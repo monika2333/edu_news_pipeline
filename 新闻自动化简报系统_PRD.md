@@ -97,3 +97,58 @@
 - 支持多渠道输出（Word/PDF/邮件推送）
 - 数据可视化（新闻热度、关键词趋势）
 - 引入机器学习模型改进去重与教育相关性判断
+
+---
+
+## 7. 技术实现路线（Supabase）
+
+### 7.1 系统架构概览
+- **数据采集层**：爬虫服务（Python）按计划任务运行，使用消息队列（如Supabase Edge Functions触发或Cron服务）将新闻写入Supabase PostgreSQL。
+- **处理服务层**：独立的ETL/分析服务（可部署为Serverless或容器），负责去重、关键词筛选、溯源聚合、摘要生成等步骤，处理后的结果同步回Supabase。
+- **应用层**：后台管理界面（例如Next.js + Supabase Auth），提供人工审核、编辑与简报生成；未来可扩展到多渠道发布。
+- **监控与日志**：利用Supabase Logflare或外部服务（如Sentry）记录爬虫与处理流程状态。
+
+### 7.2 数据库设计（Supabase PostgreSQL）
+| 表名 | 说明 | 核心字段 |
+| --- | --- | --- |
+| `sources` | 新闻来源配置 | `id`, `name`, `type`, `base_url`, `priority`, `is_active`, `metadata` |
+| `raw_articles` | 原始抓取新闻 | `id`, `source_id`, `title`, `content`, `published_at`, `url`, `raw_payload`, `hash`, `created_at` |
+| `filtered_articles` | 初筛后的新闻快照 | `id`, `raw_article_id`, `relevance_score`, `status`, `keywords`, `dedup_group_id`, `processed_payload` |
+| `events` | 聚合后的新闻事件 | `id`, `title`, `summary`, `importance_score`, `source_level`, `primary_source_url`, `status`, `created_at`, `updated_at` |
+| `event_articles` | 事件与文章映射 | `id`, `event_id`, `filtered_article_id`, `role`, `notes` |
+| `brief_items` | 简报条目 | `id`, `event_id`, `section`, `order_index`, `final_summary`, `approved_by`, `approved_at` |
+| `brief_batches` | 每日报告 | `id`, `report_date`, `sequence_no`, `generated_at`, `generated_by`, `export_payload` |
+| `audit_logs` | 操作与反馈 | `id`, `entity_type`, `entity_id`, `action`, `payload`, `created_by`, `created_at` |
+
+> 说明：`raw_articles` 与 `filtered_articles` 采用软删除字段以保留历史；`events`、`brief_items` 支持人工修改并通过 `audit_logs` 保持追踪。
+
+### 7.3 迭代计划
+1. **Sprint 1：基础数据链路（1-2周）**
+   - 搭建Supabase项目，创建上述核心数据表及存储桶。
+   - 完成至少一个新闻来源（今日头条）的爬虫，写入 `raw_articles`。
+   - 实现关键词过滤与去重逻辑，产出 `filtered_articles`。
+   - 编写基础运维脚本：任务调度、失败重试、日志记录。
+
+2. **Sprint 2：摘要与简报MVP（2周）**
+   - 集成LLM或摘要算法，为 `filtered_articles` 生成摘要与重点字段。
+   - 建立初版 `events` 聚合逻辑（简单按标题/向量相似度分组）。
+   - 开发简易前端界面：列表查看、人工选择新闻生成 `brief_items`。
+   - 支持导出TXT格式简报，并记录到 `brief_batches`。
+
+3. **Sprint 3：增强与监控（2周）**
+   - 完善溯源链路，优先显示官方媒体；增加评分模型字段。
+   - 引入Supabase Auth，区分管理员与编辑角色，保护后台访问。
+   - 增加审核日志与反馈通道，建立 `audit_logs` 写入。
+   - 建立关键指标监控（每日抓取量、过滤率、人工操作量）。
+
+4. **后续迭代方向**
+   - 拓展多来源爬虫与自定义关键词配置，支持动态更新。
+   - 实现自动排序模型（基于权重或ML），优化 `importance_score`。
+   - 推出多渠道输出（邮件/Word/PDF），并在Supabase存储对应文件。
+   - 引入数据可视化仪表盘，展示趋势与统计数据。
+
+### 7.4 工程与协作建议
+- 建立基础CI流程（Lint + 单元测试），保证数据处理脚本质量。
+- 使用Supabase的Row Level Security与Policies，确保数据访问安全。
+- 制定数据字典与API文档，方便团队协作与后续维护。
+- 每个Sprint结束进行回顾，收集人工审核的痛点，持续优化流程。

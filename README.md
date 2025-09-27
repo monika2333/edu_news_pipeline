@@ -1,168 +1,81 @@
-# 每日新闻数据处理流水线
+﻿# 教育新闻智能流水线
 
-本仓库整理了从 AuthorFetch 原始采集数据的导入、关键词筛选、LLM 摘要生成、相关度打分及导出的完整流程。最终数据存储在仓库根目录的 `articles.sqlite3` 中，关键词筛选文件位于 `education_keywords.txt`。
+## 项目概览
+- 处理今日头条 AuthorFetch 抓取的教育类新闻，从导入、补全、摘要、打分到导出成批次文本。
+- 默认使用本地 SQLite (`articles.sqlite3`) 存储，也可切换至 Supabase 托管数据库。
+- 关键词筛选列表存放于 `education_keywords.txt`，用于挑选需要摘要的文章。
 
+## 数据流程总览
+1. 导入素材：`tools/import_authorfetch_to_sqlite.py` 从 Excel/TXT 整理为结构化数据。
+2. 回填正文：`tools/fill_missing_content.py` 根据原始链接补全缺失的正文。
+3. 关键词筛选与摘要：`tools/summarize_news.py` 触发 LLM 生成摘要与来源标注。
+4. 相关度打分：`tools/score_correlation_fulltext.py` 生成 0-100 的相关度分值。
+5. 导出高相关内容：`tools/export_high_correlation.py` 组合摘要并记录导出批次。
+6. 清理：`tools/cleanup_authorfetch_outputs.py` 归档/删除已处理的原始文件。
 
-## Supabase 后端支持
+`run_pipeline.py` 将上述步骤串联成可配置的流水线，可根据命令行参数跳过或限制各阶段。
 
-若设置了 `SUPABASE_URL` 与对应的 API Key，流水线会自动切换到 Supabase 模式，也可显式指定：
+## 后端模式
+- **SQLite (默认)**：简单部署，单机存储，适合开发或离线处理。
+- **Supabase**：在 `.env.local` 配置 `SUPABASE_URL`、`SUPABASE_ANON_KEY`（或服务密钥）、`SUPABASE_DB_PASSWORD` 后启用。也可以通过 `--backend supabase` 显式指定。
+- Supabase 入口脚本位于 `tools/*_supabase.py`，目标 schema 定义在 `supabase/schema.sql`。
 
+## 环境配置
+- Python 3.10+，建议创建虚拟环境并安装 `requirements.txt`。
+- 必需环境变量
+  - `SILICONFLOW_API_KEY`（或兼容的 OpenAI API Key）。
+  - `MODEL_NAME`、`CONCURRENCY` 等可选调优参数。
+- `load_dotenv_simple` 会自动读取以下文件（若存在）：`.env`, `.env.local`, `config/abstract.env`。
+- Git 忽略建议在 `.gitignore` 中包含 `.env.local` 等敏感文件。
+
+## 快速开始
 ```
-python run_pipeline.py --backend supabase --import-src AuthorFetch --keywords education_keywords.txt
+python run_pipeline.py --db articles.sqlite3 --keywords education_keywords.txt
 ```
-
-Supabase 模式使用以下脚本：
-- `tools/import_authorfetch_supabase.py`
-- `tools/fill_missing_content_supabase.py`
-- `tools/summarize_supabase.py`
-- `tools/score_correlation_supabase.py`
-- `tools/export_high_correlation_supabase.py`
-- `tools/cleanup_authorfetch_supabase.py`
-
-请在 `.env.local` 中配置 `SUPABASE_URL`、`SUPABASE_ANON_KEY` 或服务密钥以及数据库密码。
-## 一键执行
-
-按默认配置完成导入、摘要与导出：
-
-    python run_pipeline.py --db articles.sqlite3 --keywords education_keywords.txt
-
 常用选项：
-- `--import-src`：AuthorFetch 源目录（默认 `AuthorFetch/`）
-- `--fill-limit` / `--summarize-limit`：限制处理的文章数量
-- `--summarize-concurrency` / `--score-concurrency`：调整并发
-- `--min-score`：导出时的相关度阈值
-- `--cleanup-apply`：清理阶段执行真实删除（默认开启，可通过 `--no-cleanup-apply` 只做 Dry Run）
-- `--export-report-tag`：导出批次标签，用于标记同日的早/晚报等
-- `--export-skip-exported` / `--no-export-skip-exported`：是否跳过历史上已导出的文章
-- `--export-record-history` / `--no-export-record-history`：导出后是否写入历史记录表
+- `--import-src`：AuthorFetch 原始目录（默认 `AuthorFetch/`）。
+- `--fill-limit` / `--summarize-limit`：限制处理条数。
+- `--summarize-concurrency` / `--score-concurrency`：控制并发。
+- `--min-score`：导出阶段的相关度阈值。
+- `--export-report-tag`：输出批次标签，建议早晚报区分。
+- `--export-skip-exported`、`--export-record-history`：控制增量导出与历史记录。
 
-> **增量导出说明：**
-> - `tools/export_high_correlation.py` 默认会将导出的 `article_id` 写入数据库中的 `export_history` 表，同时在下一次导出时自动跳过这些历史记录。
-> - 建议在早晚两次运行流水线时分别指定不同的标签，例如：
->
->       python run_pipeline.py --export-report-tag 2025-09-20-ZB
->       python run_pipeline.py --export-report-tag 2025-09-20-ZM
->
->   这样即可确保晚报只输出上午之后新增的新闻。
-> - 如需重新导出全部内容，可添加 `--no-export-skip-exported`；若仅做试运行且不记录，请再加 `--no-export-record-history`。
+## 分阶段执行
+```
+python tools/import_authorfetch_to_sqlite.py --src AuthorFetch --db articles.sqlite3
+python tools/fill_missing_content.py --db articles.sqlite3 --limit 200 --delay 1.5
+python tools/summarize_news.py --db articles.sqlite3 --keywords education_keywords.txt
+python tools/score_correlation_fulltext.py --db articles.sqlite3 --concurrency 5
+python tools/export_high_correlation.py --db articles.sqlite3 --output outputs/high_correlation_summaries.txt --min-score 60 --report-tag 2025-09-20-ZM
+python tools/cleanup_authorfetch_outputs.py --src AuthorFetch --db articles.sqlite3 [--apply]
+```
+- 导出脚本会根据 `export_history` 去重，`--no-export-skip-exported` 可重新导出全部。
+- 分类与排序策略在 `tools/export_high_correlation.py` 中可调，Dry Run 会打印分组统计。
 
 ## 浏览器控制台
+- `streamlit run tools/web/app.py` 启动自助面板，提供指标监控、批次导出、流水线快捷按钮等能力。
+- 首次运行需要安装 `streamlit`：`pip install streamlit`。
 
-也可以使用 Streamlit 提供的 Web 控制台在浏览器中操作：
-
-    streamlit run tools/web/app.py
-
-功能包括：
-- 关键指标面板（文章数量、摘要缺失情况等）
-- 导出历史与现有输出文件的预览/下载
-- 一键运行完整流水线，以及逐个阶段的按钮（导入、回填、摘要、打分、导出）
-- 在界面中切换标签、是否跳过历史导出、是否执行清理删除等开关
-
-首次运行需要在当前 Python 环境中安装 `streamlit`（例如 `pip install streamlit`）。
-
-## 手动分步
-
-1. 导入 AuthorFetch 数据
-
-        python tools/import_authorfetch_to_sqlite.py --src AuthorFetch --db articles.sqlite3
-
-   Excel 表第一行自动识别列名，TXT 正文会取同目录下最长的文件作为正文写入 `articles` 表。
-
-2. 回填缺失正文
-
-        python tools/fill_missing_content.py --db articles.sqlite3 --limit 200 --delay 1.5
-
-   使用 `original_url` 或 `article_id` 请求源站，失败会自动跳过。
-
-3. 关键词过滤后的摘要生成
-
-        python tools/summarize_news.py --db articles.sqlite3 --keywords education_keywords.txt
-
-   仅对包含关键词的文章调用 SiliconFlow/OpenAI 接口生成摘要，并写入 `news_summaries` 表。
-
-4. 相关度打分
-
-        python tools/score_correlation_fulltext.py --db articles.sqlite3 --concurrency 5
-
-   生成 0-100 的相关度分数，写入 `correlation` 列。
-
-5. 导出高相关度摘要（含去重机制）
-
-        python tools/export_high_correlation.py --db articles.sqlite3 --output outputs/high_correlation_summaries.txt --min-score 60 --report-tag 2025-09-20-ZM
-
-   - 默认跳过已在 `export_history` 表中出现的文章。
-   - 输出文件会包含标题、摘要以及 LLM 来源（若有），以空行分隔，并根据标签生成如 `high_correlation_summaries_20250920_ZB.txt` 的文件名。
-   - 再次导出同批次时可用 `--no-skip-exported` 重新生成全部内容。
-
-### å¯¼åºåç»æåºç­ç¥
-
-- `tools/export_high_correlation.py` ä¼åæâå¸å§æå§ â ä¸­å°å­¦ â é«æ ¡ â å¶ä»ç¤¾ä¼æ°é»âçé¡ºåºåç»ï¼åå¨æ¯ä¸ªåç»åä¿æåæçç¸å³åº¦éåºã
-- åç±»åºäº `source`ã`source_LLM`ãæ é¢ãæè¦ä»¥åæ­£æå³é®è¯çå¯åå¼å¹éï¼å¤å½ä¸­æ¶ä»¥ä¼åçº§é«çåç»ä¸ºåã
-- å³é®è¯è¡¨å¯å¨ `tools/export_high_correlation.py` ä¸­è°æ´ï¼Dry Run æ¨¡å¼ä¼æå°ååç»ç»è®¡ï¼ä¾¿äºå¿«éæ ¡ååç±»ææã
-
-
-
-6. 清理 AuthorFetch 目录
-
-        python tools/cleanup_authorfetch_outputs.py --src AuthorFetch --db articles.sqlite3
-        python tools/cleanup_authorfetch_outputs.py --src AuthorFetch --db articles.sqlite3 --apply
-
-   默认 Dry Run，带 `--apply` 后执行删除，可配合 `--allow-empty-content` 清理空正文记录。
-
-## 目录结构参考
-
-- `AuthorFetch/`：原始 Excel 与正文目录
-- `articles.sqlite3`：主 SQLite 数据库（`articles`、`news_summaries`、`export_history` 等表）
-- `education_keywords.txt`：关键词列表
-- `outputs/high_correlation_summaries.txt`：导出的文本
+## Supabase 结构与映射
+- `raw_articles`：对应原本的 `articles` 表，建议使用 `article_id`+URL hash 作为 `hash`。
+- `filtered_articles`：承载摘要、相关度、关键词及处理元数据。
+- `brief_batches` / `brief_items`：记录导出批次与摘要明细。
+- 推荐通过数据库适配层（如 `services/db_adapter.py`）封装 CRUD，便于在 SQLite 与 Supabase 之间切换。
+- 注意 Supabase RLS 与速率限制：服务调用应使用服务密钥并实现限流、重试。
 
 ## 常见问题
+- 首次运行若不存在数据库会自动创建。
+- PowerShell 若出现编码问题，可先执行 `chcp 65001`。
+- 导出前建议 Dry Run 并备份 `AuthorFetch/` 原始文件。
 
-- 初次运行若数据库不存在会自动创建。
-- 需要在 `.env` 或 `config/abstract.env` 中提供 `SILICONFLOW_API_KEY`，并可设置 `MODEL_NAME`、`CONCURRENCY`。
-- PowerShell 下如出现编码问题，可先执行 `chcp 65001`。
-- 建议在正式导出前执行 Dry Run，并检查原始抓取目录内容是否已备份。
+## 迁移路线图
+1. 抽象数据库访问：创建统一的 `DbAdapter` 接口，现有脚本改为通过适配层访问。
+2. 实现 Supabase 适配器：封装 sources/raw_articles/filtered_articles/brief_* 的增删查改与幂等写入。
+3. 逐步替换脚本：依次改造导入、摘要、打分、导出脚本以调用 Supabase 适配器。
+4. 配置与凭据管理：新增 `.env.example`，完善 `.gitignore`，统一加载配置。
+5. 数据迁移：编写一次性脚本，将 `articles.sqlite3` 中的历史数据同步至 Supabase。
+6. 验证与运维：编写关键接口集成测试，在测试环境完整跑通流水线后再切换生产。
 
-## 快速处理单条新闻
-
-当需要快速处理单个新闻链接时，可以使用 `tools/process_single_news.py`：
-
-### 交互式模式（推荐）
-
-    python tools/process_single_news.py
-
-脚本会提示你粘贴新闻分享内容，支持直接粘贴今日头条/北京日报网分享的内容：
-
-```
-【AI赋能､人人参与!北京市2025年北京市中小学科学节(通... - 今日头条】
-点击链接打开👉 https://m.toutiao.com/is/YEexSWXbGwQ/ YEexSWXbGwQ` dvX:/ m@q.EH :0am
-复制此条消息,打开｢今日头条APP｣或｢今日头条极速版APP｣后直接查看~
-```
-
-粘贴完成后按回车（空行）结束输入，脚本会：
-1. 自动提取有效链接
-2. 调用 `toutiao_fetch.py` 获取内容并保存到数据库
-3. 调用 `summarize_news.py` 生成摘要和来源识别
-4. 跳过相关度打分步骤
-5. 直接输出标题、摘要和来源信息到控制台
-
-### 命令行模式
-
-    python tools/process_single_news.py "https://m.toutiao.com/is/YEexSWXbGwQ/"
-
-支持的链接格式：
-- `https://m.toutiao.com/is/xxxxx/`（分享短链）
-- `https://www.toutiao.com/article/xxxxxx/`（标准链接）
-- `https://m.toutiao.com/ixxxxxx/`（移动端链接）
-- 北京日报网链接
-
-## 相关脚本
-
-- 数据抓取：`tools/toutiao_fetch.py`
-- 导入：`tools/import_authorfetch_to_sqlite.py`
-- 正文补全：`tools/fill_missing_content.py`
-- 摘要与打分：`tools/summarize_news.py`、`tools/score_correlation_fulltext.py`
-- 导出：`tools/export_high_correlation.py`
-- 清理：`tools/cleanup_authorfetch_outputs.py`
-- 一键流水线：`run_pipeline.py`
-- **单条新闻快速处理：`tools/process_single_news.py`**
+## 单条新闻快速处理
+- `python tools/process_single_news.py` 进入交互模式，粘贴今日头条或北京日报分享内容。
+- 也可直接传入链接：`python tools/process_single_news.py "https://m.toutiao.com/is/XXXX/"`。

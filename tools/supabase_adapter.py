@@ -179,7 +179,6 @@ class SupabaseAdapter:
             "url": record.original_url,
             "content": record.content,
             "raw_payload": record.raw_payload or {},
-            "metadata": record.metadata or {},
             "language": (record.metadata.get("language") if record.metadata else None) or "zh",
         }
         if prefer_longer_content and record.content is None:
@@ -235,7 +234,7 @@ class SupabaseAdapter:
             self.client
             .table("raw_articles")
             .select(
-                "id, hash, title, content, published_at, url, raw_payload, metadata, \
+                "id, hash, title, content, published_at, url, raw_payload, \
                  sources(name), filtered_articles(id, summary, processed_payload, status)"
             )
             .eq("is_deleted", False)

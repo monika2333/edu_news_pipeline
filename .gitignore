@@ -1,3 +1,62 @@
 .env*
 supabase/.temp/
 
+# Build and Release Folders
+bin-debug/
+bin-release/
+[Oo]bj/
+[Bb]in/
+
+# Other files and folders
+.settings/
+
+# Executables
+*.swf
+*.air
+*.ipa
+*.apk
+
+# Python bytecode cache
+__pycache__/
+*.pyc
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
+# should NOT be excluded as they contain compiler settings and other important
+# information for Eclipse / Flash Builder.
+
+# AuthorFetch generated data
+AuthorFetch/*.xlsx
+AuthorFetch/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
+
+# SQLite databases
+*.sqlite3
+
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment configuration files
+.env
+.env.*
+
+# Configuration and generated outputs
+config/*.env
+config/**/*.env
+outputs/
+
+# Claude Code configuration
+.claude/
+
+# BMAD (local only)
+.bmad-core/
+.bmad-*/
+
+# Replace news JGW txt files
+replace-news-JGW/*.txt

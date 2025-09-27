@@ -6,7 +6,7 @@ import argparse
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Dict, List, Sequence, Set, Tuple
 
 try:
     from tools.supabase_adapter import ExportCandidate, get_supabase_adapter
@@ -123,16 +123,26 @@ def export_supabase(options: ExportOptions) -> None:
         print("No Supabase summaries meet the score threshold.")
         return
 
-    existing_ids, _ = adapter.get_export_history(options.report_tag) if options.skip_exported else (set(), None)
+    if options.skip_exported:
+        existing_ids, _ = adapter.get_export_history(options.report_tag)
+        global_exported_ids: Set[str] = adapter.get_all_exported_article_ids()
+    else:
+        existing_ids = set()
+        global_exported_ids = set()
+    skip_ids = global_exported_ids
 
     grouped_entries: Dict[str, List[str]] = {category: [] for category in CATEGORY_ORDER}
     grouped_candidates: Dict[str, List[Dict[str, any]]] = {category: [] for category in CATEGORY_ORDER}
-    skipped_history = 0
+    skipped_current_tag = 0
+    skipped_previous_reports = 0
 
     for row in rows:
         article_id = str(row.get("article_id"))
-        if options.skip_exported and article_id in existing_ids:
-            skipped_history += 1
+        if options.skip_exported and article_id in skip_ids:
+            if article_id in existing_ids:
+                skipped_current_tag += 1
+            else:
+                skipped_previous_reports += 1
             continue
         category = classify_category(row.get("source"), None, row.get("title"), row.get("llm_summary"), row.get("content_markdown"))
         source_suffix = row.get('source')
@@ -181,9 +191,19 @@ def export_supabase(options: ExportOptions) -> None:
         adapter.record_export(options.report_tag, list(zip(payload, [section for _, section in export_payload])), output_path=str(final_output))
 
     category_summary = "; ".join(f"{category}:{count}" for category, count in category_counts.items())
+    total_skipped = skipped_current_tag + skipped_previous_reports
+    skip_detail = ""
+    if total_skipped:
+        detail_parts = []
+        if skipped_current_tag:
+            detail_parts.append(f"this_tag:{skipped_current_tag}")
+        if skipped_previous_reports:
+            detail_parts.append(f"previous_tags:{skipped_previous_reports}")
+        if detail_parts:
+            skip_detail = f" [{', '.join(detail_parts)}]"
     print(
         f"Exported {len(entries)} summaries to {final_output} "
-        f"(skipped {skipped_history} already exported; category counts: {category_summary})"
+        f"(skipped {total_skipped} already exported{skip_detail}; category counts: {category_summary})"
     )
 
 

@@ -442,6 +442,31 @@ class SupabaseAdapter:
         ids = {str(row.get("article_id")) for row in resp.data or [] if row.get("article_id")}
         return ids, batch_id
 
+    def get_all_exported_article_ids(self) -> Set[str]:
+        batch_size = 1000
+        start = 0
+        seen: Set[str] = set()
+        while True:
+            resp = (
+                self.client
+                .table("brief_items")
+                .select("article_id")
+                .order("id")
+                .range(start, start + batch_size - 1)
+                .execute()
+            )
+            rows = resp.data or []
+            if not rows:
+                break
+            for row in rows:
+                article_id = row.get("article_id")
+                if article_id:
+                    seen.add(str(article_id))
+            if len(rows) < batch_size:
+                break
+            start += batch_size
+        return seen
+
     def record_export(
         self,
         report_tag: str,

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Export Supabase summaries with high relevance."""
 from __future__ import annotations
 
@@ -103,33 +103,50 @@ def generate_output_path(base_path: Path, report_tag: str) -> Path:
     return base_path.parent / f"{base}_{safe_tag}{suffix}"
 
 
+def fetch_candidates(min_score: int):
+    adapter = get_supabase_adapter()
+    resp = (
+        adapter.client
+        .table("news_summaries")
+        .select("article_id, title, llm_summary, correlation, content_markdown, source, url, publish_time_iso, llm_keywords")
+        .gte("correlation", min_score)
+        .order("correlation", desc=True)
+    ).execute()
+    items = resp.data or []
+    return items
+
+
 def export_supabase(options: ExportOptions) -> None:
     adapter = get_supabase_adapter()
-    candidates = adapter.fetch_export_candidates(options.min_score)
-    if not candidates:
+    rows = fetch_candidates(options.min_score)
+    if not rows:
         print("No Supabase summaries meet the score threshold.")
         return
 
     existing_ids, _ = adapter.get_export_history(options.report_tag) if options.skip_exported else (set(), None)
 
     grouped_entries: Dict[str, List[str]] = {category: [] for category in CATEGORY_ORDER}
-    grouped_candidates: Dict[str, List[ExportCandidate]] = {category: [] for category in CATEGORY_ORDER}
+    grouped_candidates: Dict[str, List[Dict[str, any]]] = {category: [] for category in CATEGORY_ORDER}
     skipped_history = 0
 
-    for candidate in candidates:
-        if options.skip_exported and candidate.filtered_article_id in existing_ids:
+    for row in rows:
+        article_id = str(row.get("article_id"))
+        if options.skip_exported and article_id in existing_ids:
             skipped_history += 1
             continue
-        category = classify_category(candidate.source, candidate.source_llm, candidate.title, candidate.summary, candidate.content)
-        grouped_entries.setdefault(category, []).append(
-            f"{candidate.title or ''}\n{candidate.summary}{f'（{candidate.source_llm}）' if candidate.source_llm else ''}"
-        )
-        grouped_candidates.setdefault(category, []).append(candidate)
+        category = classify_category(row.get("source"), None, row.get("title"), row.get("llm_summary"), row.get("content_markdown"))
+        source_suffix = row.get('source')
+        if source_suffix:
+            entry = f"{row.get('title') or ''}\n{row.get('llm_summary') or ''}（{source_suffix}）"
+        else:
+            entry = f"{row.get('title') or ''}\n{row.get('llm_summary') or ''}"
+        grouped_entries.setdefault(category, []).append(entry)
+        grouped_candidates.setdefault(category, []).append(row)
 
     category_counts = {category: len(grouped_entries.get(category, [])) for category in CATEGORY_ORDER}
 
     entries: List[str] = []
-    export_payload: List[Tuple[ExportCandidate, str]] = []
+    export_payload: List[Tuple[Dict[str, any], str]] = []
     for category in CATEGORY_ORDER:
         items = grouped_entries.get(category, [])
         cand_items = grouped_candidates.get(category, [])
@@ -144,7 +161,24 @@ def export_supabase(options: ExportOptions) -> None:
     final_output.write_text("\n\n".join(entries), encoding="utf-8")
 
     if options.record_history and export_payload:
-        adapter.record_export(options.report_tag, export_payload, output_path=str(final_output))
+        payload = []
+        for cand, section in export_payload:
+            payload.append(
+                ExportCandidate(
+                    filtered_article_id=str(cand.get("article_id")),
+                    raw_article_id=str(cand.get("article_id")),
+                    article_hash=str(cand.get("article_id")),
+                    title=cand.get("title"),
+                    summary=cand.get("llm_summary") or "",
+                    content=str(cand.get("content_markdown") or ""),
+                    source=cand.get("source"),
+                    source_llm=None,
+                    relevance_score=float(cand.get("correlation") or 0),
+                    original_url=cand.get("url"),
+                    published_at=cand.get("publish_time_iso"),
+                )
+            )
+        adapter.record_export(options.report_tag, list(zip(payload, [section for _, section in export_payload])), output_path=str(final_output))
 
     category_summary = "; ".join(f"{category}:{count}" for category, count in category_counts.items())
     print(

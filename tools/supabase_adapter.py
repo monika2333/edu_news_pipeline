@@ -438,8 +438,8 @@ class SupabaseAdapter:
         if not batch:
             return set(), None
         batch_id = str(batch["id"])
-        resp = self.client.table("brief_items").select("filtered_article_id").eq("brief_batch_id", batch_id).execute()
-        ids = {str(row["filtered_article_id"]) for row in resp.data or [] if row.get("filtered_article_id")}
+        resp = self.client.table("brief_items").select("article_id").eq("brief_batch_id", batch_id).execute()
+        ids = {str(row.get("article_id")) for row in resp.data or [] if row.get("article_id")}
         return ids, batch_id
 
     def record_export(
@@ -472,14 +472,22 @@ class SupabaseAdapter:
                 except Exception:
                     order_index_start = 0
         for offset, (candidate, section) in enumerate(exported):
-            if candidate.filtered_article_id in existing_ids:
+            article_id = candidate.filtered_article_id
+            if article_id in existing_ids:
                 continue
             record = {
                 "brief_batch_id": batch_id,
-                "filtered_article_id": candidate.filtered_article_id,
+                "article_id": article_id,
                 "section": section,
                 "order_index": order_index_start + offset,
                 "final_summary": candidate.summary,
+                "metadata": {
+                    "title": candidate.title,
+                    "correlation": candidate.relevance_score,
+                    "original_url": candidate.original_url,
+                    "published_at": candidate.published_at,
+                    "source": candidate.source,
+                },
             }
             insert_payload.append(record)
         if insert_payload:

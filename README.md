@@ -1,81 +1,72 @@
-﻿# 教育新闻智能流水线
+﻿# 教育新闻自动化流水线
 
 ## 项目概览
-- 处理今日头条 AuthorFetch 抓取的教育类新闻，从导入、补全、摘要、打分到导出成批次文本。
-- 默认使用本地 SQLite (`articles.sqlite3`) 存储，也可切换至 Supabase 托管数据库。
-- 关键词筛选列表存放于 `education_keywords.txt`，用于挑选需要摘要的文章。
+- 基于今日头条作者主页实时抓取教育类资讯，并保存为结构化 JSON 或直接写入 Supabase。
+- 后续流程全部围绕 Supabase 架构：自动摘要、相关度评分与高相关内容导出。
+- 关键词过滤规则集中在 `education_keywords.txt`，通过 LLM 只保留教育场景需要的素材。
 
-## 数据流程总览
-1. 导入素材：`tools/import_authorfetch_to_sqlite.py` 从 Excel/TXT 整理为结构化数据。
-2. 回填正文：`tools/fill_missing_content.py` 根据原始链接补全缺失的正文。
-3. 关键词筛选与摘要：`tools/summarize_news.py` 触发 LLM 生成摘要与来源标注。
-4. 相关度打分：`tools/score_correlation_fulltext.py` 生成 0-100 的相关度分值。
-5. 导出高相关内容：`tools/export_high_correlation.py` 组合摘要并记录导出批次。
-6. 清理：`tools/cleanup_authorfetch_outputs.py` 归档/删除已处理的原始文件。
+## 环境准备
+- Python 3.10+，建议使用虚拟环境：`python -m venv .venv && .venv/Scripts/activate`。
+- 安装依赖：`pip install -r requirements.txt`，若需要将抓取结果写入数据库，请额外安装 `pip install "psycopg[binary]"`。
+- Playwright 需要安装浏览器内核：`playwright install chromium`。
+- `.env.local` / `.env` / `config/abstract.env` 会被自动读取，推荐在 `.env.local` 中维护密钥，仓库中不要提交该文件。
 
-`run_pipeline.py` 将上述步骤串联成可配置的流水线，可根据命令行参数跳过或限制各阶段。
+### Supabase 凭据
+`tools/toutiao_scrapy/toutiao_scraper.py` 直接连接 Supabase Postgres，需要以下环境变量：
+- `SUPABASE_URL`
+- `SUPABASE_DB_PASSWORD`
+- 可选：`SUPABASE_DB_USER`（默认 `postgres`）、`SUPABASE_DB_HOST`（默认根据 URL 推导）、`SUPABASE_DB_NAME`（默认 `postgres`）、`SUPABASE_DB_PORT`（默认 `5432`）、`SUPABASE_DB_SCHEMA`（默认 `public`）。
 
-## 后端模式
-- **SQLite (默认)**：简单部署，单机存储，适合开发或离线处理。
-- **Supabase**：在 `.env.local` 配置 `SUPABASE_URL`、`SUPABASE_ANON_KEY`（或服务密钥）、`SUPABASE_DB_PASSWORD` 后启用。也可以通过 `--backend supabase` 显式指定。
-- Supabase 入口脚本位于 `tools/*_supabase.py`，目标 schema 定义在 `supabase/schema.sql`。
+下游脚本通过 Supabase REST 访问，至少需要：
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY` 或 `SUPABASE_KEY`（推荐使用服务密钥以便写操作）
 
-## 环境配置
-- Python 3.10+，建议创建虚拟环境并安装 `requirements.txt`。
-- 必需环境变量
-  - `SILICONFLOW_API_KEY`（或兼容的 OpenAI API Key）。
-  - `MODEL_NAME`、`CONCURRENCY` 等可选调优参数。
-- `load_dotenv_simple` 会自动读取以下文件（若存在）：`.env`, `.env.local`, `config/abstract.env`。
-- Git 忽略建议在 `.gitignore` 中包含 `.env.local` 等敏感文件。
+SiliconFlow 调用所需：
+- `SILICONFLOW_API_KEY`
+- 可选：`MODEL_NAME`、`CONCURRENCY`、`ENABLE_THINKING`、`SILICONFLOW_BASE_URL`
 
-## 快速开始
-```
-python run_pipeline.py --db articles.sqlite3 --keywords education_keywords.txt
-```
-常用选项：
-- `--import-src`：AuthorFetch 原始目录（默认 `AuthorFetch/`）。
-- `--fill-limit` / `--summarize-limit`：限制处理条数。
-- `--summarize-concurrency` / `--score-concurrency`：控制并发。
-- `--min-score`：导出阶段的相关度阈值。
-- `--export-report-tag`：输出批次标签，建议早晚报区分。
-- `--export-skip-exported`、`--export-record-history`：控制增量导出与历史记录。
+## 数据流程
+1. **采集今日头条作者文章**  
+   `python tools/toutiao_scrapy/toutiao_scraper.py --input tools/toutiao_scrapy/author.txt --limit 150`  
+   - `author.txt` 支持作者 token 或完整主页 URL，每行一个，`#` 开头为注释。  
+   - 默认将结果写入 `tools/toutiao_scrapy/data/toutiao_articles.json`。若配置了 Supabase 凭据且安装了 `psycopg`，会同步写入 `public.toutiao_articles`（可用 `--supabase-table` 调整目标表，`--reset-supabase-table` 覆盖写入）。  
+   - 运行时通过 Playwright 调用今日头条接口，`--show-browser` 可打开非无头模式便于排查；`--limit 0` 表示抓取所有可用内容。  
+   - 再次运行时会基于 Supabase 中已存在的 `article_id` 自动跳过重复内容。
 
-## 分阶段执行
-```
-python tools/import_authorfetch_to_sqlite.py --src AuthorFetch --db articles.sqlite3
-python tools/fill_missing_content.py --db articles.sqlite3 --limit 200 --delay 1.5
-python tools/summarize_news.py --db articles.sqlite3 --keywords education_keywords.txt
-python tools/score_correlation_fulltext.py --db articles.sqlite3 --concurrency 5
-python tools/export_high_correlation.py --db articles.sqlite3 --output outputs/high_correlation_summaries.txt --min-score 60 --report-tag 2025-09-20-ZM
-python tools/cleanup_authorfetch_outputs.py --src AuthorFetch --db articles.sqlite3 [--apply]
-```
-- 导出脚本会根据 `export_history` 去重，`--no-export-skip-exported` 可重新导出全部。
-- 分类与排序策略在 `tools/export_high_correlation.py` 中可调，Dry Run 会打印分组统计。
+2. **落地到 Supabase 主流程表**  
+   - Supabase 架构定义见 `supabase/schema.sql`，核心表为 `sources`、`raw_articles`、`filtered_articles`、`brief_batches`、`brief_items`。  
+   - 可以直接在数据库中用 SQL 将 `toutiao_articles` 映射到 `raw_articles`，或编写一个小脚本调用 `tools.supabase_adapter.SupabaseAdapter.upsert_article` 把 JSON 结果写入 `raw_articles`（推荐按作者来源维护 `sources` 表，避免缺失外键）。
 
-## 浏览器控制台
-- `streamlit run tools/web/app.py` 启动自助面板，提供指标监控、批次导出、流水线快捷按钮等能力。
-- 首次运行需要安装 `streamlit`：`pip install streamlit`。
+3. **关键词筛选与摘要**  
+   `python tools/summarize_supabase.py --keywords education_keywords.txt --limit 200 --concurrency 5`  
+   - 仅处理 `raw_articles` 中尚未生成摘要的记录，并基于关键词过滤内容。  
+   - 成功后会在 `filtered_articles` 中创建或更新摘要、关键词、处理元数据。
 
-## Supabase 结构与映射
-- `raw_articles`：对应原本的 `articles` 表，建议使用 `article_id`+URL hash 作为 `hash`。
-- `filtered_articles`：承载摘要、相关度、关键词及处理元数据。
-- `brief_batches` / `brief_items`：记录导出批次与摘要明细。
-- 推荐通过数据库适配层（如 `services/db_adapter.py`）封装 CRUD，便于在 SQLite 与 Supabase 之间切换。
-- 注意 Supabase RLS 与速率限制：服务调用应使用服务密钥并实现限流、重试。
+4. **相关度打分**  
+   `python tools/score_correlation_supabase.py --concurrency 5 --limit 200`  
+   - 对待审核或未打分的摘要调用 LLM 输出 0-100 的教育相关度评分，并写回 `filtered_articles.relevance_score`。
 
-## 常见问题
-- 首次运行若不存在数据库会自动创建。
-- PowerShell 若出现编码问题，可先执行 `chcp 65001`。
-- 导出前建议 Dry Run 并备份 `AuthorFetch/` 原始文件。
+5. **导出高相关摘要**  
+   `python tools/export_high_correlation_supabase.py --min-score 65 --report-tag 2025-09-20-AM --output outputs/highlight.txt`  
+   - 从 `filtered_articles` 中筛选达到阈值的摘要，按类别落在不同分组，输出到文本文件。  
+   - `--skip-exported` / `--record-history` 会在 `brief_batches` 与 `brief_items` 中维护历史，防止重复导出。
 
-## 迁移路线图
-1. 抽象数据库访问：创建统一的 `DbAdapter` 接口，现有脚本改为通过适配层访问。
-2. 实现 Supabase 适配器：封装 sources/raw_articles/filtered_articles/brief_* 的增删查改与幂等写入。
-3. 逐步替换脚本：依次改造导入、摘要、打分、导出脚本以调用 Supabase 适配器。
-4. 配置与凭据管理：新增 `.env.example`，完善 `.gitignore`，统一加载配置。
-5. 数据迁移：编写一次性脚本，将 `articles.sqlite3` 中的历史数据同步至 Supabase。
-6. 验证与运维：编写关键接口集成测试，在测试环境完整跑通流水线后再切换生产。
+## 目录速览
+- `tools/toutiao_scrapy/`：今日头条抓取脚本及作者列表示例。
+- `tools/supabase_adapter.py`：封装 Supabase 常用 CRUD（抓取落地、摘要候选、评分、导出记录等）。
+- `tools/summarize_supabase.py`：关键词过滤 + SiliconFlow 摘要。
+- `tools/score_correlation_supabase.py`：调用 LLM 进行教育相关度打分。
+- `tools/export_high_correlation_supabase.py`：按分类导出摘要并记录批次。
+- `supabase/schema.sql`：数据库结构定义，可直接在 Supabase 项目执行。
+- `tests/test_export_high_correlation.py`：导出分类逻辑的单元测试示例。
 
-## 单条新闻快速处理
-- `python tools/process_single_news.py` 进入交互模式，粘贴今日头条或北京日报分享内容。
-- 也可直接传入链接：`python tools/process_single_news.py "https://m.toutiao.com/is/XXXX/"`。
+## 常用排查
+- Playwright 报错：重新执行 `playwright install chromium`，或加 `--show-browser` 查看页面是否被风控。
+- Supabase 上传失败：确认已安装 `psycopg[binary]`，并检查 `SUPABASE_DB_*` 变量是否正确；若仅使用 REST 接口，可加 `--skip-supabase-upload` 先输出 JSON。
+- LLM 接口超时：降低 `--concurrency`，或在 `.env.local` 中调小 `CONCURRENCY` 并配置备用模型。
+- 导出无结果：确认相关度阈值、关键词配置，或在 Supabase 后台检查 `filtered_articles` 是否已填充摘要与评分。
+
+## 后续计划
+- 将 `tools/toutiao_scrapy/toutiao_scraper.py` 的产出自动写入 `raw_articles`，减少手动同步。
+- 更新 `run_pipeline.py` 以适配新的 Supabase-only 流程。
+- 补充更多自动化测试与告警，覆盖抓取失败和 LLM 超时场景。

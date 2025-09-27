@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Scrape Toutiao authors listed in a file, fetch article contents, and push to Supabase."""
 
 from __future__ import annotations
@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import html
-import json
+
 import os
 import re
 import sys
@@ -426,12 +426,6 @@ def fetch_article_records(
     return records
 
 
-def write_output(records: List[ArticleRecord], output: Path) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    payload = [asdict(record) for record in records]
-    output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
 def derive_supabase_host(supabase_url: str) -> str:
     parsed = urlparse(supabase_url)
     host = parsed.netloc or supabase_url
@@ -680,21 +674,23 @@ async def async_main(args: argparse.Namespace) -> int:
     if not records:
         print("[warn] No article content fetched.", file=sys.stderr)
 
-    try:
-        write_output(records, args.output)
-    except Exception as exc:
-        print(f"[error] Failed to write output: {exc}", file=sys.stderr)
-        return 4
-
-    if supabase_config:
+    uploaded = False
+    if supabase_config and records:
         success = upload_records_to_supabase(records, supabase_config)
         if not success:
             return 5
+        uploaded = True
 
-    print(
-        f"Fetched {len(records)} article(s) from {len(entries)} author(s). Saved to {args.output}",
-        file=sys.stderr,
-    )
+    if uploaded:
+        print(
+            f"Fetched {len(records)} article(s) from {len(entries)} author(s). Uploaded to Supabase table {supabase_config.schema}.{supabase_config.table}",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            f"Fetched {len(records)} article(s) from {len(entries)} author(s). Supabase upload skipped.",
+            file=sys.stderr,
+        )
     return 0
 
 

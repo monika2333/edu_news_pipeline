@@ -1,7 +1,7 @@
 ﻿# 教育新闻自动化流水线
 
 ## 项目概览
-- `tools/toutiao_scraper.py` 从今日头条作者主页抓取文章并写入 Supabase `toutiao_articles` 表，可选同步生成 JSON 备份。
+- `tools/toutiao_scraper.py` 抓取今日头条作者主页并写入 Supabase `toutiao_articles` 表。
 - `tools/summarize_supabase.py` 读取 `toutiao_articles`，按 `education_keywords.txt` 过滤后调用 SiliconFlow 生成摘要，upsert 至 `news_summaries`。
 - `tools/score_correlation_supabase.py` 对 `news_summaries` 内缺失评分的文章调用 LLM，写回 `correlation` 分值。
 - `tools/export_high_correlation_supabase.py` 从 `news_summaries` 导出高分摘要，并在 `brief_batches`/`brief_items` 追踪导出历史。
@@ -46,7 +46,6 @@
    python tools/toutiao_scraper.py \
      --input tools/author.txt \
      --limit 150 \
-     --output data/toutiao_articles.json
    ```
    - `author.txt` 每行一个 token 或主页 URL，`#` 为注释。
    - 设置 Supabase Postgres 凭据并安装 `psycopg` 后，脚本会写入 `toutiao_articles`（可用 `--supabase-table` 指定目标表，`--reset-supabase-table` 清空重建）。
@@ -75,7 +74,6 @@
    python tools/export_high_correlation_supabase.py \
      --min-score 60 \
      --report-tag 2025-09-27-AM \
-     --output outputs/highlight.txt
    ```
    - 从 `news_summaries` 选取 `correlation` ≥ 阈值的记录，按分类归组。
    - 文本末尾自动追加来源括号（如 `（北京日报客户端）`）。

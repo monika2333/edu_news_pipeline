@@ -1,333 +1,245 @@
-﻿#!/usr/bin/env python3
-"""One-stop pipeline for either SQLite or Supabase backends."""
-from __future__ import annotations
+#!/usr/bin/env python3
+"""
+教育新闻自动化流水线一键运行脚本
+执行完整的抓取、摘要、评分、导出流程
+"""
 
-import argparse
 import os
-import subprocess
 import sys
+import subprocess
+import argparse
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
 
-REPO_ROOT = Path(__file__).resolve().parent
-TOOLS_DIR = REPO_ROOT / "tools"
-DEFAULT_DB_PATH = REPO_ROOT / "articles.sqlite3"
-DEFAULT_KEYWORDS_PATH = REPO_ROOT / "education_keywords.txt"
-DEFAULT_EXPORT_PATH = REPO_ROOT / "outputs" / "high_correlation_summaries.txt"
-
-BACKEND_SQLITE = "sqlite"
-BACKEND_SUPABASE = "supabase"
-BACKEND_AUTO = "auto"
-
-
-def run_step(name: str, cmd: List[str]) -> None:
-    print(f"\n=== {name} ===")
-    print(" ".join(str(c) for c in cmd))
-    result = subprocess.run(cmd, cwd=REPO_ROOT)
-    if result.returncode != 0:
-        raise SystemExit(f"Step '{name}' failed with exit code {result.returncode}")
-
-
-def detect_backend(requested: str) -> str:
-    if requested == BACKEND_SQLITE:
-        return BACKEND_SQLITE
-    if requested == BACKEND_SUPABASE:
-        return BACKEND_SUPABASE
-    # auto detection
-    if os.getenv("SUPABASE_URL") and (
-        os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY")
-    ):
-        return BACKEND_SUPABASE
-    return BACKEND_SQLITE
+# 环境变量加载（使用项目自己的逻辑）
+def _load_simple_env(path: Path) -> None:
+    """简单的环境文件加载器"""
+    if not path.exists():
+        return
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            raw = line.strip()
+            if not raw or raw.startswith("#") or "=" not in raw:
+                continue
+            key, value = raw.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if (value.startswith("\"") and value.endswith("\"")) or (value.startswith("'") and value.endswith("'")):
+                value = value[1:-1]
+            if key and key not in os.environ:
+                os.environ[key] = value
+    except Exception:
+        pass
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the news processing pipeline")
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH, help="主 SQLite 数据库路径 (SQLite 模式有效)")
-    parser.add_argument("--keywords", type=Path, default=DEFAULT_KEYWORDS_PATH, help="关键词文件路径")
-    parser.add_argument("--export-output", type=Path, default=DEFAULT_EXPORT_PATH, help="高相关度摘要导出文件")
-    parser.add_argument("--import-src", type=Path, default=REPO_ROOT / "AuthorFetch", help="AuthorFetch 源目录")
-    parser.add_argument("--fill-limit", type=int, default=0, help="回填正文的最大数量 (0=全部)")
-    parser.add_argument("--fill-delay", type=float, default=1.0, help="回填正文的请求间隔秒")
-    parser.add_argument("--fill-timeout", type=int, default=15, help="回填正文的超时时间")
-    parser.add_argument("--summarize-limit", type=int, default=0, help="摘要阶段的最大处理数量 (0=全部)")
-    parser.add_argument("--summarize-concurrency", type=int, default=0, help="摘要阶段并发线程数")
-    parser.add_argument("--score-concurrency", type=int, default=0, help="相关度打分并发数")
-    parser.add_argument("--min-score", type=int, default=60, help="导出摘要的最低相关度分数")
-    parser.add_argument("--cleanup-apply", action=argparse.BooleanOptionalAction, default=True, help="清理阶段是否实际删除文件")
-    parser.add_argument("--allow-empty-content", action="store_true", help="清理时允许正文为空仍删除")
-    parser.add_argument("--skip-import", action="store_true", help="跳过导入阶段")
-    parser.add_argument("--skip-fill", action="store_true", help="跳过回填阶段")
-    parser.add_argument("--skip-summary", action="store_true", help="跳过摘要阶段")
-    parser.add_argument("--skip-score", action="store_true", help="跳过相关度打分")
-    parser.add_argument("--skip-export", action="store_true", help="跳过导出阶段")
-    parser.add_argument("--export-report-tag", type=str, default=None, help="导出批次标签 (例如 2025-09-20-AM)")
-    parser.add_argument("--export-skip-exported", action=argparse.BooleanOptionalAction, default=True, help="导出时是否跳过历史已导出的文章")
-    parser.add_argument("--export-record-history", action=argparse.BooleanOptionalAction, default=True, help="导出后是否记录历史")
-    parser.add_argument("--skip-cleanup", action="store_true", help="跳过 AuthorFetch 清理")
-    parser.add_argument("--backend", choices=[BACKEND_AUTO, BACKEND_SQLITE, BACKEND_SUPABASE], default=BACKEND_AUTO, help="数据存储后端 (默认 auto)")
-    return parser.parse_args()
+def load_env_files():
+    """按项目约定加载环境文件"""
+    for env_file in ['.env.local', '.env', 'config/abstract.env']:
+        env_path = Path(env_file)
+        if env_path.exists():
+            _load_simple_env(env_path)
+            print(f"📝 已加载环境文件: {env_file}")
+            return True
+    return False
 
 
-def build_import_command(backend: str, python_exec: str, import_src: Path, db_path: Path) -> List[str]:
-    if backend == BACKEND_SUPABASE:
-        return [python_exec, str(TOOLS_DIR / "import_authorfetch_supabase.py"), "--src", str(import_src)]
-    return [
-        python_exec,
-        str(TOOLS_DIR / "import_authorfetch_to_sqlite.py"),
-        "--src",
-        str(import_src),
-        "--db",
-        str(db_path),
+def run_command(cmd, description):
+    """运行命令并处理错误"""
+    print(f"\n{'='*60}")
+    print(f"开始执行: {description}")
+    print(f"命令: {' '.join(cmd)}")
+    print('='*60)
+
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=False)
+        print(f"✅ 完成: {description}")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ 失败: {description}")
+        print(f"错误代码: {e.returncode}")
+        return False
+    except FileNotFoundError:
+        print(f"❌ 找不到命令: {cmd[0]}")
+        return False
+
+
+def check_requirements():
+    """检查运行环境和依赖"""
+    print("🔍 检查运行环境...")
+
+    # 检查Python版本
+    if sys.version_info < (3, 10):
+        print("❌ 需要Python 3.10+")
+        return False
+
+    # 检查Python模块
+    required_modules = [
+        "supabase",
+        "playwright"
     ]
 
+    missing_modules = []
+    for module in required_modules:
+        try:
+            __import__(module)
+        except ImportError:
+            missing_modules.append(module)
 
-def build_fill_command(
-    backend: str,
-    python_exec: str,
-    db_path: Path,
-    fill_limit: int,
-    fill_delay: float,
-    fill_timeout: int,
-) -> List[str]:
-    limit_args = []
-    if fill_limit and fill_limit > 0:
-        limit_args.extend(["--limit", str(fill_limit)])
-    if backend == BACKEND_SUPABASE:
-        return [
-            python_exec,
-            str(TOOLS_DIR / "fill_missing_content_supabase.py"),
-            *limit_args,
-            "--delay",
-            str(fill_delay),
-            "--timeout",
-            str(fill_timeout),
-        ]
-    return [
-        python_exec,
-        str(TOOLS_DIR / "fill_missing_content.py"),
-        "--db",
-        str(db_path),
-        *limit_args,
-        "--delay",
-        str(fill_delay),
-        "--timeout",
-        str(fill_timeout),
+    if missing_modules:
+        print(f"❌ 缺少Python模块: {', '.join(missing_modules)}")
+        print("💡 请运行: python3 -m pip install -r requirements.txt")
+        return False
+
+    # 检查必要文件
+    required_files = [
+        "tools/toutiao_scraper.py",
+        "tools/summarize_supabase.py",
+        "tools/score_correlation_supabase.py",
+        "tools/export_high_correlation_supabase.py",
+        "tools/author.txt",
+        "education_keywords.txt"
     ]
 
+    for file_path in required_files:
+        if not Path(file_path).exists():
+            print(f"❌ 缺少必要文件: {file_path}")
+            return False
 
-def build_summary_command(
-    backend: str,
-    python_exec: str,
-    db_path: Path,
-    keywords_path: Path,
-    summarize_limit: int,
-    summarize_concurrency: int,
-) -> List[str]:
-    limit_args = []
-    if summarize_limit and summarize_limit > 0:
-        limit_args.extend(["--limit", str(summarize_limit)])
-    concurrency_args = []
-    if summarize_concurrency and summarize_concurrency > 0:
-        concurrency_args.extend(["--concurrency", str(summarize_concurrency)])
-    if backend == BACKEND_SUPABASE:
-        return [
-            python_exec,
-            str(TOOLS_DIR / "summarize_supabase.py"),
-            "--keywords",
-            str(keywords_path),
-            *limit_args,
-            *concurrency_args,
-        ]
-    return [
-        python_exec,
-        str(TOOLS_DIR / "summarize_news.py"),
-        "--db",
-        str(db_path),
-        "--keywords",
-        str(keywords_path),
-        *limit_args,
-        *concurrency_args,
+    # 检查环境变量
+    required_env_vars = [
+        "SUPABASE_URL",
+        "SUPABASE_DB_PASSWORD",
+        "SILICONFLOW_API_KEY"
     ]
 
+    missing_vars = []
+    for var in required_env_vars:
+        if not os.getenv(var):
+            missing_vars.append(var)
 
-def build_score_command(
-    backend: str,
-    python_exec: str,
-    db_path: Path,
-    score_concurrency: int,
-) -> List[str]:
-    concurrency_args = []
-    if score_concurrency and score_concurrency > 0:
-        concurrency_args.extend(["--concurrency", str(score_concurrency)])
-    if backend == BACKEND_SUPABASE:
-        return [python_exec, str(TOOLS_DIR / "score_correlation_supabase.py"), *concurrency_args]
-    return [
-        python_exec,
-        str(TOOLS_DIR / "score_correlation_fulltext.py"),
-        "--db",
-        str(db_path),
-        *concurrency_args,
-    ]
+    if missing_vars:
+        print(f"❌ 缺少环境变量: {', '.join(missing_vars)}")
+        return False
+
+    print("✅ 环境检查通过")
+    return True
 
 
-def build_export_command(
-    backend: str,
-    python_exec: str,
-    db_path: Path,
-    export_output: Path,
-    min_score: int,
-    export_report_tag: Optional[str],
-    skip_exported: bool,
-    record_history: bool,
-) -> List[str]:
-    cmd = []
-    if backend == BACKEND_SUPABASE:
+def main():
+    parser = argparse.ArgumentParser(description="教育新闻自动化流水线一键运行")
+    parser.add_argument("--scrape-limit", type=int, default=150,
+                       help="抓取文章数量限制 (默认: 150)")
+    parser.add_argument("--summary-limit", type=int, default=200,
+                       help="摘要处理数量限制 (默认: 200)")
+    parser.add_argument("--score-limit", type=int, default=200,
+                       help="评分处理数量限制 (默认: 200)")
+    parser.add_argument("--min-score", type=int, default=60,
+                       help="导出最低相关度分数 (默认: 60)")
+    parser.add_argument("--concurrency", type=int, default=5,
+                       help="LLM并发数 (默认: 5)")
+    parser.add_argument("--show-browser", action="store_true",
+                       help="显示浏览器窗口 (用于调试)")
+    parser.add_argument("--skip-scrape", action="store_true",
+                       help="跳过抓取步骤")
+    parser.add_argument("--skip-summary", action="store_true",
+                       help="跳过摘要步骤")
+    parser.add_argument("--skip-score", action="store_true",
+                       help="跳过评分步骤")
+    parser.add_argument("--skip-export", action="store_true",
+                       help="跳过导出步骤")
+    parser.add_argument("--report-tag", type=str,
+                       help="导出报告标签 (默认: 当前日期时间)")
+
+    args = parser.parse_args()
+
+    # 加载环境变量
+    load_env_files()
+
+    # 检查环境
+    if not check_requirements():
+        sys.exit(1)
+
+    # 生成报告标签
+    if not args.report_tag:
+        args.report_tag = datetime.now().strftime("%Y%m%d_%H%M")
+
+    print(f"\n🚀 开始运行教育新闻自动化流水线")
+    print(f"报告标签: {args.report_tag}")
+
+    success_count = 0
+    total_steps = 4
+
+    # 步骤1: 抓取今日头条作者文章
+    if not args.skip_scrape:
         cmd = [
-            python_exec,
-            str(TOOLS_DIR / "export_high_correlation_supabase.py"),
-            "--output",
-            str(export_output),
-            "--min-score",
-            str(min_score),
+            "python3", "tools/toutiao_scraper.py",
+            "--input", "tools/author.txt",
+            "--limit", str(args.scrape_limit)
         ]
+        if args.show_browser:
+            cmd.append("--show-browser")
+
+        if run_command(cmd, "抓取今日头条作者文章"):
+            success_count += 1
     else:
-        cmd = [
-            python_exec,
-            str(TOOLS_DIR / "export_high_correlation.py"),
-            "--db",
-            str(db_path),
-            "--output",
-            str(export_output),
-            "--min-score",
-            str(min_score),
-        ]
-    if export_report_tag:
-        cmd.extend(["--report-tag", export_report_tag])
-    if not skip_exported:
-        cmd.append("--no-skip-exported")
-    if not record_history:
-        cmd.append("--no-record-history")
-    return cmd
+        print("\n⏭️  跳过抓取步骤")
+        success_count += 1
 
-
-def build_cleanup_command(
-    backend: str,
-    python_exec: str,
-    db_path: Path,
-    import_src: Path,
-    apply: bool,
-    allow_empty: bool,
-) -> List[str]:
-    if backend == BACKEND_SUPABASE:
-        cmd = [python_exec, str(TOOLS_DIR / "cleanup_authorfetch_supabase.py"), "--src", str(import_src)]
-        if apply:
-            cmd.append("--apply")
-        if allow_empty:
-            cmd.append("--allow-empty-content")
-        return cmd
-    cmd = [
-        python_exec,
-        str(TOOLS_DIR / "cleanup_authorfetch_outputs.py"),
-        "--src",
-        str(import_src),
-        "--db",
-        str(db_path),
-    ]
-    if apply:
-        cmd.append("--apply")
-    if allow_empty:
-        cmd.append("--allow-empty-content")
-    return cmd
-
-
-def main() -> None:
-    args = parse_args()
-    backend = detect_backend(args.backend)
-    python_exec = sys.executable
-
-    db_path = args.db.resolve()
-    keywords_path = args.keywords.resolve()
-    export_output = args.export_output.resolve()
-    import_src = args.import_src.resolve()
-
-    if backend == BACKEND_SUPABASE:
-        print("[info] Using Supabase backend")
-    else:
-        print("[info] Using SQLite backend")
-
-    if not args.skip_import:
-        run_step(
-            "Import AuthorFetch outputs",
-            build_import_command(backend, python_exec, import_src, db_path),
-        )
-
-    if not args.skip_fill:
-        run_step(
-            "Backfill missing content",
-            build_fill_command(backend, python_exec, db_path, args.fill_limit, args.fill_delay, args.fill_timeout),
-        )
-
+    # 步骤2: 关键词过滤和摘要生成
     if not args.skip_summary:
-        run_step(
-            "Summarize filtered articles",
-            build_summary_command(
-                backend,
-                python_exec,
-                db_path,
-                keywords_path,
-                args.summarize_limit,
-                args.summarize_concurrency,
-            ),
-        )
+        cmd = [
+            "python3", "tools/summarize_supabase.py",
+            "--keywords", "education_keywords.txt",
+            "--limit", str(args.summary_limit),
+            "--concurrency", str(args.concurrency)
+        ]
 
+        if run_command(cmd, "关键词过滤和摘要生成"):
+            success_count += 1
+    else:
+        print("\n⏭️  跳过摘要步骤")
+        success_count += 1
+
+    # 步骤3: 相关度评分
     if not args.skip_score:
-        run_step(
-            "Score summary correlation",
-            build_score_command(backend, python_exec, db_path, args.score_concurrency),
-        )
+        cmd = [
+            "python3", "tools/score_correlation_supabase.py",
+            "--limit", str(args.score_limit),
+            "--concurrency", str(args.concurrency)
+        ]
 
-    export_report_tag = args.export_report_tag
+        if run_command(cmd, "相关度评分"):
+            success_count += 1
+    else:
+        print("\n⏭️  跳过评分步骤")
+        success_count += 1
+
+    # 步骤4: 导出高相关摘要
     if not args.skip_export:
-        if export_report_tag is None:
-            today_tag = datetime.now().strftime("%Y-%m-%d")
-            default_tag = f"{today_tag}-ZB"
-            print(f"导出报告标签默认值为 {default_tag}")
-            prompt = "直接回车使用默认值，输入后缀（例如 ZM）或全量标签以改写: "
-            user_input = input(prompt).strip()
-            if user_input:
-                export_report_tag = user_input if '-' in user_input else f"{today_tag}-{user_input}"
-            else:
-                export_report_tag = default_tag
-        run_step(
-            "Export high correlation summaries",
-            build_export_command(
-                backend,
-                python_exec,
-                db_path,
-                export_output,
-                args.min_score,
-                export_report_tag,
-                args.export_skip_exported,
-                args.export_record_history,
-            ),
-        )
+        cmd = [
+            "python3", "tools/export_high_correlation_supabase.py",
+            "--min-score", str(args.min_score),
+            "--report-tag", args.report_tag
+        ]
 
-    if not args.skip_cleanup:
-        run_step(
-            "Cleanup imported AuthorFetch outputs",
-            build_cleanup_command(
-                backend,
-                python_exec,
-                db_path,
-                import_src,
-                args.cleanup_apply,
-                args.allow_empty_content,
-            ),
-        )
+        if run_command(cmd, "导出高相关摘要"):
+            success_count += 1
+    else:
+        print("\n⏭️  跳过导出步骤")
+        success_count += 1
 
-    print("\nPipeline completed.")
+    # 流程总结
+    print(f"\n{'='*60}")
+    print(f"🎯 流水线执行完成")
+    print(f"成功步骤: {success_count}/{total_steps}")
+
+    if success_count == total_steps:
+        print("✅ 所有步骤执行成功!")
+        print(f"📊 导出文件标签: {args.report_tag}")
+        print("📁 请查看 outputs/ 目录下的生成文件")
+    else:
+        print("⚠️  部分步骤执行失败，请检查上述错误信息")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

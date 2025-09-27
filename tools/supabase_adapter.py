@@ -83,8 +83,7 @@ class SummaryCandidate:
 
 @dataclass(slots=True)
 class SummaryForScoring:
-    filtered_article_id: str
-    raw_article_id: str
+    article_id: str
     content: str
     summary: str
 
@@ -318,36 +317,39 @@ class SupabaseAdapter:
     def fetch_summaries_for_scoring(self, limit: Optional[int] = None) -> List[SummaryForScoring]:
         query = (
             self.client
-            .table("filtered_articles")
-            .select("id, raw_article_id, summary, raw_articles(content)")
-            .is_("relevance_score", "null")
-            .not_.is_("summary", "null")
-            .order("created_at", desc=False)
+            .table("news_summaries")
+            .select("article_id, content_markdown, llm_summary")
+            .is_("correlation", "null")
+            .not_.is_("llm_summary", "null")
+            .not_.is_("content_markdown", "null")
+            .order("summary_generated_at", desc=False)
         )
         if limit and limit > 0:
             query = query.limit(limit)
         resp = query.execute()
         out: List[SummaryForScoring] = []
         for row in resp.data or []:
-            summary = row.get("summary")
+            summary = row.get("llm_summary")
             if not summary:
                 continue
-            raw_article = row.get("raw_articles") or {}
-            content = raw_article.get("content") or ""
+            content = row.get("content_markdown") or ""
+            article_id = row.get("article_id")
+            if not article_id:
+                continue
             out.append(
                 SummaryForScoring(
-                    filtered_article_id=str(row["id"]),
-                    raw_article_id=str(row["raw_article_id"]),
+                    article_id=str(article_id),
                     content=str(content),
                     summary=str(summary),
                 )
             )
         return out
 
+    def update_correlation(self, article_id: str, score: Optional[float]) -> None:
+        self.client.table("news_summaries").update({"correlation": score}).eq("article_id", article_id).execute()
+
     def update_relevance_score(self, filtered_article_id: str, score: Optional[float]) -> None:
-        self.client.table("filtered_articles").update({"relevance_score": score}).eq("id", filtered_article_id).execute()
-    def update_relevance_score(self, filtered_article_id: str, score: Optional[float]) -> None:
-        self.client.table("filtered_articles").update({"relevance_score": score}).eq("id", filtered_article_id).execute()
+        self.update_correlation(filtered_article_id, score)
 
     # ------------------------------------------------------------------
     # Export

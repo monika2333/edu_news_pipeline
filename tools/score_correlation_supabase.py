@@ -13,6 +13,35 @@ from typing import Iterable, Optional, Tuple
 
 import requests
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            raw = line.strip()
+            if not raw or raw.startswith("#") or "=" not in raw:
+                continue
+            key, val = line.split("=", 1)
+            key = key.strip()
+            val = val.strip()
+            if (val.startswith('\"') and val.endswith('\"')) or (val.startswith("'") and val.endswith("'")):
+                val = val[1:-1]
+            if key and key not in os.environ:
+                os.environ[key] = val
+    except Exception:
+        pass
+
+
+def load_environment() -> None:
+    for candidate in (REPO_ROOT / ".env", REPO_ROOT / ".env.local", REPO_ROOT / "config" / "abstract.env"):
+        _load_env_file(candidate)
+
+
+load_environment()
+
 try:
     from tools.supabase_adapter import SummaryForScoring, get_supabase_adapter
 except ModuleNotFoundError:
@@ -102,32 +131,33 @@ def score(concurrency: int, limit: Optional[int]) -> None:
     failed = 0
 
     def worker(item: SummaryForScoring) -> Tuple[SummaryForScoring, Optional[int]]:
-        if not item.content.strip():
+        text = item.summary or item.content
+        if not text.strip():
             return item, None
-        raw_score = call_score_api(item.content)
+        raw_score = call_score_api(text)
         return item, parse_score(raw_score)
 
     if concurrency == 1:
         for row in rows:
             try:
                 _, score_value = worker(row)
-                adapter.update_relevance_score(row.filtered_article_id, score_value)
+                adapter.update_correlation(row.article_id, score_value)
                 ok += 1
             except Exception as exc:
                 failed += 1
-                print(f"FAIL {row.filtered_article_id}: {exc}")
+                print(f"FAIL {row.article_id}: {exc}")
     else:
         with ThreadPoolExecutor(max_workers=concurrency) as executor:
-            future_map = {executor.submit(worker, row): row.filtered_article_id for row in rows}
+            future_map = {executor.submit(worker, row): row.article_id for row in rows}
             for future in as_completed(future_map):
-                fid = future_map[future]
+                article_id = future_map[future]
                 try:
                     row, score_value = future.result()
-                    adapter.update_relevance_score(row.filtered_article_id, score_value)
+                    adapter.update_correlation(row.article_id, score_value)
                     ok += 1
                 except Exception as exc:
                     failed += 1
-                    print(f"FAIL {fid}: {exc}")
+                    print(f"FAIL {article_id}: {exc}")
     print(f"done. ok={ok} failed={failed} total={total}")
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 import time
@@ -81,6 +82,83 @@ class SummarizeConfig:
     keywords_path: Path
     limit: Optional[int]
     concurrency: int
+    reset_cursor: bool
+
+CURSOR_FILE = REPO_ROOT / "data" / "summarize_cursor.json"
+
+@dataclass
+class ProcessCursor:
+    fetched_at: str
+    article_id: str
+
+
+def _article_id_key(value: Optional[str]) -> Tuple[int, object]:
+    text = "" if value is None else str(value)
+    if text.isdigit():
+        return (0, int(text))
+    try:
+        return (0, int(text))
+    except ValueError:
+        return (1, text)
+
+
+def _cursor_tuple(cursor: ProcessCursor) -> Tuple[str, Tuple[int, object]]:
+    return (cursor.fetched_at, _article_id_key(cursor.article_id))
+
+
+def _compare_cursor(a: ProcessCursor, b: ProcessCursor) -> int:
+    a_key = _cursor_tuple(a)
+    b_key = _cursor_tuple(b)
+    if a_key < b_key:
+        return -1
+    if a_key > b_key:
+        return 1
+    return 0
+
+
+def _max_cursor(current: Optional[ProcessCursor], other: Optional[ProcessCursor]) -> Optional[ProcessCursor]:
+    if other is None:
+        return current
+    if current is None or _compare_cursor(other, current) > 0:
+        return other
+    return current
+
+
+def _cursor_from_row(row: dict) -> Optional[ProcessCursor]:
+    fetched_at = row.get("fetched_at")
+    article_id = row.get("article_id")
+    if not fetched_at or article_id is None:
+        return None
+    return ProcessCursor(fetched_at=str(fetched_at), article_id=str(article_id))
+
+
+def _is_after_cursor(row: dict, cursor: Optional[ProcessCursor]) -> bool:
+    if cursor is None:
+        return True
+    row_cursor = _cursor_from_row(row)
+    if row_cursor is None:
+        return False
+    return _compare_cursor(row_cursor, cursor) > 0
+
+
+def load_cursor(path: Path = CURSOR_FILE) -> Optional[ProcessCursor]:
+    if not path.exists():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    fetched_at = raw.get("fetched_at")
+    article_id = raw.get("article_id")
+    if not fetched_at or article_id is None:
+        return None
+    return ProcessCursor(fetched_at=str(fetched_at), article_id=str(article_id))
+
+
+def save_cursor(cursor: ProcessCursor, path: Path = CURSOR_FILE) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"fetched_at": cursor.fetched_at, "article_id": cursor.article_id}
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def load_keywords(path: Path) -> List[str]:
@@ -128,21 +206,50 @@ def fetch_existing_news_summaries(adapter, article_ids: List[str]) -> dict[str, 
     return existing
 
 
-def fetch_toutiao_candidates(adapter, limit: Optional[int]) -> List[SummaryCandidate]:
-    batch = max(1, (limit or 50)) * 4
-    query = (
+def fetch_toutiao_candidates(
+    adapter,
+    limit: Optional[int],
+    cursor: Optional[ProcessCursor],
+) -> List[SummaryCandidate]:
+    page_size = max(1, (limit or 50)) * 4
+    base_query = (
         adapter.client
         .table("toutiao_articles")
         .select(
             "article_id, title, source, publish_time_iso, publish_time, url, content_markdown, summary, "
-            "comment_count, digg_count"
+            "comment_count, digg_count, fetched_at"
         )
         .not_.is_("content_markdown", "null")
         .order("fetched_at", desc=False)
-        .limit(batch)
     )
-    response = query.execute()
-    rows = response.data or []
+    if cursor and cursor.fetched_at:
+        base_query = base_query.gte("fetched_at", cursor.fetched_at)
+
+    rows: List[dict] = []
+    offset = 0
+    while True:
+        query = base_query.range(offset, offset + page_size - 1)
+        response = query.execute()
+        data = response.data or []
+        if not data:
+            break
+        stop = False
+        for row in data:
+            if not _is_after_cursor(row, cursor):
+                continue
+            rows.append(row)
+            if limit and len(rows) >= limit:
+                stop = True
+                break
+        if stop:
+            break
+        if len(data) < page_size:
+            break
+        offset += page_size
+
+    if not rows:
+        return []
+
     article_ids = [str(row.get("article_id")) for row in rows if row.get("article_id")]
     existing_map = fetch_existing_news_summaries(adapter, article_ids)
     candidates: List[SummaryCandidate] = []
@@ -160,6 +267,7 @@ def fetch_toutiao_candidates(adapter, limit: Optional[int]) -> List[SummaryCandi
             "publish_time": row.get("publish_time"),
             "existing_keywords": (existing_entry or {}).get("llm_keywords") or [],
             "existing_summary_generated_at": (existing_entry or {}).get("summary_generated_at"),
+            "fetched_at": row.get("fetched_at"),
         }
         candidate = SummaryCandidate(
             raw_article_id=article_id,
@@ -249,7 +357,8 @@ def summarize(config: SummarizeConfig) -> None:
     keywords = load_keywords(config.keywords_path)
     limit = config.limit
 
-    candidates = fetch_toutiao_candidates(adapter, limit)
+    cursor = None if config.reset_cursor else load_cursor()
+    candidates = fetch_toutiao_candidates(adapter, limit, cursor)
     if not candidates:
         print("No Supabase articles require summarization.")
         return
@@ -270,6 +379,16 @@ def summarize(config: SummarizeConfig) -> None:
     ok = 0
     failed = 0
     reused = 0
+    last_success_cursor: Optional[ProcessCursor] = None
+
+    def record_success(candidate: SummaryCandidate) -> None:
+        nonlocal last_success_cursor
+        fetched_at = candidate.processed_payload.get("fetched_at")
+        article_id = candidate.raw_article_id
+        if not fetched_at or article_id is None:
+            return
+        candidate_cursor = ProcessCursor(fetched_at=str(fetched_at), article_id=str(article_id))
+        last_success_cursor = _max_cursor(last_success_cursor, candidate_cursor)
 
     def worker(item: Tuple[SummaryCandidate, List[str]]) -> Tuple[SummaryCandidate, str, List[str], bool]:
         cand, hits = item
@@ -287,6 +406,7 @@ def summarize(config: SummarizeConfig) -> None:
                 else:
                     summary = call_api(candidate.content)
                 write_news_summary(adapter, candidate, summary, keywords=hits)
+                record_success(candidate)
                 ok += 1
                 tag = "(reuse)" if candidate.existing_summary else ""
                 print(f"OK {candidate.article_hash} {tag}")
@@ -301,6 +421,7 @@ def summarize(config: SummarizeConfig) -> None:
                 try:
                     cand, summary, hits, reused_flag = future.result()
                     write_news_summary(adapter, cand, summary, keywords=hits)
+                    record_success(cand)
                     if reused_flag:
                         reused += 1
                         print(f"OK {cand_hash} (reuse)")
@@ -315,6 +436,12 @@ def summarize(config: SummarizeConfig) -> None:
     print(
         f"done. ok={ok} skipped={skipped} filtered={filtered_out} failed={failed} reused={reused}"
     )
+    if last_success_cursor:
+        final_cursor = last_success_cursor
+        if cursor and not config.reset_cursor:
+            final_cursor = _max_cursor(cursor, last_success_cursor)
+        save_cursor(final_cursor)
+        print(f"Cursor updated to fetched_at={final_cursor.fetched_at} article_id={final_cursor.article_id}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -322,6 +449,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--keywords", type=Path, default=DEFAULT_KEYWORDS_FILE, help="Keywords file path")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of articles")
     parser.add_argument("--concurrency", type=int, default=None, help="Number of worker threads")
+    parser.add_argument("--reset-cursor", action=argparse.BooleanOptionalAction, default=False, help="Ignore saved cursor and process all records from the beginning")
     return parser.parse_args()
 
 
@@ -335,9 +463,11 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         keywords_path=args.keywords.resolve(),
         limit=limit if limit and limit > 0 else None,
         concurrency=max(1, concurrency),
+        reset_cursor=args.reset_cursor,
     )
     summarize(config)
 
 
 if __name__ == "__main__":
     main()
+

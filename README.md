@@ -15,6 +15,7 @@
 - `supabase/schema.sql`：数据库结构模板，可在 Supabase 项目中初始化。
 - `education_keywords.txt`：教育领域关键词（UTF-8，运行前请确认编码正确）。
 - `data/`：运行期产物（如抓取缓存、摘要游标），除 `summarize_cursor.json` 外均可按需清理。
+- `replace-news-JGW/`：用于人工修订，不参与流水线
 
 ## 环境准备
 - Python 3.10+，建议 `python -m venv .venv && .venv/Scripts/activate`。

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Score Supabase summaries for education relevance."""
 from __future__ import annotations
 
@@ -131,7 +131,7 @@ def score(concurrency: int, limit: Optional[int]) -> None:
     failed = 0
 
     def worker(item: SummaryForScoring) -> Tuple[SummaryForScoring, Optional[int]]:
-        text = item.summary or item.content
+        text = item.content or item.summary
         if not text.strip():
             return item, None
         raw_score = call_score_api(text)

@@ -40,7 +40,7 @@ def load_env_files():
         env_path = Path(env_file)
         if env_path.exists():
             _load_simple_env(env_path)
-            print(f"📝 已加载环境文件: {env_file}")
+            print(f"[NOTE] 已加载环境文件: {env_file}")
             return True
     return False
 
@@ -54,24 +54,24 @@ def run_command(cmd, description):
 
     try:
         result = subprocess.run(cmd, check=True, capture_output=False)
-        print(f"✅ 完成: {description}")
+        print(f"[OK] 完成: {description}")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"❌ 失败: {description}")
+        print(f"[FAIL] 失败: {description}")
         print(f"错误代码: {e.returncode}")
         return False
     except FileNotFoundError:
-        print(f"❌ 找不到命令: {cmd[0]}")
+        print(f"[FAIL] 找不到命令: {cmd[0]}")
         return False
 
 
 def check_requirements():
     """检查运行环境和依赖"""
-    print("🔍 检查运行环境...")
+    print("[SEARCH] 检查运行环境...")
 
     # 检查Python版本
     if sys.version_info < (3, 10):
-        print("❌ 需要Python 3.10+")
+        print("[FAIL] 需要Python 3.10+")
         return False
 
     # 检查Python模块
@@ -88,8 +88,8 @@ def check_requirements():
             missing_modules.append(module)
 
     if missing_modules:
-        print(f"❌ 缺少Python模块: {', '.join(missing_modules)}")
-        print("💡 请安装依赖模块:")
+        print(f"[FAIL] 缺少Python模块: {', '.join(missing_modules)}")
+        print("[IDEA] 请安装依赖模块:")
         if sys.platform == "win32":
             print("   在Windows PowerShell中运行:")
             print("   pip install -r requirements.txt")
@@ -97,7 +97,7 @@ def check_requirements():
             print("   python -m pip install -r requirements.txt")
         else:
             print("   python3 -m pip install -r requirements.txt")
-        print("\n⚠️  安装完成后再次运行此脚本")
+        print("\n[WARN]  安装完成后再次运行此脚本")
         return False
 
     # 检查必要文件
@@ -112,7 +112,7 @@ def check_requirements():
 
     for file_path in required_files:
         if not Path(file_path).exists():
-            print(f"❌ 缺少必要文件: {file_path}")
+            print(f"[FAIL] 缺少必要文件: {file_path}")
             return False
 
     # 检查环境变量
@@ -128,19 +128,19 @@ def check_requirements():
             missing_vars.append(var)
 
     if missing_vars:
-        print(f"❌ 缺少环境变量: {', '.join(missing_vars)}")
+        print(f"[FAIL] 缺少环境变量: {', '.join(missing_vars)}")
         return False
 
-    print("✅ 环境检查通过")
+    print("[OK] 环境检查通过")
     return True
 
 
 def main():
-    print("🔧 教育新闻自动化流水线启动中...")
+    print("[INFO] 教育新闻自动化流水线启动中...")
     if sys.platform == "win32":
-        print("🪟 检测到Windows环境")
+        print("[WIN] 检测到Windows环境")
     else:
-        print("🐧 检测到Unix/Linux环境")
+        print("[LINUX] 检测到Unix/Linux环境")
 
     parser = argparse.ArgumentParser(description="教育新闻自动化流水线一键运行")
     parser.add_argument("--scrape-limit", type=int, default=150,
@@ -181,7 +181,7 @@ def main():
     if not args.report_tag:
         args.report_tag = datetime.now().strftime("%Y%m%d_%H%M")
 
-    print(f"\n🚀 开始运行教育新闻自动化流水线")
+    print(f"\n[LAUNCH] 开始运行教育新闻自动化流水线")
     print(f"报告标签: {args.report_tag}")
 
     success_count = 0
@@ -201,7 +201,7 @@ def main():
         if run_command(cmd, "抓取今日头条作者文章"):
             success_count += 1
     else:
-        print("\n⏭️  跳过抓取步骤")
+        print("\n>>|  跳过抓取步骤")
         success_count += 1
 
     # 步骤2: 关键词过滤和摘要生成
@@ -216,7 +216,7 @@ def main():
         if run_command(cmd, "关键词过滤和摘要生成"):
             success_count += 1
     else:
-        print("\n⏭️  跳过摘要步骤")
+        print("\n>>|  跳过摘要步骤")
         success_count += 1
 
     # 步骤3: 相关度评分
@@ -230,7 +230,7 @@ def main():
         if run_command(cmd, "相关度评分"):
             success_count += 1
     else:
-        print("\n⏭️  跳过评分步骤")
+        print("\n>>|  跳过评分步骤")
         success_count += 1
 
     # 步骤4: 导出高相关摘要
@@ -244,20 +244,20 @@ def main():
         if run_command(cmd, "导出高相关摘要"):
             success_count += 1
     else:
-        print("\n⏭️  跳过导出步骤")
+        print("\n>>|  跳过导出步骤")
         success_count += 1
 
     # 流程总结
     print(f"\n{'='*60}")
-    print(f"🎯 流水线执行完成")
+    print(f"[TARGET] 流水线执行完成")
     print(f"成功步骤: {success_count}/{total_steps}")
 
     if success_count == total_steps:
-        print("✅ 所有步骤执行成功!")
-        print(f"📊 导出文件标签: {args.report_tag}")
-        print("📁 请查看 outputs/ 目录下的生成文件")
+        print("[OK] 所有步骤执行成功!")
+        print(f"[STATS] 导出文件标签: {args.report_tag}")
+        print("[FOLDER] 请查看 outputs/ 目录下的生成文件")
     else:
-        print("⚠️  部分步骤执行失败，请检查上述错误信息")
+        print("[WARN]  部分步骤执行失败，请检查上述错误信息")
         sys.exit(1)
 
 

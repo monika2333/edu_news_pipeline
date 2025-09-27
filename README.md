@@ -14,6 +14,7 @@
 - `tools/supabase_adapter.py`：Supabase 访问封装，统一读取/写入逻辑。
 - `supabase/schema.sql`：数据库结构模板，可在 Supabase 项目中初始化。
 - `education_keywords.txt`：教育领域关键词（UTF-8，运行前请确认编码正确）。
+- `data/`：运行期产物（如抓取缓存、摘要游标），除 `summarize_cursor.json` 外均可按需清理。
 
 ## 环境准备
 - Python 3.10+，建议 `python -m venv .venv && .venv/Scripts/activate`。
@@ -58,9 +59,10 @@
      --limit 200 \
      --concurrency 5
    ```
-   - 仅处理正文非空的文章。
-   - 命中关键词后调用 LLM 生成摘要；已有摘要会复用并保持 `summary_generated_at` 原值。
-   - 写入 `news_summaries`，自动去重 `llm_keywords`。
+   - 默认读取/更新 `data/summarize_cursor.json`，从上一次成功的 `fetched_at` 继续；首次运行会自动创建。如需重新处理全部文章，请追加 `--reset-cursor`。
+   - 核心字段缺失会被跳过，命令行 `--limit` 仅限制当次最大处理数量。
+   - 经过关键词判定后再请求 LLM 摘要；完全相同的摘要会沿用原 `summary_generated_at`。
+   - 写入 `news_summaries` 时会自动去重 `llm_keywords`。
 
 3. **相关度评分**
    ```bash
@@ -77,7 +79,7 @@
    ```
    - 从 `news_summaries` 选取 `correlation` ≥ 阈值的记录，按分类归组。
    - 文本末尾自动追加来源括号（如 `（北京日报客户端）`）。
-   - 若启用 `--record-history`（默认）将记录到 `brief_batches`/`brief_items`，再次导出同一 tag 可通过 `--skip-exported` 控制跳过已导出的文章。
+   - 启用 `--record-history`（默认）会把导出写入 `brief_batches`/`brief_items`；`--skip-exported` 现在会同时参考历史导出（跨 tag）避免重复，如需强制重导可加 `--no-skip-exported`。
 
 ## 常见问题
 - **Playwright 403/风控**：重新 `playwright install chromium`，或加 `--show-browser` 并手动处理验证。

@@ -1,9 +1,8 @@
 ﻿#!/usr/bin/env python3
-"""One-stop pipeline for either SQLite or Supabase backends."""
+"""One-stop pipeline for the Supabase-based Toutiao workflow."""
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
 from datetime import datetime
@@ -12,13 +11,12 @@ from typing import List, Optional
 
 REPO_ROOT = Path(__file__).resolve().parent
 TOOLS_DIR = REPO_ROOT / "tools"
-DEFAULT_DB_PATH = REPO_ROOT / "articles.sqlite3"
+
+DEFAULT_AUTHOR_LIST = TOOLS_DIR / "author.txt"
+DEFAULT_SCRAPE_OUTPUT = REPO_ROOT / "data" / "toutiao_articles.json"
 DEFAULT_KEYWORDS_PATH = REPO_ROOT / "education_keywords.txt"
 DEFAULT_EXPORT_PATH = REPO_ROOT / "outputs" / "high_correlation_summaries.txt"
-
-BACKEND_SQLITE = "sqlite"
-BACKEND_SUPABASE = "supabase"
-BACKEND_AUTO = "auto"
+DEFAULT_SUPABASE_ENV = REPO_ROOT / ".env.local"
 
 
 def run_step(name: str, cmd: List[str]) -> None:
@@ -29,182 +27,122 @@ def run_step(name: str, cmd: List[str]) -> None:
         raise SystemExit(f"Step '{name}' failed with exit code {result.returncode}")
 
 
-def detect_backend(requested: str) -> str:
-    if requested == BACKEND_SQLITE:
-        return BACKEND_SQLITE
-    if requested == BACKEND_SUPABASE:
-        return BACKEND_SUPABASE
-    # auto detection
-    if os.getenv("SUPABASE_URL") and (
-        os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY")
-    ):
-        return BACKEND_SUPABASE
-    return BACKEND_SQLITE
+def positive_or_none(value: Optional[int]) -> Optional[int]:
+    if value is None:
+        return None
+    return value if value > 0 else None
+
+
+def resolve_relative(path: Path) -> Path:
+    return path if path.is_absolute() else (REPO_ROOT / path).resolve()
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the news processing pipeline")
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH, help="主 SQLite 数据库路径 (SQLite 模式有效)")
-    parser.add_argument("--keywords", type=Path, default=DEFAULT_KEYWORDS_PATH, help="关键词文件路径")
-    parser.add_argument("--export-output", type=Path, default=DEFAULT_EXPORT_PATH, help="高相关度摘要导出文件")
-    parser.add_argument("--import-src", type=Path, default=REPO_ROOT / "AuthorFetch", help="AuthorFetch 源目录")
-    parser.add_argument("--fill-limit", type=int, default=0, help="回填正文的最大数量 (0=全部)")
-    parser.add_argument("--fill-delay", type=float, default=1.0, help="回填正文的请求间隔秒")
-    parser.add_argument("--fill-timeout", type=int, default=15, help="回填正文的超时时间")
-    parser.add_argument("--summarize-limit", type=int, default=0, help="摘要阶段的最大处理数量 (0=全部)")
-    parser.add_argument("--summarize-concurrency", type=int, default=0, help="摘要阶段并发线程数")
-    parser.add_argument("--score-concurrency", type=int, default=0, help="相关度打分并发数")
-    parser.add_argument("--min-score", type=int, default=60, help="导出摘要的最低相关度分数")
-    parser.add_argument("--cleanup-apply", action=argparse.BooleanOptionalAction, default=True, help="清理阶段是否实际删除文件")
-    parser.add_argument("--allow-empty-content", action="store_true", help="清理时允许正文为空仍删除")
-    parser.add_argument("--skip-import", action="store_true", help="跳过导入阶段")
-    parser.add_argument("--skip-fill", action="store_true", help="跳过回填阶段")
-    parser.add_argument("--skip-summary", action="store_true", help="跳过摘要阶段")
-    parser.add_argument("--skip-score", action="store_true", help="跳过相关度打分")
-    parser.add_argument("--skip-export", action="store_true", help="跳过导出阶段")
-    parser.add_argument("--export-report-tag", type=str, default=None, help="导出批次标签 (例如 2025-09-20-AM)")
-    parser.add_argument("--export-skip-exported", action=argparse.BooleanOptionalAction, default=True, help="导出时是否跳过历史已导出的文章")
-    parser.add_argument("--export-record-history", action=argparse.BooleanOptionalAction, default=True, help="导出后是否记录历史")
-    parser.add_argument("--skip-cleanup", action="store_true", help="跳过 AuthorFetch 清理")
-    parser.add_argument("--backend", choices=[BACKEND_AUTO, BACKEND_SQLITE, BACKEND_SUPABASE], default=BACKEND_AUTO, help="数据存储后端 (默认 auto)")
+    parser = argparse.ArgumentParser(description="Run the Supabase Toutiao pipeline end-to-end.")
+    parser.add_argument("--skip-scrape", action="store_true", help="Skip scraping Toutiao authors")
+    parser.add_argument("--scrape-input", type=Path, default=DEFAULT_AUTHOR_LIST, help="Author list for the scraper")
+    parser.add_argument("--scrape-limit", type=int, default=150, help="Max feed items to collect (<=0 means no limit)")
+    parser.add_argument("--scrape-output", type=Path, default=DEFAULT_SCRAPE_OUTPUT, help="JSON output path for scraped articles")
+    parser.add_argument("--scrape-timeout", type=int, default=15, help="Timeout (seconds) when fetching article content")
+    parser.add_argument("--scrape-lang", type=str, default=None, help="Override Accept-Language header")
+    parser.add_argument("--scrape-show-browser", action="store_true", help="Run scraper with a visible browser window")
+    parser.add_argument("--scrape-supabase-env", type=Path, default=DEFAULT_SUPABASE_ENV, help="Supabase credential file passed to the scraper")
+    parser.add_argument("--scrape-supabase-table", type=str, default="toutiao_articles", help="Supabase table for storing scraped articles")
+    parser.add_argument("--scrape-reset-table", action="store_true", help="Drop and recreate the Supabase table before inserting")
+    parser.add_argument("--scrape-skip-upload", action="store_true", help="Skip uploading scraped data to Supabase")
+    parser.add_argument("--skip-summary", action="store_true", help="Skip summarization step")
+    parser.add_argument("--summary-keywords", type=Path, default=DEFAULT_KEYWORDS_PATH, help="Keywords file for summarization filtering")
+    parser.add_argument("--summary-limit", type=int, default=0, help="Limit the number of articles to summarize (0 means no limit)")
+    parser.add_argument("--summary-concurrency", type=int, default=5, help="Worker threads for summarization")
+    parser.add_argument("--skip-score", action="store_true", help="Skip scoring step")
+    parser.add_argument("--score-limit", type=int, default=0, help="Limit the number of summaries to score (0 means no limit)")
+    parser.add_argument("--score-concurrency", type=int, default=5, help="Worker threads for scoring")
+    parser.add_argument("--skip-export", action="store_true", help="Skip exporting high-correlation summaries")
+    parser.add_argument("--export-min-score", type=int, default=60, help="Minimum correlation score required for export")
+    parser.add_argument("--export-report-tag", type=str, default=None, help="Report tag recorded in Supabase history (e.g. 2025-09-27-ZB)")
+    parser.add_argument("--export-output", type=Path, default=DEFAULT_EXPORT_PATH, help="Destination file for exported summaries")
+    parser.add_argument("--export-skip-exported", action=argparse.BooleanOptionalAction, default=True, help="Skip items already exported with the same tag")
+    parser.add_argument("--export-record-history", action=argparse.BooleanOptionalAction, default=True, help="Record export history in Supabase")
     return parser.parse_args()
 
 
-def build_import_command(backend: str, python_exec: str, import_src: Path, db_path: Path) -> List[str]:
-    if backend == BACKEND_SUPABASE:
-        return [python_exec, str(TOOLS_DIR / "import_authorfetch_supabase.py"), "--src", str(import_src)]
-    return [
-        python_exec,
-        str(TOOLS_DIR / "import_authorfetch_to_sqlite.py"),
-        "--src",
-        str(import_src),
-        "--db",
-        str(db_path),
-    ]
-
-
-def build_fill_command(
-    backend: str,
+def build_scrape_command(
     python_exec: str,
-    db_path: Path,
-    fill_limit: int,
-    fill_delay: float,
-    fill_timeout: int,
+    input_path: Path,
+    limit: Optional[int],
+    output_path: Path,
+    timeout: Optional[int],
+    lang: Optional[str],
+    show_browser: bool,
+    supabase_env: Path,
+    supabase_table: Optional[str],
+    reset_table: bool,
+    skip_upload: bool,
 ) -> List[str]:
-    limit_args = []
-    if fill_limit and fill_limit > 0:
-        limit_args.extend(["--limit", str(fill_limit)])
-    if backend == BACKEND_SUPABASE:
-        return [
-            python_exec,
-            str(TOOLS_DIR / "fill_missing_content_supabase.py"),
-            *limit_args,
-            "--delay",
-            str(fill_delay),
-            "--timeout",
-            str(fill_timeout),
-        ]
-    return [
-        python_exec,
-        str(TOOLS_DIR / "fill_missing_content.py"),
-        "--db",
-        str(db_path),
-        *limit_args,
-        "--delay",
-        str(fill_delay),
-        "--timeout",
-        str(fill_timeout),
-    ]
+    cmd = [python_exec, str(TOOLS_DIR / "toutiao_scraper.py"), "--input", str(input_path)]
+    if limit is not None:
+        cmd.extend(["--limit", str(limit)])
+    cmd.extend(["--output", str(output_path)])
+    if timeout is not None:
+        cmd.extend(["--timeout", str(timeout)])
+    if lang:
+        cmd.extend(["--lang", lang])
+    if show_browser:
+        cmd.append("--show-browser")
+    if supabase_env:
+        cmd.extend(["--supabase-env", str(supabase_env)])
+    if supabase_table:
+        cmd.extend(["--supabase-table", supabase_table])
+    if reset_table:
+        cmd.append("--reset-supabase-table")
+    if skip_upload:
+        cmd.append("--skip-supabase-upload")
+    return cmd
 
 
 def build_summary_command(
-    backend: str,
     python_exec: str,
-    db_path: Path,
     keywords_path: Path,
-    summarize_limit: int,
-    summarize_concurrency: int,
+    limit: Optional[int],
+    concurrency: int,
 ) -> List[str]:
-    limit_args = []
-    if summarize_limit and summarize_limit > 0:
-        limit_args.extend(["--limit", str(summarize_limit)])
-    concurrency_args = []
-    if summarize_concurrency and summarize_concurrency > 0:
-        concurrency_args.extend(["--concurrency", str(summarize_concurrency)])
-    if backend == BACKEND_SUPABASE:
-        return [
-            python_exec,
-            str(TOOLS_DIR / "summarize_supabase.py"),
-            "--keywords",
-            str(keywords_path),
-            *limit_args,
-            *concurrency_args,
-        ]
-    return [
-        python_exec,
-        str(TOOLS_DIR / "summarize_news.py"),
-        "--db",
-        str(db_path),
-        "--keywords",
-        str(keywords_path),
-        *limit_args,
-        *concurrency_args,
-    ]
+    cmd = [python_exec, str(TOOLS_DIR / "summarize_supabase.py"), "--keywords", str(keywords_path)]
+    if limit is not None:
+        cmd.extend(["--limit", str(limit)])
+    cmd.extend(["--concurrency", str(max(1, concurrency))])
+    return cmd
 
 
 def build_score_command(
-    backend: str,
     python_exec: str,
-    db_path: Path,
-    score_concurrency: int,
+    limit: Optional[int],
+    concurrency: int,
 ) -> List[str]:
-    concurrency_args = []
-    if score_concurrency and score_concurrency > 0:
-        concurrency_args.extend(["--concurrency", str(score_concurrency)])
-    if backend == BACKEND_SUPABASE:
-        return [python_exec, str(TOOLS_DIR / "score_correlation_supabase.py"), *concurrency_args]
-    return [
-        python_exec,
-        str(TOOLS_DIR / "score_correlation_fulltext.py"),
-        "--db",
-        str(db_path),
-        *concurrency_args,
-    ]
+    cmd = [python_exec, str(TOOLS_DIR / "score_correlation_supabase.py")]
+    cmd.extend(["--concurrency", str(max(1, concurrency))])
+    if limit is not None:
+        cmd.extend(["--limit", str(limit)])
+    return cmd
 
 
 def build_export_command(
-    backend: str,
     python_exec: str,
-    db_path: Path,
-    export_output: Path,
     min_score: int,
-    export_report_tag: Optional[str],
+    report_tag: str,
+    output_path: Path,
     skip_exported: bool,
     record_history: bool,
 ) -> List[str]:
-    cmd = []
-    if backend == BACKEND_SUPABASE:
-        cmd = [
-            python_exec,
-            str(TOOLS_DIR / "export_high_correlation_supabase.py"),
-            "--output",
-            str(export_output),
-            "--min-score",
-            str(min_score),
-        ]
-    else:
-        cmd = [
-            python_exec,
-            str(TOOLS_DIR / "export_high_correlation.py"),
-            "--db",
-            str(db_path),
-            "--output",
-            str(export_output),
-            "--min-score",
-            str(min_score),
-        ]
-    if export_report_tag:
-        cmd.extend(["--report-tag", export_report_tag])
+    cmd = [
+        python_exec,
+        str(TOOLS_DIR / "export_high_correlation_supabase.py"),
+        "--min-score",
+        str(min_score),
+        "--report-tag",
+        report_tag,
+        "--output",
+        str(output_path),
+    ]
     if not skip_exported:
         cmd.append("--no-skip-exported")
     if not record_history:
@@ -212,118 +150,81 @@ def build_export_command(
     return cmd
 
 
-def build_cleanup_command(
-    backend: str,
-    python_exec: str,
-    db_path: Path,
-    import_src: Path,
-    apply: bool,
-    allow_empty: bool,
-) -> List[str]:
-    if backend == BACKEND_SUPABASE:
-        cmd = [python_exec, str(TOOLS_DIR / "cleanup_authorfetch_supabase.py"), "--src", str(import_src)]
-        if apply:
-            cmd.append("--apply")
-        if allow_empty:
-            cmd.append("--allow-empty-content")
-        return cmd
-    cmd = [
-        python_exec,
-        str(TOOLS_DIR / "cleanup_authorfetch_outputs.py"),
-        "--src",
-        str(import_src),
-        "--db",
-        str(db_path),
-    ]
-    if apply:
-        cmd.append("--apply")
-    if allow_empty:
-        cmd.append("--allow-empty-content")
-    return cmd
-
-
 def main() -> None:
     args = parse_args()
-    backend = detect_backend(args.backend)
     python_exec = sys.executable
 
-    db_path = args.db.resolve()
-    keywords_path = args.keywords.resolve()
-    export_output = args.export_output.resolve()
-    import_src = args.import_src.resolve()
+    scrape_input = resolve_relative(args.scrape_input)
+    scrape_output = resolve_relative(args.scrape_output)
+    supabase_env = resolve_relative(args.scrape_supabase_env)
+    keywords_path = resolve_relative(args.summary_keywords)
+    export_output = resolve_relative(args.export_output)
 
-    if backend == BACKEND_SUPABASE:
-        print("[info] Using Supabase backend")
-    else:
-        print("[info] Using SQLite backend")
+    scrape_limit = positive_or_none(args.scrape_limit)
+    summary_limit = positive_or_none(args.summary_limit)
+    score_limit = positive_or_none(args.score_limit)
+    scrape_timeout = positive_or_none(args.scrape_timeout)
 
-    if not args.skip_import:
+    if not args.skip_scrape:
         run_step(
-            "Import AuthorFetch outputs",
-            build_import_command(backend, python_exec, import_src, db_path),
-        )
-
-    if not args.skip_fill:
-        run_step(
-            "Backfill missing content",
-            build_fill_command(backend, python_exec, db_path, args.fill_limit, args.fill_delay, args.fill_timeout),
+            "Scrape Toutiao authors",
+            build_scrape_command(
+                python_exec,
+                scrape_input,
+                scrape_limit,
+                scrape_output,
+                scrape_timeout,
+                args.scrape_lang,
+                args.scrape_show_browser,
+                supabase_env,
+                args.scrape_supabase_table,
+                args.scrape_reset_table,
+                args.scrape_skip_upload,
+            ),
         )
 
     if not args.skip_summary:
         run_step(
-            "Summarize filtered articles",
+            "Summarize Supabase articles",
             build_summary_command(
-                backend,
                 python_exec,
-                db_path,
                 keywords_path,
-                args.summarize_limit,
-                args.summarize_concurrency,
+                summary_limit,
+                args.summary_concurrency,
             ),
         )
 
     if not args.skip_score:
         run_step(
             "Score summary correlation",
-            build_score_command(backend, python_exec, db_path, args.score_concurrency),
+            build_score_command(
+                python_exec,
+                score_limit,
+                args.score_concurrency,
+            ),
         )
 
-    export_report_tag = args.export_report_tag
     if not args.skip_export:
+        export_report_tag = args.export_report_tag
         if export_report_tag is None:
-            today_tag = datetime.now().strftime("%Y-%m-%d")
-            default_tag = f"{today_tag}-ZB"
-            print(f"导出报告标签默认值为 {default_tag}")
-            prompt = "直接回车使用默认值，输入后缀（例如 ZM）或全量标签以改写: "
+            today_prefix = datetime.now().strftime("%Y-%m-%d")
+            default_tag = f"{today_prefix}-ZB"
+            print(f"Default report tag: {default_tag}")
+            prompt = "Press Enter to use the default, or type a suffix (e.g. AM) to build YYYY-MM-DD-suffix: "
             user_input = input(prompt).strip()
             if user_input:
-                export_report_tag = user_input if '-' in user_input else f"{today_tag}-{user_input}"
+                export_report_tag = user_input if "-" in user_input else f"{today_prefix}-{user_input}"
             else:
                 export_report_tag = default_tag
         run_step(
             "Export high correlation summaries",
             build_export_command(
-                backend,
                 python_exec,
-                db_path,
-                export_output,
-                args.min_score,
+                args.export_min_score,
                 export_report_tag,
+                export_output,
                 args.export_skip_exported,
                 args.export_record_history,
-            ),
-        )
-
-    if not args.skip_cleanup:
-        run_step(
-            "Cleanup imported AuthorFetch outputs",
-            build_cleanup_command(
-                backend,
-                python_exec,
-                db_path,
-                import_src,
-                args.cleanup_apply,
-                args.allow_empty_content,
             ),
         )
 

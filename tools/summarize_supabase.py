@@ -118,7 +118,7 @@ def fetch_existing_news_summaries(adapter, article_ids: List[str]) -> dict[str, 
         response = (
             adapter.client
             .table("news_summaries")
-            .select("article_id, llm_summary, llm_keywords, llm_source, summary_generated_at")
+            .select("article_id, llm_summary, llm_keywords, summary_generated_at")
             .in_("article_id", list(chunk))
             .execute()
         )
@@ -159,7 +159,6 @@ def fetch_toutiao_candidates(adapter, limit: Optional[int]) -> List[SummaryCandi
             "digg_count": row.get("digg_count"),
             "publish_time": row.get("publish_time"),
             "existing_keywords": (existing_entry or {}).get("llm_keywords") or [],
-            "existing_llm_source": (existing_entry or {}).get("llm_source"),
             "existing_summary_generated_at": (existing_entry or {}).get("summary_generated_at"),
         }
         candidate = SummaryCandidate(
@@ -185,7 +184,6 @@ def write_news_summary(
     candidate: SummaryCandidate,
     summary: str,
     *,
-    source_llm: Optional[str] = None,
     keywords: Optional[Sequence[str]] = None,
 ) -> None:
     deduped_keywords: List[str] = []
@@ -193,16 +191,13 @@ def write_news_summary(
         deduped_keywords = [kw for kw in dict.fromkeys(keywords) if kw]
     if not deduped_keywords:
         deduped_keywords = list(dict.fromkeys(candidate.processed_payload.get("existing_keywords", [])))
-    effective_source = source_llm or candidate.processed_payload.get("existing_llm_source")
     previous_generated_at = candidate.processed_payload.get("existing_summary_generated_at")
-    content = candidate.content
     payload = {
         "article_id": candidate.raw_article_id,
         "title": candidate.title,
         "llm_summary": summary,
-        "content_markdown": content,
+        "content_markdown": candidate.content,
         "source": candidate.source,
-        "llm_source": effective_source,
         "publish_time_iso": candidate.published_at,
         "publish_time": candidate.processed_payload.get("publish_time"),
         "url": candidate.original_url,
@@ -249,44 +244,6 @@ def call_api(content: str, retries: int = 4) -> str:
     raise last_error or RuntimeError("调用摘要接口失败")
 
 
-def call_source_api(content: str, retries: int = 3) -> Optional[str]:
-    if not API_KEY:
-        return None
-    url = f"{BASE_URL}/chat/completions"
-    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
-    payload = {
-        "model": MODEL,
-        "messages": [
-            {
-                "role": "user",
-                "content": (
-                    "请分析以下文本的来源类型，回答 '官方媒体'、'教育系统'、'社会新闻'、'自媒体' 其中之一，并说明理由："
-                    + content
-                ),
-            }
-        ],
-        "temperature": 0.0,
-        "max_tokens": 120,
-    }
-    backoff = 1.0
-    last_error: Optional[Exception] = None
-    for _ in range(retries):
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=30)
-            if response.status_code == 200:
-                data = response.json()
-                return (data["choices"][0]["message"]["content"] or "").strip()
-            if response.status_code in (429, 500, 502, 503, 504):
-                time.sleep(backoff)
-                backoff *= 2
-                continue
-            last_error = RuntimeError(f"API {response.status_code}: {response.text[:120]}")
-        except Exception as exc:
-            last_error = exc
-        time.sleep(backoff)
-    return None
-
-
 def summarize(config: SummarizeConfig) -> None:
     adapter = get_supabase_adapter()
     keywords = load_keywords(config.keywords_path)
@@ -314,26 +271,22 @@ def summarize(config: SummarizeConfig) -> None:
     failed = 0
     reused = 0
 
-    def worker(item: Tuple[SummaryCandidate, List[str]]) -> Tuple[SummaryCandidate, str, Optional[str], List[str], bool]:
+    def worker(item: Tuple[SummaryCandidate, List[str]]) -> Tuple[SummaryCandidate, str, List[str], bool]:
         cand, hits = item
         if cand.existing_summary:
-            source_llm_cached = cand.processed_payload.get("existing_llm_source")
-            return cand, cand.existing_summary, source_llm_cached, hits, True
+            return cand, cand.existing_summary, hits, True
         summary = call_api(cand.content)
-        source_llm = call_source_api(cand.content)
-        return cand, summary, source_llm, hits, False
+        return cand, summary, hits, False
 
     if concurrency == 1:
         for candidate, hits in filtered_candidates:
             try:
                 if candidate.existing_summary:
                     summary = candidate.existing_summary
-                    source_llm = candidate.processed_payload.get("existing_llm_source")
                     reused += 1
                 else:
                     summary = call_api(candidate.content)
-                    source_llm = call_source_api(candidate.content)
-                write_news_summary(adapter, candidate, summary, source_llm=source_llm, keywords=hits)
+                write_news_summary(adapter, candidate, summary, keywords=hits)
                 ok += 1
                 tag = "(reuse)" if candidate.existing_summary else ""
                 print(f"OK {candidate.article_hash} {tag}")
@@ -346,8 +299,8 @@ def summarize(config: SummarizeConfig) -> None:
             for future in as_completed(future_map):
                 cand_hash = future_map[future]
                 try:
-                    cand, summary, source_llm, hits, reused_flag = future.result()
-                    write_news_summary(adapter, cand, summary, source_llm=source_llm, keywords=hits)
+                    cand, summary, hits, reused_flag = future.result()
+                    write_news_summary(adapter, cand, summary, keywords=hits)
                     if reused_flag:
                         reused += 1
                         print(f"OK {cand_hash} (reuse)")

@@ -1,1 +1,2 @@
 playwright==1.55.0
+supabase==2.20.0

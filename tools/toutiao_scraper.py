@@ -6,12 +6,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import html
-
+import json
 import os
 import re
 import sys
 from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Set
 from urllib.error import HTTPError, URLError
@@ -265,13 +265,14 @@ def parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
 
 
 async def _collect_feed_from_page(
-    page, token: str, profile_url: str, limit: Optional[int], existing_ids: Optional[Set[str]]
+    page, token: str, profile_url: str, limit: Optional[int], existing_ids: Optional[Set[str]], cutoff_timestamp: Optional[int] = None
 ) -> Tuple[List[FeedItem], bool]:
     if limit == 0:
         return [], False
     collected: List[FeedItem] = []
     max_behot_time = "0"
     reached_existing = False
+    reached_cutoff = False
     for _ in range(200):
         try:
             payload = await page.evaluate(FETCH_FEED_JS, {"token": token, "max_behot_time": max_behot_time})
@@ -282,6 +283,14 @@ async def _collect_feed_from_page(
             if not raw.get("title"):
                 continue
             item = FeedItem.from_raw(token, profile_url, raw)
+
+            # Check time cutoff (3 days ago)
+            if cutoff_timestamp is not None and item.publish_time is not None:
+                if item.publish_time < cutoff_timestamp:
+                    print(f"[info] Reached 3-day cutoff for article: {item.title[:50]}...", file=sys.stderr)
+                    reached_cutoff = True
+                    break
+
             article_id = try_resolve_article_id_from_feed(item) if existing_ids is not None else None
             if article_id and existing_ids is not None and article_id in existing_ids:
                 reached_existing = True
@@ -290,6 +299,8 @@ async def _collect_feed_from_page(
             if limit is not None and len(collected) >= limit:
                 break
         if reached_existing:
+            break
+        if reached_cutoff:
             break
         if limit is not None and len(collected) >= limit:
             break
@@ -300,7 +311,7 @@ async def _collect_feed_from_page(
             break
     if limit is not None:
         collected = collected[:limit]
-    return collected, reached_existing
+    return collected, reached_existing or reached_cutoff
 
 
 async def fetch_feed_items(
@@ -308,6 +319,7 @@ async def fetch_feed_items(
     limit: Optional[int],
     show_browser: bool,
     existing_ids: Optional[Set[str]],
+    cutoff_timestamp: Optional[int] = None,
 ) -> List[FeedItem]:
     all_items: List[FeedItem] = []
     async with async_playwright() as playwright:
@@ -330,12 +342,12 @@ async def fetch_feed_items(
             await page.goto(profile_url)
             await page.wait_for_selector("body")
             items, reached_existing = await _collect_feed_from_page(
-                page, token, profile_url, remaining, existing_ids
+                page, token, profile_url, remaining, existing_ids, cutoff_timestamp
             )
             all_items.extend(items)
             await page.close()
             if reached_existing:
-                print("[info] Reached existing Supabase data; stopping pagination for this author.", file=sys.stderr)
+                print("[info] Reached existing Supabase data or 3-day cutoff; stopping pagination for this author.", file=sys.stderr)
         await browser.close()
     if limit is not None:
         return all_items[:limit]
@@ -645,6 +657,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip uploading data to Supabase even if credentials are present.",
     )
+    parser.add_argument(
+        "--days-limit",
+        type=int,
+        default=3,
+        help="Only fetch articles published within the last N days (default: 3).",
+    )
     return parser.parse_args()
 
 
@@ -666,7 +684,14 @@ async def async_main(args: argparse.Namespace) -> int:
     else:
         limit = args.limit
 
-    feed_items = await fetch_feed_items(entries, limit, args.show_browser, existing_ids)
+    # Calculate cutoff timestamp (N days ago)
+    cutoff_timestamp: Optional[int] = None
+    if args.days_limit > 0:
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=args.days_limit)
+        cutoff_timestamp = int(cutoff_date.timestamp())
+        print(f"[info] Only fetching articles published after {cutoff_date.strftime('%Y-%m-%d %H:%M:%S')} UTC (last {args.days_limit} days)", file=sys.stderr)
+
+    feed_items = await fetch_feed_items(entries, limit, args.show_browser, existing_ids, cutoff_timestamp)
     if not feed_items:
         print("[warn] No feed items collected.", file=sys.stderr)
 

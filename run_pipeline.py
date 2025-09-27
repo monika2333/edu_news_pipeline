@@ -11,6 +11,8 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
+# Debug info removed for production
+
 # 环境变量加载（使用项目自己的逻辑）
 def _load_simple_env(path: Path) -> None:
     """简单的环境文件加载器"""
@@ -87,7 +89,15 @@ def check_requirements():
 
     if missing_modules:
         print(f"❌ 缺少Python模块: {', '.join(missing_modules)}")
-        print("💡 请运行: python3 -m pip install -r requirements.txt")
+        print("💡 请安装依赖模块:")
+        if sys.platform == "win32":
+            print("   在Windows PowerShell中运行:")
+            print("   pip install -r requirements.txt")
+            print("   或者:")
+            print("   python -m pip install -r requirements.txt")
+        else:
+            print("   python3 -m pip install -r requirements.txt")
+        print("\n⚠️  安装完成后再次运行此脚本")
         return False
 
     # 检查必要文件
@@ -126,6 +136,12 @@ def check_requirements():
 
 
 def main():
+    print("🔧 教育新闻自动化流水线启动中...")
+    if sys.platform == "win32":
+        print("🪟 检测到Windows环境")
+    else:
+        print("🐧 检测到Unix/Linux环境")
+
     parser = argparse.ArgumentParser(description="教育新闻自动化流水线一键运行")
     parser.add_argument("--scrape-limit", type=int, default=150,
                        help="抓取文章数量限制 (默认: 150)")
@@ -139,6 +155,8 @@ def main():
                        help="LLM并发数 (默认: 5)")
     parser.add_argument("--show-browser", action="store_true",
                        help="显示浏览器窗口 (用于调试)")
+    parser.add_argument("--days-limit", type=int, default=3,
+                       help="只抓取最近N天的文章 (默认: 3天)")
     parser.add_argument("--skip-scrape", action="store_true",
                        help="跳过抓取步骤")
     parser.add_argument("--skip-summary", action="store_true",
@@ -174,7 +192,8 @@ def main():
         cmd = [
             "python3", "tools/toutiao_scraper.py",
             "--input", "tools/author.txt",
-            "--limit", str(args.scrape_limit)
+            "--limit", str(args.scrape_limit),
+            "--days-limit", str(args.days_limit)
         ]
         if args.show_browser:
             cmd.append("--show-browser")

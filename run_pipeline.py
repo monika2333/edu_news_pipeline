@@ -42,7 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-scrape", action="store_true", help="Skip scraping Toutiao authors")
     parser.add_argument("--scrape-input", type=Path, default=DEFAULT_AUTHOR_LIST, help="Author list for the scraper")
     parser.add_argument("--scrape-limit", type=int, default=150, help="Max feed items to collect (<=0 means no limit)")
-    parser.add_argument("--scrape-output", type=Path, default=DEFAULT_SCRAPE_OUTPUT, help="JSON output path for scraped articles")
+    parser.add_argument("--scrape-output", type=Path, default=None, help=f"Optional JSON output path for scraped articles (e.g. {DEFAULT_SCRAPE_OUTPUT})")
     parser.add_argument("--scrape-timeout", type=int, default=15, help="Timeout (seconds) when fetching article content")
     parser.add_argument("--scrape-lang", type=str, default=None, help="Override Accept-Language header")
     parser.add_argument("--scrape-show-browser", action="store_true", help="Run scraper with a visible browser window")
@@ -82,7 +82,8 @@ def build_scrape_command(
     cmd = [python_exec, str(TOOLS_DIR / "toutiao_scraper.py"), "--input", str(input_path)]
     if limit is not None:
         cmd.extend(["--limit", str(limit)])
-    cmd.extend(["--output", str(output_path)])
+    if output_path is not None:
+        cmd.extend(["--output", str(output_path)])
     if timeout is not None:
         cmd.extend(["--timeout", str(timeout)])
     if lang:
@@ -155,7 +156,7 @@ def main() -> None:
     python_exec = sys.executable
 
     scrape_input = resolve_relative(args.scrape_input)
-    scrape_output = resolve_relative(args.scrape_output)
+    scrape_output = resolve_relative(args.scrape_output) if args.scrape_output else None
     supabase_env = resolve_relative(args.scrape_supabase_env)
     keywords_path = resolve_relative(args.summary_keywords)
     export_output = resolve_relative(args.export_output)
@@ -209,12 +210,16 @@ def main() -> None:
         if export_report_tag is None:
             today_prefix = datetime.now().strftime("%Y-%m-%d")
             default_tag = f"{today_prefix}-ZB"
-            print(f"Default report tag: {default_tag}")
-            prompt = "Press Enter to use the default, or type a suffix (e.g. AM) to build YYYY-MM-DD-suffix: "
-            user_input = input(prompt).strip()
-            if user_input:
-                export_report_tag = user_input if "-" in user_input else f"{today_prefix}-{user_input}"
+            if sys.stdin.isatty():
+                print(f"Default report tag: {default_tag}")
+                prompt = "Press Enter to use the default, or type a suffix (e.g. ZM) to build YYYY-MM-DD-suffix: "
+                user_input = input(prompt).strip()
+                if user_input:
+                    export_report_tag = user_input if "-" in user_input else f"{today_prefix}-{user_input}"
+                else:
+                    export_report_tag = default_tag
             else:
+                print(f"Using default report tag: {default_tag}")
                 export_report_tag = default_tag
         run_step(
             "Export high correlation summaries",

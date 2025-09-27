@@ -1,41 +1,44 @@
 # 教育新闻自动化流水线
 
 ## 项目概览
-- 通过 `tools/toutiao_scrapy/toutiao_scraper.py` 抓取今日头条作者主页，生成结构化数据并写入 Supabase `toutiao_articles` 表。
-- `tools/summarize_supabase.py` 读取抓取结果，结合关键词筛选和 LLM 完成摘要，归档到 `news_summaries` 表。
-- 后续可在 `news_summaries` 基础上继续实现相关度评分、导出等能力；旧的 SQLite 流水线已废弃。
+- `tools/toutiao_scrapy/toutiao_scraper.py` 从今日头条作者主页抓取文章并写入 Supabase `toutiao_articles` 表，可选同步生成 JSON 备份。
+- `tools/summarize_supabase.py` 读取 `toutiao_articles`，按 `education_keywords.txt` 过滤后调用 SiliconFlow 生成摘要，upsert 至 `news_summaries`。
+- `tools/score_correlation_supabase.py` 对 `news_summaries` 内缺失评分的文章调用 LLM，写回 `correlation` 分值。
+- `tools/export_high_correlation_supabase.py` 从 `news_summaries` 导出高分摘要，并在 `brief_batches`/`brief_items` 追踪导出历史。
 
 ## 目录速览
-- `tools/toutiao_scrapy/`：抓取脚本与 `author.txt` 示例。
-- `tools/summarize_supabase.py`：Supabase + SiliconFlow 摘要任务，输出 `news_summaries`。
-- `tools/score_correlation_supabase.py`、`tools/export_high_correlation_supabase.py`：旧版 Supabase 摘要/导出脚本，待适配新表。
-- `tools/supabase_adapter.py`：Supabase 通用封装，供脚本共享。
-- `supabase/schema.sql`：数据库建表脚本，可作为 Supabase 项目初始化模板。
-- `education_keywords.txt`：教育领域关键词（UTF-8 编码）。
+- `tools/toutiao_scrapy/`：抓取脚本、示例作者列表与缓存数据。
+- `tools/summarize_supabase.py`：摘要生成与 `news_summaries` 管理。
+- `tools/score_correlation_supabase.py`：教育相关度评分，输出 `correlation`。
+- `tools/export_high_correlation_supabase.py`：基于 `news_summaries` 导出文本并记录批次。
+- `tools/supabase_adapter.py`：Supabase 访问封装，统一读取/写入逻辑。
+- `supabase/schema.sql`：数据库结构模板，可在 Supabase 项目中初始化。
+- `education_keywords.txt`：教育领域关键词（UTF-8，运行前请确认编码正确）。
 
 ## 环境准备
-- Python 3.10+；建议使用虚拟环境：`python -m venv .venv && .venv/Scripts/activate`。
-- 安装依赖：`pip install -r requirements.txt`；若需要直接连 Postgres，额外 `pip install "psycopg[binary]"`。
-- Playwright 抓取需安装内核：`playwright install chromium`。
-- 默认加载 `.env.local` -> `.env` -> `config/abstract.env`（后两者可选）。建议只保留 `.env.local` 并加入 `.gitignore`。
+- Python 3.10+，建议 `python -m venv .venv && .venv/Scripts/activate`。
+- 安装依赖：`pip install -r requirements.txt`；若需直连 Postgres，额外 `pip install "psycopg[binary]"`。
+- Playwright 首次运行需 `playwright install chromium`。
+- 默认顺序加载 `.env.local`、`.env`、`config/abstract.env`，建议仅保留 `.env.local` 并放入 `.gitignore`。
 
-### Supabase 凭据
-`toutiao_scraper.py` 直接使用 Postgres 连接，需要：
+### 关键环境变量
+**Supabase 抓取（Postgres 直连）**
 - `SUPABASE_URL`
 - `SUPABASE_DB_PASSWORD`
-- 可选：`SUPABASE_DB_USER`（默认 `postgres`）、`SUPABASE_DB_PORT`（默认 `5432`）、`SUPABASE_DB_NAME`（默认 `postgres`）。
+- 可选：`SUPABASE_DB_USER`（默认 `postgres`）、`SUPABASE_DB_PORT`（默认 `5432`）、`SUPABASE_DB_NAME`（默认 `postgres`）
 
-摘要脚本通过 Supabase REST，需要：
+**Supabase REST（摘要、评分、导出）**
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY` 或 `SUPABASE_KEY`（建议服务密钥）
 
-SiliconFlow 配置：
+**SiliconFlow / LLM**
 - `SILICONFLOW_API_KEY`
 - 可选：`MODEL_NAME`、`CONCURRENCY`、`ENABLE_THINKING`、`SILICONFLOW_BASE_URL`
 
-## 数据表说明
-- `toutiao_articles`：抓取产物，字段含作者 token、文章元数据、正文 `content_markdown` 等。
-- `news_summaries`：摘要表，字段 `article_id`、`title`、`llm_summary`、`content_markdown`、`source`、`publish_time_iso`、`publish_time`、`url`、`llm_keywords`、`summary_generated_at`（自动 upsert）。
+## 数据表摘要
+- `toutiao_articles`：抓取产物，包含 token、文章标题、正文 `content_markdown`、抓取时间等。
+- `news_summaries`：摘要结果，字段包括 `article_id`、`title`、`llm_summary`、`content_markdown`、`source`、`publish_time_iso`、`publish_time`、`url`、`llm_keywords`、`summary_generated_at`、`correlation`。
+- `brief_batches` / `brief_items`：导出批次与条目记录，`brief_items.article_id` 对应 `news_summaries.article_id`，`metadata` 存储来源、分数等信息。
 
 ## 典型流程
 1. **抓取今日头条作者**
@@ -45,37 +48,47 @@ SiliconFlow 配置：
      --limit 150 \
      --output tools/toutiao_scrapy/data/toutiao_articles.json
    ```
-   - `author.txt` 支持 token 或主页 URL，一行一个，`#` 为注释。
-   - 若提供 Supabase Postgres 凭据且安装 `psycopg`，脚本会同步写入 `toutiao_articles`（可用 `--supabase-table` 调整，`--reset-supabase-table` 清空重建）。
-   - `--show-browser` 可打开有头浏览器便于排查。
+   - `author.txt` 每行一个 token 或主页 URL，`#` 为注释。
+   - 设置 Supabase Postgres 凭据并安装 `psycopg` 后，脚本会写入 `toutiao_articles`（可用 `--supabase-table` 指定目标表，`--reset-supabase-table` 清空重建）。
+   - `--show-browser` 可开启有头浏览器便于排查封锁问题。
 
-2. **关键词过滤 + 摘要写入 `news_summaries`**
+2. **关键词过滤 + 摘要**
    ```bash
    python tools/summarize_supabase.py \
      --keywords education_keywords.txt \
      --limit 200 \
      --concurrency 5
    ```
-   - 仅处理 `toutiao_articles` 中正文非空的记录。
-   - 命中关键词后调用 LLM 生成摘要；已有摘要会复用并保持 `summary_generated_at`。
-   - 结果 upsert 到 `news_summaries`，`llm_keywords` 自动去重保存。
+   - 仅处理正文非空的文章。
+   - 命中关键词后调用 LLM 生成摘要；已有摘要会复用并保持 `summary_generated_at` 原值。
+   - 写入 `news_summaries`，自动去重 `llm_keywords`。
 
-3. **后续处理（规划中）**
-   - `tools/score_correlation_supabase.py` / `tools/export_high_correlation_supabase.py` 仍基于旧表结构，需改造为读取 `news_summaries`。
-   - 可在 `news_summaries` 基础上编写 Streamlit 展示、导出日报等功能。
+3. **相关度评分**
+   ```bash
+   python tools/score_correlation_supabase.py --limit 200 --concurrency 5
+   ```
+   - 选择 `news_summaries` 中 `correlation` 为空的记录。
+   - LLM 输出 0-100 分，写回 `correlation`。
+
+4. **导出高相关摘要**
+   ```bash
+   python tools/export_high_correlation_supabase.py \
+     --min-score 60 \
+     --report-tag 2025-09-27-AM \
+     --output outputs/highlight.txt
+   ```
+   - 从 `news_summaries` 选取 `correlation` ≥ 阈值的记录，按分类归组。
+   - 文本末尾自动追加来源括号（如 `（北京日报客户端）`）。
+   - 若启用 `--record-history`（默认）将记录到 `brief_batches`/`brief_items`，再次导出同一 tag 可通过 `--skip-exported` 控制跳过已导出的文章。
 
 ## 常见问题
-- **抓取失败/403**：重新执行 `playwright install chromium`，必要时加 `--show-browser` 手动登录排查。
-- **Supabase 连接失败**：确认 `.env.local` 中的 DB 密码、项目 URL 正确；若仅输出 JSON 可加 `--skip-supabase-upload`。
-- **LLM 调用限流**：降低 `--concurrency` 或在 `.env.local` 中设定 `CONCURRENCY=1`，并准备备用模型。
-- **关键词未命中**：`education_keywords.txt` 使用 UTF-8，注意实际文本编码；可在运行日志中查看被过滤数量。
+- **Playwright 403/风控**：重新 `playwright install chromium`，或加 `--show-browser` 并手动处理验证。
+- **Supabase 连接失败**：确认 `.env.local` 中 URL、密码无误；若仅需离线 JSON，可 `--skip-supabase-upload`。
+- **LLM 限流**：将 `--concurrency` 降为 1，或设置 `CONCURRENCY=1` 后重试；准备备用模型。
+- **关键词未命中**：确保 `education_keywords.txt` 保存为 UTF-8，运行日志会显示过滤数量。
+- **重复导出**：使用不同 `--report-tag`，或在导出前执行 `--no-skip-exported` 重新生成。
 
-## 适配旧脚本的建议
-- 更新评分脚本，改为读取 `news_summaries.llm_summary` 并写回统一的评分字段（可在表中新增 `relevance_score`）。
-- 导出逻辑可直接基于 `news_summaries` 构建，或增加视图聚合不同来源。
-- 如需保留 SQLite 流程，请手动维护相关脚本；默认 README 不再覆盖。
-
-## 后续规划
-- 在 Supabase 侧添加触发器/视图，统一统计抓取量、摘要覆盖率。
-- 为 `news_summaries` 增加索引（如 `publish_time`、`llm_keywords`）提升查询效率。
-- 新增自动化测试，覆盖关键词过滤、摘要写入、重复处理等关键路径。
+## 后续计划
+- 为 `news_summaries` 增加更多索引与视图（按日期、来源统计覆盖率）。
+- 改造旧版导出/评分脚本的测试用例以覆盖 Supabase 新流程。
+- 增补单元测试：抓取去重、关键词过滤、摘要复用、评分、导出历史等环节。

@@ -205,7 +205,7 @@ class SupabaseAdapter:
         return total, with_content
 
     def iter_missing_content(self, limit: Optional[int] = None) -> List[MissingContentTarget]:
-        query = self.client.table("raw_articles").select("id, hash, url, content").order("created_at", "asc")
+        query = self.client.table("raw_articles").select("id, hash, url, content").order("created_at", desc=False)
         if limit and limit > 0:
             query = query.limit(limit)
         resp = query.execute()
@@ -239,7 +239,7 @@ class SupabaseAdapter:
             )
             .eq("is_deleted", False)
             .not_.is_("content", "null")
-            .order("created_at", "asc")
+            .order("created_at", desc=False)
             .limit(batch)
         )
         resp = query.execute()
@@ -322,7 +322,7 @@ class SupabaseAdapter:
             .select("id, raw_article_id, summary, raw_articles(content)")
             .is_("relevance_score", "null")
             .not_.is_("summary", "null")
-            .order("created_at", "asc")
+            .order("created_at", desc=False)
         )
         if limit and limit > 0:
             query = query.limit(limit)

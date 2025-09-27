@@ -1,5 +1,5 @@
-﻿#!/usr/bin/env python3
-"""Summarize Supabase raw articles using SiliconFlow API."""
+#!/usr/bin/env python3
+"""Summarize Supabase Toutiao articles using SiliconFlow API."""
 from __future__ import annotations
 
 import argparse
@@ -8,6 +8,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
 
@@ -104,6 +105,117 @@ def contains_keywords(text: str, keywords: Sequence[str]) -> Tuple[bool, List[st
     return (bool(matched), matched)
 
 
+def _chunked(values: Sequence[str], size: int = 100) -> Iterable[Sequence[str]]:
+    for start in range(0, len(values), size):
+        yield values[start : start + size]
+
+
+def fetch_existing_news_summaries(adapter, article_ids: List[str]) -> dict[str, dict]:
+    if not article_ids:
+        return {}
+    existing: dict[str, dict] = {}
+    for chunk in _chunked(article_ids, 100):
+        response = (
+            adapter.client
+            .table("news_summaries")
+            .select("article_id, llm_summary, llm_keywords, llm_source, summary_generated_at")
+            .in_("article_id", list(chunk))
+            .execute()
+        )
+        for row in response.data or []:
+            article_id = str(row.get("article_id"))
+            existing[article_id] = row
+    return existing
+
+
+def fetch_toutiao_candidates(adapter, limit: Optional[int]) -> List[SummaryCandidate]:
+    batch = max(1, (limit or 50)) * 4
+    query = (
+        adapter.client
+        .table("toutiao_articles")
+        .select(
+            "article_id, title, source, publish_time_iso, publish_time, url, content_markdown, summary, "
+            "comment_count, digg_count"
+        )
+        .not_.is_("content_markdown", "null")
+        .order("fetched_at", desc=False)
+        .limit(batch)
+    )
+    response = query.execute()
+    rows = response.data or []
+    article_ids = [str(row.get("article_id")) for row in rows if row.get("article_id")]
+    existing_map = fetch_existing_news_summaries(adapter, article_ids)
+    candidates: List[SummaryCandidate] = []
+    for row in rows:
+        article_id = str(row.get("article_id")) if row.get("article_id") else None
+        content = row.get("content_markdown") or ""
+        if not article_id or not str(content).strip():
+            continue
+        existing_entry = existing_map.get(article_id)
+        existing_summary = (existing_entry or {}).get("llm_summary")
+        processed_payload = {
+            "original_summary": row.get("summary"),
+            "comment_count": row.get("comment_count"),
+            "digg_count": row.get("digg_count"),
+            "publish_time": row.get("publish_time"),
+            "existing_keywords": (existing_entry or {}).get("llm_keywords") or [],
+            "existing_llm_source": (existing_entry or {}).get("llm_source"),
+            "existing_summary_generated_at": (existing_entry or {}).get("summary_generated_at"),
+        }
+        candidate = SummaryCandidate(
+            raw_article_id=article_id,
+            article_hash=article_id,
+            title=row.get("title"),
+            source=row.get("source"),
+            published_at=row.get("publish_time_iso"),
+            original_url=row.get("url"),
+            content=str(content),
+            existing_summary=existing_summary,
+            filtered_article_id=None,
+            processed_payload=processed_payload,
+        )
+        candidates.append(candidate)
+        if limit and len(candidates) >= limit:
+            break
+    return candidates
+
+
+def write_news_summary(
+    adapter,
+    candidate: SummaryCandidate,
+    summary: str,
+    *,
+    source_llm: Optional[str] = None,
+    keywords: Optional[Sequence[str]] = None,
+) -> None:
+    deduped_keywords: List[str] = []
+    if keywords:
+        deduped_keywords = [kw for kw in dict.fromkeys(keywords) if kw]
+    if not deduped_keywords:
+        deduped_keywords = list(dict.fromkeys(candidate.processed_payload.get("existing_keywords", [])))
+    effective_source = source_llm or candidate.processed_payload.get("existing_llm_source")
+    previous_generated_at = candidate.processed_payload.get("existing_summary_generated_at")
+    content = candidate.content
+    payload = {
+        "article_id": candidate.raw_article_id,
+        "title": candidate.title,
+        "llm_summary": summary,
+        "content_markdown": content,
+        "source": candidate.source,
+        "llm_source": effective_source,
+        "publish_time_iso": candidate.published_at,
+        "publish_time": candidate.processed_payload.get("publish_time"),
+        "url": candidate.original_url,
+        "llm_keywords": deduped_keywords or None,
+        "summary_generated_at": None,
+    }
+    if candidate.existing_summary and summary == candidate.existing_summary and previous_generated_at:
+        payload["summary_generated_at"] = previous_generated_at
+    else:
+        payload["summary_generated_at"] = datetime.now(timezone.utc).isoformat()
+    adapter.client.table("news_summaries").upsert(payload, on_conflict="article_id").execute()
+
+
 def call_api(content: str, retries: int = 4) -> str:
     if not API_KEY:
         raise RuntimeError("缺少环境变量 SILICONFLOW_API_KEY")
@@ -180,7 +292,7 @@ def summarize(config: SummarizeConfig) -> None:
     keywords = load_keywords(config.keywords_path)
     limit = config.limit
 
-    candidates = adapter.fetch_summary_candidates(limit)
+    candidates = fetch_toutiao_candidates(adapter, limit)
     if not candidates:
         print("No Supabase articles require summarization.")
         return
@@ -205,7 +317,8 @@ def summarize(config: SummarizeConfig) -> None:
     def worker(item: Tuple[SummaryCandidate, List[str]]) -> Tuple[SummaryCandidate, str, Optional[str], List[str], bool]:
         cand, hits = item
         if cand.existing_summary:
-            return cand, cand.existing_summary, None, hits, True
+            source_llm_cached = cand.processed_payload.get("existing_llm_source")
+            return cand, cand.existing_summary, source_llm_cached, hits, True
         summary = call_api(cand.content)
         source_llm = call_source_api(cand.content)
         return cand, summary, source_llm, hits, False
@@ -215,12 +328,12 @@ def summarize(config: SummarizeConfig) -> None:
             try:
                 if candidate.existing_summary:
                     summary = candidate.existing_summary
-                    source_llm = None
+                    source_llm = candidate.processed_payload.get("existing_llm_source")
                     reused += 1
                 else:
                     summary = call_api(candidate.content)
                     source_llm = call_source_api(candidate.content)
-                adapter.save_summary(candidate, summary, source_llm=source_llm, keywords=hits)
+                write_news_summary(adapter, candidate, summary, source_llm=source_llm, keywords=hits)
                 ok += 1
                 tag = "(reuse)" if candidate.existing_summary else ""
                 print(f"OK {candidate.article_hash} {tag}")
@@ -234,7 +347,7 @@ def summarize(config: SummarizeConfig) -> None:
                 cand_hash = future_map[future]
                 try:
                     cand, summary, source_llm, hits, reused_flag = future.result()
-                    adapter.save_summary(cand, summary, source_llm=source_llm, keywords=hits)
+                    write_news_summary(adapter, cand, summary, source_llm=source_llm, keywords=hits)
                     if reused_flag:
                         reused += 1
                         print(f"OK {cand_hash} (reuse)")
@@ -252,7 +365,7 @@ def summarize(config: SummarizeConfig) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Summarize Supabase raw articles")
+    parser = argparse.ArgumentParser(description="Summarize Supabase Toutiao articles")
     parser.add_argument("--keywords", type=Path, default=DEFAULT_KEYWORDS_FILE, help="Keywords file path")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of articles")
     parser.add_argument("--concurrency", type=int, default=None, help="Number of worker threads")

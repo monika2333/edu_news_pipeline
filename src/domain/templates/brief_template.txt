@@ -1,0 +1,7 @@
+﻿# Placeholder brief template.
+# Replace the body with the format your editors expect.
+Title: {title}
+Summary: {summary}
+Score: {score}
+Published: {publish_time}
+Source: {source}

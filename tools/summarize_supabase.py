@@ -196,7 +196,7 @@ def fetch_existing_news_summaries(adapter, article_ids: List[str]) -> dict[str, 
         response = (
             adapter.client
             .table("news_summaries")
-            .select("article_id, llm_summary, llm_keywords, summary_generated_at")
+            .select("article_id, llm_summary, llm_keywords, summary_generated_at, llm_source")
             .in_("article_id", list(chunk))
             .execute()
         )
@@ -267,6 +267,7 @@ def fetch_toutiao_candidates(
             "publish_time": row.get("publish_time"),
             "existing_keywords": (existing_entry or {}).get("llm_keywords") or [],
             "existing_summary_generated_at": (existing_entry or {}).get("summary_generated_at"),
+            "existing_llm_source": (existing_entry or {}).get("llm_source"),
             "fetched_at": row.get("fetched_at"),
         }
         candidate = SummaryCandidate(
@@ -293,6 +294,7 @@ def write_news_summary(
     summary: str,
     *,
     keywords: Optional[Sequence[str]] = None,
+    llm_source: Optional[str] = None,
 ) -> None:
     deduped_keywords: List[str] = []
     if keywords:
@@ -306,7 +308,7 @@ def write_news_summary(
         "llm_summary": summary,
         "content_markdown": candidate.content,
         "source": candidate.source,
-        "llm_source": MODEL,
+        "llm_source": llm_source or None,
         "publish_time_iso": candidate.published_at,
         "publish_time": candidate.processed_payload.get("publish_time"),
         "url": candidate.original_url,
@@ -320,14 +322,19 @@ def write_news_summary(
     adapter.client.table("news_summaries").upsert(payload, on_conflict="article_id").execute()
 
 
-def call_api(content: str, retries: int = 4) -> str:
+def _call_model(
+    prompt: str,
+    *,
+    retries: int = 4,
+    failure_message: str = "调用模型接口失败",
+) -> str:
     if not API_KEY:
         raise RuntimeError("缺少环境变量 SILICONFLOW_API_KEY")
     url = f"{BASE_URL}/chat/completions"
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     payload = {
         "model": MODEL,
-        "messages": [{"role": "user", "content": f"请总结下面的新闻，直接输出总结后的内容即可：{content}"}],
+        "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.2,
         "max_tokens": 512,
     }
@@ -350,7 +357,20 @@ def call_api(content: str, retries: int = 4) -> str:
             last_error = exc
         time.sleep(backoff)
         backoff = min(backoff * 2, 8)
-    raise last_error or RuntimeError("调用摘要接口失败")
+    raise last_error or RuntimeError(failure_message)
+
+
+def call_api(content: str, retries: int = 4) -> str:
+    prompt = f"请总结下面的新闻，直接输出总结后的内容即可：{content}"
+    return _call_model(prompt, retries=retries, failure_message="调用摘要接口失败")
+
+
+def detect_llm_source(content: str, retries: int = 4) -> Optional[str]:
+    if not str(content).strip():
+        return None
+    prompt = f"请识别本文的来源，仅仅输出答案即可：{content}"
+    result = _call_model(prompt, retries=retries, failure_message="调用来源识别接口失败")
+    return result or None
 
 
 def summarize(config: SummarizeConfig) -> None:
@@ -391,12 +411,17 @@ def summarize(config: SummarizeConfig) -> None:
         candidate_cursor = ProcessCursor(fetched_at=str(fetched_at), article_id=str(article_id))
         last_success_cursor = _max_cursor(last_success_cursor, candidate_cursor)
 
-    def worker(item: Tuple[SummaryCandidate, List[str]]) -> Tuple[SummaryCandidate, str, List[str], bool]:
+    def worker(
+        item: Tuple[SummaryCandidate, List[str]]
+    ) -> Tuple[SummaryCandidate, str, List[str], bool, Optional[str]]:
         cand, hits = item
+        existing_llm_source = cand.processed_payload.get("existing_llm_source")
         if cand.existing_summary:
-            return cand, cand.existing_summary, hits, True
+            llm_source_value = existing_llm_source or detect_llm_source(cand.content)
+            return cand, cand.existing_summary, hits, True, llm_source_value
         summary = call_api(cand.content)
-        return cand, summary, hits, False
+        llm_source_value = existing_llm_source or detect_llm_source(cand.content)
+        return cand, summary, hits, False, llm_source_value
 
     if concurrency == 1:
         for candidate, hits in filtered_candidates:
@@ -406,7 +431,16 @@ def summarize(config: SummarizeConfig) -> None:
                     reused += 1
                 else:
                     summary = call_api(candidate.content)
-                write_news_summary(adapter, candidate, summary, keywords=hits)
+                llm_source_value = candidate.processed_payload.get("existing_llm_source")
+                if not llm_source_value:
+                    llm_source_value = detect_llm_source(candidate.content)
+                write_news_summary(
+                    adapter,
+                    candidate,
+                    summary,
+                    keywords=hits,
+                    llm_source=llm_source_value,
+                )
                 record_success(candidate)
                 ok += 1
                 tag = "(reuse)" if candidate.existing_summary else ""
@@ -420,8 +454,14 @@ def summarize(config: SummarizeConfig) -> None:
             for future in as_completed(future_map):
                 cand_hash = future_map[future]
                 try:
-                    cand, summary, hits, reused_flag = future.result()
-                    write_news_summary(adapter, cand, summary, keywords=hits)
+                    cand, summary, hits, reused_flag, llm_source_value = future.result()
+                    write_news_summary(
+                        adapter,
+                        cand,
+                        summary,
+                        keywords=hits,
+                        llm_source=llm_source_value,
+                    )
                     record_success(cand)
                     if reused_flag:
                         reused += 1
@@ -471,4 +511,3 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
 if __name__ == "__main__":
     main()
-

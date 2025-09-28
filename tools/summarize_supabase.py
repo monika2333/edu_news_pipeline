@@ -306,6 +306,7 @@ def write_news_summary(
         "llm_summary": summary,
         "content_markdown": candidate.content,
         "source": candidate.source,
+        "llm_source": MODEL,
         "publish_time_iso": candidate.published_at,
         "publish_time": candidate.processed_payload.get("publish_time"),
         "url": candidate.original_url,

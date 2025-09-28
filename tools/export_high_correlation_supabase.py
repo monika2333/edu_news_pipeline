@@ -108,7 +108,7 @@ def fetch_candidates(min_score: int):
     resp = (
         adapter.client
         .table("news_summaries")
-        .select("article_id, title, llm_summary, correlation, content_markdown, source, url, publish_time_iso, llm_keywords")
+        .select("article_id, title, llm_summary, correlation, content_markdown, source, llm_source, url, publish_time_iso, llm_keywords")
         .gte("correlation", min_score)
         .order("correlation", desc=True)
     ).execute()
@@ -182,7 +182,7 @@ def export_supabase(options: ExportOptions) -> None:
                     summary=cand.get("llm_summary") or "",
                     content=str(cand.get("content_markdown") or ""),
                     source=cand.get("source"),
-                    source_llm=None,
+                    source_llm=cand.get("llm_source"),
                     relevance_score=float(cand.get("correlation") or 0),
                     original_url=cand.get("url"),
                     published_at=cand.get("publish_time_iso"),

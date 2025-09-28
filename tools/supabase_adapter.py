@@ -512,6 +512,7 @@ class SupabaseAdapter:
                     "original_url": candidate.original_url,
                     "published_at": candidate.published_at,
                     "source": candidate.source,
+                    "source_llm": candidate.source_llm,
                 },
             }
             insert_payload.append(record)

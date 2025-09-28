@@ -145,9 +145,9 @@ def export_supabase(options: ExportOptions) -> None:
                 skipped_previous_reports += 1
             continue
         category = classify_category(row.get("source"), None, row.get("title"), row.get("llm_summary"), row.get("content_markdown"))
-        source_suffix = row.get('source')
-        if source_suffix:
-            entry = f"{row.get('title') or ''}\n{row.get('llm_summary') or ''}（{source_suffix}）"
+        llm_suffix = row.get('llm_source')
+        if llm_suffix:
+            entry = f"{row.get('title') or ''}\n{row.get('llm_summary') or ''}（{llm_suffix}）"
         else:
             entry = f"{row.get('title') or ''}\n{row.get('llm_summary') or ''}"
         grouped_entries.setdefault(category, []).append(entry)

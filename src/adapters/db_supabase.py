@@ -220,6 +220,78 @@ class SupabaseAdapter:
                 break
         return candidates
 
+    def fetch_toutiao_articles_for_summary(
+        self,
+        *,
+        after_fetched_at: Optional[str],
+        limit: Optional[int],
+    ) -> List[Dict[str, Any]]:
+        fetch_target = max(1, (limit or 50))
+        query = (
+            self.client
+            .table("toutiao_articles")
+            .select(
+                "article_id, title, source, publish_time, publish_time_iso, url, content_markdown, fetched_at"
+            )
+            .not_.is_("content_markdown", "null")
+            .order("fetched_at", desc=False)
+        )
+        if after_fetched_at:
+            query = query.gte("fetched_at", after_fetched_at)
+        query = query.limit(fetch_target)
+        resp = query.execute()
+        return resp.data or []
+
+    def get_existing_news_summary_ids(self, article_ids: Sequence[str]) -> Set[str]:
+        unique_ids = list({str(item) for item in article_ids if item})
+        if not unique_ids:
+            return set()
+        resp = (
+            self.client
+            .table("news_summaries")
+            .select("article_id")
+            .in_("article_id", unique_ids)
+            .execute()
+        )
+        return {str(row.get("article_id")) for row in resp.data or [] if row.get("article_id")}
+
+    def upsert_news_summary(
+        self,
+        article: Dict[str, Any],
+        summary: str,
+        *,
+        keywords: Optional[Sequence[str]] = None,
+    ) -> None:
+        article_id = str(article.get("article_id") or "")
+        if not article_id:
+            raise ValueError("Supabase upsert requires article_id")
+        content_value = article.get("content_markdown")
+        if content_value is None:
+            content_value = ""
+        payload: Dict[str, Any] = {
+            "article_id": article_id,
+            "title": article.get("title"),
+            "source": article.get("source"),
+            "publish_time": article.get("publish_time"),
+            "publish_time_iso": article.get("publish_time_iso"),
+            "url": article.get("url"),
+            "content_markdown": str(content_value),
+            "llm_summary": summary,
+            "summary_generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        fetched_at = article.get("fetched_at")
+        if fetched_at:
+            payload["fetched_at"] = fetched_at
+        deduped_keywords: List[str] = []
+        if keywords:
+            for kw in keywords:
+                if kw and kw not in deduped_keywords:
+                    deduped_keywords.append(kw)
+        if deduped_keywords:
+            payload["llm_keywords"] = deduped_keywords
+        cleaned_payload = {key: value for key, value in payload.items() if value is not None}
+        self.client.table("news_summaries").upsert(cleaned_payload, on_conflict="article_id").execute()
+
     def save_summary(
         self,
         candidate: SummaryCandidate,

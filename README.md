@@ -1,7 +1,7 @@
 ﻿# 教育新闻自动化流水线
 
 ## 项目概览
-- python run_pipeline.py crawl ��ȡ����ͷ��ר����д�� Supabase 	outiao_articles ����
+- `python run_pipeline.py crawl` 获取今日头条专栏写入 Supabase `toutiao_articles` 表
 - 	ools/summarize_supabase.py ��ȡ 	outiao_articles���� education_keywords.txt ���˺���� SiliconFlow ����ժҪ��upsert �� 
 ews_summaries��
 - 	ools/score_correlation_supabase.py �� 
@@ -52,7 +52,7 @@ ews_summaries �����߷�ժҪ������ rief_batches/rief_ite
     --limit 150 \\\
     --concurrency 5
    ```
-   - `author.txt` 每行一个 token 或主页 URL，`#` 为注释。
+   - `data/author_tokens.txt` lists tokens or profile URLs (# for comments).
    - 设置 Supabase Postgres 凭据并安装 `psycopg` 后，脚本会写入 `toutiao_articles`（可用 `--supabase-table` 指定目标表，`--reset-supabase-table` 清空重建）。
    - `--show-browser` 可开启有头浏览器便于排查封锁问题。
 

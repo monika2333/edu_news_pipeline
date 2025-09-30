@@ -72,6 +72,7 @@ class Settings:
     supabase_db_name: str
     supabase_db_user: str
     supabase_db_password: Optional[str]
+    supabase_db_schema: str
     siliconflow_base_url: str
     siliconflow_api_key: Optional[str]
     siliconflow_model_name: str
@@ -105,6 +106,7 @@ def get_settings() -> Settings:
     supabase_db_name = os.getenv("SUPABASE_DB_NAME", "postgres")
     supabase_db_user = os.getenv("SUPABASE_DB_USER", "postgres")
     supabase_db_password = os.getenv("SUPABASE_DB_PASSWORD")
+    supabase_db_schema = os.getenv("SUPABASE_DB_SCHEMA", "public")
 
     siliconflow_base_url = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
     siliconflow_api_key = os.getenv("SILICONFLOW_API_KEY")
@@ -133,6 +135,7 @@ def get_settings() -> Settings:
         supabase_db_name=supabase_db_name,
         supabase_db_user=supabase_db_user,
         supabase_db_password=supabase_db_password,
+        supabase_db_schema=supabase_db_schema,
         siliconflow_base_url=siliconflow_base_url,
         siliconflow_api_key=siliconflow_api_key,
         siliconflow_model_name=siliconflow_model_name,
@@ -144,6 +147,7 @@ def get_settings() -> Settings:
 
 
 __all__ = ["Settings", "get_settings", "load_environment"]
+
 
 
 

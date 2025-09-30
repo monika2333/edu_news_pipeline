@@ -9,3 +9,4 @@
 
 1. Extend CLI coverage in `src/cli/main.py` (ensure new options/flags are exposed, add help text, confirm `run_pipeline.py` forwards appropriately).
 2. Refresh docs/tests: update README + scheduling notes, add a smoke script/test import, and document removal plan for deprecated `tools/` shims once verified.
+

@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 
 import argparse
-from typing import Callable
+from pathlib import Path
 
 from src.workers.crawl_toutiao import run as crawl_toutiao
 from src.workers.export_brief import run as export_brief
@@ -9,25 +9,41 @@ from src.workers.score import run as score_summaries
 from src.workers.summarize import run as summarize_articles
 
 
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be positive")
+    return parsed
+
+
 def _add_crawl(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("crawl", help="Collect fresh Toutiao articles")
-    parser.add_argument("--limit", type=int, default=50, help="Max number of feed items to ingest")
+    parser.add_argument("--limit", type=_positive_int, default=500, help="Max number of feed items to ingest")
+    parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
 
 
 def _add_summarize(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("summarize", help="Generate summaries for pending articles")
-    parser.add_argument("--limit", type=int, default=50, help="Max number of articles to summarize")
+    parser.add_argument("--limit", type=_positive_int, default=50, help="Max number of articles to summarize")
+    parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
+    parser.add_argument("--keywords", type=Path, default=None, help="Override keywords file used to filter articles")
 
 
 def _add_score(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("score", help="Score correlation for summarized articles")
-    parser.add_argument("--limit", type=int, default=100, help="Max number of summaries to score")
+    parser.add_argument("--limit", type=_positive_int, default=100, help="Max number of summaries to score")
+    parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
 
 
 def _add_export(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("export", help="Export high scoring summaries")
+    parser.add_argument("--limit", type=_positive_int, default=None, help="Max number of summaries to export")
     parser.add_argument("--date", type=str, default=None, help="Report date (YYYY-MM-DD). Defaults to today")
-    parser.add_argument("--min-score", type=int, default=60, help="Minimum correlation score to include")
+    parser.add_argument("--report-tag", type=str, default=None, help="Explicit report tag identifier")
+    parser.add_argument("--min-score", type=_positive_int, default=60, help="Minimum correlation score to include")
+    parser.add_argument("--skip-exported", action=argparse.BooleanOptionalAction, default=True, help="Skip items already exported in previous runs")
+    parser.add_argument("--record-history", action=argparse.BooleanOptionalAction, default=True, help="Persist export metadata back to Supabase")
+    parser.add_argument("--output", type=Path, default=None, help="Override output file path")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -46,13 +62,21 @@ def main(argv: list[str] | None = None) -> None:
 
     command = args.command
     if command == "crawl":
-        crawl_toutiao(limit=args.limit)
+        crawl_toutiao(limit=args.limit, concurrency=args.concurrency)
     elif command == "summarize":
-        summarize_articles(limit=args.limit)
+        summarize_articles(limit=args.limit, concurrency=args.concurrency, keywords_path=args.keywords)
     elif command == "score":
-        score_summaries(limit=args.limit)
+        score_summaries(limit=args.limit, concurrency=args.concurrency)
     elif command == "export":
-        export_brief(date=args.date, min_score=args.min_score)
+        export_brief(
+            limit=args.limit,
+            date=args.date,
+            min_score=args.min_score,
+            report_tag=args.report_tag,
+            skip_exported=args.skip_exported,
+            record_history=args.record_history,
+            output_base=args.output,
+        )
     else:
         parser.error(f"Unknown command: {command}")
 

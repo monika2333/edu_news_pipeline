@@ -1,16 +1,76 @@
 ﻿from __future__ import annotations
 
-from typing import Any, Dict
+import time
+from typing import Any, Dict, Optional
+
+import requests
+
+from src.config import get_settings
+
+_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
-def build_summary_payload(article: Dict[str, Any]) -> str:
-    """Prepare the prompt/context sent to the LLM."""
-    raise NotImplementedError("build_summary_payload needs an implementation")
+def build_summary_payload(article: Dict[str, Any]) -> Dict[str, Any]:
+    """Construct the chat completion payload for the summarisation request."""
+
+    title = article.get("title")
+    content = article.get("content") or ""
+    if not content:
+        raise ValueError("Article content is required for summarisation")
+    prompt_parts = []
+    if title:
+        prompt_parts.append(f"标题：{title}")
+    prompt_parts.append("正文：")
+    prompt_parts.append(str(content))
+    message = "请总结下面的教育新闻，并直接输出简洁的中文摘要：\n" + "\n".join(prompt_parts)
+    return {"messages": [{"role": "user", "content": message}]}
 
 
-def summarise(article: Dict[str, Any]) -> Dict[str, Any]:
-    """Invoke the LLM and return the structured summary result."""
-    raise NotImplementedError("summarise needs an implementation")
+def summarise(article: Dict[str, Any], *, retries: int = 4, timeout: int = 60) -> Dict[str, Any]:
+    """Call SiliconFlow chat completions API to summarise an article."""
+
+    settings = get_settings()
+    api_key = settings.siliconflow_api_key
+    if not api_key:
+        raise RuntimeError("Missing SILICONFLOW_API_KEY environment variable")
+
+    payload = build_summary_payload(article)
+    payload.update(
+        {
+            "model": settings.siliconflow_model_name,
+            "temperature": 0.2,
+            "max_tokens": 512,
+        }
+    )
+    if settings.siliconflow_enable_thinking:
+        payload["enable_thinking"] = True
+
+    url = f"{settings.siliconflow_base_url.rstrip('/')}/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+    backoff = 1.0
+    last_error: Optional[Exception] = None
+    for _ in range(max(1, retries)):
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=timeout)
+            if response.status_code == 200:
+                data = response.json()
+                summary = (data["choices"][0]["message"]["content"] or "").strip()
+                return {
+                    "summary": summary,
+                    "model": settings.siliconflow_model_name,
+                    "raw": data,
+                }
+            if response.status_code in _RETRYABLE_STATUS:
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 8)
+                continue
+            last_error = RuntimeError(f"API {response.status_code}: {response.text[:160]}")
+        except Exception as exc:
+            last_error = exc
+        time.sleep(backoff)
+        backoff = min(backoff * 2, 8)
+    raise last_error or RuntimeError("Summarisation call failed")
 
 
 __all__ = ["build_summary_payload", "summarise"]

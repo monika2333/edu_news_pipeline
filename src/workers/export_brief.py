@@ -95,11 +95,27 @@ def generate_output_path(base_path: Path, report_tag: str) -> Path:
     return base_path.parent / f"{base}_{safe_tag}{suffix}"
 
 
+
+def _ensure_unique_output(path: Path) -> Path:
+    """Return a path with numeric suffixes when the target already exists."""
+    if not path.exists():
+        return path
+    parent = path.parent
+    stem = path.stem
+    suffix = path.suffix
+    counter = 1
+    while True:
+        candidate = parent / f"{stem}({counter}){suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
 def run(
     limit: Optional[int] = None,
     *,
     date: Optional[str] = None,
-    min_score: int = 70,
+    min_score: int = 60,
     report_tag: Optional[str] = None,
     skip_exported: bool = True,
     record_history: bool = True,
@@ -167,6 +183,7 @@ def run(
             return
 
         final_output = generate_output_path(base_output, tag)
+        final_output = _ensure_unique_output(final_output)
         final_output.parent.mkdir(parents=True, exist_ok=True)
         final_output.write_text("\n\n".join(text_entries), encoding="utf-8")
 

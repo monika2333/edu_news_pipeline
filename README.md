@@ -15,7 +15,7 @@ All steps are available through the CLI wrapper:
 python run_pipeline.py crawl --limit 500
 python run_pipeline.py summarize --limit 100
 python run_pipeline.py score --limit 100
-python run_pipeline.py export --min-score 70 --limit 50
+python run_pipeline.py export --min-score 60 --limit 50
 ```
 
 Use `-h` on any command to see flags.
@@ -82,6 +82,8 @@ Supabase credentials must be present before running any worker.
 
 ### Export Worker
 
+- Default min score: 60 (override with `--min-score`).
+- Existing output files get numbered suffixes (e.g. `(1)`, `(2)`) to avoid overwriting.
 - Command: `python run_pipeline.py export`
 - Pulls high-correlation summaries from `news_summaries`
 - Writes a text brief (defaults to `outputs/high_correlation_summaries_<tag>.txt`)

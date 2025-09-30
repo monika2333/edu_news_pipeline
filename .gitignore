@@ -20,18 +20,9 @@ bin-release/
 __pycache__/
 *.pyc
 
-# Logs
-logs/
-*.log
-*.log.*
-
 # Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
 # should NOT be excluded as they contain compiler settings and other important
 # information for Eclipse / Flash Builder.
-
-# AuthorFetch generated data
-AuthorFetch/*.xlsx
-AuthorFetch/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
 
 # SQLite databases
 *.sqlite3
@@ -54,10 +45,8 @@ outputs/
 # Claude Code configuration
 .claude/
 
-# BMAD (local only)
-.bmad-core/
-.bmad-*/
-
 # Replace news JGW txt files
 replace-news-JGW/*.txt
 data/author_tokens.txt
+data/summarized_cursor.json
+

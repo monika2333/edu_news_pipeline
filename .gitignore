@@ -60,3 +60,4 @@ outputs/
 
 # Replace news JGW txt files
 replace-news-JGW/*.txt
+data/author_tokens.txt

@@ -1,13 +1,16 @@
 ﻿# 教育新闻自动化流水线
 
 ## 项目概览
-- `tools/toutiao_scraper.py` 抓取今日头条作者主页并写入 Supabase `toutiao_articles` 表。
-- `tools/summarize_supabase.py` 读取 `toutiao_articles`，按 `education_keywords.txt` 过滤后调用 SiliconFlow 生成摘要，upsert 至 `news_summaries`。
-- `tools/score_correlation_supabase.py` 对 `news_summaries` 内缺失评分的文章调用 LLM，写回 `correlation` 分值。
-- `tools/export_high_correlation_supabase.py` 从 `news_summaries` 导出高分摘要，并在 `brief_batches`/`brief_items` 追踪导出历史。
+- python run_pipeline.py crawl ��ȡ����ͷ��ר����д�� Supabase 	outiao_articles ����
+- 	ools/summarize_supabase.py ��ȡ 	outiao_articles���� education_keywords.txt ���˺���� SiliconFlow ����ժҪ��upsert �� 
+ews_summaries��
+- 	ools/score_correlation_supabase.py �� 
+ews_summaries ��ȱʧ���ֵ����µ��� LLM��д�� correlation ��ֵ��
+- 	ools/export_high_correlation_supabase.py �� 
+ews_summaries �����߷�ժҪ������ rief_batches/rief_items ׷�ٵ�����ʷ��
 
 ## 目录速览
-- `tools/toutiao_scraper.py` / `tools/author.txt`：抓取脚本与作者列表示例。
+   - `data/author_tokens.txt` lists tokens or profile URLs (# for comments).
 - `tools/summarize_supabase.py`：摘要生成与 `news_summaries` 管理。
 - `tools/score_correlation_supabase.py`：教育相关度评分，输出 `correlation`。
 - `tools/export_high_correlation_supabase.py`：基于 `news_summaries` 导出文本并记录批次。
@@ -45,9 +48,9 @@
 ## 典型流程
 1. **抓取今日头条作者**
    ```bash
-   python tools/toutiao_scraper.py \
-     --input tools/author.txt \
-     --limit 150 \
+  python run_pipeline.py crawl \\\
+    --limit 150 \\\
+    --concurrency 5
    ```
    - `author.txt` 每行一个 token 或主页 URL，`#` 为注释。
    - 设置 Supabase Postgres 凭据并安装 `psycopg` 后，脚本会写入 `toutiao_articles`（可用 `--supabase-table` 指定目标表，`--reset-supabase-table` 清空重建）。

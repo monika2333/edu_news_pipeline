@@ -39,7 +39,7 @@ def run(limit: int = 100, *, concurrency: Optional[int] = None) -> None:
             for row in rows:
                 try:
                     value = _score_item(row)
-                    adapter.update_relevance_score(row.article_id, value)
+                    adapter.update_correlation(row.article_id, value)
                     success += 1
                     log_info(WORKER, f"OK {row.article_id}: {value}")
                 except Exception as exc:
@@ -52,7 +52,7 @@ def run(limit: int = 100, *, concurrency: Optional[int] = None) -> None:
                     article_id = future_map[future]
                     try:
                         value = future.result()
-                        adapter.update_relevance_score(article_id, value)
+                        adapter.update_correlation(article_id, value)
                         success += 1
                         log_info(WORKER, f"OK {article_id}: {value}")
                     except Exception as exc:

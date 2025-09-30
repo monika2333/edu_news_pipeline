@@ -96,7 +96,7 @@ def _build_supabase_config(table: str, reset: bool, skip: bool) -> Optional[Supa
     return build_supabase_config(args)
 
 
-def run(limit: int = 50, *, concurrency: Optional[int] = None) -> None:  # pylint: disable=unused-argument
+def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:  # pylint: disable=unused-argument
     settings = get_settings()
 
     authors_path = _resolve_authors_path()

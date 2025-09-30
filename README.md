@@ -2,8 +2,7 @@
 
 ## 项目概览
 - `python run_pipeline.py crawl` 获取今日头条专栏写入 Supabase `toutiao_articles` 表
-- 	ools/summarize_supabase.py ��ȡ 	outiao_articles���� education_keywords.txt ���˺���� SiliconFlow ����ժҪ��upsert �� 
-ews_summaries��
+- `python run_pipeline.py score` computes Supabase `news_summaries` correlation via LLM.
 - 	ools/score_correlation_supabase.py �� 
 ews_summaries ��ȱʧ���ֵ����µ��� LLM��д�� correlation ��ֵ��
 - 	ools/export_high_correlation_supabase.py �� 
@@ -11,8 +10,8 @@ ews_summaries �����߷�ժҪ������ rief_batches/rief_ite
 
 ## 目录速览
    - `data/author_tokens.txt` lists tokens or profile URLs (# for comments).
-- `tools/summarize_supabase.py`：摘要生成与 `news_summaries` 管理。
-- `tools/score_correlation_supabase.py`：教育相关度评分，输出 `correlation`。
+ - run_pipeline.py summarize generates summaries into Supabase news_summaries.
+- `python run_pipeline.py score` generates correlation scores for `news_summaries`.
 - `tools/export_high_correlation_supabase.py`：基于 `news_summaries` 导出文本并记录批次。
 - `tools/supabase_adapter.py`：Supabase 访问封装，统一读取/写入逻辑。
 - `supabase/schema.sql`：数据库结构模板，可在 Supabase 项目中初始化。
@@ -58,7 +57,6 @@ ews_summaries �����߷�ժҪ������ rief_batches/rief_ite
 
 2. **关键词过滤 + 摘要**
    ```bash
-   python tools/summarize_supabase.py \
      --keywords education_keywords.txt \
      --limit 200 \
      --concurrency 5
@@ -70,7 +68,7 @@ ews_summaries �����߷�ժҪ������ rief_batches/rief_ite
 
 3. **相关度评分**
    ```bash
-   python tools/score_correlation_supabase.py --limit 200 --concurrency 5
+   python run_pipeline.py score --limit 200 --concurrency 5
    ```
    - 选择 `news_summaries` 中 `correlation` 为空的记录。
    - LLM 输出 0-100 分，写回 `correlation`。

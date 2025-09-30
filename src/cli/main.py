@@ -18,7 +18,7 @@ def _positive_int(value: str) -> int:
 
 def _add_crawl(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("crawl", help="Collect fresh Toutiao articles")
-    parser.add_argument("--limit", type=_positive_int, default=50, help="Max number of feed items to ingest")
+    parser.add_argument("--limit", type=_positive_int, default=500, help="Max number of feed items to ingest")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
 
 

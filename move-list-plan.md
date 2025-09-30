@@ -1,4 +1,4 @@
-喜欢你这种“把程序想成一群小工人”的感觉～这正是把项目做大做稳的关键思路 👷‍♀️👷‍♂️
+﻿喜欢你这种“把程序想成一群小工人”的感觉～这正是把项目做大做稳的关键思路 👷‍♀️👷‍♂️
 
 你现在的结构**已经能用**，但为了让“多 worker 并行 + 后续好扩展”，我建议做一版**最小代价的整理**：不推倒重来，只是挪挪位置、定几个规矩。下面给你一个“**一步步落地的梳理方案**”。
 
@@ -214,3 +214,13 @@ class State:
 
 * `src/` 这套目录的**空文件骨架**直接发你（可复制粘贴），
 * 再给你一个 **`.gitignore` 模板** 和 **`config.py` 小样**，让你 10 分钟就能完成重命名与迁移。
+---
+
+## Execution Plan (2025-09-30)
+
+- [x] Bootstrap core skeleton: add `src/config.py` and `src/domain/` to centralize settings, states, and scoring logic.
+- [ ] Migrate active tool scripts into `src/adapters/` or `src/workers/` to remove duplicate pipelines under `tools/`.
+- [ ] Standardize worker interface: ensure each module in `src/workers/` exposes `run(limit=...)` and advances process states with logging hooks.
+- [ ] Align CLI coverage: extend `src/cli/main.py` so every worker entrypoint is available via subcommands and options.
+- [ ] Sync docs and smoke checks: refresh `README.md`, scheduled commands, and add minimal tests to validate the refactor.
+

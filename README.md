@@ -12,7 +12,7 @@ ews_summaries �����߷�ժҪ������ rief_batches/rief_ite
    - `data/author_tokens.txt` lists tokens or profile URLs (# for comments).
  - run_pipeline.py summarize generates summaries into Supabase news_summaries.
 - `python run_pipeline.py score` generates correlation scores for `news_summaries`.
-- `tools/export_high_correlation_supabase.py`：基于 `news_summaries` 导出文本并记录批次。
+- `python run_pipeline.py export`：基于 `news_summaries` 导出文本并记录批次。
 - `tools/supabase_adapter.py`：Supabase 访问封装，统一读取/写入逻辑。
 - `supabase/schema.sql`：数据库结构模板，可在 Supabase 项目中初始化。
 - `education_keywords.txt`：教育领域关键词（UTF-8，运行前请确认编码正确）。
@@ -75,7 +75,7 @@ ews_summaries �����߷�ժҪ������ rief_batches/rief_ite
 
 4. **导出高相关摘要**
    ```bash
-   python tools/export_high_correlation_supabase.py \
+   python run_pipeline.py export \"
      --min-score 60 \
      --report-tag 2025-09-27-AM \
    ```

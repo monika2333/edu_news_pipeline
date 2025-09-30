@@ -369,35 +369,42 @@ class SupabaseAdapter:
     # Export helpers
     # ------------------------------------------------------------------
     def fetch_export_candidates(self, min_score: float) -> List[ExportCandidate]:
+        columns = "article_id, title, llm_summary, content_markdown, correlation, url, source, publish_time_iso, publish_time"
         resp = (
             self.client
-            .table("filtered_articles")
-            .select(
-                "id, raw_article_id, summary, relevance_score, processed_payload, \
-                 raw_articles(hash, title, content, url, published_at, sources(name))"
-            )
-            .gte("relevance_score", min_score)
-            .order("relevance_score", desc=True)
+            .table("news_summaries")
+            .select(columns)
+            .gte("correlation", min_score)
+            .order("correlation", desc=True)
             .execute()
         )
         out: List[ExportCandidate] = []
         for row in resp.data or []:
-            raw = row.get("raw_articles") or {}
-            processed_payload = row.get("processed_payload") or {}
-            source_llm = processed_payload.get("source_llm") if isinstance(processed_payload, dict) else None
+            article_id = str(row.get("article_id") or "")
+            if not article_id:
+                continue
+            title = row.get("title")
+            summary = row.get("llm_summary") or ""
+            content = row.get("content_markdown") or ""
+            correlation = float(row.get("correlation") or 0)
+            url = row.get("url")
+            published_at = row.get("publish_time_iso") or row.get("publish_time")
+            source_name = row.get("source")
+            source_llm = None
+            article_hash = self._article_hash(article_id, url, title)
             out.append(
                 ExportCandidate(
-                    filtered_article_id=str(row["id"]),
-                    raw_article_id=str(row.get("raw_article_id")),
-                    article_hash=str(raw.get("hash")),
-                    title=raw.get("title"),
-                    summary=row.get("summary") or "",
-                    content=str(raw.get("content") or ""),
-                    source=((raw.get("sources") or {}).get("name") if isinstance(raw.get("sources"), dict) else None),
+                    filtered_article_id=article_id,
+                    raw_article_id=article_id,
+                    article_hash=article_hash,
+                    title=title,
+                    summary=str(summary),
+                    content=str(content),
+                    source=source_name,
                     source_llm=source_llm,
-                    relevance_score=float(row.get("relevance_score") or 0),
-                    original_url=raw.get("url"),
-                    published_at=raw.get("published_at"),
+                    relevance_score=correlation,
+                    original_url=url,
+                    published_at=published_at,
                 )
             )
         return out

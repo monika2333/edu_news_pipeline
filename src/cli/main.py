@@ -26,6 +26,7 @@ def _add_score(subparsers: argparse._SubParsersAction) -> None:
 
 def _add_export(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("export", help="Export high scoring summaries")
+    parser.add_argument("--limit", type=int, default=None, help="Max number of items to export")
     parser.add_argument("--date", type=str, default=None, help="Report date (YYYY-MM-DD). Defaults to today")
     parser.add_argument("--min-score", type=int, default=60, help="Minimum correlation score to include")
 
@@ -52,9 +53,10 @@ def main(argv: list[str] | None = None) -> None:
     elif command == "score":
         score_summaries(limit=args.limit)
     elif command == "export":
-        export_brief(date=args.date, min_score=args.min_score)
+        export_brief(limit=args.limit, date=args.date, min_score=args.min_score)
     else:
         parser.error(f"Unknown command: {command}")
 
 
 __all__ = ["build_parser", "main"]
+

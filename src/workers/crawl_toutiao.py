@@ -1,13 +1,16 @@
 ﻿from __future__ import annotations
 
+from typing import Optional
 
-def run(limit: int = 50) -> None:
-    """Collect new Toutiao articles and persist them.
+from src.workers import worker_session
 
-    Port the ingestion logic from `tools/toutiao_scraper.py` into this worker
-    so it can be scheduled independently.
-    """
-    raise NotImplementedError("crawl_toutiao.run needs an implementation")
+WORKER = "crawl"
+
+
+def run(limit: int = 50, *, concurrency: Optional[int] = None) -> None:
+    """Collect new Toutiao articles and persist them."""
+    with worker_session(WORKER, limit=limit):
+        raise NotImplementedError("crawl_toutiao.run needs an implementation")
 
 
 __all__ = ["run"]

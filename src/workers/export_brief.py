@@ -6,6 +6,9 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from src.adapters.db_supabase import get_adapter
 from src.domain import ExportCandidate
+from src.workers import log_info, log_summary, worker_session
+
+WORKER = "export"
 
 CATEGORY_RULES: Sequence[Tuple[str, Tuple[str, ...]]] = (
     (
@@ -93,8 +96,9 @@ def generate_output_path(base_path: Path, report_tag: str) -> Path:
 
 
 def run(
-    date: Optional[str] = None,
+    limit: Optional[int] = None,
     *,
+    date: Optional[str] = None,
     min_score: int = 70,
     report_tag: Optional[str] = None,
     skip_exported: bool = True,
@@ -103,89 +107,86 @@ def run(
 ) -> None:
     adapter = get_adapter()
 
-    tag = generate_report_tag(date, report_tag)
-    base_output = output_base or Path("outputs") / "high_correlation_summaries.txt"
-    if not base_output.is_absolute():
-        base_output = (Path.cwd() / base_output).resolve()
+    with worker_session(WORKER, limit=limit if limit is not None else min_score):
+        tag = generate_report_tag(date, report_tag)
+        base_output = output_base or Path("outputs") / "high_correlation_summaries.txt"
+        if not base_output.is_absolute():
+            base_output = (Path.cwd() / base_output).resolve()
 
-    candidates = adapter.fetch_export_candidates(min_score)
-    if not candidates:
-        print("No filtered articles meet the score threshold.")
-        return
+        candidates = adapter.fetch_export_candidates(min_score)
+        if not candidates:
+            log_info(WORKER, "No filtered articles meet the score threshold.")
+            return
+        if limit is not None:
+            candidates = candidates[:max(0, limit)]
 
-    existing_ids: Set[str] = set()
-    global_exported: Set[str] = set()
-    if skip_exported:
-        existing_ids, _ = adapter.get_export_history(tag)
-        global_exported = adapter.get_all_exported_article_ids()
+        existing_ids: Set[str] = set()
+        global_exported: Set[str] = set()
+        if skip_exported:
+            existing_ids, _ = adapter.get_export_history(tag)
+            global_exported = adapter.get_all_exported_article_ids()
 
-    grouped_entries: Dict[str, List[str]] = {category: [] for category in CATEGORY_ORDER}
-    grouped_candidates: Dict[str, List[ExportCandidate]] = {category: [] for category in CATEGORY_ORDER}
+        grouped_entries: Dict[str, List[str]] = {category: [] for category in CATEGORY_ORDER}
+        grouped_candidates: Dict[str, List[ExportCandidate]] = {category: [] for category in CATEGORY_ORDER}
 
-    skipped_current_tag = 0
-    skipped_previous_reports = 0
+        skipped_current_tag = 0
+        skipped_previous_reports = 0
 
-    for candidate in candidates:
-        article_id = candidate.filtered_article_id
-        if skip_exported and article_id in global_exported:
-            if article_id in existing_ids:
-                skipped_current_tag += 1
+        for candidate in candidates:
+            article_id = candidate.filtered_article_id
+            if skip_exported and article_id in global_exported:
+                if article_id in existing_ids:
+                    skipped_current_tag += 1
+                else:
+                    skipped_previous_reports += 1
+                continue
+            category = classify_category(candidate.source, candidate.title, candidate.summary, candidate.content)
+            summary_line = candidate.summary or ""
+            if candidate.source:
+                entry = f"{candidate.title or ''}\n{summary_line}（{candidate.source}）"
             else:
-                skipped_previous_reports += 1
-            continue
-        category = classify_category(candidate.source, candidate.title, candidate.summary, candidate.content)
-        summary_line = candidate.summary or ""
-        if candidate.source:
-            entry = f"{candidate.title or ''}\n{summary_line}（{candidate.source}）"
-        else:
-            entry = f"{candidate.title or ''}\n{summary_line}"
-        grouped_entries.setdefault(category, []).append(entry)
-        grouped_candidates.setdefault(category, []).append(candidate)
+                entry = f"{candidate.title or ''}\n{summary_line}"
+            grouped_entries.setdefault(category, []).append(entry)
+            grouped_candidates.setdefault(category, []).append(candidate)
 
-    category_counts = {category: len(grouped_entries.get(category, [])) for category in CATEGORY_ORDER}
+        category_counts = {category: len(grouped_entries.get(category, [])) for category in CATEGORY_ORDER}
 
-    export_payload: List[Tuple[ExportCandidate, str]] = []
-    text_entries: List[str] = []
-    for category in CATEGORY_ORDER:
-        items = grouped_entries.get(category, [])
-        cand_items = grouped_candidates.get(category, [])
-        if not items:
-            continue
-        section = SECTION_MAP.get(category, "other")
-        text_entries.extend(items)
-        export_payload.extend((cand, section) for cand in cand_items)
+        export_payload: List[Tuple[ExportCandidate, str]] = []
+        text_entries: List[str] = []
+        for category in CATEGORY_ORDER:
+            items = grouped_entries.get(category, [])
+            cand_items = grouped_candidates.get(category, [])
+            if not items:
+                continue
+            section = SECTION_MAP.get(category, "other")
+            text_entries.extend(items)
+            export_payload.extend((cand, section) for cand in cand_items)
 
-    if not text_entries:
-        print("No entries to export after filtering/skip logic.")
-        return
+        if not text_entries:
+            log_info(WORKER, "No entries to export after filtering/skip logic.")
+            return
 
-    final_output = generate_output_path(base_output, tag)
-    final_output.parent.mkdir(parents=True, exist_ok=True)
-    final_output.write_text("\n\n".join(text_entries), encoding="utf-8")
+        final_output = generate_output_path(base_output, tag)
+        final_output.parent.mkdir(parents=True, exist_ok=True)
+        final_output.write_text("\n\n".join(text_entries), encoding="utf-8")
 
-    if record_history and export_payload:
-        adapter.record_export(tag, export_payload, output_path=str(final_output))
+        if record_history and export_payload:
+            adapter.record_export(tag, export_payload, output_path=str(final_output))
 
-    category_summary = "; ".join(f"{category}:{count}" for category, count in category_counts.items())
-    total_skipped = skipped_current_tag + skipped_previous_reports
-    skip_detail = ""
-    if total_skipped:
-        detail_parts = []
-        if skipped_current_tag:
-            detail_parts.append(f"this_tag:{skipped_current_tag}")
-        if skipped_previous_reports:
-            detail_parts.append(f"previous_tags:{skipped_previous_reports}")
-        if detail_parts:
-            skip_detail = f" [{', '.join(detail_parts)}]"
+        category_summary = "; ".join(f"{category}:{count}" for category, count in category_counts.items())
+        total_skipped = skipped_current_tag + skipped_previous_reports
+        if category_summary:
+            log_info(WORKER, f"category breakdown: {category_summary}")
+        if total_skipped:
+            detail = []
+            if skipped_current_tag:
+                detail.append(f"this_tag:{skipped_current_tag}")
+            if skipped_previous_reports:
+                detail.append(f"previous_tags:{skipped_previous_reports}")
+            log_info(WORKER, "skipped " + ", ".join(detail))
 
-    print(
-        f"exported={len(export_payload)} skipped={total_skipped}{skip_detail} -> {final_output}"
-    )
-    if category_summary:
-        print(f"category breakdown: {category_summary}")
+        log_info(WORKER, f"output -> {final_output}")
+        log_summary(WORKER, ok=len(export_payload), failed=0, skipped=total_skipped if total_skipped else None)
 
 
 __all__ = ["run"]
-
-
-

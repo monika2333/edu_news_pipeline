@@ -9,11 +9,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional, Sequence
 
+from src.adapters.db_supabase import SupabaseAdapter, get_adapter
 from src.workers.crawl_toutiao import run as run_crawl
 from src.workers.export_brief import run as run_export
 from src.workers.score import run as run_score
 from src.workers.summarize import run as run_summarize
-
 
 StepHandler = Callable[[], Optional[Dict[str, str]]]
 DEFAULT_PIPELINE: Sequence[str] = ("crawl", "summarize", "score", "export")
@@ -66,6 +66,96 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _truncate(value: Optional[str], limit: int) -> Optional[str]:
+    if value is None:
+        return None
+    if len(value) <= limit:
+        return value
+    return value[: limit - 3] + "..."
+
+
+def _maybe_get_adapter(enable: bool, provided: Optional[SupabaseAdapter]) -> Optional[SupabaseAdapter]:
+    if not enable:
+        return None
+    if provided is not None:
+        return provided
+    try:
+        return get_adapter()
+    except Exception as exc:  # pragma: no cover - metadata failures should not break runs
+        print(f"[pipeline] warning: Supabase adapter unavailable: {exc}", file=sys.stderr)
+        return None
+
+
+def _record_run_start(
+    adapter: Optional[SupabaseAdapter],
+    *,
+    run_id: str,
+    plan: Sequence[str],
+    trigger_source: Optional[str],
+    started_at: datetime,
+) -> None:
+    if adapter is None:
+        return
+    try:
+        adapter.record_pipeline_run_start(
+            run_id=run_id,
+            started_at=started_at,
+            plan=plan,
+            trigger_source=trigger_source,
+        )
+    except Exception as exc:  # pragma: no cover - defensive logging
+        print(f"[pipeline] warning: failed to record run start: {exc}", file=sys.stderr)
+
+
+def _record_run_step(
+    adapter: Optional[SupabaseAdapter],
+    *,
+    run_id: str,
+    order_index: int,
+    step: StepResult,
+) -> None:
+    if adapter is None:
+        return
+    try:
+        adapter.record_pipeline_run_step(
+            run_id=run_id,
+            order_index=order_index,
+            step_name=step.name,
+            status=step.status,
+            started_at=step.started_at,
+            finished_at=step.finished_at,
+            duration_seconds=step.duration_seconds,
+            error=_truncate(step.error, 4000),
+        )
+    except Exception as exc:  # pragma: no cover - defensive logging
+        print(f"[pipeline] warning: failed to record step '{step.name}': {exc}", file=sys.stderr)
+
+
+def _record_run_finish(
+    adapter: Optional[SupabaseAdapter],
+    *,
+    run_id: str,
+    status: str,
+    finished_at: datetime,
+    steps_completed: int,
+    artifacts: Dict[str, str],
+    error_summary: Optional[str],
+) -> None:
+    if adapter is None:
+        return
+    try:
+        adapter.finalize_pipeline_run(
+            run_id=run_id,
+            status=status,
+            finished_at=finished_at,
+            steps_completed=steps_completed,
+            artifacts=artifacts,
+            error_summary=_truncate(error_summary, 1024),
+        )
+    except Exception as exc:  # pragma: no cover - defensive logging
+        print(f"[pipeline] warning: failed to finalize run: {exc}", file=sys.stderr)
+
+
 def _run_crawl_step() -> Dict[str, str]:
     run_crawl()
     return {}
@@ -100,16 +190,24 @@ def run_pipeline_once(
     steps: Optional[Sequence[str]] = None,
     *,
     continue_on_error: bool = False,
+    trigger_source: Optional[str] = None,
+    record_metadata: bool = True,
+    adapter: Optional[SupabaseAdapter] = None,
 ) -> PipelineRunResult:
     plan = list(steps) if steps is not None else list(DEFAULT_PIPELINE)
     unknown = [name for name in plan if name not in STEP_REGISTRY]
     if unknown:
         raise ValueError(f"Unknown pipeline step(s): {', '.join(unknown)}")
 
+    trigger = trigger_source or "manual-cli"
     result = PipelineRunResult(run_id=uuid.uuid4().hex, started_at=_utcnow())
-    had_failure = False
+    metadata_adapter = _maybe_get_adapter(record_metadata, adapter)
+    _record_run_start(metadata_adapter, run_id=result.run_id, plan=plan, trigger_source=trigger, started_at=result.started_at)
 
-    for name in plan:
+    had_failure = False
+    error_summary: Optional[str] = None
+
+    for index, name in enumerate(plan, start=1):
         handler = STEP_REGISTRY[name]
         step_started = _utcnow()
         error_text: Optional[str] = None
@@ -124,29 +222,45 @@ def run_pipeline_once(
             had_failure = True
             error_text = "".join(traceback.format_exception(exc)).rstrip()
         step_finished = _utcnow()
-        result.steps.append(
-            StepResult(
-                name=name,
-                status=status,
-                started_at=step_started,
-                finished_at=step_finished,
-                error=error_text,
-            )
+        step_result = StepResult(
+            name=name,
+            status=status,
+            started_at=step_started,
+            finished_at=step_finished,
+            error=error_text,
         )
+        result.steps.append(step_result)
         if artifacts:
-            result.artifacts.update(artifacts)
-        if status != "success" and not continue_on_error:
-            break
+            result.artifacts.update({key: str(value) for key, value in artifacts.items()})
+        _record_run_step(metadata_adapter, run_id=result.run_id, order_index=index, step=step_result)
+
+        if status != "success":
+            if error_text and not error_summary:
+                first_line = error_text.splitlines()[0].strip()
+                error_summary = first_line or f"{name} step failed"
+            elif not error_summary:
+                error_summary = f"{name} step failed"
+            if not continue_on_error:
+                break
 
     result.finished_at = result.steps[-1].finished_at if result.steps else result.started_at
 
     if not had_failure:
         result.status = "success"
+    elif continue_on_error and len(result.steps) == len(plan):
+        result.status = "partial"
     else:
-        if continue_on_error and len(result.steps) == len(plan):
-            result.status = "partial"
-        else:
-            result.status = "failed"
+        result.status = "failed"
+
+    _record_run_finish(
+        metadata_adapter,
+        run_id=result.run_id,
+        status=result.status,
+        finished_at=result.finished_at or result.started_at,
+        steps_completed=len(result.steps),
+        artifacts=result.artifacts,
+        error_summary=error_summary,
+    )
 
     return result
 
@@ -180,6 +294,17 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Attempt remaining steps even if a step fails.",
     )
     parser.add_argument(
+        "--trigger-source",
+        type=str,
+        default="manual-cli",
+        help="Label describing who triggered the run (stored with metadata).",
+    )
+    parser.add_argument(
+        "--no-metadata",
+        action="store_true",
+        help="Skip Supabase metadata recording.",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Emit machine-readable JSON output.",
@@ -207,7 +332,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parse_args(argv)
     selected_steps = args.steps or list(DEFAULT_PIPELINE)
     plan = _format_plan(selected_steps, args.skip)
-    result = run_pipeline_once(plan, continue_on_error=args.continue_on_error)
+    result = run_pipeline_once(
+        plan,
+        continue_on_error=args.continue_on_error,
+        trigger_source=args.trigger_source,
+        record_metadata=not args.no_metadata,
+    )
 
     if args.json:
         print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))

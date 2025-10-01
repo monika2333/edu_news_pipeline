@@ -2,7 +2,7 @@
 
 import hashlib
 from datetime import datetime, timezone, date
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 try:
     from supabase import Client, create_client
@@ -557,6 +557,115 @@ class SupabaseAdapter:
             insert_payload.append(record)
         if insert_payload:
             self.client.table("brief_items").insert(insert_payload).execute()
+
+    # ------------------------------------------------------------------
+    # Pipeline run metadata
+    # ------------------------------------------------------------------
+    def record_pipeline_run_start(
+        self,
+        *,
+        run_id: str,
+        started_at: datetime,
+        plan: Sequence[str],
+        trigger_source: Optional[str] = None,
+    ) -> None:
+        payload = {
+            "run_id": run_id,
+            "status": "running",
+            "trigger_source": trigger_source,
+            "plan": list(plan),
+            "started_at": started_at.isoformat(),
+            "finished_at": None,
+            "steps_completed": 0,
+            "artifacts": None,
+            "error_summary": None,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self.client.table("pipeline_runs").upsert(payload, on_conflict="run_id").execute()
+
+    def record_pipeline_run_step(
+        self,
+        *,
+        run_id: str,
+        order_index: int,
+        step_name: str,
+        status: str,
+        started_at: datetime,
+        finished_at: datetime,
+        duration_seconds: Optional[float],
+        error: Optional[str],
+    ) -> None:
+        payload = {
+            "run_id": run_id,
+            "order_index": order_index,
+            "step_name": step_name,
+            "status": status,
+            "started_at": started_at.isoformat(),
+            "finished_at": finished_at.isoformat(),
+            "duration_seconds": duration_seconds,
+            "error": error,
+        }
+        self.client.table("pipeline_run_steps").insert(payload).execute()
+        self.client.table("pipeline_runs").update(
+            {
+                "steps_completed": order_index,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("run_id", run_id).execute()
+
+    def finalize_pipeline_run(
+        self,
+        *,
+        run_id: str,
+        status: str,
+        finished_at: datetime,
+        steps_completed: int,
+        artifacts: Optional[Mapping[str, str]] = None,
+        error_summary: Optional[str] = None,
+    ) -> None:
+        payload = {
+            "status": status,
+            "finished_at": finished_at.isoformat(),
+            "steps_completed": steps_completed,
+            "artifacts": dict(artifacts) if artifacts else None,
+            "error_summary": error_summary,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self.client.table("pipeline_runs").update(payload).eq("run_id", run_id).execute()
+
+    def fetch_pipeline_runs(self, limit: int = 20) -> List[Dict[str, Any]]:
+        resp = (
+            self.client
+            .table("pipeline_runs")
+            .select("*")
+            .order("started_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return resp.data or []
+
+    def fetch_pipeline_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        resp = (
+            self.client
+            .table("pipeline_runs")
+            .select("*")
+            .eq("run_id", run_id)
+            .limit(1)
+            .execute()
+        )
+        data = resp.data or []
+        return data[0] if data else None
+
+    def fetch_pipeline_run_steps(self, run_id: str) -> List[Dict[str, Any]]:
+        resp = (
+            self.client
+            .table("pipeline_run_steps")
+            .select("*")
+            .eq("run_id", run_id)
+            .order("order_index")
+            .execute()
+        )
+        return resp.data or []
 
     # ------------------------------------------------------------------
     # Misc utilities

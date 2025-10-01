@@ -19,8 +19,8 @@
 - Static/template assets stored under `src/console/web/` (templates, CSS).
 
 ## Supabase Metadata
-- Define/extend table (e.g., `pipeline_runs`) with fields: `id`, `started_at`, `finished_at`, `status`, `trigger_source`, `artifacts` (JSON), `log_excerpt`.
-- Pipeline updates this table at start/finish; console reads from it.
+- Tables `pipeline_runs` and `pipeline_run_steps` defined in `supabase/schema.sql` capture run lifecycle, step timings, artifacts, and error summaries.
+- Pipeline runner writes start/step/finish records; console will read from these tables for dashboards.
 
 ## Iteration Plan
 1. **Preparation**

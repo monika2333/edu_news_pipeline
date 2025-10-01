@@ -1,3 +1,5 @@
 ﻿playwright==1.55.0
 supabase==2.20.0
 requests>=2.32.0
+fastapi==0.111.0
+uvicorn[standard]==0.30.1

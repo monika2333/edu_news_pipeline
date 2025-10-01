@@ -1,8 +1,18 @@
-﻿from __future__ import annotations
+﻿
+from __future__ import annotations
 
+import sys
 from typing import Any, Dict, List, Optional
 
 from src.adapters.db_supabase import get_adapter
+
+
+def _get_adapter_safe():
+    try:
+        return get_adapter()
+    except Exception as exc:  # pragma: no cover - degrade gracefully
+        print(f"[console] warning: Supabase adapter unavailable: {exc}", file=sys.stderr)
+        return None
 
 
 def _normalize_artifacts(raw: Any) -> Dict[str, Any]:
@@ -23,19 +33,35 @@ def _serialize_item(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def get_latest_export(include_items: bool = False) -> Optional[Dict[str, Any]]:
-    adapter = get_adapter()
-    batch = adapter.fetch_latest_brief_batch()
+    adapter = _get_adapter_safe()
+    if adapter is None:
+        return None
+    try:
+        batch = adapter.fetch_latest_brief_batch()
+    except Exception as exc:  # pragma: no cover - degrade gracefully
+        print(f"[console] warning: failed to fetch latest brief batch: {exc}", file=sys.stderr)
+        return None
     if not batch:
         return None
     batch_id = str(batch.get("id"))
     artifacts = _normalize_artifacts(batch.get("export_payload"))
+    serialized_items = []
+    item_count = 0
     if include_items:
-        items = adapter.fetch_brief_items_by_batch(batch_id)
-        serialized_items = [_serialize_item(item) for item in items]
-        item_count = len(serialized_items)
+        try:
+            items = adapter.fetch_brief_items_by_batch(batch_id)
+            serialized_items = [_serialize_item(item) for item in items]
+            item_count = len(serialized_items)
+        except Exception as exc:  # pragma: no cover
+            print(f"[console] warning: failed to fetch export items: {exc}", file=sys.stderr)
+            serialized_items = []
+            item_count = 0
     else:
-        serialized_items = []
-        item_count = adapter.fetch_brief_item_count(batch_id)
+        try:
+            item_count = adapter.fetch_brief_item_count(batch_id)
+        except Exception as exc:  # pragma: no cover
+            print(f"[console] warning: failed to count export items: {exc}", file=sys.stderr)
+            item_count = 0
 
     result: Dict[str, Any] = {
         "batch_id": batch_id,

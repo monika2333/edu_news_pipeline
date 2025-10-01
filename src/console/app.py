@@ -1,8 +1,9 @@
 ﻿from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
-from src.console.routes import health, runs
+from src.console.routes import exports, health, runs, web
+from src.console.security import require_console_user
 
 
 def create_app() -> FastAPI:
@@ -13,8 +14,13 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
     )
+
+    protected_dependencies = [Depends(require_console_user)]
+
     app.include_router(health.router)
-    app.include_router(runs.router)
+    app.include_router(runs.router, dependencies=protected_dependencies)
+    app.include_router(exports.router, dependencies=protected_dependencies)
+    app.include_router(web.router, dependencies=protected_dependencies)
     return app
 
 

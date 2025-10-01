@@ -39,7 +39,8 @@
 5. **Operational Hardening**
    - Add structured logging + error handling around script execution.
    - Provide notification hooks (email/webhook placeholder).
-   - Document deployment steps in README (service startup, Task Scheduler configuration). 
+   - Document deployment steps in README (service startup, Task Scheduler configuration).
+   - Secure console endpoints with env-configurable auth (see docs/console_auth.md). 
 6. **Future Extensions** (optional backlog)
    - Introduce SQLAlchemy/SQLModel + Alembic when migrating to Postgres.
    - Add APScheduler or RQ for queued tasks + retries.
@@ -50,3 +51,5 @@
 - Review/confirm Supabase metadata schema.
 - Refactor pipeline entry point into reusable script.
 - Scaffold `src/console/` package and FastAPI app structure.
+
+

@@ -558,6 +558,40 @@ class SupabaseAdapter:
         if insert_payload:
             self.client.table("brief_items").insert(insert_payload).execute()
 
+    def fetch_latest_brief_batch(self) -> Optional[Dict[str, Any]]:
+        resp = (
+            self.client
+            .table("brief_batches")
+            .select("*")
+            .order("report_date", desc=True)
+            .order("sequence_no", desc=True)
+            .limit(1)
+            .execute()
+        )
+        data = resp.data or []
+        return data[0] if data else None
+
+    def fetch_brief_items_by_batch(self, batch_id: str) -> List[Dict[str, Any]]:
+        resp = (
+            self.client
+            .table("brief_items")
+            .select("id,article_id,section,order_index,final_summary,metadata")
+            .eq("brief_batch_id", batch_id)
+            .order("order_index")
+            .execute()
+        )
+        return resp.data or []
+
+    def fetch_brief_item_count(self, batch_id: str) -> int:
+        resp = (
+            self.client
+            .table("brief_items")
+            .select("id", count="exact")
+            .eq("brief_batch_id", batch_id)
+            .execute()
+        )
+        return int(resp.count or 0)
+
     # ------------------------------------------------------------------
     # Pipeline run metadata
     # ------------------------------------------------------------------

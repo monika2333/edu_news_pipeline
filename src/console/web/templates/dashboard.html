@@ -1,0 +1,274 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Edu News Console</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+        body {
+            margin: 0;
+            padding: 2rem;
+            background: #f5f5f5;
+            color: #222;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .card h2 {
+            margin-top: 0;
+            font-size: 1.25rem;
+        }
+        form label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 0.4rem;
+        }
+        form input[type="text"] {
+            width: 100%;
+            padding: 0.5rem;
+            margin-bottom: 1rem;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+        }
+        form .actions {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        button.primary {
+            background: #2563eb;
+            border: none;
+            color: #fff;
+            padding: 0.6rem 1.2rem;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        button.primary:hover {
+            background: #1d4ed8;
+        }
+        .checkbox {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 0.6rem;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: left;
+        }
+        .status {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }
+        .status.success { background: #dcfce7; color: #166534; }
+        .status.failed { background: #fee2e2; color: #991b1b; }
+        .status.partial { background: #fef3c7; color: #92400e; }
+        .flash {
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        .flash.success { background: #d1fae5; color: #065f46; }
+        .flash.error { background: #fee2e2; color: #7f1d1d; }
+        .steps-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .steps-list li {
+            padding: 0.4rem 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .muted {
+            color: #6b7280;
+            font-size: 0.9rem;
+        }
+        .export-meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 0.5rem 1rem;
+        }
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+            .actions {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            button.primary {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <div>
+        <h1>Edu News Console</h1>
+        <p class="muted">Monitor pipeline exports and trigger manual runs</p>
+    </div>
+    <nav>
+        <a href="{{ request.url_for('dashboard') }}">Dashboard</a>
+        |
+        <a href="{{ request.url_for('list_runs') }}">Runs API</a>
+        |
+        <a href="{{ request.url_for('latest_run') }}">Latest Run API</a>
+    </nav>
+</header>
+
+{% if message %}
+<div class="flash success">{{ message }}</div>
+{% endif %}
+{% if error %}
+<div class="flash error">{{ error }}</div>
+{% endif %}
+
+<section class="card">
+    <h2>Trigger Pipeline Run</h2>
+    <form method="post" action="{{ request.url_for('dashboard_trigger') }}">
+        <label for="steps">Steps (comma separated, optional)</label>
+        <input type="text" id="steps" name="steps" placeholder="crawl, summarize, score, export" />
+
+        <label for="skip">Skip Steps (comma separated, optional)</label>
+        <input type="text" id="skip" name="skip" placeholder="score" />
+
+        <div class="actions">
+            <button type="submit" class="primary">Trigger Run</button>
+            <label class="checkbox">
+                <input type="checkbox" name="continue_on_error" value="1" />
+                Continue on error
+            </label>
+        </div>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Latest Run</h2>
+    {% if latest_run %}
+        <p>
+            <strong>ID:</strong> {{ latest_run['run_id'] }}<br />
+            <strong>Status:</strong>
+            <span class="status {{ latest_run['status'] }}">{{ latest_run['status'] }}</span>
+            <br />
+            <strong>Started:</strong> {{ latest_run['started_at'] }}<br />
+            {% if latest_run['finished_at'] %}
+            <strong>Finished:</strong> {{ latest_run['finished_at'] }}
+            {% endif %}
+        </p>
+        {% if latest_run.get('steps') %}
+        <ul class="steps-list">
+            {% for step in latest_run['steps'] %}
+            <li>
+                <strong>{{ step['step_name'] }}</strong>
+                <span class="status {{ step['status'] }}">{{ step['status'] }}</span>
+                <div class="muted">{{ step['started_at'] }} → {{ step['finished_at'] }} ({{ '%.2f'|format(step['duration_seconds'] or 0) }}s)</div>
+                {% if step['error'] %}
+                <div class="muted">{{ step['error'] }}</div>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    {% else %}
+        <p class="muted">No pipeline runs recorded yet.</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h2>Latest Export</h2>
+    {% if latest_export %}
+        <div class="export-meta">
+            <div><strong>Batch ID:</strong> {{ latest_export['batch_id'] }}</div>
+            <div><strong>Report Date:</strong> {{ latest_export['report_date'] }}</div>
+            <div><strong>Sequence:</strong> {{ latest_export['sequence_no'] }}</div>
+            <div><strong>Generated By:</strong> {{ latest_export['generated_by'] }}</div>
+            <div><strong>Item Count:</strong> {{ latest_export['item_count'] }}</div>
+            {% if latest_export['export_payload'].get('output_path') %}
+            <div><strong>Output Path:</strong> {{ latest_export['export_payload']['output_path'] }}</div>
+            {% endif %}
+        </div>
+        {% if include_items and latest_export['items'] %}
+        <h3>Items</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Article</th>
+                    <th>Section</th>
+                    <th>Title</th>
+                    <th>Score</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in latest_export['items'] %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ item['article_id'] }}</td>
+                    <td>{{ item['section'] }}</td>
+                    <td>{{ item['metadata'].get('title') }}</td>
+                    <td>{{ item['metadata'].get('correlation') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+            <p class="muted">Item details hidden. <a href="{{ request.url_for('dashboard') }}?include_items=true">Show items</a></p>
+        {% endif %}
+    {% else %}
+        <p class="muted">No export batches found yet.</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h2>Recent Runs</h2>
+    {% if runs %}
+    <table>
+        <thead>
+            <tr>
+                <th>Run ID</th>
+                <th>Status</th>
+                <th>Triggered By</th>
+                <th>Started</th>
+                <th>Finished</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for run in runs %}
+            <tr>
+                <td><a href="{{ request.url_for('get_run', run_id=run['run_id']) }}">{{ run['run_id'] }}</a></td>
+                <td><span class="status {{ run['status'] }}">{{ run['status'] }}</span></td>
+                <td>{{ run['trigger_source'] or 'unknown' }}</td>
+                <td>{{ run['started_at'] }}</td>
+                <td>{{ run['finished_at'] or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+        <p class="muted">No runs to display.</p>
+    {% endif %}
+</section>
+
+</body>
+</html>

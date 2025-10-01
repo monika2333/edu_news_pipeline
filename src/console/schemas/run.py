@@ -32,8 +32,16 @@ class PipelineRunDetail(PipelineRun):
     steps: List[PipelineRunStep] = Field(default_factory=list)
 
 
+class PipelineRunTriggerRequest(BaseModel):
+    steps: Optional[List[str]] = None
+    skip: Optional[List[str]] = None
+    continue_on_error: bool = False
+    record_metadata: bool = True
+
+
 __all__ = [
     "PipelineRun",
     "PipelineRunDetail",
     "PipelineRunStep",
+    "PipelineRunTriggerRequest",
 ]

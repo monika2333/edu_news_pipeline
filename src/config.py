@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 from dataclasses import dataclass
@@ -80,6 +80,9 @@ class Settings:
     process_limit: Optional[int]
     default_concurrency: int
     keywords_path: Path
+    console_basic_username: Optional[str]
+    console_basic_password: Optional[str]
+    console_api_token: Optional[str]
 
     @property
     def effective_supabase_key(self) -> Optional[str]:
@@ -123,6 +126,10 @@ def get_settings() -> Settings:
     else:
         keywords_path = _REPO_ROOT / "education_keywords.txt"
 
+    console_basic_username = os.getenv("CONSOLE_BASIC_USERNAME")
+    console_basic_password = os.getenv("CONSOLE_BASIC_PASSWORD")
+    console_api_token = os.getenv("CONSOLE_API_TOKEN")
+
     keywords_path = keywords_path.resolve()
 
     return Settings(
@@ -143,10 +150,16 @@ def get_settings() -> Settings:
         process_limit=process_limit,
         default_concurrency=default_concurrency,
         keywords_path=keywords_path,
+        console_basic_username=console_basic_username,
+        console_basic_password=console_basic_password,
+        console_api_token=console_api_token,
     )
 
 
 __all__ = ["Settings", "get_settings", "load_environment"]
+
+
+
 
 
 

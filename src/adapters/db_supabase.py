@@ -290,7 +290,17 @@ class SupabaseAdapter:
         if deduped_keywords:
             payload["llm_keywords"] = deduped_keywords
         cleaned_payload = {key: value for key, value in payload.items() if value is not None}
-        self.client.table("news_summaries").upsert(cleaned_payload, on_conflict="article_id").execute()
+        try:
+            self.client.table("news_summaries").upsert(cleaned_payload, on_conflict="article_id").execute()
+        except Exception as exc:
+            message = getattr(exc, "message", None) or str(exc)
+            if "fetched_at" in message and "news_summaries" in message:
+                fallback_payload = {key: value for key, value in cleaned_payload.items() if key != "fetched_at"}
+                if fallback_payload == cleaned_payload:
+                    raise
+                self.client.table("news_summaries").upsert(fallback_payload, on_conflict="article_id").execute()
+            else:
+                raise
 
     def save_summary(
         self,

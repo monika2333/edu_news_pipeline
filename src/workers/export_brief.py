@@ -120,7 +120,7 @@ def run(
     skip_exported: bool = True,
     record_history: bool = True,
     output_base: Optional[Path] = None,
-) -> None:
+) -> Optional[Path]:
     adapter = get_adapter()
 
     with worker_session(WORKER, limit=limit if limit is not None else min_score):
@@ -204,6 +204,7 @@ def run(
 
         log_info(WORKER, f"output -> {final_output}")
         log_summary(WORKER, ok=len(export_payload), failed=0, skipped=total_skipped if total_skipped else None)
+        return final_output
 
 
 __all__ = ["run"]

@@ -130,6 +130,15 @@ MIT License (see repository root for details).
   ```
   Configure the trigger to run daily at your preferred time, enable "Run with highest privileges", and disable battery-stop conditions when needed.
 - Customise steps with script parameters such as `-Steps crawl summarize`, `-Skip score`, or `-ContinueOnError`. Logs default to `logs/pipeline_<timestamp>.log`; override via `-LogDirectory`.
+
+- For high-frequency refresh (e.g. crawl/summarize/score every 10 minutes), use `scripts/run_pipeline_every10.ps1` with a Task Scheduler trigger that repeats every 10 minutes ("Repeat task every" -> `10 minutes`, "for a duration of" -> `Indefinitely`).
+  Example action command:
+  ```powershell
+  powershell.exe -File "D:ƀprogram\edu_news_pipeline\scriptsun_pipeline_every10.ps1" -Python "C:\Path\To\python.exe" -LogDirectory "D:\logs\edu-news-10min"
+  ```
+  The script maintains a lock under `locks\pipeline_every10.lock` to avoid overlapping runs; optional `-ContinueOnError` keeps later steps running after a failure.
+- Continue using daily scheduling (see above) for the full crawl→export pipeline, and trigger `export` on demand when you need the latest brief.
+
 - For ad-hoc single steps, call the CLI directly (`python -m src.cli.main summarize --limit 50`).
 
 ## Legacy Tooling Sunset

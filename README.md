@@ -12,10 +12,10 @@ Automated pipeline for collecting Toutiao education articles, summarising them w
 All steps are available through the CLI wrapper:
 
 ```bash
-python run_pipeline.py crawl --limit 500
-python run_pipeline.py summarize --limit 100
-python run_pipeline.py score --limit 100
-python run_pipeline.py export --min-score 60 --limit 50
+python -m src.cli.main crawl --limit 500
+python -m src.cli.main summarize --limit 100
+python -m src.cli.main score --limit 100
+python -m src.cli.main export --min-score 60 --limit 50
 ```
 
 Use `-h` on any command to see flags.
@@ -25,7 +25,7 @@ Use `-h` on any command to see flags.
 - `data/author_tokens.txt` – List of Toutiao author tokens/URLs (one per line, `#` for comments).
 - `src/adapters/db_supabase.py` – Supabase access layer shared by all workers.
 - `src/workers/` – Implementations for `crawl`, `summarize`, `score`, and `export` steps.
-- `src/cli/main.py` – CLI entry point used by `run_pipeline.py`.
+- `src/cli/main.py` - CLI entry point for worker commands (`python -m src.cli.main ...`).
 - `supabase/` – Reference SQL schema for Supabase tables (run separately when provisioning a new project).
 
 ## Prerequisites
@@ -61,7 +61,7 @@ Supabase credentials must be present before running any worker.
 
 ### Crawl Worker
 
-- Command: `python run_pipeline.py crawl`
+- Command: `python -m src.cli.main crawl`
 - Default limit: 500 articles (clamped by `PROCESS_LIMIT` if set)
 - Reads author tokens from `TOUTIAO_AUTHORS_PATH`
 - Writes new rows to `toutiao_articles`
@@ -69,14 +69,14 @@ Supabase credentials must be present before running any worker.
 
 ### Summarise Worker
 
-- Command: `python run_pipeline.py summarize`
+- Command: `python -m src.cli.main summarize`
 - Uses `data/summarize_cursor.json` to resume from the last processed article
 - Filters content against keywords from `education_keywords.txt`
 - Stores generated summaries in `news_summaries`
 
 ### Score Worker
 
-- Command: `python run_pipeline.py score`
+- Command: `python -m src.cli.main score`
 - Selects `news_summaries` rows with `correlation` missing
 - Calls the LLM scoring adapter and saves the resulting `correlation`
 
@@ -84,7 +84,7 @@ Supabase credentials must be present before running any worker.
 
 - Default min score: 60 (override with `--min-score`).
 - Existing output files get numbered suffixes (e.g. `(1)`, `(2)`) to avoid overwriting.
-- Command: `python run_pipeline.py export`
+- Command: `python -m src.cli.main export`
 - Pulls high-correlation summaries from `news_summaries`
 - Writes a text brief (defaults to `outputs/high_correlation_summaries_<tag>.txt`)
 - Optionally records batches in Supabase (`brief_batches` / `brief_items`)
@@ -93,9 +93,9 @@ Supabase credentials must be present before running any worker.
 ## Development Notes
 
 - Source code lives under `src/`; the old `tools/` scripts have been removed in favour of the worker pipeline.
-- Tests: currently only placeholders in `tests/`; feel free to extend.
+- Tests: include a CLI smoke test in `tests/test_cli_parser.py`; extend with integration coverage as needed.
 - Formatting: project uses standard Python formatting (PEP 8). Run `python -m pip install black isort` and apply if needed.
-- When adding new workers or commands, expose them via `src/cli/main.py` so `run_pipeline.py` automatically supports them.
+- When adding new workers or commands, expose them via `src/cli/main.py` so they are available through `python -m src.cli.main ...`.
 
 ## Troubleshooting
 
@@ -112,16 +112,20 @@ MIT License (see repository root for details).
 
 ## Scheduling and Automation
 
-- 使用操作系统自带的调度器触发整条流水线，例如 Linux 上的 cron：
+- **Linux/macOS cron**: schedule the full pipeline with `scripts/run_pipeline_once.py` (default steps crawl -> summarize -> score -> export).
   ```bash
   0 9 * * * /usr/bin/python /path/to/repo/scripts/run_pipeline_once.py
   ```
-  Windows 上可在任务计划程序中新建任务，调用 `python scripts/run_pipeline_once.py`。
-- 需要自定义步骤时，可在计划任务里传参，例如 `python scripts/run_pipeline_once.py --steps crawl summarize --skip score`。
-- 调用单个 worker 时，推荐使用新的 CLI：`python -m src.cli.main summarize --limit 50`。`run_pipeline.py` 仍然保留作兼容层，未来确认没有旧流程依赖后会在一次版本更新中移除。
+- **Windows Task Scheduler**: use the helper script in this repo. Example action command:
+  ```powershell
+  powershell.exe -File "D:\600program\edu_news_pipeline\scripts\run_pipeline_daily.ps1" -Python "C:\Path\To\python.exe"
+  ```
+  Configure the trigger to run daily at your preferred time, enable "Run with highest privileges", and disable battery-stop conditions when needed.
+- Customise steps with script parameters such as `-Steps crawl summarize`, `-Skip score`, or `-ContinueOnError`. Logs default to `logs/pipeline_<timestamp>.log`; override via `-LogDirectory`.
+- For ad-hoc single steps, call the CLI directly (`python -m src.cli.main summarize --limit 50`).
 
 ## Legacy Tooling Sunset
 
-- 旧 `tools/` 目录已被 worker 管线替换，相关脚本现在只保留警告并转发到新的入口。
-- 计划在稳定运行一个月后（预计 2025-10-31）删掉这些兼容脚本，并在那之前完成内部脚本/文档的替换。
-- 如果外部还有依赖，请在上述日期前迁移至 `src/cli/main.py` 提供的命令或 `scripts/run_pipeline_once.py`。
+- The historical `tools/` directory has been removed; remaining shim scripts simply warn and forward to the worker entry points.
+- Target date to delete those shims entirely is 2025-10-31, after verifying no external automation depends on them.
+- Migrate any outstanding scripts to the new commands (`python -m src.cli.main ...`) or `scripts/run_pipeline_once.py` before that deadline.

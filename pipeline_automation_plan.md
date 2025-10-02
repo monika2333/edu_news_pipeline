@@ -11,6 +11,17 @@
 - 在服务器上为 `python scripts/run_pipeline_once.py` 配置计划任务（Windows 任务计划或 Linux cron）。
 - 使用默认步骤 `crawl -> summarize -> score -> export`，确保 Supabase 等依赖配置正确。
 - 运行后检查 `output/` 目录和控制台 API，确认日志、Supabase 元数据正常写入。
+- Windows 示例脚本：`scripts/run_pipeline_daily.ps1` 会自动写日志，可在计划任务里调用：
+  ```powershell
+  powershell.exe -File "D:\600program\edu_news_pipeline\scripts\run_pipeline_daily.ps1" -Python "C:\Users\me\AppData\Local\Programs\Python\Python311\python.exe"
+  ```
+  支持参数 `-Steps crawl summarize`、`-Skip score`、`-ContinueOnError`、`-LogDirectory "D:\logs\edu-news"`。
+- Windows 任务计划配置步骤：
+  1. 打开“任务计划程序”→“创建任务”。
+  2. 在“常规”里勾选“使用最高权限运行”，指定运行账号。
+  3. 在“触发器”添加“每天”触发时间，设定时区与开始时间。
+  4. 在“操作”选择“启动程序”，程序填 `powershell.exe`，参数填上面命令（记得用双引号包路径）。
+  5. 在“条件/设置”里关闭“使用电池时停止”并允许错过后尽快运行，保存即可。
 
 ### 2. 保持手动触发入口
 - 让 `run_console.py`（或 `uvicorn src.console.app:app`）常驻运行，可用 `systemd`、`supervisor`、`pm2` 等守护工具。

@@ -110,6 +110,14 @@ Supabase credentials must be present before running any worker.
 
 MIT License (see repository root for details).
 
+
+## Feishu Notifications
+
+- Set the FEISHU_* environment variables (ID, secret, and receive ID). Lowercase keys from older configs are still accepted.
+- After a successful export, the worker reads the generated brief and posts a short summary plus file path to Feishu.
+- The message includes category counts and the first few entries; additional items stay in the exported file.
+- Failures fall back gracefully and are logged in the export worker output.
+
 ## Scheduling and Automation
 
 - **Linux/macOS cron**: schedule the full pipeline with `scripts/run_pipeline_once.py` (default steps crawl -> summarize -> score -> export).

@@ -46,6 +46,15 @@ def load_environment() -> None:
     _ENV_LOADED = True
 
 
+
+
+def _get_env(*keys: str) -> Optional[str]:
+    for key in keys:
+        value = os.getenv(key)
+        if value:
+            return value
+    return None
+
 def _optional_int(value: Optional[str]) -> Optional[int]:
     if value is None or value == "":
         return None
@@ -83,6 +92,10 @@ class Settings:
     console_basic_username: Optional[str]
     console_basic_password: Optional[str]
     console_api_token: Optional[str]
+    feishu_app_id: Optional[str]
+    feishu_app_secret: Optional[str]
+    feishu_receive_id: Optional[str]
+    feishu_receive_id_type: str
 
     @property
     def effective_supabase_key(self) -> Optional[str]:
@@ -130,6 +143,13 @@ def get_settings() -> Settings:
     console_basic_password = os.getenv("CONSOLE_BASIC_PASSWORD")
     console_api_token = os.getenv("CONSOLE_API_TOKEN")
 
+    feishu_app_id = _get_env("FEISHU_APP_ID", "feishu_APP_ID")
+    feishu_app_secret = _get_env("FEISHU_APP_SECRET", "feishu_APP_Secret")
+    feishu_receive_id = _get_env("FEISHU_RECEIVE_ID", "my_open_id")
+    feishu_receive_id_type = os.getenv("FEISHU_RECEIVE_ID_TYPE", "open_id")
+    if feishu_receive_id_type not in {"open_id", "user_id", "union_id"}:
+        feishu_receive_id_type = "open_id"
+
     keywords_path = keywords_path.resolve()
 
     return Settings(
@@ -153,6 +173,10 @@ def get_settings() -> Settings:
         console_basic_username=console_basic_username,
         console_basic_password=console_basic_password,
         console_api_token=console_api_token,
+        feishu_app_id=feishu_app_id,
+        feishu_app_secret=feishu_app_secret,
+        feishu_receive_id=feishu_receive_id,
+        feishu_receive_id_type=feishu_receive_id_type,
     )
 
 

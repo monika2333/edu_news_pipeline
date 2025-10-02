@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from src.adapters.db_supabase import get_adapter
 from src.domain import ExportCandidate
+from src.notifications.feishu import FeishuConfigError, FeishuRequestError, notify_export_summary
 from src.workers import log_info, log_summary, worker_session
 
 WORKER = "export"
@@ -203,6 +204,21 @@ def run(
             log_info(WORKER, "skipped " + ", ".join(detail))
 
         log_info(WORKER, f"output -> {final_output}")
+
+        try:
+            notify_export_summary(
+                tag=tag,
+                output_path=final_output,
+                entries=text_entries,
+                category_counts=category_counts,
+            )
+            log_info(WORKER, "Feishu notification sent")
+        except FeishuConfigError:
+            log_info(WORKER, "Feishu notification skipped (missing credentials)")
+        except FeishuRequestError as exc:
+            log_info(WORKER, f"Feishu notification failed: {exc}")
+        except Exception as exc:  # pragma: no cover - defensive logging
+            log_info(WORKER, f"Feishu notification unexpected error: {exc}")
         log_summary(WORKER, ok=len(export_payload), failed=0, skipped=total_skipped if total_skipped else None)
         return final_output
 

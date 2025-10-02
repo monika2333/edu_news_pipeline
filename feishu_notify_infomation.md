@@ -108,4 +108,49 @@ else:
 - 机器人能力：[机器人概述](https://go.feishu.cn/s/6aRonz2AA04)  
 - 访问凭证获取：[获取访问凭证](https://go.feishu.cn/s/5_sDxlNO802)  
 - 用户ID获取：[用户身份概述](https://go.feishu.cn/s/63f3TEtPU02)  
-- 消息内容格式：[发送消息 content 结构](https://go.feishu.cn/s/60d1Y6W0s02)
+- 消息内容格式：[发送消息 content 结构](https://go.feishu.cn/s/60d1Y6W0s02)### �ļ���������
+- �������ϴ��ļ��ӿڣ�POST https://open.feishu.cn/open-apis/im/v1/files��Header ʹ�� Bearer token������ `file_type=stream`��`file_name=xxx.txt`��Body �� multipart/form-data Я�� `file`��
+- �ϴ��ɹ����� `data.file_key`�������÷�����Ϣ�ӿڣ�`msg_type` ��Ϊ `file`��`content` Ϊ `{ "file_key": "���ص� file_key" }`��
+- �������Ƶ����ļ������� 20MB�������޿ɿ���ѹ����������ӿ��緵�ط� 0 code������ʾ���Ȩ���������
+
+---
+要发送TXT文件附件并在手机上接收，流程与参考资料中**发送文件消息**的方式一致，但需注意TXT文件的上传参数配置。以下是具体步骤及参考资料支撑：
+
+
+## 步骤一：上传TXT文件获取`file_key`
+需先调用[上传文件](https://go.feishu.cn/s/61BYfgpwo01)接口将TXT文件上传至飞书开放平台，获取文件的唯一标识`file_key`。  
+1. **接口参数说明**：  
+   - `file_type`：TXT不属于接口枚举的文件类型（OPUS、MP4、PDF、DOC、XLS、PPT），需填`stream`。  
+   - `file_name`：带后缀的文件名（如`news.txt`）。  
+   - `file`：TXT文件的二进制内容。  
+   - 其他参数（如`duration`）：TXT文件无需填写，留空或省略。  
+2. **权限与凭证**：  
+   - 需开启应用的[机器人能力](https://go.feishu.cn/s/6dFbxHpwQ02)。  
+   - 使用`tenant_access_token`鉴权（参考[获取访问凭证](https://go.feishu.cn/s/5_sDxlNO802)）。  
+3. **响应**：上传成功后返回`file_key`（如`file_456a92d6-c6ea-4de4-ac3f-7afcf44ac78g`）。  
+
+**参考资料支撑**：  
+- 上传文件接口：[上传文件](https://go.feishu.cn/s/61BYfgpwo01)  
+- 访问凭证获取：[获取访问凭证](https://go.feishu.cn/s/5_sDxlNO802)  
+
+
+## 步骤二：发送包含TXT文件的消息
+调用[发送消息](https://go.feishu.cn/s/61BYfgpwE01)接口，将上传得到的`file_key`包含在消息内容中，发送至目标用户/群。  
+1. **请求体参数**：  
+   - `receive_id`：接收者ID（如用户的`open_id`，获取方式参考[如何获取Open ID](https://go.feishu.cn/s/6dXEOYS0I01)）。  
+   - `msg_type`：填`file`（文件消息类型）。  
+   - `content`：JSON字符串，格式为`{"file_key": "步骤一返回的file_key"}`。  
+2. **手机接收**：飞书手机端支持接收`file`类型消息，点击消息中的附件即可下载或查看TXT文件。  
+
+**参考资料支撑**：  
+- 发送消息接口：[发送消息](https://go.feishu.cn/s/61BYfgpwE01)  
+- 消息内容结构：[发送消息内容结构-文件](https://go.feishu.cn/s/60d1Y6W0s02#文件-file)  
+
+
+## 注意事项
+1. **文件大小限制**：上传的TXT文件大小不得超过30MB（参考[上传文件](https://go.feishu.cn/s/61BYfgpwo01)的使用限制）。  
+2. **编码问题**：上传文件时请确保TXT文件为UTF-8编码，避免手机端打开乱码。  
+3. **权限验证**：确保应用拥有`获取与上传图片或文件资源`权限（参考[上传文件](https://go.feishu.cn/s/61BYfgpwo01)的权限要求）。  
+
+
+通过以上步骤，即可在手机上接收并查看TXT文件附件。

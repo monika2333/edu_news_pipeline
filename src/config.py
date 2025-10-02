@@ -145,7 +145,7 @@ def get_settings() -> Settings:
 
     feishu_app_id = _get_env("FEISHU_APP_ID", "feishu_APP_ID")
     feishu_app_secret = _get_env("FEISHU_APP_SECRET", "feishu_APP_Secret")
-    feishu_receive_id = _get_env("FEISHU_RECEIVE_ID", "my_open_id")
+    feishu_receive_id = _get_env("FEISHU_RECEIVE_ID", "FEISHU_OPEN_ID", "my_open_id")
     feishu_receive_id_type = os.getenv("FEISHU_RECEIVE_ID_TYPE", "open_id")
     if feishu_receive_id_type not in {"open_id", "user_id", "union_id"}:
         feishu_receive_id_type = "open_id"

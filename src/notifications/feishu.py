@@ -14,6 +14,7 @@ from src.config import get_settings
 _FEISHU_API_ROOT = "https://open.feishu.cn/open-apis"
 _TOKEN_URL = f"{_FEISHU_API_ROOT}/auth/v3/tenant_access_token/internal/"
 _MESSAGE_URL = f"{_FEISHU_API_ROOT}/im/v1/messages"
+_FILE_URL = f"{_FEISHU_API_ROOT}/im/v1/files"
 _DEFAULT_TIMEOUT = 10
 
 
@@ -67,6 +68,15 @@ def notify_export_summary(
         preview_limit=preview_limit,
     )
     _send_text_message(config, message)
+
+    try:
+        file_key = _upload_file(config, output_path)
+        _send_file_message(config, file_key)
+    except FeishuRequestError:
+        raise
+    except FileNotFoundError as exc:
+        raise FeishuRequestError(f"Export file missing: {output_path}") from exc
+
     return True
 
 
@@ -141,6 +151,48 @@ def _format_counts(counts: Mapping[str, int]) -> str:
     return "Category counts: " + ", ".join(filtered) if filtered else ""
 
 
+
+
+def _upload_file(config: _FeishuConfig, file_path: Path) -> str:
+    if not file_path.exists():
+        raise FileNotFoundError(str(file_path))
+
+    token = _get_token(config)
+    headers = {
+        "Authorization": f"Bearer {token}",
+    }
+    data = {
+        "file_type": "stream",
+        "file_name": file_path.name,
+    }
+    with file_path.open("rb") as handle:
+        files = {"file": (file_path.name, handle, "text/plain; charset=utf-8")}
+        try:
+            response = requests.post(
+                _FILE_URL,
+                headers=headers,
+                data=data,
+                files=files,
+                timeout=_DEFAULT_TIMEOUT,
+            )
+        except requests.RequestException as exc:  # pragma: no cover - network failure
+            raise FeishuRequestError(f"Failed to upload file to Feishu: {exc}") from exc
+
+    try:
+        data = response.json()
+    except ValueError as exc:  # pragma: no cover - defensive
+        raise FeishuRequestError("Feishu file upload response was not valid JSON") from exc
+
+    if data.get("code") != 0:
+        msg = data.get("msg") or data
+        raise FeishuRequestError(f"Feishu file upload error: {msg}")
+
+    file_key = data.get("data", {}).get("file_key")
+    if not file_key:
+        raise FeishuRequestError("Feishu file upload did not return file_key")
+    return file_key
+
+
 def _fetch_tenant_access_token(config: _FeishuConfig) -> _TokenCache:
     payload = {"app_id": config.app_id, "app_secret": config.app_secret}
     try:
@@ -167,6 +219,41 @@ def _get_token(config: _FeishuConfig) -> str:
         if _token_cache is None or not _token_cache.is_valid():
             _token_cache = _fetch_tenant_access_token(config)
         return _token_cache.token
+
+
+
+
+def _send_file_message(config: _FeishuConfig, file_key: str) -> None:
+    token = _get_token(config)
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+    params = {"receive_id_type": config.receive_id_type}
+    payload = {
+        "receive_id": config.receive_id,
+        "msg_type": "file",
+        "content": json.dumps({"file_key": file_key}),
+    }
+    try:
+        response = requests.post(
+            _MESSAGE_URL,
+            headers=headers,
+            params=params,
+            json=payload,
+            timeout=_DEFAULT_TIMEOUT,
+        )
+    except requests.RequestException as exc:  # pragma: no cover - network failure
+        raise FeishuRequestError(f"Failed to send Feishu file message: {exc}") from exc
+
+    try:
+        data = response.json()
+    except ValueError as exc:  # pragma: no cover
+        raise FeishuRequestError("Feishu file message response was not valid JSON") from exc
+
+    if data.get("code") != 0:
+        msg = data.get("msg") or data
+        raise FeishuRequestError(f"Feishu file message API error: {msg}")
 
 
 def _send_text_message(config: _FeishuConfig, message: str) -> None:

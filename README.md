@@ -113,9 +113,9 @@ MIT License (see repository root for details).
 
 ## Feishu Notifications
 
-- Set the FEISHU_* environment variables (ID, secret, and receive ID). Lowercase keys from older configs are still accepted.
-- After a successful export, the worker reads the generated brief and posts a short summary plus file path to Feishu.
-- The message includes category counts and the first few entries; additional items stay in the exported file.
+- Set the FEISHU_* environment variables (ID, secret, and receive ID). `FEISHU_RECEIVE_ID` or `FEISHU_OPEN_ID` both work (lowercase keys from older configs remain compatible).
+- After a successful export, the worker posts a short summary *and* uploads the generated `.txt` as a Feishu file attachment.
+- Text notifications include category counts and the first few entries; the full file is delivered through the attachment.
 - Failures fall back gracefully and are logged in the export worker output.
 
 ## Scheduling and Automation

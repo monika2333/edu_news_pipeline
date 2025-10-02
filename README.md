@@ -109,3 +109,19 @@ Supabase credentials must be present before running any worker.
 ## License
 
 MIT License (see repository root for details).
+
+## Scheduling and Automation
+
+- 使用操作系统自带的调度器触发整条流水线，例如 Linux 上的 cron：
+  ```bash
+  0 9 * * * /usr/bin/python /path/to/repo/scripts/run_pipeline_once.py
+  ```
+  Windows 上可在任务计划程序中新建任务，调用 `python scripts/run_pipeline_once.py`。
+- 需要自定义步骤时，可在计划任务里传参，例如 `python scripts/run_pipeline_once.py --steps crawl summarize --skip score`。
+- 调用单个 worker 时，推荐使用新的 CLI：`python -m src.cli.main summarize --limit 50`。`run_pipeline.py` 仍然保留作兼容层，未来确认没有旧流程依赖后会在一次版本更新中移除。
+
+## Legacy Tooling Sunset
+
+- 旧 `tools/` 目录已被 worker 管线替换，相关脚本现在只保留警告并转发到新的入口。
+- 计划在稳定运行一个月后（预计 2025-10-31）删掉这些兼容脚本，并在那之前完成内部脚本/文档的替换。
+- 如果外部还有依赖，请在上述日期前迁移至 `src/cli/main.py` 提供的命令或 `scripts/run_pipeline_once.py`。

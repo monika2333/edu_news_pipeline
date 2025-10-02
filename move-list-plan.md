@@ -5,8 +5,12 @@
 - Supabase adapter rebuilt (`src/adapters/db_supabase.py`) plus SiliconFlow summarise/score adapters; pipelines now share one client path.
 - Workers refactored: `summarize`, `score`, `export_brief` consume adapters, support concurrency, and replace the old tools (which now warn and forward).
 
+## Completed Actions (2025-10-02)
+
+- Extended the CLI entry point to expose crawl/summarize/score/export with consistent options; confirmed `run_pipeline.py` forwards to the new parser.
+- Refreshed documentation with scheduling guidance and the deprecation timeline for legacy tooling.
+- Added a lightweight CLI smoke test (`tests/test_cli_parser.py`) to ensure subcommands stay registered.
+
 ## Next Actions
 
-1. Extend CLI coverage in `src/cli/main.py` (ensure new options/flags are exposed, add help text, confirm `run_pipeline.py` forwards appropriately).
-2. Refresh docs/tests: update README + scheduling notes, add a smoke script/test import, and document removal plan for deprecated `tools/` shims once verified.
-
+- Monitor CLI/test usage and retire the legacy `tools/` shims after the 2025-10-31 cutoff.

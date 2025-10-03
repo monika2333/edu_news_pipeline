@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import argparse
 import html
 import json
+import time
 
 import os
 import re
@@ -36,6 +38,13 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0 Safari/537.36"
 )
+NAVIGATION_MAX_ATTEMPTS = 3
+INFO_MAX_ATTEMPTS = 3
+RETRY_BASE_DELAY_SECONDS = 1.5
+
+
+def _backoff_delay(attempt: int) -> float:
+    return RETRY_BASE_DELAY_SECONDS * (2 ** max(0, attempt - 1))
 TOKEN_PATTERN = re.compile(r"/token/([^/?#]+)/?")
 ARTICLE_ID_PATTERN = re.compile(r"(\d{16,20})")
 FETCH_FEED_JS = """
@@ -211,14 +220,28 @@ def fetch_info(article_id: str, timeout: int = 15, lang: Optional[str] = None) -
     headers = {"User-Agent": USER_AGENT}
     if lang:
         headers["Accept-Language"] = lang
-    req = Request(url, headers=headers)
-    try:
-        with urlopen(req, timeout=timeout) as resp:
-            payload = resp.read()
-    except HTTPError as exc:
-        raise RuntimeError(f"HTTP error {exc.code}: {exc.reason}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"Network error: {exc.reason}") from exc
+
+    attempt = 1
+    while True:
+        req = Request(url, headers=headers)
+        try:
+            with urlopen(req, timeout=timeout) as resp:
+                payload = resp.read()
+            break
+        except HTTPError as exc:
+            runtime_error = RuntimeError(f"HTTP error {exc.code}: {exc.reason}")
+            source_exc = exc
+        except URLError as exc:
+            runtime_error = RuntimeError(f"Network error: {exc.reason}")
+            source_exc = exc
+        if attempt >= INFO_MAX_ATTEMPTS:
+            raise runtime_error from source_exc
+        wait_seconds = _backoff_delay(attempt)
+        print(f"[warn] Toutiao info fetch failed for {article_id} (attempt {attempt}/{INFO_MAX_ATTEMPTS}): {runtime_error}; retrying in {wait_seconds:.1f}s", file=sys.stderr)
+        time.sleep(wait_seconds)
+        attempt += 1
+        continue
+
     try:
         data = json.loads(payload.decode("utf-8", errors="replace"))
     except json.JSONDecodeError as exc:
@@ -226,6 +249,7 @@ def fetch_info(article_id: str, timeout: int = 15, lang: Optional[str] = None) -
     if not data.get("success"):
         raise RuntimeError("Toutiao info API responded with success=false")
     return data.get("data") or {}
+
 
 
 def html_to_text(html_str: str) -> str:
@@ -248,6 +272,21 @@ def to_iso(ts: Optional[int]) -> Optional[str]:
         return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone().isoformat()
     except Exception:
         return None
+
+
+async def _goto_with_retries(page, url: str, *, max_attempts: int = NAVIGATION_MAX_ATTEMPTS) -> None:
+    attempt = 1
+    while True:
+        try:
+            await page.goto(url)
+            return
+        except Exception as exc:
+            if attempt >= max_attempts:
+                raise
+            wait_seconds = _backoff_delay(attempt)
+            print(f"[warn] Page.goto failed for {url} (attempt {attempt}/{max_attempts}): {exc}; retrying in {wait_seconds:.1f}s", file=sys.stderr)
+            await asyncio.sleep(wait_seconds)
+            attempt += 1
 
 
 def parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
@@ -327,7 +366,7 @@ async def fetch_feed_items(
                 remaining = max(limit - len(all_items), 0)
             page = await context.new_page()
             print(f"[info] Collecting feed for {profile_url}", file=sys.stderr)
-            await page.goto(profile_url)
+            await _goto_with_retries(page, profile_url)
             await page.wait_for_selector("body")
             items, reached_existing = await _collect_feed_from_page(
                 page, token, profile_url, remaining, existing_ids

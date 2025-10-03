@@ -30,7 +30,6 @@ def call_relevance_api(text: str, *, retries: int = 4, timeout: int = 30) -> str
         "model": settings.siliconflow_model_name,
         "messages": [{"role": "user", "content": _build_prompt(text)}],
         "temperature": 0.0,
-        "max_tokens": 16,
     }
     if settings.siliconflow_enable_thinking:
         payload["enable_thinking"] = True
@@ -44,7 +43,15 @@ def call_relevance_api(text: str, *, retries: int = 4, timeout: int = 30) -> str
             resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
             if resp.status_code == 200:
                 data = resp.json()
-                return (data["choices"][0]["message"]["content"] or "").strip()
+                choice = data.get("choices", [{}])[0]
+                message_content = (choice.get("message", {}).get("content") or "").strip()
+                if not message_content:
+                    reasoning = choice.get("reasoning_content")
+                    if isinstance(reasoning, str):
+                        message_content = reasoning.strip()
+                    elif isinstance(reasoning, list):
+                        message_content = " ".join(str(part) for part in reasoning).strip()
+                return message_content
             if resp.status_code in _RETRYABLE_STATUS:
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 8)

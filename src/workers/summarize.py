@@ -2,6 +2,7 @@
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -104,14 +105,51 @@ def _filter_articles_after_cursor(
     return result
 
 
+
+
+def _cursor_keys(fetch: Optional[str], article: Optional[str]) -> Tuple[str, str]:
+    fetch_key = str(fetch) if fetch is not None else ""
+    article_key = str(article).strip() if article is not None else ""
+    return fetch_key, article_key
+
+
+def _should_advance_cursor(
+    current_fetch: Optional[str],
+    current_article: Optional[str],
+    candidate_fetch: Optional[str],
+    candidate_article: Optional[str],
+) -> bool:
+    current_fetch_key, current_article_key = _cursor_keys(current_fetch, current_article)
+    candidate_fetch_key, candidate_article_key = _cursor_keys(candidate_fetch, candidate_article)
+    if candidate_fetch_key > current_fetch_key:
+        return True
+    if candidate_fetch_key == current_fetch_key and candidate_article_key > current_article_key:
+        return True
+    return False
+
+
+def _update_cursor(
+    cursor_path: Path,
+    latest_fetched: Optional[str],
+    latest_article: Optional[str],
+    candidate_fetch: Optional[str],
+    candidate_article: Optional[str],
+) -> Tuple[Optional[str], Optional[str]]:
+    if _should_advance_cursor(latest_fetched, latest_article, candidate_fetch, candidate_article):
+        latest_fetched = candidate_fetch
+        latest_article = candidate_article
+    _save_cursor(cursor_path, latest_fetched, latest_article)
+    return latest_fetched, latest_article
+
+
 def run(limit: int = 50, *, concurrency: Optional[int] = None, keywords_path: Optional[Path] = None) -> None:
     settings = get_settings()
     adapter = get_adapter()
 
     cursor_path = _resolve_cursor_path()
     cursor_state = _load_cursor(cursor_path)
-    cursor_fetched_at = cursor_state.get("fetched_at")
-    cursor_article_id = cursor_state.get("article_id")
+    latest_fetched = cursor_state.get('fetched_at')
+    latest_article = cursor_state.get('article_id')
 
     limit_value: Optional[int]
     if limit and limit > 0:
@@ -126,7 +164,10 @@ def run(limit: int = 50, *, concurrency: Optional[int] = None, keywords_path: Op
         else:
             limit_value = min(limit_value, process_cap)
 
-    fetch_target = limit_value or settings.default_concurrency or 5
+    max_workers = concurrency or settings.default_concurrency or 5
+    max_workers = max(1, max_workers)
+
+    fetch_target = limit_value or max_workers
     fetch_limit = max(1, fetch_target) * DEFAULT_FETCH_MULTIPLIER
 
     keywords_file = keywords_path or settings.keywords_path
@@ -136,91 +177,142 @@ def run(limit: int = 50, *, concurrency: Optional[int] = None, keywords_path: Op
 
     with worker_session(WORKER, limit=session_limit):
         raw_articles = adapter.fetch_toutiao_articles_for_summary(
-            after_fetched_at=cursor_fetched_at,
+            after_fetched_at=latest_fetched,
             limit=fetch_limit,
         )
-        articles = _filter_articles_after_cursor(raw_articles, cursor_fetched_at, cursor_article_id)
+        articles = _filter_articles_after_cursor(raw_articles, latest_fetched, latest_article)
         if not articles:
-            log_info(WORKER, "No articles available for summarisation.")
+            log_info(WORKER, 'No articles available for summarisation.')
             return
 
-        article_ids = [str(item.get("article_id")) for item in articles if item.get("article_id")]
+        article_ids = [str(item.get('article_id')) for item in articles if item.get('article_id')]
         existing_ids = adapter.get_existing_news_summary_ids(article_ids)
 
         success = 0
         failed = 0
         skipped = 0
 
-        latest_fetched = cursor_fetched_at
-        latest_article = cursor_article_id
+        pending: List[Tuple[Any, Dict[str, Any], List[str], Optional[str], str]] = []
 
-        for article in articles:
-            article_id = str(article.get("article_id") or "").strip()
-            fetched_at_value = article.get("fetched_at")
-            if not isinstance(fetched_at_value, str) and fetched_at_value is not None:
-                fetched_at_value = str(fetched_at_value)
-
-            if not article_id:
-                skipped += 1
-                latest_fetched = fetched_at_value or latest_fetched
-                _save_cursor(cursor_path, latest_fetched, latest_article)
-                continue
-
-            if article_id in existing_ids:
-                skipped += 1
-                log_info(WORKER, f"Skip existing summary {article_id}")
-                latest_fetched = fetched_at_value or latest_fetched
-                latest_article = article_id
-                _save_cursor(cursor_path, latest_fetched, latest_article)
-                continue
-
-            content = str(article.get("content_markdown") or "").strip()
-            if not content:
-                skipped += 1
-                log_info(WORKER, f"Skip empty content {article_id}")
-                latest_fetched = fetched_at_value or latest_fetched
-                latest_article = article_id
-                _save_cursor(cursor_path, latest_fetched, latest_article)
-                continue
-
-            ok, hits = _contains_keywords(content, keywords)
-            if not ok:
-                skipped += 1
-                latest_fetched = fetched_at_value or latest_fetched
-                latest_article = article_id
-                _save_cursor(cursor_path, latest_fetched, latest_article)
-                continue
-
-            summary_payload = {
-                "title": article.get("title"),
-                "content": content,
-            }
-
+        def _process_pending_entry(entry: Tuple[Any, Dict[str, Any], List[str], Optional[str], str]) -> bool:
+            nonlocal success, failed, latest_fetched, latest_article
+            future, article, hits, fetched_value, article_id = entry
             try:
-                result = summarise(summary_payload)
-                summary_text = result.get("summary", "").strip()
+                result = future.result()
+                summary_text = (result.get('summary', '')).strip()
                 if not summary_text:
-                    raise RuntimeError("Summarisation returned empty text")
+                    raise RuntimeError('Summarisation returned empty text')
                 adapter.upsert_news_summary(
                     article,
                     summary_text,
                     keywords=hits,
                 )
                 success += 1
-                existing_ids.add(article_id)
-                log_info(WORKER, f"OK {article_id}")
+                if article_id:
+                    existing_ids.add(article_id)
+                log_info(WORKER, f'OK {article_id}')
             except Exception as exc:
                 failed += 1
                 log_error(WORKER, article_id, exc)
             finally:
-                latest_fetched = fetched_at_value or latest_fetched
-                latest_article = article_id
-                _save_cursor(cursor_path, latest_fetched, latest_article)
+                latest_fetched, latest_article = _update_cursor(
+                    cursor_path,
+                    latest_fetched,
+                    latest_article,
+                    fetched_value,
+                    article_id,
+                )
+            return limit_value is not None and success >= limit_value
 
-            if limit_value is not None and success >= limit_value:
-                break
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for article in articles:
+                if limit_value is not None and success >= limit_value:
+                    break
+
+                raw_id = article.get('article_id')
+                article_id = str(raw_id).strip() if raw_id is not None else ''
+                fetched_at_value = article.get('fetched_at')
+                if fetched_at_value is not None and not isinstance(fetched_at_value, str):
+                    fetched_at_value = str(fetched_at_value)
+
+                if not article_id:
+                    skipped += 1
+                    latest_fetched, latest_article = _update_cursor(
+                        cursor_path,
+                        latest_fetched,
+                        latest_article,
+                        fetched_at_value,
+                        article_id,
+                    )
+                    continue
+
+                if article_id in existing_ids:
+                    skipped += 1
+                    log_info(WORKER, f'Skip existing summary {article_id}')
+                    latest_fetched, latest_article = _update_cursor(
+                        cursor_path,
+                        latest_fetched,
+                        latest_article,
+                        fetched_at_value,
+                        article_id,
+                    )
+                    continue
+
+                content = str(article.get('content_markdown') or '').strip()
+                if not content:
+                    skipped += 1
+                    log_info(WORKER, f'Skip empty content {article_id}')
+                    latest_fetched, latest_article = _update_cursor(
+                        cursor_path,
+                        latest_fetched,
+                        latest_article,
+                        fetched_at_value,
+                        article_id,
+                    )
+                    continue
+
+                ok, hits = _contains_keywords(content, keywords)
+                if not ok:
+                    skipped += 1
+                    latest_fetched, latest_article = _update_cursor(
+                        cursor_path,
+                        latest_fetched,
+                        latest_article,
+                        fetched_at_value,
+                        article_id,
+                    )
+                    continue
+
+                summary_payload = {
+                    'title': article.get('title'),
+                    'content': content,
+                }
+                pending.append(
+                    (
+                        executor.submit(summarise, summary_payload),
+                        article,
+                        hits,
+                        fetched_at_value,
+                        article_id,
+                    )
+                )
+
+                if len(pending) >= max_workers:
+                    entry = pending.pop(0)
+                    if _process_pending_entry(entry):
+                        break
+
+            if limit_value is None or success < limit_value:
+                while pending:
+                    entry = pending.pop(0)
+                    if _process_pending_entry(entry):
+                        break
+
+            for future, *_ in pending:
+                future.cancel()
 
         log_summary(WORKER, ok=success, failed=failed, skipped=skipped if skipped else None)
+
 
 
 __all__ = ["run"]

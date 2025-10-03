@@ -39,7 +39,6 @@ def summarise(article: Dict[str, Any], *, retries: int = 4, timeout: int = 60) -
         {
             "model": settings.siliconflow_model_name,
             "temperature": 0.2,
-            "max_tokens": 512,
         }
     )
     if settings.siliconflow_enable_thinking:

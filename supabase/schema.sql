@@ -55,6 +55,43 @@ create index if not exists news_summaries_correlation_idx
 create index if not exists news_summaries_summary_generated_idx
     on public.news_summaries (summary_generated_at asc);
 
+
+-- ---------------------------------------------------------------------------
+-- Export history (Feishu brief batches)
+-- ---------------------------------------------------------------------------
+create table if not exists public.brief_batches (
+    id uuid primary key default gen_random_uuid(),
+    report_date date not null,
+    sequence_no integer not null default 1,
+    generated_at timestamptz not null default now(),
+    generated_by text,
+    export_payload jsonb,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (report_date, sequence_no)
+);
+
+create table if not exists public.brief_items (
+    id uuid primary key default gen_random_uuid(),
+    brief_batch_id uuid not null references public.brief_batches(id) on delete cascade,
+    article_id text,
+    event_id uuid,
+    section text,
+    order_index integer not null default 0,
+    final_summary text,
+    approved_by text,
+    approved_at timestamptz,
+    metadata jsonb,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists brief_items_batch_idx
+    on public.brief_items (brief_batch_id);
+
+create index if not exists brief_items_section_idx
+    on public.brief_items (section);
+
 -- ---------------------------------------------------------------------------
 -- Pipeline run bookkeeping
 -- ---------------------------------------------------------------------------
@@ -108,6 +145,17 @@ create trigger toutiao_articles_set_updated_at
 drop trigger if exists news_summaries_set_updated_at on public.news_summaries;
 create trigger news_summaries_set_updated_at
     before update on public.news_summaries
+    for each row execute function public.set_updated_at();
+
+
+drop trigger if exists brief_batches_set_updated_at on public.brief_batches;
+create trigger brief_batches_set_updated_at
+    before update on public.brief_batches
+    for each row execute function public.set_updated_at();
+
+drop trigger if exists brief_items_set_updated_at on public.brief_items;
+create trigger brief_items_set_updated_at
+    before update on public.brief_items
     for each row execute function public.set_updated_at();
 
 drop trigger if exists pipeline_runs_set_updated_at on public.pipeline_runs;

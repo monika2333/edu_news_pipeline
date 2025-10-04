@@ -15,7 +15,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Set
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Set
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -374,7 +374,7 @@ async def fetch_feed_items(
             all_items.extend(items)
             await page.close()
             if reached_existing:
-                print("[info] Reached existing Supabase data; stopping pagination for this author.", file=sys.stderr)
+                print("[info] Reached existing local data; stopping pagination for this author.", file=sys.stderr)
         await browser.close()
     if limit is not None:
         return all_items[:limit]
@@ -538,6 +538,27 @@ def fetch_existing_article_ids(config: SupabaseConfig) -> Set[str]:
 
 
 
+def format_article_rows(records: Sequence[ArticleRecord]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for record in records:
+        rows.append({
+            'token': record.token,
+            'profile_url': record.profile_url,
+            'article_id': record.article_id,
+            'title': record.title,
+            'source': record.source,
+            'publish_time': record.publish_time,
+            'publish_time_iso': parse_iso_datetime(record.publish_time_iso),
+            'url': record.url,
+            'summary': record.summary,
+            'comment_count': record.comment_count,
+            'digg_count': record.digg_count,
+            'content_markdown': record.content_markdown,
+            'fetched_at': parse_iso_datetime(record.fetched_at),
+        })
+    return rows
+
+
 def upload_records_to_supabase(records: List[ArticleRecord], config: SupabaseConfig) -> bool:
     if not records:
         print("[warn] No records to upload to Supabase.", file=sys.stderr)
@@ -586,25 +607,7 @@ def upload_records_to_supabase(records: List[ArticleRecord], config: SupabaseCon
         sql.SQL(", ").join(sql.Identifier(col) for col in columns),
         placeholders,
     )
-    rows: List[Dict[str, Any]] = []
-    for record in records:
-        rows.append(
-            {
-                "token": record.token,
-                "profile_url": record.profile_url,
-                "article_id": record.article_id,
-                "title": record.title,
-                "source": record.source,
-                "publish_time": record.publish_time,
-                "publish_time_iso": parse_iso_datetime(record.publish_time_iso),
-                "url": record.url,
-                "summary": record.summary,
-                "comment_count": record.comment_count,
-                "digg_count": record.digg_count,
-                "content_markdown": record.content_markdown,
-                "fetched_at": parse_iso_datetime(record.fetched_at),
-            }
-        )
+    rows = format_article_rows(records)
     try:
         with psycopg.connect(
             host=config.host,
@@ -626,4 +629,4 @@ def upload_records_to_supabase(records: List[ArticleRecord], config: SupabaseCon
     print(f"[info] Uploaded {len(rows)} record(s) to Supabase table {config.schema}.{config.table}", file=sys.stderr)
     return True
 
-__all__ = ["FeedItem", "ArticleRecord", "SupabaseConfig", "SUPABASE_ENV_DEFAULT", "load_env_file", "load_author_tokens", "fetch_feed_items", "fetch_article_records", "build_supabase_config", "fetch_existing_article_ids", "upload_records_to_supabase", "DEFAULT_LIMIT"]
+__all__ = ["FeedItem", "ArticleRecord", "SupabaseConfig", "SUPABASE_ENV_DEFAULT", "load_env_file", "load_author_tokens", "fetch_feed_items", "fetch_article_records", "build_supabase_config", "fetch_existing_article_ids", "upload_records_to_supabase", "format_article_rows", "DEFAULT_LIMIT"]

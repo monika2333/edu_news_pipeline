@@ -65,6 +65,64 @@ class PostgresAdapter:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+    # Toutiao articles (crawler storage)
+    # ------------------------------------------------------------------
+    def upsert_toutiao_articles(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        if not rows:
+            return 0
+        columns = [
+            'token',
+            'profile_url',
+            'article_id',
+            'title',
+            'source',
+            'publish_time',
+            'publish_time_iso',
+            'url',
+            'summary',
+            'comment_count',
+            'digg_count',
+            'content_markdown',
+            'fetched_at',
+        ]
+        insert_sql = '''
+            INSERT INTO toutiao_articles (token, profile_url, article_id, title, source,
+                publish_time, publish_time_iso, url, summary, comment_count, digg_count,
+                content_markdown, fetched_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (article_id) DO UPDATE
+            SET token = EXCLUDED.token,
+                profile_url = EXCLUDED.profile_url,
+                title = EXCLUDED.title,
+                source = EXCLUDED.source,
+                publish_time = EXCLUDED.publish_time,
+                publish_time_iso = EXCLUDED.publish_time_iso,
+                url = EXCLUDED.url,
+                summary = EXCLUDED.summary,
+                comment_count = EXCLUDED.comment_count,
+                digg_count = EXCLUDED.digg_count,
+                content_markdown = EXCLUDED.content_markdown,
+                fetched_at = EXCLUDED.fetched_at,
+                updated_at = now()
+        '''
+        data = [tuple(row.get(col) for col in columns) for row in rows]
+        with self._cursor() as cur:
+            cur.executemany(insert_sql, data)
+        return len(rows)
+
+    def get_existing_toutiao_article_ids(self) -> Set[str]:
+        ids: Set[str] = set()
+        with self._cursor() as cur:
+            cur.execute("SELECT article_id FROM toutiao_articles")
+            for row in cur.fetchall():
+                article_id = row.get('article_id')
+                if article_id:
+                    ids.add(str(article_id))
+        return ids
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
     @staticmethod
     def _normalize_source(name: Optional[str]) -> str:
         if name:

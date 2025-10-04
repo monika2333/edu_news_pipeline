@@ -7,16 +7,12 @@ from types import SimpleNamespace
 from typing import List, Optional, Sequence, Set, Tuple
 
 from src.adapters.http_toutiao import (
-    SUPABASE_ENV_DEFAULT,
-    SupabaseConfig,
-    build_supabase_config,
     fetch_article_records,
-    fetch_existing_article_ids,
     fetch_feed_items,
     load_author_tokens,
-    load_env_file,
-    upload_records_to_supabase,
+    format_article_rows,
 )
+from src.adapters.db import get_adapter
 from src.config import get_settings
 from src.workers import log_error, log_info, log_summary, worker_session
 
@@ -24,7 +20,6 @@ WORKER = "crawl"
 DEFAULT_AUTHORS_FILE = Path("data/author_tokens.txt")
 DEFAULT_LANG = "zh-CN,zh;q=0.9"
 DEFAULT_TIMEOUT = 15
-DEFAULT_SUPABASE_TABLE = "toutiao_articles"
 
 
 def _truthy_env(value: Optional[str]) -> bool:
@@ -49,18 +44,6 @@ def _resolve_authors_path() -> Path:
         return _repo_root() / default_path
     return default_path
 
-
-def _resolve_supabase_env_path() -> Path:
-    env_value = os.getenv("TOUTIAO_SUPABASE_ENV")
-    if env_value:
-        candidate = Path(env_value).expanduser()
-        if not candidate.is_absolute():
-            candidate = _repo_root() / candidate
-        return candidate
-    candidate = SUPABASE_ENV_DEFAULT
-    if not candidate.is_absolute():
-        candidate = _repo_root() / candidate
-    return candidate
 
 
 def _load_author_entries(path: Path) -> List[Tuple[str, str]]:
@@ -87,14 +70,6 @@ def _collect_article_records(
     return fetch_article_records(feed_items, timeout=timeout, lang=lang, existing_ids=existing_ids)
 
 
-def _build_supabase_config(table: str, reset: bool, skip: bool) -> Optional[SupabaseConfig]:
-    args = SimpleNamespace(
-        supabase_table=table,
-        reset_supabase_table=reset,
-        skip_supabase_upload=skip,
-    )
-    return build_supabase_config(args)
-
 
 def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:  # pylint: disable=unused-argument
     settings = get_settings()
@@ -120,17 +95,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:  # pyli
         else:
             effective_limit = min(effective_limit, process_cap)
 
-    supabase_table = os.getenv("TOUTIAO_SUPABASE_TABLE", DEFAULT_SUPABASE_TABLE)
-    supabase_reset = _truthy_env(os.getenv("TOUTIAO_SUPABASE_RESET"))
-    supabase_skip = _truthy_env(os.getenv("TOUTIAO_SKIP_SUPABASE_UPLOAD"))
-
-    env_path = _resolve_supabase_env_path()
-    # Load env defaults; silently continue if files are missing.
-    for candidate in {env_path, _repo_root() / ".env", _repo_root() / "config" / "abstract.env"}:
-        try:
-            load_env_file(candidate)
-        except Exception as exc:  # pragma: no cover - best effort, log and continue
-            log_error(WORKER, f"env:{candidate}", exc)
+    adapter = get_adapter()
 
     with worker_session(WORKER, limit=effective_limit):
         if not authors_path.exists():
@@ -147,15 +112,10 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:  # pyli
             log_info(WORKER, "Author token list is empty.")
             return
 
-        config = _build_supabase_config(supabase_table, supabase_reset, supabase_skip)
-        if config is None:
-            log_info(WORKER, "Supabase upload is disabled or misconfigured; skipping crawl.")
-            return
-
         try:
-            existing_ids = fetch_existing_article_ids(config)
+            existing_ids = adapter.get_existing_toutiao_article_ids()
         except Exception as exc:
-            log_error(WORKER, "supabase_existing", exc)
+            log_error(WORKER, "local_existing", exc)
             existing_ids = set()
 
         feed_limit = effective_limit
@@ -195,15 +155,18 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:  # pyli
 
         skipped_count = len(records) - len(records_to_upload)
 
-        if not upload_records_to_supabase(records_to_upload, config):
-            log_error(WORKER, "supabase_upload", RuntimeError("Upload to toutiao_articles failed"))
+        rows = format_article_rows(records_to_upload)
+        try:
+            inserted = adapter.upsert_toutiao_articles(rows)
+        except Exception as exc:
+            log_error(WORKER, "postgres_upload", exc)
             log_summary(WORKER, ok=0, failed=len(records_to_upload), skipped=skipped_count or None)
             return
 
         for record in records_to_upload:
             log_info(WORKER, f"OK {record.article_id}")
 
-        log_summary(WORKER, ok=len(records_to_upload), failed=0, skipped=skipped_count or None)
+        log_summary(WORKER, ok=inserted, failed=(len(records_to_upload) - inserted) or None, skipped=skipped_count or None)
 
 
 __all__ = ["run"]

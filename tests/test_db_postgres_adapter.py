@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 import uuid
@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import psycopg
 
 from src.adapters import db as db_factory
+from src.adapters.http_toutiao import ArticleRecord, format_article_rows
 from src.config import get_settings
 
 
@@ -26,60 +27,51 @@ def test_postgres_adapter_core_roundtrip() -> None:
     fetched_at = datetime.now(timezone.utc)
     publish_iso = fetched_at.replace(microsecond=0)
 
-    article_row = {
-        "token": "unit-test",
-        "profile_url": "https://example.com/profile",
-        "article_id": article_id,
-        "title": "Unit Test Article",
-        "source": "Unit Test Source",
-        "publish_time": int(fetched_at.timestamp()),
-        "publish_time_iso": publish_iso,
-        "url": f"https://example.com/articles/{article_id}",
-        "summary": "placeholder",
-        "comment_count": 1,
-        "digg_count": 2,
-        "content_markdown": "# Heading\nBody content",
-        "fetched_at": fetched_at,
-    }
+    article_record = ArticleRecord(
+        token="unit-test",
+        profile_url="https://example.com/profile",
+        article_id=article_id,
+        title="Unit Test Article",
+        source="Unit Test Source",
+        publish_time=int(fetched_at.timestamp()),
+        publish_time_iso=publish_iso.isoformat(),
+        url=f"https://example.com/articles/{article_id}",
+        summary="placeholder",
+        comment_count=1,
+        digg_count=2,
+        content_markdown="# Heading\nBody content",
+        fetched_at=fetched_at.isoformat(),
+    )
 
     run_id = f"run-{uuid.uuid4()}"
     summary_text = "This is a generated summary."
 
     try:
-        with psycopg.connect(
-            host=settings.db_host,
-            port=settings.db_port,
-            user=settings.db_user,
-            password=settings.db_password,
-            dbname=settings.db_name,
-            autocommit=True,
-        ) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO toutiao_articles (
-                        token, profile_url, article_id, title, source,
-                        publish_time, publish_time_iso, url, summary,
-                        comment_count, digg_count, content_markdown, fetched_at
-                    )
-                    VALUES (
-                        %(token)s, %(profile_url)s, %(article_id)s, %(title)s, %(source)s,
-                        %(publish_time)s, %(publish_time_iso)s, %(url)s, %(summary)s,
-                        %(comment_count)s, %(digg_count)s, %(content_markdown)s, %(fetched_at)s
-                    )
-                    ON CONFLICT (article_id) DO NOTHING
-                    """,
-                    article_row,
-                )
+        rows = format_article_rows([article_record])
+        adapter.upsert_toutiao_articles(rows)
 
-        fetched_articles = adapter.fetch_toutiao_articles_for_summary(after_fetched_at=None, limit=5)
+        fetched_articles = adapter.fetch_toutiao_articles_for_summary(
+            after_fetched_at=fetched_at.isoformat(),
+            limit=20,
+        )
         assert any(row.get("article_id") == article_id for row in fetched_articles)
 
-        adapter.upsert_news_summary(article_row, summary_text, keywords=["unit", "test"])
+        article_payload = {
+            "article_id": article_id,
+            "title": article_record.title,
+            "source": article_record.source,
+            "publish_time": article_record.publish_time,
+            "publish_time_iso": article_record.publish_time_iso,
+            "url": article_record.url,
+            "content_markdown": article_record.content_markdown,
+            "fetched_at": article_record.fetched_at,
+        }
+
+        adapter.upsert_news_summary(article_payload, summary_text, keywords=["unit", "test"])
         existing_ids = adapter.get_existing_news_summary_ids([article_id])
         assert article_id in existing_ids
 
-        pending = adapter.fetch_summaries_for_scoring(limit=5)
+        pending = adapter.fetch_summaries_for_scoring(limit=20)
         assert any(item.article_id == article_id for item in pending)
 
         adapter.update_correlation(article_id, 0.92)

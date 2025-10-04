@@ -2,24 +2,21 @@
 from __future__ import annotations
 
 import sys
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, TYPE_CHECKING
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
 from scripts.run_pipeline_once import DEFAULT_PIPELINE, run_pipeline_once
-from src.adapters.db_supabase import get_adapter
-
-if TYPE_CHECKING:  # pragma: no cover
-    from src.adapters.db_supabase import SupabaseAdapter
+from src.adapters.db import get_adapter
 
 _ALLOWED_STEPS: Set[str] = set(DEFAULT_PIPELINE)
 _DEFAULT_LIST_LIMIT = 20
 _MAX_LIST_LIMIT = 100
 
 
-def _get_adapter_safe() -> Optional["SupabaseAdapter"]:
+def _get_adapter_safe() -> Optional[Any]:
     try:
         return get_adapter()
     except Exception as exc:  # pragma: no cover - log and degrade gracefully
-        print(f"[console] warning: Supabase adapter unavailable: {exc}", file=sys.stderr)
+        print(f"[console] warning: database adapter unavailable: {exc}", file=sys.stderr)
         return None
 def _normalize_plan(raw_plan: Any) -> List[str]:
     if isinstance(raw_plan, list):

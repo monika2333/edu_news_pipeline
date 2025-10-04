@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from src.adapters.db_supabase import get_adapter
+from src.adapters.db import get_adapter
 from src.adapters.llm_summary import summarise
 from src.config import get_settings
 from src.workers import log_error, log_info, log_summary, worker_session

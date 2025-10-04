@@ -3,7 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
-from src.adapters.db_supabase import get_adapter
+from src.adapters.db import get_adapter
 from src.adapters.llm_scoring import score_text
 from src.config import get_settings
 from src.domain import SummaryForScoring

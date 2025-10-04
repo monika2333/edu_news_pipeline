@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
-from src.adapters.db_supabase import get_adapter
+from src.adapters.db import get_adapter
 from src.domain import ExportCandidate
 from src.notifications.feishu import FeishuConfigError, FeishuRequestError, notify_export_summary
 from src.workers import log_info, log_summary, worker_session

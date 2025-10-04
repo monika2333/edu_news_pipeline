@@ -7,9 +7,9 @@ import traceback
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
-from src.adapters.db_supabase import SupabaseAdapter, get_adapter
+from src.adapters.db import get_adapter
 from src.workers.crawl_toutiao import run as run_crawl
 from src.workers.export_brief import run as run_export
 from src.workers.score import run as run_score
@@ -74,7 +74,7 @@ def _truncate(value: Optional[str], limit: int) -> Optional[str]:
     return value[: limit - 3] + "..."
 
 
-def _maybe_get_adapter(enable: bool, provided: Optional[SupabaseAdapter]) -> Optional[SupabaseAdapter]:
+def _maybe_get_adapter(enable: bool, provided: Optional[Any]) -> Optional[Any]:
     if not enable:
         return None
     if provided is not None:
@@ -87,7 +87,7 @@ def _maybe_get_adapter(enable: bool, provided: Optional[SupabaseAdapter]) -> Opt
 
 
 def _record_run_start(
-    adapter: Optional[SupabaseAdapter],
+    adapter: Optional[Any],
     *,
     run_id: str,
     plan: Sequence[str],
@@ -108,7 +108,7 @@ def _record_run_start(
 
 
 def _record_run_step(
-    adapter: Optional[SupabaseAdapter],
+    adapter: Optional[Any],
     *,
     run_id: str,
     order_index: int,
@@ -132,7 +132,7 @@ def _record_run_step(
 
 
 def _record_run_finish(
-    adapter: Optional[SupabaseAdapter],
+    adapter: Optional[Any],
     *,
     run_id: str,
     status: str,
@@ -192,7 +192,7 @@ def run_pipeline_once(
     continue_on_error: bool = False,
     trigger_source: Optional[str] = None,
     record_metadata: bool = True,
-    adapter: Optional[SupabaseAdapter] = None,
+    adapter: Optional[Any] = None,
 ) -> PipelineRunResult:
     plan = list(steps) if steps is not None else list(DEFAULT_PIPELINE)
     unknown = [name for name in plan if name not in STEP_REGISTRY]

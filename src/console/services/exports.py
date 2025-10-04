@@ -4,14 +4,14 @@ from __future__ import annotations
 import sys
 from typing import Any, Dict, List, Optional
 
-from src.adapters.db_supabase import get_adapter
+from src.adapters.db import get_adapter
 
 
 def _get_adapter_safe():
     try:
         return get_adapter()
     except Exception as exc:  # pragma: no cover - degrade gracefully
-        print(f"[console] warning: Supabase adapter unavailable: {exc}", file=sys.stderr)
+        print(f"[console] warning: database adapter unavailable: {exc}", file=sys.stderr)
         return None
 
 

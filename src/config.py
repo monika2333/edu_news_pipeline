@@ -82,6 +82,13 @@ class Settings:
     supabase_db_user: str
     supabase_db_password: Optional[str]
     supabase_db_schema: str
+    db_host: str
+    db_port: int
+    db_name: str
+    db_user: str
+    db_password: Optional[str]
+    db_schema: str
+    db_backend: str
     siliconflow_base_url: str
     siliconflow_api_key: Optional[str]
     siliconflow_model_name: str
@@ -124,6 +131,48 @@ def get_settings() -> Settings:
     supabase_db_password = os.getenv("SUPABASE_DB_PASSWORD")
     supabase_db_schema = os.getenv("SUPABASE_DB_SCHEMA", "public")
 
+    db_host = (
+        os.getenv("DB_HOST")
+        or os.getenv("POSTGRES_HOST")
+        or supabase_db_host
+        or "localhost"
+    )
+    db_port = (
+        _optional_int(_get_env("DB_PORT", "POSTGRES_PORT"))
+        or supabase_db_port
+        or 5432
+    )
+    db_name = (
+        _get_env("DB_NAME", "POSTGRES_DB", "POSTGRES_DB_NAME")
+        or supabase_db_name
+        or "postgres"
+    )
+    db_user = (
+        _get_env("DB_USER", "POSTGRES_USER")
+        or supabase_db_user
+        or "postgres"
+    )
+    db_password = _get_env("DB_PASSWORD", "POSTGRES_PASSWORD") or supabase_db_password
+    db_schema = (
+        _get_env("DB_SCHEMA", "POSTGRES_SCHEMA")
+        or supabase_db_schema
+        or "public"
+    )
+
+    backend_env = _get_env("DB_BACKEND", "DATABASE_BACKEND")
+    if backend_env:
+        db_backend = backend_env.strip().lower()
+    else:
+        prefer_supabase = _bool_from_env(os.getenv("USE_SUPABASE"))
+        if prefer_supabase:
+            db_backend = "supabase"
+        elif supabase_url and not os.getenv("DB_HOST") and not os.getenv("POSTGRES_HOST"):
+            db_backend = "supabase"
+        else:
+            db_backend = "postgres"
+    if db_backend not in {"postgres", "supabase"}:
+        db_backend = "postgres"
+
     siliconflow_base_url = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
     siliconflow_api_key = os.getenv("SILICONFLOW_API_KEY")
     siliconflow_model_name = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct")
@@ -163,6 +212,13 @@ def get_settings() -> Settings:
         supabase_db_user=supabase_db_user,
         supabase_db_password=supabase_db_password,
         supabase_db_schema=supabase_db_schema,
+        db_host=db_host,
+        db_port=db_port,
+        db_name=db_name,
+        db_user=db_user,
+        db_password=db_password,
+        db_schema=db_schema,
+        db_backend=db_backend,
         siliconflow_base_url=siliconflow_base_url,
         siliconflow_api_key=siliconflow_api_key,
         siliconflow_model_name=siliconflow_model_name,

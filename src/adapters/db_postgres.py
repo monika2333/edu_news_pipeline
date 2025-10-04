@@ -384,7 +384,17 @@ class PostgresAdapter:
         with self._cursor() as cur:
             cur.execute(query, tuple(params))
             rows = cur.fetchall()
-        return [dict(row) for row in rows]
+        result: List[Dict[str, Any]] = []
+        for row in rows:
+            record = dict(row)
+            fetched = record.get('fetched_at')
+            if isinstance(fetched, datetime):
+                record['fetched_at'] = fetched.isoformat()
+            publish_iso = record.get('publish_time_iso')
+            if isinstance(publish_iso, datetime):
+                record['publish_time_iso'] = publish_iso.isoformat()
+            result.append(record)
+        return result
 
     def get_existing_news_summary_ids(self, article_ids: Sequence[str]) -> Set[str]:
         unique_ids = list({str(item) for item in article_ids if item})

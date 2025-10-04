@@ -37,7 +37,7 @@ def summarise(article: Dict[str, Any], *, retries: int = 4, timeout: int = 60) -
     payload = build_summary_payload(article)
     payload.update(
         {
-            "model": settings.siliconflow_model_name,
+            "model": settings.summarize_model_name,
             "temperature": 0.2,
         }
     )
@@ -57,7 +57,7 @@ def summarise(article: Dict[str, Any], *, retries: int = 4, timeout: int = 60) -
                 summary = (data["choices"][0]["message"]["content"] or "").strip()
                 return {
                     "summary": summary,
-                    "model": settings.siliconflow_model_name,
+                    "model": settings.summarize_model_name,
                     "raw": data,
                 }
             if response.status_code in _RETRYABLE_STATUS:

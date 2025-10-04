@@ -27,7 +27,7 @@ def call_relevance_api(text: str, *, retries: int = 4, timeout: int = 30) -> str
 
     url = f"{settings.siliconflow_base_url.rstrip('/')}/chat/completions"
     payload = {
-        "model": settings.siliconflow_model_name,
+        "model": settings.score_model_name,
         "messages": [{"role": "user", "content": _build_prompt(text)}],
         "temperature": 0.0,
     }

@@ -1,5 +1,5 @@
--- Supabase schema for Edu News Automation System
--- Run with `supabase db push` after copying into supabase/config
+﻿-- Postgres schema for Edu News Automation System
+-- Run with `psql -f` after copying into database/migrations
 
 create table if not exists public.brief_batches (
     id uuid primary key default gen_random_uuid(),

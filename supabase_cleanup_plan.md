@@ -60,3 +60,4 @@ uff/lake8 等）确保清理未引入回归。
 - [x] 步骤 2：锁定 Postgres 作为唯一数据库后端——移除 Supabase 配置字段与 `db_backend` 逻辑，`src/adapters/db.py` 固定返回 Postgres 适配器。
 - [x] 步骤 3：删除 Supabase 适配器及调用代码——移除 `src/adapters/db_supabase.py`，精简 Toutiao 抓取脚本上传逻辑，并将 CLI 文案更新为数据库措辞。
 - [x] 步骤 4：更新依赖与环境配置——移除 `requirements.txt` 中的 Supabase 依赖，清理 `.env.local` 并同步 README 中的环境说明。
+- [x] 步骤 5：清理冗余文件与文档——迁移数据库 schema 至 `database/` 目录，删除 `supabase/` 与相关指南，更新控制台规划文档。

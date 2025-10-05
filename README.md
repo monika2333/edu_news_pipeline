@@ -26,6 +26,7 @@ Use `-h` on any command to see flags.
 - `src/adapters/db.py` - Singleton loader for the Postgres adapter.
 - `src/adapters/db_postgres.py` - PostgreSQL access layer used by all workers.
 - `src/workers/` - Implementations for `crawl`, `summarize`, `score`, and `export` steps.
+- `database/` - SQL schema and migrations used for the Postgres deployment.
 - `src/cli/main.py` - CLI entry point for worker commands (`python -m src.cli.main ...`).
 
 ## Prerequisites
@@ -44,7 +45,7 @@ Use `-h` on any command to see flags.
 
 1. Install PostgreSQL 16+ (the team standard uses Windows packages under `C:\Program Files\PostgreSQL\18`).
 2. Ensure the service is running and note the administrator credentials (default user: `postgres`).
-3. Apply the project schema: `psql -h localhost -U postgres -d postgres -f supabase/schema.sql` (repeat for any additional SQL in `supabase/migrations/`).
+3. Apply the project schema: `psql -h localhost -U postgres -d postgres -f database/schema.sql` (repeat for any additional SQL in `database/migrations/`).
 4. Populate `.env.local` with the `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `DB_SCHEMA` settings.
 5. Run the Postgres adapter validation: `python -m pytest tests/test_db_postgres_adapter.py` (install `pytest` if it is not already available).
 

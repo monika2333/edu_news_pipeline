@@ -61,3 +61,7 @@
 - [x] Drop raw_articles and filtered_articles tables from Postgres
 - [x] Remove raw/filtered tables from Supabase schema files
 - [x] Strip raw/filtered code paths from adapters
+
+## Source Table Cleanup
+- [x] Drop sources table from Postgres
+- [x] Remove sources table from Supabase schema files

@@ -11,10 +11,7 @@ from psycopg.types.json import Json
 
 from src.config import get_settings
 from src.domain import (
-    ArticleInput,
     ExportCandidate,
-    MissingContentTarget,
-    SummaryCandidate,
     SummaryForScoring,
 )
 
@@ -47,7 +44,6 @@ class PostgresAdapter:
         self._settings = get_settings()
         self._schema = self._settings.db_schema or "public"
         self._conn = connection or _get_connection()
-        self._source_cache: Dict[str, str] = {}
 
     def _conn_cursor(self):
         if self._conn.closed:
@@ -124,13 +120,6 @@ class PostgresAdapter:
     # Helpers
     # ------------------------------------------------------------------
     @staticmethod
-    def _normalize_source(name: Optional[str]) -> str:
-        if name:
-            cleaned = name.strip()
-            if cleaned:
-                return cleaned
-        return "Unknown"
-
     @staticmethod
     def _article_hash(article_id: Optional[str], original_url: Optional[str], title: Optional[str]) -> str:
         import hashlib
@@ -150,217 +139,8 @@ class PostgresAdapter:
             return None
 
     # ------------------------------------------------------------------
-    # Source helpers
-    # ------------------------------------------------------------------
-    def _get_source_id(self, source_name: Optional[str]) -> Optional[str]:
-        name = self._normalize_source(source_name)
-        if name in self._source_cache:
-            return self._source_cache[name]
-        query = "SELECT id FROM sources WHERE name = %s LIMIT 1"
-        with self._cursor() as cur:
-            cur.execute(query, (name,))
-            row = cur.fetchone()
-            if row:
-                source_id = str(row["id"])
-                self._source_cache[name] = source_id
-                return source_id
-            insert_query = """
-                INSERT INTO sources (name, type, metadata)
-                VALUES (%s, %s, %s)
-                RETURNING id
-            """
-            cur.execute(insert_query, (name, "other", Json({})))
-            inserted = cur.fetchone()
-            if not inserted:
-                raise RuntimeError("Failed to insert source")
-            source_id = str(inserted["id"])
-            self._source_cache[name] = source_id
-            return source_id
-
-
-    # ------------------------------------------------------------------
-    # Article ingest
-    # ------------------------------------------------------------------
-    def upsert_article(self, record: ArticleInput, prefer_longer_content: bool = True) -> Dict[str, Any]:
-        article_hash = self._article_hash(record.article_id, record.original_url, record.title)
-        source_id = self._get_source_id(record.source)
-        insert_columns = [
-            "hash",
-            "title",
-            "source_id",
-            "published_at",
-            "url",
-            "content",
-            "raw_payload",
-            "language",
-        ]
-        content_value = record.content
-        payload = [
-            article_hash,
-            record.title,
-            source_id,
-            self._to_iso(record.publish_time),
-            record.original_url,
-            content_value,
-            Json(record.raw_payload or {}),
-            (record.metadata.get("language") if record.metadata else None) or "zh",
-        ]
-        update_clauses = [
-            "title = EXCLUDED.title",
-            "source_id = EXCLUDED.source_id",
-            "published_at = EXCLUDED.published_at",
-            "url = EXCLUDED.url",
-            "raw_payload = EXCLUDED.raw_payload",
-            "language = EXCLUDED.language",
-        ]
-        if not (prefer_longer_content and content_value is None):
-            update_clauses.append("content = EXCLUDED.content")
-        query = f"""
-            INSERT INTO raw_articles ({', '.join(insert_columns)})
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (hash) DO UPDATE
-            SET {', '.join(update_clauses)}
-            RETURNING *
-        """
-        with self._cursor() as cur:
-            cur.execute(query, payload)
-            row = cur.fetchone()
-            if not row:
-                raise RuntimeError("Postgres upsert failed for raw_articles")
-            return dict(row)
-
-    def get_article_counts(self) -> Tuple[int, int]:
-        with self._cursor() as cur:
-            cur.execute("SELECT COUNT(*) AS total FROM raw_articles")
-            total = int(cur.fetchone()["total"])
-            cur.execute(
-                """
-                SELECT COUNT(*) AS total
-                FROM raw_articles
-                WHERE content IS NOT NULL AND LENGTH(TRIM(content)) > 0
-                """
-            )
-            with_content = int(cur.fetchone()["total"])
-        return total, with_content
-
-    def iter_missing_content(self, limit: Optional[int] = None) -> List[MissingContentTarget]:
-        query = """
-            SELECT id, hash, url, content
-            FROM raw_articles
-            ORDER BY created_at ASC
-        """
-        params: Tuple[Any, ...] = ()
-        if limit and limit > 0:
-            query += " LIMIT %s"
-            params = (limit,)
-        with self._cursor() as cur:
-            cur.execute(query, params)
-            rows = cur.fetchall()
-        items: List[MissingContentTarget] = []
-        for row in rows:
-            content = row.get("content")
-            if content and str(content).strip():
-                continue
-            items.append(
-                MissingContentTarget(
-                    raw_article_id=str(row["id"]),
-                    article_hash=str(row["hash"]),
-                    original_url=row.get("url"),
-                )
-            )
-        return items
-
-    def update_article_content(self, raw_article_id: str, content: str) -> None:
-        with self._cursor() as cur:
-            cur.execute(
-                "UPDATE raw_articles SET content = %s, updated_at = NOW() WHERE id = %s",
-                (content, raw_article_id),
-            )
-
-
-    # ------------------------------------------------------------------
     # Summaries
     # ------------------------------------------------------------------
-    def fetch_summary_candidates(self, limit: Optional[int] = None) -> List[SummaryCandidate]:
-        batch = max(1, (limit or 50)) * 4
-        articles_query = """
-            SELECT
-                ra.id,
-                ra.hash,
-                ra.title,
-                ra.content,
-                ra.published_at,
-                ra.url,
-                ra.raw_payload,
-                ra.created_at,
-                COALESCE(s.name, 'Unknown') AS source_name
-            FROM raw_articles AS ra
-            LEFT JOIN sources AS s ON s.id = ra.source_id
-            WHERE ra.is_deleted = FALSE
-              AND ra.content IS NOT NULL
-              AND LENGTH(TRIM(ra.content)) > 0
-            ORDER BY ra.created_at ASC
-            LIMIT %s
-        """
-        with self._cursor() as cur:
-            cur.execute(articles_query, (batch,))
-            article_rows = cur.fetchall()
-        if not article_rows:
-            return []
-        raw_ids = [row["id"] for row in article_rows]
-        filtered_map: Dict[str, List[Dict[str, Any]]] = {str(rid): [] for rid in raw_ids}
-        placeholder = tuple(raw_ids)
-        if placeholder:
-            filtered_query = """
-                SELECT id, raw_article_id, summary, processed_payload, status
-                FROM filtered_articles
-                WHERE raw_article_id = ANY(%s)
-                ORDER BY updated_at DESC NULLS LAST
-            """
-            with self._cursor() as cur:
-                cur.execute(filtered_query, (list(raw_ids),))
-                for row in cur.fetchall():
-                    key = str(row["raw_article_id"])
-                    filtered_map.setdefault(key, []).append(dict(row))
-        candidates: List[SummaryCandidate] = []
-        for row in article_rows:
-            content = row.get("content")
-            if not content or not str(content).strip():
-                continue
-            raw_id = str(row["id"])
-            filtered_entries = filtered_map.get(raw_id, [])
-            filtered_id = None
-            processed_payload: Dict[str, Any] = {}
-            existing_summary = None
-            for entry in filtered_entries:
-                filtered_id = str(entry.get("id")) if entry.get("id") else None
-                processed_payload = entry.get("processed_payload") or {}
-                existing_summary = entry.get("summary")
-                if existing_summary:
-                    break
-            if existing_summary:
-                continue
-            published_at = row.get("published_at")
-            if isinstance(published_at, datetime):
-                published_at = published_at.isoformat()
-            candidates.append(
-                SummaryCandidate(
-                    raw_article_id=raw_id,
-                    article_hash=str(row["hash"]),
-                    title=row.get("title"),
-                    source=row.get("source_name"),
-                    published_at=published_at,
-                    original_url=row.get("url"),
-                    content=str(content),
-                    existing_summary=None,
-                    filtered_article_id=filtered_id,
-                    processed_payload=processed_payload,
-                )
-            )
-            if limit and len(candidates) >= limit:
-                break
-        return candidates
-
     def fetch_toutiao_articles_for_summary(
         self,
         *,
@@ -470,74 +250,6 @@ class PostgresAdapter:
                 else:
                     raise
 
-    def save_summary(
-        self,
-        candidate: SummaryCandidate,
-        summary: str,
-        *,
-        llm_source: Optional[str] = None,
-        keywords: Optional[Sequence[str]] = None,
-    ) -> str:
-        payload: Dict[str, Any] = {
-            "summary": summary,
-            "status": "pending",
-        }
-        if keywords:
-            payload["keywords"] = list(dict.fromkeys(keywords))
-        processed_payload = dict(candidate.processed_payload)
-        if llm_source:
-            processed_payload["llm_source"] = llm_source
-        if candidate.original_url:
-            processed_payload.setdefault("original_url", candidate.original_url)
-        payload["processed_payload"] = Json(processed_payload)
-        with self._cursor() as cur:
-            if candidate.filtered_article_id:
-                cur.execute(
-                    """
-                    UPDATE filtered_articles
-                    SET summary = %s,
-                        status = %s,
-                        keywords = %s,
-                        processed_payload = %s,
-                        updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (
-                        summary,
-                        payload["status"],
-                        payload.get("keywords"),
-                        payload["processed_payload"],
-                        candidate.filtered_article_id,
-                    ),
-                )
-                return str(candidate.filtered_article_id)
-            cur.execute(
-                """
-                INSERT INTO filtered_articles (
-                    raw_article_id,
-                    summary,
-                    status,
-                    keywords,
-                    processed_payload,
-                    relevance_score
-                )
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING id
-                """,
-                (
-                    candidate.raw_article_id,
-                    summary,
-                    payload["status"],
-                    payload.get("keywords"),
-                    payload["processed_payload"],
-                    None,
-                ),
-            )
-            row = cur.fetchone()
-            if not row:
-                raise RuntimeError("Failed to insert filtered article")
-            return str(row["id"])
-
     # ------------------------------------------------------------------
     # Scoring
     # ------------------------------------------------------------------
@@ -580,9 +292,6 @@ class PostgresAdapter:
                 "UPDATE news_summaries SET correlation = %s, updated_at = NOW() WHERE article_id = %s",
                 (score, article_id),
             )
-
-    def update_relevance_score(self, filtered_article_id: str, score: Optional[float]) -> None:
-        self.update_correlation(filtered_article_id, score)
 
     # ------------------------------------------------------------------
     # Export helpers
@@ -1004,29 +713,6 @@ class PostgresAdapter:
     # ------------------------------------------------------------------
     # Misc utilities
     # ------------------------------------------------------------------
-    def articles_exist(self, article_hashes: Iterable[str], require_content: bool = True) -> Dict[str, bool]:
-        hashes = [h for h in {h for h in article_hashes if h}]
-        result = {h: False for h in hashes}
-        if not hashes:
-            return result
-        query = """
-            SELECT hash, content
-            FROM raw_articles
-            WHERE hash = ANY(%s)
-        """
-        with self._cursor() as cur:
-            cur.execute(query, (hashes,))
-            rows = cur.fetchall()
-        for row in rows:
-            hash_value = str(row.get("hash"))
-            content = row.get("content")
-            ok = True
-            if require_content:
-                ok = bool(content and str(content).strip())
-            result[hash_value] = ok
-        return result
-
-
 def get_adapter() -> PostgresAdapter:
     global _ADAPTER
     if _ADAPTER is None:

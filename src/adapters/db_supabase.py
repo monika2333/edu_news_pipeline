@@ -16,10 +16,7 @@ except ImportError:  # supabase lib missing
 
 from src.config import get_settings
 from src.domain import (
-    ArticleInput,
     ExportCandidate,
-    MissingContentTarget,
-    SummaryCandidate,
     SummaryForScoring,
 )
 
@@ -52,19 +49,11 @@ class SupabaseAdapter:
 
     def __init__(self, client: Optional[Client] = None) -> None:
         self.client = client or get_client()
-        self._source_cache: Dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
     @staticmethod
-    def _normalize_source(name: Optional[str]) -> str:
-        if name:
-            cleaned = name.strip()
-            if cleaned:
-                return cleaned
-        return "Unknown"
-
     @staticmethod
     def _article_hash(article_id: Optional[str], original_url: Optional[str], title: Optional[str]) -> str:
         basis = "-".join(filter(None, (article_id, original_url, title)))
@@ -82,144 +71,8 @@ class SupabaseAdapter:
             return None
 
     # ------------------------------------------------------------------
-    # Source helpers
-    # ------------------------------------------------------------------
-    def _get_source_id(self, source_name: Optional[str]) -> Optional[str]:
-        name = self._normalize_source(source_name)
-        if name in self._source_cache:
-            return self._source_cache[name]
-        resp = self.client.table("sources").select("id").eq("name", name).limit(1).execute()
-        data = resp.data or []
-        if data:
-            source_id = data[0]["id"]
-            self._source_cache[name] = source_id
-            return source_id
-        insert_payload = {
-            "name": name,
-            "type": "other",
-            "metadata": {},
-        }
-        insert_resp = self.client.table("sources").insert(insert_payload, returning="representation").execute()
-        if not insert_resp.data:
-            raise RuntimeError(f"Failed to insert source '{name}': {insert_resp}")
-        source_id = insert_resp.data[0]["id"]
-        self._source_cache[name] = source_id
-        return source_id
-
-    # ------------------------------------------------------------------
-    # Article ingest
-    # ------------------------------------------------------------------
-    def upsert_article(self, record: ArticleInput, prefer_longer_content: bool = True) -> Dict[str, Any]:
-        article_hash = self._article_hash(record.article_id, record.original_url, record.title)
-        source_id = self._get_source_id(record.source)
-        payload: Dict[str, Any] = {
-            "hash": article_hash,
-            "title": record.title or None,
-            "source_id": source_id,
-            "published_at": self._to_iso(record.publish_time),
-            "url": record.original_url,
-            "content": record.content,
-            "raw_payload": record.raw_payload or {},
-            "language": (record.metadata.get("language") if record.metadata else None) or "zh",
-        }
-        if prefer_longer_content and record.content is None:
-            payload.pop("content", None)
-        resp = self.client.table("raw_articles").upsert(
-            payload,
-            on_conflict="hash",
-            returning="representation",
-        ).execute()
-        if not resp.data:
-            raise RuntimeError(f"Supabase upsert failed: {resp}")
-        return resp.data[0]
-
-    def get_article_counts(self) -> Tuple[int, int]:
-        total_resp = self.client.table("raw_articles").select("id", count="exact", head=True).execute()
-        total = total_resp.count or 0
-        content_resp = (
-            self.client
-            .table("raw_articles")
-            .select("id", count="exact", head=True)
-            .not_.is_("content", "null")
-        ).execute()
-        with_content = content_resp.count or 0
-        return total, with_content
-
-    def iter_missing_content(self, limit: Optional[int] = None) -> List[MissingContentTarget]:
-        query = self.client.table("raw_articles").select("id, hash, url, content").order("created_at", desc=False)
-        if limit and limit > 0:
-            query = query.limit(limit)
-        resp = query.execute()
-        items: List[MissingContentTarget] = []
-        for row in resp.data or []:
-            content = row.get("content")
-            if content and str(content).strip():
-                continue
-            items.append(
-                MissingContentTarget(
-                    raw_article_id=str(row["id"]),
-                    article_hash=str(row["hash"]),
-                    original_url=row.get("url"),
-                )
-            )
-        return items
-
-    def update_article_content(self, raw_article_id: str, content: str) -> None:
-        self.client.table("raw_articles").update({"content": content}).eq("id", raw_article_id).execute()
-
-    # ------------------------------------------------------------------
     # Summaries
     # ------------------------------------------------------------------
-    def fetch_summary_candidates(self, limit: Optional[int] = None) -> List[SummaryCandidate]:
-        batch = max(1, (limit or 50)) * 4
-        query = (
-            self.client
-            .table("raw_articles")
-            .select(
-                "id, hash, title, content, published_at, url, raw_payload, \
-                 sources(name), filtered_articles(id, summary, processed_payload, status)"
-            )
-            .eq("is_deleted", False)
-            .not_.is_("content", "null")
-            .order("created_at", desc=False)
-            .limit(batch)
-        )
-        resp = query.execute()
-        candidates: List[SummaryCandidate] = []
-        for row in resp.data or []:
-            content = row.get("content")
-            if not content or not str(content).strip():
-                continue
-            filtered_entries = row.get("filtered_articles") or []
-            filtered_id = None
-            processed_payload: Dict[str, Any] = {}
-            existing_summary = None
-            for entry in filtered_entries:
-                filtered_id = entry.get("id")
-                processed_payload = entry.get("processed_payload") or {}
-                existing_summary = entry.get("summary")
-                if existing_summary:
-                    break
-            if existing_summary:
-                continue
-            candidates.append(
-                SummaryCandidate(
-                    raw_article_id=str(row["id"]),
-                    article_hash=str(row["hash"]),
-                    title=row.get("title"),
-                    source=((row.get("sources") or {}).get("name") if isinstance(row.get("sources"), dict) else None),
-                    published_at=row.get("published_at"),
-                    original_url=row.get("url"),
-                    content=str(content),
-                    existing_summary=None,
-                    filtered_article_id=filtered_id,
-                    processed_payload=processed_payload,
-                )
-            )
-            if limit and len(candidates) >= limit:
-                break
-        return candidates
-
     def fetch_toutiao_articles_for_summary(
         self,
         *,
@@ -305,40 +158,6 @@ class SupabaseAdapter:
             else:
                 raise
 
-    def save_summary(
-        self,
-        candidate: SummaryCandidate,
-        summary: str,
-        *,
-        llm_source: Optional[str] = None,
-        keywords: Optional[Sequence[str]] = None,
-    ) -> str:
-        payload: Dict[str, Any] = {
-            "summary": summary,
-            "status": "pending",
-        }
-        if keywords:
-            payload["keywords"] = list(dict.fromkeys(keywords))
-        processed_payload = dict(candidate.processed_payload)
-        if llm_source:
-            processed_payload["llm_source"] = llm_source
-        if candidate.original_url:
-            processed_payload.setdefault("original_url", candidate.original_url)
-        payload["processed_payload"] = processed_payload
-        if candidate.filtered_article_id:
-            self.client.table("filtered_articles").update(payload).eq("id", candidate.filtered_article_id).execute()
-            return str(candidate.filtered_article_id)
-        payload.update(
-            {
-                "raw_article_id": candidate.raw_article_id,
-                "relevance_score": None,
-            }
-        )
-        resp = self.client.table("filtered_articles").insert(payload, returning="representation").execute()
-        if not resp.data:
-            raise RuntimeError("Failed to insert filtered article")
-        return str(resp.data[0]["id"])
-
     # ------------------------------------------------------------------
     # Scoring
     # ------------------------------------------------------------------
@@ -374,9 +193,6 @@ class SupabaseAdapter:
 
     def update_correlation(self, article_id: str, score: Optional[float]) -> None:
         self.client.table("news_summaries").update({"correlation": score}).eq("article_id", article_id).execute()
-
-    def update_relevance_score(self, filtered_article_id: str, score: Optional[float]) -> None:
-        self.update_correlation(filtered_article_id, score)
 
     # ------------------------------------------------------------------
     # Export helpers
@@ -707,24 +523,6 @@ class SupabaseAdapter:
     # ------------------------------------------------------------------
     # Misc utilities
     # ------------------------------------------------------------------
-    def articles_exist(self, article_hashes: Iterable[str], require_content: bool = True) -> Dict[str, bool]:
-        hashes = [h for h in {h for h in article_hashes if h}]
-        result = {h: False for h in hashes}
-        if not hashes:
-            return result
-        chunk_size = 100
-        for i in range(0, len(hashes), chunk_size):
-            chunk = hashes[i : i + chunk_size]
-            resp = self.client.table("raw_articles").select("hash, content").in_("hash", chunk).execute()
-            for row in resp.data or []:
-                content = row.get("content")
-                ok = True
-                if require_content:
-                    ok = bool(content and str(content).strip())
-                result[str(row["hash"])] = ok
-        return result
-
-
 def get_adapter() -> SupabaseAdapter:
     """Return a cached `SupabaseAdapter` instance."""
 

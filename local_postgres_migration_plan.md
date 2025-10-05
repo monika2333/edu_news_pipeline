@@ -51,14 +51,13 @@
 - Do we need automated migration tooling for existing Supabase data, or will new pipelines start fresh?
 - What seeding strategy (if any) is required to support local development fixtures?
 
-
 ## Legacy Table Cleanup
 - [x] Back up redundant tables (audit_logs, events, event_articles, toutiao_articles_backup, brief_items.event_id)
 - [x] Drop redundant tables and remove brief_items.event_id from Postgres
 - [x] Update Supabase schema files to match cleaned tables
 - [x] Run local verification after cleanup
 
-
-
-
-
+## Raw Table Cleanup
+- [x] Drop raw_articles and filtered_articles tables from Postgres
+- [x] Remove raw/filtered tables from Supabase schema files
+- [x] Strip raw/filtered code paths from adapters

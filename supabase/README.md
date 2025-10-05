@@ -28,8 +28,8 @@
 ## 3. 配置 RLS 与 Policy（示例）
 Schema 中尚未启用 Row Level Security。创建表后，可根据业务需要执行如下命令：
 ```sql
-alter table public.filtered_articles enable row level security;
-create policy "Editors can manage filtered articles" on public.filtered_articles
+alter table public.news_summaries enable row level security;
+create policy "Editors can manage news summaries" on public.news_summaries
     for all using (auth.role() = 'authenticated');
 ```
 > 具体策略应结合实际的角色设计进行细化。

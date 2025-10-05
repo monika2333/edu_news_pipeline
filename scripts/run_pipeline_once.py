@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import json
@@ -82,7 +82,7 @@ def _maybe_get_adapter(enable: bool, provided: Optional[Any]) -> Optional[Any]:
     try:
         return get_adapter()
     except Exception as exc:  # pragma: no cover - metadata failures should not break runs
-        print(f"[pipeline] warning: Supabase adapter unavailable: {exc}", file=sys.stderr)
+        print(f"[pipeline] warning: metadata adapter unavailable: {exc}", file=sys.stderr)
         return None
 
 
@@ -302,7 +302,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--no-metadata",
         action="store_true",
-        help="Skip Supabase metadata recording.",
+        help="Skip database metadata recording.",
     )
     parser.add_argument(
         "--json",

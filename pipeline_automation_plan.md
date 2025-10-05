@@ -9,8 +9,8 @@
 
 ### 1. 自动触发每日运行
 - 在服务器上为 `python scripts/run_pipeline_once.py` 配置计划任务（Windows 任务计划或 Linux cron）。
-- 使用默认步骤 `crawl -> summarize -> score -> export`，确保 Supabase 等依赖配置正确。
-- 运行后检查 `output/` 目录和控制台 API，确认日志、Supabase 元数据正常写入。
+- 使用默认步骤 `crawl -> summarize -> score -> export`，确保 Postgres 等依赖配置正确。
+- 运行后检查 `output/` 目录和控制台 API，确认日志、数据库元数据正常写入。
 - Windows 示例脚本：`scripts/run_pipeline_daily.ps1` 会自动写日志，可在计划任务里调用：
   ```powershell
   powershell.exe -File "D:\600program\edu_news_pipeline\scripts\run_pipeline_daily.ps1" -Python "C:\Users\me\AppData\Local\Programs\Python\Python311\python.exe"
@@ -39,3 +39,4 @@
 - 在控制台展示更多运行细节（耗时、错误摘要、导出列表）。
 - 为推送内容添加筛选或格式化（例如按关键词分组、生成简报）。
 - 加入健康检查和告警，当流水线失败或推送异常时及时提醒。
+

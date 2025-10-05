@@ -74,8 +74,7 @@ create table if not exists public.brief_batches (
 create table if not exists public.brief_items (
     id uuid primary key default gen_random_uuid(),
     brief_batch_id uuid not null references public.brief_batches(id) on delete cascade,
-    article_id text,
-    event_id uuid,
+    article_id text,
     section text,
     order_index integer not null default 0,
     final_summary text,
@@ -164,3 +163,4 @@ create trigger pipeline_runs_set_updated_at
     for each row execute function public.set_updated_at();
 
 commit;
+

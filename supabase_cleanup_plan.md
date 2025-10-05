@@ -9,7 +9,8 @@
 1. **梳理现状与差异**
    - 通读 src/adapters/db_supabase.py、src/adapters/db_postgres.py，确认 Postgres 适配器已经实现 Supabase 所需的接口；记录任何功能差异或缺失的方法。
    - 检查 src/adapters/http_toutiao.py、src/cli/main.py 等是否仍引用 Supabase 名称或配置，并列出待修改点。
-   - 整理仓库中 Supabase 相关资产：supabase/ 目录、scripts/migrate_supabase_to_local.py、docs/supabase_*.md、equirements.txt 中的依赖、.env 模板字段等。
+   - 整理仓库中 Supabase 相关资产：supabase/ 目录、scripts/migrate_supabase_to_local.py、docs/supabase_*.md、
+equirements.txt 中的依赖、.env 模板字段等。
 
 2. **锁定 Postgres 作为唯一数据库后端**
    - 更新 src/config.py：移除 Supabase 相关字段与自动选择逻辑，只保留 Postgres 所需配置。
@@ -19,10 +20,12 @@
 3. **删除 Supabase 适配器及调用代码**
    - 移除 src/adapters/db_supabase.py 及任何对它的引用。
    - 清理 src/adapters/http_toutiao.py 中与 Supabase 交互的逻辑（上传脚本、配置类、命令行参数），视需求保留纯抓取能力。
-   - 检查 src/workers/export_brief.py、src/workers 目录下其它模块，替换/重命名所有 Supabase 特定文案（例如 ecord_history 帮助信息）。
+   - 检查 src/workers/export_brief.py、src/workers 目录下其它模块，替换/重命名所有 Supabase 特定文案（例如 
+ecord_history 帮助信息）。
 
 4. **更新依赖与环境配置**
-   - 在 equirements.txt 中删除 supabase 相关条目，确认无其它包依赖它。
+   - 在 
+equirements.txt 中删除 supabase 相关条目，确认无其它包依赖它。
    - 移除 .env.local / config/abstract.env / README 中的 SUPABASE_* 变量说明，改为仅描述 Postgres 环境变量。
    - 如有 CLI 或脚本参数默认指向 Supabase（例：--record-history 描述），同步更新文案。
 
@@ -36,7 +39,8 @@
    - 检查任何自动化流程（Makefile、CI、调度脚本）是否包含 Supabase 命令并清理。
 
 7. **回归测试与验证**
-   - 运行现有测试（如 pytest、uff/lake8 等）确保清理未引入回归。
+   - 运行现有测试（如 pytest、
+uff/lake8 等）确保清理未引入回归。
    - 手动执行关键工作流：python -m src.cli.main crawl/summarize/score/export，确认数据库读写正常，导出与通知流程可用。
    - 最后检查 Git 变更，确认无遗留 Supabase 相关文件后再进行提交。
 
@@ -45,3 +49,8 @@
    - 提醒团队同步清理 CI/CD、部署环境中的 Supabase 凭据与资源。
 
 > 以上步骤完成后，我们将逐项执行并验证，确保流水线在纯 Postgres 环境下稳定运行。
+
+## ????
+- [x] ?? 1???????????? Postgres ??????????????? Supabase ????????
+- [x] ?? 2??? Postgres ????????????? Supabase ????? `db_backend` ???`src/adapters/db.py` ???? Postgres ????
+- [x] ?? 3??? Supabase ???????????? `src/adapters/db_supabase.py`??? Toutiao ??????????? CLI ???????????

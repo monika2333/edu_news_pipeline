@@ -237,7 +237,7 @@ class PostgresAdapter:
             except psycopg.DatabaseError as exc:
                 message = str(exc)
                 if "fetched_at" in message and "news_summaries" in message:
-                    # Retry without fetched_at to mimic Supabase behaviour
+                    # Retry without fetched_at to mimic previous remote behaviour
                     filtered_columns = [c for c in columns if c != "fetched_at"]
                     filtered_values = [payload[c] for c in filtered_columns]
                     filtered_updates = [f"{col} = EXCLUDED.{col}" for col in filtered_columns if col != "article_id"]

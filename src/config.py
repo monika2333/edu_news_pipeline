@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 from dataclasses import dataclass
@@ -47,13 +47,13 @@ def load_environment() -> None:
 
 
 
-
 def _get_env(*keys: str) -> Optional[str]:
     for key in keys:
         value = os.getenv(key)
         if value:
             return value
     return None
+
 
 def _optional_int(value: Optional[str]) -> Optional[int]:
     if value is None or value == "":
@@ -72,23 +72,12 @@ def _bool_from_env(value: Optional[str], *, default: bool = False) -> bool:
 
 @dataclass(frozen=True)
 class Settings:
-    supabase_url: Optional[str]
-    supabase_service_role_key: Optional[str]
-    supabase_key: Optional[str]
-    supabase_anon_key: Optional[str]
-    supabase_db_host: Optional[str]
-    supabase_db_port: int
-    supabase_db_name: str
-    supabase_db_user: str
-    supabase_db_password: Optional[str]
-    supabase_db_schema: str
     db_host: str
     db_port: int
     db_name: str
     db_user: str
     db_password: Optional[str]
     db_schema: str
-    db_backend: str
     siliconflow_base_url: str
     siliconflow_api_key: Optional[str]
     summarize_model_name: str
@@ -106,74 +95,18 @@ class Settings:
     feishu_receive_id: Optional[str]
     feishu_receive_id_type: str
 
-    @property
-    def effective_supabase_key(self) -> Optional[str]:
-        """Return the most privileged Supabase key available."""
-        return (
-            self.supabase_service_role_key
-            or self.supabase_key
-            or self.supabase_anon_key
-        )
-
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Return cached project settings sourced from env variables."""
     load_environment()
 
-    supabase_url = os.getenv("SUPABASE_URL")
-    supabase_service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    supabase_key = os.getenv("SUPABASE_KEY")
-    supabase_anon_key = os.getenv("SUPABASE_ANON_KEY")
-
-    supabase_db_host = os.getenv("SUPABASE_DB_HOST")
-    supabase_db_port = _optional_int(os.getenv("SUPABASE_DB_PORT")) or 5432
-    supabase_db_name = os.getenv("SUPABASE_DB_NAME", "postgres")
-    supabase_db_user = os.getenv("SUPABASE_DB_USER", "postgres")
-    supabase_db_password = os.getenv("SUPABASE_DB_PASSWORD")
-    supabase_db_schema = os.getenv("SUPABASE_DB_SCHEMA", "public")
-
-    db_host = (
-        os.getenv("DB_HOST")
-        or os.getenv("POSTGRES_HOST")
-        or supabase_db_host
-        or "localhost"
-    )
-    db_port = (
-        _optional_int(_get_env("DB_PORT", "POSTGRES_PORT"))
-        or supabase_db_port
-        or 5432
-    )
-    db_name = (
-        _get_env("DB_NAME", "POSTGRES_DB", "POSTGRES_DB_NAME")
-        or supabase_db_name
-        or "postgres"
-    )
-    db_user = (
-        _get_env("DB_USER", "POSTGRES_USER")
-        or supabase_db_user
-        or "postgres"
-    )
-    db_password = _get_env("DB_PASSWORD", "POSTGRES_PASSWORD") or supabase_db_password
-    db_schema = (
-        _get_env("DB_SCHEMA", "POSTGRES_SCHEMA")
-        or supabase_db_schema
-        or "public"
-    )
-
-    backend_env = _get_env("DB_BACKEND", "DATABASE_BACKEND")
-    if backend_env:
-        db_backend = backend_env.strip().lower()
-    else:
-        prefer_supabase = _bool_from_env(os.getenv("USE_SUPABASE"))
-        if prefer_supabase:
-            db_backend = "supabase"
-        elif supabase_url and not os.getenv("DB_HOST") and not os.getenv("POSTGRES_HOST"):
-            db_backend = "supabase"
-        else:
-            db_backend = "postgres"
-    if db_backend not in {"postgres", "supabase"}:
-        db_backend = "postgres"
+    db_host = _get_env("DB_HOST", "POSTGRES_HOST") or "localhost"
+    db_port = _optional_int(_get_env("DB_PORT", "POSTGRES_PORT")) or 5432
+    db_name = _get_env("DB_NAME", "POSTGRES_DB", "POSTGRES_DB_NAME") or "postgres"
+    db_user = _get_env("DB_USER", "POSTGRES_USER") or "postgres"
+    db_password = _get_env("DB_PASSWORD", "POSTGRES_PASSWORD")
+    db_schema = _get_env("DB_SCHEMA", "POSTGRES_SCHEMA") or "public"
 
     siliconflow_base_url = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
     siliconflow_api_key = os.getenv("SILICONFLOW_API_KEY")
@@ -206,23 +139,12 @@ def get_settings() -> Settings:
     keywords_path = keywords_path.resolve()
 
     return Settings(
-        supabase_url=supabase_url,
-        supabase_service_role_key=supabase_service_role_key,
-        supabase_key=supabase_key,
-        supabase_anon_key=supabase_anon_key,
-        supabase_db_host=supabase_db_host,
-        supabase_db_port=supabase_db_port,
-        supabase_db_name=supabase_db_name,
-        supabase_db_user=supabase_db_user,
-        supabase_db_password=supabase_db_password,
-        supabase_db_schema=supabase_db_schema,
         db_host=db_host,
         db_port=db_port,
         db_name=db_name,
         db_user=db_user,
         db_password=db_password,
         db_schema=db_schema,
-        db_backend=db_backend,
         siliconflow_base_url=siliconflow_base_url,
         siliconflow_api_key=siliconflow_api_key,
         summarize_model_name=summarize_model_name,
@@ -243,11 +165,3 @@ def get_settings() -> Settings:
 
 
 __all__ = ["Settings", "get_settings", "load_environment"]
-
-
-
-
-
-
-
-

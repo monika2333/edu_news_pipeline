@@ -1,10 +1,9 @@
 ﻿#!/usr/bin/env python3
-"""Scrape Toutiao authors listed in a file, fetch article contents, and push to Supabase."""
+"""Scrape Toutiao authors listed in a file and fetch article contents."""
 
 from __future__ import annotations
 
 import asyncio
-import argparse
 import html
 import json
 import time
@@ -22,14 +21,6 @@ from urllib.request import Request, urlopen
 
 from playwright.async_api import async_playwright
 
-try:  # Optional import; Supabase upload requires psycopg
-    import psycopg
-    from psycopg import sql, errors
-except ImportError:  # pragma: no cover - handled at runtime
-    psycopg = None  # type: ignore
-    sql = None  # type: ignore
-    errors = None  # type: ignore
-
 INFO_ENDPOINT = "https://m.toutiao.com/i{article_id}/info/"
 PROFILE_URL_TEMPLATE = "https://www.toutiao.com/c/user/token/{token}/"
 DEFAULT_LIMIT = 100
@@ -41,7 +32,6 @@ USER_AGENT = (
 NAVIGATION_MAX_ATTEMPTS = 3
 INFO_MAX_ATTEMPTS = 3
 RETRY_BASE_DELAY_SECONDS = 1.5
-
 
 def _backoff_delay(attempt: int) -> float:
     return RETRY_BASE_DELAY_SECONDS * (2 ** max(0, attempt - 1))
@@ -66,8 +56,6 @@ FETCH_FEED_JS = """
         return await response.json();
     }
 """
-SUPABASE_ENV_DEFAULT = Path(".env.local")
-
 
 @dataclass
 class FeedItem:
@@ -113,7 +101,6 @@ class FeedItem:
             raw=item,
         )
 
-
 @dataclass
 class ArticleRecord:
     token: str
@@ -130,19 +117,6 @@ class ArticleRecord:
     content_markdown: str
     fetched_at: str
 
-
-@dataclass
-class SupabaseConfig:
-    host: str
-    port: int
-    user: str
-    password: str
-    database: str
-    schema: str
-    table: str
-    reset_table: bool
-
-
 def load_env_file(path: Path) -> None:
     if not path.exists():
         return
@@ -156,13 +130,11 @@ def load_env_file(path: Path) -> None:
         if key and value and key not in os.environ:
             os.environ[key] = value
 
-
 def extract_token_from_url(url: str) -> str:
     match = TOKEN_PATTERN.search(url)
     if not match:
         raise ValueError(f"Could not extract token from: {url}")
     return match.group(1)
-
 
 def load_author_tokens(path: Path) -> List[Tuple[str, str]]:
     if not path.exists():
@@ -183,7 +155,6 @@ def load_author_tokens(path: Path) -> List[Tuple[str, str]]:
         raise ValueError("No author tokens found in input file.")
     return entries
 
-
 def resolve_short_url(url: str, timeout: int = 15) -> str:
     try:
         req = Request(url, headers={"User-Agent": USER_AGENT})
@@ -191,7 +162,6 @@ def resolve_short_url(url: str, timeout: int = 15) -> str:
             return resp.geturl()
     except Exception:
         return url
-
 
 def extract_article_id(value: str) -> str:
     s = (value or "").strip()
@@ -213,7 +183,6 @@ def extract_article_id(value: str) -> str:
     if match:
         return match.group(1)
     raise ValueError(f"Could not extract article_id from: {value}")
-
 
 def fetch_info(article_id: str, timeout: int = 15, lang: Optional[str] = None) -> Dict[str, Any]:
     url = INFO_ENDPOINT.format(article_id=article_id)
@@ -250,8 +219,6 @@ def fetch_info(article_id: str, timeout: int = 15, lang: Optional[str] = None) -
         raise RuntimeError("Toutiao info API responded with success=false")
     return data.get("data") or {}
 
-
-
 def html_to_text(html_str: str) -> str:
     text = html.unescape(html_str or "")
     text = re.sub(r"<(?:/)?p[^>]*>", "\n\n", text, flags=re.I)
@@ -260,10 +227,8 @@ def html_to_text(html_str: str) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
     return text
 
-
 def html_to_markdown(html_str: str) -> str:
     return html_to_text(html_str)
-
 
 def to_iso(ts: Optional[int]) -> Optional[str]:
     if ts is None:
@@ -272,7 +237,6 @@ def to_iso(ts: Optional[int]) -> Optional[str]:
         return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone().isoformat()
     except Exception:
         return None
-
 
 async def _goto_with_retries(page, url: str, *, max_attempts: int = NAVIGATION_MAX_ATTEMPTS) -> None:
     attempt = 1
@@ -288,7 +252,6 @@ async def _goto_with_retries(page, url: str, *, max_attempts: int = NAVIGATION_M
             await asyncio.sleep(wait_seconds)
             attempt += 1
 
-
 def parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
     if not value:
         return None
@@ -301,7 +264,6 @@ def parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
             except ValueError:
                 return None
         return None
-
 
 async def _collect_feed_from_page(
     page, token: str, profile_url: str, limit: Optional[int], existing_ids: Optional[Set[str]]
@@ -341,7 +303,6 @@ async def _collect_feed_from_page(
         collected = collected[:limit]
     return collected, reached_existing
 
-
 async def fetch_feed_items(
     entries: List[Tuple[str, str]],
     limit: Optional[int],
@@ -380,7 +341,6 @@ async def fetch_feed_items(
         return all_items[:limit]
     return all_items
 
-
 def try_resolve_article_id_from_feed(item: FeedItem) -> Optional[str]:
     candidates = [item.article_url, str(item.raw.get("group_id") or ""), str(item.raw.get("item_id") or "")]
     for candidate in candidates:
@@ -392,14 +352,11 @@ def try_resolve_article_id_from_feed(item: FeedItem) -> Optional[str]:
             continue
     return None
 
-
-
 def resolve_article_id_from_feed(item: FeedItem) -> str:
     article_id = try_resolve_article_id_from_feed(item)
     if article_id is None:
         raise ValueError(f"Could not resolve article_id for feed item: {item.title}")
     return article_id
-
 
 def build_article_record(item: FeedItem, article_id: str, data: Dict[str, Any]) -> ArticleRecord:
     publish_time: Optional[int] = None
@@ -432,7 +389,6 @@ def build_article_record(item: FeedItem, article_id: str, data: Dict[str, Any]) 
         fetched_at=datetime.now(timezone.utc).astimezone().isoformat(),
     )
 
-
 def fetch_article_records(
     feed_items: Iterable[FeedItem],
     timeout: int,
@@ -449,7 +405,7 @@ def fetch_article_records(
             print(f"[warn] Skip article because ID could not be resolved: {exc}", file=sys.stderr)
             continue
         if article_id in baseline_ids:
-            print(f"[info] Article {article_id} already in Supabase; skipping.", file=sys.stderr)
+            print(f"[info] Article {article_id} already in database; skipping.", file=sys.stderr)
             continue
         if article_id in seen_new:
             continue
@@ -463,80 +419,6 @@ def fetch_article_records(
     if existing_ids is not None:
         existing_ids.update(seen_new)
     return records
-
-
-def derive_supabase_host(supabase_url: str) -> str:
-    parsed = urlparse(supabase_url)
-    host = parsed.netloc or supabase_url
-    project_ref = host.split(".")[0]
-    return f"db.{project_ref}.supabase.co"
-
-
-def build_supabase_config(args: argparse.Namespace) -> Optional[SupabaseConfig]:
-    if args.skip_supabase_upload:
-        return None
-    if psycopg is None:
-        print("[warn] psycopg is not installed; skipping Supabase upload.", file=sys.stderr)
-        return None
-    supabase_url = os.getenv("SUPABASE_URL")
-    password = os.getenv("SUPABASE_DB_PASSWORD")
-    if not supabase_url or not password:
-        print("[warn] Missing SUPABASE_URL or SUPABASE_DB_PASSWORD; skipping Supabase upload.", file=sys.stderr)
-        return None
-    user = os.getenv("SUPABASE_DB_USER", "postgres")
-    database = os.getenv("SUPABASE_DB_NAME", "postgres")
-    schema = os.getenv("SUPABASE_DB_SCHEMA", "public")
-    host = os.getenv("SUPABASE_DB_HOST", derive_supabase_host(supabase_url))
-    try:
-        port = int(os.getenv("SUPABASE_DB_PORT", "5432"))
-    except ValueError:
-        port = 5432
-    return SupabaseConfig(
-        host=host,
-        port=port,
-        user=user,
-        password=password,
-        database=database,
-        schema=schema,
-        table=args.supabase_table,
-        reset_table=args.reset_supabase_table,
-    )
-
-
-def fetch_existing_article_ids(config: SupabaseConfig) -> Set[str]:
-    if psycopg is None or sql is None:
-        return set()
-    if config.reset_table:
-        return set()
-    table_ident = sql.Identifier(config.schema, config.table)
-    query = sql.SQL("SELECT article_id FROM {}").format(table_ident)
-    article_ids: Set[str] = set()
-    try:
-        with psycopg.connect(
-            host=config.host,
-            port=config.port,
-            user=config.user,
-            password=config.password,
-            dbname=config.database,
-            sslmode="require",
-        ) as conn:
-            with conn.cursor() as cur:
-                try:
-                    cur.execute(query)
-                except Exception as exc:
-                    if errors is not None and isinstance(exc, errors.UndefinedTable):
-                        return set()
-                    raise
-                rows = cur.fetchall()
-                for row in rows:
-                    if row and row[0]:
-                        article_ids.add(str(row[0]))
-    except Exception as exc:
-        print(f"[warn] Could not read existing Supabase records: {exc}", file=sys.stderr)
-        return set()
-    return article_ids
-
-
 
 def format_article_rows(records: Sequence[ArticleRecord]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
@@ -558,75 +440,4 @@ def format_article_rows(records: Sequence[ArticleRecord]) -> List[Dict[str, Any]
         })
     return rows
 
-
-def upload_records_to_supabase(records: List[ArticleRecord], config: SupabaseConfig) -> bool:
-    if not records:
-        print("[warn] No records to upload to Supabase.", file=sys.stderr)
-        return True
-    if psycopg is None or sql is None:  # safety net
-        print("[warn] psycopg not available; cannot upload to Supabase.", file=sys.stderr)
-        return False
-    table_ident = sql.Identifier(config.schema, config.table)
-    create_sql = sql.SQL(
-        """
-        CREATE TABLE IF NOT EXISTS {} (
-            token TEXT,
-            profile_url TEXT,
-            article_id TEXT PRIMARY KEY,
-            title TEXT,
-            source TEXT,
-            publish_time BIGINT,
-            publish_time_iso TIMESTAMPTZ,
-            url TEXT,
-            summary TEXT,
-            comment_count INTEGER,
-            digg_count INTEGER,
-            content_markdown TEXT,
-            fetched_at TIMESTAMPTZ
-        )
-        """
-    ).format(table_ident)
-    columns = [
-        "token",
-        "profile_url",
-        "article_id",
-        "title",
-        "source",
-        "publish_time",
-        "publish_time_iso",
-        "url",
-        "summary",
-        "comment_count",
-        "digg_count",
-        "content_markdown",
-        "fetched_at",
-    ]
-    placeholders = sql.SQL(", ").join(sql.Placeholder(col) for col in columns)
-    insert_sql = sql.SQL("INSERT INTO {} ({}) VALUES ({})").format(
-        table_ident,
-        sql.SQL(", ").join(sql.Identifier(col) for col in columns),
-        placeholders,
-    )
-    rows = format_article_rows(records)
-    try:
-        with psycopg.connect(
-            host=config.host,
-            port=config.port,
-            user=config.user,
-            password=config.password,
-            dbname=config.database,
-            sslmode="require",
-        ) as conn:
-            with conn.cursor() as cur:
-                if config.reset_table:
-                    cur.execute(sql.SQL("DROP TABLE IF EXISTS {}").format(table_ident))
-                cur.execute(create_sql)
-                cur.executemany(insert_sql, rows)
-            conn.commit()
-    except Exception as exc:
-        print(f"[error] Failed to upload to Supabase: {exc}", file=sys.stderr)
-        return False
-    print(f"[info] Uploaded {len(rows)} record(s) to Supabase table {config.schema}.{config.table}", file=sys.stderr)
-    return True
-
-__all__ = ["FeedItem", "ArticleRecord", "SupabaseConfig", "SUPABASE_ENV_DEFAULT", "load_env_file", "load_author_tokens", "fetch_feed_items", "fetch_article_records", "build_supabase_config", "fetch_existing_article_ids", "upload_records_to_supabase", "format_article_rows", "DEFAULT_LIMIT"]
+__all__ = ["FeedItem", "ArticleRecord", "load_env_file", "load_author_tokens", "fetch_feed_items", "fetch_article_records", "format_article_rows", "DEFAULT_LIMIT"]

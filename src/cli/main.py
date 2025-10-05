@@ -42,7 +42,7 @@ def _add_export(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--report-tag", type=str, default=None, help="Explicit report tag identifier")
     parser.add_argument("--min-score", type=_positive_int, default=60, help="Minimum correlation score to include")
     parser.add_argument("--skip-exported", action=argparse.BooleanOptionalAction, default=True, help="Skip items already exported in previous runs")
-    parser.add_argument("--record-history", action=argparse.BooleanOptionalAction, default=True, help="Persist export metadata back to Supabase")
+    parser.add_argument("--record-history", action=argparse.BooleanOptionalAction, default=True, help="Persist export metadata back to the database")
     parser.add_argument("--output", type=Path, default=None, help="Override output file path")
 
 

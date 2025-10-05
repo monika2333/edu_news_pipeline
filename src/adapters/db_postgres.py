@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import contextlib
 from datetime import datetime, timezone, date
@@ -430,6 +430,9 @@ class PostgresAdapter:
             "llm_summary": summary,
             "summary_generated_at": datetime.now(timezone.utc).isoformat(),
         }
+        llm_source_value = article.get("llm_source")
+        if llm_source_value is not None:
+            payload["llm_source"] = str(llm_source_value).strip()
         fetched_at = article.get("fetched_at")
         if fetched_at:
             payload["fetched_at"] = fetched_at
@@ -472,7 +475,7 @@ class PostgresAdapter:
         candidate: SummaryCandidate,
         summary: str,
         *,
-        source_llm: Optional[str] = None,
+        llm_source: Optional[str] = None,
         keywords: Optional[Sequence[str]] = None,
     ) -> str:
         payload: Dict[str, Any] = {
@@ -482,8 +485,8 @@ class PostgresAdapter:
         if keywords:
             payload["keywords"] = list(dict.fromkeys(keywords))
         processed_payload = dict(candidate.processed_payload)
-        if source_llm:
-            processed_payload["source_llm"] = source_llm
+        if llm_source:
+            processed_payload["llm_source"] = llm_source
         if candidate.original_url:
             processed_payload.setdefault("original_url", candidate.original_url)
         payload["processed_payload"] = Json(processed_payload)
@@ -595,7 +598,8 @@ class PostgresAdapter:
                 url,
                 source,
                 publish_time_iso,
-                publish_time
+                publish_time,
+                llm_source
             FROM news_summaries
             WHERE correlation IS NOT NULL AND correlation >= %s
             ORDER BY correlation DESC
@@ -627,7 +631,7 @@ class PostgresAdapter:
                     summary=str(summary_text),
                     content=str(content),
                     source=source_name,
-                    source_llm=None,
+                    llm_source=row.get("llm_source"),
                     relevance_score=correlation,
                     original_url=url,
                     published_at=published_at,
@@ -1031,3 +1035,4 @@ def get_adapter() -> PostgresAdapter:
 
 
 __all__ = ["PostgresAdapter", "get_adapter"]
+

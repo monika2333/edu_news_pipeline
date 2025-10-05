@@ -157,10 +157,11 @@ def run(
                 else:
                     skipped_previous_reports += 1
                 continue
-            category = classify_category(candidate.source, candidate.title, candidate.summary, candidate.content)
+            category = classify_category(candidate.llm_source or candidate.source, candidate.title, candidate.summary, candidate.content)
             summary_line = candidate.summary or ""
-            if candidate.source:
-                entry = f"{candidate.title or ''}\n{summary_line}（{candidate.source}）"
+            display_source = (candidate.llm_source or candidate.source or '').strip()
+            if display_source:
+                entry = f"{candidate.title or ''}\n{summary_line}（{display_source}）"
             else:
                 entry = f"{candidate.title or ''}\n{summary_line}"
             grouped_entries.setdefault(category, []).append(entry)

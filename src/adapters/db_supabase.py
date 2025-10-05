@@ -279,6 +279,9 @@ class SupabaseAdapter:
             "llm_summary": summary,
             "summary_generated_at": datetime.now(timezone.utc).isoformat(),
         }
+        llm_source_value = article.get("llm_source")
+        if llm_source_value is not None:
+            payload["llm_source"] = str(llm_source_value).strip()
         fetched_at = article.get("fetched_at")
         if fetched_at:
             payload["fetched_at"] = fetched_at
@@ -307,7 +310,7 @@ class SupabaseAdapter:
         candidate: SummaryCandidate,
         summary: str,
         *,
-        source_llm: Optional[str] = None,
+        llm_source: Optional[str] = None,
         keywords: Optional[Sequence[str]] = None,
     ) -> str:
         payload: Dict[str, Any] = {
@@ -317,8 +320,8 @@ class SupabaseAdapter:
         if keywords:
             payload["keywords"] = list(dict.fromkeys(keywords))
         processed_payload = dict(candidate.processed_payload)
-        if source_llm:
-            processed_payload["source_llm"] = source_llm
+        if llm_source:
+            processed_payload["llm_source"] = llm_source
         if candidate.original_url:
             processed_payload.setdefault("original_url", candidate.original_url)
         payload["processed_payload"] = processed_payload
@@ -379,7 +382,7 @@ class SupabaseAdapter:
     # Export helpers
     # ------------------------------------------------------------------
     def fetch_export_candidates(self, min_score: float) -> List[ExportCandidate]:
-        columns = "article_id, title, llm_summary, content_markdown, correlation, url, source, publish_time_iso, publish_time"
+        columns = "article_id, title, llm_summary, content_markdown, correlation, url, source, publish_time_iso, publish_time, llm_source"
         resp = (
             self.client
             .table("news_summaries")
@@ -400,7 +403,7 @@ class SupabaseAdapter:
             url = row.get("url")
             published_at = row.get("publish_time_iso") or row.get("publish_time")
             source_name = row.get("source")
-            source_llm = None
+            llm_source_value = row.get("llm_source")
             article_hash = self._article_hash(article_id, url, title)
             out.append(
                 ExportCandidate(
@@ -411,7 +414,7 @@ class SupabaseAdapter:
                     summary=str(summary),
                     content=str(content),
                     source=source_name,
-                    source_llm=source_llm,
+                    llm_source=llm_source_value,
                     relevance_score=correlation,
                     original_url=url,
                     published_at=published_at,
@@ -736,6 +739,7 @@ __all__ = [
     "get_client",
     "get_adapter",
 ]
+
 
 
 

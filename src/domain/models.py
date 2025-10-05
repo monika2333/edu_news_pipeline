@@ -56,7 +56,7 @@ class ExportCandidate:
     summary: str
     content: str
     source: Optional[str]
-    source_llm: Optional[str]
+    llm_source: Optional[str]
     relevance_score: float
     original_url: Optional[str]
     published_at: Optional[str]

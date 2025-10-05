@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.adapters.db import get_adapter
+from src.adapters.llm_source import detect_source
 from src.adapters.llm_summary import summarise
 from src.config import get_settings
 from src.workers import log_error, log_info, log_summary, worker_session
@@ -202,8 +203,22 @@ def run(limit: int = 50, *, concurrency: Optional[int] = None, keywords_path: Op
                 summary_text = (result.get('summary', '')).strip()
                 if not summary_text:
                     raise RuntimeError('Summarisation returned empty text')
+                llm_source = None
+                try:
+                    source_payload = {
+                        'title': article.get('title'),
+                        'content_markdown': article.get('content_markdown'),
+                        'content': article.get('content'),
+                    }
+                    source_result = detect_source(source_payload)
+                    llm_source = (source_result.get('llm_source') or '').strip()
+                except Exception as source_exc:
+                    log_info(WORKER, f'Source detection skipped {article_id}: {source_exc}')
+                article_with_source = dict(article)
+                if llm_source:
+                    article_with_source['llm_source'] = llm_source
                 adapter.upsert_news_summary(
-                    article,
+                    article_with_source,
                     summary_text,
                     keywords=hits,
                 )

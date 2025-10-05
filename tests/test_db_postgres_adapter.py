@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import uuid
@@ -12,12 +12,12 @@ from src.config import get_settings
 
 
 def _reset_adapter_cache() -> None:
+    os.environ.pop("DB_BACKEND", None)
     db_factory._ADAPTER = None  # type: ignore[attr-defined]
     get_settings.cache_clear()
 
 
 def test_postgres_adapter_core_roundtrip() -> None:
-    os.environ["DB_BACKEND"] = "postgres"
     _reset_adapter_cache()
 
     settings = get_settings()

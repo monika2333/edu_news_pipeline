@@ -4,10 +4,10 @@ Automated pipeline for collecting Toutiao education articles, summarising them w
 
 ## Pipeline Overview
 
-1. **Crawl** – Fetch latest Toutiao articles defined in `data/author_tokens.txt` and store them in the Supabase table `toutiao_articles`.
-2. **Summarise** – Generate summaries for new articles and write them to `news_summaries`.
-3. **Score** – Ask the LLM to rate each summary and persist the `correlation` score in `news_summaries`.
-4. **Export** – Assemble the highest-scoring summaries into a plain-text brief and optionally log the batch in `brief_batches` / `brief_items`.
+1. **Crawl** - Fetch latest Toutiao articles defined in `data/author_tokens.txt` and store them in the Postgres table `toutiao_articles`.
+2. **Summarise** - Generate summaries for new articles and write them to `news_summaries`.
+3. **Score** - Ask the LLM to rate each summary and persist the `correlation` score in `news_summaries`.
+4. **Export** - Assemble the highest-scoring summaries into a plain-text brief and optionally log the batch metadata in `brief_batches` / `brief_items`.
 
 All steps are available through the CLI wrapper:
 
@@ -22,19 +22,17 @@ Use `-h` on any command to see flags.
 
 ## Directory Highlights
 
-- `data/author_tokens.txt` – List of Toutiao author tokens/URLs (one per line, `#` for comments).
-- `src/adapters/db.py` – Adapter factory that resolves the configured database backend.
-- `src/adapters/db_postgres.py` – Local PostgreSQL access layer mirrored from Supabase.
-- `src/adapters/db_supabase.py` – Supabase access layer retained for remote deployments.
-- `src/workers/` – Implementations for `crawl`, `summarize`, `score`, and `export` steps.
+- `data/author_tokens.txt` - List of Toutiao author tokens/URLs (one per line, `#` for comments).
+- `src/adapters/db.py` - Singleton loader for the Postgres adapter.
+- `src/adapters/db_postgres.py` - PostgreSQL access layer used by all workers.
+- `src/workers/` - Implementations for `crawl`, `summarize`, `score`, and `export` steps.
 - `src/cli/main.py` - CLI entry point for worker commands (`python -m src.cli.main ...`).
-- `supabase/` – Reference SQL schema for Supabase tables (run separately when provisioning a new project).
 
 ## Prerequisites
 
 - Python 3.10+
+- PostgreSQL 16+ (or compatible) with credentials for the target database
 - `pip install -r requirements.txt`
-- Supabase project (REST and PostgreSQL endpoints)
 - Playwright Chromium browser for crawling:
   ```bash
   playwright install chromium
@@ -47,7 +45,7 @@ Use `-h` on any command to see flags.
 1. Install PostgreSQL 16+ (the team standard uses Windows packages under `C:\Program Files\PostgreSQL\18`).
 2. Ensure the service is running and note the administrator credentials (default user: `postgres`).
 3. Apply the project schema: `psql -h localhost -U postgres -d postgres -f supabase/schema.sql` (repeat for any additional SQL in `supabase/migrations/`).
-4. Populate `.env.local` with the `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SCHEMA`, and `DB_BACKEND=postgres` settings.
+4. Populate `.env.local` with the `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `DB_SCHEMA` settings.
 5. Run the Postgres adapter validation: `python -m pytest tests/test_db_postgres_adapter.py` (install `pytest` if it is not already available).
 
 With these variables in place the worker and console commands automatically use the Postgres backend via `src.adapters.db.get_adapter()`.
@@ -56,21 +54,17 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 
 | Variable | Description |
 | --- | --- |
-| `SUPABASE_URL` | Supabase project URL (optional when using local Postgres) |
-| `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_KEY` / `SUPABASE_ANON_KEY`) | Supabase API key |
-| `SUPABASE_DB_PASSWORD` | Supabase Postgres password (only needed for remote Supabase uploads) |
-| `SUPABASE_DB_USER` / `SUPABASE_DB_NAME` / `SUPABASE_DB_PORT` | Optional Supabase Postgres overrides |
-| `SUPABASE_DB_SCHEMA` | Schema name (defaults to `public`) |
-| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | Connection details for the local Postgres instance |
-| `DB_SCHEMA` | Database schema to target (defaults to `public`) |
-| `DB_BACKEND` | `postgres` (default) or `supabase` to choose the adapter backend |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | Connection details for the Postgres instance |
+| `DB_SCHEMA` | Schema to target (defaults to `public`) |
 | `TOUTIAO_AUTHORS_PATH` | Override authors list path (defaults to `data/author_tokens.txt`) |
 | `TOUTIAO_FETCH_TIMEOUT` | Seconds for article fetch timeout (default 15) |
 | `TOUTIAO_LANG` | `Accept-Language` header when fetching article content |
 | `TOUTIAO_SHOW_BROWSER` | Set to `1` to run Playwright in headed mode |
 | `PROCESS_LIMIT` | Global cap applied to worker limits |
+| `CONCURRENCY` | Default worker concurrency override (falls back to 5) |
+| `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` | API credentials and endpoint for the LLM provider |
+| `SUMMARIZE_MODEL_NAME` / `SOURCE_MODEL_NAME` / `SCORE_MODEL_NAME` | Model identifiers used by the workers |
 
-Set `DB_BACKEND=postgres` (the default when local credentials are present) to route all workers through the local Postgres adapter. Supabase credentials remain supported for remote deployments, but are no longer required for local development.
 
 ## Workflow Details
 
@@ -80,7 +74,7 @@ Set `DB_BACKEND=postgres` (the default when local credentials are present) to ro
 - Default limit: 500 articles (clamped by `PROCESS_LIMIT` if set)
 - Reads author tokens from `TOUTIAO_AUTHORS_PATH`
 - Writes new rows to `toutiao_articles`
-- Skips articles already present in Supabase
+- Skips articles already present in the database
 
 ### Summarise Worker
 
@@ -102,7 +96,7 @@ Set `DB_BACKEND=postgres` (the default when local credentials are present) to ro
 - Command: `python -m src.cli.main export`
 - Pulls high-correlation summaries from `news_summaries`
 - Writes a text brief (defaults to `outputs/high_correlation_summaries_<tag>.txt`)
-- Optionally records batches in Supabase (`brief_batches` / `brief_items`)
+- Optionally records batches in the database (`brief_batches` / `brief_items`)
 - Set `--no-record-history` or `--no-skip-exported` to adjust behaviour
 
 ## Development Notes
@@ -118,8 +112,8 @@ Set `DB_BACKEND=postgres` (the default when local credentials are present) to ro
 | --- | --- |
 | Crawl returns zero items | Ensure Playwright works (`playwright install chromium`), check author tokens, increase `--limit` |
 | Summarise skips everything | Confirm keywords list, check `summarize_cursor.json`, set `--reset-cursor` manually (delete file) |
-| Score/export find nothing | Make sure previous steps completed and Supabase contains data |
-| Supabase errors (PGRST205 / missing tables) | Initialise the schema from `supabase/schema.sql` or adjust query targets |
+| Score/export find nothing | Make sure previous steps inserted rows into Postgres (`toutiao_articles` / `news_summaries`) |
+| Database errors (connection / missing tables) | Verify Postgres credentials and apply the schema SQL before rerunning |
 
 ## License
 
@@ -162,3 +156,7 @@ un_pipeline_every10.ps1" -Python "C:\Path\To\python.exe" -LogDirectory "D:\logs\
 - The historical `tools/` directory has been removed; remaining shim scripts simply warn and forward to the worker entry points.
 - Target date to delete those shims entirely is 2025-10-31, after verifying no external automation depends on them.
 - Migrate any outstanding scripts to the new commands (`python -m src.cli.main ...`) or `scripts/run_pipeline_once.py` before that deadline.
+
+
+
+

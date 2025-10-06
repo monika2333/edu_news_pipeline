@@ -162,11 +162,13 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:  # pyli
         if unresolved_count:
             log_info(WORKER, f"feed items missing article_id: {unresolved_count}")
 
-        detail_ready_ids = adapter.get_toutiao_articles_with_detail(list(feed_index.keys()))
-        detail_targets = [(article_id, feed_index[article_id]) for article_id in feed_index if article_id not in detail_ready_ids]
-        already_detailed = len(feed_index) - len(detail_targets)
-        if already_detailed:
-            log_info(WORKER, f"articles already detailed: {already_detailed}")
+        missing_content_ids = adapter.get_toutiao_articles_missing_content(list(feed_index.keys()))
+        detail_targets = [(article_id, feed_index[article_id]) for article_id in feed_index if article_id in missing_content_ids]
+        already_complete = len(feed_index) - len(detail_targets)
+        if already_complete:
+            log_info(WORKER, f"articles already populated: {already_complete}")
+        if detail_targets:
+            log_info(WORKER, f"articles needing detail refresh: {len(detail_targets)}")
 
         detail_rows = []
         detail_fetch_failures = 0
@@ -200,7 +202,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:  # pyli
 
         detail_success_count = len(detail_rows)
         failed_total = detail_fetch_failures + detail_db_failures + unresolved_count
-        skipped_total = already_detailed + duplicate_count
+        skipped_total = already_complete + duplicate_count
 
         if detail_fetch_failures:
             log_info(WORKER, f"detail fetch failures: {detail_fetch_failures}")

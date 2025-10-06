@@ -4,7 +4,7 @@ Automated pipeline for collecting Toutiao education articles, summarising them w
 
 ## Pipeline Overview
 
-1. **Crawl** - Fetch latest Toutiao articles defined in `data/author_tokens.txt` and store them in the Postgres table `toutiao_articles`.
+1. **Crawl** - Fetch latest Toutiao articles defined in `data/author_tokens.txt`, upsert feed metadata, and ensure missing bodies get re-fetched before writing to the Postgres table `toutiao_articles`.
 2. **Summarise** - Generate summaries for new articles and write them to `news_summaries`.
 3. **Score** - Ask the LLM to rate each summary and persist the `correlation` score in `news_summaries`.
 4. **Export** - Assemble the highest-scoring summaries into a plain-text brief and optionally log the batch metadata in `brief_batches` / `brief_items`.
@@ -13,6 +13,7 @@ All steps are available through the CLI wrapper:
 
 ```bash
 python -m src.cli.main crawl --limit 500
+python -m src.cli.main repair --limit 100
 python -m src.cli.main summarize --limit 100
 python -m src.cli.main score --limit 100
 python -m src.cli.main export --min-score 60 --limit 50
@@ -20,6 +21,15 @@ python -m src.cli.main export --min-score 60 --limit 50
 
 Use `-h` on any command to see flags.
 
+## Repairing Missing Content
+
+If earlier runs inserted feed rows without article bodies, use the repair worker to fill them in. It will fetch only rows where `content_markdown` is empty and update them in place.
+
+```bash
+python -m src.cli.main repair --limit 500
+```
+
+Re-run as needed until the command reports no articles remaining.
 ## Directory Highlights
 
 - `data/author_tokens.txt` - List of Toutiao author tokens/URLs (one per line, `#` for comments).

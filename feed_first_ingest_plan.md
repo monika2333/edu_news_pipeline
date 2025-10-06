@@ -9,6 +9,7 @@
 - Detail fetch retries: attempt each article detail fetch up to 3 times; skip further attempts after the third failure within a run and log the miss.
 - Downstream consumption: hide feed-only rows until detail enrichment succeeds (e.g. filter on `detail_fetched_at IS NOT NULL`).
 - Content storage: keep only Markdown representations; no raw HTML persistence required.
+- Treat blank or missing `content_markdown` as needing detail refresh; crawler forces enrichment for those rows.
 
 
 ## High-Level Flow
@@ -30,6 +31,7 @@
   - A filtered list of article IDs that still require detail fetch (new or missing `detail_fetched_at`).
   - A detail enrichment loop that reuses existing `fetch_info()` but updates rows via a dedicated adapter method (see below).
 - Keep logging granular: log separate counts for feed upserts, detail successes, and detail failures.
+- Provide a repair worker (`python -m src.cli.main repair`) to backfill bodies for legacy rows missing `content_markdown`.
 
 ## HTTP Adapter Changes (`src/adapters/http_toutiao.py`)
 - Extract existing record-building into two helpers:

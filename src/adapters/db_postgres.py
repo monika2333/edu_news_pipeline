@@ -199,15 +199,51 @@ class PostgresAdapter:
 
 
 
-    def get_toutiao_articles_with_detail(self, article_ids: Sequence[str]) -> Set[str]:
+    def get_toutiao_articles_missing_content(self, article_ids: Sequence[str]) -> Set[str]:
         unique_ids = list({str(item) for item in article_ids if item})
         if not unique_ids:
             return set()
-        query = "SELECT article_id FROM toutiao_articles WHERE article_id = ANY(%s) AND detail_fetched_at IS NOT NULL"
+        query = (
+            "SELECT article_id FROM toutiao_articles"
+            " WHERE article_id = ANY(%s)"
+            "   AND (content_markdown IS NULL OR LENGTH(TRIM(content_markdown)) = 0)"
+        )
         with self._cursor() as cur:
             cur.execute(query, (unique_ids,))
             rows = cur.fetchall()
         return {str(row['article_id']) for row in rows if row.get('article_id')}
+
+    def fetch_toutiao_articles_missing_content(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        query = [
+            "SELECT token, profile_url, article_id, title, source, publish_time, publish_time_iso, url, summary,",
+            "       comment_count, digg_count, fetched_at, detail_fetched_at",
+            "FROM toutiao_articles",
+            "WHERE content_markdown IS NULL OR LENGTH(TRIM(content_markdown)) = 0",
+            "ORDER BY fetched_at ASC NULLS LAST",
+        ]
+        params: List[Any] = []
+        if limit and limit > 0:
+            query.append("LIMIT %s")
+            params.append(limit)
+        sql_query = " ".join(query)
+        with self._cursor() as cur:
+            cur.execute(sql_query, tuple(params))
+            rows = cur.fetchall()
+        result: List[Dict[str, Any]] = []
+        for row in rows:
+            record = dict(row)
+            fetched = record.get('fetched_at')
+            if isinstance(fetched, datetime):
+                record['fetched_at'] = fetched.isoformat()
+            publish_iso = record.get('publish_time_iso')
+            if isinstance(publish_iso, datetime):
+                record['publish_time_iso'] = publish_iso.isoformat()
+            detail_fetched = record.get('detail_fetched_at')
+            if isinstance(detail_fetched, datetime):
+                record['detail_fetched_at'] = detail_fetched.isoformat()
+            result.append(record)
+        return result
+
 
     def get_existing_toutiao_article_ids(self) -> Set[str]:
         ids: Set[str] = set()

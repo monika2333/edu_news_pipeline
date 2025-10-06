@@ -5,6 +5,7 @@ from pathlib import Path
 
 from src.workers.crawl_toutiao import run as crawl_toutiao
 from src.workers.export_brief import run as export_brief
+from src.workers.repair_missing_content import run as repair_missing
 from src.workers.score import run as score_summaries
 from src.workers.summarize import run as summarize_articles
 
@@ -20,6 +21,11 @@ def _add_crawl(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("crawl", help="Collect fresh Toutiao articles")
     parser.add_argument("--limit", type=_positive_int, default=500, help="Max number of feed items to ingest")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
+
+
+def _add_repair(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser("repair", help="Fetch article bodies for rows missing content")
+    parser.add_argument("--limit", type=_positive_int, default=100, help="Max number of articles to repair")
 
 
 def _add_summarize(subparsers: argparse._SubParsersAction) -> None:
@@ -50,6 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="edu-news", description="Edu news pipeline controller")
     subparsers = parser.add_subparsers(dest="command", required=True)
     _add_crawl(subparsers)
+    _add_repair(subparsers)
     _add_summarize(subparsers)
     _add_score(subparsers)
     _add_export(subparsers)
@@ -63,6 +70,8 @@ def main(argv: list[str] | None = None) -> None:
     command = args.command
     if command == "crawl":
         crawl_toutiao(limit=args.limit, concurrency=args.concurrency)
+    elif command == "repair":
+        repair_missing(limit=args.limit)
     elif command == "summarize":
         summarize_articles(limit=args.limit, concurrency=args.concurrency, keywords_path=args.keywords)
     elif command == "score":
@@ -86,4 +95,3 @@ __all__ = ["build_parser", "main"]
 
 if __name__ == "__main__":
     main()
-

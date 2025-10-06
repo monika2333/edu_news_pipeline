@@ -106,6 +106,109 @@ class PostgresAdapter:
             cur.executemany(insert_sql, data)
         return len(rows)
 
+
+    def upsert_toutiao_feed_rows(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        if not rows:
+            return 0
+        columns = [
+            'token',
+            'profile_url',
+            'article_id',
+            'title',
+            'source',
+            'publish_time',
+            'publish_time_iso',
+            'url',
+            'summary',
+            'comment_count',
+            'digg_count',
+            'fetched_at',
+        ]
+        insert_sql = '''
+            INSERT INTO toutiao_articles (token, profile_url, article_id, title, source,
+                publish_time, publish_time_iso, url, summary, comment_count, digg_count,
+                fetched_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (article_id) DO UPDATE
+            SET token = EXCLUDED.token,
+                profile_url = EXCLUDED.profile_url,
+                title = EXCLUDED.title,
+                source = EXCLUDED.source,
+                publish_time = EXCLUDED.publish_time,
+                publish_time_iso = EXCLUDED.publish_time_iso,
+                url = EXCLUDED.url,
+                summary = EXCLUDED.summary,
+                comment_count = EXCLUDED.comment_count,
+                digg_count = EXCLUDED.digg_count,
+                fetched_at = EXCLUDED.fetched_at,
+                updated_at = now()
+        '''
+        data = [tuple(row.get(col) for col in columns) for row in rows]
+        with self._cursor() as cur:
+            cur.executemany(insert_sql, data)
+        return len(rows)
+
+    def update_toutiao_article_details(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        if not rows:
+            return 0
+        columns = [
+            'token',
+            'profile_url',
+            'title',
+            'source',
+            'publish_time',
+            'publish_time_iso',
+            'url',
+            'summary',
+            'comment_count',
+            'digg_count',
+            'content_markdown',
+            'detail_fetched_at',
+        ]
+        update_sql = '''
+            UPDATE toutiao_articles
+            SET token = %s,
+                profile_url = %s,
+                title = %s,
+                source = %s,
+                publish_time = %s,
+                publish_time_iso = %s,
+                url = %s,
+                summary = %s,
+                comment_count = %s,
+                digg_count = %s,
+                content_markdown = %s,
+                detail_fetched_at = %s,
+                updated_at = now()
+            WHERE article_id = %s
+        '''
+        missing: List[str] = []
+        with self._cursor() as cur:
+            for row in rows:
+                article_id = str(row.get('article_id') or '')
+                if not article_id:
+                    raise ValueError('Detail update requires article_id')
+                values = [row.get(col) for col in columns]
+                cur.execute(update_sql, values + [article_id])
+                if cur.rowcount == 0:
+                    missing.append(article_id)
+        if missing:
+            missing_values = ', '.join(sorted(missing))
+            raise ValueError(f'Missing feed rows for detail update: {missing_values}')
+        return len(rows)
+
+
+
+    def get_toutiao_articles_with_detail(self, article_ids: Sequence[str]) -> Set[str]:
+        unique_ids = list({str(item) for item in article_ids if item})
+        if not unique_ids:
+            return set()
+        query = "SELECT article_id FROM toutiao_articles WHERE article_id = ANY(%s) AND detail_fetched_at IS NOT NULL"
+        with self._cursor() as cur:
+            cur.execute(query, (unique_ids,))
+            rows = cur.fetchall()
+        return {str(row['article_id']) for row in rows if row.get('article_id')}
+
     def get_existing_toutiao_article_ids(self) -> Set[str]:
         ids: Set[str] = set()
         with self._cursor() as cur:
@@ -149,9 +252,10 @@ class PostgresAdapter:
     ) -> List[Dict[str, Any]]:
         fetch_target = max(1, (limit or 50))
         base_query = [
-            "SELECT article_id, title, source, publish_time, publish_time_iso, url, content_markdown, fetched_at",
+            "SELECT article_id, title, source, publish_time, publish_time_iso, url, content_markdown, fetched_at, detail_fetched_at",
             "FROM toutiao_articles",
             "WHERE content_markdown IS NOT NULL AND LENGTH(TRIM(content_markdown)) > 0",
+            "  AND detail_fetched_at IS NOT NULL",
         ]
         params: List[Any] = []
         if after_fetched_at:
@@ -173,6 +277,9 @@ class PostgresAdapter:
             publish_iso = record.get('publish_time_iso')
             if isinstance(publish_iso, datetime):
                 record['publish_time_iso'] = publish_iso.isoformat()
+            detail_fetched = record.get('detail_fetched_at')
+            if isinstance(detail_fetched, datetime):
+                record['detail_fetched_at'] = detail_fetched.isoformat()
             result.append(record)
         return result
 

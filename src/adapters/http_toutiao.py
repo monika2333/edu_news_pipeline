@@ -389,6 +389,44 @@ def build_article_record(item: FeedItem, article_id: str, data: Dict[str, Any]) 
         fetched_at=datetime.now(timezone.utc).astimezone().isoformat(),
     )
 
+
+
+def feed_item_to_row(item: FeedItem, article_id: str, *, fetched_at: datetime) -> Dict[str, Any]:
+    """Convert a feed item into a minimal row for feed upserts."""
+    return {
+        'token': item.token,
+        'profile_url': item.profile_url,
+        'article_id': article_id,
+        'title': item.title,
+        'source': item.source,
+        'publish_time': item.publish_time,
+        'publish_time_iso': parse_iso_datetime(item.publish_time_iso),
+        'url': item.article_url,
+        'summary': item.summary,
+        'comment_count': item.comment_count,
+        'digg_count': item.digg_count,
+        'fetched_at': fetched_at,
+    }
+
+
+def build_detail_update(
+    item: FeedItem,
+    article_id: str,
+    data: Dict[str, Any],
+    *,
+    detail_fetched_at: datetime,
+) -> Dict[str, Any]:
+    """Build a detail update payload using article content response data."""
+    record = build_article_record(item, article_id, data)
+    rows = format_article_rows([record])
+    if not rows:
+        raise ValueError(f"Unable to format article row for {article_id}")
+    row = rows[0]
+    row.pop('fetched_at', None)
+    row['detail_fetched_at'] = detail_fetched_at
+    return row
+
+
 def fetch_article_records(
     feed_items: Iterable[FeedItem],
     timeout: int,
@@ -440,4 +478,4 @@ def format_article_rows(records: Sequence[ArticleRecord]) -> List[Dict[str, Any]
         })
     return rows
 
-__all__ = ["FeedItem", "ArticleRecord", "load_env_file", "load_author_tokens", "fetch_feed_items", "fetch_article_records", "format_article_rows", "DEFAULT_LIMIT"]
+__all__ = ["FeedItem", "ArticleRecord", "load_env_file", "load_author_tokens", "fetch_feed_items", "fetch_article_records", "format_article_rows", "DEFAULT_LIMIT", "feed_item_to_row", "build_detail_update", "resolve_article_id_from_feed"]

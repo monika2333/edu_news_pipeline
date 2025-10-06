@@ -2,15 +2,18 @@
 
 import asyncio
 import os
+from datetime import datetime, timezone
 from pathlib import Path
-from types import SimpleNamespace
-from typing import List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from src.adapters.http_toutiao import (
-    fetch_article_records,
+    FeedItem,
+    build_detail_update,
     fetch_feed_items,
+    fetch_info,
+    feed_item_to_row,
     load_author_tokens,
-    format_article_rows,
+    resolve_article_id_from_feed,
 )
 from src.adapters.db import get_adapter
 from src.config import get_settings
@@ -60,14 +63,24 @@ def _collect_feed(
     return asyncio.run(fetch_feed_items(list(entries), limit, show_browser, existing_ids))
 
 
-def _collect_article_records(
-    feed_items,
-    *,
-    timeout: int,
-    lang: Optional[str],
-    existing_ids: Optional[Set[str]],
-):
-    return fetch_article_records(feed_items, timeout=timeout, lang=lang, existing_ids=existing_ids)
+def _prepare_feed_rows(feed_items):
+    rows: List[Dict[str, Any]] = []
+    items_by_id: Dict[str, FeedItem] = {}
+    unresolved = 0
+    duplicates = 0
+    for item in feed_items:
+        try:
+            article_id = resolve_article_id_from_feed(item)
+        except Exception as exc:
+            log_error(WORKER, "feed_article_id", exc)
+            unresolved += 1
+            continue
+        if article_id in items_by_id:
+            duplicates += 1
+            continue
+        rows.append(feed_item_to_row(item, article_id, fetched_at=datetime.now(timezone.utc)))
+        items_by_id[article_id] = item
+    return rows, items_by_id, unresolved, duplicates
 
 
 
@@ -129,44 +142,78 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:  # pyli
             log_info(WORKER, "No feed items returned from Toutiao.")
             return
 
+        feed_rows, feed_index, unresolved_count, duplicate_count = _prepare_feed_rows(feed_items)
+        if not feed_rows:
+            log_info(WORKER, "No feed rows to upsert after filtering.")
+            skipped_total = duplicate_count
+            log_summary(WORKER, ok=0, failed=unresolved_count, skipped=skipped_total or None)
+            return
+
         try:
-            records = _collect_article_records(
-                feed_items,
-                timeout=timeout_value,
-                lang=lang,
-                existing_ids=existing_ids,
+            feed_upserted = adapter.upsert_toutiao_feed_rows(feed_rows)
+        except Exception as exc:
+            log_error(WORKER, "postgres_feed", exc)
+            log_summary(WORKER, ok=0, failed=len(feed_rows), skipped=None)
+            return
+
+        log_info(WORKER, f"feed rows upserted: {feed_upserted}")
+        if duplicate_count:
+            log_info(WORKER, f"duplicate feed items skipped: {duplicate_count}")
+        if unresolved_count:
+            log_info(WORKER, f"feed items missing article_id: {unresolved_count}")
+
+        detail_ready_ids = adapter.get_toutiao_articles_with_detail(list(feed_index.keys()))
+        detail_targets = [(article_id, feed_index[article_id]) for article_id in feed_index if article_id not in detail_ready_ids]
+        already_detailed = len(feed_index) - len(detail_targets)
+        if already_detailed:
+            log_info(WORKER, f"articles already detailed: {already_detailed}")
+
+        detail_rows = []
+        detail_fetch_failures = 0
+        for article_id, item in detail_targets:
+            try:
+                detail_payload = fetch_info(article_id, timeout=timeout_value, lang=lang)
+            except Exception as exc:
+                detail_fetch_failures += 1
+                log_error(WORKER, f"detail_fetch:{article_id}", exc)
+                continue
+            detail_rows.append(
+                build_detail_update(
+                    item,
+                    article_id,
+                    detail_payload,
+                    detail_fetched_at=datetime.now(timezone.utc),
+                )
             )
-        except Exception as exc:
-            log_error(WORKER, "article_content", exc)
-            return
 
-        if not records:
-            log_info(WORKER, "No article content fetched.")
-            return
+        detail_db_failures = 0
+        if detail_rows:
+            try:
+                adapter.update_toutiao_article_details(detail_rows)
+            except Exception as exc:
+                detail_db_failures = len(detail_rows)
+                detail_rows = []
+                log_error(WORKER, "postgres_detail", exc)
+            else:
+                for row in detail_rows:
+                    log_info(WORKER, f"DETAIL OK {row['article_id']}")
 
-        if effective_limit is not None:
-            records_to_upload = records[:effective_limit]
-        else:
-            records_to_upload = records
+        detail_success_count = len(detail_rows)
+        failed_total = detail_fetch_failures + detail_db_failures + unresolved_count
+        skipped_total = already_detailed + duplicate_count
 
-        if not records_to_upload:
-            log_info(WORKER, "No new records to upload after applying limit.")
-            return
+        if detail_fetch_failures:
+            log_info(WORKER, f"detail fetch failures: {detail_fetch_failures}")
+        if detail_db_failures:
+            log_info(WORKER, f"detail persistence failures: {detail_db_failures}")
 
-        skipped_count = len(records) - len(records_to_upload)
+        log_summary(
+            WORKER,
+            ok=detail_success_count,
+            failed=failed_total,
+            skipped=skipped_total or None,
+        )
 
-        rows = format_article_rows(records_to_upload)
-        try:
-            inserted = adapter.upsert_toutiao_articles(rows)
-        except Exception as exc:
-            log_error(WORKER, "postgres_upload", exc)
-            log_summary(WORKER, ok=0, failed=len(records_to_upload), skipped=skipped_count or None)
-            return
-
-        for record in records_to_upload:
-            log_info(WORKER, f"OK {record.article_id}")
-
-        log_summary(WORKER, ok=inserted, failed=(len(records_to_upload) - inserted) or None, skipped=skipped_count or None)
 
 
 __all__ = ["run"]

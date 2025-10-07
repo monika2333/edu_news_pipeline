@@ -103,11 +103,23 @@
 5) CLI：`crawl` 子命令接入多源参数；保持其他子命令不变。
 6) 联调与验证；补充 README 与基础解析测试。
 
+## 下一步执行计划（逐步推进）
+- 修复缺正文（多源化）：`src/workers/repair_missing_content.py` 按 `article_id` 前缀路由详情获取
+  - `toutiao`：沿用 `http_toutiao.fetch_info` + `build_detail_update`
+  - `chinanews`：使用 `http_chinanews.fetch_detail` + `build_detail_update`（以 `url` 为主）
+- 建立来源“注册表”与统一调度
+  - 在 `crawl_sources` 维护 `{source: adapter_fns}`，按 `--sources` 顺序遍历执行
+  - 共享 `--limit` 配额（顺序消耗或按源均分），每源独立统计与容错，最终聚合一次 `log_summary`
+- 强化 ChinaNews 解析稳健性
+  - 增强标题/来源/正文选择器，增加移动页回退；补充发布时间解析与时区归一
+- 文档与 CLI 帮助
+  - README 增补多源用法（`--sources`、`--pages`）、raw_articles 迁移说明、ChinaNews 注意事项
+- 测试与冒烟
+  - 调整/补充 DB 适配器 raw_* 的测试；新增 ChinaNews 解析的片段测试
+  - 小规模端到端验证：`crawl`（CN/Toutiao/多源）→ `summarize` → `score` → `export`
+
 ## 风险与应对
 - 结构变更风险：使用多选择器与回退策略；解析失败按条降级。
 - 反爬/跳转：设置 UA/语言，必要时切换抓取为 `m.chinanews.com` 的对应页面。
 - 兼容性：保留原列，保障头条数据与逻辑不受影响。
 
----
-
-后续我将先提交迁移脚本与 DB 适配器重命名，再补中国新闻网适配器与 Worker。如需，我也可先最小化提交一版跑通端到端的实现供你验证。

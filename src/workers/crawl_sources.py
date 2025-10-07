@@ -301,6 +301,12 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None, sources: Optiona
         cn_failed = int(cn_stats.get('failed') or 0)
         cn_skipped = int(cn_stats.get('skipped') or 0)
 
+    # If Toutiao not selected or no remaining capacity, emit CN-only summary (if any) and return
+    if 'toutiao' not in selected_sources or (remaining_limit is not None and remaining_limit <= 0):
+        if 'chinanews' in selected_sources:
+            log_summary(WORKER, ok=cn_ok, failed=cn_failed or None, skipped=cn_skipped or None)
+        return
+
     with worker_session(WORKER, limit=effective_limit):
         if not authors_path.exists():
             log_info(WORKER, f"Author token file not found: {authors_path}")

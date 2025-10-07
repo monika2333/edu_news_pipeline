@@ -1,4 +1,4 @@
-﻿-- Minimal schema for the Edu News pipeline (local PostgreSQL)
+-- Minimal schema for the Edu News pipeline (local PostgreSQL)
 -- Apply with `psql -h localhost -U postgres -d <database> -f database/schema.sql`
 
 begin;

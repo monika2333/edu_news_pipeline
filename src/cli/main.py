@@ -30,9 +30,9 @@ def _add_repair(subparsers: argparse._SubParsersAction) -> None:
 
 def _add_summarize(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("summarize", help="Generate summaries for pending articles")
-    parser.add_argument("--limit", type=_positive_int, default=50, help="Max number of articles to summarize")
+    parser.add_argument("--limit", type=_positive_int, default=50, help="Max number of pending summaries to process")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
-    parser.add_argument("--keywords", type=Path, default=None, help="Override keywords file used to filter articles")
+    parser.add_argument("--keywords", type=Path, default=None, help="(Deprecated) keywords now handled in crawl; kept for CLI compatibility")
 
 
 def _add_score(subparsers: argparse._SubParsersAction) -> None:

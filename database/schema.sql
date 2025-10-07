@@ -45,6 +45,9 @@ create table if not exists public.news_summaries (
     url text,
     content_markdown text,
     llm_summary text,
+    summary_status text not null default 'pending',
+    summary_attempted_at timestamptz,
+    summary_fail_count integer not null default 0,
     summary_generated_at timestamptz not null default now(),
     fetched_at timestamptz,
     llm_keywords text[] default '{}'::text[],
@@ -58,6 +61,9 @@ create index if not exists news_summaries_correlation_idx
 
 create index if not exists news_summaries_summary_generated_idx
     on public.news_summaries (summary_generated_at asc);
+
+create index if not exists news_summaries_status_attempt_idx
+    on public.news_summaries (summary_status, summary_attempted_at);
 
 
 -- ---------------------------------------------------------------------------

@@ -64,3 +64,11 @@
 - Keyword filtering remains part of the crawl workflow; pending summary rows are inserted during the same run.
 - LLM summarisation retries: attempt up to 3 times per article; mark the row as `failed` if all retries exhaust.
 - CLI should report the count and IDs of `failed` summaries at the end of each run; no additional alerting is planned.
+
+## Implementation Checklist
+- [x] Apply migration adding status fields to `news_summaries`.
+- [x] Update DB adapter with pending queue helpers and optimistic locking transitions.
+- [x] Modify `crawl` (or prep flow) to insert pending summary rows on keyword hit.
+- [x] Refactor `summarize` worker to consume pending rows and handle retries/status.
+- [x] Adjust CLI/help docs to describe the two-stage summary process.
+- [x] Validate end-to-end flow (manual run + tests).

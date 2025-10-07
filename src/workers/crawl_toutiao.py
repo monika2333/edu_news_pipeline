@@ -63,6 +63,29 @@ def _collect_feed(
     return asyncio.run(fetch_feed_items(list(entries), limit, show_browser, existing_ids))
 
 
+def _load_keywords(path: Path) -> List[str]:
+    if not path.exists():
+        return []
+    keywords: List[str] = []
+    for line in path.read_text(encoding='utf-8').splitlines():
+        raw = line.strip()
+        if raw and not raw.startswith('#'):
+            keywords.append(raw)
+    return keywords
+
+
+def _contains_keywords(content: str, keywords: Sequence[str]) -> Tuple[bool, List[str]]:
+    if not keywords:
+        return True, []
+    lowered = content.lower()
+    hits: List[str] = []
+    for kw in keywords:
+        if kw and kw.lower() in lowered:
+            hits.append(kw)
+    return bool(hits), hits
+
+
+
 def _prepare_feed_rows(feed_items):
     rows: List[Dict[str, Any]] = []
     items_by_id: Dict[str, FeedItem] = {}
@@ -95,6 +118,16 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:  # pyli
     except ValueError:
         timeout_value = DEFAULT_TIMEOUT
     lang = os.getenv("TOUTIAO_LANG", DEFAULT_LANG)
+
+    keywords_path_value = getattr(settings, 'keywords_path', None)
+    keywords_file: Optional[Path]
+    if keywords_path_value:
+        keywords_file = Path(keywords_path_value)
+        if not keywords_file.is_absolute():
+            keywords_file = _repo_root() / keywords_file
+    else:
+        keywords_file = None
+    keywords = _load_keywords(keywords_file) if keywords_file else []
 
     process_cap = settings.process_limit
     effective_limit: Optional[int]
@@ -199,6 +232,38 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:  # pyli
             else:
                 for row in detail_rows:
                     log_info(WORKER, f"DETAIL OK {row['article_id']}")
+
+        pending_inserted = 0
+        if detail_rows:
+            for row in detail_rows:
+                article_id = str(row.get('article_id') or '').strip()
+                content = str(row.get('content_markdown') or '').strip()
+                if not article_id or not content:
+                    continue
+                ok, hits = _contains_keywords(content, keywords)
+                if not ok:
+                    continue
+                summary_payload = {
+                    'article_id': article_id,
+                    'title': row.get('title'),
+                    'source': row.get('source'),
+                    'publish_time': row.get('publish_time'),
+                    'publish_time_iso': row.get('publish_time_iso'),
+                    'url': row.get('url'),
+                    'content_markdown': content,
+                }
+                try:
+                    adapter.insert_pending_summary(
+                        summary_payload,
+                        keywords=hits,
+                        fetched_at=datetime.now(timezone.utc).isoformat(),
+                    )
+                except Exception as exc:
+                    log_error(WORKER, f'pending_summary:{article_id}', exc)
+                else:
+                    pending_inserted += 1
+        if pending_inserted:
+            log_info(WORKER, f'pending summaries queued: {pending_inserted}')
 
         detail_success_count = len(detail_rows)
         failed_total = detail_fetch_failures + detail_db_failures + unresolved_count

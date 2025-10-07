@@ -4,8 +4,8 @@ Automated pipeline for collecting Toutiao education articles, summarising them w
 
 ## Pipeline Overview
 
-1. **Crawl** - Fetch latest Toutiao articles defined in `data/author_tokens.txt`, upsert feed metadata, and ensure missing bodies get re-fetched before writing to the Postgres table `toutiao_articles`.
-2. **Summarise** - Generate summaries for new articles and write them to `news_summaries`.
+1. **Crawl** - Fetch latest Toutiao articles defined in `data/author_tokens.txt`, upsert feed metadata, ensure bodies are fetched, and enqueue keyword-positive articles into `news_summaries` with a `pending` status.
+2. **Summarise** - Consume pending rows from `news_summaries`, call the LLM for those without summaries, and update their status to `completed` (failed rows remain pending for retry).
 3. **Score** - Ask the LLM to rate each summary and persist the `correlation` score in `news_summaries`.
 4. **Export** - Assemble the highest-scoring summaries into a plain-text brief and optionally log the batch metadata in `brief_batches` / `brief_items`.
 
@@ -19,7 +19,7 @@ python -m src.cli.main score --limit 100
 python -m src.cli.main export --min-score 60 --limit 50
 ```
 
-Use `-h` on any command to see flags.
+Use `-h` on any command to see flags. `summarize` now operates on the queued pending rows—run `crawl` first so new candidates are available.
 
 ## Repairing Missing Content
 

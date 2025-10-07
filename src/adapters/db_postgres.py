@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import contextlib
+import sys
 from datetime import datetime, timezone, date
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -280,6 +281,160 @@ class PostgresAdapter:
     # ------------------------------------------------------------------
     # Summaries
     # ------------------------------------------------------------------
+    def insert_pending_summary(
+        self,
+        article: Mapping[str, Any],
+        *,
+        keywords: Optional[Sequence[str]] = None,
+        fetched_at: Optional[str] = None,
+    ) -> None:
+        article_id = str(article.get('article_id') or '').strip()
+        if not article_id:
+            raise ValueError('Pending summary insert requires article_id')
+        payload: Dict[str, Any] = {
+            'article_id': article_id,
+            'title': article.get('title'),
+            'source': article.get('source'),
+            'publish_time': article.get('publish_time'),
+            'publish_time_iso': article.get('publish_time_iso'),
+            'url': article.get('url'),
+            'content_markdown': article.get('content_markdown') or '',
+            'fetched_at': fetched_at or article.get('fetched_at'),
+            'summary_status': 'pending',
+            'summary_attempted_at': None,
+            'summary_fail_count': 0,
+        }
+        if keywords:
+            deduped: List[str] = []
+            for kw in keywords:
+                if kw and kw not in deduped:
+                    deduped.append(kw)
+            if deduped:
+                payload['llm_keywords'] = deduped
+        columns = list(payload.keys())
+        values = [payload[col] for col in columns]
+        updates = [
+            "title = EXCLUDED.title",
+            "source = EXCLUDED.source",
+            "publish_time = EXCLUDED.publish_time",
+            "publish_time_iso = EXCLUDED.publish_time_iso",
+            "url = EXCLUDED.url",
+            "content_markdown = EXCLUDED.content_markdown",
+            "fetched_at = COALESCE(EXCLUDED.fetched_at, news_summaries.fetched_at)",
+            "llm_keywords = CASE WHEN EXCLUDED.llm_keywords IS NULL OR array_length(EXCLUDED.llm_keywords, 1) = 0 THEN news_summaries.llm_keywords ELSE EXCLUDED.llm_keywords END",
+            "summary_status = CASE WHEN news_summaries.summary_status = 'completed' THEN news_summaries.summary_status ELSE EXCLUDED.summary_status END",
+            "summary_attempted_at = CASE WHEN news_summaries.summary_status = 'completed' THEN news_summaries.summary_attempted_at ELSE EXCLUDED.summary_attempted_at END",
+            "summary_fail_count = CASE WHEN news_summaries.summary_status = 'completed' THEN news_summaries.summary_fail_count ELSE EXCLUDED.summary_fail_count END",
+        ]
+        query = f"""
+            INSERT INTO news_summaries ({', '.join(columns)})
+            VALUES ({', '.join(['%s'] * len(columns))})
+            ON CONFLICT (article_id) DO UPDATE
+            SET {', '.join(updates)}
+            WHERE news_summaries.summary_status <> 'completed'
+        """
+        with self._cursor() as cur:
+            cur.execute(query, values)
+
+    def fetch_pending_summaries(
+        self,
+        limit: Optional[int] = None,
+        *,
+        max_attempts: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        clauses = ["summary_status = 'pending'"]
+        params: List[Any] = []
+        if max_attempts is not None:
+            clauses.append("summary_fail_count < %s")
+            params.append(max_attempts)
+        where_sql = ' AND '.join(clauses)
+        query_parts = [
+            "SELECT article_id, title, source, publish_time, publish_time_iso, url, content_markdown,",
+            "       fetched_at, summary_attempted_at, summary_fail_count, llm_keywords",
+            "FROM news_summaries",
+            f"WHERE {where_sql}",
+            "ORDER BY summary_attempted_at ASC NULLS FIRST, fetched_at ASC NULLS LAST, article_id ASC",
+        ]
+        if limit and limit > 0:
+            query_parts.append("LIMIT %s")
+            params.append(limit)
+        query = " ".join(query_parts)
+        with self._cursor() as cur:
+            cur.execute(query, tuple(params))
+            rows = cur.fetchall()
+        result: List[Dict[str, Any]] = []
+        for row in rows:
+            record = dict(row)
+            for field in ('fetched_at', 'summary_attempted_at', 'publish_time_iso'):
+                value = record.get(field)
+                if isinstance(value, datetime):
+                    record[field] = value.isoformat()
+            result.append(record)
+        return result
+
+    def mark_summary_attempt(self, article_id: str) -> bool:
+        if not article_id:
+            return False
+        query = """
+            UPDATE news_summaries
+            SET summary_attempted_at = NOW(),
+                summary_fail_count = summary_fail_count + 1
+            WHERE article_id = %s AND summary_status = 'pending'
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (article_id,))
+            return cur.rowcount == 1
+
+    def complete_summary(
+        self,
+        article_id: str,
+        summary_text: str,
+        *,
+        llm_source: Optional[str] = None,
+        keywords: Optional[Sequence[str]] = None,
+    ) -> None:
+        if not article_id:
+            raise ValueError('complete_summary requires article_id')
+        payload: Dict[str, Any] = {
+            'llm_summary': summary_text,
+            'summary_status': 'completed',
+            'summary_generated_at': datetime.now(timezone.utc).isoformat(),
+            'summary_attempted_at': datetime.now(timezone.utc).isoformat(),
+        }
+        if llm_source is not None:
+            payload['llm_source'] = llm_source
+        if keywords:
+            deduped: List[str] = []
+            for kw in keywords:
+                if kw and kw not in deduped:
+                    deduped.append(kw)
+            if deduped:
+                payload['llm_keywords'] = deduped
+        sets = ', '.join(f"{field} = %s" for field in payload)
+        values = list(payload.values()) + [article_id]
+        query = f"""
+            UPDATE news_summaries
+            SET {sets}
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.execute(query, values)
+            if cur.rowcount != 1:
+                raise ValueError(f'Unable to complete summary for {article_id}')
+
+    def mark_summary_failed(self, article_id: str, *, message: Optional[str] = None) -> None:
+        if not article_id:
+            return
+        query = """
+            UPDATE news_summaries
+            SET summary_status = 'failed'
+            WHERE article_id = %s AND summary_status = 'pending'
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (article_id,))
+        if message:
+            print(f"[warn] summary failed {article_id}: {message}", file=sys.stderr)
+
     def fetch_toutiao_articles_for_summary(
         self,
         *,

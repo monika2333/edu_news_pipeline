@@ -107,8 +107,10 @@ def _prepare_feed_rows(feed_items):
 
 
 
-def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:  # pylint: disable=unused-argument
+def run(limit: int = 500, *, concurrency: Optional[int] = None, sources: Optional[Sequence[str]] = None, pages: Optional[int] = None) -> None:  # pylint: disable=unused-argument
     settings = get_settings()
+    # For now, only Toutiao is wired; `sources`/`pages` are accepted for forward compatibility
+    _ = pages
 
     authors_path = _resolve_authors_path()
     show_browser = _truthy_env(os.getenv("TOUTIAO_SHOW_BROWSER"))
@@ -159,7 +161,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:  # pyli
             return
 
         try:
-            existing_ids = adapter.get_existing_toutiao_article_ids()
+            existing_ids = adapter.get_existing_raw_article_ids()
         except Exception as exc:
             log_error(WORKER, "local_existing", exc)
             existing_ids = set()
@@ -195,7 +197,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:  # pyli
         if unresolved_count:
             log_info(WORKER, f"feed items missing article_id: {unresolved_count}")
 
-        missing_content_ids = adapter.get_toutiao_articles_missing_content(list(feed_index.keys()))
+        missing_content_ids = adapter.get_raw_articles_missing_content(list(feed_index.keys()))
         detail_targets = [(article_id, feed_index[article_id]) for article_id in feed_index if article_id in missing_content_ids]
         already_complete = len(feed_index) - len(detail_targets)
         if already_complete:
@@ -224,7 +226,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:  # pyli
         detail_db_failures = 0
         if detail_rows:
             try:
-                adapter.update_toutiao_article_details(detail_rows)
+                adapter.update_raw_article_details(detail_rows)
             except Exception as exc:
                 detail_db_failures = len(detail_rows)
                 detail_rows = []
@@ -284,3 +286,5 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:  # pyli
 
 
 __all__ = ["run"]
+
+

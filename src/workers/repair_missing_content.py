@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -36,7 +36,7 @@ def run(limit: Optional[int] = None) -> None:
     adapter = get_adapter()
 
     with worker_session(WORKER, limit=limit):
-        rows = adapter.fetch_toutiao_articles_missing_content(limit)
+        rows = adapter.fetch_raw_articles_missing_content(limit)
         if not rows:
             log_info(WORKER, "No articles with missing content found.")
             log_summary(WORKER, ok=0, failed=0, skipped=None)
@@ -84,7 +84,7 @@ def run(limit: Optional[int] = None) -> None:
         success = 0
         if detail_rows:
             try:
-                adapter.update_toutiao_article_details(detail_rows)
+                adapter.update_raw_article_details(detail_rows)
             except Exception as exc:
                 failures += len(detail_rows)
                 log_error(WORKER, "postgres_detail", exc)
@@ -97,3 +97,4 @@ def run(limit: Optional[int] = None) -> None:
 
 
 __all__ = ["run"]
+

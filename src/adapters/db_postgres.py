@@ -64,6 +64,7 @@ class PostgresAdapter:
     # ------------------------------------------------------------------
     # Toutiao articles (crawler storage)
     # ------------------------------------------------------------------
+    # Legacy: kept for backward-compat in tests; now raw_articles is canonical
     def upsert_toutiao_articles(self, rows: Sequence[Mapping[str, Any]]) -> int:
         if not rows:
             return 0
@@ -83,7 +84,7 @@ class PostgresAdapter:
             'fetched_at',
         ]
         insert_sql = '''
-            INSERT INTO toutiao_articles (token, profile_url, article_id, title, source,
+            INSERT INTO raw_articles (token, profile_url, article_id, title, source,
                 publish_time, publish_time_iso, url, summary, comment_count, digg_count,
                 content_markdown, fetched_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -108,7 +109,8 @@ class PostgresAdapter:
         return len(rows)
 
 
-    def upsert_toutiao_feed_rows(self, rows: Sequence[Mapping[str, Any]]) -> int:
+    # New canonical: raw feed upsert
+    def upsert_raw_feed_rows(self, rows: Sequence[Mapping[str, Any]]) -> int:
         if not rows:
             return 0
         columns = [
@@ -126,7 +128,7 @@ class PostgresAdapter:
             'fetched_at',
         ]
         insert_sql = '''
-            INSERT INTO toutiao_articles (token, profile_url, article_id, title, source,
+            INSERT INTO raw_articles (token, profile_url, article_id, title, source,
                 publish_time, publish_time_iso, url, summary, comment_count, digg_count,
                 fetched_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -149,7 +151,8 @@ class PostgresAdapter:
             cur.executemany(insert_sql, data)
         return len(rows)
 
-    def update_toutiao_article_details(self, rows: Sequence[Mapping[str, Any]]) -> int:
+    # New canonical: raw details update
+    def update_raw_article_details(self, rows: Sequence[Mapping[str, Any]]) -> int:
         if not rows:
             return 0
         columns = [
@@ -167,7 +170,7 @@ class PostgresAdapter:
             'detail_fetched_at',
         ]
         update_sql = '''
-            UPDATE toutiao_articles
+            UPDATE raw_articles
             SET token = %s,
                 profile_url = %s,
                 title = %s,
@@ -200,12 +203,12 @@ class PostgresAdapter:
 
 
 
-    def get_toutiao_articles_missing_content(self, article_ids: Sequence[str]) -> Set[str]:
+    def get_raw_articles_missing_content(self, article_ids: Sequence[str]) -> Set[str]:
         unique_ids = list({str(item) for item in article_ids if item})
         if not unique_ids:
             return set()
         query = (
-            "SELECT article_id FROM toutiao_articles"
+            "SELECT article_id FROM raw_articles"
             " WHERE article_id = ANY(%s)"
             "   AND (content_markdown IS NULL OR LENGTH(TRIM(content_markdown)) = 0)"
         )
@@ -214,11 +217,11 @@ class PostgresAdapter:
             rows = cur.fetchall()
         return {str(row['article_id']) for row in rows if row.get('article_id')}
 
-    def fetch_toutiao_articles_missing_content(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def fetch_raw_articles_missing_content(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         query = [
             "SELECT token, profile_url, article_id, title, source, publish_time, publish_time_iso, url, summary,",
             "       comment_count, digg_count, fetched_at, detail_fetched_at",
-            "FROM toutiao_articles",
+            "FROM raw_articles",
             "WHERE content_markdown IS NULL OR LENGTH(TRIM(content_markdown)) = 0",
             "ORDER BY fetched_at ASC NULLS LAST",
         ]
@@ -246,10 +249,10 @@ class PostgresAdapter:
         return result
 
 
-    def get_existing_toutiao_article_ids(self) -> Set[str]:
+    def get_existing_raw_article_ids(self) -> Set[str]:
         ids: Set[str] = set()
         with self._cursor() as cur:
-            cur.execute("SELECT article_id FROM toutiao_articles")
+            cur.execute("SELECT article_id FROM raw_articles")
             for row in cur.fetchall():
                 article_id = row.get('article_id')
                 if article_id:
@@ -435,7 +438,7 @@ class PostgresAdapter:
         if message:
             print(f"[warn] summary failed {article_id}: {message}", file=sys.stderr)
 
-    def fetch_toutiao_articles_for_summary(
+    def fetch_raw_articles_for_summary(
         self,
         *,
         after_fetched_at: Optional[str],
@@ -444,7 +447,7 @@ class PostgresAdapter:
         fetch_target = max(1, (limit or 50))
         base_query = [
             "SELECT article_id, title, source, publish_time, publish_time_iso, url, content_markdown, fetched_at, detail_fetched_at",
-            "FROM toutiao_articles",
+            "FROM raw_articles",
             "WHERE content_markdown IS NOT NULL AND LENGTH(TRIM(content_markdown)) > 0",
             "  AND detail_fetched_at IS NOT NULL",
         ]
@@ -473,6 +476,32 @@ class PostgresAdapter:
                 record['detail_fetched_at'] = detail_fetched.isoformat()
             result.append(record)
         return result
+
+    # ------------------------------------------------------------------
+    # Backward-compat wrappers (to be removed after refactor)
+    # ------------------------------------------------------------------
+    def upsert_toutiao_feed_rows(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        return self.upsert_raw_feed_rows(rows)
+
+    def update_toutiao_article_details(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        return self.update_raw_article_details(rows)
+
+    def get_toutiao_articles_missing_content(self, article_ids: Sequence[str]) -> Set[str]:
+        return self.get_raw_articles_missing_content(article_ids)
+
+    def fetch_toutiao_articles_missing_content(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        return self.fetch_raw_articles_missing_content(limit)
+
+    def get_existing_toutiao_article_ids(self) -> Set[str]:
+        return self.get_existing_raw_article_ids()
+
+    def fetch_toutiao_articles_for_summary(
+        self,
+        *,
+        after_fetched_at: Optional[str],
+        limit: Optional[int],
+    ) -> List[Dict[str, Any]]:
+        return self.fetch_raw_articles_for_summary(after_fetched_at=after_fetched_at, limit=limit)
 
     def get_existing_news_summary_ids(self, article_ids: Sequence[str]) -> Set[str]:
         unique_ids = list({str(item) for item in article_ids if item})

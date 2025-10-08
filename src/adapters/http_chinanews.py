@@ -116,6 +116,15 @@ SOURCE_SELECTORS: Sequence[str] = (
     ".left .time-source",
     ".newsInfo",
     ".cont .source",
+    "#source",
+    ".source",
+    ".time-source",
+    ".article-source",
+    ".photo .source",
+    ".photo-source",
+    ".photo-info .from",
+    ".xwly",
+    ".laiyuan",
 )
 
 

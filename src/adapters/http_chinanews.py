@@ -37,6 +37,21 @@ def _session() -> requests.Session:
     return s
 
 
+def _response_text(resp: requests.Response) -> str:
+    # Prefer server-declared encoding; if missing or iso-8859-1, use apparent_encoding
+    try:
+        enc = (resp.encoding or "").lower()
+    except Exception:
+        enc = ""
+    if not enc or enc == "iso-8859-1":
+        try:
+            apparent = resp.apparent_encoding or "utf-8"
+            resp.encoding = apparent
+        except Exception:
+            resp.encoding = "utf-8"
+    return resp.text or ""
+
+
 def normalize_url(url: str) -> str:
     u = (url or "").strip()
     if not u:
@@ -230,7 +245,7 @@ def list_items(limit: Optional[int] = None, pages: Optional[int] = None, *, exis
         url = f"https://www.chinanews.com.cn/scroll-news/news{page}.html"
         resp = sess.get(url, timeout=15)
         resp.raise_for_status()
-        soup = BeautifulSoup(resp.content, "html.parser")
+        soup = BeautifulSoup(_response_text(resp), "html.parser")
         if last_page is None:
             last_page = _extract_max_page(soup)
             # Clamp requested_pages to the actual last page
@@ -281,8 +296,8 @@ def fetch_detail(url: str) -> Dict[str, Any]:
     sess = _session()
     resp = sess.get(normalize_url(url), timeout=15)
     resp.raise_for_status()
-    html_bytes = resp.content
-    soup = BeautifulSoup(html_bytes, "html.parser")
+    html_text = _response_text(resp)
+    soup = BeautifulSoup(html_text, "html.parser")
 
     # Title: h1 -> og:title -> <title> (strip site suffix)
     title = None
@@ -332,7 +347,18 @@ def fetch_detail(url: str) -> Dict[str, Any]:
         if content_node and len(content_node.get_text(strip=True)) > 40:
             break
         content_node = None
-    content_html = content_node.decode_contents() if content_node else (html_bytes.decode(errors='ignore'))
+    if content_node:
+        # Remove scripts/styles/ads inside content
+        for bad in content_node.select("script, style, .ad, .adEditor, .adInContent"):
+            bad.decompose()
+        content_html = content_node.decode_contents()
+    else:
+        # Fallback to meta description for video/special pages
+        meta_desc = soup.find("meta", attrs={"name": "description"})
+        if meta_desc and meta_desc.get("content"):
+            content_html = meta_desc.get("content") or ""
+        else:
+            content_html = html_text
     text_md = html_to_markdown(content_html)
 
     # Per current requirement, prefer feed time; do not override from detail.

@@ -101,7 +101,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 
 #### ChinaNews specifics
 - Paging: use `--pages N` to fetch multiple feed pages. Default is 1; it does not auto-flip without `--pages`.
-  - Example: `python -m src.cli.main crawl --sources chinanews --limit 500 --pages 15`
+  - Example: `python -m src.cli.main crawl --sources chinanews --limit 500 --pages 10`
   - The crawler reads the page navigator (`.pagebox`) and will not exceed the last available page.
 - Published time: derived from the feed item (`.dd_time`) combined with the URL date. Stored as tz-aware (+08:00); exports can render `YYYY-MM-DD HH:MM`.
 - Source (媒体来源): extracted from visible nodes (selectors aligned with our reference crawler), then fallback to meta tags.

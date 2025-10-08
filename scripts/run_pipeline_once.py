@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from src.adapters.db import get_adapter
-from src.workers.crawl_toutiao import run as run_crawl
+from src.workers.crawl_sources import run as run_crawl
 from src.workers.export_brief import run as run_export
 from src.workers.score import run as run_score
 from src.workers.summarize import run as run_summarize

@@ -206,14 +206,35 @@ def _dt_from_iso(iso: Optional[str]) -> Optional[datetime]:
 def list_items(limit: Optional[int] = None, pages: Optional[int] = None, *, existing_ids: Optional[Set[str]] = None) -> List[FeedItemLike]:
     sess = _session()
     collected: List[FeedItemLike] = []
-    total_pages = max(1, int(pages or 1))
-    for page in range(1, total_pages + 1):
+    requested_pages = max(1, int(pages or 1))
+
+    def _extract_max_page(soup: BeautifulSoup) -> int:
+        box = soup.select_one("div.pagebox")
+        if not box:
+            return 1
+        pages_local: List[int] = []
+        for node in box.find_all(["a", "span"]):
+            text = node.get_text(strip=True)
+            if text.isdigit():
+                try:
+                    pages_local.append(int(text))
+                except Exception:
+                    continue
+        return max(pages_local) if pages_local else 1
+
+    last_page: Optional[int] = None
+    page = 1
+    while page <= requested_pages:
         if limit is not None and len(collected) >= limit:
             break
-        url = "https://www.chinanews.com.cn/scroll-news/news1.html" if page == 1 else f"https://www.chinanews.com.cn/scroll-news/news1-{page}.html"
+        url = f"https://www.chinanews.com.cn/scroll-news/news{page}.html"
         resp = sess.get(url, timeout=15)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.content, "html.parser")
+        if last_page is None:
+            last_page = _extract_max_page(soup)
+            # Clamp requested_pages to the actual last page
+            requested_pages = min(requested_pages, last_page)
         ul = soup.select_one(".content_list")
         if not ul:
             break
@@ -236,7 +257,6 @@ def list_items(limit: Optional[int] = None, pages: Optional[int] = None, *, exis
                 m = re.match(r"(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})", text)
                 if m:
                     try:
-                        # month, day = int(m.group(1)), int(m.group(2))  # could cross-check with URL
                         hh, mm = int(m.group(3)), int(m.group(4))
                     except Exception:
                         hh = mm = 0
@@ -253,6 +273,7 @@ def list_items(limit: Optional[int] = None, pages: Optional[int] = None, *, exis
             collected.append(item)
             if limit is not None and len(collected) >= limit:
                 break
+        page += 1
     return collected
 
 

@@ -1,4 +1,4 @@
-﻿# Edu News Pipeline
+# Edu News Pipeline
 
 Automated pipeline for collecting education-related articles, summarising them with an LLM, scoring relevance, and exporting daily briefs.
 
@@ -83,9 +83,28 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 
 - Command: `python -m src.cli.main crawl`
 - Default limit: 500 articles (clamped by `PROCESS_LIMIT` if set)
-- Sources: `--sources` comma list (default `toutiao`; add `chinanews` to include ChinaNews scroll page)\n- Toutiao uses Playwright (requires `playwright install chromium`) and reads authors from `TOUTIAO_AUTHORS_PATH`
+- Sources: `--sources` comma list (default `toutiao`; add `chinanews` to include ChinaNews scroll page)
+  - Toutiao uses Playwright (requires `playwright install chromium`) and reads authors from `TOUTIAO_AUTHORS_PATH`
 - Writes/updates rows in `raw_articles`
 - Skips articles already present in the database
+
+#### Examples
+- ChinaNews (first page only): `python -m src.cli.main crawl --sources chinanews --limit 50`
+- ChinaNews (multi-page to approach 500): `python -m src.cli.main crawl --sources chinanews --limit 500 --pages 15`
+- Toutiao + ChinaNews (total 500, sequential consumption): `python -m src.cli.main crawl --sources toutiao,chinanews --limit 500`
+- Repair missing bodies (all sources): `python -m src.cli.main repair --limit 200`
+
+#### Multi-source allocation
+- `--limit` is a total upper bound per run.
+- Sources are processed in the order you pass in `--sources` (e.g., `toutiao,chinanews`). Each source consumes from the remaining quota; there is no auto even-split.
+- If you prefer fixed quotas (e.g., Toutiao 300 + ChinaNews 200), run separate commands for each for now.
+
+#### ChinaNews specifics
+- Paging: use `--pages N` to fetch multiple feed pages. Default is 1; it does not auto-flip without `--pages`.
+  - Example: `python -m src.cli.main crawl --sources chinanews --limit 500 --pages 15`
+  - The crawler reads the page navigator (`.pagebox`) and will not exceed the last available page.
+- Published time: derived from the feed item (`.dd_time`) combined with the URL date. Stored as tz-aware (+08:00); exports can render `YYYY-MM-DD HH:MM`.
+- Source (媒体来源): extracted from visible nodes (selectors aligned with our reference crawler), then fallback to meta tags.
 
 ### Summarise Worker
 
@@ -121,7 +140,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 
 | Issue | Fix |
 | --- | --- |
-| Crawl returns zero items | Ensure Playwright works (`playwright install chromium`), check author tokens, increase `--limit` |
+| Crawl returns zero items | Ensure Playwright works (Toutiao: `playwright install chromium`), check author tokens/`--pages`, increase `--limit` |
 | Summarise skips everything | Confirm keywords list, check `summarize_cursor.json`, set `--reset-cursor` manually (delete file) |
 | Score/export find nothing | Make sure previous steps inserted rows into Postgres (`raw_articles` / `news_summaries`) |
 | Database errors (connection / missing tables) | Verify Postgres credentials and apply the schema SQL before rerunning |

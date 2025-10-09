@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Set
+import os
 
 import requests
 from bs4 import BeautifulSoup
@@ -231,6 +232,14 @@ def list_items(limit: Optional[int] = None, pages: Optional[int] = None, *, exis
     sess = _session()
     collected: List[FeedItemLike] = []
     requested_pages = max(1, int(pages or 1))
+    # Stop after hitting N consecutive items that already exist locally
+    try:
+        consecutive_stop = int(os.getenv("CHINANEWS_EXISTING_CONSECUTIVE_STOP", "5"))
+    except Exception:
+        consecutive_stop = 5
+    if consecutive_stop < 0:
+        consecutive_stop = 0
+    consecutive_hits = 0
 
     def _extract_max_page(soup: BeautifulSoup) -> int:
         box = soup.select_one("div.pagebox")
@@ -293,7 +302,17 @@ def list_items(limit: Optional[int] = None, pages: Optional[int] = None, *, exis
             item = FeedItemLike(title=title, url=href, section=section, publish_time_iso=iso, raw={})
             aid = make_article_id(href)
             if existing_ids is not None and aid in existing_ids:
+                if consecutive_stop == 0:
+                    # Never early-stop on existing items
+                    continue
+                consecutive_hits += 1
+                if consecutive_hits >= consecutive_stop:
+                    # Early stop across pagination
+                    return collected
+                # Skip collecting existing items and continue scanning this page
                 continue
+            else:
+                consecutive_hits = 0
             collected.append(item)
             if limit is not None and len(collected) >= limit:
                 break

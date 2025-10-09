@@ -75,6 +75,9 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `CONCURRENCY` | Default worker concurrency override (falls back to 5) |
 | `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` | API credentials and endpoint for the LLM provider |
 | `SUMMARIZE_MODEL_NAME` / `SOURCE_MODEL_NAME` / `SCORE_MODEL_NAME` | Model identifiers used by the workers |
+| `CRAWL_SOURCES` | Comma list of sources used by the pipeline wrapper (e.g., `toutiao,chinanews`; default `toutiao`) |
+| `TOUTIAO_EXISTING_CONSECUTIVE_STOP` | Early‑stop after N consecutive existing items per author (default `5`; set `0` to disable) |
+| `CHINANEWS_EXISTING_CONSECUTIVE_STOP` | Early‑stop after N consecutive existing items across scroll pages (default `5`; set `0` to disable) |
 
 
 ## Workflow Details
@@ -83,10 +86,14 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 
 - Command: `python -m src.cli.main crawl`
 - Default limit: 500 articles (clamped by `PROCESS_LIMIT` if set)
-- Sources: `--sources` comma list (default `toutiao`; add `chinanews` to include ChinaNews scroll page)
+- Sources: `--sources` comma list (default `toutiao`; add `chinanews` to include ChinaNews scroll page). The pipeline wrapper also respects `CRAWL_SOURCES` from env (e.g., `CRAWL_SOURCES=toutiao,chinanews`).
   - Toutiao uses Playwright (requires `playwright install chromium`) and reads authors from `TOUTIAO_AUTHORS_PATH`
 - Writes/updates rows in `raw_articles`
 - Skips articles already present in the database
+
+- Early‑stop policy for duplicates:
+  - Toutiao: while scanning each author’s feed, stops after `TOUTIAO_EXISTING_CONSECUTIVE_STOP` consecutive items already present in the DB (default 5). Set it to `0` to never early‑stop on existing items.
+  - ChinaNews: while iterating scroll pages, skips existing items and stops when `CHINANEWS_EXISTING_CONSECUTIVE_STOP` consecutive items are already present (default 5). Set it to `0` to never early‑stop on existing items.
 
 #### Examples
 - ChinaNews (first page only): `python -m src.cli.main crawl --sources chinanews --limit 50`

@@ -52,3 +52,5 @@ data/summarized_cursor.json
 # Logs
 logs/
 
+# Lock files to prevent overlapping runs
+locks/

@@ -13,10 +13,10 @@ All steps are available through the CLI wrapper:
 
 ```bash
 python -m src.cli.main crawl --sources toutiao,chinanews --limit 500
-python -m src.cli.main repair --limit 100
-python -m src.cli.main summarize --limit 100
-python -m src.cli.main score --limit 100
-python -m src.cli.main export --min-score 60 --limit 50
+python -m src.cli.main repair --limit 1000
+python -m src.cli.main summarize --limit 1000
+python -m src.cli.main score --limit 1000
+python -m src.cli.main export --min-score 60 --limit 500
 ```
 
 Use `-h` on any command to see flags. `summarize` now operates on the queued pending rows—run `crawl` first so new candidates are available.

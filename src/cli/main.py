@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from src.workers.crawl_toutiao import run as crawl_toutiao
+from src.workers.crawl_sources import run as crawl_sources
 from src.workers.export_brief import run as export_brief
 from src.workers.repair_missing_content import run as repair_missing
 from src.workers.score import run as score_summaries
@@ -18,9 +18,11 @@ def _positive_int(value: str) -> int:
 
 
 def _add_crawl(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("crawl", help="Collect fresh Toutiao articles")
-    parser.add_argument("--limit", type=_positive_int, default=500, help="Max number of feed items to ingest")
+    parser = subparsers.add_parser("crawl", help="Collect fresh articles from configured sources")
+    parser.add_argument("--limit", type=_positive_int, default=500, help="Max number of feed items to ingest (across sources)")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
+    parser.add_argument("--sources", type=str, default="toutiao", help="Comma-separated sources, e.g. 'toutiao,chinanews'")
+    parser.add_argument("--pages", type=_positive_int, default=None, help="Optional pages per paginated source (e.g., ChinaNews)")
 
 
 def _add_repair(subparsers: argparse._SubParsersAction) -> None:
@@ -30,9 +32,9 @@ def _add_repair(subparsers: argparse._SubParsersAction) -> None:
 
 def _add_summarize(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("summarize", help="Generate summaries for pending articles")
-    parser.add_argument("--limit", type=_positive_int, default=50, help="Max number of articles to summarize")
+    parser.add_argument("--limit", type=_positive_int, default=50, help="Max number of pending summaries to process")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
-    parser.add_argument("--keywords", type=Path, default=None, help="Override keywords file used to filter articles")
+    parser.add_argument("--keywords", type=Path, default=None, help="(Deprecated) keywords now handled in crawl; kept for CLI compatibility")
 
 
 def _add_score(subparsers: argparse._SubParsersAction) -> None:
@@ -69,7 +71,7 @@ def main(argv: list[str] | None = None) -> None:
 
     command = args.command
     if command == "crawl":
-        crawl_toutiao(limit=args.limit, concurrency=args.concurrency)
+        crawl_sources(limit=args.limit, concurrency=args.concurrency, sources=args.sources, pages=args.pages)
     elif command == "repair":
         repair_missing(limit=args.limit)
     elif command == "summarize":

@@ -1,25 +1,25 @@
-﻿# Edu News Pipeline
+# Edu News Pipeline
 
-Automated pipeline for collecting Toutiao education articles, summarising them with an LLM, scoring relevance, and exporting daily briefs.
+Automated pipeline for collecting education-related articles, summarising them with an LLM, scoring relevance, and exporting daily briefs.
 
 ## Pipeline Overview
 
-1. **Crawl** - Fetch latest Toutiao articles defined in `data/author_tokens.txt`, upsert feed metadata, and ensure missing bodies get re-fetched before writing to the Postgres table `toutiao_articles`.
-2. **Summarise** - Generate summaries for new articles and write them to `news_summaries`.
+1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: ChinaNews), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `news_summaries` with a `pending` status.
+2. **Summarise** - Consume pending rows from `news_summaries`, call the LLM for those without summaries, and update their status to `completed` (failed rows remain pending for retry).
 3. **Score** - Ask the LLM to rate each summary and persist the `correlation` score in `news_summaries`.
 4. **Export** - Assemble the highest-scoring summaries into a plain-text brief and optionally log the batch metadata in `brief_batches` / `brief_items`.
 
 All steps are available through the CLI wrapper:
 
 ```bash
-python -m src.cli.main crawl --limit 500
-python -m src.cli.main repair --limit 100
-python -m src.cli.main summarize --limit 100
-python -m src.cli.main score --limit 100
-python -m src.cli.main export --min-score 60 --limit 50
+python -m src.cli.main crawl --sources toutiao,chinanews --limit 500
+python -m src.cli.main repair --limit 1000
+python -m src.cli.main summarize --limit 1000
+python -m src.cli.main score --limit 1000
+python -m src.cli.main export --min-score 60 --limit 500
 ```
 
-Use `-h` on any command to see flags.
+Use `-h` on any command to see flags. `summarize` now operates on the queued pending rows—run `crawl` first so new candidates are available.
 
 ## Repairing Missing Content
 
@@ -32,7 +32,7 @@ python -m src.cli.main repair --limit 500
 Re-run as needed until the command reports no articles remaining.
 ## Directory Highlights
 
-- `data/author_tokens.txt` - List of Toutiao author tokens/URLs (one per line, `#` for comments).
+- `data/author_tokens.txt` - List of Toutiao author tokens/URLs (one per line, `#` for comments). Used when crawling `--sources toutiao`.
 - `src/adapters/db.py` - Singleton loader for the Postgres adapter.
 - `src/adapters/db_postgres.py` - PostgreSQL access layer used by all workers.
 - `src/workers/` - Implementations for `crawl`, `summarize`, `score`, and `export` steps.
@@ -55,7 +55,7 @@ Re-run as needed until the command reports no articles remaining.
 
 1. Install PostgreSQL 16+ (the team standard uses Windows packages under `C:\Program Files\PostgreSQL\18`).
 2. Ensure the service is running and note the administrator credentials (default user: `postgres`).
-3. Apply the project schema: `psql -h localhost -U postgres -d postgres -f database/schema.sql` (repeat for any additional SQL in `database/migrations/`).
+3. Apply the project schema: `psql -h localhost -U postgres -d postgres -f database/schema.sql`.\n   - Then apply migrations under `database/migrations/` as needed. Notably, `20251007194500_rename_toutiao_to_raw_articles.sql` renames `toutiao_articles` to `raw_articles` for multi-source support (safe to run multiple times).
 4. Populate `.env.local` with the `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `DB_SCHEMA` settings.
 5. Run the Postgres adapter validation: `python -m pytest tests/test_db_postgres_adapter.py` (install `pytest` if it is not already available).
 
@@ -67,7 +67,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | --- | --- |
 | `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | Connection details for the Postgres instance |
 | `DB_SCHEMA` | Schema to target (defaults to `public`) |
-| `TOUTIAO_AUTHORS_PATH` | Override authors list path (defaults to `data/author_tokens.txt`) |
+| `TOUTIAO_AUTHORS_PATH` | Override Toutiao authors list path (defaults to `data/author_tokens.txt`) |
 | `TOUTIAO_FETCH_TIMEOUT` | Seconds for article fetch timeout (default 15) |
 | `TOUTIAO_LANG` | `Accept-Language` header when fetching article content |
 | `TOUTIAO_SHOW_BROWSER` | Set to `1` to run Playwright in headed mode |
@@ -75,6 +75,9 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `CONCURRENCY` | Default worker concurrency override (falls back to 5) |
 | `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` | API credentials and endpoint for the LLM provider |
 | `SUMMARIZE_MODEL_NAME` / `SOURCE_MODEL_NAME` / `SCORE_MODEL_NAME` | Model identifiers used by the workers |
+| `CRAWL_SOURCES` | Comma list of sources used by the pipeline wrapper (e.g., `toutiao,chinanews`; default `toutiao`) |
+| `TOUTIAO_EXISTING_CONSECUTIVE_STOP` | Early‑stop after N consecutive existing items per author (default `5`; set `0` to disable) |
+| `CHINANEWS_EXISTING_CONSECUTIVE_STOP` | Early‑stop after N consecutive existing items across scroll pages (default `5`; set `0` to disable) |
 
 
 ## Workflow Details
@@ -83,9 +86,32 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 
 - Command: `python -m src.cli.main crawl`
 - Default limit: 500 articles (clamped by `PROCESS_LIMIT` if set)
-- Reads author tokens from `TOUTIAO_AUTHORS_PATH`
-- Writes new rows to `toutiao_articles`
+- Sources: `--sources` comma list (default `toutiao`; add `chinanews` to include ChinaNews scroll page). The pipeline wrapper also respects `CRAWL_SOURCES` from env (e.g., `CRAWL_SOURCES=toutiao,chinanews`).
+  - Toutiao uses Playwright (requires `playwright install chromium`) and reads authors from `TOUTIAO_AUTHORS_PATH`
+- Writes/updates rows in `raw_articles`
 - Skips articles already present in the database
+
+- Early‑stop policy for duplicates:
+  - Toutiao: while scanning each author’s feed, stops after `TOUTIAO_EXISTING_CONSECUTIVE_STOP` consecutive items already present in the DB (default 5). Set it to `0` to never early‑stop on existing items.
+  - ChinaNews: while iterating scroll pages, skips existing items and stops when `CHINANEWS_EXISTING_CONSECUTIVE_STOP` consecutive items are already present (default 5). Set it to `0` to never early‑stop on existing items.
+
+#### Examples
+- ChinaNews (first page only): `python -m src.cli.main crawl --sources chinanews --limit 50`
+- ChinaNews (multi-page to approach 500): `python -m src.cli.main crawl --sources chinanews --limit 500 --pages 15`
+- Toutiao + ChinaNews (total 500, sequential consumption): `python -m src.cli.main crawl --sources toutiao,chinanews --limit 500`
+- Repair missing bodies (all sources): `python -m src.cli.main repair --limit 200`
+
+#### Multi-source allocation
+- `--limit` is a total upper bound per run.
+- Sources are processed in the order you pass in `--sources` (e.g., `toutiao,chinanews`). Each source consumes from the remaining quota; there is no auto even-split.
+- If you prefer fixed quotas (e.g., Toutiao 300 + ChinaNews 200), run separate commands for each for now.
+
+#### ChinaNews specifics
+- Paging: use `--pages N` to fetch multiple feed pages. Default is 1; it does not auto-flip without `--pages`.
+  - Example: `python -m src.cli.main crawl --sources chinanews --limit 500 --pages 10`
+  - The crawler reads the page navigator (`.pagebox`) and will not exceed the last available page.
+- Published time: derived from the feed item (`.dd_time`) combined with the URL date. Stored as tz-aware (+08:00); exports can render `YYYY-MM-DD HH:MM`.
+- Source (媒体来源): extracted from visible nodes (selectors aligned with our reference crawler), then fallback to meta tags.
 
 ### Summarise Worker
 
@@ -121,9 +147,9 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 
 | Issue | Fix |
 | --- | --- |
-| Crawl returns zero items | Ensure Playwright works (`playwright install chromium`), check author tokens, increase `--limit` |
+| Crawl returns zero items | Ensure Playwright works (Toutiao: `playwright install chromium`), check author tokens/`--pages`, increase `--limit` |
 | Summarise skips everything | Confirm keywords list, check `summarize_cursor.json`, set `--reset-cursor` manually (delete file) |
-| Score/export find nothing | Make sure previous steps inserted rows into Postgres (`toutiao_articles` / `news_summaries`) |
+| Score/export find nothing | Make sure previous steps inserted rows into Postgres (`raw_articles` / `news_summaries`) |
 | Database errors (connection / missing tables) | Verify Postgres credentials and apply the schema SQL before rerunning |
 
 ## License
@@ -167,6 +193,7 @@ un_pipeline_every10.ps1" -Python "C:\Path\To\python.exe" -LogDirectory "D:\logs\
 - The historical `tools/` directory has been removed; remaining shim scripts simply warn and forward to the worker entry points.
 - Target date to delete those shims entirely is 2025-10-31, after verifying no external automation depends on them.
 - Migrate any outstanding scripts to the new commands (`python -m src.cli.main ...`) or `scripts/run_pipeline_once.py` before that deadline.
+
 
 
 

@@ -271,6 +271,14 @@ async def _collect_feed_from_page(
     if limit == 0:
         return [], False
     collected: List[FeedItem] = []
+    # Stop after hitting N consecutive items that already exist locally
+    try:
+        consecutive_stop = int(os.getenv("TOUTIAO_EXISTING_CONSECUTIVE_STOP", "5"))
+    except Exception:
+        consecutive_stop = 5
+    if consecutive_stop < 0:
+        consecutive_stop = 0
+    consecutive_hits = 0
     max_behot_time = "0"
     reached_existing = False
     for _ in range(200):
@@ -285,8 +293,17 @@ async def _collect_feed_from_page(
             item = FeedItem.from_raw(token, profile_url, raw)
             article_id = try_resolve_article_id_from_feed(item) if existing_ids is not None else None
             if article_id and existing_ids is not None and article_id in existing_ids:
-                reached_existing = True
-                break
+                if consecutive_stop == 0:
+                    # Never early-stop on existing items
+                    continue
+                consecutive_hits += 1
+                if consecutive_hits >= consecutive_stop:
+                    reached_existing = True
+                    break
+                # Do not collect existing items; continue scanning within this page
+                continue
+            else:
+                consecutive_hits = 0
             collected.append(item)
             if limit is not None and len(collected) >= limit:
                 break

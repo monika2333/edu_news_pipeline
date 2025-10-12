@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$Python = "python",
     [switch]$ContinueOnError,
     [string]$LogDirectory,
@@ -19,7 +19,8 @@ if (-not (Test-Path $LockDirectory)) {
     New-Item -ItemType Directory -Path $LockDirectory -Force | Out-Null
 }
 
-$lockPath = Join-Path $LockDirectory "pipeline_every10.lock"
+# Prevent overlapping runs
+$lockPath = Join-Path $LockDirectory "pipeline_hourly.lock"
 $lockFile = $null
 try {
     $lockFile = [System.IO.File]::Open($lockPath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
@@ -36,9 +37,11 @@ if (-not (Test-Path $LogDirectory)) {
 }
 
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$logFile = Join-Path $LogDirectory "pipeline_every10_$timestamp.log"
+$logFile = Join-Path $LogDirectory "pipeline_hourly_$timestamp.log"
 
-$arguments = @("scripts/run_pipeline_once.py", "--steps", "crawl", "summarize", "score", "--trigger-source", "scheduler-10min")
+# Restrict to crawl -> summarize -> score
+# Prefer module execution so project root stays on sys.path
+$arguments = @("-m", "scripts.run_pipeline_once", "--steps", "crawl", "summarize", "score", "--trigger-source", "scheduler-hourly")
 if ($ContinueOnError) {
     $arguments += "--continue-on-error"
 }
@@ -46,8 +49,11 @@ if ($ContinueOnError) {
 $env:PYTHONUNBUFFERED = "1"
 Push-Location $repoRoot
 try {
-    & $Python @arguments *>&1 | Tee-Object -FilePath $logFile
+    $prevErr = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $Python @arguments 2>&1 | Tee-Object -FilePath $logFile
     $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevErr
 } finally {
     Pop-Location
     if ($lockFile) {

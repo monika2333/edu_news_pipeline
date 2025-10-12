@@ -121,6 +121,6 @@ def test_postgres_adapter_core_roundtrip() -> None:
                 cur.execute("DELETE FROM pipeline_run_steps WHERE run_id = %s", (run_id,))
                 cur.execute("DELETE FROM pipeline_runs WHERE run_id = %s", (run_id,))
                 cur.execute("DELETE FROM news_summaries WHERE article_id = %s", (article_id,))
-                cur.execute("DELETE FROM toutiao_articles WHERE article_id = %s", (article_id,))
+                cur.execute("DELETE FROM raw_articles WHERE article_id = %s", (article_id,))
 
     _reset_adapter_cache()

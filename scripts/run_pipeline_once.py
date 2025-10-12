@@ -9,8 +9,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
+import os
 from src.adapters.db import get_adapter
-from src.workers.crawl_toutiao import run as run_crawl
+from src.config import load_environment
+from src.workers.crawl_sources import run as run_crawl
 from src.workers.export_brief import run as run_export
 from src.workers.score import run as run_score
 from src.workers.summarize import run as run_summarize
@@ -157,7 +159,13 @@ def _record_run_finish(
 
 
 def _run_crawl_step() -> Dict[str, str]:
-    run_crawl()
+    # Allow selecting sources via environment variable, e.g. CRAWL_SOURCES=toutiao,chinanews
+    load_environment()
+    sources_env = os.getenv("CRAWL_SOURCES")
+    if sources_env:
+        run_crawl(sources=sources_env)
+    else:
+        run_crawl()
     return {}
 
 

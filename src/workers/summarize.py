@@ -1,7 +1,5 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-import json
-import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,143 +12,30 @@ from src.config import get_settings
 from src.workers import log_error, log_info, log_summary, worker_session
 
 WORKER = "summarize"
-CURSOR_FILENAME = Path("data/summarize_cursor.json")
-CURSOR_ENV_VAR = "SUMMARIZE_CURSOR_PATH"
 DEFAULT_FETCH_MULTIPLIER = 4
+MAX_RETRIES = 3
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
-def _resolve_cursor_path() -> Path:
-    env_value = os.getenv(CURSOR_ENV_VAR)
-    if env_value:
-        candidate = Path(env_value).expanduser()
-        if not candidate.is_absolute():
-            candidate = _repo_root() / candidate
-        return candidate
-    if CURSOR_FILENAME.is_absolute():
-        return CURSOR_FILENAME
-    return _repo_root() / CURSOR_FILENAME
-
-
-def _load_cursor(path: Path) -> Dict[str, Optional[str]]:
-    if not path.exists():
-        return {"fetched_at": None, "article_id": None}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {"fetched_at": None, "article_id": None}
-    return {
-        "fetched_at": data.get("fetched_at"),
-        "article_id": data.get("article_id"),
-    }
-
-
-def _save_cursor(path: Path, fetched_at: Optional[str], article_id: Optional[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"fetched_at": fetched_at, "article_id": article_id}
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
-
-
-def _load_keywords(path: Path) -> List[str]:
-    if not path.exists():
+def _normalize_keywords(value: Optional[Sequence[str]]) -> List[str]:
+    if not value:
         return []
-    keywords: List[str] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        raw = line.strip()
-        if raw and not raw.startswith("#"):
-            keywords.append(raw)
-    return keywords
-
-
-def _contains_keywords(text: str, keywords: Sequence[str]) -> Tuple[bool, List[str]]:
-    if not keywords:
-        return True, []
-    lowered = text.lower()
-    hits: List[str] = []
-    for kw in keywords:
-        if kw and kw.lower() in lowered:
-            hits.append(kw)
-    return (bool(hits), hits)
-
-
-def _filter_articles_after_cursor(
-    articles: Sequence[Dict[str, Any]],
-    fetched_at: Optional[str],
-    article_id: Optional[str],
-) -> List[Dict[str, Any]]:
-    ordered = sorted(
-        list(articles),
-        key=lambda item: (
-            item.get("fetched_at") or "",
-            str(item.get("article_id") or ""),
-        ),
-    )
-    if not fetched_at:
-        return ordered
-    result: List[Dict[str, Any]] = []
-    for article in ordered:
-        article_fetched = article.get("fetched_at")
-        article_fetch_str = article_fetched or ""
-        if article_fetch_str and article_fetch_str < fetched_at:
+    result: List[str] = []
+    for item in value:
+        if item is None:
             continue
-        if (
-            article_fetch_str == fetched_at
-            and article_id
-            and str(article.get("article_id") or "") <= article_id
-        ):
-            continue
-        result.append(article)
+        text = str(item).strip()
+        if text and text not in result:
+            result.append(text)
     return result
 
 
-
-
-def _cursor_keys(fetch: Optional[str], article: Optional[str]) -> Tuple[str, str]:
-    fetch_key = str(fetch) if fetch is not None else ""
-    article_key = str(article).strip() if article is not None else ""
-    return fetch_key, article_key
-
-
-def _should_advance_cursor(
-    current_fetch: Optional[str],
-    current_article: Optional[str],
-    candidate_fetch: Optional[str],
-    candidate_article: Optional[str],
-) -> bool:
-    current_fetch_key, current_article_key = _cursor_keys(current_fetch, current_article)
-    candidate_fetch_key, candidate_article_key = _cursor_keys(candidate_fetch, candidate_article)
-    if candidate_fetch_key > current_fetch_key:
-        return True
-    if candidate_fetch_key == current_fetch_key and candidate_article_key > current_article_key:
-        return True
-    return False
-
-
-def _update_cursor(
-    cursor_path: Path,
-    latest_fetched: Optional[str],
-    latest_article: Optional[str],
-    candidate_fetch: Optional[str],
-    candidate_article: Optional[str],
-) -> Tuple[Optional[str], Optional[str]]:
-    if _should_advance_cursor(latest_fetched, latest_article, candidate_fetch, candidate_article):
-        latest_fetched = candidate_fetch
-        latest_article = candidate_article
-    _save_cursor(cursor_path, latest_fetched, latest_article)
-    return latest_fetched, latest_article
+def _content_from_row(article: Dict[str, Any]) -> str:
+    return str(article.get('content_markdown') or '').strip()
 
 
 def run(limit: int = 50, *, concurrency: Optional[int] = None, keywords_path: Optional[Path] = None) -> None:
     settings = get_settings()
     adapter = get_adapter()
-
-    cursor_path = _resolve_cursor_path()
-    cursor_state = _load_cursor(cursor_path)
-    latest_fetched = cursor_state.get('fetched_at')
-    latest_article = cursor_state.get('article_id')
 
     limit_value: Optional[int]
     if limit and limit > 0:
@@ -170,34 +55,52 @@ def run(limit: int = 50, *, concurrency: Optional[int] = None, keywords_path: Op
 
     fetch_target = limit_value or max_workers
     fetch_limit = max(1, fetch_target) * DEFAULT_FETCH_MULTIPLIER
-
-    keywords_file = keywords_path or settings.keywords_path
-    keywords = _load_keywords(Path(keywords_file))
-
     session_limit = limit_value or fetch_target
 
-    with worker_session(WORKER, limit=session_limit):
-        raw_articles = adapter.fetch_toutiao_articles_for_summary(
-            after_fetched_at=latest_fetched,
-            limit=fetch_limit,
-        )
-        articles = _filter_articles_after_cursor(raw_articles, latest_fetched, latest_article)
-        if not articles:
-            log_info(WORKER, 'No articles available for summarisation.')
-            return
+    # keywords_path is no longer used in the two-stage flow but kept for CLI compatibility
+    _ = keywords_path
 
-        article_ids = [str(item.get('article_id')) for item in articles if item.get('article_id')]
-        existing_ids = adapter.get_existing_news_summary_ids(article_ids)
+    with worker_session(WORKER, limit=session_limit):
+        rows = adapter.fetch_pending_summaries(fetch_limit, max_attempts=MAX_RETRIES)
+        if not rows:
+            log_info(WORKER, 'No pending summaries found.')
+            log_summary(WORKER, ok=0, failed=0, skipped=None)
+            return
 
         success = 0
         failed = 0
         skipped = 0
+        failure_ids: List[str] = []
+        pending_tasks: List[Tuple[Any, Dict[str, Any], str, int]] = []
 
-        pending: List[Tuple[Any, Dict[str, Any], List[str], Optional[str], str]] = []
+        def _submit_article(article: Dict[str, Any]) -> None:
+            nonlocal skipped
+            article_id = str(article.get('article_id') or '').strip()
+            if not article_id:
+                skipped += 1
+                return
+            content = _content_from_row(article)
+            if not content:
+                skipped += 1
+                adapter.mark_summary_failed(article_id, message='empty content')
+                return
+            previous_failures = int(article.get('summary_fail_count') or 0)
+            attempt_count = previous_failures + 1
+            if not adapter.mark_summary_attempt(article_id):
+                skipped += 1
+                return
+            summary_payload = {
+                'title': article.get('title'),
+                'content': content,
+            }
+            future = executor.submit(summarise, summary_payload)
+            article['summary_fail_count'] = attempt_count
+            pending_tasks.append((future, article, article_id, attempt_count))
 
-        def _process_pending_entry(entry: Tuple[Any, Dict[str, Any], List[str], Optional[str], str]) -> bool:
-            nonlocal success, failed, latest_fetched, latest_article
-            future, article, hits, fetched_value, article_id = entry
+        def _process_entry(entry: Tuple[Any, Dict[str, Any], str, int]) -> None:
+            nonlocal success, failed
+            future, article, article_id, attempt_count = entry
+            content = _content_from_row(article)
             try:
                 result = future.result()
                 summary_text = (result.get('summary', '')).strip()
@@ -207,127 +110,60 @@ def run(limit: int = 50, *, concurrency: Optional[int] = None, keywords_path: Op
                 try:
                     source_payload = {
                         'title': article.get('title'),
-                        'content_markdown': article.get('content_markdown'),
-                        'content': article.get('content'),
+                        'content_markdown': content,
+                        'content': content,
                     }
                     source_result = detect_source(source_payload)
                     llm_source = (source_result.get('llm_source') or '').strip()
                 except Exception as source_exc:
                     log_info(WORKER, f'Source detection skipped {article_id}: {source_exc}')
-                article_with_source = dict(article)
-                if llm_source:
-                    article_with_source['llm_source'] = llm_source
-                adapter.upsert_news_summary(
-                    article_with_source,
+                keywords = _normalize_keywords(article.get('llm_keywords'))
+                adapter.complete_summary(
+                    article_id,
                     summary_text,
-                    keywords=hits,
+                    llm_source=llm_source,
+                    keywords=keywords,
                 )
                 success += 1
-                if article_id:
-                    existing_ids.add(article_id)
                 log_info(WORKER, f'OK {article_id}')
             except Exception as exc:
                 failed += 1
+                failure_ids.append(article_id)
                 log_error(WORKER, article_id, exc)
+                if attempt_count >= MAX_RETRIES:
+                    adapter.mark_summary_failed(article_id, message=str(exc))
             finally:
-                latest_fetched, latest_article = _update_cursor(
-                    cursor_path,
-                    latest_fetched,
-                    latest_article,
-                    fetched_value,
-                    article_id,
-                )
-            return limit_value is not None and success >= limit_value
+                future = None  # allow GC
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for article in articles:
+            for article in rows:
+                if limit_value is not None and success >= limit_value:
+                    break
+                _submit_article(article)
+                while pending_tasks and len(pending_tasks) >= max_workers:
+                    entry = pending_tasks.pop(0)
+                    _process_entry(entry)
+                    if limit_value is not None and success >= limit_value:
+                        break
                 if limit_value is not None and success >= limit_value:
                     break
 
-                raw_id = article.get('article_id')
-                article_id = str(raw_id).strip() if raw_id is not None else ''
-                fetched_at_value = article.get('fetched_at')
-                if fetched_at_value is not None and not isinstance(fetched_at_value, str):
-                    fetched_at_value = str(fetched_at_value)
+            while pending_tasks:
+                entry = pending_tasks.pop(0)
+                _process_entry(entry)
+                if limit_value is not None and success >= limit_value:
+                    for future, *_ in pending_tasks:
+                        future.cancel()
+                    break
 
-                if not article_id:
-                    skipped += 1
-                    latest_fetched, latest_article = _update_cursor(
-                        cursor_path,
-                        latest_fetched,
-                        latest_article,
-                        fetched_at_value,
-                        article_id,
-                    )
-                    continue
-
-                if article_id in existing_ids:
-                    skipped += 1
-                    log_info(WORKER, f'Skip existing summary {article_id}')
-                    latest_fetched, latest_article = _update_cursor(
-                        cursor_path,
-                        latest_fetched,
-                        latest_article,
-                        fetched_at_value,
-                        article_id,
-                    )
-                    continue
-
-                content = str(article.get('content_markdown') or '').strip()
-                if not content:
-                    skipped += 1
-                    log_info(WORKER, f'Skip empty content {article_id}')
-                    latest_fetched, latest_article = _update_cursor(
-                        cursor_path,
-                        latest_fetched,
-                        latest_article,
-                        fetched_at_value,
-                        article_id,
-                    )
-                    continue
-
-                ok, hits = _contains_keywords(content, keywords)
-                if not ok:
-                    skipped += 1
-                    latest_fetched, latest_article = _update_cursor(
-                        cursor_path,
-                        latest_fetched,
-                        latest_article,
-                        fetched_at_value,
-                        article_id,
-                    )
-                    continue
-
-                summary_payload = {
-                    'title': article.get('title'),
-                    'content': content,
-                }
-                pending.append(
-                    (
-                        executor.submit(summarise, summary_payload),
-                        article,
-                        hits,
-                        fetched_at_value,
-                        article_id,
-                    )
-                )
-
-                if len(pending) >= max_workers:
-                    entry = pending.pop(0)
-                    if _process_pending_entry(entry):
-                        break
-
-            if limit_value is None or success < limit_value:
-                while pending:
-                    entry = pending.pop(0)
-                    if _process_pending_entry(entry):
-                        break
-
-            for future, *_ in pending:
-                future.cancel()
-
-        log_summary(WORKER, ok=success, failed=failed, skipped=skipped if skipped else None)
-
+        log_summary(
+            WORKER,
+            ok=success,
+            failed=failed or None,
+            skipped=skipped or None,
+        )
+        if failure_ids:
+            log_info(WORKER, f"failed ids: {', '.join(failure_ids)}")
 
 
 __all__ = ["run"]

@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import contextlib
+import sys
 from datetime import datetime, timezone, date
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -63,6 +64,7 @@ class PostgresAdapter:
     # ------------------------------------------------------------------
     # Toutiao articles (crawler storage)
     # ------------------------------------------------------------------
+    # Legacy: kept for backward-compat in tests; now raw_articles is canonical
     def upsert_toutiao_articles(self, rows: Sequence[Mapping[str, Any]]) -> int:
         if not rows:
             return 0
@@ -82,7 +84,7 @@ class PostgresAdapter:
             'fetched_at',
         ]
         insert_sql = '''
-            INSERT INTO toutiao_articles (token, profile_url, article_id, title, source,
+            INSERT INTO raw_articles (token, profile_url, article_id, title, source,
                 publish_time, publish_time_iso, url, summary, comment_count, digg_count,
                 content_markdown, fetched_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -107,7 +109,8 @@ class PostgresAdapter:
         return len(rows)
 
 
-    def upsert_toutiao_feed_rows(self, rows: Sequence[Mapping[str, Any]]) -> int:
+    # New canonical: raw feed upsert
+    def upsert_raw_feed_rows(self, rows: Sequence[Mapping[str, Any]]) -> int:
         if not rows:
             return 0
         columns = [
@@ -125,7 +128,7 @@ class PostgresAdapter:
             'fetched_at',
         ]
         insert_sql = '''
-            INSERT INTO toutiao_articles (token, profile_url, article_id, title, source,
+            INSERT INTO raw_articles (token, profile_url, article_id, title, source,
                 publish_time, publish_time_iso, url, summary, comment_count, digg_count,
                 fetched_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -148,7 +151,8 @@ class PostgresAdapter:
             cur.executemany(insert_sql, data)
         return len(rows)
 
-    def update_toutiao_article_details(self, rows: Sequence[Mapping[str, Any]]) -> int:
+    # New canonical: raw details update
+    def update_raw_article_details(self, rows: Sequence[Mapping[str, Any]]) -> int:
         if not rows:
             return 0
         columns = [
@@ -166,7 +170,7 @@ class PostgresAdapter:
             'detail_fetched_at',
         ]
         update_sql = '''
-            UPDATE toutiao_articles
+            UPDATE raw_articles
             SET token = %s,
                 profile_url = %s,
                 title = %s,
@@ -199,12 +203,12 @@ class PostgresAdapter:
 
 
 
-    def get_toutiao_articles_missing_content(self, article_ids: Sequence[str]) -> Set[str]:
+    def get_raw_articles_missing_content(self, article_ids: Sequence[str]) -> Set[str]:
         unique_ids = list({str(item) for item in article_ids if item})
         if not unique_ids:
             return set()
         query = (
-            "SELECT article_id FROM toutiao_articles"
+            "SELECT article_id FROM raw_articles"
             " WHERE article_id = ANY(%s)"
             "   AND (content_markdown IS NULL OR LENGTH(TRIM(content_markdown)) = 0)"
         )
@@ -213,11 +217,11 @@ class PostgresAdapter:
             rows = cur.fetchall()
         return {str(row['article_id']) for row in rows if row.get('article_id')}
 
-    def fetch_toutiao_articles_missing_content(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def fetch_raw_articles_missing_content(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         query = [
             "SELECT token, profile_url, article_id, title, source, publish_time, publish_time_iso, url, summary,",
             "       comment_count, digg_count, fetched_at, detail_fetched_at",
-            "FROM toutiao_articles",
+            "FROM raw_articles",
             "WHERE content_markdown IS NULL OR LENGTH(TRIM(content_markdown)) = 0",
             "ORDER BY fetched_at ASC NULLS LAST",
         ]
@@ -245,10 +249,10 @@ class PostgresAdapter:
         return result
 
 
-    def get_existing_toutiao_article_ids(self) -> Set[str]:
+    def get_existing_raw_article_ids(self) -> Set[str]:
         ids: Set[str] = set()
         with self._cursor() as cur:
-            cur.execute("SELECT article_id FROM toutiao_articles")
+            cur.execute("SELECT article_id FROM raw_articles")
             for row in cur.fetchall():
                 article_id = row.get('article_id')
                 if article_id:
@@ -280,7 +284,161 @@ class PostgresAdapter:
     # ------------------------------------------------------------------
     # Summaries
     # ------------------------------------------------------------------
-    def fetch_toutiao_articles_for_summary(
+    def insert_pending_summary(
+        self,
+        article: Mapping[str, Any],
+        *,
+        keywords: Optional[Sequence[str]] = None,
+        fetched_at: Optional[str] = None,
+    ) -> None:
+        article_id = str(article.get('article_id') or '').strip()
+        if not article_id:
+            raise ValueError('Pending summary insert requires article_id')
+        payload: Dict[str, Any] = {
+            'article_id': article_id,
+            'title': article.get('title'),
+            'source': article.get('source'),
+            'publish_time': article.get('publish_time'),
+            'publish_time_iso': article.get('publish_time_iso'),
+            'url': article.get('url'),
+            'content_markdown': article.get('content_markdown') or '',
+            'fetched_at': fetched_at or article.get('fetched_at'),
+            'summary_status': 'pending',
+            'summary_attempted_at': None,
+            'summary_fail_count': 0,
+        }
+        if keywords:
+            deduped: List[str] = []
+            for kw in keywords:
+                if kw and kw not in deduped:
+                    deduped.append(kw)
+            if deduped:
+                payload['llm_keywords'] = deduped
+        columns = list(payload.keys())
+        values = [payload[col] for col in columns]
+        updates = [
+            "title = EXCLUDED.title",
+            "source = EXCLUDED.source",
+            "publish_time = EXCLUDED.publish_time",
+            "publish_time_iso = EXCLUDED.publish_time_iso",
+            "url = EXCLUDED.url",
+            "content_markdown = EXCLUDED.content_markdown",
+            "fetched_at = COALESCE(EXCLUDED.fetched_at, news_summaries.fetched_at)",
+            "llm_keywords = CASE WHEN EXCLUDED.llm_keywords IS NULL OR array_length(EXCLUDED.llm_keywords, 1) = 0 THEN news_summaries.llm_keywords ELSE EXCLUDED.llm_keywords END",
+            "summary_status = CASE WHEN news_summaries.summary_status = 'completed' THEN news_summaries.summary_status ELSE EXCLUDED.summary_status END",
+            "summary_attempted_at = CASE WHEN news_summaries.summary_status = 'completed' THEN news_summaries.summary_attempted_at ELSE EXCLUDED.summary_attempted_at END",
+            "summary_fail_count = CASE WHEN news_summaries.summary_status = 'completed' THEN news_summaries.summary_fail_count ELSE EXCLUDED.summary_fail_count END",
+        ]
+        query = f"""
+            INSERT INTO news_summaries ({', '.join(columns)})
+            VALUES ({', '.join(['%s'] * len(columns))})
+            ON CONFLICT (article_id) DO UPDATE
+            SET {', '.join(updates)}
+            WHERE news_summaries.summary_status <> 'completed'
+        """
+        with self._cursor() as cur:
+            cur.execute(query, values)
+
+    def fetch_pending_summaries(
+        self,
+        limit: Optional[int] = None,
+        *,
+        max_attempts: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        clauses = ["summary_status = 'pending'"]
+        params: List[Any] = []
+        if max_attempts is not None:
+            clauses.append("summary_fail_count < %s")
+            params.append(max_attempts)
+        where_sql = ' AND '.join(clauses)
+        query_parts = [
+            "SELECT article_id, title, source, publish_time, publish_time_iso, url, content_markdown,",
+            "       fetched_at, summary_attempted_at, summary_fail_count, llm_keywords",
+            "FROM news_summaries",
+            f"WHERE {where_sql}",
+            "ORDER BY summary_attempted_at ASC NULLS FIRST, fetched_at ASC NULLS LAST, article_id ASC",
+        ]
+        if limit and limit > 0:
+            query_parts.append("LIMIT %s")
+            params.append(limit)
+        query = " ".join(query_parts)
+        with self._cursor() as cur:
+            cur.execute(query, tuple(params))
+            rows = cur.fetchall()
+        result: List[Dict[str, Any]] = []
+        for row in rows:
+            record = dict(row)
+            for field in ('fetched_at', 'summary_attempted_at', 'publish_time_iso'):
+                value = record.get(field)
+                if isinstance(value, datetime):
+                    record[field] = value.isoformat()
+            result.append(record)
+        return result
+
+    def mark_summary_attempt(self, article_id: str) -> bool:
+        if not article_id:
+            return False
+        query = """
+            UPDATE news_summaries
+            SET summary_attempted_at = NOW(),
+                summary_fail_count = summary_fail_count + 1
+            WHERE article_id = %s AND summary_status = 'pending'
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (article_id,))
+            return cur.rowcount == 1
+
+    def complete_summary(
+        self,
+        article_id: str,
+        summary_text: str,
+        *,
+        llm_source: Optional[str] = None,
+        keywords: Optional[Sequence[str]] = None,
+    ) -> None:
+        if not article_id:
+            raise ValueError('complete_summary requires article_id')
+        payload: Dict[str, Any] = {
+            'llm_summary': summary_text,
+            'summary_status': 'completed',
+            'summary_generated_at': datetime.now(timezone.utc).isoformat(),
+            'summary_attempted_at': datetime.now(timezone.utc).isoformat(),
+        }
+        if llm_source is not None:
+            payload['llm_source'] = llm_source
+        if keywords:
+            deduped: List[str] = []
+            for kw in keywords:
+                if kw and kw not in deduped:
+                    deduped.append(kw)
+            if deduped:
+                payload['llm_keywords'] = deduped
+        sets = ', '.join(f"{field} = %s" for field in payload)
+        values = list(payload.values()) + [article_id]
+        query = f"""
+            UPDATE news_summaries
+            SET {sets}
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.execute(query, values)
+            if cur.rowcount != 1:
+                raise ValueError(f'Unable to complete summary for {article_id}')
+
+    def mark_summary_failed(self, article_id: str, *, message: Optional[str] = None) -> None:
+        if not article_id:
+            return
+        query = """
+            UPDATE news_summaries
+            SET summary_status = 'failed'
+            WHERE article_id = %s AND summary_status = 'pending'
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (article_id,))
+        if message:
+            print(f"[warn] summary failed {article_id}: {message}", file=sys.stderr)
+
+    def fetch_raw_articles_for_summary(
         self,
         *,
         after_fetched_at: Optional[str],
@@ -289,7 +447,7 @@ class PostgresAdapter:
         fetch_target = max(1, (limit or 50))
         base_query = [
             "SELECT article_id, title, source, publish_time, publish_time_iso, url, content_markdown, fetched_at, detail_fetched_at",
-            "FROM toutiao_articles",
+            "FROM raw_articles",
             "WHERE content_markdown IS NOT NULL AND LENGTH(TRIM(content_markdown)) > 0",
             "  AND detail_fetched_at IS NOT NULL",
         ]
@@ -318,6 +476,32 @@ class PostgresAdapter:
                 record['detail_fetched_at'] = detail_fetched.isoformat()
             result.append(record)
         return result
+
+    # ------------------------------------------------------------------
+    # Backward-compat wrappers (to be removed after refactor)
+    # ------------------------------------------------------------------
+    def upsert_toutiao_feed_rows(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        return self.upsert_raw_feed_rows(rows)
+
+    def update_toutiao_article_details(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        return self.update_raw_article_details(rows)
+
+    def get_toutiao_articles_missing_content(self, article_ids: Sequence[str]) -> Set[str]:
+        return self.get_raw_articles_missing_content(article_ids)
+
+    def fetch_toutiao_articles_missing_content(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        return self.fetch_raw_articles_missing_content(limit)
+
+    def get_existing_toutiao_article_ids(self) -> Set[str]:
+        return self.get_existing_raw_article_ids()
+
+    def fetch_toutiao_articles_for_summary(
+        self,
+        *,
+        after_fetched_at: Optional[str],
+        limit: Optional[int],
+    ) -> List[Dict[str, Any]]:
+        return self.fetch_raw_articles_for_summary(after_fetched_at=after_fetched_at, limit=limit)
 
     def get_existing_news_summary_ids(self, article_ids: Sequence[str]) -> Set[str]:
         unique_ids = list({str(item) for item in article_ids if item})

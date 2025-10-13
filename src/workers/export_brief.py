@@ -128,11 +128,15 @@ def run(
         for label, items, section_key in section_definitions:
             if not items:
                 continue
-            block_lines = [f"【{label}】共 {len(items)} 条"]
+            header_line = f"【{label}】共 {len(items)} 条"
+            entry_lines = []
             for item in items:
-                block_lines.append(_format_entry(item))
+                entry_lines.append(_format_entry(item))
                 export_payload.append((item, section_key))
-            text_entries.append("\n".join(block_lines))
+            block_text = header_line
+            if entry_lines:
+                block_text = header_line + "\n\n" + "\n\n".join(entry_lines)
+            text_entries.append(block_text)
 
         final_output = generate_output_path(base_output, tag)
         final_output = _ensure_unique_output(final_output)

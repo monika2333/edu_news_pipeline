@@ -16,6 +16,7 @@ python -m src.cli.main crawl --sources toutiao,chinanews --limit 500
 python -m src.cli.main repair --limit 1000
 python -m src.cli.main summarize --limit 1000
 python -m src.cli.main score --limit 1000
+python -m src.cli.main geo-tag --limit 1000 --batch-size 200
 python -m src.cli.main export --min-score 60 --limit 500
 ```
 
@@ -132,9 +133,16 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 - Existing output files get numbered suffixes (e.g. `(1)`, `(2)`) to avoid overwriting.
 - Command: `python -m src.cli.main export`
 - Pulls high-correlation summaries from `news_summaries`
-- Writes a text brief (defaults to `outputs/high_correlation_summaries_<tag>.txt`)
-- Optionally records batches in the database (`brief_batches` / `brief_items`)
+- Writes a text brief (默认 `outputs/high_correlation_summaries_<tag>.txt`)，内容按“【京内】 / 【京外】”分组并保留组内相关性降序
+- Optionally records batches in the database (`brief_batches` / `brief_items`)，元数据包含 `is_beijing_related`
 - Set `--no-record-history` or `--no-skip-exported` to adjust behaviour
+
+### Beijing Relevance Tagging
+
+- 新增字段 `news_summaries.is_beijing_related` 标记文章是否与北京相关，默认由 `summarize` worker 在写入摘要时根据正文/摘要/关键词判定。
+- 关键词来源：`data/beijing_keywords.txt`，可通过环境变量 `BEIJING_KEYWORDS_PATH` 指向自定义文件。
+- 对旧数据或关键词调整后的补标，使用 `python -m src.cli.main geo-tag --limit 200 --batch-size 200`（可按需缩小范围）。命令会批量读取 `is_beijing_related IS NULL` 的记录并写回布尔值。
+- 导出与 Feishu 通知会根据该字段拆分“京内/京外”并输出数量统计；`brief_items.metadata` 同步保存该信息。
 
 ## Development Notes
 

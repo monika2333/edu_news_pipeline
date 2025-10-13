@@ -395,6 +395,7 @@ class PostgresAdapter:
         *,
         llm_source: Optional[str] = None,
         keywords: Optional[Sequence[str]] = None,
+        beijing_related: Optional[bool] = None,
     ) -> None:
         if not article_id:
             raise ValueError('complete_summary requires article_id')
@@ -413,6 +414,8 @@ class PostgresAdapter:
                     deduped.append(kw)
             if deduped:
                 payload['llm_keywords'] = deduped
+        if beijing_related is not None:
+            payload['is_beijing_related'] = beijing_related
         sets = ', '.join(f"{field} = %s" for field in payload)
         values = list(payload.values()) + [article_id]
         query = f"""
@@ -620,6 +623,47 @@ class PostgresAdapter:
                 (score, article_id),
             )
 
+    def fetch_beijing_tag_candidates(self, limit: int) -> List[Dict[str, Any]]:
+        query = """
+            SELECT
+                article_id,
+                content_markdown,
+                llm_summary,
+                llm_keywords
+            FROM news_summaries
+            WHERE is_beijing_related IS NULL
+            ORDER BY summary_generated_at ASC NULLS LAST
+            LIMIT %s
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (max(1, limit),))
+            rows = cur.fetchall()
+        results: List[Dict[str, Any]] = []
+        for row in rows:
+            record = dict(row)
+            article_id = record.get("article_id")
+            if not article_id:
+                continue
+            results.append(record)
+        return results
+
+    def update_beijing_related_bulk(self, updates: Sequence[Tuple[str, bool]]) -> int:
+        if not updates:
+            return 0
+        payload = []
+        for article_id, value in updates:
+            if not article_id:
+                continue
+            payload.append((value, str(article_id)))
+        if not payload:
+            return 0
+        with self._cursor() as cur:
+            cur.executemany(
+                "UPDATE news_summaries SET is_beijing_related = %s, updated_at = NOW() WHERE article_id = %s",
+                payload,
+            )
+        return len(payload)
+
     # ------------------------------------------------------------------
     # Export helpers
     # ------------------------------------------------------------------
@@ -635,7 +679,8 @@ class PostgresAdapter:
                 source,
                 publish_time_iso,
                 publish_time,
-                llm_source
+                llm_source,
+                is_beijing_related
             FROM news_summaries
             WHERE correlation IS NOT NULL AND correlation >= %s
             ORDER BY correlation DESC
@@ -671,6 +716,7 @@ class PostgresAdapter:
                     relevance_score=correlation,
                     original_url=url,
                     published_at=published_at,
+                    is_beijing_related=row.get("is_beijing_related"),
                 )
             )
         return out
@@ -831,6 +877,7 @@ class PostgresAdapter:
                                 "original_url": candidate.original_url,
                                 "published_at": candidate.published_at,
                                 "source": candidate.source,
+                                "is_beijing_related": candidate.is_beijing_related,
                             }
                         ),
                     )

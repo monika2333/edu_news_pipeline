@@ -50,6 +50,7 @@ create table if not exists public.news_summaries (
     fetched_at timestamptz,
     llm_keywords text[] default '{}'::text[],
     correlation numeric(6,3),
+    is_beijing_related boolean,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
@@ -154,6 +155,8 @@ drop trigger if exists news_summaries_set_updated_at on public.news_summaries;
 create trigger news_summaries_set_updated_at
     before update on public.news_summaries
     for each row execute function public.set_updated_at();
+
+comment on column public.news_summaries.is_beijing_related is 'True when the article is related to Beijing; NULL when not evaluated';
 
 
 drop trigger if exists brief_batches_set_updated_at on public.brief_batches;

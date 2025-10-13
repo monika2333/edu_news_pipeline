@@ -68,6 +68,7 @@ def test_postgres_adapter_core_roundtrip() -> None:
         }
 
         adapter.upsert_news_summary(article_payload, summary_text, keywords=["unit", "test"])
+        adapter.complete_summary(article_id, summary_text, llm_source="unit-test", keywords=["unit", "test"], beijing_related=True)
         existing_ids = adapter.get_existing_news_summary_ids([article_id])
         assert article_id in existing_ids
 
@@ -76,7 +77,19 @@ def test_postgres_adapter_core_roundtrip() -> None:
 
         adapter.update_correlation(article_id, 0.92)
         export_candidates = adapter.fetch_export_candidates(min_score=0.5)
-        assert any(candidate.filtered_article_id == article_id for candidate in export_candidates)
+        matched_candidates = [candidate for candidate in export_candidates if candidate.filtered_article_id == article_id]
+        assert matched_candidates
+        assert matched_candidates[0].is_beijing_related is True
+
+        tag = f"geo-{uuid.uuid4()}"
+        adapter.record_export(tag, [(matched_candidates[0], "jingnei")], output_path="demo/path.txt")
+        history_ids, batch_id = adapter.get_export_history(tag)
+        assert batch_id is not None
+        assert article_id in history_ids
+        items = adapter.fetch_brief_items_by_batch(batch_id)
+        assert items
+        metadata = items[0].get("metadata") or {}
+        assert metadata.get("is_beijing_related") is True
 
         adapter.record_pipeline_run_start(
             run_id=run_id,
@@ -122,5 +135,7 @@ def test_postgres_adapter_core_roundtrip() -> None:
                 cur.execute("DELETE FROM pipeline_runs WHERE run_id = %s", (run_id,))
                 cur.execute("DELETE FROM news_summaries WHERE article_id = %s", (article_id,))
                 cur.execute("DELETE FROM raw_articles WHERE article_id = %s", (article_id,))
+                cur.execute("DELETE FROM brief_items WHERE article_id = %s", (article_id,))
+                cur.execute("DELETE FROM brief_batches WHERE generated_by LIKE %s", ("geo-%",))
 
     _reset_adapter_cache()

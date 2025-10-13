@@ -9,6 +9,7 @@ from src.adapters.db import get_adapter
 from src.adapters.llm_source import detect_source
 from src.adapters.llm_summary import summarise
 from src.config import get_settings
+from src.domain import is_beijing_related, load_beijing_keywords
 from src.workers import log_error, log_info, log_summary, worker_session
 
 WORKER = "summarize"
@@ -36,6 +37,7 @@ def _content_from_row(article: Dict[str, Any]) -> str:
 def run(limit: int = 50, *, concurrency: Optional[int] = None, keywords_path: Optional[Path] = None) -> None:
     settings = get_settings()
     adapter = get_adapter()
+    beijing_keywords = load_beijing_keywords(settings.beijing_keywords_path)
 
     limit_value: Optional[int]
     if limit and limit > 0:
@@ -118,11 +120,18 @@ def run(limit: int = 50, *, concurrency: Optional[int] = None, keywords_path: Op
                 except Exception as source_exc:
                     log_info(WORKER, f'Source detection skipped {article_id}: {source_exc}')
                 keywords = _normalize_keywords(article.get('llm_keywords'))
+                beijing_related: Optional[bool] = None
+                if beijing_keywords:
+                    detection_payload: List[str] = [content, summary_text]
+                    if keywords:
+                        detection_payload.extend(keywords)
+                    beijing_related = is_beijing_related(detection_payload, beijing_keywords)
                 adapter.complete_summary(
                     article_id,
                     summary_text,
                     llm_source=llm_source,
                     keywords=keywords,
+                    beijing_related=beijing_related,
                 )
                 success += 1
                 log_info(WORKER, f'OK {article_id}')

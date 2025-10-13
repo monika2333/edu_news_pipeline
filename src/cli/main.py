@@ -5,6 +5,7 @@ from pathlib import Path
 
 from src.workers.crawl_sources import run as crawl_sources
 from src.workers.export_brief import run as export_brief
+from src.workers.geo_tag import run as geo_tag
 from src.workers.repair_missing_content import run as repair_missing
 from src.workers.score import run as score_summaries
 from src.workers.summarize import run as summarize_articles
@@ -54,6 +55,17 @@ def _add_export(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--output", type=Path, default=None, help="Override output file path")
 
 
+def _add_geo_tag(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser("geo-tag", help="Backfill Beijing relevance tags for existing summaries")
+    parser.add_argument("--limit", type=_positive_int, default=None, help="Max number of summaries to process")
+    parser.add_argument(
+        "--batch-size",
+        type=_positive_int,
+        default=200,
+        help="Number of rows to fetch per database batch",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="edu-news", description="Edu news pipeline controller")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -62,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_summarize(subparsers)
     _add_score(subparsers)
     _add_export(subparsers)
+    _add_geo_tag(subparsers)
     return parser
 
 
@@ -88,6 +101,8 @@ def main(argv: list[str] | None = None) -> None:
             record_history=args.record_history,
             output_base=args.output,
         )
+    elif command == "geo-tag":
+        geo_tag(limit=args.limit, batch_size=args.batch_size)
     else:
         parser.error(f"Unknown command: {command}")
 

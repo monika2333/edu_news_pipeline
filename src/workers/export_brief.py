@@ -101,19 +101,38 @@ def run(
             log_info(WORKER, "No entries to export after filtering/skip logic.")
             return
 
-        # Produce flat text entries and record payload with constant section
+        internal_candidates: List[ExportCandidate] = []
+        external_candidates: List[ExportCandidate] = []
+        for cand in selected_candidates:
+            if cand.is_beijing_related is True:
+                internal_candidates.append(cand)
+            else:
+                external_candidates.append(cand)
+
+        def _format_entry(candidate: ExportCandidate) -> str:
+            title_line = (candidate.title or "").strip()
+            summary_line = (candidate.summary or "").strip()
+            display_source = (candidate.llm_source or candidate.source or "").strip()
+            if display_source:
+                return f"{title_line}\n{summary_line}（{display_source}）"
+            return f"{title_line}\n{summary_line}"
+
         text_entries: List[str] = []
         export_payload: List[Tuple[ExportCandidate, str]] = []
-        for cand in selected_candidates:
-            title_line = (cand.title or "").strip()
-            summary_line = (cand.summary or "").strip()
-            display_source = (cand.llm_source or cand.source or "").strip()
-            if display_source:
-                entry = f"{title_line}\n{summary_line}（{display_source}）"
-            else:
-                entry = f"{title_line}\n{summary_line}"
-            text_entries.append(entry)
-            export_payload.append((cand, "other"))
+
+        section_definitions: List[Tuple[str, List[ExportCandidate], str]] = [
+            ("京内", internal_candidates, "jingnei"),
+            ("京外", external_candidates, "jingwai"),
+        ]
+
+        for label, items, section_key in section_definitions:
+            if not items:
+                continue
+            block_lines = [f"【{label}】共 {len(items)} 条"]
+            for item in items:
+                block_lines.append(_format_entry(item))
+                export_payload.append((item, section_key))
+            text_entries.append("\n".join(block_lines))
 
         final_output = generate_output_path(base_output, tag)
         final_output = _ensure_unique_output(final_output)
@@ -135,12 +154,14 @@ def run(
         log_info(WORKER, f"output -> {final_output}")
 
         try:
-            # Pass empty dict for category_counts to keep notification signature
             notify_export_summary(
                 tag=tag,
                 output_path=final_output,
                 entries=text_entries,
-                category_counts={},
+                category_counts={
+                    "京内": len(internal_candidates),
+                    "京外": len(external_candidates),
+                },
             )
             log_info(WORKER, "Feishu notification sent")
         except FeishuConfigError:

@@ -94,6 +94,7 @@ class Settings:
     feishu_app_secret: Optional[str]
     feishu_receive_id: Optional[str]
     feishu_receive_id_type: str
+    beijing_keywords_path: Path
 
 
 @lru_cache(maxsize=1)
@@ -119,11 +120,17 @@ def get_settings() -> Settings:
     default_concurrency = _optional_int(os.getenv("CONCURRENCY")) or 5
 
     keywords_env = os.getenv("KEYWORDS_PATH")
-    if keywords_env:
-        raw_path = Path(keywords_env).expanduser()
-        keywords_path = raw_path if raw_path.is_absolute() else (_REPO_ROOT / raw_path)
-    else:
-        keywords_path = _REPO_ROOT / "education_keywords.txt"
+    def _resolve_path(env_value: Optional[str], *, default: Path) -> Path:
+        if env_value:
+            raw_path = Path(env_value).expanduser()
+            return raw_path if raw_path.is_absolute() else (_REPO_ROOT / raw_path)
+        return default
+
+    keywords_path = _resolve_path(os.getenv("KEYWORDS_PATH"), default=_REPO_ROOT / "education_keywords.txt")
+    beijing_keywords_path = _resolve_path(
+        os.getenv("BEIJING_KEYWORDS_PATH"),
+        default=_REPO_ROOT / "data" / "beijing_keywords.txt",
+    )
 
     console_basic_username = os.getenv("CONSOLE_BASIC_USERNAME")
     console_basic_password = os.getenv("CONSOLE_BASIC_PASSWORD")
@@ -137,6 +144,7 @@ def get_settings() -> Settings:
         feishu_receive_id_type = "open_id"
 
     keywords_path = keywords_path.resolve()
+    beijing_keywords_path = beijing_keywords_path.resolve()
 
     return Settings(
         db_host=db_host,
@@ -161,6 +169,7 @@ def get_settings() -> Settings:
         feishu_app_secret=feishu_app_secret,
         feishu_receive_id=feishu_receive_id,
         feishu_receive_id_type=feishu_receive_id_type,
+        beijing_keywords_path=beijing_keywords_path,
     )
 
 

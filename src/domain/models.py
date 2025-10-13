@@ -60,6 +60,7 @@ class ExportCandidate:
     relevance_score: float
     original_url: Optional[str]
     published_at: Optional[str]
+    is_beijing_related: Optional[bool] = None
 
 
 @dataclass(slots=True)

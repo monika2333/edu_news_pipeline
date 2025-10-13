@@ -122,9 +122,7 @@ def run(limit: int = 50, *, concurrency: Optional[int] = None, keywords_path: Op
                 keywords = _normalize_keywords(article.get('llm_keywords'))
                 beijing_related: Optional[bool] = None
                 if beijing_keywords:
-                    detection_payload: List[str] = [content, summary_text]
-                    if keywords:
-                        detection_payload.extend(keywords)
+                    detection_payload: List[str] = [summary_text]
                     beijing_related = is_beijing_related(detection_payload, beijing_keywords)
                 adapter.complete_summary(
                     article_id,

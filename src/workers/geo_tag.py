@@ -13,17 +13,9 @@ DEFAULT_BATCH_SIZE = 200
 
 def _build_detection_payload(row: dict) -> List[str]:
     payload: List[str] = []
-    content = row.get("content_markdown")
-    if content:
-        payload.append(str(content))
     summary = row.get("llm_summary")
     if summary:
         payload.append(str(summary))
-    keywords = row.get("llm_keywords") or []
-    for item in keywords:
-        if not item:
-            continue
-        payload.append(str(item))
     return payload
 
 

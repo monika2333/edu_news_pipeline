@@ -22,7 +22,7 @@ def _add_crawl(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("crawl", help="Collect fresh articles from configured sources")
     parser.add_argument("--limit", type=_positive_int, default=500, help="Max number of feed items to ingest (across sources)")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
-    parser.add_argument("--sources", type=str, default="toutiao", help="Comma-separated sources, e.g. 'toutiao,chinanews'")
+    parser.add_argument("--sources", type=str, default="toutiao", help="Comma-separated sources, e.g. 'toutiao,chinanews,gmw'")
     parser.add_argument("--pages", type=_positive_int, default=None, help="Optional pages per paginated source (e.g., ChinaNews)")
 
 

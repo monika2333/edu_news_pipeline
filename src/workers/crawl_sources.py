@@ -26,6 +26,14 @@ from src.adapters.http_chinanews import (
     make_article_id as cn_make_article_id,
     build_detail_update as cn_build_detail_update,
 )
+from src.adapters.http_gmw import (
+    DEFAULT_BASE_URL as GMW_DEFAULT_BASE_URL,
+    DEFAULT_TIMEOUT as GMW_DEFAULT_TIMEOUT,
+    article_to_detail_row as gmw_article_to_detail_row,
+    article_to_feed_row as gmw_article_to_feed_row,
+    fetch_articles as gmw_fetch_articles,
+    make_article_id as gmw_make_article_id,
+)
 
 WORKER = "crawl"
 DEFAULT_AUTHORS_FILE = Path("data/author_tokens.txt")
@@ -374,6 +382,99 @@ def _run_chinanews_flow(
     return stats
 
 
+def _run_gmw_flow(
+    *,
+    adapter,
+    keywords: Sequence[str],
+    remaining_limit: Optional[int],
+    base_url: str,
+    timeout_value: float,
+) -> Dict[str, Any]:
+    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
+    try:
+        articles = gmw_fetch_articles(limit=remaining_limit, base_url=base_url, timeout=timeout_value)
+    except Exception as exc:
+        log_error(WORKER, "gmw_fetch", exc)
+        return stats
+    if not articles:
+        log_info(WORKER, "No articles returned from Guangming Daily.")
+        return stats
+
+    feed_rows: List[Dict[str, Any]] = []
+    detail_rows: List[Dict[str, Any]] = []
+    seen_ids: Set[str] = set()
+    duplicates = 0
+    for article in articles:
+        try:
+            article_id = gmw_make_article_id(article.url)
+        except Exception as exc:
+            log_error(WORKER, "gmw_article_id", exc)
+            continue
+        if article_id in seen_ids:
+            duplicates += 1
+            continue
+        seen_ids.add(article_id)
+        fetched_at = datetime.now(timezone.utc)
+        feed_rows.append(gmw_article_to_feed_row(article, article_id, fetched_at=fetched_at))
+        detail_rows.append(gmw_article_to_detail_row(article, article_id, detail_fetched_at=datetime.now(timezone.utc)))
+
+    stats["consumed"] = len(seen_ids)
+    if duplicates:
+        log_info(WORKER, f"gmw duplicate articles skipped: {duplicates}")
+        stats["skipped"] += duplicates
+    if not feed_rows:
+        log_info(WORKER, "No Guangming Daily rows to upsert after filtering.")
+        return stats
+
+    try:
+        inserted = adapter.upsert_raw_feed_rows(feed_rows)
+    except Exception as exc:
+        log_error(WORKER, "gmw_postgres_feed", exc)
+        stats["failed"] += len(feed_rows)
+        return stats
+    log_info(WORKER, f"gmw feed rows upserted: {inserted}")
+
+    try:
+        adapter.update_raw_article_details(detail_rows)
+    except Exception as exc:
+        log_error(WORKER, "gmw_postgres_detail", exc)
+        stats["failed"] += len(detail_rows)
+        detail_rows = []
+    else:
+        for row in detail_rows:
+            log_info(WORKER, f"GMW DETAIL OK {row['article_id']}")
+
+    stats["ok"] = len(detail_rows)
+    pending = 0
+    fetched_iso = datetime.now(timezone.utc).isoformat()
+    for row in detail_rows:
+        article_id = str(row.get("article_id") or "").strip()
+        content = str(row.get("content_markdown") or "").strip()
+        if not article_id or not content:
+            continue
+        ok_hit, hits = _contains_keywords(content, keywords)
+        if not ok_hit:
+            continue
+        payload = {
+            "article_id": article_id,
+            "title": row.get("title"),
+            "source": row.get("source"),
+            "publish_time": row.get("publish_time"),
+            "publish_time_iso": row.get("publish_time_iso"),
+            "url": row.get("url"),
+            "content_markdown": content,
+        }
+        try:
+            adapter.insert_pending_summary(payload, keywords=hits, fetched_at=fetched_iso)
+        except Exception as exc:
+            log_error(WORKER, f"gmw_pending_summary:{article_id}", exc)
+        else:
+            pending += 1
+    if pending:
+        log_info(WORKER, f"gmw pending summaries queued: {pending}")
+    return stats
+
+
 def run(limit: int = 500, *, concurrency: Optional[int] = None, sources: Optional[Sequence[str]] = None, pages: Optional[int] = None) -> None:  # pylint: disable=unused-argument
     settings = get_settings()
     # Normalize selected sources preserving order
@@ -392,6 +493,14 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None, sources: Optiona
     except ValueError:
         timeout_value = DEFAULT_TIMEOUT
     lang = os.getenv("TOUTIAO_LANG", DEFAULT_LANG)
+
+    gmw_base_url_env = os.getenv("GMW_BASE_URL")
+    gmw_base_url = (gmw_base_url_env.strip() if gmw_base_url_env and gmw_base_url_env.strip() else GMW_DEFAULT_BASE_URL)
+    gmw_timeout_env = os.getenv("GMW_TIMEOUT")
+    try:
+        gmw_timeout = float(gmw_timeout_env) if gmw_timeout_env is not None else GMW_DEFAULT_TIMEOUT
+    except ValueError:
+        gmw_timeout = GMW_DEFAULT_TIMEOUT
 
     keywords_path_value = getattr(settings, 'keywords_path', None)
     keywords_file: Optional[Path]
@@ -424,6 +533,14 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None, sources: Optiona
                 break
             if source == 'chinanews':
                 stats = _run_chinanews_flow(adapter=adapter, keywords=keywords, remaining_limit=remaining_limit, pages=pages)
+            elif source == 'gmw':
+                stats = _run_gmw_flow(
+                    adapter=adapter,
+                    keywords=keywords,
+                    remaining_limit=remaining_limit,
+                    base_url=gmw_base_url,
+                    timeout_value=gmw_timeout,
+                )
             elif source == 'toutiao':
                 stats = _run_toutiao_flow(
                     adapter=adapter,

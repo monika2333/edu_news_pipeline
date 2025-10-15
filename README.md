@@ -4,7 +4,7 @@ Automated pipeline for collecting education-related articles, summarising them w
 
 ## Pipeline Overview
 
-1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: ChinaNews), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `news_summaries` with a `pending` status.
+1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: ChinaNews, Guangming Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `news_summaries` with a `pending` status.
 2. **Summarise** - Consume pending rows from `news_summaries`, call the LLM for those without summaries, and update their status to `completed` (failed rows remain pending for retry).
 3. **Score** - Ask the LLM to rate each summary and persist the `correlation` score in `news_summaries`.
 4. **Export** - Assemble the highest-scoring summaries into a plain-text brief and optionally log the batch metadata in `brief_batches` / `brief_items`.
@@ -12,7 +12,7 @@ Automated pipeline for collecting education-related articles, summarising them w
 All steps are available through the CLI wrapper:
 
 ```bash
-python -m src.cli.main crawl --sources toutiao,chinanews --limit 500
+python -m src.cli.main crawl --sources toutiao,chinanews,gmw --limit 500
 python -m src.cli.main repair --limit 1000
 python -m src.cli.main summarize --limit 1000
 python -m src.cli.main score --limit 1000
@@ -72,6 +72,8 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `TOUTIAO_FETCH_TIMEOUT` | Seconds for article fetch timeout (default 15) |
 | `TOUTIAO_LANG` | `Accept-Language` header when fetching article content |
 | `TOUTIAO_SHOW_BROWSER` | Set to `1` to run Playwright in headed mode |
+| `GMW_BASE_URL` | Override Guangming Daily listing entry point |
+| `GMW_TIMEOUT` | Seconds for Guangming Daily HTTP requests (default 15) |
 | `PROCESS_LIMIT` | Global cap applied to worker limits |
 | `CONCURRENCY` | Default worker concurrency override (falls back to 5) |
 | `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` | API credentials and endpoint for the LLM provider |
@@ -87,8 +89,9 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 
 - Command: `python -m src.cli.main crawl`
 - Default limit: 500 articles (clamped by `PROCESS_LIMIT` if set)
-- Sources: `--sources` comma list (default `toutiao`; add `chinanews` to include ChinaNews scroll page). The pipeline wrapper also respects `CRAWL_SOURCES` from env (e.g., `CRAWL_SOURCES=toutiao,chinanews`).
+- Sources: `--sources` comma list (default `toutiao`; add `chinanews` and/or `gmw` for additional feeds). The pipeline wrapper also respects `CRAWL_SOURCES` from env (e.g., `CRAWL_SOURCES=toutiao,chinanews,gmw`).
   - Toutiao uses Playwright (requires `playwright install chromium`) and reads authors from `TOUTIAO_AUTHORS_PATH`
+  - Guangming Daily uses the bundled HTTP crawler (no Playwright). Configure the entry point with `GMW_BASE_URL` if you need a different node and tweak `GMW_TIMEOUT` to adjust the per-request timeout.
 - Writes/updates rows in `raw_articles`
 - Skips articles already present in the database
 
@@ -100,6 +103,8 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 - ChinaNews (first page only): `python -m src.cli.main crawl --sources chinanews --limit 50`
 - ChinaNews (multi-page to approach 500): `python -m src.cli.main crawl --sources chinanews --limit 500 --pages 15`
 - Toutiao + ChinaNews (total 500, sequential consumption): `python -m src.cli.main crawl --sources toutiao,chinanews --limit 500`
+- Guangming Daily only: `python -m src.cli.main crawl --sources gmw --limit 100`
+- Toutiao + ChinaNews + Guangming Daily: `python -m src.cli.main crawl --sources toutiao,chinanews,gmw --limit 500`
 - Repair missing bodies (all sources): `python -m src.cli.main repair --limit 200`
 
 #### Multi-source allocation
@@ -113,6 +118,11 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
   - The crawler reads the page navigator (`.pagebox`) and will not exceed the last available page.
 - Published time: derived from the feed item (`.dd_time`) combined with the URL date. Stored as tz-aware (+08:00); exports can render `YYYY-MM-DD HH:MM`.
 - Source (媒体来源): extracted from visible nodes (selectors aligned with our reference crawler), then fallback to meta tags.
+
+#### Guangming Daily specifics
+- Uses the custom HTTP crawler under `gmw_crawl/` to walk listing and detail pages, so each run fetches full article bodies without a second repair step.
+- Publish time is parsed from article metadata or body; when available it is normalised to +08:00 and stored alongside the Unix timestamp.
+- Requests honour `GMW_BASE_URL` and `GMW_TIMEOUT`. Duplicate URLs within a run are de-duplicated before writing to the database.
 
 ### Summarise Worker
 

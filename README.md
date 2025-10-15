@@ -120,7 +120,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 - Source (媒体来源): extracted from visible nodes (selectors aligned with our reference crawler), then fallback to meta tags.
 
 #### Guangming Daily specifics
-- Uses the custom HTTP crawler under `gmw_crawl/` to walk listing and detail pages, so each run fetches full article bodies without a second repair step.
+- Uses the custom HTTP crawler bundled in `src/adapters/http_gmw.py` (legacy CLI preserved in `gmw_crawl/` for now) to walk listing and detail pages, so each run fetches full article bodies without a second repair step.
 - Publish time is parsed from article metadata or body; when available it is normalised to +08:00 and stored alongside the Unix timestamp.
 - Requests honour `GMW_BASE_URL` and `GMW_TIMEOUT`. Duplicate URLs within a run are de-duplicated before writing to the database.
 

@@ -12,11 +12,11 @@ Automated pipeline for collecting education-related articles, summarising them w
 All steps are available through the CLI wrapper:
 
 ```bash
-python -m src.cli.main crawl --sources toutiao,chinanews,gmw --limit 500
-python -m src.cli.main repair --limit 1000
-python -m src.cli.main summarize --limit 1000
-python -m src.cli.main score --limit 1000
-python -m src.cli.main geo-tag --limit 1000 --batch-size 200
+python -m src.cli.main crawl --sources toutiao,chinanews,gmw --limit 5000
+python -m src.cli.main repair --limit 500
+python -m src.cli.main summarize --limit 500
+python -m src.cli.main score --limit 500
+python -m src.cli.main geo-tag --limit 500 --batch-size 200
 python -m src.cli.main export --min-score 60 --limit 500
 ```
 

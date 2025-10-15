@@ -19,7 +19,7 @@ def _score_item(item: SummaryForScoring) -> Optional[int]:
     return score_text(text)
 
 
-def run(limit: int = 100, *, concurrency: Optional[int] = None) -> None:
+def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
     settings = get_settings()
     adapter = get_adapter()
 

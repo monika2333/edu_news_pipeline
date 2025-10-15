@@ -496,7 +496,7 @@ def _run_gmw_flow(
     return stats
 
 
-def run(limit: int = 500, *, concurrency: Optional[int] = None, sources: Optional[Sequence[str]] = None, pages: Optional[int] = None) -> None:  # pylint: disable=unused-argument
+def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Optional[Sequence[str]] = None, pages: Optional[int] = None) -> None:  # pylint: disable=unused-argument
     settings = get_settings()
     # Normalize selected sources preserving order
     if sources is None:

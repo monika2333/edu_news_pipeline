@@ -34,7 +34,7 @@ def _content_from_row(article: Dict[str, Any]) -> str:
     return str(article.get('content_markdown') or '').strip()
 
 
-def run(limit: int = 50, *, concurrency: Optional[int] = None, keywords_path: Optional[Path] = None) -> None:
+def run(limit: int = 500, *, concurrency: Optional[int] = None, keywords_path: Optional[Path] = None) -> None:
     settings = get_settings()
     adapter = get_adapter()
     beijing_keywords = load_beijing_keywords(settings.beijing_keywords_path)

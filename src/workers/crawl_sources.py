@@ -391,8 +391,29 @@ def _run_gmw_flow(
     timeout_value: float,
 ) -> Dict[str, Any]:
     stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
+    # Load existing IDs to allow early-stop on consecutive existing items
     try:
-        articles = gmw_fetch_articles(limit=remaining_limit, base_url=base_url, timeout=timeout_value)
+        existing_ids = adapter.get_existing_raw_article_ids()
+    except Exception as exc:
+        log_error(WORKER, "gmw_local_existing", exc)
+        existing_ids = set()
+
+    # Read early-stop threshold from env (default 5; 0 disables early-stop)
+    try:
+        gmw_consecutive_stop = int(os.getenv("GMW_EXISTING_CONSECUTIVE_STOP", "5"))
+    except Exception:
+        gmw_consecutive_stop = 5
+    if gmw_consecutive_stop < 0:
+        gmw_consecutive_stop = 0
+
+    try:
+        articles = gmw_fetch_articles(
+            limit=remaining_limit,
+            base_url=base_url,
+            timeout=timeout_value,
+            existing_ids=existing_ids,
+            consecutive_stop=gmw_consecutive_stop,
+        )
     except Exception as exc:
         log_error(WORKER, "gmw_fetch", exc)
         return stats

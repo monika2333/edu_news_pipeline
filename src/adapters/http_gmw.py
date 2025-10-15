@@ -318,14 +318,33 @@ class GMWCrawler:
             "Referer": "https://news.gmw.cn/",
         }
 
-    def crawl(self, *, max_articles: Optional[int] = None) -> List[Article]:
+    def crawl(
+        self,
+        *,
+        max_articles: Optional[int] = None,
+        existing_ids: Optional[Set[str]] = None,
+        consecutive_stop: Optional[int] = None,
+    ) -> List[Article]:
         listing_queue: List[str] = [self.base_url]
         visited_listings: Set[str] = set()
         seen_articles: Set[str] = set()
         articles: List[Article] = []
+        reached_existing = False
+
+        # Normalize early-stop parameter
+        if consecutive_stop is not None:
+            try:
+                consecutive_stop = int(consecutive_stop)
+            except Exception:
+                consecutive_stop = 5
+            if consecutive_stop < 0:
+                consecutive_stop = 0
+        consecutive_hits = 0
 
         while listing_queue:
             if max_articles is not None and len(articles) >= max_articles:
+                break
+            if reached_existing:
                 break
             listing_url = listing_queue.pop(0)
             if listing_url in visited_listings:
@@ -356,6 +375,26 @@ class GMWCrawler:
                 seen_articles.add(article_url)
                 if max_articles is not None and len(articles) >= max_articles:
                     break
+                # Early-stop and skip handling for existing articles
+                if existing_ids is not None:
+                    try:
+                        aid = make_article_id(article_url)
+                    except Exception:
+                        aid = None
+                    if aid and aid in existing_ids:
+                        if consecutive_stop:
+                            consecutive_hits += 1
+                            if consecutive_stop > 0 and consecutive_hits >= consecutive_stop:
+                                LOGGER.info(
+                                    "Reached %d consecutive existing items; stopping crawl.",
+                                    consecutive_stop,
+                                )
+                                reached_existing = True
+                                break
+                        # Do not fetch details for existing items
+                        continue
+                    else:
+                        consecutive_hits = 0
                 try:
                     article_html = self._fetch_html(article_url)
                     article = self._parse_article(article_url, article_html)
@@ -600,10 +639,16 @@ def fetch_articles(
     *,
     base_url: str = DEFAULT_BASE_URL,
     timeout: float = DEFAULT_TIMEOUT,
+    existing_ids: Optional[Set[str]] = None,
+    consecutive_stop: Optional[int] = None,
 ) -> List[GMWArticle]:
     """Return Guangming Daily articles using the integrated crawler implementation."""
     crawler = GMWCrawler(base_url=base_url, timeout=timeout)
-    raw_articles = crawler.crawl(max_articles=limit)
+    raw_articles = crawler.crawl(
+        max_articles=limit,
+        existing_ids=existing_ids,
+        consecutive_stop=consecutive_stop,
+    )
     parsed: List[GMWArticle] = []
     for raw in raw_articles:
         publish_ts, publish_dt = _parse_publish_time(raw.publish_time)

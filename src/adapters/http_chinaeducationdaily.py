@@ -146,7 +146,8 @@ def list_items(limit: Optional[int] = None, pages: Optional[int] = None, *, exis
         timeout = 20.0
     api_url = os.getenv("JYB_SEARCH_API_URL", DEFAULT_SEARCH_API_URL)
     start_url = os.getenv("JYB_START_URL", SEARCH_URL)
-    raw_keywords = os.getenv("JYB_KEYWORDS", "教育")
+    # Default to blank keywords when env is unset
+    raw_keywords = os.getenv("JYB_KEYWORDS", "")
     keywords = [kw.strip() for kw in raw_keywords.split(',') if kw.strip()] or [""]
     try:
         consecutive_stop = int(os.getenv("JYB_EXISTING_CONSECUTIVE_STOP", "5"))

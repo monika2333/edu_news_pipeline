@@ -42,6 +42,14 @@ from src.adapters.http_chinadaily import (
     make_article_id as cd_make_article_id,
     build_detail_update as cd_build_detail_update,
 )
+from src.adapters.http_chinaeducationdaily import (
+    FeedItemLike as JYBFeedItem,
+    list_items as jyb_list_items,
+    fetch_detail as jyb_fetch_detail,
+    feed_item_to_row as jyb_feed_item_to_row,
+    make_article_id as jyb_make_article_id,
+    build_detail_update as jyb_build_detail_update,
+)
 
 WORKER = "crawl"
 DEFAULT_AUTHORS_FILE = Path("data/author_tokens.txt")
@@ -504,6 +512,131 @@ def _run_gmw_flow(
     return stats
 
 
+def _run_jyb_flow(
+    *,
+    adapter,
+    keywords: Sequence[str],
+    remaining_limit: Optional[int],
+    pages: Optional[int],
+) -> Dict[str, Any]:
+    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
+    try:
+        existing_ids = adapter.get_existing_raw_article_ids()
+    except Exception as exc:
+        log_error(WORKER, "jyb_local_existing", exc)
+        existing_ids = set()
+
+    try:
+        items = jyb_list_items(limit=remaining_limit, pages=pages or 1, existing_ids=existing_ids)
+    except Exception as exc:
+        log_error(WORKER, "jyb_list", exc)
+        return stats
+    if not items:
+        log_info(WORKER, "No feed items returned from JYB.")
+        return stats
+
+    feed_rows: List[Dict[str, Any]] = []
+    index: Dict[str, JYBFeedItem] = {}
+    duplicates = 0
+    for it in items:
+        try:
+            aid = jyb_make_article_id(it.url)
+        except Exception as exc:
+            log_error(WORKER, "jyb_feed_id", exc)
+            continue
+        if aid in index:
+            duplicates += 1
+            continue
+        feed_rows.append(jyb_feed_item_to_row(it, aid, fetched_at=datetime.now(timezone.utc)))
+        index[aid] = it
+
+    stats["consumed"] = len(index)
+    if not feed_rows:
+        log_info(WORKER, "No JYB rows to upsert after filtering.")
+        stats["skipped"] = duplicates
+        return stats
+
+    try:
+        upserted = adapter.upsert_raw_feed_rows(feed_rows)
+    except Exception as exc:
+        log_error(WORKER, "postgres_feed_jyb", exc)
+        return stats
+    log_info(WORKER, f"jyb feed rows upserted: {upserted}")
+    if duplicates:
+        log_info(WORKER, f"jyb duplicate feed items skipped: {duplicates}")
+
+    missing_ids = adapter.get_raw_articles_missing_content(list(index.keys()))
+    targets = [(aid, index[aid]) for aid in index if aid in missing_ids]
+    already = len(index) - len(targets)
+    if already:
+        log_info(WORKER, f"jyb articles already populated: {already}")
+    if targets:
+        log_info(WORKER, f"jyb articles needing detail refresh: {len(targets)}")
+
+    detail_rows: List[Dict[str, Any]] = []
+    for aid, it in targets:
+        try:
+            payload = jyb_fetch_detail(it.url)
+        except Exception as exc:
+            stats["failed"] += 1
+            log_error(WORKER, f"jyb_detail_fetch:{aid}", exc)
+            continue
+        try:
+            detail_rows.append(
+                jyb_build_detail_update(
+                    it,
+                    aid,
+                    payload,
+                    detail_fetched_at=datetime.now(timezone.utc),
+                )
+            )
+        except Exception as exc:
+            stats["failed"] += 1
+            log_error(WORKER, f"jyb_build_update:{aid}", exc)
+
+    if detail_rows:
+        try:
+            adapter.update_raw_article_details(detail_rows)
+        except Exception as exc:
+            stats["failed"] += len(detail_rows)
+            log_error(WORKER, "postgres_detail_jyb", exc)
+            detail_rows = []
+        else:
+            for row in detail_rows:
+                log_info(WORKER, f"JYB DETAIL OK {row['article_id']}")
+
+    pending = 0
+    for row in detail_rows:
+        aid = str(row.get('article_id') or '').strip()
+        content = str(row.get('content_markdown') or '').strip()
+        if not aid or not content:
+            continue
+        ok_hit, hits = _contains_keywords(content, keywords)
+        if not ok_hit:
+            continue
+        summary_payload = {
+            'article_id': aid,
+            'title': row.get('title'),
+            'source': row.get('source'),
+            'publish_time': row.get('publish_time'),
+            'publish_time_iso': row.get('publish_time_iso'),
+            'url': row.get('url'),
+            'content_markdown': content,
+        }
+        try:
+            adapter.insert_pending_summary(summary_payload, keywords=hits, fetched_at=datetime.now(timezone.utc).isoformat())
+        except Exception as exc:
+            log_error(WORKER, f"jyb_pending_summary:{aid}", exc)
+        else:
+            pending += 1
+    if pending:
+        log_info(WORKER, f"jyb pending summaries queued: {pending}")
+
+    stats["ok"] = len(detail_rows)
+    stats["skipped"] += already + duplicates
+    return stats
+
+
 def _run_chinadaily_flow(
     *,
     adapter,
@@ -693,6 +826,8 @@ def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Option
                 stats = _run_chinanews_flow(adapter=adapter, keywords=keywords, remaining_limit=remaining_limit, pages=pages)
             elif source == 'chinadaily':
                 stats = _run_chinadaily_flow(adapter=adapter, keywords=keywords, remaining_limit=remaining_limit, pages=pages)
+            elif source == 'jyb':
+                stats = _run_jyb_flow(adapter=adapter, keywords=keywords, remaining_limit=remaining_limit, pages=pages)
             elif source == 'gmw':
                 stats = _run_gmw_flow(
                     adapter=adapter,

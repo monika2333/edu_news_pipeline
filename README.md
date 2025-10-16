@@ -12,7 +12,7 @@ Automated pipeline for collecting education-related articles, summarising them w
 All steps are available through the CLI wrapper:
 
 ```bash
-python -m src.cli.main crawl --sources toutiao,chinanews,chinadaily,gmw --limit 5000
+python -m src.cli.main crawl --sources toutiao,chinanews,chinadaily,jyb,gmw --limit 5000
 python -m src.cli.main repair --limit 500
 python -m src.cli.main summarize --limit 500
 python -m src.cli.main score --limit 500
@@ -201,6 +201,17 @@ MIT License (see repository root for details).
   - `CHINADAILY_START_URL` — Channel listing entry (defaults to a China Daily site channel).
   - `CHINADAILY_TIMEOUT` — Request timeout in seconds (default `20`).
   - `CHINADAILY_EXISTING_CONSECUTIVE_STOP` — Early-stop after N consecutive existing items across pages (default `5`; `0` disables).
+
+### China Education Daily (JYB)
+
+- Enable via CLI: `--sources jyb` (can be combined, e.g. `--sources toutiao,chinanews,chinadaily,jyb,gmw`).
+- Optional flags: `--pages N` to bound pagination.
+- Environment variables:
+  - `JYB_SEARCH_API_URL` — JSON search API endpoint (defaults to `http://new.jyb.cn/jybuc/hyBaseCol/search.action`).
+  - `JYB_START_URL` — Fallback HTML listing/search page (defaults to `http://www.jyb.cn/search.html`).
+  - `JYB_KEYWORDS` — Optional keywords (comma-separated). Default: `教育`.
+  - `JYB_TIMEOUT` — Request timeout in seconds (default `20`).
+  - `JYB_EXISTING_CONSECUTIVE_STOP` — Early-stop after N consecutive existing items across pages (default `5`; `0` disables).
   Configure the trigger to run daily at your preferred time, enable "Run with highest privileges", and disable battery-stop conditions when needed.
 - Customise steps with script parameters such as `-Steps crawl summarize`, `-Skip score`, or `-ContinueOnError`. Logs default to `logs/pipeline_<timestamp>.log`; override via `-LogDirectory`.
 

@@ -297,7 +297,7 @@ def fetch_detail(url: str) -> Dict[str, Any]:
 
     return {
         "title": title.strip() if title else None,
-        "source": "China Daily",
+        "source": "中国日报",
         "publish_time": None,
         "publish_time_iso": publish_iso,
         "url": normalize_url(url),
@@ -336,7 +336,7 @@ def build_detail_update(item: FeedItemLike, article_id: str, data: Dict[str, Any
         'profile_url': None,
         'article_id': article_id,
         'title': (data.get('title') or item.title or '').strip(),
-        'source': (data.get('source') or item.section or 'China Daily').strip(),
+        'source': (data.get('source') or item.section or '中国日报').strip(),
         'publish_time': pub_ts,
         'publish_time_iso': pub_dt,
         'url': data.get('url') or item.url,

@@ -7,6 +7,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 import os
 from urllib.parse import urljoin
+import time
 
 import requests
 from bs4 import BeautifulSoup
@@ -39,6 +40,8 @@ def _session() -> requests.Session:
     s.headers.update({
         "User-Agent": USER_AGENT,
         "Accept-Language": "zh-CN,zh;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Referer": "https://cn.chinadaily.com.cn/",
     })
     return s
 
@@ -180,9 +183,23 @@ def list_items(limit: Optional[int] = None, pages: Optional[int] = None, *, exis
 
     while page_url and page_idx < max_pages:
         page_idx += 1
-        resp = sess.get(page_url, timeout=timeout)
-        resp.raise_for_status()
-        html = _response_text(resp)
+        # retry listing fetch
+        last_exc: Optional[Exception] = None
+        html = ""
+        for attempt in range(3):
+            try:
+                resp = sess.get(page_url, timeout=timeout)
+                resp.raise_for_status()
+                html = _response_text(resp)
+                break
+            except Exception as exc:
+                last_exc = exc
+                time.sleep(0.5 * (2 ** attempt))
+        if not html:
+            if last_exc:
+                raise last_exc
+            else:
+                raise RuntimeError("empty listing response")
         entries, next_page = _parse_listing_page(html, page_url)
         for it in entries:
             aid = make_article_id(it.url)
@@ -218,9 +235,24 @@ def _get_meta(soup: BeautifulSoup, *, names: Sequence[str] = (), props: Sequence
 
 def fetch_detail(url: str) -> Dict[str, Any]:
     sess = _session()
-    resp = sess.get(normalize_url(url), timeout=float(os.getenv("CHINADAILY_TIMEOUT", "20")))
-    resp.raise_for_status()
-    html_text = _response_text(resp)
+    timeout = float(os.getenv("CHINADAILY_TIMEOUT", "20"))
+    # retry detail fetch
+    html_text = ""
+    last_exc: Optional[Exception] = None
+    for attempt in range(3):
+        try:
+            resp = sess.get(normalize_url(url), timeout=timeout)
+            resp.raise_for_status()
+            html_text = _response_text(resp)
+            break
+        except Exception as exc:
+            last_exc = exc
+            time.sleep(0.5 * (2 ** attempt))
+    if not html_text:
+        if last_exc:
+            raise last_exc
+        else:
+            raise RuntimeError("empty detail response")
     soup = BeautifulSoup(html_text, "html.parser")
 
     title = None
@@ -326,4 +358,3 @@ __all__ = [
     'feed_item_to_row',
     'build_detail_update',
 ]
-

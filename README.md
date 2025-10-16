@@ -4,7 +4,7 @@ Automated pipeline for collecting education-related articles, summarising them w
 
 ## Pipeline Overview
 
-1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: ChinaNews, Guangming Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `news_summaries` with a `pending` status.
+1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: ChinaNews, China Daily, Guangming Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `news_summaries` with a `pending` status.
 2. **Summarise** - Consume pending rows from `news_summaries`, call the LLM for those without summaries, and update their status to `completed` (failed rows remain pending for retry).
 3. **Score** - Ask the LLM to rate each summary and persist the `correlation` score in `news_summaries`.
 4. **Export** - Assemble the highest-scoring summaries into a plain-text brief and optionally log the batch metadata in `brief_batches` / `brief_items`.
@@ -12,7 +12,7 @@ Automated pipeline for collecting education-related articles, summarising them w
 All steps are available through the CLI wrapper:
 
 ```bash
-python -m src.cli.main crawl --sources toutiao,chinanews,gmw --limit 5000
+python -m src.cli.main crawl --sources toutiao,chinanews,chinadaily,gmw --limit 5000
 python -m src.cli.main repair --limit 500
 python -m src.cli.main summarize --limit 500
 python -m src.cli.main score --limit 500
@@ -187,11 +187,20 @@ MIT License (see repository root for details).
 - **Linux/macOS cron**: schedule the full pipeline with `scripts/run_pipeline_once.py` (default steps crawl -> summarize -> score -> export).
   ```bash
   0 9 * * * /usr/bin/python /path/to/repo/scripts/run_pipeline_once.py
-  ```
+```
 - **Windows Task Scheduler**: use the helper script in this repo. Example action command:
   ```powershell
   powershell.exe -File "D:\600program\edu_news_pipeline\scripts\run_pipeline_daily.ps1" -Python "C:\Path\To\python.exe"
-  ```
+```
+
+### China Daily Source
+
+- Enable via CLI: `--sources chinadaily` (can be combined, e.g. `--sources toutiao,chinanews,chinadaily,gmw`).
+- Optional flags: `--pages N` to bound pagination.
+- Environment variables:
+  - `CHINADAILY_START_URL` — Channel listing entry (defaults to a China Daily site channel).
+  - `CHINADAILY_TIMEOUT` — Request timeout in seconds (default `20`).
+  - `CHINADAILY_EXISTING_CONSECUTIVE_STOP` — Early-stop after N consecutive existing items across pages (default `5`; `0` disables).
   Configure the trigger to run daily at your preferred time, enable "Run with highest privileges", and disable battery-stop conditions when needed.
 - Customise steps with script parameters such as `-Steps crawl summarize`, `-Skip score`, or `-ContinueOnError`. Logs default to `logs/pipeline_<timestamp>.log`; override via `-LogDirectory`.
 

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import os
@@ -504,135 +504,6 @@ def _run_gmw_flow(
     return stats
 
 
-def _run_chinadaily_flow(
-    *,
-    adapter,
-    keywords: Sequence[str],
-    remaining_limit: Optional[int],
-    pages: Optional[int],
-) -> Dict[str, Any]:
-    """Run China Daily ingestion; return stats and consumption.
-
-    Returns a dict with keys: consumed, ok, failed, skipped.
-    """
-    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
-    try:
-        existing_ids = adapter.get_existing_raw_article_ids()
-    except Exception as exc:
-        log_error(WORKER, "chinadaily_local_existing", exc)
-        existing_ids = set()
-
-    try:
-        items = cd_list_items(limit=remaining_limit, pages=pages or 1, existing_ids=existing_ids)
-    except Exception as exc:
-        log_error(WORKER, "chinadaily_list", exc)
-        return stats
-    if not items:
-        log_info(WORKER, "No feed items returned from China Daily.")
-        return stats
-
-    feed_rows: List[Dict[str, Any]] = []
-    index: Dict[str, CDLFeedItem] = {}
-    duplicates = 0
-    for it in items:
-        try:
-            aid = cd_make_article_id(it.url)
-        except Exception as exc:
-            log_error(WORKER, "cd_feed_id", exc)
-            continue
-        if aid in index:
-            duplicates += 1
-            continue
-        feed_rows.append(cd_feed_item_to_row(it, aid, fetched_at=datetime.now(timezone.utc)))
-        index[aid] = it
-
-    stats["consumed"] = len(index)
-    if not feed_rows:
-        log_info(WORKER, "No China Daily rows to upsert after filtering.")
-        stats["skipped"] = duplicates
-        return stats
-
-    try:
-        upserted = adapter.upsert_raw_feed_rows(feed_rows)
-    except Exception as exc:
-        log_error(WORKER, "postgres_feed_chinadaily", exc)
-        return stats
-    log_info(WORKER, f"chinadaily feed rows upserted: {upserted}")
-    if duplicates:
-        log_info(WORKER, f"chinadaily duplicate feed items skipped: {duplicates}")
-
-    missing_ids = adapter.get_raw_articles_missing_content(list(index.keys()))
-    targets = [(aid, index[aid]) for aid in index if aid in missing_ids]
-    already = len(index) - len(targets)
-    if already:
-        log_info(WORKER, f"chinadaily articles already populated: {already}")
-    if targets:
-        log_info(WORKER, f"chinadaily articles needing detail refresh: {len(targets)}")
-
-    detail_rows: List[Dict[str, Any]] = []
-    for aid, it in targets:
-        try:
-            payload = cd_fetch_detail(it.url)
-        except Exception as exc:
-            stats["failed"] += 1
-            log_error(WORKER, f"cd_detail_fetch:{aid}", exc)
-            continue
-        try:
-            detail_rows.append(
-                cd_build_detail_update(
-                    it,
-                    aid,
-                    payload,
-                    detail_fetched_at=datetime.now(timezone.utc),
-                )
-            )
-        except Exception as exc:
-            stats["failed"] += 1
-            log_error(WORKER, f"cd_build_update:{aid}", exc)
-
-    if detail_rows:
-        try:
-            adapter.update_raw_article_details(detail_rows)
-        except Exception as exc:
-            stats["failed"] += len(detail_rows)
-            log_error(WORKER, "postgres_detail_chinadaily", exc)
-            detail_rows = []
-        else:
-            for row in detail_rows:
-                log_info(WORKER, f"CD DETAIL OK {row['article_id']}")
-
-    pending = 0
-    for row in detail_rows:
-        aid = str(row.get('article_id') or '').strip()
-        content = str(row.get('content_markdown') or '').strip()
-        if not aid or not content:
-            continue
-        ok_hit, hits = _contains_keywords(content, keywords)
-        if not ok_hit:
-            continue
-        summary_payload = {
-            'article_id': aid,
-            'title': row.get('title'),
-            'source': row.get('source'),
-            'publish_time': row.get('publish_time'),
-            'publish_time_iso': row.get('publish_time_iso'),
-            'url': row.get('url'),
-            'content_markdown': content,
-        }
-        try:
-            adapter.insert_pending_summary(summary_payload, keywords=hits, fetched_at=datetime.now(timezone.utc).isoformat())
-        except Exception as exc:
-            log_error(WORKER, f"cd_pending_summary:{aid}", exc)
-        else:
-            pending += 1
-    if pending:
-        log_info(WORKER, f"chinadaily pending summaries queued: {pending}")
-
-    stats["ok"] = len(detail_rows)
-    stats["skipped"] += already + duplicates
-    return stats
-
-
 def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Optional[Sequence[str]] = None, pages: Optional[int] = None) -> None:  # pylint: disable=unused-argument
     settings = get_settings()
     # Normalize selected sources preserving order
@@ -730,6 +601,7 @@ def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Option
 
 
 __all__ = ["run"]
+
 
 
 

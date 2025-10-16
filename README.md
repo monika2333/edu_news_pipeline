@@ -225,3 +225,13 @@ un_pipeline_every10.ps1" -Python "C:\Path\To\python.exe" -LogDirectory "D:\logs\
 
 
 
+
+
+## Logs Maintenance
+
+- Baseline: compress logs older than 3 days and delete logs (including archives) older than 14 days.
+- Manual run: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-logs.ps1`
+  - Options: `-LogsPath logs -CompressOlderThanDays 3 -DeleteOlderThanDays 14 -DryRun`
+- Register daily cleanup (02:00):
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/register-clean-logs-task.ps1 -Time 02:00 -TaskName EduNews_CleanLogs`
+  - Verify: `schtasks /Query /TN EduNews_CleanLogs /V /FO LIST`

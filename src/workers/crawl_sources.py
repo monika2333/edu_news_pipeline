@@ -512,19 +512,6 @@ def _run_gmw_flow(
     return stats
 
 
-def _run_chinadaily_flow(
-    *,
-    adapter,
-    keywords: Sequence[str],
-    remaining_limit: Optional[int],
-    pages: Optional[int],
-) -> Dict[str, Any]:
-    # Exists earlier in file in our previous integration, ensure not duplicated in merged file.
-    # This definition is a placeholder safeguard in case of partial merges.
-    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
-    return stats
-
-
 def _run_jyb_flow(
     *,
     adapter,

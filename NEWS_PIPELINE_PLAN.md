@@ -1,156 +1,172 @@
 # 新闻流水线重构规划
 
 ## 整体规划
-- 梳理现有流水线的采集、清洗、入库、筛选、出报全流程，明确数据字段、处理逻辑、运行频率与人工决策点，形成基线流程图。
-- 按模块拆分需求：分类、去重、事件聚合、评分四大模块分别评估可用数据、缺口、优先级与验证方式。
+- 梳理采集 → 分析 → 聚合 → 报告全流程，明确输入输出、运行频率与人工决策点，形成当前体系的基线图。
+- 以分类（新增正/负向）、去重、事件聚合、综合评分四大模块为核心，评估可用数据、缺口与落地优先级。
+- 在不影响现有产出表（`news_summaries`、`brief_batches`、`brief_items`）的前提下，增量扩展数据结构并强化可观测性。
+
+## 现有数据库映射
+- `raw_articles`：爬虫写入的主表，包含 `content_markdown`、发布时间、来源、互动指标等，实际已存储清洗后的正文，可作为事实表。
+- `news_summaries`：LLM 摘要与关键词表，直接以 `article_id` 引用 `raw_articles`。
+- `brief_batches` / `brief_items`：报告批次与条目表，对应人工最终筛选的结果。
+- `pipeline_runs` / `pipeline_run_steps`：流水线运行与步骤日志，可继续作为监控数据源。
+- `toutiao_articles_backup`：历史备份数据，可用于离线比对或模型训练。
+
+> 结论：无需再增加 `news_processed` 表，直接在 `raw_articles` 基础上扩展特征、标签、去重、事件、评分等附表即可。
+
+## 数据结构调整方案
+
+### 1. 原始与标准化层（基于 `raw_articles`）
+- 继续以现有字段为主，新增或复用字段：
+  - `region_tag`（text）：沿用现有京内/京外标签。
+  - `content_hash`（text）：正文哈希用于快速去重。
+  - `fingerprint`（text 或 bytea）：SimHash/MinHash 指纹，用于相似度判断。
+  - `processing_flags`（jsonb）：记录各阶段（features、labels、dedup、events、scores）是否完成。
+- 索引建议：`(publish_time_iso DESC)`、`(source)`、`(content_hash)`。
+- 可建立物化视图 `vw_articles_latest`，汇总 `raw_articles` 与常用派生信息，供报告层使用。
+
+### 2. 特征与标签层
+- `article_features`
+  - `article_id`（PK，引用 `raw_articles.article_id`）
+  - `keywords`（text[]）
+  - `entities`（jsonb，地点/机构/人物/主题词）
+  - `embedding_vector`（pgvector 或 jsonb，用于相似度检索）
+  - `language_model_version`（text）
+  - `updated_at`（timestamptz）
+  - 索引：`(updated_at)`、`gin(entities)`，如使用 pgvector 则需创建向量索引。
+- `article_labels`
+  - `article_id`（FK）
+  - `label_type`（如 `sentiment`、`topic`、`special_flag`）
+  - `label_value`（如 `positive`、`education_policy`）
+  - `confidence`（numeric）
+  - `model_version`（text）
+  - `labeled_at`（timestamptz）
+  - 唯一键：`(article_id, label_type)`
+- 京内/京外标签仍写在 `raw_articles.region_tag`；新增的正负向、主题标签写入 `article_labels`。
+
+### 3. 去重与事件层
+- `article_dedup`
+  - `article_id`（PK）
+  - `primary_article_id`（text，指向保留主文；主文自身=article_id）
+  - `fingerprint_distance`（integer）
+  - `resolution_strategy`（text，如 `source_priority`、`freshness`）
+  - `checked_at`（timestamptz）
+  - 索引：`(primary_article_id)`、`(fingerprint_distance)`
+- `article_events`
+  - `event_id`（uuid，PK）
+  - `headline_summary`（text）
+  - `first_seen_at`、`last_updated_at`（timestamptz）
+  - `topic_tags`（text[]）
+  - `status`（`active`/`archived`）
+- `article_event_members`
+  - `event_id`（FK）
+  - `article_id`（FK）
+  - `match_score`（numeric）
+  - `role`（`representative`/`supporting`）
+  - 唯一键：`(event_id, article_id)`
+- 去重确保最终仅保留主文；事件聚合用于串联同一主题的多篇报道，两者结合满足需求 2 和 3。
+
+### 4. 综合评分层
+- `article_scores`
+  - `article_id`（PK）
+  - `score_total`（numeric）
+  - `score_breakdown`（jsonb，例如 `{ "education_relevance":0.4, "sentiment":0.2, ... }`）
+  - `scoring_profile`（text，标识权重配置版本）
+  - `scored_at`（timestamptz）
+- `scoring_profiles`
+  - `profile_name`（PK）
+  - `weights`（jsonb）
+  - `effective_from` / `effective_to`（timestamptz，可选）
+  - 支持历史权重记录与回滚。
+
+### 5. 配置与反馈
+- `source_priority`：定义媒体权威度、优先级（可新增）。
+- `manual_feedback`
+  - `feedback_id`（uuid，PK）
+  - `article_id` / `event_id`
+  - `feedback_type`（`label_override`、`score_adjust`、`event_merge` 等）
+  - `payload`（jsonb，记录具体调整）
+  - `handled_by`、`handled_at`
+- 继续沿用 `pipeline_runs` 与 `pipeline_run_steps` 追踪任务执行。
 
 ## 模块拆分方案
 
 ### 分类
-- 建立统一的新闻要素结构：标题、摘要、正文、媒体、发布时间、地区标签、关键词、实体识别结果等。
-- 京内/京外分类：继续沿用当前规则体系，短期仅增加监控指标以观察准确率，无需改动实现。
-- 正面/负面分类：
-  - 阶段性方案：关键词或模式匹配加权打分（如“整改”“示警”倾向负向，“表彰”“成绩”倾向正向），快速上线。
-  - 中长期方案：收集历史新闻人工标注样本（500~1000 条），训练轻量中文文本分类模型（fastText、BERT 微调等），输出标签与置信度。
-- 分类结果写入 `news_classification`（含标签、置信度、模型版本），并预留人工校正回写能力。
+- 京内/京外：维持现有实现，仅监控准确率，无需结构调整。
+- 正负向分类：
+  - 规则版：关键词/模式加权打分，低门槛上线。
+  - 模型版：准备 500~1000 条人工标注样本，训练轻量中文分类模型（fastText、BERT 微调等），写回 `article_labels` 并记录 `confidence` 和 `model_version`。
+- 主题标签：同时写入 `article_labels`，标记是否与市委教委、重点活动等相关。
 
 ### 去重
-- 入库时生成正文指纹（SimHash 或 MinHash），计算哈希距离，小于阈值即视为重复。
-- 保留权威源首条记录，后续转载记录关联主记录 ID（`duplicate_of`），并基于“新闻源优先级”配置确定保留策略。
-- 提供去重命中日志，便于人工审查与规则调优。
+- `raw_articles` 写入时生成 `content_hash` 和 `fingerprint`。
+- 以哈希快速过滤 + 指纹距离精细判断，结果写入 `article_dedup`。
+- 对于被判定为重复的文章，可选地在 `article_labels` 增加 `label_type='duplicate'`，方便查询与折叠。
 
 ### 同事件聚合
-- 在去重基础上对标题、关键词、核心实体生成向量（BERT 句向量或 TF-IDF），按相似度聚类。
-- 建立事件聚类表：`event_id`、`headline_summary`、`member_news_ids`、聚类时间、主题标签。
-- 每日增量处理：新新闻优先尝试归入现有事件，若相似度低于阈值则创建新事件。
-- 报告结构按事件块呈现：事件摘要、代表新闻、相关媒体列表，辅助人工筛选。
+- 利用 `article_features.embedding_vector`、标题及关键词计算相似度。
+- 按阈值策略归入既有事件或创建新事件，写入 `article_events` / `article_event_members`。
+- `headline_summary` 可由规则或 LLM 自动生成，人工通过 `manual_feedback` 校正。
+- 事件状态（`active`/`archived`）控制报告展示范围。
 
-### 综合评分框架
-- 设计可配置的加权评分：`score = Σ(weight_i * feature_i)`。
-- 特征示例：教育相关度、主题优先级、媒体权威度、情感倾向、舆情风险、与市委教委关联度等，每个特征输出 0~1 分。
+### 综合评分
+- 定义可配置特征函数：教育相关度、媒体权威度、情感倾向、舆情风险、主题优先级等。
+- 按 `scoring_profiles` 权重合成总分，写入 `article_scores`。
+- 报告端依据分数与事件结构确定展示顺序，实现需求 4。
 
-## 数据结构细化
+## 处理管道流程（结合现有结构）
 
-### 核心业务表
-- `news_raw`  
-  - `id`：主键，采集任务唯一标识。  
-  - `source_id`：对应爬虫配置或媒体标识。  
-  - `raw_payload`：原始 HTML/JSON 原文，供回溯。  
-  - `fetched_at`：抓取时间。  
-  - `ingest_batch_id`：批次号，追踪任务运行。  
-  - 索引：`(source_id, fetched_at)`，便于快速定位来源数据。
+### 0. 采集层（Crawler → `raw_articles`）
+- 按来源配置抓取频率，写入 `content_markdown`、`publish_time_iso`、`fetched_at` 等现有字段。
+- 新增：写入 `content_hash`、`fingerprint`，初始化 `processing_flags`（如 `{ "features":false, "labels":false, ... }`）。
 
-- `news_processed`  
-  - `id`：与 `news_raw.id` 一一对应。  
-  - `title`、`summary`、`content`：清洗后文本。  
-  - `publish_time`、`media_name`、`media_level`。  
-  - `region_tag`：京内/京外标签。  
-  - `language_features`：结构化字段（关键词列表、实体列表、词频向量 ID 等）。  
-  - `processing_status`：`pending`/`completed`/`failed`，用于重试。  
-  - 索引：`(publish_time)`、`(media_name)`、全文索引 `content` 支撑检索。
+### 1. 特征抽取（→ `article_features`）
+- 读取 `processing_flags.features=false` 的文章。
+- 执行分词、关键词提取、实体识别、向量化，写入 `article_features`。
+- 更新 `processing_flags.features=true` 与 `article_features.updated_at`。
 
-- `news_classification`  
-  - `news_id`：外键关联 `news_processed`.  
-  - `category`：标签名（如 `sentiment_positive`、`sentiment_negative`）。  
-  - `confidence`：模型或规则置信度。  
-  - `model_version`：分类模型或规则集版本号。  
-  - `updated_at`：最后一次分类时间。  
-  - 复合唯一键：`(news_id, category)` 防止重复写入。
+### 2. 分类与标签（→ `article_labels` 与 `raw_articles.region_tag`）
+- 京内/京外沿用现有逻辑，仅在监控中统计误差。
+- 正负向与主题标签写入 `article_labels`，低置信度样本推送至人工审查队列。
+- 更新 `processing_flags.labels=true`。
 
-- `news_duplicates`  
-  - `news_id`：当前记录 ID。  
-  - `fingerprint`：指纹值（64 位二进制或十六进制字符串）。  
-  - `primary_id`：主记录 ID；若自身为主，则等于 `news_id`。  
-  - `distance`：与主记录的指纹距离。  
-  - `decision_reason`：保留/合并原因，便于审计。  
-  - 索引：`(fingerprint)`、`(primary_id)`。
+### 3. 去重识别（→ `article_dedup`）
+- 基于 `content_hash` 先做粗筛，再用 `fingerprint` 计算指纹距离。
+- 确定主文后写入 `article_dedup`，并标记从属关系。
+- 更新 `processing_flags.dedup=true`，必要时在 `article_labels` 标记 `duplicate`。
 
-- `news_events`  
-  - `event_id`：主键。  
-  - `headline_summary`：事件主题摘要。  
-  - `first_seen_at`、`last_updated_at`：事件时间范围。  
-  - `topic_tags`：主题标签列表（教育改革、招生政策等）。  
-  - `status`：`active`/`archived`，控制报告展示。
+### 4. 事件聚合（→ `article_events`、`article_event_members`）
+- 以向量相似度 + 关键词匹配归并相关文章，生成/更新事件。
+- 记录 `match_score` 与事件摘要，更新 `processing_flags.events=true`。
+- 聚合结果可写入缓存或物化视图供报告使用。
 
-- `event_members`  
-  - `event_id`：外键。  
-  - `news_id`：成员新闻。  
-  - `match_score`：聚类相似度。  
-  - `is_representative`：是否作为报告展示主文。  
-  - 复合唯一键：`(event_id, news_id)`。
+### 5. 综合评分（→ `article_scores`）
+- 按配置计算各特征分值，汇总为总分。
+- 写入 `article_scores`，记录 `scoring_profile` 与时间戳。
+- 更新 `processing_flags.scores=true`。
 
-- `news_scores`  
-  - `news_id`：外键。  
-  - `score_total`：综合得分。  
-  - `score_breakdown`：JSON 存储各特征分值。  
-  - `scoring_profile`：权重配置版本。  
-  - `scored_at`：打分时间。
+### 6. 摘要与报告（`news_summaries`、`brief_*`）
+- LLM 摘要继续写入 `news_summaries`，可增 `event_id`、`score_total` 等引用以支撑组合展示。
+- 报告生成服务读取视图（`vw_articles_latest` + 事件/评分数据），生成 `brief_batches`、`brief_items`。
+- 人工终审修改写回 `manual_feedback`，形成迭代闭环。
 
-### 配置与日志表
-- `source_priority`：媒体优先级、可信度配置。  
-- `processing_jobs`：记录各批次处理任务状态、耗时、错误信息。  
-- `manual_feedback`：人工调整记录（修正分类、事件、评分），用于二次训练与审计。  
-- `feature_dictionary`：关键词、主题词、实体别名字典，供 NLP 模块使用。
-
-## 处理管道流程
-
-### 0. 采集层（Ingestion）
-- 触发频率：按来源配置（小时级/天级）。  
-- 步骤：爬虫拉取 → 存入 `news_raw` → 写入 `processing_jobs` 记录。  
-- 校验：去除明显空内容、重复 URL，失败写入失败队列供重试。
-
-### 1. 文本清洗与标准化
-- 从 `news_raw` 拉取待处理数据，执行正文抽取、HTML 去噪、日期解析。  
-- 输出写回 `news_processed`，更新 `processing_status`。  
-- 若解析失败：标记 `failed` 并写错误日志，配合重跑脚本。
-
-### 2. 语言特征抽取
-- 对 `news_processed` 文本执行：分词、关键词提取、实体识别（地名、机构、人物、主题词）。  
-- 结果存入 `language_features`（结构化 JSON）与 `feature_dictionary` 索引。  
-- 同时为后续聚类准备向量表示（如句向量，存入向量存储或向量表）。
-
-### 3. 分类模块
-- 京内/京外：沿用现有规则，仅在 `language_features` 中记录地理实体，用于后续监控。  
-- 正负向分类：执行规则打分或模型预测，将标签与置信度写入 `news_classification`。  
-- 产出监控：每日统计分类分布、低置信度样本，写入监控报表。
-
-### 4. 去重识别
-- 对新入库的 `news_processed` 生成指纹，并与当天/最近一周指纹对比。  
-- 命中重复时，将从属记录写入 `news_duplicates` 并指向主记录，同时在 `processing_jobs` 中计数。  
-- 未命中重复的记录作为主新闻存储指纹，等待事件聚合。
-
-### 5. 事件聚合
-- 使用向量相似度（阈值分层：高阈值直接归类，中阈值待人工确认，低阈值新建事件）。  
-- 更新或创建 `news_events`、`event_members`，并为事件生成摘要（可通过标题拼接或抽象算法）。  
-- 将聚合结果同步至报告服务的缓存或视图。
-
-### 6. 综合评分
-- 读取分类、去重、事件等结果，按配置执行特征函数计算分值。  
-- 汇总写入 `news_scores`，同时记录 `scoring_profile` 版本。  
-- 根据分数自动设置报告展示优先级和折叠逻辑。
-
-### 7. 报告生成
-- 汇总 `news_events` 中活跃事件，选取代表新闻与相关条目。  
-- 组合 `news_scores`、`news_classification` 等信息，生成结构化报告（Markdown/Excel）。  
-- 输出提交给人工终审界面，同时将人工反馈写入 `manual_feedback`。
-
-### 8. 监控与回溯
-- `processing_jobs` 记录全链路处理时长、失败率。  
-- 定期导出 KPI（重复率、分类准确率、事件聚合命中率、人工修改率）供周报使用。  
-- 提供回溯工具：按 `ingest_batch_id` 复盘某批次的完整数据流。
+### 7. 监控与回溯
+- 延续 `pipeline_runs`、`pipeline_run_steps` 记录每次执行状态、耗时、错误。
+- 定期统计 KPI：重复率、事件聚合命中率、情感分类准确率、人工修改率。
+- 支持按 `content_hash`、`event_id`、`report_date` 回溯特定批次的处理痕迹。
 
 ## 流水线服务架构
-- 采集服务：负责与各来源交互，保证数据按批次写入 `news_raw` 与 `processing_jobs`。  
-- 处理服务：可拆分为多个独立任务（清洗、特征、分类、去重、聚类、评分），通过任务队列（Airflow、Celery、Dagster 等）串联，支持失败重试与横向扩展。  
-- 报告服务：读取汇总视图或物化视图，提供导出与可视化接口；支持事件层级展示。  
-- 各服务共享统一配置中心（源优先级、评分权重、分类模型版本），配置更新需具备审计与回滚机制。
+- 采集服务：保持现有爬虫逻辑，新增哈希/指纹计算即可。
+- 处理服务：拆分为特征、分类、去重、事件、评分等任务，使用 Airflow/Celery/Dagster 等编排，支持失败重试与横向扩展。
+- 报告服务：基于视图或物化视图组合文章、事件、评分、摘要信息，提供导出与可视化接口。
+- 配置中心：统一管理源优先级、分类模型版本、评分权重等，并具备审计、灰度发布与回滚能力。
 
 ## 验证与监控
-- 建立标注反馈闭环：报告界面人工修改分类、事件或评分时回写训练集。  
-- 定期追踪质量指标：重复率、聚合准确率、分类准确率、人工修改率等，按周审查。  
-- 设置模型回归测试集，在规则或模型更新时对比关键指标，防止回归。
+- 构建标注闭环：报告界面人工调整分类、事件或评分时写入 `manual_feedback`，定期抽样回流训练。
+- 跟踪关键指标：重复率、事件聚合命中率、情感分类准确率、人工修改率等，按周复盘。
+- 维护模型回归测试集：更新分类或评分模型前后对比核心指标，避免性能回退。
 
 ## 推进节奏建议
-- 优先完成数据结构与处理管道重构，为后续模块提供基础。  
-- 选取一周数据做 POC，人工校验分类、去重、聚合效果，迭代阈值与规则。  
-- 搭建可视化后台或 Notebook，展示事件聚类、分数分布，辅助策略调优与决策。
+- 第一阶段：扩展 `raw_articles` 字段、搭建 `article_features`、`article_labels`、`article_dedup` 基础表，并梳理任务编排。
+- 第二阶段：实现事件聚合与评分逻辑，选取一周数据做 POC，人工校验聚合与评分效果。
+- 第三阶段：整合报告输出视图，搭建可视化面板或 Notebook，展示得分、事件聚类效果，并根据反馈迭代策略。

@@ -471,6 +471,45 @@ class PostgresAdapter:
             cur.executemany(update_sql, payload)
         return len(payload)
 
+    def gather_pipeline_metrics(self, *, sentiment_threshold: float) -> Dict[str, Dict[str, float]]:
+        metrics: Dict[str, Dict[str, float]] = {}
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE primary_article_id IS NULL OR primary_article_id = article_id) AS master_count,
+                    COUNT(*) FILTER (WHERE primary_article_id IS NOT NULL AND primary_article_id <> article_id) AS duplicate_count,
+                    COUNT(*) FILTER (WHERE sentiment_label IS NOT NULL) AS sentiment_scored,
+                    COUNT(*) FILTER (WHERE sentiment_label = 'positive') AS sentiment_positive,
+                    COUNT(*) FILTER (WHERE sentiment_label = 'negative') AS sentiment_negative,
+                    COUNT(*) FILTER (
+                        WHERE sentiment_confidence IS NOT NULL
+                          AND sentiment_confidence < %s
+                    ) AS sentiment_low_confidence
+                FROM raw_articles
+                """,
+                (sentiment_threshold,),
+            )
+            row = cur.fetchone() or {}
+            metrics["raw_articles"] = {key: int(value) for key, value in row.items() if value is not None}
+
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE correlation IS NOT NULL) AS scored_count,
+                    COUNT(*) FILTER (WHERE correlation IS NOT NULL AND correlation >= 60) AS high_score_count,
+                    COUNT(*) FILTER (WHERE is_beijing_related IS TRUE) AS beijing_marked
+                FROM news_summaries
+                """
+            )
+            row = cur.fetchone() or {}
+            metrics["news_summaries"] = {key: int(value) for key, value in row.items() if value is not None}
+
+        return metrics
+
 
     def get_existing_raw_article_ids(self) -> Set[str]:
         ids: Set[str] = set()
@@ -893,20 +932,26 @@ class PostgresAdapter:
     def fetch_export_candidates(self, min_score: float) -> List[ExportCandidate]:
         query = """
             SELECT
-                article_id,
-                title,
-                llm_summary,
-                content_markdown,
-                correlation,
-                url,
-                source,
-                publish_time_iso,
-                publish_time,
-                llm_source,
-                is_beijing_related
-            FROM news_summaries
-            WHERE correlation IS NOT NULL AND correlation >= %s
-            ORDER BY correlation DESC
+                ns.article_id,
+                ns.title,
+                ns.llm_summary,
+                ns.content_markdown,
+                ns.correlation,
+                ns.url,
+                ns.source,
+                ns.publish_time_iso,
+                ns.publish_time,
+                ns.llm_source,
+                ns.is_beijing_related,
+                ra.primary_article_id,
+                ra.sentiment_label,
+                ra.sentiment_confidence
+            FROM news_summaries AS ns
+            JOIN raw_articles AS ra ON ra.article_id = ns.article_id
+            WHERE ns.correlation IS NOT NULL
+              AND ns.correlation >= %s
+              AND (ra.primary_article_id IS NULL OR ra.primary_article_id = ra.article_id)
+            ORDER BY ns.correlation DESC
         """
         with self._cursor() as cur:
             cur.execute(query, (min_score,))
@@ -926,6 +971,12 @@ class PostgresAdapter:
                 published_at = published_at.isoformat()
             source_name = row.get("source")
             article_hash = self._article_hash(article_id, url, title)
+            sentiment_label = row.get("sentiment_label")
+            sentiment_confidence = row.get("sentiment_confidence")
+            try:
+                sentiment_confidence = float(sentiment_confidence) if sentiment_confidence is not None else None
+            except (TypeError, ValueError):
+                sentiment_confidence = None
             out.append(
                 ExportCandidate(
                     filtered_article_id=article_id,
@@ -940,6 +991,8 @@ class PostgresAdapter:
                     original_url=url,
                     published_at=published_at,
                     is_beijing_related=row.get("is_beijing_related"),
+                    sentiment_label=sentiment_label,
+                    sentiment_confidence=sentiment_confidence,
                 )
             )
         return out

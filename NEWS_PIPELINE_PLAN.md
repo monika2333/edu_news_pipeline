@@ -51,4 +51,5 @@
 ## 运行维护
 - **重算计划**：当指纹算法或阈值调整时，可按时间段重新计算 `fingerprint` 或重新跑情感分类任务。  
 - **配置管理**：在 `.env` 中统一维护模型名称、置信度阈值、指纹参数。  
-- **数据回溯**：保留原始 `content_markdown` 和历史字段，确保未来扩展事件聚合或评分功能时可直接复用。
+- **数据回溯**：保留原始 `content_markdown` 和历史字段，确保未来扩展事件聚合或评分功能时可直接复用。  
+- **监控脚本**：运行 `python scripts/pipeline_metrics.py` 可查看重复率、情感覆盖率等指标；若需补算，可执行 `python -m src.workers.deduplicate` 或 `python -m src.workers.sentiment --limit ...`。

@@ -61,6 +61,8 @@ class ExportCandidate:
     original_url: Optional[str]
     published_at: Optional[str]
     is_beijing_related: Optional[bool] = None
+    sentiment_label: Optional[str] = None
+    sentiment_confidence: Optional[float] = None
 
 
 @dataclass(slots=True)

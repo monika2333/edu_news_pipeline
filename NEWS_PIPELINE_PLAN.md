@@ -93,30 +93,11 @@
 - **数据回滚**：保留 `raw_articles` 原文，确保流程失误时可重放。
 
 ## 推进步骤建议
-1. **数据库迁移**
-   - 建 `filtered_articles` 表，添加必要索引与约束。
-   - 可预先插入历史命中关键词的数据（从 `news_summaries` 或 `raw_articles` 回填）。
 
-2. **关键词 Worker 落地**
-   - 实现对 `raw_articles` 的增量扫描（可用 `fetched_at` 或触发队列）。
-   - 将命中结果插入 `filtered_articles`。
-
-3. **指纹 / 情感任务迁移**
-   - 改造 dedup、sentiment 只处理 `filtered_articles`。
-   - 验证性能和重复率。
-
-4. **摘要 / 导出对接**
-   - Summarize 读取 `filtered_articles` 主文写入 `news_summaries`。
-   - Export 读取 `news_summaries` + `filtered_articles`，按四类导出。
-
-5. **清理旧逻辑**
-   - 移除对 `raw_articles` 的指纹、情感计算。
-   - 更新文档和 CLI 命令说明，明确新表与流程。
-
-6. **上线与回溯**
-   - 先跑一批历史数据验证分类/去重效果。
-   - 根据监控数据调整关键词、阈值等参数。
-
+### 近期优先事项
+1. **DDL 落地**：起草 `filtered_articles` 表结构，包含 `article_id` 主键、`primary_article_id` 外键（自指主文规则）、`content_hash` 唯一索引，并保留情感/摘要所需字段。
+2. **历史数据回填**：编写迁移脚本回溯既有命中文章，校验主文自指关系与 `news_summaries` 的摘要对应是否一致，确保唯一约束不会被触发。
+3. **Worker 串联**：调整去重、情感、摘要相关任务改为读取 `filtered_articles`，按照“哈希去重 → 情感 → 主文摘要/导出”的顺序处理，确认最小闭环可运行。
 ## 风险与注意事项
 - 关键词列表需及时维护，以免遗漏重要稿件。
 - `filtered_articles` 与 `raw_articles` 的数据一致性（article_id 唯一性、更新同步）需通过触发器或应用逻辑保证。

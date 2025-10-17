@@ -410,14 +410,66 @@ class PostgresAdapter:
             return 0
         update_sql = """
             UPDATE raw_articles
-            SET content_hash = %s,
-                fingerprint = %s,
+            SET content_hash = COALESCE(%s, content_hash),
+                fingerprint = COALESCE(%s, fingerprint),
                 updated_at = NOW()
             WHERE article_id = %s
         """
         with self._cursor() as cur:
             cur.executemany(update_sql, list(feature_rows))
         return len(feature_rows)
+
+
+    def fetch_articles_for_sentiment(
+        self,
+        *,
+        limit: Optional[int] = None,
+        threshold: float = 0.0,
+        include_low_confidence: bool = False,
+    ) -> List[Dict[str, Any]]:
+        clauses = [
+            "content_markdown IS NOT NULL",
+            "LENGTH(TRIM(content_markdown)) > 0",
+        ]
+        if include_low_confidence:
+            clauses.append("(sentiment_label IS NULL OR sentiment_confidence IS NULL OR sentiment_confidence < %s)")
+            params: List[Any] = [threshold]
+        else:
+            clauses.append("(sentiment_label IS NULL OR sentiment_confidence IS NULL)")
+            params = []
+        query = [
+            "SELECT article_id, title, source, publish_time, publish_time_iso, fetched_at, content_markdown, sentiment_confidence",
+            "FROM raw_articles",
+            "WHERE",
+            " AND ".join(f"({clause})" for clause in clauses),
+            "ORDER BY fetched_at DESC NULLS LAST",
+        ]
+        if limit and limit > 0:
+            query.append("LIMIT %s")
+            params.append(limit)
+        sql_query = " ".join(query)
+        with self._cursor() as cur:
+            cur.execute(sql_query, tuple(params))
+            rows = cur.fetchall()
+        return [dict(row) for row in rows if row.get("article_id")]
+
+
+    def update_sentiment_results(self, rows: Sequence[Tuple[str, Optional[str], Optional[float]]]) -> int:
+        if not rows:
+            return 0
+        update_sql = """
+            UPDATE raw_articles
+            SET sentiment_label = %s,
+                sentiment_confidence = %s,
+                updated_at = NOW()
+            WHERE article_id = %s
+        """
+        payload = [(label, confidence, article_id) for article_id, label, confidence in rows if article_id]
+        if not payload:
+            return 0
+        with self._cursor() as cur:
+            cur.executemany(update_sql, payload)
+        return len(payload)
 
 
     def get_existing_raw_article_ids(self) -> Set[str]:

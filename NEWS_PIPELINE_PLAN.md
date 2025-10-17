@@ -89,13 +89,22 @@
   - `handled_by`、`handled_at`
 - 继续沿用 `pipeline_runs` 与 `pipeline_run_steps` 追踪任务执行。
 
+### 表用途概览与精简建议
+- `article_features`：承载 NLP 抽取的关键词、实体、向量，用于相似度检索与事件聚合；如暂不做聚合，可将关键词与实体直接写入 `raw_articles` 的 jsonb 字段，延后建表。
+- `article_labels`：管理多类型标签（情感、主题、特征标记）及置信度，支持模型版本化；若短期仅有情感标签，可直接在 `raw_articles` 添加 `sentiment`/`sentiment_confidence` 列，待标签体系扩展后再拆表。
+- `article_dedup`：记录主从关系和指纹距离，便于追踪去重决策；若仅需简单去重，可在 `raw_articles` 中新增 `primary_article_id` 字段替代独立表。
+- `article_events` / `article_event_members`：维护同事件聚合结构。若初期只需要“相似新闻分组”而无需事件概念，可用一张 `article_clusters(article_id, cluster_id, score)` 来简化，后续再升级为事件表。
+- `article_scores`：保存可配置的打分结果和分项明细，便于回溯模型版本。若评分逻辑简单，可直接写回 `raw_articles.score_total` 与 `score_breakdown`。
+- `scoring_profiles`：存储权重配置历史。若暂不需要多版本管理，可改为配置文件或环境变量，待评分策略复杂化后再入库。
+
 ## 模块拆分方案
 
 ### 分类
 - 京内/京外：维持现有实现，仅监控准确率，无需结构调整。
 - 正负向分类：
   - 规则版：关键词/模式加权打分，低门槛上线。
-  - 模型版：准备 500~1000 条人工标注样本，训练轻量中文分类模型（fastText、BERT 微调等），写回 `article_labels` 并记录 `confidence` 和 `model_version`。
+  - 模型版：采用“两段式”策略——首先使用轻量模型（如 fastText、MiniLM 等）快速推理；若置信度低于阈值（如 0.6，对应 `.env` 中 `SENTIMENT_CONFIDENCE_THRESHOLD`），再调用大模型（`SENTIMENT_MODEL_NAME`）复审，兼顾成本与准确率。
+  - 数据积累后，可对小模型进行持续微调或引入校准模型；无论小模型还是大模型，预测结果均写入 `article_labels` 并记录 `confidence`、`model_version` 以便回溯。
 - 主题标签：同时写入 `article_labels`，标记是否与市委教委、重点活动等相关。
 
 ### 去重
@@ -170,3 +179,37 @@
 - 第一阶段：扩展 `raw_articles` 字段、搭建 `article_features`、`article_labels`、`article_dedup` 基础表，并梳理任务编排。
 - 第二阶段：实现事件聚合与评分逻辑，选取一周数据做 POC，人工校验聚合与评分效果。
 - 第三阶段：整合报告输出视图，搭建可视化面板或 Notebook，展示得分、事件聚类效果，并根据反馈迭代策略。
+
+## 近期实施计划（情感分类 & 去重）
+
+### 目标
+1. 为所有入库文章生成正/负向情感标签，采用“小模型优先 + 大模型兜底”的策略，兼顾成本与准确率。
+2. 通过正文哈希与指纹对新增文章做重复检测，将重复内容从候选列表中剔除或标记折叠。
+
+### 数据库调整
+- `raw_articles`
+  - 新增 `content_hash`（text）、`fingerprint`（text/bytea）、`primary_article_id`（text，可空，指向去重后的主记录）。
+  - 新增情感字段：`sentiment_label`（text，取值 `positive`/`negative`）、`sentiment_confidence`（numeric）、`sentiment_model_version`（text）、`sentiment_scored_at`（timestamptz）。
+  - 视后续需求再扩展 `processing_flags`，或先用派生视图统计处理状态。
+- 若希望未来支持多标签体系，可同步建立 `article_labels` 表；短期只用情感标签时可暂写在 `raw_articles` 以降低迁移成本。
+
+### 处理流程
+1. **采集阶段**：在写入 `raw_articles` 时同步生成 `content_hash`（如 SHA256）和初始 `fingerprint`（SimHash/MinHash）。未生成成功的记录进入补算队列。
+2. **情感分类任务**：
+   - 批处理或实时消费新文章，先调用小模型（`SENTIMENT_SMALL_MODEL_NAME`），获取标签与置信度。
+   - 若置信度低于 `SENTIMENT_CONFIDENCE_THRESHOLD`，再调用大模型（`SENTIMENT_MODEL_NAME`）复审，最终结果写入 `raw_articles` 对应情感字段。
+   - 保留模型版本信息，便于后续回溯与模型迭代。
+3. **去重任务**：
+   - 依据 `content_hash` 做快速匹配；如哈希一致直接视为重复。
+   - 对哈希不同但相似度可能较高的文章，使用 `fingerprint` 计算汉明距离，根据阈值判定是否重复。
+   - 重复文章写入 `primary_article_id` 指向首篇保留内容，并记录命中策略（哈希匹配 / 指纹匹配）。
+   - 在生成候选列表或报告时过滤掉 `primary_article_id` 非空的记录，或折叠显示。
+
+### 运维与验证
+- 监控指标：每日新增文章数、情感分类置信度分布、调用大模型比例、去重命中率、人工复核反馈。
+- 配置管理：在 `.env` 中维护模型名称与阈值，可通过任务重启或热加载生效。
+- 回溯策略：保留所有原始内容和指纹，支持后续调参或更换算法时重跑。
+
+### 后续扩展接口
+- 预留钩子：情感结果与去重信息写入后，可直接为未来的事件聚合和评分提供特征。
+- 迭代安排：完成上述两项后，可评估是否需要建立 `article_labels` 或 `article_dedup` 独立表，以便支持更复杂的标签体系与去重审计。

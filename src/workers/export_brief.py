@@ -101,13 +101,25 @@ def run(
             log_info(WORKER, "No entries to export after filtering/skip logic.")
             return
 
-        internal_candidates: List[ExportCandidate] = []
-        external_candidates: List[ExportCandidate] = []
+        internal_positive: List[ExportCandidate] = []
+        internal_negative: List[ExportCandidate] = []
+        external_positive: List[ExportCandidate] = []
+        external_negative: List[ExportCandidate] = []
         for cand in selected_candidates:
-            if cand.is_beijing_related is True:
-                internal_candidates.append(cand)
+            is_beijing = cand.is_beijing_related is True
+            sentiment = (cand.sentiment_label or "positive").lower()
+            if sentiment not in {"positive", "negative"}:
+                sentiment = "positive"
+            if is_beijing:
+                if sentiment == "negative":
+                    internal_negative.append(cand)
+                else:
+                    internal_positive.append(cand)
             else:
-                external_candidates.append(cand)
+                if sentiment == "negative":
+                    external_negative.append(cand)
+                else:
+                    external_positive.append(cand)
 
         def _format_entry(candidate: ExportCandidate) -> str:
             title_line = (candidate.title or "").strip()
@@ -121,8 +133,10 @@ def run(
         export_payload: List[Tuple[ExportCandidate, str]] = []
 
         section_definitions: List[Tuple[str, List[ExportCandidate], str]] = [
-            ("京内", internal_candidates, "jingnei"),
-            ("京外", external_candidates, "jingwai"),
+            ("京内正面", internal_positive, "jingnei_positive"),
+            ("京内负面", internal_negative, "jingnei_negative"),
+            ("京外正面", external_positive, "jingwai_positive"),
+            ("京外负面", external_negative, "jingwai_negative"),
         ]
 
         for label, items, section_key in section_definitions:
@@ -163,8 +177,10 @@ def run(
                 output_path=final_output,
                 entries=text_entries,
                 category_counts={
-                    "京内": len(internal_candidates),
-                    "京外": len(external_candidates),
+                    "京内正面": len(internal_positive),
+                    "京内负面": len(internal_negative),
+                    "京外正面": len(external_positive),
+                    "京外负面": len(external_negative),
                 },
             )
             log_info(WORKER, "Feishu notification sent")

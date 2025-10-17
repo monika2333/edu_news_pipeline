@@ -1,215 +1,38 @@
-# 新闻流水线重构规划
+# 新闻流水线近期改造计划
 
-## 整体规划
-- 梳理采集 → 分析 → 聚合 → 报告全流程，明确输入输出、运行频率与人工决策点，形成当前体系的基线图。
-- 以分类（新增正/负向）、去重、事件聚合、综合评分四大模块为核心，评估可用数据、缺口与落地优先级。
-- 在不影响现有产出表（`news_summaries`、`brief_batches`、`brief_items`）的前提下，增量扩展数据结构并强化可观测性。
+## 目标
+- 在不调整现有流程和表结构的前提下，仅对 `raw_articles` 增补所需字段，实现：
+  1. 正负向情感标签的生成与存储；
+  2. 基于哈希与指纹的重复新闻识别。
 
-## 现有数据库映射
-- `raw_articles`：爬虫写入的主表，包含 `content_markdown`、发布时间、来源、互动指标等，实际已存储清洗后的正文，可作为事实表。
-- `news_summaries`：LLM 摘要与关键词表，直接以 `article_id` 引用 `raw_articles`。
-- `brief_batches` / `brief_items`：报告批次与条目表，对应人工最终筛选的结果。
-- `pipeline_runs` / `pipeline_run_steps`：流水线运行与步骤日志，可继续作为监控数据源。
-- `toutiao_articles_backup`：历史备份数据，可用于离线比对或模型训练。
+## 数据库调整
+对 `raw_articles` 新增如下字段：
+- `content_hash` (text)：正文内容的哈希值（建议使用 SHA256），用于快速识别完全重复的文章。
+- `fingerprint` (text 或 bytea)：正文指纹（如 SimHash/MinHash），用于判断相似但不完全相等的文章。
+- `sentiment_label` (text)：情感标签，取值 `positive` 或 `negative`。
+- `sentiment_confidence` (numeric)：情感标签的置信度（0-1）。
+- （可选）如需追踪模型版本或重算时间，可于后续阶段再补充相应字段。
 
-> 结论：无需再增加 `news_processed` 表，直接在 `raw_articles` 基础上扩展特征、标签、去重、事件、评分等附表即可。
+（如有需要，可同步刷新相应索引或视图，但本阶段不新增其他表。）
 
-## 数据结构调整方案
+## 处理流程
+1. **采集写入**  
+   - 爬虫或采集脚本在写入 `raw_articles` 时生成 `content_hash`。  
+   - 对无法立即计算指纹的记录，标记待处理并进入补算任务。
 
-### 1. 原始与标准化层（基于 `raw_articles`）
-- 继续以现有字段为主，新增或复用字段：
-  - `region_tag`（text）：沿用现有京内/京外标签。
-  - `content_hash`（text）：正文哈希用于快速去重。
-  - `fingerprint`（text 或 bytea）：SimHash/MinHash 指纹，用于相似度判断。
-  - `processing_flags`（jsonb）：记录各阶段（features、labels、dedup、events、scores）是否完成。
-- 索引建议：`(publish_time_iso DESC)`、`(source)`、`(content_hash)`。
-- 可建立物化视图 `vw_articles_latest`，汇总 `raw_articles` 与常用派生信息，供报告层使用。
+2. **指纹计算任务**  
+   - 批量读取缺少 `fingerprint` 的文章，使用选定算法生成指纹并写回。  
+   - 保留算法与参数配置，方便未来调整。
 
-### 2. 特征与标签层
-- `article_features`
-  - `article_id`（PK，引用 `raw_articles.article_id`）
-  - `keywords`（text[]）
-  - `entities`（jsonb，地点/机构/人物/主题词）
-  - `embedding_vector`（pgvector 或 jsonb，用于相似度检索）
-  - `language_model_version`（text）
-  - `updated_at`（timestamptz）
-  - 索引：`(updated_at)`、`gin(entities)`，如使用 pgvector 则需创建向量索引。
-- `article_labels`
-  - `article_id`（FK）
-  - `label_type`（如 `sentiment`、`topic`、`special_flag`）
-  - `label_value`（如 `positive`、`education_policy`）
-  - `confidence`（numeric）
-  - `model_version`（text）
-  - `labeled_at`（timestamptz）
-  - 唯一键：`(article_id, label_type)`
-- 京内/京外标签仍写在 `raw_articles.region_tag`；新增的正负向、主题标签写入 `article_labels`。
+3. **情感分类任务**  
+- 采用“小模型优先 + 大模型兜底”策略：先调用 `.env` 中配置的 `SENTIMENT_SMALL_MODEL_NAME`，若置信度低于 `SENTIMENT_CONFIDENCE_THRESHOLD`，再使用 `SENTIMENT_MODEL_NAME`。  
+- 将最终标签与置信度写入 `raw_articles` 对应字段。
 
-### 3. 去重与事件层
-- `article_dedup`
-  - `article_id`（PK）
-  - `primary_article_id`（text，指向保留主文；主文自身=article_id）
-  - `fingerprint_distance`（integer）
-  - `resolution_strategy`（text，如 `source_priority`、`freshness`）
-  - `checked_at`（timestamptz）
-  - 索引：`(primary_article_id)`、`(fingerprint_distance)`
-- `article_events`
-  - `event_id`（uuid，PK）
-  - `headline_summary`（text）
-  - `first_seen_at`、`last_updated_at`（timestamptz）
-  - `topic_tags`（text[]）
-  - `status`（`active`/`archived`）
-- `article_event_members`
-  - `event_id`（FK）
-  - `article_id`（FK）
-  - `match_score`（numeric）
-  - `role`（`representative`/`supporting`）
-  - 唯一键：`(event_id, article_id)`
-- 去重确保最终仅保留主文；事件聚合用于串联同一主题的多篇报道，两者结合满足需求 2 和 3。
+4. **重复识别与过滤**  
+   - 首先根据 `content_hash` 判断完全重复，必要时直接标记为重复或从候选列表中剔除。  
+   - 对哈希不同但指纹距离低于阈值的文章，归为重复集合，后续在报送或人工审核时折叠/隐藏。
 
-### 4. 综合评分层
-- `article_scores`
-  - `article_id`（PK）
-  - `score_total`（numeric）
-  - `score_breakdown`（jsonb，例如 `{ "education_relevance":0.4, "sentiment":0.2, ... }`）
-  - `scoring_profile`（text，标识权重配置版本）
-  - `scored_at`（timestamptz）
-- `scoring_profiles`
-  - `profile_name`（PK）
-  - `weights`（jsonb）
-  - `effective_from` / `effective_to`（timestamptz，可选）
-  - 支持历史权重记录与回滚。
-
-### 5. 配置与反馈
-- `source_priority`：定义媒体权威度、优先级（可新增）。
-- `manual_feedback`
-  - `feedback_id`（uuid，PK）
-  - `article_id` / `event_id`
-  - `feedback_type`（`label_override`、`score_adjust`、`event_merge` 等）
-  - `payload`（jsonb，记录具体调整）
-  - `handled_by`、`handled_at`
-- 继续沿用 `pipeline_runs` 与 `pipeline_run_steps` 追踪任务执行。
-
-### 表用途概览与精简建议
-- `article_features`：承载 NLP 抽取的关键词、实体、向量，用于相似度检索与事件聚合；如暂不做聚合，可将关键词与实体直接写入 `raw_articles` 的 jsonb 字段，延后建表。
-- `article_labels`：管理多类型标签（情感、主题、特征标记）及置信度，支持模型版本化；若短期仅有情感标签，可直接在 `raw_articles` 添加 `sentiment`/`sentiment_confidence` 列，待标签体系扩展后再拆表。
-- `article_dedup`：记录主从关系和指纹距离，便于追踪去重决策；若仅需简单去重，可在 `raw_articles` 中新增 `primary_article_id` 字段替代独立表。
-- `article_events` / `article_event_members`：维护同事件聚合结构。若初期只需要“相似新闻分组”而无需事件概念，可用一张 `article_clusters(article_id, cluster_id, score)` 来简化，后续再升级为事件表。
-- `article_scores`：保存可配置的打分结果和分项明细，便于回溯模型版本。若评分逻辑简单，可直接写回 `raw_articles.score_total` 与 `score_breakdown`。
-- `scoring_profiles`：存储权重配置历史。若暂不需要多版本管理，可改为配置文件或环境变量，待评分策略复杂化后再入库。
-
-## 模块拆分方案
-
-### 分类
-- 京内/京外：维持现有实现，仅监控准确率，无需结构调整。
-- 正负向分类：
-  - 规则版：关键词/模式加权打分，低门槛上线。
-  - 模型版：采用“两段式”策略——首先使用轻量模型（如 fastText、MiniLM 等）快速推理；若置信度低于阈值（如 0.6，对应 `.env` 中 `SENTIMENT_CONFIDENCE_THRESHOLD`），再调用大模型（`SENTIMENT_MODEL_NAME`）复审，兼顾成本与准确率。
-  - 数据积累后，可对小模型进行持续微调或引入校准模型；无论小模型还是大模型，预测结果均写入 `article_labels` 并记录 `confidence`、`model_version` 以便回溯。
-- 主题标签：同时写入 `article_labels`，标记是否与市委教委、重点活动等相关。
-
-### 去重
-- `raw_articles` 写入时生成 `content_hash` 和 `fingerprint`。
-- 以哈希快速过滤 + 指纹距离精细判断，结果写入 `article_dedup`。
-- 对于被判定为重复的文章，可选地在 `article_labels` 增加 `label_type='duplicate'`，方便查询与折叠。
-
-### 同事件聚合
-- 利用 `article_features.embedding_vector`、标题及关键词计算相似度。
-- 按阈值策略归入既有事件或创建新事件，写入 `article_events` / `article_event_members`。
-- `headline_summary` 可由规则或 LLM 自动生成，人工通过 `manual_feedback` 校正。
-- 事件状态（`active`/`archived`）控制报告展示范围。
-
-### 综合评分
-- 定义可配置特征函数：教育相关度、媒体权威度、情感倾向、舆情风险、主题优先级等。
-- 按 `scoring_profiles` 权重合成总分，写入 `article_scores`。
-- 报告端依据分数与事件结构确定展示顺序，实现需求 4。
-
-## 处理管道流程（结合现有结构）
-
-### 0. 采集层（Crawler → `raw_articles`）
-- 按来源配置抓取频率，写入 `content_markdown`、`publish_time_iso`、`fetched_at` 等现有字段。
-- 新增：写入 `content_hash`、`fingerprint`，初始化 `processing_flags`（如 `{ "features":false, "labels":false, ... }`）。
-
-### 1. 特征抽取（→ `article_features`）
-- 读取 `processing_flags.features=false` 的文章。
-- 执行分词、关键词提取、实体识别、向量化，写入 `article_features`。
-- 更新 `processing_flags.features=true` 与 `article_features.updated_at`。
-
-### 2. 分类与标签（→ `article_labels` 与 `raw_articles.region_tag`）
-- 京内/京外沿用现有逻辑，仅在监控中统计误差。
-- 正负向与主题标签写入 `article_labels`，低置信度样本推送至人工审查队列。
-- 更新 `processing_flags.labels=true`。
-
-### 3. 去重识别（→ `article_dedup`）
-- 基于 `content_hash` 先做粗筛，再用 `fingerprint` 计算指纹距离。
-- 确定主文后写入 `article_dedup`，并标记从属关系。
-- 更新 `processing_flags.dedup=true`，必要时在 `article_labels` 标记 `duplicate`。
-
-### 4. 事件聚合（→ `article_events`、`article_event_members`）
-- 以向量相似度 + 关键词匹配归并相关文章，生成/更新事件。
-- 记录 `match_score` 与事件摘要，更新 `processing_flags.events=true`。
-- 聚合结果可写入缓存或物化视图供报告使用。
-
-### 5. 综合评分（→ `article_scores`）
-- 按配置计算各特征分值，汇总为总分。
-- 写入 `article_scores`，记录 `scoring_profile` 与时间戳。
-- 更新 `processing_flags.scores=true`。
-
-### 6. 摘要与报告（`news_summaries`、`brief_*`）
-- LLM 摘要继续写入 `news_summaries`，可增 `event_id`、`score_total` 等引用以支撑组合展示。
-- 报告生成服务读取视图（`vw_articles_latest` + 事件/评分数据），生成 `brief_batches`、`brief_items`。
-- 人工终审修改写回 `manual_feedback`，形成迭代闭环。
-
-### 7. 监控与回溯
-- 延续 `pipeline_runs`、`pipeline_run_steps` 记录每次执行状态、耗时、错误。
-- 定期统计 KPI：重复率、事件聚合命中率、情感分类准确率、人工修改率。
-- 支持按 `content_hash`、`event_id`、`report_date` 回溯特定批次的处理痕迹。
-
-## 流水线服务架构
-- 采集服务：保持现有爬虫逻辑，新增哈希/指纹计算即可。
-- 处理服务：拆分为特征、分类、去重、事件、评分等任务，使用 Airflow/Celery/Dagster 等编排，支持失败重试与横向扩展。
-- 报告服务：基于视图或物化视图组合文章、事件、评分、摘要信息，提供导出与可视化接口。
-- 配置中心：统一管理源优先级、分类模型版本、评分权重等，并具备审计、灰度发布与回滚能力。
-
-## 验证与监控
-- 构建标注闭环：报告界面人工调整分类、事件或评分时写入 `manual_feedback`，定期抽样回流训练。
-- 跟踪关键指标：重复率、事件聚合命中率、情感分类准确率、人工修改率等，按周复盘。
-- 维护模型回归测试集：更新分类或评分模型前后对比核心指标，避免性能回退。
-
-## 推进节奏建议
-- 第一阶段：扩展 `raw_articles` 字段、搭建 `article_features`、`article_labels`、`article_dedup` 基础表，并梳理任务编排。
-- 第二阶段：实现事件聚合与评分逻辑，选取一周数据做 POC，人工校验聚合与评分效果。
-- 第三阶段：整合报告输出视图，搭建可视化面板或 Notebook，展示得分、事件聚类效果，并根据反馈迭代策略。
-
-## 近期实施计划（情感分类 & 去重）
-
-### 目标
-1. 为所有入库文章生成正/负向情感标签，采用“小模型优先 + 大模型兜底”的策略，兼顾成本与准确率。
-2. 通过正文哈希与指纹对新增文章做重复检测，将重复内容从候选列表中剔除或标记折叠。
-
-### 数据库调整
-- `raw_articles`
-  - 新增 `content_hash`（text）、`fingerprint`（text/bytea）、`primary_article_id`（text，可空，指向去重后的主记录）。
-  - 新增情感字段：`sentiment_label`（text，取值 `positive`/`negative`）、`sentiment_confidence`（numeric）、`sentiment_model_version`（text）、`sentiment_scored_at`（timestamptz）。
-  - 视后续需求再扩展 `processing_flags`，或先用派生视图统计处理状态。
-- 若希望未来支持多标签体系，可同步建立 `article_labels` 表；短期只用情感标签时可暂写在 `raw_articles` 以降低迁移成本。
-
-### 处理流程
-1. **采集阶段**：在写入 `raw_articles` 时同步生成 `content_hash`（如 SHA256）和初始 `fingerprint`（SimHash/MinHash）。未生成成功的记录进入补算队列。
-2. **情感分类任务**：
-   - 批处理或实时消费新文章，先调用小模型（`SENTIMENT_SMALL_MODEL_NAME`），获取标签与置信度。
-   - 若置信度低于 `SENTIMENT_CONFIDENCE_THRESHOLD`，再调用大模型（`SENTIMENT_MODEL_NAME`）复审，最终结果写入 `raw_articles` 对应情感字段。
-   - 保留模型版本信息，便于后续回溯与模型迭代。
-3. **去重任务**：
-   - 依据 `content_hash` 做快速匹配；如哈希一致直接视为重复。
-   - 对哈希不同但相似度可能较高的文章，使用 `fingerprint` 计算汉明距离，根据阈值判定是否重复。
-   - 重复文章写入 `primary_article_id` 指向首篇保留内容，并记录命中策略（哈希匹配 / 指纹匹配）。
-   - 在生成候选列表或报告时过滤掉 `primary_article_id` 非空的记录，或折叠显示。
-
-### 运维与验证
-- 监控指标：每日新增文章数、情感分类置信度分布、调用大模型比例、去重命中率、人工复核反馈。
-- 配置管理：在 `.env` 中维护模型名称与阈值，可通过任务重启或热加载生效。
-- 回溯策略：保留所有原始内容和指纹，支持后续调参或更换算法时重跑。
-
-### 后续扩展接口
-- 预留钩子：情感结果与去重信息写入后，可直接为未来的事件聚合和评分提供特征。
-- 迭代安排：完成上述两项后，可评估是否需要建立 `article_labels` 或 `article_dedup` 独立表，以便支持更复杂的标签体系与去重审计。
+## 运维与监控
+- 监控每日新文章在情感标签中的分布、调用大模型的比例、重复命中率。  
+- 建立重算脚本：当算法或模型升级时，可按时间区间重新计算指纹或情感标签。  
+- 保留原始 `content_markdown`，确保未来需要更复杂功能时可以复用现有数据。

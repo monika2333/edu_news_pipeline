@@ -7,9 +7,17 @@ import traceback
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import os
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SRC_ROOT = REPO_ROOT / "src"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
 from src.adapters.db import get_adapter
 from src.config import load_environment
 from src.workers.crawl_sources import run as run_crawl

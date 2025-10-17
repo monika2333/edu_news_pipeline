@@ -1,7 +1,10 @@
 ﻿from __future__ import annotations
 
 import contextlib
+import hashlib
+import re
 import sys
+from collections import Counter
 from datetime import datetime, timezone, date
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -18,6 +21,10 @@ from src.domain import (
 
 _CONNECTION: Optional[psycopg.Connection] = None
 _ADAPTER: Optional["PostgresAdapter"] = None
+
+_SIMHASH_BITS = 64
+_WORD_RE = re.compile(r"[A-Za-z0-9_]+", re.UNICODE)
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
 
 def _get_connection() -> psycopg.Connection:
@@ -36,6 +43,58 @@ def _get_connection() -> psycopg.Connection:
         with _CONNECTION.cursor() as cur:
             cur.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
     return _CONNECTION
+
+
+def _normalize_content(content: Optional[str]) -> str:
+    return (content or "").strip()
+
+
+def _tokenize_for_simhash(text: str) -> List[str]:
+    tokens: List[str] = []
+    buffer: List[str] = []
+    for char in text:
+        if _CJK_RE.match(char):
+            if buffer:
+                tokens.append("".join(buffer))
+                buffer.clear()
+            tokens.append(char)
+        elif _WORD_RE.match(char):
+            buffer.append(char.lower())
+        else:
+            if buffer:
+                tokens.append("".join(buffer))
+                buffer.clear()
+    if buffer:
+        tokens.append("".join(buffer))
+    # For longer texts, include bigrams to improve discrimination
+    if len(tokens) >= 4:
+        bigrams = ["".join(tokens[i:i + 2]) for i in range(len(tokens) - 1)]
+        tokens.extend(bigrams)
+    return tokens[:512]  # cap to avoid extremely long vectors
+
+
+def _compute_content_features(content: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    text = _normalize_content(content)
+    if not text:
+        return None, None
+    content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    tokens = _tokenize_for_simhash(text)
+    if not tokens:
+        tokens = [text]
+    vector = [0] * _SIMHASH_BITS
+    for token, weight in Counter(tokens).items():
+        digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
+        token_hash = int.from_bytes(digest, byteorder="big", signed=False)
+        for bit in range(_SIMHASH_BITS):
+            if (token_hash >> bit) & 1:
+                vector[bit] += weight
+            else:
+                vector[bit] -= weight
+    fingerprint = 0
+    for bit, value in enumerate(vector):
+        if value > 0:
+            fingerprint |= (1 << bit)
+    return content_hash, f"{fingerprint:016x}"
 
 
 class PostgresAdapter:
@@ -68,26 +127,26 @@ class PostgresAdapter:
     def upsert_toutiao_articles(self, rows: Sequence[Mapping[str, Any]]) -> int:
         if not rows:
             return 0
-        columns = [
-            'token',
-            'profile_url',
-            'article_id',
-            'title',
-            'source',
-            'publish_time',
-            'publish_time_iso',
-            'url',
-            'summary',
-            'comment_count',
-            'digg_count',
-            'content_markdown',
-            'fetched_at',
-        ]
         insert_sql = '''
-            INSERT INTO raw_articles (token, profile_url, article_id, title, source,
-                publish_time, publish_time_iso, url, summary, comment_count, digg_count,
-                content_markdown, fetched_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO raw_articles (
+                token,
+                profile_url,
+                article_id,
+                title,
+                source,
+                publish_time,
+                publish_time_iso,
+                url,
+                summary,
+                comment_count,
+                digg_count,
+                content_markdown,
+                fetched_at,
+                content_hash,
+                fingerprint,
+                primary_article_id
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (article_id) DO UPDATE
             SET token = EXCLUDED.token,
                 profile_url = EXCLUDED.profile_url,
@@ -101,9 +160,37 @@ class PostgresAdapter:
                 digg_count = EXCLUDED.digg_count,
                 content_markdown = EXCLUDED.content_markdown,
                 fetched_at = EXCLUDED.fetched_at,
+                content_hash = COALESCE(EXCLUDED.content_hash, raw_articles.content_hash),
+                fingerprint = COALESCE(EXCLUDED.fingerprint, raw_articles.fingerprint),
+                primary_article_id = COALESCE(raw_articles.primary_article_id, EXCLUDED.primary_article_id),
                 updated_at = now()
         '''
-        data = [tuple(row.get(col) for col in columns) for row in rows]
+        data = []
+        for row in rows:
+            content = row.get('content_markdown')
+            content_hash, fingerprint = _compute_content_features(content)
+            article_id = str(row.get('article_id') or '').strip()
+            primary_article_id = article_id or None
+            data.append(
+                (
+                    row.get('token'),
+                    row.get('profile_url'),
+                    article_id,
+                    row.get('title'),
+                    row.get('source'),
+                    row.get('publish_time'),
+                    row.get('publish_time_iso'),
+                    row.get('url'),
+                    row.get('summary'),
+                    row.get('comment_count'),
+                    row.get('digg_count'),
+                    content,
+                    row.get('fetched_at'),
+                    content_hash,
+                    fingerprint,
+                    primary_article_id,
+                )
+            )
         with self._cursor() as cur:
             cur.executemany(insert_sql, data)
         return len(rows)
@@ -113,25 +200,25 @@ class PostgresAdapter:
     def upsert_raw_feed_rows(self, rows: Sequence[Mapping[str, Any]]) -> int:
         if not rows:
             return 0
-        columns = [
-            'token',
-            'profile_url',
-            'article_id',
-            'title',
-            'source',
-            'publish_time',
-            'publish_time_iso',
-            'url',
-            'summary',
-            'comment_count',
-            'digg_count',
-            'fetched_at',
-        ]
         insert_sql = '''
-            INSERT INTO raw_articles (token, profile_url, article_id, title, source,
-                publish_time, publish_time_iso, url, summary, comment_count, digg_count,
-                fetched_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO raw_articles (
+                token,
+                profile_url,
+                article_id,
+                title,
+                source,
+                publish_time,
+                publish_time_iso,
+                url,
+                summary,
+                comment_count,
+                digg_count,
+                fetched_at,
+                content_hash,
+                fingerprint,
+                primary_article_id
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (article_id) DO UPDATE
             SET token = EXCLUDED.token,
                 profile_url = EXCLUDED.profile_url,
@@ -144,9 +231,34 @@ class PostgresAdapter:
                 comment_count = EXCLUDED.comment_count,
                 digg_count = EXCLUDED.digg_count,
                 fetched_at = EXCLUDED.fetched_at,
+                content_hash = COALESCE(EXCLUDED.content_hash, raw_articles.content_hash),
+                fingerprint = COALESCE(EXCLUDED.fingerprint, raw_articles.fingerprint),
+                primary_article_id = COALESCE(raw_articles.primary_article_id, EXCLUDED.primary_article_id),
                 updated_at = now()
         '''
-        data = [tuple(row.get(col) for col in columns) for row in rows]
+        data = []
+        for row in rows:
+            article_id = str(row.get('article_id') or '').strip()
+            primary_article_id = article_id or None
+            data.append(
+                (
+                    row.get('token'),
+                    row.get('profile_url'),
+                    article_id,
+                    row.get('title'),
+                    row.get('source'),
+                    row.get('publish_time'),
+                    row.get('publish_time_iso'),
+                    row.get('url'),
+                    row.get('summary'),
+                    row.get('comment_count'),
+                    row.get('digg_count'),
+                    row.get('fetched_at'),
+                    None,
+                    None,
+                    primary_article_id,
+                )
+            )
         with self._cursor() as cur:
             cur.executemany(insert_sql, data)
         return len(rows)
@@ -155,20 +267,6 @@ class PostgresAdapter:
     def update_raw_article_details(self, rows: Sequence[Mapping[str, Any]]) -> int:
         if not rows:
             return 0
-        columns = [
-            'token',
-            'profile_url',
-            'title',
-            'source',
-            'publish_time',
-            'publish_time_iso',
-            'url',
-            'summary',
-            'comment_count',
-            'digg_count',
-            'content_markdown',
-            'detail_fetched_at',
-        ]
         update_sql = '''
             UPDATE raw_articles
             SET token = %s,
@@ -183,6 +281,9 @@ class PostgresAdapter:
                 digg_count = %s,
                 content_markdown = %s,
                 detail_fetched_at = %s,
+                content_hash = %s,
+                fingerprint = %s,
+                primary_article_id = COALESCE(primary_article_id, %s),
                 updated_at = now()
             WHERE article_id = %s
         '''
@@ -192,8 +293,27 @@ class PostgresAdapter:
                 article_id = str(row.get('article_id') or '')
                 if not article_id:
                     raise ValueError('Detail update requires article_id')
-                values = [row.get(col) for col in columns]
-                cur.execute(update_sql, values + [article_id])
+                content = row.get('content_markdown')
+                content_hash, fingerprint = _compute_content_features(content)
+                values = [
+                    row.get('token'),
+                    row.get('profile_url'),
+                    row.get('title'),
+                    row.get('source'),
+                    row.get('publish_time'),
+                    row.get('publish_time_iso'),
+                    row.get('url'),
+                    row.get('summary'),
+                    row.get('comment_count'),
+                    row.get('digg_count'),
+                    content,
+                    row.get('detail_fetched_at'),
+                    content_hash,
+                    fingerprint,
+                    article_id,
+                    article_id,
+                ]
+                cur.execute(update_sql, values)
                 if cur.rowcount == 0:
                     missing.append(article_id)
         if missing:
@@ -247,6 +367,57 @@ class PostgresAdapter:
                 record['detail_fetched_at'] = detail_fetched.isoformat()
             result.append(record)
         return result
+
+
+    def fetch_articles_for_dedup(self) -> List[Dict[str, Any]]:
+        query = """
+            SELECT
+                article_id,
+                source,
+                publish_time,
+                publish_time_iso,
+                fetched_at,
+                content_markdown,
+                content_hash,
+                fingerprint,
+                primary_article_id
+            FROM raw_articles
+            WHERE content_markdown IS NOT NULL
+              AND LENGTH(TRIM(content_markdown)) > 0
+        """
+        with self._cursor() as cur:
+            cur.execute(query)
+            rows = cur.fetchall()
+        return [dict(row) for row in rows if row.get('article_id')]
+
+
+    def update_primary_article_ids(self, mappings: Sequence[Tuple[str, str]]) -> int:
+        if not mappings:
+            return 0
+        update_sql = """
+            UPDATE raw_articles
+            SET primary_article_id = %s,
+                updated_at = NOW()
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.executemany(update_sql, list(mappings))
+        return len(mappings)
+
+
+    def update_article_features(self, feature_rows: Sequence[Tuple[Optional[str], Optional[str], str]]) -> int:
+        if not feature_rows:
+            return 0
+        update_sql = """
+            UPDATE raw_articles
+            SET content_hash = %s,
+                fingerprint = %s,
+                updated_at = NOW()
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.executemany(update_sql, list(feature_rows))
+        return len(feature_rows)
 
 
     def get_existing_raw_article_ids(self) -> Set[str]:

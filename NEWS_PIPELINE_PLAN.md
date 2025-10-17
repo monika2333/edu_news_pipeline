@@ -1,55 +1,128 @@
-# 新闻流水线近期改造计划（最小实现）
+# 新闻流水线重构计划（关键词驱动的最小闭环）
 
-## 目标
-- **情感标签**：为每篇文章生成正/负向标签，并记录置信度。
-- **重复检测**：基于正文哈希与指纹识别重复新闻，在候选列表中剔除或折叠重复项。
+## 背景
+- 现有流程在 `raw_articles` 中保存所有抓取原文，并对全部文章执行指纹、情感、摘要等处理，资源消耗较大。
+- 实际业务只需要关注教育关键词命中的稿件；未命中关键词的稿件只需留档，无需进一步处理。
+- 目标：将“关键词命中的文章”拆分到独立数据层，仅对这批数据执行去重、情感、摘要、评分和导出。
 
-本阶段只改动 `raw_articles` 表，其余结构与流程保持不变。
+## 核心设计
 
-## 数据库调整（仅 `raw_articles`）
-- `content_hash` (`text`)：正文哈希值（建议 SHA256），用于快速识别完全重复的文章。  
-  - 索引：`BTREE (content_hash)`。
-- `fingerprint` (`text`)：64 位 SimHash 指纹，用于判定高度相似的文章。  
-  - 索引：可根据执行效果再决定是否建立（如 `BTREE` 或 `GIN`/`SP-GiST`）。  
-  - 指纹为空时不参与重复判断。
-- `primary_article_id` (`text`)：指向保留的主文章 ID；主文写入自身 `article_id`，从文写入主文的 `article_id`。  
-  - 索引：`BTREE (primary_article_id)`，便于查询重复集合。
-- `sentiment_label` (`text`)：情感标签，取值 `positive` 或 `negative`。
-- `sentiment_confidence` (`numeric`)：情感判断置信度（0~1）。
+### 数据层次划分
+1. **raw_articles（原始留档层）**
+   - 继续承载所有抓取的原文。
+   - 不再在此表上执行指纹、情感等昂贵计算。
+   - 字段保持现状（包括 `content_markdown` 等），供回溯和补算使用。
 
-> 迁移脚本需为历史数据增加新列并回填：`primary_article_id` 先设为 `article_id`，`content_hash` 可直接计算，`fingerprint` 与 `sentiment_*` 可后续任务补齐。
+2. **filtered_articles（关键词命中层，新建）**
+   - 仅存储命中 `education_keywords.txt` 的文章。
+   - 建议字段：
+     - `article_id`（PK，对应 raw_articles.article_id）
+     - `keywords`（text[]，命中的关键词列表）
+     - `content_markdown` / `title` / `source` / `publish_time` / `url`（摘要/评分所需字段）
+     - `content_hash`、`fingerprint`（用于重复检测，命中后再计算）
+     - `primary_article_id`（主文标识，主文写自身 ID，从文写主文 ID）
+     - `sentiment_label`、`sentiment_confidence`
+     - `inserted_at`、`updated_at`
+   - 索引：`BTREE (primary_article_id)`，`BTREE (sentiment_label)`（可选），`BTREE (inserted_at DESC)`。
 
-## 重复检测策略
-1. **内容哈希**：写入时生成 `content_hash`。相同哈希直接视为完全重复，保留主文、其余记录标记为从文。
-2. **SimHash 指纹**：  
-   - 使用 64 位 SimHash；根据以下汉明距离阈值判断：
+3. **news_summaries（摘要层）**
+   - 仅对 `filtered_articles` 中的主文生成摘要；字段结构沿用现有设计。
+   - 可以增加外键引用 `filtered_articles.article_id` 以确保一致性。
 
-     | 内容类型             | 阈值范围 | 说明               |
-     | -------------------- | -------- | ------------------ |
-     | 完全相同             | 0        | 文本一致           |
-     | 高度相似（改写稿）   | 1–3      | 仅个别词不同       |
-     | 中度相似（同题不同角度） | 4–6      | 可记作同一事件聚合 |
-     | 无关内容             | >10      | 判为独立文章       |
+4. **衍生服务层**
+   - `filtered_articles` 是情感、事件聚合、评分、导出的主要入口。
+   - 未命中关键词的文章若在未来需要处理，可从 `raw_articles` 迁移至 `filtered_articles` 再执行后续流程。
 
-   - 当前阶段：阈值 ≤3 视为重复加入同一集合；4–6 的文章只记录匹配得分，待未来事件聚合阶段再处理。
-3. **主文选择**：同一集合内，按“来源优先级 + 发布时间最早”确定主文。来源优先级为：新华网 ＞ 人民网 ＞ 光明日报 ＞ 新京报 ＞北京日报 ＞ 中国教育报 ＞ 其他地方媒体；若优先级相同，则发布时间最早者为主文。
-4. **候选过滤**：生成候选列表或报告时，仅展示 `primary_article_id = article_id` 的主文；从文可折叠展示或直接剔除。
-5. **缺失处理**：正文缺失或过短无法计算哈希/指纹的记录，直接跳过，只保留原始内容待人工处理。
+### 流程重构
+1. **采集 / 留档**
+   - 爬虫仍写入 `raw_articles`。
+   - 不在此层计算指纹或情感。
 
-## 情感分类流程
-1. 写入任务读取新增文章，先调用 `.env` 中配置的本地小模型（`SENTIMENT_SMALL_MODEL_NAME`）。  
-2. 若小模型置信度低于 `SENTIMENT_CONFIDENCE_THRESHOLD`，再调用大模型（`SENTIMENT_MODEL_NAME`）。  
-3. 将最终标签与置信度写入 `sentiment_label`、`sentiment_confidence`；可记录低置信度样本供人工回查。
-4. 小模型部署在本地服务，大模型调用额度充足无需额外限制。
+2. **关键词过滤任务**
+   - 接收 `raw_articles` 新增/更新的正文。
+   - 命中关键词时，将文章信息写入 `filtered_articles`。
+   - 可记录命中的关键词列表，用于后续分析。
 
-## 实施步骤
-1. **数据库迁移**：新增字段与索引，对历史数据执行回填脚本（`content_hash`、`primary_article_id`）。  
-2. **指纹与情感任务**：实现批处理/队列任务，补齐历史数据并处理增量；对失败记录重试并写日志。  
-3. **候选/报告筛选**：更新查询逻辑，只输出主文，确保重复条目不再进入人工候选列表。  
-4. **监控与调优**：上线后监控情感分布、大模型调用比例、重复命中率、指纹生成成功率，并根据反馈调整阈值或主文选择规则。
+3. **去重与情感（仅作用于 filtered_articles）**
+   - 对新入库的 `filtered_articles` 计算 `content_hash`、`fingerprint`。
+   - 执行主文判定（来源优先级 + 发布时间）。
+   - 仅对 `filtered_articles` 执行情感分类（小模型先判、大模型兜底）。
 
-## 运行维护
-- **重算计划**：当指纹算法或阈值调整时，可按时间段重新计算 `fingerprint` 或重新跑情感分类任务。  
-- **配置管理**：在 `.env` 中统一维护模型名称、置信度阈值、指纹参数。  
-- **数据回溯**：保留原始 `content_markdown` 和历史字段，确保未来扩展事件聚合或评分功能时可直接复用。  
-- **监控脚本**：运行 `python scripts/pipeline_metrics.py` 可查看重复率、情感覆盖率等指标；若需补算，可执行 `python -m src.workers.deduplicate` 或 `python -m src.workers.sentiment --limit ...`。
+4. **摘要 / 评分 / 导出**
+   - 以 `filtered_articles` 中 `primary_article_id = article_id` 的主文为来源写入 `news_summaries`。
+   - 摘要、评分、导出流程读取 `news_summaries` + `filtered_articles` 辅助字段（情感、来源、事件信息等）。
+   - 导出时按“京内/京外 × 正/负”顺序生成报告，并继续支持 Feishu 通知。
+
+5. **回溯与重算**
+   - 若需要对未命中关键词的原文进行处理，可重新运行关键词过滤任务，将其导入 `filtered_articles` 后再走后续管道。
+
+## 数据库改动总结
+- 新建 `filtered_articles` 表（结构如上）。
+- 可选: 为 `news_summaries.article_id` 添加外键指向 `filtered_articles.article_id`。
+- `raw_articles` 无新增字段，只保留原样（可视情况保留 `content_hash`、`fingerprint` 作为历史字段，但不再更新）。
+
+## 服务与任务调整
+1. **关键词过滤 Worker（新）**
+   - 从 `raw_articles` 中读取新抓取或更新的文章。
+   - 命中关键词后插入/更新 `filtered_articles`。
+   - 可将命中情况写入日志和监控，对关键词命中率进行统计。
+
+2. **Dedup / Sentiment Worker（改造）**
+   - 输入改为 `filtered_articles`（增量扫描 `updated_at`）。
+   - 更新 `filtered_articles` 的指纹、情感、主文字段。
+
+3. **Summarize / Score / Export Worker（改造）**
+   - 在生成摘要前确认 `primary_article_id = article_id`。
+   - 调用 `filtered_articles` 上的情感信息，完成四象限排序。
+
+4. **Pipeline 编排**
+   - 新的执行顺序示例：
+     1. `crawl`
+     2. `keyword_filter`（新任务）
+     3. `dedup`
+     4. `sentiment`
+     5. `summarize`
+     6. `score`
+     7. `export`
+   - 可选：将 `dedup` 和 `sentiment` 合并成一个处理任务，减少调度次数。
+
+## 监控与维护
+- **覆盖率监控**：关注 `filtered_articles` 的增量及命中率；统计“命中关键词 → 主文 → 摘要”的漏斗。
+- **重复率 / 情感分布**：沿用现有 `pipeline_metrics`，但数据源改为 `filtered_articles`。
+- **重算策略**：当关键词列表或算法更新时，只对 `filtered_articles` 重新跑流程；必要时可从 `raw_articles` 重新过滤。
+- **数据回滚**：保留 `raw_articles` 原文，确保流程失误时可重放。
+
+## 推进步骤建议
+1. **数据库迁移**
+   - 建 `filtered_articles` 表，添加必要索引与约束。
+   - 可预先插入历史命中关键词的数据（从 `news_summaries` 或 `raw_articles` 回填）。
+
+2. **关键词 Worker 落地**
+   - 实现对 `raw_articles` 的增量扫描（可用 `fetched_at` 或触发队列）。
+   - 将命中结果插入 `filtered_articles`。
+
+3. **指纹 / 情感任务迁移**
+   - 改造 dedup、sentiment 只处理 `filtered_articles`。
+   - 验证性能和重复率。
+
+4. **摘要 / 导出对接**
+   - Summarize 读取 `filtered_articles` 主文写入 `news_summaries`。
+   - Export 读取 `news_summaries` + `filtered_articles`，按四类导出。
+
+5. **清理旧逻辑**
+   - 移除对 `raw_articles` 的指纹、情感计算。
+   - 更新文档和 CLI 命令说明，明确新表与流程。
+
+6. **上线与回溯**
+   - 先跑一批历史数据验证分类/去重效果。
+   - 根据监控数据调整关键词、阈值等参数。
+
+## 风险与注意事项
+- 关键词列表需及时维护，以免遗漏重要稿件。
+- `filtered_articles` 与 `raw_articles` 的数据一致性（article_id 唯一性、更新同步）需通过触发器或应用逻辑保证。
+- 如果未来要做事件聚合（非完全重复的相似新闻），可以基于 `filtered_articles` 的主文集合继续扩展聚类逻辑。
+- 若用户想查看未命中关键词的新闻，需要明确提供查询手段（例如独立报表或 CLI 命令）。
+
+---
+
+该设计可以显著缩短处理链条的资源消耗，同时保留原始数据和未来扩展能力。待确认后可进入迁移与开发阶段。*** End Patch

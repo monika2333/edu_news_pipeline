@@ -98,6 +98,75 @@
 1. **DDL 落地**：起草 `filtered_articles` 表结构，包含 `article_id` 主键、`primary_article_id` 外键（自指主文规则）、`content_hash` 唯一索引，并保留情感/摘要所需字段。
 2. **历史数据回填**：编写迁移脚本回溯既有命中文章，校验主文自指关系与 `news_summaries` 的摘要对应是否一致，确保唯一约束不会被触发。
 3. **Worker 串联**：调整去重、情感、摘要相关任务改为读取 `filtered_articles`，按照“哈希去重 → 情感 → 主文摘要/导出”的顺序处理，确认最小闭环可运行。
+### filtered_articles DDL ??
+
+```sql
+create table if not exists public.filtered_articles (
+    article_id text primary key,
+    primary_article_id text not null,
+    keywords text[] not null default '{}'::text[],
+    title text,
+    source text,
+    publish_time bigint,
+    publish_time_iso timestamptz,
+    url text,
+    content_markdown text,
+    content_hash text,
+    fingerprint text,
+    sentiment_label text,
+    sentiment_confidence double precision,
+    inserted_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    constraint filtered_articles_article_fk
+        foreign key (article_id) references public.raw_articles(article_id)
+            on delete cascade
+);
+
+alter table public.filtered_articles
+    add constraint filtered_articles_primary_fk
+        foreign key (primary_article_id)
+        references public.filtered_articles(article_id)
+        on delete restrict
+        deferrable initially deferred;
+
+create unique index if not exists filtered_articles_content_hash_uidx
+    on public.filtered_articles (content_hash)
+    where content_hash is not null;
+
+create index if not exists filtered_articles_primary_idx
+    on public.filtered_articles (primary_article_id);
+
+create index if not exists filtered_articles_updated_idx
+    on public.filtered_articles (updated_at desc);
+
+drop trigger if exists filtered_articles_set_updated_at on public.filtered_articles;
+create trigger filtered_articles_set_updated_at
+    before update on public.filtered_articles
+    for each row execute function public.set_updated_at();
+```
+
+### 历史数据回填脚本框架
+
+1. **候选集构建**：对 `news_summaries` 现有主文和 `raw_articles` 中命中教育关键词的历史记录生成首批 `article_id` 清单，脚本支持传入时间窗或 `article_id` 列表，避免一次性全表扫描产生长事务。
+2. **关键词重算**：调用现有关键词匹配函数对候选正文重算命中列表；若命中为空则记录日志并跳过，同时输出“已入库 vs. 未命中”统计，便于确认关键词版本差异。
+3. **数据写入**：按批次读取候选集合，构造 `INSERT ... ON CONFLICT (article_id) DO UPDATE` 语句写入 `filtered_articles`，初始将 `primary_article_id` 设为自身，暂存 `keywords`、`content_markdown`、`publish_time` 等摘要链路所需字段，触发器自动刷新 `updated_at`。
+4. **后处理触发**：批量写入完成后，将本次回填的 `article_id` 列表推送到 dedup/sentiment 队列，或直接更新相应任务的增量游标，确保后续 Worker 能拾取新数据。
+5. **校验与监控**：脚本结束时比对 `filtered_articles` 与 `news_summaries` 的主文数量，检查唯一约束未被触发的情况；输出命中率、重算耗时以及失败重试列表，供上线前复盘。
+
+
+
+
+
+### Worker 改造计划
+
+1. **Dedup Worker**：改为按 iltered_articles.updated_at 增量扫描，批量拉取待处理记录，遇到自指主文时确认并更新 primary_article_id，写回 content_hash/ingerprint 后仅触碰变化行，避免循环更新。
+2. **Sentiment Worker**：输入改为 Dedup 产出的新主文及其从文队列，优先尝试本地小模型，置信度不足再调大模型，最终将 sentiment_label、sentiment_confidence 写入 iltered_articles 并刷新 updated_at。
+3. **Summarize Worker**：仅消费 primary_article_id = article_id 的主文，若情感尚未入库则延迟重试；生成摘要后补写 
+ews_summaries，保持与原导出逻辑兼容。
+4. **Score / Export**：读取 
+ews_summaries + iltered_articles 情感字段，沿用“京内/京外 × 正/负”组合，输出时追加主文 rticle_id，便于追踪。
+5. **任务编排**：统一以 keyword_filter → dedup → sentiment → summarize → score → export 顺序串联，提供手动触发参数（时间窗/文章列表），并在每一步记录处理耗时与失败计数，便于监控。
+
 ## 风险与注意事项
 - 关键词列表需及时维护，以免遗漏重要稿件。
 - `filtered_articles` 与 `raw_articles` 的数据一致性（article_id 唯一性、更新同步）需通过触发器或应用逻辑保证。

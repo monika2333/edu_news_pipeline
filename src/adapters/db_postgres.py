@@ -13,6 +13,7 @@ from psycopg.types.json import Json
 from src.config import get_settings
 from src.domain import (
     ExportCandidate,
+    PrimaryArticleForScoring,
     SummaryForScoring,
 )
 
@@ -890,6 +891,155 @@ class PostgresAdapter:
                 "UPDATE news_summaries SET correlation = %s, updated_at = NOW() WHERE article_id = %s",
                 (score, article_id),
             )
+
+    def fetch_primary_articles_for_scoring(self, limit: int) -> List[PrimaryArticleForScoring]:
+        query = """
+            SELECT
+                article_id,
+                primary_article_id,
+                status,
+                score,
+                title,
+                source,
+                publish_time,
+                publish_time_iso,
+                url,
+                content_markdown,
+                keywords,
+                content_hash,
+                simhash,
+                created_at
+            FROM primary_articles
+            WHERE status IN ('pending', 'failed')
+               OR score IS NULL
+            ORDER BY created_at ASC
+            LIMIT %s
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (max(1, limit),))
+            rows = cur.fetchall()
+        results: List[PrimaryArticleForScoring] = []
+        for row in rows:
+            article_id = row.get("article_id")
+            content = row.get("content_markdown")
+            if not article_id or content is None:
+                continue
+            keywords = row.get("keywords") or []
+            if keywords is None:
+                keywords = []
+            results.append(
+                PrimaryArticleForScoring(
+                    article_id=str(article_id),
+                    content=str(content),
+                    title=row.get("title"),
+                    source=row.get("source"),
+                    publish_time=row.get("publish_time"),
+                    publish_time_iso=row.get("publish_time_iso"),
+                    url=row.get("url"),
+                    keywords=list(keywords),
+                    content_hash=row.get("content_hash"),
+                    simhash=row.get("simhash"),
+                )
+            )
+        return results
+
+    def update_primary_article_scores(self, updates: Sequence[Mapping[str, Any]]) -> int:
+        if not updates:
+            return 0
+        prepared: List[Tuple[Any, ...]] = []
+        for row in updates:
+            article_id = str(row.get("article_id") or "").strip()
+            if not article_id:
+                continue
+            prepared.append(
+                (
+                    row.get("score"),
+                    row.get("status") or "pending",
+                    article_id,
+                )
+            )
+        if not prepared:
+            return 0
+        query = """
+            UPDATE primary_articles
+            SET
+                score = %s,
+                status = %s,
+                score_updated_at = NOW(),
+                updated_at = NOW()
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.executemany(query, prepared)
+        return len(prepared)
+
+    def upsert_news_summaries_from_primary(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        if not rows:
+            return 0
+        columns = [
+            "article_id",
+            "title",
+            "source",
+            "publish_time",
+            "publish_time_iso",
+            "url",
+            "content_markdown",
+            "score",
+            "status",
+            "llm_keywords",
+        ]
+        prepared: List[Tuple[Any, ...]] = []
+        for row in rows:
+            article_id = str(row.get("article_id") or "").strip()
+            if not article_id:
+                continue
+            keywords = row.get("keywords") or []
+            deduped: List[str] = []
+            seen: Set[str] = set()
+            for kw in keywords:
+                if not kw:
+                    continue
+                cleaned = str(kw).strip()
+                if not cleaned or cleaned in seen:
+                    continue
+                seen.add(cleaned)
+                deduped.append(cleaned)
+            prepared.append(
+                (
+                    article_id,
+                    row.get("title"),
+                    row.get("source"),
+                    row.get("publish_time"),
+                    row.get("publish_time_iso"),
+                    row.get("url"),
+                    row.get("content_markdown"),
+                    row.get("score"),
+                    row.get("status") or "pending",
+                    deduped,
+                )
+            )
+        if not prepared:
+            return 0
+        update_parts = [
+            "title = EXCLUDED.title",
+            "source = EXCLUDED.source",
+            "publish_time = EXCLUDED.publish_time",
+            "publish_time_iso = EXCLUDED.publish_time_iso",
+            "url = EXCLUDED.url",
+            "content_markdown = EXCLUDED.content_markdown",
+            "score = EXCLUDED.score",
+            "llm_keywords = EXCLUDED.llm_keywords",
+            "status = CASE WHEN news_summaries.status IN ('pending', 'failed') THEN EXCLUDED.status ELSE news_summaries.status END",
+            "updated_at = NOW()",
+        ]
+        query = f"""
+            INSERT INTO news_summaries ({', '.join(columns)})
+            VALUES ({', '.join(['%s'] * len(columns))})
+            ON CONFLICT (article_id) DO UPDATE SET {', '.join(update_parts)}
+        """
+        with self._cursor() as cur:
+            cur.executemany(query, prepared)
+        return len(prepared)
 
     def fetch_beijing_tag_candidates(self, limit: int) -> List[Dict[str, Any]]:
         query = """

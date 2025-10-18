@@ -48,6 +48,20 @@ class SummaryForScoring:
 
 
 @dataclass(slots=True)
+class PrimaryArticleForScoring:
+    article_id: str
+    content: str
+    title: Optional[str]
+    source: Optional[str]
+    publish_time: Optional[int]
+    publish_time_iso: Optional[str]
+    url: Optional[str]
+    keywords: Sequence[str] = field(default_factory=list)
+    content_hash: Optional[str] = None
+    simhash: Optional[str] = None
+
+
+@dataclass(slots=True)
 class ExportCandidate:
     filtered_article_id: str
     raw_article_id: str
@@ -82,6 +96,7 @@ __all__ = [
     "MissingContentTarget",
     "SummaryCandidate",
     "SummaryForScoring",
+    "PrimaryArticleForScoring",
     "ExportCandidate",
     "BriefExportRecord",
 ]

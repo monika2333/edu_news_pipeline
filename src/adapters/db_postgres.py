@@ -913,45 +913,12 @@ class PostgresAdapter:
                     raise
 
     # ------------------------------------------------------------------
-    # Scoring
+    # Scoring helpers (news_summaries)
     # ------------------------------------------------------------------
-    def fetch_summaries_for_scoring(self, limit: Optional[int] = None) -> List[SummaryForScoring]:
-        query = [
-            "SELECT article_id, content_markdown, llm_summary",
-            "FROM news_summaries",
-            "WHERE correlation IS NULL",
-            "  AND llm_summary IS NOT NULL",
-            "ORDER BY summary_generated_at ASC",
-        ]
-        params: List[Any] = []
-        if limit and limit > 0:
-            query.append("LIMIT %s")
-            params.append(limit)
-        full_query = " ".join(query)
-        with self._cursor() as cur:
-            cur.execute(full_query, tuple(params))
-            rows = cur.fetchall()
-        out: List[SummaryForScoring] = []
-        for row in rows:
-            summary_text = row.get("llm_summary")
-            if not summary_text:
-                continue
-            article_id = row.get("article_id")
-            if not article_id:
-                continue
-            out.append(
-                SummaryForScoring(
-                    article_id=str(article_id),
-                    content=str(row.get("content_markdown") or ""),
-                    summary=str(summary_text),
-                )
-            )
-        return out
-
-    def update_correlation(self, article_id: str, score: Optional[float]) -> None:
+    def update_summary_score(self, article_id: str, score: Optional[float]) -> None:
         with self._cursor() as cur:
             cur.execute(
-                "UPDATE news_summaries SET correlation = %s, updated_at = NOW() WHERE article_id = %s",
+                "UPDATE news_summaries SET score = %s, updated_at = NOW() WHERE article_id = %s",
                 (score, article_id),
             )
 

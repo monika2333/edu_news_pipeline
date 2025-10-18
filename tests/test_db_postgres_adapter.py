@@ -72,10 +72,8 @@ def test_postgres_adapter_core_roundtrip() -> None:
         existing_ids = adapter.get_existing_news_summary_ids([article_id])
         assert article_id in existing_ids
 
-        pending = adapter.fetch_summaries_for_scoring(limit=20)
-        assert any(item.article_id == article_id for item in pending)
-
-        adapter.update_correlation(article_id, 0.92)
+        # Set a score on the summary to enable export candidates
+        adapter.update_summary_score(article_id, 0.92)
         export_candidates = adapter.fetch_export_candidates(min_score=0.5)
         matched_candidates = [candidate for candidate in export_candidates if candidate.filtered_article_id == article_id]
         assert matched_candidates

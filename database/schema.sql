@@ -153,7 +153,6 @@ create table if not exists public.news_summaries (
     summary_generated_at timestamptz not null default now(),
     fetched_at timestamptz,
     llm_keywords text[] default '{}'::text[],
-    correlation numeric(6,3),
     is_beijing_related boolean,
     sentiment_label text,
     sentiment_confidence double precision,
@@ -161,8 +160,6 @@ create table if not exists public.news_summaries (
     updated_at timestamptz not null default now()
 );
 
-create index if not exists news_summaries_correlation_idx
-    on public.news_summaries (correlation desc nulls last);
 
 create index if not exists news_summaries_summary_generated_idx
     on public.news_summaries (summary_generated_at asc);

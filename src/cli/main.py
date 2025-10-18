@@ -48,7 +48,7 @@ def _add_hash_primary(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _add_score(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("score", help="Score correlation for summarized articles")
+    parser = subparsers.add_parser("score", help="Score relevance for primary articles")
     parser.add_argument("--limit", type=_positive_int, default=500, help="Max number of summaries to score")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
 
@@ -58,7 +58,7 @@ def _add_export(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--limit", type=_positive_int, default=None, help="Max number of summaries to export")
     parser.add_argument("--date", type=str, default=None, help="Report date (YYYY-MM-DD). Defaults to today")
     parser.add_argument("--report-tag", type=str, default=None, help="Explicit report tag identifier")
-    parser.add_argument("--min-score", type=_positive_int, default=60, help="Minimum correlation score to include")
+    parser.add_argument("--min-score", type=_positive_int, default=60, help="Minimum score to include")
     parser.add_argument("--skip-exported", action=argparse.BooleanOptionalAction, default=True, help="Skip items already exported in previous runs")
     parser.add_argument("--record-history", action=argparse.BooleanOptionalAction, default=True, help="Persist export metadata back to the database")
     parser.add_argument("--output", type=Path, default=None, help="Override output file path")

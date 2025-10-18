@@ -98,7 +98,7 @@ class BriefExportRecord:
     section: str
     title: Optional[str]
     summary: str
-    correlation: Optional[float]
+    score: Optional[float]
     original_url: Optional[str]
     published_at: Optional[str]
     source: Optional[str]

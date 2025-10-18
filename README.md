@@ -136,16 +136,16 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 ### Score Worker
 
 - Command: `python -m src.cli.main score`
-- Selects `news_summaries` rows with `correlation` missing
-- Calls the LLM scoring adapter and saves the resulting `correlation`
+- Scores relevance for entries in `primary_articles` where status is pending/failed or score is NULL
+- Writes `score` back to `primary_articles`; items meeting the threshold are promoted into `news_summaries`
 
 ### Export Worker
 
 - Default min score: 60 (override with `--min-score`).
 - Existing output files get numbered suffixes (e.g. `(1)`, `(2)`) to avoid overwriting.
 - Command: `python -m src.cli.main export`
-- Pulls high-correlation summaries from `news_summaries`.
-- Writes a text brief (defaults to `outputs/high_correlation_summaries_<tag>.txt`), grouping entries into `[Beijing]` / `[Non-Beijing]` sections and sorting each section by descending correlation.
+- Pulls high-score summaries from `news_summaries`.
+- Writes a text brief (defaults to `outputs/high_score_summaries_<tag>.txt`), grouping entries into `[Beijing]` / `[Non-Beijing]` sections and sorting each section by descending score.
 - Optionally records batches in the database (`brief_batches` / `brief_items`), storing the `is_beijing_related` flag in the metadata.
 - Set `--no-record-history` or `--no-skip-exported` to adjust behaviour.
 

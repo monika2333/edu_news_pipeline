@@ -64,11 +64,11 @@ def run(
 
     with worker_session(WORKER, limit=limit if limit is not None else min_score):
         tag = generate_report_tag(date, report_tag)
-        base_output = output_base or Path("outputs") / "high_correlation_summaries.txt"
+        base_output = output_base or Path("outputs") / "high_score_summaries.txt"
         if not base_output.is_absolute():
             base_output = (Path.cwd() / base_output).resolve()
 
-        # Fetch candidates already sorted by correlation DESC
+        # Fetch candidates already sorted by score DESC
         candidates = adapter.fetch_export_candidates(min_score)
         if not candidates:
             log_info(WORKER, "No filtered articles meet the score threshold.")

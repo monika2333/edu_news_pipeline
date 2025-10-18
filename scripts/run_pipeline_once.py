@@ -170,6 +170,11 @@ def _run_crawl_step() -> Dict[str, str]:
     return {}
 
 
+def _run_hash_primary_step() -> Dict[str, str]:
+    run_hash_primary()
+    return {}
+
+
 def _run_summarize_step() -> Dict[str, str]:
     run_summarize()
     return {}

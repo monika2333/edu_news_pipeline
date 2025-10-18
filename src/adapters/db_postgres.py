@@ -318,6 +318,204 @@ class PostgresAdapter:
             cur.executemany(query, prepared)
         return len(prepared)
 
+    def fetch_filtered_articles_for_hashing(self, limit: int) -> List[Dict[str, Any]]:
+        query = """
+            SELECT
+                article_id,
+                title,
+                source,
+                publish_time,
+                publish_time_iso,
+                url,
+                content_markdown,
+                keywords,
+                status,
+                primary_article_id,
+                content_hash,
+                simhash,
+                inserted_at,
+                updated_at
+            FROM filtered_articles
+            WHERE
+                status IN ('pending', 'failed')
+                OR content_hash IS NULL
+                OR simhash IS NULL
+                OR primary_article_id IS NULL
+            ORDER BY inserted_at ASC
+            LIMIT %s
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (max(1, limit),))
+            rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
+    def fetch_filtered_articles_by_hashes(self, hashes: Sequence[str]) -> List[Dict[str, Any]]:
+        ordered_hashes = [value for value in dict.fromkeys(hashes) if value]
+        if not ordered_hashes:
+            return []
+        query = """
+            SELECT
+                article_id,
+                title,
+                source,
+                publish_time,
+                publish_time_iso,
+                url,
+                content_markdown,
+                keywords,
+                content_hash,
+                simhash,
+                primary_article_id,
+                status,
+                inserted_at,
+                updated_at
+            FROM filtered_articles
+            WHERE content_hash = ANY(%s)
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (ordered_hashes,))
+            rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
+    def update_filtered_article_features(self, updates: Sequence[Mapping[str, Any]]) -> int:
+        if not updates:
+            return 0
+        prepared: List[Tuple[Any, ...]] = []
+        for row in updates:
+            article_id = str(row.get("article_id") or "").strip()
+            if not article_id:
+                continue
+            prepared.append(
+                (
+                    row.get("content_hash"),
+                    row.get("simhash"),
+                    article_id,
+                )
+            )
+        if not prepared:
+            return 0
+        query = """
+            UPDATE filtered_articles
+            SET
+                content_hash = %s,
+                simhash = %s,
+                status = CASE
+                    WHEN status IN ('pending', 'failed') THEN 'hashed'
+                    ELSE status
+                END,
+                updated_at = NOW()
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.executemany(query, prepared)
+        return len(prepared)
+
+    def update_filtered_primary_ids(self, updates: Sequence[Mapping[str, Any]]) -> int:
+        if not updates:
+            return 0
+        prepared: List[Tuple[Any, ...]] = []
+        for row in updates:
+            article_id = str(row.get("article_id") or "").strip()
+            primary_id = str(row.get("primary_article_id") or "").strip()
+            status_value = str(row.get("status") or "").strip()
+            if not article_id or not primary_id or not status_value:
+                continue
+            prepared.append((primary_id, status_value, article_id))
+        if not prepared:
+            return 0
+        query = """
+            UPDATE filtered_articles
+            SET
+                primary_article_id = %s,
+                status = %s,
+                updated_at = NOW()
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.executemany(query, prepared)
+        return len(prepared)
+
+    def upsert_primary_articles(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        if not rows:
+            return 0
+        columns = [
+            "article_id",
+            "primary_article_id",
+            "status",
+            "score",
+            "score_updated_at",
+            "title",
+            "source",
+            "publish_time",
+            "publish_time_iso",
+            "url",
+            "content_markdown",
+            "keywords",
+            "content_hash",
+            "simhash",
+        ]
+        prepared: List[Tuple[Any, ...]] = []
+        for row in rows:
+            article_id = str(row.get("article_id") or "").strip()
+            primary_article_id = str(row.get("primary_article_id") or "").strip()
+            if not article_id or not primary_article_id:
+                continue
+            keywords = row.get("keywords") or []
+            normalized_keywords: List[str] = []
+            seen: Set[str] = set()
+            for kw in keywords:
+                if not kw:
+                    continue
+                cleaned = str(kw).strip()
+                if not cleaned or cleaned in seen:
+                    continue
+                seen.add(cleaned)
+                normalized_keywords.append(cleaned)
+            prepared.append(
+                (
+                    article_id,
+                    primary_article_id,
+                    row.get("status", "pending"),
+                    row.get("score"),
+                    row.get("score_updated_at"),
+                    row.get("title"),
+                    row.get("source"),
+                    row.get("publish_time"),
+                    row.get("publish_time_iso"),
+                    row.get("url"),
+                    row.get("content_markdown"),
+                    normalized_keywords,
+                    row.get("content_hash"),
+                    row.get("simhash"),
+                )
+            )
+        if not prepared:
+            return 0
+        update_clauses = [
+            "primary_article_id = EXCLUDED.primary_article_id",
+            "title = EXCLUDED.title",
+            "source = EXCLUDED.source",
+            "publish_time = EXCLUDED.publish_time",
+            "publish_time_iso = EXCLUDED.publish_time_iso",
+            "url = EXCLUDED.url",
+            "content_markdown = EXCLUDED.content_markdown",
+            "keywords = EXCLUDED.keywords",
+            "content_hash = EXCLUDED.content_hash",
+            "simhash = EXCLUDED.simhash",
+            "score = COALESCE(EXCLUDED.score, primary_articles.score)",
+            "score_updated_at = COALESCE(EXCLUDED.score_updated_at, primary_articles.score_updated_at)",
+            "status = CASE WHEN primary_articles.status IN ('pending', 'failed') THEN EXCLUDED.status ELSE primary_articles.status END",
+            "updated_at = NOW()",
+        ]
+        query = f"""
+            INSERT INTO primary_articles ({', '.join(columns)})
+            VALUES ({', '.join(['%s'] * len(columns))})
+            ON CONFLICT (article_id) DO UPDATE SET {', '.join(update_clauses)}
+        """
+        with self._cursor() as cur:
+            cur.executemany(query, prepared)
+        return len(prepared)
+
 
     def get_existing_raw_article_ids(self) -> Set[str]:
         ids: Set[str] = set()

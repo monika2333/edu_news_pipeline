@@ -56,7 +56,7 @@
 ## Implementation Phases
 - [x] Apply schema changes (create `primary_articles`, extend `filtered_articles` and `news_summaries`, add indexes and triggers).
 - [x] Update `crawl_sources.py` to write `filtered_articles` rows on keyword hits.
-- [ ] Build `hash_primary_worker` with hash utilities and SimHash integration.
+- [x] Build `hash_primary_worker` with hash utilities and SimHash integration.
 - [ ] Modify `score.py` to consume `primary_articles` and enforce the 60-point threshold.
 - [ ] Extend `summarize.py` for sentiment classification and new status transitions.
 - [ ] Update `export_brief.py` to emit four ordered buckets and rely on `sentiment_label`.

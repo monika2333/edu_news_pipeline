@@ -119,15 +119,8 @@ def run(
             title_line = (candidate.title or "").strip()
             summary_line = (candidate.summary or "").strip()
             display_source = (candidate.llm_source or candidate.source or "").strip()
-            score_value = ""
-            if candidate.score is not None:
-                score_value = f"{candidate.score:.1f}".rstrip("0").rstrip(".")
-            sentiment = (candidate.sentiment_label or "").strip()
+            # Only include location/source info in the suffix.
             suffix_parts: List[str] = []
-            if score_value:
-                suffix_parts.append(f"得分 {score_value}")
-            if sentiment:
-                suffix_parts.append(f"情感 {sentiment}")
             if display_source:
                 suffix_parts.append(display_source)
             suffix = f"（{'，'.join(suffix_parts)}）" if suffix_parts else ""

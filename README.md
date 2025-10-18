@@ -184,7 +184,7 @@ MIT License (see repository root for details).
 
 ## Scheduling and Automation
 
-- **Linux/macOS cron**: schedule the full pipeline with `scripts/run_pipeline_once.py` (default steps crawl -> summarize -> score -> export).
+- **Linux/macOS cron**: schedule the full pipeline with `scripts/run_pipeline_once.py` (default steps crawl -> hash-primary -> score -> summarize -> export).
   ```bash
   0 9 * * * /usr/bin/python /path/to/repo/scripts/run_pipeline_once.py
 ```

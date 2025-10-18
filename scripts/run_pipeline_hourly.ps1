@@ -39,9 +39,19 @@ if (-not (Test-Path $LogDirectory)) {
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $logFile = Join-Path $LogDirectory "pipeline_hourly_$timestamp.log"
 
-# Restrict to crawl -> summarize -> score
+# Restrict to crawl -> hash-primary -> score -> summarize
 # Prefer module execution so project root stays on sys.path
-$arguments = @("-m", "scripts.run_pipeline_once", "--steps", "crawl", "summarize", "score", "--trigger-source", "scheduler-hourly")
+$arguments = @(
+    "-m",
+    "scripts.run_pipeline_once",
+    "--steps",
+    "crawl",
+    "hash-primary",
+    "score",
+    "summarize",
+    "--trigger-source",
+    "scheduler-hourly"
+)
 if ($ContinueOnError) {
     $arguments += "--continue-on-error"
 }

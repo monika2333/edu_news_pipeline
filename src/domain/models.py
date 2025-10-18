@@ -84,9 +84,11 @@ class ExportCandidate:
     content: str
     source: Optional[str]
     llm_source: Optional[str]
-    relevance_score: float
+    score: float
     original_url: Optional[str]
     published_at: Optional[str]
+    sentiment_label: Optional[str] = None
+    sentiment_confidence: Optional[float] = None
     is_beijing_related: Optional[bool] = None
 
 

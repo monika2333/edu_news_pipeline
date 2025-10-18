@@ -59,7 +59,7 @@
 - [x] Build `hash_primary_worker` with hash utilities and SimHash integration.
 - [x] Modify `score.py` to consume `primary_articles` and enforce the 60-point threshold.
 - [x] Extend `summarize.py` for sentiment classification and new status transitions.
-- [ ] Update `export_brief.py` to emit four ordered buckets and rely on `sentiment_label`.
+- [x] Update `export_brief.py` to emit four ordered buckets and rely on `sentiment_label`.
 - [ ] Adjust orchestration (scheduler, CLI commands) to run workers in the new order.
 
 ## Backfill and Migration

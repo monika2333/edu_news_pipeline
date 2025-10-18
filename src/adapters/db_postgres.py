@@ -1105,16 +1105,23 @@ class PostgresAdapter:
                 title,
                 llm_summary,
                 content_markdown,
-                correlation,
+                score,
                 url,
                 source,
                 publish_time_iso,
                 publish_time,
                 llm_source,
-                is_beijing_related
+                sentiment_label,
+                sentiment_confidence,
+                is_beijing_related,
+                status,
+                summary_status
             FROM news_summaries
-            WHERE correlation IS NOT NULL AND correlation >= %s
-            ORDER BY correlation DESC
+            WHERE status = 'ready_for_export'
+              AND summary_status = 'completed'
+              AND score IS NOT NULL
+              AND score >= %s
+            ORDER BY score DESC NULLS LAST, publish_time_iso DESC NULLS LAST, article_id ASC
         """
         with self._cursor() as cur:
             cur.execute(query, (min_score,))
@@ -1127,7 +1134,7 @@ class PostgresAdapter:
             title = row.get("title")
             summary_text = row.get("llm_summary") or ""
             content = row.get("content_markdown") or ""
-            correlation = float(row.get("correlation") or 0.0)
+            score_value = float(row.get("score") or 0.0)
             url = row.get("url")
             published_at = row.get("publish_time_iso") or row.get("publish_time")
             if isinstance(published_at, datetime):
@@ -1144,9 +1151,11 @@ class PostgresAdapter:
                     content=str(content),
                     source=source_name,
                     llm_source=row.get("llm_source"),
-                    relevance_score=correlation,
+                    score=score_value,
                     original_url=url,
                     published_at=published_at,
+                    sentiment_label=row.get("sentiment_label"),
+                    sentiment_confidence=row.get("sentiment_confidence"),
                     is_beijing_related=row.get("is_beijing_related"),
                 )
             )
@@ -1304,11 +1313,13 @@ class PostgresAdapter:
                         Json(
                             {
                                 "title": candidate.title,
-                                "correlation": candidate.relevance_score,
+                                "score": candidate.score,
                                 "original_url": candidate.original_url,
                                 "published_at": candidate.published_at,
                                 "source": candidate.source,
                                 "is_beijing_related": candidate.is_beijing_related,
+                                "sentiment_label": candidate.sentiment_label,
+                                "sentiment_confidence": candidate.sentiment_confidence,
                             }
                         ),
                     )

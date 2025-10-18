@@ -321,6 +321,133 @@ class PostgresAdapter:
             raise ValueError(f'Missing feed rows for detail update: {missing_values}')
         return len(rows)
 
+    def iter_raw_articles_for_filtered_backfill(
+        self,
+        *,
+        since: Optional[datetime] = None,
+        article_ids: Optional[Sequence[str]] = None,
+        batch_size: int = 500,
+        limit: Optional[int] = None,
+        only_missing: bool = False,
+    ):
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        clauses = [
+            "content_markdown IS NOT NULL",
+            "LENGTH(TRIM(content_markdown)) > 0",
+        ]
+        params: List[Any] = []
+        if since is not None:
+            clauses.append("updated_at >= %s")
+            params.append(since)
+        ids_param: Optional[List[str]] = None
+        if article_ids:
+            ids_param = [str(item).strip() for item in article_ids if str(item).strip()]
+            if ids_param:
+                clauses.append("article_id = ANY(%s)")
+                params.append(ids_param)
+        if only_missing:
+            clauses.append("NOT EXISTS (SELECT 1 FROM filtered_articles fa WHERE fa.article_id = raw_articles.article_id)")
+        where_sql = " AND ".join(f"({clause})" for clause in clauses)
+        query = [
+            "SELECT article_id, primary_article_id, title, source, publish_time, publish_time_iso,",
+            "       url, content_markdown, content_hash, fingerprint, sentiment_label, sentiment_confidence,",
+            "       fetched_at, updated_at",
+            "FROM raw_articles",
+            f"WHERE {where_sql}",
+            "ORDER BY updated_at ASC NULLS FIRST, article_id ASC",
+        ]
+        if limit and limit > 0:
+            query.append("LIMIT %s")
+            params.append(limit)
+        sql_query = " ".join(query)
+        with self._cursor() as cur:
+            cur.execute(sql_query, tuple(params))
+            emitted = 0
+            while True:
+                rows = cur.fetchmany(batch_size)
+                if not rows:
+                    break
+                batch: List[Dict[str, Any]] = [dict(row) for row in rows if row.get("article_id")]
+                if not batch:
+                    continue
+                emitted += len(batch)
+                yield batch
+                if limit and emitted >= limit:
+                    break
+
+    def upsert_filtered_articles(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        if not rows:
+            return 0
+        insert_sql = """
+            INSERT INTO filtered_articles (
+                article_id,
+                primary_article_id,
+                keywords,
+                title,
+                source,
+                publish_time,
+                publish_time_iso,
+                url,
+                content_markdown,
+                content_hash,
+                fingerprint,
+                sentiment_label,
+                sentiment_confidence
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (article_id) DO UPDATE
+            SET primary_article_id = CASE
+                    WHEN EXCLUDED.primary_article_id IS NOT NULL THEN EXCLUDED.primary_article_id
+                    ELSE filtered_articles.primary_article_id
+                END,
+                keywords = CASE
+                    WHEN array_length(EXCLUDED.keywords, 1) IS NULL OR array_length(EXCLUDED.keywords, 1) = 0
+                        THEN filtered_articles.keywords
+                    ELSE EXCLUDED.keywords
+                END,
+                title = EXCLUDED.title,
+                source = EXCLUDED.source,
+                publish_time = EXCLUDED.publish_time,
+                publish_time_iso = EXCLUDED.publish_time_iso,
+                url = EXCLUDED.url,
+                content_markdown = EXCLUDED.content_markdown,
+                content_hash = COALESCE(EXCLUDED.content_hash, filtered_articles.content_hash),
+                fingerprint = COALESCE(EXCLUDED.fingerprint, filtered_articles.fingerprint),
+                sentiment_label = COALESCE(filtered_articles.sentiment_label, EXCLUDED.sentiment_label),
+                sentiment_confidence = COALESCE(filtered_articles.sentiment_confidence, EXCLUDED.sentiment_confidence),
+                updated_at = NOW()
+        """
+        payload: List[Tuple[Any, ...]] = []
+        for row in rows:
+            article_id = str(row.get("article_id") or "").strip()
+            if not article_id:
+                continue
+            primary_id = str(row.get("primary_article_id") or article_id or "").strip()
+            keywords = row.get("keywords") or []
+            payload.append(
+                (
+                    article_id,
+                    primary_id or article_id,
+                    keywords,
+                    row.get("title"),
+                    row.get("source"),
+                    row.get("publish_time"),
+                    row.get("publish_time_iso"),
+                    row.get("url"),
+                    row.get("content_markdown"),
+                    row.get("content_hash"),
+                    row.get("fingerprint"),
+                    row.get("sentiment_label"),
+                    row.get("sentiment_confidence"),
+                )
+            )
+        if not payload:
+            return 0
+        with self._cursor() as cur:
+            cur.executemany(insert_sql, payload)
+        return len(payload)
+
 
 
     def get_raw_articles_missing_content(self, article_ids: Sequence[str]) -> Set[str]:
@@ -419,6 +546,54 @@ class PostgresAdapter:
             cur.executemany(update_sql, list(feature_rows))
         return len(feature_rows)
 
+    def fetch_filtered_articles_for_dedup(self) -> List[Dict[str, Any]]:
+        query = """
+            SELECT
+                article_id,
+                source,
+                publish_time,
+                publish_time_iso,
+                inserted_at AS fetched_at,
+                content_markdown,
+                content_hash,
+                fingerprint,
+                primary_article_id
+            FROM filtered_articles
+            WHERE content_markdown IS NOT NULL
+              AND LENGTH(TRIM(content_markdown)) > 0
+        """
+        with self._cursor() as cur:
+            cur.execute(query)
+            rows = cur.fetchall()
+        return [dict(row) for row in rows if row.get("article_id")]
+
+    def update_filtered_article_features(self, feature_rows: Sequence[Tuple[Optional[str], Optional[str], str]]) -> int:
+        if not feature_rows:
+            return 0
+        update_sql = """
+            UPDATE filtered_articles
+            SET content_hash = COALESCE(%s, content_hash),
+                fingerprint = COALESCE(%s, fingerprint),
+                updated_at = NOW()
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.executemany(update_sql, list(feature_rows))
+        return len(feature_rows)
+
+    def update_filtered_primary_ids(self, mappings: Sequence[Tuple[str, str]]) -> int:
+        if not mappings:
+            return 0
+        update_sql = """
+            UPDATE filtered_articles
+            SET primary_article_id = %s,
+                updated_at = NOW()
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.executemany(update_sql, list(mappings))
+        return len(mappings)
+
 
     def fetch_articles_for_sentiment(
         self,
@@ -459,6 +634,56 @@ class PostgresAdapter:
             return 0
         update_sql = """
             UPDATE raw_articles
+            SET sentiment_label = %s,
+                sentiment_confidence = %s,
+                updated_at = NOW()
+            WHERE article_id = %s
+        """
+        payload = [(label, confidence, article_id) for article_id, label, confidence in rows if article_id]
+        if not payload:
+            return 0
+        with self._cursor() as cur:
+            cur.executemany(update_sql, payload)
+        return len(payload)
+
+    def fetch_filtered_articles_for_sentiment(
+        self,
+        *,
+        limit: Optional[int] = None,
+        threshold: float = 0.0,
+        include_low_confidence: bool = False,
+    ) -> List[Dict[str, Any]]:
+        clauses = [
+            "content_markdown IS NOT NULL",
+            "LENGTH(TRIM(content_markdown)) > 0",
+        ]
+        params: List[Any] = []
+        if include_low_confidence:
+            clauses.append("(sentiment_label IS NULL OR sentiment_confidence IS NULL OR sentiment_confidence < %s)")
+            params.append(threshold)
+        else:
+            clauses.append("(sentiment_label IS NULL OR sentiment_confidence IS NULL)")
+        query_parts = [
+            "SELECT article_id, title, source, publish_time, publish_time_iso,",
+            "       content_markdown, sentiment_confidence",
+            "FROM filtered_articles",
+            "WHERE " + " AND ".join(f"({clause})" for clause in clauses),
+            "ORDER BY updated_at ASC NULLS FIRST, inserted_at ASC NULLS LAST, article_id ASC",
+        ]
+        if limit and limit > 0:
+            query_parts.append("LIMIT %s")
+            params.append(limit)
+        query = " ".join(query_parts)
+        with self._cursor() as cur:
+            cur.execute(query, tuple(params))
+            rows = cur.fetchall()
+        return [dict(row) for row in rows if row.get("article_id")]
+
+    def update_filtered_sentiment_results(self, rows: Sequence[Tuple[str, Optional[str], Optional[float]]]) -> int:
+        if not rows:
+            return 0
+        update_sql = """
+            UPDATE filtered_articles
             SET sentiment_label = %s,
                 sentiment_confidence = %s,
                 updated_at = NOW()

@@ -21,13 +21,15 @@ if str(SRC_ROOT) not in sys.path:
 from src.adapters.db import get_adapter
 from src.config import load_environment
 from src.workers.crawl_sources import run as run_crawl
+from src.workers.deduplicate import run as run_deduplicate
 from src.workers.export_brief import run as run_export
+from src.workers.keyword_filter import run as run_keyword_filter
 from src.workers.score import run as run_score
 from src.workers.sentiment import run as run_sentiment
 from src.workers.summarize import run as run_summarize
 
 StepHandler = Callable[[], Optional[Dict[str, str]]]
-DEFAULT_PIPELINE: Sequence[str] = ("crawl", "sentiment", "summarize", "score", "export")
+DEFAULT_PIPELINE: Sequence[str] = ("crawl", "keyword_filter", "deduplicate", "sentiment", "summarize", "score", "export")
 
 
 @dataclass
@@ -182,6 +184,17 @@ def _run_sentiment_step() -> Dict[str, str]:
     run_sentiment()
     return {}
 
+def _run_keyword_filter_step() -> Dict[str, str]:
+    stats = run_keyword_filter()
+    if not stats:
+        return {}
+    return {key: str(value) for key, value in stats.items()}
+
+
+def _run_deduplicate_step() -> Dict[str, str]:
+    updated = run_deduplicate()
+    return {"deduplicated": str(updated)}
+
 
 def _run_summarize_step() -> Dict[str, str]:
     run_summarize()
@@ -202,6 +215,8 @@ def _run_export_step() -> Dict[str, str]:
 
 STEP_REGISTRY: Dict[str, StepHandler] = {
     "crawl": _run_crawl_step,
+    "keyword_filter": _run_keyword_filter_step,
+    "deduplicate": _run_deduplicate_step,
     "sentiment": _run_sentiment_step,
     "summarize": _run_summarize_step,
     "score": _run_score_step,
@@ -302,7 +317,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--steps",
         nargs="+",
         choices=list(STEP_REGISTRY.keys()),
-        help="Explicit step order to run (default: crawl summarize score export)",
+        help="Explicit step order to run (default: crawl keyword_filter deduplicate sentiment summarize score export)",
     )
     parser.add_argument(
         "--skip",

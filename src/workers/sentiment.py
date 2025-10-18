@@ -59,7 +59,7 @@ def run(
     threshold = settings.sentiment_confidence_threshold
 
     with worker_session(WORKER, limit=fetch_limit):
-        rows = adapter.fetch_articles_for_sentiment(
+        rows = adapter.fetch_filtered_articles_for_sentiment(
             limit=fetch_limit,
             threshold=threshold,
             include_low_confidence=include_low_confidence,
@@ -72,7 +72,9 @@ def run(
         updates, ok, failed, skipped = _collect_updates(rows, threshold=threshold)
 
         if updates:
-            adapter.update_sentiment_results([(article_id, label, confidence) for article_id, label, confidence in updates])
+            adapter.update_filtered_sentiment_results(
+                [(article_id, label, confidence) for article_id, label, confidence in updates]
+            )
 
         log_summary(WORKER, ok=ok, failed=failed or None, skipped=skipped or None)
         return {"processed": len(rows), "updated": len(updates), "failed": failed, "skipped": skipped}

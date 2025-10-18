@@ -145,7 +145,7 @@ def _build_clusters(articles: Dict[str, Dict[str, object]]) -> Dict[str, List[st
 
 def run(*, adapter: Optional[PostgresAdapter] = None) -> int:
     adapter = adapter or get_adapter()
-    rows = adapter.fetch_articles_for_dedup()
+    rows = adapter.fetch_filtered_articles_for_dedup()
     if not rows:
         return 0
 
@@ -176,7 +176,7 @@ def run(*, adapter: Optional[PostgresAdapter] = None) -> int:
         articles[article_id] = record
 
     if feature_updates:
-        adapter.update_article_features(feature_updates)
+        adapter.update_filtered_article_features(feature_updates)
 
     clusters = _build_clusters(articles)
     updates: List[Tuple[str, str]] = []
@@ -194,7 +194,7 @@ def run(*, adapter: Optional[PostgresAdapter] = None) -> int:
     if not updates:
         return 0
 
-    adapter.update_primary_article_ids(updates)
+    adapter.update_filtered_primary_ids(updates)
     return len(updates)
 
 

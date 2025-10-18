@@ -28,7 +28,7 @@ ALTER TABLE public.filtered_articles
         ON DELETE RESTRICT
         DEFERRABLE INITIALLY DEFERRED;
 
-CREATE UNIQUE INDEX IF NOT EXISTS filtered_articles_content_hash_uidx
+CREATE INDEX IF NOT EXISTS filtered_articles_content_hash_idx
     ON public.filtered_articles (content_hash)
     WHERE content_hash IS NOT NULL;
 
@@ -42,4 +42,3 @@ DROP TRIGGER IF EXISTS filtered_articles_set_updated_at ON public.filtered_artic
 CREATE TRIGGER filtered_articles_set_updated_at
     BEFORE UPDATE ON public.filtered_articles
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-

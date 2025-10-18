@@ -281,8 +281,6 @@ class PostgresAdapter:
                 digg_count = %s,
                 content_markdown = %s,
                 detail_fetched_at = %s,
-                content_hash = %s,
-                fingerprint = %s,
                 primary_article_id = COALESCE(primary_article_id, %s),
                 updated_at = now()
             WHERE article_id = %s
@@ -293,8 +291,6 @@ class PostgresAdapter:
                 article_id = str(row.get('article_id') or '')
                 if not article_id:
                     raise ValueError('Detail update requires article_id')
-                content = row.get('content_markdown')
-                content_hash, fingerprint = _compute_content_features(content)
                 values = [
                     row.get('token'),
                     row.get('profile_url'),
@@ -306,10 +302,8 @@ class PostgresAdapter:
                     row.get('summary'),
                     row.get('comment_count'),
                     row.get('digg_count'),
-                    content,
+                    row.get('content_markdown'),
                     row.get('detail_fetched_at'),
-                    content_hash,
-                    fingerprint,
                     article_id,
                     article_id,
                 ]
@@ -423,7 +417,7 @@ class PostgresAdapter:
             article_id = str(row.get("article_id") or "").strip()
             if not article_id:
                 continue
-            primary_id = str(row.get("primary_article_id") or article_id or "").strip()
+            primary_id = article_id
             keywords = row.get("keywords") or []
             payload.append(
                 (

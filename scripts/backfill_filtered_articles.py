@@ -177,7 +177,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 fingerprint = fingerprint or computed_fingerprint
             payload = {
                 "article_id": article_id,
-                "primary_article_id": row.get("primary_article_id") or article_id,
+                "primary_article_id": article_id,
                 "keywords": hits,
                 "title": row.get("title"),
                 "source": row.get("source"),
@@ -219,4 +219,3 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

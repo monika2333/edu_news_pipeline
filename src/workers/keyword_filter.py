@@ -93,7 +93,7 @@ def run(
                 payload.append(
                     {
                         "article_id": article_id,
-                        "primary_article_id": row.get("primary_article_id") or article_id,
+                        "primary_article_id": article_id,
                         "keywords": hits,
                         "title": row.get("title"),
                         "source": row.get("source"),

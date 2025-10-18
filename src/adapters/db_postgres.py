@@ -334,6 +334,11 @@ class PostgresAdapter:
                 primary_article_id,
                 content_hash,
                 simhash,
+                simhash_bigint,
+                simhash_band1,
+                simhash_band2,
+                simhash_band3,
+                simhash_band4,
                 inserted_at,
                 updated_at
             FROM filtered_articles
@@ -342,6 +347,11 @@ class PostgresAdapter:
                 OR content_hash IS NULL
                 OR simhash IS NULL
                 OR primary_article_id IS NULL
+                OR simhash_bigint IS NULL
+                OR simhash_band1 IS NULL
+                OR simhash_band2 IS NULL
+                OR simhash_band3 IS NULL
+                OR simhash_band4 IS NULL
             ORDER BY inserted_at ASC
             LIMIT %s
         """
@@ -390,6 +400,11 @@ class PostgresAdapter:
                 (
                     row.get("content_hash"),
                     row.get("simhash"),
+                    row.get("simhash_bigint"),
+                    row.get("simhash_band1"),
+                    row.get("simhash_band2"),
+                    row.get("simhash_band3"),
+                    row.get("simhash_band4"),
                     article_id,
                 )
             )
@@ -400,6 +415,11 @@ class PostgresAdapter:
             SET
                 content_hash = %s,
                 simhash = %s,
+                simhash_bigint = %s,
+                simhash_band1 = %s,
+                simhash_band2 = %s,
+                simhash_band3 = %s,
+                simhash_band4 = %s,
                 status = CASE
                     WHEN status IN ('pending', 'failed') THEN 'hashed'
                     ELSE status
@@ -410,6 +430,36 @@ class PostgresAdapter:
         with self._cursor() as cur:
             cur.executemany(query, prepared)
         return len(prepared)
+
+    def fetch_filtered_articles_by_band(self, band_index: int, band_value: int, limit: int) -> List[Dict[str, Any]]:
+        if band_index not in (1, 2, 3, 4):
+            raise ValueError("band_index must be between 1 and 4")
+        column_name = f"simhash_band{band_index}"
+        query = f"""
+            SELECT
+                article_id,
+                title,
+                source,
+                publish_time,
+                publish_time_iso,
+                url,
+                content_markdown,
+                keywords,
+                status,
+                primary_article_id,
+                content_hash,
+                simhash,
+                simhash_bigint,
+                inserted_at,
+                updated_at
+            FROM filtered_articles
+            WHERE {column_name} = %s
+            LIMIT %s
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (band_value, max(1, limit)))
+            rows = cur.fetchall()
+        return [dict(row) for row in rows]
 
     def update_filtered_primary_ids(self, updates: Sequence[Mapping[str, Any]]) -> int:
         if not updates:

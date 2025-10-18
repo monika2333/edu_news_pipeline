@@ -62,6 +62,17 @@
 - [x] Update `export_brief.py` to emit four ordered buckets and rely on `sentiment_label`.
 - [x] Adjust orchestration (scheduler, CLI commands) to run workers in the new order.
 
+## SimHash Dedup Redesign
+- [x] Add SimHash band columns to `filtered_articles` (4 bands of 16 bits)
+- [x] Create indexes on each band column
+- [x] Update `hash_primary_worker` to compute bands and use SimHash-based matching
+- [x] Persist per-band values via adapter methods
+- [x] Implement candidate search with band matches and Hamming threshold (¡Ü3)
+- [x] Update primary selection logic to use SimHash duplicates
+- [x] Backfill existing rows: populate bands, rerun dedup in batch
+- [x] Track metrics (counts of primaries/duplicates, distance distribution)
+
+
 ## Backfill and Migration
 - Script historical keyword hits into `filtered_articles` with initial status `pending`.
 - Recompute hash and SimHash to populate `primary_article_id` and seed `primary_articles`.

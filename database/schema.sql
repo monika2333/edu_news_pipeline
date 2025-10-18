@@ -46,6 +46,11 @@ create table if not exists public.filtered_articles (
     content_markdown text,
     content_hash text,
     simhash text,
+    simhash_bigint bigint,
+    simhash_band1 integer,
+    simhash_band2 integer,
+    simhash_band3 integer,
+    simhash_band4 integer,
     primary_article_id text,
     inserted_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
@@ -75,6 +80,18 @@ create index if not exists filtered_articles_primary_idx
 create index if not exists filtered_articles_simhash_idx
     on public.filtered_articles (simhash)
     where simhash is not null;
+
+create index if not exists filtered_articles_simhash_band1_idx
+    on public.filtered_articles (simhash_band1);
+
+create index if not exists filtered_articles_simhash_band2_idx
+    on public.filtered_articles (simhash_band2);
+
+create index if not exists filtered_articles_simhash_band3_idx
+    on public.filtered_articles (simhash_band3);
+
+create index if not exists filtered_articles_simhash_band4_idx
+    on public.filtered_articles (simhash_band4);
 
 -- ---------------------------------------------------------------------------
 -- Primary article staging for scoring and summarization

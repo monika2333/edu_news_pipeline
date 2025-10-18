@@ -5,7 +5,7 @@ import re
 import sys
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
 from src.adapters.db import get_adapter
 from src.workers import log_info, log_summary, worker_session
@@ -13,7 +13,12 @@ from src.workers import log_info, log_summary, worker_session
 WORKER = "hash-primary"
 TOKEN_PATTERN = re.compile(r"\w+", re.UNICODE)
 SIMHASH_BITS = 64
+SIMHASH_BAND_SIZE = 16
+SIMHASH_BANDS = 4
+SIMHASH_MASK = (1 << SIMHASH_BITS) - 1
 MAX_TOKENS = 512
+BAND_CANDIDATE_LIMIT = 50
+HAMMING_THRESHOLD = 3
 
 
 def _normalize_content(text: str) -> str:
@@ -51,6 +56,40 @@ def _compute_simhash(text: str) -> Optional[str]:
         if total > 0:
             value |= 1 << index
     return f"{value:016x}"
+
+
+def _simhash_to_int(simhash_hex: Optional[str]) -> Optional[int]:
+    if not simhash_hex:
+        return None
+    try:
+        return int(simhash_hex, 16)
+    except ValueError:
+        return None
+
+
+def _split_simhash(simhash_int: int) -> List[int]:
+    bands: List[int] = []
+    mask = (1 << SIMHASH_BAND_SIZE) - 1
+    for index in range(SIMHASH_BANDS):
+        shift = index * SIMHASH_BAND_SIZE
+        bands.append((simhash_int >> shift) & mask)
+    return bands
+
+
+def _hamming_distance(a: int, b: int) -> int:
+    return (a ^ b).bit_count()
+
+
+def _to_signed_64(value: int) -> int:
+    if value >= 1 << (SIMHASH_BITS - 1):
+        return value - (1 << SIMHASH_BITS)
+    return value
+
+
+def _normalize_record(row: Mapping[str, Any]) -> Dict[str, Any]:
+    record = dict(row)
+    record["article_id"] = str(row.get("article_id") or "").strip()
+    return record
 
 
 def _normalized_datetime(value: Optional[datetime]) -> datetime:
@@ -111,7 +150,7 @@ def run(limit: int = 200) -> None:
         log_info(WORKER, f"fetched {len(candidates)} filtered articles for hashing")
 
         feature_updates: List[Dict[str, Any]] = []
-        hash_values: List[str] = []
+        article_info: Dict[str, Dict[str, Any]] = {}
         skipped = 0
 
         for row in candidates:
@@ -122,14 +161,33 @@ def run(limit: int = 200) -> None:
                 continue
             content_hash = _compute_content_hash(content)
             simhash = _compute_simhash(content)
+            simhash_unsigned = _simhash_to_int(simhash)
+            simhash_signed = _to_signed_64(simhash_unsigned) if simhash_unsigned is not None else None
+            bands = _split_simhash(simhash_unsigned) if simhash_unsigned is not None else [None] * SIMHASH_BANDS
             feature_updates.append(
                 {
                     "article_id": article_id,
                     "content_hash": content_hash,
                     "simhash": simhash,
+                    "simhash_bigint": simhash_signed,
+                    "simhash_band1": bands[0] if bands[0] is not None else None,
+                    "simhash_band2": bands[1] if bands[1] is not None else None,
+                    "simhash_band3": bands[2] if bands[2] is not None else None,
+                    "simhash_band4": bands[3] if bands[3] is not None else None,
                 }
             )
-            hash_values.append(content_hash)
+            info = dict(row)
+            info.update(
+                {
+                    "article_id": article_id,
+                    "content_hash": content_hash,
+                    "simhash": simhash,
+                    "simhash_bigint": simhash_signed,
+                    "simhash_unsigned": simhash_unsigned,
+                    "bands": bands,
+                }
+            )
+            article_info[article_id] = info
 
         if not feature_updates:
             log_summary(WORKER, ok=0, failed=0, skipped=skipped)
@@ -137,44 +195,100 @@ def run(limit: int = 200) -> None:
 
         adapter.update_filtered_article_features(feature_updates)
 
-        grouped_records = adapter.fetch_filtered_articles_by_hashes(hash_values)
-        groups: Dict[str, List[Dict[str, Any]]] = {}
-        for record in grouped_records:
-            hash_value = record.get("content_hash")
-            if not hash_value:
-                continue
-            groups.setdefault(hash_value, []).append(record)
-
         primary_updates: List[Dict[str, Any]] = []
         primary_rows: List[Dict[str, Any]] = []
         seen_primary_ids: Set[str] = set()
         duplicate_count = 0
+        processed_ids: Set[str] = set()
 
-        for hash_value, records in groups.items():
-            primary_record = _choose_primary(records)
+        for row in candidates:
+            article_id = str(row.get("article_id") or "").strip()
+            if not article_id or article_id in processed_ids:
+                continue
+            info = article_info.get(article_id) or {}
+            simhash_unsigned = info.get("simhash_unsigned")
+            bands = info.get("bands") or [None] * SIMHASH_BANDS
+
+            current_record = _normalize_record(info)
+            candidates_map: Dict[str, Dict[str, Any]] = {}
+
+            if simhash_unsigned is not None:
+                for index, band_value in enumerate(bands, start=1):
+                    if band_value is None:
+                        continue
+                    rows = adapter.fetch_filtered_articles_by_band(index, band_value, BAND_CANDIDATE_LIMIT)
+                    for candidate_row in rows:
+                        candidate_id = str(candidate_row.get("article_id") or "").strip()
+                        if not candidate_id or candidate_id == article_id:
+                            continue
+                        candidates_map.setdefault(candidate_id, candidate_row)
+
+            group_records: List[Dict[str, Any]] = []
+
+            if simhash_unsigned is not None:
+                group_records.append(current_record)
+                for candidate_row in candidates_map.values():
+                    candidate_record = _normalize_record(candidate_row)
+                    candidate_simhash_signed = candidate_record.get("simhash_bigint")
+                    if candidate_simhash_signed is None:
+                        continue
+                    candidate_simhash = int(candidate_simhash_signed) & SIMHASH_MASK
+                    distance = _hamming_distance(int(simhash_unsigned), candidate_simhash)
+                    if distance <= HAMMING_THRESHOLD:
+                        candidate_record["__distance"] = distance
+                        group_records.append(candidate_record)
+            else:
+                content_hash = info.get("content_hash")
+                if content_hash:
+                    hash_records = adapter.fetch_filtered_articles_by_hashes([content_hash])
+                    for record in hash_records:
+                        candidate_record = _normalize_record(record)
+                        group_records.append(candidate_record)
+                if not group_records:
+                    group_records.append(current_record)
+
+            # Ensure unique and include current record
+            deduped: Dict[str, Dict[str, Any]] = {}
+            for record in group_records:
+                record_id = str(record.get("article_id") or "").strip()
+                if not record_id:
+                    continue
+                deduped.setdefault(record_id, record)
+            group_records = list(deduped.values())
+
+            if not group_records:
+                continue
+
+            primary_record = _choose_primary(group_records)
             if primary_record is None:
                 continue
             primary_id = primary_record.get("article_id")
             if not primary_id:
                 continue
-            duplicate_count += sum(1 for record in records if record.get("article_id") != primary_id)
-            for record in records:
-                article_id = record.get("article_id")
-                if not article_id:
+
+            records_in_group = group_records
+            duplicate_count += sum(1 for record in records_in_group if record.get("article_id") != primary_id)
+
+            for record in records_in_group:
+                record_id = record.get("article_id")
+                if not record_id:
                     continue
-                new_status = "primary" if article_id == primary_id else "duplicate"
-                if record.get("primary_article_id") == primary_id and record.get("status") == new_status:
-                    continue
-                primary_updates.append(
-                    {
-                        "article_id": article_id,
-                        "primary_article_id": primary_id,
-                        "status": new_status,
-                    }
-                )
+                desired_status = "primary" if record_id == primary_id else "duplicate"
+                current_primary = record.get("primary_article_id")
+                current_status = record.get("status")
+                if current_primary != primary_id or current_status != desired_status:
+                    primary_updates.append(
+                        {
+                            "article_id": record_id,
+                            "primary_article_id": primary_id,
+                            "status": desired_status,
+                        }
+                    )
             if primary_id not in seen_primary_ids:
                 seen_primary_ids.add(primary_id)
-                primary_rows.append(_prepare_primary_rows(records, primary_id))
+                primary_rows.append(_prepare_primary_rows(records_in_group, primary_id))
+
+            processed_ids.update(str(record.get("article_id") or "").strip() for record in records_in_group)
 
         if primary_updates:
             adapter.update_filtered_primary_ids(primary_updates)

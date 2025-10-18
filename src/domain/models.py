@@ -62,6 +62,19 @@ class PrimaryArticleForScoring:
 
 
 @dataclass(slots=True)
+class PrimaryArticleForSummarizing:
+    article_id: str
+    content: str
+    title: Optional[str]
+    source: Optional[str]
+    publish_time: Optional[int]
+    publish_time_iso: Optional[str]
+    url: Optional[str]
+    keywords: Sequence[str] = field(default_factory=list)
+    score: Optional[float] = None
+
+
+@dataclass(slots=True)
 class ExportCandidate:
     filtered_article_id: str
     raw_article_id: str
@@ -97,6 +110,7 @@ __all__ = [
     "SummaryCandidate",
     "SummaryForScoring",
     "PrimaryArticleForScoring",
+    "PrimaryArticleForSummarizing",
     "ExportCandidate",
     "BriefExportRecord",
 ]

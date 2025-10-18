@@ -614,7 +614,7 @@ class PostgresAdapter:
         *,
         max_attempts: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        clauses = ["summary_status = 'pending'"]
+        clauses = ["summary_status = 'pending'", "status = 'pending'"]
         params: List[Any] = []
         if max_attempts is not None:
             clauses.append("summary_fail_count < %s")
@@ -651,7 +651,9 @@ class PostgresAdapter:
             UPDATE news_summaries
             SET summary_attempted_at = NOW(),
                 summary_fail_count = summary_fail_count + 1
-            WHERE article_id = %s AND summary_status = 'pending'
+            WHERE article_id = %s
+              AND summary_status = 'pending'
+              AND status = 'pending'
         """
         with self._cursor() as cur:
             cur.execute(query, (article_id,))
@@ -665,6 +667,9 @@ class PostgresAdapter:
         llm_source: Optional[str] = None,
         keywords: Optional[Sequence[str]] = None,
         beijing_related: Optional[bool] = None,
+        sentiment_label: Optional[str] = None,
+        sentiment_confidence: Optional[float] = None,
+        status: str = "ready_for_export",
     ) -> None:
         if not article_id:
             raise ValueError('complete_summary requires article_id')
@@ -673,6 +678,7 @@ class PostgresAdapter:
             'summary_status': 'completed',
             'summary_generated_at': datetime.now(timezone.utc).isoformat(),
             'summary_attempted_at': datetime.now(timezone.utc).isoformat(),
+            'status': status,
         }
         if llm_source is not None:
             payload['llm_source'] = llm_source
@@ -685,6 +691,10 @@ class PostgresAdapter:
                 payload['llm_keywords'] = deduped
         if beijing_related is not None:
             payload['is_beijing_related'] = beijing_related
+        if sentiment_label is not None:
+            payload['sentiment_label'] = sentiment_label
+        if sentiment_confidence is not None:
+            payload['sentiment_confidence'] = float(sentiment_confidence)
         sets = ', '.join(f"{field} = %s" for field in payload)
         values = list(payload.values()) + [article_id]
         query = f"""
@@ -702,8 +712,11 @@ class PostgresAdapter:
             return
         query = """
             UPDATE news_summaries
-            SET summary_status = 'failed'
-            WHERE article_id = %s AND summary_status = 'pending'
+            SET summary_status = 'failed',
+                status = 'failed'
+            WHERE article_id = %s
+              AND summary_status = 'pending'
+              AND status = 'pending'
         """
         with self._cursor() as cur:
             cur.execute(query, (article_id,))

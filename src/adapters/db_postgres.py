@@ -248,6 +248,76 @@ class PostgresAdapter:
             result.append(record)
         return result
 
+    # ------------------------------------------------------------------
+    # Filtered articles (keyword hits)
+    # ------------------------------------------------------------------
+    def upsert_filtered_articles(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        if not rows:
+            return 0
+        columns = [
+            "article_id",
+            "keywords",
+            "status",
+            "title",
+            "source",
+            "publish_time",
+            "publish_time_iso",
+            "url",
+            "content_markdown",
+        ]
+        prepared: List[Tuple[Any, ...]] = []
+        for row in rows:
+            article_id = str(row.get("article_id") or "").strip()
+            if not article_id:
+                continue
+            keywords = row.get("keywords") or []
+            normalized_keywords: List[str] = []
+            seen: Set[str] = set()
+            for kw in keywords:
+                if not kw:
+                    continue
+                cleaned = str(kw).strip()
+                if not cleaned or cleaned in seen:
+                    continue
+                seen.add(cleaned)
+                normalized_keywords.append(cleaned)
+            status_value = str(row.get("status") or "pending").strip() or "pending"
+            prepared.append(
+                (
+                    article_id,
+                    normalized_keywords,
+                    status_value,
+                    row.get("title"),
+                    row.get("source"),
+                    row.get("publish_time"),
+                    row.get("publish_time_iso"),
+                    row.get("url"),
+                    str(row.get("content_markdown") or ""),
+                )
+            )
+        if not prepared:
+            return 0
+        updates = [
+            "keywords = EXCLUDED.keywords",
+            "title = EXCLUDED.title",
+            "source = EXCLUDED.source",
+            "publish_time = EXCLUDED.publish_time",
+            "publish_time_iso = EXCLUDED.publish_time_iso",
+            "url = EXCLUDED.url",
+            "content_markdown = EXCLUDED.content_markdown",
+            "status = CASE WHEN filtered_articles.status IN ('pending', 'failed') OR filtered_articles.status IS NULL"
+            " THEN EXCLUDED.status ELSE filtered_articles.status END",
+            "updated_at = NOW()",
+        ]
+        query = f"""
+            INSERT INTO filtered_articles ({', '.join(columns)})
+            VALUES ({', '.join(['%s'] * len(columns))})
+            ON CONFLICT (article_id) DO UPDATE SET {', '.join(updates)}
+        """
+        with self._cursor() as cur:
+            cur.executemany(query, prepared)
+        return len(prepared)
+
 
     def get_existing_raw_article_ids(self) -> Set[str]:
         ids: Set[str] = set()

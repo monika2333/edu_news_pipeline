@@ -4,11 +4,11 @@ Automated pipeline for collecting education-related articles, summarising them w
 
 ## Pipeline Overview
 
-1. **Crawl** – Fetch latest articles from configured sources (default: Toutiao; optional: ChinaNews, China Daily, Guangming Daily, China Education Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
-2. **Hash / Deduplicate** – `hash_primary` computes an exact `content_hash`, 64-bit SimHash, and four 16-bit band hashes for each filtered article. Using SimHash band lookup and a Hamming-distance threshold (≤ 3), duplicates are grouped under a primary article and promoted to `primary_articles`.
-3. **Score** – LLM-based relevance scoring runs on entries in `primary_articles`. The LLM output becomes `raw_relevance_score`; keyword rules add a `keyword_bonus_score`, and their sum is persisted as `score`. Promotion still keys off `raw_relevance_score ≥ 60`, while the final score (without an upper bound) is used for ordering.
-4. **Summarise & Sentiment** – `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and writes the results back into `news_summaries` with status `ready_for_export` (failed attempts remain `pending`).
-5. **Export** – Assemble the ready summaries into a briefing ordered by “京内/京外 × 正面/负面” buckets (sorted descending by score) and persist batch metadata in `brief_batches` / `brief_items`, sending an optional Feishu notification.
+1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: ChinaNews, China Daily, Guangming Daily, China Education Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
+2. **Hash / Deduplicate** - `hash_primary` computes an exact `content_hash`, 64-bit SimHash, and four 16-bit band hashes for each filtered article. Using SimHash band lookup and a Hamming-distance threshold (<= 3), duplicates are grouped under a primary article and promoted to `primary_articles`.
+3. **Score** - LLM-based relevance scoring runs on entries in `primary_articles`. The LLM output becomes `raw_relevance_score`; keyword rules add a `keyword_bonus_score`, and their sum is persisted as `score`. Promotion still keys off `raw_relevance_score >= 60`, while the final score (without an upper bound) is used for ordering.
+4. **Summarise & Sentiment** - `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and writes the results back into `news_summaries` with status `ready_for_export` (failed attempts remain `pending`).
+5. **Export** - Assemble the ready summaries into a briefing ordered by "Jingnei/Jingwai x Positive/Negative" buckets (sorted descending by score) and persist batch metadata in `brief_batches` / `brief_items`, sending an optional Feishu notification.
 
 All stages are available through the CLI wrapper:
 
@@ -77,7 +77,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `GMW_BASE_URL` | Override Guangming Daily listing entry point |
 | `GMW_TIMEOUT` | Seconds for Guangming Daily HTTP requests (default 15) |
 | `PROCESS_LIMIT` | Global cap applied to worker limits |
-| `SCORE_KEYWORD_BONUSES` | Optional JSON map overriding keyword → bonus rules for scoring |
+| `SCORE_KEYWORD_BONUSES` | Optional JSON map overriding keyword ?bonus rules for scoring |
 | `SCORE_KEYWORD_BONUSES_PATH` | Optional path to a JSON file providing keyword bonus rules (`data/score_keyword_bonuses.json` by default) |
 | `CONCURRENCY` | Default worker concurrency override (falls back to 5) |
 | `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` | API credentials and endpoint for the LLM provider |
@@ -131,7 +131,6 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 ### Summarise Worker
 
 - Command: `python -m src.cli.main summarize`
-- Uses `data/summarize_cursor.json` to resume from the last processed article
 - Filters content against keywords from `education_keywords.txt`
 - Stores generated summaries in `news_summaries`
 
@@ -140,11 +139,11 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 - Command: `python -m src.cli.main score`
 - Scores entries in `primary_articles` where status is pending/failed or `score` is `NULL`
 - Persists:
-  - `raw_relevance_score`: the raw LLM output (0–100 clamp removed)
+  - `raw_relevance_score`: the raw LLM output (0?00 clamp removed)
   - `keyword_bonus_score`: additive bonus from keyword rules
   - `score`: `raw + bonus` (no upper limit) for downstream ordering
   - `score_details`: JSON metadata documenting matched rules and totals
-- Promotion to `news_summaries` still hinges on `raw_relevance_score ≥ 60`
+- Promotion to `news_summaries` still hinges on `raw_relevance_score ?60`
 
 #### Scoring Metrics Helper
 
@@ -182,7 +181,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | Issue | Fix |
 | --- | --- |
 | Crawl returns zero items | Ensure Playwright works (Toutiao: `playwright install chromium`), check author tokens/`--pages`, increase `--limit` |
-| Summarise skips everything | Confirm keywords list, check `summarize_cursor.json`, set `--reset-cursor` manually (delete file) |
+| Summarise skips everything | Confirm keywords list; ensure pending rows exist in `news_summaries`; adjust `--limit` or `PROCESS_LIMIT` if needed |
 | Score/export find nothing | Make sure previous steps inserted rows into Postgres (`raw_articles` / `news_summaries`) |
 | Database errors (connection / missing tables) | Verify Postgres credentials and apply the schema SQL before rerunning |
 
@@ -214,20 +213,20 @@ MIT License (see repository root for details).
 - Enable via CLI: `--sources chinadaily` (can be combined, e.g. `--sources toutiao,chinanews,chinadaily,gmw`).
 - Optional flags: `--pages N` to bound pagination.
 - Environment variables:
-  - `CHINADAILY_START_URL` — Channel listing entry (defaults to a China Daily site channel).
-  - `CHINADAILY_TIMEOUT` — Request timeout in seconds (default `20`).
-  - `CHINADAILY_EXISTING_CONSECUTIVE_STOP` — Early-stop after N consecutive existing items across pages (default `5`; `0` disables).
+  - `CHINADAILY_START_URL` ?Channel listing entry (defaults to a China Daily site channel).
+  - `CHINADAILY_TIMEOUT` ?Request timeout in seconds (default `20`).
+  - `CHINADAILY_EXISTING_CONSECUTIVE_STOP` ?Early-stop after N consecutive existing items across pages (default `5`; `0` disables).
 
 ### China Education Daily (JYB)
 
 - Enable via CLI: `--sources jyb` (can be combined, e.g. `--sources toutiao,chinanews,chinadaily,jyb,gmw`).
 - Optional flags: `--pages N` to bound pagination.
 - Environment variables:
-  - `JYB_SEARCH_API_URL` — JSON search API endpoint (defaults to `http://new.jyb.cn/jybuc/hyBaseCol/search.action`).
-  - `JYB_START_URL` — Fallback HTML listing/search page (defaults to `http://www.jyb.cn/search.html`).
-  - `JYB_KEYWORDS` — Optional keywords (comma-separated). Default: `教育`.
-  - `JYB_TIMEOUT` — Request timeout in seconds (default `20`).
-  - `JYB_EXISTING_CONSECUTIVE_STOP` — Early-stop after N consecutive existing items across pages (default `5`; `0` disables).
+  - `JYB_SEARCH_API_URL` ?JSON search API endpoint (defaults to `http://new.jyb.cn/jybuc/hyBaseCol/search.action`).
+  - `JYB_START_URL` ?Fallback HTML listing/search page (defaults to `http://www.jyb.cn/search.html`).
+  - `JYB_KEYWORDS` ?Optional keywords (comma-separated). Default: `教育`.
+  - `JYB_TIMEOUT` ?Request timeout in seconds (default `20`).
+  - `JYB_EXISTING_CONSECUTIVE_STOP` ?Early-stop after N consecutive existing items across pages (default `5`; `0` disables).
   Configure the trigger to run daily at your preferred time, enable "Run with highest privileges", and disable battery-stop conditions when needed.
 - Customise steps with script parameters such as `-Steps crawl summarize`, `-Skip score`, or `-ContinueOnError`. Logs default to `logs/pipeline_<timestamp>.log`; override via `-LogDirectory`.
 
@@ -262,3 +261,4 @@ un_pipeline_every10.ps1" -Python "C:\Path\To\python.exe" -LogDirectory "D:\logs\
 - Register daily cleanup (02:00):
   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/register-clean-logs-task.ps1 -Time 02:00 -TaskName EduNews_CleanLogs`
   - Verify: `schtasks /Query /TN EduNews_CleanLogs /V /FO LIST`
+

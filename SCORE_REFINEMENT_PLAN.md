@@ -91,4 +91,4 @@
 - [x] Introduce configuration surface for keyword bonus rules.
 - [x] Ensure `news_summaries` promotion syncs new fields and respects raw-score threshold.
 - [x] Update tests (unit/integration) to cover new scoring breakdown.
-- [ ] Refresh documentation and pipeline metrics to reflect the refined scoring model.
+- [x] Refresh documentation and pipeline metrics to reflect the refined scoring model.

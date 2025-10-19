@@ -6,7 +6,7 @@ Automated pipeline for collecting education-related articles, summarising them w
 
 1. **Crawl** – Fetch latest articles from configured sources (default: Toutiao; optional: ChinaNews, China Daily, Guangming Daily, China Education Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
 2. **Hash / Deduplicate** – `hash_primary` computes an exact `content_hash`, 64-bit SimHash, and four 16-bit band hashes for each filtered article. Using SimHash band lookup and a Hamming-distance threshold (≤ 3), duplicates are grouped under a primary article and promoted to `primary_articles`.
-3. **Score** – LLM-based relevance scoring runs on entries in `primary_articles`; rows scoring ≥ 60 are marked `scored` and staged for summarisation, while lower scores become `filtered_out`.
+3. **Score** – LLM-based relevance scoring runs on entries in `primary_articles`. The LLM output becomes `raw_relevance_score`; keyword rules add a `keyword_bonus_score`, and their sum is persisted as `score`. Promotion still keys off `raw_relevance_score ≥ 60`, while the final score (without an upper bound) is used for ordering.
 4. **Summarise & Sentiment** – `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and writes the results back into `news_summaries` with status `ready_for_export` (failed attempts remain `pending`).
 5. **Export** – Assemble the ready summaries into a briefing ordered by “京内/京外 × 正面/负面” buckets (sorted descending by score) and persist batch metadata in `brief_batches` / `brief_items`, sending an optional Feishu notification.
 
@@ -77,6 +77,8 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `GMW_BASE_URL` | Override Guangming Daily listing entry point |
 | `GMW_TIMEOUT` | Seconds for Guangming Daily HTTP requests (default 15) |
 | `PROCESS_LIMIT` | Global cap applied to worker limits |
+| `SCORE_KEYWORD_BONUSES` | Optional JSON map overriding keyword → bonus rules for scoring |
+| `SCORE_KEYWORD_BONUSES_PATH` | Optional path to a JSON file providing keyword bonus rules (`config/score_keyword_bonuses.json` by default) |
 | `CONCURRENCY` | Default worker concurrency override (falls back to 5) |
 | `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` | API credentials and endpoint for the LLM provider |
 | `SUMMARIZE_MODEL_NAME` / `SOURCE_MODEL_NAME` / `SCORE_MODEL_NAME` | Model identifiers used by the workers |
@@ -136,8 +138,20 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 ### Score Worker
 
 - Command: `python -m src.cli.main score`
-- Scores relevance for entries in `primary_articles` where status is pending/failed or score is NULL
-- Writes `score` back to `primary_articles`; items meeting the threshold are promoted into `news_summaries`
+- Scores entries in `primary_articles` where status is pending/failed or `score` is `NULL`
+- Persists:
+  - `raw_relevance_score`: the raw LLM output (0–100 clamp removed)
+  - `keyword_bonus_score`: additive bonus from keyword rules
+  - `score`: `raw + bonus` (no upper limit) for downstream ordering
+  - `score_details`: JSON metadata documenting matched rules and totals
+- Promotion to `news_summaries` still hinges on `raw_relevance_score ≥ 60`
+
+#### Scoring Metrics Helper
+
+- Command: `python scripts/pipeline_metrics.py --days 7`
+- Outputs status counts for `primary_articles` / `news_summaries` plus aggregates for `raw_relevance_score`, `keyword_bonus_score`, and final `score`
+- Pass `--days 0` to inspect the full history; omit the flag (default 7) for a recent view
+- Useful for gauging how keyword rules affect the pipeline and verifying bonuses are being applied
 
 ### Export Worker
 

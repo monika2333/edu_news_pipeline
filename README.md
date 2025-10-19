@@ -4,20 +4,22 @@ Automated pipeline for collecting education-related articles, summarising them w
 
 ## Pipeline Overview
 
-1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: ChinaNews, China Daily, Guangming Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `news_summaries` with a `pending` status.
-2. **Summarise** - Consume pending rows from `news_summaries`, call the LLM for those without summaries, and update their status to `completed` (failed rows remain pending for retry).
-3. **Score** - Ask the LLM to rate each summary and persist the `correlation` score in `news_summaries`.
-4. **Export** - Assemble the highest-scoring summaries into a plain-text brief and optionally log the batch metadata in `brief_batches` / `brief_items`.
+1. **Crawl** – Fetch latest articles from configured sources (default: Toutiao; optional: ChinaNews, China Daily, Guangming Daily, China Education Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
+2. **Hash / Deduplicate** – `hash_primary` computes an exact `content_hash`, 64-bit SimHash, and four 16-bit band hashes for each filtered article. Using SimHash band lookup and a Hamming-distance threshold (≤ 3), duplicates are grouped under a primary article and promoted to `primary_articles`.
+3. **Score** – LLM-based relevance scoring runs on entries in `primary_articles`; rows scoring ≥ 60 are marked `scored` and staged for summarisation, while lower scores become `filtered_out`.
+4. **Summarise & Sentiment** – `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and writes the results back into `news_summaries` with status `ready_for_export` (failed attempts remain `pending`).
+5. **Export** – Assemble the ready summaries into a briefing ordered by “京内/京外 × 正面/负面” buckets (sorted descending by score) and persist batch metadata in `brief_batches` / `brief_items`, sending an optional Feishu notification.
 
-All steps are available through the CLI wrapper:
+All stages are available through the CLI wrapper:
 
 ```bash
 python -m src.cli.main crawl --sources toutiao,chinanews,chinadaily,jyb,gmw --limit 5000
-python -m src.cli.main repair --limit 500
-python -m src.cli.main summarize --limit 500
+python -m src.cli.main hash-primary --limit 200
 python -m src.cli.main score --limit 500
-python -m src.cli.main geo-tag --limit 500 --batch-size 200
+python -m src.cli.main summarize --limit 500
 python -m src.cli.main export --min-score 60 --limit 500
+python -m src.cli.main repair --limit 500
+python -m src.cli.main geo-tag --limit 500 --batch-size 200
 ```
 
 Use `-h` on any command to see flags. `summarize` now operates on the queued pending rows—run `crawl` first so new candidates are available.
@@ -134,16 +136,16 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 ### Score Worker
 
 - Command: `python -m src.cli.main score`
-- Selects `news_summaries` rows with `correlation` missing
-- Calls the LLM scoring adapter and saves the resulting `correlation`
+- Scores relevance for entries in `primary_articles` where status is pending/failed or score is NULL
+- Writes `score` back to `primary_articles`; items meeting the threshold are promoted into `news_summaries`
 
 ### Export Worker
 
 - Default min score: 60 (override with `--min-score`).
 - Existing output files get numbered suffixes (e.g. `(1)`, `(2)`) to avoid overwriting.
 - Command: `python -m src.cli.main export`
-- Pulls high-correlation summaries from `news_summaries`.
-- Writes a text brief (defaults to `outputs/high_correlation_summaries_<tag>.txt`), grouping entries into `[Beijing]` / `[Non-Beijing]` sections and sorting each section by descending correlation.
+- Pulls high-score summaries from `news_summaries`.
+- Writes a text brief (defaults to `outputs/high_score_summaries_<tag>.txt`), grouping entries into `[Beijing]` / `[Non-Beijing]` sections and sorting each section by descending score.
 - Optionally records batches in the database (`brief_batches` / `brief_items`), storing the `is_beijing_related` flag in the metadata.
 - Set `--no-record-history` or `--no-skip-exported` to adjust behaviour.
 
@@ -184,7 +186,7 @@ MIT License (see repository root for details).
 
 ## Scheduling and Automation
 
-- **Linux/macOS cron**: schedule the full pipeline with `scripts/run_pipeline_once.py` (default steps crawl -> summarize -> score -> export).
+- **Linux/macOS cron**: schedule the full pipeline with `scripts/run_pipeline_once.py` (default steps crawl -> hash-primary -> score -> summarize -> export).
   ```bash
   0 9 * * * /usr/bin/python /path/to/repo/scripts/run_pipeline_once.py
 ```

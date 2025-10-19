@@ -4,7 +4,7 @@ import asyncio
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from src.adapters.http_toutiao import (
     FeedItem,
@@ -117,6 +117,62 @@ def _contains_keywords(content: str, keywords: Sequence[str]) -> Tuple[bool, Lis
     return bool(hits), hits
 
 
+def _dedupe_keywords(hits: Sequence[str]) -> List[str]:
+    ordered: List[str] = []
+    seen: Set[str] = set()
+    for kw in hits:
+        if not kw:
+            continue
+        normalized = kw.strip()
+        if not normalized:
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(normalized)
+    return ordered
+
+
+def _build_filtered_candidate(
+    row: Mapping[str, Any],
+    *,
+    content: str,
+    keywords: Sequence[str],
+) -> Optional[Dict[str, Any]]:
+    article_id = str(row.get("article_id") or "").strip()
+    normalized_content = str(content or "").strip()
+    if not article_id or not normalized_content:
+        return None
+    return {
+        "article_id": article_id,
+        "keywords": _dedupe_keywords(keywords),
+        "status": "pending",
+        "title": row.get("title"),
+        "source": row.get("source"),
+        "publish_time": row.get("publish_time"),
+        "publish_time_iso": row.get("publish_time_iso"),
+        "url": row.get("url"),
+        "content_markdown": normalized_content,
+    }
+
+
+def _persist_filtered_candidates(
+    adapter: Any,
+    candidates: Sequence[Mapping[str, Any]],
+    *,
+    source: str,
+) -> int:
+    if not candidates:
+        return 0
+    try:
+        adapter.upsert_filtered_articles(candidates)
+    except Exception as exc:  # pylint: disable=broad-except
+        log_error(WORKER, f"{source}_filtered_articles", exc)
+        return 0
+    log_info(WORKER, f"{source} filtered articles queued: {len(candidates)}")
+    return len(candidates)
+
+
 
 def _prepare_feed_rows(feed_items):
     rows: List[Dict[str, Any]] = []
@@ -227,7 +283,7 @@ def _run_toutiao_flow(
         else:
             for row in detail_rows:
                 log_info(WORKER, f"DETAIL OK {row['article_id']}")
-    pending_inserted = 0
+    filtered_candidates: List[Dict[str, Any]] = []
     if detail_rows:
         for row in detail_rows:
             article_id = str(row.get('article_id') or '').strip()
@@ -237,27 +293,11 @@ def _run_toutiao_flow(
             ok, hits = _contains_keywords(content, keywords)
             if not ok:
                 continue
-            summary_payload = {
-                'article_id': article_id,
-                'title': row.get('title'),
-                'source': row.get('source'),
-                'publish_time': row.get('publish_time'),
-                'publish_time_iso': row.get('publish_time_iso'),
-                'url': row.get('url'),
-                'content_markdown': content,
-            }
-            try:
-                adapter.insert_pending_summary(
-                    summary_payload,
-                    keywords=hits,
-                    fetched_at=datetime.now(timezone.utc).isoformat(),
-                )
-            except Exception as exc:
-                log_error(WORKER, f'pending_summary:{article_id}', exc)
-            else:
-                pending_inserted += 1
-    if pending_inserted:
-        log_info(WORKER, f'pending summaries queued: {pending_inserted}')
+            candidate = _build_filtered_candidate(row, content=content, keywords=hits)
+            if candidate:
+                filtered_candidates.append(candidate)
+    if filtered_candidates:
+        _persist_filtered_candidates(adapter, filtered_candidates, source="toutiao")
     detail_success_count = len(detail_rows)
     failed_total = detail_fetch_failures + detail_db_failures + unresolved_count
     skipped_total = already_complete + duplicate_count
@@ -366,7 +406,7 @@ def _run_chinanews_flow(
             for row in detail_rows:
                 log_info(WORKER, f"CN DETAIL OK {row['article_id']}")
 
-    pending = 0
+    filtered_candidates: List[Dict[str, Any]] = []
     for row in detail_rows:
         aid = str(row.get('article_id') or '').strip()
         content = str(row.get('content_markdown') or '').strip()
@@ -375,23 +415,11 @@ def _run_chinanews_flow(
         ok_hit, hits = _contains_keywords(content, keywords)
         if not ok_hit:
             continue
-        summary_payload = {
-            'article_id': aid,
-            'title': row.get('title'),
-            'source': row.get('source'),
-            'publish_time': row.get('publish_time'),
-            'publish_time_iso': row.get('publish_time_iso'),
-            'url': row.get('url'),
-            'content_markdown': content,
-        }
-        try:
-            adapter.insert_pending_summary(summary_payload, keywords=hits, fetched_at=datetime.now(timezone.utc).isoformat())
-        except Exception as exc:
-            log_error(WORKER, f"cn_pending_summary:{aid}", exc)
-        else:
-            pending += 1
-    if pending:
-        log_info(WORKER, f"chinanews pending summaries queued: {pending}")
+        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
+        if candidate:
+            filtered_candidates.append(candidate)
+    if filtered_candidates:
+        _persist_filtered_candidates(adapter, filtered_candidates, source="chinanews")
 
     stats["ok"] = len(detail_rows)
     stats["skipped"] += already + duplicates
@@ -482,8 +510,7 @@ def _run_gmw_flow(
             log_info(WORKER, f"GMW DETAIL OK {row['article_id']}")
 
     stats["ok"] = len(detail_rows)
-    pending = 0
-    fetched_iso = datetime.now(timezone.utc).isoformat()
+    filtered_candidates: List[Dict[str, Any]] = []
     for row in detail_rows:
         article_id = str(row.get("article_id") or "").strip()
         content = str(row.get("content_markdown") or "").strip()
@@ -492,23 +519,11 @@ def _run_gmw_flow(
         ok_hit, hits = _contains_keywords(content, keywords)
         if not ok_hit:
             continue
-        payload = {
-            "article_id": article_id,
-            "title": row.get("title"),
-            "source": row.get("source"),
-            "publish_time": row.get("publish_time"),
-            "publish_time_iso": row.get("publish_time_iso"),
-            "url": row.get("url"),
-            "content_markdown": content,
-        }
-        try:
-            adapter.insert_pending_summary(payload, keywords=hits, fetched_at=fetched_iso)
-        except Exception as exc:
-            log_error(WORKER, f"gmw_pending_summary:{article_id}", exc)
-        else:
-            pending += 1
-    if pending:
-        log_info(WORKER, f"gmw pending summaries queued: {pending}")
+        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
+        if candidate:
+            filtered_candidates.append(candidate)
+    if filtered_candidates:
+        _persist_filtered_candidates(adapter, filtered_candidates, source="gmw")
     return stats
 
 
@@ -605,7 +620,7 @@ def _run_jyb_flow(
             for row in detail_rows:
                 log_info(WORKER, f"JYB DETAIL OK {row['article_id']}")
 
-    pending = 0
+    filtered_candidates: List[Dict[str, Any]] = []
     for row in detail_rows:
         aid = str(row.get('article_id') or '').strip()
         content = str(row.get('content_markdown') or '').strip()
@@ -614,23 +629,11 @@ def _run_jyb_flow(
         ok_hit, hits = _contains_keywords(content, keywords)
         if not ok_hit:
             continue
-        summary_payload = {
-            'article_id': aid,
-            'title': row.get('title'),
-            'source': row.get('source'),
-            'publish_time': row.get('publish_time'),
-            'publish_time_iso': row.get('publish_time_iso'),
-            'url': row.get('url'),
-            'content_markdown': content,
-        }
-        try:
-            adapter.insert_pending_summary(summary_payload, keywords=hits, fetched_at=datetime.now(timezone.utc).isoformat())
-        except Exception as exc:
-            log_error(WORKER, f"jyb_pending_summary:{aid}", exc)
-        else:
-            pending += 1
-    if pending:
-        log_info(WORKER, f"jyb pending summaries queued: {pending}")
+        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
+        if candidate:
+            filtered_candidates.append(candidate)
+    if filtered_candidates:
+        _persist_filtered_candidates(adapter, filtered_candidates, source="jyb")
 
     stats["ok"] = len(detail_rows)
     stats["skipped"] += already + duplicates
@@ -734,7 +737,7 @@ def _run_chinadaily_flow(
             for row in detail_rows:
                 log_info(WORKER, f"CD DETAIL OK {row['article_id']}")
 
-    pending = 0
+    filtered_candidates: List[Dict[str, Any]] = []
     for row in detail_rows:
         aid = str(row.get('article_id') or '').strip()
         content = str(row.get('content_markdown') or '').strip()
@@ -743,23 +746,11 @@ def _run_chinadaily_flow(
         ok_hit, hits = _contains_keywords(content, keywords)
         if not ok_hit:
             continue
-        summary_payload = {
-            'article_id': aid,
-            'title': row.get('title'),
-            'source': row.get('source'),
-            'publish_time': row.get('publish_time'),
-            'publish_time_iso': row.get('publish_time_iso'),
-            'url': row.get('url'),
-            'content_markdown': content,
-        }
-        try:
-            adapter.insert_pending_summary(summary_payload, keywords=hits, fetched_at=datetime.now(timezone.utc).isoformat())
-        except Exception as exc:
-            log_error(WORKER, f"cd_pending_summary:{aid}", exc)
-        else:
-            pending += 1
-    if pending:
-        log_info(WORKER, f"chinadaily pending summaries queued: {pending}")
+        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
+        if candidate:
+            filtered_candidates.append(candidate)
+    if filtered_candidates:
+        _persist_filtered_candidates(adapter, filtered_candidates, source="chinadaily")
 
     stats["ok"] = len(detail_rows)
     stats["skipped"] += already + duplicates

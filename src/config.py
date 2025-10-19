@@ -83,6 +83,7 @@ class Settings:
     summarize_model_name: str
     source_model_name: str
     score_model_name: str
+    sentiment_model_name: str
     siliconflow_enable_thinking: bool
     process_limit: Optional[int]
     default_concurrency: int
@@ -114,6 +115,7 @@ def get_settings() -> Settings:
     summarize_model_name = os.getenv("SUMMARIZE_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
     source_model_name = os.getenv("SOURCE_MODEL_NAME", summarize_model_name)
     score_model_name = os.getenv("SCORE_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
+    sentiment_model_name = os.getenv("SENTIMENT_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
     siliconflow_enable_thinking = _bool_from_env(os.getenv("ENABLE_THINKING"), default=False)
 
     process_limit = _optional_int(os.getenv("PROCESS_LIMIT"))
@@ -158,6 +160,7 @@ def get_settings() -> Settings:
         summarize_model_name=summarize_model_name,
         source_model_name=source_model_name,
         score_model_name=score_model_name,
+        sentiment_model_name=sentiment_model_name,
         siliconflow_enable_thinking=siliconflow_enable_thinking,
         process_limit=process_limit,
         default_concurrency=default_concurrency,

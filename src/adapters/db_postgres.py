@@ -13,6 +13,7 @@ from psycopg.types.json import Json
 from src.config import get_settings
 from src.domain import (
     ExportCandidate,
+    PrimaryArticleForScoring,
     SummaryForScoring,
 )
 
@@ -248,6 +249,324 @@ class PostgresAdapter:
             result.append(record)
         return result
 
+    # ------------------------------------------------------------------
+    # Filtered articles (keyword hits)
+    # ------------------------------------------------------------------
+    def upsert_filtered_articles(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        if not rows:
+            return 0
+        columns = [
+            "article_id",
+            "keywords",
+            "status",
+            "title",
+            "source",
+            "publish_time",
+            "publish_time_iso",
+            "url",
+            "content_markdown",
+        ]
+        prepared: List[Tuple[Any, ...]] = []
+        for row in rows:
+            article_id = str(row.get("article_id") or "").strip()
+            if not article_id:
+                continue
+            keywords = row.get("keywords") or []
+            normalized_keywords: List[str] = []
+            seen: Set[str] = set()
+            for kw in keywords:
+                if not kw:
+                    continue
+                cleaned = str(kw).strip()
+                if not cleaned or cleaned in seen:
+                    continue
+                seen.add(cleaned)
+                normalized_keywords.append(cleaned)
+            status_value = str(row.get("status") or "pending").strip() or "pending"
+            prepared.append(
+                (
+                    article_id,
+                    normalized_keywords,
+                    status_value,
+                    row.get("title"),
+                    row.get("source"),
+                    row.get("publish_time"),
+                    row.get("publish_time_iso"),
+                    row.get("url"),
+                    str(row.get("content_markdown") or ""),
+                )
+            )
+        if not prepared:
+            return 0
+        updates = [
+            "keywords = EXCLUDED.keywords",
+            "title = EXCLUDED.title",
+            "source = EXCLUDED.source",
+            "publish_time = EXCLUDED.publish_time",
+            "publish_time_iso = EXCLUDED.publish_time_iso",
+            "url = EXCLUDED.url",
+            "content_markdown = EXCLUDED.content_markdown",
+            "status = CASE WHEN filtered_articles.status IN ('pending', 'failed') OR filtered_articles.status IS NULL"
+            " THEN EXCLUDED.status ELSE filtered_articles.status END",
+            "updated_at = NOW()",
+        ]
+        query = f"""
+            INSERT INTO filtered_articles ({', '.join(columns)})
+            VALUES ({', '.join(['%s'] * len(columns))})
+            ON CONFLICT (article_id) DO UPDATE SET {', '.join(updates)}
+        """
+        with self._cursor() as cur:
+            cur.executemany(query, prepared)
+        return len(prepared)
+
+    def fetch_filtered_articles_for_hashing(self, limit: int) -> List[Dict[str, Any]]:
+        query = """
+            SELECT
+                article_id,
+                title,
+                source,
+                publish_time,
+                publish_time_iso,
+                url,
+                content_markdown,
+                keywords,
+                status,
+                primary_article_id,
+                content_hash,
+                simhash,
+                simhash_bigint,
+                simhash_band1,
+                simhash_band2,
+                simhash_band3,
+                simhash_band4,
+                inserted_at,
+                updated_at
+            FROM filtered_articles
+            WHERE
+                status IN ('pending', 'failed')
+                OR content_hash IS NULL
+                OR simhash IS NULL
+                OR primary_article_id IS NULL
+                OR simhash_bigint IS NULL
+                OR simhash_band1 IS NULL
+                OR simhash_band2 IS NULL
+                OR simhash_band3 IS NULL
+                OR simhash_band4 IS NULL
+            ORDER BY inserted_at ASC
+            LIMIT %s
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (max(1, limit),))
+            rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
+    def fetch_filtered_articles_by_hashes(self, hashes: Sequence[str]) -> List[Dict[str, Any]]:
+        ordered_hashes = [value for value in dict.fromkeys(hashes) if value]
+        if not ordered_hashes:
+            return []
+        query = """
+            SELECT
+                article_id,
+                title,
+                source,
+                publish_time,
+                publish_time_iso,
+                url,
+                content_markdown,
+                keywords,
+                content_hash,
+                simhash,
+                primary_article_id,
+                status,
+                inserted_at,
+                updated_at
+            FROM filtered_articles
+            WHERE content_hash = ANY(%s)
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (ordered_hashes,))
+            rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
+    def update_filtered_article_features(self, updates: Sequence[Mapping[str, Any]]) -> int:
+        if not updates:
+            return 0
+        prepared: List[Tuple[Any, ...]] = []
+        for row in updates:
+            article_id = str(row.get("article_id") or "").strip()
+            if not article_id:
+                continue
+            prepared.append(
+                (
+                    row.get("content_hash"),
+                    row.get("simhash"),
+                    row.get("simhash_bigint"),
+                    row.get("simhash_band1"),
+                    row.get("simhash_band2"),
+                    row.get("simhash_band3"),
+                    row.get("simhash_band4"),
+                    article_id,
+                )
+            )
+        if not prepared:
+            return 0
+        query = """
+            UPDATE filtered_articles
+            SET
+                content_hash = %s,
+                simhash = %s,
+                simhash_bigint = %s,
+                simhash_band1 = %s,
+                simhash_band2 = %s,
+                simhash_band3 = %s,
+                simhash_band4 = %s,
+                status = CASE
+                    WHEN status IN ('pending', 'failed') THEN 'hashed'
+                    ELSE status
+                END,
+                updated_at = NOW()
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.executemany(query, prepared)
+        return len(prepared)
+
+    def fetch_filtered_articles_by_band(self, band_index: int, band_value: int, limit: int) -> List[Dict[str, Any]]:
+        if band_index not in (1, 2, 3, 4):
+            raise ValueError("band_index must be between 1 and 4")
+        column_name = f"simhash_band{band_index}"
+        query = f"""
+            SELECT
+                article_id,
+                title,
+                source,
+                publish_time,
+                publish_time_iso,
+                url,
+                content_markdown,
+                keywords,
+                status,
+                primary_article_id,
+                content_hash,
+                simhash,
+                simhash_bigint,
+                inserted_at,
+                updated_at
+            FROM filtered_articles
+            WHERE {column_name} = %s
+            LIMIT %s
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (band_value, max(1, limit)))
+            rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
+    def update_filtered_primary_ids(self, updates: Sequence[Mapping[str, Any]]) -> int:
+        if not updates:
+            return 0
+        prepared: List[Tuple[Any, ...]] = []
+        for row in updates:
+            article_id = str(row.get("article_id") or "").strip()
+            primary_id = str(row.get("primary_article_id") or "").strip()
+            status_value = str(row.get("status") or "").strip()
+            if not article_id or not primary_id or not status_value:
+                continue
+            prepared.append((primary_id, status_value, article_id))
+        if not prepared:
+            return 0
+        query = """
+            UPDATE filtered_articles
+            SET
+                primary_article_id = %s,
+                status = %s,
+                updated_at = NOW()
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.executemany(query, prepared)
+        return len(prepared)
+
+    def upsert_primary_articles(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        if not rows:
+            return 0
+        columns = [
+            "article_id",
+            "primary_article_id",
+            "status",
+            "score",
+            "score_updated_at",
+            "title",
+            "source",
+            "publish_time",
+            "publish_time_iso",
+            "url",
+            "content_markdown",
+            "keywords",
+            "content_hash",
+            "simhash",
+        ]
+        prepared: List[Tuple[Any, ...]] = []
+        for row in rows:
+            article_id = str(row.get("article_id") or "").strip()
+            primary_article_id = str(row.get("primary_article_id") or "").strip()
+            if not article_id or not primary_article_id:
+                continue
+            keywords = row.get("keywords") or []
+            normalized_keywords: List[str] = []
+            seen: Set[str] = set()
+            for kw in keywords:
+                if not kw:
+                    continue
+                cleaned = str(kw).strip()
+                if not cleaned or cleaned in seen:
+                    continue
+                seen.add(cleaned)
+                normalized_keywords.append(cleaned)
+            prepared.append(
+                (
+                    article_id,
+                    primary_article_id,
+                    row.get("status", "pending"),
+                    row.get("score"),
+                    row.get("score_updated_at"),
+                    row.get("title"),
+                    row.get("source"),
+                    row.get("publish_time"),
+                    row.get("publish_time_iso"),
+                    row.get("url"),
+                    row.get("content_markdown"),
+                    normalized_keywords,
+                    row.get("content_hash"),
+                    row.get("simhash"),
+                )
+            )
+        if not prepared:
+            return 0
+        update_clauses = [
+            "primary_article_id = EXCLUDED.primary_article_id",
+            "title = EXCLUDED.title",
+            "source = EXCLUDED.source",
+            "publish_time = EXCLUDED.publish_time",
+            "publish_time_iso = EXCLUDED.publish_time_iso",
+            "url = EXCLUDED.url",
+            "content_markdown = EXCLUDED.content_markdown",
+            "keywords = EXCLUDED.keywords",
+            "content_hash = EXCLUDED.content_hash",
+            "simhash = EXCLUDED.simhash",
+            "score = COALESCE(EXCLUDED.score, primary_articles.score)",
+            "score_updated_at = COALESCE(EXCLUDED.score_updated_at, primary_articles.score_updated_at)",
+            "status = CASE WHEN primary_articles.status IN ('pending', 'failed') THEN EXCLUDED.status ELSE primary_articles.status END",
+            "updated_at = NOW()",
+        ]
+        query = f"""
+            INSERT INTO primary_articles ({', '.join(columns)})
+            VALUES ({', '.join(['%s'] * len(columns))})
+            ON CONFLICT (article_id) DO UPDATE SET {', '.join(update_clauses)}
+        """
+        with self._cursor() as cur:
+            cur.executemany(query, prepared)
+        return len(prepared)
+
 
     def get_existing_raw_article_ids(self) -> Set[str]:
         ids: Set[str] = set()
@@ -345,7 +664,7 @@ class PostgresAdapter:
         *,
         max_attempts: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        clauses = ["summary_status = 'pending'"]
+        clauses = ["summary_status = 'pending'", "status = 'pending'"]
         params: List[Any] = []
         if max_attempts is not None:
             clauses.append("summary_fail_count < %s")
@@ -382,7 +701,9 @@ class PostgresAdapter:
             UPDATE news_summaries
             SET summary_attempted_at = NOW(),
                 summary_fail_count = summary_fail_count + 1
-            WHERE article_id = %s AND summary_status = 'pending'
+            WHERE article_id = %s
+              AND summary_status = 'pending'
+              AND status = 'pending'
         """
         with self._cursor() as cur:
             cur.execute(query, (article_id,))
@@ -396,6 +717,9 @@ class PostgresAdapter:
         llm_source: Optional[str] = None,
         keywords: Optional[Sequence[str]] = None,
         beijing_related: Optional[bool] = None,
+        sentiment_label: Optional[str] = None,
+        sentiment_confidence: Optional[float] = None,
+        status: str = "ready_for_export",
     ) -> None:
         if not article_id:
             raise ValueError('complete_summary requires article_id')
@@ -404,6 +728,7 @@ class PostgresAdapter:
             'summary_status': 'completed',
             'summary_generated_at': datetime.now(timezone.utc).isoformat(),
             'summary_attempted_at': datetime.now(timezone.utc).isoformat(),
+            'status': status,
         }
         if llm_source is not None:
             payload['llm_source'] = llm_source
@@ -416,6 +741,10 @@ class PostgresAdapter:
                 payload['llm_keywords'] = deduped
         if beijing_related is not None:
             payload['is_beijing_related'] = beijing_related
+        if sentiment_label is not None:
+            payload['sentiment_label'] = sentiment_label
+        if sentiment_confidence is not None:
+            payload['sentiment_confidence'] = float(sentiment_confidence)
         sets = ', '.join(f"{field} = %s" for field in payload)
         values = list(payload.values()) + [article_id]
         query = f"""
@@ -433,8 +762,11 @@ class PostgresAdapter:
             return
         query = """
             UPDATE news_summaries
-            SET summary_status = 'failed'
-            WHERE article_id = %s AND summary_status = 'pending'
+            SET summary_status = 'failed',
+                status = 'failed'
+            WHERE article_id = %s
+              AND summary_status = 'pending'
+              AND status = 'pending'
         """
         with self._cursor() as cur:
             cur.execute(query, (article_id,))
@@ -581,47 +913,163 @@ class PostgresAdapter:
                     raise
 
     # ------------------------------------------------------------------
-    # Scoring
+    # Scoring helpers (news_summaries)
     # ------------------------------------------------------------------
-    def fetch_summaries_for_scoring(self, limit: Optional[int] = None) -> List[SummaryForScoring]:
-        query = [
-            "SELECT article_id, content_markdown, llm_summary",
-            "FROM news_summaries",
-            "WHERE correlation IS NULL",
-            "  AND llm_summary IS NOT NULL",
-            "ORDER BY summary_generated_at ASC",
-        ]
-        params: List[Any] = []
-        if limit and limit > 0:
-            query.append("LIMIT %s")
-            params.append(limit)
-        full_query = " ".join(query)
-        with self._cursor() as cur:
-            cur.execute(full_query, tuple(params))
-            rows = cur.fetchall()
-        out: List[SummaryForScoring] = []
-        for row in rows:
-            summary_text = row.get("llm_summary")
-            if not summary_text:
-                continue
-            article_id = row.get("article_id")
-            if not article_id:
-                continue
-            out.append(
-                SummaryForScoring(
-                    article_id=str(article_id),
-                    content=str(row.get("content_markdown") or ""),
-                    summary=str(summary_text),
-                )
-            )
-        return out
-
-    def update_correlation(self, article_id: str, score: Optional[float]) -> None:
+    def update_summary_score(self, article_id: str, score: Optional[float]) -> None:
         with self._cursor() as cur:
             cur.execute(
-                "UPDATE news_summaries SET correlation = %s, updated_at = NOW() WHERE article_id = %s",
+                "UPDATE news_summaries SET score = %s, updated_at = NOW() WHERE article_id = %s",
                 (score, article_id),
             )
+
+    def fetch_primary_articles_for_scoring(self, limit: int) -> List[PrimaryArticleForScoring]:
+        query = """
+            SELECT
+                article_id,
+                primary_article_id,
+                status,
+                score,
+                title,
+                source,
+                publish_time,
+                publish_time_iso,
+                url,
+                content_markdown,
+                keywords,
+                content_hash,
+                simhash,
+                created_at
+            FROM primary_articles
+            WHERE status IN ('pending', 'failed')
+               OR score IS NULL
+            ORDER BY created_at ASC
+            LIMIT %s
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (max(1, limit),))
+            rows = cur.fetchall()
+        results: List[PrimaryArticleForScoring] = []
+        for row in rows:
+            article_id = row.get("article_id")
+            content = row.get("content_markdown")
+            if not article_id or content is None:
+                continue
+            keywords = row.get("keywords") or []
+            if keywords is None:
+                keywords = []
+            results.append(
+                PrimaryArticleForScoring(
+                    article_id=str(article_id),
+                    content=str(content),
+                    title=row.get("title"),
+                    source=row.get("source"),
+                    publish_time=row.get("publish_time"),
+                    publish_time_iso=row.get("publish_time_iso"),
+                    url=row.get("url"),
+                    keywords=list(keywords),
+                    content_hash=row.get("content_hash"),
+                    simhash=row.get("simhash"),
+                )
+            )
+        return results
+
+    def update_primary_article_scores(self, updates: Sequence[Mapping[str, Any]]) -> int:
+        if not updates:
+            return 0
+        prepared: List[Tuple[Any, ...]] = []
+        for row in updates:
+            article_id = str(row.get("article_id") or "").strip()
+            if not article_id:
+                continue
+            prepared.append(
+                (
+                    row.get("score"),
+                    row.get("status") or "pending",
+                    article_id,
+                )
+            )
+        if not prepared:
+            return 0
+        query = """
+            UPDATE primary_articles
+            SET
+                score = %s,
+                status = %s,
+                score_updated_at = NOW(),
+                updated_at = NOW()
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.executemany(query, prepared)
+        return len(prepared)
+
+    def upsert_news_summaries_from_primary(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        if not rows:
+            return 0
+        columns = [
+            "article_id",
+            "title",
+            "source",
+            "publish_time",
+            "publish_time_iso",
+            "url",
+            "content_markdown",
+            "score",
+            "status",
+            "llm_keywords",
+        ]
+        prepared: List[Tuple[Any, ...]] = []
+        for row in rows:
+            article_id = str(row.get("article_id") or "").strip()
+            if not article_id:
+                continue
+            keywords = row.get("keywords") or []
+            deduped: List[str] = []
+            seen: Set[str] = set()
+            for kw in keywords:
+                if not kw:
+                    continue
+                cleaned = str(kw).strip()
+                if not cleaned or cleaned in seen:
+                    continue
+                seen.add(cleaned)
+                deduped.append(cleaned)
+            prepared.append(
+                (
+                    article_id,
+                    row.get("title"),
+                    row.get("source"),
+                    row.get("publish_time"),
+                    row.get("publish_time_iso"),
+                    row.get("url"),
+                    row.get("content_markdown"),
+                    row.get("score"),
+                    row.get("status") or "pending",
+                    deduped,
+                )
+            )
+        if not prepared:
+            return 0
+        update_parts = [
+            "title = EXCLUDED.title",
+            "source = EXCLUDED.source",
+            "publish_time = EXCLUDED.publish_time",
+            "publish_time_iso = EXCLUDED.publish_time_iso",
+            "url = EXCLUDED.url",
+            "content_markdown = EXCLUDED.content_markdown",
+            "score = EXCLUDED.score",
+            "llm_keywords = EXCLUDED.llm_keywords",
+            "status = CASE WHEN news_summaries.status IN ('pending', 'failed') THEN EXCLUDED.status ELSE news_summaries.status END",
+            "updated_at = NOW()",
+        ]
+        query = f"""
+            INSERT INTO news_summaries ({', '.join(columns)})
+            VALUES ({', '.join(['%s'] * len(columns))})
+            ON CONFLICT (article_id) DO UPDATE SET {', '.join(update_parts)}
+        """
+        with self._cursor() as cur:
+            cur.executemany(query, prepared)
+        return len(prepared)
 
     def fetch_beijing_tag_candidates(self, limit: int) -> List[Dict[str, Any]]:
         query = """
@@ -674,16 +1122,23 @@ class PostgresAdapter:
                 title,
                 llm_summary,
                 content_markdown,
-                correlation,
+                score,
                 url,
                 source,
                 publish_time_iso,
                 publish_time,
                 llm_source,
-                is_beijing_related
+                sentiment_label,
+                sentiment_confidence,
+                is_beijing_related,
+                status,
+                summary_status
             FROM news_summaries
-            WHERE correlation IS NOT NULL AND correlation >= %s
-            ORDER BY correlation DESC
+            WHERE status = 'ready_for_export'
+              AND summary_status = 'completed'
+              AND score IS NOT NULL
+              AND score >= %s
+            ORDER BY score DESC NULLS LAST, publish_time_iso DESC NULLS LAST, article_id ASC
         """
         with self._cursor() as cur:
             cur.execute(query, (min_score,))
@@ -696,7 +1151,7 @@ class PostgresAdapter:
             title = row.get("title")
             summary_text = row.get("llm_summary") or ""
             content = row.get("content_markdown") or ""
-            correlation = float(row.get("correlation") or 0.0)
+            score_value = float(row.get("score") or 0.0)
             url = row.get("url")
             published_at = row.get("publish_time_iso") or row.get("publish_time")
             if isinstance(published_at, datetime):
@@ -713,9 +1168,11 @@ class PostgresAdapter:
                     content=str(content),
                     source=source_name,
                     llm_source=row.get("llm_source"),
-                    relevance_score=correlation,
+                    score=score_value,
                     original_url=url,
                     published_at=published_at,
+                    sentiment_label=row.get("sentiment_label"),
+                    sentiment_confidence=row.get("sentiment_confidence"),
                     is_beijing_related=row.get("is_beijing_related"),
                 )
             )
@@ -873,11 +1330,13 @@ class PostgresAdapter:
                         Json(
                             {
                                 "title": candidate.title,
-                                "correlation": candidate.relevance_score,
+                                "score": candidate.score,
                                 "original_url": candidate.original_url,
                                 "published_at": candidate.published_at,
                                 "source": candidate.source,
                                 "is_beijing_related": candidate.is_beijing_related,
+                                "sentiment_label": candidate.sentiment_label,
+                                "sentiment_confidence": candidate.sentiment_confidence,
                             }
                         ),
                     )

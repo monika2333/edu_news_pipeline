@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from src.adapters.db import get_adapter
 from src.domain import ExportCandidate
@@ -64,11 +64,11 @@ def run(
 
     with worker_session(WORKER, limit=limit if limit is not None else min_score):
         tag = generate_report_tag(date, report_tag)
-        base_output = output_base or Path("outputs") / "high_correlation_summaries.txt"
+        base_output = output_base or Path("outputs") / "high_score_summaries.txt"
         if not base_output.is_absolute():
             base_output = (Path.cwd() / base_output).resolve()
 
-        # Fetch candidates already sorted by correlation DESC
+        # Fetch candidates already sorted by score DESC
         candidates = adapter.fetch_export_candidates(min_score)
         if not candidates:
             log_info(WORKER, "No filtered articles meet the score threshold.")
@@ -109,34 +109,68 @@ def run(
             else:
                 external_candidates.append(cand)
 
+        def _normalized_sentiment(candidate: ExportCandidate) -> str:
+            label = (candidate.sentiment_label or "").strip().lower()
+            if label == "negative":
+                return "negative"
+            return "positive"
+
         def _format_entry(candidate: ExportCandidate) -> str:
             title_line = (candidate.title or "").strip()
             summary_line = (candidate.summary or "").strip()
             display_source = (candidate.llm_source or candidate.source or "").strip()
+            # Only include location/source info in the suffix.
+            suffix_parts: List[str] = []
             if display_source:
-                return f"{title_line}\n{summary_line}（{display_source}）"
-            return f"{title_line}\n{summary_line}"
+                suffix_parts.append(display_source)
+            suffix = f"（{'，'.join(suffix_parts)}）" if suffix_parts else ""
+            return "\n".join(filter(None, [title_line, summary_line + suffix]))
+
+        bucket_index: Dict[Tuple[str, str], List[ExportCandidate]] = {
+            ("internal", "positive"): [],
+            ("internal", "negative"): [],
+            ("external", "positive"): [],
+            ("external", "negative"): [],
+        }
+
+        for cand in internal_candidates:
+            bucket_index[("internal", _normalized_sentiment(cand))].append(cand)
+        for cand in external_candidates:
+            bucket_index[("external", _normalized_sentiment(cand))].append(cand)
 
         text_entries: List[str] = []
         export_payload: List[Tuple[ExportCandidate, str]] = []
 
-        section_definitions: List[Tuple[str, List[ExportCandidate], str]] = [
-            ("京内", internal_candidates, "jingnei"),
-            ("京外", external_candidates, "jingwai"),
+        bucket_definitions: List[Tuple[str, Tuple[str, str], str]] = [
+            ("京内正面", ("internal", "positive"), "jingnei_positive"),
+            ("京内负面", ("internal", "negative"), "jingnei_negative"),
+            ("京外正面", ("external", "positive"), "jingwai_positive"),
+            ("京外负面", ("external", "negative"), "jingwai_negative"),
         ]
 
-        for label, items, section_key in section_definitions:
+        category_counts: Dict[str, int] = {}
+
+        for label, key, section_key in bucket_definitions:
+            items = bucket_index[key]
             if not items:
+                category_counts[label] = 0
                 continue
+            items.sort(key=lambda item: item.score if item.score is not None else 0.0, reverse=True)
+            category_counts[label] = len(items)
             header_line = f"【{label}】共 {len(items)} 条"
-            entry_lines = []
-            for item in items:
-                entry_lines.append(_format_entry(item))
-                export_payload.append((item, section_key))
+            entry_lines = [_format_entry(item) for item in items]
+            export_payload.extend((item, section_key) for item in items)
             block_text = header_line
             if entry_lines:
                 block_text = header_line + "\n\n" + "\n\n".join(entry_lines)
             text_entries.append(block_text)
+
+        if not text_entries:
+            log_info(WORKER, "No entries to export after sentiment bucketing.")
+            return
+
+        for label, count in category_counts.items():
+            log_info(WORKER, f"{label}: {count}")
 
         final_output = generate_output_path(base_output, tag)
         final_output = _ensure_unique_output(final_output)
@@ -162,10 +196,7 @@ def run(
                 tag=tag,
                 output_path=final_output,
                 entries=text_entries,
-                category_counts={
-                    "京内": len(internal_candidates),
-                    "京外": len(external_candidates),
-                },
+                category_counts=category_counts,
             )
             log_info(WORKER, "Feishu notification sent")
         except FeishuConfigError:

@@ -48,6 +48,33 @@ class SummaryForScoring:
 
 
 @dataclass(slots=True)
+class PrimaryArticleForScoring:
+    article_id: str
+    content: str
+    title: Optional[str]
+    source: Optional[str]
+    publish_time: Optional[int]
+    publish_time_iso: Optional[str]
+    url: Optional[str]
+    keywords: Sequence[str] = field(default_factory=list)
+    content_hash: Optional[str] = None
+    simhash: Optional[str] = None
+
+
+@dataclass(slots=True)
+class PrimaryArticleForSummarizing:
+    article_id: str
+    content: str
+    title: Optional[str]
+    source: Optional[str]
+    publish_time: Optional[int]
+    publish_time_iso: Optional[str]
+    url: Optional[str]
+    keywords: Sequence[str] = field(default_factory=list)
+    score: Optional[float] = None
+
+
+@dataclass(slots=True)
 class ExportCandidate:
     filtered_article_id: str
     raw_article_id: str
@@ -57,9 +84,11 @@ class ExportCandidate:
     content: str
     source: Optional[str]
     llm_source: Optional[str]
-    relevance_score: float
+    score: float
     original_url: Optional[str]
     published_at: Optional[str]
+    sentiment_label: Optional[str] = None
+    sentiment_confidence: Optional[float] = None
     is_beijing_related: Optional[bool] = None
 
 
@@ -69,7 +98,7 @@ class BriefExportRecord:
     section: str
     title: Optional[str]
     summary: str
-    correlation: Optional[float]
+    score: Optional[float]
     original_url: Optional[str]
     published_at: Optional[str]
     source: Optional[str]
@@ -82,6 +111,8 @@ __all__ = [
     "MissingContentTarget",
     "SummaryCandidate",
     "SummaryForScoring",
+    "PrimaryArticleForScoring",
+    "PrimaryArticleForSummarizing",
     "ExportCandidate",
     "BriefExportRecord",
 ]

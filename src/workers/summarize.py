@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from src.adapters.db import get_adapter
 from src.adapters.llm_source import detect_source
 from src.adapters.llm_summary import summarise
+from src.adapters.sentiment_classifier import classify_sentiment
 from src.config import get_settings
 from src.domain import is_beijing_related, load_beijing_keywords
 from src.workers import log_error, log_info, log_summary, worker_session
@@ -108,6 +109,9 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None, keywords_path: O
                 summary_text = (result.get('summary', '')).strip()
                 if not summary_text:
                     raise RuntimeError('Summarisation returned empty text')
+                sentiment_payload = classify_sentiment(summary_text)
+                sentiment_label = str(sentiment_payload.get("label") or "").strip() or None
+                sentiment_confidence = sentiment_payload.get("confidence")
                 llm_source = None
                 try:
                     source_payload = {
@@ -130,9 +134,15 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None, keywords_path: O
                     llm_source=llm_source,
                     keywords=keywords,
                     beijing_related=beijing_related,
+                    sentiment_label=sentiment_label,
+                    sentiment_confidence=sentiment_confidence,
+                    status="ready_for_export",
                 )
                 success += 1
-                log_info(WORKER, f'OK {article_id}')
+                if sentiment_label:
+                    log_info(WORKER, f'OK {article_id} sentiment={sentiment_label} ({sentiment_confidence})')
+                else:
+                    log_info(WORKER, f'OK {article_id}')
             except Exception as exc:
                 failed += 1
                 failure_ids.append(article_id)

@@ -7,6 +7,8 @@ from .models import (
     BriefExportRecord,
     ExportCandidate,
     MissingContentTarget,
+    PrimaryArticleForScoring,
+    PrimaryArticleForSummarizing,
     SummaryCandidate,
     SummaryForScoring,
 )
@@ -22,6 +24,8 @@ __all__ = [
     "DEFAULT_BRIEF_TEMPLATE",
     "DEFAULT_WEIGHTS",
     "ExportCandidate",
+    "PrimaryArticleForScoring",
+    "PrimaryArticleForSummarizing",
     "IN_PROGRESS_STATES",
     "ProcessState",
     "TERMINAL_STATES",

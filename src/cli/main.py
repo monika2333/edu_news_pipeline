@@ -9,6 +9,7 @@ from src.workers.geo_tag import run as geo_tag
 from src.workers.repair_missing_content import run as repair_missing
 from src.workers.score import run as score_summaries
 from src.workers.summarize import run as summarize_articles
+from src.workers.hash_primary import run as hash_primary
 
 
 def _positive_int(value: str) -> int:
@@ -38,8 +39,16 @@ def _add_summarize(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--keywords", type=Path, default=None, help="(Deprecated) keywords now handled in crawl; kept for CLI compatibility")
 
 
+def _add_hash_primary(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "hash-primary",
+        help="Compute content hashes/SimHash for filtered articles and assign primary/duplicate groups",
+    )
+    parser.add_argument("--limit", type=_positive_int, default=200, help="Max number of filtered articles to process")
+
+
 def _add_score(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("score", help="Score correlation for summarized articles")
+    parser = subparsers.add_parser("score", help="Score relevance for primary articles")
     parser.add_argument("--limit", type=_positive_int, default=500, help="Max number of summaries to score")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
 
@@ -49,7 +58,7 @@ def _add_export(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--limit", type=_positive_int, default=None, help="Max number of summaries to export")
     parser.add_argument("--date", type=str, default=None, help="Report date (YYYY-MM-DD). Defaults to today")
     parser.add_argument("--report-tag", type=str, default=None, help="Explicit report tag identifier")
-    parser.add_argument("--min-score", type=_positive_int, default=60, help="Minimum correlation score to include")
+    parser.add_argument("--min-score", type=_positive_int, default=60, help="Minimum score to include")
     parser.add_argument("--skip-exported", action=argparse.BooleanOptionalAction, default=True, help="Skip items already exported in previous runs")
     parser.add_argument("--record-history", action=argparse.BooleanOptionalAction, default=True, help="Persist export metadata back to the database")
     parser.add_argument("--output", type=Path, default=None, help="Override output file path")
@@ -71,6 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     _add_crawl(subparsers)
     _add_repair(subparsers)
+    _add_hash_primary(subparsers)
     _add_summarize(subparsers)
     _add_score(subparsers)
     _add_export(subparsers)
@@ -87,6 +97,8 @@ def main(argv: list[str] | None = None) -> None:
         crawl_sources(limit=args.limit, concurrency=args.concurrency, sources=args.sources, pages=args.pages)
     elif command == "repair":
         repair_missing(limit=args.limit)
+    elif command == "hash-primary":
+        hash_primary(limit=args.limit)
     elif command == "summarize":
         summarize_articles(limit=args.limit, concurrency=args.concurrency, keywords_path=args.keywords)
     elif command == "score":

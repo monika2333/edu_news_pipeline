@@ -2,7 +2,7 @@
 
 ## Background
 - Current workflow stores a single `score` on `primary_articles` / `news_summaries`, produced entirely by the LLM relevance model.
-- We need to introduce rule-based bonuses (e.g., keyword hits like "北京市委教育工委", "北京市教育委员会") without breaking downstream thresholds, ordering, or historical data.
+- We need to introduce rule-based bonuses (e.g., keyword hits like "北京市委教育工委", "�����н���ίԱ��") without breaking downstream thresholds, ordering, or historical data.
 
 ## Objectives
 - Preserve the existing `score` as the final, comprehensive value used by summarise/export steps.
@@ -70,7 +70,7 @@
     "keyword_bonus_score": 120,
     "matched_rules": [
       {"rule_id": "keyword:北京市委教育工委", "label": "Beijing Municipal Party Committee", "bonus": 100},
-      {"rule_id": "keyword:北京市教育委员会", "label": "Beijing Municipal Education Commission", "bonus": 20}
+      {"rule_id": "keyword:�����н���ίԱ��", "label": "Beijing Municipal Education Commission", "bonus": 20}
     ],
     "notes": "Promotion uses raw_relevance_score threshold (>= 60)."
   }
@@ -89,6 +89,6 @@
 - [x] Adjust database adapter read/write logic for the additional columns.
 - [x] Implement keyword bonus calculation and `score_details` persistence in `src/workers/score.py`.
 - [x] Introduce configuration surface for keyword bonus rules.
-- [ ] Ensure `news_summaries` promotion syncs new fields and respects raw-score threshold.
+- [x] Ensure `news_summaries` promotion syncs new fields and respects raw-score threshold.
 - [ ] Update tests (unit/integration) to cover new scoring breakdown.
 - [ ] Refresh documentation and pipeline metrics to reflect the refined scoring model.

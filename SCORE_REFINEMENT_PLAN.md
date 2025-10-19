@@ -83,7 +83,7 @@
 - `score_details`: optional but recommended when investigating rule effects; it documents which rules fired and their contributions.
 
 ## Action Checklist
-- [ ] Update database schema and migrations for `raw_relevance_score`, `keyword_bonus_score`, and `score_details`.
+- [x] Update database schema and migrations for `raw_relevance_score`, `keyword_bonus_score`, and `score_details`.
 - [ ] Extend domain models (`PrimaryArticleForScoring`, `PrimaryArticleForSummarizing`, `ExportCandidate`) with new fields.
 - [ ] Adjust database adapter read/write logic for the additional columns.
 - [ ] Implement keyword bonus calculation and `score_details` persistence in `src/workers/score.py`.

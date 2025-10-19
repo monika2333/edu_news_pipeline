@@ -929,6 +929,9 @@ class PostgresAdapter:
                 primary_article_id,
                 status,
                 score,
+                raw_relevance_score,
+                keyword_bonus_score,
+                score_details,
                 title,
                 source,
                 publish_time,
@@ -957,6 +960,9 @@ class PostgresAdapter:
             keywords = row.get("keywords") or []
             if keywords is None:
                 keywords = []
+            score_details = row.get("score_details") or {}
+            if isinstance(score_details, list):
+                score_details = {}
             results.append(
                 PrimaryArticleForScoring(
                     article_id=str(article_id),
@@ -969,6 +975,9 @@ class PostgresAdapter:
                     keywords=list(keywords),
                     content_hash=row.get("content_hash"),
                     simhash=row.get("simhash"),
+                    raw_relevance_score=row.get("raw_relevance_score"),
+                    keyword_bonus_score=row.get("keyword_bonus_score"),
+                    score_details=score_details,
                 )
             )
         return results
@@ -981,9 +990,15 @@ class PostgresAdapter:
             article_id = str(row.get("article_id") or "").strip()
             if not article_id:
                 continue
+            score_details = row.get("score_details")
+            if score_details is None:
+                score_details = {}
             prepared.append(
                 (
                     row.get("score"),
+                    row.get("raw_relevance_score"),
+                    row.get("keyword_bonus_score"),
+                    Json(score_details),
                     row.get("status") or "pending",
                     article_id,
                 )
@@ -994,6 +1009,9 @@ class PostgresAdapter:
             UPDATE primary_articles
             SET
                 score = %s,
+                raw_relevance_score = %s,
+                keyword_bonus_score = %s,
+                score_details = %s,
                 status = %s,
                 score_updated_at = NOW(),
                 updated_at = NOW()
@@ -1015,6 +1033,9 @@ class PostgresAdapter:
             "url",
             "content_markdown",
             "score",
+            "raw_relevance_score",
+            "keyword_bonus_score",
+            "score_details",
             "status",
             "llm_keywords",
         ]
@@ -1034,6 +1055,9 @@ class PostgresAdapter:
                     continue
                 seen.add(cleaned)
                 deduped.append(cleaned)
+            score_details = row.get("score_details")
+            if score_details is None:
+                score_details = {}
             prepared.append(
                 (
                     article_id,
@@ -1044,6 +1068,9 @@ class PostgresAdapter:
                     row.get("url"),
                     row.get("content_markdown"),
                     row.get("score"),
+                    row.get("raw_relevance_score"),
+                    row.get("keyword_bonus_score"),
+                    Json(score_details),
                     row.get("status") or "pending",
                     deduped,
                 )
@@ -1058,6 +1085,9 @@ class PostgresAdapter:
             "url = EXCLUDED.url",
             "content_markdown = EXCLUDED.content_markdown",
             "score = EXCLUDED.score",
+            "raw_relevance_score = EXCLUDED.raw_relevance_score",
+            "keyword_bonus_score = EXCLUDED.keyword_bonus_score",
+            "score_details = EXCLUDED.score_details",
             "llm_keywords = EXCLUDED.llm_keywords",
             "status = CASE WHEN news_summaries.status IN ('pending', 'failed') THEN EXCLUDED.status ELSE news_summaries.status END",
             "updated_at = NOW()",
@@ -1123,6 +1153,9 @@ class PostgresAdapter:
                 llm_summary,
                 content_markdown,
                 score,
+                raw_relevance_score,
+                keyword_bonus_score,
+                score_details,
                 url,
                 source,
                 publish_time_iso,
@@ -1158,6 +1191,9 @@ class PostgresAdapter:
                 published_at = published_at.isoformat()
             source_name = row.get("source")
             article_hash = self._article_hash(article_id, url, title)
+            score_details = row.get("score_details") or {}
+            if isinstance(score_details, list):
+                score_details = {}
             out.append(
                 ExportCandidate(
                     filtered_article_id=article_id,
@@ -1174,6 +1210,9 @@ class PostgresAdapter:
                     sentiment_label=row.get("sentiment_label"),
                     sentiment_confidence=row.get("sentiment_confidence"),
                     is_beijing_related=row.get("is_beijing_related"),
+                    raw_relevance_score=row.get("raw_relevance_score"),
+                    keyword_bonus_score=row.get("keyword_bonus_score"),
+                    score_details=score_details,
                 )
             )
         return out

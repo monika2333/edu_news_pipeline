@@ -85,7 +85,7 @@
 ## Action Checklist
 - [x] Update database schema and migrations for `raw_relevance_score`, `keyword_bonus_score`, and `score_details`.
 - [x] Extend domain models (`PrimaryArticleForScoring`, `PrimaryArticleForSummarizing`, `ExportCandidate`) with new fields.
-- [ ] Adjust database adapter read/write logic for the additional columns.
+- [x] Adjust database adapter read/write logic for the additional columns.
 - [ ] Implement keyword bonus calculation and `score_details` persistence in `src/workers/score.py`.
 - [ ] Introduce configuration surface for keyword bonus rules.
 - [ ] Ensure `news_summaries` promotion syncs new fields and respects raw-score threshold.

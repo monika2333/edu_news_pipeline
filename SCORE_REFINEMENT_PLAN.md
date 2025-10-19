@@ -30,7 +30,7 @@
      - Exact string matches.
      - Optional case sensitivity/regex or weighting (future-proof).
    - Expose via `src/config.py` so workers can read without code changes per keyword tweak.
-   - Default source: `config/score_keyword_bonuses.json`, overridable via `SCORE_KEYWORD_BONUSES_PATH` or inline JSON in `SCORE_KEYWORD_BONUSES`.
+   - Default source: `data/score_keyword_bonuses.json`, overridable via `SCORE_KEYWORD_BONUSES_PATH` or inline JSON in `SCORE_KEYWORD_BONUSES`.
 
 ## Scoring Workflow Enhancements
 1. **Score Worker (`src/workers/score.py`)**

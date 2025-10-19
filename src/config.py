@@ -166,7 +166,7 @@ def get_settings() -> Settings:
     keyword_bonus_rules = _parse_keyword_bonus_rules(os.getenv("SCORE_KEYWORD_BONUSES"))
     keyword_bonus_rules_path = _resolve_path(
         os.getenv("SCORE_KEYWORD_BONUSES_PATH"),
-        default=_REPO_ROOT / "config" / "score_keyword_bonuses.json",
+        default=_REPO_ROOT / "data" / "score_keyword_bonuses.json",
     )
     if keyword_bonus_rules is None:
         keyword_bonus_rules = _parse_keyword_bonus_rules_file(keyword_bonus_rules_path)

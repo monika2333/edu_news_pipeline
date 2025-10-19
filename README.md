@@ -78,7 +78,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `GMW_TIMEOUT` | Seconds for Guangming Daily HTTP requests (default 15) |
 | `PROCESS_LIMIT` | Global cap applied to worker limits |
 | `SCORE_KEYWORD_BONUSES` | Optional JSON map overriding keyword → bonus rules for scoring |
-| `SCORE_KEYWORD_BONUSES_PATH` | Optional path to a JSON file providing keyword bonus rules (`config/score_keyword_bonuses.json` by default) |
+| `SCORE_KEYWORD_BONUSES_PATH` | Optional path to a JSON file providing keyword bonus rules (`data/score_keyword_bonuses.json` by default) |
 | `CONCURRENCY` | Default worker concurrency override (falls back to 5) |
 | `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` | API credentials and endpoint for the LLM provider |
 | `SUMMARIZE_MODEL_NAME` / `SOURCE_MODEL_NAME` / `SCORE_MODEL_NAME` | Model identifiers used by the workers |

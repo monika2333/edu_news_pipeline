@@ -2,7 +2,7 @@
 
 ## Background
 - Current workflow stores a single `score` on `primary_articles` / `news_summaries`, produced entirely by the LLM relevance model.
-- We need to introduce rule-based bonuses (e.g., keyword hits like "北京市委教育工委", "�����н���ίԱ��") without breaking downstream thresholds, ordering, or historical data.
+- We need to introduce rule-based bonuses (e.g., keyword hits like "北京市委教育工委", "北京市教育委员会") without breaking downstream thresholds, ordering, or historical data.
 
 ## Objectives
 - Preserve the existing `score` as the final, comprehensive value used by summarise/export steps.
@@ -26,11 +26,11 @@
    - Update `fetch_primary_articles_for_scoring`, `update_primary_article_scores`, and `upsert_news_summaries_from_primary` to read/write the new columns.
    - Ensure keyword arrays continue to deduplicate, but now also pass to the rule engine for bonuses.
 3. **Configuration**
-  - Introduce a structured configuration (YAML/JSON/env) for keyword bonus rules:
-    - Exact string matches.
-    - Optional case sensitivity/regex or weighting (future-proof).
-  - Expose via `src/config.py` so workers can read without code changes per keyword tweak.
-  - Default source: `config/score_keyword_bonuses.json`, overridable via `SCORE_KEYWORD_BONUSES_PATH` or inline JSON in `SCORE_KEYWORD_BONUSES`.
+   - Introduce a structured configuration (YAML/JSON/env) for keyword bonus rules:
+     - Exact string matches.
+     - Optional case sensitivity/regex or weighting (future-proof).
+   - Expose via `src/config.py` so workers can read without code changes per keyword tweak.
+   - Default source: `config/score_keyword_bonuses.json`, overridable via `SCORE_KEYWORD_BONUSES_PATH` or inline JSON in `SCORE_KEYWORD_BONUSES`.
 
 ## Scoring Workflow Enhancements
 1. **Score Worker (`src/workers/score.py`)**
@@ -70,7 +70,7 @@
     "keyword_bonus_score": 120,
     "matched_rules": [
       {"rule_id": "keyword:北京市委教育工委", "label": "Beijing Municipal Party Committee", "bonus": 100},
-      {"rule_id": "keyword:�����н���ίԱ��", "label": "Beijing Municipal Education Commission", "bonus": 20}
+      {"rule_id": "keyword:北京市教育委员会", "label": "Beijing Municipal Education Commission", "bonus": 20}
     ],
     "notes": "Promotion uses raw_relevance_score threshold (>= 60)."
   }
@@ -90,5 +90,5 @@
 - [x] Implement keyword bonus calculation and `score_details` persistence in `src/workers/score.py`.
 - [x] Introduce configuration surface for keyword bonus rules.
 - [x] Ensure `news_summaries` promotion syncs new fields and respects raw-score threshold.
-- [ ] Update tests (unit/integration) to cover new scoring breakdown.
+- [x] Update tests (unit/integration) to cover new scoring breakdown.
 - [ ] Refresh documentation and pipeline metrics to reflect the refined scoring model.

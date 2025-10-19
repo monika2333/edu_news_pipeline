@@ -1,8 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.adapters.db import get_adapter
@@ -15,8 +13,8 @@ WORKER = "score"
 SCORE_THRESHOLD = 60
 
 DEFAULT_KEYWORD_BONUS_RULES: Dict[str, int] = {
-    "北京市委教育工委": 100,
-    "北京市教育委员会": 100,
+    "\u5317\u4eac\u5e02\u59d4\u6559\u80b2\u5de5\u59d4": 100,
+    "\u5317\u4eac\u5e02\u6559\u80b2\u59d4\u5458\u4f1a": 100,
 }
 
 
@@ -25,32 +23,6 @@ def _score_item(item: PrimaryArticleForScoring) -> Optional[int]:
     if not text.strip():
         return None
     return score_text(text)
-
-
-@lru_cache(maxsize=1)
-def _keyword_bonus_rules() -> Dict[str, int]:
-    """Return keyword bonus mapping, allowing overrides via env variable JSON."""
-    raw = os.getenv("SCORE_KEYWORD_BONUSES")
-    if not raw:
-        return DEFAULT_KEYWORD_BONUS_RULES
-    try:
-        import json
-
-        data = json.loads(raw)
-        if isinstance(data, dict):
-            cleaned: Dict[str, int] = {}
-            for key, value in data.items():
-                if not key:
-                    continue
-                try:
-                    cleaned[str(key)] = int(value)
-                except (ValueError, TypeError):
-                    continue
-            if cleaned:
-                return cleaned
-    except json.JSONDecodeError:
-        pass
-    return DEFAULT_KEYWORD_BONUS_RULES
 
 
 def _collect_text_sources(item: PrimaryArticleForScoring) -> List[str]:
@@ -65,8 +37,9 @@ def _collect_text_sources(item: PrimaryArticleForScoring) -> List[str]:
     return sources
 
 
-def _calculate_keyword_bonus(item: PrimaryArticleForScoring) -> Tuple[int, List[Dict[str, Any]]]:
-    rules = _keyword_bonus_rules()
+def _calculate_keyword_bonus(
+    item: PrimaryArticleForScoring, rules: Dict[str, int]
+) -> Tuple[int, List[Dict[str, Any]]]:
     if not rules:
         return 0, []
     haystacks = _collect_text_sources(item)
@@ -88,7 +61,10 @@ def _calculate_keyword_bonus(item: PrimaryArticleForScoring) -> Tuple[int, List[
 
 
 def _compose_score_details(
-    raw_score: Optional[int], bonus: int, final_score: Optional[int], matched_rules: List[Dict[str, Any]]
+    raw_score: Optional[int],
+    bonus: int,
+    final_score: Optional[int],
+    matched_rules: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     return {
         "raw_relevance_score": raw_score,
@@ -110,8 +86,11 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
 
         workers = concurrency or settings.default_concurrency
         workers = max(1, workers)
+        bonus_rules = settings.score_keyword_bonus_rules or DEFAULT_KEYWORD_BONUS_RULES
 
-        successes: List[Tuple[PrimaryArticleForScoring, Optional[int], int, Optional[int], Dict[str, Any]]] = []
+        successes: List[
+            Tuple[PrimaryArticleForScoring, Optional[int], int, Optional[int], Dict[str, Any]]
+        ] = []
         failures: List[str] = []
 
         if workers == 1:
@@ -122,7 +101,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
                     matched_rules: List[Dict[str, Any]] = []
                     final_score: Optional[int] = None
                     if raw_score is not None:
-                        bonus_score, matched_rules = _calculate_keyword_bonus(row)
+                        bonus_score, matched_rules = _calculate_keyword_bonus(row, bonus_rules)
                         final_score = raw_score + bonus_score
                     score_details = _compose_score_details(raw_score, bonus_score, final_score, matched_rules)
                     successes.append((row, raw_score, bonus_score, final_score, score_details))
@@ -143,10 +122,10 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
                     try:
                         raw_score = future.result()
                         bonus_score = 0
-                        matched_rules = []
+                        matched_rules: List[Dict[str, Any]] = []
                         final_score: Optional[int] = None
                         if raw_score is not None:
-                            bonus_score, matched_rules = _calculate_keyword_bonus(item)
+                            bonus_score, matched_rules = _calculate_keyword_bonus(item, bonus_rules)
                             final_score = raw_score + bonus_score
                         score_details = _compose_score_details(raw_score, bonus_score, final_score, matched_rules)
                         successes.append((item, raw_score, bonus_score, final_score, score_details))

@@ -1,10 +1,11 @@
 ﻿from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _ENV_LOADED = False
@@ -70,6 +71,35 @@ def _bool_from_env(value: Optional[str], *, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _parse_keyword_bonus_rules(raw: Optional[str]) -> Optional[Dict[str, int]]:
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    result: Dict[str, int] = {}
+    for key, value in data.items():
+        if not key:
+            continue
+        try:
+            result[str(key)] = int(value)
+        except (TypeError, ValueError):
+            continue
+    return result or None
+
+
+def _parse_keyword_bonus_rules_file(path: Path) -> Optional[Dict[str, int]]:
+    if not path.exists():
+        return None
+    try:
+        return _parse_keyword_bonus_rules(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
 @dataclass(frozen=True)
 class Settings:
     db_host: str
@@ -96,6 +126,7 @@ class Settings:
     feishu_receive_id: Optional[str]
     feishu_receive_id_type: str
     beijing_keywords_path: Path
+    score_keyword_bonus_rules: Dict[str, int]
 
 
 @lru_cache(maxsize=1)
@@ -121,7 +152,6 @@ def get_settings() -> Settings:
     process_limit = _optional_int(os.getenv("PROCESS_LIMIT"))
     default_concurrency = _optional_int(os.getenv("CONCURRENCY")) or 5
 
-    keywords_env = os.getenv("KEYWORDS_PATH")
     def _resolve_path(env_value: Optional[str], *, default: Path) -> Path:
         if env_value:
             raw_path = Path(env_value).expanduser()
@@ -133,6 +163,15 @@ def get_settings() -> Settings:
         os.getenv("BEIJING_KEYWORDS_PATH"),
         default=_REPO_ROOT / "data" / "beijing_keywords.txt",
     )
+    keyword_bonus_rules = _parse_keyword_bonus_rules(os.getenv("SCORE_KEYWORD_BONUSES"))
+    keyword_bonus_rules_path = _resolve_path(
+        os.getenv("SCORE_KEYWORD_BONUSES_PATH"),
+        default=_REPO_ROOT / "config" / "score_keyword_bonuses.json",
+    )
+    if keyword_bonus_rules is None:
+        keyword_bonus_rules = _parse_keyword_bonus_rules_file(keyword_bonus_rules_path)
+    if keyword_bonus_rules is None:
+        keyword_bonus_rules = {}
 
     console_basic_username = os.getenv("CONSOLE_BASIC_USERNAME")
     console_basic_password = os.getenv("CONSOLE_BASIC_PASSWORD")
@@ -173,6 +212,7 @@ def get_settings() -> Settings:
         feishu_receive_id=feishu_receive_id,
         feishu_receive_id_type=feishu_receive_id_type,
         beijing_keywords_path=beijing_keywords_path,
+        score_keyword_bonus_rules=keyword_bonus_rules,
     )
 
 

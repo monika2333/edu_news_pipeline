@@ -26,11 +26,11 @@
    - Update `fetch_primary_articles_for_scoring`, `update_primary_article_scores`, and `upsert_news_summaries_from_primary` to read/write the new columns.
    - Ensure keyword arrays continue to deduplicate, but now also pass to the rule engine for bonuses.
 3. **Configuration**
-   - Introduce a structured configuration (YAML/JSON/env) for keyword bonus rules:
-     - Exact string matches.
-     - Optional case sensitivity/regex or weighting (future-proof).
-   - Expose via `src/config.py` so workers can read without code changes per keyword tweak.
-   - Interim support: env var `SCORE_KEYWORD_BONUSES` (JSON map) overrides default rules baked into `src/workers/score`.
+  - Introduce a structured configuration (YAML/JSON/env) for keyword bonus rules:
+    - Exact string matches.
+    - Optional case sensitivity/regex or weighting (future-proof).
+  - Expose via `src/config.py` so workers can read without code changes per keyword tweak.
+  - Default source: `config/score_keyword_bonuses.json`, overridable via `SCORE_KEYWORD_BONUSES_PATH` or inline JSON in `SCORE_KEYWORD_BONUSES`.
 
 ## Scoring Workflow Enhancements
 1. **Score Worker (`src/workers/score.py`)**
@@ -88,7 +88,7 @@
 - [x] Extend domain models (`PrimaryArticleForScoring`, `PrimaryArticleForSummarizing`, `ExportCandidate`) with new fields.
 - [x] Adjust database adapter read/write logic for the additional columns.
 - [x] Implement keyword bonus calculation and `score_details` persistence in `src/workers/score.py`.
-- [ ] Introduce configuration surface for keyword bonus rules.
+- [x] Introduce configuration surface for keyword bonus rules.
 - [ ] Ensure `news_summaries` promotion syncs new fields and respects raw-score threshold.
 - [ ] Update tests (unit/integration) to cover new scoring breakdown.
 - [ ] Refresh documentation and pipeline metrics to reflect the refined scoring model.

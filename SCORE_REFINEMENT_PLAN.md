@@ -30,6 +30,7 @@
      - Exact string matches.
      - Optional case sensitivity/regex or weighting (future-proof).
    - Expose via `src/config.py` so workers can read without code changes per keyword tweak.
+   - Interim support: env var `SCORE_KEYWORD_BONUSES` (JSON map) overrides default rules baked into `src/workers/score`.
 
 ## Scoring Workflow Enhancements
 1. **Score Worker (`src/workers/score.py`)**
@@ -86,7 +87,7 @@
 - [x] Update database schema and migrations for `raw_relevance_score`, `keyword_bonus_score`, and `score_details`.
 - [x] Extend domain models (`PrimaryArticleForScoring`, `PrimaryArticleForSummarizing`, `ExportCandidate`) with new fields.
 - [x] Adjust database adapter read/write logic for the additional columns.
-- [ ] Implement keyword bonus calculation and `score_details` persistence in `src/workers/score.py`.
+- [x] Implement keyword bonus calculation and `score_details` persistence in `src/workers/score.py`.
 - [ ] Introduce configuration surface for keyword bonus rules.
 - [ ] Ensure `news_summaries` promotion syncs new fields and respects raw-score threshold.
 - [ ] Update tests (unit/integration) to cover new scoring breakdown.

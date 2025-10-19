@@ -59,6 +59,9 @@ class PrimaryArticleForScoring:
     keywords: Sequence[str] = field(default_factory=list)
     content_hash: Optional[str] = None
     simhash: Optional[str] = None
+    raw_relevance_score: Optional[float] = None
+    keyword_bonus_score: Optional[float] = None
+    score_details: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -72,6 +75,9 @@ class PrimaryArticleForSummarizing:
     url: Optional[str]
     keywords: Sequence[str] = field(default_factory=list)
     score: Optional[float] = None
+    raw_relevance_score: Optional[float] = None
+    keyword_bonus_score: Optional[float] = None
+    score_details: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -90,6 +96,9 @@ class ExportCandidate:
     sentiment_label: Optional[str] = None
     sentiment_confidence: Optional[float] = None
     is_beijing_related: Optional[bool] = None
+    raw_relevance_score: Optional[float] = None
+    keyword_bonus_score: Optional[float] = None
+    score_details: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

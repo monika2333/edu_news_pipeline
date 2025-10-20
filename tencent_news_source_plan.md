@@ -22,9 +22,9 @@
 - [x] 确保关键词过滤、去重、数据库调用与其他来源保持一致。
 
 ### 4. 文档与目录清理
-- [ ] 更新 README 或相关文档，介绍腾讯来源配置、运行方式与环境变量。
-- [ ] 将 `newsqq_crawl/qq_author.txt` 迁至 `config/`，确认引用位置更新。
-- [ ] 删除 `newsqq_crawl/` 目录及其文件，保证仓库无冗余脚本。
+- [x] 更新 README 或相关文档，介绍腾讯来源配置、运行方式与环境变量。
+- [x] 将 `newsqq_crawl/qq_author.txt` 迁至 `config/`，确认引用位置更新。
+- [x] 删除 `newsqq_crawl/` 目录及其文件，保证仓库无冗余脚本。
 
 ### 5. 验证与收尾
 - [ ] 运行最小化集成测试（例如：`python -m src.cli.main crawl --sources=tencent --limit=<小值>`），验证功能闭环。

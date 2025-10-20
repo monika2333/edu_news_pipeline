@@ -4,7 +4,7 @@ Automated pipeline for collecting education-related articles, summarising them w
 
 ## Pipeline Overview
 
-1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: ChinaNews, China Daily, Guangming Daily, China Education Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
+1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: Tencent News, ChinaNews, China Daily, Guangming Daily, China Education Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
 2. **Hash / Deduplicate** - `hash_primary` computes an exact `content_hash`, 64-bit SimHash, and four 16-bit band hashes for each filtered article. Using SimHash band lookup and a Hamming-distance threshold (<= 3), duplicates are grouped under a primary article and promoted to `primary_articles`.
 3. **Score** - LLM-based relevance scoring runs on entries in `primary_articles`. The LLM output becomes `raw_relevance_score`; keyword rules add a `keyword_bonus_score`, and their sum is persisted as `score`. Promotion still keys off `raw_relevance_score >= 60`, while the final score (without an upper bound) is used for ordering.
 4. **Summarise & Sentiment** - `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and writes the results back into `news_summaries` with status `ready_for_export` (failed attempts remain `pending`).
@@ -13,7 +13,7 @@ Automated pipeline for collecting education-related articles, summarising them w
 All stages are available through the CLI wrapper:
 
 ```bash
-python -m src.cli.main crawl --sources toutiao,chinanews,chinadaily,jyb,gmw --limit 5000
+python -m src.cli.main crawl --sources toutiao,tencent,chinanews,chinadaily,jyb,gmw --limit 5000
 python -m src.cli.main hash-primary --limit 200
 python -m src.cli.main score --limit 500
 python -m src.cli.main summarize --limit 500
@@ -36,6 +36,7 @@ Re-run as needed until the command reports no articles remaining.
 ## Directory Highlights
 
 - `config/toutiao_author.txt` - List of Toutiao author tokens/URLs (one per line, `#` for comments). Used when crawling `--sources toutiao`.
+- `config/qq_author.txt` - List of Tencent author URLs or suid identifiers (one per line). Used when crawling `--sources tencent` (or `qq` alias).
 - `src/adapters/db.py` - Singleton loader for the Postgres adapter.
 - `src/adapters/db_postgres.py` - PostgreSQL access layer used by all workers.
 - `src/workers/` - Implementations for `crawl`, `summarize`, `score`, and `export` steps.
@@ -71,6 +72,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | Connection details for the Postgres instance |
 | `DB_SCHEMA` | Schema to target (defaults to `public`) |
 | `TOUTIAO_AUTHORS_PATH` | Override Toutiao authors list path (defaults to `config/toutiao_author.txt`) |
+| `TENCENT_AUTHORS_PATH` | Override Tencent authors list path (defaults to `config/qq_author.txt`) |
 | `TOUTIAO_FETCH_TIMEOUT` | Seconds for article fetch timeout (default 15) |
 | `TOUTIAO_LANG` | `Accept-Language` header when fetching article content |
 | `TOUTIAO_SHOW_BROWSER` | Set to `1` to run Playwright in headed mode |
@@ -93,8 +95,9 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 
 - Command: `python -m src.cli.main crawl`
 - Default limit: 500 articles (clamped by `PROCESS_LIMIT` if set)
-- Sources: `--sources` comma list (default `toutiao`; add `chinanews` and/or `gmw` for additional feeds). The pipeline wrapper also respects `CRAWL_SOURCES` from env (e.g., `CRAWL_SOURCES=toutiao,chinanews,gmw`).
+- Sources: `--sources` comma list (default `toutiao`; add `tencent`, `chinanews`, `chinadaily`, `jyb`, `gmw` as needed). The pipeline wrapper also respects `CRAWL_SOURCES` from env (e.g., `CRAWL_SOURCES=toutiao,tencent,chinanews`).
   - Toutiao uses Playwright (requires `playwright install chromium`) and reads authors from `TOUTIAO_AUTHORS_PATH`
+  - Tencent News uses the REST adapter (no Playwright). Authors live in `config/qq_author.txt` and can be overridden via `TENCENT_AUTHORS_PATH`.
   - Guangming Daily uses the bundled HTTP crawler (no Playwright). Configure the entry point with `GMW_BASE_URL` if you need a different node and tweak `GMW_TIMEOUT` to adjust the per-request timeout.
 - Writes/updates rows in `raw_articles`
 - Skips articles already present in the database
@@ -106,9 +109,10 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 #### Examples
 - ChinaNews (first page only): `python -m src.cli.main crawl --sources chinanews --limit 50`
 - ChinaNews (multi-page to approach 500): `python -m src.cli.main crawl --sources chinanews --limit 500 --pages 15`
-- Toutiao + ChinaNews (total 500, sequential consumption): `python -m src.cli.main crawl --sources toutiao,chinanews --limit 500`
+- Tencent News (all configured authors): `python -m src.cli.main crawl --sources tencent --limit 200`
+- Toutiao + Tencent (split by remaining quota): `python -m src.cli.main crawl --sources toutiao,tencent --limit 400`
 - Guangming Daily only: `python -m src.cli.main crawl --sources gmw --limit 100`
-- Toutiao + ChinaNews + Guangming Daily: `python -m src.cli.main crawl --sources toutiao,chinanews,gmw --limit 500`
+- Toutiao + Tencent + ChinaNews + Guangming Daily: `python -m src.cli.main crawl --sources toutiao,tencent,chinanews,gmw --limit 500`
 - Repair missing bodies (all sources): `python -m src.cli.main repair --limit 200`
 
 #### Multi-source allocation

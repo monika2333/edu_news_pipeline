@@ -35,7 +35,7 @@ python -m src.cli.main repair --limit 500
 Re-run as needed until the command reports no articles remaining.
 ## Directory Highlights
 
-- `data/toutiao_author.txt` - List of Toutiao author tokens/URLs (one per line, `#` for comments). Used when crawling `--sources toutiao`.
+- `config/toutiao_author.txt` - List of Toutiao author tokens/URLs (one per line, `#` for comments). Used when crawling `--sources toutiao`.
 - `src/adapters/db.py` - Singleton loader for the Postgres adapter.
 - `src/adapters/db_postgres.py` - PostgreSQL access layer used by all workers.
 - `src/workers/` - Implementations for `crawl`, `summarize`, `score`, and `export` steps.
@@ -70,7 +70,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | --- | --- |
 | `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | Connection details for the Postgres instance |
 | `DB_SCHEMA` | Schema to target (defaults to `public`) |
-| `TOUTIAO_AUTHORS_PATH` | Override Toutiao authors list path (defaults to `data/toutiao_author.txt`) |
+| `TOUTIAO_AUTHORS_PATH` | Override Toutiao authors list path (defaults to `config/toutiao_author.txt`) |
 | `TOUTIAO_FETCH_TIMEOUT` | Seconds for article fetch timeout (default 15) |
 | `TOUTIAO_LANG` | `Accept-Language` header when fetching article content |
 | `TOUTIAO_SHOW_BROWSER` | Set to `1` to run Playwright in headed mode |
@@ -78,7 +78,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `GMW_TIMEOUT` | Seconds for Guangming Daily HTTP requests (default 15) |
 | `PROCESS_LIMIT` | Global cap applied to worker limits |
 | `SCORE_KEYWORD_BONUSES` | Optional JSON map overriding keyword ?bonus rules for scoring |
-| `SCORE_KEYWORD_BONUSES_PATH` | Optional path to a JSON file providing keyword bonus rules (`data/score_keyword_bonuses.json` by default) |
+| `SCORE_KEYWORD_BONUSES_PATH` | Optional path to a JSON file providing keyword bonus rules (`config/score_keyword_bonuses.json` by default) |
 | `CONCURRENCY` | Default worker concurrency override (falls back to 5) |
 | `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` | API credentials and endpoint for the LLM provider |
 | `SUMMARIZE_MODEL_NAME` / `SOURCE_MODEL_NAME` / `SCORE_MODEL_NAME` | Model identifiers used by the workers |
@@ -131,7 +131,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 ### Summarise Worker
 
 - Command: `python -m src.cli.main summarize`
-- Filters content against keywords from `data/education_keywords.txt` (override with `KEYWORDS_PATH`)
+- Filters content against keywords from `config/education_keywords.txt` (override with `KEYWORDS_PATH`)
 - Stores generated summaries in `news_summaries`
 
 ### Score Worker
@@ -165,7 +165,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 ### Beijing Relevance Tagging
 
 - Adds the `news_summaries.is_beijing_related` field to flag whether an article is Beijing-related. The `summarize` worker sets it by default when writing summaries, based on the article body, summary, and keyword hits.
-- Keyword list lives in `data/beijing_keywords.txt`. Override it with the `BEIJING_KEYWORDS_PATH` environment variable if you need a custom file.
+- Keyword list lives in `config/beijing_keywords.txt`. Override it with the `BEIJING_KEYWORDS_PATH` environment variable if you need a custom file.
 - To backfill older data or after tweaking keywords, run `python -m src.cli.main geo-tag --limit 200 --batch-size 200` (trim the scope if needed). The command batches through rows where `is_beijing_related IS NULL` and writes the boolean back.
 - Export output and Feishu notifications use this field to split "Beijing" vs "non-Beijing" sections and include count summaries; the flag is also copied into `brief_items.metadata`.
 

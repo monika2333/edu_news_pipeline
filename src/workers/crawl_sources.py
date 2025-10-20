@@ -52,7 +52,7 @@ from src.adapters.http_chinaeducationdaily import (
 )
 
 WORKER = "crawl"
-DEFAULT_AUTHORS_FILE = Path("data/toutiao_author.txt")
+DEFAULT_AUTHORS_FILE = Path("config/toutiao_author.txt")
 DEFAULT_LANG = "zh-CN,zh;q=0.9"
 DEFAULT_TIMEOUT = 15
 
@@ -74,10 +74,14 @@ def _resolve_authors_path() -> Path:
         if not candidate.is_absolute():
             candidate = Path.cwd() / candidate
         return candidate
+    # Default preference: config/, with fallback to legacy data/
     default_path = DEFAULT_AUTHORS_FILE
-    if not default_path.is_absolute():
-        return _repo_root() / default_path
-    return default_path
+    root = _repo_root()
+    preferred = (root / default_path) if not default_path.is_absolute() else default_path
+    if preferred.exists():
+        return preferred
+    legacy = root / "data" / "toutiao_author.txt"
+    return legacy
 
 
 

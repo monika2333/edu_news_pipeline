@@ -52,7 +52,7 @@ from src.adapters.http_chinaeducationdaily import (
 )
 
 WORKER = "crawl"
-DEFAULT_AUTHORS_FILE = Path("data/author_tokens.txt")
+DEFAULT_AUTHORS_FILE = Path("data/toutiao_author.txt")
 DEFAULT_LANG = "zh-CN,zh;q=0.9"
 DEFAULT_TIMEOUT = 15
 

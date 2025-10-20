@@ -35,7 +35,7 @@ python -m src.cli.main repair --limit 500
 Re-run as needed until the command reports no articles remaining.
 ## Directory Highlights
 
-- `data/author_tokens.txt` - List of Toutiao author tokens/URLs (one per line, `#` for comments). Used when crawling `--sources toutiao`.
+- `data/toutiao_author.txt` - List of Toutiao author tokens/URLs (one per line, `#` for comments). Used when crawling `--sources toutiao`.
 - `src/adapters/db.py` - Singleton loader for the Postgres adapter.
 - `src/adapters/db_postgres.py` - PostgreSQL access layer used by all workers.
 - `src/workers/` - Implementations for `crawl`, `summarize`, `score`, and `export` steps.
@@ -70,7 +70,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | --- | --- |
 | `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | Connection details for the Postgres instance |
 | `DB_SCHEMA` | Schema to target (defaults to `public`) |
-| `TOUTIAO_AUTHORS_PATH` | Override Toutiao authors list path (defaults to `data/author_tokens.txt`) |
+| `TOUTIAO_AUTHORS_PATH` | Override Toutiao authors list path (defaults to `data/toutiao_author.txt`) |
 | `TOUTIAO_FETCH_TIMEOUT` | Seconds for article fetch timeout (default 15) |
 | `TOUTIAO_LANG` | `Accept-Language` header when fetching article content |
 | `TOUTIAO_SHOW_BROWSER` | Set to `1` to run Playwright in headed mode |

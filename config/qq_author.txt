@@ -1,4 +1,0 @@
-# 腾讯网作者配置
-# 每行填写一个作者页面 URL 或 suid，例如：
-# https://news.qq.com/omn/author/8QMc2HxU7oAVuTfd
-

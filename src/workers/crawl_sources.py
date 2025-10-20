@@ -364,10 +364,17 @@ def _run_tencent_flow(
         return stats
     max_pages = pages if pages is not None else TENCENT_DEFAULT_MAX_PAGES
     try:
+        existing_ids_raw = adapter.get_existing_raw_article_ids()
+        existing_ids: Set[str] = set(existing_ids_raw or [])
+    except Exception as exc:
+        log_error(WORKER, "tencent_existing_ids", exc)
+        existing_ids = set()
+    try:
         feed_items = tencent_list_feed_items(
             entries,
             max_pages=max_pages,
             limit=remaining_limit,
+            existing_ids=existing_ids,
         )
     except Exception as exc:
         log_error(WORKER, "tencent_feed_list", exc)

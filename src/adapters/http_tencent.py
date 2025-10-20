@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from urllib.parse import urlparse
-import sys
 
 import requests
 from bs4 import BeautifulSoup
@@ -248,6 +249,9 @@ def list_feed_items_for_author(
     tab_override: Optional[str] = None,
     max_pages: int = DEFAULT_MAX_PAGES,
     delay_seconds: float = DEFAULT_DELAY_SECONDS,
+    limit: Optional[int] = None,
+    existing_ids: Optional[Set[str]] = None,
+    consecutive_stop: int = 5,
 ) -> List[FeedItem]:
     sess = session or _session()
     profile = fetch_author_profile(entry.author_id, session=sess)
@@ -256,6 +260,11 @@ def list_feed_items_for_author(
     print(f"[info] Collecting Tencent feed for {entry.profile_url} (tab={tab_id})", file=sys.stderr)
     collected: List[FeedItem] = []
     offset = ""
+    if consecutive_stop < 0:
+        consecutive_stop = 0
+    consecutive_hits = 0
+    reached_existing = False
+    per_author_seen: Set[str] = set()
     for page in range(max_pages):
         params = {
             "guestSuid": entry.author_id,
@@ -272,7 +281,22 @@ def list_feed_items_for_author(
             url = (item.get("url") or item.get("surl") or "").strip()
             if not (raw_article_id and title and url):
                 continue
-            article_id = make_article_id(raw_article_id)
+            try:
+                article_id = make_article_id(raw_article_id)
+            except ValueError:
+                continue
+            if article_id in per_author_seen:
+                continue
+            per_author_seen.add(article_id)
+            if existing_ids is not None and article_id in existing_ids:
+                if consecutive_stop == 0:
+                    continue
+                consecutive_hits += 1
+                if consecutive_hits >= consecutive_stop:
+                    reached_existing = True
+                    break
+                continue
+            consecutive_hits = 0
             publish_raw = item.get("time") or item.get("pubtime") or item.get("publish_time")
             publish_ts, publish_iso = _parse_publish_time(publish_raw)
             source_value = (item.get("source") or author_name or "").strip() or None
@@ -291,12 +315,22 @@ def list_feed_items_for_author(
                     raw=item,
                 )
             )
+            if existing_ids is not None:
+                existing_ids.add(article_id)
+            if limit is not None and len(collected) >= limit:
+                break
         has_next = bool(payload.get("hasNext"))
         offset = payload.get("offsetInfo") or ""
+        if reached_existing:
+            break
+        if limit is not None and len(collected) >= limit:
+            break
         if not has_next or not offset:
             break
         if delay_seconds:
             time.sleep(delay_seconds)
+    if reached_existing:
+        print("[info] Reached existing Tencent data; stopping pagination for this author.", file=sys.stderr)
     print(f"[info] Tencent author {entry.author_id} returned {len(collected)} items", file=sys.stderr)
     return collected
 
@@ -309,18 +343,33 @@ def list_feed_items(
     max_pages: int = DEFAULT_MAX_PAGES,
     delay_seconds: float = DEFAULT_DELAY_SECONDS,
     limit: Optional[int] = None,
+    existing_ids: Optional[Set[str]] = None,
 ) -> List[FeedItem]:
     sess = session or _session()
+    try:
+        consecutive_stop = int(os.getenv("TENCENT_EXISTING_CONSECUTIVE_STOP", "5"))
+    except Exception:
+        consecutive_stop = 5
+    if existing_ids is not None and not isinstance(existing_ids, set):
+        existing_ids = set(existing_ids)
     aggregated: List[FeedItem] = []
     for entry in entries:
         if limit is not None and len(aggregated) >= limit:
             break
+        remaining: Optional[int]
+        if limit is None:
+            remaining = None
+        else:
+            remaining = max(limit - len(aggregated), 0)
         items = list_feed_items_for_author(
             entry,
             session=sess,
             tab_override=tab_override,
             max_pages=max_pages,
             delay_seconds=delay_seconds,
+            limit=remaining,
+            existing_ids=existing_ids,
+            consecutive_stop=consecutive_stop,
         )
         if not items:
             continue

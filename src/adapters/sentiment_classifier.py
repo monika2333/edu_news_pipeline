@@ -13,21 +13,23 @@ _POSITIVE_TOKENS = {"positive", "pos", "good", "favorable", "favourable"}
 _NEGATIVE_TOKENS = {"negative", "neg", "bad", "unfavorable", "unfavourable"}
 
 
+
+
 def _build_prompt(text: str) -> Dict[str, str]:
     base = text.strip()
     if not base:
         raise ValueError("Sentiment classification requires non-empty text")
     instruction = (
-        "请判断以下教育新闻内容的整体情感倾向，只能回答JSON："
-        '{"label":"positive或negative","confidence":0到1之间的小数}。'
-        "如果内容过于中性，请根据事实略微倾向最合理的标签。"
+        "Classify overall sentiment for the following education news. Output ONLY JSON.\n"
+        "Allowed labels: 'positive' or 'negative'.\n"
+        "Rule: if clearly negative (risk/accident/criticism/scandal/negative public opinion, etc.), output 'negative'; otherwise output 'positive'.\n"
+        "Format (single line only): {\\\"label\\\":\\\"positive or negative\\\",\\\"confidence\\\": a decimal from 0 to 1}.\n"
+        "Do NOT output neutral/other labels or any extra text."
     )
     return {
         "role": "user",
-        "content": f"{instruction}\n\n内容：\n{base}",
+        "content": f"{instruction}\n\nContent:\n{base}",
     }
-
-
 def _parse_response(raw_text: str) -> Tuple[str, float]:
     text = raw_text.strip()
     if not text:
@@ -47,7 +49,7 @@ def _parse_response(raw_text: str) -> Tuple[str, float]:
         confidence = 0.5
     label = "positive" if label in _POSITIVE_TOKENS else ("negative" if label in _NEGATIVE_TOKENS else label)
     if label not in {"positive", "negative"}:
-        raise ValueError(f"Unsupported sentiment label: {label}")
+        label = "positive"
     confidence = max(0.0, min(1.0, confidence))
     return label, confidence
 
@@ -94,3 +96,4 @@ def classify_sentiment(content: str, *, retries: int = 4, timeout: int = 45) -> 
 
 
 __all__ = ["classify_sentiment"]
+

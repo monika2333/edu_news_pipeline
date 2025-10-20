@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
@@ -422,6 +423,11 @@ def _run_tencent_flow(
         log_info(WORKER, f"Tencent articles already populated: {already_populated}")
     if detail_targets:
         log_info(WORKER, f"Tencent articles needing detail refresh: {len(detail_targets)}")
+    detail_delay_env = os.getenv("TENCENT_DETAIL_DELAY", "0.5")
+    try:
+        detail_delay = max(0.0, float(detail_delay_env))
+    except (TypeError, ValueError):
+        detail_delay = 0.5
     detail_rows: List[Dict[str, Any]] = []
     detail_failures = 0
     for item in detail_targets:
@@ -430,13 +436,16 @@ def _run_tencent_flow(
         except Exception as exc:
             detail_failures += 1
             log_error(WORKER, f"tencent_detail_fetch:{item.article_id}", exc)
-            continue
-        detail_rows.append(
-            tencent_build_detail_update(
-                detail,
-                detail_fetched_at=datetime.now(timezone.utc),
+        else:
+            detail_rows.append(
+                tencent_build_detail_update(
+                    detail,
+                    detail_fetched_at=datetime.now(timezone.utc),
+                )
             )
-        )
+        finally:
+            if detail_delay:
+                time.sleep(detail_delay)
     db_failures = 0
     if detail_rows:
         try:

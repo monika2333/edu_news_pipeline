@@ -425,7 +425,36 @@ def fetch_article_detail(
     session: Optional[requests.Session] = None,
 ) -> ArticleDetail:
     sess = session or _session()
-    resp = _request_with_retries(sess, item.url, timeout=10)
+
+    article_id_raw = item.article_id.split(":", 1)[1] if ":" in item.article_id else item.article_id
+    url_candidates: List[str] = []
+    primary_url = item.url.strip()
+    if primary_url:
+        url_candidates.append(primary_url)
+    if article_id_raw:
+        rain_url = f"https://new.qq.com/rain/a/{article_id_raw}"
+        if rain_url not in url_candidates:
+            url_candidates.append(rain_url)
+        omni_url = f"https://news.qq.com/omn/{article_id_raw[0:8]}/{article_id_raw}.html"
+        if len(article_id_raw) >= 8 and omni_url not in url_candidates:
+            url_candidates.append(omni_url)
+
+    resp: Optional[requests.Response] = None
+    last_exc: Optional[Exception] = None
+    for candidate in url_candidates:
+        try:
+            resp = _request_with_retries(sess, candidate, timeout=10)
+            if resp is not None:
+                primary_url = candidate
+                break
+        except Exception as exc:
+            last_exc = exc
+            continue
+    if resp is None:
+        if last_exc:
+            raise last_exc
+        raise RuntimeError(f"Unable to fetch Tencent article detail for {item.article_id}")
+
     data_block = _extract_data_block(resp.text)
     origin = data_block.get("originContent") or {}
     markdown = _clean_html_to_markdown(origin.get("text") or "")
@@ -443,7 +472,7 @@ def fetch_article_detail(
         source=source_value,
         publish_time=detail_publish_time,
         publish_time_iso=detail_publish_iso,
-        url=item.url,
+        url=primary_url,
         summary=item.summary,
         content_markdown=markdown,
     )

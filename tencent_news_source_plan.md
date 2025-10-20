@@ -27,6 +27,6 @@
 - [x] 删除 `newsqq_crawl/` 目录及其文件，保证仓库无冗余脚本。
 
 ### 5. 验证与收尾
-- [ ] 运行最小化集成测试（例如：`python -m src.cli.main crawl --sources=tencent --limit=<小值>`），验证功能闭环。
-- [ ] 检查 `git status`，确保只有计划内的改动。
-- [ ] 根据测试结果修正问题，准备提交或交付。
+- [x] 运行最小化集成测试（例如：`python -m src.cli.main crawl --sources=tencent --limit=<小值>`），验证功能闭环。
+- [x] 检查 `git status`，确保只有计划内的改动。
+- [x] 根据测试结果修正问题，准备提交或交付。

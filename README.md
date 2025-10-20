@@ -131,7 +131,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 ### Summarise Worker
 
 - Command: `python -m src.cli.main summarize`
-- Filters content against keywords from `education_keywords.txt`
+- Filters content against keywords from `data/education_keywords.txt` (override with `KEYWORDS_PATH`)
 - Stores generated summaries in `news_summaries`
 
 ### Score Worker

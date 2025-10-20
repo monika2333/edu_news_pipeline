@@ -158,7 +158,10 @@ def get_settings() -> Settings:
             return raw_path if raw_path.is_absolute() else (_REPO_ROOT / raw_path)
         return default
 
-    keywords_path = _resolve_path(os.getenv("KEYWORDS_PATH"), default=_REPO_ROOT / "education_keywords.txt")
+    keywords_path = _resolve_path(
+        os.getenv("KEYWORDS_PATH"),
+        default=_REPO_ROOT / "data" / "education_keywords.txt",
+    )
     beijing_keywords_path = _resolve_path(
         os.getenv("BEIJING_KEYWORDS_PATH"),
         default=_REPO_ROOT / "data" / "beijing_keywords.txt",

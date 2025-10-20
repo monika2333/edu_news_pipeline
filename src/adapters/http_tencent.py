@@ -22,7 +22,7 @@ USER_AGENT = (
 AUTHOR_INFO_API = "https://i.news.qq.com/i/getUserHomepageInfo"
 ARTICLE_LIST_API = "https://i.news.qq.com/getSubNewsMixedList"
 
-DEFAULT_MAX_PAGES = 3
+DEFAULT_MAX_PAGES = 10
 DEFAULT_DELAY_SECONDS = 0.5
 DEFAULT_TAB_ID = "om_index"
 DEFAULT_LOCALE = "zh-CN,zh;q=0.9"

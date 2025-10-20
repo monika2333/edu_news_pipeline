@@ -12,9 +12,9 @@
 - [x] 分析 `newsqq_crawl/qq_author_crawler.py`，提炼作者信息拉取、分页列表、正文抓取与 Markdown 转换的核心逻辑及重试/速率控制要求。
 
 ### 2. HTTP 适配器与配置支持
-- [ ] 在 `src/adapters/` 下新增 `http_tencent.py`，实现作者 ID 解析、作者列表与详情 API 调用、内容 Markdown 化和时间戳标准化。
-- [ ] 设计作者配置加载入口：新增 `config/qq_author.txt`（UTF-8），支持环境变量覆盖路径，借鉴头条作者配置解析。
-- [ ] 处理请求限速、错误重试与临时失败回退，保持与现有风格一致。
+- [x] 在 `src/adapters/` 下新增 `http_tencent.py`，实现作者 ID 解析、作者列表与详情 API 调用、内容 Markdown 化和时间戳标准化。
+- [x] 设计作者配置加载入口：新增 `config/qq_author.txt`（UTF-8），支持环境变量覆盖路径，借鉴头条作者配置解析。
+- [x] 处理请求限速、错误重试与临时失败回退，保持与现有风格一致。
 
 ### 3. 抓取 Worker 集成
 - [ ] 在 `crawl_sources` 中新增 `_run_tencent_flow`，复用“读作者→拉取 feed→写入 raw_articles→补全正文→关键词过滤→入库 filtered_articles”流程。

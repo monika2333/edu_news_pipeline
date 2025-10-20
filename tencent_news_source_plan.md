@@ -8,8 +8,8 @@
 ## 步骤计划
 
 ### 1. 现有实现审查
-- [ ] 阅读 `src/workers/crawl_sources.py` 当前各来源（今日头条/中新网/光明网等）流程，确定适配 Tencent 所需的抽象接口与数据库交互节点。
-- [ ] 分析 `newsqq_crawl/qq_author_crawler.py`，提炼作者信息拉取、分页列表、正文抓取与 Markdown 转换的核心逻辑及重试/速率控制要求。
+- [x] 阅读 `src/workers/crawl_sources.py` 当前各来源（今日头条/中新网/光明网等）流程，确定适配 Tencent 所需的抽象接口与数据库交互节点。
+- [x] 分析 `newsqq_crawl/qq_author_crawler.py`，提炼作者信息拉取、分页列表、正文抓取与 Markdown 转换的核心逻辑及重试/速率控制要求。
 
 ### 2. HTTP 适配器与配置支持
 - [ ] 在 `src/adapters/` 下新增 `http_tencent.py`，实现作者 ID 解析、作者列表与详情 API 调用、内容 Markdown 化和时间戳标准化。
@@ -30,4 +30,3 @@
 - [ ] 运行最小化集成测试（例如：`python -m src.cli.main crawl --sources=tencent --limit=<小值>`），验证功能闭环。
 - [ ] 检查 `git status`，确保只有计划内的改动。
 - [ ] 根据测试结果修正问题，准备提交或交付。
-

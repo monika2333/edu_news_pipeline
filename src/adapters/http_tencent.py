@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 
 import requests
 from bs4 import BeautifulSoup
@@ -80,6 +80,11 @@ def _session() -> requests.Session:
         {
             "User-Agent": USER_AGENT,
             "Accept-Language": DEFAULT_LOCALE,
+            # Help Tencent endpoints treat us like a browser XHR
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://news.qq.com",
+            "Referer": "https://news.qq.com/",
+            "Connection": "keep-alive",
         }
     )
     return sess
@@ -94,7 +99,8 @@ def parse_author_id(raw: str) -> str:
         segments = [segment for segment in parsed.path.split("/") if segment]
         if not segments:
             raise ValueError(f"Unable to derive author id from URL: {raw}")
-        return segments[-1]
+        # Author IDs can be URL-encoded (e.g. trailing '=' as %3D)
+        return unquote(segments[-1])
     return value
 
 
@@ -273,6 +279,8 @@ def list_feed_items_for_author(
             "from_scene": "103",
             "visit_type": "guest",
             "offset_info": offset,
+            # Some Tencent endpoints require apptype=web for proper routing
+            "apptype": "web",
         }
         payload = _safe_request_json(sess, ARTICLE_LIST_API, params)
         for item in _summaries_from_payload(payload):

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import urlparse
+import sys
 
 import requests
 from bs4 import BeautifulSoup
@@ -252,6 +253,7 @@ def list_feed_items_for_author(
     profile = fetch_author_profile(entry.author_id, session=sess)
     tab_id = entry.tab_id or tab_override or resolve_tab_id(profile)
     author_name = (profile.get("name") or profile.get("nick") or "").strip() or None
+    print(f"[info] Collecting Tencent feed for {entry.profile_url} (tab={tab_id})", file=sys.stderr)
     collected: List[FeedItem] = []
     offset = ""
     for page in range(max_pages):
@@ -295,6 +297,7 @@ def list_feed_items_for_author(
             break
         if delay_seconds:
             time.sleep(delay_seconds)
+    print(f"[info] Tencent author {entry.author_id} returned {len(collected)} items", file=sys.stderr)
     return collected
 
 

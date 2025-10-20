@@ -17,9 +17,9 @@
 - [x] 处理请求限速、错误重试与临时失败回退，保持与现有风格一致。
 
 ### 3. 抓取 Worker 集成
-- [ ] 在 `crawl_sources` 中新增 `_run_tencent_flow`，复用“读作者→拉取 feed→写入 raw_articles→补全正文→关键词过滤→入库 filtered_articles”流程。
-- [ ] 将 `tencent`（必要时含 `qq` 别名）纳入 `run()` 的 `sources` 参数解析，并在 CLI `crawl` 子命令文档中说明用法。
-- [ ] 确保关键词过滤、去重、数据库调用与其他来源保持一致。
+- [x] 在 `crawl_sources` 中新增 `_run_tencent_flow`，复用“读作者→拉取 feed→写入 raw_articles→补全正文→关键词过滤→入库 filtered_articles”流程。
+- [x] 将 `tencent`（必要时含 `qq` 别名）纳入 `run()` 的 `sources` 参数解析，并在 CLI `crawl` 子命令文档中说明用法。
+- [x] 确保关键词过滤、去重、数据库调用与其他来源保持一致。
 
 ### 4. 文档与目录清理
 - [ ] 更新 README 或相关文档，介绍腾讯来源配置、运行方式与环境变量。

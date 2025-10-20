@@ -50,6 +50,15 @@ from src.adapters.http_chinaeducationdaily import (
     make_article_id as jyb_make_article_id,
     build_detail_update as jyb_build_detail_update,
 )
+from src.adapters.http_tencent import (
+    DEFAULT_AUTHORS_FILE as TENCENT_DEFAULT_AUTHORS_FILE,
+    DEFAULT_MAX_PAGES as TENCENT_DEFAULT_MAX_PAGES,
+    build_detail_update as tencent_build_detail_update,
+    fetch_article_detail as tencent_fetch_article_detail,
+    feed_item_to_row as tencent_feed_item_to_row,
+    list_feed_items as tencent_list_feed_items,
+    load_author_entries as tencent_load_author_entries,
+)
 
 WORKER = "crawl"
 DEFAULT_AUTHORS_FILE = Path("config/toutiao_author.txt")
@@ -83,6 +92,24 @@ def _resolve_authors_path() -> Path:
     legacy = root / "data" / "toutiao_author.txt"
     return legacy
 
+
+
+def _resolve_tencent_authors_path() -> Path:
+    env_value = os.getenv("TENCENT_AUTHORS_PATH")
+    if env_value:
+        candidate = Path(env_value).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path.cwd() / candidate
+        return candidate
+    default_path = TENCENT_DEFAULT_AUTHORS_FILE
+    root = _repo_root()
+    preferred = (root / default_path) if not default_path.is_absolute() else default_path
+    if preferred.exists():
+        return preferred
+    legacy = root / "newsqq_crawl" / "qq_author.txt"
+    if legacy.exists():
+        return legacy
+    return preferred
 
 
 def _load_author_entries(path: Path) -> List[Tuple[str, str]]:
@@ -312,6 +339,126 @@ def _run_toutiao_flow(
     stats["ok"] = detail_success_count
     stats["failed"] += failed_total
     stats["skipped"] += skipped_total
+    return stats
+
+
+def _run_tencent_flow(
+    *,
+    adapter,
+    keywords: Sequence[str],
+    remaining_limit: Optional[int],
+    pages: Optional[int],
+) -> Dict[str, Any]:
+    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
+    authors_path = _resolve_tencent_authors_path()
+    if not authors_path.exists():
+        log_info(WORKER, f"Tencent author list not found: {authors_path}")
+        return stats
+    try:
+        entries = tencent_load_author_entries(authors_path)
+    except Exception as exc:
+        log_error(WORKER, authors_path.as_posix(), exc)
+        return stats
+    if not entries:
+        log_info(WORKER, "Tencent author list is empty.")
+        return stats
+    max_pages = pages if pages is not None else TENCENT_DEFAULT_MAX_PAGES
+    try:
+        feed_items = tencent_list_feed_items(
+            entries,
+            max_pages=max_pages,
+            limit=remaining_limit,
+        )
+    except Exception as exc:
+        log_error(WORKER, "tencent_feed_list", exc)
+        return stats
+    if not feed_items:
+        log_info(WORKER, "No feed items returned from Tencent.")
+        return stats
+    feed_rows: List[Dict[str, Any]] = []
+    index: Dict[str, Any] = {}
+    duplicates = 0
+    fetched_at = datetime.now(timezone.utc)
+    for item in feed_items:
+        article_id = str(item.article_id or "").strip()
+        if not article_id:
+            log_error(WORKER, "tencent_feed_id", ValueError("Empty article_id encountered"))
+            stats["failed"] += 1
+            continue
+        if article_id in index:
+            duplicates += 1
+            continue
+        feed_rows.append(tencent_feed_item_to_row(item, fetched_at=fetched_at))
+        index[article_id] = item
+    stats["consumed"] = len(index)
+    if not feed_rows:
+        if duplicates:
+            log_info(WORKER, f"Tencent duplicate feed items skipped: {duplicates}")
+        return stats
+    try:
+        upserted = adapter.upsert_raw_feed_rows(feed_rows)
+    except Exception as exc:
+        log_error(WORKER, "tencent_postgres_feed", exc)
+        stats["failed"] += len(feed_rows)
+        return stats
+    log_info(WORKER, f"Tencent feed rows upserted: {upserted}")
+    if duplicates:
+        log_info(WORKER, f"Tencent duplicate feed items skipped: {duplicates}")
+    try:
+        missing_content_ids = adapter.get_raw_articles_missing_content(list(index.keys()))
+    except Exception as exc:
+        log_error(WORKER, "tencent_missing_content", exc)
+        missing_content_ids = []
+    detail_targets = [index[aid] for aid in index if aid in missing_content_ids]
+    already_populated = len(index) - len(detail_targets)
+    if already_populated:
+        log_info(WORKER, f"Tencent articles already populated: {already_populated}")
+    if detail_targets:
+        log_info(WORKER, f"Tencent articles needing detail refresh: {len(detail_targets)}")
+    detail_rows: List[Dict[str, Any]] = []
+    detail_failures = 0
+    for item in detail_targets:
+        try:
+            detail = tencent_fetch_article_detail(item)
+        except Exception as exc:
+            detail_failures += 1
+            log_error(WORKER, f"tencent_detail_fetch:{item.article_id}", exc)
+            continue
+        detail_rows.append(
+            tencent_build_detail_update(
+                detail,
+                detail_fetched_at=datetime.now(timezone.utc),
+            )
+        )
+    db_failures = 0
+    if detail_rows:
+        try:
+            adapter.update_raw_article_details(detail_rows)
+        except Exception as exc:
+            db_failures = len(detail_rows)
+            log_error(WORKER, "tencent_detail_update", exc)
+            detail_rows = []
+        else:
+            for row in detail_rows:
+                log_info(WORKER, f"TENCENT DETAIL OK {row['article_id']}")
+    filtered_candidates: List[Dict[str, Any]] = []
+    for row in detail_rows:
+        article_id = str(row.get("article_id") or "").strip()
+        content = str(row.get("content_markdown") or "").strip()
+        if not article_id or not content:
+            continue
+        ok_hit, hits = _contains_keywords(content, keywords)
+        if not ok_hit:
+            continue
+        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
+        if candidate:
+            filtered_candidates.append(candidate)
+    if filtered_candidates:
+        _persist_filtered_candidates(adapter, filtered_candidates, source="tencent")
+    detail_success_count = len(detail_rows)
+    stats["ok"] = detail_success_count
+    stats["failed"] += detail_failures + db_failures
+    stats["skipped"] += duplicates + already_populated
     return stats
 def _run_chinanews_flow(
     *,
@@ -830,6 +977,13 @@ def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Option
                     remaining_limit=remaining_limit,
                     base_url=gmw_base_url,
                     timeout_value=gmw_timeout,
+                )
+            elif source in {'tencent', 'qq'}:
+                stats = _run_tencent_flow(
+                    adapter=adapter,
+                    keywords=keywords,
+                    remaining_limit=remaining_limit,
+                    pages=pages,
                 )
             elif source == 'toutiao':
                 stats = _run_toutiao_flow(

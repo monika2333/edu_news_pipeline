@@ -119,12 +119,67 @@ def run(
             title_line = (candidate.title or "").strip()
             summary_line = (candidate.summary or "").strip()
             display_source = (candidate.llm_source or candidate.source or "").strip()
+
+            def _format_number(value: Optional[float]) -> Optional[str]:
+                if value is None:
+                    return None
+                try:
+                    number = float(value)
+                except (TypeError, ValueError):
+                    return str(value)
+                if number.is_integer():
+                    return str(int(number))
+                return f"{number:.2f}".rstrip("0").rstrip(".")
+
             # Only include location/source info in the suffix.
             suffix_parts: List[str] = []
             if display_source:
                 suffix_parts.append(display_source)
-            suffix = f"（{'，'.join(suffix_parts)}）" if suffix_parts else ""
-            return "\n".join(filter(None, [title_line, summary_line + suffix]))
+            suffix = f"（{'、'.join(suffix_parts)}）" if suffix_parts else ""
+
+            metrics_parts: List[str] = []
+            score_text = _format_number(candidate.score)
+            if score_text is not None:
+                metrics_parts.append(f"score={score_text}")
+
+            keyword_bonus_total = candidate.keyword_bonus_score
+            details = candidate.score_details if isinstance(candidate.score_details, dict) else {}
+
+            bonus_value: Optional[float] = None
+            if keyword_bonus_total is not None:
+                try:
+                    bonus_value = float(keyword_bonus_total)
+                except (TypeError, ValueError):
+                    bonus_value = None
+            if bonus_value is None and details:
+                bonus_from_details = details.get("keyword_bonus_score")
+                if bonus_from_details is not None:
+                    try:
+                        bonus_value = float(bonus_from_details)
+                    except (TypeError, ValueError):
+                        bonus_value = None
+
+            matched_labels: List[str] = []
+            if details:
+                matched = details.get("matched_rules")
+                if isinstance(matched, list):
+                    for rule in matched:
+                        if isinstance(rule, dict):
+                            label = rule.get("label") or rule.get("rule_id")
+                            if label:
+                                matched_labels.append(str(label))
+
+            if bonus_value is not None and bonus_value != 0:
+                keyword_bonus_text = _format_number(bonus_value) or str(bonus_value)
+                if matched_labels:
+                    keyword_bonus_text = f"{keyword_bonus_text}（{'、'.join(matched_labels)}）"
+                metrics_parts.append(f"keyword_bonuses={keyword_bonus_text}")
+
+            metrics_suffix = f" ({'; '.join(metrics_parts)})" if metrics_parts else ""
+
+            return "\n".join(
+                filter(None, [title_line, summary_line + suffix + metrics_suffix])
+            )
 
         bucket_index: Dict[Tuple[str, str], List[ExportCandidate]] = {
             ("internal", "positive"): [],

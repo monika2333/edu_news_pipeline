@@ -141,7 +141,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
         updates: List[dict] = []
         promotion_payloads: List[dict] = []
         for item, raw_score, bonus_score, final_score, score_details in successes:
-            threshold_met = raw_score is not None and raw_score >= SCORE_THRESHOLD
+            threshold_met = final_score is not None and final_score >= SCORE_THRESHOLD
             status = "scored" if threshold_met else "filtered_out"
             updates.append(
                 {

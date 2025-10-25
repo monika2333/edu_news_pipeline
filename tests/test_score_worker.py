@@ -65,12 +65,17 @@ def test_keyword_bonus_applied(monkeypatch):
     assert update["raw_relevance_score"] == 50
     assert update["keyword_bonus_score"] == 25
     assert update["score"] == 75
-    assert update["status"] == "filtered_out"
+    assert update["status"] == "scored"
     assert update["score_details"]["matched_rules"]
-    assert not fake_adapter.promotions
+    assert fake_adapter.promotions, "final score meeting threshold should be promoted"
+    promotion = fake_adapter.promotions[0]
+    assert promotion["raw_relevance_score"] == 50
+    assert promotion["keyword_bonus_score"] == 25
+    assert promotion["score"] == 75
+    assert promotion["status"] == "pending"
 
 
-def test_promotion_uses_raw_threshold(monkeypatch):
+def test_promotion_uses_final_threshold(monkeypatch):
     item = PrimaryArticleForScoring(
         article_id="promote-me",
         content="Beijing Municipal Party Committee content",
@@ -99,7 +104,7 @@ def test_promotion_uses_raw_threshold(monkeypatch):
 
     score.run(limit=1, concurrency=1)
 
-    assert fake_adapter.promotions, "item meeting raw threshold should be promoted"
+    assert fake_adapter.promotions, "item meeting final threshold should be promoted"
     promotion = fake_adapter.promotions[0]
     assert promotion["raw_relevance_score"] == 60
     assert promotion["keyword_bonus_score"] == 100

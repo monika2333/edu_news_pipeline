@@ -152,8 +152,8 @@ def get_settings() -> Settings:
     score_model_name = os.getenv("SCORE_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
     sentiment_model_name = os.getenv("SENTIMENT_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
     siliconflow_enable_thinking = _bool_from_env(os.getenv("ENABLE_THINKING"), default=False)
-    external_filter_model_name = os.getenv("EXTERNAL_FILTER_MODEL_NAME", summarize_model_name)
-    external_filter_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_THRESHOLD")) or 70
+    external_filter_model_name = os.getenv("EXTERNAL_FILTER_MODEL_NAME", score_model_name)
+    external_filter_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_THRESHOLD")) or 20
     external_filter_batch_size = _optional_int(os.getenv("EXTERNAL_FILTER_BATCH_SIZE")) or 50
     external_filter_max_retries = _optional_int(os.getenv("EXTERNAL_FILTER_MAX_RETRIES")) or 3
 

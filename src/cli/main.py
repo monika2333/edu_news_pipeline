@@ -10,6 +10,7 @@ from src.workers.repair_missing_content import run as repair_missing
 from src.workers.score import run as score_summaries
 from src.workers.summarize import run as summarize_articles
 from src.workers.hash_primary import run as hash_primary
+from src.workers.external_filter import run as run_external_filter
 
 
 def _positive_int(value: str) -> int:
@@ -53,6 +54,11 @@ def _add_score(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
 
 
+def _add_external_filter(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser("external-filter", help="Run external importance filter for pending 京外稿件")
+    parser.add_argument("--limit", type=_positive_int, default=None, help="Max number of rows to process (default: unlimited)")
+
+
 def _add_export(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("export", help="Export high scoring summaries")
     parser.add_argument("--limit", type=_positive_int, default=None, help="Max number of summaries to export")
@@ -83,6 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_hash_primary(subparsers)
     _add_summarize(subparsers)
     _add_score(subparsers)
+    _add_external_filter(subparsers)
     _add_export(subparsers)
     _add_geo_tag(subparsers)
     return parser
@@ -103,6 +110,8 @@ def main(argv: list[str] | None = None) -> None:
         summarize_articles(limit=args.limit, concurrency=args.concurrency, keywords_path=args.keywords)
     elif command == "score":
         score_summaries(limit=args.limit, concurrency=args.concurrency)
+    elif command == "external-filter":
+        run_external_filter(limit=args.limit)
     elif command == "export":
         export_brief(
             limit=args.limit,

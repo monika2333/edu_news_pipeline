@@ -8,7 +8,8 @@ Automated pipeline for collecting education-related articles, summarising them w
 2. **Hash / Deduplicate** - `hash_primary` computes an exact `content_hash`, 64-bit SimHash, and four 16-bit band hashes for each filtered article. Using SimHash band lookup and a Hamming-distance threshold (<= 3), duplicates are grouped under a primary article and promoted to `primary_articles`.
 3. **Score** - LLM-based relevance scoring runs on entries in `primary_articles`. The LLM output becomes `raw_relevance_score`; keyword rules add a `keyword_bonus_score`, and their sum is persisted as `score`. Promotion still keys off `raw_relevance_score >= 60`, while the final score (without an upper bound) is used for ordering.
 4. **Summarise & Sentiment** - `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and writes the results back into `news_summaries` with status `ready_for_export` (failed attempts remain `pending`).
-5. **Export** - Assemble the ready summaries into a briefing ordered by "Jingnei/Jingwai x Positive/Negative" buckets (sorted descending by score) and persist batch metadata in `brief_batches` / `brief_items`, sending an optional Feishu notification.
+5. **External Filter** - `external_filter` re-scores京外正面稿件，按照 external importance（0-100）决定是否继续导出；不满足阈值的记录被标记为 `external_filtered`。
+6. **Export** - Assemble the ready summaries into a briefing ordered by "Jingnei/Jingwai x Positive/Negative" buckets (sorted descending by score) and persist batch metadata in `brief_batches` / `brief_items`, sending an optional Feishu notification.
 
 All stages are available through the CLI wrapper:
 
@@ -17,6 +18,7 @@ python -m src.cli.main crawl --sources toutiao,tencent,chinanews,chinadaily,jyb,
 python -m src.cli.main hash-primary --limit 200
 python -m src.cli.main score --limit 500
 python -m src.cli.main summarize --limit 500
+python -m src.cli.main external-filter --limit 100
 python -m src.cli.main export --min-score 60 --limit 500
 python -m src.cli.main repair --limit 500
 python -m src.cli.main geo-tag --limit 500 --batch-size 200
@@ -68,6 +70,7 @@ With these variables in place the worker and console commands automatically use 
 ### External Filter Workflow
 
 - Configure the external filter env vars (see `.env.example` or `.env.local`).
+- `scripts/run_pipeline_once.py` 默认计划会在 summarize 之后自动运行 `external-filter` 步骤；无需额外调度即可串接进整条流水线。
 - Run the external filter worker to score pending 京外稿：`python -m src.workers.external_filter --limit 100`（按需调整 limit/batch）。
 - 使用 backfill 脚本重置历史京外正面记录：先 `python -m scripts.backfill_external_filter --dry-run --limit 50` 查看影响，再去掉 `--dry-run` 实际执行。
 - 观察 `news_summaries.external_importance_status` 字段（`pending_external_filter` → `ready_for_export` / `external_filtered`）确保 worker 正常推进。

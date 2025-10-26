@@ -17,9 +17,10 @@ from src.workers.export_brief import run as run_export
 from src.workers.hash_primary import run as run_hash_primary
 from src.workers.score import run as run_score
 from src.workers.summarize import run as run_summarize
+from src.workers.external_filter import run as run_external_filter
 
 StepHandler = Callable[[], Optional[Dict[str, str]]]
-DEFAULT_PIPELINE: Sequence[str] = ("crawl", "hash-primary", "score", "summarize", "export")
+DEFAULT_PIPELINE: Sequence[str] = ("crawl", "hash-primary", "score", "summarize", "external-filter", "export")
 
 
 @dataclass
@@ -185,6 +186,11 @@ def _run_score_step() -> Dict[str, str]:
     return {}
 
 
+def _run_external_filter_step() -> Dict[str, str]:
+    run_external_filter()
+    return {}
+
+
 def _run_export_step() -> Dict[str, str]:
     output_path = run_export()
     if output_path is None:
@@ -197,6 +203,7 @@ STEP_REGISTRY: Dict[str, StepHandler] = {
     "hash-primary": _run_hash_primary_step,
     "summarize": _run_summarize_step,
     "score": _run_score_step,
+    "external-filter": _run_external_filter_step,
     "export": _run_export_step,
 }
 
@@ -294,7 +301,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--steps",
         nargs="+",
         choices=list(STEP_REGISTRY.keys()),
-        help="Explicit step order to run (default: crawl hash-primary score summarize export)",
+        help="Explicit step order to run (default: crawl hash-primary score summarize external-filter export)",
     )
     parser.add_argument(
         "--skip",

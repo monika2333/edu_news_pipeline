@@ -938,6 +938,48 @@ class PostgresAdapter:
         """
         with self._cursor() as cur:
             cur.execute(query, values)
+    def fetch_external_backfill_candidates(self, limit: int) -> List[Dict[str, Any]]:
+        if limit <= 0:
+            return []
+        query = """
+            SELECT
+                article_id,
+                title,
+                publish_time_iso,
+                summary_generated_at,
+                sentiment_label
+            FROM news_summaries
+            WHERE status = 'ready_for_export'
+              AND summary_status = 'completed'
+              AND (is_beijing_related IS DISTINCT FROM TRUE)
+              AND lower(coalesce(sentiment_label, '')) = 'positive'
+              AND (external_importance_status IS NULL OR external_importance_status NOT IN ('pending_external_filter'))
+            ORDER BY summary_generated_at ASC NULLS LAST, article_id ASC
+            LIMIT %s
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (limit,))
+            rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
+    def reset_external_filter_pending(self, article_ids: Sequence[str]) -> int:
+        if not article_ids:
+            return 0
+        query = """
+            UPDATE news_summaries
+            SET status = 'pending_external_filter',
+                external_importance_status = 'pending_external_filter',
+                external_importance_score = NULL,
+                external_importance_checked_at = NULL,
+                external_importance_raw = NULL,
+                external_filter_attempted_at = NULL,
+                external_filter_fail_count = 0,
+                updated_at = NOW()
+            WHERE article_id = ANY(%s)
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (list(article_ids),))
+            return cur.rowcount
 
     def fetch_raw_articles_for_summary(
         self,

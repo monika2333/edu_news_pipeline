@@ -149,6 +149,8 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None, keywords_path: O
                     external_importance_score=None,
                     external_importance_checked_at=None,
                     external_importance_raw=None,
+                    external_filter_attempted_at=None,
+                    external_filter_fail_count=0,
                 )
                 success += 1
                 if sentiment_label:

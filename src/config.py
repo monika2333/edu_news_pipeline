@@ -127,6 +127,10 @@ class Settings:
     feishu_receive_id_type: str
     beijing_keywords_path: Path
     score_keyword_bonus_rules: Dict[str, int]
+    external_filter_model_name: str
+    external_filter_threshold: int
+    external_filter_batch_size: int
+    external_filter_max_retries: int
 
 
 @lru_cache(maxsize=1)
@@ -148,6 +152,10 @@ def get_settings() -> Settings:
     score_model_name = os.getenv("SCORE_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
     sentiment_model_name = os.getenv("SENTIMENT_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
     siliconflow_enable_thinking = _bool_from_env(os.getenv("ENABLE_THINKING"), default=False)
+    external_filter_model_name = os.getenv("EXTERNAL_FILTER_MODEL_NAME", summarize_model_name)
+    external_filter_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_THRESHOLD")) or 70
+    external_filter_batch_size = _optional_int(os.getenv("EXTERNAL_FILTER_BATCH_SIZE")) or 50
+    external_filter_max_retries = _optional_int(os.getenv("EXTERNAL_FILTER_MAX_RETRIES")) or 3
 
     process_limit = _optional_int(os.getenv("PROCESS_LIMIT"))
     default_concurrency = _optional_int(os.getenv("CONCURRENCY")) or 5
@@ -224,6 +232,10 @@ def get_settings() -> Settings:
         feishu_receive_id_type=feishu_receive_id_type,
         beijing_keywords_path=beijing_keywords_path,
         score_keyword_bonus_rules=keyword_bonus_rules,
+        external_filter_model_name=external_filter_model_name,
+        external_filter_threshold=external_filter_threshold,
+        external_filter_batch_size=external_filter_batch_size,
+        external_filter_max_retries=external_filter_max_retries,
     )
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, TypedDict
 
 
 @dataclass(slots=True)
@@ -99,6 +99,8 @@ class ExportCandidate:
     raw_relevance_score: Optional[float] = None
     keyword_bonus_score: Optional[float] = None
     score_details: Dict[str, Any] = field(default_factory=dict)
+    external_importance_score: Optional[float] = None
+    external_importance_checked_at: Optional[str] = None
 
 
 @dataclass(slots=True)

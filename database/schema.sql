@@ -166,6 +166,8 @@ create table if not exists public.news_summaries (
     external_importance_score numeric(6,3),
     external_importance_checked_at timestamptz,
     external_importance_raw jsonb,
+    external_filter_attempted_at timestamptz,
+    external_filter_fail_count integer not null default 0,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );

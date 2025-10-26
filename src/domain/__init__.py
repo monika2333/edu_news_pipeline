@@ -16,6 +16,7 @@ from .scoring import DEFAULT_WEIGHTS, ScoreResult, ScoreWeights, score_summary
 from .states import IN_PROGRESS_STATES, TERMINAL_STATES, ProcessState, is_terminal
 from .templates import BriefTemplate, DEFAULT_BRIEF_TEMPLATE
 from .region import load_beijing_keywords, is_beijing_related
+from .external_filter import ExternalFilterCandidate, ExternalFilterResult
 
 __all__ = [
     "ArticleInput",
@@ -38,4 +39,6 @@ __all__ = [
     "score_summary",
     "load_beijing_keywords",
     "is_beijing_related",
+    "ExternalFilterCandidate",
+    "ExternalFilterResult",
 ]

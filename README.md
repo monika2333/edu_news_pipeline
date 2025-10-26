@@ -65,6 +65,13 @@ Re-run as needed until the command reports no articles remaining.
 
 With these variables in place the worker and console commands automatically use the Postgres backend via `src.adapters.db.get_adapter()`.
 
+### External Filter Workflow
+
+- Configure the external filter env vars (see `.env.example` or `.env.local`).
+- Run the external filter worker to score pending 京外稿：`python -m src.workers.external_filter --limit 100`（按需调整 limit/batch）。
+- 使用 backfill 脚本重置历史京外正面记录：先 `python -m scripts.backfill_external_filter --dry-run --limit 50` 查看影响，再去掉 `--dry-run` 实际执行。
+- 观察 `news_summaries.external_importance_status` 字段（`pending_external_filter` → `ready_for_export` / `external_filtered`）确保 worker 正常推进。
+
 The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env`. Key settings:
 
 | Variable | Description |
@@ -84,6 +91,10 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `CONCURRENCY` | Default worker concurrency override (falls back to 5) |
 | `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` | API credentials and endpoint for the LLM provider |
 | `SUMMARIZE_MODEL_NAME` / `SOURCE_MODEL_NAME` / `SCORE_MODEL_NAME` | Model identifiers used by the workers |
+| `EXTERNAL_FILTER_MODEL_NAME` | Model identifier used by the external filter worker (defaults to `SUMMARIZE_MODEL_NAME`) |
+| `EXTERNAL_FILTER_THRESHOLD` | External importance score (0-100) required to pass京外稿，默认 70 |
+| `EXTERNAL_FILTER_BATCH_SIZE` | Rows processed per batch by the external filter worker（默认 50） |
+| `EXTERNAL_FILTER_MAX_RETRIES` | Retry attempts before marking a record `external_filtered`（默认 3） |
 | `CRAWL_SOURCES` | Comma list of sources used by the pipeline wrapper (e.g., `toutiao,chinanews`; default `toutiao`) |
 | `TOUTIAO_EXISTING_CONSECUTIVE_STOP` | Early‑stop after N consecutive existing items per author (default `5`; set `0` to disable) |
 | `CHINANEWS_EXISTING_CONSECUTIVE_STOP` | Early‑stop after N consecutive existing items across scroll pages (default `5`; set `0` to disable) |

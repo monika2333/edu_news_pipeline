@@ -2,21 +2,21 @@
 
 ## 背景与目标
 - news_summaries 当前仅依赖 score + is_beijing_related + sentiment_label 来决定导出，所有京外正面稿件都会进入 export（database/schema.sql:142, src/adapters/db_postgres.py:1148）。
-- 新需求：为京外正面稿件增加一层“外部重要性”审核，只有达到阈值才进入导出，其余被拦截，且可追踪拦截原因。
+- 新需求：为京外正面稿件增加一层“外部重要性”审核，只有达到阈值才进入导出，其余被拦截。
 
 ## 详细设计
 
 ### 1. Schema & 状态机
 1. 在 `database/schema.sql:142` 增加字段：
    - `external_importance_status` (enum: pending, pending_external_filter, ready_for_export, external_filtered)。
-   - `external_importance_score` (NUMERIC)、`external_importance_reason` (TEXT)、`external_importance_checked_at` (TIMESTAMP)、`external_importance_raw` (JSONB)。
+   - `external_importance_score` (NUMERIC)、`external_importance_checked_at` (TIMESTAMP)、`external_importance_raw` (JSONB)。
 2. 为 `(is_beijing_related, sentiment_label, external_importance_status)` 建联合索引，方便 worker 批量扫描。
 3. 保持 status 字段与旧值兼容：京内稿不受影响，京外正面新增两个状态；失败重试次数和 `updated_at` 仍由触发器维护。
 
 ### 2. Summarize 写库逻辑
 1. 在 `src/workers/summarize.py:131` 写 `complete_summary` 前判断 `is_beijing_related is not True` 且 `sentiment_label='positive'`：
    - 将 `status` 置为 `pending_external_filter`。
-   - 清空/初始化新字段：score/checked_at/reason/raw 设 `NULL`。
+   - 清空/初始化新字段：score/checked_at/raw 设 `NULL`。
 2. 其他记录仍写 `ready_for_export`，保证已有流程不变。
 3. `src/adapters/db_postgres.py:712` 等保存接口需允许新状态并正确 upsert 新列。
 
@@ -25,10 +25,10 @@
    - 批量拉取 `pending_external_filter` 记录（按 `updated_at` 升序 + 限流）。
    - 通过 `src/adapters/llm_scoring.py` 新增 `ExternalFilterScorer`，使用专用 prompt（写在 `prompts/external_filter.md`）。
 2. 模型返回结构：
-   - `score` (0-100)、`reason`、`raw_json`（保留模型原始输出）。
+   - `score` (0-100)、`raw_json`（保留模型原始输出）。
 3. 状态转换：
-   - `score >= external_filter_threshold` → 写 `external_importance_score/checked_at/reason/raw` 并将 `status` 置为 `ready_for_export`。
-   - 否则 `status='external_filtered'`，同样记录原因，便于后续人工复核。
+   - `score >= external_filter_threshold` → 写 `external_importance_score/checked_at/raw` 并将 `status` 置为 `ready_for_export`。
+   - 否则 `status='external_filtered'`，并保留 `raw` 便于后续人工复核。
 4. 失败与重试：
    - 对 LLM/network/解析失败计入 `retry_count`，超过 `EXTERNAL_FILTER_MAX_RETRIES` 后标记 `status='external_filtered'` 并附上失败描述。
    - Worker 暴露 `--dry-run/--limit` 方便回填和调试。
@@ -37,8 +37,8 @@
 1. `src/adapters/db_postgres.py:1148` 的 `fetch_export_candidates`：
    - 排除 `external_importance_status='external_filtered'` 的记录。
    - 对京外正面仅选 `status='ready_for_export'`。
-   - 将 `external_importance_score/reason/checked_at` 带入 `brief_items.metadata`（`src/adapters/db_postgres.py:1323` 写入时一并保存）。
-2. `src/workers/export_brief.py:199` 在日志与最终输出中展示该分值和理由，方便人工审核。
+   - 将 `external_importance_score/checked_at` 带入 `brief_items.metadata`（`src/adapters/db_postgres.py:1323` 写入时一并保存）。
+2. `src/workers/export_brief.py:199` 在日志与最终输出中展示该分值，方便人工审核。
 
 ### 5. 配置与运维
 1. `src/config.py:104` 新增：

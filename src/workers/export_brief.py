@@ -138,7 +138,7 @@ def run(
             suffix = f"（{'、'.join(suffix_parts)}）" if suffix_parts else ""
 
             metrics_parts: List[str] = []
-            score_text = _format_number(candidate.score)
+            score_text = _format_number(candidate.score) if candidate.is_beijing_related is True else None
             if score_text is not None:
                 metrics_parts.append(f"score={score_text}")
 
@@ -151,7 +151,7 @@ def run(
             details = candidate.score_details if isinstance(candidate.score_details, dict) else {}
 
             bonus_value: Optional[float] = None
-            if keyword_bonus_total is not None:
+            if candidate.is_beijing_related is True and keyword_bonus_total is not None:
                 try:
                     bonus_value = float(keyword_bonus_total)
                 except (TypeError, ValueError):

@@ -144,7 +144,7 @@
 - [x] 更新 summarize 流程与 Postgres adapter，确保京外正面写入 pending_external_filter 并维护新列。
 - [x] 起草 docs/external_filter_prompt.md 并敲定 external filter prompt。（已根据教育政策评估场景更新提示词）
 - [x] 实现 external_filter worker 与 LLM 评分逻辑（含阈值、重试、状态流转）。
-- [x] 更新 export SQL/brief writer，把 external_importance 分数写入 brief，导出文本仅展示分值（去掉检查时间）。
+- [x] 更新 export SQL/brief writer，把 external_importance 分数写入 brief，导出文本仅展示分值（京外不再显示 score/keyword bonuses）。
 - [ ] 编写 backfill 脚本，处理历史京外正面并验证幂等。
 - [ ] 在 settings/README/.env.example 中加入新的配置项与运行说明。
 - [ ] 跑通端到端验证（summarize → external_filter → export）并记录测试结果。

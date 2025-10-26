@@ -128,6 +128,14 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None, keywords_path: O
                 if beijing_keywords:
                     detection_payload: List[str] = [summary_text]
                     beijing_related = is_beijing_related(detection_payload, beijing_keywords)
+                needs_external_filter = (
+                    beijing_related is not True
+                    and (sentiment_label or "").lower() == "positive"
+                )
+                next_status = "pending_external_filter" if needs_external_filter else "ready_for_export"
+                external_importance_status = (
+                    "pending_external_filter" if needs_external_filter else "ready_for_export"
+                )
                 adapter.complete_summary(
                     article_id,
                     summary_text,
@@ -136,7 +144,11 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None, keywords_path: O
                     beijing_related=beijing_related,
                     sentiment_label=sentiment_label,
                     sentiment_confidence=sentiment_confidence,
-                    status="ready_for_export",
+                    status=next_status,
+                    external_importance_status=external_importance_status,
+                    external_importance_score=None,
+                    external_importance_checked_at=None,
+                    external_importance_raw=None,
                 )
                 success += 1
                 if sentiment_label:

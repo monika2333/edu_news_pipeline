@@ -19,6 +19,7 @@ from src.domain import (
 
 _CONNECTION: Optional[psycopg.Connection] = None
 _ADAPTER: Optional["PostgresAdapter"] = None
+_MISSING = object()
 
 
 def _get_connection() -> psycopg.Connection:
@@ -720,6 +721,10 @@ class PostgresAdapter:
         sentiment_label: Optional[str] = None,
         sentiment_confidence: Optional[float] = None,
         status: str = "ready_for_export",
+        external_importance_status: Any = _MISSING,
+        external_importance_score: Any = _MISSING,
+        external_importance_checked_at: Any = _MISSING,
+        external_importance_raw: Any = _MISSING,
     ) -> None:
         if not article_id:
             raise ValueError('complete_summary requires article_id')
@@ -745,6 +750,14 @@ class PostgresAdapter:
             payload['sentiment_label'] = sentiment_label
         if sentiment_confidence is not None:
             payload['sentiment_confidence'] = float(sentiment_confidence)
+        def _maybe_set(field: str, value: Any) -> None:
+            if value is not _MISSING:
+                payload[field] = value
+
+        _maybe_set('external_importance_status', external_importance_status)
+        _maybe_set('external_importance_score', external_importance_score)
+        _maybe_set('external_importance_checked_at', external_importance_checked_at)
+        _maybe_set('external_importance_raw', Json(external_importance_raw) if (external_importance_raw is not _MISSING and external_importance_raw is not None) else external_importance_raw)
         sets = ', '.join(f"{field} = %s" for field in payload)
         values = list(payload.values()) + [article_id]
         query = f"""

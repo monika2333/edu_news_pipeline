@@ -142,6 +142,13 @@ def run(
             if score_text is not None:
                 metrics_parts.append(f"score={score_text}")
 
+            ext_score_value = candidate.external_importance_score
+            if ext_score_value is not None:
+                ext_score_text = _format_number(ext_score_value) or str(ext_score_value)
+                metrics_parts.append(f"external_importance={ext_score_text}")
+                if candidate.external_importance_checked_at:
+                    metrics_parts.append(f"external_checked_at={candidate.external_importance_checked_at}")
+
             keyword_bonus_total = candidate.keyword_bonus_score
             details = candidate.score_details if isinstance(candidate.score_details, dict) else {}
 

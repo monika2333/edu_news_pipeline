@@ -43,17 +43,13 @@ def build_prompt(candidate: ExternalFilterCandidate) -> str:
     template = _load_prompt_template()
     title = candidate.title or "（无标题）"
     source = candidate.source or "（未知来源）"
-    publish_time = candidate.publish_time_iso or "（未知时间）"
     summary = (candidate.summary or "").strip() or "（无摘要）"
     content = _truncate(candidate.content or "")
-    sentiment = (candidate.sentiment_label or "unknown").lower()
     return (
         f"{template}\n\n"
         "【新闻内容】\n"
         f"标题：{title}\n"
         f"来源：{source}\n"
-        f"时间：{publish_time}\n"
-        f"情感：{sentiment}\n"
         f"摘要：{summary}\n"
         f"正文摘录：{content}\n"
     )

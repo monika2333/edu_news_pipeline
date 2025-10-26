@@ -1331,7 +1331,9 @@ class PostgresAdapter:
                 sentiment_confidence,
                 is_beijing_related,
                 status,
-                summary_status
+                summary_status,
+                external_importance_score,
+                external_importance_checked_at
             FROM news_summaries
             WHERE status = 'ready_for_export'
               AND summary_status = 'completed'
@@ -1379,6 +1381,8 @@ class PostgresAdapter:
                     raw_relevance_score=row.get("raw_relevance_score"),
                     keyword_bonus_score=row.get("keyword_bonus_score"),
                     score_details=score_details,
+                    external_importance_score=row.get("external_importance_score"),
+                    external_importance_checked_at=self._iso_datetime(row.get("external_importance_checked_at")),
                 )
             )
         return out
@@ -1542,6 +1546,8 @@ class PostgresAdapter:
                                 "is_beijing_related": candidate.is_beijing_related,
                                 "sentiment_label": candidate.sentiment_label,
                                 "sentiment_confidence": candidate.sentiment_confidence,
+                                "external_importance_score": candidate.external_importance_score,
+                                "external_importance_checked_at": candidate.external_importance_checked_at,
                             }
                         ),
                     )

@@ -55,8 +55,13 @@ def _add_score(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _add_external_filter(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("external-filter", help="Run external importance filter for pending 京外稿件")
+    parser = subparsers.add_parser(
+        "external-filter",
+        help="Run external importance filter for pending Jingwai positives",
+    )
     parser.add_argument("--limit", type=_positive_int, default=None, help="Max number of rows to process (default: unlimited)")
+    parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional concurrency override for LLM calls")
+
 
 
 def _add_export(subparsers: argparse._SubParsersAction) -> None:
@@ -111,7 +116,7 @@ def main(argv: list[str] | None = None) -> None:
     elif command == "score":
         score_summaries(limit=args.limit, concurrency=args.concurrency)
     elif command == "external-filter":
-        run_external_filter(limit=args.limit)
+        run_external_filter(limit=args.limit, concurrency=args.concurrency)
     elif command == "export":
         export_brief(
             limit=args.limit,

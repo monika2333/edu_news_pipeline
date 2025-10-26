@@ -92,7 +92,7 @@
 
    - `external_filter_batch_size`、`external_filter_max_retries`。
 
-2. 在 `Settings` 文档与 `.env.example` 中补充说明，并在 README/Runbook 更新部署步骤。
+2. 在 `Settings` 文档与 `.env.local` 示例配置中补充说明，并在 README/Runbook 更新部署步骤。
 
 3. 在 `scripts/` 目录新增 `backfill_external_filter.py`：
 
@@ -146,7 +146,7 @@
 - [x] 实现 external_filter worker 与 LLM 评分逻辑（含阈值、重试、状态流转）。
 - [x] 更新 export SQL/brief writer，把 external_importance 分数写入 brief，导出文本仅展示分值（京外不再显示 score/keyword bonuses）。
 - [x] 编写 backfill 脚本，处理历史京外正面并验证幂等。
-- [x] 在 settings/README/.env.example 中加入新的配置项与运行说明。
+- [x] 在 settings/README/.env.local 示例中加入新的配置项与运行说明。
 - [x] 跑通端到端验证（summarize → external_filter → export）并记录测试结果。
 - [ ] 部署并观察首批运行指标，必要时调整阈值或 prompt。
 

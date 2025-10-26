@@ -1,5 +1,4 @@
 .env*
-!.env.example
 supabase/.temp/
 
 # Build and Release Folders
@@ -36,7 +35,6 @@ env/
 # Environment configuration files
 .env
 .env.*
-!.env.example
 
 # Configuration and generated outputs
 config/*.env

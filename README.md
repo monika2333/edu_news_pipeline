@@ -69,7 +69,7 @@ With these variables in place the worker and console commands automatically use 
 
 ### External Filter Workflow
 
-- Configure the external filter env vars (see `.env.example` or `.env.local`).
+- Configure the external filter env vars (use `.env.local`).
 - `scripts/run_pipeline_once.py` 默认计划会在 summarize 之后自动运行 `external-filter` 步骤；无需额外调度即可串接进整条流水线。
 - Run the external filter worker to score pending 京外稿：`python -m src.workers.external_filter --limit 100`（按需调整 limit/batch）。
 - 使用 backfill 脚本重置历史京外正面记录：先 `python -m scripts.backfill_external_filter --dry-run --limit 50` 查看影响，再去掉 `--dry-run` 实际执行。

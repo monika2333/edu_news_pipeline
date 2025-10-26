@@ -18,7 +18,7 @@ python -m src.cli.main crawl --sources toutiao,tencent,chinanews,chinadaily,jyb,
 python -m src.cli.main hash-primary --limit 200
 python -m src.cli.main score --limit 500
 python -m src.cli.main summarize --limit 500
-python -m src.cli.main external-filter --limit 100
+python -m src.cli.main external-filter
 python -m src.cli.main export --min-score 60 --limit 500
 python -m src.cli.main repair --limit 500
 python -m src.cli.main geo-tag --limit 500 --batch-size 200

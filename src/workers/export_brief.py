@@ -215,7 +215,16 @@ def run(
             if not items:
                 category_counts[label] = 0
                 continue
-            items.sort(key=lambda item: item.score if item.score is not None else 0.0, reverse=True)
+            if key[0] == "external":
+                items.sort(
+                    key=lambda item: (
+                        item.external_importance_score if item.external_importance_score is not None else -1,
+                        item.score if item.score is not None else 0.0,
+                    ),
+                    reverse=True,
+                )
+            else:
+                items.sort(key=lambda item: item.score if item.score is not None else 0.0, reverse=True)
             category_counts[label] = len(items)
             header_line = f"【{label}】共 {len(items)} 条"
             entry_lines = [_format_entry(item) for item in items]

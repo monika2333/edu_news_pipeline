@@ -142,7 +142,7 @@
 
 - [x] 编写并应用 schema 迁移：新增 external_importance 字段/索引、扩展 status 枚举。
 - [x] 更新 summarize 流程与 Postgres adapter，确保京外正面写入 pending_external_filter 并维护新列。
-- [ ] 起草 docs/external_filter_prompt.md 并敲定 external filter prompt。
+- [x] 起草 docs/external_filter_prompt.md 并敲定 external filter prompt。
 - [ ] 实现 external_filter worker 与 LLM 评分逻辑（含阈值、重试、状态流转）。
 - [ ] 更新 export SQL/brief writer，把 external_importance 元数据带入并展示。
 - [ ] 编写 backfill 脚本，处理历史京外正面并验证幂等。

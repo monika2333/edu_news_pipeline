@@ -158,29 +158,19 @@ def get_settings() -> Settings:
             return raw_path if raw_path.is_absolute() else (_REPO_ROOT / raw_path)
         return default
 
-    # Prefer config/ with fallback to legacy data/
     config_dir = _REPO_ROOT / "config"
-    data_dir = _REPO_ROOT / "data"
 
     raw_keywords_env = os.getenv("KEYWORDS_PATH")
     keywords_path = _resolve_path(
         raw_keywords_env,
         default=config_dir / "education_keywords.txt",
     )
-    if not raw_keywords_env and not keywords_path.exists():
-        legacy_kw = data_dir / "education_keywords.txt"
-        if legacy_kw.exists():
-            keywords_path = legacy_kw
 
     raw_beijing_env = os.getenv("BEIJING_KEYWORDS_PATH")
     beijing_keywords_path = _resolve_path(
         raw_beijing_env,
         default=config_dir / "beijing_keywords.txt",
     )
-    if not raw_beijing_env and not beijing_keywords_path.exists():
-        legacy_bj = data_dir / "beijing_keywords.txt"
-        if legacy_bj.exists():
-            beijing_keywords_path = legacy_bj
 
     keyword_bonus_rules = _parse_keyword_bonus_rules(os.getenv("SCORE_KEYWORD_BONUSES"))
     raw_bonus_path_env = os.getenv("SCORE_KEYWORD_BONUSES_PATH")
@@ -189,11 +179,7 @@ def get_settings() -> Settings:
         default=config_dir / "score_keyword_bonuses.json",
     )
     if keyword_bonus_rules is None:
-        # Try preferred path first; if missing and no env override, try legacy data file
         parsed = _parse_keyword_bonus_rules_file(keyword_bonus_rules_path)
-        if parsed is None and not raw_bonus_path_env:
-            legacy_bonus = data_dir / "score_keyword_bonuses.json"
-            parsed = _parse_keyword_bonus_rules_file(legacy_bonus)
         keyword_bonus_rules = parsed
     if keyword_bonus_rules is None:
         keyword_bonus_rules = {}

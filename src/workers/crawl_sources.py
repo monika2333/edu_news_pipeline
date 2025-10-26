@@ -84,14 +84,10 @@ def _resolve_authors_path() -> Path:
         if not candidate.is_absolute():
             candidate = Path.cwd() / candidate
         return candidate
-    # Default preference: config/, with fallback to legacy data/
+    # Default to config/ path
     default_path = DEFAULT_AUTHORS_FILE
     root = _repo_root()
-    preferred = (root / default_path) if not default_path.is_absolute() else default_path
-    if preferred.exists():
-        return preferred
-    legacy = root / "data" / "toutiao_author.txt"
-    return legacy
+    return (root / default_path) if not default_path.is_absolute() else default_path
 
 
 

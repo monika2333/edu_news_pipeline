@@ -45,8 +45,6 @@ outputs/
 .claude/
 
 # Replace news JGW txt files
-data/toutiao_author.txt
-data/summarized_cursor.json
 config/toutiao_author.txt
 config/qq_author.txt
 config/summarized_cursor.json

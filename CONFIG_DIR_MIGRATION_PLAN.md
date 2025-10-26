@@ -1,5 +1,5 @@
 # 注意（后续清理提醒）
-- 过渡稳定后，请移除代码中的“config/ 优先、data/ 回退”的兼容逻辑，并清理 `.gitignore` 中与 `data/*` 相关的过渡性忽略项；同时更新文档中任何仍提及回退策略的说明。建议在观察一段稳定运行期（例如 1–2 周）后执行。
+- 已移除代码中的“config/ 优先、data/ 回退”兼容逻辑，并清理 `.gitignore` 中与 `data/*` 相关的过渡性忽略项；文档也已更新为只描述 `config/` 默认路径。
 
 # Config Directory Migration Plan
 

@@ -3,6 +3,7 @@
 import contextlib
 import sys
 from datetime import datetime, timezone, date
+from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 import psycopg
@@ -609,6 +610,14 @@ class PostgresAdapter:
         if isinstance(value, datetime):
             return value.isoformat()
         return str(value)
+
+    @staticmethod
+    def _json_safe(value: Any) -> Any:
+        if isinstance(value, Decimal):
+            return float(value)
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return value
 
     # ------------------------------------------------------------------
     # Summaries
@@ -1571,6 +1580,18 @@ class PostgresAdapter:
                 article_id = candidate.filtered_article_id
                 if article_id in existing_ids:
                     continue
+                metadata = {
+                    "title": self._json_safe(candidate.title),
+                    "score": self._json_safe(candidate.score),
+                    "original_url": self._json_safe(candidate.original_url),
+                    "published_at": self._json_safe(candidate.published_at),
+                    "source": self._json_safe(candidate.source),
+                    "is_beijing_related": self._json_safe(candidate.is_beijing_related),
+                    "sentiment_label": self._json_safe(candidate.sentiment_label),
+                    "sentiment_confidence": self._json_safe(candidate.sentiment_confidence),
+                    "external_importance_score": self._json_safe(candidate.external_importance_score),
+                    "external_importance_checked_at": self._json_safe(candidate.external_importance_checked_at),
+                }
                 insert_payload.append(
                     (
                         batch_id,
@@ -1578,20 +1599,7 @@ class PostgresAdapter:
                         section,
                         order_index_start + offset,
                         candidate.summary,
-                        Json(
-                            {
-                                "title": candidate.title,
-                                "score": candidate.score,
-                                "original_url": candidate.original_url,
-                                "published_at": candidate.published_at,
-                                "source": candidate.source,
-                                "is_beijing_related": candidate.is_beijing_related,
-                                "sentiment_label": candidate.sentiment_label,
-                                "sentiment_confidence": candidate.sentiment_confidence,
-                                "external_importance_score": candidate.external_importance_score,
-                                "external_importance_checked_at": candidate.external_importance_checked_at,
-                            }
-                        ),
+                        Json(metadata),
                     )
                 )
             if insert_payload:

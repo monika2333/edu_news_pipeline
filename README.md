@@ -1,4 +1,4 @@
-# Edu News Pipeline
+﻿# Edu News Pipeline
 
 Automated pipeline for collecting education-related articles, summarising them with an LLM, scoring relevance, and exporting daily briefs.
 

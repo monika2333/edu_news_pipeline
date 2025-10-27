@@ -947,27 +947,36 @@ class PostgresAdapter:
         """
         with self._cursor() as cur:
             cur.execute(query, values)
-    def fetch_external_backfill_candidates(self, limit: int) -> List[Dict[str, Any]]:
+    def fetch_external_backfill_candidates(self, limit: int, since_date: Optional[date] = None) -> List[Dict[str, Any]]:
         if limit <= 0:
             return []
-        query = """
-            SELECT
-                article_id,
-                title,
-                publish_time_iso,
-                summary_generated_at,
-                sentiment_label
-            FROM news_summaries
-            WHERE status = 'ready_for_export'
-              AND summary_status = 'completed'
-              AND (is_beijing_related IS DISTINCT FROM TRUE)
-              AND lower(coalesce(sentiment_label, '')) = 'positive'
-              AND (external_importance_status IS NULL OR external_importance_status NOT IN ('pending_external_filter'))
-            ORDER BY summary_generated_at ASC NULLS LAST, article_id ASC
-            LIMIT %s
-        """
+        # Build query with optional date filter on publish_time_iso (date-level)
+        parts: List[str] = [
+            "SELECT",
+            "    article_id,",
+            "    title,",
+            "    publish_time_iso,",
+            "    summary_generated_at,",
+            "    sentiment_label",
+            "FROM news_summaries",
+            "WHERE status = 'ready_for_export'",
+            "  AND summary_status = 'completed'",
+            "  AND (is_beijing_related IS DISTINCT FROM TRUE)",
+            "  AND lower(coalesce(sentiment_label, '')) = 'positive'",
+            "  AND (external_importance_status IS NULL OR external_importance_status NOT IN ('pending_external_filter'))",
+        ]
+        params: List[Any] = []
+        if since_date is not None:
+            parts.append("  AND publish_time_iso::date >= %s")
+            params.append(since_date)
+        parts.extend([
+            "ORDER BY summary_generated_at ASC NULLS LAST, article_id ASC",
+            "LIMIT %s",
+        ])
+        params.append(limit)
+        query = "\n".join(parts)
         with self._cursor() as cur:
-            cur.execute(query, (limit,))
+            cur.execute(query, tuple(params))
             rows = cur.fetchall()
         return [dict(row) for row in rows]
 

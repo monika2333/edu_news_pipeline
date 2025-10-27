@@ -35,7 +35,7 @@ def _add_repair(subparsers: argparse._SubParsersAction) -> None:
 
 def _add_summarize(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("summarize", help="Generate summaries for pending articles")
-    parser.add_argument("--limit", type=_positive_int, default=500, help="Max number of pending summaries to process")
+    parser.add_argument("--limit", type=_positive_int, default=2500, help="Max number of pending summaries to process")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
     parser.add_argument("--keywords", type=Path, default=None, help="(Deprecated) keywords now handled in crawl; kept for CLI compatibility")
 
@@ -45,12 +45,12 @@ def _add_hash_primary(subparsers: argparse._SubParsersAction) -> None:
         "hash-primary",
         help="Compute content hashes/SimHash for filtered articles and assign primary/duplicate groups",
     )
-    parser.add_argument("--limit", type=_positive_int, default=200, help="Max number of filtered articles to process")
+    parser.add_argument("--limit", type=_positive_int, default=5000, help="Max number of filtered articles to process")
 
 
 def _add_score(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("score", help="Score relevance for primary articles")
-    parser.add_argument("--limit", type=_positive_int, default=500, help="Max number of summaries to score")
+    parser.add_argument("--limit", type=_positive_int, default=2500, help="Max number of summaries to score")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
 
 
@@ -59,7 +59,7 @@ def _add_external_filter(subparsers: argparse._SubParsersAction) -> None:
         "external-filter",
         help="Run external importance filter for pending Jingwai positives",
     )
-    parser.add_argument("--limit", type=_positive_int, default=None, help="Max number of rows to process (default: unlimited)")
+    parser.add_argument("--limit", type=_positive_int, default=2000, help="Max number of rows to process")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional concurrency override for LLM calls")
 
 

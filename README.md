@@ -4,7 +4,7 @@ Automated pipeline for collecting education-related articles, summarising them w
 
 ## Pipeline Overview
 
-1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: Tencent News, ChinaNews, China Daily, Guangming Daily, China Education Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
+1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: Tencent News, ChinaNews, China Daily, Guangming Daily, Qianlong, China Education Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
 2. **Hash / Deduplicate** - `hash_primary` computes an exact `content_hash`, 64-bit SimHash, and four 16-bit band hashes for each filtered article. Using SimHash band lookup and a Hamming-distance threshold (<= 3), duplicates are grouped under a primary article and promoted to `primary_articles`.
 3. **Score** - LLM-based relevance scoring runs on entries in `primary_articles`. The LLM output becomes `raw_relevance_score`; keyword rules add a `keyword_bonus_score`, and their sum is persisted as `score`. Promotion still keys off `raw_relevance_score >= 60`, while the final score (without an upper bound) is used for ordering.
 4. **Summarise & Sentiment** - `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and writes the results back into `news_summaries` with status `ready_for_export` (failed attempts remain `pending`).
@@ -14,7 +14,7 @@ Automated pipeline for collecting education-related articles, summarising them w
 All stages are available through the CLI wrapper:
 
 ```bash
-python -m src.cli.main crawl --sources toutiao,tencent,chinanews,chinadaily,jyb,gmw --limit 5000
+python -m src.cli.main crawl --sources toutiao,tencent,chinanews,chinadaily,jyb,gmw,qianlong --limit 5000
 python -m src.cli.main hash-primary
 python -m src.cli.main score
 python -m src.cli.main summarize
@@ -88,6 +88,11 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `TOUTIAO_SHOW_BROWSER` | Set to `1` to run Playwright in headed mode |
 | `GMW_BASE_URL` | Override Guangming Daily listing entry point |
 | `GMW_TIMEOUT` | Seconds for Guangming Daily HTTP requests (default 15) |
+| `QIANLONG_BASE_URL` | Override Qianlong listing entry point (default `https://beijing.qianlong.com/`) |
+| `QIANLONG_TIMEOUT` | Seconds for Qianlong HTTP requests (default 20) |
+| `QIANLONG_DELAY` | Optional delay between Qianlong article fetches (default 0) |
+| `QIANLONG_PAGES` / `QIANLONG_MAX_PAGES` | Optional page cap for Qianlong listings (defaults to unlimited) |
+| `QIANLONG_EXISTING_CONSECUTIVE_STOP` | Early-stop after N consecutive existing Qianlong articles (default disabled) |
 | `PROCESS_LIMIT` | Global cap applied to worker limits |
 | `SCORE_KEYWORD_BONUSES` | Optional JSON map overriding keyword ?bonus rules for scoring |
 | `SCORE_KEYWORD_BONUSES_PATH` | Optional path to a JSON file providing keyword bonus rules (`config/score_keyword_bonuses.json` by default) |
@@ -98,7 +103,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `EXTERNAL_FILTER_THRESHOLD` | External importance score (0-100) required to pass京外稿，默认 70 |
 | `EXTERNAL_FILTER_BATCH_SIZE` | Rows processed per batch by the external filter worker（默认 50） |
 | `EXTERNAL_FILTER_MAX_RETRIES` | Retry attempts before marking a record `external_filtered`（默认 3） |
-| `CRAWL_SOURCES` | Comma list of sources used by the pipeline wrapper (e.g., `toutiao,chinanews`; default `toutiao`) |
+| `CRAWL_SOURCES` | Comma list of sources used by the pipeline wrapper (e.g., `toutiao,chinanews`; default `toutiao,qianlong`) |
 | `TOUTIAO_EXISTING_CONSECUTIVE_STOP` | Early‑stop after N consecutive existing items per author (default `5`; set `0` to disable) |
 | `CHINANEWS_EXISTING_CONSECUTIVE_STOP` | Early‑stop after N consecutive existing items across scroll pages (default `5`; set `0` to disable) |
 
@@ -109,7 +114,7 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 
 - Command: `python -m src.cli.main crawl`
 - Default limit: 500 articles (clamped by `PROCESS_LIMIT` if set)
-- Sources: `--sources` comma list (default `toutiao`; add `tencent`, `chinanews`, `chinadaily`, `jyb`, `gmw` as needed). The pipeline wrapper also respects `CRAWL_SOURCES` from env (e.g., `CRAWL_SOURCES=toutiao,tencent,chinanews`).
+- Sources: `--sources` comma list (default `toutiao`; add `tencent`, `chinanews`, `chinadaily`, `jyb`, `gmw`, `qianlong` as needed). The pipeline wrapper also respects `CRAWL_SOURCES` from env (e.g., `CRAWL_SOURCES=toutiao,tencent,chinanews`).
   - Toutiao uses Playwright (requires `playwright install chromium`) and reads authors from `TOUTIAO_AUTHORS_PATH`
   - Tencent News uses the REST adapter (no Playwright). Authors live in `config/qq_author.txt` and can be overridden via `TENCENT_AUTHORS_PATH`.
   - Guangming Daily uses the bundled HTTP crawler (no Playwright). Configure the entry point with `GMW_BASE_URL` if you need a different node and tweak `GMW_TIMEOUT` to adjust the per-request timeout.
@@ -126,7 +131,8 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 - Tencent News (all configured authors): `python -m src.cli.main crawl --sources tencent --limit 200`
 - Toutiao + Tencent (split by remaining quota): `python -m src.cli.main crawl --sources toutiao,tencent --limit 400`
 - Guangming Daily only: `python -m src.cli.main crawl --sources gmw --limit 100`
-- Toutiao + Tencent + ChinaNews + Guangming Daily: `python -m src.cli.main crawl --sources toutiao,tencent,chinanews,gmw --limit 500`
+- Qianlong only: `python -m src.cli.main crawl --sources qianlong --limit 100`
+- Toutiao + Tencent + ChinaNews + Guangming Daily + Qianlong: `python -m src.cli.main crawl --sources toutiao,tencent,chinanews,gmw,qianlong --limit 500`
 - Repair missing bodies (all sources): `python -m src.cli.main repair --limit 200`
 
 #### Multi-source allocation
@@ -145,6 +151,16 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 - Uses the custom HTTP crawler bundled in `src/adapters/http_gmw.py` (legacy CLI preserved in `gmw_crawl/` for now) to walk listing and detail pages, so each run fetches full article bodies without a second repair step.
 - Publish time is parsed from article metadata or body; when available it is normalised to +08:00 and stored alongside the Unix timestamp.
 - Requests honour `GMW_BASE_URL` and `GMW_TIMEOUT`. Duplicate URLs within a run are de-duplicated before writing to the database.
+
+#### Qianlong (千龙网) specifics
+- Uses the HTTP adapter in `src/adapters/http_qianlong.py`. Listing pages continue until the requested quota is met or three consecutive pages contain no new articles.
+- Publish times are parsed from the article body (`YYYY-MM-DD HH:MM`) and normalised to +08:00 for timestamp/ISO storage.
+- Environment variables:
+  - `QIANLONG_BASE_URL` 自定义入口频道 (默认 `https://beijing.qianlong.com/`)
+  - `QIANLONG_TIMEOUT` 控制单次请求超时时间 (默认 20 秒)
+  - `QIANLONG_DELAY` 设置文章抓取间隔秒数 (默认 0)
+  - `QIANLONG_PAGES` / `QIANLONG_MAX_PAGES` 限制翻页数；未设置时按条数继续翻页
+  - `QIANLONG_EXISTING_CONSECUTIVE_STOP` 限制连续命中已存在文章后的提前停止 (默认不限制)
 
 ### Summarise Worker
 

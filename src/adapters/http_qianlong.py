@@ -16,7 +16,7 @@ from urllib3.util.retry import Retry
 LOGGER = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://beijing.qianlong.com/"
-DEFAULT_MAX_PAGES = 3
+DEFAULT_MAX_PAGES: Optional[int] = None
 DEFAULT_TIMEOUT = 20.0
 DEFAULT_DELAY = 0.0
 USER_AGENT = (
@@ -76,10 +76,14 @@ def _wrap_timeout(func, timeout: float):
     return wrapper
 
 
-def _iter_listing_urls(base_url: str, max_pages: int) -> Iterable[str]:
+def _iter_listing_urls(base_url: str, max_pages: Optional[int]) -> Iterable[str]:
     yield base_url
-    for page in range(2, max_pages + 1):
+    page = 2
+    while True:
+        if max_pages is not None and page > max_pages:
+            break
         yield urljoin(base_url, f"{page}.shtml")
+        page += 1
 
 
 def _extract_article_links(html: bytes, page_url: str) -> List[str]:
@@ -210,7 +214,7 @@ def _collect_article_urls(
     session: requests.Session,
     *,
     base_url: str,
-    max_pages: int,
+    max_pages: Optional[int],
     limit: Optional[int],
     existing_ids: Optional[Set[str]],
     consecutive_stop: Optional[int],
@@ -218,13 +222,15 @@ def _collect_article_urls(
     collected: List[str] = []
     seen: Set[str] = set()
     consecutive_hits = 0
-    for page_url in _iter_listing_urls(base_url, max_pages):
+    consecutive_empty_pages = 0
+    for page_index, page_url in enumerate(_iter_listing_urls(base_url, max_pages), start=1):
         try:
             resp = session.get(page_url)
             resp.raise_for_status()
         except Exception as exc:
             LOGGER.warning("Failed to fetch Qianlong listing %s: %s", page_url, exc)
             continue
+        page_added = 0
         for link in _extract_article_links(resp.content, page_url):
             if link in seen:
                 continue
@@ -241,10 +247,21 @@ def _collect_article_urls(
                 continue
             consecutive_hits = 0
             collected.append(link)
+            page_added += 1
             if limit is not None and len(collected) >= limit:
                 return collected
         if limit is not None and len(collected) >= limit:
             break
+        if page_added == 0:
+            consecutive_empty_pages += 1
+            if max_pages is None and consecutive_empty_pages >= 3:
+                LOGGER.info(
+                    "No new Qianlong articles after %s listing pages; stopping listing crawl.",
+                    consecutive_empty_pages,
+                )
+                break
+        else:
+            consecutive_empty_pages = 0
     return collected
 
 
@@ -259,7 +276,16 @@ def fetch_articles(
     consecutive_stop: Optional[int] = None,
 ) -> List[QianlongArticle]:
     """Crawl 千龙网 articles following the shared adapter contract."""
-    max_pages = max(1, int(pages) if pages else DEFAULT_MAX_PAGES)
+    max_pages = None
+    if pages is not None:
+        try:
+            candidate = int(pages)
+        except Exception:
+            candidate = None
+        if candidate is not None and candidate > 0:
+            max_pages = candidate
+    elif DEFAULT_MAX_PAGES is not None:
+        max_pages = DEFAULT_MAX_PAGES
     session = _create_session(timeout)
     try:
         urls = _collect_article_urls(

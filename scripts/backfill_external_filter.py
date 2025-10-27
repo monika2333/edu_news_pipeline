@@ -17,6 +17,32 @@ def backfill_external_filter(*, batch_size: int, limit: Optional[int], dry_run: 
     adapter = get_adapter()
     total = 0
 
+    # Dry-run: fetch once, de-duplicate, print, and exit to avoid
+    # repeating the same batch without state changes.
+    if dry_run:
+        fetch_size = batch_size
+        if limit is not None:
+            fetch_size = min(batch_size, max(limit, 0))
+
+        candidates = adapter.fetch_external_backfill_candidates(fetch_size)
+        seen = set()
+        ids_unique = []
+        for row in candidates:
+            aid = str(row.get("article_id") or "")
+            if not aid or aid in seen:
+                continue
+            seen.add(aid)
+            ids_unique.append(aid)
+
+        if ids_unique:
+            print(f"[dry-run] would reset {len(ids_unique)} items:", ", ".join(ids_unique))
+        else:
+            print("[dry-run] no candidates matched the filter")
+
+        print(f"[backfill] completed. total matched={len(ids_unique)}, dry_run=True")
+        return len(ids_unique)
+
+    # Real run: loop batches until exhausted; updates exclude them next pass
     while True:
         fetch_size = batch_size
         if limit is not None:
@@ -33,11 +59,8 @@ def backfill_external_filter(*, batch_size: int, limit: Optional[int], dry_run: 
         if not article_ids:
             break
 
-        if dry_run:
-            print(f"[dry-run] would reset {len(article_ids)} items:", ", ".join(article_ids))
-        else:
-            updated = adapter.reset_external_filter_pending(article_ids)
-            print(f"[backfill] reset {updated} items → pending_external_filter")
+        updated = adapter.reset_external_filter_pending(article_ids)
+        print(f"[backfill] reset {updated} items -> pending_external_filter")
 
         total += len(article_ids)
         if limit is not None and total >= limit:
@@ -59,3 +82,4 @@ def main(argv: Optional[list[str]] = None) -> None:
 
 if __name__ == "__main__":
     main()
+

@@ -1083,10 +1083,10 @@ def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Option
         qianlong_pages_config = QIANLONG_DEFAULT_MAX_PAGES
     qianlong_consecutive_env = os.getenv("QIANLONG_EXISTING_CONSECUTIVE_STOP")
     try:
-        qianlong_consecutive_stop = int(qianlong_consecutive_env) if qianlong_consecutive_env is not None else None
+        qianlong_consecutive_stop = int(qianlong_consecutive_env) if qianlong_consecutive_env is not None else 5
     except ValueError:
-        qianlong_consecutive_stop = None
-    if qianlong_consecutive_stop is not None and qianlong_consecutive_stop < 0:
+        qianlong_consecutive_stop = 5
+    if qianlong_consecutive_stop < 0:
         qianlong_consecutive_stop = 0
 
     keywords_path_value = getattr(settings, 'keywords_path', None)

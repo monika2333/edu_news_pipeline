@@ -115,6 +115,9 @@ class Settings:
     score_model_name: str
     sentiment_model_name: str
     siliconflow_enable_thinking: bool
+    siliconflow_timeout_score: int
+    siliconflow_timeout_summary: int
+    siliconflow_timeout_external_filter: int
     process_limit: Optional[int]
     default_concurrency: int
     keywords_path: Path
@@ -152,6 +155,25 @@ def get_settings() -> Settings:
     score_model_name = os.getenv("SCORE_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
     sentiment_model_name = os.getenv("SENTIMENT_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
     siliconflow_enable_thinking = _bool_from_env(os.getenv("ENABLE_THINKING"), default=False)
+
+    # SiliconFlow timeout configuration (in seconds)
+    # Fallback order: specific -> global -> hardcoded default
+    _sf_global_timeout = _optional_int(os.getenv("SILICONFLOW_TIMEOUT"))
+    siliconflow_timeout_score = (
+        _optional_int(os.getenv("SILICONFLOW_TIMEOUT_SCORE"))
+        or _sf_global_timeout
+        or 30
+    )
+    siliconflow_timeout_summary = (
+        _optional_int(os.getenv("SILICONFLOW_TIMEOUT_SUMMARY"))
+        or _sf_global_timeout
+        or 60
+    )
+    siliconflow_timeout_external_filter = (
+        _optional_int(os.getenv("SILICONFLOW_TIMEOUT_EXTERNAL_FILTER"))
+        or _sf_global_timeout
+        or 30
+    )
     external_filter_model_name = os.getenv("EXTERNAL_FILTER_MODEL_NAME", score_model_name)
     external_filter_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_THRESHOLD")) or 20
     external_filter_batch_size = _optional_int(os.getenv("EXTERNAL_FILTER_BATCH_SIZE")) or 50
@@ -220,6 +242,9 @@ def get_settings() -> Settings:
         score_model_name=score_model_name,
         sentiment_model_name=sentiment_model_name,
         siliconflow_enable_thinking=siliconflow_enable_thinking,
+        siliconflow_timeout_score=siliconflow_timeout_score,
+        siliconflow_timeout_summary=siliconflow_timeout_summary,
+        siliconflow_timeout_external_filter=siliconflow_timeout_external_filter,
         process_limit=process_limit,
         default_concurrency=default_concurrency,
         keywords_path=keywords_path,

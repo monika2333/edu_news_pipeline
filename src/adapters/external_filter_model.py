@@ -55,7 +55,12 @@ def build_prompt(candidate: ExternalFilterCandidate) -> str:
     )
 
 
-def call_external_filter_model(candidate: ExternalFilterCandidate, *, retries: int = 3, timeout: int = 30) -> str:
+def call_external_filter_model(
+    candidate: ExternalFilterCandidate,
+    *,
+    retries: int = 3,
+    timeout: Optional[int] = None,
+) -> str:
     settings = get_settings()
     api_key = settings.siliconflow_api_key
     if not api_key:
@@ -71,9 +76,12 @@ def call_external_filter_model(candidate: ExternalFilterCandidate, *, retries: i
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     backoff = 1.0
     last_error: Optional[Exception] = None
+    # Resolve timeout from settings if not explicitly provided
+    resolved_timeout = timeout or settings.siliconflow_timeout_external_filter
+
     for _ in range(max(1, retries)):
         try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
+            resp = requests.post(url, json=payload, headers=headers, timeout=resolved_timeout)
             if resp.status_code == 200:
                 data = resp.json()
                 choice = data.get("choices", [{}])[0]

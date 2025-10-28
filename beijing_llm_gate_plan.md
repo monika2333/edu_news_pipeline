@@ -100,7 +100,7 @@
 ## 实施 Checklist
 - [x] 编写数据库迁移：新增 `pending_beijing_gate` 状态及 `beijing_gate_*` 字段，并更新索引/注释。
 - [x] 更新 `src/domain/external_filter.py` dataclass，增加 LLM 判定字段及新的候选类型。
-- [ ] 在 `src/adapters/db_postgres.py` 中实现 `fetch_beijing_gate_candidates`、`complete_beijing_gate`、`mark_beijing_gate_failure`，并调整现有查询/状态写入逻辑。
+- [x] 在 `src/adapters/db_postgres.py` 中实现 `fetch_beijing_gate_candidates`、`complete_beijing_gate`、`mark_beijing_gate_failure`，并调整现有查询/状态写入逻辑。
 - [ ] 新建 `src/adapters/llm_beijing_gate.py`（或等效服务层），封装 Prompt、请求与响应解析；补充 `docs/beijing_gate_prompt.md`。
 - [ ] 修改 `src/workers/summarize.py`：输出「京内」稿件时切换到 `pending_beijing_gate` 状态并初始化字段。
 - [ ] 扩展 `src/workers/external_filter.py`：插入 LLM 判定环节，处理通过/回流/失败逻辑与日志统计。

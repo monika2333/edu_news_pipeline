@@ -16,6 +16,7 @@ from src.domain import (
     ExportCandidate,
     PrimaryArticleForScoring,
     SummaryForScoring,
+    BeijingGateCandidate,
     ExternalFilterCandidate,
 )
 
@@ -808,6 +809,71 @@ class PostgresAdapter:
         if message:
             print(f"[warn] summary failed {article_id}: {message}", file=sys.stderr)
 
+    def fetch_beijing_gate_candidates(
+        self,
+        limit: int,
+        *,
+        max_failures: Optional[int] = None,
+    ) -> List[BeijingGateCandidate]:
+        if limit <= 0:
+            return []
+        clauses = [
+            "status = 'pending_beijing_gate'",
+            "summary_status = 'completed'",
+        ]
+        params: List[Any] = []
+        if max_failures is not None:
+            clauses.append("beijing_gate_fail_count < %s")
+            params.append(max_failures)
+        where_sql = " AND ".join(clauses)
+        query = f"""
+            SELECT
+                article_id,
+                title,
+                source,
+                publish_time_iso,
+                llm_summary,
+                content_markdown,
+                sentiment_label,
+                is_beijing_related,
+                is_beijing_related_llm,
+                external_importance_status,
+                beijing_gate_fail_count,
+                beijing_gate_attempted_at
+            FROM news_summaries
+            WHERE {where_sql}
+            ORDER BY beijing_gate_attempted_at ASC NULLS FIRST,
+                     summary_generated_at ASC NULLS LAST,
+                     article_id ASC
+            LIMIT %s
+        """
+        params.append(limit)
+        with self._cursor() as cur:
+            cur.execute(query, tuple(params))
+            rows = cur.fetchall()
+        results: List[BeijingGateCandidate] = []
+        for row in rows:
+            article_id = row.get("article_id")
+            if not article_id:
+                continue
+            results.append(
+                BeijingGateCandidate(
+                    article_id=str(article_id),
+                    title=row.get("title"),
+                    source=row.get("source"),
+                    publish_time_iso=self._iso_datetime(row.get("publish_time_iso")),
+                    summary=row.get("llm_summary") or "",
+                    content=row.get("content_markdown") or "",
+                    sentiment_label=row.get("sentiment_label"),
+                    is_beijing_related=row.get("is_beijing_related"),
+                    is_beijing_related_llm=row.get("is_beijing_related_llm"),
+                    external_importance_status=row.get("external_importance_status") or "pending",
+                    beijing_gate_fail_count=int(row.get("beijing_gate_fail_count") or 0),
+                    beijing_gate_attempted_at=self._iso_datetime(row.get("beijing_gate_attempted_at")),
+                )
+            )
+        return results
+
     def fetch_external_filter_candidates(
         self,
         limit: int,
@@ -836,6 +902,7 @@ class PostgresAdapter:
                 content_markdown,
                 sentiment_label,
                 is_beijing_related,
+                is_beijing_related_llm,
                 external_importance_status,
                 external_filter_fail_count
             FROM news_summaries
@@ -864,11 +931,96 @@ class PostgresAdapter:
                     content=row.get("content_markdown") or "",
                     sentiment_label=row.get("sentiment_label"),
                     is_beijing_related=row.get("is_beijing_related"),
+                    is_beijing_related_llm=row.get("is_beijing_related_llm"),
                     external_importance_status=row.get("external_importance_status") or "pending_external_filter",
                     external_filter_fail_count=int(row.get("external_filter_fail_count") or 0),
                 )
             )
         return results
+
+    def complete_beijing_gate(
+        self,
+        article_id: str,
+        *,
+        status: str,
+        is_beijing_related: Optional[bool],
+        is_beijing_related_llm: Optional[bool],
+        raw_output: Optional[Mapping[str, Any]],
+        external_importance_status: Optional[str] = None,
+        reset_external_filter: bool = False,
+    ) -> None:
+        if not article_id:
+            raise ValueError("complete_beijing_gate requires article_id")
+        timestamp = datetime.now(timezone.utc)
+        payload: Dict[str, Any] = {
+            "status": status,
+            "external_importance_status": external_importance_status or status,
+            "is_beijing_related": is_beijing_related,
+            "is_beijing_related_llm": is_beijing_related_llm,
+            "beijing_gate_checked_at": timestamp,
+            "beijing_gate_fail_count": 0,
+            "beijing_gate_attempted_at": timestamp,
+            "external_importance_score": None,
+            "external_importance_checked_at": None,
+            "external_importance_raw": None,
+        }
+        if raw_output is not None:
+            payload["beijing_gate_raw"] = Json(raw_output)
+        else:
+            payload["beijing_gate_raw"] = None
+        if reset_external_filter:
+            payload.update(
+                {
+                    "external_filter_fail_count": 0,
+                    "external_filter_attempted_at": None,
+                }
+            )
+        sets = ", ".join(f"{field} = %s" for field in payload)
+        values = list(payload.values()) + [article_id]
+        query = f"""
+            UPDATE news_summaries
+            SET {sets}
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.execute(query, values)
+            if cur.rowcount != 1:
+                raise ValueError(f"Unable to update Beijing gate result for {article_id}")
+
+    def mark_beijing_gate_failure(
+        self,
+        article_id: str,
+        *,
+        fail_count: int,
+        error: str,
+        final_status: Optional[str] = None,
+        external_importance_status: Optional[str] = None,
+    ) -> None:
+        if not article_id:
+            return
+        timestamp = datetime.now(timezone.utc)
+        payload: Dict[str, Any] = {
+            "beijing_gate_fail_count": fail_count,
+            "beijing_gate_attempted_at": timestamp,
+            "beijing_gate_raw": Json(
+                {
+                    "error": str(error)[:500],
+                    "recorded_at": timestamp.isoformat(),
+                }
+            ),
+        }
+        if final_status:
+            payload["status"] = final_status
+            payload["external_importance_status"] = external_importance_status or final_status
+        sets = ", ".join(f"{field} = %s" for field in payload)
+        values = list(payload.values()) + [article_id]
+        query = f"""
+            UPDATE news_summaries
+            SET {sets}
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.execute(query, values)
 
     def complete_external_filter(
         self,

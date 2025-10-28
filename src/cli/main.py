@@ -10,6 +10,7 @@ from src.workers.repair_missing_content import run as repair_missing
 from src.workers.score import run as score_summaries
 from src.workers.summarize import run as summarize_articles
 from src.workers.hash_primary import run as hash_primary
+from src.workers.external_filter import run as run_external_filter
 
 
 def _positive_int(value: str) -> int:
@@ -34,7 +35,7 @@ def _add_repair(subparsers: argparse._SubParsersAction) -> None:
 
 def _add_summarize(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("summarize", help="Generate summaries for pending articles")
-    parser.add_argument("--limit", type=_positive_int, default=500, help="Max number of pending summaries to process")
+    parser.add_argument("--limit", type=_positive_int, default=2500, help="Max number of pending summaries to process")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
     parser.add_argument("--keywords", type=Path, default=None, help="(Deprecated) keywords now handled in crawl; kept for CLI compatibility")
 
@@ -44,13 +45,23 @@ def _add_hash_primary(subparsers: argparse._SubParsersAction) -> None:
         "hash-primary",
         help="Compute content hashes/SimHash for filtered articles and assign primary/duplicate groups",
     )
-    parser.add_argument("--limit", type=_positive_int, default=200, help="Max number of filtered articles to process")
+    parser.add_argument("--limit", type=_positive_int, default=5000, help="Max number of filtered articles to process")
 
 
 def _add_score(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("score", help="Score relevance for primary articles")
-    parser.add_argument("--limit", type=_positive_int, default=500, help="Max number of summaries to score")
+    parser.add_argument("--limit", type=_positive_int, default=2500, help="Max number of summaries to score")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
+
+
+def _add_external_filter(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "external-filter",
+        help="Run external importance filter for pending Jingwai positives",
+    )
+    parser.add_argument("--limit", type=_positive_int, default=2000, help="Max number of rows to process")
+    parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional concurrency override for LLM calls")
+
 
 
 def _add_export(subparsers: argparse._SubParsersAction) -> None:
@@ -83,6 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_hash_primary(subparsers)
     _add_summarize(subparsers)
     _add_score(subparsers)
+    _add_external_filter(subparsers)
     _add_export(subparsers)
     _add_geo_tag(subparsers)
     return parser
@@ -103,6 +115,8 @@ def main(argv: list[str] | None = None) -> None:
         summarize_articles(limit=args.limit, concurrency=args.concurrency, keywords_path=args.keywords)
     elif command == "score":
         score_summaries(limit=args.limit, concurrency=args.concurrency)
+    elif command == "external-filter":
+        run_external_filter(limit=args.limit, concurrency=args.concurrency)
     elif command == "export":
         export_brief(
             limit=args.limit,

@@ -138,15 +138,20 @@ def run(
             suffix = f"（{'、'.join(suffix_parts)}）" if suffix_parts else ""
 
             metrics_parts: List[str] = []
-            score_text = _format_number(candidate.score)
+            score_text = _format_number(candidate.score) if candidate.is_beijing_related is True else None
             if score_text is not None:
                 metrics_parts.append(f"score={score_text}")
+
+            ext_score_value = candidate.external_importance_score
+            if ext_score_value is not None:
+                ext_score_text = _format_number(ext_score_value) or str(ext_score_value)
+                metrics_parts.append(f"external_importance={ext_score_text}")
 
             keyword_bonus_total = candidate.keyword_bonus_score
             details = candidate.score_details if isinstance(candidate.score_details, dict) else {}
 
             bonus_value: Optional[float] = None
-            if keyword_bonus_total is not None:
+            if candidate.is_beijing_related is True and keyword_bonus_total is not None:
                 try:
                     bonus_value = float(keyword_bonus_total)
                 except (TypeError, ValueError):
@@ -210,7 +215,16 @@ def run(
             if not items:
                 category_counts[label] = 0
                 continue
-            items.sort(key=lambda item: item.score if item.score is not None else 0.0, reverse=True)
+            if key[0] == "external":
+                items.sort(
+                    key=lambda item: (
+                        item.external_importance_score if item.external_importance_score is not None else -1,
+                        item.score if item.score is not None else 0.0,
+                    ),
+                    reverse=True,
+                )
+            else:
+                items.sort(key=lambda item: item.score if item.score is not None else 0.0, reverse=True)
             category_counts[label] = len(items)
             header_line = f"【{label}】共 {len(items)} 条"
             entry_lines = [_format_entry(item) for item in items]

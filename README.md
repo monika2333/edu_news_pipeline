@@ -4,25 +4,27 @@ Automated pipeline for collecting education-related articles, summarising them w
 
 ## Pipeline Overview
 
-1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: Tencent News, ChinaNews, China Daily, Guangming Daily, China Education Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
+1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: Tencent News, ChinaNews, China Daily, Guangming Daily, Qianlong, China Education Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
 2. **Hash / Deduplicate** - `hash_primary` computes an exact `content_hash`, 64-bit SimHash, and four 16-bit band hashes for each filtered article. Using SimHash band lookup and a Hamming-distance threshold (<= 3), duplicates are grouped under a primary article and promoted to `primary_articles`.
 3. **Score** - LLM-based relevance scoring runs on entries in `primary_articles`. The LLM output becomes `raw_relevance_score`; keyword rules add a `keyword_bonus_score`, and their sum is persisted as `score`. Promotion still keys off `raw_relevance_score >= 60`, while the final score (without an upper bound) is used for ordering.
 4. **Summarise & Sentiment** - `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and writes the results back into `news_summaries` with status `ready_for_export` (failed attempts remain `pending`).
-5. **Export** - Assemble the ready summaries into a briefing ordered by "Jingnei/Jingwai x Positive/Negative" buckets (sorted descending by score) and persist batch metadata in `brief_batches` / `brief_items`, sending an optional Feishu notification.
+5. **External Filter** - `external_filter` re-scores京外正面稿件，按照 external importance（0-100）决定是否继续导出；不满足阈值的记录被标记为 `external_filtered`。
+6. **Export** - Assemble the ready summaries into a briefing ordered by "Jingnei/Jingwai x Positive/Negative" buckets (sorted descending by score) and persist batch metadata in `brief_batches` / `brief_items`, sending an optional Feishu notification.
 
 All stages are available through the CLI wrapper:
 
 ```bash
-python -m src.cli.main crawl --sources toutiao,tencent,chinanews,chinadaily,jyb,gmw --limit 5000
-python -m src.cli.main hash-primary --limit 200
-python -m src.cli.main score --limit 500
-python -m src.cli.main summarize --limit 500
-python -m src.cli.main export --min-score 60 --limit 500
+python -m src.cli.main crawl --sources toutiao,tencent,chinanews,chinadaily,jyb,gmw,qianlong --limit 5000
+python -m src.cli.main hash-primary
+python -m src.cli.main score
+python -m src.cli.main summarize
+python -m src.cli.main external-filter
+python -m src.cli.main export
 python -m src.cli.main repair --limit 500
 python -m src.cli.main geo-tag --limit 500 --batch-size 200
 ```
 
-Use `-h` on any command to see flags. `summarize` now operates on the queued pending rows鈥攔un `crawl` first so new candidates are available.
+Use `-h` on any command to see flags. `summarize` now operates on the queued pending rows—run `crawl` first so new candidates are available.
 
 ## Repairing Missing Content
 
@@ -65,6 +67,14 @@ Re-run as needed until the command reports no articles remaining.
 
 With these variables in place the worker and console commands automatically use the Postgres backend via `src.adapters.db.get_adapter()`.
 
+### External Filter Workflow
+
+- Configure the external filter env vars (use `.env.local`).
+- `scripts/run_pipeline_once.py` 默认计划会在 summarize 之后自动运行 `external-filter` 步骤；无需额外调度即可串接进整条流水线。
+- Run the external filter worker to score pending 京外稿：`python -m src.workers.external_filter --limit 100`（按需调整 limit/batch）。
+- 使用 backfill 脚本重置历史京外正面记录：先 `python -m scripts.backfill_external_filter --dry-run --limit 50` 查看影响，再去掉 `--dry-run` 实际执行。
+- 观察 `news_summaries.external_importance_status` 字段（`pending_external_filter` → `ready_for_export` / `external_filtered`）确保 worker 正常推进。
+
 The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env`. Key settings:
 
 | Variable | Description |
@@ -78,15 +88,24 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `TOUTIAO_SHOW_BROWSER` | Set to `1` to run Playwright in headed mode |
 | `GMW_BASE_URL` | Override Guangming Daily listing entry point |
 | `GMW_TIMEOUT` | Seconds for Guangming Daily HTTP requests (default 15) |
+| `QIANLONG_BASE_URL` | Override Qianlong listing entry point (default `https://beijing.qianlong.com/`) |
+| `QIANLONG_TIMEOUT` | Seconds for Qianlong HTTP requests (default 20) |
+| `QIANLONG_DELAY` | Optional delay between Qianlong article fetches (default 0) |
+| `QIANLONG_PAGES` / `QIANLONG_MAX_PAGES` | Optional page cap for Qianlong listings (defaults to unlimited) |
+| `QIANLONG_EXISTING_CONSECUTIVE_STOP` | Early-stop after N consecutive existing Qianlong articles (default 5; set `0` to disable) |
 | `PROCESS_LIMIT` | Global cap applied to worker limits |
 | `SCORE_KEYWORD_BONUSES` | Optional JSON map overriding keyword ?bonus rules for scoring |
 | `SCORE_KEYWORD_BONUSES_PATH` | Optional path to a JSON file providing keyword bonus rules (`config/score_keyword_bonuses.json` by default) |
 | `CONCURRENCY` | Default worker concurrency override (falls back to 5) |
 | `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` | API credentials and endpoint for the LLM provider |
 | `SUMMARIZE_MODEL_NAME` / `SOURCE_MODEL_NAME` / `SCORE_MODEL_NAME` | Model identifiers used by the workers |
-| `CRAWL_SOURCES` | Comma list of sources used by the pipeline wrapper (e.g., `toutiao,chinanews`; default `toutiao`) |
-| `TOUTIAO_EXISTING_CONSECUTIVE_STOP` | Early鈥憇top after N consecutive existing items per author (default `5`; set `0` to disable) |
-| `CHINANEWS_EXISTING_CONSECUTIVE_STOP` | Early鈥憇top after N consecutive existing items across scroll pages (default `5`; set `0` to disable) |
+| `EXTERNAL_FILTER_MODEL_NAME` | Model identifier used by the external filter worker (defaults to `SUMMARIZE_MODEL_NAME`) |
+| `EXTERNAL_FILTER_THRESHOLD` | External importance score (0-100) required to pass京外稿，默认 70 |
+| `EXTERNAL_FILTER_BATCH_SIZE` | Rows processed per batch by the external filter worker（默认 50） |
+| `EXTERNAL_FILTER_MAX_RETRIES` | Retry attempts before marking a record `external_filtered`（默认 3） |
+| `CRAWL_SOURCES` | Comma list of sources used by the pipeline wrapper (e.g., `toutiao,chinanews`; default `toutiao,qianlong`) |
+| `TOUTIAO_EXISTING_CONSECUTIVE_STOP` | Early?stop after N consecutive existing items per author (default `5`; set `0` to disable) |
+| `CHINANEWS_EXISTING_CONSECUTIVE_STOP` | Early?stop after N consecutive existing items across scroll pages (default `5`; set `0` to disable) |
 
 
 ## Workflow Details
@@ -95,16 +114,16 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 
 - Command: `python -m src.cli.main crawl`
 - Default limit: 500 articles (clamped by `PROCESS_LIMIT` if set)
-- Sources: `--sources` comma list (default `toutiao`; add `tencent`, `chinanews`, `chinadaily`, `jyb`, `gmw` as needed). The pipeline wrapper also respects `CRAWL_SOURCES` from env (e.g., `CRAWL_SOURCES=toutiao,tencent,chinanews`).
+- Sources: `--sources` comma list (default `toutiao`; add `tencent`, `chinanews`, `chinadaily`, `jyb`, `gmw`, `qianlong` as needed). The pipeline wrapper also respects `CRAWL_SOURCES` from env (e.g., `CRAWL_SOURCES=toutiao,tencent,chinanews`).
   - Toutiao uses Playwright (requires `playwright install chromium`) and reads authors from `TOUTIAO_AUTHORS_PATH`
   - Tencent News uses the REST adapter (no Playwright). Authors live in `config/qq_author.txt` and can be overridden via `TENCENT_AUTHORS_PATH`.
   - Guangming Daily uses the bundled HTTP crawler (no Playwright). Configure the entry point with `GMW_BASE_URL` if you need a different node and tweak `GMW_TIMEOUT` to adjust the per-request timeout.
 - Writes/updates rows in `raw_articles`
 - Skips articles already present in the database
 
-- Early鈥憇top policy for duplicates:
-  - Toutiao: while scanning each author鈥檚 feed, stops after `TOUTIAO_EXISTING_CONSECUTIVE_STOP` consecutive items already present in the DB (default 5). Set it to `0` to never early鈥憇top on existing items.
-  - ChinaNews: while iterating scroll pages, skips existing items and stops when `CHINANEWS_EXISTING_CONSECUTIVE_STOP` consecutive items are already present (default 5). Set it to `0` to never early鈥憇top on existing items.
+- Early?stop policy for duplicates:
+  - Toutiao: while scanning each author’s feed, stops after `TOUTIAO_EXISTING_CONSECUTIVE_STOP` consecutive items already present in the DB (default 5). Set it to `0` to never early?stop on existing items.
+  - ChinaNews: while iterating scroll pages, skips existing items and stops when `CHINANEWS_EXISTING_CONSECUTIVE_STOP` consecutive items are already present (default 5). Set it to `0` to never early?stop on existing items.
 
 #### Examples
 - ChinaNews (first page only): `python -m src.cli.main crawl --sources chinanews --limit 50`
@@ -112,7 +131,8 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 - Tencent News (all configured authors): `python -m src.cli.main crawl --sources tencent --limit 200`
 - Toutiao + Tencent (split by remaining quota): `python -m src.cli.main crawl --sources toutiao,tencent --limit 400`
 - Guangming Daily only: `python -m src.cli.main crawl --sources gmw --limit 100`
-- Toutiao + Tencent + ChinaNews + Guangming Daily: `python -m src.cli.main crawl --sources toutiao,tencent,chinanews,gmw --limit 500`
+- Qianlong only: `python -m src.cli.main crawl --sources qianlong --limit 100`
+- Toutiao + Tencent + ChinaNews + Guangming Daily + Qianlong: `python -m src.cli.main crawl --sources toutiao,tencent,chinanews,gmw,qianlong --limit 500`
 - Repair missing bodies (all sources): `python -m src.cli.main repair --limit 200`
 
 #### Multi-source allocation
@@ -125,12 +145,22 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
   - Example: `python -m src.cli.main crawl --sources chinanews --limit 500 --pages 10`
   - The crawler reads the page navigator (`.pagebox`) and will not exceed the last available page.
 - Published time: derived from the feed item (`.dd_time`) combined with the URL date. Stored as tz-aware (+08:00); exports can render `YYYY-MM-DD HH:MM`.
-- Source (濯掍綋鏉ユ簮): extracted from visible nodes (selectors aligned with our reference crawler), then fallback to meta tags.
+- Source (媒体来源): extracted from visible nodes (selectors aligned with our reference crawler), then fallback to meta tags.
 
 #### Guangming Daily specifics
 - Uses the custom HTTP crawler bundled in `src/adapters/http_gmw.py` (legacy CLI preserved in `gmw_crawl/` for now) to walk listing and detail pages, so each run fetches full article bodies without a second repair step.
 - Publish time is parsed from article metadata or body; when available it is normalised to +08:00 and stored alongside the Unix timestamp.
 - Requests honour `GMW_BASE_URL` and `GMW_TIMEOUT`. Duplicate URLs within a run are de-duplicated before writing to the database.
+
+#### Qianlong (千龙网) specifics
+- Uses the HTTP adapter in `src/adapters/http_qianlong.py`. Listing pages continue until the requested quota is met or three consecutive pages contain no new articles.
+- Publish times are parsed from the article body (`YYYY-MM-DD HH:MM`) and normalised to +08:00 for timestamp/ISO storage.
+- Environment variables:
+  - `QIANLONG_BASE_URL` 自定义入口频道 (默认 `https://beijing.qianlong.com/`)
+  - `QIANLONG_TIMEOUT` 控制单次请求超时时间 (默认 20 秒)
+  - `QIANLONG_DELAY` 设置文章抓取间隔秒数 (默认 0)
+  - `QIANLONG_PAGES` / `QIANLONG_MAX_PAGES` 限制翻页数；未设置时按条数继续翻页
+  - `QIANLONG_EXISTING_CONSECUTIVE_STOP` early-stop once the crawler encounters N existing articles in a row (default 5; set 0 to disable)
 
 ### Summarise Worker
 
@@ -228,7 +258,7 @@ MIT License (see repository root for details).
 - Environment variables:
   - `JYB_SEARCH_API_URL` ?JSON search API endpoint (defaults to `http://new.jyb.cn/jybuc/hyBaseCol/search.action`).
   - `JYB_START_URL` ?Fallback HTML listing/search page (defaults to `http://www.jyb.cn/search.html`).
-  - `JYB_KEYWORDS` ?Optional keywords (comma-separated). Default: `鏁欒偛`.
+  - `JYB_KEYWORDS` ?Optional keywords (comma-separated). Default: `教育`.
   - `JYB_TIMEOUT` ?Request timeout in seconds (default `20`).
   - `JYB_EXISTING_CONSECUTIVE_STOP` ?Early-stop after N consecutive existing items across pages (default `5`; `0` disables).
   Configure the trigger to run daily at your preferred time, enable "Run with highest privileges", and disable battery-stop conditions when needed.
@@ -237,11 +267,11 @@ MIT License (see repository root for details).
 - For high-frequency refresh (e.g. crawl/summarize/score every 10 minutes), use `scripts/run_pipeline_every10.ps1` with a Task Scheduler trigger that repeats every 10 minutes ("Repeat task every" -> `10 minutes`, "for a duration of" -> `Indefinitely`).
   Example action command:
   ```powershell
-  powershell.exe -File "D:苺program\edu_news_pipeline\scripts
+  powershell.exe -File "D:?program\edu_news_pipeline\scripts
 un_pipeline_every10.ps1" -Python "C:\Path\To\python.exe" -LogDirectory "D:\logs\edu-news-10min"
   ```
   The script maintains a lock under `locks\pipeline_every10.lock` to avoid overlapping runs; optional `-ContinueOnError` keeps later steps running after a failure.
-- Continue using daily scheduling (see above) for the full crawl鈫抏xport pipeline, and trigger `export` on demand when you need the latest brief.
+- Continue using daily scheduling (see above) for the full crawl→export pipeline, and trigger `export` on demand when you need the latest brief.
 
 - For ad-hoc single steps, call the CLI directly (`python -m src.cli.main summarize --limit 50`).
 

@@ -162,6 +162,12 @@ create table if not exists public.news_summaries (
     is_beijing_related boolean,
     sentiment_label text,
     sentiment_confidence double precision,
+    external_importance_status text not null default 'pending',
+    external_importance_score numeric(6,3),
+    external_importance_checked_at timestamptz,
+    external_importance_raw jsonb,
+    external_filter_attempted_at timestamptz,
+    external_filter_fail_count integer not null default 0,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
@@ -181,6 +187,9 @@ create index if not exists news_summaries_sentiment_idx
 
 create index if not exists news_summaries_score_idx
     on public.news_summaries (score desc nulls last);
+
+create index if not exists news_summaries_external_filter_idx
+    on public.news_summaries (is_beijing_related, sentiment_label, external_importance_status);
 
 
 -- ---------------------------------------------------------------------------

@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
+from typing import Optional, Tuple
+
+from src.adapters.db import get_adapter
+from src.adapters.external_filter_model import (
+    call_external_filter_model,
+    parse_external_filter_score,
+)
+from src.config import get_settings
+from src.domain import ExternalFilterCandidate
+from src.workers import log_error, log_info, log_summary, worker_session
+
+WORKER = "external_filter"
+
+
+def _should_pass(score: Optional[int], threshold: int) -> bool:
+    return score is not None and score >= threshold
+
+
+def _score_candidate(
+    candidate: ExternalFilterCandidate,
+    *,
+    retries: int,
+    threshold: int,
+) -> Tuple[int, str, bool]:
+    raw_output = call_external_filter_model(candidate, retries=retries)
+    score_value = parse_external_filter_score(raw_output)
+    if score_value is None:
+        raise RuntimeError("Model did not return a numeric score")
+    passed = _should_pass(score_value, threshold)
+    return score_value, raw_output, passed
+
+
+def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
+    settings = get_settings()
+    adapter = get_adapter()
+    batch_size = settings.external_filter_batch_size
+    remaining = None if limit is None else max(limit, 0)
+    total_processed = 0
+    total_failed = 0
+    max_retries = settings.external_filter_max_retries
+    threshold = settings.external_filter_threshold
+    workers = concurrency or settings.default_concurrency or 5
+    workers = max(1, workers)
+
+    with worker_session(WORKER, limit=limit):
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            while True:
+                fetch_size = batch_size
+                if remaining is not None:
+                    if remaining <= 0:
+                        break
+                    fetch_size = min(fetch_size, remaining)
+                candidates = adapter.fetch_external_filter_candidates(
+                    fetch_size,
+                    max_failures=max_retries,
+                )
+                if not candidates:
+                    if total_processed + total_failed == 0:
+                        log_info(WORKER, "No pending external filter candidates.")
+                    break
+
+                future_map = {
+                    executor.submit(
+                        _score_candidate,
+                        candidate,
+                        retries=max_retries,
+                        threshold=threshold,
+                    ): candidate
+                    for candidate in candidates
+                }
+
+                processed = 0
+                failed = 0
+                for future in as_completed(future_map):
+                    candidate = future_map[future]
+                    if remaining is not None and processed >= remaining:
+                        future.cancel()
+                        continue
+                    try:
+                        score_value, raw_output, passed = future.result()
+                        adapter.complete_external_filter(
+                            candidate.article_id,
+                            passed=passed,
+                            score=score_value,
+                            raw_output=raw_output,
+                        )
+                        state = "ready_for_export" if passed else "external_filtered"
+                        log_info(
+                            WORKER,
+                            f"OK {candidate.article_id}: score={score_value} -> {state}",
+                        )
+                        processed += 1
+                    except Exception as exc:
+                        failed += 1
+                        new_fail_count = candidate.external_filter_fail_count + 1
+                        final_failure = new_fail_count >= max_retries
+                        adapter.mark_external_filter_failure(
+                            candidate.article_id,
+                            fail_count=new_fail_count,
+                            final_failure=final_failure,
+                            error=str(exc),
+                        )
+                        log_error(WORKER, candidate.article_id, exc)
+
+                total_processed += processed
+                total_failed += failed
+                if remaining is not None:
+                    remaining -= processed
+
+                if processed == 0 and failed == 0:
+                    break
+
+        log_summary(
+            WORKER,
+            ok=total_processed,
+            failed=total_failed or None,
+            skipped=None,
+        )
+
+
+__all__ = ["run"]

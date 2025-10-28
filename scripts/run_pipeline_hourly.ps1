@@ -49,6 +49,7 @@ $arguments = @(
     "hash-primary",
     "score",
     "summarize",
+    "external-filter",
     "--trigger-source",
     "scheduler-hourly"
 )

@@ -26,7 +26,12 @@ def build_summary_payload(article: Dict[str, Any]) -> Dict[str, Any]:
     return {"messages": [{"role": "user", "content": message}]}
 
 
-def summarise(article: Dict[str, Any], *, retries: int = 4, timeout: int = 60) -> Dict[str, Any]:
+def summarise(
+    article: Dict[str, Any],
+    *,
+    retries: int = 4,
+    timeout: Optional[int] = None,
+) -> Dict[str, Any]:
     """Call SiliconFlow chat completions API to summarise an article."""
 
     settings = get_settings()
@@ -49,9 +54,12 @@ def summarise(article: Dict[str, Any], *, retries: int = 4, timeout: int = 60) -
 
     backoff = 1.0
     last_error: Optional[Exception] = None
+    # Resolve timeout from settings if not explicitly provided
+    resolved_timeout = timeout or settings.siliconflow_timeout_summary
+
     for _ in range(max(1, retries)):
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=timeout)
+            response = requests.post(url, json=payload, headers=headers, timeout=resolved_timeout)
             if response.status_code == 200:
                 data = response.json()
                 summary = (data["choices"][0]["message"]["content"] or "").strip()

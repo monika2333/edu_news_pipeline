@@ -3,6 +3,7 @@
 import contextlib
 import sys
 from datetime import datetime, timezone, date
+from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 import psycopg
@@ -15,10 +16,12 @@ from src.domain import (
     ExportCandidate,
     PrimaryArticleForScoring,
     SummaryForScoring,
+    ExternalFilterCandidate,
 )
 
 _CONNECTION: Optional[psycopg.Connection] = None
 _ADAPTER: Optional["PostgresAdapter"] = None
+_MISSING = object()
 
 
 def _get_connection() -> psycopg.Connection:
@@ -600,6 +603,22 @@ class PostgresAdapter:
         except Exception:
             return None
 
+    @staticmethod
+    def _iso_datetime(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return str(value)
+
+    @staticmethod
+    def _json_safe(value: Any) -> Any:
+        if isinstance(value, Decimal):
+            return float(value)
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return value
+
     # ------------------------------------------------------------------
     # Summaries
     # ------------------------------------------------------------------
@@ -720,6 +739,12 @@ class PostgresAdapter:
         sentiment_label: Optional[str] = None,
         sentiment_confidence: Optional[float] = None,
         status: str = "ready_for_export",
+        external_importance_status: Any = _MISSING,
+        external_importance_score: Any = _MISSING,
+        external_importance_checked_at: Any = _MISSING,
+        external_importance_raw: Any = _MISSING,
+        external_filter_attempted_at: Any = _MISSING,
+        external_filter_fail_count: Any = _MISSING,
     ) -> None:
         if not article_id:
             raise ValueError('complete_summary requires article_id')
@@ -745,6 +770,16 @@ class PostgresAdapter:
             payload['sentiment_label'] = sentiment_label
         if sentiment_confidence is not None:
             payload['sentiment_confidence'] = float(sentiment_confidence)
+        def _maybe_set(field: str, value: Any) -> None:
+            if value is not _MISSING:
+                payload[field] = value
+
+        _maybe_set('external_importance_status', external_importance_status)
+        _maybe_set('external_importance_score', external_importance_score)
+        _maybe_set('external_importance_checked_at', external_importance_checked_at)
+        _maybe_set('external_importance_raw', Json(external_importance_raw) if (external_importance_raw is not _MISSING and external_importance_raw is not None) else external_importance_raw)
+        _maybe_set('external_filter_attempted_at', external_filter_attempted_at)
+        _maybe_set('external_filter_fail_count', external_filter_fail_count)
         sets = ', '.join(f"{field} = %s" for field in payload)
         values = list(payload.values()) + [article_id]
         query = f"""
@@ -772,6 +807,197 @@ class PostgresAdapter:
             cur.execute(query, (article_id,))
         if message:
             print(f"[warn] summary failed {article_id}: {message}", file=sys.stderr)
+
+    def fetch_external_filter_candidates(
+        self,
+        limit: int,
+        *,
+        max_failures: Optional[int] = None,
+    ) -> List[ExternalFilterCandidate]:
+        if limit <= 0:
+            return []
+        clauses = [
+            "status = 'pending_external_filter'",
+            "external_importance_status = 'pending_external_filter'",
+            "summary_status = 'completed'",
+        ]
+        params: List[Any] = []
+        if max_failures is not None:
+            clauses.append("external_filter_fail_count < %s")
+            params.append(max_failures)
+        where_sql = " AND ".join(clauses)
+        query = f"""
+            SELECT
+                article_id,
+                title,
+                source,
+                publish_time_iso,
+                llm_summary,
+                content_markdown,
+                sentiment_label,
+                is_beijing_related,
+                external_importance_status,
+                external_filter_fail_count
+            FROM news_summaries
+            WHERE {where_sql}
+            ORDER BY external_filter_attempted_at ASC NULLS FIRST,
+                     summary_generated_at ASC NULLS LAST,
+                     article_id ASC
+            LIMIT %s
+        """
+        params.append(limit)
+        with self._cursor() as cur:
+            cur.execute(query, tuple(params))
+            rows = cur.fetchall()
+        results: List[ExternalFilterCandidate] = []
+        for row in rows:
+            article_id = row.get("article_id")
+            if not article_id:
+                continue
+            results.append(
+                ExternalFilterCandidate(
+                    article_id=str(article_id),
+                    title=row.get("title"),
+                    source=row.get("source"),
+                    publish_time_iso=self._iso_datetime(row.get("publish_time_iso")),
+                    summary=row.get("llm_summary") or "",
+                    content=row.get("content_markdown") or "",
+                    sentiment_label=row.get("sentiment_label"),
+                    is_beijing_related=row.get("is_beijing_related"),
+                    external_importance_status=row.get("external_importance_status") or "pending_external_filter",
+                    external_filter_fail_count=int(row.get("external_filter_fail_count") or 0),
+                )
+            )
+        return results
+
+    def complete_external_filter(
+        self,
+        article_id: str,
+        *,
+        passed: bool,
+        score: int,
+        raw_output: str,
+    ) -> None:
+        if not article_id:
+            raise ValueError("complete_external_filter requires article_id")
+        target_status = "ready_for_export" if passed else "external_filtered"
+        timestamp = datetime.now(timezone.utc)
+        payload = {
+            "status": target_status,
+            "external_importance_status": target_status,
+            "external_importance_score": score,
+            "external_importance_checked_at": timestamp,
+            "external_importance_raw": Json(
+                {
+                    "model_output": raw_output,
+                    "decided_at": timestamp.isoformat(),
+                }
+            ),
+            "external_filter_attempted_at": timestamp,
+            "external_filter_fail_count": 0,
+        }
+        sets = ", ".join(f"{field} = %s" for field in payload)
+        values = list(payload.values()) + [article_id]
+        query = f"""
+            UPDATE news_summaries
+            SET {sets}
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.execute(query, values)
+            if cur.rowcount != 1:
+                raise ValueError(f"Unable to update external filter status for {article_id}")
+
+    def mark_external_filter_failure(
+        self,
+        article_id: str,
+        *,
+        fail_count: int,
+        final_failure: bool,
+        error: str,
+    ) -> None:
+        if not article_id:
+            return
+        timestamp = datetime.now(timezone.utc)
+        payload: Dict[str, Any] = {
+            "external_filter_fail_count": fail_count,
+            "external_filter_attempted_at": timestamp,
+            "external_importance_raw": Json(
+                {
+                    "error": str(error)[:500],
+                    "recorded_at": timestamp.isoformat(),
+                }
+            ),
+        }
+        if final_failure:
+            payload.update(
+                {
+                    "status": "external_filtered",
+                    "external_importance_status": "external_filtered",
+                    "external_importance_checked_at": timestamp,
+                    "external_importance_score": None,
+                }
+            )
+        sets = ", ".join(f"{field} = %s" for field in payload)
+        values = list(payload.values()) + [article_id]
+        query = f"""
+            UPDATE news_summaries
+            SET {sets}
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.execute(query, values)
+    def fetch_external_backfill_candidates(self, limit: int, since_date: Optional[date] = None) -> List[Dict[str, Any]]:
+        if limit <= 0:
+            return []
+        # Build query with optional date filter on publish_time_iso (date-level)
+        parts: List[str] = [
+            "SELECT",
+            "    article_id,",
+            "    title,",
+            "    publish_time_iso,",
+            "    summary_generated_at,",
+            "    sentiment_label",
+            "FROM news_summaries",
+            "WHERE status = 'ready_for_export'",
+            "  AND summary_status = 'completed'",
+            "  AND (is_beijing_related IS DISTINCT FROM TRUE)",
+            "  AND lower(coalesce(sentiment_label, '')) = 'positive'",
+            "  AND (external_importance_status IS NULL OR external_importance_status NOT IN ('pending_external_filter'))",
+        ]
+        params: List[Any] = []
+        if since_date is not None:
+            parts.append("  AND publish_time_iso::date >= %s")
+            params.append(since_date)
+        parts.extend([
+            "ORDER BY summary_generated_at ASC NULLS LAST, article_id ASC",
+            "LIMIT %s",
+        ])
+        params.append(limit)
+        query = "\n".join(parts)
+        with self._cursor() as cur:
+            cur.execute(query, tuple(params))
+            rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
+    def reset_external_filter_pending(self, article_ids: Sequence[str]) -> int:
+        if not article_ids:
+            return 0
+        query = """
+            UPDATE news_summaries
+            SET status = 'pending_external_filter',
+                external_importance_status = 'pending_external_filter',
+                external_importance_score = NULL,
+                external_importance_checked_at = NULL,
+                external_importance_raw = NULL,
+                external_filter_attempted_at = NULL,
+                external_filter_fail_count = 0,
+                updated_at = NOW()
+            WHERE article_id = ANY(%s)
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (list(article_ids),))
+            return cur.rowcount
 
     def fetch_raw_articles_for_summary(
         self,
@@ -1165,7 +1391,9 @@ class PostgresAdapter:
                 sentiment_confidence,
                 is_beijing_related,
                 status,
-                summary_status
+                summary_status,
+                external_importance_score,
+                external_importance_checked_at
             FROM news_summaries
             WHERE status = 'ready_for_export'
               AND summary_status = 'completed'
@@ -1213,6 +1441,8 @@ class PostgresAdapter:
                     raw_relevance_score=row.get("raw_relevance_score"),
                     keyword_bonus_score=row.get("keyword_bonus_score"),
                     score_details=score_details,
+                    external_importance_score=row.get("external_importance_score"),
+                    external_importance_checked_at=self._iso_datetime(row.get("external_importance_checked_at")),
                 )
             )
         return out
@@ -1359,6 +1589,18 @@ class PostgresAdapter:
                 article_id = candidate.filtered_article_id
                 if article_id in existing_ids:
                     continue
+                metadata = {
+                    "title": self._json_safe(candidate.title),
+                    "score": self._json_safe(candidate.score),
+                    "original_url": self._json_safe(candidate.original_url),
+                    "published_at": self._json_safe(candidate.published_at),
+                    "source": self._json_safe(candidate.source),
+                    "is_beijing_related": self._json_safe(candidate.is_beijing_related),
+                    "sentiment_label": self._json_safe(candidate.sentiment_label),
+                    "sentiment_confidence": self._json_safe(candidate.sentiment_confidence),
+                    "external_importance_score": self._json_safe(candidate.external_importance_score),
+                    "external_importance_checked_at": self._json_safe(candidate.external_importance_checked_at),
+                }
                 insert_payload.append(
                     (
                         batch_id,
@@ -1366,18 +1608,7 @@ class PostgresAdapter:
                         section,
                         order_index_start + offset,
                         candidate.summary,
-                        Json(
-                            {
-                                "title": candidate.title,
-                                "score": candidate.score,
-                                "original_url": candidate.original_url,
-                                "published_at": candidate.published_at,
-                                "source": candidate.source,
-                                "is_beijing_related": candidate.is_beijing_related,
-                                "sentiment_label": candidate.sentiment_label,
-                                "sentiment_confidence": candidate.sentiment_confidence,
-                            }
-                        ),
+                        Json(metadata),
                     )
                 )
             if insert_payload:

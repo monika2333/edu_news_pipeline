@@ -35,6 +35,16 @@ from src.adapters.http_gmw import (
     fetch_articles as gmw_fetch_articles,
     make_article_id as gmw_make_article_id,
 )
+from src.adapters.http_qianlong import (
+    DEFAULT_BASE_URL as QIANLONG_DEFAULT_BASE_URL,
+    DEFAULT_TIMEOUT as QIANLONG_DEFAULT_TIMEOUT,
+    DEFAULT_MAX_PAGES as QIANLONG_DEFAULT_MAX_PAGES,
+    DEFAULT_DELAY as QIANLONG_DEFAULT_DELAY,
+    article_to_detail_row as qianlong_article_to_detail_row,
+    article_to_feed_row as qianlong_article_to_feed_row,
+    fetch_articles as qianlong_fetch_articles,
+    make_article_id as qianlong_make_article_id,
+)
 from src.adapters.http_chinadaily import (
     FeedItemLike as CDLFeedItem,
     list_items as cd_list_items,
@@ -690,6 +700,109 @@ def _run_gmw_flow(
     return stats
 
 
+def _run_qianlong_flow(
+    *,
+    adapter,
+    keywords: Sequence[str],
+    remaining_limit: Optional[int],
+    base_url: str,
+    timeout_value: float,
+    delay_value: float,
+    pages_hint: Optional[int],
+    consecutive_stop: Optional[int],
+) -> Dict[str, Any]:
+    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
+    try:
+        existing_ids = adapter.get_existing_raw_article_ids()
+    except Exception as exc:
+        log_error(WORKER, "qianlong_local_existing", exc)
+        existing_ids = set()
+
+    try:
+        articles = qianlong_fetch_articles(
+            limit=remaining_limit,
+            base_url=base_url,
+            pages=pages_hint,
+            timeout=timeout_value,
+            delay=delay_value,
+            existing_ids=existing_ids,
+            consecutive_stop=consecutive_stop,
+        )
+    except Exception as exc:
+        log_error(WORKER, "qianlong_fetch", exc)
+        return stats
+    if not articles:
+        log_info(WORKER, "No articles returned from Qianlong.")
+        return stats
+
+    feed_rows: List[Dict[str, Any]] = []
+    detail_rows: List[Dict[str, Any]] = []
+    seen_ids: Set[str] = set()
+    duplicates = 0
+    for article in articles:
+        try:
+            article_id = qianlong_make_article_id(article.url)
+        except Exception as exc:
+            log_error(WORKER, "qianlong_article_id", exc)
+            continue
+        if article_id in seen_ids:
+            duplicates += 1
+            continue
+        seen_ids.add(article_id)
+        fetched_at = datetime.now(timezone.utc)
+        feed_rows.append(qianlong_article_to_feed_row(article, article_id, fetched_at=fetched_at))
+        detail_rows.append(
+            qianlong_article_to_detail_row(
+                article,
+                article_id,
+                detail_fetched_at=datetime.now(timezone.utc),
+            )
+        )
+
+    stats["consumed"] = len(seen_ids)
+    if duplicates:
+        log_info(WORKER, f"qianlong duplicate articles skipped: {duplicates}")
+        stats["skipped"] += duplicates
+    if not feed_rows:
+        log_info(WORKER, "No Qianlong rows to upsert after filtering.")
+        return stats
+
+    try:
+        inserted = adapter.upsert_raw_feed_rows(feed_rows)
+    except Exception as exc:
+        log_error(WORKER, "qianlong_postgres_feed", exc)
+        stats["failed"] += len(feed_rows)
+        return stats
+    log_info(WORKER, f"qianlong feed rows upserted: {inserted}")
+
+    try:
+        adapter.update_raw_article_details(detail_rows)
+    except Exception as exc:
+        log_error(WORKER, "qianlong_postgres_detail", exc)
+        stats["failed"] += len(detail_rows)
+        detail_rows = []
+    else:
+        for row in detail_rows:
+            log_info(WORKER, f"QIANLONG DETAIL OK {row['article_id']}")
+
+    stats["ok"] = len(detail_rows)
+    filtered_candidates: List[Dict[str, Any]] = []
+    for row in detail_rows:
+        aid = str(row.get("article_id") or "").strip()
+        content = str(row.get("content_markdown") or "").strip()
+        if not aid or not content:
+            continue
+        ok_hit, hits = _contains_keywords(content, keywords)
+        if not ok_hit:
+            continue
+        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
+        if candidate:
+            filtered_candidates.append(candidate)
+    if filtered_candidates:
+        _persist_filtered_candidates(adapter, filtered_candidates, source="qianlong")
+    return stats
+
+
 def _run_jyb_flow(
     *,
     adapter,
@@ -947,6 +1060,35 @@ def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Option
     except ValueError:
         gmw_timeout = GMW_DEFAULT_TIMEOUT
 
+    qianlong_base_url_env = os.getenv("QIANLONG_BASE_URL")
+    qianlong_base_url = (
+        qianlong_base_url_env.strip() if qianlong_base_url_env and qianlong_base_url_env.strip() else QIANLONG_DEFAULT_BASE_URL
+    )
+    qianlong_timeout_env = os.getenv("QIANLONG_TIMEOUT")
+    try:
+        qianlong_timeout = float(qianlong_timeout_env) if qianlong_timeout_env is not None else QIANLONG_DEFAULT_TIMEOUT
+    except ValueError:
+        qianlong_timeout = QIANLONG_DEFAULT_TIMEOUT
+    qianlong_delay_env = os.getenv("QIANLONG_DELAY")
+    try:
+        qianlong_delay = float(qianlong_delay_env) if qianlong_delay_env is not None else QIANLONG_DEFAULT_DELAY
+    except ValueError:
+        qianlong_delay = QIANLONG_DEFAULT_DELAY
+    qianlong_pages_env = os.getenv("QIANLONG_PAGES") or os.getenv("QIANLONG_MAX_PAGES")
+    try:
+        qianlong_pages_config = int(qianlong_pages_env) if qianlong_pages_env is not None else None
+    except ValueError:
+        qianlong_pages_config = None
+    if qianlong_pages_config is not None and qianlong_pages_config <= 0:
+        qianlong_pages_config = QIANLONG_DEFAULT_MAX_PAGES
+    qianlong_consecutive_env = os.getenv("QIANLONG_EXISTING_CONSECUTIVE_STOP")
+    try:
+        qianlong_consecutive_stop = int(qianlong_consecutive_env) if qianlong_consecutive_env is not None else 5
+    except ValueError:
+        qianlong_consecutive_stop = 5
+    if qianlong_consecutive_stop < 0:
+        qianlong_consecutive_stop = 0
+
     keywords_path_value = getattr(settings, 'keywords_path', None)
     keywords_file: Optional[Path]
     if keywords_path_value:
@@ -989,6 +1131,17 @@ def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Option
                     remaining_limit=remaining_limit,
                     base_url=gmw_base_url,
                     timeout_value=gmw_timeout,
+                )
+            elif source == 'qianlong':
+                stats = _run_qianlong_flow(
+                    adapter=adapter,
+                    keywords=keywords,
+                    remaining_limit=remaining_limit,
+                    base_url=qianlong_base_url,
+                    timeout_value=qianlong_timeout,
+                    delay_value=qianlong_delay,
+                    pages_hint=pages if pages is not None else qianlong_pages_config,
+                    consecutive_stop=qianlong_consecutive_stop,
                 )
             elif source in {'tencent', 'qq'}:
                 stats = _run_tencent_flow(

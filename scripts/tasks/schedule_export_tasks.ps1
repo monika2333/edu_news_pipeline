@@ -7,7 +7,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $taskNames = @('EduNews_Export_15', 'EduNews_Export_20')
-$scriptPath = Join-Path $PSScriptRoot 'run_export.ps1'
+
+# Resolve paths relative to scripts/tasks/
+$tasksDir   = $PSScriptRoot
+$scriptsDir = Split-Path -Parent $tasksDir
+$repoRoot   = Split-Path -Parent $scriptsDir
+$scriptPath = Join-Path $scriptsDir 'run_export.ps1'
 
 if ($Remove) {
   foreach ($name in $taskNames) {
@@ -30,7 +35,7 @@ if (-not (Test-Path $scriptPath)) {
 $action = New-ScheduledTaskAction `
   -Execute 'powershell.exe' `
   -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" `
-  -WorkingDirectory (Split-Path -Parent $PSScriptRoot)
+  -WorkingDirectory $repoRoot
 
 # Determine start date (for first run). If not provided, default to today.
 if (-not $StartDate) { $StartDate = (Get-Date).Date }

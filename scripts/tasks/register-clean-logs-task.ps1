@@ -33,9 +33,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$repoRoot  = Split-Path -Parent $scriptDir
-$cleanScript = Join-Path $scriptDir 'clean-logs.ps1'
+$tasksDir  = Split-Path -Parent $MyInvocation.MyCommand.Path  # scripts\tasks
+$scriptsDir = Split-Path -Parent $tasksDir                     # scripts
+$repoRoot  = Split-Path -Parent $scriptsDir
+$cleanScript = Join-Path $scriptsDir 'clean-logs.ps1'
 if (-not (Test-Path -LiteralPath $cleanScript)) { throw "Script not found: $cleanScript" }
 
 if (-not ([System.IO.Path]::IsPathRooted($LogsPath))) {
@@ -43,7 +44,11 @@ if (-not ([System.IO.Path]::IsPathRooted($LogsPath))) {
 }
 
 $ps = (Get-Command powershell.exe).Source
-$action = "`"$ps`" -NoProfile -ExecutionPolicy Bypass -File `"$cleanScript`" -LogsPath `"$LogsPath`" -CompressOlderThanDays $CompressOlderThanDays -DeleteOlderThanDays $DeleteOlderThanDays"
+# Use a wrapper to simplify /TR and capture logs reliably
+$wrapper = Join-Path $tasksDir 'run_clean_logs.ps1'
+if (-not (Test-Path -LiteralPath $wrapper)) { throw "Wrapper not found: $wrapper" }
+# Keep /TR short to avoid 261-char limit; rely on wrapper defaults
+$action = "`"$ps`" -NoProfile -ExecutionPolicy Bypass -File `"$wrapper`""
 
 Write-Host "Registering scheduled task '$TaskName' to run daily at $Time" -ForegroundColor Cyan
 Write-Host "Action: $action"
@@ -59,4 +64,3 @@ $args = @(
 
 & schtasks.exe @args | Write-Host
 Write-Host "Done. Use 'schtasks /Query /TN $TaskName /V /FO LIST' to verify." -ForegroundColor Green
-

@@ -160,6 +160,11 @@ create table if not exists public.news_summaries (
     fetched_at timestamptz,
     llm_keywords text[] default '{}'::text[],
     is_beijing_related boolean,
+    is_beijing_related_llm boolean,
+    beijing_gate_checked_at timestamptz,
+    beijing_gate_raw jsonb,
+    beijing_gate_attempted_at timestamptz,
+    beijing_gate_fail_count integer not null default 0,
     sentiment_label text,
     sentiment_confidence double precision,
     external_importance_status text not null default 'pending',
@@ -190,6 +195,10 @@ create index if not exists news_summaries_score_idx
 
 create index if not exists news_summaries_external_filter_idx
     on public.news_summaries (is_beijing_related, sentiment_label, external_importance_status);
+
+create index if not exists news_summaries_beijing_gate_idx
+    on public.news_summaries (beijing_gate_attempted_at, summary_generated_at)
+    where status = 'pending_beijing_gate' and summary_status = 'completed';
 
 
 -- ---------------------------------------------------------------------------
@@ -294,6 +303,8 @@ create trigger news_summaries_set_updated_at
     for each row execute function public.set_updated_at();
 
 comment on column public.news_summaries.is_beijing_related is 'True when the article is related to Beijing; NULL when not evaluated';
+comment on column public.news_summaries.is_beijing_related_llm is 'True when the LLM confirms Beijing relevance; NULL when not evaluated';
+comment on column public.news_summaries.beijing_gate_checked_at is 'Timestamp when the LLM Beijing gate returned a definitive result';
 
 
 drop trigger if exists brief_batches_set_updated_at on public.brief_batches;

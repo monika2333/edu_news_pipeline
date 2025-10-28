@@ -98,12 +98,12 @@
 - 回滚层面：关闭 LLM 判定配置后流程自动恢复，不产生额外积压与错误。
 
 ## 实施 Checklist
-- [x] 编写数据库迁移：新增 pending_beijing_gate 状态及 eijing_gate_* 字段，并更新索引/注释。
+- [x] 编写数据库迁移：新增 pending_beijing_gate 状态及 beijing_gate_* 字段，并更新索引和注释。
 - [x] 更新 src/domain/external_filter.py dataclass，增加 LLM 判定字段及新的候选类型。
-- [x] 在 src/adapters/db_postgres.py 中实现 etch_beijing_gate_candidates、complete_beijing_gate、mark_beijing_gate_failure，并调整现有查询/状态写入逻辑。
-- [x] 新建 src/adapters/llm_beijing_gate.py（或等效服务层），封装 Prompt、请求与响应解析；补充 docs/beijing_gate_prompt.md。
-- [ ] 修改 src/workers/summarize.py：输出「京内」稿件时切换到 pending_beijing_gate 状态并初始化字段。
-- [ ] 扩展 src/workers/external_filter.py：插入 LLM 判定环节，处理通过/回流/失败逻辑与日志统计。
-- [ ] 扩展 src/config.py 与 .env.local 示例，纳入新的模型配置、超时/重试参数。
-- [ ] 增补测试：数据库适配器、LLM 解析、Worker 流程（Mock LLM）及端到端路径。
+- [x] 在 src/adapters/db_postgres.py 中实现 fetch_beijing_gate_candidates、complete_beijing_gate、mark_beijing_gate_failure，并调整现有查询与状态写入逻辑。
+- [x] 新建 src/adapters/llm_beijing_gate.py（或等效服务层），封装 prompt、请求与响应解析；补充 docs/beijing_gate_prompt.md。
+- [x] 修改 src/workers/summarize.py：输出“京内”稿件时切换到 pending_beijing_gate 状态并初始化字段。
+- [x] 扩展 src/workers/external_filter.py：插入 LLM 判定环节，处理通过/回流/失败逻辑与日志统计。
+- [x] 扩展 src/config.py 与 .env.local 示例，纳入新的模型配置、超时和重试参数。
+- [ ] 增补测试：数据库适配器、LLM 解析、worker 流程（mock LLM）及端到端路径。
 - [ ] 更新运维/监控文档，记录新指标与回滚/重试策略；规划上线与回填步骤。

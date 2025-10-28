@@ -128,14 +128,24 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None, keywords_path: O
                 if beijing_keywords:
                     detection_payload: List[str] = [summary_text]
                     beijing_related = is_beijing_related(detection_payload, beijing_keywords)
-                needs_external_filter = (
-                    beijing_related is not True
-                    and (sentiment_label or "").lower() == "positive"
-                )
-                next_status = "pending_external_filter" if needs_external_filter else "ready_for_export"
-                external_importance_status = (
-                    "pending_external_filter" if needs_external_filter else "ready_for_export"
-                )
+                sentiment_positive = (sentiment_label or "").lower() == "positive"
+                if beijing_related is True:
+                    next_status = "pending_beijing_gate"
+                    external_importance_status = "pending_beijing_gate"
+                elif sentiment_positive and beijing_related is not True:
+                    next_status = "pending_external_filter"
+                    external_importance_status = "pending_external_filter"
+                else:
+                    next_status = "ready_for_export"
+                    external_importance_status = "ready_for_export"
+
+                beijing_gate_defaults = {
+                    "is_beijing_related_llm": None,
+                    "beijing_gate_checked_at": None,
+                    "beijing_gate_raw": None,
+                    "beijing_gate_attempted_at": None,
+                    "beijing_gate_fail_count": 0,
+                }
                 adapter.complete_summary(
                     article_id,
                     summary_text,
@@ -151,6 +161,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None, keywords_path: O
                     external_importance_raw=None,
                     external_filter_attempted_at=None,
                     external_filter_fail_count=0,
+                    **beijing_gate_defaults,
                 )
                 success += 1
                 if sentiment_label:

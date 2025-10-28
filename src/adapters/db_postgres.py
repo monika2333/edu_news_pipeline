@@ -746,6 +746,11 @@ class PostgresAdapter:
         external_importance_raw: Any = _MISSING,
         external_filter_attempted_at: Any = _MISSING,
         external_filter_fail_count: Any = _MISSING,
+        is_beijing_related_llm: Any = _MISSING,
+        beijing_gate_checked_at: Any = _MISSING,
+        beijing_gate_raw: Any = _MISSING,
+        beijing_gate_attempted_at: Any = _MISSING,
+        beijing_gate_fail_count: Any = _MISSING,
     ) -> None:
         if not article_id:
             raise ValueError('complete_summary requires article_id')
@@ -778,9 +783,22 @@ class PostgresAdapter:
         _maybe_set('external_importance_status', external_importance_status)
         _maybe_set('external_importance_score', external_importance_score)
         _maybe_set('external_importance_checked_at', external_importance_checked_at)
-        _maybe_set('external_importance_raw', Json(external_importance_raw) if (external_importance_raw is not _MISSING and external_importance_raw is not None) else external_importance_raw)
+        _maybe_set(
+            'external_importance_raw',
+            Json(external_importance_raw)
+            if (external_importance_raw is not _MISSING and external_importance_raw is not None)
+            else external_importance_raw,
+        )
         _maybe_set('external_filter_attempted_at', external_filter_attempted_at)
         _maybe_set('external_filter_fail_count', external_filter_fail_count)
+        _maybe_set('is_beijing_related_llm', is_beijing_related_llm)
+        _maybe_set('beijing_gate_checked_at', beijing_gate_checked_at)
+        if beijing_gate_raw is not _MISSING:
+            payload['beijing_gate_raw'] = (
+                Json(beijing_gate_raw) if beijing_gate_raw is not None else None
+            )
+        _maybe_set('beijing_gate_attempted_at', beijing_gate_attempted_at)
+        _maybe_set('beijing_gate_fail_count', beijing_gate_fail_count)
         sets = ', '.join(f"{field} = %s" for field in payload)
         values = list(payload.values()) + [article_id]
         query = f"""

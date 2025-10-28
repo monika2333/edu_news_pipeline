@@ -118,6 +118,7 @@ class Settings:
     siliconflow_timeout_score: int
     siliconflow_timeout_summary: int
     siliconflow_timeout_external_filter: int
+    siliconflow_timeout_beijing_gate: int
     process_limit: Optional[int]
     default_concurrency: int
     keywords_path: Path
@@ -134,6 +135,8 @@ class Settings:
     external_filter_threshold: int
     external_filter_batch_size: int
     external_filter_max_retries: int
+    beijing_gate_model_name: str
+    beijing_gate_max_retries: int
 
 
 @lru_cache(maxsize=1)
@@ -174,10 +177,17 @@ def get_settings() -> Settings:
         or _sf_global_timeout
         or 30
     )
+    siliconflow_timeout_beijing_gate = (
+        _optional_int(os.getenv("SILICONFLOW_TIMEOUT_BEIJING_GATE"))
+        or _sf_global_timeout
+        or 30
+    )
     external_filter_model_name = os.getenv("EXTERNAL_FILTER_MODEL_NAME", score_model_name)
     external_filter_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_THRESHOLD")) or 20
     external_filter_batch_size = _optional_int(os.getenv("EXTERNAL_FILTER_BATCH_SIZE")) or 50
     external_filter_max_retries = _optional_int(os.getenv("EXTERNAL_FILTER_MAX_RETRIES")) or 3
+    beijing_gate_model_name = os.getenv("BEIJING_GATE_MODEL_NAME", score_model_name)
+    beijing_gate_max_retries = _optional_int(os.getenv("BEIJING_GATE_MAX_RETRIES")) or 3
 
     process_limit = _optional_int(os.getenv("PROCESS_LIMIT"))
     default_concurrency = _optional_int(os.getenv("CONCURRENCY")) or 5
@@ -245,6 +255,7 @@ def get_settings() -> Settings:
         siliconflow_timeout_score=siliconflow_timeout_score,
         siliconflow_timeout_summary=siliconflow_timeout_summary,
         siliconflow_timeout_external_filter=siliconflow_timeout_external_filter,
+        siliconflow_timeout_beijing_gate=siliconflow_timeout_beijing_gate,
         process_limit=process_limit,
         default_concurrency=default_concurrency,
         keywords_path=keywords_path,
@@ -261,6 +272,8 @@ def get_settings() -> Settings:
         external_filter_threshold=external_filter_threshold,
         external_filter_batch_size=external_filter_batch_size,
         external_filter_max_retries=external_filter_max_retries,
+        beijing_gate_model_name=beijing_gate_model_name,
+        beijing_gate_max_retries=beijing_gate_max_retries,
     )
 
 

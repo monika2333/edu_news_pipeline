@@ -7,10 +7,10 @@ Automated pipeline for collecting education-related articles, summarising them w
 1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: Tencent News, ChinaNews, China Daily, Guangming Daily, Qianlong, China Education Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
 2. **Hash / Deduplicate** - `hash_primary` computes an exact `content_hash`, 64-bit SimHash, and four 16-bit band hashes for each filtered article. Using SimHash band lookup and a Hamming-distance threshold (<= 3), duplicates are grouped under a primary article and promoted to `primary_articles`.
 3. **Score** - LLM-based relevance scoring runs on entries in `primary_articles`. The LLM output becomes `raw_relevance_score`; keyword rules add a `keyword_bonus_score`, and their sum is persisted as `score`. Promotion still keys off `raw_relevance_score >= 60`, while the final score (without an upper bound) is used for ordering.
-4. **Summarise & Sentiment** - `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and writes the results back into `news_summaries` with status `ready_for_export` (failed attempts remain `pending`).
-5. **External Filter** - `external_filter` re-scores¾©ÍâÕıÃæ¸å¼ş£¬°´ÕÕ external importance£¨0-100£©¾ö¶¨ÊÇ·ñ¼ÌĞøµ¼³ö£»²»Âú×ããĞÖµµÄ¼ÇÂ¼±»±ê¼ÇÎª `external_filtered`¡£
-6. **Export** - Assemble the ready summaries into a briefing ordered by "Jingnei/Jingwai x Positive/Negative" buckets (sorted descending by score) and persist batch metadata in `brief_batches` / `brief_items`, sending an optional Feishu notification.
-
+4. **Summarise & Sentiment** - `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and now routes articles into multiple states: Beijing-positive items move to `pending_beijing_gate` for the second pass, non-Beijing positives go to `pending_external_filter`, and everything else writes back as `ready_for_export` (failures remain `pending`).
+5. **Beijing Gate** - Before running the external importance model, the `external_filter` worker picks up `pending_beijing_gate`, calls the dedicated LLM prompt, and either reclassifies to `pending_external_filter` (when not Beijing related) or promotes directly to `ready_for_export` while recording the LLM decision.
+6. **External Filter** - External scoring runs on `pending_external_filter`, assigns an importance score from 0-100, and flags items below the threshold as `external_filtered`; the rest become `ready_for_export`.
+7. **Export** - Assemble the ready summaries into a briefing ordered by "Jingnei/Jingwai x Positive/Negative" buckets (sorted descending by score) and persist batch metadata in `brief_batches` / `brief_items`, sending an optional Feishu notification.
 All stages are available through the CLI wrapper:
 
 ```bash
@@ -24,7 +24,7 @@ python -m src.cli.main repair --limit 500
 python -m src.cli.main geo-tag --limit 500 --batch-size 200
 ```
 
-Use `-h` on any command to see flags. `summarize` now operates on the queued pending rows¡ªrun `crawl` first so new candidates are available.
+Use `-h` on any command to see flags. `summarize` now operates on the queued pending rowsâ€”run `crawl` first so new candidates are available.
 
 ## Repairing Missing Content
 
@@ -43,6 +43,7 @@ Re-run as needed until the command reports no articles remaining.
 - `src/adapters/db_postgres.py` - PostgreSQL access layer used by all workers.
 - `src/workers/` - Implementations for `crawl`, `summarize`, `score`, and `export` steps.
 - `database/` - SQL schema and migrations used for the Postgres deployment.
+- `docs/beijing_gate_prompt.md` - Prompt definition used by the Beijing gate LLM check (kept for review and updates).
 - `src/cli/main.py` - CLI entry point for worker commands (`python -m src.cli.main ...`).
 
 ## Prerequisites
@@ -70,10 +71,10 @@ With these variables in place the worker and console commands automatically use 
 ### External Filter Workflow
 
 - Configure the external filter env vars (use `.env.local`).
-- `scripts/run_pipeline_once.py` Ä¬ÈÏ¼Æ»®»áÔÚ summarize Ö®ºó×Ô¶¯ÔËĞĞ `external-filter` ²½Öè£»ÎŞĞè¶îÍâµ÷¶È¼´¿É´®½Ó½øÕûÌõÁ÷Ë®Ïß¡£
-- Run the external filter worker to score pending ¾©Íâ¸å£º`python -m src.workers.external_filter --limit 100`£¨°´Ğèµ÷Õû limit/batch£©¡£
-- Ê¹ÓÃ backfill ½Å±¾ÖØÖÃÀúÊ·¾©ÍâÕıÃæ¼ÇÂ¼£ºÏÈ `python -m scripts.backfill_external_filter --dry-run --limit 50` ²é¿´Ó°Ïì£¬ÔÙÈ¥µô `--dry-run` Êµ¼ÊÖ´ĞĞ¡£
-- ¹Û²ì `news_summaries.external_importance_status` ×Ö¶Î£¨`pending_external_filter` ¡ú `ready_for_export` / `external_filtered`£©È·±£ worker Õı³£ÍÆ½ø¡£
+- `scripts/run_pipeline_once.py` é»˜è®¤è®¡åˆ’ä¼šåœ¨ summarize ä¹‹åè‡ªåŠ¨è¿è¡Œ `external-filter` æ­¥éª¤ï¼›æ— éœ€é¢å¤–è°ƒåº¦å³å¯ä¸²æ¥è¿›æ•´æ¡æµæ°´çº¿ã€‚
+- Run the external filter worker to score pending äº¬å¤–ç¨¿ï¼š`python -m src.workers.external_filter --limit 100`ï¼ˆæŒ‰éœ€è°ƒæ•´ limit/batchï¼‰ã€‚
+- ä½¿ç”¨ backfill è„šæœ¬é‡ç½®å†å²äº¬å¤–æ­£é¢è®°å½•ï¼šå…ˆ `python -m scripts.backfill_external_filter --dry-run --limit 50` æŸ¥çœ‹å½±å“ï¼Œå†å»æ‰ `--dry-run` å®é™…æ‰§è¡Œã€‚
+- è§‚å¯Ÿ `news_summaries.external_importance_status` å­—æ®µï¼ˆ`pending_external_filter` â†’ `ready_for_export` / `external_filtered`ï¼‰ç¡®ä¿ worker æ­£å¸¸æ¨è¿›ã€‚
 
 The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env`. Key settings:
 
@@ -93,19 +94,21 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `QIANLONG_DELAY` | Optional delay between Qianlong article fetches (default 0) |
 | `QIANLONG_PAGES` / `QIANLONG_MAX_PAGES` | Optional page cap for Qianlong listings (defaults to unlimited) |
 | `QIANLONG_EXISTING_CONSECUTIVE_STOP` | Early-stop after N consecutive existing Qianlong articles (default 5; set `0` to disable) |
-| `PROCESS_LIMIT` | Global cap applied to worker limits |
-| `SCORE_KEYWORD_BONUSES` | Optional JSON map overriding keyword ?bonus rules for scoring |
-| `SCORE_KEYWORD_BONUSES_PATH` | Optional path to a JSON file providing keyword bonus rules (`config/score_keyword_bonuses.json` by default) |
-| `CONCURRENCY` | Default worker concurrency override (falls back to 5) |
-| `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` | API credentials and endpoint for the LLM provider |
-| `SUMMARIZE_MODEL_NAME` / `SOURCE_MODEL_NAME` / `SCORE_MODEL_NAME` | Model identifiers used by the workers |
-| `EXTERNAL_FILTER_MODEL_NAME` | Model identifier used by the external filter worker (defaults to `SUMMARIZE_MODEL_NAME`) |
-| `EXTERNAL_FILTER_THRESHOLD` | External importance score (0-100) required to pass¾©Íâ¸å£¬Ä¬ÈÏ 70 |
-| `EXTERNAL_FILTER_BATCH_SIZE` | Rows processed per batch by the external filter worker£¨Ä¬ÈÏ 50£© |
-| `EXTERNAL_FILTER_MAX_RETRIES` | Retry attempts before marking a record `external_filtered`£¨Ä¬ÈÏ 3£© |
-| `CRAWL_SOURCES` | Comma list of sources used by the pipeline wrapper (e.g., `toutiao,chinanews`; default `toutiao,qianlong`) |
-| `TOUTIAO_EXISTING_CONSECUTIVE_STOP` | Early?stop after N consecutive existing items per author (default `5`; set `0` to disable) |
-| `CHINANEWS_EXISTING_CONSECUTIVE_STOP` | Early?stop after N consecutive existing items across scroll pages (default `5`; set `0` to disable) |
+| `PROCESS_LIMIT` | Global cap applied to worker limits (overrides CLI `--limit`). |
+| `SCORE_KEYWORD_BONUSES` | Optional JSON map overriding keyword bonus rules for scoring. |
+| `SCORE_KEYWORD_BONUSES_PATH` | Optional path to a JSON file providing keyword bonuses (`config/score_keyword_bonuses.json` by default). |
+| `CONCURRENCY` | Default worker concurrency override (falls back to 5). |
+| `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` | API credentials and endpoint for the LLM provider. |
+| `SUMMARIZE_MODEL_NAME` / `SOURCE_MODEL_NAME` / `SCORE_MODEL_NAME` | Model identifiers used by summarize/source detection/scoring workers. |
+| `SILICONFLOW_TIMEOUT_SUMMARY` / `SILICONFLOW_TIMEOUT_SCORE` / `SILICONFLOW_TIMEOUT_EXTERNAL_FILTER` / `SILICONFLOW_TIMEOUT_BEIJING_GATE` | Timeout (seconds) for the respective SiliconFlow requests; each falls back to `SILICONFLOW_TIMEOUT` or its hard-coded default if unset. |
+| `EXTERNAL_FILTER_MODEL_NAME` | Model identifier used by the external filter stage (defaults to `SCORE_MODEL_NAME`). |
+| `EXTERNAL_FILTER_THRESHOLD` | External importance score (0-100) required to pass (default 20). |
+| `EXTERNAL_FILTER_BATCH_SIZE` | Rows processed per batch by the external filter worker (default 50). |
+| `EXTERNAL_FILTER_MAX_RETRIES` | Retry attempts before a record is marked `external_filtered` (default 3). |
+| `BEIJING_GATE_MODEL_NAME` | Model identifier used by the Beijing gate LLM check (defaults to `SCORE_MODEL_NAME`). |
+| `BEIJING_GATE_MAX_RETRIES` | Maximum LLM failures before falling back to treating the item as Beijing related (default 3). |
+| `TOUTIAO_EXISTING_CONSECUTIVE_STOP` | Early-stop after N consecutive existing items per author (default `5`; set `0` to disable) |
+| `CHINANEWS_EXISTING_CONSECUTIVE_STOP` | Early-stop after N consecutive existing items across scroll pages (default `5`; set `0` to disable) |
 
 
 ## Workflow Details
@@ -121,8 +124,8 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 - Writes/updates rows in `raw_articles`
 - Skips articles already present in the database
 
-- Early?stop policy for duplicates:
-  - Toutiao: while scanning each author¡¯s feed, stops after `TOUTIAO_EXISTING_CONSECUTIVE_STOP` consecutive items already present in the DB (default 5). Set it to `0` to never early?stop on existing items.
+- Early-stop policy for duplicates:
+  - Toutiao: while scanning each authorâ€™s feed, stops after `TOUTIAO_EXISTING_CONSECUTIVE_STOP` consecutive items already present in the DB (default 5). Set it to `0` to never early?stop on existing items.
   - ChinaNews: while iterating scroll pages, skips existing items and stops when `CHINANEWS_EXISTING_CONSECUTIVE_STOP` consecutive items are already present (default 5). Set it to `0` to never early?stop on existing items.
 
 #### Examples
@@ -145,21 +148,21 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
   - Example: `python -m src.cli.main crawl --sources chinanews --limit 500 --pages 10`
   - The crawler reads the page navigator (`.pagebox`) and will not exceed the last available page.
 - Published time: derived from the feed item (`.dd_time`) combined with the URL date. Stored as tz-aware (+08:00); exports can render `YYYY-MM-DD HH:MM`.
-- Source (Ã½ÌåÀ´Ô´): extracted from visible nodes (selectors aligned with our reference crawler), then fallback to meta tags.
+- Source (åª’ä½“æ¥æº): extracted from visible nodes (selectors aligned with our reference crawler), then fallback to meta tags.
 
 #### Guangming Daily specifics
 - Uses the custom HTTP crawler bundled in `src/adapters/http_gmw.py` (legacy CLI preserved in `gmw_crawl/` for now) to walk listing and detail pages, so each run fetches full article bodies without a second repair step.
 - Publish time is parsed from article metadata or body; when available it is normalised to +08:00 and stored alongside the Unix timestamp.
 - Requests honour `GMW_BASE_URL` and `GMW_TIMEOUT`. Duplicate URLs within a run are de-duplicated before writing to the database.
 
-#### Qianlong (Ç§ÁúÍø) specifics
+#### Qianlong (åƒé¾™ç½‘) specifics
 - Uses the HTTP adapter in `src/adapters/http_qianlong.py`. Listing pages continue until the requested quota is met or three consecutive pages contain no new articles.
 - Publish times are parsed from the article body (`YYYY-MM-DD HH:MM`) and normalised to +08:00 for timestamp/ISO storage.
 - Environment variables:
-  - `QIANLONG_BASE_URL` ×Ô¶¨ÒåÈë¿ÚÆµµÀ (Ä¬ÈÏ `https://beijing.qianlong.com/`)
-  - `QIANLONG_TIMEOUT` ¿ØÖÆµ¥´ÎÇëÇó³¬Ê±Ê±¼ä (Ä¬ÈÏ 20 Ãë)
-  - `QIANLONG_DELAY` ÉèÖÃÎÄÕÂ×¥È¡¼ä¸ôÃëÊı (Ä¬ÈÏ 0)
-  - `QIANLONG_PAGES` / `QIANLONG_MAX_PAGES` ÏŞÖÆ·­Ò³Êı£»Î´ÉèÖÃÊ±°´ÌõÊı¼ÌĞø·­Ò³
+  - `QIANLONG_BASE_URL` è‡ªå®šä¹‰å…¥å£é¢‘é“ (é»˜è®¤ `https://beijing.qianlong.com/`)
+  - `QIANLONG_TIMEOUT` æ§åˆ¶å•æ¬¡è¯·æ±‚è¶…æ—¶æ—¶é—´ (é»˜è®¤ 20 ç§’)
+  - `QIANLONG_DELAY` è®¾ç½®æ–‡ç« æŠ“å–é—´éš”ç§’æ•° (é»˜è®¤ 0)
+  - `QIANLONG_PAGES` / `QIANLONG_MAX_PAGES` é™åˆ¶ç¿»é¡µæ•°ï¼›æœªè®¾ç½®æ—¶æŒ‰æ¡æ•°ç»§ç»­ç¿»é¡µ
   - `QIANLONG_EXISTING_CONSECUTIVE_STOP` early-stop once the crawler encounters N existing articles in a row (default 5; set 0 to disable)
 
 ### Summarise Worker
@@ -258,7 +261,7 @@ MIT License (see repository root for details).
 - Environment variables:
   - `JYB_SEARCH_API_URL` ?JSON search API endpoint (defaults to `http://new.jyb.cn/jybuc/hyBaseCol/search.action`).
   - `JYB_START_URL` ?Fallback HTML listing/search page (defaults to `http://www.jyb.cn/search.html`).
-  - `JYB_KEYWORDS` ?Optional keywords (comma-separated). Default: `½ÌÓı`.
+  - `JYB_KEYWORDS` ?Optional keywords (comma-separated). Default: `æ•™è‚²`.
   - `JYB_TIMEOUT` ?Request timeout in seconds (default `20`).
   - `JYB_EXISTING_CONSECUTIVE_STOP` ?Early-stop after N consecutive existing items across pages (default `5`; `0` disables).
   Configure the trigger to run daily at your preferred time, enable "Run with highest privileges", and disable battery-stop conditions when needed.
@@ -271,7 +274,7 @@ MIT License (see repository root for details).
 un_pipeline_every10.ps1" -Python "C:\Path\To\python.exe" -LogDirectory "D:\logs\edu-news-10min"
   ```
   The script maintains a lock under `locks\pipeline_every10.lock` to avoid overlapping runs; optional `-ContinueOnError` keeps later steps running after a failure.
-- Continue using daily scheduling (see above) for the full crawl¡úexport pipeline, and trigger `export` on demand when you need the latest brief.
+- Continue using daily scheduling (see above) for the full crawlâ†’export pipeline, and trigger `export` on demand when you need the latest brief.
 
 - For ad-hoc single steps, call the CLI directly (`python -m src.cli.main summarize --limit 50`).
 
@@ -295,4 +298,3 @@ un_pipeline_every10.ps1" -Python "C:\Path\To\python.exe" -LogDirectory "D:\logs\
 - Register daily cleanup (02:00):
   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/register-clean-logs-task.ps1 -Time 02:00 -TaskName EduNews_CleanLogs`
   - Verify: `schtasks /Query /TN EduNews_CleanLogs /V /FO LIST`
-

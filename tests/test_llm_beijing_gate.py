@@ -22,11 +22,11 @@ def _candidate(**overrides):
 
 
 def test_build_prompt_includes_core_fields():
-    candidate = _candidate(title="北京高校招生", source="北京日报")
+    candidate = _candidate(title="北京高校招生", summary="摘要信息")
     prompt = gate.build_prompt(candidate)
     assert "北京高校招生" in prompt
-    assert "北京日报" in prompt
-    assert "情感标签" in prompt
+    assert "摘要信息" in prompt
+    assert "情感标签：" not in prompt
 
 
 def test_parse_decision_with_valid_json():

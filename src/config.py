@@ -180,7 +180,7 @@ def get_settings() -> Settings:
     siliconflow_timeout_beijing_gate = (
         _optional_int(os.getenv("SILICONFLOW_TIMEOUT_BEIJING_GATE"))
         or _sf_global_timeout
-        or 30
+        or 60
     )
     external_filter_model_name = os.getenv("EXTERNAL_FILTER_MODEL_NAME", score_model_name)
     external_filter_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_THRESHOLD")) or 20

@@ -20,11 +20,13 @@ def _build_prompt(text: str) -> Dict[str, str]:
     if not base:
         raise ValueError("Sentiment classification requires non-empty text")
     instruction = (
-        "你是一名舆情分析员，需要判断以下教育相关新闻整体倾向，请只输出 JSON。\n"
+        "你是一名舆情分析员，需要判断以下教育相关新闻的整体倾向，请只输出 JSON。\n"
         "允许的标签：'positive' 或 'negative'。\n"
-        "判定规则：如果报道聚焦于负面事件、风险、事故、腐败或违规被查处、批评问责、群体质疑等舆情，哪怕文章强调整治或整改，也判为 'negative'；"
-        "仅在内容主要描述正面成绩、利好政策、褒奖时才判为 'positive'。\n"
-        "格式（仅一行）：{\\\"label\\\":\\\"positive or negative\\\",\\\"confidence\\\": 小数0到1}。\n"
+        "判定规则：\n"
+        "- 如果报道聚焦于负面事件、风险、事故、腐败或违规被查处、批评问责、群体质疑等舆情，判为 'negative'；\n"
+        "- 除上述情况外（包括正面或中性内容），一律判为 'positive'。\n"
+        "输出格式（仅一行）：\n"
+        "{\"label\":\"positive or negative\",\"confidence\": 小数0到1}\n"
         "不要输出中性标签或任何附加文字。"
     )
     return {

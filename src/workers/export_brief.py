@@ -36,9 +36,7 @@ def generate_output_path(base_path: Path, report_tag: str) -> Path:
 
 
 def _ensure_unique_output(path: Path) -> Path:
-    """Return a path with numeric suffixes when the target already exists."""
-    if not path.exists():
-        return path
+    """Return a path with numeric suffixes, starting from (1)."""
     parent = path.parent
     stem = path.stem
     suffix = path.suffix

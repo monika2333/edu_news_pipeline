@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
@@ -117,6 +117,9 @@ def run(
             title_line = (candidate.title or "").strip()
             summary_line = (candidate.summary or "").strip()
             display_source = (candidate.llm_source or candidate.source or "").strip()
+            sentiment_bucket = _normalized_sentiment(candidate)
+            is_positive = sentiment_bucket == "positive"
+            is_internal = candidate.is_beijing_related is True
 
             def _format_number(value: Optional[float]) -> Optional[str]:
                 if value is None:
@@ -129,52 +132,56 @@ def run(
                     return str(int(number))
                 return f"{number:.2f}".rstrip("0").rstrip(".")
 
-            # Only include location/source info in the suffix.
             suffix_parts: List[str] = []
             if display_source:
                 suffix_parts.append(display_source)
-            suffix = f"（{'、'.join(suffix_parts)}）" if suffix_parts else ""
+            suffix = f" ({' / '.join(suffix_parts)})" if suffix_parts else ""
 
             metrics_parts: List[str] = []
-            keyword_bonus_total = candidate.keyword_bonus_score
-            details = candidate.score_details if isinstance(candidate.score_details, dict) else {}
+            ext_score_value = candidate.external_importance_score
+            if is_positive and ext_score_value is not None:
+                ext_score_text = _format_number(ext_score_value) or str(ext_score_value)
+                metrics_parts.append(f"external_importance={ext_score_text}")
 
-            bonus_value: Optional[float] = None
-            if candidate.is_beijing_related is True and keyword_bonus_total is not None:
-                try:
-                    bonus_value = float(keyword_bonus_total)
-                except (TypeError, ValueError):
-                    bonus_value = None
-            if bonus_value is None and details:
-                bonus_from_details = details.get("keyword_bonus_score")
-                if bonus_from_details is not None:
+            if is_internal and is_positive:
+                keyword_bonus_total = candidate.keyword_bonus_score
+                details = candidate.score_details if isinstance(candidate.score_details, dict) else {}
+
+                bonus_value: Optional[float] = None
+                if keyword_bonus_total is not None:
                     try:
-                        bonus_value = float(bonus_from_details)
+                        bonus_value = float(keyword_bonus_total)
                     except (TypeError, ValueError):
                         bonus_value = None
+                if bonus_value is None and isinstance(details, dict):
+                    bonus_from_details = details.get("keyword_bonus_score")
+                    if bonus_from_details is not None:
+                        try:
+                            bonus_value = float(bonus_from_details)
+                        except (TypeError, ValueError):
+                            bonus_value = None
 
-            matched_labels: List[str] = []
-            if details:
-                matched = details.get("matched_rules")
-                if isinstance(matched, list):
-                    for rule in matched:
-                        if isinstance(rule, dict):
-                            label = rule.get("label") or rule.get("rule_id")
-                            if label:
-                                matched_labels.append(str(label))
+                matched_labels: List[str] = []
+                if isinstance(details, dict):
+                    matched = details.get("matched_rules")
+                    if isinstance(matched, list):
+                        for rule in matched:
+                            if isinstance(rule, dict):
+                                label = rule.get("label") or rule.get("rule_id")
+                                if label:
+                                    matched_labels.append(str(label))
 
-            if bonus_value is not None and bonus_value != 0:
-                keyword_bonus_text = _format_number(bonus_value) or str(bonus_value)
-                if matched_labels:
-                    keyword_bonus_text = f"{keyword_bonus_text}（{'、'.join(matched_labels)}）"
-                metrics_parts.append(f"keyword_bonuses={keyword_bonus_text}")
+                if bonus_value is not None:
+                    keyword_bonus_text = _format_number(bonus_value) or str(bonus_value)
+                    if matched_labels:
+                        keyword_bonus_text = f"{keyword_bonus_text} ({', '.join(matched_labels)})"
+                    metrics_parts.append(f"keyword_bonuses={keyword_bonus_text}")
 
             metrics_suffix = f" ({'; '.join(metrics_parts)})" if metrics_parts else ""
 
             return "\n".join(
                 filter(None, [title_line, summary_line + suffix + metrics_suffix])
             )
-
         bucket_index: Dict[Tuple[str, str], List[ExportCandidate]] = {
             ("internal", "positive"): [],
             ("internal", "negative"): [],
@@ -191,10 +198,10 @@ def run(
         export_payload: List[Tuple[ExportCandidate, str]] = []
 
         bucket_definitions: List[Tuple[str, Tuple[str, str], str]] = [
-            ("京内正面", ("internal", "positive"), "jingnei_positive"),
-            ("京内负面", ("internal", "negative"), "jingnei_negative"),
-            ("京外正面", ("external", "positive"), "jingwai_positive"),
-            ("京外负面", ("external", "negative"), "jingwai_negative"),
+            ("浜唴姝ｉ潰", ("internal", "positive"), "jingnei_positive"),
+            ("浜唴璐熼潰", ("internal", "negative"), "jingnei_negative"),
+            ("浜姝ｉ潰", ("external", "positive"), "jingwai_positive"),
+            ("浜璐熼潰", ("external", "negative"), "jingwai_negative"),
         ]
 
         category_counts: Dict[str, int] = {}
@@ -215,7 +222,7 @@ def run(
             else:
                 items.sort(key=lambda item: item.score if item.score is not None else 0.0, reverse=True)
             category_counts[label] = len(items)
-            header_line = f"【{label}】共 {len(items)} 条"
+            header_line = f"銆恵label}銆戝叡 {len(items)} 鏉?
             entry_lines = [_format_entry(item) for item in items]
             export_payload.extend((item, section_key) for item in items)
             block_text = header_line
@@ -268,3 +275,4 @@ def run(
 
 
 __all__ = ["run"]
+

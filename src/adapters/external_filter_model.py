@@ -65,6 +65,7 @@ def build_prompt(candidate: ExternalFilterCandidate, *, category: str = "externa
 def call_external_filter_model(
     candidate: ExternalFilterCandidate,
     *,
+    category: str = "external",
     retries: int = 3,
     timeout: Optional[int] = None,
 ) -> str:
@@ -75,7 +76,7 @@ def call_external_filter_model(
     url = f"{settings.siliconflow_base_url.rstrip('/')}/chat/completions"
     payload = {
         "model": settings.external_filter_model_name,
-        "messages": [{"role": "user", "content": build_prompt(candidate)}],
+        "messages": [{"role": "user", "content": build_prompt(candidate, category=category)}],
         "temperature": 0.0,
     }
     if settings.siliconflow_enable_thinking:

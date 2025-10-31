@@ -66,7 +66,7 @@
 - [x] 1.1 调整 `PostgresAdapter.complete_beijing_gate`，正向北京稿件改入 `pending_external_filter` 并重置相关字段
 - [x] 1.2 确认 `BeijingGateCandidate` 暴露情感标签并在网关逻辑中判定正向
 - [x] 2.1 在 `ExternalFilterCandidate` 添加 `candidate_category` 辅助属性
-- [ ] 2.2 更新 `_score_candidate` 及调用链，按 `category` 选择提示词与阈值
+- [x] 2.2 更新 `_score_candidate` 及调用链，按 `category` 选择提示词与阈值
 - [ ] 2.3 调整模型调用与日志，带上 `category` 上下文
 - [ ] 2.4 在 `adapter.complete_external_filter` 的原始 payload 中记录 `category`
 - [ ] 3.1 扩展 `Settings` 增加内部阈值和提示词路径配置，并读取环境变量

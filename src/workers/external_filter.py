@@ -25,9 +25,15 @@ def _score_candidate(
     candidate: ExternalFilterCandidate,
     *,
     retries: int,
-    threshold: int,
+    thresholds: Mapping[str, int],
 ) -> Tuple[int, str, bool]:
-    raw_output = call_external_filter_model(candidate, retries=retries)
+    category = candidate.candidate_category
+    threshold = thresholds.get(category, thresholds.get("external", 0))
+    raw_output = call_external_filter_model(
+        candidate,
+        category=category,
+        retries=retries,
+    )
     score_value = parse_external_filter_score(raw_output)
     if score_value is None:
         raise RuntimeError("Model did not return a numeric score")
@@ -142,7 +148,11 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
     total_processed = 0
     total_failed = 0
     max_retries = settings.external_filter_max_retries
-    threshold = settings.external_filter_threshold
+    default_threshold = settings.external_filter_threshold
+    thresholds: Mapping[str, int] = {
+        "external": default_threshold,
+        "internal": default_threshold,
+    }
     workers = concurrency or settings.default_concurrency or 5
     workers = max(1, workers)
     beijing_gate_max_failures = max(1, settings.beijing_gate_max_retries or 1)
@@ -190,7 +200,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                         _score_candidate,
                         candidate,
                         retries=max_retries,
-                        threshold=threshold,
+                        thresholds=thresholds,
                     ): candidate
                     for candidate in candidates
                 }

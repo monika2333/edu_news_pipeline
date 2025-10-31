@@ -136,15 +136,6 @@ def run(
             suffix = f"（{'、'.join(suffix_parts)}）" if suffix_parts else ""
 
             metrics_parts: List[str] = []
-            score_text = _format_number(candidate.score) if candidate.is_beijing_related is True else None
-            if score_text is not None:
-                metrics_parts.append(f"score={score_text}")
-
-            ext_score_value = candidate.external_importance_score
-            if ext_score_value is not None:
-                ext_score_text = _format_number(ext_score_value) or str(ext_score_value)
-                metrics_parts.append(f"external_importance={ext_score_text}")
-
             keyword_bonus_total = candidate.keyword_bonus_score
             details = candidate.score_details if isinstance(candidate.score_details, dict) else {}
 

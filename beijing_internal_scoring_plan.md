@@ -13,6 +13,10 @@
 
 ## Implementation Steps
 
+### 0. Prompt asset
+1. Create `docs/internal_importance_prompt.md` containing the dedicated prompt (wrap final text in `<prompt>...</prompt>` like the existing external file for reuse in tooling).
+2. Add loader support so the external filter model can pick the internal prompt when evaluating Beijing positives.
+
 ### 1. Data flow adjustments
 1. Update `PostgresAdapter.complete_beijing_gate`:
    - When `is_beijing_related=True` and underlying sentiment is positive (from candidate), set
@@ -26,7 +30,7 @@
 ### 2. External filter worker enhancements
 1. In `ExternalFilterCandidate`, confirm fields `sentiment_label` and `is_beijing_related` are available (already present); add helper `candidate_category = 'internal' if candidate.is_beijing_related else 'external'`.
 2. Adjust `_score_candidate` (or a wrapper) to accept `category` so we can:
-   - Choose prompt (default reuse existing; optionally load `docs/internal_importance_prompt.md` if provided).
+   - Load the internal prompt from `docs/internal_importance_prompt.md` when category is `internal` (fallback to external prompt otherwise).
    - Apply category-specific thresholds (`internal_threshold`, `external_threshold`).
 3. Modify `call_external_filter_model` invocation to pass category context:
    - Update prompt builder to take category and optionally add section name or guidelines.
@@ -36,24 +40,24 @@
 ### 3. Configuration updates
 1. Extend `Settings`:
    - Add `internal_filter_threshold` (env: `INTERNAL_FILTER_THRESHOLD`, fallback to existing `external_filter_threshold`).
-   - Optional: allow overriding prompt path (e.g., `INTERNAL_FILTER_PROMPT_PATH`) for future use.
+   - Add `internal_filter_prompt_path` to override the default `docs/internal_importance_prompt.md` when needed.
 2. Wire new settings into worker functions so thresholds and prompt selection honour environment overrides.
 3. Document new environment variables in README and `.env.example` (if present).
 
 ### 4. Testing and validation
 1. Unit tests:
    - `tests/test_llm_beijing_gate.py`: ensure a positive Beijing article now sets status to `pending_external_filter`.
-   - `tests/test_external_filter_worker.py` (create if absent): mock adapter/model to verify category-specific thresholds and raw payload content.
+   - `tests/test_external_filter_worker.py` (create if absent): mock adapter/model to verify category-specific thresholds, prompt selection, and raw payload content.
 2. Integration smoke (manual): run `python -m src.workers.external_filter --limit 1` with fixture data to ensure the flow works.
 3. Verify export ordering still sorts Beijing positives by `external_importance_score` once populated.
 
 ### 5. Documentation and rollout
-1. Update README "External Filter" section to mention it covers both Jingnei and Jingwai positives after the change.
+1. Update README "External Filter" section to mention it covers both Jingnei and Jingwai positives after the change and note the new internal prompt file.
 2. Add release notes or migration tips: rerun the external filter worker to backfill existing Beijing positives if needed (provide script or instructions).
 3. Communicate configuration changes to the team.
 
 ## Open Questions
-- Do we need a distinct prompt for internal positives? (If yes, specify path and content.)
+- Do we need further tuning of the internal prompt content (e.g., domain experts to review)?
 - Should neutral Beijing articles also receive a score? Currently they stay `ready_for_export`; confirm desired behaviour.
 - Are there reporting dashboards that need new metrics?
 

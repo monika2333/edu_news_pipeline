@@ -34,6 +34,10 @@ class ExternalFilterCandidate:
     external_importance_status: str
     external_filter_fail_count: int = 0
 
+    @property
+    def candidate_category(self) -> str:
+        return "internal" if self.is_beijing_related else "external"
+
 
 @dataclass(slots=True)
 class ExternalFilterResult:

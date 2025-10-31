@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
@@ -198,10 +198,10 @@ def run(
         export_payload: List[Tuple[ExportCandidate, str]] = []
 
         bucket_definitions: List[Tuple[str, Tuple[str, str], str]] = [
-            ("浜唴姝ｉ潰", ("internal", "positive"), "jingnei_positive"),
-            ("浜唴璐熼潰", ("internal", "negative"), "jingnei_negative"),
-            ("浜姝ｉ潰", ("external", "positive"), "jingwai_positive"),
-            ("浜璐熼潰", ("external", "negative"), "jingwai_negative"),
+            ("京内正面", ("internal", "positive"), "jingnei_positive"),
+            ("京内负面", ("internal", "negative"), "jingnei_negative"),
+            ("京外正面", ("external", "positive"), "jingwai_positive"),
+            ("京外负面", ("external", "negative"), "jingwai_negative"),
         ]
 
         category_counts: Dict[str, int] = {}
@@ -222,7 +222,7 @@ def run(
             else:
                 items.sort(key=lambda item: item.score if item.score is not None else 0.0, reverse=True)
             category_counts[label] = len(items)
-            header_line = f"銆恵label}銆戝叡 {len(items)} 鏉?
+            header_line = f"【{label}】共 {len(items)} 条"
             entry_lines = [_format_entry(item) for item in items]
             export_payload.extend((item, section_key) for item in items)
             block_text = header_line

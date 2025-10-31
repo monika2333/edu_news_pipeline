@@ -73,7 +73,7 @@
 - [x] 3.2 将新配置接入 worker 使用流程
 - [x] 3.3 在 README 与 `.env.local` 记录新环境变量
 - [x] 4.1 补充/更新单元测试覆盖北京网关与外部过滤 worker 的分类分支
-- [ ] 4.2 手动运行 `python -m src.workers.external_filter --limit 1` 做冒烟验证
+- [x] 4.2 手动运行 `python -m src.workers.external_filter --limit 1` 做冒烟验证
 - [ ] 4.3 确认导出排序依旧按 `external_importance_score` 工作
 - [ ] 5.1 更新 README 外部过滤章节说明并引用内部提示词
 - [ ] 5.2 撰写发布/迁移说明，指导如何回填既有北京正向稿件

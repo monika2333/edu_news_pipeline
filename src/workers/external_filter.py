@@ -78,6 +78,8 @@ def _process_beijing_gate(
                     raw_output=raw_payload,
                     external_importance_status="ready_for_export",
                     reset_external_filter=False,
+                    sentiment_label=candidate.sentiment_label,
+                    candidate_category="internal",
                 )
                 confirmed += 1
                 log_info(WORKER, f"Gate OK {candidate.article_id}: confirmed Beijing")
@@ -90,6 +92,8 @@ def _process_beijing_gate(
                     raw_output=raw_payload,
                     external_importance_status="pending_external_filter",
                     reset_external_filter=True,
+                    sentiment_label=candidate.sentiment_label,
+                    candidate_category="external",
                 )
                 rerouted += 1
                 log_info(WORKER, f"Gate REROUTE {candidate.article_id}: sent to external filter")
@@ -112,6 +116,8 @@ def _process_beijing_gate(
                     raw_output=fallback_payload,
                     external_importance_status="ready_for_export",
                     reset_external_filter=False,
+                    sentiment_label=candidate.sentiment_label,
+                    candidate_category="internal",
                 )
                 log_error(WORKER, candidate.article_id, exc)
                 log_info(

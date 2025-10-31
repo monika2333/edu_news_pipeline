@@ -64,7 +64,7 @@
 - [x] 0.1 创建 `docs/internal_importance_prompt.md`，按 `<prompt>...</prompt>` 包裹内容，准备内部提示词
 - [x] 0.2 更新加载逻辑，确保北京正向稿件使用新内部提示词
 - [x] 1.1 调整 `PostgresAdapter.complete_beijing_gate`，正向北京稿件改入 `pending_external_filter` 并重置相关字段
-- [ ] 1.2 确认 `BeijingGateCandidate` 暴露情感标签并在网关逻辑中判定正向
+- [x] 1.2 确认 `BeijingGateCandidate` 暴露情感标签并在网关逻辑中判定正向
 - [ ] 2.1 在 `ExternalFilterCandidate` 添加 `candidate_category` 辅助属性
 - [ ] 2.2 更新 `_score_candidate` 及调用链，按 `category` 选择提示词与阈值
 - [ ] 2.3 调整模型调用与日志，带上 `category` 上下文

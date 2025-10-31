@@ -185,9 +185,11 @@ def get_settings() -> Settings:
         or 60
     )
     external_filter_model_name = os.getenv("EXTERNAL_FILTER_MODEL_NAME", score_model_name)
-    external_filter_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_THRESHOLD")) or 20
+    raw_external_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_THRESHOLD"))
+    external_filter_threshold = raw_external_threshold if raw_external_threshold is not None else 20
+    raw_internal_threshold = _optional_int(os.getenv("INTERNAL_FILTER_THRESHOLD"))
     internal_filter_threshold = (
-        _optional_int(os.getenv("INTERNAL_FILTER_THRESHOLD")) or external_filter_threshold
+        raw_internal_threshold if raw_internal_threshold is not None else external_filter_threshold
     )
     external_filter_batch_size = _optional_int(os.getenv("EXTERNAL_FILTER_BATCH_SIZE")) or 50
     external_filter_max_retries = _optional_int(os.getenv("EXTERNAL_FILTER_MAX_RETRIES")) or 3

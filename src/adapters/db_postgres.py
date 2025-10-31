@@ -922,7 +922,8 @@ class PostgresAdapter:
                 is_beijing_related,
                 is_beijing_related_llm,
                 external_importance_status,
-                external_filter_fail_count
+                external_filter_fail_count,
+                score_details
             FROM news_summaries
             WHERE {where_sql}
             ORDER BY external_filter_attempted_at ASC NULLS FIRST,
@@ -939,6 +940,19 @@ class PostgresAdapter:
             article_id = row.get("article_id")
             if not article_id:
                 continue
+            score_details = row.get("score_details") or {}
+            if isinstance(score_details, list):
+                score_details = {}
+            matched_rules = score_details.get("matched_rules") if isinstance(score_details, dict) else None
+            keyword_matches = []
+            if isinstance(matched_rules, list):
+                for rule in matched_rules:
+                    if not isinstance(rule, dict):
+                        continue
+                    label = rule.get("label") or rule.get("rule_id")
+                    if label:
+                        keyword_matches.append(str(label))
+
             results.append(
                 ExternalFilterCandidate(
                     article_id=str(article_id),
@@ -952,6 +966,7 @@ class PostgresAdapter:
                     is_beijing_related_llm=row.get("is_beijing_related_llm"),
                     external_importance_status=row.get("external_importance_status") or "pending_external_filter",
                     external_filter_fail_count=int(row.get("external_filter_fail_count") or 0),
+                    keyword_matches=tuple(keyword_matches),
                 )
             )
         return results

@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from src.adapters import external_filter_model
 from src.domain.external_filter import BeijingGateCandidate, ExternalFilterCandidate
 from src.workers import external_filter
 
@@ -20,6 +21,7 @@ def _external_candidate(**overrides) -> ExternalFilterCandidate:
         is_beijing_related_llm=None,
         external_importance_status="pending_external_filter",
         external_filter_fail_count=0,
+        keyword_matches=(),
     )
     base.update(overrides)
     return ExternalFilterCandidate(**base)
@@ -158,3 +160,13 @@ def test_process_beijing_gate_reroutes_external_category():
     assert kwargs["candidate_category"] == "external"
     assert kwargs["status"] == "pending_external_filter"
     assert kwargs["reset_external_filter"] is True
+
+
+def test_internal_prompt_includes_bonus_keywords():
+    candidate = _external_candidate(keyword_matches=("北京教育改革", "首都治理"))
+    with patch(
+        "src.adapters.external_filter_model._load_prompt_template", return_value="PROMPT"
+    ):
+        prompt = external_filter_model.build_prompt(candidate, category="internal")
+    assert "Bonus Keywords: 北京教育改革、首都治理" in prompt
+    assert "PROMPT" in prompt

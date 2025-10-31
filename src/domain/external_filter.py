@@ -33,6 +33,7 @@ class ExternalFilterCandidate:
     is_beijing_related_llm: Optional[bool]
     external_importance_status: str
     external_filter_fail_count: int = 0
+    keyword_matches: tuple[str, ...] = ()
 
     @property
     def candidate_category(self) -> str:

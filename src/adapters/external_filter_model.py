@@ -55,8 +55,13 @@ def build_prompt(candidate: ExternalFilterCandidate, *, category: str = "externa
     source = candidate.source or "（未知来源）"
     summary = (candidate.summary or "").strip() or "（无摘要）"
     content = _truncate(candidate.content or "")
+    keyword_section = ""
+    if category == "internal" and candidate.keyword_matches:
+        keyword_text = "、".join(candidate.keyword_matches)
+        keyword_section = f"Bonus Keywords: {keyword_text}\n\n"
     return (
         f"{template}\n\n"
+        f"{keyword_section}"
         "【新闻内容】\n"
         f"标题：{title}\n"
         f"来源：{source}\n"

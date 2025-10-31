@@ -69,6 +69,7 @@
 - [x] 2.2 更新 `_score_candidate` 及调用链，按 `category` 选择提示词与阈值
 - [x] 2.3 调整模型调用与日志，带上 `category` 上下文
 - [x] 2.4 在 `adapter.complete_external_filter` 的原始 payload 中记录 `category`
+- [x] 2.5 为京内评分提示增加关键词命中信息
 - [x] 3.1 扩展 `Settings` 增加内部阈值和提示词路径配置，并读取环境变量
 - [x] 3.2 将新配置接入 worker 使用流程
 - [x] 3.3 在 README 与 `.env.local` 记录新环境变量

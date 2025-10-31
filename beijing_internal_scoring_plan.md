@@ -69,7 +69,7 @@
 - [x] 2.2 更新 `_score_candidate` 及调用链，按 `category` 选择提示词与阈值
 - [x] 2.3 调整模型调用与日志，带上 `category` 上下文
 - [x] 2.4 在 `adapter.complete_external_filter` 的原始 payload 中记录 `category`
-- [ ] 3.1 扩展 `Settings` 增加内部阈值和提示词路径配置，并读取环境变量
+- [x] 3.1 扩展 `Settings` 增加内部阈值和提示词路径配置，并读取环境变量
 - [ ] 3.2 将新配置接入 worker 使用流程
 - [ ] 3.3 在 README 与 `.env.example` 记录新环境变量
 - [ ] 4.1 补充/更新单元测试覆盖北京网关与外部过滤 worker 的分类分支

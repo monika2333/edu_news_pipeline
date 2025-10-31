@@ -966,13 +966,27 @@ class PostgresAdapter:
         raw_output: Optional[Mapping[str, Any]],
         external_importance_status: Optional[str] = None,
         reset_external_filter: bool = False,
+        sentiment_label: Optional[str] = None,
+        candidate_category: Optional[str] = None,
     ) -> None:
         if not article_id:
             raise ValueError("complete_beijing_gate requires article_id")
         timestamp = datetime.now(timezone.utc)
+        positive_sentiment = (sentiment_label or "").strip().lower() == "positive"
+        category = (candidate_category or "").strip().lower() or (
+            "internal" if is_beijing_related else "external"
+        )
+        route_to_external_filter = bool(is_beijing_related) and positive_sentiment
+        target_status = "pending_external_filter" if route_to_external_filter else status
+        target_external_status = (
+            "pending_external_filter"
+            if route_to_external_filter
+            else external_importance_status
+            or status
+        )
         payload: Dict[str, Any] = {
-            "status": status,
-            "external_importance_status": external_importance_status or status,
+            "status": target_status,
+            "external_importance_status": target_external_status,
             "is_beijing_related": is_beijing_related,
             "is_beijing_related_llm": is_beijing_related_llm,
             "beijing_gate_checked_at": timestamp,
@@ -986,7 +1000,15 @@ class PostgresAdapter:
             payload["beijing_gate_raw"] = Json(raw_output)
         else:
             payload["beijing_gate_raw"] = None
-        if reset_external_filter:
+        if route_to_external_filter:
+            payload["external_importance_raw"] = Json({"category": category or "internal"})
+            payload.update(
+                {
+                    "external_filter_fail_count": 0,
+                    "external_filter_attempted_at": None,
+                }
+            )
+        elif reset_external_filter:
             payload.update(
                 {
                     "external_filter_fail_count": 0,

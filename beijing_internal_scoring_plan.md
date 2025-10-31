@@ -60,3 +60,21 @@
 - Do we need further tuning of the internal prompt content (e.g., domain experts to review)?
 - [On hold] Dashboard updates: no immediate action required unless downstream stakeholders request changes.
 
+## Checklist
+- [x] 0.1 创建 `docs/internal_importance_prompt.md`，按 `<prompt>...</prompt>` 包裹内容，准备内部提示词
+- [ ] 0.2 更新加载逻辑，确保北京正向稿件使用新内部提示词
+- [ ] 1.1 调整 `PostgresAdapter.complete_beijing_gate`，正向北京稿件改入 `pending_external_filter` 并重置相关字段
+- [ ] 1.2 确认 `BeijingGateCandidate` 暴露情感标签并在网关逻辑中判定正向
+- [ ] 2.1 在 `ExternalFilterCandidate` 添加 `candidate_category` 辅助属性
+- [ ] 2.2 更新 `_score_candidate` 及调用链，按 `category` 选择提示词与阈值
+- [ ] 2.3 调整模型调用与日志，带上 `category` 上下文
+- [ ] 2.4 在 `adapter.complete_external_filter` 的原始 payload 中记录 `category`
+- [ ] 3.1 扩展 `Settings` 增加内部阈值和提示词路径配置，并读取环境变量
+- [ ] 3.2 将新配置接入 worker 使用流程
+- [ ] 3.3 在 README 与 `.env.example` 记录新环境变量
+- [ ] 4.1 补充/更新单元测试覆盖北京网关与外部过滤 worker 的分类分支
+- [ ] 4.2 手动运行 `python -m src.workers.external_filter --limit 1` 做冒烟验证
+- [ ] 4.3 确认导出排序依旧按 `external_importance_score` 工作
+- [ ] 5.1 更新 README 外部过滤章节说明并引用内部提示词
+- [ ] 5.2 撰写发布/迁移说明，指导如何回填既有北京正向稿件
+- [ ] 5.3 通知团队新的配置和流程调整

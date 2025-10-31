@@ -26,7 +26,7 @@ def _score_candidate(
     *,
     retries: int,
     thresholds: Mapping[str, int],
-) -> Tuple[int, str, bool]:
+) -> Tuple[int, str, bool, str]:
     category = candidate.candidate_category
     threshold = thresholds.get(category, thresholds.get("external", 0))
     raw_output = call_external_filter_model(
@@ -38,7 +38,7 @@ def _score_candidate(
     if score_value is None:
         raise RuntimeError("Model did not return a numeric score")
     passed = _should_pass(score_value, threshold)
-    return score_value, raw_output, passed
+    return score_value, raw_output, passed, category
 
 
 def _beijing_gate_raw_payload(result: Mapping[str, Any], raw_text: str) -> dict[str, Any]:
@@ -213,7 +213,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                         future.cancel()
                         continue
                     try:
-                        score_value, raw_output, passed = future.result()
+                        score_value, raw_output, passed, category = future.result()
                         adapter.complete_external_filter(
                             candidate.article_id,
                             passed=passed,
@@ -223,7 +223,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                         state = "ready_for_export" if passed else "external_filtered"
                         log_info(
                             WORKER,
-                            f"OK {candidate.article_id}: score={score_value} -> {state}",
+                            f"{category.upper()} OK {candidate.article_id}: score={score_value} -> {state}",
                         )
                         processed += 1
                     except Exception as exc:
@@ -236,7 +236,11 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                             final_failure=final_failure,
                             error=str(exc),
                         )
-                        log_error(WORKER, candidate.article_id, exc)
+                        log_error(
+                            WORKER,
+                            f"{candidate.candidate_category.upper()} {candidate.article_id}",
+                            exc,
+                        )
 
                 total_processed += processed
                 total_failed += failed

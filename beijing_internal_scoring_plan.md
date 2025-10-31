@@ -23,9 +23,9 @@
      - `status = 'pending_external_filter'`
      - `external_importance_status = 'pending_external_filter'`
    - Ensure `external_filter_fail_count = 0` and `external_filter_attempted_at = NULL` so the worker retries fresh.
-   - Preserve existing behaviour for negative/neutral or rerouted cases.
+   - Preserve existing behaviour for negative cases or rerouted candidates.
    - Include a category marker in `external_importance_raw` (e.g., `{"category": "internal"}`) if prior data exists.
-2. Ensure `BeijingGateCandidate` conveys the sentiment label (already present) so the gate logic can check positivity before routing.
+2. Ensure `BeijingGateCandidate` conveys the sentiment label (already present) so the gate logic can confirm positivity before routing.
 
 ### 2. External filter worker enhancements
 1. In `ExternalFilterCandidate`, confirm fields `sentiment_label` and `is_beijing_related` are available (already present); add helper `candidate_category = 'internal' if candidate.is_beijing_related else 'external'`.
@@ -58,6 +58,5 @@
 
 ## Open Questions
 - Do we need further tuning of the internal prompt content (e.g., domain experts to review)?
-- Should neutral Beijing articles also receive a score? Currently they stay `ready_for_export`; confirm desired behaviour.
-- Are there reporting dashboards that need new metrics?
+- [On hold] Dashboard updates: no immediate action required unless downstream stakeholders request changes.
 

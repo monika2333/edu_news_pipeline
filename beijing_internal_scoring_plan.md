@@ -71,7 +71,7 @@
 - [x] 2.4 在 `adapter.complete_external_filter` 的原始 payload 中记录 `category`
 - [x] 3.1 扩展 `Settings` 增加内部阈值和提示词路径配置，并读取环境变量
 - [x] 3.2 将新配置接入 worker 使用流程
-- [ ] 3.3 在 README 与 `.env.example` 记录新环境变量
+- [x] 3.3 在 README 与 `.env.local` 记录新环境变量
 - [ ] 4.1 补充/更新单元测试覆盖北京网关与外部过滤 worker 的分类分支
 - [ ] 4.2 手动运行 `python -m src.workers.external_filter --limit 1` 做冒烟验证
 - [ ] 4.3 确认导出排序依旧按 `external_importance_score` 工作

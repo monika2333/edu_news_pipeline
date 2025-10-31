@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 import requests
 
@@ -11,25 +11,32 @@ from src.adapters.llm_scoring import parse_score
 from src.config import get_settings
 from src.domain import ExternalFilterCandidate
 
-_PROMPT_CACHE: Optional[str] = None
-_PROMPT_PATH = Path(__file__).resolve().parents[2] / "docs" / "external_filter_prompt.md"
+_PROMPT_CACHE: Dict[str, str] = {}
+_PROMPT_PATHS = {
+    "external": Path(__file__).resolve().parents[2] / "docs" / "external_filter_prompt.md",
+    "internal": Path(__file__).resolve().parents[2] / "docs" / "internal_importance_prompt.md",
+}
 _PROMPT_TAG_PATTERN = re.compile(r"<prompt>(.*?)</prompt>", re.DOTALL)
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
-def _load_prompt_template() -> str:
-    global _PROMPT_CACHE
-    if _PROMPT_CACHE is not None:
-        return _PROMPT_CACHE
-    if not _PROMPT_PATH.exists():
-        _PROMPT_CACHE = ""
-        return _PROMPT_CACHE
-    content = _PROMPT_PATH.read_text(encoding="utf-8")
+def _get_prompt_path(category: str) -> Path:
+    return _PROMPT_PATHS.get(category, _PROMPT_PATHS["external"])
+
+
+def _load_prompt_template(category: str = "external") -> str:
+    if category in _PROMPT_CACHE:
+        return _PROMPT_CACHE[category]
+    prompt_path = _get_prompt_path(category)
+    if not prompt_path.exists():
+        _PROMPT_CACHE[category] = ""
+        return _PROMPT_CACHE[category]
+    content = prompt_path.read_text(encoding="utf-8")
     match = _PROMPT_TAG_PATTERN.search(content)
     template = match.group(1).strip() if match else content.strip()
-    _PROMPT_CACHE = template
-    return _PROMPT_CACHE
+    _PROMPT_CACHE[category] = template
+    return template
 
 
 def _truncate(text: str, limit: int = 1500) -> str:
@@ -39,8 +46,8 @@ def _truncate(text: str, limit: int = 1500) -> str:
     return text[:limit] + "……（内容截断）"
 
 
-def build_prompt(candidate: ExternalFilterCandidate) -> str:
-    template = _load_prompt_template()
+def build_prompt(candidate: ExternalFilterCandidate, *, category: str = "external") -> str:
+    template = _load_prompt_template(category)
     title = candidate.title or "（无标题）"
     source = candidate.source or "（未知来源）"
     summary = (candidate.summary or "").strip() or "（无摘要）"

@@ -12,7 +12,7 @@ from src.config import get_settings
 from src.domain import ExternalFilterCandidate
 
 _PROMPT_CACHE: Dict[str, str] = {}
-_PROMPT_PATHS = {
+_DEFAULT_PROMPT_PATHS = {
     "external": Path(__file__).resolve().parents[2] / "docs" / "external_filter_prompt.md",
     "internal": Path(__file__).resolve().parents[2] / "docs" / "internal_importance_prompt.md",
 }
@@ -22,7 +22,10 @@ _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
 def _get_prompt_path(category: str) -> Path:
-    return _PROMPT_PATHS.get(category, _PROMPT_PATHS["external"])
+    settings = get_settings()
+    if category == "internal":
+        return settings.internal_filter_prompt_path
+    return _DEFAULT_PROMPT_PATHS.get(category, _DEFAULT_PROMPT_PATHS["external"])
 
 
 def _load_prompt_template(category: str = "external") -> str:

@@ -151,7 +151,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
     default_threshold = settings.external_filter_threshold
     thresholds: Mapping[str, int] = {
         "external": default_threshold,
-        "internal": default_threshold,
+        "internal": settings.internal_filter_threshold,
     }
     workers = concurrency or settings.default_concurrency or 5
     workers = max(1, workers)

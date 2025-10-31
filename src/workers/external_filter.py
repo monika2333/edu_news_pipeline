@@ -219,6 +219,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                             passed=passed,
                             score=score_value,
                             raw_output=raw_output,
+                            category=category,
                         )
                         state = "ready_for_export" if passed else "external_filtered"
                         log_info(

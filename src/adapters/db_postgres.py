@@ -1069,6 +1069,7 @@ class PostgresAdapter:
         passed: bool,
         score: int,
         raw_output: str,
+        category: Optional[str] = None,
     ) -> None:
         if not article_id:
             raise ValueError("complete_external_filter requires article_id")
@@ -1083,6 +1084,7 @@ class PostgresAdapter:
                 {
                     "model_output": raw_output,
                     "decided_at": timestamp.isoformat(),
+                    "category": (category or "").strip().lower() or None,
                 }
             ),
             "external_filter_attempted_at": timestamp,

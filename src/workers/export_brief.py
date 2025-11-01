@@ -135,7 +135,8 @@ def run(
             suffix_parts: List[str] = []
             if display_source:
                 suffix_parts.append(display_source)
-            suffix = f" ({' / '.join(suffix_parts)})" if suffix_parts else ""
+            # Use full-width Chinese parentheses for source suffix
+            suffix = f"（{' / '.join(suffix_parts)}）" if suffix_parts else ""
 
             metrics_parts: List[str] = []
             ext_score_value = candidate.external_importance_score
@@ -174,10 +175,12 @@ def run(
                 if bonus_value is not None:
                     keyword_bonus_text = _format_number(bonus_value) or str(bonus_value)
                     if matched_labels:
-                        keyword_bonus_text = f"{keyword_bonus_text} ({', '.join(matched_labels)})"
+                        # Use full-width Chinese parentheses around matched labels
+                        keyword_bonus_text = f"{keyword_bonus_text}（{', '.join(matched_labels)}）"
                     metrics_parts.append(f"keyword_bonuses={keyword_bonus_text}")
 
-            metrics_suffix = f" ({'; '.join(metrics_parts)})" if metrics_parts else ""
+            # Use full-width Chinese parentheses for metrics suffix
+            metrics_suffix = f"（{'; '.join(metrics_parts)}）" if metrics_parts else ""
 
             return "\n".join(
                 filter(None, [title_line, summary_line + suffix + metrics_suffix])
@@ -275,4 +278,3 @@ def run(
 
 
 __all__ = ["run"]
-

@@ -214,7 +214,11 @@ def run(
             if not items:
                 category_counts[label] = 0
                 continue
-            if key[0] == "external":
+            # Sorting rules:
+            # - External buckets: by external_importance_score desc, then score desc
+            # - Internal positive (京内正面): align with external — prefer external_importance_score desc
+            # - Other internal buckets: by score desc
+            if key[0] == "external" or (key[0] == "internal" and key[1] == "positive"):
                 items.sort(
                     key=lambda item: (
                         item.external_importance_score if item.external_importance_score is not None else -1,

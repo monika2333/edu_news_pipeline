@@ -59,9 +59,9 @@ def _parse_response(raw_text: str) -> Tuple[str, float]:
 
 def classify_sentiment(content: str, *, retries: int = 4, timeout: int = 45) -> Dict[str, object]:
     settings = get_settings()
-    api_key = settings.siliconflow_api_key
+    api_key = settings.llm_api_key
     if not api_key:
-        raise RuntimeError("Missing SILICONFLOW_API_KEY environment variable")
+        raise RuntimeError("Missing LLM API key (set OPENROUTER_API_KEY or LLM_API_KEY)")
 
     message = _build_prompt(content)
     payload = {
@@ -69,8 +69,15 @@ def classify_sentiment(content: str, *, retries: int = 4, timeout: int = 45) -> 
         "messages": [message],
         "temperature": 0.0,
     }
-    url = f"{settings.siliconflow_base_url.rstrip('/')}/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    url = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    if settings.llm_http_referer:
+        headers["HTTP-Referer"] = settings.llm_http_referer
+    if settings.llm_title:
+        headers["X-Title"] = settings.llm_title
 
     backoff = 1.0
     last_error: Optional[Exception] = None

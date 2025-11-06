@@ -99,9 +99,11 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `SCORE_KEYWORD_BONUSES` | Optional JSON map overriding keyword bonus rules for scoring. |
 | `SCORE_KEYWORD_BONUSES_PATH` | Optional path to a JSON file providing keyword bonuses (`config/score_keyword_bonuses.json` by default). |
 | `CONCURRENCY` | Default worker concurrency override (falls back to 5). |
-| `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` | API credentials and endpoint for the LLM provider. |
+| `LLM_API_KEY` / `OPENROUTER_API_KEY` | API credential for the chat-completion provider (defaults to OpenRouter). |
+| `LLM_BASE_URL` / `OPENROUTER_BASE_URL` | Endpoint for the LLM provider (defaults to `https://openrouter.ai/api/v1`). |
+| `OPENROUTER_HTTP_REFERER` / `OPENROUTER_TITLE` | Optional headers forwarded to OpenRouter for attribution rankings. |
 | `SUMMARIZE_MODEL_NAME` / `SOURCE_MODEL_NAME` / `SCORE_MODEL_NAME` | Model identifiers used by summarize/source detection/scoring workers. |
-| `SILICONFLOW_TIMEOUT_SUMMARY` / `SILICONFLOW_TIMEOUT_SCORE` / `SILICONFLOW_TIMEOUT_EXTERNAL_FILTER` / `SILICONFLOW_TIMEOUT_BEIJING_GATE` | Timeout (seconds) for the respective SiliconFlow requests; each falls back to `SILICONFLOW_TIMEOUT` or its hard-coded default if unset. |
+| `LLM_TIMEOUT_SUMMARY` / `LLM_TIMEOUT_SCORE` / `LLM_TIMEOUT_EXTERNAL_FILTER` / `LLM_TIMEOUT_BEIJING_GATE` | Timeout (seconds) for the respective LLM requests; each falls back to `LLM_TIMEOUT` or its hard-coded default if unset. |
 | `EXTERNAL_FILTER_MODEL_NAME` | Model identifier used by the external filter stage (defaults to `SCORE_MODEL_NAME`). |
 | `EXTERNAL_FILTER_THRESHOLD` | External importance score (0-100) required to pass (default 20). |
 | `INTERNAL_FILTER_THRESHOLD` | Override threshold used for Beijing internal positives (defaults to `EXTERNAL_FILTER_THRESHOLD`). |

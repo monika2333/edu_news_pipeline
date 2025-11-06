@@ -922,7 +922,8 @@ class PostgresAdapter:
                 is_beijing_related,
                 is_beijing_related_llm,
                 external_importance_status,
-                external_filter_fail_count
+                external_filter_fail_count,
+                score_details
             FROM news_summaries
             WHERE {where_sql}
             ORDER BY external_filter_attempted_at ASC NULLS FIRST,
@@ -939,6 +940,19 @@ class PostgresAdapter:
             article_id = row.get("article_id")
             if not article_id:
                 continue
+            score_details = row.get("score_details") or {}
+            if isinstance(score_details, list):
+                score_details = {}
+            matched_rules = score_details.get("matched_rules") if isinstance(score_details, dict) else None
+            keyword_matches = []
+            if isinstance(matched_rules, list):
+                for rule in matched_rules:
+                    if not isinstance(rule, dict):
+                        continue
+                    label = rule.get("label") or rule.get("rule_id")
+                    if label:
+                        keyword_matches.append(str(label))
+
             results.append(
                 ExternalFilterCandidate(
                     article_id=str(article_id),
@@ -952,6 +966,7 @@ class PostgresAdapter:
                     is_beijing_related_llm=row.get("is_beijing_related_llm"),
                     external_importance_status=row.get("external_importance_status") or "pending_external_filter",
                     external_filter_fail_count=int(row.get("external_filter_fail_count") or 0),
+                    keyword_matches=tuple(keyword_matches),
                 )
             )
         return results
@@ -966,13 +981,27 @@ class PostgresAdapter:
         raw_output: Optional[Mapping[str, Any]],
         external_importance_status: Optional[str] = None,
         reset_external_filter: bool = False,
+        sentiment_label: Optional[str] = None,
+        candidate_category: Optional[str] = None,
     ) -> None:
         if not article_id:
             raise ValueError("complete_beijing_gate requires article_id")
         timestamp = datetime.now(timezone.utc)
+        positive_sentiment = (sentiment_label or "").strip().lower() == "positive"
+        category = (candidate_category or "").strip().lower() or (
+            "internal" if is_beijing_related else "external"
+        )
+        route_to_external_filter = bool(is_beijing_related) and positive_sentiment
+        target_status = "pending_external_filter" if route_to_external_filter else status
+        target_external_status = (
+            "pending_external_filter"
+            if route_to_external_filter
+            else external_importance_status
+            or status
+        )
         payload: Dict[str, Any] = {
-            "status": status,
-            "external_importance_status": external_importance_status or status,
+            "status": target_status,
+            "external_importance_status": target_external_status,
             "is_beijing_related": is_beijing_related,
             "is_beijing_related_llm": is_beijing_related_llm,
             "beijing_gate_checked_at": timestamp,
@@ -986,7 +1015,15 @@ class PostgresAdapter:
             payload["beijing_gate_raw"] = Json(raw_output)
         else:
             payload["beijing_gate_raw"] = None
-        if reset_external_filter:
+        if route_to_external_filter:
+            payload["external_importance_raw"] = Json({"category": category or "internal"})
+            payload.update(
+                {
+                    "external_filter_fail_count": 0,
+                    "external_filter_attempted_at": None,
+                }
+            )
+        elif reset_external_filter:
             payload.update(
                 {
                     "external_filter_fail_count": 0,
@@ -1047,6 +1084,7 @@ class PostgresAdapter:
         passed: bool,
         score: int,
         raw_output: str,
+        category: Optional[str] = None,
     ) -> None:
         if not article_id:
             raise ValueError("complete_external_filter requires article_id")
@@ -1061,6 +1099,7 @@ class PostgresAdapter:
                 {
                     "model_output": raw_output,
                     "decided_at": timestamp.isoformat(),
+                    "category": (category or "").strip().lower() or None,
                 }
             ),
             "external_filter_attempted_at": timestamp,

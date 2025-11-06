@@ -117,6 +117,9 @@ def run(
             title_line = (candidate.title or "").strip()
             summary_line = (candidate.summary or "").strip()
             display_source = (candidate.llm_source or candidate.source or "").strip()
+            sentiment_bucket = _normalized_sentiment(candidate)
+            is_positive = sentiment_bucket == "positive"
+            is_internal = candidate.is_beijing_related is True
 
             def _format_number(value: Optional[float]) -> Optional[str]:
                 if value is None:
@@ -129,61 +132,59 @@ def run(
                     return str(int(number))
                 return f"{number:.2f}".rstrip("0").rstrip(".")
 
-            # Only include location/source info in the suffix.
             suffix_parts: List[str] = []
             if display_source:
                 suffix_parts.append(display_source)
-            suffix = f"（{'、'.join(suffix_parts)}）" if suffix_parts else ""
+            # Use full-width Chinese parentheses for source suffix
+            suffix = f"（{' / '.join(suffix_parts)}）" if suffix_parts else ""
 
             metrics_parts: List[str] = []
-            score_text = _format_number(candidate.score) if candidate.is_beijing_related is True else None
-            if score_text is not None:
-                metrics_parts.append(f"score={score_text}")
-
             ext_score_value = candidate.external_importance_score
-            if ext_score_value is not None:
+            if is_positive and ext_score_value is not None:
                 ext_score_text = _format_number(ext_score_value) or str(ext_score_value)
                 metrics_parts.append(f"external_importance={ext_score_text}")
 
-            keyword_bonus_total = candidate.keyword_bonus_score
-            details = candidate.score_details if isinstance(candidate.score_details, dict) else {}
+            if is_internal and is_positive:
+                keyword_bonus_total = candidate.keyword_bonus_score
+                details = candidate.score_details if isinstance(candidate.score_details, dict) else {}
 
-            bonus_value: Optional[float] = None
-            if candidate.is_beijing_related is True and keyword_bonus_total is not None:
-                try:
-                    bonus_value = float(keyword_bonus_total)
-                except (TypeError, ValueError):
-                    bonus_value = None
-            if bonus_value is None and details:
-                bonus_from_details = details.get("keyword_bonus_score")
-                if bonus_from_details is not None:
+                bonus_value: Optional[float] = None
+                if keyword_bonus_total is not None:
                     try:
-                        bonus_value = float(bonus_from_details)
+                        bonus_value = float(keyword_bonus_total)
                     except (TypeError, ValueError):
                         bonus_value = None
+                if bonus_value is None and isinstance(details, dict):
+                    bonus_from_details = details.get("keyword_bonus_score")
+                    if bonus_from_details is not None:
+                        try:
+                            bonus_value = float(bonus_from_details)
+                        except (TypeError, ValueError):
+                            bonus_value = None
 
-            matched_labels: List[str] = []
-            if details:
-                matched = details.get("matched_rules")
-                if isinstance(matched, list):
-                    for rule in matched:
-                        if isinstance(rule, dict):
-                            label = rule.get("label") or rule.get("rule_id")
-                            if label:
-                                matched_labels.append(str(label))
+                matched_labels: List[str] = []
+                if isinstance(details, dict):
+                    matched = details.get("matched_rules")
+                    if isinstance(matched, list):
+                        for rule in matched:
+                            if isinstance(rule, dict):
+                                label = rule.get("label") or rule.get("rule_id")
+                                if label:
+                                    matched_labels.append(str(label))
 
-            if bonus_value is not None and bonus_value != 0:
-                keyword_bonus_text = _format_number(bonus_value) or str(bonus_value)
-                if matched_labels:
-                    keyword_bonus_text = f"{keyword_bonus_text}（{'、'.join(matched_labels)}）"
-                metrics_parts.append(f"keyword_bonuses={keyword_bonus_text}")
+                if bonus_value is not None:
+                    keyword_bonus_text = _format_number(bonus_value) or str(bonus_value)
+                    if matched_labels:
+                        # Use full-width Chinese parentheses around matched labels
+                        keyword_bonus_text = f"{keyword_bonus_text}（{', '.join(matched_labels)}）"
+                    metrics_parts.append(f"keyword_bonuses={keyword_bonus_text}")
 
-            metrics_suffix = f" ({'; '.join(metrics_parts)})" if metrics_parts else ""
+            # Use full-width Chinese parentheses for metrics suffix
+            metrics_suffix = f"（{'; '.join(metrics_parts)}）" if metrics_parts else ""
 
             return "\n".join(
                 filter(None, [title_line, summary_line + suffix + metrics_suffix])
             )
-
         bucket_index: Dict[Tuple[str, str], List[ExportCandidate]] = {
             ("internal", "positive"): [],
             ("internal", "negative"): [],
@@ -213,7 +214,11 @@ def run(
             if not items:
                 category_counts[label] = 0
                 continue
-            if key[0] == "external":
+            # Sorting rules:
+            # - External buckets: by external_importance_score desc, then score desc
+            # - Internal positive (京内正面): align with external — prefer external_importance_score desc
+            # - Other internal buckets: by score desc
+            if key[0] == "external" or (key[0] == "internal" and key[1] == "positive"):
                 items.sort(
                     key=lambda item: (
                         item.external_importance_score if item.external_importance_score is not None else -1,

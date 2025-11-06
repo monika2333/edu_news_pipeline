@@ -133,6 +133,8 @@ class Settings:
     score_keyword_bonus_rules: Dict[str, int]
     external_filter_model_name: str
     external_filter_threshold: int
+    internal_filter_threshold: int
+    internal_filter_prompt_path: Path
     external_filter_batch_size: int
     external_filter_max_retries: int
     beijing_gate_model_name: str
@@ -183,7 +185,12 @@ def get_settings() -> Settings:
         or 60
     )
     external_filter_model_name = os.getenv("EXTERNAL_FILTER_MODEL_NAME", score_model_name)
-    external_filter_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_THRESHOLD")) or 20
+    raw_external_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_THRESHOLD"))
+    external_filter_threshold = raw_external_threshold if raw_external_threshold is not None else 20
+    raw_internal_threshold = _optional_int(os.getenv("INTERNAL_FILTER_THRESHOLD"))
+    internal_filter_threshold = (
+        raw_internal_threshold if raw_internal_threshold is not None else external_filter_threshold
+    )
     external_filter_batch_size = _optional_int(os.getenv("EXTERNAL_FILTER_BATCH_SIZE")) or 50
     external_filter_max_retries = _optional_int(os.getenv("EXTERNAL_FILTER_MAX_RETRIES")) or 3
     beijing_gate_model_name = os.getenv("BEIJING_GATE_MODEL_NAME", score_model_name)
@@ -212,6 +219,12 @@ def get_settings() -> Settings:
         default=config_dir / "beijing_keywords.txt",
     )
 
+    raw_internal_prompt = os.getenv("INTERNAL_FILTER_PROMPT_PATH")
+    internal_filter_prompt_path = _resolve_path(
+        raw_internal_prompt,
+        default=_REPO_ROOT / "docs" / "internal_importance_prompt.md",
+    )
+
     keyword_bonus_rules = _parse_keyword_bonus_rules(os.getenv("SCORE_KEYWORD_BONUSES"))
     raw_bonus_path_env = os.getenv("SCORE_KEYWORD_BONUSES_PATH")
     keyword_bonus_rules_path = _resolve_path(
@@ -237,6 +250,7 @@ def get_settings() -> Settings:
 
     keywords_path = keywords_path.resolve()
     beijing_keywords_path = beijing_keywords_path.resolve()
+    internal_filter_prompt_path = internal_filter_prompt_path.resolve()
 
     return Settings(
         db_host=db_host,
@@ -270,6 +284,8 @@ def get_settings() -> Settings:
         score_keyword_bonus_rules=keyword_bonus_rules,
         external_filter_model_name=external_filter_model_name,
         external_filter_threshold=external_filter_threshold,
+        internal_filter_threshold=internal_filter_threshold,
+        internal_filter_prompt_path=internal_filter_prompt_path,
         external_filter_batch_size=external_filter_batch_size,
         external_filter_max_retries=external_filter_max_retries,
         beijing_gate_model_name=beijing_gate_model_name,

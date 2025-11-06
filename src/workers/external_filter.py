@@ -25,14 +25,20 @@ def _score_candidate(
     candidate: ExternalFilterCandidate,
     *,
     retries: int,
-    threshold: int,
-) -> Tuple[int, str, bool]:
-    raw_output = call_external_filter_model(candidate, retries=retries)
+    thresholds: Mapping[str, int],
+) -> Tuple[int, str, bool, str]:
+    category = candidate.candidate_category
+    threshold = thresholds.get(category, thresholds.get("external", 0))
+    raw_output = call_external_filter_model(
+        candidate,
+        category=category,
+        retries=retries,
+    )
     score_value = parse_external_filter_score(raw_output)
     if score_value is None:
         raise RuntimeError("Model did not return a numeric score")
     passed = _should_pass(score_value, threshold)
-    return score_value, raw_output, passed
+    return score_value, raw_output, passed, category
 
 
 def _beijing_gate_raw_payload(result: Mapping[str, Any], raw_text: str) -> dict[str, Any]:
@@ -78,6 +84,8 @@ def _process_beijing_gate(
                     raw_output=raw_payload,
                     external_importance_status="ready_for_export",
                     reset_external_filter=False,
+                    sentiment_label=candidate.sentiment_label,
+                    candidate_category="internal",
                 )
                 confirmed += 1
                 log_info(WORKER, f"Gate OK {candidate.article_id}: confirmed Beijing")
@@ -90,6 +98,8 @@ def _process_beijing_gate(
                     raw_output=raw_payload,
                     external_importance_status="pending_external_filter",
                     reset_external_filter=True,
+                    sentiment_label=candidate.sentiment_label,
+                    candidate_category="external",
                 )
                 rerouted += 1
                 log_info(WORKER, f"Gate REROUTE {candidate.article_id}: sent to external filter")
@@ -112,6 +122,8 @@ def _process_beijing_gate(
                     raw_output=fallback_payload,
                     external_importance_status="ready_for_export",
                     reset_external_filter=False,
+                    sentiment_label=candidate.sentiment_label,
+                    candidate_category="internal",
                 )
                 log_error(WORKER, candidate.article_id, exc)
                 log_info(
@@ -136,7 +148,11 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
     total_processed = 0
     total_failed = 0
     max_retries = settings.external_filter_max_retries
-    threshold = settings.external_filter_threshold
+    default_threshold = settings.external_filter_threshold
+    thresholds: Mapping[str, int] = {
+        "external": default_threshold,
+        "internal": settings.internal_filter_threshold,
+    }
     workers = concurrency or settings.default_concurrency or 5
     workers = max(1, workers)
     beijing_gate_max_failures = max(1, settings.beijing_gate_max_retries or 1)
@@ -184,7 +200,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                         _score_candidate,
                         candidate,
                         retries=max_retries,
-                        threshold=threshold,
+                        thresholds=thresholds,
                     ): candidate
                     for candidate in candidates
                 }
@@ -197,17 +213,18 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                         future.cancel()
                         continue
                     try:
-                        score_value, raw_output, passed = future.result()
+                        score_value, raw_output, passed, category = future.result()
                         adapter.complete_external_filter(
                             candidate.article_id,
                             passed=passed,
                             score=score_value,
                             raw_output=raw_output,
+                            category=category,
                         )
                         state = "ready_for_export" if passed else "external_filtered"
                         log_info(
                             WORKER,
-                            f"OK {candidate.article_id}: score={score_value} -> {state}",
+                            f"{category.upper()} OK {candidate.article_id}: score={score_value} -> {state}",
                         )
                         processed += 1
                     except Exception as exc:
@@ -220,7 +237,11 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                             final_failure=final_failure,
                             error=str(exc),
                         )
-                        log_error(WORKER, candidate.article_id, exc)
+                        log_error(
+                            WORKER,
+                            f"{candidate.candidate_category.upper()} {candidate.article_id}",
+                            exc,
+                        )
 
                 total_processed += processed
                 total_failed += failed

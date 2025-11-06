@@ -18,9 +18,9 @@ def build_source_payload(article: Dict[str, Any]) -> Dict[str, Any]:
     if not content:
         raise ValueError("Article content is required for source detection")
     prompt_parts = [
-        "请阅读以下文章内容，并判断原始发布的机构或媒体名称。",
+        "请阅读以下文章内容，并判断原始发布的媒体名称。",
         "如果无法确定，请回答“未知”。",
-        "仅返回机构或媒体名称本身，不要包含额外说明。",
+        "仅返回媒体名称本身，不要包含额外说明。",
     ]
     if title:
         prompt_parts.append(f"标题：{title}")

@@ -126,7 +126,11 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None, keywords_path: O
                 keywords = _normalize_keywords(article.get('llm_keywords'))
                 beijing_related: Optional[bool] = None
                 if beijing_keywords:
-                    detection_payload: List[str] = [summary_text]
+                    detection_payload: List[str] = [
+                        summary_text,
+                        str(article.get("title") or "").strip(),
+                        content,
+                    ]
                     beijing_related = is_beijing_related(detection_payload, beijing_keywords)
                 sentiment_positive = (sentiment_label or "").lower() == "positive"
                 if beijing_related is True:

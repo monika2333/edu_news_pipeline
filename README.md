@@ -44,6 +44,7 @@ Re-run as needed until the command reports no articles remaining.
 - `src/workers/` - Implementations for `crawl`, `summarize`, `score`, and `export` steps.
 - `database/` - SQL schema and migrations used for the Postgres deployment.
 - `docs/beijing_gate_prompt.md` - Prompt definition used by the Beijing gate LLM check (kept for review and updates).
+- `docs/internal_importance_prompt.md` - Prompt used by the Beijing internal importance scoring path.
 - `src/cli/main.py` - CLI entry point for worker commands (`python -m src.cli.main ...`).
 
 ## Prerequisites
@@ -70,10 +71,10 @@ With these variables in place the worker and console commands automatically use 
 
 ### External Filter Workflow
 
-- Configure the external filter env vars (use `.env.local`).
+- Configure the external/internal filter env vars in `.env.local` (`EXTERNAL_FILTER_*`, `INTERNAL_FILTER_THRESHOLD`, `INTERNAL_FILTER_PROMPT_PATH`).
 - `scripts/run_pipeline_once.py` 默认计划会在 summarize 之后自动运行 `external-filter` 步骤；无需额外调度即可串接进整条流水线。
-- Run the external filter worker to score pending 京外稿：`python -m src.workers.external_filter --limit 100`（按需调整 limit/batch）。
-- 使用 backfill 脚本重置历史京外正面记录：先 `python -m scripts.backfill_external_filter --dry-run --limit 50` 查看影响，再去掉 `--dry-run` 实际执行。
+- Run the external filter worker to score pending 内/外正向稿：`python -m src.workers.external_filter --limit 100`（按需调整 limit/batch）。
+- 使用 backfill 脚本重置历史京内/京外正面记录：先 `python -m scripts.backfill_external_filter --dry-run --limit 50` 查看影响，再去掉 `--dry-run` 实际执行。
 - 观察 `news_summaries.external_importance_status` 字段（`pending_external_filter` → `ready_for_export` / `external_filtered`）确保 worker 正常推进。
 
 The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env`. Key settings:
@@ -103,6 +104,8 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `SILICONFLOW_TIMEOUT_SUMMARY` / `SILICONFLOW_TIMEOUT_SCORE` / `SILICONFLOW_TIMEOUT_EXTERNAL_FILTER` / `SILICONFLOW_TIMEOUT_BEIJING_GATE` | Timeout (seconds) for the respective SiliconFlow requests; each falls back to `SILICONFLOW_TIMEOUT` or its hard-coded default if unset. |
 | `EXTERNAL_FILTER_MODEL_NAME` | Model identifier used by the external filter stage (defaults to `SCORE_MODEL_NAME`). |
 | `EXTERNAL_FILTER_THRESHOLD` | External importance score (0-100) required to pass (default 20). |
+| `INTERNAL_FILTER_THRESHOLD` | Override threshold used for Beijing internal positives (defaults to `EXTERNAL_FILTER_THRESHOLD`). |
+| `INTERNAL_FILTER_PROMPT_PATH` | Optional path to the internal scoring prompt (defaults to `docs/internal_importance_prompt.md`). |
 | `EXTERNAL_FILTER_BATCH_SIZE` | Rows processed per batch by the external filter worker (default 50). |
 | `EXTERNAL_FILTER_MAX_RETRIES` | Retry attempts before a record is marked `external_filtered` (default 3). |
 | `BEIJING_GATE_MODEL_NAME` | Model identifier used by the Beijing gate LLM check (defaults to `SCORE_MODEL_NAME`). |

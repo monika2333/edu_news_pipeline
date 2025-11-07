@@ -9,3 +9,15 @@
 7. **Backfill / scripts sanity** (`scripts/backfill_external_filter.py` & CLI): confirm existing scripts either continue to work or get optional flags to repopulate negative items. Document any manual steps needed to requeue historic rows.
 8. **Tests** (`tests/test_external_filter_worker.py`, optional summarize tests): add coverage for the new category logic, threshold selection, and prompt selection. If practical, craft a summarize-worker unit test to ensure negative sentiment paths enqueue correctly.
 9. **Docs & README** (`README.md`, new prompt docs): describe the expanded external filter scope, list the new environment variables, and mention where to edit the four prompt files so operators know how to tune them.
+
+## Implementation Checklist
+
+- [x] Update summarize worker routing for negative external items.
+- [ ] Adjust Beijing gate completion logic to route negative Beijing items to external filter.
+- [ ] Expand candidate categories to cover internal/external × positive/negative.
+- [ ] Add negative-specific prompt templates and wire them into the adapter.
+- [ ] Introduce negative threshold env settings and expose through config.
+- [ ] Update external filter worker to use new categories and thresholds.
+- [ ] Review auxiliary scripts/backfills for compatibility.
+- [ ] Extend test suite for new logic and prompts.
+- [ ] Refresh README/docs to describe the expanded scoring and prompts.

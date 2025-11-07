@@ -132,11 +132,13 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None, keywords_path: O
                         content,
                     ]
                     beijing_related = is_beijing_related(detection_payload, beijing_keywords)
-                sentiment_positive = (sentiment_label or "").lower() == "positive"
+                sentiment_value = (sentiment_label or "").lower()
+                sentiment_positive = sentiment_value == "positive"
+                sentiment_negative = sentiment_value == "negative"
                 if beijing_related is True:
                     next_status = "pending_beijing_gate"
                     external_importance_status = "pending_beijing_gate"
-                elif sentiment_positive and beijing_related is not True:
+                elif beijing_related is not True and (sentiment_positive or sentiment_negative):
                     next_status = "pending_external_filter"
                     external_importance_status = "pending_external_filter"
                 else:

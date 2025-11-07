@@ -135,7 +135,9 @@ class Settings:
     score_keyword_bonus_rules: Dict[str, int]
     external_filter_model_name: str
     external_filter_threshold: int
+    external_filter_negative_threshold: int
     internal_filter_threshold: int
+    internal_filter_negative_threshold: int
     internal_filter_prompt_path: Path
     external_filter_batch_size: int
     external_filter_max_retries: int
@@ -211,9 +213,19 @@ def get_settings() -> Settings:
     external_filter_model_name = os.getenv("EXTERNAL_FILTER_MODEL_NAME", score_model_name)
     raw_external_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_THRESHOLD"))
     external_filter_threshold = raw_external_threshold if raw_external_threshold is not None else 20
+    raw_external_negative_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_NEGATIVE_THRESHOLD"))
+    external_filter_negative_threshold = (
+        raw_external_negative_threshold if raw_external_negative_threshold is not None else external_filter_threshold
+    )
     raw_internal_threshold = _optional_int(os.getenv("INTERNAL_FILTER_THRESHOLD"))
     internal_filter_threshold = (
         raw_internal_threshold if raw_internal_threshold is not None else external_filter_threshold
+    )
+    raw_internal_negative_threshold = _optional_int(os.getenv("INTERNAL_FILTER_NEGATIVE_THRESHOLD"))
+    internal_filter_negative_threshold = (
+        raw_internal_negative_threshold
+        if raw_internal_negative_threshold is not None
+        else internal_filter_threshold
     )
     external_filter_batch_size = _optional_int(os.getenv("EXTERNAL_FILTER_BATCH_SIZE")) or 50
     external_filter_max_retries = _optional_int(os.getenv("EXTERNAL_FILTER_MAX_RETRIES")) or 3
@@ -310,7 +322,9 @@ def get_settings() -> Settings:
         score_keyword_bonus_rules=keyword_bonus_rules,
         external_filter_model_name=external_filter_model_name,
         external_filter_threshold=external_filter_threshold,
+        external_filter_negative_threshold=external_filter_negative_threshold,
         internal_filter_threshold=internal_filter_threshold,
+        internal_filter_negative_threshold=internal_filter_negative_threshold,
         internal_filter_prompt_path=internal_filter_prompt_path,
         external_filter_batch_size=external_filter_batch_size,
         external_filter_max_retries=external_filter_max_retries,

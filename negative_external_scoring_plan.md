@@ -16,7 +16,7 @@
 - [x] Adjust Beijing gate completion logic to route negative Beijing items to external filter.
 - [x] Expand candidate categories to cover internal/external × positive/negative.
 - [x] Add negative-specific prompt templates and wire them into the adapter.
-- [ ] Introduce negative threshold env settings and expose through config.
+- [x] Introduce negative threshold env settings and expose through config.
 - [ ] Update external filter worker to use new categories and thresholds.
 - [ ] Review auxiliary scripts/backfills for compatibility.
 - [ ] Extend test suite for new logic and prompts.

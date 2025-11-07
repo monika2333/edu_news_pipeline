@@ -106,7 +106,9 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `LLM_TIMEOUT_SUMMARY` / `LLM_TIMEOUT_SCORE` / `LLM_TIMEOUT_EXTERNAL_FILTER` / `LLM_TIMEOUT_BEIJING_GATE` | Timeout (seconds) for the respective LLM requests; each falls back to `LLM_TIMEOUT` or its hard-coded default if unset. |
 | `EXTERNAL_FILTER_MODEL_NAME` | Model identifier used by the external filter stage (defaults to `SCORE_MODEL_NAME`). |
 | `EXTERNAL_FILTER_THRESHOLD` | External importance score (0-100) required to pass (default 20). |
+| `EXTERNAL_FILTER_NEGATIVE_THRESHOLD` | Optional override for negative external items (fallbacks to `EXTERNAL_FILTER_THRESHOLD`). |
 | `INTERNAL_FILTER_THRESHOLD` | Override threshold used for Beijing internal positives (defaults to `EXTERNAL_FILTER_THRESHOLD`). |
+| `INTERNAL_FILTER_NEGATIVE_THRESHOLD` | Optional override for negative Beijing items (fallbacks to `INTERNAL_FILTER_THRESHOLD`). |
 | `INTERNAL_FILTER_PROMPT_PATH` | Optional path to the internal scoring prompt (defaults to `docs/internal_importance_prompt.md`). |
 | `EXTERNAL_FILTER_BATCH_SIZE` | Rows processed per batch by the external filter worker (default 50). |
 | `EXTERNAL_FILTER_MAX_RETRIES` | Retry attempts before a record is marked `external_filtered` (default 3). |

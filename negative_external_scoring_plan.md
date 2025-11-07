@@ -20,4 +20,4 @@
 - [x] Update external filter worker to use new categories and thresholds.
 - [x] Review auxiliary scripts/backfills for compatibility (existing `scripts/backfill_external_filter.py` already just requeues rows by status; no updates required for sentiment-aware categories).
 - [x] Extend test suite for new logic and prompts.
-- [ ] Refresh README/docs to describe the expanded scoring and prompts.
+- [x] Refresh README/docs to describe the expanded scoring and prompts.

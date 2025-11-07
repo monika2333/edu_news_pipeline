@@ -7,9 +7,9 @@ Automated pipeline for collecting education-related articles, summarising them w
 1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: Tencent News, ChinaNews, China Daily, Guangming Daily, Qianlong, China Education Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
 2. **Hash / Deduplicate** - `hash_primary` computes an exact `content_hash`, 64-bit SimHash, and four 16-bit band hashes for each filtered article. Using SimHash band lookup and a Hamming-distance threshold (<= 3), duplicates are grouped under a primary article and promoted to `primary_articles`.
 3. **Score** - LLM-based relevance scoring runs on entries in `primary_articles`. The LLM output becomes `raw_relevance_score`; keyword rules add a `keyword_bonus_score`, and their sum is persisted as `score`. Promotion still keys off `raw_relevance_score >= 60`, while the final score (without an upper bound) is used for ordering.
-4. **Summarise & Sentiment** - `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and now routes articles into multiple states: Beijing-positive items move to `pending_beijing_gate` for the second pass, non-Beijing positives go to `pending_external_filter`, and everything else writes back as `ready_for_export` (failures remain `pending`).
-5. **Beijing Gate** - Before running the external importance model, the `external_filter` worker picks up `pending_beijing_gate`, calls the dedicated LLM prompt, and either reclassifies to `pending_external_filter` (when not Beijing related) or promotes directly to `ready_for_export` while recording the LLM decision.
-6. **External Filter** - External scoring runs on `pending_external_filter`, assigns an importance score from 0-100, and flags items below the threshold as `external_filtered`; the rest become `ready_for_export`.
+4. **Summarise & Sentiment** - `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and now routes articles into multiple states: Beijing-related items move to `pending_beijing_gate` for a second pass, non-Beijing positives **and negatives** go to `pending_external_filter`, and the remaining items write back as `ready_for_export` (failures remain `pending`).
+5. **Beijing Gate** - Before running the external importance model, the `external_filter` worker picks up `pending_beijing_gate`, calls the dedicated LLM prompt, and either reclassifies to `pending_external_filter` (when not Beijing related) or promotes directly to `ready_for_export` while recording the LLM decision. Confirmed Beijing articles keep their sentiment so both positive/negative variants can be rescored downstream.
+6. **External Filter** - External scoring runs on `pending_external_filter`, assigns an importance score from 0-100 using category-specific prompts and thresholds (京内/京外 × 正面/负面), and flags items below the relevant threshold as `external_filtered`; the rest become `ready_for_export`.
 7. **Export** - Assemble the ready summaries into a briefing ordered by "Jingnei/Jingwai x Positive/Negative" buckets (sorted descending by score) and persist batch metadata in `brief_batches` / `brief_items`, sending an optional Feishu notification.
 All stages are available through the CLI wrapper:
 
@@ -44,7 +44,10 @@ Re-run as needed until the command reports no articles remaining.
 - `src/workers/` - Implementations for `crawl`, `summarize`, `score`, and `export` steps.
 - `database/` - SQL schema and migrations used for the Postgres deployment.
 - `docs/beijing_gate_prompt.md` - Prompt definition used by the Beijing gate LLM check (kept for review and updates).
-- `docs/internal_importance_prompt.md` - Prompt used by the Beijing internal importance scoring path.
+- `docs/internal_importance_prompt.md` - Prompt used by the Beijing internal positive scoring path.
+- `docs/internal_negative_importance_prompt.md` - Prompt used when re-scoring Beijing negative sentiment items.
+- `docs/external_filter_prompt.md` - Prompt used by the non-Beijing positive external scoring path.
+- `docs/external_negative_filter_prompt.md` - Prompt used by the non-Beijing negative path.
 - `src/cli/main.py` - CLI entry point for worker commands (`python -m src.cli.main ...`).
 
 ## Prerequisites
@@ -71,10 +74,13 @@ With these variables in place the worker and console commands automatically use 
 
 ### External Filter Workflow
 
-- Configure the external/internal filter env vars in `.env.local` (`EXTERNAL_FILTER_*`, `INTERNAL_FILTER_THRESHOLD`, `INTERNAL_FILTER_PROMPT_PATH`).
-- `scripts/run_pipeline_once.py` 默认计划会在 summarize 之后自动运行 `external-filter` 步骤；无需额外调度即可串接进整条流水线。
-- Run the external filter worker to score pending 内/外正向稿：`python -m src.workers.external_filter --limit 100`（按需调整 limit/batch）。
-- 使用 backfill 脚本重置历史京内/京外正面记录：先 `python -m scripts.backfill_external_filter --dry-run --limit 50` 查看影响，再去掉 `--dry-run` 实际执行。
+- Configure the external/internal filter env vars in `.env.local`（`EXTERNAL_FILTER_*`, `INTERNAL_FILTER_*`, `INTERNAL_FILTER_PROMPT_PATH`）。负面稿件可通过 `*_NEGATIVE_THRESHOLD` 独立调节。
+- Prompt files live under `docs/` and can be edited independently：  
+  - `external_filter_prompt.md`（京外正面）、`external_negative_filter_prompt.md`（京外负面）  
+  - `internal_importance_prompt.md`（京内正面）、`internal_negative_importance_prompt.md`（京内负面）
+- `scripts/run_pipeline_once.py` 默认在 summarize 之后自动运行 `external-filter`；无需额外调度即可串接进整条流水线。
+- Run the external filter worker to score pending 京内/京外正负稿：`python -m src.workers.external_filter --limit 100`（按需调整 limit/batch）。
+- 使用 backfill 脚本重置历史记录：先 `python -m scripts.backfill_external_filter --dry-run --limit 50` 查看影响，再去掉 `--dry-run` 实际执行。
 - 观察 `news_summaries.external_importance_status` 字段（`pending_external_filter` → `ready_for_export` / `external_filtered`）确保 worker 正常推进。
 
 The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env`. Key settings:

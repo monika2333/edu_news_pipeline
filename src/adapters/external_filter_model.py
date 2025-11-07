@@ -14,31 +14,45 @@ from src.domain import ExternalFilterCandidate
 _PROMPT_CACHE: Dict[str, str] = {}
 _DEFAULT_PROMPT_PATHS = {
     "external": Path(__file__).resolve().parents[2] / "docs" / "external_filter_prompt.md",
+    "external_negative": Path(__file__).resolve().parents[2] / "docs" / "external_negative_filter_prompt.md",
     "internal": Path(__file__).resolve().parents[2] / "docs" / "internal_importance_prompt.md",
+    "internal_negative": Path(__file__).resolve().parents[2] / "docs" / "internal_negative_importance_prompt.md",
 }
 _PROMPT_TAG_PATTERN = re.compile(r"<prompt>(.*?)</prompt>", re.DOTALL)
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
-def _get_prompt_path(category: str) -> Path:
+def _prompt_key_for_category(category: Optional[str]) -> str:
+    raw = (category or "external").strip().lower()
+    if raw in _DEFAULT_PROMPT_PATHS:
+        return raw
+    if raw.startswith("internal"):
+        return "internal_negative" if "negative" in raw else "internal"
+    if raw.startswith("external"):
+        return "external_negative" if "negative" in raw else "external"
+    return "external"
+
+
+def _get_prompt_path(prompt_key: str) -> Path:
     settings = get_settings()
-    if category == "internal":
+    if prompt_key == "internal":
         return settings.internal_filter_prompt_path
-    return _DEFAULT_PROMPT_PATHS.get(category, _DEFAULT_PROMPT_PATHS["external"])
+    return _DEFAULT_PROMPT_PATHS.get(prompt_key, _DEFAULT_PROMPT_PATHS["external"])
 
 
 def _load_prompt_template(category: str = "external") -> str:
-    if category in _PROMPT_CACHE:
-        return _PROMPT_CACHE[category]
-    prompt_path = _get_prompt_path(category)
+    prompt_key = _prompt_key_for_category(category)
+    if prompt_key in _PROMPT_CACHE:
+        return _PROMPT_CACHE[prompt_key]
+    prompt_path = _get_prompt_path(prompt_key)
     if not prompt_path.exists():
-        _PROMPT_CACHE[category] = ""
-        return _PROMPT_CACHE[category]
+        _PROMPT_CACHE[prompt_key] = ""
+        return _PROMPT_CACHE[prompt_key]
     content = prompt_path.read_text(encoding="utf-8")
     match = _PROMPT_TAG_PATTERN.search(content)
     template = match.group(1).strip() if match else content.strip()
-    _PROMPT_CACHE[category] = template
+    _PROMPT_CACHE[prompt_key] = template
     return template
 
 
@@ -51,12 +65,14 @@ def _truncate(text: str, limit: int = 1500) -> str:
 
 def build_prompt(candidate: ExternalFilterCandidate, *, category: str = "external") -> str:
     template = _load_prompt_template(category)
+    prompt_key = _prompt_key_for_category(category)
+    is_internal_category = prompt_key.startswith("internal")
     title = candidate.title or "（无标题）"
     source = candidate.source or "（未知来源）"
     summary = (candidate.summary or "").strip() or "（无摘要）"
     content = _truncate(candidate.content or "")
     keyword_section = ""
-    if category == "internal" and candidate.keyword_matches:
+    if is_internal_category and candidate.keyword_matches:
         keyword_text = "、".join(candidate.keyword_matches)
         keyword_section = f"Bonus Keywords: {keyword_text}\n\n"
     return (

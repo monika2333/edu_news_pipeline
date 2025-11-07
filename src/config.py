@@ -165,7 +165,7 @@ def get_settings() -> Settings:
     summarize_model_name = os.getenv("SUMMARIZE_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
     source_model_name = os.getenv("SOURCE_MODEL_NAME", summarize_model_name)
     score_model_name = os.getenv("SCORE_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
-    sentiment_model_name = os.getenv("SENTIMENT_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
+    sentiment_model_name = os.getenv("SENTIMENT_MODEL_NAME", summarize_model_name)
     llm_enable_thinking = _bool_from_env(
         _get_env("LLM_ENABLE_THINKING", "OPENROUTER_ENABLE_THINKING", "ENABLE_THINKING"),
         default=False,

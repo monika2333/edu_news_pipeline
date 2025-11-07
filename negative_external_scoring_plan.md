@@ -13,7 +13,7 @@
 ## Implementation Checklist
 
 - [x] Update summarize worker routing for negative external items.
-- [ ] Adjust Beijing gate completion logic to route negative Beijing items to external filter.
+- [x] Adjust Beijing gate completion logic to route negative Beijing items to external filter.
 - [ ] Expand candidate categories to cover internal/external × positive/negative.
 - [ ] Add negative-specific prompt templates and wire them into the adapter.
 - [ ] Introduce negative threshold env settings and expose through config.

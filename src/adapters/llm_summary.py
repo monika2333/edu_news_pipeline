@@ -22,7 +22,7 @@ def build_summary_payload(article: Dict[str, Any]) -> Dict[str, Any]:
         prompt_parts.append(f"标题：{title}")
     prompt_parts.append("正文：")
     prompt_parts.append(str(content))
-    message = "请概括下面的内容为一段话，尽量保留日期信息：\n" + "\n".join(prompt_parts)
+    message = "请概括下面的内容为一段话：\n" + "\n".join(prompt_parts)
     return {"messages": [{"role": "user", "content": message}]}
 
 

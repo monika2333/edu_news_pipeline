@@ -66,8 +66,9 @@ try {
     $includeFilter = { param($f, $patterns) foreach($p in $patterns){ if ($f.Name -like $p) { return $true } } return $false }
 
     # 1) Delete very old files (any extension commonly used for logs)
+    # Note: ensure patterns are concatenated before passing as a single argument
     $toDelete = Get-ChildItem -LiteralPath $LogsPath -Recurse -File |
-        Where-Object { $_.LastWriteTime -lt $deleteBefore -and (& $includeFilter $_ $Patterns + @('*.zip','*.gz')) }
+        Where-Object { $_.LastWriteTime -lt $deleteBefore -and (& $includeFilter $_ ($Patterns + @('*.zip','*.gz'))) }
 
     $deleted = 0
     foreach ($f in $toDelete) {
@@ -126,4 +127,3 @@ catch {
     Write-Error "Failed: $($_.Exception.Message)"
     exit 1
 }
-

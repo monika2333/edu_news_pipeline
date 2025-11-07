@@ -17,7 +17,7 @@
 - [x] Expand candidate categories to cover internal/external × positive/negative.
 - [x] Add negative-specific prompt templates and wire them into the adapter.
 - [x] Introduce negative threshold env settings and expose through config.
-- [ ] Update external filter worker to use new categories and thresholds.
+- [x] Update external filter worker to use new categories and thresholds.
 - [ ] Review auxiliary scripts/backfills for compatibility.
 - [ ] Extend test suite for new logic and prompts.
 - [ ] Refresh README/docs to describe the expanded scoring and prompts.

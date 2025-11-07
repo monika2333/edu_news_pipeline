@@ -164,10 +164,17 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
     total_processed = 0
     total_failed = 0
     max_retries = settings.external_filter_max_retries
-    default_threshold = settings.external_filter_threshold
+    external_positive_threshold = settings.external_filter_threshold
+    external_negative_threshold = settings.external_filter_negative_threshold
+    internal_positive_threshold = settings.internal_filter_threshold
+    internal_negative_threshold = settings.internal_filter_negative_threshold
     thresholds: Mapping[str, int] = {
-        "external": default_threshold,
-        "internal": settings.internal_filter_threshold,
+        "external": external_positive_threshold,
+        "external_positive": external_positive_threshold,
+        "external_negative": external_negative_threshold,
+        "internal": internal_positive_threshold,
+        "internal_positive": internal_positive_threshold,
+        "internal_negative": internal_negative_threshold,
     }
     workers = concurrency or settings.default_concurrency or 5
     workers = max(1, workers)

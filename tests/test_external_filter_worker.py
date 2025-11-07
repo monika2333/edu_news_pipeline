@@ -162,6 +162,29 @@ def test_process_beijing_gate_reroutes_external_category():
     assert kwargs["reset_external_filter"] is True
 
 
+def test_score_candidate_uses_external_negative_threshold():
+    candidate = _external_candidate(sentiment_label="negative", is_beijing_related=False)
+    thresholds = {
+        "external": 60,
+        "external_positive": 60,
+        "external_negative": 30,
+    }
+    with patch(
+        "src.workers.external_filter.call_external_filter_model",
+        return_value="40",
+    ) as mock_call:
+        score, raw, passed, category = external_filter._score_candidate(
+            candidate,
+            retries=1,
+            thresholds=thresholds,
+        )
+    mock_call.assert_called_once_with(candidate, category="external_negative", retries=1)
+    assert score == 40
+    assert raw == "40"
+    assert passed is True  # uses the lower negative threshold
+    assert category == "external_negative"
+
+
 def test_internal_prompt_includes_bonus_keywords():
     candidate = _external_candidate(keyword_matches=("北京教育改革", "首都治理"))
     with patch(

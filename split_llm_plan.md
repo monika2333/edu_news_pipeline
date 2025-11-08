@@ -19,9 +19,9 @@ Goal: keep most workers on OpenRouter while routing `summarize` worker (and opti
 - [x] Verify error messages reference the correct env vars when missing.
 
 ## 4. Testing & Validation
-- [ ] Run `python -m compileall src` (quick smoke) after code changes.
-- [ ] Dry-run `python -m src.cli.main summarize --limit 1` (if credentials available) to confirm SiliconFlow path works; otherwise, describe manual test steps.
-- [ ] Verify other workers (`score`, `external-filter`) still resolve OpenRouter config.
+- [x] Run `python -m compileall src` (quick smoke) after code changes.
+- [x] Dry-run `python -m src.cli.main summarize --limit 1` (if credentials available) to confirm SiliconFlow path works; otherwise, describe manual test steps. *(Result: no pending summaries; command exercised new config without errors.)*
+- [x] Verify other workers (`score`, `external-filter`) still resolve OpenRouter config. *(Ran `python -m src.cli.main score --limit 1`, completed successfully via OpenRouter.)*
 
 ## 5. Cleanup / Delivery
 - [ ] Update the new checklist documenting what was implemented/left TODO.

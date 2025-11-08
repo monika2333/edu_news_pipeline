@@ -12,7 +12,7 @@ Goal: keep most workers on OpenRouter while routing `summarize` worker (and opti
 ## 2. Adapter Changes
 - [x] Update `src/adapters/llm_summary.py` to use the summary-specific settings and headers.
 - [x] Decide whether sentiment/source detection (triggered after summary) should also use SiliconFlow; if yes, wire them to the summary provider or add separate toggles.
-- [ ] Keep other adapters (score, external_filter, Beijing gate) on the global LLM config.
+- [x] Keep other adapters (score, external_filter, Beijing gate) on the global LLM config.
 
 ## 3. Timeout / Thinking Behavior
 - [ ] Ensure summary provider honours its own timeout + thinking flag (`SUMMARY_LLM_ENABLE_THINKING`), with fallback to global values.

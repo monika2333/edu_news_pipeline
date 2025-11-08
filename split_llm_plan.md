@@ -24,5 +24,5 @@ Goal: keep most workers on OpenRouter while routing `summarize` worker (and opti
 - [x] Verify other workers (`score`, `external-filter`) still resolve OpenRouter config. *(Ran `python -m src.cli.main score --limit 1`, completed successfully via OpenRouter.)*
 
 ## 5. Cleanup / Delivery
-- [ ] Update the new checklist documenting what was implemented/left TODO.
-- [ ] Summarize key changes + instructions for configuring both providers.
+- [x] Update the new checklist documenting what was implemented/left TODO. *(Summary concurrency wired into `src/workers/summarize.py`; README now documents the split.)*
+- [x] Summarize key changes + instructions for configuring both providers. *(README “LLM Provider Configuration” section added; final PR summary can reference it.)*

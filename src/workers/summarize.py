@@ -53,7 +53,9 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None, keywords_path: O
         else:
             limit_value = min(limit_value, process_cap)
 
-    max_workers = concurrency or settings.default_concurrency or 5
+    max_workers = concurrency
+    if max_workers is None:
+        max_workers = settings.summary_concurrency or settings.default_concurrency or 5
     max_workers = max(1, max_workers)
 
     fetch_target = limit_value or max_workers

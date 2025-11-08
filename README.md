@@ -127,6 +127,16 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `CHINANEWS_EXISTING_CONSECUTIVE_STOP` | Early-stop after N consecutive existing items across scroll pages (default `5`; set `0` to disable) |
 
 
+### LLM Provider Configuration
+
+By default every adapter shares the global OpenRouter configuration (`LLM_API_KEY`, `LLM_BASE_URL`, `LLM_TIMEOUT*`). When you want the summarize worker to talk to a different vendor (e.g., SiliconFlow), set the summary-specific overrides:
+
+1. Keep the global OpenRouter variables in place so `score`, `external-filter`, Beijing gate, etc. continue to use them.
+2. Add `SUMMARY_LLM_API_KEY` and `SUMMARY_LLM_BASE_URL` (plus optional `SUMMARY_LLM_ENABLE_THINKING`, `SUMMARY_LLM_TIMEOUT`) pointing at the alternate provider. The summarize worker (and its sentiment/source follow-up calls) will fall back to the global values if any override is omitted.
+3. Use `SUMMARY_CONCURRENCY` to cap just the summarize worker’s thread pool when the alternate provider has lower parallel limits; all other workers still read `CONCURRENCY`.
+
+With this setup, switching summarize back to OpenRouter is as simple as removing the `SUMMARY_LLM_*` variables or pointing them at the same base URL/key as the global settings.
+
 ## Workflow Details
 
 ### Crawl Worker

@@ -57,7 +57,7 @@ def _parse_response(raw_text: str) -> Tuple[str, float]:
     return label, confidence
 
 
-def classify_sentiment(content: str, *, retries: int = 4, timeout: int = 45) -> Dict[str, object]:
+def classify_sentiment(content: str, *, retries: int = 4, timeout: Optional[int] = None) -> Dict[str, object]:
     settings = get_settings()
     api_key = settings.summary_llm_api_key or settings.llm_api_key
     if not api_key:
@@ -83,9 +83,10 @@ def classify_sentiment(content: str, *, retries: int = 4, timeout: int = 45) -> 
 
     backoff = 1.0
     last_error: Optional[Exception] = None
+    resolved_timeout = timeout or settings.summary_llm_timeout
     for _ in range(max(1, retries)):
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=timeout)
+            response = requests.post(url, json=payload, headers=headers, timeout=resolved_timeout)
             if response.status_code == 200:
                 data = response.json()
                 content = (data["choices"][0]["message"]["content"] or "").strip()

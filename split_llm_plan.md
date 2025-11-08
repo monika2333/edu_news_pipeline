@@ -15,8 +15,8 @@ Goal: keep most workers on OpenRouter while routing `summarize` worker (and opti
 - [x] Keep other adapters (score, external_filter, Beijing gate) on the global LLM config.
 
 ## 3. Timeout / Thinking Behavior
-- [ ] Ensure summary provider honours its own timeout + thinking flag (`SUMMARY_LLM_ENABLE_THINKING`), with fallback to global values.
-- [ ] Verify error messages reference the correct env vars when missing.
+- [x] Ensure summary provider honours its own timeout + thinking flag (`SUMMARY_LLM_ENABLE_THINKING`), with fallback to global values.
+- [x] Verify error messages reference the correct env vars when missing.
 
 ## 4. Testing & Validation
 - [ ] Run `python -m compileall src` (quick smoke) after code changes.

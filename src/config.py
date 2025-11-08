@@ -112,17 +112,24 @@ class Settings:
     llm_api_key: Optional[str]
     llm_http_referer: Optional[str]
     llm_title: Optional[str]
+    summary_llm_base_url: str
+    summary_llm_api_key: Optional[str]
+    summary_llm_http_referer: Optional[str]
+    summary_llm_title: Optional[str]
     summarize_model_name: str
     source_model_name: str
     score_model_name: str
     sentiment_model_name: str
     llm_enable_thinking: bool
+    summary_llm_enable_thinking: bool
     llm_timeout_score: int
     llm_timeout_summary: int
     llm_timeout_external_filter: int
     llm_timeout_beijing_gate: int
+    summary_llm_timeout: int
     process_limit: Optional[int]
     default_concurrency: int
+    summary_concurrency: int
     keywords_path: Path
     console_basic_username: Optional[str]
     console_basic_password: Optional[str]
@@ -172,6 +179,14 @@ def get_settings() -> Settings:
         _get_env("LLM_ENABLE_THINKING", "OPENROUTER_ENABLE_THINKING", "ENABLE_THINKING"),
         default=False,
     )
+    summary_llm_base_url = _get_env("SUMMARY_LLM_BASE_URL", "SILICONFLOW_BASE_URL") or llm_base_url
+    summary_llm_api_key = _get_env("SUMMARY_LLM_API_KEY", "SILICONFLOW_API_KEY") or llm_api_key
+    summary_llm_http_referer = _get_env("SUMMARY_LLM_HTTP_REFERER", "SILICONFLOW_HTTP_REFERER") or llm_http_referer
+    summary_llm_title = _get_env("SUMMARY_LLM_TITLE", "SILICONFLOW_TITLE") or llm_title
+    summary_llm_enable_thinking = _bool_from_env(
+        _get_env("SUMMARY_LLM_ENABLE_THINKING", "SILICONFLOW_ENABLE_THINKING"),
+        default=llm_enable_thinking,
+    )
 
     # LLM timeout configuration (in seconds)
     # Fallback order: specific -> global -> hardcoded default
@@ -187,6 +202,17 @@ def get_settings() -> Settings:
         )
         or _llm_global_timeout
         or 60
+    )
+    summary_llm_timeout = (
+        _optional_int(
+            _get_env(
+                "SUMMARY_LLM_TIMEOUT",
+                "SUMMARY_LLM_TIMEOUT_SUMMARY",
+                "SILICONFLOW_TIMEOUT_SUMMARY",
+                "SILICONFLOW_TIMEOUT",
+            )
+        )
+        or llm_timeout_summary
     )
     llm_timeout_external_filter = (
         _optional_int(
@@ -234,6 +260,7 @@ def get_settings() -> Settings:
 
     process_limit = _optional_int(os.getenv("PROCESS_LIMIT"))
     default_concurrency = _optional_int(os.getenv("CONCURRENCY")) or 5
+    summary_concurrency = _optional_int(os.getenv("SUMMARY_CONCURRENCY")) or default_concurrency
 
     def _resolve_path(env_value: Optional[str], *, default: Path) -> Path:
         if env_value:
@@ -299,17 +326,24 @@ def get_settings() -> Settings:
         llm_api_key=llm_api_key,
         llm_http_referer=llm_http_referer,
         llm_title=llm_title,
+        summary_llm_base_url=summary_llm_base_url,
+        summary_llm_api_key=summary_llm_api_key,
+        summary_llm_http_referer=summary_llm_http_referer,
+        summary_llm_title=summary_llm_title,
         summarize_model_name=summarize_model_name,
         source_model_name=source_model_name,
         score_model_name=score_model_name,
         sentiment_model_name=sentiment_model_name,
         llm_enable_thinking=llm_enable_thinking,
+        summary_llm_enable_thinking=summary_llm_enable_thinking,
         llm_timeout_score=llm_timeout_score,
         llm_timeout_summary=llm_timeout_summary,
         llm_timeout_external_filter=llm_timeout_external_filter,
         llm_timeout_beijing_gate=llm_timeout_beijing_gate,
+        summary_llm_timeout=summary_llm_timeout,
         process_limit=process_limit,
         default_concurrency=default_concurrency,
+        summary_concurrency=summary_concurrency,
         keywords_path=keywords_path,
         console_basic_username=console_basic_username,
         console_basic_password=console_basic_password,

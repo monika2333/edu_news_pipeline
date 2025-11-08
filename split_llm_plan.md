@@ -3,11 +3,11 @@
 Goal: keep most workers on OpenRouter while routing `summarize` worker (and optionally related calls) to SiliconFlow.
 
 ## 1. Config & Settings
-- [ ] Extend `Settings` in `src/config.py` with dedicated summary provider fields (API key, base URL, optional headers, timeout overrides, enable_thinking).
-- [ ] Load new env vars (e.g., `SUMMARY_LLM_API_KEY`, `SUMMARY_LLM_BASE_URL`, `SUMMARY_LLM_TIMEOUT_*`) with sensible fallbacks to existing global `LLM_*` values.
-- [ ] Update `.env.local` example to include the new summary-specific variables and notes about precedence.
-- [ ] Document new env vars in `README.md` (configuration table + narrative).
-- [ ] Add `SUMMARY_CONCURRENCY` config (defaults to global `CONCURRENCY`) to cap summarize worker threads separately.
+- [x] Extend `Settings` in `src/config.py` with dedicated summary provider fields (API key, base URL, optional headers, timeout overrides, enable_thinking).
+- [x] Load new env vars (e.g., `SUMMARY_LLM_API_KEY`, `SUMMARY_LLM_BASE_URL`, `SUMMARY_LLM_TIMEOUT_*`) with sensible fallbacks to existing global `LLM_*` values.
+- [x] Update `.env.local` example to include the new summary-specific variables and notes about precedence.
+- [x] Document new env vars in `README.md` (configuration table + narrative).
+- [x] Add `SUMMARY_CONCURRENCY` config (defaults to global `CONCURRENCY`) to cap summarize worker threads separately.
 
 ## 2. Adapter Changes
 - [ ] Update `src/adapters/llm_summary.py` to use the summary-specific settings and headers.

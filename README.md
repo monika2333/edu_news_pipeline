@@ -108,6 +108,9 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `LLM_API_KEY` / `OPENROUTER_API_KEY` | API credential for the chat-completion provider (defaults to OpenRouter). |
 | `LLM_BASE_URL` / `OPENROUTER_BASE_URL` | Endpoint for the LLM provider (defaults to `https://openrouter.ai/api/v1`). |
 | `OPENROUTER_HTTP_REFERER` / `OPENROUTER_TITLE` | Optional headers forwarded to OpenRouter for attribution rankings. |
+| `SUMMARY_LLM_API_KEY` / `SUMMARY_LLM_BASE_URL` | Optional override (e.g., SiliconFlow) used only by the summarize worker; falls back to global LLM settings when unset. |
+| `SUMMARY_LLM_TIMEOUT` | Timeout for summary requests (falls back to `LLM_TIMEOUT_SUMMARY`). |
+| `SUMMARY_CONCURRENCY` | Dedicated thread cap for the summarize worker (falls back to `CONCURRENCY`). |
 | `SUMMARIZE_MODEL_NAME` / `SOURCE_MODEL_NAME` / `SCORE_MODEL_NAME` | Model identifiers used by summarize/source detection/scoring workers. |
 | `LLM_TIMEOUT_SUMMARY` / `LLM_TIMEOUT_SCORE` / `LLM_TIMEOUT_EXTERNAL_FILTER` / `LLM_TIMEOUT_BEIJING_GATE` | Timeout (seconds) for the respective LLM requests; each falls back to `LLM_TIMEOUT` or its hard-coded default if unset. |
 | `EXTERNAL_FILTER_MODEL_NAME` | Model identifier used by the external filter stage (defaults to `SCORE_MODEL_NAME`). |

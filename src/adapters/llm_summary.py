@@ -35,9 +35,9 @@ def summarise(
     """Call the configured LLM chat completions API to summarise an article."""
 
     settings = get_settings()
-    api_key = settings.llm_api_key
+    api_key = settings.summary_llm_api_key or settings.llm_api_key
     if not api_key:
-        raise RuntimeError("Missing LLM API key (set OPENROUTER_API_KEY or LLM_API_KEY)")
+        raise RuntimeError("Missing summary LLM API key (set SUMMARY_LLM_API_KEY or OPENROUTER_API_KEY)")
 
     payload = build_summary_payload(article)
     payload.update(
@@ -46,23 +46,25 @@ def summarise(
             "temperature": 0.2,
         }
     )
-    if settings.llm_enable_thinking:
+    if settings.summary_llm_enable_thinking:
         payload["enable_thinking"] = True
 
-    url = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
+    url = f"{settings.summary_llm_base_url.rstrip('/')}/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    if settings.llm_http_referer:
-        headers["HTTP-Referer"] = settings.llm_http_referer
-    if settings.llm_title:
-        headers["X-Title"] = settings.llm_title
+    referer = settings.summary_llm_http_referer or settings.llm_http_referer
+    title = settings.summary_llm_title or settings.llm_title
+    if referer:
+        headers["HTTP-Referer"] = referer
+    if title:
+        headers["X-Title"] = title
 
     backoff = 1.0
     last_error: Optional[Exception] = None
     # Resolve timeout from settings if not explicitly provided
-    resolved_timeout = timeout or settings.llm_timeout_summary
+    resolved_timeout = timeout or settings.summary_llm_timeout
 
     for _ in range(max(1, retries)):
         try:

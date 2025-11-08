@@ -10,8 +10,8 @@ Goal: keep most workers on OpenRouter while routing `summarize` worker (and opti
 - [x] Add `SUMMARY_CONCURRENCY` config (defaults to global `CONCURRENCY`) to cap summarize worker threads separately.
 
 ## 2. Adapter Changes
-- [ ] Update `src/adapters/llm_summary.py` to use the summary-specific settings and headers.
-- [ ] Decide whether sentiment/source detection (triggered after summary) should also use SiliconFlow; if yes, wire them to the summary provider or add separate toggles.
+- [x] Update `src/adapters/llm_summary.py` to use the summary-specific settings and headers.
+- [x] Decide whether sentiment/source detection (triggered after summary) should also use SiliconFlow; if yes, wire them to the summary provider or add separate toggles.
 - [ ] Keep other adapters (score, external_filter, Beijing gate) on the global LLM config.
 
 ## 3. Timeout / Thinking Behavior

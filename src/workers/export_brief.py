@@ -140,7 +140,7 @@ def run(
 
             metrics_parts: List[str] = []
             ext_score_value = candidate.external_importance_score
-            if is_positive and ext_score_value is not None:
+            if ext_score_value is not None:
                 ext_score_text = _format_number(ext_score_value) or str(ext_score_value)
                 metrics_parts.append(f"external_importance={ext_score_text}")
 

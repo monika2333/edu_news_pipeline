@@ -7,9 +7,9 @@ Automated pipeline for collecting education-related articles, summarising them w
 1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: Tencent News, ChinaNews, China Daily, Guangming Daily, Qianlong, China Education Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
 2. **Hash / Deduplicate** - `hash_primary` computes an exact `content_hash`, 64-bit SimHash, and four 16-bit band hashes for each filtered article. Using SimHash band lookup and a Hamming-distance threshold (<= 3), duplicates are grouped under a primary article and promoted to `primary_articles`.
 3. **Score** - LLM-based relevance scoring runs on entries in `primary_articles`. The LLM output becomes `raw_relevance_score`; keyword rules add a `keyword_bonus_score`, and their sum is persisted as `score`. Promotion still keys off `raw_relevance_score >= 60`, while the final score (without an upper bound) is used for ordering.
-4. **Summarise & Sentiment** - `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and now routes articles into multiple states: Beijing-positive items move to `pending_beijing_gate` for the second pass, non-Beijing positives go to `pending_external_filter`, and everything else writes back as `ready_for_export` (failures remain `pending`).
-5. **Beijing Gate** - Before running the external importance model, the `external_filter` worker picks up `pending_beijing_gate`, calls the dedicated LLM prompt, and either reclassifies to `pending_external_filter` (when not Beijing related) or promotes directly to `ready_for_export` while recording the LLM decision.
-6. **External Filter** - External scoring runs on `pending_external_filter`, assigns an importance score from 0-100, and flags items below the threshold as `external_filtered`; the rest become `ready_for_export`.
+4. **Summarise & Sentiment** - `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and now routes articles into multiple states: Beijing-related items move to `pending_beijing_gate` for a second pass, non-Beijing positives **and negatives** go to `pending_external_filter`, and the remaining items write back as `ready_for_export` (failures remain `pending`).
+5. **Beijing Gate** - Before running the external importance model, the `external_filter` worker picks up `pending_beijing_gate`, calls the dedicated LLM prompt, and either reclassifies to `pending_external_filter` (when not Beijing related) or promotes directly to `ready_for_export` while recording the LLM decision. Confirmed Beijing articles keep their sentiment so both positive/negative variants can be rescored downstream.
+6. **External Filter** - External scoring runs on `pending_external_filter`, assigns an importance score from 0-100 using category-specific prompts and thresholds (京内/京外 × 正面/负面), and flags items below the relevant threshold as `external_filtered`; the rest become `ready_for_export`.
 7. **Export** - Assemble the ready summaries into a briefing ordered by "Jingnei/Jingwai x Positive/Negative" buckets (sorted descending by score) and persist batch metadata in `brief_batches` / `brief_items`, sending an optional Feishu notification.
 All stages are available through the CLI wrapper:
 
@@ -44,7 +44,10 @@ Re-run as needed until the command reports no articles remaining.
 - `src/workers/` - Implementations for `crawl`, `summarize`, `score`, and `export` steps.
 - `database/` - SQL schema and migrations used for the Postgres deployment.
 - `docs/beijing_gate_prompt.md` - Prompt definition used by the Beijing gate LLM check (kept for review and updates).
-- `docs/internal_importance_prompt.md` - Prompt used by the Beijing internal importance scoring path.
+- `docs/internal_importance_prompt.md` - Prompt used by the Beijing internal positive scoring path.
+- `docs/internal_negative_importance_prompt.md` - Prompt used when re-scoring Beijing negative sentiment items.
+- `docs/external_filter_prompt.md` - Prompt used by the non-Beijing positive external scoring path.
+- `docs/external_negative_filter_prompt.md` - Prompt used by the non-Beijing negative path.
 - `src/cli/main.py` - CLI entry point for worker commands (`python -m src.cli.main ...`).
 
 ## Prerequisites
@@ -71,10 +74,13 @@ With these variables in place the worker and console commands automatically use 
 
 ### External Filter Workflow
 
-- Configure the external/internal filter env vars in `.env.local` (`EXTERNAL_FILTER_*`, `INTERNAL_FILTER_THRESHOLD`, `INTERNAL_FILTER_PROMPT_PATH`).
-- `scripts/run_pipeline_once.py` 默认计划会在 summarize 之后自动运行 `external-filter` 步骤；无需额外调度即可串接进整条流水线。
-- Run the external filter worker to score pending 内/外正向稿：`python -m src.workers.external_filter --limit 100`（按需调整 limit/batch）。
-- 使用 backfill 脚本重置历史京内/京外正面记录：先 `python -m scripts.backfill_external_filter --dry-run --limit 50` 查看影响，再去掉 `--dry-run` 实际执行。
+- Configure the external/internal filter env vars in `.env.local`（`EXTERNAL_FILTER_*`, `INTERNAL_FILTER_*`, `INTERNAL_FILTER_PROMPT_PATH`）。负面稿件可通过 `*_NEGATIVE_THRESHOLD` 独立调节。
+- Prompt files live under `docs/` and can be edited independently：  
+  - `external_filter_prompt.md`（京外正面）、`external_negative_filter_prompt.md`（京外负面）  
+  - `internal_importance_prompt.md`（京内正面）、`internal_negative_importance_prompt.md`（京内负面）
+- `scripts/run_pipeline_once.py` 默认在 summarize 之后自动运行 `external-filter`；无需额外调度即可串接进整条流水线。
+- Run the external filter worker to score pending 京内/京外正负稿：`python -m src.workers.external_filter --limit 100`（按需调整 limit/batch）。
+- 使用 backfill 脚本重置历史记录：先 `python -m scripts.backfill_external_filter --dry-run --limit 50` 查看影响，再去掉 `--dry-run` 实际执行。
 - 观察 `news_summaries.external_importance_status` 字段（`pending_external_filter` → `ready_for_export` / `external_filtered`）确保 worker 正常推进。
 
 The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env`. Key settings:
@@ -99,12 +105,19 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `SCORE_KEYWORD_BONUSES` | Optional JSON map overriding keyword bonus rules for scoring. |
 | `SCORE_KEYWORD_BONUSES_PATH` | Optional path to a JSON file providing keyword bonuses (`config/score_keyword_bonuses.json` by default). |
 | `CONCURRENCY` | Default worker concurrency override (falls back to 5). |
-| `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL` | API credentials and endpoint for the LLM provider. |
+| `LLM_API_KEY` / `OPENROUTER_API_KEY` | API credential for the chat-completion provider (defaults to OpenRouter). |
+| `LLM_BASE_URL` / `OPENROUTER_BASE_URL` | Endpoint for the LLM provider (defaults to `https://openrouter.ai/api/v1`). |
+| `OPENROUTER_HTTP_REFERER` / `OPENROUTER_TITLE` | Optional headers forwarded to OpenRouter for attribution rankings. |
+| `SUMMARY_LLM_API_KEY` / `SUMMARY_LLM_BASE_URL` | Optional override (e.g., SiliconFlow) used only by the summarize worker; falls back to global LLM settings when unset. |
+| `SUMMARY_LLM_TIMEOUT` | Timeout for summary requests (falls back to `LLM_TIMEOUT_SUMMARY`). |
+| `SUMMARY_CONCURRENCY` | Dedicated thread cap for the summarize worker (falls back to `CONCURRENCY`). |
 | `SUMMARIZE_MODEL_NAME` / `SOURCE_MODEL_NAME` / `SCORE_MODEL_NAME` | Model identifiers used by summarize/source detection/scoring workers. |
-| `SILICONFLOW_TIMEOUT_SUMMARY` / `SILICONFLOW_TIMEOUT_SCORE` / `SILICONFLOW_TIMEOUT_EXTERNAL_FILTER` / `SILICONFLOW_TIMEOUT_BEIJING_GATE` | Timeout (seconds) for the respective SiliconFlow requests; each falls back to `SILICONFLOW_TIMEOUT` or its hard-coded default if unset. |
+| `LLM_TIMEOUT_SUMMARY` / `LLM_TIMEOUT_SCORE` / `LLM_TIMEOUT_EXTERNAL_FILTER` / `LLM_TIMEOUT_BEIJING_GATE` | Timeout (seconds) for the respective LLM requests; each falls back to `LLM_TIMEOUT` or its hard-coded default if unset. |
 | `EXTERNAL_FILTER_MODEL_NAME` | Model identifier used by the external filter stage (defaults to `SCORE_MODEL_NAME`). |
 | `EXTERNAL_FILTER_THRESHOLD` | External importance score (0-100) required to pass (default 20). |
+| `EXTERNAL_FILTER_NEGATIVE_THRESHOLD` | Optional override for negative external items (fallbacks to `EXTERNAL_FILTER_THRESHOLD`). |
 | `INTERNAL_FILTER_THRESHOLD` | Override threshold used for Beijing internal positives (defaults to `EXTERNAL_FILTER_THRESHOLD`). |
+| `INTERNAL_FILTER_NEGATIVE_THRESHOLD` | Optional override for negative Beijing items (fallbacks to `INTERNAL_FILTER_THRESHOLD`). |
 | `INTERNAL_FILTER_PROMPT_PATH` | Optional path to the internal scoring prompt (defaults to `docs/internal_importance_prompt.md`). |
 | `EXTERNAL_FILTER_BATCH_SIZE` | Rows processed per batch by the external filter worker (default 50). |
 | `EXTERNAL_FILTER_MAX_RETRIES` | Retry attempts before a record is marked `external_filtered` (default 3). |
@@ -113,6 +126,16 @@ The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env
 | `TOUTIAO_EXISTING_CONSECUTIVE_STOP` | Early-stop after N consecutive existing items per author (default `5`; set `0` to disable) |
 | `CHINANEWS_EXISTING_CONSECUTIVE_STOP` | Early-stop after N consecutive existing items across scroll pages (default `5`; set `0` to disable) |
 
+
+### LLM Provider Configuration
+
+By default every adapter shares the global OpenRouter configuration (`LLM_API_KEY`, `LLM_BASE_URL`, `LLM_TIMEOUT*`). When you want the summarize worker to talk to a different vendor (e.g., SiliconFlow), set the summary-specific overrides:
+
+1. Keep the global OpenRouter variables in place so `score`, `external-filter`, Beijing gate, etc. continue to use them.
+2. Add `SUMMARY_LLM_API_KEY` and `SUMMARY_LLM_BASE_URL` (plus optional `SUMMARY_LLM_ENABLE_THINKING`, `SUMMARY_LLM_TIMEOUT`) pointing at the alternate provider. The summarize worker (and its sentiment/source follow-up calls) will fall back to the global values if any override is omitted.
+3. Use `SUMMARY_CONCURRENCY` to cap just the summarize worker’s thread pool when the alternate provider has lower parallel limits; all other workers still read `CONCURRENCY`.
+
+With this setup, switching summarize back to OpenRouter is as simple as removing the `SUMMARY_LLM_*` variables or pointing them at the same base URL/key as the global settings.
 
 ## Workflow Details
 

@@ -987,11 +987,13 @@ class PostgresAdapter:
         if not article_id:
             raise ValueError("complete_beijing_gate requires article_id")
         timestamp = datetime.now(timezone.utc)
-        positive_sentiment = (sentiment_label or "").strip().lower() == "positive"
+        sentiment_value = (sentiment_label or "").strip().lower()
+        positive_sentiment = sentiment_value == "positive"
+        negative_sentiment = sentiment_value == "negative"
         category = (candidate_category or "").strip().lower() or (
             "internal" if is_beijing_related else "external"
         )
-        route_to_external_filter = bool(is_beijing_related) and positive_sentiment
+        route_to_external_filter = bool(is_beijing_related) and (positive_sentiment or negative_sentiment)
         target_status = "pending_external_filter" if route_to_external_filter else status
         target_external_status = (
             "pending_external_filter"
@@ -2033,4 +2035,3 @@ def get_adapter() -> PostgresAdapter:
 
 
 __all__ = ["PostgresAdapter", "get_adapter"]
-

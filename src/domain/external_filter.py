@@ -4,6 +4,14 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 
+def determine_candidate_category(is_beijing_related: Optional[bool], sentiment_label: Optional[str]) -> str:
+    base = "internal" if is_beijing_related else "external"
+    sentiment = (sentiment_label or "").strip().lower()
+    if sentiment in {"positive", "negative"}:
+        return f"{base}_{sentiment}"
+    return base
+
+
 @dataclass(slots=True)
 class BeijingGateCandidate:
     article_id: str
@@ -37,7 +45,7 @@ class ExternalFilterCandidate:
 
     @property
     def candidate_category(self) -> str:
-        return "internal" if self.is_beijing_related else "external"
+        return determine_candidate_category(self.is_beijing_related, self.sentiment_label)
 
 
 @dataclass(slots=True)
@@ -49,4 +57,9 @@ class ExternalFilterResult:
     error: Optional[str] = None
 
 
-__all__ = ["BeijingGateCandidate", "ExternalFilterCandidate", "ExternalFilterResult"]
+__all__ = [
+    "BeijingGateCandidate",
+    "ExternalFilterCandidate",
+    "ExternalFilterResult",
+    "determine_candidate_category",
+]

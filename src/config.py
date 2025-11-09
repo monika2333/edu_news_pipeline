@@ -108,19 +108,28 @@ class Settings:
     db_user: str
     db_password: Optional[str]
     db_schema: str
-    siliconflow_base_url: str
-    siliconflow_api_key: Optional[str]
+    llm_base_url: str
+    llm_api_key: Optional[str]
+    llm_http_referer: Optional[str]
+    llm_title: Optional[str]
+    summary_llm_base_url: str
+    summary_llm_api_key: Optional[str]
+    summary_llm_http_referer: Optional[str]
+    summary_llm_title: Optional[str]
     summarize_model_name: str
     source_model_name: str
     score_model_name: str
     sentiment_model_name: str
-    siliconflow_enable_thinking: bool
-    siliconflow_timeout_score: int
-    siliconflow_timeout_summary: int
-    siliconflow_timeout_external_filter: int
-    siliconflow_timeout_beijing_gate: int
+    llm_enable_thinking: bool
+    summary_llm_enable_thinking: bool
+    llm_timeout_score: int
+    llm_timeout_summary: int
+    llm_timeout_external_filter: int
+    llm_timeout_beijing_gate: int
+    summary_llm_timeout: int
     process_limit: Optional[int]
     default_concurrency: int
+    summary_concurrency: int
     keywords_path: Path
     console_basic_username: Optional[str]
     console_basic_password: Optional[str]
@@ -133,7 +142,9 @@ class Settings:
     score_keyword_bonus_rules: Dict[str, int]
     external_filter_model_name: str
     external_filter_threshold: int
+    external_filter_negative_threshold: int
     internal_filter_threshold: int
+    internal_filter_negative_threshold: int
     internal_filter_prompt_path: Path
     external_filter_batch_size: int
     external_filter_max_retries: int
@@ -153,43 +164,94 @@ def get_settings() -> Settings:
     db_password = _get_env("DB_PASSWORD", "POSTGRES_PASSWORD")
     db_schema = _get_env("DB_SCHEMA", "POSTGRES_SCHEMA") or "public"
 
-    siliconflow_base_url = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
-    siliconflow_api_key = os.getenv("SILICONFLOW_API_KEY")
+    llm_base_url = (
+        _get_env("LLM_BASE_URL", "OPENROUTER_BASE_URL", "SILICONFLOW_BASE_URL")
+        or "https://openrouter.ai/api/v1"
+    )
+    llm_api_key = _get_env("LLM_API_KEY", "OPENROUTER_API_KEY", "SILICONFLOW_API_KEY")
+    llm_http_referer = _get_env("LLM_HTTP_REFERER", "OPENROUTER_HTTP_REFERER", "OPENROUTER_REFERER", "HTTP_REFERER")
+    llm_title = _get_env("LLM_TITLE", "OPENROUTER_TITLE", "OPENROUTER_SITE_NAME", "X_TITLE")
     summarize_model_name = os.getenv("SUMMARIZE_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
     source_model_name = os.getenv("SOURCE_MODEL_NAME", summarize_model_name)
     score_model_name = os.getenv("SCORE_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
-    sentiment_model_name = os.getenv("SENTIMENT_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
-    siliconflow_enable_thinking = _bool_from_env(os.getenv("ENABLE_THINKING"), default=False)
+    sentiment_model_name = os.getenv("SENTIMENT_MODEL_NAME", summarize_model_name)
+    llm_enable_thinking = _bool_from_env(
+        _get_env("LLM_ENABLE_THINKING", "OPENROUTER_ENABLE_THINKING", "ENABLE_THINKING"),
+        default=False,
+    )
+    summary_llm_base_url = _get_env("SUMMARY_LLM_BASE_URL", "SILICONFLOW_BASE_URL") or llm_base_url
+    summary_llm_api_key = _get_env("SUMMARY_LLM_API_KEY", "SILICONFLOW_API_KEY") or llm_api_key
+    summary_llm_http_referer = _get_env("SUMMARY_LLM_HTTP_REFERER", "SILICONFLOW_HTTP_REFERER") or llm_http_referer
+    summary_llm_title = _get_env("SUMMARY_LLM_TITLE", "SILICONFLOW_TITLE") or llm_title
+    summary_llm_enable_thinking = _bool_from_env(
+        _get_env("SUMMARY_LLM_ENABLE_THINKING", "SILICONFLOW_ENABLE_THINKING"),
+        default=llm_enable_thinking,
+    )
 
-    # SiliconFlow timeout configuration (in seconds)
+    # LLM timeout configuration (in seconds)
     # Fallback order: specific -> global -> hardcoded default
-    _sf_global_timeout = _optional_int(os.getenv("SILICONFLOW_TIMEOUT"))
-    siliconflow_timeout_score = (
-        _optional_int(os.getenv("SILICONFLOW_TIMEOUT_SCORE"))
-        or _sf_global_timeout
+    _llm_global_timeout = _optional_int(_get_env("LLM_TIMEOUT", "OPENROUTER_TIMEOUT", "SILICONFLOW_TIMEOUT"))
+    llm_timeout_score = (
+        _optional_int(_get_env("LLM_TIMEOUT_SCORE", "OPENROUTER_TIMEOUT_SCORE", "SILICONFLOW_TIMEOUT_SCORE"))
+        or _llm_global_timeout
         or 30
     )
-    siliconflow_timeout_summary = (
-        _optional_int(os.getenv("SILICONFLOW_TIMEOUT_SUMMARY"))
-        or _sf_global_timeout
+    llm_timeout_summary = (
+        _optional_int(
+            _get_env("LLM_TIMEOUT_SUMMARY", "OPENROUTER_TIMEOUT_SUMMARY", "SILICONFLOW_TIMEOUT_SUMMARY")
+        )
+        or _llm_global_timeout
         or 60
     )
-    siliconflow_timeout_external_filter = (
-        _optional_int(os.getenv("SILICONFLOW_TIMEOUT_EXTERNAL_FILTER"))
-        or _sf_global_timeout
+    summary_llm_timeout = (
+        _optional_int(
+            _get_env(
+                "SUMMARY_LLM_TIMEOUT",
+                "SUMMARY_LLM_TIMEOUT_SUMMARY",
+                "SILICONFLOW_TIMEOUT_SUMMARY",
+                "SILICONFLOW_TIMEOUT",
+            )
+        )
+        or llm_timeout_summary
+    )
+    llm_timeout_external_filter = (
+        _optional_int(
+            _get_env(
+                "LLM_TIMEOUT_EXTERNAL_FILTER",
+                "OPENROUTER_TIMEOUT_EXTERNAL_FILTER",
+                "SILICONFLOW_TIMEOUT_EXTERNAL_FILTER",
+            )
+        )
+        or _llm_global_timeout
         or 30
     )
-    siliconflow_timeout_beijing_gate = (
-        _optional_int(os.getenv("SILICONFLOW_TIMEOUT_BEIJING_GATE"))
-        or _sf_global_timeout
+    llm_timeout_beijing_gate = (
+        _optional_int(
+            _get_env(
+                "LLM_TIMEOUT_BEIJING_GATE",
+                "OPENROUTER_TIMEOUT_BEIJING_GATE",
+                "SILICONFLOW_TIMEOUT_BEIJING_GATE",
+            )
+        )
+        or _llm_global_timeout
         or 60
     )
     external_filter_model_name = os.getenv("EXTERNAL_FILTER_MODEL_NAME", score_model_name)
     raw_external_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_THRESHOLD"))
     external_filter_threshold = raw_external_threshold if raw_external_threshold is not None else 20
+    raw_external_negative_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_NEGATIVE_THRESHOLD"))
+    external_filter_negative_threshold = (
+        raw_external_negative_threshold if raw_external_negative_threshold is not None else external_filter_threshold
+    )
     raw_internal_threshold = _optional_int(os.getenv("INTERNAL_FILTER_THRESHOLD"))
     internal_filter_threshold = (
         raw_internal_threshold if raw_internal_threshold is not None else external_filter_threshold
+    )
+    raw_internal_negative_threshold = _optional_int(os.getenv("INTERNAL_FILTER_NEGATIVE_THRESHOLD"))
+    internal_filter_negative_threshold = (
+        raw_internal_negative_threshold
+        if raw_internal_negative_threshold is not None
+        else internal_filter_threshold
     )
     external_filter_batch_size = _optional_int(os.getenv("EXTERNAL_FILTER_BATCH_SIZE")) or 50
     external_filter_max_retries = _optional_int(os.getenv("EXTERNAL_FILTER_MAX_RETRIES")) or 3
@@ -198,6 +260,7 @@ def get_settings() -> Settings:
 
     process_limit = _optional_int(os.getenv("PROCESS_LIMIT"))
     default_concurrency = _optional_int(os.getenv("CONCURRENCY")) or 5
+    summary_concurrency = _optional_int(os.getenv("SUMMARY_CONCURRENCY")) or default_concurrency
 
     def _resolve_path(env_value: Optional[str], *, default: Path) -> Path:
         if env_value:
@@ -259,19 +322,28 @@ def get_settings() -> Settings:
         db_user=db_user,
         db_password=db_password,
         db_schema=db_schema,
-        siliconflow_base_url=siliconflow_base_url,
-        siliconflow_api_key=siliconflow_api_key,
+        llm_base_url=llm_base_url,
+        llm_api_key=llm_api_key,
+        llm_http_referer=llm_http_referer,
+        llm_title=llm_title,
+        summary_llm_base_url=summary_llm_base_url,
+        summary_llm_api_key=summary_llm_api_key,
+        summary_llm_http_referer=summary_llm_http_referer,
+        summary_llm_title=summary_llm_title,
         summarize_model_name=summarize_model_name,
         source_model_name=source_model_name,
         score_model_name=score_model_name,
         sentiment_model_name=sentiment_model_name,
-        siliconflow_enable_thinking=siliconflow_enable_thinking,
-        siliconflow_timeout_score=siliconflow_timeout_score,
-        siliconflow_timeout_summary=siliconflow_timeout_summary,
-        siliconflow_timeout_external_filter=siliconflow_timeout_external_filter,
-        siliconflow_timeout_beijing_gate=siliconflow_timeout_beijing_gate,
+        llm_enable_thinking=llm_enable_thinking,
+        summary_llm_enable_thinking=summary_llm_enable_thinking,
+        llm_timeout_score=llm_timeout_score,
+        llm_timeout_summary=llm_timeout_summary,
+        llm_timeout_external_filter=llm_timeout_external_filter,
+        llm_timeout_beijing_gate=llm_timeout_beijing_gate,
+        summary_llm_timeout=summary_llm_timeout,
         process_limit=process_limit,
         default_concurrency=default_concurrency,
+        summary_concurrency=summary_concurrency,
         keywords_path=keywords_path,
         console_basic_username=console_basic_username,
         console_basic_password=console_basic_password,
@@ -284,7 +356,9 @@ def get_settings() -> Settings:
         score_keyword_bonus_rules=keyword_bonus_rules,
         external_filter_model_name=external_filter_model_name,
         external_filter_threshold=external_filter_threshold,
+        external_filter_negative_threshold=external_filter_negative_threshold,
         internal_filter_threshold=internal_filter_threshold,
+        internal_filter_negative_threshold=internal_filter_negative_threshold,
         internal_filter_prompt_path=internal_filter_prompt_path,
         external_filter_batch_size=external_filter_batch_size,
         external_filter_max_retries=external_filter_max_retries,

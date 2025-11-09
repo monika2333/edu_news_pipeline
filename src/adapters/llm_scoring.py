@@ -21,25 +21,32 @@ def _build_prompt(text: str) -> str:
 
 def call_relevance_api(text: str, *, retries: int = 4, timeout: Optional[int] = None) -> str:
     settings = get_settings()
-    api_key = settings.siliconflow_api_key
+    api_key = settings.llm_api_key
     if not api_key:
-        raise RuntimeError("Missing SILICONFLOW_API_KEY environment variable")
+        raise RuntimeError("Missing LLM API key (set OPENROUTER_API_KEY or LLM_API_KEY)")
 
-    url = f"{settings.siliconflow_base_url.rstrip('/')}/chat/completions"
+    url = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
     payload = {
         "model": settings.score_model_name,
         "messages": [{"role": "user", "content": _build_prompt(text)}],
         "temperature": 0.0,
     }
-    if settings.siliconflow_enable_thinking:
+    if settings.llm_enable_thinking:
         payload["enable_thinking"] = True
 
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    if settings.llm_http_referer:
+        headers["HTTP-Referer"] = settings.llm_http_referer
+    if settings.llm_title:
+        headers["X-Title"] = settings.llm_title
 
     backoff = 1.0
     last_error: Optional[Exception] = None
     # Resolve timeout from settings if not explicitly provided
-    resolved_timeout = timeout or settings.siliconflow_timeout_score
+    resolved_timeout = timeout or settings.llm_timeout_score
 
     for _ in range(max(1, retries)):
         try:

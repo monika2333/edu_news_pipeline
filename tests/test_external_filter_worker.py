@@ -48,7 +48,7 @@ def _beijing_gate_candidate(**overrides) -> BeijingGateCandidate:
 
 def test_score_candidate_uses_internal_threshold_and_category():
     candidate = _external_candidate()
-    thresholds = {"external": 30, "internal": 60}
+    thresholds = {"external": 30, "internal": 60, "internal_positive": 60}
     with patch(
         "src.workers.external_filter.call_external_filter_model", return_value="88"
     ) as mock_call:
@@ -57,16 +57,16 @@ def test_score_candidate_uses_internal_threshold_and_category():
             retries=2,
             thresholds=thresholds,
         )
-    mock_call.assert_called_once_with(candidate, category="internal", retries=2)
+    mock_call.assert_called_once_with(candidate, category="internal_positive", retries=2)
     assert score == 88
     assert raw == "88"
     assert passed is True
-    assert category == "internal"
+    assert category == "internal_positive"
 
 
 def test_score_candidate_respects_internal_threshold():
     candidate = _external_candidate()
-    thresholds = {"external": 30, "internal": 60}
+    thresholds = {"external": 30, "internal": 60, "internal_positive": 60}
     with patch(
         "src.workers.external_filter.call_external_filter_model", return_value="40"
     ):
@@ -77,7 +77,7 @@ def test_score_candidate_respects_internal_threshold():
         )
     assert score == 40
     assert passed is False
-    assert category == "internal"
+    assert category == "internal_positive"
 
 
 class _DummyFuture:
@@ -126,7 +126,7 @@ def test_process_beijing_gate_passes_internal_category():
     assert failures == 0
     adapter.complete_beijing_gate.assert_called_once()
     kwargs = adapter.complete_beijing_gate.call_args.kwargs
-    assert kwargs["candidate_category"] == "internal"
+    assert kwargs["candidate_category"] == "internal_positive"
     assert kwargs["sentiment_label"] == "positive"
     assert kwargs["status"] == "ready_for_export"
 
@@ -157,9 +157,32 @@ def test_process_beijing_gate_reroutes_external_category():
     assert failures == 0
     adapter.complete_beijing_gate.assert_called_once()
     kwargs = adapter.complete_beijing_gate.call_args.kwargs
-    assert kwargs["candidate_category"] == "external"
+    assert kwargs["candidate_category"] == "external_positive"
     assert kwargs["status"] == "pending_external_filter"
     assert kwargs["reset_external_filter"] is True
+
+
+def test_score_candidate_uses_external_negative_threshold():
+    candidate = _external_candidate(sentiment_label="negative", is_beijing_related=False)
+    thresholds = {
+        "external": 60,
+        "external_positive": 60,
+        "external_negative": 30,
+    }
+    with patch(
+        "src.workers.external_filter.call_external_filter_model",
+        return_value="40",
+    ) as mock_call:
+        score, raw, passed, category = external_filter._score_candidate(
+            candidate,
+            retries=1,
+            thresholds=thresholds,
+        )
+    mock_call.assert_called_once_with(candidate, category="external_negative", retries=1)
+    assert score == 40
+    assert raw == "40"
+    assert passed is True  # uses the lower negative threshold
+    assert category == "external_negative"
 
 
 def test_internal_prompt_includes_bonus_keywords():

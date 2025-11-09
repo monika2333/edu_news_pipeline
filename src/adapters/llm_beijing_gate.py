@@ -66,22 +66,26 @@ def _resolve_model_name(settings) -> str:
 
 
 def _resolve_timeout(settings) -> int:
-    value = getattr(settings, "siliconflow_timeout_beijing_gate", None)
+    value = getattr(settings, "llm_timeout_beijing_gate", None)
     if isinstance(value, int) and value > 0:
         return value
-    return settings.siliconflow_timeout_external_filter
+    return settings.llm_timeout_external_filter
 
 
 def _post_chat_completion(payload: Mapping[str, Any], retries: int, timeout: int) -> str:
     settings = get_settings()
-    api_key = settings.siliconflow_api_key
+    api_key = settings.llm_api_key
     if not api_key:
-        raise RuntimeError("Missing SILICONFLOW_API_KEY environment variable")
-    url = f"{settings.siliconflow_base_url.rstrip('/')}/chat/completions"
+        raise RuntimeError("Missing LLM API key (set OPENROUTER_API_KEY or LLM_API_KEY)")
+    url = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+    if settings.llm_http_referer:
+        headers["HTTP-Referer"] = settings.llm_http_referer
+    if settings.llm_title:
+        headers["X-Title"] = settings.llm_title
     backoff = 1.0
     last_error: Optional[Exception] = None
     for _ in range(max(1, retries)):
@@ -120,7 +124,7 @@ def call_beijing_gate(candidate: BeijingGateCandidate, *, retries: int = 3) -> B
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0,
     }
-    if getattr(settings, "siliconflow_enable_thinking", False):
+    if getattr(settings, "llm_enable_thinking", False):
         payload["enable_thinking"] = True
     timeout = _resolve_timeout(settings)
     raw_output = _post_chat_completion(payload, retries=retries, timeout=timeout)

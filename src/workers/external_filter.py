@@ -11,7 +11,11 @@ from src.adapters.external_filter_model import (
 )
 from src.adapters.llm_beijing_gate import call_beijing_gate
 from src.config import get_settings
-from src.domain import BeijingGateCandidate, ExternalFilterCandidate
+from src.domain import (
+    BeijingGateCandidate,
+    ExternalFilterCandidate,
+    determine_candidate_category,
+)
 from src.workers import log_error, log_info, log_summary, worker_session
 
 WORKER = "external_filter"
@@ -28,7 +32,15 @@ def _score_candidate(
     thresholds: Mapping[str, int],
 ) -> Tuple[int, str, bool, str]:
     category = candidate.candidate_category
-    threshold = thresholds.get(category, thresholds.get("external", 0))
+    base_category = (category.split("_", 1)[0] if category else "").strip().lower()
+    if base_category not in {"internal", "external"}:
+        base_category = "external"
+    threshold = (
+        thresholds.get(category)
+        or thresholds.get(base_category)
+        or thresholds.get("external")
+        or 0
+    )
     raw_output = call_external_filter_model(
         candidate,
         category=category,
@@ -76,6 +88,7 @@ def _process_beijing_gate(
             }
             raw_payload = _beijing_gate_raw_payload(decision_raw, decision.raw_text)
             if decision.is_beijing_related is True:
+                category_label = determine_candidate_category(True, candidate.sentiment_label)
                 adapter.complete_beijing_gate(
                     candidate.article_id,
                     status="ready_for_export",
@@ -85,11 +98,12 @@ def _process_beijing_gate(
                     external_importance_status="ready_for_export",
                     reset_external_filter=False,
                     sentiment_label=candidate.sentiment_label,
-                    candidate_category="internal",
+                    candidate_category=category_label,
                 )
                 confirmed += 1
                 log_info(WORKER, f"Gate OK {candidate.article_id}: confirmed Beijing")
             elif decision.is_beijing_related is False:
+                category_label = determine_candidate_category(False, candidate.sentiment_label)
                 adapter.complete_beijing_gate(
                     candidate.article_id,
                     status="pending_external_filter",
@@ -99,7 +113,7 @@ def _process_beijing_gate(
                     external_importance_status="pending_external_filter",
                     reset_external_filter=True,
                     sentiment_label=candidate.sentiment_label,
-                    candidate_category="external",
+                    candidate_category=category_label,
                 )
                 rerouted += 1
                 log_info(WORKER, f"Gate REROUTE {candidate.article_id}: sent to external filter")
@@ -114,16 +128,18 @@ def _process_beijing_gate(
                     "fail_count": new_fail_count,
                     "fallback": "ready_for_export",
                 }
+                fallback_is_beijing = candidate.is_beijing_related if candidate.is_beijing_related is not None else True
+                category_label = determine_candidate_category(fallback_is_beijing, candidate.sentiment_label)
                 adapter.complete_beijing_gate(
                     candidate.article_id,
                     status="ready_for_export",
-                    is_beijing_related=candidate.is_beijing_related if candidate.is_beijing_related is not None else True,
+                    is_beijing_related=fallback_is_beijing,
                     is_beijing_related_llm=None,
                     raw_output=fallback_payload,
                     external_importance_status="ready_for_export",
                     reset_external_filter=False,
                     sentiment_label=candidate.sentiment_label,
-                    candidate_category="internal",
+                    candidate_category=category_label,
                 )
                 log_error(WORKER, candidate.article_id, exc)
                 log_info(
@@ -148,10 +164,17 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
     total_processed = 0
     total_failed = 0
     max_retries = settings.external_filter_max_retries
-    default_threshold = settings.external_filter_threshold
+    external_positive_threshold = settings.external_filter_threshold
+    external_negative_threshold = settings.external_filter_negative_threshold
+    internal_positive_threshold = settings.internal_filter_threshold
+    internal_negative_threshold = settings.internal_filter_negative_threshold
     thresholds: Mapping[str, int] = {
-        "external": default_threshold,
-        "internal": settings.internal_filter_threshold,
+        "external": external_positive_threshold,
+        "external_positive": external_positive_threshold,
+        "external_negative": external_negative_threshold,
+        "internal": internal_positive_threshold,
+        "internal_positive": internal_positive_threshold,
+        "internal_negative": internal_negative_threshold,
     }
     workers = concurrency or settings.default_concurrency or 5
     workers = max(1, workers)

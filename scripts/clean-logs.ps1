@@ -30,7 +30,7 @@
 param(
     [string]$LogsPath = "logs",
     [int]$CompressOlderThanDays = 3,
-    [int]$DeleteOlderThanDays = 14,
+    [int]$DeleteOlderThanDays = 10,
     [string[]]$Patterns = @('*.log','*.txt','*.jsonl'),
     [switch]$DryRun
 )
@@ -65,9 +65,48 @@ try {
     # Build include filter scriptblock for Get-ChildItem
     $includeFilter = { param($f, $patterns) foreach($p in $patterns){ if ($f.Name -like $p) { return $true } } return $false }
 
+    # Parse date from filename; fall back to LastWriteTime if not found
+    function Try-ParseDateFromName([string]$name, [ref]$outDate) {
+        # Pattern 1: yyyyMMdd_HHmmss  e.g., 20251104_123001
+        if ($name -match '(?<year>\d{4})(?<month>\d{2})(?<day>\d{2})[_-](?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})') {
+            try {
+                $outDate.Value = Get-Date -Year [int]$Matches['year'] -Month [int]$Matches['month'] -Day [int]$Matches['day'] -Hour [int]$Matches['hour'] -Minute [int]$Matches['minute'] -Second [int]$Matches['second']
+                return $true
+            } catch {}
+        }
+        # Pattern 2: yyyy-MM-dd_HH-mm-ss e.g., 2025-11-04_02-00-01
+        if ($name -match '(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})[_-](?<hour>\d{2})-(?<minute>\d{2})-(?<second>\d{2})') {
+            try {
+                $outDate.Value = Get-Date -Year [int]$Matches['year'] -Month [int]$Matches['month'] -Day [int]$Matches['day'] -Hour [int]$Matches['hour'] -Minute [int]$Matches['minute'] -Second [int]$Matches['second']
+                return $true
+            } catch {}
+        }
+        # Pattern 3: yyyyMMdd (date only)
+        if ($name -match '(?<year>\d{4})(?<month>\d{2})(?<day>\d{2})') {
+            try {
+                $outDate.Value = Get-Date -Year [int]$Matches['year'] -Month [int]$Matches['month'] -Day [int]$Matches['day'] -Hour 0 -Minute 0 -Second 0
+                return $true
+            } catch {}
+        }
+        return $false
+    }
+
+    function Get-EffectiveDate($f) {
+        $parsed = $null
+        if (Try-ParseDateFromName $f.Name ([ref]$parsed)) {
+            return $parsed
+        }
+        return $f.LastWriteTime
+    }
+
     # 1) Delete very old files (any extension commonly used for logs)
+    # Use effective date parsed from filename, fallback to LastWriteTime
+    # Note: ensure patterns are concatenated before passing as a single argument
     $toDelete = Get-ChildItem -LiteralPath $LogsPath -Recurse -File |
-        Where-Object { $_.LastWriteTime -lt $deleteBefore -and (& $includeFilter $_ $Patterns + @('*.zip','*.gz')) }
+        Where-Object {
+            $eff = Get-EffectiveDate $_
+            $eff -lt $deleteBefore -and (& $includeFilter $_ ($Patterns + @('*.zip','*.gz')))
+        }
 
     $deleted = 0
     foreach ($f in $toDelete) {
@@ -83,7 +122,8 @@ try {
     # 2) Compress older files that are not already compressed
     $compressCandidates = Get-ChildItem -LiteralPath $LogsPath -Recurse -File |
         Where-Object {
-            $_.LastWriteTime -lt $compressBefore -and
+            $eff = Get-EffectiveDate $_
+            $eff -lt $compressBefore -and
             -not ($_.Extension -in @('.zip', '.gz')) -and
             (& $includeFilter $_ $Patterns)
         }
@@ -126,4 +166,3 @@ catch {
     Write-Error "Failed: $($_.Exception.Message)"
     exit 1
 }
-

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query
 from src.console.schemas.article import NewsArticleSearchResponse
 from src.console.services import articles as articles_service
 
-router = APIRouter(prefix="/articles", tags=["articles"])
+router = APIRouter(prefix="/api/articles", tags=["articles"])
 
 
 @router.get(

@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -16,6 +16,19 @@ router = APIRouter(tags=["console"], include_in_schema=False)
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "web" / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
+
+
+def _parse_date(value: str | None) -> tuple[date | None, str | None]:
+    if value is None:
+        return None, None
+    cleaned = value.strip()
+    if not cleaned:
+        return None, None
+    try:
+        parsed = datetime.strptime(cleaned, "%Y-%m-%d").date()
+        return parsed, None
+    except ValueError:
+        return None, cleaned
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -84,21 +97,33 @@ async def articles_search_page(
     source: str | None = Query(None),
     sentiment: str | None = Query(None),
     status: str | None = Query(None),
-    start_date: date | None = Query(None),
-    end_date: date | None = Query(None),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
     page: int = Query(1, ge=1, le=200),
     limit: int = Query(20, ge=1, le=100),
 ) -> HTMLResponse:
-    result = articles_service.search_articles(
-        query=q,
-        page=page,
-        limit=limit,
-        sources=[source] if source else None,
-        sentiments=[sentiment] if sentiment else None,
-        statuses=[status] if status else None,
-        start_date=start_date,
-        end_date=end_date,
-    )
+    parsed_start, start_error = _parse_date(start_date)
+    parsed_end, end_error = _parse_date(end_date)
+    error_messages = []
+    if start_error:
+        error_messages.append(f"Start date must follow YYYY-MM-DD (got '{start_error}')")
+    if end_error:
+        error_messages.append(f"End date must follow YYYY-MM-DD (got '{end_error}')")
+
+    if error_messages:
+        result = {"items": [], "total": 0, "limit": limit, "page": page, "pages": 1}
+    else:
+        result = articles_service.search_articles(
+            query=q,
+            page=page,
+            limit=limit,
+            sources=[source] if source else None,
+            sentiments=[sentiment] if sentiment else None,
+            statuses=[status] if status else None,
+            start_date=parsed_start,
+            end_date=parsed_end,
+        )
+
     base_params = dict(request.query_params)
 
     def build_page_url(target: int) -> str:
@@ -116,8 +141,8 @@ async def articles_search_page(
         "source": source or "",
         "sentiment": sentiment or "",
         "status": status or "",
-        "start_date": start_date.isoformat() if start_date else "",
-        "end_date": end_date.isoformat() if end_date else "",
+        "start_date": start_date or "",
+        "end_date": end_date or "",
         "limit": limit,
         "results": result["items"],
         "total": result["total"],
@@ -127,6 +152,7 @@ async def articles_search_page(
         "has_next": has_next,
         "prev_url": build_page_url(result["page"] - 1) if has_prev else None,
         "next_url": build_page_url(result["page"] + 1) if has_next else None,
+        "error": " ; ".join(error_messages) if error_messages else "",
     }
     return templates.TemplateResponse("search.html", context)
 

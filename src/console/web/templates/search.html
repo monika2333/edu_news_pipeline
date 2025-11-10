@@ -27,6 +27,16 @@
             font-weight: 600;
             margin-left: 1rem;
         }
+        .flash {
+            padding: 0.75rem 1rem;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+        .flash.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
         .card {
             background: #fff;
             border-radius: 12px;
@@ -170,6 +180,9 @@
 
 <section class="card">
     <h2>Filters</h2>
+    {% if error %}
+    <div class="flash error">{{ error }}</div>
+    {% endif %}
     <form method="get" class="filters">
         <div class="grid">
             <label>

@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Edu News Search</title>
     <style>
         :root {
@@ -13,11 +14,12 @@
             padding: 0;
             background: #f2f5fb;
             color: #0f172a;
+            overflow-x: hidden;
         }
         .page {
             max-width: 1100px;
             margin: 0 auto;
-            padding: 32px 24px 48px;
+            padding: 32px clamp(16px, 4vw, 32px) 48px;
         }
         header {
             display: flex;
@@ -77,6 +79,7 @@
             padding: 0.55rem 1.3rem;
             font-size: 0.95rem;
             cursor: pointer;
+            transition: background 0.2s ease;
         }
         button.primary:hover {
             background: #1d4ed8;
@@ -103,12 +106,18 @@
         .result-headline {
             display: flex;
             justify-content: space-between;
-            gap: 10px;
+            gap: 12px;
             align-items: flex-start;
+            flex-wrap: wrap;
         }
         .result-headline h3 {
             margin: 0;
             font-size: 1.05rem;
+            font-weight: 600;
+        }
+        .result-headline a {
+            text-decoration: none;
+            color: #2563eb;
             font-weight: 600;
         }
         .status-chip {
@@ -144,6 +153,9 @@
         details {
             margin-top: 10px;
         }
+        details summary {
+            cursor: pointer;
+        }
         pre {
             background: #f8fafc;
             padding: 10px;
@@ -171,6 +183,7 @@
             align-items: center;
             margin-top: 10px;
             font-size: 0.92rem;
+            gap: 12px;
         }
         .pagination a {
             text-decoration: none;
@@ -184,20 +197,51 @@
             color: #94a3b8;
         }
         @media (max-width: 720px) {
+            body {
+                background: #fff;
+            }
             .page {
                 padding: 20px 16px 32px;
             }
             header {
                 flex-direction: column;
                 align-items: flex-start;
+                gap: 8px;
+            }
+            header nav a {
+                font-size: 0.9rem;
+            }
+            form .grid {
+                grid-template-columns: 1fr;
+            }
+            button.primary {
+                width: 100%;
+                padding: 0.75rem 1.2rem;
+            }
+            .card {
+                padding: 16px 14px;
+                border-radius: 12px;
             }
             .result-headline {
                 flex-direction: column;
-                align-items: flex-start;
+            }
+            .result-headline a {
+                width: 100%;
+                text-align: center;
+                background: #eef2ff;
+                border-radius: 8px;
+                padding: 8px 12px;
             }
             .meta-line {
                 flex-direction: column;
                 gap: 4px;
+            }
+            .summary {
+                font-size: 0.92rem;
+            }
+            .pagination {
+                flex-direction: column;
+                align-items: stretch;
             }
         }
     </style>

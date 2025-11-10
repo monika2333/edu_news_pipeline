@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 from src.adapters.db import get_adapter
+from src.adapters.title_cluster import cluster_titles
 from src.domain import ExportCandidate
 from src.notifications.feishu import FeishuConfigError, FeishuRequestError, notify_export_summary
 from src.workers import log_info, log_summary, worker_session
@@ -113,6 +114,27 @@ def run(
                 return "negative"
             return "positive"
 
+        def _external_importance_value(candidate: ExportCandidate) -> float:
+            value = candidate.external_importance_score
+            if value is None:
+                return float("-inf")
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return float("-inf")
+
+        def _score_value(candidate: ExportCandidate) -> float:
+            value = candidate.score
+            if value is None:
+                return float("-inf")
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return float("-inf")
+
+        def _candidate_rank_key(candidate: ExportCandidate) -> Tuple[float, float]:
+            return (_external_importance_value(candidate), _score_value(candidate))
+
         def _format_entry(candidate: ExportCandidate) -> str:
             title_line = (candidate.title or "").strip()
             summary_line = (candidate.summary or "").strip()
@@ -214,27 +236,44 @@ def run(
             if not items:
                 category_counts[label] = 0
                 continue
-            # Sorting rules:
-            # - External buckets: by external_importance_score desc, then score desc
-            # - Internal positive (京内正面): align with external — prefer external_importance_score desc
-            # - Other internal buckets: by score desc
-            if key[0] == "external" or (key[0] == "internal" and key[1] == "positive"):
-                items.sort(
-                    key=lambda item: (
-                        item.external_importance_score if item.external_importance_score is not None else -1,
-                        item.score if item.score is not None else 0.0,
-                    ),
-                    reverse=True,
-                )
+
+            # Cluster titles within each bucket
+            title_sequence = [candidate.title or "" for candidate in items]
+            clusters = cluster_titles(title_sequence)
+            if not clusters:
+                clusters = [list(range(len(items)))]
+
+            cluster_structs: List[Tuple[Tuple[float, float], List[ExportCandidate]]] = []
+            for cluster in clusters:
+                cluster_candidates = [items[idx] for idx in cluster if 0 <= idx < len(items)]
+                if not cluster_candidates:
+                    continue
+                cluster_candidates.sort(key=_candidate_rank_key, reverse=True)
+                cluster_key = max((_candidate_rank_key(c) for c in cluster_candidates), default=(float("-inf"), float("-inf")))
+                cluster_structs.append((cluster_key, cluster_candidates))
+
+            if not cluster_structs:
+                fallback_candidates = sorted(items, key=_candidate_rank_key, reverse=True)
+                cluster_structs.append(((float("-inf"), float("-inf")), fallback_candidates))
+
+            cluster_structs.sort(key=lambda entry: entry[0], reverse=True)
+
+            ordered_items: List[ExportCandidate] = []
+            cluster_texts: List[str] = []
+            for _, cluster_candidates in cluster_structs:
+                ordered_items.extend(cluster_candidates)
+                cluster_lines = [_format_entry(item) for item in cluster_candidates]
+                if cluster_lines:
+                    cluster_texts.append("\n\n".join(cluster_lines))
+
+            category_counts[label] = len(ordered_items)
+            header_line = f"【{label}】共 {len(ordered_items)} 条"
+            export_payload.extend((item, section_key) for item in ordered_items)
+
+            if cluster_texts:
+                block_text = header_line + "\n\n" + "\n\n---\n\n".join(cluster_texts)
             else:
-                items.sort(key=lambda item: item.score if item.score is not None else 0.0, reverse=True)
-            category_counts[label] = len(items)
-            header_line = f"【{label}】共 {len(items)} 条"
-            entry_lines = [_format_entry(item) for item in items]
-            export_payload.extend((item, section_key) for item in items)
-            block_text = header_line
-            if entry_lines:
-                block_text = header_line + "\n\n" + "\n\n".join(entry_lines)
+                block_text = header_line
             text_entries.append(block_text)
 
         if not text_entries:

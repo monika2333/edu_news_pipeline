@@ -324,3 +324,4 @@ un_pipeline_every10.ps1" -Python "C:\Path\To\python.exe" -LogDirectory "D:\logs\
 - Register daily cleanup (02:00):
   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/register-clean-logs-task.ps1 -Time 02:00 -TaskName EduNews_CleanLogs`
   - Verify: `schtasks /Query /TN EduNews_CleanLogs /V /FO LIST`
+\n- 新增依赖 sentence-transformers 用于导出阶段聚类

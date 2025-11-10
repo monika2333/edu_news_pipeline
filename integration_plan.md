@@ -11,11 +11,11 @@
    - 实现单一入口函数（如 `cluster_titles(titles: List[str], threshold: float = 0.9)`），返回聚类结果（簇 -> 索引列表）。
    - 采用懒加载模型 + 全局缓存，避免多次运行 export worker 时重复初始化。
 
-2. **引入依赖**
+2. **引入依赖** ✅
    - 在 `requirements.txt` 补充 `sentence-transformers`（随带 `torch` 依赖），确保环境能加载 BGE 模型。
    - 可在 README/docs 简要说明该依赖及需要联网下载模型。
 
-3. **接入 export worker**
+3. **接入 export worker** ✅
    - 在 `src/workers/export_brief.py` 中、对四个桶进行排序前，调用聚类模块：
      - 对每个桶单独聚类。
      - 组内：按 `external_importance_score`（缺失时视为 -inf）降序，再按 `score` 兜底。

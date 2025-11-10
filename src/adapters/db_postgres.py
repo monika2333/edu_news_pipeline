@@ -1274,7 +1274,7 @@ class PostgresAdapter:
                 url,
                 content_markdown,
                 llm_summary,
-                COALESCE(llm_keywords, '{}'::text[]) AS llm_keywords,
+                COALESCE(llm_keywords, '{{}}'::text[]) AS llm_keywords,
                 score,
                 raw_relevance_score,
                 keyword_bonus_score,

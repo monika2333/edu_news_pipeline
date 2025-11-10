@@ -6,8 +6,8 @@
 - 最终删除 `dup_news1108/` 目录及其示例产物。
 
 ## 执行步骤
-1. **抽取聚类能力**
-   - 新建模块（建议 `src/services/title_cluster.py`），封装加载 `BAAI/bge-large-zh` 模型、编码标题、计算相似度矩阵、贪心聚类等逻辑，直接复用 `dup_news1108/dup_news_bge.py` 的核心实现。
+1. **抽取聚类能力** ✅
+   - 新建模块（位于 `src/adapters/title_cluster.py`），封装加载 `BAAI/bge-large-zh` 模型、编码标题、计算相似度矩阵、贪心聚类等逻辑，直接复用 `dup_news1108/dup_news_bge.py` 的核心实现。
    - 实现单一入口函数（如 `cluster_titles(titles: List[str], threshold: float = 0.9)`），返回聚类结果（簇 -> 索引列表）。
    - 采用懒加载模型 + 全局缓存，避免多次运行 export worker 时重复初始化。
 

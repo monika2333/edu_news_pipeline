@@ -52,8 +52,8 @@ This document summarizes how to run the FastAPI console (article search, dashboa
 
 ### Option B – Windows Service (Task Scheduler)
 
-1. Create a scheduled task that runs `powershell.exe -File run_console_service.ps1` (script wraps `python run_console.py` + restart logic).
-2. Configure to run “whether user is logged in or not” and auto-restart on failure.
+1. Use `scripts\register_console_task.ps1 -TaskName EduNews_Console` to register a startup task that calls `scripts\run_console_service.ps1`. Override `-PythonPath` / `-LogPath` if needed.
+2. Task Scheduler will run PowerShell as SYSTEM (or chosen account) and keep restarting the console if it exits unexpectedly.
 
 ### Option C – Docker Compose
 

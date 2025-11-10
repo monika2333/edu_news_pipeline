@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Edu News Search</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+        body {
+            margin: 0;
+            padding: 2rem;
+            background: #f5f5f5;
+            color: #111827;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        header nav a {
+            text-decoration: none;
+            color: #2563eb;
+            font-weight: 600;
+            margin-left: 1rem;
+        }
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        form .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1rem;
+        }
+        label {
+            display: flex;
+            flex-direction: column;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #374151;
+        }
+        input[type="text"],
+        input[type="date"],
+        select {
+            margin-top: 0.3rem;
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+        button.primary {
+            margin-top: 1rem;
+            background: #2563eb;
+            border: none;
+            color: #fff;
+            padding: 0.7rem 1.5rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        button.primary:hover {
+            background: #1d4ed8;
+        }
+        .results {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .result {
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 1rem;
+            background: #fff;
+        }
+        .result h3 {
+            margin: 0 0 0.5rem;
+        }
+        .meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            font-size: 0.9rem;
+            color: #6b7280;
+        }
+        .tags {
+            margin-top: 0.5rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+        }
+        .tag {
+            background: #e0e7ff;
+            color: #1e3a8a;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+        }
+        .summary,
+        .content {
+            margin-top: 0.75rem;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+        details {
+            margin-top: 0.8rem;
+        }
+        details summary {
+            cursor: pointer;
+            font-weight: 600;
+        }
+        pre {
+            background: #f9fafb;
+            padding: 0.8rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            font-size: 0.9rem;
+        }
+        .pagination {
+            margin-top: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.95rem;
+        }
+        .pagination a {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .pagination .disabled {
+            color: #9ca3af;
+        }
+        .muted {
+            color: #6b7280;
+        }
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .pagination {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <div>
+        <h1>Article Search</h1>
+        <p class="muted">Search directly against the <code>news_summaries</code> table to inspect summaries and raw content.</p>
+    </div>
+    <nav>
+        <a href="{{ request.url_for('dashboard') }}">Dashboard</a>
+    </nav>
+</header>
+
+<section class="card">
+    <h2>Filters</h2>
+    <form method="get" class="filters">
+        <div class="grid">
+            <label>
+                Keywords
+                <input type="text" name="q" placeholder="title, keywords, summary..." value="{{ query }}" />
+            </label>
+            <label>
+                Source
+                <input type="text" name="source" placeholder="toutiao, tencent..." value="{{ source }}" />
+            </label>
+            <label>
+                Sentiment
+                <select name="sentiment">
+                    <option value="" {% if not sentiment %}selected{% endif %}>Any</option>
+                    <option value="positive" {% if sentiment == 'positive' %}selected{% endif %}>Positive</option>
+                    <option value="negative" {% if sentiment == 'negative' %}selected{% endif %}>Negative</option>
+                </select>
+            </label>
+            <label>
+                Status
+                <input type="text" name="status" placeholder="ready_for_export..." value="{{ status }}" />
+            </label>
+            <label>
+                Start Date
+                <input type="date" name="start_date" value="{{ start_date }}" />
+            </label>
+            <label>
+                End Date
+                <input type="date" name="end_date" value="{{ end_date }}" />
+            </label>
+            <label>
+                Page Size
+                <select name="limit">
+                    {% for option in [10, 20, 50, 100] %}
+                    <option value="{{ option }}" {% if limit == option %}selected{% endif %}>{{ option }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <button type="submit" class="primary">Search</button>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Results ({{ total }} items)</h2>
+    {% if results %}
+    <div class="results">
+        {% for item in results %}
+        <article class="result">
+            <header>
+                <h3>{{ item.title or 'Untitled article' }}</h3>
+                <div class="meta">
+                    <span>ID: {{ item.article_id }}</span>
+                    {% if item.publish_time_iso %}<span>Published: {{ item.publish_time_iso }}</span>{% endif %}
+                    {% if item.source %}<span>Source: {{ item.source }}</span>{% endif %}
+                    {% if item.score is not none %}<span>Score: {{ '%.2f'|format(item.score) }}</span>{% endif %}
+                    {% if item.sentiment_label %}<span>Sentiment: {{ item.sentiment_label }}</span>{% endif %}
+                    {% if item.status %}<span>Status: {{ item.status }}</span>{% endif %}
+                </div>
+                {% if item.url %}
+                <div class="meta">
+                    <a href="{{ item.url }}" target="_blank" rel="noopener">Open original link</a>
+                </div>
+                {% endif %}
+            </header>
+            {% if item.llm_summary %}
+            <div class="summary">
+                <strong>LLM Summary</strong>
+                <p>{{ item.llm_summary }}</p>
+            </div>
+            {% endif %}
+            {% if item.content_markdown %}
+            <details>
+                <summary>Show raw content</summary>
+                <pre>{{ item.content_markdown }}</pre>
+            </details>
+            {% endif %}
+            {% if item.keywords or item.llm_keywords %}
+            <div class="tags">
+                {% for kw in item.keywords %}
+                <span class="tag">{{ kw }}</span>
+                {% endfor %}
+                {% for kw in item.llm_keywords %}
+                <span class="tag">{{ kw }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+        <p class="muted">No articles match the current filters.</p>
+    {% endif %}
+
+    {% if pages > 1 %}
+    <div class="pagination">
+        {% if has_prev %}
+        <a href="{{ prev_url }}">&laquo; Previous</a>
+        {% else %}
+        <span class="disabled">&laquo; Previous</span>
+        {% endif %}
+
+        <span>Page {{ page }} of {{ pages }}</span>
+
+        {% if has_next %}
+        <a href="{{ next_url }}">Next &raquo;</a>
+        {% else %}
+        <span class="disabled">Next &raquo;</span>
+        {% endif %}
+    </div>
+    {% endif %}
+</section>
+
+</body>
+</html>

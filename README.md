@@ -26,6 +26,19 @@ python -m src.cli.main geo-tag --limit 500 --batch-size 200
 
 Use `-h` on any command to see flags. `summarize` now operates on the queued pending rows—run `crawl` first so new candidates are available.
 
+
+## Web Console & Article Search
+
+- `python run_console.py` starts the FastAPI console (`http://127.0.0.1:8000` by default). Protect it with `CONSOLE_BASIC_USERNAME` / `CONSOLE_BASIC_PASSWORD` or `CONSOLE_API_TOKEN`; skip these only when the service remains bound to localhost.
+- `/dashboard` remains the pipeline status view used to trigger runs and inspect the latest export.
+- `/articles/search` is a lightweight HTML portal backed directly by PostgreSQL. Enter keywords (title/summary/body), filter by source, sentiment, status, or date range, and open summaries alongside the original markdown without downloading the daily `.txt`.
+- `GET /articles/search` (JSON) exposes the same data for automation. Parameters:
+  - `q` – keyword (matches title, `llm_summary`, and `content_markdown`).
+  - `source`, `sentiment`, `status` – optional equality filters (sentiment/status are case-insensitive).
+  - `start_date`, `end_date` – ISO dates applied to `publish_time_iso`.
+  - `page` / `limit` – pagination controls (1–200 / 1–100). Response includes `items`, `total`, `page`, `pages`, and `limit`.
+
+
 ## Repairing Missing Content
 
 If earlier runs inserted feed rows without article bodies, use the repair worker to fill them in. It will fetch only rows where `content_markdown` is empty and update them in place.

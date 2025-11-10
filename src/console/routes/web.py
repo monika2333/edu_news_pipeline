@@ -1,12 +1,14 @@
 ﻿from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Form, HTTPException, Query, Request
+from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from src.console.services import articles as articles_service
 from src.console.services import exports as exports_service
 from src.console.services import runs as runs_service
 
@@ -73,6 +75,60 @@ async def dashboard_trigger(
     if query:
         redirect_url = f"{redirect_url}?{query}"
     return RedirectResponse(url=redirect_url, status_code=303)
+
+
+@router.get("/articles/search", response_class=HTMLResponse)
+async def articles_search_page(
+    request: Request,
+    q: str | None = Query(None, min_length=1, max_length=200),
+    source: str | None = Query(None),
+    sentiment: str | None = Query(None),
+    status: str | None = Query(None),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    page: int = Query(1, ge=1, le=200),
+    limit: int = Query(20, ge=1, le=100),
+) -> HTMLResponse:
+    result = articles_service.search_articles(
+        query=q,
+        page=page,
+        limit=limit,
+        sources=[source] if source else None,
+        sentiments=[sentiment] if sentiment else None,
+        statuses=[status] if status else None,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    base_params = dict(request.query_params)
+
+    def build_page_url(target: int) -> str:
+        params = base_params.copy()
+        params["page"] = str(target)
+        params["limit"] = str(limit)
+        encoded = urlencode(params)
+        return f"{request.url.path}?{encoded}" if encoded else request.url.path
+
+    has_prev = result["page"] > 1
+    has_next = result["page"] < result["pages"]
+    context = {
+        "request": request,
+        "query": q or "",
+        "source": source or "",
+        "sentiment": sentiment or "",
+        "status": status or "",
+        "start_date": start_date.isoformat() if start_date else "",
+        "end_date": end_date.isoformat() if end_date else "",
+        "limit": limit,
+        "results": result["items"],
+        "total": result["total"],
+        "page": result["page"],
+        "pages": result["pages"],
+        "has_prev": has_prev,
+        "has_next": has_next,
+        "prev_url": build_page_url(result["page"] - 1) if has_prev else None,
+        "next_url": build_page_url(result["page"] + 1) if has_next else None,
+    }
+    return templates.TemplateResponse("search.html", context)
 
 
 __all__ = ["router"]

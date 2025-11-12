@@ -11,8 +11,9 @@
   - 时间戳：若页面只提供日期，补齐 `publish_time_iso = "YYYY-MM-DDT12:00:00+08:00"`，保持和库中其它记录的 ISO8601 一致。
   - 配置化：暴露 `verify_tls`, `request_timeout`, `user_agent` 等参数，默认关闭 TLS 校验但允许通过环境变量开启。
 - **单元测试**
-  - 使用 `laodongwubao_crawl/latest_issue_sample.json` 中的样例 HTML，新增 `tests/adapters/test_http_laodongwubao.py`。
-  - 覆盖页面列表解析、文章解析、`article_id` 生成，确保未来网站结构轻微变化时有报警。
+- 使用 `laodongwubao_crawl/latest_issue_sample.json` 中的样例 HTML，新增 `tests/adapters/test_http_laodongwubao.py`。
+- 覆盖页面列表解析、文章解析、`article_id` 生成，确保未来网站结构轻微变化时有报警。
+- 现有 `laodongwubao_crawl/` 文件夹包含已跑通的参考脚本与样例数据，用于本次开发；在 adapter 正式完成并迁移逻辑后，需要彻底删除该目录以免混淆（在合并前清理）。
 
 ## 2. Crawl Worker 集成
 

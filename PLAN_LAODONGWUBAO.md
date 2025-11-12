@@ -6,7 +6,7 @@
 
 - **新建 `src/adapters/http_laodongwubao.py`**
   - 把 `laodongwubao_crawl/crawl_ldwb.py` 的能力收编为 adapter：获取最新期刊、枚举版面、抓取文章、解析 founder-content。
-  - 输出统一结构：`article_id`, `title`, `content_markdown`, `publish_time_iso`, `source='laodongwubao'`, `token`（版面/栏目名），`profile_url/author` 等可选字段。
+  - 输出统一结构：`article_id`, `title`, `content_markdown`, `publish_time_iso`, `source='laodongwubao'`（版面信息仅用于去重与日志，可在解析阶段丢弃，不写入数据库）。
   - `article_id` 生成规则：基于 issue 日期 + 版面 + 文章 slug，如 `laodongwubao:2024-11-12:A01:content_123456`，确保多次抓取不会重复入库。
   - 时间戳：若页面只提供日期，补齐 `publish_time_iso = "YYYY-MM-DDT00:00:00+08:00"`（以当天零点为默认），保持和库中其它记录的 ISO8601 一致。
   - 配置化：暴露 `verify_tls`, `request_timeout`, `user_agent` 等参数，默认关闭 TLS 校验但允许通过环境变量开启。

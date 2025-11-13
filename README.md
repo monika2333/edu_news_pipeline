@@ -4,7 +4,7 @@ Automated pipeline for collecting education-related articles, summarising them w
 
 ## Pipeline Overview
 
-1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: Tencent News, ChinaNews, China Daily, Guangming Daily, Qianlong, China Education Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
+1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: Tencent News, ChinaNews, China Daily, Guangming Daily, Qianlong, China Education Daily, Laodong Wubao), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
 2. **Hash / Deduplicate** - `hash_primary` computes an exact `content_hash`, 64-bit SimHash, and four 16-bit band hashes for each filtered article. Using SimHash band lookup and a Hamming-distance threshold (<= 3), duplicates are grouped under a primary article and promoted to `primary_articles`.
 3. **Score** - LLM-based relevance scoring runs on entries in `primary_articles`. The LLM output becomes `raw_relevance_score`; keyword rules add a `keyword_bonus_score`, and their sum is persisted as `score`. Promotion still keys off `raw_relevance_score >= 60`, while the final score (without an upper bound) is used for ordering.
 4. **Summarise & Sentiment** - `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and now routes articles into multiple states: Beijing-related items move to `pending_beijing_gate` for a second pass, non-Beijing positives **and negatives** go to `pending_external_filter`, and the remaining items write back as `ready_for_export` (failures remain `pending`).
@@ -14,7 +14,7 @@ Automated pipeline for collecting education-related articles, summarising them w
 All stages are available through the CLI wrapper:
 
 ```bash
-python -m src.cli.main crawl --sources toutiao,tencent,chinanews,chinadaily,jyb,gmw,qianlong --limit 5000
+python -m src.cli.main crawl --sources toutiao,tencent,chinanews,chinadaily,jyb,gmw,qianlong,laodongwubao --limit 5000
 python -m src.cli.main hash-primary
 python -m src.cli.main score
 python -m src.cli.main summarize

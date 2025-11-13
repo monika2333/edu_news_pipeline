@@ -32,8 +32,8 @@
     2. 通过 `python -m scripts.run_pipeline_once --steps crawl hash-primary score summarize external-filter --trigger-source scheduler-ldwb --continue-on-error` 调用主流水线。
     3. 使用独立 lock 文件（如 `locks/pipeline_ldwb.lock`），日志写入 `logs/pipeline_ldwb_YYYYMMDD.log`。
   - 是否加 `export`：视业务需要决定当天中午是否即刻入日报；默认交由晚间导出统一处理。
-  - 计划任务：
-  - 在 `scripts/tasks/` 下新增 `register-ldwb-midday.ps1`，注册 Windows 计划任务，触发时间每日 11:55。
+- 计划任务：
+  - 在 `scripts/tasks/` 下新增 `register-ldwb-midday.ps1`，注册 Windows 计划任务，触发时间改为每日 18:50。
   - 任务动作：运行 `run_ldwb_daily.ps1`，并设置失败重试（例如 15 分钟间隔，最多 2 次）。
 - 备选方案：若不想新增脚本，可在现有 `run_pipeline_hourly.ps1` 中检测当小时 `== 12` 时临时追加 `laodongwubao` 源，但独立任务更易排障、日志也更清晰。
 

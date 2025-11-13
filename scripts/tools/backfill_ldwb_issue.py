@@ -3,7 +3,7 @@ import argparse
 import re
 import sys
 from datetime import datetime, timezone
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 from urllib.parse import urljoin
 
 import requests
@@ -119,6 +119,17 @@ def persist_records(records: Sequence, *, dry_run: bool) -> int:
     return len(feed_rows)
 
 
+def _construct_issue_start_url_from_date(date_str: str) -> Optional[str]:
+    """Build an issue start URL (index or node_1) from a date string YYYY-MM-DD."""
+    m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", date_str)
+    if not m:
+        return None
+    y, mm, dd = m.group(1), m.group(2), m.group(3)
+    base_dir = f"https://ldwb.workerbj.cn/content/{y}-{mm}/{dd}/"
+    # Prefer index.htm
+    return base_dir + "index.htm"
+
+
 def main(argv: List[str]) -> int:
     p = argparse.ArgumentParser(
         description=(
@@ -126,13 +137,16 @@ def main(argv: List[str]) -> int:
             "auto-discovers all node_X.htm pages and persists articles."
         )
     )
-    p.add_argument(
+    g = p.add_mutually_exclusive_group(required=False)
+    g.add_argument(
         "url",
         help=(
             "Issue page URL (node_X.htm or index.htm), e.g. "
             "https://ldwb.workerbj.cn/content/2025-11/14/node_2.htm"
         ),
+        nargs="?",
     )
+    g.add_argument("--date", help="Issue date in YYYY-MM-DD; constructs the URL automatically")
     p.add_argument("--timeout", type=float, default=20.0)
     p.add_argument("--verify", action="store_true", help="Verify TLS certs (default off)")
     p.add_argument("--dry-run", action="store_true", help="Only print actions, no DB writes")
@@ -152,19 +166,29 @@ def main(argv: List[str]) -> int:
     if not args.verify:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+    # Resolve starting URL
+    start_url = args.url
+    if not start_url and args.date:
+        start_url = _construct_issue_start_url_from_date(args.date)
+        if not start_url:
+            print("Invalid --date format; expected YYYY-MM-DD")
+            return 2
+    if not start_url:
+        p.error("either URL or --date is required")
+
     # Fetch starting page
-    print(f"Fetch issue page: {args.url}")
-    resp = sess.get(args.url, timeout=args.timeout, verify=args.verify)
+    print(f"Fetch issue page: {start_url}")
+    resp = sess.get(start_url, timeout=args.timeout, verify=args.verify)
     resp.raise_for_status()
     resp.encoding = "utf-8"
     start_html = resp.text
 
     # Discover all node pages for this issue
-    node_urls = discover_issue_nodes(start_html, args.url)
+    node_urls = discover_issue_nodes(start_html, start_url)
 
     # Optional fallback probing
     if not node_urls and args.probe_max and args.probe_max > 0:
-        base_dir = args.url.rsplit("/", 1)[0] + "/"
+        base_dir = start_url.rsplit("/", 1)[0] + "/"
         for i in range(1, args.probe_max + 1):
             test_url = urljoin(base_dir, f"node_{i}.htm")
             try:
@@ -180,7 +204,7 @@ def main(argv: List[str]) -> int:
     if not node_urls:
         # Treat the provided URL itself as the only page
         print("No node links discovered; fallback to single page backfill.")
-        node_urls = [args.url]
+        node_urls = [start_url]
 
     print(f"Discovered node pages: {len(node_urls)}")
     for u in node_urls:

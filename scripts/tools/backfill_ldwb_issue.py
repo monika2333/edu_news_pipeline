@@ -126,7 +126,7 @@ def _construct_issue_start_url_from_date(date_str: str) -> Optional[str]:
         return None
     y, mm, dd = m.group(1), m.group(2), m.group(3)
     base_dir = f"https://ldwb.workerbj.cn/content/{y}-{mm}/{dd}/"
-    # Prefer index.htm
+    # Prefer index.htm; caller may still probe node_1 if index missing
     return base_dir + "index.htm"
 
 
@@ -176,12 +176,37 @@ def main(argv: List[str]) -> int:
     if not start_url:
         p.error("either URL or --date is required")
 
-    # Fetch starting page
-    print(f"Fetch issue page: {start_url}")
-    resp = sess.get(start_url, timeout=args.timeout, verify=args.verify)
-    resp.raise_for_status()
-    resp.encoding = "utf-8"
-    start_html = resp.text
+    # Fetch starting page (with fallback to node_1 for --date)
+    start_html = None
+    fetch_errors = []
+    candidates = [start_url]
+    if args.date and not args.url:
+        # Add node_1.htm as a fallback candidate
+        m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", args.date)
+        if m:
+            y, mm, dd = m.group(1), m.group(2), m.group(3)
+            base_dir = f"https://ldwb.workerbj.cn/content/{y}-{mm}/{dd}/"
+            node1 = base_dir + "node_1.htm"
+            if node1 not in candidates:
+                candidates.append(node1)
+
+    for candidate in candidates:
+        try:
+            print(f"Fetch issue page: {candidate}")
+            resp = sess.get(candidate, timeout=args.timeout, verify=args.verify)
+            resp.raise_for_status()
+            resp.encoding = "utf-8"
+            start_html = resp.text
+            start_url = candidate
+            break
+        except Exception as exc:
+            fetch_errors.append(f"{candidate}: {exc}")
+            continue
+    if start_html is None:
+        print("ERROR: unable to fetch issue start page. Tried:")
+        for e in fetch_errors:
+            print(f" - {e}")
+        return 2
 
     # Discover all node pages for this issue
     node_urls = discover_issue_nodes(start_html, start_url)

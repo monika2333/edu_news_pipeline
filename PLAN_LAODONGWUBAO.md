@@ -21,9 +21,7 @@
   - 复用现有 `collect -> upsert feed -> fetch missing content` 模板，按 adapter 输出写入 `raw_articles`。
   - 因为报纸一次性抓完最新一期，可忽略 `pages`，默认跑满；若 CLI 指定 `--limit`，则在 enqueue 阶段截断，便于测试。
   - 入口：`python -m src.cli.main crawl --sources laodongwubao` 或 `CRAWL_SOURCES=laodongwubao python -m scripts.run_pipeline_once --steps crawl ...`。
-- 文档更新：
-  - README “Pipeline Overview / Crawl” 中补充该源描述、CLI 示例。
-  - 若已有 source 列表（如 `docs/sources.md`），同步添加。
+- 文档更新：README “Pipeline Overview / Crawl” 中补充该源描述、CLI 示例。
 
 ## 3. 调度方案
 

@@ -15,13 +15,13 @@
 - 覆盖页面列表解析、文章解析、`article_id` 生成，确保未来网站结构轻微变化时有报警。
 - 现有 `laodongwubao_crawl/` 文件夹包含已跑通的参考脚本与样例数据，用于本次开发；在 adapter 正式完成并迁移逻辑后，需要彻底删除该目录以免混淆（在合并前清理）。
 
-## 2. Crawl Worker 集成
+## 2. Crawl Worker 集成（进行中）
 
-- 在 `src/workers/crawl_sources.py` 中注册 `laodongwubao` 分支：
+- 在 `src/workers/crawl_sources.py` 中注册 `laodongwubao` 分支（已完成）：
   - 复用现有 `collect -> upsert feed -> fetch missing content` 模板，按 adapter 输出写入 `raw_articles`。
   - 因为报纸一次性抓完最新一期，可忽略 `pages`，默认跑满；若 CLI 指定 `--limit`，则在 enqueue 阶段截断，便于测试。
   - 入口：`python -m src.cli.main crawl --sources laodongwubao` 或 `CRAWL_SOURCES=laodongwubao python -m scripts.run_pipeline_once --steps crawl ...`。
-- 文档更新：README “Pipeline Overview / Crawl” 中补充该源描述、CLI 示例。
+- 文档更新：README “Pipeline Overview / Crawl” 中补充该源描述、CLI 示例（待完成）。
 
 ## 3. 调度方案
 

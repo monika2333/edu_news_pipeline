@@ -2,7 +2,7 @@
 
 本文档汇总了“劳动午报”数据源接入 edu news pipeline 的整体规划、调度策略以及验证步骤，便于在 `feature/laodongwubao-source` 分支上落地实现。
 
-## 1. 适配层与数据模型
+## 1. 适配层与数据模型（已完成）
 
 - **新建 `src/adapters/http_laodongwubao.py`**
   - 把 `laodongwubao_crawl/crawl_ldwb.py` 的能力收编为 adapter：获取最新期刊、枚举版面、抓取文章、解析 founder-content。

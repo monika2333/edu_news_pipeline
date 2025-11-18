@@ -70,6 +70,11 @@ from src.adapters.http_tencent import (
     list_feed_items as tencent_list_feed_items,
     load_author_entries as tencent_load_author_entries,
 )
+from src.adapters.http_laodongwubao import (
+    crawl_latest_issue as ldwb_crawl_latest_issue,
+    article_to_feed_row as ldwb_article_to_feed_row,
+    article_to_detail_row as ldwb_article_to_detail_row,
+)
 
 WORKER = "crawl"
 DEFAULT_AUTHORS_FILE = Path("config/toutiao_author.txt")
@@ -700,6 +705,92 @@ def _run_gmw_flow(
     return stats
 
 
+def _run_ldwb_flow(
+    *,
+    adapter,
+    keywords: Sequence[str],
+    remaining_limit: Optional[int],
+) -> Dict[str, Any]:
+    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
+    try:
+        existing_ids = adapter.get_existing_raw_article_ids()
+    except Exception as exc:
+        log_error(WORKER, "ldwb_local_existing", exc)
+        existing_ids = set()
+
+    try:
+        records = ldwb_crawl_latest_issue(limit=remaining_limit)
+    except Exception as exc:
+        log_error(WORKER, "ldwb_fetch", exc)
+        return stats
+
+    if not records:
+        log_info(WORKER, "No articles returned from Laodong Wubao.")
+        return stats
+
+    seen_ids: Set[str] = set()
+    feed_rows: List[Dict[str, Any]] = []
+    detail_rows: List[Dict[str, Any]] = []
+    duplicates = already = 0
+    for record in records:
+        aid = str(record.article_id or "").strip()
+        if not aid:
+            continue
+        if aid in seen_ids:
+            duplicates += 1
+            continue
+        seen_ids.add(aid)
+        if aid in existing_ids:
+            already += 1
+            continue
+        fetched_at = datetime.now(timezone.utc)
+        feed_rows.append(ldwb_article_to_feed_row(record, fetched_at=fetched_at))
+        detail_rows.append(ldwb_article_to_detail_row(record, detail_fetched_at=fetched_at))
+
+    stats["consumed"] = len(seen_ids)
+    stats["skipped"] += duplicates + already
+    if not feed_rows:
+        log_info(WORKER, "No new Laodong Wubao rows to upsert.")
+        return stats
+
+    try:
+        adapter.upsert_raw_feed_rows(feed_rows)
+    except Exception as exc:
+        stats["failed"] += len(feed_rows)
+        log_error(WORKER, "ldwb_postgres_feed", exc)
+        feed_rows = []
+    else:
+        log_info(WORKER, f"LDWB feed rows upserted: {len(feed_rows)}")
+
+    if detail_rows:
+        try:
+            adapter.update_raw_article_details(detail_rows)
+        except Exception as exc:
+            stats["failed"] += len(detail_rows)
+            log_error(WORKER, "ldwb_postgres_detail", exc)
+            detail_rows = []
+        else:
+            for row in detail_rows:
+                log_info(WORKER, f"LDWB DETAIL OK {row['article_id']}")
+
+    stats["ok"] = len(detail_rows)
+    filtered_candidates: List[Dict[str, Any]] = []
+    for row in detail_rows:
+        aid = str(row.get("article_id") or "").strip()
+        content = str(row.get("content_markdown") or "").strip()
+        if not aid or not content:
+            continue
+        ok_hit, hits = _contains_keywords(content, keywords)
+        if not ok_hit:
+            continue
+        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
+        if candidate:
+            filtered_candidates.append(candidate)
+    if filtered_candidates:
+        _persist_filtered_candidates(adapter, filtered_candidates, source="laodongwubao")
+    return stats
+
+
 def _run_qianlong_flow(
     *,
     adapter,
@@ -1149,6 +1240,12 @@ def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Option
                     keywords=keywords,
                     remaining_limit=remaining_limit,
                     pages=pages,
+                )
+            elif source in {'laodongwubao', 'ldwb'}:
+                stats = _run_ldwb_flow(
+                    adapter=adapter,
+                    keywords=keywords,
+                    remaining_limit=remaining_limit,
                 )
             elif source == 'toutiao':
                 stats = _run_toutiao_flow(

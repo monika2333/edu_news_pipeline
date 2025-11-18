@@ -53,7 +53,7 @@ def notify_export_summary(
     output_path: Path,
     entries: Sequence[str],
     category_counts: Mapping[str, int],
-    preview_limit: int = 3,
+    preview_limit: int = 0,
 ) -> bool:
     """Send a Feishu notification for a successful export."""
     config = _load_config()
@@ -98,15 +98,15 @@ def _render_message(
     preview_limit: int,
 ) -> str:
     counts_line = _format_counts(category_counts)
-    preview_lines = _build_preview(entries, limit=preview_limit)
+    preview_lines = _build_preview(entries, limit=preview_limit) if preview_limit > 0 else []
 
     lines: list[str] = [f"Edu News Brief - {tag}"]
     if counts_line:
         lines.append(counts_line)
-    if preview_lines:
-        lines.append("")
-        lines.extend(preview_lines)
     lines.append("")
+    if preview_lines:
+        lines.extend(preview_lines)
+        lines.append("")
     lines.append(f"Full file: {output_path}")
 
     return _truncate("\n".join(lines), 1800)

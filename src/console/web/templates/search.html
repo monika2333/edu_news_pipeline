@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Edu News Search</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            font-family: "Segoe UI", system, -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            background: #f2f5fb;
+            color: #0f172a;
+            overflow-x: hidden;
+        }
+        .page {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 32px clamp(16px, 4vw, 32px) 48px;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.75rem;
+            font-weight: 650;
+        }
+        header nav a {
+            text-decoration: none;
+            color: #2563eb;
+            font-weight: 600;
+        }
+        .card {
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.07);
+            padding: 18px 20px;
+            margin-bottom: 18px;
+        }
+        .card h2 {
+            margin: 0 0 12px;
+            font-size: 1.2rem;
+        }
+        form .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 14px;
+        }
+        label {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: #475569;
+        }
+        input[type="text"],
+        input[type="date"],
+        select {
+            padding: 0.45rem 0.6rem;
+            border: 1px solid #cbd5f5;
+            border-radius: 6px;
+            font-size: 0.95rem;
+        }
+        button.primary {
+            margin-top: 16px;
+            background: #2563eb;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 0.55rem 1.3rem;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        button.primary:hover {
+            background: #1d4ed8;
+        }
+        .flash {
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        .flash.error {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+        .result {
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 14px 16px 16px;
+            margin-bottom: 12px;
+        }
+        .result:not(:last-child) {
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+        }
+        .result-headline {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+        .result-headline h3 {
+            margin: 0;
+            font-size: 1.05rem;
+            font-weight: 600;
+        }
+        .result-headline a {
+            text-decoration: none;
+            color: #2563eb;
+            font-weight: 600;
+        }
+        .status-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0.2rem 0.65rem;
+            border-radius: 999px;
+            background: #eef2ff;
+            color: #4338ca;
+            font-size: 0.78rem;
+        }
+        .meta-line {
+            margin: 8px 0 0;
+            font-size: 0.85rem;
+            color: #475569;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .section-title {
+            margin: 12px 0 4px;
+            font-size: 0.92rem;
+            font-weight: 600;
+        }
+        .summary {
+            font-size: 0.95rem;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            word-break: break-word;
+            margin: 0;
+        }
+        details {
+            margin-top: 10px;
+        }
+        details summary {
+            cursor: pointer;
+        }
+        pre {
+            background: #f8fafc;
+            padding: 10px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+        .tags {
+            margin-top: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .tag {
+            background: #e0f2fe;
+            color: #0369a1;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+        }
+        .pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+            font-size: 0.92rem;
+            gap: 12px;
+        }
+        .pagination a {
+            text-decoration: none;
+            color: #2563eb;
+            font-weight: 600;
+        }
+        .pagination .disabled {
+            color: #9ca3af;
+        }
+        .muted {
+            color: #94a3b8;
+        }
+        @media (max-width: 720px) {
+            body {
+                background: #fff;
+            }
+            .page {
+                padding: 20px 16px 32px;
+            }
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+            header nav a {
+                font-size: 0.9rem;
+            }
+            form .grid {
+                grid-template-columns: 1fr;
+            }
+            button.primary {
+                width: 100%;
+                padding: 0.75rem 1.2rem;
+            }
+            .card {
+                padding: 16px 14px;
+                border-radius: 12px;
+            }
+            .result-headline {
+                flex-direction: column;
+            }
+            .result-headline a {
+                width: 100%;
+                text-align: center;
+                background: #eef2ff;
+                border-radius: 8px;
+                padding: 8px 12px;
+            }
+            .meta-line {
+                flex-direction: column;
+                gap: 4px;
+            }
+            .summary {
+                font-size: 0.92rem;
+            }
+            .pagination {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <header>
+        <div>
+            <h1>Article Search</h1>
+            <p class="muted">Inspect summaries directly from the Postgres backend.</p>
+        </div>
+        <nav>
+            <a href="{{ request.url_for('dashboard') }}">Dashboard</a>
+        </nav>
+    </header>
+
+    <section class="card">
+        <h2>Filters</h2>
+        {% if error %}
+        <div class="flash error">{{ error }}</div>
+        {% endif %}
+        <form method="get">
+            <div class="grid">
+                <label>
+                    Keywords
+                    <input type="text" name="q" placeholder="title, summary, body..." value="{{ query }}" />
+                </label>
+                <label>
+                    Source
+                    <input type="text" name="source" placeholder="toutiao, tencent..." value="{{ source }}" />
+                </label>
+                <label>
+                    Sentiment
+                    <select name="sentiment">
+                        <option value="" {% if not sentiment %}selected{% endif %}>Any</option>
+                        <option value="positive" {% if sentiment == 'positive' %}selected{% endif %}>Positive</option>
+                        <option value="negative" {% if sentiment == 'negative' %}selected{% endif %}>Negative</option>
+                    </select>
+                </label>
+                <label>
+                    Status
+                    <input type="text" name="status" placeholder="ready_for_export..." value="{{ status }}" />
+                </label>
+                <label>
+                    Start Date
+                    <input type="date" name="start_date" value="{{ start_date }}" />
+                </label>
+                <label>
+                    End Date
+                    <input type="date" name="end_date" value="{{ end_date }}" />
+                </label>
+                <label>
+                    Page Size
+                    <select name="limit">
+                        {% for option in [10, 20, 50, 100] %}
+                        <option value="{{ option }}" {% if limit == option %}selected{% endif %}>{{ option }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+            <button type="submit" class="primary">Search</button>
+        </form>
+    </section>
+
+    <section class="card">
+        <h2>Results ({{ total }} items)</h2>
+        {% if results %}
+        {% for item in results %}
+        <article class="result">
+            <div class="result-headline">
+                <div>
+                    <h3>{{ item.title or 'Untitled article' }}</h3>
+                    <div class="status-chip">
+                        <span>{{ item.article_id }}</span>
+                        {% if item.status %}<span>• {{ item.status }}</span>{% endif %}
+                    </div>
+                </div>
+                {% if item.url %}
+                <a href="{{ item.url }}" target="_blank" rel="noopener">Open original link</a>
+                {% endif %}
+            </div>
+            <div class="meta-line">
+                {% if item.publish_time_iso %}<span>Published: {{ item.publish_time_iso }}</span>{% endif %}
+                {% if item.source %}<span>Source: {{ item.source }}</span>{% endif %}
+                {% if item.score is not none %}<span>Score: {{ '%.2f'|format(item.score) }}</span>{% endif %}
+                {% if item.sentiment_label %}<span>Sentiment: {{ item.sentiment_label }}</span>{% endif %}
+                {% if item.external_importance_status %}<span>External: {{ item.external_importance_status }}</span>{% endif %}
+            </div>
+            {% if item.llm_summary %}
+            <div class="section-title">LLM Summary</div>
+            <p class="summary">{{ item.llm_summary }}</p>
+            {% endif %}
+            {% if item.content_markdown %}
+            <details>
+                <summary>Show raw content</summary>
+                <pre>{{ item.content_markdown }}</pre>
+            </details>
+            {% endif %}
+            {% if item.keywords or item.llm_keywords %}
+            <div class="tags">
+                {% for kw in item.keywords %}
+                <span class="tag">{{ kw }}</span>
+                {% endfor %}
+                {% for kw in item.llm_keywords %}
+                <span class="tag">{{ kw }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </article>
+        {% endfor %}
+        {% else %}
+            <p class="muted">No articles match the current filters.</p>
+        {% endif %}
+
+        {% if pages > 1 %}
+        <div class="pagination">
+            {% if has_prev %}
+            <a href="{{ prev_url }}">&laquo; Previous</a>
+            {% else %}
+            <span class="disabled">&laquo; Previous</span>
+            {% endif %}
+
+            <span>Page {{ page }} of {{ pages }}</span>
+
+            {% if has_next %}
+            <a href="{{ next_url }}">Next &raquo;</a>
+            {% else %}
+            <span class="disabled">Next &raquo;</span>
+            {% endif %}
+        </div>
+        {% endif %}
+    </section>
+</div>
+</body>
+</html>

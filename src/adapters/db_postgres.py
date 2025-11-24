@@ -2,7 +2,7 @@
 
 import contextlib
 import sys
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -333,7 +333,6 @@ class PostgresAdapter:
                 publish_time_iso,
                 url,
                 content_markdown,
-                keywords,
                 status,
                 primary_article_id,
                 content_hash,
@@ -1209,6 +1208,108 @@ class PostgresAdapter:
         with self._cursor() as cur:
             cur.execute(query, (list(article_ids),))
             return cur.rowcount
+
+    def search_news_summaries(
+        self,
+        *,
+        query: Optional[str] = None,
+        sources: Optional[Sequence[str]] = None,
+        sentiments: Optional[Sequence[str]] = None,
+        statuses: Optional[Sequence[str]] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        limit = max(1, min(int(limit or 50), 200))
+        offset = max(0, int(offset or 0))
+        normalized_query = (query or "").strip()
+        clauses: List[str] = []
+        params: List[Any] = []
+        if normalized_query:
+            like_pattern = f"%{normalized_query}%"
+            clauses.append(
+                "("
+                "COALESCE(title, '') ILIKE %s "
+                "OR COALESCE(content_markdown, '') ILIKE %s "
+                "OR COALESCE(llm_summary, '') ILIKE %s"
+                ")"
+            )
+            params.extend([like_pattern, like_pattern, like_pattern])
+
+        normalized_sources = [item.strip() for item in (sources or []) if item and item.strip()]
+        if normalized_sources:
+            clauses.append("source = ANY(%s)")
+            params.append(normalized_sources)
+
+        normalized_sentiments = [item.strip().lower() for item in (sentiments or []) if item and item.strip()]
+        if normalized_sentiments:
+            clauses.append("lower(coalesce(sentiment_label, '')) = ANY(%s)")
+            params.append(normalized_sentiments)
+
+        normalized_statuses = [item.strip().lower() for item in (statuses or []) if item and item.strip()]
+        if normalized_statuses:
+            clauses.append("lower(coalesce(status, '')) = ANY(%s)")
+            params.append(normalized_statuses)
+
+        if start_date:
+            start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+            clauses.append("publish_time_iso >= %s")
+            params.append(start_dt)
+
+        if end_date:
+            exclusive_end = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+            clauses.append("publish_time_iso < %s")
+            params.append(exclusive_end)
+
+        where_clause = " AND ".join(clauses) if clauses else "TRUE"
+        count_sql = f"SELECT COUNT(*) FROM news_summaries WHERE {where_clause}"
+        select_sql = f"""
+            SELECT
+                article_id,
+                title,
+                source,
+                publish_time,
+                publish_time_iso,
+                url,
+                content_markdown,
+                llm_summary,
+                COALESCE(llm_keywords, '{{}}'::text[]) AS llm_keywords,
+                score,
+                raw_relevance_score,
+                keyword_bonus_score,
+                sentiment_label,
+                sentiment_confidence,
+                status,
+                summary_status,
+                external_importance_status,
+                external_importance_score,
+                is_beijing_related,
+                is_beijing_related_llm,
+                external_importance_checked_at,
+                external_importance_raw,
+                summary_generated_at,
+                created_at,
+                updated_at
+            FROM news_summaries
+            WHERE {where_clause}
+            ORDER BY publish_time_iso DESC NULLS LAST, created_at DESC
+            LIMIT %s OFFSET %s
+        """
+        with self._cursor() as cur:
+            cur.execute(count_sql, tuple(params))
+            total_row = cur.fetchone() or {}
+            total = int(total_row.get("count") or 0)
+            fetch_params = list(params)
+            fetch_params.extend([limit, offset])
+            cur.execute(select_sql, tuple(fetch_params))
+            rows = cur.fetchall()
+        return {
+            "items": [dict(row) for row in rows],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
 
     def fetch_raw_articles_for_summary(
         self,

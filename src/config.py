@@ -126,6 +126,7 @@ class Settings:
     llm_timeout_summary: int
     llm_timeout_external_filter: int
     llm_timeout_beijing_gate: int
+    score_promotion_threshold: int
     summary_llm_timeout: int
     process_limit: Optional[int]
     default_concurrency: int
@@ -237,6 +238,10 @@ def get_settings() -> Settings:
         or 60
     )
     external_filter_model_name = os.getenv("EXTERNAL_FILTER_MODEL_NAME", score_model_name)
+    raw_score_threshold = _optional_int(
+        _get_env("SCORE_PROMOTION_THRESHOLD", "SCORE_THRESHOLD")
+    )
+    score_promotion_threshold = raw_score_threshold if raw_score_threshold is not None else 60
     raw_external_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_THRESHOLD"))
     external_filter_threshold = raw_external_threshold if raw_external_threshold is not None else 20
     raw_external_negative_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_NEGATIVE_THRESHOLD"))
@@ -340,6 +345,7 @@ def get_settings() -> Settings:
         llm_timeout_summary=llm_timeout_summary,
         llm_timeout_external_filter=llm_timeout_external_filter,
         llm_timeout_beijing_gate=llm_timeout_beijing_gate,
+        score_promotion_threshold=score_promotion_threshold,
         summary_llm_timeout=summary_llm_timeout,
         process_limit=process_limit,
         default_concurrency=default_concurrency,

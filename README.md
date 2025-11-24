@@ -4,7 +4,7 @@ Automated pipeline for collecting education-related articles, summarising them w
 
 ## Pipeline Overview
 
-1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: Tencent News, ChinaNews, China Daily, Guangming Daily, Qianlong, China Education Daily), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
+1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: Tencent News, ChinaNews, China Daily, Guangming Daily, Qianlong, China Education Daily, Laodong Wubao), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
 2. **Hash / Deduplicate** - `hash_primary` computes an exact `content_hash`, 64-bit SimHash, and four 16-bit band hashes for each filtered article. Using SimHash band lookup and a Hamming-distance threshold (<= 3), duplicates are grouped under a primary article and promoted to `primary_articles`.
 3. **Score** - LLM-based relevance scoring runs on entries in `primary_articles`. The LLM output becomes `raw_relevance_score`; keyword rules add a `keyword_bonus_score`, and their sum is persisted as `score`. Promotion still keys off `raw_relevance_score >= 60`, while the final score (without an upper bound) is used for ordering.
 4. **Summarise & Sentiment** - `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and now routes articles into multiple states: Beijing-related items move to `pending_beijing_gate` for a second pass, non-Beijing positives **and negatives** go to `pending_external_filter`, and the remaining items write back as `ready_for_export` (failures remain `pending`).
@@ -14,7 +14,7 @@ Automated pipeline for collecting education-related articles, summarising them w
 All stages are available through the CLI wrapper:
 
 ```bash
-python -m src.cli.main crawl --sources toutiao,tencent,chinanews,chinadaily,jyb,gmw,qianlong --limit 5000
+python -m src.cli.main crawl --sources toutiao,tencent,chinanews,chinadaily,jyb,gmw,qianlong,laodongwubao --limit 5000
 python -m src.cli.main hash-primary
 python -m src.cli.main score
 python -m src.cli.main summarize
@@ -25,6 +25,19 @@ python -m src.cli.main geo-tag --limit 500 --batch-size 200
 ```
 
 Use `-h` on any command to see flags. `summarize` now operates on the queued pending rowsâ€”run `crawl` first so new candidates are available.
+
+
+## Web Console & Article Search
+
+- `python run_console.py` starts the FastAPI console (`http://127.0.0.1:8000` by default). Protect it with `CONSOLE_BASIC_USERNAME` / `CONSOLE_BASIC_PASSWORD` or `CONSOLE_API_TOKEN`; skip these only when the service remains bound to localhost.
+- `/dashboard` remains the pipeline status view used to trigger runs and inspect the latest export.
+- `/articles/search` is a lightweight HTML portal backed directly by PostgreSQL. Enter keywords (title/summary/body), filter by source, sentiment, status, or date range, and open summaries alongside the original markdown without downloading the daily `.txt`.
+- `GET /api/articles/search` (JSON) exposes the same data for automation. Parameters:
+  - `q` â€“ keyword (matches title, `llm_summary`, and `content_markdown`).
+  - `source`, `sentiment`, `status` â€“ optional equality filters (sentiment/status are case-insensitive).
+  - `start_date`, `end_date` â€“ ISO dates applied to `publish_time_iso`.
+  - `page` / `limit` â€“ pagination controls (1â€“200 / 1â€“100). Response includes `items`, `total`, `page`, `pages`, and `limit`.
+
 
 ## Repairing Missing Content
 
@@ -324,3 +337,4 @@ un_pipeline_every10.ps1" -Python "C:\Path\To\python.exe" -LogDirectory "D:\logs\
 - Register daily cleanup (02:00):
   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/register-clean-logs-task.ps1 -Time 02:00 -TaskName EduNews_CleanLogs`
   - Verify: `schtasks /Query /TN EduNews_CleanLogs /V /FO LIST`
+\n- ÐÂÔöÒÀÀµ sentence-transformers ÓÃÓÚµ¼³ö½×¶Î¾ÛÀà

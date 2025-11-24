@@ -10,7 +10,6 @@ from src.domain import PrimaryArticleForScoring
 from src.workers import log_error, log_info, log_summary, worker_session
 
 WORKER = "score"
-SCORE_THRESHOLD = 60
 
 DEFAULT_KEYWORD_BONUS_RULES: Dict[str, int] = {
     "\u5317\u4eac\u5e02\u59d4\u6559\u80b2\u5de5\u59d4": 100,
@@ -77,6 +76,7 @@ def _compose_score_details(
 def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
     settings = get_settings()
     adapter = get_adapter()
+    threshold = getattr(settings, "score_promotion_threshold", 60)
 
     with worker_session(WORKER, limit=limit):
         rows = adapter.fetch_primary_articles_for_scoring(limit)
@@ -141,7 +141,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
         updates: List[dict] = []
         promotion_payloads: List[dict] = []
         for item, raw_score, bonus_score, final_score, score_details in successes:
-            threshold_met = final_score is not None and final_score >= SCORE_THRESHOLD
+            threshold_met = final_score is not None and final_score >= threshold
             status = "scored" if threshold_met else "filtered_out"
             updates.append(
                 {

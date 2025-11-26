@@ -1,7 +1,7 @@
 param(
   [string]$LogsPath = 'logs',
   [int]$CompressOlderThanDays = 3,
-  [int]$DeleteOlderThanDays = 14
+  [int]$DeleteOlderThanDays = 7
 )
 
 Set-StrictMode -Version Latest

@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   - Compresses files older than -CompressOlderThanDays (default 3 days) using ZIP
-  - Deletes files (including .zip/.gz) older than -DeleteOlderThanDays (default 14 days)
+  - Deletes files (including .zip/.gz) older than -DeleteOlderThanDays (default 7 days)
   - Skips files already compressed (.zip/.gz)
   - Provides a -DryRun switch to preview actions
 
@@ -30,7 +30,7 @@
 param(
     [string]$LogsPath = "logs",
     [int]$CompressOlderThanDays = 3,
-    [int]$DeleteOlderThanDays = 10,
+    [int]$DeleteOlderThanDays = 7,
     [string[]]$Patterns = @('*.log','*.txt','*.jsonl'),
     [switch]$DryRun
 )

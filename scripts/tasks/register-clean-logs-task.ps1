@@ -18,7 +18,7 @@
   Default: 3
 
 .PARAMETER DeleteOlderThanDays
-  Default: 14
+  Default: 7
 #>
 
 [CmdletBinding()]
@@ -27,7 +27,7 @@ param(
   [string]$TaskName = 'EduNews_CleanLogs',
   [string]$LogsPath = 'logs',
   [int]$CompressOlderThanDays = 3,
-  [int]$DeleteOlderThanDays = 14
+  [int]$DeleteOlderThanDays = 7
 )
 
 Set-StrictMode -Version Latest

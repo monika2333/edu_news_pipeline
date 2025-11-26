@@ -33,10 +33,10 @@ Use `-h` on any command to see flags. `summarize` now operates on the queued pen
 - `/dashboard` remains the pipeline status view used to trigger runs and inspect the latest export.
 - `/articles/search` is a lightweight HTML portal backed directly by PostgreSQL. Enter keywords (title/summary/body), filter by source, sentiment, status, or date range, and open summaries alongside the original markdown without downloading the daily `.txt`.
 - `GET /api/articles/search` (JSON) exposes the same data for automation. Parameters:
-  - `q` – keyword (matches title, `llm_summary`, and `content_markdown`).
-  - `source`, `sentiment`, `status` – optional equality filters (sentiment/status are case-insensitive).
-  - `start_date`, `end_date` – ISO dates applied to `publish_time_iso`.
-  - `page` / `limit` – pagination controls (1–200 / 1–100). Response includes `items`, `total`, `page`, `pages`, and `limit`.
+  - `q` �?keyword (matches title, `llm_summary`, and `content_markdown`).
+  - `source`, `sentiment`, `status` �?optional equality filters (sentiment/status are case-insensitive).
+  - `start_date`, `end_date` �?ISO dates applied to `publish_time_iso`.
+  - `page` / `limit` �?pagination controls (1�?00 / 1�?00). Response includes `items`, `total`, `page`, `pages`, and `limit`.
 
 
 ## Repairing Missing Content
@@ -87,14 +87,14 @@ With these variables in place the worker and console commands automatically use 
 
 ### External Filter Workflow
 
-- Configure the external/internal filter env vars in `.env.local`（`EXTERNAL_FILTER_*`, `INTERNAL_FILTER_*`, `INTERNAL_FILTER_PROMPT_PATH`）。负面稿件可通过 `*_NEGATIVE_THRESHOLD` 独立调节。
-- Prompt files live under `docs/` and can be edited independently：  
+- Configure the external/internal filter env vars in `.env.local`（`EXTERNAL_FILTER_*`, `INTERNAL_FILTER_*`, `INTERNAL_FILTER_PROMPT_PATH`）。负面稿件可通过 `*_NEGATIVE_THRESHOLD` 独立调节�?
+- Prompt files live under `docs/` and can be edited independently�? 
   - `external_filter_prompt.md`（京外正面）、`external_negative_filter_prompt.md`（京外负面）  
   - `internal_importance_prompt.md`（京内正面）、`internal_negative_importance_prompt.md`（京内负面）
-- `scripts/run_pipeline_once.py` 默认在 summarize 之后自动运行 `external-filter`；无需额外调度即可串接进整条流水线。
-- Run the external filter worker to score pending 京内/京外正负稿：`python -m src.workers.external_filter --limit 100`（按需调整 limit/batch）。
-- 使用 backfill 脚本重置历史记录：先 `python -m scripts.backfill_external_filter --dry-run --limit 50` 查看影响，再去掉 `--dry-run` 实际执行。
-- 观察 `news_summaries.external_importance_status` 字段（`pending_external_filter` → `ready_for_export` / `external_filtered`）确保 worker 正常推进。
+- `scripts/run_pipeline_once.py` 默认�?summarize 之后自动运行 `external-filter`；无需额外调度即可串接进整条流水线�?
+- Run the external filter worker to score pending 京内/京外正负稿：`python -m src.workers.external_filter --limit 100`（按需调整 limit/batch）�?
+- 使用 backfill 脚本重置历史记录：先 `python -m scripts.backfill_external_filter --dry-run --limit 50` 查看影响，再去掉 `--dry-run` 实际执行�?
+- 观察 `news_summaries.external_importance_status` 字段（`pending_external_filter` �?`ready_for_export` / `external_filtered`）确�?worker 正常推进�?
 
 The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env`. Key settings:
 
@@ -194,14 +194,14 @@ With this setup, switching summarize back to OpenRouter is as simple as removing
 - Publish time is parsed from article metadata or body; when available it is normalised to +08:00 and stored alongside the Unix timestamp.
 - Requests honour `GMW_BASE_URL` and `GMW_TIMEOUT`. Duplicate URLs within a run are de-duplicated before writing to the database.
 
-#### Qianlong (千龙网) specifics
+#### Qianlong (千龙�? specifics
 - Uses the HTTP adapter in `src/adapters/http_qianlong.py`. Listing pages continue until the requested quota is met or three consecutive pages contain no new articles.
 - Publish times are parsed from the article body (`YYYY-MM-DD HH:MM`) and normalised to +08:00 for timestamp/ISO storage.
 - Environment variables:
-  - `QIANLONG_BASE_URL` 自定义入口频道 (默认 `https://beijing.qianlong.com/`)
-  - `QIANLONG_TIMEOUT` 控制单次请求超时时间 (默认 20 秒)
+  - `QIANLONG_BASE_URL` 自定义入口频�?(默认 `https://beijing.qianlong.com/`)
+  - `QIANLONG_TIMEOUT` 控制单次请求超时时间 (默认 20 �?
   - `QIANLONG_DELAY` 设置文章抓取间隔秒数 (默认 0)
-  - `QIANLONG_PAGES` / `QIANLONG_MAX_PAGES` 限制翻页数；未设置时按条数继续翻页
+  - `QIANLONG_PAGES` / `QIANLONG_MAX_PAGES` 限制翻页数；未设置时按条数继续翻�?
   - `QIANLONG_EXISTING_CONSECUTIVE_STOP` early-stop once the crawler encounters N existing articles in a row (default 5; set 0 to disable)
 
 ### Summarise Worker
@@ -331,10 +331,11 @@ un_pipeline_every10.ps1" -Python "C:\Path\To\python.exe" -LogDirectory "D:\logs\
 
 ## Logs Maintenance
 
-- Baseline: compress logs older than 3 days and delete logs (including archives) older than 14 days.
+- Baseline: compress logs older than 3 days and delete logs (including archives) older than 7 days.
 - Manual run: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-logs.ps1`
-  - Options: `-LogsPath logs -CompressOlderThanDays 3 -DeleteOlderThanDays 14 -DryRun`
+  - Options: `-LogsPath logs -CompressOlderThanDays 3 -DeleteOlderThanDays 7 -DryRun`
 - Register daily cleanup (02:00):
   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/register-clean-logs-task.ps1 -Time 02:00 -TaskName EduNews_CleanLogs`
   - Verify: `schtasks /Query /TN EduNews_CleanLogs /V /FO LIST`
 \n- �������� sentence-transformers ���ڵ����׶ξ���
+

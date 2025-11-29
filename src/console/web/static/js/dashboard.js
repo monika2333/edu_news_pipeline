@@ -215,10 +215,10 @@ function renderFilterList(items) {
     });
 
     const sections = [
-        { key: 'internalPositive', label: '京内正面' },
-        { key: 'internalNegative', label: '京内负面' },
-        { key: 'externalPositive', label: '京外正面' },
-        { key: 'externalNegative', label: '京外负面' },
+        { key: 'internalPositive', label: '' },
+        { key: 'internalNegative', label: '' },
+        { key: 'externalPositive', label: '' },
+        { key: 'externalNegative', label: '' },
     ];
 
     elements.filterList.innerHTML = sections.map(sec => {
@@ -226,7 +226,6 @@ function renderFilterList(items) {
         if (!list.length) return '';
         return `
             <div class="filter-section">
-                <h3>${sec.label} (${list.length})</h3>
                 ${list.map(renderCard).join('')}
             </div>
         `;

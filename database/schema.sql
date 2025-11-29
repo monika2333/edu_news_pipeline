@@ -173,6 +173,12 @@ create table if not exists public.news_summaries (
     external_importance_raw jsonb,
     external_filter_attempted_at timestamptz,
     external_filter_fail_count integer not null default 0,
+    manual_status text not null default 'pending',
+    manual_summary text,
+    manual_score numeric(6,3),
+    manual_notes text,
+    manual_decided_by text,
+    manual_decided_at timestamptz,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
@@ -199,6 +205,9 @@ create index if not exists news_summaries_external_filter_idx
 create index if not exists news_summaries_beijing_gate_idx
     on public.news_summaries (beijing_gate_attempted_at, summary_generated_at)
     where status = 'pending_beijing_gate' and summary_status = 'completed';
+
+create index if not exists news_summaries_manual_status_idx
+    on public.news_summaries (manual_status);
 
 
 -- ---------------------------------------------------------------------------
@@ -323,4 +332,3 @@ create trigger pipeline_runs_set_updated_at
     for each row execute function public.set_updated_at();
 
 commit;
-

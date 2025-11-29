@@ -15,7 +15,6 @@
 - 基础表：`news_summaries`（见 `database/schema.sql`），包含 `title/llm_summary/score/status/is_beijing_related` 等。
 - 手工筛选的存储方案：
   - 推荐：新增字段到 `news_summaries`（优先理由：查询/导出无需 join；写入和导出原子性好；表已经承载状态机，保持单表更直观）。字段：`manual_status/manual_summary/manual_score/manual_notes/manual_decided_by/manual_decided_at`。
-  - 备选：新建 `manual_decisions` 表（适用于需要审计多版本、撤销/重做历史、或未来多用户并行的场景）。如采用需在查询时 join 最新决策记录，导出时写入版本记录。
 - 候选池：仅拉取 `status='ready_for_export'` 且 `manual_status='pending'` 的记录。
 - 排序：`score desc` 表示按分数从高到低排序。
 - 导出策略：仅导出 `manual_status='approved'`，导出后批量更新为 `manual_status='exported'`；`discarded` 保留历史不再展示。
@@ -71,3 +70,13 @@
 4) Streamlit 独立部署，无认证。
 5) 每页 30，`score desc` 即分数高→低。
 6) 需要支持撤销/重新入队（pending）。
+
+## 9. 实施 Checklist
+- [ ] 设计并执行 migration：为 `news_summaries` 增加 `manual_status/manual_summary/manual_score/manual_notes/manual_decided_by/manual_decided_at`。
+- [ ] 在 `src/console/services` 创建 `manual_filter.py`，实现 `list_candidates`、`bulk_decide`、`export_batch`，使用参数化 SQL。
+- [ ] 新增导出落盘逻辑（保留现有分组/排序），记录到现有 `brief_batches/brief_items`，并标注手工筛选来源（例如新增 batch 元数据字段）。
+- [ ] 开发 Streamlit `dashboard.py`：状态栏、分页列表（30 条）、编辑摘要、批量提交、导出显示与下载；使用 `st.form` + `st.session_state` 记忆勾选/编辑。
+- [ ] 支持撤销/重新入队：提供操作入口将 `manual_status` 恢复为 `pending`。
+- [ ] 增加轻量单测：服务层（选择/批量更新/导出文本拼装），可用 sqlite/fixtures。
+- [ ] 本地联通测试库跑端到端，验证提交与导出后状态流转（pending → approved/discarded → exported）。
+- [ ] 文档补充：运行方式、环境变量、导出文件路径、已知限制。

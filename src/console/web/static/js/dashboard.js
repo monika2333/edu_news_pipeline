@@ -528,18 +528,10 @@ async function saveReview() {
                 selected_ids: statusChanges.selected,
                 backup_ids: statusChanges.backup,
                 discarded_ids: statusChanges.discarded,
+                pending_ids: statusChanges.pending,
                 actor: state.actor
             })
         });
-
-        // Handle pending resets if any (though API might not have bulk pending endpoint exposed easily, 
-        // let's assume decide handles it or we ignore for now as 'decide' only does 3 statuses.
-        // Wait, manual_filter.py has reset_to_pending but it's not in bulk_decide.
-        // The router doesn't expose reset_to_pending. 
-        // I should probably add it or just ignore for now. 
-        // Let's ignore pending for now or map it to something else? 
-        // Actually, if I want to support 'pending', I need to update the router.
-        // For now, let's just reload.
 
         showToast('Review saved');
         loadStats();

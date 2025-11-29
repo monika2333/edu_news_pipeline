@@ -460,29 +460,39 @@ def bulk_decide(
     selected_ids: Sequence[str],
     backup_ids: Sequence[str],
     discarded_ids: Sequence[str],
+    pending_ids: Sequence[str] = (),
     actor: Optional[str] = None,
 ) -> Dict[str, int]:
     _ensure_manual_filter_schema()
     selected = _normalize_ids(selected_ids)
     backups = _normalize_ids(backup_ids)
     discarded = _normalize_ids(discarded_ids)
+    pending = _normalize_ids(pending_ids)
     logger.info(
-        "Applying decisions: selected=%s backup=%s discarded=%s actor=%s",
+        "Applying decisions: selected=%s backup=%s discarded=%s pending=%s actor=%s",
         len(selected),
         len(backups),
         len(discarded),
+        len(pending),
         actor,
     )
     updated_selected = _apply_decision(status="selected", ids=selected, actor=actor)
     updated_backup = _apply_decision(status="backup", ids=backups, actor=actor)
     updated_discarded = _apply_decision(status="discarded", ids=discarded, actor=actor)
+    updated_pending = reset_to_pending(pending, actor=actor)
     logger.info(
-        "Decision result: selected=%s backup=%s discarded=%s",
+        "Decision result: selected=%s backup=%s discarded=%s pending=%s",
         updated_selected,
         updated_backup,
         updated_discarded,
+        updated_pending,
     )
-    return {"selected": updated_selected, "backup": updated_backup, "discarded": updated_discarded}
+    return {
+        "selected": updated_selected,
+        "backup": updated_backup,
+        "discarded": updated_discarded,
+        "pending": updated_pending,
+    }
 
 
 def update_ranks(

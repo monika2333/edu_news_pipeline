@@ -16,6 +16,7 @@ class BulkDecideRequest(BaseModel):
     selected_ids: List[str] = Field(default_factory=list)
     backup_ids: List[str] = Field(default_factory=list)
     discarded_ids: List[str] = Field(default_factory=list)
+    pending_ids: List[str] = Field(default_factory=list)
     actor: Optional[str] = None
 
 
@@ -65,6 +66,7 @@ def bulk_decide_api(req: BulkDecideRequest) -> Dict[str, int]:
         selected_ids=req.selected_ids,
         backup_ids=req.backup_ids,
         discarded_ids=req.discarded_ids,
+        pending_ids=req.pending_ids,
         actor=req.actor,
     )
 

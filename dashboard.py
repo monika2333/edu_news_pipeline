@@ -40,7 +40,8 @@ def _display_meta(item: Dict[str, Any]) -> None:
         f"来源：{item.get('source') or '-'} | 分数：{item.get('score') or '-'} | 情感：{item.get('sentiment_label') or '-'} | 京内：{item.get('is_beijing_related')}"
     )
     bonus = item.get("bonus_keywords") or []
-    st.caption("Bonus keywords: " + (", ".join(bonus) if bonus else "无匹配"))
+    if bonus:
+        st.caption("Bonus keywords: " + ", ".join(bonus))
 
 
 def _render_select_tab() -> None:

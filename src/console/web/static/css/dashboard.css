@@ -445,9 +445,19 @@ h1 {
     align-items: center;
 }
 
+.modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
 .modal-body textarea {
     width: 100%;
-    height: 400px;
+    flex: 1 1 auto;
+    min-height: 180px;
+    max-height: 55vh;
     padding: 12px;
     border: 1px solid var(--border-color);
     border-radius: 8px;

@@ -238,6 +238,11 @@ def _load_css() -> None:
     st.markdown(
         """
         <style>
+        /* Compact title */
+        h4 {
+            padding-top: 0 !important;
+            margin-top: 0 !important;
+        }
         /* Radio button styling to look like buttons */
         div[role="radiogroup"] {
             gap: 8px;
@@ -245,7 +250,7 @@ def _load_css() -> None:
         div[role="radiogroup"] label {
             background-color: #f8f9fa;
             border: 1px solid #dee2e6;
-            padding: 10px 20px;
+            padding: 4px 12px;
             border-radius: 6px;
             cursor: pointer;
             transition: all 0.2s;

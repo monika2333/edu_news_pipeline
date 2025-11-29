@@ -157,4 +157,10 @@ async def articles_search_page(
     return templates.TemplateResponse("search.html", context)
 
 
+@router.get("/manual_filter", response_class=HTMLResponse)
+async def manual_filter_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse("manual_filter.html", {"request": request})
+
+
+
 __all__ = ["router"]

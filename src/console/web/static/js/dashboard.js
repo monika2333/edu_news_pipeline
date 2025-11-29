@@ -134,7 +134,7 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
                 <div class="meta-item">
                     <span class="badge ${getSentimentClass(safe.sentiment_label)}">${safe.sentiment_label || '-'}</span>
                 </div>
-                <div class="meta-item">京内: ${safe.is_beijing_related ? '是' : '否
+                <div class="meta-item">京内: ${safe.is_beijing_related ? '是' : '否'
         }</div>
     ${safe.bonus_keywords && safe.bonus_keywords.length ?
             `<div class="meta-item">Bonus: ${safe.bonus_keywords.join(', ')}</div>` : ''
@@ -260,7 +260,7 @@ function renderFilterList(data) {
                 <div class="meta-item">
                     <span class="badge ${getSentimentClass(item.sentiment_label)}">${item.sentiment_label || '-'}</span>
                 </div>
-                <div class="meta-item">京内: ${item.is_beijing_related ? '是' : '否
+                <div class="meta-item">京内: ${item.is_beijing_related ? '是' : '否'
         }</div>
     ${item.bonus_keywords && item.bonus_keywords.length ?
             `<div class="meta-item">Bonus: ${item.bonus_keywords.join(', ')}</div>` : ''

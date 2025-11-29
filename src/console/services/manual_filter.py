@@ -124,8 +124,8 @@ def _apply_decision(
         UPDATE news_summaries
         SET manual_status = %s,
             manual_summary = COALESCE(%s, manual_summary, llm_summary),
-            manual_score = COALESCE(%s, manual_score),
-            manual_notes = COALESCE(%s, manual_notes),
+            manual_score = NULL,
+            manual_notes = NULL,
             manual_decided_by = COALESCE(%s, manual_decided_by),
             manual_decided_at = %s,
             updated_at = NOW()

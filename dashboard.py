@@ -36,7 +36,7 @@ def _render_sidebar() -> None:
 
 def _persist_edit(article_id: str, summary: str, score: float | None, notes: str) -> None:
     edits: Dict[str, Dict[str, str]] = st.session_state.get("edits", {})
-    edits[article_id] = {"summary": summary, "score": score, "notes": notes}
+    edits[article_id] = {"summary": summary, "score": score, "notes": None}
     st.session_state["edits"] = edits
 
 
@@ -58,7 +58,9 @@ def _render_candidates(page_data: Dict[str, any]) -> None:
         with col1:
             keep = st.checkbox("保留", value=keep_default, key=f"keep-{aid}")
             title = item.get("title") or "(无标题)"
-            st.markdown(f"**{title}**")
+            url = item.get("url")
+            link_suffix = f" · [原文]({url})" if url else ""
+            st.markdown(f"**{title}**{link_suffix}")
             st.markdown(
                 f"来源：{item.get('source') or '-'} | 分数：{item.get('score') or '-'} | 情感：{item.get('sentiment_label') or '-'} | 京内：{item.get('is_beijing_related')}"
             )
@@ -66,14 +68,9 @@ def _render_candidates(page_data: Dict[str, any]) -> None:
             summary_val = default_edit.get("summary") or item.get("summary") or ""
             summary = st.text_area("摘要", summary_val, key=summary_key, height=160)
         with col2:
-            score_key = f"score-{aid}"
-            base_score = default_edit.get("score") or item.get("manual_score") or item.get("score")
-            score = st.number_input("手工分数（可选）", value=float(base_score) if base_score is not None else 0.0, key=score_key)
-            notes_key = f"notes-{aid}"
-            notes_val = default_edit.get("notes") or item.get("manual_notes") or ""
-            notes = st.text_area("备注", notes_val, key=notes_key, height=80)
+            pass
 
-        _persist_edit(aid, summary, score, notes)
+        _persist_edit(aid, summary, None, None)
         if keep:
             approved_ids.append(aid)
         else:

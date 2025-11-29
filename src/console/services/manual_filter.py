@@ -383,6 +383,10 @@ def export_batch(
     total_period: Optional[int] = None,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
+    # 预览模式永不落盘或标记
+    if dry_run:
+        mark_exported = False
+
     _ensure_manual_filter_schema()
     adapter = get_adapter()
     fetch_query = """

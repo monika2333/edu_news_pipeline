@@ -310,6 +310,12 @@ h1 {
     border-color: #cbd5e1;
 }
 
+.btn.active {
+    background: #eef2ff;
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
 /* Review Grid */
 .review-grid {
     display: grid;
@@ -328,7 +334,17 @@ h1 {
     flex: 1 1 auto;
 }
 
+.status-select {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: #ffffff;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
 .drag-handle {
+    display: none;
     cursor: grab;
     user-select: none;
     color: var(--text-secondary);
@@ -353,6 +369,44 @@ h1 {
     padding-bottom: 12px;
     border-bottom: 2px solid var(--border-color);
     color: var(--text-primary);
+}
+
+/* Compact Sort View */
+.review-grid.compact-mode .article-card {
+    padding: 8px 16px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.review-grid.compact-mode .card-header {
+    margin-bottom: 0;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.review-grid.compact-mode .article-title {
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+}
+
+.review-grid.compact-mode .summary-box,
+.review-grid.compact-mode .meta-row {
+    display: none;
+}
+
+.review-grid.compact-mode .drag-handle {
+    display: block;
+}
+
+.review-grid.compact-mode .status-select {
+    min-width: 140px;
 }
 
 /* Modal */

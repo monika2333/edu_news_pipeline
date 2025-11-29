@@ -9,6 +9,9 @@ let state = {
     currentTab: 'filter'
 };
 
+// UI mode
+let isSortMode = false;
+
 // DOM Elements
 const elements = {
     tabs: document.querySelectorAll('.tab-btn'),
@@ -17,6 +20,7 @@ const elements = {
     reviewList: document.getElementById('review-list'),
     discardList: document.getElementById('discard-list'),
     actorInput: document.getElementById('actor-input'),
+    sortToggleBtn: document.getElementById('btn-toggle-sort'),
     stats: {
         pending: document.getElementById('stat-pending'),
         selected: document.getElementById('stat-selected'),
@@ -47,6 +51,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-export').addEventListener('click', openExportModal);
     document.getElementById('btn-copy').addEventListener('click', copyExportText);
     document.getElementById('btn-close-modal').addEventListener('click', closeModal);
+    if (elements.sortToggleBtn) {
+        elements.sortToggleBtn.addEventListener('click', toggleSortMode);
+    }
 
     // Pagination listeners (delegated or specific)
     setupPagination();
@@ -243,6 +250,24 @@ function renderReviewGrid(selectedItems, backupItems) {
         </div>
     `;
     initReviewSortable();
+    applySortModeState();
+}
+
+function applySortModeState() {
+    const container = document.querySelector('#review-list .review-grid');
+    const toggleBtn = elements.sortToggleBtn;
+    if (container) {
+        container.classList.toggle('compact-mode', isSortMode);
+    }
+    if (toggleBtn) {
+        toggleBtn.classList.toggle('active', isSortMode);
+        toggleBtn.innerHTML = `<span class="icon">🔃</span> ${isSortMode ? '退出排序' : '排序模式'}`;
+    }
+}
+
+function toggleSortMode() {
+    isSortMode = !isSortMode;
+    applySortModeState();
 }
 
 function renderReviewItems(items, currentStatus) {

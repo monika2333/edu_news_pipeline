@@ -135,14 +135,14 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
                     <span class="badge ${getSentimentClass(safe.sentiment_label)}">${safe.sentiment_label || '-'}</span>
                 </div>
                 <div class="meta-item">京内: ${safe.is_beijing_related ? '是' : '否
-        }</div >
+        }</div>
     ${safe.bonus_keywords && safe.bonus_keywords.length ?
             `<div class="meta-item">Bonus: ${safe.bonus_keywords.join(', ')}</div>` : ''
         }
-            </div >
+            </div>
 
     <textarea class="summary-box" id="summary-${safe.article_id}">${safe.summary || ''}</textarea>
-        </div >
+        </div>
     `;
 }
 
@@ -153,7 +153,7 @@ function setupTabs() {
             elements.contents.forEach(c => c.classList.remove('active'));
 
             tab.classList.add('active');
-            document.getElementById(`${tab.dataset.tab} -tab`).classList.add('active');
+            document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
             state.currentTab = tab.dataset.tab;
 
             reloadCurrentTab();
@@ -261,14 +261,14 @@ function renderFilterList(data) {
                     <span class="badge ${getSentimentClass(item.sentiment_label)}">${item.sentiment_label || '-'}</span>
                 </div>
                 <div class="meta-item">京内: ${item.is_beijing_related ? '是' : '否
-        }</div >
+        }</div>
     ${item.bonus_keywords && item.bonus_keywords.length ?
             `<div class="meta-item">Bonus: ${item.bonus_keywords.join(', ')}</div>` : ''
         }
-            </div >
+            </div>
 
     <textarea class="summary-box" id="summary-${item.article_id}">${item.summary || ''}</textarea>
-        </div >
+        </div>
     `;
 
     items.forEach(item => {
@@ -293,7 +293,7 @@ function renderFilterList(data) {
         return `
     < div class="filter-section" >
         ${list.map(item => renderArticleCard(item, { showStatus: true, collapsed: false })).join('')}
-            </div >
+            </div>
     `;
     }).filter(Boolean).join('') || '<div class="empty">No pending articles</div>';
 }

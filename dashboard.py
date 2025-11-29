@@ -31,7 +31,7 @@ def _render_sidebar() -> None:
     st.sidebar.markdown("---")
     actor = st.sidebar.text_input("操作者（可选）", value=st.session_state.get("actor", ""))
     st.session_state["actor"] = actor.strip()
-    if st.sidebar.button("刷新数据"):
+    if st.sidebar.button("刷新数据", key="btn-refresh"):
         st.experimental_rerun()
 
 
@@ -71,7 +71,7 @@ def _render_select_tab() -> None:
             discarded_ids.append(aid)
         form.text_area("摘要（只读）", item.get("summary") or "", key=f"summary-ro-{aid}", height=140, disabled=True)
         form.markdown("---")
-    submitted = form.form_submit_button("提交当前页选择")
+    submitted = form.form_submit_button("提交当前页选择", key="submit-select")
     if submitted:
         actor = st.session_state.get("actor") or None
         result = manual_filter.bulk_decide(
@@ -82,10 +82,10 @@ def _render_select_tab() -> None:
         )
         st.experimental_rerun()
     col_prev, col_next = st.columns(2)
-    if col_prev.button("上一页", disabled=page <= 1):
+    if col_prev.button("上一页", key="select-prev", disabled=page <= 1):
         st.session_state["page_select"] = max(1, page - 1)
         st.experimental_rerun()
-    if col_next.button("下一页", disabled=(page * PAGE_SIZE) >= page_data["total"]):
+    if col_next.button("下一页", key="select-next", disabled=(page * PAGE_SIZE) >= page_data["total"]):
         st.session_state["page_select"] = page + 1
         st.experimental_rerun()
 
@@ -143,7 +143,7 @@ def _render_review_tab() -> None:
     default_tag = datetime.now().strftime("%Y-%m-%d")
     report_tag = export_col1.text_input("Report Tag", value=default_tag)
     output_path = export_col2.text_input("输出路径", value=DEFAULT_EXPORT_PATH)
-    if st.button("导出（仅采纳）"):
+    if st.button("导出（仅采纳）", key="export-selected"):
         result = manual_filter.export_batch(report_tag=report_tag.strip(), output_path=output_path)
         st.success(f"生成 {result.get('count', 0)} 条，输出：{result.get('output_path')}")
         st.json(result.get("category_counts", {}))
@@ -157,7 +157,7 @@ def _render_review_tab() -> None:
         st.caption(f"备选 {data_bak['total']} 条，第 {page_bak} 页")
         result_bak = _render_review_list("备选列表", data_bak["items"], bucket="backup")
 
-    if st.button("保存编辑与状态"):
+    if st.button("保存编辑与状态", key="save-review"):
         actor = st.session_state.get("actor") or None
         # 合并编辑
         merged_edits: Dict[str, Dict[str, Any]] = {}
@@ -181,18 +181,18 @@ def _render_review_tab() -> None:
         st.experimental_rerun()
 
     col_prev1, col_next1 = st.columns(2)
-    if col_prev1.button("采纳上一页", disabled=page_sel <= 1):
+    if col_prev1.button("采纳上一页", key="sel-prev", disabled=page_sel <= 1):
         st.session_state["page_review_sel"] = max(1, page_sel - 1)
         st.experimental_rerun()
-    if col_next1.button("采纳下一页", disabled=(page_sel * PAGE_SIZE) >= data_sel["total"]):
+    if col_next1.button("采纳下一页", key="sel-next", disabled=(page_sel * PAGE_SIZE) >= data_sel["total"]):
         st.session_state["page_review_sel"] = page_sel + 1
         st.experimental_rerun()
 
     col_prev2, col_next2 = st.columns(2)
-    if col_prev2.button("备选上一页", disabled=page_bak <= 1):
+    if col_prev2.button("备选上一页", key="bak-prev", disabled=page_bak <= 1):
         st.session_state["page_review_backup"] = max(1, page_bak - 1)
         st.experimental_rerun()
-    if col_next2.button("备选下一页", disabled=(page_bak * PAGE_SIZE) >= data_bak["total"]):
+    if col_next2.button("备选下一页", key="bak-next", disabled=(page_bak * PAGE_SIZE) >= data_bak["total"]):
         st.session_state["page_review_backup"] = page_bak + 1
         st.experimental_rerun()
 
@@ -213,16 +213,16 @@ def _render_discard_tab() -> None:
         if pick:
             backup_ids.append(aid)
         form.markdown("---")
-    if form.form_submit_button("批量加入备选"):
+    if form.form_submit_button("批量加入备选", key="discard-to-backup"):
         actor = st.session_state.get("actor") or None
         manual_filter.bulk_decide(selected_ids=[], backup_ids=backup_ids, discarded_ids=[], actor=actor)
         st.success(f"已加入备选 {len(backup_ids)} 条")
         st.experimental_rerun()
     col_prev, col_next = st.columns(2)
-    if col_prev.button("上一页", disabled=page <= 1):
+    if col_prev.button("上一页", key="discard-prev", disabled=page <= 1):
         st.session_state["page_discard"] = max(1, page - 1)
         st.experimental_rerun()
-    if col_next.button("下一页", disabled=(page * PAGE_SIZE) >= data["total"]):
+    if col_next.button("下一页", key="discard-next", disabled=(page * PAGE_SIZE) >= data["total"]):
         st.session_state["page_discard"] = page + 1
         st.experimental_rerun()
 

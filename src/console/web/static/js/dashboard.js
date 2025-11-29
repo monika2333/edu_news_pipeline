@@ -291,7 +291,10 @@ function renderReviewItems(items, currentStatus) {
         <div class="article-card" data-id="${item.article_id}">
             <div class="card-header">
                 <span class="drag-handle" title="拖动排序">&#8942;</span>
-                <h4 class="article-title">${item.title}</h4>
+                <h4 class="article-title">
+                    ${item.title}
+                    ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
+                </h4>
                 <select class="status-select" data-id="${item.article_id}">
                     <option value="selected" ${currentStatus === 'selected' ? 'selected' : ''}>采纳</option>
                     <option value="backup" ${currentStatus === 'backup' ? 'selected' : ''}>备选</option>

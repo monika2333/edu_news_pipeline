@@ -161,8 +161,11 @@ async function submitFilter() {
 
     cards.forEach(card => {
         const id = card.dataset.id;
-        const status = card.querySelector(`input[name="status-${id}"]:checked`).value;
-        const summary = card.querySelector(`#summary-${id}`).value;
+        // Avoid invalid selectors when article_id contains ':' or '/'
+        const statusInput = card.querySelector('input[type="radio"]:checked');
+        const status = statusInput ? statusInput.value : 'discarded';
+        const summaryBox = card.querySelector('.summary-box');
+        const summary = summaryBox ? summaryBox.value : '';
 
         // Save edit if summary changed (we assume it might have, simplest to just send all for now or check dataset)
         // For simplicity, we'll send edits for all items in this batch to ensure latest summary is saved

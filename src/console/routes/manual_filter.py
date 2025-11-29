@@ -29,6 +29,12 @@ class ExportRequest(BaseModel):
     output_path: Optional[str] = None
 
 
+class UpdateOrderRequest(BaseModel):
+    selected_order: List[str] = Field(default_factory=list)
+    backup_order: List[str] = Field(default_factory=list)
+    actor: Optional[str] = None
+
+
 @router.get("/candidates")
 def list_candidates_api(limit: int = 30, offset: int = 0) -> Dict[str, Any]:
     return manual_filter.list_candidates(limit=limit, offset=offset)
@@ -82,3 +88,12 @@ def export_batch_api(req: ExportRequest) -> Dict[str, Any]:
             result["content"] = ""
 
     return result
+
+
+@router.post("/order")
+def update_order_api(req: UpdateOrderRequest) -> Dict[str, int]:
+    return manual_filter.update_ranks(
+        selected_order=req.selected_order,
+        backup_order=req.backup_order,
+        actor=req.actor,
+    )

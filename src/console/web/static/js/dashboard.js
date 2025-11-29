@@ -228,16 +228,21 @@ async function loadReviewData() {
 function renderReviewGrid(selectedItems, backupItems) {
     elements.reviewList.innerHTML = `
         <div class="review-grid">
-            <div class="review-col">
+            <div class="review-col selected-col" data-status="selected">
                 <h3>采纳 (${selectedItems.length})</h3>
-                ${renderReviewItems(selectedItems, 'selected')}
+                <div class="review-items">
+                    ${renderReviewItems(selectedItems, 'selected')}
+                </div>
             </div>
-            <div class="review-col">
+            <div class="review-col backup-col" data-status="backup">
                 <h3>备选 (${backupItems.length})</h3>
-                ${renderReviewItems(backupItems, 'backup')}
+                <div class="review-items">
+                    ${renderReviewItems(backupItems, 'backup')}
+                </div>
             </div>
         </div>
     `;
+    initReviewSortable();
 }
 
 function renderReviewItems(items, currentStatus) {
@@ -255,6 +260,45 @@ function renderReviewItems(items, currentStatus) {
             <textarea class="summary-box" data-id="${item.article_id}">${item.summary || ''}</textarea>
         </div>
     `).join('');
+}
+
+function initReviewSortable() {
+    if (typeof Sortable === 'undefined') return;
+    const selectedList = document.querySelector('.review-col.selected-col .review-items');
+    const backupList = document.querySelector('.review-col.backup-col .review-items');
+    if (!selectedList || !backupList) return;
+
+    const options = {
+        group: 'review-order',
+        animation: 150,
+        handle: '.card-header',
+        onEnd: persistReviewOrder,
+    };
+
+    // Destroy previous instances by replacing containers (renderReviewGrid already re-rendered DOM),
+    // so just create new Sortable instances.
+    new Sortable(selectedList, options);
+    new Sortable(backupList, options);
+}
+
+async function persistReviewOrder() {
+    const selectedList = document.querySelector('.review-col.selected-col .review-items');
+    const backupList = document.querySelector('.review-col.backup-col .review-items');
+    if (!selectedList || !backupList) return;
+
+    const selected_order = Array.from(selectedList.querySelectorAll('.article-card')).map(card => card.dataset.id);
+    const backup_order = Array.from(backupList.querySelectorAll('.article-card')).map(card => card.dataset.id);
+
+    try {
+        await fetch(`${API_BASE}/order`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ selected_order, backup_order, actor: state.actor })
+        });
+        showToast('排序已保存');
+    } catch (e) {
+        showToast('排序保存失败', 'error');
+    }
 }
 
 async function saveReview() {

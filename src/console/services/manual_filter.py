@@ -27,6 +27,7 @@ def _ensure_manual_filter_schema() -> None:
     statements = [
         "ALTER TABLE news_summaries ADD COLUMN IF NOT EXISTS manual_status VARCHAR(50) DEFAULT 'pending'",
         "ALTER TABLE news_summaries ADD COLUMN IF NOT EXISTS manual_summary TEXT",
+        "ALTER TABLE news_summaries ADD COLUMN IF NOT EXISTS manual_rank DOUBLE PRECISION",
         "ALTER TABLE news_summaries ADD COLUMN IF NOT EXISTS manual_decided_by VARCHAR(100)",
         "ALTER TABLE news_summaries ADD COLUMN IF NOT EXISTS manual_decided_at TIMESTAMPTZ",
         "UPDATE news_summaries SET manual_status = 'pending' WHERE manual_status IS NULL",
@@ -102,7 +103,10 @@ def _paginate_by_status(
         FROM news_summaries
         WHERE manual_status = %s
           {where_ready}
-        ORDER BY score DESC NULLS LAST, publish_time_iso DESC NULLS LAST, article_id ASC
+        ORDER BY manual_rank ASC NULLS LAST,
+                 score DESC NULLS LAST,
+                 publish_time_iso DESC NULLS LAST,
+                 article_id ASC
         LIMIT %s OFFSET %s
     """
     count_query = f"""
@@ -219,6 +223,50 @@ def bulk_decide(
     return {"selected": updated_selected, "backup": updated_backup, "discarded": updated_discarded}
 
 
+def update_ranks(
+    *,
+    selected_order: Sequence[str],
+    backup_order: Sequence[str],
+    actor: Optional[str] = None,
+) -> Dict[str, int]:
+    """
+    Persist manual ordering for review lists and keep statuses in sync with list membership.
+    """
+    _ensure_manual_filter_schema()
+    adapter = get_adapter()
+    now_ts = datetime.now(timezone.utc)
+    payload: List[Tuple[Any, ...]] = []
+    selected_ids = _normalize_ids(selected_order)
+    backup_ids = _normalize_ids(backup_order)
+
+    for index, aid in enumerate(selected_ids, start=1):
+        payload.append(("selected", float(index), actor, now_ts, aid))
+    for index, aid in enumerate(backup_ids, start=1):
+        payload.append(("backup", float(index), actor, now_ts, aid))
+
+    if not payload:
+        return {"selected": 0, "backup": 0}
+
+    query = """
+        UPDATE news_summaries
+        SET manual_status = %s,
+            manual_rank = %s,
+            manual_decided_by = COALESCE(%s, manual_decided_by),
+            manual_decided_at = %s,
+            updated_at = NOW()
+        WHERE article_id = %s
+    """
+    with adapter._cursor() as cur:  # type: ignore[attr-defined]
+        cur.executemany(query, payload)
+        logger.info(
+            "Updated manual ranks: selected=%s backup=%s rows=%s",
+            len(selected_ids),
+            len(backup_ids),
+            cur.rowcount,
+        )
+        return {"selected": len(selected_ids), "backup": len(backup_ids), "updated_rows": cur.rowcount}
+
+
 def reset_to_pending(ids: Sequence[str], *, actor: Optional[str] = None) -> int:
     _ensure_manual_filter_schema()
     target_ids = _normalize_ids(ids)
@@ -284,6 +332,7 @@ def export_batch(
             title,
             llm_summary,
             manual_summary,
+            manual_rank,
             score,
             content_markdown,
             url,
@@ -297,7 +346,10 @@ def export_batch(
             external_importance_checked_at
         FROM news_summaries
         WHERE manual_status = 'selected'
-        ORDER BY score DESC NULLS LAST, publish_time_iso DESC NULLS LAST, article_id ASC
+        ORDER BY manual_rank ASC NULLS LAST,
+                 score DESC NULLS LAST,
+                 publish_time_iso DESC NULLS LAST,
+                 article_id ASC
     """
     with adapter._cursor() as cur:  # type: ignore[attr-defined]
         cur.execute(fetch_query)
@@ -475,6 +527,7 @@ __all__ = [
     "list_review",
     "list_discarded",
     "bulk_decide",
+    "update_ranks",
     "save_edits",
     "export_batch",
     "status_counts",

@@ -75,6 +75,26 @@ def list_candidates(*, limit: int = 30, offset: int = 0) -> Dict[str, Any]:
     }
 
 
+def status_counts() -> Dict[str, int]:
+    adapter = get_adapter()
+    query = """
+        SELECT manual_status, COUNT(*) AS total
+        FROM news_summaries
+        GROUP BY manual_status
+    """
+    with adapter._cursor() as cur:  # type: ignore[attr-defined]
+        cur.execute(query)
+        rows = cur.fetchall()
+    counts: Dict[str, int] = {"pending": 0, "approved": 0, "discarded": 0, "exported": 0}
+    for row in rows:
+        status = str(row.get("manual_status") or "").strip() or "pending"
+        try:
+            counts[status] = int(row.get("total") or 0)
+        except Exception:
+            counts[status] = 0
+    return counts
+
+
 def _apply_decision(
     *,
     status: str,
@@ -318,4 +338,4 @@ def export_batch(
     }
 
 
-__all__ = ["list_candidates", "bulk_decide", "export_batch"]
+__all__ = ["list_candidates", "bulk_decide", "export_batch", "status_counts"]

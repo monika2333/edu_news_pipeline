@@ -136,12 +136,19 @@ function renderFilterList(items) {
         return;
     }
 
-    elements.filterList.innerHTML = items.map(item => `
+    const buckets = {
+        internalPositive: [],
+        internalNegative: [],
+        externalPositive: [],
+        externalNegative: [],
+    };
+
+    const renderCard = (item) => `
         <div class="article-card" data-id="${item.article_id}">
             <div class="card-header">
                 <h3 class="article-title">
                     ${item.title || '(No Title)'}
-                    ${item.url ? `<a href="${item.url}" target="_blank">🔗</a>` : ''}
+                    ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
                 </h3>
                 <div class="radio-group" role="radiogroup">
                     <div class="radio-option">
@@ -172,7 +179,34 @@ function renderFilterList(items) {
             
             <textarea class="summary-box" id="summary-${item.article_id}">${item.summary || ''}</textarea>
         </div>
-    `).join('');
+    `;
+
+    items.forEach(item => {
+        const isInternal = !!item.is_beijing_related;
+        const sentiment = (item.sentiment_label || '').toLowerCase() === 'negative' ? 'negative' : 'positive';
+        if (isInternal && sentiment === 'positive') buckets.internalPositive.push(item);
+        else if (isInternal && sentiment === 'negative') buckets.internalNegative.push(item);
+        else if (!isInternal && sentiment === 'positive') buckets.externalPositive.push(item);
+        else buckets.externalNegative.push(item);
+    });
+
+    const sections = [
+        { key: 'internalPositive', label: '京内正面' },
+        { key: 'internalNegative', label: '京内负面' },
+        { key: 'externalPositive', label: '京外正面' },
+        { key: 'externalNegative', label: '京外负面' },
+    ];
+
+    elements.filterList.innerHTML = sections.map(sec => {
+        const list = buckets[sec.key] || [];
+        if (!list.length) return '';
+        return `
+            <div class="filter-section">
+                <h3>${sec.label} (${list.length})</h3>
+                ${list.map(renderCard).join('')}
+            </div>
+        `;
+    }).filter(Boolean).join('') || '<div class="empty">No pending articles</div>';
 }
 
 async function submitFilter() {

@@ -105,15 +105,15 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
         <div class="radio-group" role="radiogroup">
             <div class="radio-option">
                 <input type="radio" name="status-${safe.article_id}" value="selected" id="sel-${safe.article_id}">
-                <label for="sel-${safe.article_id}" class="radio-label">閲囩撼</label>
+                <label for="sel-${safe.article_id}" class="radio-label">采纳</label>
             </div>
             <div class="radio-option">
                 <input type="radio" name="status-${safe.article_id}" value="backup" id="bak-${safe.article_id}">
-                <label for="bak-${safe.article_id}" class="radio-label">澶囬€?/label>
+                <label for="bak-${safe.article_id}" class="radio-label">备选</label>
             </div>
             <div class="radio-option">
                 <input type="radio" name="status-${safe.article_id}" value="discarded" id="dis-${safe.article_id}" checked>
-                <label for="dis-${safe.article_id}" class="radio-label">鏀惧純</label>
+                <label for="dis-${safe.article_id}" class="radio-label">放弃</label>
             </div>
         </div>
     ` : '';
@@ -123,24 +123,26 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
             <div class="card-header">
                 <h3 class="article-title">
                     ${safe.title || '(No Title)'}
-                    ${safe.url ? `<a href="${safe.url}" target="_blank" rel="noopener noreferrer">馃敆</a>` : ''}
+                    ${safe.url ? `<a href="${safe.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
                 </h3>
                 ${statusGroup}
             </div>
 
             <div class="meta-row">
-                <div class="meta-item">鏉ユ簮: ${safe.source || '-'}</div>
-                <div class="meta-item">鍒嗘暟: ${safe.score || '-'}</div>
+                <div class="meta-item">来源: ${safe.source || '-'}</div>
+                <div class="meta-item">分数: ${safe.score || '-'}</div>
                 <div class="meta-item">
                     <span class="badge ${getSentimentClass(safe.sentiment_label)}">${safe.sentiment_label || '-'}</span>
                 </div>
-                <div class="meta-item">浜唴: ${safe.is_beijing_related ? '鏄? : '鍚?}</div>
-                ${safe.bonus_keywords && safe.bonus_keywords.length ?
-            `<div class="meta-item">Bonus: ${safe.bonus_keywords.join(', ')}</div>` : ''}
-            </div>
+                <div class="meta-item">京内: ${safe.is_beijing_related ? '是' : '否
+        }</div >
+    ${safe.bonus_keywords && safe.bonus_keywords.length ?
+            `<div class="meta-item">Bonus: ${safe.bonus_keywords.join(', ')}</div>` : ''
+        }
+            </div >
 
-            <textarea class="summary-box" id="summary-${safe.article_id}">${safe.summary || ''}</textarea>
-        </div>
+    <textarea class="summary-box" id="summary-${safe.article_id}">${safe.summary || ''}</textarea>
+        </div >
     `;
 }
 
@@ -151,7 +153,7 @@ function setupTabs() {
             elements.contents.forEach(c => c.classList.remove('active'));
 
             tab.classList.add('active');
-            document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
+            document.getElementById(`${tab.dataset.tab} -tab`).classList.add('active');
             state.currentTab = tab.dataset.tab;
 
             reloadCurrentTab();
@@ -234,37 +236,39 @@ function renderFilterList(data) {
             <div class="card-header">
                 <h3 class="article-title">
                     ${item.title || '(No Title)'}
-                    ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">馃敆</a>` : ''}
+                    ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
                 </h3>
                 <div class="radio-group" role="radiogroup">
                     <div class="radio-option">
                         <input type="radio" name="status-${item.article_id}" value="selected" id="sel-${item.article_id}">
-                        <label for="sel-${item.article_id}" class="radio-label">閲囩撼</label>
+                        <label for="sel-${item.article_id}" class="radio-label">采纳</label>
                     </div>
                     <div class="radio-option">
                         <input type="radio" name="status-${item.article_id}" value="backup" id="bak-${item.article_id}">
-                        <label for="bak-${item.article_id}" class="radio-label">澶囬€?/label>
+                        <label for="bak-${item.article_id}" class="radio-label">备选</label>
                     </div>
                     <div class="radio-option">
                         <input type="radio" name="status-${item.article_id}" value="discarded" id="dis-${item.article_id}" checked>
-                        <label for="dis-${item.article_id}" class="radio-label">鏀惧純</label>
+                        <label for="dis-${item.article_id}" class="radio-label">放弃</label>
                     </div>
                 </div>
             </div>
             
             <div class="meta-row">
-                <div class="meta-item">鏉ユ簮: ${item.source || '-'}</div>
-                <div class="meta-item">鍒嗘暟: ${item.score || '-'}</div>
+                <div class="meta-item">来源: ${item.source || '-'}</div>
+                <div class="meta-item">分数: ${item.score || '-'}</div>
                 <div class="meta-item">
                     <span class="badge ${getSentimentClass(item.sentiment_label)}">${item.sentiment_label || '-'}</span>
                 </div>
-                <div class="meta-item">浜唴: ${item.is_beijing_related ? '鏄? : '鍚?}</div>
-                ${item.bonus_keywords && item.bonus_keywords.length ?
-            `<div class="meta-item">Bonus: ${item.bonus_keywords.join(', ')}</div>` : ''}
-            </div>
-            
-            <textarea class="summary-box" id="summary-${item.article_id}">${item.summary || ''}</textarea>
-        </div>
+                <div class="meta-item">京内: ${item.is_beijing_related ? '是' : '否
+        }</div >
+    ${item.bonus_keywords && item.bonus_keywords.length ?
+            `<div class="meta-item">Bonus: ${item.bonus_keywords.join(', ')}</div>` : ''
+        }
+            </div >
+
+    <textarea class="summary-box" id="summary-${item.article_id}">${item.summary || ''}</textarea>
+        </div >
     `;
 
     items.forEach(item => {
@@ -287,10 +291,10 @@ function renderFilterList(data) {
         const list = buckets[sec.key] || [];
         if (!list.length) return '';
         return `
-            <div class="filter-section">
-                ${list.map(item => renderArticleCard(item, { showStatus: true, collapsed: false })).join('')}
-            </div>
-        `;
+    < div class="filter-section" >
+        ${list.map(item => renderArticleCard(item, { showStatus: true, collapsed: false })).join('')}
+            </div >
+    `;
     }).filter(Boolean).join('') || '<div class="empty">No pending articles</div>';
 }
 
@@ -313,39 +317,39 @@ function renderClusteredList(clusters) {
         const hiddenCount = rest.length;
 
         return `
-            <div class="filter-cluster" data-cluster-id="${cluster.cluster_id}" data-size="${size}">
-                <div class="cluster-header">
-                    <div class="cluster-title">
-                        ${cluster.representative || '(鑱氱被)'} ${size ? `(${size})` : ''}
-                    </div>
-                    <div class="radio-group cluster-radio" data-cluster="${cluster.cluster_id}">
-                        <div class="radio-option">
-                            <input type="radio" name="cluster-${cluster.cluster_id}" value="selected" id="cluster-sel-${cluster.cluster_id}">
-                            <label for="cluster-sel-${cluster.cluster_id}" class="radio-label">閲囩撼</label>
-                        </div>
-                        <div class="radio-option">
-                            <input type="radio" name="cluster-${cluster.cluster_id}" value="backup" id="cluster-bak-${cluster.cluster_id}">
-                            <label for="cluster-bak-${cluster.cluster_id}" class="radio-label">澶囬€?/label>
+    < div class="filter-cluster" data - cluster - id="${cluster.cluster_id}" data - size="${size}" >
+        <div class="cluster-header">
+            <div class="cluster-title">
+                ${cluster.representative || '(聚类)'} ${size ? `(${size})` : ''}
+            </div>
+            <div class="radio-group cluster-radio" data-cluster="${cluster.cluster_id}">
+                <div class="radio-option">
+                    <input type="radio" name="cluster-${cluster.cluster_id}" value="selected" id="cluster-sel-${cluster.cluster_id}">
+                        <label for="cluster-sel-${cluster.cluster_id}" class="radio-label">采纳</label>
+                </div>
+                <div class="radio-option">
+                    <input type="radio" name="cluster-${cluster.cluster_id}" value="backup" id="cluster-bak-${cluster.cluster_id}">
+                        <label for="cluster-bak-${cluster.cluster_id}" class="radio-label">备选</label>
                         </div>
                         <div class="radio-option">
                             <input type="radio" name="cluster-${cluster.cluster_id}" value="discarded" id="cluster-dis-${cluster.cluster_id}">
-                            <label for="cluster-dis-${cluster.cluster_id}" class="radio-label">鏀惧純</label>
+                                <label for="cluster-dis-${cluster.cluster_id}" class="radio-label">放弃</label>
                         </div>
-                    </div>
                 </div>
-                <div class="filter-section">
-                    ${renderArticleCard(first, { showStatus: false, collapsed: false })}
-                    ${rest.map(item => renderArticleCard(item, { showStatus: false, collapsed: true })).join('')}
-                </div>
-                ${hiddenCount ? `<div class="cluster-toggle-row"><button type="button" class="btn btn-link cluster-toggle" data-target="${cluster.cluster_id}">灞曞紑鍏朵綑${hiddenCount}鏉?/button></div>` : ''}
             </div>
-        `;
+            <div class="filter-section">
+                ${renderArticleCard(first, { showStatus: false, collapsed: false })}
+                ${rest.map(item => renderArticleCard(item, { showStatus: false, collapsed: true })).join('')}
+            </div>
+            ${hiddenCount ? `<div class="cluster-toggle-row"><button type="button" class="btn btn-link cluster-toggle" data-target="${cluster.cluster_id}">展开其余${hiddenCount}条</button></div>` : ''}
+        </div>
+`;
     }).join('');
 
     elements.filterList.querySelectorAll('.cluster-toggle').forEach(btn => {
         btn.addEventListener('click', () => {
             const target = btn.dataset.target;
-            const container = elements.filterList.querySelector(`[data-cluster-id="${target}"]`);
+            const container = elements.filterList.querySelector(`[data - cluster - id= "${target}"]`);
             if (!container) return;
             const hiddenCards = container.querySelectorAll('.article-card.collapsed');
             const isHidden = hiddenCards.length ? hiddenCards[0].style.display === 'none' : true;
@@ -353,7 +357,7 @@ function renderClusteredList(clusters) {
                 card.style.display = isHidden ? '' : 'none';
             });
             const count = hiddenCards.length;
-            btn.textContent = isHidden ? '鏀惰捣鍏朵綑' + count + '鏉? : '灞曞紑鍏朵綑' + count + '鏉?;
+            btn.textContent = isHidden ? '收起其余' + count + '条' : '展开其余' + count + '条';
         });
     });
 }
@@ -468,13 +472,13 @@ function renderReviewGrid(selectedItems, backupItems) {
     elements.reviewList.innerHTML = `
         <div class="review-grid">
             <div class="review-col selected-col" data-status="selected">
-                <h3>閲囩撼 (${selectedItems.length})</h3>
+                <h3>采纳 (${selectedItems.length})</h3>
                 <div class="review-items">
                     ${renderReviewItems(selectedItems, 'selected')}
                 </div>
             </div>
             <div class="review-col backup-col" data-status="backup">
-                <h3>澶囬€?(${backupItems.length})</h3>
+                <h3>备选(${backupItems.length})</h3>
                 <div class="review-items">
                     ${renderReviewItems(backupItems, 'backup')}
                 </div>
@@ -494,7 +498,7 @@ function applySortModeState() {
     }
     if (toggleBtn) {
         toggleBtn.classList.toggle('active', isSortMode);
-        toggleBtn.innerHTML = `<span class="icon">馃攦</span> ${isSortMode ? '閫€鍑烘帓搴? : '鎺掑簭妯″紡'}`;
+        toggleBtn.innerHTML = `<span class="icon">⇅</span> ${isSortMode ? '退出排序' : '排序模式'}`;
     }
 }
 
@@ -507,19 +511,19 @@ function renderReviewItems(items, currentStatus) {
     return items.map(item => `
         <div class="article-card" data-id="${item.article_id}">
             <div class="card-header">
-                <label class="review-select-wrap" title="閫夋嫨">
+                <label class="review-select-wrap" title="选择">
                     <input type="checkbox" class="review-select">
                 </label>
-                <span class="drag-handle" title="鎷栧姩鎺掑簭">&#8942;</span>
+                <span class="drag-handle" title="拖动排序">&#8942;</span>
                 <h4 class="article-title">
                     ${item.title}
-                    ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">馃敆</a>` : ''}
+                    ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
                 </h4>
                 <select class="status-select" data-id="${item.article_id}">
-                    <option value="selected" ${currentStatus === 'selected' ? 'selected' : ''}>閲囩撼</option>
-                    <option value="backup" ${currentStatus === 'backup' ? 'selected' : ''}>澶囬€?/option>
-                    <option value="discarded">鏀惧純</option>
-                    <option value="pending">寰呭鐞?/option>
+                    <option value="selected" ${currentStatus === 'selected' ? 'selected' : ''}>采纳</option>
+                    <option value="backup" ${currentStatus === 'backup' ? 'selected' : ''}>备选</option>
+                    <option value="discarded">放弃</option>
+                    <option value="pending">待处理</option>
                 </select>
             </div>
             <textarea class="summary-box" data-id="${item.article_id}">${item.summary || ''}</textarea>
@@ -588,7 +592,7 @@ function applyReviewBulkStatus() {
         }
     });
     updateReviewSelectAllState();
-    showToast('宸叉壒閲忚缃墍閫夐」');
+    showToast('已批量设置所选项');
 }
 
 async function persistReviewOrder() {
@@ -680,11 +684,11 @@ function renderDiscardList(items) {
         <div class="article-card">
             <div class="card-header">
                 <h4 class="article-title">${item.title}</h4>
-                <button class="btn btn-secondary btn-sm" onclick="restoreToBackup('${item.article_id}')">鎭㈠鑷冲閫?/button>
+                <button class="btn btn-secondary btn-sm" onclick="restoreToBackup('${item.article_id}')">恢复至备选</button>
             </div>
             <div class="meta-row">
-                <div class="meta-item">鏉ユ簮: ${item.source}</div>
-                <div class="meta-item">鍒嗘暟: ${item.score}</div>
+                <div class="meta-item">来源: ${item.source}</div>
+                <div class="meta-item">分数: ${item.score}</div>
             </div>
         </div>
     `).join('');
@@ -782,10 +786,10 @@ async function triggerExport(dryRun = true) {
         if (elements.modalText) {
             elements.modalText.value = result.content || 'No content generated';
         }
-        const toastMsg = dryRun ? '宸茬敓鎴愰瑙? : `宸插鍑?${result.count || 0} 鏉;
+        const toastMsg = dryRun ? '已生成预览' : `已导出${result.count || 0} 条`;
         showToast(toastMsg);
     } catch (e) {
-        showToast(dryRun ? '棰勮澶辫触' : '瀵煎嚭澶辫触', 'error');
+        showToast(dryRun ? '预览失败' : '导出失败', 'error');
     }
 }
 

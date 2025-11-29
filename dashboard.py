@@ -111,6 +111,19 @@ def _render_export() -> None:
         st.json(result.get("category_counts", {}))
 
 
+def _render_reset() -> None:
+    st.markdown("---")
+    st.header("撤销/重新入队")
+    help_text = "输入 article_id（可多行或逗号分隔），将其 manual_status 重新设为 pending。"
+    ids_text = st.text_area("待撤销的 IDs", value="", help=help_text)
+    if st.button("重新入队"):
+        raw_ids = [part.strip() for part in ids_text.replace(",", "\n").splitlines() if part.strip()]
+        actor = st.session_state.get("actor") or None
+        updated = manual_filter.reset_to_pending(raw_ids, actor=actor)
+        st.success(f"已重新入队 {updated} 条")
+        st.experimental_rerun()
+
+
 def main() -> None:
     st.set_page_config(page_title="筛选控制台", layout="wide")
     _init_state()
@@ -125,6 +138,7 @@ def main() -> None:
         _render_candidates(page_data)
 
     _render_export()
+    _render_reset()
 
 
 if __name__ == "__main__":

@@ -150,6 +150,28 @@ def bulk_decide(
     return {"approved": updated_approved, "discarded": updated_discarded}
 
 
+def reset_to_pending(ids: Sequence[str], *, actor: Optional[str] = None) -> int:
+    target_ids = _normalize_ids(ids)
+    if not target_ids:
+        return 0
+    adapter = get_adapter()
+    now_ts = datetime.now(timezone.utc)
+    payload = []
+    for aid in target_ids:
+        payload.append((actor, now_ts, aid))
+    query = """
+        UPDATE news_summaries
+        SET manual_status = 'pending',
+            manual_decided_by = COALESCE(%s, manual_decided_by),
+            manual_decided_at = %s,
+            updated_at = NOW()
+        WHERE article_id = %s
+    """
+    with adapter._cursor() as cur:  # type: ignore[attr-defined]
+        cur.executemany(query, payload)
+        return cur.rowcount
+
+
 def export_batch(
     *,
     report_tag: str,
@@ -338,4 +360,4 @@ def export_batch(
     }
 
 
-__all__ = ["list_candidates", "bulk_decide", "export_batch", "status_counts"]
+__all__ = ["list_candidates", "bulk_decide", "export_batch", "status_counts", "reset_to_pending"]

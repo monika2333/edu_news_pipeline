@@ -12,25 +12,23 @@
 - 部署：本地/内网运行，初期直接 `streamlit run dashboard.py`；后续可加 FastAPI 反代或 Basic Auth（复用现有 console 认证方案）。
 
 ## 3. 数据与状态映射
-- 基础表：`news_summaries`（见 `database/schema.sql`），包含 `title/llm_summary/score/status/external_importance_status/is_beijing_related` 等。
-- 手工筛选的新增字段（建议新增 migration）：
-  - `manual_status text default 'pending'`：`pending|approved|discarded|exported`。
-  - `manual_summary text`：保存用户编辑后的摘要。
-  - `manual_score numeric(6,3)`：手调优先级（可选）。
-  - `manual_notes text`：操作备注。
-  - `manual_decided_by text` / `manual_decided_at timestamptz`。
-- 候选池选择：默认拉取 `status in ('ready_for_export','pending_external_filter','pending_beijing_gate')` 且 `manual_status='pending'` 的记录，按 `score desc` 分页。
-- 导出策略：仅导出 `manual_status='approved'`，导出后置为 `manual_status='exported'`；`discarded` 保留历史不再展示。
+- 基础表：`news_summaries`（见 `database/schema.sql`），包含 `title/llm_summary/score/status/is_beijing_related` 等。
+- 手工筛选的存储方案：
+  - 推荐：新增字段到 `news_summaries`（优先理由：查询/导出无需 join；写入和导出原子性好；表已经承载状态机，保持单表更直观）。字段：`manual_status/manual_summary/manual_score/manual_notes/manual_decided_by/manual_decided_at`。
+  - 备选：新建 `manual_decisions` 表（适用于需要审计多版本、撤销/重做历史、或未来多用户并行的场景）。如采用需在查询时 join 最新决策记录，导出时写入版本记录。
+- 候选池：仅拉取 `status='ready_for_export'` 且 `manual_status='pending'` 的记录。
+- 排序：`score desc` 表示按分数从高到低排序。
+- 导出策略：仅导出 `manual_status='approved'`，导出后批量更新为 `manual_status='exported'`；`discarded` 保留历史不再展示。
 
 ## 4. 功能设计
 - 侧边栏（状态总览）：显示 `pending/approved/discarded/exported` 数量，可一键刷新。
-- 主列表（分页 20，可配置）：按得分排序。
+- 主列表（分页 30）：按得分排序（score 降序）。
   - 卡片字段：复选框(Keep)、标题、可编辑摘要（初始用 `llm_summary`）、分数/来源/发布时间/情感/Beijing 标签。
   - 会话缓存：翻页返回时保留已编辑内容与勾选状态。
 - 批量提交：底部“提交当前页”按钮。
   - 逻辑：将勾选项设为 `approved`（并写入编辑摘要/备注），未勾选项设为 `discarded`；空勾选弹出确认。
 - 导出模块：按钮生成当日文案。
-  - 查询 `manual_status='approved'`（可选时间/批次筛选）→ 拼装文本 → 页面 code block 展示及复制按钮。
+  - 查询 `manual_status='approved'`（可选时间/批次筛选）→ 拼装文本（沿用现有分组/排序）→ 页面 code block 展示、可复制并落盘到文件。
   - 导出后批量更新 `manual_status='exported'`，并记录批次号/操作者。
   - 预留 webhook/飞书通知钩子。
 - 错误提示：DB 失败时 toast + 不阻塞前端展示。
@@ -52,11 +50,11 @@
         manual_decided_at = now()
     where article_id = any(%(ids)s);
     ```
-  - 导出批次信息可追加到 `brief_batches/brief_items` 或新表 `manual_export_batches`（需确认）。
+  - 导出批次信息可追加到 `brief_batches/brief_items` 或新建 `manual_export_batches`（需确认）。
 
 ## 6. 安全与权限
-- 优先复用现有 console 认证（Basic / Token），将 Streamlit 置于同一保护层；临时方案可用 Streamlit 内置密码提示。
-- 所有写操作要求会话态的用户标识，落库 `manual_decided_by`。
+- 按当前需求：Streamlit 独立部署且不做认证（内部使用）。后续如需对外，可通过反代 + Basic/Token 加壳。
+- 所有写操作可记录操作者标识（如果后续引入认证或通过环境变量/启动参数传入）。
 - 记录操作日志：在控制台打印或写 `logs/`。
 
 ## 7. 迭代计划
@@ -66,9 +64,10 @@
 - 验证：本地连测试库跑端到端；补充服务层 unit tests（可用 sqlite 替代），导出文本快照测试。
 
 ## 8. 待确认事项
-1) 手工筛选作用的实际状态来源：是否仅挑 `ready_for_export`，还是包括 `pending_external_filter`/`pending_beijing_gate`。  
-2) 是否接受在 `news_summaries` 增加 `manual_*` 字段，或更倾向新表记录决策。  
-3) 导出格式：是否保持现有 TXT 的分组（京内/京外、正/负面，含 Emoji），是否需要文件落盘或仅展示复制。  
-4) 认证方案：Streamlit 是否部署在现有 FastAPI 后面，是否强制 Token/Basic。  
-5) 每页展示数量及排序（默认 20、按 `score desc` 是否满足）。  
-6) 是否需要保留“撤销”或“重新入队”功能（将 discarded/approved 重新设为 pending）。
+（根据当前答复已锁定）
+1) 候选仅 `ready_for_export`。
+2) 更倾向新增字段；如需强审计/多版本可改用新表。
+3) 导出保持现有分组与文件落盘。
+4) Streamlit 独立部署，无认证。
+5) 每页 30，`score desc` 即分数高→低。
+6) 需要支持撤销/重新入队（pending）。

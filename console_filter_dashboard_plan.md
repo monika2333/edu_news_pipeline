@@ -79,4 +79,11 @@
 - [x] 支持撤销/重新入队：提供操作入口将 `manual_status` 恢复为 `pending`。
 - [ ] 增加轻量单测：服务层（选择/批量更新/导出文本拼装），可用 sqlite/fixtures。
 - [ ] 本地联通测试库跑端到端，验证提交与导出后状态流转（pending → approved/discarded → exported）。
-- [ ] 文档补充：运行方式、环境变量、导出文件路径、已知限制。
+- [x] 文档补充：运行方式、环境变量、导出文件路径、已知限制。
+
+## 10. 运行与使用说明（草案）
+- 环境：确保 `.env.local` 填好 `DB_*`，Postgres 可访问；已执行新增 `manual_*` 字段的 migration。
+- 启动：`streamlit run dashboard.py`（默认 8501）。若需更改端口：`streamlit run dashboard.py --server.port 8502`。
+- 操作流程：侧边栏查看状态 → 列表中勾选保留/编辑摘要 → “提交当前页决策” → 导出时输入 tag/输出路径并点击生成 → 如需撤销，输入 ID 重新入队。
+- 输出：导出文件默认 `outputs/manual_filter_export.txt`（自动避免重名），历史写入 `brief_batches/brief_items`，并将已导出条目标记为 `manual_status=exported`。
+- 已知限制：无认证保护（仅内部使用）；未做并发提交防抖，建议单人操作；测试覆盖待补充。

@@ -23,7 +23,8 @@ class FakeCursor:
     def execute(self, query: str, params: Sequence[Any] = ()):
         q = query.lower()
         if "count(*)" in q:
-            if "manual_status = 'pending'" in q:
+            status_param = params[0] if params else None
+            if status_param == "pending" and "ready_for_export" in q:
                 filtered = [
                     row
                     for row in self.adapter.rows
@@ -37,10 +38,13 @@ class FakeCursor:
                     counts[key] = counts.get(key, 0) + 1
                 self._results = [{"manual_status": k, "total": v} for k, v in counts.items()]
             else:
-                self._results = [{"total": 0}]
+                status_val = status_param or "pending"
+                filtered = [row for row in self.adapter.rows if row["manual_status"] == status_val]
+                self._results = [{"total": len(filtered)}]
             return
-        if "from news_summaries" in q and "manual_status = 'pending'" in q and "limit" in q:
-            limit, offset = params
+
+        if "from news_summaries" in q and "manual_status = 'pending'" in q and "ready_for_export" in q:
+            limit, offset = params[1], params[2]
             candidates = [
                 row
                 for row in self.adapter.rows
@@ -49,40 +53,51 @@ class FakeCursor:
             candidates.sort(key=lambda r: (-(r.get("score") or 0), r.get("article_id")))
             self._results = candidates[offset : offset + limit]
             return
-        if "from news_summaries" in q and "manual_status = 'approved'" in q:
-            approved = [
-                row
-                for row in self.adapter.rows
-                if row["manual_status"] == "approved"
-            ]
-            approved.sort(key=lambda r: (-(r.get("score") or 0), r.get("article_id")))
-            self._results = approved
+
+        if "from news_summaries" in q and "manual_status = %s" in q:
+            status_val, limit, offset = params
+            filtered = [row for row in self.adapter.rows if row["manual_status"] == status_val]
+            filtered.sort(key=lambda r: (-(r.get("score") or 0), r.get("article_id")))
+            self._results = filtered[offset : offset + limit]
             return
+
+        if "from news_summaries" in q and "manual_status = 'selected'" in q:
+            selected = [row for row in self.adapter.rows if row["manual_status"] == "selected"]
+            selected.sort(key=lambda r: (-(r.get("score") or 0), r.get("article_id")))
+            self._results = selected
+            return
+
         self._results = []
 
     def executemany(self, query: str, params_seq: Iterable[Sequence[Any]]):
         q = query.lower()
         self.rowcount = 0
-        if "set manual_status = %s" in q and "manual_summary" in q:
-            # bulk_decide
-            for status, summary, score, notes, actor, decided_at, aid in params_seq:
+        if "set manual_status = %s" in q and "manual_summary" not in q:
+            # bulk_decide / export mark
+            for status, actor, decided_at, aid in params_seq:
                 updated = self.adapter._update_row(
                     aid,
                     manual_status=status,
-                    manual_summary=summary if summary is not None else None,
-                    manual_score=score if score is not None else None,
-                    manual_notes=notes if notes is not None else None,
                     manual_decided_by=actor if actor is not None else None,
                     manual_decided_at=decided_at,
                 )
                 if updated:
                     self.rowcount += 1
         elif "set manual_status = 'pending'" in q:
-            # reset_to_pending
             for actor, decided_at, aid in params_seq:
                 updated = self.adapter._update_row(
                     aid,
                     manual_status="pending",
+                    manual_decided_by=actor if actor is not None else None,
+                    manual_decided_at=decided_at,
+                )
+                if updated:
+                    self.rowcount += 1
+        elif "set manual_summary" in q:
+            for summary, actor, decided_at, aid in params_seq:
+                updated = self.adapter._update_row(
+                    aid,
+                    manual_summary=summary,
                     manual_decided_by=actor if actor is not None else None,
                     manual_decided_at=decided_at,
                 )
@@ -116,7 +131,10 @@ class FakeAdapter:
     def _update_row(self, article_id: str, **updates: Any) -> bool:
         for row in self.rows:
             if str(row.get("article_id")) == str(article_id):
-                row.update({k: v for k, v in updates.items() if v is not None or k == "manual_status"})
+                for k, v in updates.items():
+                    if v is None and k not in ("manual_status", "manual_summary"):
+                        continue
+                    row[k] = v
                 return True
         return False
 
@@ -130,7 +148,6 @@ def fake_adapter(monkeypatch):
             "llm_summary": "llm",
             "manual_summary": None,
             "score": 90,
-            "manual_score": None,
             "status": "ready_for_export",
             "manual_status": "pending",
             "source": "src",
@@ -140,11 +157,11 @@ def fake_adapter(monkeypatch):
             "sentiment_confidence": 0.9,
             "is_beijing_related": True,
             "external_importance_score": 80,
-            "manual_notes": None,
             "manual_decided_by": None,
             "manual_decided_at": None,
             "content_markdown": "body",
             "url": "http://example.com/a1",
+            "score_details": {"matched_rules": [{"label": "教育政策"}, {"rule_id": "rule-x"}]},
         },
         {
             "article_id": "a2",
@@ -152,7 +169,6 @@ def fake_adapter(monkeypatch):
             "llm_summary": "llm2",
             "manual_summary": None,
             "score": 70,
-            "manual_score": None,
             "status": "ready_for_export",
             "manual_status": "pending",
             "source": "src2",
@@ -162,11 +178,11 @@ def fake_adapter(monkeypatch):
             "sentiment_confidence": 0.8,
             "is_beijing_related": False,
             "external_importance_score": 60,
-            "manual_notes": None,
             "manual_decided_by": None,
             "manual_decided_at": None,
             "content_markdown": "body2",
             "url": "http://example.com/a2",
+            "score_details": {"matched_rules": []},
         },
     ]
     adapter = FakeAdapter(rows)
@@ -174,30 +190,35 @@ def fake_adapter(monkeypatch):
     return adapter
 
 
-def test_list_candidates_returns_pending(fake_adapter):
+def test_list_candidates_returns_pending_with_bonus(fake_adapter):
     result = manual_filter.list_candidates(limit=10, offset=0)
     assert result["total"] == 2
     assert len(result["items"]) == 2
-    assert result["items"][0]["summary"] == "llm"
+    assert "教育政策" in result["items"][0]["bonus_keywords"]
 
 
-def test_bulk_decide_updates_status_and_edits(fake_adapter):
-    edits = {"a1": {"summary": "edited", "score": 88.0, "notes": "keep"}}
-    res = manual_filter.bulk_decide(approved_ids=["a1"], discarded_ids=["a2"], edits=edits, actor="tester")
-    assert res == {"approved": 1, "discarded": 1}
-    row_a1 = next(r for r in fake_adapter.rows if r["article_id"] == "a1")
-    row_a2 = next(r for r in fake_adapter.rows if r["article_id"] == "a2")
-    assert row_a1["manual_status"] == "approved"
-    assert row_a1["manual_summary"] == "edited"
-    assert row_a1["manual_score"] == 88.0
-    assert row_a1["manual_notes"] == "keep"
-    assert row_a1["manual_decided_by"] == "tester"
-    assert row_a2["manual_status"] == "discarded"
+def test_bulk_decide_updates_states(fake_adapter):
+    res = manual_filter.bulk_decide(
+        selected_ids=["a1"],
+        backup_ids=["a2"],
+        discarded_ids=[],
+        actor="tester",
+    )
+    assert res == {"selected": 1, "backup": 1, "discarded": 0}
+    status_map = {r["article_id"]: r["manual_status"] for r in fake_adapter.rows}
+    assert status_map == {"a1": "selected", "a2": "backup"}
+
+
+def test_save_edits_and_review(fake_adapter):
+    manual_filter.bulk_decide(selected_ids=["a1"], backup_ids=[], discarded_ids=[], actor=None)
+    manual_filter.save_edits({"a1": {"summary": "edited"}}, actor="tester")
+    review = manual_filter.list_review("selected", limit=10, offset=0)
+    assert review["items"][0]["summary"] == "edited"
+    assert review["items"][0]["bonus_keywords"]  # still present
 
 
 def test_export_batch_writes_file_and_marks_exported(fake_adapter, tmp_path: Path):
-    # mark approved first
-    manual_filter.bulk_decide(approved_ids=["a1", "a2"], discarded_ids=[], edits=None, actor=None)
+    manual_filter.bulk_decide(selected_ids=["a1", "a2"], backup_ids=[], discarded_ids=[], actor=None)
     output_file = tmp_path / "out.txt"
     res = manual_filter.export_batch(report_tag="test", output_path=str(output_file))
     assert res["count"] == 2
@@ -207,9 +228,11 @@ def test_export_batch_writes_file_and_marks_exported(fake_adapter, tmp_path: Pat
     assert fake_adapter.export_calls, "record_export should be invoked"
 
 
-def test_reset_to_pending(fake_adapter):
-    manual_filter.bulk_decide(approved_ids=["a1"], discarded_ids=["a2"], edits=None, actor=None)
-    updated = manual_filter.reset_to_pending(["a1", "a2"])
-    assert updated == 2
-    statuses = {r["article_id"]: r["manual_status"] for r in fake_adapter.rows}
-    assert statuses == {"a1": "pending", "a2": "pending"}
+def test_reset_to_pending_and_discarded_listing(fake_adapter):
+    manual_filter.bulk_decide(selected_ids=[], backup_ids=[], discarded_ids=["a1", "a2"], actor=None)
+    discarded = manual_filter.list_discarded(limit=10, offset=0)
+    assert discarded["total"] == 2
+    updated = manual_filter.reset_to_pending(["a1"])
+    assert updated == 1
+    status_map = {r["article_id"]: r["manual_status"] for r in fake_adapter.rows}
+    assert status_map["a1"] == "pending"

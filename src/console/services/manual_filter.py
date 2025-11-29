@@ -20,18 +20,40 @@ def _normalize_ids(ids: Iterable[str]) -> List[str]:
     return list(seen.keys())
 
 
-def list_candidates(*, limit: int = 30, offset: int = 0) -> Dict[str, Any]:
+def _bonus_keywords(score_details: Any) -> List[str]:
+    if not isinstance(score_details, dict):
+        return []
+    matched = score_details.get("matched_rules")
+    if not isinstance(matched, list):
+        return []
+    labels: List[str] = []
+    for rule in matched:
+        if not isinstance(rule, dict):
+            continue
+        label = rule.get("label") or rule.get("rule_id")
+        if label:
+            labels.append(str(label))
+    return labels
+
+
+def _paginate_by_status(
+    manual_status: str,
+    *,
+    limit: int,
+    offset: int,
+    only_ready: bool = False,
+) -> Dict[str, Any]:
     adapter = get_adapter()
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
-    query = """
+    where_ready = "AND status = 'ready_for_export'" if only_ready else ""
+    query = f"""
         SELECT
             article_id,
             title,
             llm_summary,
             manual_summary,
             score,
-            manual_score,
             source,
             publish_time,
             publish_time_iso,
@@ -41,38 +63,45 @@ def list_candidates(*, limit: int = 30, offset: int = 0) -> Dict[str, Any]:
             is_beijing_related,
             external_importance_score,
             manual_status,
-            manual_notes,
-            manual_decided_by,
-            manual_decided_at
+            score_details
         FROM news_summaries
-        WHERE status = 'ready_for_export'
-          AND manual_status = 'pending'
+        WHERE manual_status = %s
+          {where_ready}
         ORDER BY score DESC NULLS LAST, publish_time_iso DESC NULLS LAST, article_id ASC
         LIMIT %s OFFSET %s
     """
-    count_query = """
+    count_query = f"""
         SELECT COUNT(*) AS total
         FROM news_summaries
-        WHERE status = 'ready_for_export'
-          AND manual_status = 'pending'
+        WHERE manual_status = %s
+          {where_ready}
     """
     with adapter._cursor() as cur:  # type: ignore[attr-defined]
-        cur.execute(count_query)
+        cur.execute(count_query, (manual_status,))
         total_row = cur.fetchone()
         total = int(total_row["total"]) if total_row else 0
-        cur.execute(query, (limit, offset))
+        cur.execute(query, (manual_status, limit, offset))
         rows = cur.fetchall()
     items: List[Dict[str, Any]] = []
     for row in rows:
         record = dict(row)
         record["summary"] = record.get("manual_summary") or record.get("llm_summary") or ""
+        record["bonus_keywords"] = _bonus_keywords(record.get("score_details"))
         items.append(record)
-    return {
-        "items": items,
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-    }
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+def list_candidates(*, limit: int = 30, offset: int = 0) -> Dict[str, Any]:
+    return _paginate_by_status("pending", limit=limit, offset=offset, only_ready=True)
+
+
+def list_review(decision: str, *, limit: int = 30, offset: int = 0) -> Dict[str, Any]:
+    decision = decision if decision in ("selected", "backup") else "selected"
+    return _paginate_by_status(decision, limit=limit, offset=offset, only_ready=False)
+
+
+def list_discarded(*, limit: int = 30, offset: int = 0) -> Dict[str, Any]:
+    return _paginate_by_status("discarded", limit=limit, offset=offset, only_ready=False)
 
 
 def status_counts() -> Dict[str, int]:
@@ -85,7 +114,7 @@ def status_counts() -> Dict[str, int]:
     with adapter._cursor() as cur:  # type: ignore[attr-defined]
         cur.execute(query)
         rows = cur.fetchall()
-    counts: Dict[str, int] = {"pending": 0, "approved": 0, "discarded": 0, "exported": 0}
+    counts: Dict[str, int] = {"pending": 0, "selected": 0, "backup": 0, "discarded": 0, "exported": 0}
     for row in rows:
         status = str(row.get("manual_status") or "").strip() or "pending"
         try:
@@ -99,33 +128,18 @@ def _apply_decision(
     *,
     status: str,
     ids: Sequence[str],
-    edits: Optional[Dict[str, Dict[str, Any]]] = None,
     actor: Optional[str] = None,
 ) -> int:
     adapter = get_adapter()
     payload = []
     now_ts = datetime.now(timezone.utc)
     for article_id in ids:
-        edit = (edits or {}).get(article_id) or {}
-        payload.append(
-            (
-                status,
-                edit.get("summary"),
-                edit.get("score"),
-                edit.get("notes"),
-                actor,
-                now_ts,
-                article_id,
-            )
-        )
+        payload.append((status, actor, now_ts, article_id))
     if not payload:
         return 0
     query = """
         UPDATE news_summaries
         SET manual_status = %s,
-            manual_summary = COALESCE(%s, manual_summary, llm_summary),
-            manual_score = NULL,
-            manual_notes = NULL,
             manual_decided_by = COALESCE(%s, manual_decided_by),
             manual_decided_at = %s,
             updated_at = NOW()
@@ -138,16 +152,18 @@ def _apply_decision(
 
 def bulk_decide(
     *,
-    approved_ids: Sequence[str],
+    selected_ids: Sequence[str],
+    backup_ids: Sequence[str],
     discarded_ids: Sequence[str],
-    edits: Optional[Dict[str, Dict[str, Any]]] = None,
     actor: Optional[str] = None,
 ) -> Dict[str, int]:
-    approved = _normalize_ids(approved_ids)
+    selected = _normalize_ids(selected_ids)
+    backups = _normalize_ids(backup_ids)
     discarded = _normalize_ids(discarded_ids)
-    updated_approved = _apply_decision(status="approved", ids=approved, edits=edits, actor=actor)
-    updated_discarded = _apply_decision(status="discarded", ids=discarded, edits=edits, actor=actor)
-    return {"approved": updated_approved, "discarded": updated_discarded}
+    updated_selected = _apply_decision(status="selected", ids=selected, actor=actor)
+    updated_backup = _apply_decision(status="backup", ids=backups, actor=actor)
+    updated_discarded = _apply_decision(status="discarded", ids=discarded, actor=actor)
+    return {"selected": updated_selected, "backup": updated_backup, "discarded": updated_discarded}
 
 
 def reset_to_pending(ids: Sequence[str], *, actor: Optional[str] = None) -> int:
@@ -162,6 +178,30 @@ def reset_to_pending(ids: Sequence[str], *, actor: Optional[str] = None) -> int:
     query = """
         UPDATE news_summaries
         SET manual_status = 'pending',
+            manual_decided_by = COALESCE(%s, manual_decided_by),
+            manual_decided_at = %s,
+            updated_at = NOW()
+        WHERE article_id = %s
+    """
+    with adapter._cursor() as cur:  # type: ignore[attr-defined]
+        cur.executemany(query, payload)
+        return cur.rowcount
+
+
+def save_edits(edits: Dict[str, Dict[str, Any]], *, actor: Optional[str] = None) -> int:
+    adapter = get_adapter()
+    now_ts = datetime.now(timezone.utc)
+    payload = []
+    for aid, edit in edits.items():
+        summary = edit.get("summary")
+        if summary is None:
+            continue
+        payload.append((summary, actor, now_ts, aid))
+    if not payload:
+        return 0
+    query = """
+        UPDATE news_summaries
+        SET manual_summary = %s,
             manual_decided_by = COALESCE(%s, manual_decided_by),
             manual_decided_at = %s,
             updated_at = NOW()
@@ -187,7 +227,6 @@ def export_batch(
             llm_summary,
             manual_summary,
             score,
-            manual_score,
             content_markdown,
             url,
             source,
@@ -199,7 +238,7 @@ def export_batch(
             external_importance_score,
             external_importance_checked_at
         FROM news_summaries
-        WHERE manual_status = 'approved'
+        WHERE manual_status = 'selected'
         ORDER BY score DESC NULLS LAST, publish_time_iso DESC NULLS LAST, article_id ASC
     """
     with adapter._cursor() as cur:  # type: ignore[attr-defined]
@@ -222,7 +261,7 @@ def export_batch(
             content=str(record.get("content_markdown") or ""),
             source=record.get("source"),
             llm_source=None,
-            score=float(record.get("manual_score") or record.get("score") or 0.0),
+            score=float(record.get("score") or 0.0),
             original_url=record.get("url"),
             published_at=record.get("publish_time_iso") or record.get("publish_time"),
             sentiment_label=record.get("sentiment_label"),
@@ -350,7 +389,7 @@ def export_batch(
     adapter.record_export(report_tag, export_payload, output_path=str(final_output))
     if mark_exported:
         ids = [cid.filtered_article_id for cid, _ in export_payload]
-        _apply_decision(status="exported", ids=ids, edits=None, actor=None)
+        _apply_decision(status="exported", ids=ids, actor=None)
     return {
         "items": items,
         "count": len(items),
@@ -360,4 +399,13 @@ def export_batch(
     }
 
 
-__all__ = ["list_candidates", "bulk_decide", "export_batch", "status_counts", "reset_to_pending"]
+__all__ = [
+    "list_candidates",
+    "list_review",
+    "list_discarded",
+    "bulk_decide",
+    "save_edits",
+    "export_batch",
+    "status_counts",
+    "reset_to_pending",
+]

@@ -7,7 +7,7 @@ let state = {
     discardPage: 1,
     actor: localStorage.getItem('actor') || '',
     currentTab: 'filter',
-    filterCategory: 'all'
+    filterCategory: 'internal_positive'
 };
 
 // UI mode
@@ -139,8 +139,8 @@ async function loadFilterData() {
             offset: `${(state.filterPage - 1) * 10}`,
             cluster: 'true',
         });
-        const cat = state.filterCategory;
-        if (cat && cat !== 'all') {
+        const cat = state.filterCategory || 'internal_positive';
+        if (cat) {
             if (cat.startsWith('internal')) params.set('region', 'internal');
             if (cat.startsWith('external')) params.set('region', 'external');
             if (cat.endsWith('positive')) params.set('sentiment', 'positive');

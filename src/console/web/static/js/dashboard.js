@@ -41,6 +41,12 @@ document.addEventListener('DOMContentLoaded', () => {
         loadStats();
         reloadCurrentTab();
     });
+
+    // Sort Toggle
+    const btnSort = document.getElementById('btn-toggle-sort');
+    if (btnSort) {
+        btnSort.addEventListener('click', toggleSortMode);
+    }
     function setupTabs() {
         elements.tabs.forEach(tab => {
             tab.addEventListener('click', () => {
@@ -237,6 +243,16 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderReviewItems(items, currentStatus) {
         return items.map(item => `
         <div class="article-card" data-id="${item.article_id}">
+            <div class="drag-handle">⋮⋮</div>
+            <div class="card-header">
+                <h4 class="article-title">${item.title}</h4>
+                <select class="status-select" data-id="${item.article_id}">
+                    <option value="selected" ${currentStatus === 'selected' ? 'selected' : ''}>采纳</option>
+                    <option value="backup" ${currentStatus === 'backup' ? 'selected' : ''}>备选</option>
+                    <option value="discarded">放弃</option>
+                    <option value="pending">待处理</option>
+                </select>
+            </div>
             <textarea class="summary-box" data-id="${item.article_id}">${item.summary || ''}</textarea>
         </div>
     `).join('');
@@ -460,3 +476,22 @@ document.addEventListener('DOMContentLoaded', () => {
     function setupPagination() {
         // Handled dynamically
     }
+});
+
+let isSortMode = false;
+
+function toggleSortMode() {
+    isSortMode = !isSortMode;
+    const container = document.querySelector('.review-grid');
+    const btn = document.getElementById('btn-toggle-sort');
+
+    if (isSortMode) {
+        container.classList.add('compact-mode');
+        btn.classList.add('active');
+        btn.textContent = '退出排序';
+    } else {
+        container.classList.remove('compact-mode');
+        btn.classList.remove('active');
+        btn.textContent = '排序模式';
+    }
+}

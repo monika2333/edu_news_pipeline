@@ -234,8 +234,53 @@ def _render_discard_tab() -> None:
         st.experimental_rerun()
 
 
+def _load_css() -> None:
+    st.markdown(
+        """
+        <style>
+        /* Radio button styling to look like buttons */
+        div[role="radiogroup"] {
+            gap: 8px;
+        }
+        div[role="radiogroup"] label {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex: 1; /* Make them expand to fill space if needed */
+        }
+        div[role="radiogroup"] label:hover {
+            border-color: #ff4b4b;
+            color: #ff4b4b;
+            background-color: #fff;
+        }
+        /* Hide the default radio circle */
+        div[role="radiogroup"] label > div:first-child {
+            display: none;
+        }
+        /* Selected state using :has selector (supported in modern browsers) */
+        div[role="radiogroup"] label:has(input:checked) {
+            background-color: #ff4b4b;
+            color: white;
+            border-color: #ff4b4b;
+        }
+        div[role="radiogroup"] label:has(input:checked) p {
+            color: white !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def main() -> None:
     st.set_page_config(page_title="筛选控制台（二期）", layout="wide")
+    _load_css()
     _init_state()
     _render_sidebar()
     st.title("人工筛选控制台")

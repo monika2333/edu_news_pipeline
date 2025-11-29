@@ -35,13 +35,13 @@ def _render_sidebar() -> None:
         st.experimental_rerun()
 
 
-def _display_meta(item: Dict[str, Any]) -> None:
-    st.markdown(
+def _display_meta(item: Dict[str, Any], container: Any = st) -> None:
+    container.markdown(
         f"来源：{item.get('source') or '-'} | 分数：{item.get('score') or '-'} | 情感：{item.get('sentiment_label') or '-'} | 京内：{item.get('is_beijing_related')}"
     )
     bonus = item.get("bonus_keywords") or []
     if bonus:
-        st.caption("Bonus keywords: " + ", ".join(bonus))
+        container.caption("Bonus keywords: " + ", ".join(bonus))
 
 
 def _render_select_tab() -> None:
@@ -57,7 +57,8 @@ def _render_select_tab() -> None:
         url = item.get("url")
         link = f" · [原文]({url})" if url else ""
         form.markdown(f"### {item.get('title') or '(无标题)'}{link}")
-        _display_meta(item)
+        _display_meta(item, container=form)
+        form.text_area("摘要（只读）", item.get("summary") or "", key=f"summary-ro-{aid}", height=140, disabled=True)
         choice = form.radio(
             "选择",
             options=("selected", "backup", "discarded"),
@@ -70,7 +71,6 @@ def _render_select_tab() -> None:
             backup_ids.append(aid)
         else:
             discarded_ids.append(aid)
-        form.text_area("摘要（只读）", item.get("summary") or "", key=f"summary-ro-{aid}", height=140, disabled=True)
         form.markdown("---")
     submitted = form.form_submit_button("提交当前页选择", key="submit-select")
     if submitted:
@@ -209,7 +209,7 @@ def _render_discard_tab() -> None:
         url = item.get("url")
         link = f" · [原文]({url})" if url else ""
         form.markdown(f"**{item.get('title') or '(无标题)'}{link}**")
-        _display_meta(item)
+        _display_meta(item, container=form)
         pick = form.checkbox("加入备选", key=f"discard-backup-{aid}")
         if pick:
             backup_ids.append(aid)

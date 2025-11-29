@@ -249,6 +249,7 @@ function renderReviewItems(items, currentStatus) {
     return items.map(item => `
         <div class="article-card" data-id="${item.article_id}">
             <div class="card-header">
+                <span class="drag-handle" title="拖动排序">&#8942;</span>
                 <h4 class="article-title">${item.title}</h4>
                 <select class="status-select" data-id="${item.article_id}">
                     <option value="selected" ${currentStatus === 'selected' ? 'selected' : ''}>采纳</option>
@@ -271,7 +272,9 @@ function initReviewSortable() {
     const options = {
         group: 'review-order',
         animation: 150,
-        handle: '.card-header',
+        handle: '.drag-handle',
+        forceFallback: true,
+        fallbackOnBody: true,
         onEnd: persistReviewOrder,
     };
 

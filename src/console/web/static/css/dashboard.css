@@ -317,6 +317,36 @@ h1 {
     gap: 24px;
 }
 
+.review-col .card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: space-between;
+}
+
+.review-col .card-header .article-title {
+    flex: 1 1 auto;
+}
+
+.drag-handle {
+    cursor: grab;
+    user-select: none;
+    color: var(--text-secondary);
+    font-size: 1rem;
+    padding: 4px 6px;
+    border-radius: 6px;
+    border: 1px dashed transparent;
+}
+
+.drag-handle:active {
+    cursor: grabbing;
+}
+
+.drag-handle:hover {
+    border-color: var(--border-color);
+    background: #f8fafc;
+}
+
 .review-col h3 {
     margin-top: 0;
     margin-bottom: 16px;

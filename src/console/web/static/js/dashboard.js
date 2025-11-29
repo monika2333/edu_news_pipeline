@@ -1,4 +1,4 @@
-const API_BASE = '/api/manual_filter';
+﻿const API_BASE = '/api/manual_filter';
 
 // State
 let state = {
@@ -20,6 +20,9 @@ const elements = {
     filterList: document.getElementById('filter-list'),
     filterTabButtons: document.querySelectorAll('.filter-tab-btn'),
     reviewList: document.getElementById('review-list'),
+    reviewSelectAll: document.getElementById('review-select-all'),
+    reviewBulkStatus: document.getElementById('review-bulk-status'),
+    reviewBulkApply: document.getElementById('btn-apply-review-status'),
     discardList: document.getElementById('discard-list'),
     actorInput: document.getElementById('actor-input'),
     sortToggleBtn: document.getElementById('btn-toggle-sort'),
@@ -63,6 +66,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (elements.sortToggleBtn) {
         elements.sortToggleBtn.addEventListener('click', toggleSortMode);
     }
+    if (elements.reviewSelectAll) {
+        elements.reviewSelectAll.addEventListener('change', (e) => {
+            toggleReviewSelectAll(Boolean(e.target.checked));
+        });
+    }
+    if (elements.reviewBulkApply) {
+        elements.reviewBulkApply.addEventListener('click', applyReviewBulkStatus);
+    }
     if (elements.filterTabButtons && elements.filterTabButtons.length) {
         elements.filterTabButtons.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -94,15 +105,15 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
         <div class="radio-group" role="radiogroup">
             <div class="radio-option">
                 <input type="radio" name="status-${safe.article_id}" value="selected" id="sel-${safe.article_id}">
-                <label for="sel-${safe.article_id}" class="radio-label">采纳</label>
+                <label for="sel-${safe.article_id}" class="radio-label">閲囩撼</label>
             </div>
             <div class="radio-option">
                 <input type="radio" name="status-${safe.article_id}" value="backup" id="bak-${safe.article_id}">
-                <label for="bak-${safe.article_id}" class="radio-label">备选</label>
+                <label for="bak-${safe.article_id}" class="radio-label">澶囬€?/label>
             </div>
             <div class="radio-option">
                 <input type="radio" name="status-${safe.article_id}" value="discarded" id="dis-${safe.article_id}" checked>
-                <label for="dis-${safe.article_id}" class="radio-label">放弃</label>
+                <label for="dis-${safe.article_id}" class="radio-label">鏀惧純</label>
             </div>
         </div>
     ` : '';
@@ -112,18 +123,18 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
             <div class="card-header">
                 <h3 class="article-title">
                     ${safe.title || '(No Title)'}
-                    ${safe.url ? `<a href="${safe.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
+                    ${safe.url ? `<a href="${safe.url}" target="_blank" rel="noopener noreferrer">馃敆</a>` : ''}
                 </h3>
                 ${statusGroup}
             </div>
 
             <div class="meta-row">
-                <div class="meta-item">来源: ${safe.source || '-'}</div>
-                <div class="meta-item">分数: ${safe.score || '-'}</div>
+                <div class="meta-item">鏉ユ簮: ${safe.source || '-'}</div>
+                <div class="meta-item">鍒嗘暟: ${safe.score || '-'}</div>
                 <div class="meta-item">
                     <span class="badge ${getSentimentClass(safe.sentiment_label)}">${safe.sentiment_label || '-'}</span>
                 </div>
-                <div class="meta-item">京内: ${safe.is_beijing_related ? '是' : '否'}</div>
+                <div class="meta-item">浜唴: ${safe.is_beijing_related ? '鏄? : '鍚?}</div>
                 ${safe.bonus_keywords && safe.bonus_keywords.length ?
             `<div class="meta-item">Bonus: ${safe.bonus_keywords.join(', ')}</div>` : ''}
             </div>
@@ -223,31 +234,31 @@ function renderFilterList(data) {
             <div class="card-header">
                 <h3 class="article-title">
                     ${item.title || '(No Title)'}
-                    ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
+                    ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">馃敆</a>` : ''}
                 </h3>
                 <div class="radio-group" role="radiogroup">
                     <div class="radio-option">
                         <input type="radio" name="status-${item.article_id}" value="selected" id="sel-${item.article_id}">
-                        <label for="sel-${item.article_id}" class="radio-label">采纳</label>
+                        <label for="sel-${item.article_id}" class="radio-label">閲囩撼</label>
                     </div>
                     <div class="radio-option">
                         <input type="radio" name="status-${item.article_id}" value="backup" id="bak-${item.article_id}">
-                        <label for="bak-${item.article_id}" class="radio-label">备选</label>
+                        <label for="bak-${item.article_id}" class="radio-label">澶囬€?/label>
                     </div>
                     <div class="radio-option">
                         <input type="radio" name="status-${item.article_id}" value="discarded" id="dis-${item.article_id}" checked>
-                        <label for="dis-${item.article_id}" class="radio-label">放弃</label>
+                        <label for="dis-${item.article_id}" class="radio-label">鏀惧純</label>
                     </div>
                 </div>
             </div>
             
             <div class="meta-row">
-                <div class="meta-item">来源: ${item.source || '-'}</div>
-                <div class="meta-item">分数: ${item.score || '-'}</div>
+                <div class="meta-item">鏉ユ簮: ${item.source || '-'}</div>
+                <div class="meta-item">鍒嗘暟: ${item.score || '-'}</div>
                 <div class="meta-item">
                     <span class="badge ${getSentimentClass(item.sentiment_label)}">${item.sentiment_label || '-'}</span>
                 </div>
-                <div class="meta-item">京内: ${item.is_beijing_related ? '是' : '否'}</div>
+                <div class="meta-item">浜唴: ${item.is_beijing_related ? '鏄? : '鍚?}</div>
                 ${item.bonus_keywords && item.bonus_keywords.length ?
             `<div class="meta-item">Bonus: ${item.bonus_keywords.join(', ')}</div>` : ''}
             </div>
@@ -305,20 +316,20 @@ function renderClusteredList(clusters) {
             <div class="filter-cluster" data-cluster-id="${cluster.cluster_id}" data-size="${size}">
                 <div class="cluster-header">
                     <div class="cluster-title">
-                        ${cluster.representative || '(聚类)'} ${size ? `(${size})` : ''}
+                        ${cluster.representative || '(鑱氱被)'} ${size ? `(${size})` : ''}
                     </div>
                     <div class="radio-group cluster-radio" data-cluster="${cluster.cluster_id}">
                         <div class="radio-option">
                             <input type="radio" name="cluster-${cluster.cluster_id}" value="selected" id="cluster-sel-${cluster.cluster_id}">
-                            <label for="cluster-sel-${cluster.cluster_id}" class="radio-label">采纳</label>
+                            <label for="cluster-sel-${cluster.cluster_id}" class="radio-label">閲囩撼</label>
                         </div>
                         <div class="radio-option">
                             <input type="radio" name="cluster-${cluster.cluster_id}" value="backup" id="cluster-bak-${cluster.cluster_id}">
-                            <label for="cluster-bak-${cluster.cluster_id}" class="radio-label">备选</label>
+                            <label for="cluster-bak-${cluster.cluster_id}" class="radio-label">澶囬€?/label>
                         </div>
                         <div class="radio-option">
                             <input type="radio" name="cluster-${cluster.cluster_id}" value="discarded" id="cluster-dis-${cluster.cluster_id}">
-                            <label for="cluster-dis-${cluster.cluster_id}" class="radio-label">放弃</label>
+                            <label for="cluster-dis-${cluster.cluster_id}" class="radio-label">鏀惧純</label>
                         </div>
                     </div>
                 </div>
@@ -326,7 +337,7 @@ function renderClusteredList(clusters) {
                     ${renderArticleCard(first, { showStatus: false, collapsed: false })}
                     ${rest.map(item => renderArticleCard(item, { showStatus: false, collapsed: true })).join('')}
                 </div>
-                ${hiddenCount ? `<div class="cluster-toggle-row"><button type="button" class="btn btn-link cluster-toggle" data-target="${cluster.cluster_id}">展开其余${hiddenCount}条</button></div>` : ''}
+                ${hiddenCount ? `<div class="cluster-toggle-row"><button type="button" class="btn btn-link cluster-toggle" data-target="${cluster.cluster_id}">灞曞紑鍏朵綑${hiddenCount}鏉?/button></div>` : ''}
             </div>
         `;
     }).join('');
@@ -342,7 +353,7 @@ function renderClusteredList(clusters) {
                 card.style.display = isHidden ? '' : 'none';
             });
             const count = hiddenCards.length;
-            btn.textContent = isHidden ? '收起其余' + count + '条' : '展开其余' + count + '条';
+            btn.textContent = isHidden ? '鏀惰捣鍏朵綑' + count + '鏉? : '灞曞紑鍏朵綑' + count + '鏉?;
         });
     });
 }
@@ -457,13 +468,13 @@ function renderReviewGrid(selectedItems, backupItems) {
     elements.reviewList.innerHTML = `
         <div class="review-grid">
             <div class="review-col selected-col" data-status="selected">
-                <h3>采纳 (${selectedItems.length})</h3>
+                <h3>閲囩撼 (${selectedItems.length})</h3>
                 <div class="review-items">
                     ${renderReviewItems(selectedItems, 'selected')}
                 </div>
             </div>
             <div class="review-col backup-col" data-status="backup">
-                <h3>备选 (${backupItems.length})</h3>
+                <h3>澶囬€?(${backupItems.length})</h3>
                 <div class="review-items">
                     ${renderReviewItems(backupItems, 'backup')}
                 </div>
@@ -472,6 +483,7 @@ function renderReviewGrid(selectedItems, backupItems) {
     `;
     initReviewSortable();
     applySortModeState();
+    bindReviewSelectionControls();
 }
 
 function applySortModeState() {
@@ -482,7 +494,7 @@ function applySortModeState() {
     }
     if (toggleBtn) {
         toggleBtn.classList.toggle('active', isSortMode);
-        toggleBtn.innerHTML = `<span class="icon">🔃</span> ${isSortMode ? '退出排序' : '排序模式'}`;
+        toggleBtn.innerHTML = `<span class="icon">馃攦</span> ${isSortMode ? '閫€鍑烘帓搴? : '鎺掑簭妯″紡'}`;
     }
 }
 
@@ -495,16 +507,19 @@ function renderReviewItems(items, currentStatus) {
     return items.map(item => `
         <div class="article-card" data-id="${item.article_id}">
             <div class="card-header">
-                <span class="drag-handle" title="拖动排序">&#8942;</span>
+                <label class="review-select-wrap" title="閫夋嫨">
+                    <input type="checkbox" class="review-select">
+                </label>
+                <span class="drag-handle" title="鎷栧姩鎺掑簭">&#8942;</span>
                 <h4 class="article-title">
                     ${item.title}
-                    ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
+                    ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">馃敆</a>` : ''}
                 </h4>
                 <select class="status-select" data-id="${item.article_id}">
-                    <option value="selected" ${currentStatus === 'selected' ? 'selected' : ''}>采纳</option>
-                    <option value="backup" ${currentStatus === 'backup' ? 'selected' : ''}>备选</option>
-                    <option value="discarded">放弃</option>
-                    <option value="pending">待处理</option>
+                    <option value="selected" ${currentStatus === 'selected' ? 'selected' : ''}>閲囩撼</option>
+                    <option value="backup" ${currentStatus === 'backup' ? 'selected' : ''}>澶囬€?/option>
+                    <option value="discarded">鏀惧純</option>
+                    <option value="pending">寰呭鐞?/option>
                 </select>
             </div>
             <textarea class="summary-box" data-id="${item.article_id}">${item.summary || ''}</textarea>
@@ -533,6 +548,49 @@ function initReviewSortable() {
     new Sortable(backupList, options);
 }
 
+function bindReviewSelectionControls() {
+    const checkboxes = elements.reviewList.querySelectorAll('.review-select');
+    checkboxes.forEach(cb => {
+        cb.addEventListener('change', updateReviewSelectAllState);
+    });
+    updateReviewSelectAllState();
+}
+
+function updateReviewSelectAllState() {
+    const selectAll = elements.reviewSelectAll;
+    if (!selectAll) return;
+    const checkboxes = elements.reviewList.querySelectorAll('.review-select');
+    const total = checkboxes.length;
+    const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < total;
+    selectAll.checked = total > 0 && checkedCount === total;
+}
+
+function toggleReviewSelectAll(checked) {
+    const checkboxes = elements.reviewList.querySelectorAll('.review-select');
+    checkboxes.forEach(cb => {
+        cb.checked = checked;
+    });
+    updateReviewSelectAllState();
+}
+
+function applyReviewBulkStatus() {
+    if (!elements.reviewBulkStatus) return;
+    const value = elements.reviewBulkStatus.value;
+    if (!value) return;
+    const targets = elements.reviewList.querySelectorAll('.review-select:checked');
+    targets.forEach(cb => {
+        const card = cb.closest('.article-card');
+        if (!card) return;
+        const select = card.querySelector('.status-select');
+        if (select) {
+            select.value = value;
+        }
+    });
+    updateReviewSelectAllState();
+    showToast('宸叉壒閲忚缃墍閫夐」');
+}
+
 async function persistReviewOrder() {
     const selectedList = document.querySelector('.review-col.selected-col .review-items');
     const backupList = document.querySelector('.review-col.backup-col .review-items');
@@ -547,9 +605,9 @@ async function persistReviewOrder() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ selected_order, backup_order, actor: state.actor })
         });
-        showToast('排序已保存');
+        showToast('Order saved');
     } catch (e) {
-        showToast('排序保存失败', 'error');
+        showToast('Failed to save order', 'error');
     }
 }
 
@@ -622,11 +680,11 @@ function renderDiscardList(items) {
         <div class="article-card">
             <div class="card-header">
                 <h4 class="article-title">${item.title}</h4>
-                <button class="btn btn-secondary btn-sm" onclick="restoreToBackup('${item.article_id}')">恢复至备选</button>
+                <button class="btn btn-secondary btn-sm" onclick="restoreToBackup('${item.article_id}')">鎭㈠鑷冲閫?/button>
             </div>
             <div class="meta-row">
-                <div class="meta-item">来源: ${item.source}</div>
-                <div class="meta-item">分数: ${item.score}</div>
+                <div class="meta-item">鏉ユ簮: ${item.source}</div>
+                <div class="meta-item">鍒嗘暟: ${item.score}</div>
             </div>
         </div>
     `).join('');
@@ -724,10 +782,10 @@ async function triggerExport(dryRun = true) {
         if (elements.modalText) {
             elements.modalText.value = result.content || 'No content generated';
         }
-        const toastMsg = dryRun ? '已生成预览' : `已导出 ${result.count || 0} 条`;
+        const toastMsg = dryRun ? '宸茬敓鎴愰瑙? : `宸插鍑?${result.count || 0} 鏉;
         showToast(toastMsg);
     } catch (e) {
-        showToast(dryRun ? '预览失败' : '导出失败', 'error');
+        showToast(dryRun ? '棰勮澶辫触' : '瀵煎嚭澶辫触', 'error');
     }
 }
 

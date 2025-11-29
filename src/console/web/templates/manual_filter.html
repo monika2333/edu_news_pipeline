@@ -1,59 +1,59 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>人工筛选控制台</title>
+    <title>浜哄伐绛涢€夋帶鍒跺彴</title>
     <link rel="stylesheet" href="/static/css/dashboard.css">
 </head>
 <body>
     <div class="container">
         <header>
             <div class="header-left">
-                <h1>人工筛选控制台</h1>
+                <h1>浜哄伐绛涢€夋帶鍒跺彴</h1>
             </div>
             <div class="stats">
                 <div class="stat-item">
                     <span class="stat-value" id="stat-pending">-</span>
-                    <span class="stat-label">待处理</span>
+                    <span class="stat-label">寰呭鐞?/span>
                 </div>
                 <div class="stat-item">
                     <span class="stat-value" id="stat-selected">-</span>
-                    <span class="stat-label">采纳</span>
+                    <span class="stat-label">閲囩撼</span>
                 </div>
                 <div class="stat-item">
                     <span class="stat-value" id="stat-backup">-</span>
-                    <span class="stat-label">备选</span>
+                    <span class="stat-label">澶囬€?/span>
                 </div>
                 <div class="stat-item">
                     <span class="stat-value" id="stat-discarded">-</span>
-                    <span class="stat-label">放弃</span>
+                    <span class="stat-label">鏀惧純</span>
                 </div>
                 <div class="stat-item">
                     <span class="stat-value" id="stat-exported">-</span>
-                    <span class="stat-label">已导出</span>
+                    <span class="stat-label">宸插鍑?/span>
                 </div>
             </div>
             <div class="header-right">
-                <input type="text" id="actor-input" placeholder="操作者姓名" class="actor-input">
-                <button class="btn btn-secondary" id="btn-refresh">刷新</button>
+                <input type="text" id="actor-input" placeholder="鎿嶄綔鑰呭鍚? class="actor-input">
+                <button class="btn btn-secondary" id="btn-refresh">鍒锋柊</button>
             </div>
         </header>
 
         <div class="tabs">
-            <button class="tab-btn active" data-tab="filter">筛选</button>
-            <button class="tab-btn" data-tab="review">审阅</button>
-            <button class="tab-btn" data-tab="discard">放弃</button>
+            <button class="tab-btn active" data-tab="filter">绛涢€?/button>
+            <button class="tab-btn" data-tab="review">瀹￠槄</button>
+            <button class="tab-btn" data-tab="discard">鏀惧純</button>
         </div>
 
         <!-- Filter Tab -->
         <div class="tab-content active" id="filter-tab">
             <div class="filter-layout">
                 <div class="filter-sidebar">
-                    <button class="filter-tab-btn active" data-category="internal_positive">京内正面</button>
-                    <button class="filter-tab-btn" data-category="internal_negative">京内负面</button>
-                    <button class="filter-tab-btn" data-category="external_positive">京外正面</button>
-                    <button class="filter-tab-btn" data-category="external_negative">京外负面</button>
+                    <button class="filter-tab-btn active" data-category="internal_positive">浜唴姝ｉ潰</button>
+                    <button class="filter-tab-btn" data-category="internal_negative">浜唴璐熼潰</button>
+                    <button class="filter-tab-btn" data-category="external_positive">浜姝ｉ潰</button>
+                    <button class="filter-tab-btn" data-category="external_negative">浜璐熼潰</button>
                 </div>
                 <div class="filter-content">
                     <div id="filter-list">
@@ -62,8 +62,8 @@
                     <div id="filter-pagination" class="pagination"></div>
                     
                     <div class="actions-bar">
-                        <span>批量操作</span>
-                        <button class="btn btn-primary" id="btn-submit-filter">提交当前页选择</button>
+                        <span>鎵归噺鎿嶄綔</span>
+                        <button class="btn btn-primary" id="btn-submit-filter">鎻愪氦褰撳墠椤甸€夋嫨</button>
                     </div>
                 </div>
             </div>
@@ -71,18 +71,30 @@
 
         <!-- Review Tab -->
         <div class="tab-content" id="review-tab">
-            <div class="toolbar" style="margin-bottom: 20px; display: flex; justify-content: flex-end; gap: 10px;">
+            <div class="toolbar" style="margin-bottom: 20px; display: flex; justify-content: flex-end; gap: 10px; align-items: center;">
+                <label style="display: flex; align-items: center; gap: 6px; margin: 0;">
+                    <input type="checkbox" id="review-select-all">
+                    <span>全选</span>
+                </label>
+                <select id="review-bulk-status">
+                    <option value="">批量设置状态</option>
+                    <option value="selected">采纳</option>
+                    <option value="backup">备选</option>
+                    <option value="discarded">放弃</option>
+                    <option value="pending">待处理</option>
+                </select>
+                <button class="btn btn-secondary" id="btn-apply-review-status">应用</button>
                 <button class="btn btn-secondary" id="btn-toggle-sort">
                     <span class="icon">🔃</span> 排序模式
                 </button>
-                <button class="btn btn-primary" id="btn-export">导出 (仅采纳)</button>
+                <button class="btn btn-primary" id="btn-export">导出 (仅采�?</button>
             </div>
             <div id="review-list">
                 <!-- Grid will be injected here -->
             </div>
             <div class="actions-bar">
                 <span>批量操作</span>
-                <button class="btn btn-primary" id="btn-save-review">保存编辑与状态</button>
+                <button class="btn btn-primary" id="btn-save-review">保存编辑与状�?/button>
             </div>
         </div>
 
@@ -99,35 +111,35 @@
     <div class="modal" id="export-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>导出结果</h3>
-                <button class="btn btn-secondary" id="btn-close-modal">关闭</button>
+                <h3>瀵煎嚭缁撴灉</h3>
+                <button class="btn btn-secondary" id="btn-close-modal">鍏抽棴</button>
             </div>
             <div class="modal-body">
                 <div class="export-form">
                     <div class="form-row">
-                        <label for="export-template">模板</label>
+                        <label for="export-template">妯℃澘</label>
                         <select id="export-template">
-                            <option value="zongbao">综报</option>
-                            <option value="wanbao">晚报</option>
+                            <option value="zongbao">缁兼姤</option>
+                            <option value="wanbao">鏅氭姤</option>
                         </select>
                     </div>
                     <div class="form-row">
-                        <label for="export-period">期号</label>
-                        <input type="number" id="export-period" placeholder="期号">
-                        <label for="export-total">总期号</label>
-                        <input type="number" id="export-total" placeholder="总期号">
+                        <label for="export-period">鏈熷彿</label>
+                        <input type="number" id="export-period" placeholder="鏈熷彿">
+                        <label for="export-total">鎬绘湡鍙?/label>
+                        <input type="number" id="export-total" placeholder="鎬绘湡鍙?>
                     </div>
                     <div class="form-row check-row">
-                        <label><input type="checkbox" id="export-preview" checked> 预览</label>
-                        <label><input type="checkbox" id="export-mark" checked> 标记为已导出</label>
+                        <label><input type="checkbox" id="export-preview" checked> 棰勮</label>
+                        <label><input type="checkbox" id="export-mark" checked> 鏍囪涓哄凡瀵煎嚭</label>
                     </div>
                 </div>
                 <textarea id="export-text" readonly></textarea>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; margin-top: 16px;">
-                <button class="btn btn-secondary" id="btn-export-preview">预览</button>
-                <button class="btn btn-primary" id="btn-export-confirm">导出</button>
-                <button class="btn btn-primary" id="btn-copy">复制到剪贴板</button>
+                <button class="btn btn-secondary" id="btn-export-preview">棰勮</button>
+                <button class="btn btn-primary" id="btn-export-confirm">瀵煎嚭</button>
+                <button class="btn btn-primary" id="btn-copy">澶嶅埗鍒板壀璐存澘</button>
             </div>
         </div>
     </div>

@@ -22,7 +22,7 @@ body {
 }
 
 .container {
-    max-width: 1400px;
+    max-width: 1000px;
     margin: 0 auto;
     padding: 20px;
 }
@@ -178,23 +178,23 @@ h1 {
     user-select: none;
 }
 
-.radio-option input:checked + .radio-label {
+.radio-option input:checked+.radio-label {
     background: var(--card-bg);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 /* Specific colors for selected states */
-.radio-option input[value="selected"]:checked + .radio-label {
+.radio-option input[value="selected"]:checked+.radio-label {
     color: var(--success-color);
     background: #dcfce7;
 }
 
-.radio-option input[value="backup"]:checked + .radio-label {
+.radio-option input[value="backup"]:checked+.radio-label {
     color: var(--warning-color);
     background: #fef3c7;
 }
 
-.radio-option input[value="discarded"]:checked + .radio-label {
+.radio-option input[value="discarded"]:checked+.radio-label {
     color: var(--danger-color);
     background: #fee2e2;
 }
@@ -225,13 +225,25 @@ h1 {
     background: #f1f5f9;
 }
 
-.badge.positive { background: #dcfce7; color: #166534; }
-.badge.negative { background: #fee2e2; color: #991b1b; }
-.badge.neutral { background: #f1f5f9; color: #475569; }
+.badge.positive {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.badge.negative {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.badge.neutral {
+    background: #f1f5f9;
+    color: #475569;
+}
 
 /* Summary Textarea */
 .summary-box {
     width: 100%;
+    box-sizing: border-box;
     min-height: 100px;
     padding: 12px;
     border: 1px solid var(--border-color);

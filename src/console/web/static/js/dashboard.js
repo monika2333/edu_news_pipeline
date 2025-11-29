@@ -88,6 +88,51 @@ document.addEventListener('DOMContentLoaded', () => {
     setupPagination();
 });
 
+function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) {
+    const safe = item || {};
+    const statusGroup = showStatus ? `
+        <div class="radio-group" role="radiogroup">
+            <div class="radio-option">
+                <input type="radio" name="status-${safe.article_id}" value="selected" id="sel-${safe.article_id}">
+                <label for="sel-${safe.article_id}" class="radio-label">采纳</label>
+            </div>
+            <div class="radio-option">
+                <input type="radio" name="status-${safe.article_id}" value="backup" id="bak-${safe.article_id}">
+                <label for="bak-${safe.article_id}" class="radio-label">备选</label>
+            </div>
+            <div class="radio-option">
+                <input type="radio" name="status-${safe.article_id}" value="discarded" id="dis-${safe.article_id}" checked>
+                <label for="dis-${safe.article_id}" class="radio-label">放弃</label>
+            </div>
+        </div>
+    ` : '';
+
+    return `
+        <div class="article-card${collapsed ? ' collapsed' : ''}" data-id="${safe.article_id || ''}" ${collapsed ? 'style="display:none;"' : ''}>
+            <div class="card-header">
+                <h3 class="article-title">
+                    ${safe.title || '(No Title)'}
+                    ${safe.url ? `<a href="${safe.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
+                </h3>
+                ${statusGroup}
+            </div>
+
+            <div class="meta-row">
+                <div class="meta-item">来源: ${safe.source || '-'}</div>
+                <div class="meta-item">分数: ${safe.score || '-'}</div>
+                <div class="meta-item">
+                    <span class="badge ${getSentimentClass(safe.sentiment_label)}">${safe.sentiment_label || '-'}</span>
+                </div>
+                <div class="meta-item">京内: ${safe.is_beijing_related ? '是' : '否'}</div>
+                ${safe.bonus_keywords && safe.bonus_keywords.length ?
+            `<div class="meta-item">Bonus: ${safe.bonus_keywords.join(', ')}</div>` : ''}
+            </div>
+
+            <textarea class="summary-box" id="summary-${safe.article_id}">${safe.summary || ''}</textarea>
+        </div>
+    `;
+}
+
 function setupTabs() {
     elements.tabs.forEach(tab => {
         tab.addEventListener('click', () => {
@@ -232,120 +277,132 @@ function renderFilterList(data) {
         if (!list.length) return '';
         return `
             <div class="filter-section">
-                ${list.map(renderCard).join('')}
+                ${list.map(item => renderArticleCard(item, { showStatus: true, collapsed: false })).join('')}
             </div>
         `;
     }).filter(Boolean).join('') || '<div class="empty">No pending articles</div>';
 }
 
 function renderClusteredList(clusters) {
-    const renderCard = (item) => `
-        <div class="article-card" data-id="${item.article_id}">
-            <div class="card-header">
-                <h3 class="article-title">
-                    ${item.title || '(No Title)'}
-                    ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
-                </h3>
-                <div class="radio-group" role="radiogroup">
-                    <div class="radio-option">
-                        <input type="radio" name="status-${item.article_id}" value="selected" id="sel-${item.article_id}">
-                        <label for="sel-${item.article_id}" class="radio-label">采纳</label>
-                    </div>
-                    <div class="radio-option">
-                        <input type="radio" name="status-${item.article_id}" value="backup" id="bak-${item.article_id}">
-                        <label for="bak-${item.article_id}" class="radio-label">备选</label>
-                    </div>
-                    <div class="radio-option">
-                        <input type="radio" name="status-${item.article_id}" value="discarded" id="dis-${item.article_id}" checked>
-                        <label for="dis-${item.article_id}" class="radio-label">放弃</label>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="meta-row">
-                <div class="meta-item">来源: ${item.source || '-'}</div>
-                <div class="meta-item">分数: ${item.score || '-'}</div>
-                <div class="meta-item">
-                    <span class="badge ${getSentimentClass(item.sentiment_label)}">${item.sentiment_label || '-'}</span>
-                </div>
-                <div class="meta-item">京内: ${item.is_beijing_related ? '是' : '否'}</div>
-                ${item.bonus_keywords && item.bonus_keywords.length ?
-            `<div class="meta-item">Bonus: ${item.bonus_keywords.join(', ')}</div>` : ''}
-            </div>
-            
-            <textarea class="summary-box" id="summary-${item.article_id}">${item.summary || ''}</textarea>
-        </div>
-    `;
-
     if (!clusters.length) {
         elements.filterList.innerHTML = '<div class="empty">No pending articles</div>';
         return;
     }
 
-    elements.filterList.innerHTML = clusters.map(cluster => `
-        <div class="filter-cluster" data-cluster-id="${cluster.cluster_id}">
-            <div class="cluster-header">
-                <div class="cluster-title">
-                    ${cluster.representative || '(聚类)'} ${cluster.size ? `(${cluster.size})` : ''}
-                </div>
-                <div class="radio-group cluster-radio" data-cluster="${cluster.cluster_id}">
-                    <div class="radio-option">
-                        <input type="radio" name="cluster-${cluster.cluster_id}" value="selected" id="cluster-sel-${cluster.cluster_id}">
-                        <label for="cluster-sel-${cluster.cluster_id}" class="radio-label">采纳</label>
-                    </div>
-                    <div class="radio-option">
-                        <input type="radio" name="cluster-${cluster.cluster_id}" value="backup" id="cluster-bak-${cluster.cluster_id}">
-                        <label for="cluster-bak-${cluster.cluster_id}" class="radio-label">备选</label>
-                    </div>
-                    <div class="radio-option">
-                        <input type="radio" name="cluster-${cluster.cluster_id}" value="discarded" id="cluster-dis-${cluster.cluster_id}">
-                        <label for="cluster-dis-${cluster.cluster_id}" class="radio-label">放弃</label>
-                    </div>
-                </div>
-            </div>
-            <div class="filter-section">
-                ${cluster.items.map(renderCard).join('')}
-            </div>
-        </div>
-    `).join('');
+    elements.filterList.innerHTML = clusters.map(cluster => {
+        const items = cluster.items || [];
+        const size = items.length;
 
-    // Cluster-level selection
-    elements.filterList.querySelectorAll('.cluster-radio input').forEach(input => {
-        input.addEventListener('change', () => {
-            const clusterId = input.name.replace('cluster-', '');
-            const status = input.value;
-            const container = elements.filterList.querySelector(`[data-cluster-id="${clusterId}"]`);
+        // Single-item cluster: render as a plain article card (no cluster frame).
+        if (size <= 1) {
+            return renderArticleCard(items[0], { showStatus: true, collapsed: false });
+        }
+
+        const [first, ...rest] = items;
+        const hiddenCount = rest.length;
+
+        return `
+            <div class="filter-cluster" data-cluster-id="${cluster.cluster_id}" data-size="${size}">
+                <div class="cluster-header">
+                    <div class="cluster-title">
+                        ${cluster.representative || '(聚类)'} ${size ? `(${size})` : ''}
+                    </div>
+                    <div class="radio-group cluster-radio" data-cluster="${cluster.cluster_id}">
+                        <div class="radio-option">
+                            <input type="radio" name="cluster-${cluster.cluster_id}" value="selected" id="cluster-sel-${cluster.cluster_id}">
+                            <label for="cluster-sel-${cluster.cluster_id}" class="radio-label">采纳</label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" name="cluster-${cluster.cluster_id}" value="backup" id="cluster-bak-${cluster.cluster_id}">
+                            <label for="cluster-bak-${cluster.cluster_id}" class="radio-label">备选</label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" name="cluster-${cluster.cluster_id}" value="discarded" id="cluster-dis-${cluster.cluster_id}">
+                            <label for="cluster-dis-${cluster.cluster_id}" class="radio-label">放弃</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="filter-section">
+                    ${renderArticleCard(first, { showStatus: false, collapsed: false })}
+                    ${rest.map(item => renderArticleCard(item, { showStatus: false, collapsed: true })).join('')}
+                </div>
+                ${hiddenCount ? `<div class="cluster-toggle-row"><button type="button" class="btn btn-link cluster-toggle" data-target="${cluster.cluster_id}">展开其余${hiddenCount}条</button></div>` : ''}
+            </div>
+        `;
+    }).join('');
+
+    elements.filterList.querySelectorAll('.cluster-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const target = btn.dataset.target;
+            const container = elements.filterList.querySelector(`[data-cluster-id="${target}"]`);
             if (!container) return;
-            container.querySelectorAll(`input[type="radio"][value="${status}"]`).forEach(r => {
-                r.checked = true;
+            const hiddenCards = container.querySelectorAll('.article-card.collapsed');
+            const isHidden = hiddenCards.length ? hiddenCards[0].style.display === 'none' : true;
+            hiddenCards.forEach(card => {
+                card.style.display = isHidden ? '' : 'none';
             });
+            const count = hiddenCards.length;
+            btn.textContent = isHidden ? '收起其余' + count + '条' : '展开其余' + count + '条';
         });
     });
 }
 
 async function submitFilter() {
+    const clusterContainers = document.querySelectorAll('#filter-list .filter-cluster');
+    const standaloneCards = document.querySelectorAll('#filter-list > .article-card');
     const cards = document.querySelectorAll('#filter-list .article-card');
     const selected = [];
     const backup = [];
     const discarded = [];
     const edits = {};
 
-    cards.forEach(card => {
+    // Clustered items with cluster-level decision
+    clusterContainers.forEach(cluster => {
+        const statusInput = cluster.querySelector('.cluster-radio input:checked');
+        const status = statusInput ? statusInput.value : 'discarded';
+        const cardsInCluster = cluster.querySelectorAll('.article-card');
+
+        cardsInCluster.forEach(card => {
+            const id = card.dataset.id;
+            const summaryBox = card.querySelector('.summary-box');
+            const summary = summaryBox ? summaryBox.value : '';
+            edits[id] = { summary };
+
+            if (status === 'selected') selected.push(id);
+            else if (status === 'backup') backup.push(id);
+            else discarded.push(id);
+        });
+    });
+
+    // Standalone cards (e.g., single-item clusters rendered as plain cards or non-cluster data)
+    standaloneCards.forEach(card => {
         const id = card.dataset.id;
-        // Avoid invalid selectors when article_id contains ':' or '/'
         const statusInput = card.querySelector('input[type="radio"]:checked');
         const status = statusInput ? statusInput.value : 'discarded';
         const summaryBox = card.querySelector('.summary-box');
         const summary = summaryBox ? summaryBox.value : '';
-
-        // Save edit if summary changed (we assume it might have, simplest to just send all for now or check dataset)
-        // For simplicity, we'll send edits for all items in this batch to ensure latest summary is saved
         edits[id] = { summary };
 
         if (status === 'selected') selected.push(id);
         else if (status === 'backup') backup.push(id);
         else discarded.push(id);
     });
+
+    // Fallback
+    if (!clusterContainers.length && !standaloneCards.length) {
+        cards.forEach(card => {
+            const id = card.dataset.id;
+            const statusInput = card.querySelector('input[type="radio"]:checked');
+            const status = statusInput ? statusInput.value : 'discarded';
+            const summaryBox = card.querySelector('.summary-box');
+            const summary = summaryBox ? summaryBox.value : '';
+            edits[id] = { summary };
+
+            if (status === 'selected') selected.push(id);
+            else if (status === 'backup') backup.push(id);
+            else discarded.push(id);
+        });
+    }
 
     try {
         // First save edits

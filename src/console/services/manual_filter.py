@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from src.adapters.db import get_adapter
 from src.domain.models import ExportCandidate
+from src.adapters.title_cluster import cluster_titles
 
 logger = logging.getLogger(__name__)
 EXPORT_META_PATH = Path("outputs/manual_filter_export_meta.json")
@@ -208,11 +209,155 @@ def list_candidates(
     offset: int = 0,
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
+    cluster: bool = False,
 ) -> Dict[str, Any]:
     region = region if region in ("internal", "external") else None
     sentiment = sentiment if sentiment in ("positive", "negative") else None
     logger.info("Listing candidates: limit=%s offset=%s region=%s sentiment=%s", limit, offset, region, sentiment)
+    if cluster:
+        return cluster_pending(region=region, sentiment=sentiment)
     return _paginate_by_status("pending", limit=limit, offset=offset, only_ready=True, region=region, sentiment=sentiment)
+
+
+def _candidate_rank_key_by_record(record: Dict[str, Any]) -> Tuple[float, float, float]:
+    ext_val = record.get("external_importance_score")
+    ext_score = float(ext_val) if isinstance(ext_val, (int, float)) else float("-inf")
+    score_val = record.get("score")
+    score = float(score_val) if isinstance(score_val, (int, float)) else float("-inf")
+    ts = record.get("publish_time_iso") or record.get("publish_time")
+    ts_val = 0.0
+    if ts:
+        try:
+            ts_val = datetime.fromisoformat(str(ts)).timestamp()
+        except Exception:
+            ts_val = 0.0
+    return (ext_score, score, ts_val)
+
+
+def _collect_pending(region: Optional[str], sentiment: Optional[str]) -> List[Dict[str, Any]]:
+    _ensure_manual_filter_schema()
+    adapter = get_adapter()
+    conditions = ["manual_status = 'pending'", "status = 'ready_for_export'"]
+    params: List[Any] = []
+    if region in ("internal", "external"):
+        conditions.append("is_beijing_related = %s")
+        params.append(True if region == "internal" else False)
+    if sentiment in ("positive", "negative"):
+        conditions.append("sentiment_label = %s")
+        params.append(sentiment)
+    where_clause = " AND ".join(conditions)
+    query = f"""
+        SELECT
+            article_id,
+            title,
+            llm_summary,
+            manual_summary,
+            manual_rank,
+            score,
+            content_markdown,
+            url,
+            source,
+            publish_time_iso,
+            publish_time,
+            sentiment_label,
+            sentiment_confidence,
+            is_beijing_related,
+            external_importance_score,
+            external_importance_checked_at,
+            score_details
+        FROM news_summaries
+        WHERE {where_clause}
+        ORDER BY manual_rank ASC NULLS LAST,
+                 score DESC NULLS LAST,
+                 publish_time_iso DESC NULLS LAST,
+                 article_id ASC
+        LIMIT 1000
+    """
+    with adapter._cursor() as cur:  # type: ignore[attr-defined]
+        cur.execute(query, tuple(params))
+        rows = cur.fetchall()
+    records: List[Dict[str, Any]] = []
+    for row in rows:
+        record = dict(row)
+        record["summary"] = record.get("manual_summary") or record.get("llm_summary") or ""
+        record["bonus_keywords"] = _bonus_keywords(record.get("score_details"))
+        records.append(record)
+    return records
+
+
+def cluster_pending(
+    *,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+) -> Dict[str, Any]:
+    records = _collect_pending(region, sentiment)
+    total = len(records)
+    if not records:
+        return {"clusters": [], "total": 0}
+
+    buckets: Dict[Tuple[str, str], List[Dict[str, Any]]] = {
+        ("internal", "positive"): [],
+        ("internal", "negative"): [],
+        ("external", "positive"): [],
+        ("external", "negative"): [],
+    }
+    for rec in records:
+        reg_key = "internal" if rec.get("is_beijing_related") else "external"
+        sent_key = "negative" if (rec.get("sentiment_label") or "").lower() == "negative" else "positive"
+        bucket_key = (reg_key, sent_key)
+        buckets[bucket_key].append(rec)
+
+    clusters: List[Dict[str, Any]] = []
+    for bucket_key, items in buckets.items():
+        if not items:
+            continue
+        items_sorted = sorted(items, key=_candidate_rank_key_by_record, reverse=True)
+        titles = [itm.get("title") or "" for itm in items_sorted]
+        groups = cluster_titles(titles)
+        if not groups:
+            groups = [list(range(len(items_sorted)))]
+
+        cluster_structs: List[Tuple[Tuple[float, float, float], List[Dict[str, Any]]]] = []
+        for idx, group in enumerate(groups):
+            group_items = [items_sorted[i] for i in group if 0 <= i < len(items_sorted)]
+            if not group_items:
+                continue
+            group_items.sort(key=_candidate_rank_key_by_record, reverse=True)
+            key_val = _candidate_rank_key_by_record(group_items[0])
+            cluster_structs.append((key_val, group_items))
+
+        if not cluster_structs:
+            cluster_structs.append((_candidate_rank_key_by_record(items_sorted[0]), items_sorted))
+
+        cluster_structs.sort(key=lambda x: x[0], reverse=True)
+        for idx, (_, group_items) in enumerate(cluster_structs):
+            rep = group_items[0]
+            cluster_id = f"{bucket_key[0]}-{bucket_key[1]}-{idx}"
+            clusters.append(
+                {
+                    "cluster_id": cluster_id,
+                    "region": bucket_key[0],
+                    "sentiment": bucket_key[1],
+                    "size": len(group_items),
+                    "representative": rep.get("title"),
+                    "items": [
+                        {
+                            "article_id": itm.get("article_id"),
+                            "title": itm.get("title"),
+                            "summary": itm.get("summary"),
+                            "source": itm.get("source"),
+                            "score": itm.get("score"),
+                            "sentiment_label": itm.get("sentiment_label"),
+                            "is_beijing_related": itm.get("is_beijing_related"),
+                            "url": itm.get("url"),
+                            "bonus_keywords": itm.get("bonus_keywords"),
+                        }
+                        for itm in group_items
+                    ],
+                }
+            )
+
+    return {"clusters": clusters, "total": total}
 
 
 def list_review(decision: str, *, limit: int = 30, offset: int = 0) -> Dict[str, Any]:

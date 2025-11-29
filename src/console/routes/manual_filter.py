@@ -46,8 +46,15 @@ def list_candidates_api(
     offset: int = 0,
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
+    cluster: bool = False,
 ) -> Dict[str, Any]:
-    return manual_filter.list_candidates(limit=limit, offset=offset, region=region, sentiment=sentiment)
+    return manual_filter.list_candidates(
+        limit=limit,
+        offset=offset,
+        region=region,
+        sentiment=sentiment,
+        cluster=cluster,
+    )
 
 
 @router.post("/decide")

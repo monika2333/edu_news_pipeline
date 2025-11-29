@@ -241,6 +241,27 @@ h1 {
     color: var(--text-primary);
 }
 
+.filter-cluster {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 16px;
+    background: #fff;
+}
+
+.cluster-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.cluster-title {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
 /* Metadata */
 .meta-row {
     display: flex;

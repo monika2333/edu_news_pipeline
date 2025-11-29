@@ -135,8 +135,9 @@ async function loadFilterData() {
     elements.filterList.innerHTML = '<div class="loading">Loading...</div>';
     try {
         const params = new URLSearchParams({
-            limit: '10',
-            offset: `${(state.filterPage - 1) * 10}`,
+            limit: '1000',
+            offset: `${(state.filterPage - 1) * 1000}`,
+            cluster: 'true',
         });
         const cat = state.filterCategory;
         if (cat && cat !== 'all') {
@@ -147,14 +148,19 @@ async function loadFilterData() {
         }
         const res = await fetch(`${API_BASE}/candidates?${params.toString()}`);
         const data = await res.json();
-        renderFilterList(data.items);
-        updatePagination('filter', data.total, state.filterPage);
+        renderFilterList(data);
+        updatePagination('filter', data.total || 0, state.filterPage);
     } catch (e) {
         elements.filterList.innerHTML = '<div class="error">Failed to load data</div>';
     }
 }
 
-function renderFilterList(items) {
+function renderFilterList(data) {
+    const items = data.items || [];
+    if (data.clusters && Array.isArray(data.clusters) && data.clusters.length) {
+        renderClusteredList(data.clusters);
+        return;
+    }
     if (!items.length) {
         elements.filterList.innerHTML = '<div class="empty">No pending articles</div>';
         return;
@@ -230,6 +236,91 @@ function renderFilterList(items) {
             </div>
         `;
     }).filter(Boolean).join('') || '<div class="empty">No pending articles</div>';
+}
+
+function renderClusteredList(clusters) {
+    const renderCard = (item) => `
+        <div class="article-card" data-id="${item.article_id}">
+            <div class="card-header">
+                <h3 class="article-title">
+                    ${item.title || '(No Title)'}
+                    ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
+                </h3>
+                <div class="radio-group" role="radiogroup">
+                    <div class="radio-option">
+                        <input type="radio" name="status-${item.article_id}" value="selected" id="sel-${item.article_id}">
+                        <label for="sel-${item.article_id}" class="radio-label">采纳</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" name="status-${item.article_id}" value="backup" id="bak-${item.article_id}">
+                        <label for="bak-${item.article_id}" class="radio-label">备选</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" name="status-${item.article_id}" value="discarded" id="dis-${item.article_id}" checked>
+                        <label for="dis-${item.article_id}" class="radio-label">放弃</label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="meta-row">
+                <div class="meta-item">来源: ${item.source || '-'}</div>
+                <div class="meta-item">分数: ${item.score || '-'}</div>
+                <div class="meta-item">
+                    <span class="badge ${getSentimentClass(item.sentiment_label)}">${item.sentiment_label || '-'}</span>
+                </div>
+                <div class="meta-item">京内: ${item.is_beijing_related ? '是' : '否'}</div>
+                ${item.bonus_keywords && item.bonus_keywords.length ?
+            `<div class="meta-item">Bonus: ${item.bonus_keywords.join(', ')}</div>` : ''}
+            </div>
+            
+            <textarea class="summary-box" id="summary-${item.article_id}">${item.summary || ''}</textarea>
+        </div>
+    `;
+
+    if (!clusters.length) {
+        elements.filterList.innerHTML = '<div class="empty">No pending articles</div>';
+        return;
+    }
+
+    elements.filterList.innerHTML = clusters.map(cluster => `
+        <div class="filter-cluster" data-cluster-id="${cluster.cluster_id}">
+            <div class="cluster-header">
+                <div class="cluster-title">
+                    ${cluster.representative || '(聚类)'} ${cluster.size ? `(${cluster.size})` : ''}
+                </div>
+                <div class="radio-group cluster-radio" data-cluster="${cluster.cluster_id}">
+                    <div class="radio-option">
+                        <input type="radio" name="cluster-${cluster.cluster_id}" value="selected" id="cluster-sel-${cluster.cluster_id}">
+                        <label for="cluster-sel-${cluster.cluster_id}" class="radio-label">采纳</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" name="cluster-${cluster.cluster_id}" value="backup" id="cluster-bak-${cluster.cluster_id}">
+                        <label for="cluster-bak-${cluster.cluster_id}" class="radio-label">备选</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" name="cluster-${cluster.cluster_id}" value="discarded" id="cluster-dis-${cluster.cluster_id}">
+                        <label for="cluster-dis-${cluster.cluster_id}" class="radio-label">放弃</label>
+                    </div>
+                </div>
+            </div>
+            <div class="filter-section">
+                ${cluster.items.map(renderCard).join('')}
+            </div>
+        </div>
+    `).join('');
+
+    // Cluster-level selection
+    elements.filterList.querySelectorAll('.cluster-radio input').forEach(input => {
+        input.addEventListener('change', () => {
+            const clusterId = input.name.replace('cluster-', '');
+            const status = input.value;
+            const container = elements.filterList.querySelector(`[data-cluster-id="${clusterId}"]`);
+            if (!container) return;
+            container.querySelectorAll(`input[type="radio"][value="${status}"]`).forEach(r => {
+                r.checked = true;
+            });
+        });
+    });
 }
 
 async function submitFilter() {

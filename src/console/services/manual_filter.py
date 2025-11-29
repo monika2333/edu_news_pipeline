@@ -234,7 +234,7 @@ def _candidate_rank_key_by_record(record: Dict[str, Any]) -> Tuple[float, float,
     return (ext_score, score, ts_val)
 
 
-def _collect_pending(region: Optional[str], sentiment: Optional[str]) -> List[Dict[str, Any]]:
+def _collect_pending(region: Optional[str], sentiment: Optional[str], fetch_limit: int = 5000) -> List[Dict[str, Any]]:
     _ensure_manual_filter_schema()
     adapter = get_adapter()
     conditions = ["manual_status = 'pending'", "status = 'ready_for_export'"]
@@ -271,10 +271,10 @@ def _collect_pending(region: Optional[str], sentiment: Optional[str]) -> List[Di
                  score DESC NULLS LAST,
                  publish_time_iso DESC NULLS LAST,
                  article_id ASC
-        LIMIT 1000
+        LIMIT %s
     """
     with adapter._cursor() as cur:  # type: ignore[attr-defined]
-        cur.execute(query, tuple(params))
+        cur.execute(query, tuple(params + [fetch_limit]))
         rows = cur.fetchall()
     records: List[Dict[str, Any]] = []
     for row in rows:
@@ -289,8 +289,11 @@ def cluster_pending(
     *,
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
+    limit: int = 10,
+    offset: int = 0,
 ) -> Dict[str, Any]:
-    records = _collect_pending(region, sentiment)
+    fetch_limit = 5000
+    records = _collect_pending(region, sentiment, fetch_limit=fetch_limit)
     total = len(records)
     if not records:
         return {"clusters": [], "total": 0}
@@ -354,10 +357,26 @@ def cluster_pending(
                         }
                         for itm in group_items
                     ],
+                    "rank_key": _candidate_rank_key_by_record(rep),
                 }
             )
 
-    return {"clusters": clusters, "total": total}
+    # 排序簇（与 export 类似，按代表项 rank 值）
+    clusters.sort(key=lambda c: c.get("rank_key", (float("-inf"), float("-inf"), float("-inf"))), reverse=True)
+    total_clusters = len(clusters)
+
+    # 分页（按簇分页）
+    limit = max(1, min(int(limit or 10), 200))
+    offset = max(0, int(offset or 0))
+    start = offset
+    end = offset + limit
+    paged_clusters = clusters[start:end]
+
+    # 清理 rank_key 不返回
+    for c in paged_clusters:
+        c.pop("rank_key", None)
+
+    return {"clusters": paged_clusters, "total": total_clusters}
 
 
 def list_review(decision: str, *, limit: int = 30, offset: int = 0) -> Dict[str, Any]:

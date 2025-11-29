@@ -135,8 +135,8 @@ async function loadFilterData() {
     elements.filterList.innerHTML = '<div class="loading">Loading...</div>';
     try {
         const params = new URLSearchParams({
-            limit: '1000',
-            offset: `${(state.filterPage - 1) * 1000}`,
+            limit: '10',
+            offset: `${(state.filterPage - 1) * 10}`,
             cluster: 'true',
         });
         const cat = state.filterCategory;

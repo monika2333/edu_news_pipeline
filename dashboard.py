@@ -56,21 +56,26 @@ def _render_select_tab() -> None:
         aid = str(item.get("article_id") or "")
         url = item.get("url")
         link = f" · [原文]({url})" if url else ""
-        form.markdown(f"### {item.get('title') or '(无标题)'}{link}")
-        _display_meta(item, container=form)
-        form.text_area("摘要（只读）", item.get("summary") or "", key=f"summary-ro-{aid}", height=140, disabled=True)
-        choice = form.radio(
-            "选择",
-            options=("selected", "backup", "discarded"),
-            format_func=lambda x: {"selected": "采纳", "backup": "备选", "discarded": "放弃"}[x],
-            key=f"choice-{aid}",
-        )
+        col_title, col_action = form.columns([0.7, 0.3])
+        with col_title:
+            col_title.markdown(f"#### {item.get('title') or '(无标题)'}{link}")
+            _display_meta(item, container=col_title)
+        with col_action:
+            choice = form.radio(
+                "选择",
+                options=("selected", "backup", "discarded"),
+                format_func=lambda x: {"selected": "采纳", "backup": "备选", "discarded": "放弃"}[x],
+                key=f"choice-{aid}",
+                label_visibility="collapsed",
+                horizontal=True,
+            )
         if choice == "selected":
             selected_ids.append(aid)
         elif choice == "backup":
             backup_ids.append(aid)
         else:
             discarded_ids.append(aid)
+        form.text_area("摘要（只读）", item.get("summary") or "", key=f"summary-ro-{aid}", height=140, disabled=True)
         form.markdown("---")
     submitted = form.form_submit_button("提交当前页选择", key="submit-select")
     if submitted:

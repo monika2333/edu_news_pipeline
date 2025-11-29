@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>人工筛选控制台</title>
     <link rel="stylesheet" href="/static/css/dashboard.css">
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -52,34 +54,18 @@
                 <!-- Items will be injected here -->
             </div>
             <div id="filter-pagination" class="pagination"></div>
-            
-            <div class="actions-bar">
-                <span>批量操作</span>
-                <button class="btn btn-primary" id="btn-submit-filter">提交当前页选择</button>
-            </div>
-        </div>
 
-        <!-- Review Tab -->
-        <div class="tab-content" id="review-tab">
-            <div class="toolbar" style="margin-bottom: 20px; display: flex; justify-content: flex-end; gap: 10px;">
-                <button class="btn btn-primary" id="btn-export">导出 (仅采纳)</button>
-            </div>
-            <div id="review-list">
-                <!-- Grid will be injected here -->
-            </div>
-            <div class="actions-bar">
-                <span>批量操作</span>
-                <button class="btn btn-primary" id="btn-save-review">保存编辑与状态</button>
-            </div>
+            <button class="btn btn-primary" id="btn-save-review">保存编辑与状态</button>
         </div>
+    </div>
 
-        <!-- Discard Tab -->
-        <div class="tab-content" id="discard-tab">
-            <div id="discard-list">
-                <!-- Items will be injected here -->
-            </div>
-            <div id="discard-pagination" class="pagination"></div>
+    <!-- Discard Tab -->
+    <div class="tab-content" id="discard-tab">
+        <div id="discard-list">
+            <!-- Items will be injected here -->
         </div>
+        <div id="discard-pagination" class="pagination"></div>
+    </div>
     </div>
 
     <!-- Export Modal -->
@@ -104,4 +90,5 @@
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
     <script src="/static/js/dashboard.js"></script>
 </body>
+
 </html>

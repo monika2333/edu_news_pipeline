@@ -6,7 +6,8 @@ let state = {
     reviewPage: 1,
     discardPage: 1,
     actor: localStorage.getItem('actor') || '',
-    currentTab: 'filter'
+    currentTab: 'filter',
+    filterCategory: 'all'
 };
 
 // UI mode
@@ -17,6 +18,7 @@ const elements = {
     tabs: document.querySelectorAll('.tab-btn'),
     contents: document.querySelectorAll('.tab-content'),
     filterList: document.getElementById('filter-list'),
+    filterTabButtons: document.querySelectorAll('.filter-tab-btn'),
     reviewList: document.getElementById('review-list'),
     discardList: document.getElementById('discard-list'),
     actorInput: document.getElementById('actor-input'),
@@ -60,6 +62,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-close-modal').addEventListener('click', closeModal);
     if (elements.sortToggleBtn) {
         elements.sortToggleBtn.addEventListener('click', toggleSortMode);
+    }
+    if (elements.filterTabButtons && elements.filterTabButtons.length) {
+        elements.filterTabButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                elements.filterTabButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                state.filterCategory = btn.dataset.category || 'all';
+                state.filterPage = 1;
+                loadFilterData();
+            });
+        });
     }
     if (elements.exportPreviewToggle) {
         elements.exportPreviewToggle.addEventListener('change', syncPreviewToggleState);
@@ -121,7 +134,18 @@ async function loadStats() {
 async function loadFilterData() {
     elements.filterList.innerHTML = '<div class="loading">Loading...</div>';
     try {
-        const res = await fetch(`${API_BASE}/candidates?limit=10&offset=${(state.filterPage - 1) * 10}`);
+        const params = new URLSearchParams({
+            limit: '10',
+            offset: `${(state.filterPage - 1) * 10}`,
+        });
+        const cat = state.filterCategory;
+        if (cat && cat !== 'all') {
+            if (cat.startsWith('internal')) params.set('region', 'internal');
+            if (cat.startsWith('external')) params.set('region', 'external');
+            if (cat.endsWith('positive')) params.set('sentiment', 'positive');
+            if (cat.endsWith('negative')) params.set('sentiment', 'negative');
+        }
+        const res = await fetch(`${API_BASE}/candidates?${params.toString()}`);
         const data = await res.json();
         renderFilterList(data.items);
         updatePagination('filter', data.total, state.filterPage);

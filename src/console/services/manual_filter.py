@@ -132,12 +132,27 @@ def _paginate_by_status(
     limit: int,
     offset: int,
     only_ready: bool = False,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
 ) -> Dict[str, Any]:
     _ensure_manual_filter_schema()
     adapter = get_adapter()
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
     where_ready = "AND status = 'ready_for_export'" if only_ready else ""
+
+    conditions = []
+    params: List[Any] = [manual_status]
+    if region in ("internal", "external"):
+        conditions.append("is_beijing_related = %s")
+        params.append(True if region == "internal" else False)
+    if sentiment in ("positive", "negative"):
+        conditions.append("sentiment_label = %s")
+        params.append(sentiment)
+    extra_where = ""
+    if conditions:
+        extra_where = " AND " + " AND ".join(conditions)
+
     query = f"""
         SELECT
             article_id,
@@ -158,6 +173,7 @@ def _paginate_by_status(
         FROM news_summaries
         WHERE manual_status = %s
           {where_ready}
+          {extra_where}
         ORDER BY manual_rank ASC NULLS LAST,
                  score DESC NULLS LAST,
                  publish_time_iso DESC NULLS LAST,
@@ -169,12 +185,13 @@ def _paginate_by_status(
         FROM news_summaries
         WHERE manual_status = %s
           {where_ready}
+          {extra_where}
     """
     with adapter._cursor() as cur:  # type: ignore[attr-defined]
-        cur.execute(count_query, (manual_status,))
+        cur.execute(count_query, tuple(params))
         total_row = cur.fetchone()
         total = int(total_row["total"]) if total_row else 0
-        cur.execute(query, (manual_status, limit, offset))
+        cur.execute(query, tuple(params + [limit, offset]))
         rows = cur.fetchall()
     items: List[Dict[str, Any]] = []
     for row in rows:
@@ -185,9 +202,17 @@ def _paginate_by_status(
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
-def list_candidates(*, limit: int = 30, offset: int = 0) -> Dict[str, Any]:
-    logger.info("Listing candidates: limit=%s offset=%s", limit, offset)
-    return _paginate_by_status("pending", limit=limit, offset=offset, only_ready=True)
+def list_candidates(
+    *,
+    limit: int = 30,
+    offset: int = 0,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+) -> Dict[str, Any]:
+    region = region if region in ("internal", "external") else None
+    sentiment = sentiment if sentiment in ("positive", "negative") else None
+    logger.info("Listing candidates: limit=%s offset=%s region=%s sentiment=%s", limit, offset, region, sentiment)
+    return _paginate_by_status("pending", limit=limit, offset=offset, only_ready=True, region=region, sentiment=sentiment)
 
 
 def list_review(decision: str, *, limit: int = 30, offset: int = 0) -> Dict[str, Any]:

@@ -48,14 +48,25 @@
 
         <!-- Filter Tab -->
         <div class="tab-content active" id="filter-tab">
-            <div id="filter-list">
-                <!-- Items will be injected here -->
-            </div>
-            <div id="filter-pagination" class="pagination"></div>
-            
-            <div class="actions-bar">
-                <span>批量操作</span>
-                <button class="btn btn-primary" id="btn-submit-filter">提交当前页选择</button>
+            <div class="filter-layout">
+                <div class="filter-sidebar">
+                    <button class="filter-tab-btn active" data-category="all">全部</button>
+                    <button class="filter-tab-btn" data-category="internal_positive">京内正面</button>
+                    <button class="filter-tab-btn" data-category="internal_negative">京内负面</button>
+                    <button class="filter-tab-btn" data-category="external_positive">京外正面</button>
+                    <button class="filter-tab-btn" data-category="external_negative">京外负面</button>
+                </div>
+                <div class="filter-content">
+                    <div id="filter-list">
+                        <!-- Items will be injected here -->
+                    </div>
+                    <div id="filter-pagination" class="pagination"></div>
+                    
+                    <div class="actions-bar">
+                        <span>批量操作</span>
+                        <button class="btn btn-primary" id="btn-submit-filter">提交当前页选择</button>
+                    </div>
+                </div>
             </div>
         </div>
 

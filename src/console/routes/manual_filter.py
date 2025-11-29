@@ -41,8 +41,13 @@ class UpdateOrderRequest(BaseModel):
 
 
 @router.get("/candidates")
-def list_candidates_api(limit: int = 30, offset: int = 0) -> Dict[str, Any]:
-    return manual_filter.list_candidates(limit=limit, offset=offset)
+def list_candidates_api(
+    limit: int = 30,
+    offset: int = 0,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+) -> Dict[str, Any]:
+    return manual_filter.list_candidates(limit=limit, offset=offset, region=region, sentiment=sentiment)
 
 
 @router.post("/decide")

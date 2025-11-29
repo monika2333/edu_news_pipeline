@@ -455,6 +455,48 @@ def _apply_decision(
         return cur.rowcount
 
 
+def _next_rank(status: str) -> float:
+    adapter = get_adapter()
+    query = "SELECT COALESCE(MAX(manual_rank), 0) AS max_rank FROM news_summaries WHERE manual_status = %s"
+    with adapter._cursor() as cur:  # type: ignore[attr-defined]
+        cur.execute(query, (status,))
+        row = cur.fetchone() or {}
+    try:
+        return float(row.get("max_rank") or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _apply_ranked_decision(
+    *,
+    status: str,
+    ids: Sequence[str],
+    actor: Optional[str],
+    start_rank: float,
+) -> int:
+    adapter = get_adapter()
+    now_ts = datetime.now(timezone.utc)
+    payload = []
+    rank = start_rank
+    for article_id in ids:
+        payload.append((status, rank, actor, now_ts, article_id))
+        rank += 1
+    if not payload:
+        return 0
+    query = """
+        UPDATE news_summaries
+        SET manual_status = %s,
+            manual_rank = %s,
+            manual_decided_by = COALESCE(%s, manual_decided_by),
+            manual_decided_at = %s,
+            updated_at = NOW()
+        WHERE article_id = %s
+    """
+    with adapter._cursor() as cur:  # type: ignore[attr-defined]
+        cur.executemany(query, payload)
+        return cur.rowcount
+
+
 def bulk_decide(
     *,
     selected_ids: Sequence[str],
@@ -476,8 +518,20 @@ def bulk_decide(
         len(pending),
         actor,
     )
-    updated_selected = _apply_decision(status="selected", ids=selected, actor=actor)
-    updated_backup = _apply_decision(status="backup", ids=backups, actor=actor)
+    selected_rank_base = _next_rank("selected")
+    backup_rank_base = _next_rank("backup")
+    updated_selected = _apply_ranked_decision(
+        status="selected",
+        ids=selected,
+        actor=actor,
+        start_rank=selected_rank_base + 1,
+    )
+    updated_backup = _apply_ranked_decision(
+        status="backup",
+        ids=backups,
+        actor=actor,
+        start_rank=backup_rank_base + 1,
+    )
     updated_discarded = _apply_decision(status="discarded", ids=discarded, actor=actor)
     updated_pending = reset_to_pending(pending, actor=actor)
     logger.info(

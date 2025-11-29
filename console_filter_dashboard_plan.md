@@ -72,7 +72,7 @@
 6) 需要支持撤销/重新入队（pending）。
 
 ## 9. 实施 Checklist
-- [ ] 设计并执行 migration：为 `news_summaries` 增加 `manual_status/manual_summary/manual_score/manual_notes/manual_decided_by/manual_decided_at`。
+- [x] 设计并执行 migration：为 `news_summaries` 增加 `manual_status/manual_summary/manual_score/manual_notes/manual_decided_by/manual_decided_at`。
 - [ ] 在 `src/console/services` 创建 `manual_filter.py`，实现 `list_candidates`、`bulk_decide`、`export_batch`，使用参数化 SQL。
 - [ ] 新增导出落盘逻辑（保留现有分组/排序），记录到现有 `brief_batches/brief_items`，并标注手工筛选来源（例如新增 batch 元数据字段）。
 - [ ] 开发 Streamlit `dashboard.py`：状态栏、分页列表（30 条）、编辑摘要、批量提交、导出显示与下载；使用 `st.form` + `st.session_state` 记忆勾选/编辑。

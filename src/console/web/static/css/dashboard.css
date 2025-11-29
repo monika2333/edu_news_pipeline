@@ -455,6 +455,37 @@ h1 {
     font-size: 0.9rem;
 }
 
+.export-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.export-form .form-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.export-form label {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.export-form input,
+.export-form select {
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.95rem;
+}
+
+.export-form .check-row label {
+    font-weight: 500;
+}
+
 /* Toast */
 .toast {
     position: fixed;

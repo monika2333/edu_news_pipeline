@@ -21,6 +21,13 @@ const elements = {
     discardList: document.getElementById('discard-list'),
     actorInput: document.getElementById('actor-input'),
     sortToggleBtn: document.getElementById('btn-toggle-sort'),
+    exportTemplate: document.getElementById('export-template'),
+    exportPeriod: document.getElementById('export-period'),
+    exportTotal: document.getElementById('export-total'),
+    exportPreviewToggle: document.getElementById('export-preview'),
+    exportMarkToggle: document.getElementById('export-mark'),
+    exportPreviewBtn: document.getElementById('btn-export-preview'),
+    exportConfirmBtn: document.getElementById('btn-export-confirm'),
     stats: {
         pending: document.getElementById('stat-pending'),
         selected: document.getElementById('stat-selected'),
@@ -53,6 +60,15 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-close-modal').addEventListener('click', closeModal);
     if (elements.sortToggleBtn) {
         elements.sortToggleBtn.addEventListener('click', toggleSortMode);
+    }
+    if (elements.exportPreviewToggle) {
+        elements.exportPreviewToggle.addEventListener('change', syncPreviewToggleState);
+    }
+    if (elements.exportPreviewBtn) {
+        elements.exportPreviewBtn.addEventListener('click', () => triggerExport(true));
+    }
+    if (elements.exportConfirmBtn) {
+        elements.exportConfirmBtn.addEventListener('click', () => triggerExport(false));
     }
 
     // Pagination listeners (delegated or specific)
@@ -439,21 +455,12 @@ window.restoreToBackup = async function (id) {
 // --- Export Logic ---
 
 async function openExportModal() {
-    const tag = new Date().toISOString().split('T')[0];
-    try {
-        const res = await fetch(`${API_BASE}/export`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ report_tag: tag })
-        });
-        const result = await res.json();
-
-        elements.modalText.value = result.content || 'No content generated';
-        elements.modal.classList.add('active');
-        showToast(`Exported ${result.count} items`);
-    } catch (e) {
-        showToast('Export failed', 'error');
+    if (elements.exportPreviewToggle) {
+        elements.exportPreviewToggle.checked = true;
+        syncPreviewToggleState();
     }
+    elements.modal.classList.add('active');
+    await triggerExport(true);
 }
 
 function closeModal() {
@@ -464,6 +471,64 @@ function copyExportText() {
     elements.modalText.select();
     document.execCommand('copy');
     showToast('Copied to clipboard');
+}
+
+function syncPreviewToggleState() {
+    const isPreview = elements.exportPreviewToggle && elements.exportPreviewToggle.checked;
+    if (elements.exportMarkToggle) {
+        elements.exportMarkToggle.disabled = isPreview;
+        if (isPreview) {
+            elements.exportMarkToggle.checked = false;
+        } else if (!elements.exportMarkToggle.checked) {
+            elements.exportMarkToggle.checked = true;
+        }
+    }
+}
+
+function buildExportPayload(dryRun) {
+    const tag = new Date().toISOString().split('T')[0];
+    const payload = {
+        report_tag: tag,
+        template: elements.exportTemplate ? elements.exportTemplate.value : 'zongbao',
+        period: undefined,
+        total_period: undefined,
+        dry_run: dryRun,
+        mark_exported: !dryRun && elements.exportMarkToggle ? elements.exportMarkToggle.checked : false,
+    };
+    if (elements.exportPeriod && elements.exportPeriod.value) {
+        const val = Number(elements.exportPeriod.value);
+        if (!Number.isNaN(val)) payload.period = val;
+    }
+    if (elements.exportTotal && elements.exportTotal.value) {
+        const val = Number(elements.exportTotal.value);
+        if (!Number.isNaN(val)) payload.total_period = val;
+    }
+    return payload;
+}
+
+async function triggerExport(dryRun = true) {
+    const payload = buildExportPayload(dryRun);
+    try {
+        const res = await fetch(`${API_BASE}/export`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+        if (elements.exportPeriod && result.period !== undefined) {
+            elements.exportPeriod.value = result.period;
+        }
+        if (elements.exportTotal && result.total_period !== undefined) {
+            elements.exportTotal.value = result.total_period;
+        }
+        if (elements.modalText) {
+            elements.modalText.value = result.content || 'No content generated';
+        }
+        const toastMsg = dryRun ? '已生成预览' : `已导出 ${result.count || 0} 条`;
+        showToast(toastMsg);
+    } catch (e) {
+        showToast(dryRun ? '预览失败' : '导出失败', 'error');
+    }
 }
 
 // --- Helpers ---

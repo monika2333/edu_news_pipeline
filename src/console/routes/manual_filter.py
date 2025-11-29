@@ -26,6 +26,11 @@ class SaveEditsRequest(BaseModel):
 
 class ExportRequest(BaseModel):
     report_tag: str
+    template: str = "zongbao"
+    period: Optional[int] = None
+    total_period: Optional[int] = None
+    mark_exported: bool = True
+    dry_run: bool = False
     output_path: Optional[str] = None
 
 
@@ -76,7 +81,12 @@ def status_counts_api() -> Dict[str, int]:
 def export_batch_api(req: ExportRequest) -> Dict[str, Any]:
     result = manual_filter.export_batch(
         report_tag=req.report_tag,
-        output_path=req.output_path or "outputs/manual_filter_export.txt"
+        output_path=req.output_path or "outputs/manual_filter_export.txt",
+        template=req.template,
+        period=req.period,
+        total_period=req.total_period,
+        mark_exported=req.mark_exported,
+        dry_run=req.dry_run,
     )
 
     if not result.get("content"):

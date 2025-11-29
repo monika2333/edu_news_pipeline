@@ -93,9 +93,30 @@
                 <button class="btn btn-secondary" id="btn-close-modal">关闭</button>
             </div>
             <div class="modal-body">
+                <div class="export-form">
+                    <div class="form-row">
+                        <label for="export-template">模板</label>
+                        <select id="export-template">
+                            <option value="zongbao">综报</option>
+                            <option value="wanbao">晚报</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label for="export-period">期号</label>
+                        <input type="number" id="export-period" placeholder="期号">
+                        <label for="export-total">总期号</label>
+                        <input type="number" id="export-total" placeholder="总期号">
+                    </div>
+                    <div class="form-row check-row">
+                        <label><input type="checkbox" id="export-preview" checked> 预览</label>
+                        <label><input type="checkbox" id="export-mark" checked> 标记为已导出</label>
+                    </div>
+                </div>
                 <textarea id="export-text" readonly></textarea>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; margin-top: 16px;">
+                <button class="btn btn-secondary" id="btn-export-preview">预览</button>
+                <button class="btn btn-primary" id="btn-export-confirm">导出</button>
                 <button class="btn btn-primary" id="btn-copy">复制到剪贴板</button>
             </div>
         </div>

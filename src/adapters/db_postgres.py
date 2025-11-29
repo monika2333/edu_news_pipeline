@@ -61,6 +61,12 @@ class PostgresAdapter:
         cur = self._conn_cursor()
         try:
             yield cur
+            if not self._conn.autocommit:
+                self._conn.commit()
+        except Exception:
+            if not self._conn.autocommit:
+                self._conn.rollback()
+            raise
         finally:
             cur.close()
 

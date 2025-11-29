@@ -1,11 +1,45 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from src.adapters.db import get_adapter
 from src.domain.models import ExportCandidate
+
+logger = logging.getLogger(__name__)
+
+_SCHEMA_VERIFIED = False
+
+
+def _ensure_manual_filter_schema() -> None:
+    """
+    Make sure the columns used by the manual filter console exist.
+
+    This is lightweight and guarded to run only once per process. It prevents
+    silent UPDATE failures when a new database is missing the manual_* columns.
+    """
+    global _SCHEMA_VERIFIED
+    if _SCHEMA_VERIFIED:
+        return
+    adapter = get_adapter()
+    statements = [
+        "ALTER TABLE news_summaries ADD COLUMN IF NOT EXISTS manual_status VARCHAR(50) DEFAULT 'pending'",
+        "ALTER TABLE news_summaries ADD COLUMN IF NOT EXISTS manual_summary TEXT",
+        "ALTER TABLE news_summaries ADD COLUMN IF NOT EXISTS manual_decided_by VARCHAR(100)",
+        "ALTER TABLE news_summaries ADD COLUMN IF NOT EXISTS manual_decided_at TIMESTAMPTZ",
+        "UPDATE news_summaries SET manual_status = 'pending' WHERE manual_status IS NULL",
+        "CREATE INDEX IF NOT EXISTS news_summaries_manual_status_idx ON news_summaries(manual_status)",
+    ]
+    try:
+        with adapter._cursor() as cur:  # type: ignore[attr-defined]
+            for stmt in statements:
+                cur.execute(stmt)
+        _SCHEMA_VERIFIED = True
+        logger.debug("Manual filter schema verified/ensured")
+    except Exception as exc:  # pragma: no cover - defensive guard for prod environments
+        logger.warning("Manual filter schema check skipped: %s", exc)
 
 
 def _normalize_ids(ids: Iterable[str]) -> List[str]:
@@ -43,6 +77,7 @@ def _paginate_by_status(
     offset: int,
     only_ready: bool = False,
 ) -> Dict[str, Any]:
+    _ensure_manual_filter_schema()
     adapter = get_adapter()
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
@@ -92,19 +127,23 @@ def _paginate_by_status(
 
 
 def list_candidates(*, limit: int = 30, offset: int = 0) -> Dict[str, Any]:
+    logger.info("Listing candidates: limit=%s offset=%s", limit, offset)
     return _paginate_by_status("pending", limit=limit, offset=offset, only_ready=True)
 
 
 def list_review(decision: str, *, limit: int = 30, offset: int = 0) -> Dict[str, Any]:
     decision = decision if decision in ("selected", "backup") else "selected"
+    logger.info("Listing review items: decision=%s limit=%s offset=%s", decision, limit, offset)
     return _paginate_by_status(decision, limit=limit, offset=offset, only_ready=False)
 
 
 def list_discarded(*, limit: int = 30, offset: int = 0) -> Dict[str, Any]:
+    logger.info("Listing discarded items: limit=%s offset=%s", limit, offset)
     return _paginate_by_status("discarded", limit=limit, offset=offset, only_ready=False)
 
 
 def status_counts() -> Dict[str, int]:
+    _ensure_manual_filter_schema()
     adapter = get_adapter()
     query = """
         SELECT manual_status, COUNT(*) AS total
@@ -157,19 +196,35 @@ def bulk_decide(
     discarded_ids: Sequence[str],
     actor: Optional[str] = None,
 ) -> Dict[str, int]:
+    _ensure_manual_filter_schema()
     selected = _normalize_ids(selected_ids)
     backups = _normalize_ids(backup_ids)
     discarded = _normalize_ids(discarded_ids)
+    logger.info(
+        "Applying decisions: selected=%s backup=%s discarded=%s actor=%s",
+        len(selected),
+        len(backups),
+        len(discarded),
+        actor,
+    )
     updated_selected = _apply_decision(status="selected", ids=selected, actor=actor)
     updated_backup = _apply_decision(status="backup", ids=backups, actor=actor)
     updated_discarded = _apply_decision(status="discarded", ids=discarded, actor=actor)
+    logger.info(
+        "Decision result: selected=%s backup=%s discarded=%s",
+        updated_selected,
+        updated_backup,
+        updated_discarded,
+    )
     return {"selected": updated_selected, "backup": updated_backup, "discarded": updated_discarded}
 
 
 def reset_to_pending(ids: Sequence[str], *, actor: Optional[str] = None) -> int:
+    _ensure_manual_filter_schema()
     target_ids = _normalize_ids(ids)
     if not target_ids:
         return 0
+    logger.info("Resetting to pending: count=%s actor=%s", len(target_ids), actor)
     adapter = get_adapter()
     now_ts = datetime.now(timezone.utc)
     payload = []
@@ -189,6 +244,7 @@ def reset_to_pending(ids: Sequence[str], *, actor: Optional[str] = None) -> int:
 
 
 def save_edits(edits: Dict[str, Dict[str, Any]], *, actor: Optional[str] = None) -> int:
+    _ensure_manual_filter_schema()
     adapter = get_adapter()
     now_ts = datetime.now(timezone.utc)
     payload = []
@@ -199,6 +255,7 @@ def save_edits(edits: Dict[str, Dict[str, Any]], *, actor: Optional[str] = None)
         payload.append((summary, actor, now_ts, aid))
     if not payload:
         return 0
+    logger.info("Saving manual edits: count=%s actor=%s", len(payload), actor)
     query = """
         UPDATE news_summaries
         SET manual_summary = %s,
@@ -219,6 +276,7 @@ def export_batch(
     output_path: str = "outputs/manual_filter_export.txt",
     mark_exported: bool = True,
 ) -> Dict[str, Any]:
+    _ensure_manual_filter_schema()
     adapter = get_adapter()
     fetch_query = """
         SELECT
@@ -284,7 +342,16 @@ def export_batch(
             }
         )
     if not candidates:
-        return {"items": [], "count": 0, "report_tag": report_tag, "output_path": output_path}
+        logger.info("Export requested but no candidates found for report_tag=%s", report_tag)
+        return {
+            "items": [],
+            "count": 0,
+            "report_tag": report_tag,
+            "output_path": output_path,
+            "content": "",
+            "category_counts": {},
+        }
+    logger.info("Preparing export payload: %s candidates found", len(candidates))
 
     def _normalized_sentiment(candidate: ExportCandidate) -> str:
         label = (candidate.sentiment_label or "").strip().lower()
@@ -326,14 +393,14 @@ def export_batch(
         title_line = (candidate.title or "").strip()
         summary_line = (candidate.summary or "").strip()
         display_source = (candidate.llm_source or candidate.source or "").strip()
-        suffix = f"（{display_source}）" if display_source else ""
+        suffix = f" ({display_source})" if display_source else ""
 
         metrics_parts: List[str] = []
         ext_score_value = candidate.external_importance_score
         if ext_score_value is not None:
             ext_score_text = _format_number(ext_score_value) or str(ext_score_value)
             metrics_parts.append(f"external_importance={ext_score_text}")
-        metrics_suffix = f"（{'; '.join(metrics_parts)}）" if metrics_parts else ""
+        metrics_suffix = f" ({'; '.join(metrics_parts)})" if metrics_parts else ""
         body = summary_line + suffix + metrics_suffix if summary_line else ""
         return "\n".join(filter(None, [title_line, body]))
 
@@ -348,10 +415,10 @@ def export_batch(
         key = ("internal", sentiment_bucket) if cand.is_beijing_related else ("external", sentiment_bucket)
         bucket_index[key].append(cand)
     bucket_definitions: List[Tuple[str, Tuple[str, str], str]] = [
-        ("京内正面", ("internal", "positive"), "jingnei_positive"),
-        ("京内负面", ("internal", "negative"), "jingnei_negative"),
-        ("京外正面", ("external", "positive"), "jingwai_positive"),
-        ("京外负面", ("external", "negative"), "jingwai_negative"),
+        ("\u4eac\u5185\u6b63\u9762", ("internal", "positive"), "jingnei_positive"),
+        ("\u4eac\u5185\u8d1f\u9762", ("internal", "negative"), "jingnei_negative"),
+        ("\u4eac\u5916\u6b63\u9762", ("external", "positive"), "jingwai_positive"),
+        ("\u4eac\u5916\u8d1f\u9762", ("external", "negative"), "jingwai_negative"),
     ]
     text_entries: List[str] = []
     export_payload: List[Tuple[ExportCandidate, str]] = []
@@ -363,7 +430,7 @@ def export_batch(
             continue
         export_payload.extend((item, section_key) for item in bucket_items)
         cluster_texts = [_format_entry(item) for item in bucket_items]
-        header_line = f"【{label}】共 {len(bucket_items)} 条"
+        header_line = f"[{label}] total {len(bucket_items)} items"
         block_text = header_line + "\n\n" + "\n\n---\n\n".join(cluster_texts)
         text_entries.append(block_text)
 
@@ -384,19 +451,23 @@ def export_batch(
             counter += 1
 
     final_output = _ensure_unique(base_output)
-    final_output.write_text("\n\n".join(text_entries), encoding="utf-8")
+    export_text = "\n\n".join(text_entries)
+    final_output.write_text(export_text, encoding="utf-8")
 
     adapter.record_export(report_tag, export_payload, output_path=str(final_output))
     if mark_exported:
         ids = [cid.filtered_article_id for cid, _ in export_payload]
-        _apply_decision(status="exported", ids=ids, actor=None)
+        updated = _apply_decision(status="exported", ids=ids, actor=None)
+        logger.info("Marked %s articles as exported", updated)
     return {
         "items": items,
         "count": len(items),
         "report_tag": report_tag,
         "output_path": str(final_output),
         "category_counts": category_counts,
+        "content": export_text,
     }
+
 
 
 __all__ = [

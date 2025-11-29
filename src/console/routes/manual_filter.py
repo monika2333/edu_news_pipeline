@@ -1,24 +1,26 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, Query
-from pydantic import BaseModel
+from fastapi import APIRouter
+from pydantic import BaseModel, Field
 
 from src.console.services import manual_filter
 
 router = APIRouter(prefix="/api/manual_filter", tags=["manual_filter"])
+logger = logging.getLogger(__name__)
 
 
 class BulkDecideRequest(BaseModel):
-    selected_ids: List[str] = []
-    backup_ids: List[str] = []
-    discarded_ids: List[str] = []
+    selected_ids: List[str] = Field(default_factory=list)
+    backup_ids: List[str] = Field(default_factory=list)
+    discarded_ids: List[str] = Field(default_factory=list)
     actor: Optional[str] = None
 
 
 class SaveEditsRequest(BaseModel):
-    edits: Dict[str, Dict[str, Any]]  # article_id -> {"summary": "..."}
+    edits: Dict[str, Dict[str, Any]] = Field(default_factory=dict)  # article_id -> {"summary": "..."}
     actor: Optional[str] = None
 
 
@@ -66,26 +68,17 @@ def status_counts_api() -> Dict[str, int]:
 
 @router.post("/export")
 def export_batch_api(req: ExportRequest) -> Dict[str, Any]:
-    # We return the full result including the file path and content if needed
-    # Ideally we should return the text content so frontend can display it
-    # The service writes to file, but we can read it back or modify service to return text.
-    # For now, let's use the existing service and maybe read the file content if needed,
-    # or just return the path.
-    # The user wants to copy text to clipboard, so we probably need the text content.
-    # Let's check `manual_filter.export_batch` implementation again.
-    # It returns "output_path". We can read that file.
-    
     result = manual_filter.export_batch(
         report_tag=req.report_tag,
         output_path=req.output_path or "outputs/manual_filter_export.txt"
     )
-    
-    # Read the content to return to frontend
-    try:
-        with open(result["output_path"], "r", encoding="utf-8") as f:
-            content = f.read()
-        result["content"] = content
-    except Exception:
-        result["content"] = ""
-        
+
+    if not result.get("content"):
+        try:
+            with open(result["output_path"], "r", encoding="utf-8") as f:
+                result["content"] = f.read()
+        except Exception as exc:  # pragma: no cover - defensive logging for runtime issues
+            logger.warning("Failed to read export content from %s: %s", result.get("output_path"), exc)
+            result["content"] = ""
+
     return result

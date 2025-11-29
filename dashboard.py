@@ -68,6 +68,7 @@ def _render_select_tab() -> None:
                 key=f"choice-{aid}",
                 label_visibility="collapsed",
                 horizontal=True,
+                index=2,
             )
         if choice == "selected":
             selected_ids.append(aid)

@@ -50,6 +50,9 @@ def _period_increment_for_template(template: str) -> int:
     return 1 if template == "zongbao" else 2
 
 
+DEFAULT_CLUSTER_THRESHOLD = 0.82
+
+
 def _load_export_meta() -> Dict[str, Any]:
     if not EXPORT_META_PATH.exists():
         return {}
@@ -210,12 +213,19 @@ def list_candidates(
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
     cluster: bool = False,
+    cluster_threshold: Optional[float] = None,
 ) -> Dict[str, Any]:
     region = region if region in ("internal", "external") else None
     sentiment = sentiment if sentiment in ("positive", "negative") else None
     logger.info("Listing candidates: limit=%s offset=%s region=%s sentiment=%s", limit, offset, region, sentiment)
     if cluster:
-        return cluster_pending(region=region, sentiment=sentiment)
+        return cluster_pending(
+            region=region,
+            sentiment=sentiment,
+            limit=limit,
+            offset=offset,
+            cluster_threshold=cluster_threshold,
+        )
     return _paginate_by_status("pending", limit=limit, offset=offset, only_ready=True, region=region, sentiment=sentiment)
 
 
@@ -291,6 +301,7 @@ def cluster_pending(
     sentiment: Optional[str] = None,
     limit: int = 10,
     offset: int = 0,
+    cluster_threshold: Optional[float] = None,
 ) -> Dict[str, Any]:
     fetch_limit = 5000
     records = _collect_pending(region, sentiment, fetch_limit=fetch_limit)
@@ -316,7 +327,14 @@ def cluster_pending(
             continue
         items_sorted = sorted(items, key=_candidate_rank_key_by_record, reverse=True)
         titles = [itm.get("title") or "" for itm in items_sorted]
-        groups = cluster_titles(titles)
+        threshold = cluster_threshold if cluster_threshold is not None else DEFAULT_CLUSTER_THRESHOLD
+        try:
+            threshold_val = float(threshold)
+        except Exception:
+            threshold_val = DEFAULT_CLUSTER_THRESHOLD
+        threshold_val = max(0.0, min(threshold_val, 1.0))
+
+        groups = cluster_titles(titles, threshold=threshold_val)
         if not groups:
             groups = [list(range(len(items_sorted)))]
 

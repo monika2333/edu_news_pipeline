@@ -71,18 +71,20 @@
 
         <!-- Review Tab -->
         <div class="tab-content" id="review-tab">
-            <div class="toolbar" style="margin-bottom: 20px; display: flex; justify-content: flex-end; gap: 10px; align-items: center;">
-                <label style="display: flex; align-items: center; gap: 6px; margin: 0;">
-                    <input type="checkbox" id="review-select-all">
-                    <span>全选</span>
-                </label>
-                <select id="review-bulk-status">
-                    <option value="">批量设置状态</option>
-                    <option value="selected">采纳</option>
-                    <option value="backup">备选</option>
-                    <option value="discarded">放弃</option>
-                    <option value="pending">待处理</option>
-                </select>
+            <div class="toolbar review-toolbar">
+                <div class="bulk-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="review-select-all">
+                        <span>全选</span>
+                    </label>
+                    <select id="review-bulk-status" class="bulk-select">
+                        <option value="">批量设置状态</option>
+                        <option value="selected">采纳</option>
+                        <option value="backup">备选</option>
+                        <option value="discarded">放弃</option>
+                        <option value="pending">待处理</option>
+                    </select>
+                </div>
                 <button class="btn btn-secondary" id="btn-apply-review-status">应用</button>
                 <button class="btn btn-secondary" id="btn-toggle-sort">
                     <span class="icon">🔃</span> 排序模式

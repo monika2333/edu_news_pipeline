@@ -291,7 +291,7 @@ function renderFilterList(data) {
         const list = buckets[sec.key] || [];
         if (!list.length) return '';
         return `
-    < div class="filter-section" >
+    <div class="filter-section">
         ${list.map(item => renderArticleCard(item, { showStatus: true, collapsed: false })).join('')}
             </div>
     `;
@@ -317,7 +317,7 @@ function renderClusteredList(clusters) {
         const hiddenCount = rest.length;
 
         return `
-    < div class="filter-cluster" data - cluster - id="${cluster.cluster_id}" data - size="${size}" >
+    <div class="filter-cluster" data-cluster-id="${cluster.cluster_id}" data-size="${size}">
         <div class="cluster-header">
             <div class="cluster-title">
                 ${cluster.representative || '(聚类)'} ${size ? `(${size})` : ''}
@@ -325,31 +325,31 @@ function renderClusteredList(clusters) {
             <div class="radio-group cluster-radio" data-cluster="${cluster.cluster_id}">
                 <div class="radio-option">
                     <input type="radio" name="cluster-${cluster.cluster_id}" value="selected" id="cluster-sel-${cluster.cluster_id}">
-                        <label for="cluster-sel-${cluster.cluster_id}" class="radio-label">采纳</label>
+                    <label for="cluster-sel-${cluster.cluster_id}" class="radio-label">采纳</label>
                 </div>
                 <div class="radio-option">
                     <input type="radio" name="cluster-${cluster.cluster_id}" value="backup" id="cluster-bak-${cluster.cluster_id}">
-                        <label for="cluster-bak-${cluster.cluster_id}" class="radio-label">备选</label>
-                        </div>
-                        <div class="radio-option">
-                            <input type="radio" name="cluster-${cluster.cluster_id}" value="discarded" id="cluster-dis-${cluster.cluster_id}">
-                                <label for="cluster-dis-${cluster.cluster_id}" class="radio-label">放弃</label>
-                        </div>
+                    <label for="cluster-bak-${cluster.cluster_id}" class="radio-label">备选</label>
+                </div>
+                <div class="radio-option">
+                    <input type="radio" name="cluster-${cluster.cluster_id}" value="discarded" id="cluster-dis-${cluster.cluster_id}">
+                    <label for="cluster-dis-${cluster.cluster_id}" class="radio-label">放弃</label>
                 </div>
             </div>
-            <div class="filter-section">
-                ${renderArticleCard(first, { showStatus: false, collapsed: false })}
-                ${rest.map(item => renderArticleCard(item, { showStatus: false, collapsed: true })).join('')}
-            </div>
-            ${hiddenCount ? `<div class="cluster-toggle-row"><button type="button" class="btn btn-link cluster-toggle" data-target="${cluster.cluster_id}">展开其余${hiddenCount}条</button></div>` : ''}
         </div>
+        <div class="filter-section">
+            ${renderArticleCard(first, { showStatus: false, collapsed: false })}
+            ${rest.map(item => renderArticleCard(item, { showStatus: false, collapsed: true })).join('')}
+        </div>
+        ${hiddenCount ? `<div class="cluster-toggle-row"><button type="button" class="btn btn-link cluster-toggle" data-target="${cluster.cluster_id}">展开其余${hiddenCount}条</button></div>` : ''}
+    </div>
 `;
     }).join('');
 
     elements.filterList.querySelectorAll('.cluster-toggle').forEach(btn => {
         btn.addEventListener('click', () => {
             const target = btn.dataset.target;
-            const container = elements.filterList.querySelector(`[data - cluster - id= "${target}"]`);
+            const container = elements.filterList.querySelector(`[data-cluster-id="${target}"]`);
             if (!container) return;
             const hiddenCards = container.querySelectorAll('.article-card.collapsed');
             const isHidden = hiddenCards.length ? hiddenCards[0].style.display === 'none' : true;

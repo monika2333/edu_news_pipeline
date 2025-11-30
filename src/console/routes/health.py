@@ -10,9 +10,4 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/", summary="Root redirect")
-def root() -> dict[str, str]:
-    return {"message": "Edu News console is running"}
-
-
 __all__ = ["router"]

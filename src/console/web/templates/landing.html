@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>控制台导览</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <style>
+        .landing-container {
+            max-width: 900px;
+            margin: 60px auto;
+            padding: 24px;
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+            border: 1px solid var(--border-color);
+        }
+        .landing-header {
+            margin-bottom: 24px;
+        }
+        .landing-grid {
+            display: grid;
+            gap: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        }
+        .landing-card {
+            background: #f8fafc;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            transition: all 0.2s;
+        }
+        .landing-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+            border-color: #cbd5e1;
+        }
+        .landing-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin: 0;
+        }
+        .landing-desc {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.5;
+            margin: 0;
+        }
+        .landing-actions {
+            margin-top: auto;
+        }
+        .btn-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            background: var(--primary-color);
+            color: #fff;
+            transition: all 0.2s;
+        }
+        .btn-link:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+    </style>
+</head>
+<body>
+    <div class="landing-container">
+        <div class="landing-header">
+            <h2>Edu News 控制台导览</h2>
+            <p class="landing-desc">请选择要进入的页面。</p>
+        </div>
+        <div class="landing-grid">
+            <div class="landing-card">
+                <p class="landing-title">人工筛选 / 审阅</p>
+                <p class="landing-desc">聚类展示、状态自动保存、排序模式、导出预览。</p>
+                <div class="landing-actions">
+                    <a class="btn-link" href="{{ manual_filter_url }}">进入 /manual_filter</a>
+                </div>
+            </div>
+            <div class="landing-card">
+                <p class="landing-title">Dashboard</p>
+                <p class="landing-desc">查看流水线运行快照与最近一次导出，支持手动触发运行。</p>
+                <div class="landing-actions">
+                    <a class="btn-link" href="{{ dashboard_url }}">进入 /dashboard</a>
+                </div>
+            </div>
+            <div class="landing-card">
+                <p class="landing-title">文章搜索</p>
+                <p class="landing-desc">按关键词、来源、情感、状态、日期过滤，查看摘要和原文链接。</p>
+                <div class="landing-actions">
+                    <a class="btn-link" href="{{ search_url }}">进入 /articles/search</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

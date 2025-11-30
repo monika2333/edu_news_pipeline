@@ -1,341 +1,59 @@
 # Edu News Pipeline
 
-Automated pipeline for collecting education-related articles, summarising them with an LLM, scoring relevance, and exporting daily briefs.
+面向教育新闻的自动化采集、评分、摘要与导出流水线，并提供 Web 控制台进行人工筛选与复核。
 
-## Pipeline Overview
+## 功能总览
+- **流水线**：抓取 → 去重 → 评分 → 摘要/情感 → 北京/外地分流与重要性评分 → 导出简报。
+- **Web 控制台**：`/manual_filter` 进行人工筛选/审阅（簇展示、状态自动保存、排序模式、导出弹窗）；`/dashboard` 查看最近运行与最新导出并可手动触发；`/articles/search` 直接按关键词/来源/情感/状态检索。
+- **导出/预览**：支持在审阅页导出文本或预览（可选标记为已导出）。
 
-1. **Crawl** - Fetch latest articles from configured sources (default: Toutiao; optional: Tencent News, ChinaNews, China Daily, Guangming Daily, Qianlong, China Education Daily, Laodong Wubao), upsert feed metadata into `raw_articles`, ensure bodies are fetched, and enqueue keyword-positive articles into `filtered_articles` with status `pending`.
-2. **Hash / Deduplicate** - `hash_primary` computes an exact `content_hash`, 64-bit SimHash, and four 16-bit band hashes for each filtered article. Using SimHash band lookup and a Hamming-distance threshold (<= 3), duplicates are grouped under a primary article and promoted to `primary_articles`.
-3. **Score** - LLM-based relevance scoring runs on entries in `primary_articles`. The LLM output becomes `raw_relevance_score`; keyword rules add a `keyword_bonus_score`, and their sum is persisted as `score`. Promotion still keys off `raw_relevance_score >= 60`, while the final score (without an upper bound) is used for ordering.
-4. **Summarise & Sentiment** - `summarize` generates LLM summaries for promoted primaries, classifies sentiment (`positive` / `negative`), and now routes articles into multiple states: Beijing-related items move to `pending_beijing_gate` for a second pass, non-Beijing positives **and negatives** go to `pending_external_filter`, and the remaining items write back as `ready_for_export` (failures remain `pending`).
-5. **Beijing Gate** - Before running the external importance model, the `external_filter` worker picks up `pending_beijing_gate`, calls the dedicated LLM prompt, and either reclassifies to `pending_external_filter` (when not Beijing related) or promotes directly to `ready_for_export` while recording the LLM decision. Confirmed Beijing articles keep their sentiment so both positive/negative variants can be rescored downstream.
-6. **External Filter** - External scoring runs on `pending_external_filter`, assigns an importance score from 0-100 using category-specific prompts and thresholds (京内/京外 × 正面/负面), and flags items below the relevant threshold as `external_filtered`; the rest become `ready_for_export`.
-7. **Export** - Assemble the ready summaries into a briefing ordered by "Jingnei/Jingwai x Positive/Negative" buckets (sorted descending by score) and persist batch metadata in `brief_batches` / `brief_items`, sending an optional Feishu notification.
-All stages are available through the CLI wrapper:
-
+## 快速开始
+1) 安装依赖
 ```bash
-python -m src.cli.main crawl --sources toutiao,tencent,chinanews,chinadaily,jyb,gmw,qianlong,laodongwubao --limit 5000
+pip install -r requirements.txt
+```
+2) 启动控制台（默认 8000）
+```bash
+python run_console.py
+```
+- 建议设置 `CONSOLE_BASIC_USERNAME` / `CONSOLE_BASIC_PASSWORD` 或 `CONSOLE_API_TOKEN` 保护接口。
+
+3) 运行流水线单步（示例）
+```bash
+python -m src.cli.main crawl --sources toutiao,tencent --limit 5000
 python -m src.cli.main hash-primary
 python -m src.cli.main score
 python -m src.cli.main summarize
 python -m src.cli.main external-filter
 python -m src.cli.main export
-python -m src.cli.main repair --limit 500
-python -m src.cli.main geo-tag --limit 500 --batch-size 200
 ```
-
-Use `-h` on any command to see flags. `summarize` now operates on the queued pending rows—run `crawl` first so new candidates are available.
-
-
-## Web Console & Article Search
-
-- `python run_console.py` starts the FastAPI console (`http://127.0.0.1:8000` by default). Protect it with `CONSOLE_BASIC_USERNAME` / `CONSOLE_BASIC_PASSWORD` or `CONSOLE_API_TOKEN`; skip these only when the service remains bound to localhost.
-- `/dashboard` remains the pipeline status view used to trigger runs and inspect the latest export.
-- `/articles/search` is a lightweight HTML portal backed directly by PostgreSQL. Enter keywords (title/summary/body), filter by source, sentiment, status, or date range, and open summaries alongside the original markdown without downloading the daily `.txt`.
-- `GET /api/articles/search` (JSON) exposes the same data for automation. Parameters:
-  - `q` �?keyword (matches title, `llm_summary`, and `content_markdown`).
-  - `source`, `sentiment`, `status` �?optional equality filters (sentiment/status are case-insensitive).
-  - `start_date`, `end_date` �?ISO dates applied to `publish_time_iso`.
-  - `page` / `limit` �?pagination controls (1�?00 / 1�?00). Response includes `items`, `total`, `page`, `pages`, and `limit`.
-
-
-## Repairing Missing Content
-
-If earlier runs inserted feed rows without article bodies, use the repair worker to fill them in. It will fetch only rows where `content_markdown` is empty and update them in place.
-
-```bash
-python -m src.cli.main repair --limit 500
-```
-
-Re-run as needed until the command reports no articles remaining.
-## Directory Highlights
-
-- `config/toutiao_author.txt` - List of Toutiao author tokens/URLs (one per line, `#` for comments). Used when crawling `--sources toutiao`.
-- `config/qq_author.txt` - List of Tencent author URLs or suid identifiers (one per line). Used when crawling `--sources tencent` (or `qq` alias).
-- `src/adapters/db.py` - Singleton loader for the Postgres adapter.
-- `src/adapters/db_postgres.py` - PostgreSQL access layer used by all workers.
-- `src/workers/` - Implementations for `crawl`, `summarize`, `score`, and `export` steps.
-- `database/` - SQL schema and migrations used for the Postgres deployment.
-- `docs/beijing_gate_prompt.md` - Prompt definition used by the Beijing gate LLM check (kept for review and updates).
-- `docs/internal_importance_prompt.md` - Prompt used by the Beijing internal positive scoring path.
-- `docs/internal_negative_importance_prompt.md` - Prompt used when re-scoring Beijing negative sentiment items.
-- `docs/external_filter_prompt.md` - Prompt used by the non-Beijing positive external scoring path.
-- `docs/external_negative_filter_prompt.md` - Prompt used by the non-Beijing negative path.
-- `src/cli/main.py` - CLI entry point for worker commands (`python -m src.cli.main ...`).
-
-## Prerequisites
-
-- Python 3.10+
-- PostgreSQL 16+ (or compatible) with credentials for the target database
-- `pip install -r requirements.txt`
-- Playwright Chromium browser for crawling:
-  ```bash
-  playwright install chromium
-  ```
-
-## Environment Configuration
-
-### Local PostgreSQL Quick Start
-
-1. Install PostgreSQL 16+ (the team standard uses Windows packages under `C:\Program Files\PostgreSQL\18`).
-2. Ensure the service is running and note the administrator credentials (default user: `postgres`).
-3. Apply the project schema: `psql -h localhost -U postgres -d postgres -f database/schema.sql`.\n   - Then apply migrations under `database/migrations/` as needed. Notably, `20251007194500_rename_toutiao_to_raw_articles.sql` renames `toutiao_articles` to `raw_articles` for multi-source support (safe to run multiple times).
-4. Populate `.env.local` with the `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `DB_SCHEMA` settings.
-5. Run the Postgres adapter validation: `python -m pytest tests/test_db_postgres_adapter.py` (install `pytest` if it is not already available).
-
-With these variables in place the worker and console commands automatically use the Postgres backend via `src.adapters.db.get_adapter()`.
-
-### External Filter Workflow
-
-- Configure the external/internal filter env vars in `.env.local`（`EXTERNAL_FILTER_*`, `INTERNAL_FILTER_*`, `INTERNAL_FILTER_PROMPT_PATH`）。负面稿件可通过 `*_NEGATIVE_THRESHOLD` 独立调节�?
-- Prompt files live under `docs/` and can be edited independently�? 
-  - `external_filter_prompt.md`（京外正面）、`external_negative_filter_prompt.md`（京外负面）  
-  - `internal_importance_prompt.md`（京内正面）、`internal_negative_importance_prompt.md`（京内负面）
-- `scripts/run_pipeline_once.py` 默认�?summarize 之后自动运行 `external-filter`；无需额外调度即可串接进整条流水线�?
-- Run the external filter worker to score pending 京内/京外正负稿：`python -m src.workers.external_filter --limit 100`（按需调整 limit/batch）�?
-- 使用 backfill 脚本重置历史记录：先 `python -m scripts.backfill_external_filter --dry-run --limit 50` 查看影响，再去掉 `--dry-run` 实际执行�?
-- 观察 `news_summaries.external_importance_status` 字段（`pending_external_filter` �?`ready_for_export` / `external_filtered`）确�?worker 正常推进�?
-
-The pipeline loads variables from `.env.local`, `.env`, and `config/abstract.env`. Key settings:
-
-| Variable | Description |
-| --- | --- |
-| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | Connection details for the Postgres instance |
-| `DB_SCHEMA` | Schema to target (defaults to `public`) |
-| `TOUTIAO_AUTHORS_PATH` | Override Toutiao authors list path (defaults to `config/toutiao_author.txt`) |
-| `TENCENT_AUTHORS_PATH` | Override Tencent authors list path (defaults to `config/qq_author.txt`) |
-| `TOUTIAO_FETCH_TIMEOUT` | Seconds for article fetch timeout (default 15) |
-| `TOUTIAO_LANG` | `Accept-Language` header when fetching article content |
-| `TOUTIAO_SHOW_BROWSER` | Set to `1` to run Playwright in headed mode |
-| `GMW_BASE_URL` | Override Guangming Daily listing entry point |
-| `GMW_TIMEOUT` | Seconds for Guangming Daily HTTP requests (default 15) |
-| `QIANLONG_BASE_URL` | Override Qianlong listing entry point (default `https://beijing.qianlong.com/`) |
-| `QIANLONG_TIMEOUT` | Seconds for Qianlong HTTP requests (default 20) |
-| `QIANLONG_DELAY` | Optional delay between Qianlong article fetches (default 0) |
-| `QIANLONG_PAGES` / `QIANLONG_MAX_PAGES` | Optional page cap for Qianlong listings (defaults to unlimited) |
-| `QIANLONG_EXISTING_CONSECUTIVE_STOP` | Early-stop after N consecutive existing Qianlong articles (default 5; set `0` to disable) |
-| `PROCESS_LIMIT` | Global cap applied to worker limits (overrides CLI `--limit`). |
-| `SCORE_KEYWORD_BONUSES` | Optional JSON map overriding keyword bonus rules for scoring. |
-| `SCORE_KEYWORD_BONUSES_PATH` | Optional path to a JSON file providing keyword bonuses (`config/score_keyword_bonuses.json` by default). |
-| `CONCURRENCY` | Default worker concurrency override (falls back to 5). |
-| `LLM_API_KEY` / `OPENROUTER_API_KEY` | API credential for the chat-completion provider (defaults to OpenRouter). |
-| `LLM_BASE_URL` / `OPENROUTER_BASE_URL` | Endpoint for the LLM provider (defaults to `https://openrouter.ai/api/v1`). |
-| `OPENROUTER_HTTP_REFERER` / `OPENROUTER_TITLE` | Optional headers forwarded to OpenRouter for attribution rankings. |
-| `SUMMARY_LLM_API_KEY` / `SUMMARY_LLM_BASE_URL` | Optional override (e.g., SiliconFlow) used only by the summarize worker; falls back to global LLM settings when unset. |
-| `SUMMARY_LLM_TIMEOUT` | Timeout for summary requests (falls back to `LLM_TIMEOUT_SUMMARY`). |
-| `SUMMARY_CONCURRENCY` | Dedicated thread cap for the summarize worker (falls back to `CONCURRENCY`). |
-| `SUMMARIZE_MODEL_NAME` / `SOURCE_MODEL_NAME` / `SCORE_MODEL_NAME` | Model identifiers used by summarize/source detection/scoring workers. |
-| `LLM_TIMEOUT_SUMMARY` / `LLM_TIMEOUT_SCORE` / `LLM_TIMEOUT_EXTERNAL_FILTER` / `LLM_TIMEOUT_BEIJING_GATE` | Timeout (seconds) for the respective LLM requests; each falls back to `LLM_TIMEOUT` or its hard-coded default if unset. |
-| `EXTERNAL_FILTER_MODEL_NAME` | Model identifier used by the external filter stage (defaults to `SCORE_MODEL_NAME`). |
-| `EXTERNAL_FILTER_THRESHOLD` | External importance score (0-100) required to pass (default 20). |
-| `EXTERNAL_FILTER_NEGATIVE_THRESHOLD` | Optional override for negative external items (fallbacks to `EXTERNAL_FILTER_THRESHOLD`). |
-| `INTERNAL_FILTER_THRESHOLD` | Override threshold used for Beijing internal positives (defaults to `EXTERNAL_FILTER_THRESHOLD`). |
-| `INTERNAL_FILTER_NEGATIVE_THRESHOLD` | Optional override for negative Beijing items (fallbacks to `INTERNAL_FILTER_THRESHOLD`). |
-| `INTERNAL_FILTER_PROMPT_PATH` | Optional path to the internal scoring prompt (defaults to `docs/internal_importance_prompt.md`). |
-| `EXTERNAL_FILTER_BATCH_SIZE` | Rows processed per batch by the external filter worker (default 50). |
-| `EXTERNAL_FILTER_MAX_RETRIES` | Retry attempts before a record is marked `external_filtered` (default 3). |
-| `BEIJING_GATE_MODEL_NAME` | Model identifier used by the Beijing gate LLM check (defaults to `SCORE_MODEL_NAME`). |
-| `BEIJING_GATE_MAX_RETRIES` | Maximum LLM failures before falling back to treating the item as Beijing related (default 3). |
-| `TOUTIAO_EXISTING_CONSECUTIVE_STOP` | Early-stop after N consecutive existing items per author (default `5`; set `0` to disable) |
-| `CHINANEWS_EXISTING_CONSECUTIVE_STOP` | Early-stop after N consecutive existing items across scroll pages (default `5`; set `0` to disable) |
-
-
-### LLM Provider Configuration
-
-By default every adapter shares the global OpenRouter configuration (`LLM_API_KEY`, `LLM_BASE_URL`, `LLM_TIMEOUT*`). When you want the summarize worker to talk to a different vendor (e.g., SiliconFlow), set the summary-specific overrides:
-
-1. Keep the global OpenRouter variables in place so `score`, `external-filter`, Beijing gate, etc. continue to use them.
-2. Add `SUMMARY_LLM_API_KEY` and `SUMMARY_LLM_BASE_URL` (plus optional `SUMMARY_LLM_ENABLE_THINKING`, `SUMMARY_LLM_TIMEOUT`) pointing at the alternate provider. The summarize worker (and its sentiment/source follow-up calls) will fall back to the global values if any override is omitted.
-3. Use `SUMMARY_CONCURRENCY` to cap just the summarize worker’s thread pool when the alternate provider has lower parallel limits; all other workers still read `CONCURRENCY`.
-
-With this setup, switching summarize back to OpenRouter is as simple as removing the `SUMMARY_LLM_*` variables or pointing them at the same base URL/key as the global settings.
-
-## Workflow Details
-
-### Crawl Worker
-
-- Command: `python -m src.cli.main crawl`
-- Default limit: 500 articles (clamped by `PROCESS_LIMIT` if set)
-- Sources: `--sources` comma list (default `toutiao`; add `tencent`, `chinanews`, `chinadaily`, `jyb`, `gmw`, `qianlong` as needed). The pipeline wrapper also respects `CRAWL_SOURCES` from env (e.g., `CRAWL_SOURCES=toutiao,tencent,chinanews`).
-  - Toutiao uses Playwright (requires `playwright install chromium`) and reads authors from `TOUTIAO_AUTHORS_PATH`
-  - Tencent News uses the REST adapter (no Playwright). Authors live in `config/qq_author.txt` and can be overridden via `TENCENT_AUTHORS_PATH`.
-  - Guangming Daily uses the bundled HTTP crawler (no Playwright). Configure the entry point with `GMW_BASE_URL` if you need a different node and tweak `GMW_TIMEOUT` to adjust the per-request timeout.
-- Writes/updates rows in `raw_articles`
-- Skips articles already present in the database
-
-- Early-stop policy for duplicates:
-  - Toutiao: while scanning each author’s feed, stops after `TOUTIAO_EXISTING_CONSECUTIVE_STOP` consecutive items already present in the DB (default 5). Set it to `0` to never early?stop on existing items.
-  - ChinaNews: while iterating scroll pages, skips existing items and stops when `CHINANEWS_EXISTING_CONSECUTIVE_STOP` consecutive items are already present (default 5). Set it to `0` to never early?stop on existing items.
-
-#### Examples
-- ChinaNews (first page only): `python -m src.cli.main crawl --sources chinanews --limit 50`
-- ChinaNews (multi-page to approach 500): `python -m src.cli.main crawl --sources chinanews --limit 500 --pages 15`
-- Tencent News (all configured authors): `python -m src.cli.main crawl --sources tencent --limit 200`
-- Toutiao + Tencent (split by remaining quota): `python -m src.cli.main crawl --sources toutiao,tencent --limit 400`
-- Guangming Daily only: `python -m src.cli.main crawl --sources gmw --limit 100`
-- Qianlong only: `python -m src.cli.main crawl --sources qianlong --limit 100`
-- Toutiao + Tencent + ChinaNews + Guangming Daily + Qianlong: `python -m src.cli.main crawl --sources toutiao,tencent,chinanews,gmw,qianlong --limit 500`
-- Repair missing bodies (all sources): `python -m src.cli.main repair --limit 200`
-
-#### Multi-source allocation
-- `--limit` is a total upper bound per run.
-- Sources are processed in the order you pass in `--sources` (e.g., `toutiao,chinanews`). Each source consumes from the remaining quota; there is no auto even-split.
-- If you prefer fixed quotas (e.g., Toutiao 300 + ChinaNews 200), run separate commands for each for now.
-
-#### ChinaNews specifics
-- Paging: use `--pages N` to fetch multiple feed pages. Default is 1; it does not auto-flip without `--pages`.
-  - Example: `python -m src.cli.main crawl --sources chinanews --limit 500 --pages 10`
-  - The crawler reads the page navigator (`.pagebox`) and will not exceed the last available page.
-- Published time: derived from the feed item (`.dd_time`) combined with the URL date. Stored as tz-aware (+08:00); exports can render `YYYY-MM-DD HH:MM`.
-- Source (媒体来源): extracted from visible nodes (selectors aligned with our reference crawler), then fallback to meta tags.
-
-#### Guangming Daily specifics
-- Uses the custom HTTP crawler bundled in `src/adapters/http_gmw.py` (legacy CLI preserved in `gmw_crawl/` for now) to walk listing and detail pages, so each run fetches full article bodies without a second repair step.
-- Publish time is parsed from article metadata or body; when available it is normalised to +08:00 and stored alongside the Unix timestamp.
-- Requests honour `GMW_BASE_URL` and `GMW_TIMEOUT`. Duplicate URLs within a run are de-duplicated before writing to the database.
-
-#### Qianlong (千龙�? specifics
-- Uses the HTTP adapter in `src/adapters/http_qianlong.py`. Listing pages continue until the requested quota is met or three consecutive pages contain no new articles.
-- Publish times are parsed from the article body (`YYYY-MM-DD HH:MM`) and normalised to +08:00 for timestamp/ISO storage.
-- Environment variables:
-  - `QIANLONG_BASE_URL` 自定义入口频�?(默认 `https://beijing.qianlong.com/`)
-  - `QIANLONG_TIMEOUT` 控制单次请求超时时间 (默认 20 �?
-  - `QIANLONG_DELAY` 设置文章抓取间隔秒数 (默认 0)
-  - `QIANLONG_PAGES` / `QIANLONG_MAX_PAGES` 限制翻页数；未设置时按条数继续翻�?
-  - `QIANLONG_EXISTING_CONSECUTIVE_STOP` early-stop once the crawler encounters N existing articles in a row (default 5; set 0 to disable)
-
-### Summarise Worker
-
-- Command: `python -m src.cli.main summarize`
-- Filters content against keywords from `config/education_keywords.txt` (override with `KEYWORDS_PATH`)
-- Stores generated summaries in `news_summaries`
-
-### Score Worker
-
-- Command: `python -m src.cli.main score`
-- Scores entries in `primary_articles` where status is pending/failed or `score` is `NULL`
-- Persists:
-  - `raw_relevance_score`: the raw LLM output (0?00 clamp removed)
-  - `keyword_bonus_score`: additive bonus from keyword rules
-  - `score`: `raw + bonus` (no upper limit) for downstream ordering
-  - `score_details`: JSON metadata documenting matched rules and totals
-- Promotion to `news_summaries` still hinges on `raw_relevance_score ?60`
-
-#### Scoring Metrics Helper
-
-- Command: `python scripts/pipeline_metrics.py --days 7`
-- Outputs status counts for `primary_articles` / `news_summaries` plus aggregates for `raw_relevance_score`, `keyword_bonus_score`, and final `score`
-- Pass `--days 0` to inspect the full history; omit the flag (default 7) for a recent view
-- Useful for gauging how keyword rules affect the pipeline and verifying bonuses are being applied
-
-### Export Worker
-
-- Default min score: 60 (override with `--min-score`).
-- Existing output files get numbered suffixes (e.g. `(1)`, `(2)`) to avoid overwriting.
-- Command: `python -m src.cli.main export`
-- Pulls high-score summaries from `news_summaries`.
-- Writes a text brief (defaults to `outputs/high_score_summaries_<tag>.txt`), grouping entries into `[Beijing]` / `[Non-Beijing]` sections and sorting each section by descending score.
-- Optionally records batches in the database (`brief_batches` / `brief_items`), storing the `is_beijing_related` flag in the metadata.
-- Set `--no-record-history` or `--no-skip-exported` to adjust behaviour.
-
-### Beijing Relevance Tagging
-
-- Adds the `news_summaries.is_beijing_related` field to flag whether an article is Beijing-related. The `summarize` worker sets it by default when writing summaries, based on the article body, summary, and keyword hits.
-- Keyword list lives in `config/beijing_keywords.txt`. Override it with the `BEIJING_KEYWORDS_PATH` environment variable if you need a custom file.
-- To backfill older data or after tweaking keywords, run `python -m src.cli.main geo-tag --limit 200 --batch-size 200` (trim the scope if needed). The command batches through rows where `is_beijing_related IS NULL` and writes the boolean back.
-- Export output and Feishu notifications use this field to split "Beijing" vs "non-Beijing" sections and include count summaries; the flag is also copied into `brief_items.metadata`.
-
-## Development Notes
-
-- Source code lives under `src/`; the old `tools/` scripts have been removed in favour of the worker pipeline.
-- Tests: include a CLI smoke test in `tests/test_cli_parser.py` and a Postgres adapter validation in `tests/test_db_postgres_adapter.py`; extend with integration coverage as needed.
-- Formatting: project uses standard Python formatting (PEP 8). Run `python -m pip install black isort` and apply if needed.
-- When adding new workers or commands, expose them via `src/cli/main.py` so they are available through `python -m src.cli.main ...`.
-
-## Troubleshooting
-
-| Issue | Fix |
-| --- | --- |
-| Crawl returns zero items | Ensure Playwright works (Toutiao: `playwright install chromium`), check author tokens/`--pages`, increase `--limit` |
-| Summarise skips everything | Confirm keywords list; ensure pending rows exist in `news_summaries`; adjust `--limit` or `PROCESS_LIMIT` if needed |
-| Score/export find nothing | Make sure previous steps inserted rows into Postgres (`raw_articles` / `news_summaries`) |
-| Database errors (connection / missing tables) | Verify Postgres credentials and apply the schema SQL before rerunning |
-
-## License
-
-MIT License (see repository root for details).
-
-
-## Feishu Notifications
-
-- Set the FEISHU_* environment variables (ID, secret, and receive ID). `FEISHU_RECEIVE_ID` or `FEISHU_OPEN_ID` both work (lowercase keys from older configs remain compatible).
-- After a successful export, the worker posts a short summary *and* uploads the generated `.txt` as a Feishu file attachment.
-- Text notifications include category counts and the first few entries; the full file is delivered through the attachment.
-- Failures fall back gracefully and are logged in the export worker output.
-
-## Scheduling and Automation
-
-- **Linux/macOS cron**: schedule the full pipeline with `scripts/run_pipeline_once.py` (default steps crawl -> hash-primary -> score -> summarize -> export).
-  ```bash
-  0 9 * * * /usr/bin/python /path/to/repo/scripts/run_pipeline_once.py
-```
-- **Windows Task Scheduler**: use the helper script in this repo. Example action command:
-  ```powershell
-  powershell.exe -File "D:\600program\edu_news_pipeline\scripts\run_pipeline_daily.ps1" -Python "C:\Path\To\python.exe"
-```
-
-### China Daily Source
-
-- Enable via CLI: `--sources chinadaily` (can be combined, e.g. `--sources toutiao,chinanews,chinadaily,gmw`).
-- Optional flags: `--pages N` to bound pagination.
-- Environment variables:
-  - `CHINADAILY_START_URL` ?Channel listing entry (defaults to a China Daily site channel).
-  - `CHINADAILY_TIMEOUT` ?Request timeout in seconds (default `20`).
-  - `CHINADAILY_EXISTING_CONSECUTIVE_STOP` ?Early-stop after N consecutive existing items across pages (default `5`; `0` disables).
-
-### China Education Daily (JYB)
-
-- Enable via CLI: `--sources jyb` (can be combined, e.g. `--sources toutiao,chinanews,chinadaily,jyb,gmw`).
-- Optional flags: `--pages N` to bound pagination.
-- Environment variables:
-  - `JYB_SEARCH_API_URL` ?JSON search API endpoint (defaults to `http://new.jyb.cn/jybuc/hyBaseCol/search.action`).
-  - `JYB_START_URL` ?Fallback HTML listing/search page (defaults to `http://www.jyb.cn/search.html`).
-  - `JYB_KEYWORDS` ?Optional keywords (comma-separated). Default: `教育`.
-  - `JYB_TIMEOUT` ?Request timeout in seconds (default `20`).
-  - `JYB_EXISTING_CONSECUTIVE_STOP` ?Early-stop after N consecutive existing items across pages (default `5`; `0` disables).
-  Configure the trigger to run daily at your preferred time, enable "Run with highest privileges", and disable battery-stop conditions when needed.
-- Customise steps with script parameters such as `-Steps crawl summarize`, `-Skip score`, or `-ContinueOnError`. Logs default to `logs/pipeline_<timestamp>.log`; override via `-LogDirectory`.
-
-- For high-frequency refresh (e.g. crawl/summarize/score every 10 minutes), use `scripts/run_pipeline_every10.ps1` with a Task Scheduler trigger that repeats every 10 minutes ("Repeat task every" -> `10 minutes`, "for a duration of" -> `Indefinitely`).
-  Example action command:
-  ```powershell
-  powershell.exe -File "D:?program\edu_news_pipeline\scripts
-un_pipeline_every10.ps1" -Python "C:\Path\To\python.exe" -LogDirectory "D:\logs\edu-news-10min"
-  ```
-  The script maintains a lock under `locks\pipeline_every10.lock` to avoid overlapping runs; optional `-ContinueOnError` keeps later steps running after a failure.
-- Continue using daily scheduling (see above) for the full crawl→export pipeline, and trigger `export` on demand when you need the latest brief.
-
-- For ad-hoc single steps, call the CLI directly (`python -m src.cli.main summarize --limit 50`).
-
-## Legacy Tooling Sunset
-
-- The historical `tools/` directory has been removed; remaining shim scripts simply warn and forward to the worker entry points.
-- Target date to delete those shims entirely is 2025-10-31, after verifying no external automation depends on them.
-- Migrate any outstanding scripts to the new commands (`python -m src.cli.main ...`) or `scripts/run_pipeline_once.py` before that deadline.
-
-
-
-
-
-
-
-## Logs Maintenance
-
-- Baseline: compress logs older than 3 days and delete logs (including archives) older than 7 days.
-- Manual run: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-logs.ps1`
-  - Options: `-LogsPath logs -CompressOlderThanDays 3 -DeleteOlderThanDays 7 -DryRun`
-- Register daily cleanup (02:00):
-  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/register-clean-logs-task.ps1 -Time 02:00 -TaskName EduNews_CleanLogs`
-  - Verify: `schtasks /Query /TN EduNews_CleanLogs /V /FO LIST`
-\n- �������� sentence-transformers ���ڵ����׶ξ���
-
+可用 `-h` 查看每个步骤的参数。
+
+-## Web 控制台
+- 默认地址：`http://127.0.0.1:8000`
+- **/manual_filter**
+  - 默认按地域/情感聚类展示，可切换桶（京内正/京内负/京外正/京外负/全部）。
+  - 卡片摘要可编辑，状态下拉/批量设置会自动保存并移动到对应列，放弃/待处理会移出视图。
+  - 审阅页支持排序模式（紧凑卡片 + 拖拽），导出弹窗支持预览/正式导出。
+- **/dashboard**
+  - 查看最近流水线运行和最新导出概况，可从页面触发一次运行。
+- **/articles/search**
+  - 按关键词、来源、情感、状态、日期过滤；查看摘要与原文链接。
+
+## 配置要点（.env / .env.local）
+- 数据库：`DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`、`DB_SCHEMA`。
+- 抓取/评分：如 `TOUTIAO_AUTHORS_PATH`、`TENCENT_AUTHORS_PATH`、`PROCESS_LIMIT` 等。
+- 控制台认证：`CONSOLE_BASIC_USERNAME` / `CONSOLE_BASIC_PASSWORD` 或 `CONSOLE_API_TOKEN`。
+
+## 目录速览
+- `run_console.py`：控制台入口。
+- `src/console/app.py`：FastAPI 应用与路由挂载。
+- `src/console/routes/`：API 与页面路由（manual_filter、dashboard、articles/search 等）。
+- `src/console/services/`：对应的业务逻辑。
+- `src/console/web/templates/`：Jinja2 模板。
+- `src/console/web/static/`：前端 JS / CSS 资源。
+- `docs/`：提示词与流程文档。
+
+## 说明
+- 控制台访问默认仅监听本机，部署到外网时务必开启认证。
+- 如果数据库不可用，部分接口会降级为空结果以保证页面可访问。

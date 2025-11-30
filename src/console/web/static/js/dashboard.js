@@ -22,7 +22,6 @@ const elements = {
     reviewList: document.getElementById('review-list'),
     reviewSelectAll: document.getElementById('review-select-all'),
     reviewBulkStatus: document.getElementById('review-bulk-status'),
-    reviewBulkApply: document.getElementById('btn-apply-review-status'),
     discardList: document.getElementById('discard-list'),
     actorInput: document.getElementById('actor-input'),
     sortToggleBtn: document.getElementById('btn-toggle-sort'),
@@ -59,7 +58,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('btn-submit-filter').addEventListener('click', submitFilter);
-    document.getElementById('btn-save-review').addEventListener('click', saveReview);
     document.getElementById('btn-export').addEventListener('click', openExportModal);
     document.getElementById('btn-copy').addEventListener('click', copyExportText);
     document.getElementById('btn-close-modal').addEventListener('click', closeModal);
@@ -71,8 +69,8 @@ document.addEventListener('DOMContentLoaded', () => {
             toggleReviewSelectAll(Boolean(e.target.checked));
         });
     }
-    if (elements.reviewBulkApply) {
-        elements.reviewBulkApply.addEventListener('click', applyReviewBulkStatus);
+    if (elements.reviewBulkStatus) {
+        elements.reviewBulkStatus.addEventListener('change', applyReviewBulkStatus);
     }
     if (elements.filterTabButtons && elements.filterTabButtons.length) {
         elements.filterTabButtons.forEach(btn => {
@@ -557,6 +555,16 @@ function bindReviewSelectionControls() {
     checkboxes.forEach(cb => {
         cb.addEventListener('change', updateReviewSelectAllState);
     });
+
+    const statusSelects = elements.reviewList.querySelectorAll('.status-select');
+    statusSelects.forEach(sel => {
+        sel.addEventListener('change', handleReviewStatusChange);
+    });
+
+    const summaries = elements.reviewList.querySelectorAll('.summary-box');
+    summaries.forEach(box => {
+        box.addEventListener('change', handleSummaryUpdate);
+    });
     updateReviewSelectAllState();
 }
 
@@ -587,12 +595,13 @@ function applyReviewBulkStatus() {
         const card = cb.closest('.article-card');
         if (!card) return;
         const select = card.querySelector('.status-select');
-        if (select) {
+        if (select && select.value !== value) {
             select.value = value;
+            handleReviewStatusChange({ target: select });
         }
     });
+    elements.reviewBulkStatus.value = '';
     updateReviewSelectAllState();
-    showToast('已批量设置所选项');
 }
 
 async function persistReviewOrder() {
@@ -615,49 +624,90 @@ async function persistReviewOrder() {
     }
 }
 
-async function saveReview() {
-    const cards = document.querySelectorAll('#review-list .article-card');
-    const edits = {};
-    const statusChanges = { selected: [], backup: [], discarded: [], pending: [] };
-    let hasChanges = false;
+async function handleReviewStatusChange(e) {
+    const select = e.target;
+    const card = select.closest('.article-card');
+    if (!card) return;
+    const id = card.dataset.id;
+    const status = select.value;
+    const summaryBox = card.querySelector('.summary-box');
+    const summary = summaryBox ? summaryBox.value : '';
 
-    cards.forEach(card => {
-        const id = card.dataset.id;
-        const summary = card.querySelector('textarea').value;
-        const status = card.querySelector('select').value;
-
-        edits[id] = { summary };
-        statusChanges[status].push(id);
-        hasChanges = true;
-    });
-
-    if (!hasChanges) return;
-
+    select.disabled = true;
     try {
+        // Persist summary edits along with status change
         await fetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ edits, actor: state.actor })
+            body: JSON.stringify({ edits: { [id]: { summary } }, actor: state.actor })
         });
 
         await fetch(`${API_BASE}/decide`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                selected_ids: statusChanges.selected,
-                backup_ids: statusChanges.backup,
-                discarded_ids: statusChanges.discarded,
-                pending_ids: statusChanges.pending,
+                selected_ids: status === 'selected' ? [id] : [],
+                backup_ids: status === 'backup' ? [id] : [],
+                discarded_ids: status === 'discarded' ? [id] : [],
+                pending_ids: status === 'pending' ? [id] : [],
                 actor: state.actor
             })
         });
 
-        showToast('Review saved');
+        moveReviewCard(card, status);
+        updateReviewCounters();
+        updateReviewSelectAllState();
         loadStats();
-        loadReviewData();
-    } catch (e) {
-        showToast('Failed to save review', 'error');
+        showToast('已更新状态');
+    } catch (err) {
+        showToast('更新失败，请重试', 'error');
+    } finally {
+        select.disabled = false;
     }
+}
+
+async function handleSummaryUpdate(e) {
+    const box = e.target;
+    const card = box.closest('.article-card');
+    if (!card) return;
+    const id = card.dataset.id;
+    const summary = box.value;
+    try {
+        await fetch(`${API_BASE}/edit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ edits: { [id]: { summary } }, actor: state.actor })
+        });
+        showToast('摘要已保存');
+    } catch (err) {
+        showToast('摘要保存失败', 'error');
+    }
+}
+
+function moveReviewCard(card, status) {
+    const selectedList = document.querySelector('.review-col.selected-col .review-items');
+    const backupList = document.querySelector('.review-col.backup-col .review-items');
+    if (!selectedList || !backupList) return;
+
+    if (status === 'selected') {
+        selectedList.prepend(card);
+    } else if (status === 'backup') {
+        backupList.prepend(card);
+    } else {
+        card.remove();
+    }
+}
+
+function updateReviewCounters() {
+    const selectedList = document.querySelector('.review-col.selected-col .review-items');
+    const backupList = document.querySelector('.review-col.backup-col .review-items');
+    const selectedCount = selectedList ? selectedList.children.length : 0;
+    const backupCount = backupList ? backupList.children.length : 0;
+
+    const selHeader = document.querySelector('.review-col.selected-col h3');
+    const bakHeader = document.querySelector('.review-col.backup-col h3');
+    if (selHeader) selHeader.textContent = `采纳 (${selectedCount})`;
+    if (bakHeader) bakHeader.textContent = `备选(${backupCount})`;
 }
 
 // --- Discard Tab Logic ---

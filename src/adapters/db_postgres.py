@@ -1112,6 +1112,9 @@ class PostgresAdapter:
             "external_filter_attempted_at": timestamp,
             "external_filter_fail_count": 0,
         }
+        # External filtered items should be dropped from manual review.
+        if not passed:
+            payload["manual_status"] = "discarded"
         sets = ", ".join(f"{field} = %s" for field in payload)
         values = list(payload.values()) + [article_id]
         query = f"""
@@ -1152,6 +1155,8 @@ class PostgresAdapter:
                     "external_importance_status": "external_filtered",
                     "external_importance_checked_at": timestamp,
                     "external_importance_score": None,
+                    # Final failure => do not surface to manual pending.
+                    "manual_status": "discarded",
                 }
             )
         sets = ", ".join(f"{field} = %s" for field in payload)

@@ -682,6 +682,16 @@ class PostgresAdapter:
         """
         with self._cursor() as cur:
             cur.execute(query, values)
+        if final_failure:
+            self.update_manual_review_statuses(
+                [
+                    {
+                        "article_id": article_id,
+                        "status": "discarded",
+                        "decided_at": timestamp,
+                    }
+                ]
+            )
 
     def fetch_pending_summaries(
         self,
@@ -1084,6 +1094,328 @@ class PostgresAdapter:
         with self._cursor() as cur:
             cur.execute(query, values)
 
+    # ------------------------------------------------------------------
+    # Manual reviews
+    # ------------------------------------------------------------------
+    def enqueue_manual_review(
+        self,
+        article_id: str,
+        *,
+        status: str = "pending",
+        rank: Optional[float] = None,
+        summary: Optional[str] = None,
+        notes: Optional[str] = None,
+        score: Optional[float] = None,
+        decided_by: Optional[str] = None,
+        decided_at: Optional[datetime] = None,
+    ) -> None:
+        if not article_id:
+            return
+        query = """
+            INSERT INTO manual_reviews (article_id, status, summary, rank, notes, score, decided_by, decided_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (article_id) DO NOTHING
+        """
+        with self._cursor() as cur:
+            cur.execute(
+                query,
+                (
+                    article_id,
+                    status or "pending",
+                    summary,
+                    rank,
+                    notes,
+                    score,
+                    decided_by,
+                    decided_at,
+                ),
+            )
+
+    def fetch_manual_reviews(
+        self,
+        *,
+        status: str,
+        limit: int,
+        offset: int,
+        only_ready: bool = False,
+        region: Optional[str] = None,
+        sentiment: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        limit = max(1, min(int(limit or 30), 200))
+        offset = max(0, int(offset or 0))
+        clauses = ["mr.status = %s"]
+        params: List[Any] = [status]
+        if only_ready:
+            clauses.append("ns.status = 'ready_for_export'")
+        if region in ("internal", "external"):
+            clauses.append("ns.is_beijing_related = %s")
+            params.append(True if region == "internal" else False)
+        if sentiment in ("positive", "negative"):
+            clauses.append("ns.sentiment_label = %s")
+            params.append(sentiment)
+        where_sql = " AND ".join(clauses)
+        base_params = list(params)
+        count_query = f"""
+            SELECT COUNT(*) AS total
+            FROM manual_reviews mr
+            JOIN news_summaries ns ON ns.article_id = mr.article_id
+            WHERE {where_sql}
+        """
+        query = f"""
+            SELECT
+                mr.article_id,
+                mr.status,
+                mr.summary AS manual_summary,
+                mr.rank AS manual_rank,
+                mr.notes AS manual_notes,
+                mr.score AS manual_score,
+                mr.decided_by,
+                mr.decided_at,
+                ns.title,
+                ns.llm_summary,
+                ns.score,
+                ns.content_markdown,
+                ns.url,
+                ns.source,
+                ns.publish_time_iso,
+                ns.publish_time,
+                ns.sentiment_label,
+                ns.sentiment_confidence,
+                ns.is_beijing_related,
+                ns.external_importance_score,
+                ns.external_importance_checked_at,
+                ns.score_details
+            FROM manual_reviews mr
+            JOIN news_summaries ns ON ns.article_id = mr.article_id
+            WHERE {where_sql}
+            ORDER BY mr.rank ASC NULLS LAST,
+                     ns.score DESC NULLS LAST,
+                     ns.publish_time_iso DESC NULLS LAST,
+                     mr.article_id ASC
+            LIMIT %s OFFSET %s
+        """
+        with self._cursor() as cur:
+            cur.execute(count_query, tuple(base_params))
+            total_row = cur.fetchone()
+            total = int(total_row["total"]) if total_row else 0
+            cur.execute(query, tuple(params + [limit, offset]))
+            rows = cur.fetchall()
+        items = [dict(row) for row in rows]
+        return items, total
+
+    def fetch_manual_pending_for_cluster(
+        self,
+        *,
+        region: Optional[str] = None,
+        sentiment: Optional[str] = None,
+        fetch_limit: int = 5000,
+    ) -> List[Dict[str, Any]]:
+        clauses = ["mr.status = 'pending'", "ns.status = 'ready_for_export'"]
+        params: List[Any] = []
+        if region in ("internal", "external"):
+            clauses.append("ns.is_beijing_related = %s")
+            params.append(True if region == "internal" else False)
+        if sentiment in ("positive", "negative"):
+            clauses.append("ns.sentiment_label = %s")
+            params.append(sentiment)
+        where_sql = " AND ".join(clauses)
+        query = f"""
+            SELECT
+                mr.article_id,
+                mr.summary AS manual_summary,
+                mr.rank AS manual_rank,
+                mr.notes AS manual_notes,
+                mr.score AS manual_score,
+                mr.decided_by,
+                mr.decided_at,
+                ns.title,
+                ns.llm_summary,
+                ns.score,
+                ns.content_markdown,
+                ns.url,
+                ns.source,
+                ns.publish_time_iso,
+                ns.publish_time,
+                ns.sentiment_label,
+                ns.sentiment_confidence,
+                ns.is_beijing_related,
+                ns.external_importance_score,
+                ns.external_importance_checked_at,
+                ns.score_details
+            FROM manual_reviews mr
+            JOIN news_summaries ns ON ns.article_id = mr.article_id
+            WHERE {where_sql}
+            ORDER BY mr.rank ASC NULLS LAST,
+                     ns.score DESC NULLS LAST,
+                     ns.publish_time_iso DESC NULLS LAST,
+                     mr.article_id ASC
+            LIMIT %s
+        """
+        with self._cursor() as cur:
+            cur.execute(query, tuple(params + [fetch_limit]))
+            rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
+    def manual_review_status_counts(self) -> Dict[str, int]:
+        counts: Dict[str, int] = {"pending": 0, "selected": 0, "backup": 0, "discarded": 0, "exported": 0}
+        query = """
+            SELECT status, COUNT(*) AS total
+            FROM manual_reviews
+            GROUP BY status
+        """
+        with self._cursor() as cur:
+            cur.execute(query)
+            for row in cur.fetchall():
+                status = str(row.get("status") or "").strip() or "pending"
+                try:
+                    counts[status] = int(row.get("total") or 0)
+                except Exception:
+                    counts[status] = 0
+        return counts
+
+    def manual_review_max_rank(self, status: str) -> float:
+        query = "SELECT COALESCE(MAX(rank), 0) AS max_rank FROM manual_reviews WHERE status = %s"
+        with self._cursor() as cur:
+            cur.execute(query, (status,))
+            row = cur.fetchone() or {}
+        try:
+            return float(row.get("max_rank") or 0.0)
+        except Exception:
+            return 0.0
+
+    def update_manual_review_statuses(
+        self,
+        updates: Sequence[Mapping[str, Any]],
+    ) -> int:
+        if not updates:
+            return 0
+        payload: List[Tuple[Any, ...]] = []
+        for item in updates:
+            article_id = str(item.get("article_id") or "").strip()
+            status = str(item.get("status") or "").strip()
+            if not article_id or not status:
+                continue
+            payload.append(
+                (
+                    status,
+                    item.get("rank"),
+                    item.get("decided_by"),
+                    item.get("decided_at"),
+                    article_id,
+                )
+            )
+        if not payload:
+            return 0
+        query = """
+            UPDATE manual_reviews
+            SET status = %s,
+                rank = %s,
+                decided_by = COALESCE(%s, decided_by),
+                decided_at = COALESCE(%s, decided_at),
+                updated_at = NOW()
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.executemany(query, payload)
+            return cur.rowcount
+
+    def reset_manual_reviews_to_pending(
+        self,
+        article_ids: Sequence[str],
+        *,
+        actor: Optional[str] = None,
+        decided_at: Optional[datetime] = None,
+    ) -> int:
+        target_ids = [str(aid).strip() for aid in article_ids or [] if str(aid).strip()]
+        if not target_ids:
+            return 0
+        timestamp = decided_at or datetime.now(timezone.utc)
+        payload = [(actor, timestamp, aid) for aid in target_ids]
+        query = """
+            UPDATE manual_reviews
+            SET status = 'pending',
+                rank = NULL,
+                decided_by = COALESCE(%s, decided_by),
+                decided_at = %s,
+                updated_at = NOW()
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.executemany(query, payload)
+            return cur.rowcount
+
+    def update_manual_review_summaries(
+        self,
+        edits: Mapping[str, Mapping[str, Any]],
+        *,
+        actor: Optional[str] = None,
+        decided_at: Optional[datetime] = None,
+    ) -> int:
+        if not edits:
+            return 0
+        timestamp = decided_at or datetime.now(timezone.utc)
+        payload: List[Tuple[Any, ...]] = []
+        for aid, edit in edits.items():
+            summary = edit.get("summary")
+            notes = edit.get("notes")
+            score = edit.get("score")
+            article_id = str(aid).strip()
+            if not article_id or summary is None:
+                continue
+            payload.append((summary, notes, score, actor, timestamp, article_id))
+        if not payload:
+            return 0
+        query = """
+            UPDATE manual_reviews
+            SET summary = %s,
+                notes = %s,
+                score = %s,
+                decided_by = COALESCE(%s, decided_by),
+                decided_at = %s,
+                updated_at = NOW()
+            WHERE article_id = %s
+        """
+        with self._cursor() as cur:
+            cur.executemany(query, payload)
+            return cur.rowcount
+
+    def fetch_manual_selected_for_export(self) -> List[Dict[str, Any]]:
+        query = """
+            SELECT
+                mr.article_id,
+                mr.summary AS manual_summary,
+                mr.rank AS manual_rank,
+                mr.notes AS manual_notes,
+                mr.score AS manual_score,
+                mr.decided_by,
+                mr.decided_at,
+                ns.title,
+                ns.llm_summary,
+                ns.llm_source,
+                ns.score,
+                ns.content_markdown,
+                ns.url,
+                ns.source,
+                ns.publish_time_iso,
+                ns.publish_time,
+                ns.sentiment_label,
+                ns.sentiment_confidence,
+                ns.is_beijing_related,
+                ns.external_importance_score,
+                ns.external_importance_checked_at
+            FROM manual_reviews mr
+            JOIN news_summaries ns ON ns.article_id = mr.article_id
+            WHERE mr.status = 'selected'
+            ORDER BY mr.rank ASC NULLS LAST,
+                     ns.score DESC NULLS LAST,
+                     ns.publish_time_iso DESC NULLS LAST,
+                     mr.article_id ASC
+        """
+        with self._cursor() as cur:
+            cur.execute(query)
+            rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
     def complete_external_filter(
         self,
         article_id: str,
@@ -1126,6 +1458,18 @@ class PostgresAdapter:
             cur.execute(query, values)
             if cur.rowcount != 1:
                 raise ValueError(f"Unable to update external filter status for {article_id}")
+        if passed:
+            self.enqueue_manual_review(article_id, status="pending")
+        else:
+            self.update_manual_review_statuses(
+                [
+                    {
+                        "article_id": article_id,
+                        "status": "discarded",
+                        "decided_at": timestamp,
+                    }
+                ]
+            )
 
     def mark_external_filter_failure(
         self,
@@ -1168,6 +1512,7 @@ class PostgresAdapter:
         """
         with self._cursor() as cur:
             cur.execute(query, values)
+
     def fetch_external_backfill_candidates(self, limit: int, since_date: Optional[date] = None) -> List[Dict[str, Any]]:
         if limit <= 0:
             return []

@@ -13,39 +13,6 @@ from src.adapters.title_cluster import cluster_titles
 logger = logging.getLogger(__name__)
 EXPORT_META_PATH = Path("outputs/manual_filter_export_meta.json")
 
-_SCHEMA_VERIFIED = False
-
-
-def _ensure_manual_filter_schema() -> None:
-    """
-    Make sure the columns used by the manual filter console exist.
-
-    This is lightweight and guarded to run only once per process. It prevents
-    silent UPDATE failures when a new database is missing the manual_* columns.
-    """
-    global _SCHEMA_VERIFIED
-    if _SCHEMA_VERIFIED:
-        return
-    adapter = get_adapter()
-    statements = [
-        "ALTER TABLE news_summaries ADD COLUMN IF NOT EXISTS manual_status VARCHAR(50) DEFAULT 'pending'",
-        "ALTER TABLE news_summaries ADD COLUMN IF NOT EXISTS manual_summary TEXT",
-        "ALTER TABLE news_summaries ADD COLUMN IF NOT EXISTS manual_rank DOUBLE PRECISION",
-        "ALTER TABLE news_summaries ADD COLUMN IF NOT EXISTS manual_decided_by VARCHAR(100)",
-        "ALTER TABLE news_summaries ADD COLUMN IF NOT EXISTS manual_decided_at TIMESTAMPTZ",
-        "UPDATE news_summaries SET manual_status = 'pending' WHERE manual_status IS NULL",
-        "CREATE INDEX IF NOT EXISTS news_summaries_manual_status_idx ON news_summaries(manual_status)",
-    ]
-    try:
-        with adapter._cursor() as cur:  # type: ignore[attr-defined]
-            for stmt in statements:
-                cur.execute(stmt)
-        _SCHEMA_VERIFIED = True
-        logger.debug("Manual filter schema verified/ensured")
-    except Exception as exc:  # pragma: no cover - defensive guard for prod environments
-        logger.warning("Manual filter schema check skipped: %s", exc)
-
-
 def _period_increment_for_template(template: str) -> int:
     return 1 if template == "zongbao" else 2
 
@@ -139,67 +106,21 @@ def _paginate_by_status(
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
 ) -> Dict[str, Any]:
-    _ensure_manual_filter_schema()
     adapter = get_adapter()
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
-    where_ready = "AND status = 'ready_for_export'" if only_ready else ""
-
-    conditions = []
-    params: List[Any] = [manual_status]
-    if region in ("internal", "external"):
-        conditions.append("is_beijing_related = %s")
-        params.append(True if region == "internal" else False)
-    if sentiment in ("positive", "negative"):
-        conditions.append("sentiment_label = %s")
-        params.append(sentiment)
-    extra_where = ""
-    if conditions:
-        extra_where = " AND " + " AND ".join(conditions)
-
-    query = f"""
-        SELECT
-            article_id,
-            title,
-            llm_summary,
-            manual_summary,
-            score,
-            source,
-            publish_time,
-            publish_time_iso,
-            url,
-            sentiment_label,
-            sentiment_confidence,
-            is_beijing_related,
-            external_importance_score,
-            manual_status,
-            score_details
-        FROM news_summaries
-        WHERE manual_status = %s
-          {where_ready}
-          {extra_where}
-        ORDER BY manual_rank ASC NULLS LAST,
-                 score DESC NULLS LAST,
-                 publish_time_iso DESC NULLS LAST,
-                 article_id ASC
-        LIMIT %s OFFSET %s
-    """
-    count_query = f"""
-        SELECT COUNT(*) AS total
-        FROM news_summaries
-        WHERE manual_status = %s
-          {where_ready}
-          {extra_where}
-    """
-    with adapter._cursor() as cur:  # type: ignore[attr-defined]
-        cur.execute(count_query, tuple(params))
-        total_row = cur.fetchone()
-        total = int(total_row["total"]) if total_row else 0
-        cur.execute(query, tuple(params + [limit, offset]))
-        rows = cur.fetchall()
+    rows, total = adapter.fetch_manual_reviews(  # type: ignore[attr-defined]
+        status=manual_status,
+        limit=limit,
+        offset=offset,
+        only_ready=only_ready,
+        region=region,
+        sentiment=sentiment,
+    )
     items: List[Dict[str, Any]] = []
-    for row in rows:
-        record = dict(row)
+    for record in rows:
+        record = dict(record)
+        record["manual_status"] = record.get("status") or manual_status
         record["summary"] = record.get("manual_summary") or record.get("llm_summary") or ""
         record["bonus_keywords"] = _bonus_keywords(record.get("score_details"))
         items.append(record)
@@ -245,47 +166,12 @@ def _candidate_rank_key_by_record(record: Dict[str, Any]) -> Tuple[float, float,
 
 
 def _collect_pending(region: Optional[str], sentiment: Optional[str], fetch_limit: int = 5000) -> List[Dict[str, Any]]:
-    _ensure_manual_filter_schema()
     adapter = get_adapter()
-    conditions = ["manual_status = 'pending'", "status = 'ready_for_export'"]
-    params: List[Any] = []
-    if region in ("internal", "external"):
-        conditions.append("is_beijing_related = %s")
-        params.append(True if region == "internal" else False)
-    if sentiment in ("positive", "negative"):
-        conditions.append("sentiment_label = %s")
-        params.append(sentiment)
-    where_clause = " AND ".join(conditions)
-    query = f"""
-        SELECT
-            article_id,
-            title,
-            llm_summary,
-            manual_summary,
-            manual_rank,
-            score,
-            content_markdown,
-            url,
-            source,
-            publish_time_iso,
-            publish_time,
-            sentiment_label,
-            sentiment_confidence,
-            is_beijing_related,
-            external_importance_score,
-            external_importance_checked_at,
-            score_details
-        FROM news_summaries
-        WHERE {where_clause}
-        ORDER BY manual_rank ASC NULLS LAST,
-                 score DESC NULLS LAST,
-                 publish_time_iso DESC NULLS LAST,
-                 article_id ASC
-        LIMIT %s
-    """
-    with adapter._cursor() as cur:  # type: ignore[attr-defined]
-        cur.execute(query, tuple(params + [fetch_limit]))
-        rows = cur.fetchall()
+    rows = adapter.fetch_manual_pending_for_cluster(  # type: ignore[attr-defined]
+        region=region,
+        sentiment=sentiment,
+        fetch_limit=fetch_limit,
+    )
     records: List[Dict[str, Any]] = []
     for row in rows:
         record = dict(row)
@@ -409,24 +295,8 @@ def list_discarded(*, limit: int = 30, offset: int = 0) -> Dict[str, Any]:
 
 
 def status_counts() -> Dict[str, int]:
-    _ensure_manual_filter_schema()
     adapter = get_adapter()
-    query = """
-        SELECT manual_status, COUNT(*) AS total
-        FROM news_summaries
-        GROUP BY manual_status
-    """
-    with adapter._cursor() as cur:  # type: ignore[attr-defined]
-        cur.execute(query)
-        rows = cur.fetchall()
-    counts: Dict[str, int] = {"pending": 0, "selected": 0, "backup": 0, "discarded": 0, "exported": 0}
-    for row in rows:
-        status = str(row.get("manual_status") or "").strip() or "pending"
-        try:
-            counts[status] = int(row.get("total") or 0)
-        except Exception:
-            counts[status] = 0
-    return counts
+    return adapter.manual_review_status_counts()  # type: ignore[attr-defined]
 
 
 def _apply_decision(
@@ -436,35 +306,28 @@ def _apply_decision(
     actor: Optional[str] = None,
 ) -> int:
     adapter = get_adapter()
-    payload = []
     now_ts = datetime.now(timezone.utc)
+    payload: List[Dict[str, Any]] = []
     for article_id in ids:
-        payload.append((status, actor, now_ts, article_id))
+        if not article_id:
+            continue
+        payload.append(
+            {
+                "article_id": article_id,
+                "status": status,
+                "rank": None,
+                "decided_by": actor,
+                "decided_at": now_ts,
+            }
+        )
     if not payload:
         return 0
-    query = """
-        UPDATE news_summaries
-        SET manual_status = %s,
-            manual_decided_by = COALESCE(%s, manual_decided_by),
-            manual_decided_at = %s,
-            updated_at = NOW()
-        WHERE article_id = %s
-    """
-    with adapter._cursor() as cur:  # type: ignore[attr-defined]
-        cur.executemany(query, payload)
-        return cur.rowcount
+    return adapter.update_manual_review_statuses(payload)  # type: ignore[attr-defined]
 
 
 def _next_rank(status: str) -> float:
     adapter = get_adapter()
-    query = "SELECT COALESCE(MAX(manual_rank), 0) AS max_rank FROM news_summaries WHERE manual_status = %s"
-    with adapter._cursor() as cur:  # type: ignore[attr-defined]
-        cur.execute(query, (status,))
-        row = cur.fetchone() or {}
-    try:
-        return float(row.get("max_rank") or 0.0)
-    except Exception:
-        return 0.0
+    return adapter.manual_review_max_rank(status)  # type: ignore[attr-defined]
 
 
 def _apply_ranked_decision(
@@ -476,25 +339,24 @@ def _apply_ranked_decision(
 ) -> int:
     adapter = get_adapter()
     now_ts = datetime.now(timezone.utc)
-    payload = []
+    payload: List[Dict[str, Any]] = []
     rank = start_rank
     for article_id in ids:
-        payload.append((status, rank, actor, now_ts, article_id))
+        if not article_id:
+            continue
+        payload.append(
+            {
+                "article_id": article_id,
+                "status": status,
+                "rank": rank,
+                "decided_by": actor,
+                "decided_at": now_ts,
+            }
+        )
         rank += 1
     if not payload:
         return 0
-    query = """
-        UPDATE news_summaries
-        SET manual_status = %s,
-            manual_rank = %s,
-            manual_decided_by = COALESCE(%s, manual_decided_by),
-            manual_decided_at = %s,
-            updated_at = NOW()
-        WHERE article_id = %s
-    """
-    with adapter._cursor() as cur:  # type: ignore[attr-defined]
-        cur.executemany(query, payload)
-        return cur.rowcount
+    return adapter.update_manual_review_statuses(payload)  # type: ignore[attr-defined]
 
 
 def bulk_decide(
@@ -505,7 +367,6 @@ def bulk_decide(
     pending_ids: Sequence[str] = (),
     actor: Optional[str] = None,
 ) -> Dict[str, int]:
-    _ensure_manual_filter_schema()
     selected = _normalize_ids(selected_ids)
     backups = _normalize_ids(backup_ids)
     discarded = _normalize_ids(discarded_ids)
@@ -558,89 +419,61 @@ def update_ranks(
     """
     Persist manual ordering for review lists and keep statuses in sync with list membership.
     """
-    _ensure_manual_filter_schema()
     adapter = get_adapter()
     now_ts = datetime.now(timezone.utc)
-    payload: List[Tuple[Any, ...]] = []
+    payload: List[Dict[str, Any]] = []
     selected_ids = _normalize_ids(selected_order)
     backup_ids = _normalize_ids(backup_order)
 
     for index, aid in enumerate(selected_ids, start=1):
-        payload.append(("selected", float(index), actor, now_ts, aid))
+        payload.append(
+            {
+                "article_id": aid,
+                "status": "selected",
+                "rank": float(index),
+                "decided_by": actor,
+                "decided_at": now_ts,
+            }
+        )
     for index, aid in enumerate(backup_ids, start=1):
-        payload.append(("backup", float(index), actor, now_ts, aid))
+        payload.append(
+            {
+                "article_id": aid,
+                "status": "backup",
+                "rank": float(index),
+                "decided_by": actor,
+                "decided_at": now_ts,
+            }
+        )
 
     if not payload:
         return {"selected": 0, "backup": 0}
 
-    query = """
-        UPDATE news_summaries
-        SET manual_status = %s,
-            manual_rank = %s,
-            manual_decided_by = COALESCE(%s, manual_decided_by),
-            manual_decided_at = %s,
-            updated_at = NOW()
-        WHERE article_id = %s
-    """
-    with adapter._cursor() as cur:  # type: ignore[attr-defined]
-        cur.executemany(query, payload)
-        logger.info(
-            "Updated manual ranks: selected=%s backup=%s rows=%s",
-            len(selected_ids),
-            len(backup_ids),
-            cur.rowcount,
-        )
-        return {"selected": len(selected_ids), "backup": len(backup_ids), "updated_rows": cur.rowcount}
+    updated_rows = adapter.update_manual_review_statuses(payload)  # type: ignore[attr-defined]
+    logger.info(
+        "Updated manual ranks: selected=%s backup=%s rows=%s",
+        len(selected_ids),
+        len(backup_ids),
+        updated_rows,
+    )
+    return {"selected": len(selected_ids), "backup": len(backup_ids), "updated_rows": updated_rows}
 
 
 def reset_to_pending(ids: Sequence[str], *, actor: Optional[str] = None) -> int:
-    _ensure_manual_filter_schema()
     target_ids = _normalize_ids(ids)
     if not target_ids:
         return 0
     logger.info("Resetting to pending: count=%s actor=%s", len(target_ids), actor)
     adapter = get_adapter()
-    now_ts = datetime.now(timezone.utc)
-    payload = []
-    for aid in target_ids:
-        payload.append((actor, now_ts, aid))
-    query = """
-        UPDATE news_summaries
-        SET manual_status = 'pending',
-            manual_decided_by = COALESCE(%s, manual_decided_by),
-            manual_decided_at = %s,
-            updated_at = NOW()
-        WHERE article_id = %s
-    """
-    with adapter._cursor() as cur:  # type: ignore[attr-defined]
-        cur.executemany(query, payload)
-        return cur.rowcount
+    return adapter.reset_manual_reviews_to_pending(target_ids, actor=actor)  # type: ignore[attr-defined]
 
 
 def save_edits(edits: Dict[str, Dict[str, Any]], *, actor: Optional[str] = None) -> int:
-    _ensure_manual_filter_schema()
     adapter = get_adapter()
-    now_ts = datetime.now(timezone.utc)
-    payload = []
-    for aid, edit in edits.items():
-        summary = edit.get("summary")
-        if summary is None:
-            continue
-        payload.append((summary, actor, now_ts, aid))
-    if not payload:
+    if not edits:
         return 0
-    logger.info("Saving manual edits: count=%s actor=%s", len(payload), actor)
-    query = """
-        UPDATE news_summaries
-        SET manual_summary = %s,
-            manual_decided_by = COALESCE(%s, manual_decided_by),
-            manual_decided_at = %s,
-            updated_at = NOW()
-        WHERE article_id = %s
-    """
-    with adapter._cursor() as cur:  # type: ignore[attr-defined]
-        cur.executemany(query, payload)
-        return cur.rowcount
+    logger.info("Saving manual edits: count=%s actor=%s", len(edits), actor)
+    return adapter.update_manual_review_summaries(edits, actor=actor)  # type: ignore[attr-defined]
 
 
 def export_batch(
@@ -658,36 +491,8 @@ def export_batch(
     if dry_run:
         mark_exported = False
 
-    _ensure_manual_filter_schema()
     adapter = get_adapter()
-    fetch_query = """
-        SELECT
-            article_id,
-            title,
-            llm_summary,
-            manual_summary,
-            manual_rank,
-            score,
-            content_markdown,
-            url,
-            source,
-            publish_time_iso,
-            publish_time,
-            sentiment_label,
-            sentiment_confidence,
-            is_beijing_related,
-            external_importance_score,
-            external_importance_checked_at
-        FROM news_summaries
-        WHERE manual_status = 'selected'
-        ORDER BY manual_rank ASC NULLS LAST,
-                 score DESC NULLS LAST,
-                 publish_time_iso DESC NULLS LAST,
-                 article_id ASC
-    """
-    with adapter._cursor() as cur:  # type: ignore[attr-defined]
-        cur.execute(fetch_query)
-        rows = cur.fetchall()
+    rows = adapter.fetch_manual_selected_for_export()  # type: ignore[attr-defined]
     items: List[Dict[str, Any]] = []
     candidates: List[Tuple[ExportCandidate, str]] = []
     for row in rows:

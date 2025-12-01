@@ -113,7 +113,7 @@ def test_process_beijing_gate_passes_internal_category():
     with patch(
         "src.workers.external_filter.as_completed", lambda futures: list(futures)
     ):
-        confirmed, rerouted, failures = external_filter._process_beijing_gate(
+        confirmed, rerouted, failures, promoted = external_filter._process_beijing_gate(
             adapter,
             [candidate],
             executor,
@@ -124,6 +124,7 @@ def test_process_beijing_gate_passes_internal_category():
     assert confirmed == 1
     assert rerouted == 0
     assert failures == 0
+    assert promoted == 1
     adapter.complete_beijing_gate.assert_called_once()
     kwargs = adapter.complete_beijing_gate.call_args.kwargs
     assert kwargs["candidate_category"] == "internal_positive"
@@ -144,7 +145,7 @@ def test_process_beijing_gate_reroutes_external_category():
     with patch(
         "src.workers.external_filter.as_completed", lambda futures: list(futures)
     ):
-        confirmed, rerouted, failures = external_filter._process_beijing_gate(
+        confirmed, rerouted, failures, promoted = external_filter._process_beijing_gate(
             adapter,
             [candidate],
             executor,
@@ -155,6 +156,7 @@ def test_process_beijing_gate_reroutes_external_category():
     assert confirmed == 0
     assert rerouted == 1
     assert failures == 0
+    assert promoted == 0
     adapter.complete_beijing_gate.assert_called_once()
     kwargs = adapter.complete_beijing_gate.call_args.kwargs
     assert kwargs["candidate_category"] == "external_positive"

@@ -68,10 +68,11 @@ def _process_beijing_gate(
     *,
     llm_retries: int,
     max_failures: int,
-) -> Tuple[int, int, int]:
+) -> Tuple[int, int, int, int]:
     confirmed = 0
     rerouted = 0
     failures = 0
+    promoted = 0
 
     future_map = {
         executor.submit(call_beijing_gate, candidate, retries=llm_retries): candidate
@@ -101,6 +102,7 @@ def _process_beijing_gate(
                     candidate_category=category_label,
                 )
                 confirmed += 1
+                promoted += 1
                 log_info(WORKER, f"Gate OK {candidate.article_id}: confirmed Beijing")
             elif decision.is_beijing_related is False:
                 category_label = determine_candidate_category(False, candidate.sentiment_label)
@@ -146,6 +148,7 @@ def _process_beijing_gate(
                     WORKER,
                     f"Gate FALLBACK {candidate.article_id}: fail_count={new_fail_count}, defaulting to ready_for_export",
                 )
+                promoted += 1
             else:
                 adapter.mark_beijing_gate_failure(
                     candidate.article_id,
@@ -153,7 +156,7 @@ def _process_beijing_gate(
                     error=str(exc),
                 )
                 log_error(WORKER, candidate.article_id, exc)
-    return confirmed, rerouted, failures
+    return confirmed, rerouted, failures, promoted
 
 
 def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
@@ -184,6 +187,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
     gate_confirmed = 0
     gate_rerouted = 0
     gate_failures = 0
+    promoted_ready = 0
 
     with worker_session(WORKER, limit=limit):
         with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -198,7 +202,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                     max_failures=beijing_gate_max_failures,
                 )
                 if beijing_candidates:
-                    confirmed, rerouted, failures = _process_beijing_gate(
+                    confirmed, rerouted, failures, promoted = _process_beijing_gate(
                         adapter,
                         beijing_candidates,
                         executor,
@@ -208,6 +212,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                     gate_confirmed += confirmed
                     gate_rerouted += rerouted
                     gate_failures += failures
+                    promoted_ready += promoted
                     continue
                 candidates = adapter.fetch_external_filter_candidates(
                     fetch_size,
@@ -249,6 +254,8 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                             WORKER,
                             f"{category.upper()} OK {candidate.article_id}: score={score_value} -> {state}",
                         )
+                        if passed:
+                            promoted_ready += 1
                         processed += 1
                     except Exception as exc:
                         failed += 1
@@ -279,6 +286,8 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                 WORKER,
                 f"Beijing gate summary: confirmed={gate_confirmed}, rerouted={gate_rerouted}, failures={gate_failures}",
             )
+
+        log_info(WORKER, f"Promoted {promoted_ready} articles to ready_for_export")
 
         log_summary(
             WORKER,

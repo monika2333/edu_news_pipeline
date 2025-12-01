@@ -148,6 +148,7 @@ create table if not exists public.news_summaries (
     url text,
     content_markdown text,
     llm_summary text,
+    llm_source text,
     score numeric(6,3),
     raw_relevance_score numeric(6,3),
     keyword_bonus_score numeric(6,3),
@@ -314,6 +315,7 @@ create trigger news_summaries_set_updated_at
 comment on column public.news_summaries.is_beijing_related is 'True when the article is related to Beijing; NULL when not evaluated';
 comment on column public.news_summaries.is_beijing_related_llm is 'True when the LLM confirms Beijing relevance; NULL when not evaluated';
 comment on column public.news_summaries.beijing_gate_checked_at is 'Timestamp when the LLM Beijing gate returned a definitive result';
+comment on column public.news_summaries.llm_source is 'Identifier for the LLM model used to generate the summary.';
 
 
 drop trigger if exists brief_batches_set_updated_at on public.brief_batches;

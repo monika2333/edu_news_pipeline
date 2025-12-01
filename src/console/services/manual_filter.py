@@ -50,7 +50,7 @@ def _period_increment_for_template(template: str) -> int:
     return 1 if template == "zongbao" else 2
 
 
-DEFAULT_CLUSTER_THRESHOLD = 0.82
+DEFAULT_CLUSTER_THRESHOLD = 0.9
 
 
 def _load_export_meta() -> Dict[str, Any]:

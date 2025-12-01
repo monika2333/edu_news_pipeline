@@ -76,4 +76,4 @@
 2) 改适配器：添加新方法并替换旧的手工字段写入点，保持接口幂等/事务性。✅ 已完成（新增 manual_reviews 读写接口；外部过滤结果同步入队/丢弃）
 3) 改服务层：`manual_filter` 只依赖新表；移除 `_ensure_manual_filter_schema` 的列创建逻辑。✅ 已完成（读取/决策/导出均走 manual_reviews）
 4) 改控制台/测试：`dashboard.py`、相关路由与测试用例同步更新。✅ 已完成（手工筛选服务测试改为基于 manual_reviews 假数据）
-5) 清理：删除旧列，更新 `database/schema.sql`。
+5) 清理：删除旧列，更新 `database/schema.sql`。✅ 已完成（新迁移移除 manual_* 列；schema 增加 manual_reviews、移除旧列/索引）

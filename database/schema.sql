@@ -174,12 +174,6 @@ create table if not exists public.news_summaries (
     external_importance_raw jsonb,
     external_filter_attempted_at timestamptz,
     external_filter_fail_count integer not null default 0,
-    manual_status text not null default 'pending',
-    manual_summary text,
-    manual_score numeric(6,3),
-    manual_notes text,
-    manual_decided_by text,
-    manual_decided_at timestamptz,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
@@ -207,8 +201,30 @@ create index if not exists news_summaries_beijing_gate_idx
     on public.news_summaries (beijing_gate_attempted_at, summary_generated_at)
     where status = 'pending_beijing_gate' and summary_status = 'completed';
 
-create index if not exists news_summaries_manual_status_idx
-    on public.news_summaries (manual_status);
+-- ---------------------------------------------------------------------------
+-- Manual reviews (decoupled from summaries)
+-- ---------------------------------------------------------------------------
+create table if not exists public.manual_reviews (
+    id uuid primary key default gen_random_uuid(),
+    article_id text not null references public.news_summaries(article_id) on delete cascade,
+    status text not null check (status in ('pending','selected','backup','discarded','exported')),
+    summary text,
+    rank double precision,
+    notes text,
+    score numeric(6,3),
+    decided_by text,
+    decided_at timestamptz,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (article_id)
+);
+
+create index if not exists manual_reviews_pending_idx
+    on public.manual_reviews (status, rank asc nulls last, article_id)
+    where status = 'pending';
+
+create index if not exists manual_reviews_status_idx
+    on public.manual_reviews (status);
 
 
 -- ---------------------------------------------------------------------------

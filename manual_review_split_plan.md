@@ -72,7 +72,7 @@
 - 迁移校验：回填后行数 ≈ 预期（`ready_for_export` pending 数 + 已经人工处理的行）；部分 spot-check JOIN 数据与原表手工列一致。
 
 ## 代码改动指引（落地顺序）
-1) 写迁移：新增 `database/migrations/XXXX_manual_reviews.sql`（建表+索引+回填）。
+1) 写迁移：新增 `database/migrations/XXXX_manual_reviews.sql`（建表+索引+回填）。✅ 已完成（20251201093000_manual_reviews_split.sql）
 2) 改适配器：添加新方法并替换旧的手工字段写入点，保持接口幂等/事务性。
 3) 改服务层：`manual_filter` 只依赖新表；移除 `_ensure_manual_filter_schema` 的列创建逻辑。
 4) 改控制台/测试：`dashboard.py`、相关路由与测试用例同步更新。

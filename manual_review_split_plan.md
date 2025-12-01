@@ -25,7 +25,7 @@
       unique (article_id)
   );
   create index if not exists manual_reviews_pending_idx
-      on manual_reviews (status, rank desc nulls last, article_id)
+      on manual_reviews (status, rank asc nulls last, article_id)
       where status = 'pending';
   create index if not exists manual_reviews_status_idx
       on manual_reviews (status);
@@ -34,7 +34,7 @@
 ## 流程调整（设计稿）
 - 入队：当文章通过外部过滤进入 `ready_for_export`（当前在 `db_postgres.complete_external_filter`），如果需要人工审阅则 `INSERT ... ON CONFLICT DO NOTHING` 到 `manual_reviews`（`status='pending'`，可同时带初始 `rank`）。只要未进入人工流程则不建行。
 - 队列读取 / 聚类：`manual_filter.list_candidates/cluster_pending` 改为从 `manual_reviews` 取 `status='pending'` 并 JOIN `news_summaries` 获取标题、情感、地域等，再按现有排序规则工作。
-- 批量决策 / 排序：`bulk_decide`、`update_ranks`、`reset_to_pending` 等改写为更新 `manual_reviews`，并维护 `rank/decided_by/decided_at`。如需要把最终摘要用于导出，可在写入 `summary` 时同步写回 `news_summaries.manual_summary` 或在查询导出时 JOIN。
+- 批量决策 / 排序：`bulk_decide`、`update_ranks`、`reset_to_pending` 等改写为更新 `manual_reviews`，并维护 `rank/decided_by/decided_at`。导出/展示时直接使用 `manual_reviews.summary` 与主表 JOIN，不再回写旧列。
 - 导出：`export_batch` 改为从 `manual_reviews` 取 `status='selected'`（JOIN 主表拉取文章信息）。导出后将 `manual_reviews.status` 更新为 `exported`。
 - 自动丢弃：`complete_external_filter` / `mark_external_filter_failure` 等不再改 `news_summaries.manual_status`，而是若存在排队行则更新为 `discarded`；未入队则无需建行。
 ## 迁移步骤（零停机串行）

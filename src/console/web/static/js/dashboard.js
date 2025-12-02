@@ -30,8 +30,6 @@ const elements = {
     exportTemplate: document.getElementById('export-template'),
     exportPeriod: document.getElementById('export-period'),
     exportTotal: document.getElementById('export-total'),
-    exportPreviewToggle: document.getElementById('export-preview'),
-    exportMarkToggle: document.getElementById('export-mark'),
     exportPreviewBtn: document.getElementById('btn-export-preview'),
     exportConfirmBtn: document.getElementById('btn-export-confirm'),
     reviewViewSelect: document.getElementById('review-view-select'),
@@ -87,9 +85,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadFilterData();
             });
         });
-    }
-    if (elements.exportPreviewToggle) {
-        elements.exportPreviewToggle.addEventListener('change', syncPreviewToggleState);
     }
     if (elements.exportPreviewBtn) {
         elements.exportPreviewBtn.addEventListener('click', () => triggerExport(true));
@@ -855,10 +850,6 @@ window.restoreToBackup = async function (id) {
 // --- Export Logic ---
 
 async function openExportModal() {
-    if (elements.exportPreviewToggle) {
-        elements.exportPreviewToggle.checked = true;
-        syncPreviewToggleState();
-    }
     elements.modal.classList.add('active');
     await triggerExport(true);
 }
@@ -873,18 +864,6 @@ function copyExportText() {
     showToast('Copied to clipboard');
 }
 
-function syncPreviewToggleState() {
-    const isPreview = elements.exportPreviewToggle && elements.exportPreviewToggle.checked;
-    if (elements.exportMarkToggle) {
-        elements.exportMarkToggle.disabled = isPreview;
-        if (isPreview) {
-            elements.exportMarkToggle.checked = false;
-        } else if (!elements.exportMarkToggle.checked) {
-            elements.exportMarkToggle.checked = true;
-        }
-    }
-}
-
 function buildExportPayload(dryRun) {
     const tag = new Date().toISOString().split('T')[0];
     const payload = {
@@ -893,7 +872,7 @@ function buildExportPayload(dryRun) {
         period: undefined,
         total_period: undefined,
         dry_run: dryRun,
-        mark_exported: !dryRun && elements.exportMarkToggle ? elements.exportMarkToggle.checked : false,
+        mark_exported: !dryRun,
     };
     if (elements.exportPeriod && elements.exportPeriod.value) {
         const val = Number(elements.exportPeriod.value);

@@ -559,6 +559,7 @@ function initReviewSortable() {
         group: 'review-order',
         animation: 150,
         handle: isMobileSort ? undefined : '.drag-handle',
+        ghostClass: 'review-ghost',
         forceFallback: true,
         fallbackOnBody: true,
         onEnd: persistReviewOrder,

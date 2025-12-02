@@ -561,6 +561,12 @@ h1 {
     min-width: 140px;
 }
 
+.review-ghost {
+    opacity: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+
 .review-grid.single-view {
     grid-template-columns: 1fr;
 }

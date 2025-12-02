@@ -187,7 +187,8 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
     gate_confirmed = 0
     gate_rerouted = 0
     gate_failures = 0
-    promoted_ready = 0
+    gate_ready = 0
+    filter_ready = 0
 
     with worker_session(WORKER, limit=limit):
         with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -212,7 +213,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                     gate_confirmed += confirmed
                     gate_rerouted += rerouted
                     gate_failures += failures
-                    promoted_ready += promoted
+                    gate_ready += promoted
                     continue
                 candidates = adapter.fetch_external_filter_candidates(
                     fetch_size,
@@ -255,7 +256,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                             f"{category.upper()} OK {candidate.article_id}: score={score_value} -> {state}",
                         )
                         if passed:
-                            promoted_ready += 1
+                            filter_ready += 1
                         processed += 1
                     except Exception as exc:
                         failed += 1
@@ -287,7 +288,11 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                 f"Beijing gate summary: confirmed={gate_confirmed}, rerouted={gate_rerouted}, failures={gate_failures}",
             )
 
-        log_info(WORKER, f"Promoted {promoted_ready} articles to ready_for_export")
+        total_ready = gate_ready + filter_ready
+        log_info(
+            WORKER,
+            f"Promoted {total_ready} articles to ready_for_export (beijing_gate={gate_ready}, external_filter={filter_ready})",
+        )
 
         log_summary(
             WORKER,

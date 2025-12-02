@@ -546,7 +546,10 @@ h1 {
 }
 
 .review-grid.compact-mode .summary-box,
-.review-grid.compact-mode .meta-row {
+.review-grid.compact-mode .meta-row,
+.review-grid.compact-mode .status-select,
+.review-grid.compact-mode .review-select-wrap,
+.review-grid.compact-mode .source-box {
     display: none;
 }
 

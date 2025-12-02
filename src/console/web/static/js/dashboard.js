@@ -39,7 +39,6 @@ const elements = {
         pending: document.getElementById('stat-pending'),
         selected: document.getElementById('stat-selected'),
         backup: document.getElementById('stat-backup'),
-        discarded: document.getElementById('stat-discarded'),
         exported: document.getElementById('stat-exported')
     },
     modal: document.getElementById('export-modal'),

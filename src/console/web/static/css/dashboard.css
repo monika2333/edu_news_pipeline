@@ -444,6 +444,27 @@ h1 {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
+.review-view-toggle {
+    display: none;
+    align-items: center;
+    gap: 8px;
+}
+
+.review-view-toggle label {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.review-view-select {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: #ffffff;
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
 /* Review Grid */
 .review-grid {
     display: grid;
@@ -535,6 +556,19 @@ h1 {
 
 .review-grid.compact-mode .status-select {
     min-width: 140px;
+}
+
+.review-grid.single-view {
+    grid-template-columns: 1fr;
+}
+
+.review-grid.single-view .review-col {
+    display: none;
+}
+
+.review-grid.single-view[data-view="selected"] .review-col.selected-col,
+.review-grid.single-view[data-view="backup"] .review-col.backup-col {
+    display: block;
 }
 
 /* Modal */
@@ -757,6 +791,15 @@ h1 {
 
     .review-toolbar .bulk-select,
     .review-toolbar button {
+        width: 100%;
+    }
+
+    .review-view-toggle {
+        display: flex;
+        width: 100%;
+    }
+
+    .review-view-select {
         width: 100%;
     }
 

@@ -7,11 +7,13 @@ let state = {
     discardPage: 1,
     actor: localStorage.getItem('actor') || '',
     currentTab: 'filter',
-    filterCategory: 'internal_positive'
+    filterCategory: 'internal_positive',
+    reviewView: 'selected'
 };
 
 // UI mode
 let isSortMode = false;
+const MOBILE_REVIEW_BREAKPOINT = 768;
 
 // DOM Elements
 const elements = {
@@ -32,6 +34,7 @@ const elements = {
     exportMarkToggle: document.getElementById('export-mark'),
     exportPreviewBtn: document.getElementById('btn-export-preview'),
     exportConfirmBtn: document.getElementById('btn-export-confirm'),
+    reviewViewSelect: document.getElementById('review-view-select'),
     stats: {
         pending: document.getElementById('stat-pending'),
         selected: document.getElementById('stat-selected'),
@@ -72,6 +75,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (elements.reviewBulkStatus) {
         elements.reviewBulkStatus.addEventListener('change', applyReviewBulkStatus);
     }
+    if (elements.reviewViewSelect) {
+        elements.reviewViewSelect.addEventListener('change', handleReviewViewChange);
+    }
     if (elements.filterTabButtons && elements.filterTabButtons.length) {
         elements.filterTabButtons.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -95,6 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Pagination listeners (delegated or specific)
     setupPagination();
+    window.addEventListener('resize', applyReviewViewMode);
 });
 
 function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) {
@@ -495,6 +502,7 @@ function renderReviewGrid(selectedItems, backupItems) {
     initReviewSortable();
     applySortModeState();
     bindReviewSelectionControls();
+    applyReviewViewMode();
 }
 
 function applySortModeState() {
@@ -507,6 +515,7 @@ function applySortModeState() {
         toggleBtn.classList.toggle('active', isSortMode);
         toggleBtn.innerHTML = `<span class="icon">⇅</span> ${isSortMode ? '退出排序' : '排序模式'}`;
     }
+    applyReviewViewMode();
 }
 
 function toggleSortMode() {
@@ -585,7 +594,8 @@ function bindReviewSelectionControls() {
 function updateReviewSelectAllState() {
     const selectAll = elements.reviewSelectAll;
     if (!selectAll) return;
-    const checkboxes = elements.reviewList.querySelectorAll('.review-select');
+    const scope = getActiveReviewContainer();
+    const checkboxes = scope.querySelectorAll('.review-select');
     const total = checkboxes.length;
     const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
     selectAll.indeterminate = checkedCount > 0 && checkedCount < total;
@@ -593,7 +603,8 @@ function updateReviewSelectAllState() {
 }
 
 function toggleReviewSelectAll(checked) {
-    const checkboxes = elements.reviewList.querySelectorAll('.review-select');
+    const scope = getActiveReviewContainer();
+    const checkboxes = scope.querySelectorAll('.review-select');
     checkboxes.forEach(cb => {
         cb.checked = checked;
     });
@@ -604,7 +615,8 @@ function applyReviewBulkStatus() {
     if (!elements.reviewBulkStatus) return;
     const value = elements.reviewBulkStatus.value;
     if (!value) return;
-    const targets = elements.reviewList.querySelectorAll('.review-select:checked');
+    const scope = getActiveReviewContainer();
+    const targets = scope.querySelectorAll('.review-select:checked');
     targets.forEach(cb => {
         const card = cb.closest('.article-card');
         if (!card) return;
@@ -616,6 +628,43 @@ function applyReviewBulkStatus() {
     });
     elements.reviewBulkStatus.value = '';
     updateReviewSelectAllState();
+}
+
+function handleReviewViewChange(e) {
+    const value = e.target.value || 'selected';
+    state.reviewView = value;
+    applyReviewViewMode();
+}
+
+function applyReviewViewMode() {
+    const grid = document.querySelector('#review-list .review-grid');
+    const wrapper = document.querySelector('.review-view-toggle');
+    const select = elements.reviewViewSelect;
+    if (!grid) return;
+    const isMobile = window.innerWidth <= MOBILE_REVIEW_BREAKPOINT;
+    if (select) {
+        select.value = state.reviewView;
+    }
+    if (isMobile) {
+        grid.classList.add('single-view');
+        grid.dataset.view = state.reviewView || 'selected';
+        if (wrapper) wrapper.style.display = '';
+    } else {
+        grid.classList.remove('single-view');
+        grid.removeAttribute('data-view');
+        if (wrapper) wrapper.style.display = 'none';
+    }
+}
+
+function getActiveReviewContainer() {
+    const grid = document.querySelector('#review-list .review-grid');
+    if (!grid) return elements.reviewList;
+    const isSingle = grid.classList.contains('single-view');
+    if (!isSingle) return elements.reviewList;
+    const view = grid.dataset.view === 'backup' ? 'backup' : 'selected';
+    const selector = view === 'backup' ? '.review-col.backup-col' : '.review-col.selected-col';
+    const col = grid.querySelector(selector);
+    return col || elements.reviewList;
 }
 
 async function persistReviewOrder() {

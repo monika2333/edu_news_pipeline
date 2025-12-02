@@ -554,10 +554,11 @@ function initReviewSortable() {
     const backupList = document.querySelector('.review-col.backup-col .review-items');
     if (!selectedList || !backupList) return;
 
+    const isMobileSort = window.innerWidth <= MOBILE_REVIEW_BREAKPOINT;
     const options = {
         group: 'review-order',
         animation: 150,
-        handle: '.drag-handle',
+        handle: isMobileSort ? undefined : '.drag-handle',
         forceFallback: true,
         fallbackOnBody: true,
         onEnd: persistReviewOrder,

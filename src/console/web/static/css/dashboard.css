@@ -814,6 +814,10 @@ h1 {
         width: 100%;
     }
 
+    .review-grid.compact-mode .drag-handle {
+        display: none;
+    }
+
     .pagination {
         display: flex;
         align-items: center;

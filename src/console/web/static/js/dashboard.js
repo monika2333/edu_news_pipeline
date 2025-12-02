@@ -928,6 +928,9 @@ async function refreshPreviewAndCopy() {
 async function confirmExportAndCopy() {
     await triggerExport(false);
     await copyPreviewText();
+    if (state.currentTab === 'review') {
+        loadReviewData();
+    }
 }
 
 // --- Helpers ---

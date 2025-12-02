@@ -1112,8 +1112,8 @@ class PostgresAdapter:
         if not article_id:
             return
         query = """
-            INSERT INTO manual_reviews (article_id, status, summary, rank, notes, score, decided_by, decided_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO manual_reviews (article_id, status, summary, manual_llm_source, rank, notes, score, decided_by, decided_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (article_id) DO NOTHING
         """
         with self._cursor() as cur:
@@ -1123,6 +1123,7 @@ class PostgresAdapter:
                     article_id,
                     status or "pending",
                     summary,
+                    None,
                     rank,
                     notes,
                     score,
@@ -1166,6 +1167,7 @@ class PostgresAdapter:
                 mr.article_id,
                 mr.status,
                 mr.summary AS manual_summary,
+                mr.manual_llm_source,
                 mr.rank AS manual_rank,
                 mr.notes AS manual_notes,
                 mr.score AS manual_score,
@@ -1173,6 +1175,7 @@ class PostgresAdapter:
                 mr.decided_at,
                 ns.title,
                 ns.llm_summary,
+                ns.llm_source,
                 ns.score,
                 ns.content_markdown,
                 ns.url,
@@ -1223,6 +1226,7 @@ class PostgresAdapter:
             SELECT
                 mr.article_id,
                 mr.summary AS manual_summary,
+                mr.manual_llm_source,
                 mr.rank AS manual_rank,
                 mr.notes AS manual_notes,
                 mr.score AS manual_score,
@@ -1230,6 +1234,7 @@ class PostgresAdapter:
                 mr.decided_at,
                 ns.title,
                 ns.llm_summary,
+                ns.llm_source,
                 ns.score,
                 ns.content_markdown,
                 ns.url,
@@ -1359,19 +1364,21 @@ class PostgresAdapter:
             summary = edit.get("summary")
             notes = edit.get("notes")
             score = edit.get("score")
+            manual_llm_source = edit.get("manual_llm_source")
             article_id = str(aid).strip()
-            if not article_id or summary is None:
+            if not article_id or (summary is None and manual_llm_source is None and notes is None and score is None):
                 continue
-            payload.append((summary, notes, score, actor, timestamp, article_id))
+            payload.append((summary, manual_llm_source, notes, score, actor, timestamp, article_id))
         if not payload:
             return 0
         query = """
             UPDATE manual_reviews
-            SET summary = %s,
-                notes = %s,
-                score = %s,
+            SET summary = COALESCE(%s, summary),
+                manual_llm_source = COALESCE(%s, manual_llm_source),
+                notes = COALESCE(%s, notes),
+                score = COALESCE(%s, score),
                 decided_by = COALESCE(%s, decided_by),
-                decided_at = %s,
+                decided_at = COALESCE(%s, decided_at),
                 updated_at = NOW()
             WHERE article_id = %s
         """
@@ -1384,6 +1391,7 @@ class PostgresAdapter:
             SELECT
                 mr.article_id,
                 mr.summary AS manual_summary,
+                mr.manual_llm_source,
                 mr.rank AS manual_rank,
                 mr.notes AS manual_notes,
                 mr.score AS manual_score,

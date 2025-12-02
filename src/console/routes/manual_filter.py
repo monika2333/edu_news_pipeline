@@ -21,7 +21,7 @@ class BulkDecideRequest(BaseModel):
 
 
 class SaveEditsRequest(BaseModel):
-    edits: Dict[str, Dict[str, Any]] = Field(default_factory=dict)  # article_id -> {"summary": "..."}
+    edits: Dict[str, Dict[str, Any]] = Field(default_factory=dict)  # article_id -> {"summary": "...", "llm_source": "..."}
     actor: Optional[str] = None
 
 

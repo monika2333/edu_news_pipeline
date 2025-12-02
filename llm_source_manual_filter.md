@@ -42,7 +42,7 @@
 
 ## 开发步骤清单
 - [x] **数据库**：新增迁移并更新 `database/schema.sql`（已完成；请在目标 DB 执行迁移）。
-- [ ] **后端**：
+- [x] **后端**：
   - `db_postgres.update_manual_review_summaries` 支持 `manual_llm_source` 更新；相关 SELECT 补充列。
   - `manual_filter` 服务中构建返回体与导出候选时使用来源优先级。
   - Pydantic `SaveEditsRequest` 增加 `llm_source: Optional[str]`。

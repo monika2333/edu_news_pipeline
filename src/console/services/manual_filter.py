@@ -97,6 +97,23 @@ def _bonus_keywords(score_details: Any) -> List[str]:
     return labels
 
 
+def _resolved_llm_source(record: Dict[str, Any]) -> str:
+    """
+    Prefer manual override, then LLM-detected, then raw source.
+    """
+    manual = (record.get("manual_llm_source") or "").strip()
+    llm = (record.get("llm_source") or "").strip()
+    source = (record.get("source") or "").strip()
+    return manual or llm or source
+
+
+def _attach_source_fields(record: Dict[str, Any]) -> Dict[str, Any]:
+    record["llm_source_manual"] = (record.get("manual_llm_source") or "").strip()
+    record["llm_source_raw"] = (record.get("llm_source") or "").strip()
+    record["llm_source_display"] = _resolved_llm_source(record)
+    return record
+
+
 def _paginate_by_status(
     manual_status: str,
     *,
@@ -119,7 +136,7 @@ def _paginate_by_status(
     )
     items: List[Dict[str, Any]] = []
     for record in rows:
-        record = dict(record)
+        record = _attach_source_fields(dict(record))
         record["manual_status"] = record.get("status") or manual_status
         record["summary"] = record.get("manual_summary") or record.get("llm_summary") or ""
         record["bonus_keywords"] = _bonus_keywords(record.get("score_details"))
@@ -174,7 +191,7 @@ def _collect_pending(region: Optional[str], sentiment: Optional[str], fetch_limi
     )
     records: List[Dict[str, Any]] = []
     for row in rows:
-        record = dict(row)
+        record = _attach_source_fields(dict(row))
         record["summary"] = record.get("manual_summary") or record.get("llm_summary") or ""
         record["bonus_keywords"] = _bonus_keywords(record.get("score_details"))
         records.append(record)
@@ -253,6 +270,9 @@ def cluster_pending(
                             "title": itm.get("title"),
                             "summary": itm.get("summary"),
                             "source": itm.get("source"),
+                            "llm_source_display": itm.get("llm_source_display"),
+                            "llm_source_raw": itm.get("llm_source_raw"),
+                            "llm_source_manual": itm.get("llm_source_manual"),
                             "score": itm.get("score"),
                             "sentiment_label": itm.get("sentiment_label"),
                             "is_beijing_related": itm.get("is_beijing_related"),
@@ -472,8 +492,20 @@ def save_edits(edits: Dict[str, Dict[str, Any]], *, actor: Optional[str] = None)
     adapter = get_adapter()
     if not edits:
         return 0
+    normalized: Dict[str, Dict[str, Any]] = {}
+    for aid, payload in (edits or {}).items():
+        summary = payload.get("summary")
+        llm_source = payload.get("llm_source")
+        notes = payload.get("notes")
+        score = payload.get("score")
+        normalized[aid] = {
+            "summary": summary,
+            "manual_llm_source": (llm_source or "").strip() if llm_source is not None else None,
+            "notes": notes,
+            "score": score,
+        }
     logger.info("Saving manual edits: count=%s actor=%s", len(edits), actor)
-    return adapter.update_manual_review_summaries(edits, actor=actor)  # type: ignore[attr-defined]
+    return adapter.update_manual_review_summaries(normalized, actor=actor)  # type: ignore[attr-defined]
 
 
 def export_batch(
@@ -496,11 +528,12 @@ def export_batch(
     items: List[Dict[str, Any]] = []
     candidates: List[Tuple[ExportCandidate, str]] = []
     for row in rows:
-        record = dict(row)
+        record = _attach_source_fields(dict(row))
         summary_text = record.get("manual_summary") or record.get("llm_summary") or ""
         article_id = str(record.get("article_id") or "")
         title = record.get("title")
         article_hash = adapter._article_hash(article_id, record.get("url"), title)  # type: ignore[attr-defined]
+        source_text = record.get("llm_source_display") or ""
         candidate = ExportCandidate(
             filtered_article_id=article_id,
             raw_article_id=article_id,
@@ -509,7 +542,7 @@ def export_batch(
             summary=str(summary_text),
             content=str(record.get("content_markdown") or ""),
             source=record.get("source"),
-            llm_source=None,
+            llm_source=source_text,
             score=float(record.get("score") or 0.0),
             original_url=record.get("url"),
             published_at=record.get("publish_time_iso") or record.get("publish_time"),
@@ -527,6 +560,7 @@ def export_batch(
                 "summary": summary_text,
                 "score": candidate.score,
                 "source": record.get("source"),
+                "llm_source_display": source_text,
                 "publish_time_iso": record.get("publish_time_iso"),
                 "sentiment_label": record.get("sentiment_label"),
                 "is_beijing_related": record.get("is_beijing_related"),

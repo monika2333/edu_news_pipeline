@@ -209,6 +209,7 @@ create table if not exists public.manual_reviews (
     article_id text not null references public.news_summaries(article_id) on delete cascade,
     status text not null check (status in ('pending','selected','backup','discarded','exported')),
     summary text,
+    manual_llm_source text,
     rank double precision,
     notes text,
     score numeric(6,3),

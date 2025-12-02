@@ -41,18 +41,18 @@
 3) 界面提示：当来源为空时用 placeholder 提示“留空则导出时回退抓取来源”。
 
 ## 开发步骤清单
-1) **数据库**：新增迁移并执行；本地更新 `database/schema.sql`。
-2) **后端**：
-   - `db_postgres.update_manual_review_summaries` 支持 `manual_llm_source` 更新；相关 SELECT 补充列。
-   - `manual_filter` 服务中构建返回体与导出候选时使用来源优先级。
-   - Pydantic `SaveEditsRequest` 增加 `llm_source: Optional[str]`。
-3) **前端**：
-   - `manual_filter.html`：在摘要下方插入来源输入框。
-   - `dashboard.js`：渲染和事件中读写 `llm_source`，随保存/提交一并发送；导出前不需要额外动作。
-4) **测试/验证**：
-   - 新增/修改一条卡片的来源，确认 `/api/manual_filter/edit` 响应正常，刷新后值被回填。
-   - 导出预览文本中来源显示为人工值；清空后回退到 LLM/source。
-   - 兼容聚类展开、排序模式、批量提交等路径。
+- [x] **数据库**：新增迁移并更新 `database/schema.sql`（已完成；请在目标 DB 执行迁移）。
+- [ ] **后端**：
+  - `db_postgres.update_manual_review_summaries` 支持 `manual_llm_source` 更新；相关 SELECT 补充列。
+  - `manual_filter` 服务中构建返回体与导出候选时使用来源优先级。
+  - Pydantic `SaveEditsRequest` 增加 `llm_source: Optional[str]`。
+- [ ] **前端**：
+  - `manual_filter.html`：在摘要下方插入来源输入框。
+  - `dashboard.js`：渲染和事件中读写 `llm_source`，随保存/提交一并发送；导出前不需要额外动作。
+- [ ] **测试/验证**：
+  - 新增/修改一条卡片的来源，确认 `/api/manual_filter/edit` 响应正常，刷新后值被回填。
+  - 导出预览文本中来源显示为人工值；清空后回退到 LLM/source。
+  - 兼容聚类展开、排序模式、批量提交等路径。
 
 ## 验收要点
 - 控制台所有列表都能看到来源且可编辑，保存后刷新不丢失。

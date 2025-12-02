@@ -99,6 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) {
     const safe = item || {};
+    const sourcePlaceholder = safe.llm_source_raw ? `(LLM: ${safe.llm_source_raw})` : '留空则回退抓取来源';
     const statusGroup = showStatus ? `
         <div class="radio-group" role="radiogroup">
             <div class="radio-option">
@@ -140,6 +141,7 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
             </div>
 
     <textarea class="summary-box" id="summary-${safe.article_id}">${safe.summary || ''}</textarea>
+    <input class="source-box" id="source-${safe.article_id}" value="${safe.llm_source_display || ''}" placeholder="${sourcePlaceholder}">
         </div>
     `;
 }
@@ -266,6 +268,7 @@ function renderFilterList(data) {
             </div>
 
     <textarea class="summary-box" id="summary-${item.article_id}">${item.summary || ''}</textarea>
+    <input class="source-box" id="source-${item.article_id}" value="${item.llm_source_display || ''}" placeholder="${item.llm_source_raw ? `(LLM: ${item.llm_source_raw})` : '留空则回退抓取来源'}">
         </div>
     `;
 
@@ -379,7 +382,9 @@ async function submitFilter() {
             const id = card.dataset.id;
             const summaryBox = card.querySelector('.summary-box');
             const summary = summaryBox ? summaryBox.value : '';
-            edits[id] = { summary };
+            const sourceBox = card.querySelector('.source-box');
+            const llm_source = sourceBox ? sourceBox.value : '';
+            edits[id] = { summary, llm_source };
 
             if (status === 'selected') selected.push(id);
             else if (status === 'backup') backup.push(id);
@@ -394,7 +399,9 @@ async function submitFilter() {
         const status = statusInput ? statusInput.value : 'discarded';
         const summaryBox = card.querySelector('.summary-box');
         const summary = summaryBox ? summaryBox.value : '';
-        edits[id] = { summary };
+        const sourceBox = card.querySelector('.source-box');
+        const llm_source = sourceBox ? sourceBox.value : '';
+        edits[id] = { summary, llm_source };
 
         if (status === 'selected') selected.push(id);
         else if (status === 'backup') backup.push(id);
@@ -407,9 +414,11 @@ async function submitFilter() {
             const id = card.dataset.id;
             const statusInput = card.querySelector('input[type="radio"]:checked');
             const status = statusInput ? statusInput.value : 'discarded';
-            const summaryBox = card.querySelector('.summary-box');
-            const summary = summaryBox ? summaryBox.value : '';
-            edits[id] = { summary };
+        const summaryBox = card.querySelector('.summary-box');
+        const summary = summaryBox ? summaryBox.value : '';
+        const sourceBox = card.querySelector('.source-box');
+        const llm_source = sourceBox ? sourceBox.value : '';
+        edits[id] = { summary, llm_source };
 
             if (status === 'selected') selected.push(id);
             else if (status === 'backup') backup.push(id);
@@ -525,6 +534,7 @@ function renderReviewItems(items, currentStatus) {
                 </select>
             </div>
             <textarea class="summary-box" data-id="${item.article_id}">${item.summary || ''}</textarea>
+            <input class="source-box" data-id="${item.article_id}" value="${item.llm_source_display || ''}" placeholder="${item.llm_source_raw ? `(LLM: ${item.llm_source_raw})` : '留空则回退抓取来源'}">
         </div>
     `).join('');
 }
@@ -564,6 +574,10 @@ function bindReviewSelectionControls() {
     const summaries = elements.reviewList.querySelectorAll('.summary-box');
     summaries.forEach(box => {
         box.addEventListener('change', handleSummaryUpdate);
+    });
+    const sources = elements.reviewList.querySelectorAll('.source-box');
+    sources.forEach(input => {
+        input.addEventListener('change', handleSourceUpdate);
     });
     updateReviewSelectAllState();
 }
@@ -632,6 +646,8 @@ async function handleReviewStatusChange(e) {
     const status = select.value;
     const summaryBox = card.querySelector('.summary-box');
     const summary = summaryBox ? summaryBox.value : '';
+    const sourceBox = card.querySelector('.source-box');
+    const llm_source = sourceBox ? sourceBox.value : '';
 
     select.disabled = true;
     try {
@@ -639,7 +655,7 @@ async function handleReviewStatusChange(e) {
         await fetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ edits: { [id]: { summary } }, actor: state.actor })
+            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor })
         });
 
         await fetch(`${API_BASE}/decide`, {
@@ -672,15 +688,37 @@ async function handleSummaryUpdate(e) {
     if (!card) return;
     const id = card.dataset.id;
     const summary = box.value;
+    const sourceBox = card.querySelector('.source-box');
+    const llm_source = sourceBox ? sourceBox.value : '';
     try {
         await fetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ edits: { [id]: { summary } }, actor: state.actor })
+            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor })
         });
         showToast('摘要已保存');
     } catch (err) {
         showToast('摘要保存失败', 'error');
+    }
+}
+
+async function handleSourceUpdate(e) {
+    const input = e.target;
+    const card = input.closest('.article-card');
+    if (!card) return;
+    const id = card.dataset.id;
+    const llm_source = input.value;
+    const summaryBox = card.querySelector('.summary-box');
+    const summary = summaryBox ? summaryBox.value : '';
+    try {
+        await fetch(`${API_BASE}/edit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor })
+        });
+        showToast('来源已保存');
+    } catch (err) {
+        showToast('来源保存失败', 'error');
     }
 }
 

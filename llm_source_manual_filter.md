@@ -46,7 +46,7 @@
   - `db_postgres.update_manual_review_summaries` 支持 `manual_llm_source` 更新；相关 SELECT 补充列。
   - `manual_filter` 服务中构建返回体与导出候选时使用来源优先级。
   - Pydantic `SaveEditsRequest` 增加 `llm_source: Optional[str]`。
-- [ ] **前端**：
+- [x] **前端**：
   - `manual_filter.html`：在摘要下方插入来源输入框。
   - `dashboard.js`：渲染和事件中读写 `llm_source`，随保存/提交一并发送；导出前不需要额外动作。
 - [ ] **测试/验证**：

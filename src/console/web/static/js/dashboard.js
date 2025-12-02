@@ -59,7 +59,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('btn-submit-filter').addEventListener('click', submitFilter);
     document.getElementById('btn-export').addEventListener('click', openExportModal);
-    document.getElementById('btn-copy').addEventListener('click', copyExportText);
     document.getElementById('btn-close-modal').addEventListener('click', closeModal);
     if (elements.sortToggleBtn) {
         elements.sortToggleBtn.addEventListener('click', toggleSortMode);
@@ -87,10 +86,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     if (elements.exportPreviewBtn) {
-        elements.exportPreviewBtn.addEventListener('click', () => triggerExport(true));
+        elements.exportPreviewBtn.addEventListener('click', refreshPreviewAndCopy);
     }
     if (elements.exportConfirmBtn) {
-        elements.exportConfirmBtn.addEventListener('click', () => triggerExport(false));
+        elements.exportConfirmBtn.addEventListener('click', confirmExportAndCopy);
     }
 
     // Pagination listeners (delegated or specific)
@@ -858,12 +857,6 @@ function closeModal() {
     elements.modal.classList.remove('active');
 }
 
-function copyExportText() {
-    elements.modalText.select();
-    document.execCommand('copy');
-    showToast('Copied to clipboard');
-}
-
 function buildExportPayload(dryRun) {
     const tag = new Date().toISOString().split('T')[0];
     const payload = {
@@ -908,6 +901,33 @@ async function triggerExport(dryRun = true) {
     } catch (e) {
         showToast(dryRun ? '预览失败' : '导出失败', 'error');
     }
+}
+
+async function copyPreviewText() {
+    if (!elements.modalText) return;
+    const text = elements.modalText.value || '';
+    if (!text) return;
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+        } else {
+            elements.modalText.select();
+            document.execCommand('copy');
+        }
+        showToast('已复制到剪贴板');
+    } catch (err) {
+        showToast('复制失败，请手动复制', 'error');
+    }
+}
+
+async function refreshPreviewAndCopy() {
+    await triggerExport(true);
+    await copyPreviewText();
+}
+
+async function confirmExportAndCopy() {
+    await triggerExport(false);
+    await copyPreviewText();
 }
 
 // --- Helpers ---

@@ -703,7 +703,7 @@ def export_batch(
     final_output = _ensure_unique(base_output)
     if not dry_run:
         final_output.write_text(export_text, encoding="utf-8")
-        adapter.record_export(
+        adapter.record_manual_export(
             report_tag,
             export_payload,
             output_path=str(final_output),

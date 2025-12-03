@@ -2130,6 +2130,18 @@ class PostgresAdapter:
             row = cur.fetchone()
         return dict(row) if row else None
 
+    def _get_manual_batch_by_tag(self, report_tag: str) -> Optional[Dict[str, Any]]:
+        query = """
+            SELECT id, report_date, sequence_no, export_payload
+            FROM manual_export_batches
+            WHERE generated_by = %s
+            LIMIT 1
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (report_tag,))
+            row = cur.fetchone()
+        return dict(row) if row else None
+
     def _parse_report_tag(self, report_tag: str) -> Tuple[date, str]:
         try:
             parts = report_tag.split("-")
@@ -2184,12 +2196,66 @@ class PostgresAdapter:
                 raise RuntimeError("Failed to create brief batch")
             return dict(created)
 
+    def _create_manual_batch(self, report_tag: str) -> Dict[str, Any]:
+        report_date, suffix = self._parse_report_tag(report_tag)
+        fetch_query = """
+            SELECT sequence_no
+            FROM manual_export_batches
+            WHERE report_date = %s
+            ORDER BY sequence_no DESC
+            LIMIT 1
+        """
+        with self._cursor() as cur:
+            cur.execute(fetch_query, (report_date.isoformat(),))
+            row = cur.fetchone()
+            next_seq = 1
+            if row:
+                try:
+                    next_seq = int(row["sequence_no"]) + 1
+                except Exception:
+                    next_seq = 1
+            payload = {
+                "report_date": report_date.isoformat(),
+                "sequence_no": next_seq,
+                "generated_by": report_tag,
+                "export_payload": Json({"report_tag": report_tag, "suffix": suffix}),
+            }
+            cur.execute(
+                """
+                INSERT INTO manual_export_batches (report_date, sequence_no, generated_by, export_payload)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id, report_date, sequence_no, export_payload
+                """,
+                (
+                    payload["report_date"],
+                    payload["sequence_no"],
+                    payload["generated_by"],
+                    payload["export_payload"],
+                ),
+            )
+            created = cur.fetchone()
+            if not created:
+                raise RuntimeError("Failed to create manual export batch")
+            return dict(created)
+
     def get_export_history(self, report_tag: str) -> Tuple[Set[str], Optional[str]]:
         batch = self._get_batch_by_tag(report_tag)
         if not batch:
             return set(), None
         batch_id = str(batch["id"])
         query = "SELECT article_id FROM brief_items WHERE brief_batch_id = %s"
+        with self._cursor() as cur:
+            cur.execute(query, (batch_id,))
+            rows = cur.fetchall()
+        ids = {str(row.get("article_id")) for row in rows if row.get("article_id")}
+        return ids, batch_id
+
+    def get_manual_export_history(self, report_tag: str) -> Tuple[Set[str], Optional[str]]:
+        batch = self._get_manual_batch_by_tag(report_tag)
+        if not batch:
+            return set(), None
+        batch_id = str(batch["id"])
+        query = "SELECT article_id FROM manual_export_items WHERE manual_export_batch_id = %s"
         with self._cursor() as cur:
             cur.execute(query, (batch_id,))
             rows = cur.fetchall()
@@ -2298,6 +2364,83 @@ class PostgresAdapter:
                     insert_payload,
                 )
 
+    def record_manual_export(
+        self,
+        report_tag: str,
+        exported: Sequence[Tuple[ExportCandidate, str]],
+        *,
+        output_path: str,
+    ) -> None:
+        existing_ids, batch_id = self.get_manual_export_history(report_tag)
+        if batch_id is None:
+            batch = self._create_manual_batch(report_tag)
+            batch_id = str(batch["id"])
+        with self._cursor() as cur:
+            cur.execute(
+                "UPDATE manual_export_batches SET export_payload = %s, updated_at = NOW() WHERE id = %s",
+                (Json({"report_tag": report_tag, "output_path": output_path}), batch_id),
+            )
+            order_index_start = 0
+            if existing_ids:
+                cur.execute(
+                    """
+                    SELECT order_index
+                    FROM manual_export_items
+                    WHERE manual_export_batch_id = %s
+                    ORDER BY order_index DESC
+                    LIMIT 1
+                    """,
+                    (batch_id,),
+                )
+                row = cur.fetchone()
+                if row:
+                    try:
+                        order_index_start = int(row["order_index"]) + 1
+                    except Exception:
+                        order_index_start = 0
+            insert_payload: List[Tuple[Any, ...]] = []
+            for offset, (candidate, section) in enumerate(exported):
+                article_id = candidate.filtered_article_id
+                if article_id in existing_ids:
+                    continue
+                metadata = {
+                    "title": self._json_safe(candidate.title),
+                    "score": self._json_safe(candidate.score),
+                    "original_url": self._json_safe(candidate.original_url),
+                    "published_at": self._json_safe(candidate.published_at),
+                    "source": self._json_safe(candidate.source),
+                    "is_beijing_related": self._json_safe(candidate.is_beijing_related),
+                    "sentiment_label": self._json_safe(candidate.sentiment_label),
+                    "sentiment_confidence": self._json_safe(candidate.sentiment_confidence),
+                    "external_importance_score": self._json_safe(candidate.external_importance_score),
+                    "external_importance_checked_at": self._json_safe(candidate.external_importance_checked_at),
+                }
+                insert_payload.append(
+                    (
+                        batch_id,
+                        article_id,
+                        section,
+                        order_index_start + offset,
+                        candidate.summary,
+                        Json(metadata),
+                    )
+                )
+            if insert_payload:
+                cur.executemany(
+                    """
+                    INSERT INTO manual_export_items (
+                        manual_export_batch_id,
+                        article_id,
+                        section,
+                        order_index,
+                        final_summary,
+                        metadata
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    insert_payload,
+                )
+
     def fetch_latest_brief_batch(self) -> Optional[Dict[str, Any]]:
         query = """
             SELECT *
@@ -2324,6 +2467,37 @@ class PostgresAdapter:
 
     def fetch_brief_item_count(self, batch_id: str) -> int:
         query = "SELECT COUNT(*) AS total FROM brief_items WHERE brief_batch_id = %s"
+        with self._cursor() as cur:
+            cur.execute(query, (batch_id,))
+            row = cur.fetchone()
+        return int(row["total"]) if row else 0
+
+    def fetch_latest_manual_export_batch(self) -> Optional[Dict[str, Any]]:
+        query = """
+            SELECT *
+            FROM manual_export_batches
+            ORDER BY report_date DESC, sequence_no DESC
+            LIMIT 1
+        """
+        with self._cursor() as cur:
+            cur.execute(query)
+            row = cur.fetchone()
+        return dict(row) if row else None
+
+    def fetch_manual_export_items_by_batch(self, batch_id: str) -> List[Dict[str, Any]]:
+        query = """
+            SELECT id, article_id, section, order_index, final_summary, metadata
+            FROM manual_export_items
+            WHERE manual_export_batch_id = %s
+            ORDER BY order_index ASC
+        """
+        with self._cursor() as cur:
+            cur.execute(query, (batch_id,))
+            rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
+    def fetch_manual_export_item_count(self, batch_id: str) -> int:
+        query = "SELECT COUNT(*) AS total FROM manual_export_items WHERE manual_export_batch_id = %s"
         with self._cursor() as cur:
             cur.execute(query, (batch_id,))
             row = cur.fetchone()

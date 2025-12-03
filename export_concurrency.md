@@ -25,3 +25,25 @@
 - 默认情况下，同时跑两条线可行，但请务必使用**不同的 report_tag**；否则存在重复/覆盖风险。
 - 即便区分了 report_tag，`brief_items` 仍共享一张表；若后续查询/分析需要区分来源，请依赖 batch 过滤或新增来源列/分表。
 - 若准备长期并行运行，优先实施分表方案（`manual_export_batches` / `manual_export_items`）；次优为来源字段 + 唯一约束，使行为可预测。
+
+## 分表落地计划（manual_export_batches / manual_export_items）
+1) **DB 设计与迁移**
+   - 创建 `manual_export_batches`（字段：id, report_date, sequence_no, generated_by, export_payload JSONB, created_at/updated_at，必要索引）。
+   - 创建 `manual_export_items`（字段：id, manual_export_batch_id FK, article_id, section, order_index, final_summary, metadata JSONB, created_at/updated_at）。
+   - 索引/约束：唯一键 `(manual_export_batch_id, article_id)`；`manual_export_batch_id` 外键；常用查询字段索引（batch_id, order_index）。
+   - 视情况迁移历史人工导出记录（可选）。
+2) **Adapter 层**
+   - 在 `src/adapters/db_postgres.py` 增加 `record_manual_export`、`fetch_latest_manual_export_batch`、`fetch_manual_export_history` 等与新表对应的方法。
+   - 保留现有 `record_export` 供 worker 使用，不要共用同一方法。
+3) **Console 服务层**
+   - `manual_filter.export_batch` 改为调用新的 adapter 方法写入分表；`mark_exported` 逻辑保留（只影响 manual_reviews 状态）。
+   - 返回内容/预览逻辑保持不变。
+4) **前端 & API**
+   - API 路由不变，只需让 export 接口调用新的服务逻辑；无需改 UI 表单。
+5) **并发与回滚**
+   - 并行运行时，人工导出与 worker 写不同表，不再相互干扰。
+   - 可在配置层保留开关，遇问题时切回老表（临时方案，稳定后可移除）。
+6) **验证**
+   - 数据库层验证唯一约束生效。
+   - 跑一次人工导出，确认新表有 batch/items 且内容正确；跑 worker，确认仍写老表且未受影响。
+   - 手工验证前端导出预览/导出流程正常。

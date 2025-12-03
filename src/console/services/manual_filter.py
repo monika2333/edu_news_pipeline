@@ -221,6 +221,7 @@ def _collect_pending(region: Optional[str], sentiment: Optional[str], fetch_limi
         record = _attach_source_fields(dict(row))
         record["summary"] = record.get("manual_summary") or record.get("llm_summary") or ""
         record["bonus_keywords"] = _bonus_keywords(record.get("score_details"))
+        record["external_importance_score"] = record.get("external_importance_score")
         records.append(record)
     return records
 
@@ -309,6 +310,7 @@ def cluster_pending(
                             "llm_source_raw": itm.get("llm_source_raw"),
                             "llm_source_manual": itm.get("llm_source_manual"),
                             "score": itm.get("score"),
+                            "external_importance_score": itm.get("external_importance_score"),
                             "sentiment_label": itm.get("sentiment_label"),
                             "is_beijing_related": itm.get("is_beijing_related"),
                             "url": itm.get("url"),

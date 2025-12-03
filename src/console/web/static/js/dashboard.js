@@ -105,6 +105,8 @@ document.addEventListener('DOMContentLoaded', () => {
 function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) {
     const safe = item || {};
     const currentStatus = safe.manual_status || safe.status || 'pending';
+    const importanceScoreRaw = safe.external_importance_score ?? safe.score;
+    const importanceScore = (importanceScoreRaw === undefined || importanceScoreRaw === null) ? '-' : importanceScoreRaw;
     const sourcePlaceholder = safe.llm_source_raw ? `(LLM: ${safe.llm_source_raw})` : '留空则回退抓取来源';
     const statusGroup = showStatus ? `
         <div class="radio-group" role="radiogroup">
@@ -135,7 +137,7 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
 
             <div class="meta-row">
                 <div class="meta-item">来源: ${safe.source || '-'}</div>
-                <div class="meta-item">分数: ${safe.score || '-'}</div>
+                <div class="meta-item">分数: ${importanceScore}</div>
                 <div class="meta-item">
                     <span class="badge ${getSentimentClass(safe.sentiment_label)}">${safe.sentiment_label || '-'}</span>
                 </div>

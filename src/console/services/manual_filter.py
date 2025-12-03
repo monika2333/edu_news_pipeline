@@ -25,8 +25,24 @@ def _cluster_cache_key(region: Optional[str], sentiment: Optional[str], threshol
     return (region or "all", sentiment or "all", threshold)
 
 
-def invalidate_cluster_cache() -> None:
-    _cluster_cache.clear()
+def _prune_cluster_cache(decided_ids: Sequence[str]) -> None:
+    decided = {str(i).strip() for i in decided_ids if i}
+    if not decided or not _cluster_cache:
+        return
+    for key, payload in list(_cluster_cache.items()):
+        clusters = payload.get("clusters", [])
+        if not clusters:
+            continue
+        pruned: List[Dict[str, Any]] = []
+        for cluster in clusters:
+            items = cluster.get("items") or []
+            kept = [itm for itm in items if str(itm.get("article_id") or "").strip() not in decided]
+            if not kept:
+                continue
+            cluster["items"] = kept
+            cluster["size"] = len(kept)
+            pruned.append(cluster)
+        _cluster_cache[key] = {"clusters": pruned, "total": len(pruned)}
 
 
 def _load_export_meta() -> Dict[str, Any]:
@@ -445,7 +461,7 @@ def bulk_decide(
         updated_discarded,
         updated_pending,
     )
-    invalidate_cluster_cache()
+    _prune_cluster_cache(selected + backups + discarded + pending)
     return {
         "selected": updated_selected,
         "backup": updated_backup,

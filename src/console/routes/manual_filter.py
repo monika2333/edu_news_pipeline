@@ -49,6 +49,7 @@ def list_candidates_api(
     sentiment: Optional[str] = None,
     cluster: bool = False,
     cluster_threshold: Optional[float] = None,
+    force_refresh: bool = False,
 ) -> Dict[str, Any]:
     return manual_filter.list_candidates(
         limit=limit,
@@ -57,6 +58,7 @@ def list_candidates_api(
         sentiment=sentiment,
         cluster=cluster,
         cluster_threshold=cluster_threshold,
+        force_refresh=force_refresh,
     )
 
 

@@ -12,12 +12,21 @@ from src.adapters.title_cluster import cluster_titles
 
 logger = logging.getLogger(__name__)
 EXPORT_META_PATH = Path("outputs/manual_filter_export_meta.json")
+_cluster_cache: Dict[Tuple[str, str, float], Dict[str, Any]] = {}
 
 def _period_increment_for_template(template: str) -> int:
     return 1 if template == "zongbao" else 2
 
 
 DEFAULT_CLUSTER_THRESHOLD = 0.9
+
+
+def _cluster_cache_key(region: Optional[str], sentiment: Optional[str], threshold: float) -> Tuple[str, str, float]:
+    return (region or "all", sentiment or "all", threshold)
+
+
+def invalidate_cluster_cache() -> None:
+    _cluster_cache.clear()
 
 
 def _load_export_meta() -> Dict[str, Any]:
@@ -152,6 +161,7 @@ def list_candidates(
     sentiment: Optional[str] = None,
     cluster: bool = False,
     cluster_threshold: Optional[float] = None,
+    force_refresh: bool = False,
 ) -> Dict[str, Any]:
     region = region if region in ("internal", "external") else None
     sentiment = sentiment if sentiment in ("positive", "negative") else None
@@ -163,6 +173,7 @@ def list_candidates(
             limit=limit,
             offset=offset,
             cluster_threshold=cluster_threshold,
+            force_refresh=force_refresh,
         )
     return _paginate_by_status("pending", limit=limit, offset=offset, only_ready=True, region=region, sentiment=sentiment)
 
@@ -205,12 +216,27 @@ def cluster_pending(
     limit: int = 10,
     offset: int = 0,
     cluster_threshold: Optional[float] = None,
+    force_refresh: bool = False,
 ) -> Dict[str, Any]:
     fetch_limit = 5000
+    try:
+        threshold_val = float(cluster_threshold) if cluster_threshold is not None else DEFAULT_CLUSTER_THRESHOLD
+    except Exception:
+        threshold_val = DEFAULT_CLUSTER_THRESHOLD
+    threshold_val = max(0.0, min(threshold_val, 1.0))
+
+    cache_key = _cluster_cache_key(region, sentiment, threshold_val)
+    if not force_refresh and cache_key in _cluster_cache:
+        cached = _cluster_cache[cache_key]
+        clusters = cached.get("clusters", [])
+        total_clusters = cached.get("total", len(clusters))
+        return _paginate_clusters(clusters, limit=limit, offset=offset, total=total_clusters)
+
     records = _collect_pending(region, sentiment, fetch_limit=fetch_limit)
-    total = len(records)
     if not records:
+        _cluster_cache[cache_key] = {"clusters": [], "total": 0}
         return {"clusters": [], "total": 0}
+    total = len(records)
 
     buckets: Dict[Tuple[str, str], List[Dict[str, Any]]] = {
         ("internal", "positive"): [],
@@ -230,13 +256,6 @@ def cluster_pending(
             continue
         items_sorted = sorted(items, key=_candidate_rank_key_by_record, reverse=True)
         titles = [itm.get("title") or "" for itm in items_sorted]
-        threshold = cluster_threshold if cluster_threshold is not None else DEFAULT_CLUSTER_THRESHOLD
-        try:
-            threshold_val = float(threshold)
-        except Exception:
-            threshold_val = DEFAULT_CLUSTER_THRESHOLD
-        threshold_val = max(0.0, min(threshold_val, 1.0))
-
         groups = cluster_titles(titles, threshold=threshold_val)
         if not groups:
             groups = [list(range(len(items_sorted)))]
@@ -289,18 +308,22 @@ def cluster_pending(
     clusters.sort(key=lambda c: c.get("rank_key", (float("-inf"), float("-inf"), float("-inf"))), reverse=True)
     total_clusters = len(clusters)
 
-    # 分页（按簇分页）
-    limit = max(1, min(int(limit or 10), 200))
-    offset = max(0, int(offset or 0))
-    start = offset
-    end = offset + limit
+    _cluster_cache[cache_key] = {"clusters": clusters, "total": total_clusters}
+
+    return _paginate_clusters(clusters, limit=limit, offset=offset, total=total_clusters)
+
+
+def _paginate_clusters(clusters: List[Dict[str, Any]], *, limit: int, offset: int, total: int) -> Dict[str, Any]:
+    limit_val = max(1, min(int(limit or 10), 200))
+    offset_val = max(0, int(offset or 0))
+    start = offset_val
+    end = offset_val + limit_val
     paged_clusters = clusters[start:end]
 
-    # 清理 rank_key 不返回
     for c in paged_clusters:
         c.pop("rank_key", None)
 
-    return {"clusters": paged_clusters, "total": total_clusters}
+    return {"clusters": paged_clusters, "total": total}
 
 
 def list_review(decision: str, *, limit: int = 30, offset: int = 0) -> Dict[str, Any]:
@@ -422,6 +445,7 @@ def bulk_decide(
         updated_discarded,
         updated_pending,
     )
+    invalidate_cluster_cache()
     return {
         "selected": updated_selected,
         "backup": updated_backup,

@@ -11,6 +11,8 @@ let state = {
     reviewView: 'selected'
 };
 
+let shouldForceClusterRefresh = false;
+
 // UI mode
 let isSortMode = false;
 const MOBILE_REVIEW_BREAKPOINT = 768;
@@ -55,7 +57,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Global event listeners
     document.getElementById('btn-refresh').addEventListener('click', () => {
         loadStats();
-        reloadCurrentTab();
+        shouldForceClusterRefresh = true;
+        reloadCurrentTab({ forceClusterRefresh: true });
     });
 
     document.getElementById('btn-submit-filter').addEventListener('click', discardRemainingItems);
@@ -171,8 +174,8 @@ function setupActor() {
     });
 }
 
-function reloadCurrentTab() {
-    if (state.currentTab === 'filter') loadFilterData();
+function reloadCurrentTab(options = {}) {
+    if (state.currentTab === 'filter') loadFilterData(options);
     else if (state.currentTab === 'review') loadReviewData();
     else if (state.currentTab === 'discard') loadDiscardData();
 }
@@ -191,7 +194,9 @@ async function loadStats() {
 
 // --- Filter Tab Logic ---
 
-async function loadFilterData() {
+async function loadFilterData(options = {}) {
+    const forceClusterRefresh = Boolean(options.forceClusterRefresh) || shouldForceClusterRefresh;
+    shouldForceClusterRefresh = false;
     elements.filterList.innerHTML = '<div class="loading">Loading...</div>';
     try {
         const params = new URLSearchParams({
@@ -206,6 +211,7 @@ async function loadFilterData() {
             if (cat.endsWith('positive')) params.set('sentiment', 'positive');
             if (cat.endsWith('negative')) params.set('sentiment', 'negative');
         }
+        if (forceClusterRefresh) params.set('force_refresh', 'true');
         const res = await fetch(`${API_BASE}/candidates?${params.toString()}`);
         const data = await res.json();
         renderFilterList(data);

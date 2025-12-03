@@ -100,7 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) {
     const safe = item || {};
-    const currentStatus = safe.manual_status || safe.status || 'discarded';
+    const currentStatus = safe.manual_status || safe.status || 'pending';
     const sourcePlaceholder = safe.llm_source_raw ? `(LLM: ${safe.llm_source_raw})` : '留空则回退抓取来源';
     const statusGroup = showStatus ? `
         <div class="radio-group" role="radiogroup">
@@ -310,7 +310,7 @@ function renderClusteredList(clusters) {
     elements.filterList.innerHTML = clusters.map(cluster => {
         const items = cluster.items || [];
         const size = items.length;
-        const clusterStatus = cluster.status || 'discarded';
+        const clusterStatus = cluster.status || 'pending';
 
         // Single-item cluster: render as a plain article card (no cluster frame).
         if (size <= 1) {
@@ -383,7 +383,7 @@ async function handleCardDecisionChange(input) {
 
     const id = card.dataset.id;
     const status = input.value;
-    const previousStatus = card.dataset.status || 'discarded';
+    const previousStatus = card.dataset.status || 'pending';
     if (!id || status === previousStatus) return;
 
     const radios = card.querySelectorAll('input[type="radio"][name^="status-"]');
@@ -414,7 +414,7 @@ async function handleClusterDecisionChange(input) {
     if (!cluster) return;
 
     const status = input.value;
-    const previousStatus = cluster.dataset.status || 'discarded';
+    const previousStatus = cluster.dataset.status || 'pending';
     if (status === previousStatus) return;
 
     const cards = cluster.querySelectorAll('.article-card');

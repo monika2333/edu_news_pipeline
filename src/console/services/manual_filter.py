@@ -195,16 +195,10 @@ def list_candidates(
 
 
 def _candidate_rank_key_by_record(record: Dict[str, Any]) -> Tuple[float, float, float]:
-    def _as_float(val: Any) -> float:
-        try:
-            if val is None:
-                return float("-inf")
-            return float(val)
-        except Exception:
-            return float("-inf")
-
-    ext_score = _as_float(record.get("external_importance_score"))
-    score = _as_float(record.get("score"))
+    ext_val = record.get("external_importance_score")
+    ext_score = float(ext_val) if isinstance(ext_val, (int, float)) else float("-inf")
+    score_val = record.get("score")
+    score = float(score_val) if isinstance(score_val, (int, float)) else float("-inf")
     ts = record.get("publish_time_iso") or record.get("publish_time")
     ts_val = 0.0
     if ts:

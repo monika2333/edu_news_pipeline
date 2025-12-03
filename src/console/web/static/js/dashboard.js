@@ -320,9 +320,6 @@ function renderClusteredList(clusters) {
         return `
     <div class="filter-cluster" data-cluster-id="${cluster.cluster_id}" data-size="${size}">
         <div class="cluster-header">
-            <div class="cluster-title">
-                ${cluster.representative || '(聚类)'} ${size ? `(${size})` : ''}
-            </div>
             <div class="radio-group cluster-radio" data-cluster="${cluster.cluster_id}">
                 <div class="radio-option">
                     <input type="radio" name="cluster-${cluster.cluster_id}" value="selected" id="cluster-sel-${cluster.cluster_id}">

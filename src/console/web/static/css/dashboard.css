@@ -259,15 +259,10 @@ h1 {
 
 .cluster-header {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: center;
     gap: 12px;
     margin-bottom: 8px;
-}
-
-.cluster-title {
-    font-weight: 700;
-    color: var(--text-primary);
 }
 
 /* Metadata */

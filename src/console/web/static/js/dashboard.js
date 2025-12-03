@@ -12,6 +12,7 @@ let state = {
 };
 
 let shouldForceClusterRefresh = false;
+let emptyFilterPageReloadTimer = null;
 
 // UI mode
 let isSortMode = false;
@@ -515,6 +516,7 @@ function removeCardAndMaybeCluster(card) {
     if (cluster && !cluster.querySelector('.article-card')) {
         cluster.remove();
     }
+    scheduleReloadIfFilterPageEmpty();
 }
 
 function removeCardsAndClusters(cards) {
@@ -527,6 +529,25 @@ function removeCardsAndClusters(cards) {
     clusters.forEach(cluster => {
         if (!cluster.querySelector('.article-card')) cluster.remove();
     });
+    scheduleReloadIfFilterPageEmpty();
+}
+
+function scheduleReloadIfFilterPageEmpty() {
+    if (emptyFilterPageReloadTimer) clearTimeout(emptyFilterPageReloadTimer);
+    emptyFilterPageReloadTimer = setTimeout(async () => {
+        emptyFilterPageReloadTimer = null;
+        if (!elements.filterList) return;
+        const remaining = elements.filterList.querySelectorAll('.article-card');
+        if (remaining && remaining.length) return;
+
+        const currentPage = state.filterPage;
+        await loadFilterData({ forceClusterRefresh: true });
+        const afterReload = elements.filterList.querySelectorAll('.article-card');
+        if ((!afterReload || !afterReload.length) && currentPage > 1) {
+            state.filterPage = currentPage - 1;
+            await loadFilterData({ forceClusterRefresh: true });
+        }
+    }, 120);
 }
 
 async function discardRemainingItems() {

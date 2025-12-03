@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
         reloadCurrentTab();
     });
 
-    document.getElementById('btn-submit-filter').addEventListener('click', submitFilter);
+    document.getElementById('btn-submit-filter').addEventListener('click', discardRemainingItems);
     document.getElementById('btn-export').addEventListener('click', openExportModal);
     document.getElementById('btn-close-modal').addEventListener('click', closeModal);
     if (elements.sortToggleBtn) {
@@ -511,95 +511,47 @@ function removeCardAndMaybeCluster(card) {
     }
 }
 
-async function submitFilter() {
-    const clusterContainers = document.querySelectorAll('#filter-list .filter-cluster');
-    const standaloneCards = document.querySelectorAll('#filter-list > .article-card');
-    const cards = document.querySelectorAll('#filter-list .article-card');
-    const selected = [];
-    const backup = [];
-    const discarded = [];
+function removeCardsAndClusters(cards) {
+    const clusters = new Set();
+    cards.forEach(card => {
+        const cluster = card.closest('.filter-cluster');
+        if (cluster) clusters.add(cluster);
+        card.remove();
+    });
+    clusters.forEach(cluster => {
+        if (!cluster.querySelector('.article-card')) cluster.remove();
+    });
+}
+
+async function discardRemainingItems() {
+    const cards = elements.filterList ? elements.filterList.querySelectorAll('.article-card') : [];
+    if (!cards || !cards.length) {
+        showToast('当前无可放弃内容');
+        return;
+    }
+
     const edits = {};
-
-    // Clustered items with cluster-level decision
-    clusterContainers.forEach(cluster => {
-        const statusInput = cluster.querySelector('.cluster-radio input:checked');
-        const status = statusInput ? statusInput.value : 'discarded';
-        const cardsInCluster = cluster.querySelectorAll('.article-card');
-
-        cardsInCluster.forEach(card => {
-            const id = card.dataset.id;
-            const summaryBox = card.querySelector('.summary-box');
-            const summary = summaryBox ? summaryBox.value : '';
-            const sourceBox = card.querySelector('.source-box');
-            const llm_source = sourceBox ? sourceBox.value : '';
-            edits[id] = { summary, llm_source };
-
-            if (status === 'selected') selected.push(id);
-            else if (status === 'backup') backup.push(id);
-            else discarded.push(id);
-        });
-    });
-
-    // Standalone cards (e.g., single-item clusters rendered as plain cards or non-cluster data)
-    standaloneCards.forEach(card => {
+    const ids = [];
+    cards.forEach(card => {
         const id = card.dataset.id;
-        const statusInput = card.querySelector('input[type="radio"]:checked');
-        const status = statusInput ? statusInput.value : 'discarded';
-        const summaryBox = card.querySelector('.summary-box');
-        const summary = summaryBox ? summaryBox.value : '';
-        const sourceBox = card.querySelector('.source-box');
-        const llm_source = sourceBox ? sourceBox.value : '';
-        edits[id] = { summary, llm_source };
-
-        if (status === 'selected') selected.push(id);
-        else if (status === 'backup') backup.push(id);
-        else discarded.push(id);
+        if (!id) return;
+        ids.push(id);
+        collectCardEdits(card, edits);
     });
 
-    // Fallback
-    if (!clusterContainers.length && !standaloneCards.length) {
-        cards.forEach(card => {
-            const id = card.dataset.id;
-            const statusInput = card.querySelector('input[type="radio"]:checked');
-            const status = statusInput ? statusInput.value : 'discarded';
-        const summaryBox = card.querySelector('.summary-box');
-        const summary = summaryBox ? summaryBox.value : '';
-        const sourceBox = card.querySelector('.source-box');
-        const llm_source = sourceBox ? sourceBox.value : '';
-        edits[id] = { summary, llm_source };
-
-            if (status === 'selected') selected.push(id);
-            else if (status === 'backup') backup.push(id);
-            else discarded.push(id);
-        });
+    if (!ids.length) {
+        showToast('当前无可放弃内容');
+        return;
     }
 
     try {
-        // First save edits
-        await fetch(`${API_BASE}/edit`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ edits, actor: state.actor })
-        });
-
-        // Then update status
-        const res = await fetch(`${API_BASE}/decide`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                selected_ids: selected,
-                backup_ids: backup,
-                discarded_ids: discarded,
-                actor: state.actor
-            })
-        });
-
-        const result = await res.json();
-        showToast(`Updated: ${result.selected} selected, ${result.backup} backup, ${result.discarded} discarded`);
+        await persistEdits(edits);
+        await submitDecisions(ids, 'discarded');
+        removeCardsAndClusters(cards);
         loadStats();
-        loadFilterData(); // Reload to get next page
+        showToast(`已放弃${ids.length}条`);
     } catch (e) {
-        showToast('Failed to submit', 'error');
+        showToast('批量放弃失败', 'error');
     }
 }
 

@@ -15,9 +15,8 @@
    - Added delegated radio listeners to single cards and clusters that POST edits then decisions, remove the affected cards/clusters from the DOM, refresh stats, and revert selection with a toast on failure.
 2. **Pending retention** ✅
    - Immediate handlers only remove the cards/clusters whose status changed; untouched items stay on the page with no automatic reload.
-3. **“放弃本页剩余内容” bulk**
-   - Rename the button text.
-   - Bulk handler: gather all currently visible undecided cards (or all remaining), send their summaries/sources to `/edit`, then call `/decide` with those IDs marked discarded, remove them from DOM, refresh stats.
+3. **“放弃本页剩余内容” bulk** ✅
+   - Button renamed; bulk handler now collects all visible remaining cards (including collapsed ones), saves their edits, discards them via `/decide`, removes cards/clusters from the DOM, and refreshes stats without reloading.
 
 ## Edge Handling
 - Clusters: a cluster-level radio change should apply to all cards inside that cluster in one request.

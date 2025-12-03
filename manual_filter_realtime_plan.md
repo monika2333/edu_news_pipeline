@@ -11,10 +11,8 @@
 - DOM removal only happens via reload.
 
 ## Plan
-1. **Per-item immediate update**
-   - Add delegated listeners for status changes (single cards and cluster-level radios). On change, collect the affected card IDs plus current summary/source edits, POST to `/edit`, then POST to `/decide` with the chosen status.
-   - On success, remove the relevant card(s) from the DOM; if a cluster becomes empty, remove its wrapper. Update counters via `loadStats()` (no full list reload).
-   - On failure, show toast and revert the radio selection to prior state.
+1. **Per-item immediate update** ✅
+   - Added delegated radio listeners to single cards and clusters that POST edits then decisions, remove the affected cards/clusters from the DOM, refresh stats, and revert selection with a toast on failure.
 2. **Pending retention**
    - Only remove cards that received an explicit status change; untouched cards stay rendered. Avoid automatic refresh that would drop Pending items.
 3. **“放弃本页剩余内容” bulk**

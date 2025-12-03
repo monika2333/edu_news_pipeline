@@ -50,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupActor();
     loadStats();
     loadFilterData();
+    setupFilterRealtimeDecisionHandlers();
 
     // Global event listeners
     document.getElementById('btn-refresh').addEventListener('click', () => {
@@ -99,26 +100,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) {
     const safe = item || {};
+    const currentStatus = safe.manual_status || safe.status || 'discarded';
     const sourcePlaceholder = safe.llm_source_raw ? `(LLM: ${safe.llm_source_raw})` : '留空则回退抓取来源';
     const statusGroup = showStatus ? `
         <div class="radio-group" role="radiogroup">
             <div class="radio-option">
-                <input type="radio" name="status-${safe.article_id}" value="selected" id="sel-${safe.article_id}">
+                <input type="radio" name="status-${safe.article_id}" value="selected" id="sel-${safe.article_id}" ${currentStatus === 'selected' ? 'checked' : ''}>
                 <label for="sel-${safe.article_id}" class="radio-label">采纳</label>
             </div>
             <div class="radio-option">
-                <input type="radio" name="status-${safe.article_id}" value="backup" id="bak-${safe.article_id}">
+                <input type="radio" name="status-${safe.article_id}" value="backup" id="bak-${safe.article_id}" ${currentStatus === 'backup' ? 'checked' : ''}>
                 <label for="bak-${safe.article_id}" class="radio-label">备选</label>
             </div>
             <div class="radio-option">
-                <input type="radio" name="status-${safe.article_id}" value="discarded" id="dis-${safe.article_id}" checked>
+                <input type="radio" name="status-${safe.article_id}" value="discarded" id="dis-${safe.article_id}" ${currentStatus === 'discarded' ? 'checked' : ''}>
                 <label for="dis-${safe.article_id}" class="radio-label">放弃</label>
             </div>
         </div>
     ` : '';
 
     return `
-        <div class="article-card${collapsed ? ' collapsed' : ''}" data-id="${safe.article_id || ''}" ${collapsed ? 'style="display:none;"' : ''}>
+        <div class="article-card${collapsed ? ' collapsed' : ''}" data-id="${safe.article_id || ''}" data-status="${currentStatus}" ${collapsed ? 'style="display:none;"' : ''}>
             <div class="card-header">
                 <h3 class="article-title">
                     ${safe.title || '(No Title)'}
@@ -308,6 +310,7 @@ function renderClusteredList(clusters) {
     elements.filterList.innerHTML = clusters.map(cluster => {
         const items = cluster.items || [];
         const size = items.length;
+        const clusterStatus = cluster.status || 'discarded';
 
         // Single-item cluster: render as a plain article card (no cluster frame).
         if (size <= 1) {
@@ -318,19 +321,19 @@ function renderClusteredList(clusters) {
         const hiddenCount = rest.length;
 
         return `
-    <div class="filter-cluster" data-cluster-id="${cluster.cluster_id}" data-size="${size}">
+    <div class="filter-cluster" data-cluster-id="${cluster.cluster_id}" data-size="${size}" data-status="${clusterStatus}">
         <div class="cluster-header">
             <div class="radio-group cluster-radio" data-cluster="${cluster.cluster_id}">
                 <div class="radio-option">
-                    <input type="radio" name="cluster-${cluster.cluster_id}" value="selected" id="cluster-sel-${cluster.cluster_id}">
+                    <input type="radio" name="cluster-${cluster.cluster_id}" value="selected" id="cluster-sel-${cluster.cluster_id}" ${clusterStatus === 'selected' ? 'checked' : ''}>
                     <label for="cluster-sel-${cluster.cluster_id}" class="radio-label">采纳</label>
                 </div>
                 <div class="radio-option">
-                    <input type="radio" name="cluster-${cluster.cluster_id}" value="backup" id="cluster-bak-${cluster.cluster_id}">
+                    <input type="radio" name="cluster-${cluster.cluster_id}" value="backup" id="cluster-bak-${cluster.cluster_id}" ${clusterStatus === 'backup' ? 'checked' : ''}>
                     <label for="cluster-bak-${cluster.cluster_id}" class="radio-label">备选</label>
                 </div>
                 <div class="radio-option">
-                    <input type="radio" name="cluster-${cluster.cluster_id}" value="discarded" id="cluster-dis-${cluster.cluster_id}">
+                    <input type="radio" name="cluster-${cluster.cluster_id}" value="discarded" id="cluster-dis-${cluster.cluster_id}" ${clusterStatus === 'discarded' ? 'checked' : ''}>
                     <label for="cluster-dis-${cluster.cluster_id}" class="radio-label">放弃</label>
                 </div>
             </div>
@@ -358,6 +361,154 @@ function renderClusteredList(clusters) {
             btn.textContent = isHidden ? '收起其余' + count + '条' : '展开其余' + count + '条';
         });
     });
+}
+
+function setupFilterRealtimeDecisionHandlers() {
+    if (!elements.filterList) return;
+    elements.filterList.addEventListener('change', (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLInputElement) || target.type !== 'radio') return;
+
+        if (target.name.startsWith('cluster-')) {
+            handleClusterDecisionChange(target);
+        } else if (target.name.startsWith('status-')) {
+            handleCardDecisionChange(target);
+        }
+    });
+}
+
+async function handleCardDecisionChange(input) {
+    const card = input.closest('.article-card');
+    if (!card) return;
+
+    const id = card.dataset.id;
+    const status = input.value;
+    const previousStatus = card.dataset.status || 'discarded';
+    if (!id || status === previousStatus) return;
+
+    const radios = card.querySelectorAll('input[type="radio"][name^="status-"]');
+    setInputsDisabled(radios, true);
+
+    const edits = {};
+    collectCardEdits(card, edits);
+
+    try {
+        await persistEdits(edits);
+        await submitDecisions([id], status);
+        removeCardAndMaybeCluster(card);
+        loadStats();
+        showToast('已更新并移除');
+    } catch (err) {
+        revertRadioSelection(radios, previousStatus);
+        card.dataset.status = previousStatus;
+        showToast('更新失败，请重试', 'error');
+    } finally {
+        if (card.isConnected) {
+            setInputsDisabled(radios, false);
+        }
+    }
+}
+
+async function handleClusterDecisionChange(input) {
+    const cluster = input.closest('.filter-cluster');
+    if (!cluster) return;
+
+    const status = input.value;
+    const previousStatus = cluster.dataset.status || 'discarded';
+    if (status === previousStatus) return;
+
+    const cards = cluster.querySelectorAll('.article-card');
+    if (!cards.length) return;
+
+    const radios = cluster.querySelectorAll('.cluster-radio input[type="radio"]');
+    setInputsDisabled(radios, true);
+
+    const edits = {};
+    const ids = [];
+    cards.forEach(card => {
+        const id = card.dataset.id;
+        if (!id) return;
+        ids.push(id);
+        collectCardEdits(card, edits);
+    });
+
+    if (!ids.length) {
+        setInputsDisabled(radios, false);
+        return;
+    }
+
+    try {
+        await persistEdits(edits);
+        await submitDecisions(ids, status);
+        cluster.remove();
+        loadStats();
+        showToast('已更新并移除');
+    } catch (err) {
+        revertRadioSelection(radios, previousStatus);
+        cluster.dataset.status = previousStatus;
+        showToast('更新失败，请重试', 'error');
+    } finally {
+        if (cluster.isConnected) {
+            setInputsDisabled(radios, false);
+        }
+    }
+}
+
+function collectCardEdits(card, edits) {
+    const id = card.dataset.id;
+    if (!id) return;
+    const summaryBox = card.querySelector('.summary-box');
+    const sourceBox = card.querySelector('.source-box');
+    const summary = summaryBox ? summaryBox.value : '';
+    const llm_source = sourceBox ? sourceBox.value : '';
+    edits[id] = { summary, llm_source };
+}
+
+async function persistEdits(edits) {
+    if (!Object.keys(edits || {}).length) return;
+    const res = await fetch(`${API_BASE}/edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ edits, actor: state.actor })
+    });
+    if (!res.ok) throw new Error('failed to save edits');
+}
+
+async function submitDecisions(ids, status) {
+    const payload = {
+        selected_ids: status === 'selected' ? ids : [],
+        backup_ids: status === 'backup' ? ids : [],
+        discarded_ids: status === 'discarded' ? ids : [],
+        pending_ids: [],
+        actor: state.actor
+    };
+
+    const res = await fetch(`${API_BASE}/decide`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('failed to update status');
+}
+
+function setInputsDisabled(nodes, disabled) {
+    nodes.forEach(node => {
+        node.disabled = disabled;
+    });
+}
+
+function revertRadioSelection(radios, status) {
+    radios.forEach(r => {
+        r.checked = r.value === status;
+    });
+}
+
+function removeCardAndMaybeCluster(card) {
+    const cluster = card.closest('.filter-cluster');
+    card.remove();
+    if (cluster && !cluster.querySelector('.article-card')) {
+        cluster.remove();
+    }
 }
 
 async function submitFilter() {

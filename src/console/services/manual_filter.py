@@ -14,6 +14,18 @@ logger = logging.getLogger(__name__)
 EXPORT_META_PATH = Path("outputs/manual_filter_export_meta.json")
 _cluster_cache: Dict[Tuple[str, str, float], Dict[str, Any]] = {}
 
+
+def _pending_total(adapter: Any) -> int:
+    """Lightweight pending count; falls back to status counts on adapter that lacks the method."""
+    try:
+        return int(adapter.manual_review_pending_count())  # type: ignore[attr-defined]
+    except Exception:
+        try:
+            counts = adapter.manual_review_status_counts()  # type: ignore[attr-defined]
+            return int(counts.get("pending", 0)) if isinstance(counts, dict) else 0
+        except Exception:
+            return 0
+
 def _period_increment_for_template(template: str) -> int:
     return 1 if template == "zongbao" else 2
 
@@ -209,8 +221,8 @@ def _candidate_rank_key_by_record(record: Dict[str, Any]) -> Tuple[float, float,
     return (ext_score, score, ts_val)
 
 
-def _collect_pending(region: Optional[str], sentiment: Optional[str], fetch_limit: int = 5000) -> List[Dict[str, Any]]:
-    adapter = get_adapter()
+def _collect_pending(region: Optional[str], sentiment: Optional[str], fetch_limit: int = 5000, *, adapter: Any = None) -> List[Dict[str, Any]]:
+    adapter = adapter or get_adapter()
     rows = adapter.fetch_manual_pending_for_cluster(  # type: ignore[attr-defined]
         region=region,
         sentiment=sentiment,
@@ -236,6 +248,7 @@ def cluster_pending(
     force_refresh: bool = False,
 ) -> Dict[str, Any]:
     fetch_limit = 5000
+    adapter = get_adapter()
     try:
         threshold_val = float(cluster_threshold) if cluster_threshold is not None else DEFAULT_CLUSTER_THRESHOLD
     except Exception:
@@ -243,17 +256,25 @@ def cluster_pending(
     threshold_val = max(0.0, min(threshold_val, 1.0))
 
     cache_key = _cluster_cache_key(region, sentiment, threshold_val)
+    current_pending_total = _pending_total(adapter)
     if not force_refresh and cache_key in _cluster_cache:
         cached = _cluster_cache[cache_key]
         clusters = cached.get("clusters", [])
         total_clusters = cached.get("total", len(clusters))
-        return _paginate_clusters(clusters, limit=limit, offset=offset, total=total_clusters)
+        cached_pending_total = cached.get("pending_total")
+        if cached_pending_total is not None and cached_pending_total == current_pending_total:
+            return _paginate_clusters(clusters, limit=limit, offset=offset, total=total_clusters)
 
-    records = _collect_pending(region, sentiment, fetch_limit=fetch_limit)
+    records = _collect_pending(region, sentiment, fetch_limit=fetch_limit, adapter=adapter)
     if not records:
-        _cluster_cache[cache_key] = {"clusters": [], "total": 0}
+        _cluster_cache[cache_key] = {
+            "clusters": [],
+            "total": 0,
+            "item_total": 0,
+            "pending_total": current_pending_total,
+        }
         return {"clusters": [], "total": 0}
-    total = len(records)
+    item_total = len(records)
 
     buckets: Dict[Tuple[str, str], List[Dict[str, Any]]] = {
         ("internal", "positive"): [],
@@ -326,7 +347,12 @@ def cluster_pending(
     clusters.sort(key=lambda c: c.get("rank_key", (float("-inf"), float("-inf"), float("-inf"))), reverse=True)
     total_clusters = len(clusters)
 
-    _cluster_cache[cache_key] = {"clusters": clusters, "total": total_clusters}
+    _cluster_cache[cache_key] = {
+        "clusters": clusters,
+        "total": total_clusters,
+        "item_total": item_total,
+        "pending_total": current_pending_total,
+    }
 
     return _paginate_clusters(clusters, limit=limit, offset=offset, total=total_clusters)
 

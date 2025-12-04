@@ -71,6 +71,9 @@ class FakeAdapter:
             counts[key] = counts.get(key, 0) + 1
         return counts
 
+    def manual_review_pending_count(self) -> int:
+        return sum(1 for row in self.rows if (row.get("status") or "pending") == "pending")
+
     def manual_review_max_rank(self, status: str) -> float:
         ranks = [r.get("rank") for r in self.rows if r.get("status") == status and r.get("rank") is not None]
         if not ranks:

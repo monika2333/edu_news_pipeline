@@ -1278,6 +1278,22 @@ class PostgresAdapter:
                     counts[status] = 0
         return counts
 
+    def manual_review_pending_count(self) -> int:
+        query = """
+            SELECT COUNT(*) AS total
+            FROM manual_reviews mr
+            JOIN news_summaries ns ON ns.article_id = mr.article_id
+            WHERE mr.status = 'pending'
+              AND ns.status = 'ready_for_export'
+        """
+        with self._cursor() as cur:
+            cur.execute(query)
+            row = cur.fetchone() or {}
+        try:
+            return int(row.get("total") or 0)
+        except Exception:
+            return 0
+
     def manual_review_max_rank(self, status: str) -> float:
         query = "SELECT COALESCE(MAX(rank), 0) AS max_rank FROM manual_reviews WHERE status = %s"
         with self._cursor() as cur:

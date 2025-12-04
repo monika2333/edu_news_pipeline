@@ -207,17 +207,28 @@ def list_candidates(
 
 
 def _candidate_rank_key_by_record(record: Dict[str, Any]) -> Tuple[float, float, float]:
-    ext_val = record.get("external_importance_score")
-    ext_score = float(ext_val) if isinstance(ext_val, (int, float)) else float("-inf")
-    score_val = record.get("score")
-    score = float(score_val) if isinstance(score_val, (int, float)) else float("-inf")
-    ts = record.get("publish_time_iso") or record.get("publish_time")
-    ts_val = 0.0
-    if ts:
+    def _num(val: Any, default: float = float("-inf")) -> float:
         try:
-            ts_val = datetime.fromisoformat(str(ts)).timestamp()
+            return float(val)
+        except (TypeError, ValueError):
+            return default
+
+    def _ts(val: Any) -> float:
+        if val is None:
+            return 0.0
+        if isinstance(val, (int, float)):
+            return float(val)
+        try:
+            return datetime.fromisoformat(str(val)).timestamp()
         except Exception:
-            ts_val = 0.0
+            try:
+                return float(val)
+            except Exception:
+                return 0.0
+
+    ext_score = _num(record.get("external_importance_score"))
+    score = _num(record.get("score"))
+    ts_val = _ts(record.get("publish_time_iso") or record.get("publish_time"))
     return (ext_score, score, ts_val)
 
 

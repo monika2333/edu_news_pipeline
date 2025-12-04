@@ -1191,7 +1191,8 @@ class PostgresAdapter:
             FROM manual_reviews mr
             JOIN news_summaries ns ON ns.article_id = mr.article_id
             WHERE {where_sql}
-            ORDER BY mr.rank ASC NULLS LAST,
+            ORDER BY ns.external_importance_score DESC NULLS LAST,
+                     mr.rank ASC NULLS LAST,
                      ns.score DESC NULLS LAST,
                      ns.publish_time_iso DESC NULLS LAST,
                      mr.article_id ASC
@@ -1250,7 +1251,8 @@ class PostgresAdapter:
             FROM manual_reviews mr
             JOIN news_summaries ns ON ns.article_id = mr.article_id
             WHERE {where_sql}
-            ORDER BY mr.rank ASC NULLS LAST,
+            ORDER BY ns.external_importance_score DESC NULLS LAST,
+                     mr.rank ASC NULLS LAST,
                      ns.score DESC NULLS LAST,
                      ns.publish_time_iso DESC NULLS LAST,
                      mr.article_id ASC
@@ -1430,7 +1432,8 @@ class PostgresAdapter:
             FROM manual_reviews mr
             JOIN news_summaries ns ON ns.article_id = mr.article_id
             WHERE mr.status = 'selected'
-            ORDER BY mr.rank ASC NULLS LAST,
+            ORDER BY ns.external_importance_score DESC NULLS LAST,
+                     mr.rank ASC NULLS LAST,
                      ns.score DESC NULLS LAST,
                      ns.publish_time_iso DESC NULLS LAST,
                      mr.article_id ASC

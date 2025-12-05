@@ -162,6 +162,11 @@ async def manual_filter_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("manual_filter.html", {"request": request})
 
 
+@router.get("/xiaohongshu/summary", response_class=HTMLResponse)
+async def xhs_summary_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse("xhs_summary.html", {"request": request})
+
+
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def landing_page(request: Request) -> HTMLResponse:
     """根路径导览页，便于跳转到各工具。"""
@@ -170,6 +175,7 @@ async def landing_page(request: Request) -> HTMLResponse:
         "manual_filter_url": request.url_for("manual_filter_page"),
         "dashboard_url": request.url_for("dashboard"),
         "search_url": request.url_for("articles_search_page"),
+        "xhs_summary_url": request.url_for("xhs_summary_page"),
     }
     return templates.TemplateResponse("landing.html", context)
 

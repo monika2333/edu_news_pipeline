@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-XHS_ROOT = Path("xiaohongshu-summary - origin")
+XHS_ROOT = Path(os.getenv("XHS_SUMMARY_ROOT", "xiaohongshu-summary - origin"))
 DEFAULT_INPUT = XHS_ROOT / "input_task.txt"
 GUIDE_PATH = XHS_ROOT / "xiaohongshu-post-analysis-guide.md"
 

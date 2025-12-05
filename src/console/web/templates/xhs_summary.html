@@ -8,9 +8,77 @@
 <body>
     <div class="container">
         <div class="card">
-            <h2>小红书总结</h2>
-            <p>页面骨架即将补充（见开发步骤 3）。</p>
+            <div class="card-header">
+                <h2>小红书总结</h2>
+                <p class="muted">粘贴原文或指定路径，提取小红书链接并调用 Codex 生成总结。</p>
+            </div>
+
+            <div class="card-body">
+                <section class="section">
+                    <div class="section-header">
+                        <h3>输入</h3>
+                        <div class="section-actions">
+                            <button id="btn-load-default" class="btn btn-secondary" type="button">填入默认路径</button>
+                        </div>
+                    </div>
+                    <label class="form-label">原始文本（粘贴即可）</label>
+                    <textarea id="raw-text" class="form-control" rows="6" placeholder="粘贴原始文本，或留空改用文件路径"></textarea>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">文件路径（可选）</label>
+                            <input id="source-path" class="form-control" placeholder='默认 "xiaohongshu-summary - origin/input_task.txt"'>
+                        </div>
+                        <div class="form-group">
+                            <button id="btn-extract" class="btn btn-primary" type="button">提取链接</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="section">
+                    <div class="section-header">
+                        <h3>链接提取结果</h3>
+                        <span id="links-count" class="badge">0 个</span>
+                    </div>
+                    <div id="links-list" class="tag-list empty-state">尚未提取</div>
+                </section>
+
+                <section class="section">
+                    <div class="section-header">
+                        <h3>Codex 生成</h3>
+                        <div class="section-actions">
+                            <button id="btn-summarize" class="btn btn-primary" type="button">生成总结</button>
+                        </div>
+                    </div>
+                    <details class="prompt-block">
+                        <summary>使用的 Prompt（预览）</summary>
+                        <pre id="prompt-preview">待后端 compose_prompt 落地后更新。</pre>
+                    </details>
+                    <div class="status-row">
+                        <span>任务状态：</span>
+                        <span id="status-chip" class="badge">未开始</span>
+                    </div>
+                </section>
+
+                <section class="section">
+                    <div class="section-header">
+                        <h3>输出</h3>
+                        <div class="section-actions">
+                            <button id="btn-copy-output" class="btn btn-secondary" type="button">复制输出</button>
+                        </div>
+                    </div>
+                    <div class="output-path muted" id="output-path"></div>
+                    <textarea id="output-text" class="form-control" rows="10" placeholder="生成结果将在此展示" readonly></textarea>
+                </section>
+
+                <section class="section">
+                    <div class="section-header">
+                        <h3>运行日志</h3>
+                    </div>
+                    <pre id="log-area" class="log-area">等待操作...</pre>
+                </section>
+            </div>
         </div>
     </div>
+    <script src="/static/js/xhs_summary.js"></script>
 </body>
 </html>

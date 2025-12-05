@@ -9,23 +9,23 @@
   1) **输入**：多行文本框，预填或一键加载 `xiaohongshu-summary - origin/input_task.txt`；可选“选择文件路径”文本框（高级）。  
   2) **链接提取结果**：展示去重后的链接列表（无需下载按钮）。  
   3) **Codex 生成**：显示当前使用的 prompt（可折叠），按钮触发 Codex 调用，支持在执行中提示“生成中/完成/失败”。  
-  4) **输出**：展示 Codex 生成的总结文本，并标出落盘文件（如 `YYYYMMDDxiaohongshu-summaries.txt`）。可提供“复制”与“重新生成”按钮。  
+  4) **输出**：展示 Codex 生成的总结文本，并标出落盘文件（如 `YYYYMMDDxiaohongshu-summaries.txt(1)`，同日递增 `(2)`...）。可提供“复制”与“重新生成”按钮。  
   5) **运行日志/状态**：简单的状态条或日志区域，展示文件路径、Codex 执行命令、错误信息。
 
 ## 后端设计（FastAPI）
 - 新建路由模块 `src/console/routes/xhs_summary.py`，挂载前缀 `/api/xhs_summary`；在 `app.py` 里纳入 `protected_dependencies`。
 - 服务层放在 `src/console/services/xhs_summary.py`，职责拆分：
-  - `extract_links(raw_text: str, source_path: Path | None) -> ExtractionResult`：包装 `xiaohongshu-summary - origin/extract_links.py` 的逻辑，输出唯一链接列表与生成文件路径。
+  - `extract_links(raw_text: str, source_path: Path | None) -> ExtractionResult`：包装 `xiaohongshu-summary - origin/extract_links.py` 的逻辑，输出唯一链接列表（默认不落盘）；如 Codex prompt 需要文件，可后台生成临时 links 文件供内部使用，执行完可删除。
   - `run_codex(prompt: str, workdir: Path, output_file: Path) -> RunResult`：封装 Codex 调用（见下文），记录 stdout/stderr、退出码。
-  - `compose_prompt(links_file: Path, summaries_file: Path) -> str`：注入用户提供的固定 prompt：“请调用chrome dev mcp，按照 @xiaohongshu-post-analysis-guide.md ，依次处理{links_file}中的所有帖文，将结果写入{summaries_file}”。
+  - `compose_prompt(links_file: Path | None, summaries_file: Path) -> str`：注入固定 prompt；若传入 `links_file` 仅供内部运行，不对用户暴露/下载。
 - API 形态建议：
-  - `POST /extract`：入参 `raw_text`（必填）或 `source_path`（可选，默认 `xiaohongshu-summary - origin/input_task.txt`）；返回 `{ links: [...], output_path }`。
-  - `POST /summarize`：入参 `links` 或 `links_path`；可选 `summaries_filename`；返回任务 id，并立即启动后台任务。
+  - `POST /extract`：入参 `raw_text`（必填）或 `source_path`（可选，默认 `xiaohongshu-summary - origin/input_task.txt`）；返回 `{ links: [...] }`，不返回文件路径。
+  - `POST /summarize`：入参 `links`（列表）或 `links_path`（仅内部可选，为 Codex prompt 需要时后台自动创建并清理）；可选 `summaries_filename`；返回任务 id，并立即启动后台任务。
   - `GET /task/{task_id}`：轮询任务状态，返回 `status`/`error`/`output_path`/`content`（内容可选懒加载读取文件）。
 - 后台执行：使用 `asyncio.to_thread` 或 `BackgroundTasks` 让 Codex 调用不阻塞请求；任务状态暂存于进程内字典（简单需求即可），重启后可丢失。
 
 ## 复用与兼容性要点
-- **提取逻辑复用**：`xiaohongshu-summary - origin` 含空格与连字符，不能直接作为包导入。可用 `importlib.machinery.SourceFileLoader` 加载 `extract_links.py`，或在服务层内复制其核心函数 `extract_xhslink_urls`。保留原有输出命名规则 `YYYYMMDD-xiaohongshu-links.txt`。
+- **提取逻辑复用**：`xiaohongshu-summary - origin` 含空格与连字符，不能直接作为包导入。可用 `importlib.machinery.SourceFileLoader` 加载 `extract_links.py`，或在服务层内复制其核心函数 `extract_xhslink_urls`。默认不持久化 links 文件，如 Codex 需要文件可按原命名规则临时生成（运行后清理）。
 - **文件落盘目录**：默认落在 `xiaohongshu-summary - origin/` 以方便与现有样例对齐；需要 `Path` 统一处理，避免因空格导致的 shell 失败。必要时增加配置项 `XHS_SUMMARY_ROOT`。
 - **认证**：沿用 `require_console_user`，不要暴露未鉴权的命令执行入口。
 

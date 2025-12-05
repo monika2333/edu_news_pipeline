@@ -49,7 +49,7 @@ CLI 路径注意事项：
 1) 新建服务与路由文件 `src/console/services/xhs_summary.py`、`src/console/routes/xhs_summary.py`；在 `app.py` 注册。（已完成）  
 2) 在 `web.py` 增加页面路由 `/xiaohongshu/summary`，同时给 `landing.html` 增加入口卡片。（已完成）  
 3) 新建前端模板与 JS，完成输入区、提取区、生成区、状态区，以及调用上述 API 的 fetch 逻辑。（已完成）  
-4) 落地 Codex CLI 调用（必要时再提供 SDK 兜底），在服务层实现安全的命令组装与错误捕获，并校验 CLI 是否已安装。  
+4) 落地 Codex CLI 调用（必要时再提供 SDK 兜底），在服务层实现安全的命令组装与错误捕获，并校验 CLI 是否已安装。（已完成）  
 5) 为 `xiaohongshu-summary - origin` 目录路径增加配置项或常量，确保引用一致。  
 6) 自测流程：  
    - 用 `xiaohongshu-summary - origin/input_task.txt` 作为输入，验证能提取链接并正常显示。  

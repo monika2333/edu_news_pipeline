@@ -135,6 +135,9 @@ async function handleSummarize() {
             throw new Error("未返回任务 ID");
         }
         state.taskId = data.task_id;
+        if (data.prompt && elements.promptPreview) {
+            elements.promptPreview.textContent = data.prompt;
+        }
         setStatus("执行中", "pending");
         appendLog(`任务已创建: ${state.taskId}，开始轮询...`);
         state.pollingTimer = window.setInterval(pollTask, 2000);
@@ -160,6 +163,9 @@ async function pollTask() {
         if (status === "succeeded") {
             setStatus("完成", "success");
             renderOutput(data);
+            if (data.prompt && elements.promptPreview) {
+                elements.promptPreview.textContent = data.prompt;
+            }
             appendLog("生成完成。");
             clearPolling();
             return;

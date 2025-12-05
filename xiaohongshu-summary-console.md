@@ -46,7 +46,7 @@ CLI 路径注意事项：
 4) 如需重试，可直接复用上一轮的链接列表，不要求落盘文件。
 
 ## 开发步骤清单
-1) 新建服务与路由文件 `src/console/services/xhs_summary.py`、`src/console/routes/xhs_summary.py`；在 `app.py` 注册。  
+1) 新建服务与路由文件 `src/console/services/xhs_summary.py`、`src/console/routes/xhs_summary.py`；在 `app.py` 注册。（已完成）  
 2) 在 `web.py` 增加页面路由 `/xiaohongshu/summary`，同时给 `landing.html` 增加入口卡片。  
 3) 新建前端模板与 JS，完成输入区、提取区、生成区、状态区，以及调用上述 API 的 fetch 逻辑。  
 4) 落地 Codex CLI 调用（必要时再提供 SDK 兜底），在服务层实现安全的命令组装与错误捕获，并校验 CLI 是否已安装。  

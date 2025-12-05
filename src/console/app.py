@@ -3,7 +3,7 @@
 from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from src.console.routes import articles, exports, health, manual_filter, runs, web
+from src.console.routes import articles, exports, health, manual_filter, runs, web, xhs_summary
 from src.console.security import require_console_user
 
 
@@ -26,6 +26,7 @@ def create_app() -> FastAPI:
     app.include_router(articles.router, dependencies=protected_dependencies)
     app.include_router(exports.router, dependencies=protected_dependencies)
     app.include_router(manual_filter.router, dependencies=protected_dependencies)
+    app.include_router(xhs_summary.router, dependencies=protected_dependencies)
     app.include_router(web.router, dependencies=protected_dependencies)
     return app
 

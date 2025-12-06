@@ -172,6 +172,13 @@ def run_codex(prompt: str, workdir: Path, output_file: Path) -> RunResult:
             returncode=completed.returncode,
             output_path=output_file,
         )
+    except FileNotFoundError:
+        return RunResult(
+            stdout="",
+            stderr="codex CLI 未找到，请确认已安装并在 PATH 中可用",
+            returncode=127,
+            output_path=output_file,
+        )
     except Exception as exc:  # pragma: no cover - defensive
         return RunResult(
             stdout="",

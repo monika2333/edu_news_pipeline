@@ -921,13 +921,18 @@ function renderSortableReviewItems(items) {
 
 function renderReviewCard(item) {
     const currentStatus = item.manual_status || item.status || state.reviewView || 'selected';
+    const currentReportType = item.report_type || state.reviewReportType || 'zongbao';
     const placeholder = item.llm_source_raw ? `(LLM: ${item.llm_source_raw})` : '留空则回退抓取来源';
     const sourceText = item.source || item.llm_source_display || '-';
     const scoreVal = item.external_importance_score ?? item.score ?? '-';
     const bonusText = (item.bonus_keywords && item.bonus_keywords.length) ? item.bonus_keywords.join(', ') : '';
     const bonusClass = bonusText ? ' has-bonus' : '';
+    const selectValue =
+        currentStatus === 'selected' || currentStatus === 'backup'
+            ? `${currentReportType}:${currentStatus}`
+            : currentStatus;
     return `
-        <div class="article-card${bonusClass}" data-id="${item.article_id || ''}" data-status="${currentStatus}">
+        <div class="article-card${bonusClass}" data-id="${item.article_id || ''}" data-status="${currentStatus}" data-report-type="${currentReportType}">
             <div class="card-header">
                 <label class="review-select-wrap" title="选择">
                     <input type="checkbox" class="review-select">
@@ -938,10 +943,12 @@ function renderReviewCard(item) {
                     ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
                 </h4>
                 <select class="status-select" data-id="${item.article_id || ''}">
-                    <option value="selected" ${currentStatus === 'selected' ? 'selected' : ''}>采纳</option>
-                    <option value="backup" ${currentStatus === 'backup' ? 'selected' : ''}>备选</option>
-                    <option value="discarded">放弃</option>
-                    <option value="pending">待处理</option>
+                    <option value="zongbao:selected" ${selectValue === 'zongbao:selected' ? 'selected' : ''}>综报采纳</option>
+                    <option value="zongbao:backup" ${selectValue === 'zongbao:backup' ? 'selected' : ''}>综报备选</option>
+                    <option value="wanbao:selected" ${selectValue === 'wanbao:selected' ? 'selected' : ''}>晚报采纳</option>
+                    <option value="wanbao:backup" ${selectValue === 'wanbao:backup' ? 'selected' : ''}>晚报备选</option>
+                    <option value="discarded" ${selectValue === 'discarded' ? 'selected' : ''}>放弃</option>
+                    <option value="pending" ${selectValue === 'pending' ? 'selected' : ''}>待处理</option>
                 </select>
             </div>
             <div class="meta-row">
@@ -1149,7 +1156,14 @@ async function handleReviewStatusChange(e) {
     const card = select.closest('.article-card');
     if (!card) return;
     const id = card.dataset.id;
-    const status = select.value;
+    const rawValue = select.value;
+    let status = rawValue;
+    let targetReportType = card.dataset.reportType || state.reviewReportType;
+    if (rawValue.includes(':')) {
+        const [rt, st] = rawValue.split(':');
+        targetReportType = rt === 'wanbao' ? 'wanbao' : 'zongbao';
+        status = st;
+    }
     const summaryBox = card.querySelector('.summary-box');
     const summary = summaryBox ? summaryBox.value : '';
     const sourceBox = card.querySelector('.source-box');
@@ -1172,7 +1186,7 @@ async function handleReviewStatusChange(e) {
                 discarded_ids: status === 'discarded' ? [id] : [],
                 pending_ids: status === 'pending' ? [id] : [],
                 actor: state.actor,
-                report_type: state.reviewReportType
+                report_type: targetReportType
             })
         });
 

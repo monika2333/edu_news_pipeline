@@ -147,6 +147,8 @@ def run_codex(prompt: str, workdir: Path, output_file: Path) -> RunResult:
             returncode=127,
             output_path=output_file,
         )
+    workdir = workdir.resolve()
+    output_file = output_file.resolve()
     workdir.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     cmd = [
@@ -155,7 +157,9 @@ def run_codex(prompt: str, workdir: Path, output_file: Path) -> RunResult:
         "--full-auto",
         "--sandbox",
         "danger-full-access",
-        "-o",
+        # Avoid interactive prompt when the workdir is not a git repo.
+        "--skip-git-repo-check",
+        "--output-last-message",
         str(output_file),
         prompt,
     ]
@@ -165,6 +169,7 @@ def run_codex(prompt: str, workdir: Path, output_file: Path) -> RunResult:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             env=env,
             cwd=str(workdir),
         )

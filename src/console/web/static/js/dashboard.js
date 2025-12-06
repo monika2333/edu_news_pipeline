@@ -50,7 +50,6 @@ const elements = {
     reviewViewSelect: document.getElementById('review-view-select'),
     reviewViewButtons: document.querySelectorAll('.review-view-btn'),
     reportTypeButtons: document.querySelectorAll('.report-type-btn'),
-    groupToggle: document.getElementById('toggle-groups'),
     stats: {
         pending: document.getElementById('stat-pending'),
         selected: document.getElementById('stat-selected'),
@@ -130,13 +129,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         elements.reportTypeButtons.forEach(btn => {
             btn.classList.toggle('active', btn.dataset.type === state.reviewReportType);
-        });
-    }
-    if (elements.groupToggle) {
-        elements.groupToggle.checked = state.showGroups;
-        elements.groupToggle.addEventListener('change', (e) => {
-            state.showGroups = Boolean(e.target.checked);
-            renderReviewView();
         });
     }
 

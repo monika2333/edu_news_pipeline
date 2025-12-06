@@ -5,6 +5,7 @@ const GROUP_ORDER = [
     { key: 'external_positive', label: '京外正面' },
     { key: 'external_negative', label: '京外负面' }
 ];
+const FILTER_CATEGORIES = ['internal_positive', 'internal_negative', 'external_positive', 'external_negative'];
 
 // State
 let state = {
@@ -20,6 +21,16 @@ let state = {
     reviewData: {
         selected: [],
         backup: []
+    },
+    filterCounts: {
+        internal_positive: 0,
+        internal_negative: 0,
+        external_positive: 0,
+        external_negative: 0
+    },
+    reviewCounts: {
+        zongbao: { selected: 0, backup: 0 },
+        wanbao: { selected: 0, backup: 0 }
     }
 };
 
@@ -68,6 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupActor();
     loadStats();
     loadFilterData();
+    loadFilterCounts();
     setupFilterRealtimeDecisionHandlers();
 
     // Global event listeners
@@ -111,6 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadFilterData();
             });
         });
+        updateFilterCountsUI();
     }
     if (elements.exportPreviewBtn) {
         elements.exportPreviewBtn.addEventListener('click', refreshPreviewAndCopy);
@@ -216,6 +229,29 @@ function reloadCurrentTab(options = {}) {
     else if (state.currentTab === 'discard') loadDiscardData();
 }
 
+function updateReviewRailCounts() {
+    if (!elements.reviewRailButtons || !elements.reviewRailButtons.length) return;
+    elements.reviewRailButtons.forEach(btn => {
+        const baseLabel = btn.dataset.label || btn.textContent.trim();
+        btn.dataset.label = baseLabel;
+        const rt = btn.dataset.reportType === 'wanbao' ? 'wanbao' : 'zongbao';
+        const view = btn.dataset.view === 'backup' ? 'backup' : 'selected';
+        const count = (state.reviewCounts[rt] && state.reviewCounts[rt][view]) || 0;
+        btn.textContent = `${baseLabel} (${count})`;
+    });
+}
+
+function updateFilterCountsUI() {
+    if (!elements.filterTabButtons || !elements.filterTabButtons.length) return;
+    elements.filterTabButtons.forEach(btn => {
+        const baseLabel = btn.dataset.label || btn.textContent.trim();
+        btn.dataset.label = baseLabel;
+        const key = btn.dataset.category || '';
+        const count = state.filterCounts[key] || 0;
+        btn.textContent = `${baseLabel} (${count})`;
+    });
+}
+
 function setReviewReportType(value) {
     const normalized = value === 'wanbao' ? 'wanbao' : 'zongbao';
     state.reviewReportType = normalized;
@@ -232,6 +268,7 @@ function setReviewReportType(value) {
             );
         });
     }
+    updateReviewRailCounts();
     loadReviewData();
 }
 
@@ -246,16 +283,28 @@ function setReviewView(view) {
             );
         });
     }
+    updateReviewRailCounts();
     renderReviewView();
 }
 
 async function loadStats() {
     try {
-        const res = await fetch(`${API_BASE}/stats`);
-        const data = await res.json();
-        Object.keys(data).forEach(key => {
-            if (elements.stats[key]) elements.stats[key].textContent = data[key];
+        const [allRes, zbRes, wbRes] = await Promise.all([
+            fetch(`${API_BASE}/stats`),
+            fetch(`${API_BASE}/stats?report_type=zongbao`),
+            fetch(`${API_BASE}/stats?report_type=wanbao`)
+        ]);
+        const allData = await allRes.json();
+        const zbData = await zbRes.json();
+        const wbData = await wbRes.json();
+        Object.keys(allData).forEach(key => {
+            if (elements.stats[key]) elements.stats[key].textContent = allData[key];
         });
+        state.reviewCounts = {
+            zongbao: { selected: zbData.selected || 0, backup: zbData.backup || 0 },
+            wanbao: { selected: wbData.selected || 0, backup: wbData.backup || 0 }
+        };
+        updateReviewRailCounts();
     } catch (e) {
         showToast('Failed to load stats', 'error');
     }
@@ -285,8 +334,34 @@ async function loadFilterData(options = {}) {
         const data = await res.json();
         renderFilterList(data);
         updatePagination('filter', data.total || 0, state.filterPage);
+        state.filterCounts[cat] = data.total || 0;
+        updateFilterCountsUI();
     } catch (e) {
         elements.filterList.innerHTML = '<div class="error">Failed to load data</div>';
+    }
+}
+
+async function loadFilterCounts() {
+    try {
+        await Promise.all(
+            FILTER_CATEGORIES.map(async (cat) => {
+                const params = new URLSearchParams({
+                    limit: '1',
+                    offset: '0',
+                    cluster: 'true'
+                });
+                if (cat.startsWith('internal')) params.set('region', 'internal');
+                if (cat.startsWith('external')) params.set('region', 'external');
+                if (cat.endsWith('positive')) params.set('sentiment', 'positive');
+                if (cat.endsWith('negative')) params.set('sentiment', 'negative');
+                const res = await fetch(`${API_BASE}/candidates?${params.toString()}`);
+                const data = await res.json();
+                state.filterCounts[cat] = data.total || 0;
+            })
+        );
+        updateFilterCountsUI();
+    } catch (e) {
+        // Silent fail; counts remain previous
     }
 }
 
@@ -923,6 +998,7 @@ function applyReviewViewMode() {
             );
         });
     }
+    updateReviewRailCounts();
 }
 
 function getActiveReviewContainer() {

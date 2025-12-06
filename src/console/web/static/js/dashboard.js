@@ -36,7 +36,7 @@ let state = {
 
 let shouldForceClusterRefresh = false;
 let emptyFilterPageReloadTimer = null;
-let reviewSortableInstance = null;
+let reviewSortableInstances = [];
 
 // UI mode
 let isSortMode = false;
@@ -881,22 +881,39 @@ function renderSortableReviewItems(items) {
     if (!items || !items.length) {
         return '<div class="empty">当前列表为空</div>';
     }
-    return items.map(item => {
-        const currentStatus = item.manual_status || item.status || state.reviewView || 'selected';
-        const groupKey = resolveGroupKey(item);
-        const groupLabel = getGroupLabel(groupKey);
-        const title = item.title || '(No Title)';
-        const link = item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">${title}</a>` : title;
-        return `
-            <div class="article-card sort-card" data-id="${item.article_id || ''}" data-status="${currentStatus}">
-                <div class="card-header sort-header">
-                    <span class="drag-handle" title="拖动排序">&#8942;</span>
-                    <span class="group-pill">${groupLabel}</span>
-                    <h4 class="article-title">${link}</h4>
+    const buckets = {};
+    items.forEach(item => {
+        const key = resolveGroupKey(item);
+        if (!buckets[key]) buckets[key] = [];
+        buckets[key].push(item);
+    });
+
+    let html = '';
+    GROUP_ORDER.forEach(group => {
+        const groupItems = buckets[group.key] || [];
+        if (!groupItems.length) return;
+        html += `
+            <div class="review-group sort-group" data-group="${group.key}">
+                <div class="review-group-header">${group.label}(${groupItems.length})</div>
+                <div class="review-group-body sort-group-body">
+                    ${groupItems.map(item => {
+                        const currentStatus = item.manual_status || item.status || state.reviewView || 'selected';
+                        const title = item.title || '(No Title)';
+                        const link = item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">${title}</a>` : title;
+                        return `
+                            <div class="article-card sort-card" data-id="${item.article_id || ''}" data-status="${currentStatus}">
+                                <div class="card-header sort-header">
+                                    <span class="drag-handle" title="拖动排序">&#8942;</span>
+                                    <h4 class="article-title">${link}</h4>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
                 </div>
             </div>
         `;
-    }).join('');
+    });
+    return html || '<div class="empty">当前列表为空</div>';
 }
 
 function renderReviewCard(item) {
@@ -936,22 +953,26 @@ function renderReviewCard(item) {
 }
 
 function initReviewSortable() {
-    if (reviewSortableInstance) {
-        reviewSortableInstance.destroy();
-        reviewSortableInstance = null;
+    if (reviewSortableInstances && reviewSortableInstances.length) {
+        reviewSortableInstances.forEach(inst => inst && inst.destroy());
+        reviewSortableInstances = [];
     }
     if (!isSortMode || typeof Sortable === 'undefined') return;
-    const list = document.querySelector('#review-items');
-    if (!list) return;
+    const lists = document.querySelectorAll('.sort-group-body');
+    if (!lists || !lists.length) return;
     const isMobileSort = window.innerWidth <= MOBILE_REVIEW_BREAKPOINT;
-    reviewSortableInstance = new Sortable(list, {
-        animation: 150,
-        handle: isMobileSort ? undefined : '.drag-handle',
-        ghostClass: 'review-ghost',
-        forceFallback: true,
-        fallbackOnBody: true,
-        draggable: '.article-card',
-        onEnd: persistReviewOrder,
+    lists.forEach(list => {
+        const inst = new Sortable(list, {
+            animation: 150,
+            handle: isMobileSort ? undefined : '.drag-handle',
+            ghostClass: 'review-ghost',
+            forceFallback: true,
+            fallbackOnBody: true,
+            draggable: '.article-card',
+            group: { name: 'review-groups', pull: false, put: false },
+            onEnd: persistReviewOrder,
+        });
+        reviewSortableInstances.push(inst);
     });
 }
 

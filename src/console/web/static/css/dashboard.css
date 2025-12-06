@@ -440,9 +440,18 @@ h1 {
 }
 
 .review-view-toggle {
-    display: none;
+    display: flex;
     align-items: center;
     gap: 8px;
+}
+
+.review-view-tabs {
+    display: flex;
+    gap: 0;
+}
+
+.review-view-select {
+    display: none;
 }
 
 .review-view-toggle label {
@@ -722,7 +731,9 @@ h1 {
         padding: 14px 16px;
     }
 
-    .header-right, .header-left, .stats {
+    .header-right,
+    .header-left,
+    .stats {
         width: 100%;
     }
 
@@ -803,7 +814,12 @@ h1 {
         width: 100%;
     }
 
+    .review-view-tabs {
+        display: none;
+    }
+
     .review-view-select {
+        display: block;
         width: 100%;
     }
 

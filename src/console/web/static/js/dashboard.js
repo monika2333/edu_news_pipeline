@@ -852,23 +852,39 @@ async function applyReviewBulkStatus() {
     if (!value) return;
     const scope = getActiveReviewContainer();
     const targets = scope.querySelectorAll('.review-select:checked');
-    if (!targets.length) return;
+    if (!targets.length) {
+        elements.reviewBulkStatus.value = '';
+        showToast('请先选择要移动的条目', 'error');
+        return;
+    }
 
     const selected_ids = [];
     const backup_ids = [];
     const discarded_ids = [];
     const pending_ids = [];
 
-    targets.forEach(cb => {
-        const card = cb.closest('.article-card');
-        if (!card) return;
-        const id = card.dataset.id;
-        if (!id) return;
-        if (value === 'selected') selected_ids.push(id);
-        else if (value === 'backup') backup_ids.push(id);
-        else if (value === 'discarded') discarded_ids.push(id);
-        else if (value === 'pending') pending_ids.push(id);
-    });
+    let targetReportType = state.reviewReportType;
+    if (value.includes(':')) {
+        const [rt, st] = value.split(':');
+        targetReportType = rt === 'wanbao' ? 'wanbao' : 'zongbao';
+        targets.forEach(cb => {
+            const card = cb.closest('.article-card');
+            if (!card) return;
+            const id = card.dataset.id;
+            if (!id) return;
+            if (st === 'selected') selected_ids.push(id);
+            else if (st === 'backup') backup_ids.push(id);
+        });
+    } else if (value === 'discarded' || value === 'pending') {
+        targets.forEach(cb => {
+            const card = cb.closest('.article-card');
+            if (!card) return;
+            const id = card.dataset.id;
+            if (!id) return;
+            if (value === 'discarded') discarded_ids.push(id);
+            else pending_ids.push(id);
+        });
+    }
 
     elements.reviewBulkStatus.value = '';
     if (!selected_ids.length && !backup_ids.length && !discarded_ids.length && !pending_ids.length) {
@@ -886,14 +902,14 @@ async function applyReviewBulkStatus() {
                 discarded_ids,
                 pending_ids,
                 actor: state.actor,
-                report_type: state.reviewReportType
+                report_type: targetReportType
             })
         });
         await loadReviewData();
         loadStats();
-        showToast('批量更新完成');
+        showToast('批量移动完成');
     } catch (e) {
-        showToast('批量更新失败', 'error');
+        showToast('批量移动失败', 'error');
     } finally {
         isBulkUpdatingReview = false;
         updateReviewSelectAllState();

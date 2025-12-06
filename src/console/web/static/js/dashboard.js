@@ -836,7 +836,7 @@ function renderGroupedReviewItems(items) {
 function renderReviewCard(item) {
     const currentStatus = item.manual_status || item.status || state.reviewView || 'selected';
     const placeholder = item.llm_source_raw ? `(LLM: ${item.llm_source_raw})` : '留空则回退抓取来源';
-    const sourceText = item.llm_source_display || item.source || '-';
+    const sourceText = item.source || item.llm_source_display || '-';
     const scoreVal = item.external_importance_score ?? item.score ?? '-';
     const bonusText = (item.bonus_keywords && item.bonus_keywords.length) ? item.bonus_keywords.join(', ') : '';
     return `

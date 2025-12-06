@@ -47,8 +47,6 @@ const elements = {
     exportTotal: document.getElementById('export-total'),
     exportPreviewBtn: document.getElementById('btn-export-preview'),
     exportConfirmBtn: document.getElementById('btn-export-confirm'),
-    reviewViewSelect: document.getElementById('review-view-select'),
-    reviewViewButtons: document.querySelectorAll('.review-view-btn'),
     reportTypeButtons: document.querySelectorAll('.report-type-btn'),
     stats: {
         pending: document.getElementById('stat-pending'),
@@ -92,17 +90,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (elements.reviewBulkStatus) {
         elements.reviewBulkStatus.addEventListener('change', applyReviewBulkStatus);
-    }
-    if (elements.reviewViewSelect) {
-        elements.reviewViewSelect.addEventListener('change', handleReviewViewChange);
-    }
-    if (elements.reviewViewButtons && elements.reviewViewButtons.length) {
-        elements.reviewViewButtons.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const view = btn.dataset.view || 'selected';
-                setReviewView(view);
-            });
-        });
     }
     if (elements.reviewRailButtons && elements.reviewRailButtons.length) {
         elements.reviewRailButtons.forEach(btn => {
@@ -251,14 +238,6 @@ function setReviewReportType(value) {
 function setReviewView(view) {
     const normalized = view === 'backup' ? 'backup' : 'selected';
     state.reviewView = normalized;
-    if (elements.reviewViewSelect) {
-        elements.reviewViewSelect.value = normalized;
-    }
-    if (elements.reviewViewButtons && elements.reviewViewButtons.length) {
-        elements.reviewViewButtons.forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.view === normalized);
-        });
-    }
     if (elements.reviewRailButtons && elements.reviewRailButtons.length) {
         elements.reviewRailButtons.forEach(btn => {
             btn.classList.toggle(
@@ -943,20 +922,7 @@ async function applyReviewBulkStatus() {
     }
 }
 
-function handleReviewViewChange(e) {
-    const value = e.target.value || 'selected';
-    setReviewView(value);
-}
-
 function applyReviewViewMode() {
-    if (elements.reviewViewSelect) {
-        elements.reviewViewSelect.value = state.reviewView;
-    }
-    if (elements.reviewViewButtons && elements.reviewViewButtons.length) {
-        elements.reviewViewButtons.forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.view === state.reviewView);
-        });
-    }
     if (elements.reviewRailButtons && elements.reviewRailButtons.length) {
         elements.reviewRailButtons.forEach(btn => {
             btn.classList.toggle(

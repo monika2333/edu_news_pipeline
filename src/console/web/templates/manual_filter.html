@@ -97,8 +97,11 @@
                     </select>
                 </div>
                 <div class="review-view-toggle">
-                    <label for="review-view-select">查看</label>
-                    <select id="review-view-select" class="review-view-select">
+                    <div class="review-view-tabs">
+                        <button class="btn btn-secondary review-view-btn active" data-view="selected">采纳</button>
+                        <button class="btn btn-secondary review-view-btn" data-view="backup">备选</button>
+                    </div>
+                    <select id="review-view-select" class="review-view-select" style="display:none;">
                         <option value="selected">采纳</option>
                         <option value="backup">备选</option>
                     </select>

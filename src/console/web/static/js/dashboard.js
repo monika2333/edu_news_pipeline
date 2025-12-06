@@ -48,6 +48,7 @@ const elements = {
     exportPreviewBtn: document.getElementById('btn-export-preview'),
     exportConfirmBtn: document.getElementById('btn-export-confirm'),
     reviewViewSelect: document.getElementById('review-view-select'),
+    reviewViewButtons: document.querySelectorAll('.review-view-btn'),
     reportTypeButtons: document.querySelectorAll('.report-type-btn'),
     groupToggle: document.getElementById('toggle-groups'),
     stats: {
@@ -94,6 +95,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (elements.reviewViewSelect) {
         elements.reviewViewSelect.addEventListener('change', handleReviewViewChange);
+    }
+    if (elements.reviewViewButtons && elements.reviewViewButtons.length) {
+        elements.reviewViewButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const view = btn.dataset.view || 'selected';
+                setReviewView(view);
+            });
+        });
     }
     if (elements.filterTabButtons && elements.filterTabButtons.length) {
         elements.filterTabButtons.forEach(btn => {
@@ -226,6 +235,20 @@ function setReviewReportType(value) {
         });
     }
     loadReviewData();
+}
+
+function setReviewView(view) {
+    const normalized = view === 'backup' ? 'backup' : 'selected';
+    state.reviewView = normalized;
+    if (elements.reviewViewSelect) {
+        elements.reviewViewSelect.value = normalized;
+    }
+    if (elements.reviewViewButtons && elements.reviewViewButtons.length) {
+        elements.reviewViewButtons.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.view === normalized);
+        });
+    }
+    renderReviewView();
 }
 
 async function loadStats() {
@@ -887,13 +910,17 @@ async function applyReviewBulkStatus() {
 
 function handleReviewViewChange(e) {
     const value = e.target.value || 'selected';
-    state.reviewView = value;
-    renderReviewView();
+    setReviewView(value);
 }
 
 function applyReviewViewMode() {
     if (elements.reviewViewSelect) {
         elements.reviewViewSelect.value = state.reviewView;
+    }
+    if (elements.reviewViewButtons && elements.reviewViewButtons.length) {
+        elements.reviewViewButtons.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.view === state.reviewView);
+        });
     }
 }
 

@@ -167,6 +167,15 @@ def _attach_source_fields(record: Dict[str, Any]) -> Dict[str, Any]:
     return record
 
 
+def _attach_group_fields(record: Dict[str, Any]) -> Dict[str, Any]:
+    region = "internal" if record.get("is_beijing_related") else "external"
+    sentiment = "negative" if (record.get("sentiment_label") or "").lower() == "negative" else "positive"
+    record["region"] = region
+    record["sentiment_key"] = sentiment
+    record["group_key"] = f"{region}_{sentiment}"
+    return record
+
+
 def _paginate_by_status(
     manual_status: str,
     *,
@@ -192,7 +201,7 @@ def _paginate_by_status(
     )
     items: List[Dict[str, Any]] = []
     for record in rows:
-        record = _attach_source_fields(dict(record))
+        record = _attach_group_fields(_attach_source_fields(dict(record)))
         record["manual_status"] = record.get("status") or manual_status
         record["summary"] = record.get("manual_summary") or record.get("llm_summary") or ""
         record["bonus_keywords"] = _bonus_keywords(record.get("score_details"))
@@ -288,7 +297,7 @@ def _collect_pending(
     )
     records: List[Dict[str, Any]] = []
     for row in rows:
-        record = _attach_source_fields(dict(row))
+        record = _attach_group_fields(_attach_source_fields(dict(row)))
         record["summary"] = record.get("manual_summary") or record.get("llm_summary") or ""
         record["bonus_keywords"] = _bonus_keywords(record.get("score_details"))
         record["external_importance_score"] = record.get("external_importance_score")

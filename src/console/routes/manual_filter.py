@@ -18,11 +18,13 @@ class BulkDecideRequest(BaseModel):
     discarded_ids: List[str] = Field(default_factory=list)
     pending_ids: List[str] = Field(default_factory=list)
     actor: Optional[str] = None
+    report_type: str = "zongbao"
 
 
 class SaveEditsRequest(BaseModel):
     edits: Dict[str, Dict[str, Any]] = Field(default_factory=dict)  # article_id -> {"summary": "...", "llm_source": "..."}
     actor: Optional[str] = None
+    report_type: str = "zongbao"
 
 
 class ExportRequest(BaseModel):
@@ -33,12 +35,14 @@ class ExportRequest(BaseModel):
     mark_exported: bool = True
     dry_run: bool = False
     output_path: Optional[str] = None
+    report_type: str = "zongbao"
 
 
 class UpdateOrderRequest(BaseModel):
     selected_order: List[str] = Field(default_factory=list)
     backup_order: List[str] = Field(default_factory=list)
     actor: Optional[str] = None
+    report_type: str = "zongbao"
 
 
 @router.get("/candidates")
@@ -50,6 +54,7 @@ def list_candidates_api(
     cluster: bool = False,
     cluster_threshold: Optional[float] = None,
     force_refresh: bool = False,
+    report_type: str = "zongbao",
 ) -> Dict[str, Any]:
     return manual_filter.list_candidates(
         limit=limit,
@@ -59,6 +64,7 @@ def list_candidates_api(
         cluster=cluster,
         cluster_threshold=cluster_threshold,
         force_refresh=force_refresh,
+        report_type=report_type,
     )
 
 
@@ -70,29 +76,30 @@ def bulk_decide_api(req: BulkDecideRequest) -> Dict[str, int]:
         discarded_ids=req.discarded_ids,
         pending_ids=req.pending_ids,
         actor=req.actor,
+        report_type=req.report_type,
     )
 
 
 @router.get("/review")
-def list_review_api(decision: str = "selected", limit: int = 30, offset: int = 0) -> Dict[str, Any]:
-    return manual_filter.list_review(decision, limit=limit, offset=offset)
+def list_review_api(decision: str = "selected", limit: int = 30, offset: int = 0, report_type: str = "zongbao") -> Dict[str, Any]:
+    return manual_filter.list_review(decision, limit=limit, offset=offset, report_type=report_type)
 
 
 @router.get("/discarded")
-def list_discarded_api(limit: int = 30, offset: int = 0) -> Dict[str, Any]:
-    return manual_filter.list_discarded(limit=limit, offset=offset)
+def list_discarded_api(limit: int = 30, offset: int = 0, report_type: str = "zongbao") -> Dict[str, Any]:
+    return manual_filter.list_discarded(limit=limit, offset=offset, report_type=report_type)
 
 
 @router.post("/edit")
 def save_edits_api(req: SaveEditsRequest) -> Dict[str, int]:
     # The service expects Dict[str, Dict[str, Any]], which matches the pydantic model
-    count = manual_filter.save_edits(req.edits, actor=req.actor)
+    count = manual_filter.save_edits(req.edits, actor=req.actor, report_type=req.report_type)
     return {"updated": count}
 
 
 @router.get("/stats")
-def status_counts_api() -> Dict[str, int]:
-    return manual_filter.status_counts()
+def status_counts_api(report_type: str = "zongbao") -> Dict[str, int]:
+    return manual_filter.status_counts(report_type=report_type)
 
 
 @router.post("/export")
@@ -105,6 +112,7 @@ def export_batch_api(req: ExportRequest) -> Dict[str, Any]:
         total_period=req.total_period,
         mark_exported=req.mark_exported,
         dry_run=req.dry_run,
+        report_type=req.report_type,
     )
 
     if not result.get("content"):
@@ -124,4 +132,5 @@ def update_order_api(req: UpdateOrderRequest) -> Dict[str, int]:
         selected_order=req.selected_order,
         backup_order=req.backup_order,
         actor=req.actor,
+        report_type=req.report_type,
     )

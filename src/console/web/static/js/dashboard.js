@@ -1,4 +1,10 @@
 ﻿const API_BASE = '/api/manual_filter';
+const GROUP_ORDER = [
+    { key: 'internal_negative', label: '京内负面' },
+    { key: 'internal_positive', label: '京内正面' },
+    { key: 'external_positive', label: '京外正面' },
+    { key: 'external_negative', label: '京外负面' }
+];
 
 // State
 let state = {
@@ -8,7 +14,13 @@ let state = {
     actor: localStorage.getItem('actor') || '',
     currentTab: 'filter',
     filterCategory: 'internal_positive',
-    reviewView: 'selected'
+    reviewView: 'selected',
+    reviewReportType: 'zongbao',
+    showGroups: true,
+    reviewData: {
+        selected: [],
+        backup: []
+    }
 };
 
 let shouldForceClusterRefresh = false;
@@ -36,6 +48,8 @@ const elements = {
     exportPreviewBtn: document.getElementById('btn-export-preview'),
     exportConfirmBtn: document.getElementById('btn-export-confirm'),
     reviewViewSelect: document.getElementById('review-view-select'),
+    reportTypeButtons: document.querySelectorAll('.report-type-btn'),
+    groupToggle: document.getElementById('toggle-groups'),
     stats: {
         pending: document.getElementById('stat-pending'),
         selected: document.getElementById('stat-selected'),
@@ -46,6 +60,8 @@ const elements = {
     modalText: document.getElementById('export-text'),
     toast: document.getElementById('toast')
 };
+
+let isBulkUpdatingReview = false;
 
 // Init
 document.addEventListener('DOMContentLoaded', () => {
@@ -95,6 +111,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (elements.exportConfirmBtn) {
         elements.exportConfirmBtn.addEventListener('click', confirmExportAndCopy);
+    }
+    if (elements.reportTypeButtons && elements.reportTypeButtons.length) {
+        elements.reportTypeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const val = btn.dataset.type || 'zongbao';
+                setReviewReportType(val);
+            });
+        });
+        elements.reportTypeButtons.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.type === state.reviewReportType);
+        });
+    }
+    if (elements.groupToggle) {
+        elements.groupToggle.checked = state.showGroups;
+        elements.groupToggle.addEventListener('change', (e) => {
+            state.showGroups = Boolean(e.target.checked);
+            renderReviewView();
+        });
     }
 
     // Pagination listeners (delegated or specific)
@@ -181,6 +215,17 @@ function reloadCurrentTab(options = {}) {
     if (state.currentTab === 'filter') loadFilterData(options);
     else if (state.currentTab === 'review') loadReviewData();
     else if (state.currentTab === 'discard') loadDiscardData();
+}
+
+function setReviewReportType(value) {
+    const normalized = value === 'wanbao' ? 'wanbao' : 'zongbao';
+    state.reviewReportType = normalized;
+    if (elements.reportTypeButtons && elements.reportTypeButtons.length) {
+        elements.reportTypeButtons.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.type === normalized);
+        });
+    }
+    loadReviewData();
 }
 
 async function loadStats() {
@@ -589,46 +634,63 @@ async function discardRemainingItems() {
 async function loadReviewData() {
     elements.reviewList.innerHTML = '<div class="loading">Loading...</div>';
     try {
-        // Load both selected and backup
+        const paramsSelected = new URLSearchParams({
+            decision: 'selected',
+            limit: '200',
+            report_type: state.reviewReportType
+        });
+        const paramsBackup = new URLSearchParams({
+            decision: 'backup',
+            limit: '200',
+            report_type: state.reviewReportType
+        });
+
         const [selRes, bakRes] = await Promise.all([
-            fetch(`${API_BASE}/review?decision=selected&limit=50`), // Load more for review
-            fetch(`${API_BASE}/review?decision=backup&limit=50`)
+            fetch(`${API_BASE}/review?${paramsSelected.toString()}`),
+            fetch(`${API_BASE}/review?${paramsBackup.toString()}`)
         ]);
 
         const selData = await selRes.json();
         const bakData = await bakRes.json();
 
-        renderReviewGrid(selData.items, bakData.items);
+        state.reviewData = {
+            selected: selData.items || [],
+            backup: bakData.items || []
+        };
+        renderReviewView();
     } catch (e) {
         elements.reviewList.innerHTML = '<div class="error">Failed to load review data</div>';
     }
 }
 
-function renderReviewGrid(selectedItems, backupItems) {
+function renderReviewView() {
+    const currentView = state.reviewView === 'backup' ? 'backup' : 'selected';
+    const items = state.reviewData[currentView] || [];
+    const typeLabel = state.reviewReportType === 'wanbao' ? '晚报' : '综报';
+    const viewLabel = currentView === 'backup' ? '备选' : '采纳';
+    const content = renderGroupedReviewItems(items);
+
     elements.reviewList.innerHTML = `
-        <div class="review-grid">
-            <div class="review-col selected-col" data-status="selected">
-                <h3>采纳 (${selectedItems.length})</h3>
-                <div class="review-items">
-                    ${renderReviewItems(selectedItems, 'selected')}
-                </div>
+        <div class="review-grid single-view" data-view="${currentView}">
+            <div class="review-meta-bar">
+                <span class="meta-chip">报型：${typeLabel}</span>
+                <span class="meta-chip">列表：${viewLabel}</span>
+                <span class="meta-chip">数量：${items.length}</span>
+                <span class="meta-chip">分组：${state.showGroups ? '显示' : '隐藏'}</span>
             </div>
-            <div class="review-col backup-col" data-status="backup">
-                <h3>备选(${backupItems.length})</h3>
-                <div class="review-items">
-                    ${renderReviewItems(backupItems, 'backup')}
-                </div>
+            <div class="review-items" id="review-items">
+                ${content}
             </div>
         </div>
     `;
+    applyReviewViewMode();
+    bindReviewSelectionControls();
     initReviewSortable();
     applySortModeState();
-    bindReviewSelectionControls();
-    applyReviewViewMode();
 }
 
 function applySortModeState() {
-    const container = document.querySelector('#review-list .review-grid');
+    const container = document.querySelector('#review-items');
     const toggleBtn = elements.sortToggleBtn;
     if (container) {
         container.classList.toggle('compact-mode', isSortMode);
@@ -645,52 +707,86 @@ function toggleSortMode() {
     applySortModeState();
 }
 
-function renderReviewItems(items, currentStatus) {
-    return items.map(item => `
-        <div class="article-card" data-id="${item.article_id}">
+function resolveGroupKey(item) {
+    if (item.group_key) return item.group_key;
+    const region = item.is_beijing_related ? 'internal' : 'external';
+    const sentiment = (item.sentiment_label || '').toLowerCase() === 'negative' ? 'negative' : 'positive';
+    return `${region}_${sentiment}`;
+}
+
+function renderGroupedReviewItems(items) {
+    if (!items || !items.length) {
+        return '<div class="empty">当前列表为空</div>';
+    }
+    const buckets = {};
+    items.forEach(item => {
+        const key = resolveGroupKey(item);
+        if (!buckets[key]) buckets[key] = [];
+        buckets[key].push(item);
+    });
+
+    const renderCards = (list) => list.map(renderReviewCard).join('');
+    let html = '';
+    GROUP_ORDER.forEach(group => {
+        const groupItems = buckets[group.key] || [];
+        if (state.showGroups) {
+            html += `
+                <div class="review-group" data-group="${group.key}">
+                    <div class="review-group-header">${group.label} (${groupItems.length})</div>
+                    <div class="review-group-body">
+                        ${renderCards(groupItems)}
+                    </div>
+                </div>
+            `;
+        } else {
+            html += renderCards(groupItems);
+        }
+    });
+    return html;
+}
+
+function renderReviewCard(item) {
+    const currentStatus = item.manual_status || item.status || state.reviewView || 'selected';
+    const placeholder = item.llm_source_raw ? `(LLM: ${item.llm_source_raw})` : '留空则回退抓取来源';
+    return `
+        <div class="article-card" data-id="${item.article_id || ''}" data-status="${currentStatus}">
             <div class="card-header">
                 <label class="review-select-wrap" title="选择">
                     <input type="checkbox" class="review-select">
                 </label>
                 <span class="drag-handle" title="拖动排序">&#8942;</span>
                 <h4 class="article-title">
-                    ${item.title}
+                    ${item.title || '(No Title)'}
                     ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
                 </h4>
-                <select class="status-select" data-id="${item.article_id}">
+                <select class="status-select" data-id="${item.article_id || ''}">
                     <option value="selected" ${currentStatus === 'selected' ? 'selected' : ''}>采纳</option>
                     <option value="backup" ${currentStatus === 'backup' ? 'selected' : ''}>备选</option>
                     <option value="discarded">放弃</option>
                     <option value="pending">待处理</option>
                 </select>
             </div>
-            <textarea class="summary-box" data-id="${item.article_id}">${item.summary || ''}</textarea>
-            <input class="source-box" data-id="${item.article_id}" value="${item.llm_source_display || ''}" placeholder="${item.llm_source_raw ? `(LLM: ${item.llm_source_raw})` : '留空则回退抓取来源'}">
+            <textarea class="summary-box" data-id="${item.article_id || ''}">${item.summary || ''}</textarea>
+            <input class="source-box" data-id="${item.article_id || ''}" value="${item.llm_source_display || ''}" placeholder="${placeholder}">
         </div>
-    `).join('');
+    `;
 }
 
 function initReviewSortable() {
     if (typeof Sortable === 'undefined') return;
-    const selectedList = document.querySelector('.review-col.selected-col .review-items');
-    const backupList = document.querySelector('.review-col.backup-col .review-items');
-    if (!selectedList || !backupList) return;
+    const list = document.querySelector('#review-items');
+    if (!list) return;
 
     const isMobileSort = window.innerWidth <= MOBILE_REVIEW_BREAKPOINT;
-    const options = {
-        group: 'review-order',
+    new Sortable(list, {
         animation: 150,
         handle: isMobileSort ? undefined : '.drag-handle',
         ghostClass: 'review-ghost',
         forceFallback: true,
         fallbackOnBody: true,
+        draggable: '.article-card',
         onEnd: persistReviewOrder,
-    };
-
-    // Destroy previous instances by replacing containers (renderReviewGrid already re-rendered DOM),
-    // so just create new Sortable instances.
-    new Sortable(selectedList, options);
-    new Sortable(backupList, options);
+    });
 }
 
 function bindReviewSelectionControls() {
@@ -735,75 +831,105 @@ function toggleReviewSelectAll(checked) {
     updateReviewSelectAllState();
 }
 
-function applyReviewBulkStatus() {
+async function applyReviewBulkStatus() {
     if (!elements.reviewBulkStatus) return;
     const value = elements.reviewBulkStatus.value;
     if (!value) return;
     const scope = getActiveReviewContainer();
     const targets = scope.querySelectorAll('.review-select:checked');
+    if (!targets.length) return;
+
+    const selected_ids = [];
+    const backup_ids = [];
+    const discarded_ids = [];
+    const pending_ids = [];
+
     targets.forEach(cb => {
         const card = cb.closest('.article-card');
         if (!card) return;
-        const select = card.querySelector('.status-select');
-        if (select && select.value !== value) {
-            select.value = value;
-            handleReviewStatusChange({ target: select });
-        }
+        const id = card.dataset.id;
+        if (!id) return;
+        if (value === 'selected') selected_ids.push(id);
+        else if (value === 'backup') backup_ids.push(id);
+        else if (value === 'discarded') discarded_ids.push(id);
+        else if (value === 'pending') pending_ids.push(id);
     });
+
     elements.reviewBulkStatus.value = '';
-    updateReviewSelectAllState();
+    if (!selected_ids.length && !backup_ids.length && !discarded_ids.length && !pending_ids.length) {
+        return;
+    }
+
+    try {
+        isBulkUpdatingReview = true;
+        await fetch(`${API_BASE}/decide`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                selected_ids,
+                backup_ids,
+                discarded_ids,
+                pending_ids,
+                actor: state.actor,
+                report_type: state.reviewReportType
+            })
+        });
+        await loadReviewData();
+        loadStats();
+        showToast('批量更新完成');
+    } catch (e) {
+        showToast('批量更新失败', 'error');
+    } finally {
+        isBulkUpdatingReview = false;
+        updateReviewSelectAllState();
+    }
 }
 
 function handleReviewViewChange(e) {
     const value = e.target.value || 'selected';
     state.reviewView = value;
-    applyReviewViewMode();
+    renderReviewView();
 }
 
 function applyReviewViewMode() {
-    const grid = document.querySelector('#review-list .review-grid');
-    const wrapper = document.querySelector('.review-view-toggle');
-    const select = elements.reviewViewSelect;
-    if (!grid) return;
-    const isMobile = window.innerWidth <= MOBILE_REVIEW_BREAKPOINT;
-    if (select) {
-        select.value = state.reviewView;
-    }
-    if (isMobile) {
-        grid.classList.add('single-view');
-        grid.dataset.view = state.reviewView || 'selected';
-        if (wrapper) wrapper.style.display = '';
-    } else {
-        grid.classList.remove('single-view');
-        grid.removeAttribute('data-view');
-        if (wrapper) wrapper.style.display = 'none';
+    if (elements.reviewViewSelect) {
+        elements.reviewViewSelect.value = state.reviewView;
     }
 }
 
 function getActiveReviewContainer() {
-    const grid = document.querySelector('#review-list .review-grid');
-    if (!grid) return elements.reviewList;
-    const isSingle = grid.classList.contains('single-view');
-    if (!isSingle) return elements.reviewList;
-    const view = grid.dataset.view === 'backup' ? 'backup' : 'selected';
-    const selector = view === 'backup' ? '.review-col.backup-col' : '.review-col.selected-col';
-    const col = grid.querySelector(selector);
-    return col || elements.reviewList;
+    const container = document.getElementById('review-items');
+    return container || elements.reviewList;
+}
+
+function syncReviewStateOrder(status, orderedIds) {
+    const lookup = {};
+    [...(state.reviewData.selected || []), ...(state.reviewData.backup || [])].forEach(item => {
+        if (item && item.article_id) lookup[item.article_id] = item;
+    });
+    const orderedItems = orderedIds.map(id => lookup[id]).filter(Boolean);
+    state.reviewData[status] = orderedItems;
 }
 
 async function persistReviewOrder() {
-    const selectedList = document.querySelector('.review-col.selected-col .review-items');
-    const backupList = document.querySelector('.review-col.backup-col .review-items');
-    if (!selectedList || !backupList) return;
+    const list = document.querySelector('#review-items');
+    if (!list) return;
 
-    const selected_order = Array.from(selectedList.querySelectorAll('.article-card')).map(card => card.dataset.id);
-    const backup_order = Array.from(backupList.querySelectorAll('.article-card')).map(card => card.dataset.id);
+    const orderedIds = Array.from(list.querySelectorAll('.article-card')).map(card => card.dataset.id);
+    syncReviewStateOrder(state.reviewView, orderedIds);
+
+    const payload = {
+        selected_order: (state.reviewData.selected || []).map(item => item.article_id),
+        backup_order: (state.reviewData.backup || []).map(item => item.article_id),
+        actor: state.actor,
+        report_type: state.reviewReportType
+    };
 
     try {
         await fetch(`${API_BASE}/order`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ selected_order, backup_order, actor: state.actor })
+            body: JSON.stringify(payload)
         });
         showToast('Order saved');
     } catch (e) {
@@ -824,11 +950,10 @@ async function handleReviewStatusChange(e) {
 
     select.disabled = true;
     try {
-        // Persist summary edits along with status change
         await fetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor })
+            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor, report_type: state.reviewReportType })
         });
 
         await fetch(`${API_BASE}/decide`, {
@@ -839,13 +964,12 @@ async function handleReviewStatusChange(e) {
                 backup_ids: status === 'backup' ? [id] : [],
                 discarded_ids: status === 'discarded' ? [id] : [],
                 pending_ids: status === 'pending' ? [id] : [],
-                actor: state.actor
+                actor: state.actor,
+                report_type: state.reviewReportType
             })
         });
 
-        moveReviewCard(card, status);
-        updateReviewCounters();
-        updateReviewSelectAllState();
+        await loadReviewData();
         loadStats();
         showToast('已更新状态');
     } catch (err) {
@@ -867,7 +991,7 @@ async function handleSummaryUpdate(e) {
         await fetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor })
+            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor, report_type: state.reviewReportType })
         });
         showToast('摘要已保存');
     } catch (err) {
@@ -887,7 +1011,7 @@ async function handleSourceUpdate(e) {
         await fetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor })
+            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor, report_type: state.reviewReportType })
         });
         showToast('来源已保存');
     } catch (err) {
@@ -895,38 +1019,17 @@ async function handleSourceUpdate(e) {
     }
 }
 
-function moveReviewCard(card, status) {
-    const selectedList = document.querySelector('.review-col.selected-col .review-items');
-    const backupList = document.querySelector('.review-col.backup-col .review-items');
-    if (!selectedList || !backupList) return;
-
-    if (status === 'selected') {
-        selectedList.prepend(card);
-    } else if (status === 'backup') {
-        backupList.prepend(card);
-    } else {
-        card.remove();
-    }
-}
-
-function updateReviewCounters() {
-    const selectedList = document.querySelector('.review-col.selected-col .review-items');
-    const backupList = document.querySelector('.review-col.backup-col .review-items');
-    const selectedCount = selectedList ? selectedList.children.length : 0;
-    const backupCount = backupList ? backupList.children.length : 0;
-
-    const selHeader = document.querySelector('.review-col.selected-col h3');
-    const bakHeader = document.querySelector('.review-col.backup-col h3');
-    if (selHeader) selHeader.textContent = `采纳 (${selectedCount})`;
-    if (bakHeader) bakHeader.textContent = `备选(${backupCount})`;
-}
-
 // --- Discard Tab Logic ---
 
 async function loadDiscardData() {
     elements.discardList.innerHTML = '<div class="loading">Loading...</div>';
     try {
-        const res = await fetch(`${API_BASE}/discarded?limit=30&offset=${(state.discardPage - 1) * 30}`);
+        const params = new URLSearchParams({
+            limit: '30',
+            offset: `${(state.discardPage - 1) * 30}`,
+            report_type: state.reviewReportType
+        });
+        const res = await fetch(`${API_BASE}/discarded?${params.toString()}`);
         const data = await res.json();
         renderDiscardList(data.items);
         updatePagination('discard', data.total, state.discardPage);
@@ -964,7 +1067,8 @@ window.restoreToBackup = async function (id) {
                 selected_ids: [],
                 backup_ids: [id],
                 discarded_ids: [],
-                actor: state.actor
+                actor: state.actor,
+                report_type: state.reviewReportType
             })
         });
         showToast('Restored to backup');
@@ -988,13 +1092,15 @@ function closeModal() {
 
 function buildExportPayload(dryRun) {
     const tag = new Date().toISOString().split('T')[0];
+    const templateValue = elements.exportTemplate ? elements.exportTemplate.value : 'zongbao';
     const payload = {
         report_tag: tag,
-        template: elements.exportTemplate ? elements.exportTemplate.value : 'zongbao',
+        template: templateValue,
         period: undefined,
         total_period: undefined,
         dry_run: dryRun,
         mark_exported: !dryRun,
+        report_type: templateValue === 'wanbao' ? 'wanbao' : 'zongbao',
     };
     if (elements.exportPeriod && elements.exportPeriod.value) {
         const val = Number(elements.exportPeriod.value);

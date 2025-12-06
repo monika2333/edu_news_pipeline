@@ -79,6 +79,10 @@
         <!-- Review Tab -->
         <div class="tab-content" id="review-tab">
             <div class="toolbar review-toolbar">
+                <div class="report-type-toggle">
+                    <button class="btn btn-secondary report-type-btn active" data-type="zongbao">综报</button>
+                    <button class="btn btn-secondary report-type-btn" data-type="wanbao">晚报</button>
+                </div>
                 <div class="bulk-group">
                     <label class="checkbox-label">
                         <input type="checkbox" id="review-select-all">
@@ -98,6 +102,12 @@
                         <option value="selected">采纳</option>
                         <option value="backup">备选</option>
                     </select>
+                </div>
+                <div class="review-group-toggle">
+                    <label class="checkbox-label" title="仅影响前端展示">
+                        <input type="checkbox" id="toggle-groups" checked>
+                        <span>显示分组</span>
+                    </label>
                 </div>
                 <button class="btn btn-secondary" id="btn-toggle-sort">
                     <span class="icon">🔃</span> 排序模式

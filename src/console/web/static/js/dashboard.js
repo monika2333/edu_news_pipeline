@@ -856,6 +856,9 @@ function renderGroupedReviewItems(items) {
     let html = '';
     GROUP_ORDER.forEach(group => {
         const groupItems = buckets[group.key] || [];
+        if (!groupItems.length) {
+            return;
+        }
         if (state.showGroups) {
             html += `
                 <div class="review-group" data-group="${group.key}">

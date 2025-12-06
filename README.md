@@ -39,11 +39,14 @@ python -m src.cli.main export
   - 查看最近流水线运行和最新导出概况，可从页面触发一次运行。
 - **/articles/search**
   - 按关键词、来源、情感、状态、日期过滤；查看摘要与原文链接。
+- **/xiaohongshu/summary**
+  - 输入原文或指定路径（默认 `xiaohongshu-summary - origin/input_task.txt`），提取 `http://xhslink.com/o/...` 链接并调用 Codex 生成总结；支持轮询任务与复制输出。
 
 ## 配置要点（.env / .env.local）
 - 数据库：`DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`、`DB_SCHEMA`。
 - 抓取/评分：如 `TOUTIAO_AUTHORS_PATH`、`TENCENT_AUTHORS_PATH`、`PROCESS_LIMIT` 等。
 - 控制台认证：`CONSOLE_BASIC_USERNAME` / `CONSOLE_BASIC_PASSWORD` 或 `CONSOLE_API_TOKEN`。
+- 小红书总结：`XHS_SUMMARY_ROOT`（默认 `xiaohongshu-summary - origin`，用于定位输入/输出与提示词指南）；可用 `XHS_SUMMARY_FAKE_OUTPUT=1`（配合 `XHS_SUMMARY_FAKE_TEXT`）在无 Codex CLI 时模拟生成，正式环境需安装并登录 codex CLI。
 
 ## 目录速览
 - `run_console.py`：控制台入口。

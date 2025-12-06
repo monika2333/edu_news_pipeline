@@ -55,7 +55,7 @@ CLI 路径注意事项：
    - 用 `xiaohongshu-summary - origin/input_task.txt` 作为输入，验证能提取链接并正常显示。  
    - 模拟 Codex 调用（可先用 `XHS_SUMMARY_FAKE_OUTPUT=1` 或 `echo "fake output" > YYYYMMDDxiaohongshu-summaries.txt(1)` 代替）验证前端状态流转与文件命名。  
    - 正式串起 Codex，确认能生成并回显 `YYYYMMDDxiaohongshu-summaries.txt(1)` 形态文件。
-7) 补充 README 或控制台帮助文案，说明需要的环境变量与 CLI 依赖。
+7) 补充 README 或控制台帮助文案，说明需要的环境变量与 CLI 依赖。（已完成：README.md 新增 `/xiaohongshu/summary` 入口说明与 `XHS_SUMMARY_ROOT` / `XHS_SUMMARY_FAKE_OUTPUT` 配置）
 
 ## 已确认的约束与约定
 - Node/TypeScript SDK 兜底暂不需要，先以 Codex CLI 为唯一实现路径，不通时再补兜底。

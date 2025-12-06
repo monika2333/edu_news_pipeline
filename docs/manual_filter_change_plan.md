@@ -48,7 +48,7 @@
 - 审阅页数据量维持现状（一次拉取当前列表即可）。
 
 ## 开发步骤（实施顺序）
-1) 后端数据层
+1) 后端数据层（已完成）
    - 为 `manual_reviews` 增加 `report_type`（enum: zongbao/wanbao/null，默认视为 zongbao），补充索引（status, report_type, rank），编写迁移脚本，将现有记录填充为 zongbao。
    - Adapter/Service：`list_review`、`bulk_decide`、`update_ranks`、`save_edits`、`export_batch` 增加 `report_type` 参数；导出期号元数据按报型分桶存储。
 2) API 层

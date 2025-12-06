@@ -208,6 +208,7 @@ create table if not exists public.manual_reviews (
     id uuid primary key default gen_random_uuid(),
     article_id text not null references public.news_summaries(article_id) on delete cascade,
     status text not null check (status in ('pending','selected','backup','discarded','exported')),
+    report_type text check (report_type in ('zongbao','wanbao')),
     summary text,
     manual_llm_source text,
     rank double precision,
@@ -221,11 +222,14 @@ create table if not exists public.manual_reviews (
 );
 
 create index if not exists manual_reviews_pending_idx
-    on public.manual_reviews (status, rank asc nulls last, article_id)
+    on public.manual_reviews (coalesce(report_type, 'zongbao'), rank asc nulls last, article_id)
     where status = 'pending';
 
 create index if not exists manual_reviews_status_idx
-    on public.manual_reviews (status);
+    on public.manual_reviews (status, coalesce(report_type, 'zongbao'));
+
+create index if not exists manual_reviews_status_report_type_rank_idx
+    on public.manual_reviews (status, coalesce(report_type, 'zongbao'), rank asc nulls last, article_id);
 
 
 -- ---------------------------------------------------------------------------

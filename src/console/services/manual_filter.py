@@ -12,16 +12,24 @@ from src.adapters.title_cluster import cluster_titles
 
 logger = logging.getLogger(__name__)
 EXPORT_META_PATH = Path("outputs/manual_filter_export_meta.json")
-_cluster_cache: Dict[Tuple[str, str, float], Dict[str, Any]] = {}
+DEFAULT_REPORT_TYPE = "zongbao"
+VALID_REPORT_TYPES = {"zongbao", "wanbao"}
+_cluster_cache: Dict[Tuple[str, str, str, float], Dict[str, Any]] = {}
 
 
-def _pending_total(adapter: Any) -> int:
+def _normalize_report_type(report_type: Optional[str]) -> str:
+    value = (report_type or DEFAULT_REPORT_TYPE).strip().lower()
+    return value if value in VALID_REPORT_TYPES else DEFAULT_REPORT_TYPE
+
+
+def _pending_total(adapter: Any, *, report_type: str = DEFAULT_REPORT_TYPE) -> int:
     """Lightweight pending count; falls back to status counts on adapter that lacks the method."""
+    target_type = _normalize_report_type(report_type)
     try:
-        return int(adapter.manual_review_pending_count())  # type: ignore[attr-defined]
+        return int(adapter.manual_review_pending_count(report_type=target_type))  # type: ignore[attr-defined]
     except Exception:
         try:
-            counts = adapter.manual_review_status_counts()  # type: ignore[attr-defined]
+            counts = adapter.manual_review_status_counts(report_type=target_type)  # type: ignore[attr-defined]
             return int(counts.get("pending", 0)) if isinstance(counts, dict) else 0
         except Exception:
             return 0
@@ -33,8 +41,8 @@ def _period_increment_for_template(template: str) -> int:
 DEFAULT_CLUSTER_THRESHOLD = 0.9
 
 
-def _cluster_cache_key(region: Optional[str], sentiment: Optional[str], threshold: float) -> Tuple[str, str, float]:
-    return (region or "all", sentiment or "all", threshold)
+def _cluster_cache_key(region: Optional[str], sentiment: Optional[str], threshold: float, report_type: str) -> Tuple[str, str, str, float]:
+    return (region or "all", sentiment or "all", report_type, threshold)
 
 
 def _prune_cluster_cache(decided_ids: Sequence[str]) -> None:
@@ -75,10 +83,18 @@ def _resolve_periods(
     template: str,
     provided_period: Optional[int],
     provided_total: Optional[int],
+    *,
+    report_type: str,
 ) -> Tuple[int, int, Dict[str, Any], str]:
     meta = _load_export_meta()
     today = date.today()
-    tpl_meta = meta.get(template) or {}
+    normalized_report_type = _normalize_report_type(report_type)
+    report_bucket = meta.get(normalized_report_type)
+    if not isinstance(report_bucket, dict):
+        report_bucket = {}
+    tpl_meta = report_bucket.get(template) or {}
+    if not tpl_meta and normalized_report_type == template:
+        tpl_meta = meta.get(template) or {}
     last_date_raw = tpl_meta.get("date")
     last_period = int(tpl_meta.get("period") or 0)
     last_total = int(tpl_meta.get("total") or 0)
@@ -159,10 +175,12 @@ def _paginate_by_status(
     only_ready: bool = False,
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
+    report_type: str = DEFAULT_REPORT_TYPE,
 ) -> Dict[str, Any]:
     adapter = get_adapter()
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
+    target_report_type = _normalize_report_type(report_type)
     rows, total = adapter.fetch_manual_reviews(  # type: ignore[attr-defined]
         status=manual_status,
         limit=limit,
@@ -170,6 +188,7 @@ def _paginate_by_status(
         only_ready=only_ready,
         region=region,
         sentiment=sentiment,
+        report_type=target_report_type,
     )
     items: List[Dict[str, Any]] = []
     for record in rows:
@@ -177,6 +196,7 @@ def _paginate_by_status(
         record["manual_status"] = record.get("status") or manual_status
         record["summary"] = record.get("manual_summary") or record.get("llm_summary") or ""
         record["bonus_keywords"] = _bonus_keywords(record.get("score_details"))
+        record["report_type"] = record.get("report_type") or target_report_type
         items.append(record)
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
@@ -190,10 +210,19 @@ def list_candidates(
     cluster: bool = False,
     cluster_threshold: Optional[float] = None,
     force_refresh: bool = False,
+    report_type: str = DEFAULT_REPORT_TYPE,
 ) -> Dict[str, Any]:
     region = region if region in ("internal", "external") else None
     sentiment = sentiment if sentiment in ("positive", "negative") else None
-    logger.info("Listing candidates: limit=%s offset=%s region=%s sentiment=%s", limit, offset, region, sentiment)
+    target_report_type = _normalize_report_type(report_type)
+    logger.info(
+        "Listing candidates: limit=%s offset=%s region=%s sentiment=%s report_type=%s",
+        limit,
+        offset,
+        region,
+        sentiment,
+        target_report_type,
+    )
     if cluster:
         return cluster_pending(
             region=region,
@@ -202,8 +231,17 @@ def list_candidates(
             offset=offset,
             cluster_threshold=cluster_threshold,
             force_refresh=force_refresh,
+            report_type=target_report_type,
         )
-    return _paginate_by_status("pending", limit=limit, offset=offset, only_ready=True, region=region, sentiment=sentiment)
+    return _paginate_by_status(
+        "pending",
+        limit=limit,
+        offset=offset,
+        only_ready=True,
+        region=region,
+        sentiment=sentiment,
+        report_type=target_report_type,
+    )
 
 
 def _candidate_rank_key_by_record(record: Dict[str, Any]) -> Tuple[float, float, float]:
@@ -232,12 +270,21 @@ def _candidate_rank_key_by_record(record: Dict[str, Any]) -> Tuple[float, float,
     return (ext_score, score, ts_val)
 
 
-def _collect_pending(region: Optional[str], sentiment: Optional[str], fetch_limit: int = 5000, *, adapter: Any = None) -> List[Dict[str, Any]]:
+def _collect_pending(
+    region: Optional[str],
+    sentiment: Optional[str],
+    fetch_limit: int = 5000,
+    *,
+    adapter: Any = None,
+    report_type: str = DEFAULT_REPORT_TYPE,
+) -> List[Dict[str, Any]]:
     adapter = adapter or get_adapter()
+    target_report_type = _normalize_report_type(report_type)
     rows = adapter.fetch_manual_pending_for_cluster(  # type: ignore[attr-defined]
         region=region,
         sentiment=sentiment,
         fetch_limit=fetch_limit,
+        report_type=target_report_type,
     )
     records: List[Dict[str, Any]] = []
     for row in rows:
@@ -245,6 +292,7 @@ def _collect_pending(region: Optional[str], sentiment: Optional[str], fetch_limi
         record["summary"] = record.get("manual_summary") or record.get("llm_summary") or ""
         record["bonus_keywords"] = _bonus_keywords(record.get("score_details"))
         record["external_importance_score"] = record.get("external_importance_score")
+        record["report_type"] = record.get("report_type") or target_report_type
         records.append(record)
     return records
 
@@ -257,17 +305,19 @@ def cluster_pending(
     offset: int = 0,
     cluster_threshold: Optional[float] = None,
     force_refresh: bool = False,
+    report_type: str = DEFAULT_REPORT_TYPE,
 ) -> Dict[str, Any]:
     fetch_limit = 5000
     adapter = get_adapter()
+    target_report_type = _normalize_report_type(report_type)
     try:
         threshold_val = float(cluster_threshold) if cluster_threshold is not None else DEFAULT_CLUSTER_THRESHOLD
     except Exception:
         threshold_val = DEFAULT_CLUSTER_THRESHOLD
     threshold_val = max(0.0, min(threshold_val, 1.0))
 
-    cache_key = _cluster_cache_key(region, sentiment, threshold_val)
-    current_pending_total = _pending_total(adapter)
+    cache_key = _cluster_cache_key(region, sentiment, threshold_val, target_report_type)
+    current_pending_total = _pending_total(adapter, report_type=target_report_type)
     if not force_refresh and cache_key in _cluster_cache:
         cached = _cluster_cache[cache_key]
         clusters = cached.get("clusters", [])
@@ -276,7 +326,7 @@ def cluster_pending(
         if cached_pending_total is not None and cached_pending_total == current_pending_total:
             return _paginate_clusters(clusters, limit=limit, offset=offset, total=total_clusters)
 
-    records = _collect_pending(region, sentiment, fetch_limit=fetch_limit, adapter=adapter)
+    records = _collect_pending(region, sentiment, fetch_limit=fetch_limit, adapter=adapter, report_type=target_report_type)
     if not records:
         _cluster_cache[cache_key] = {
             "clusters": [],
@@ -381,20 +431,23 @@ def _paginate_clusters(clusters: List[Dict[str, Any]], *, limit: int, offset: in
     return {"clusters": paged_clusters, "total": total}
 
 
-def list_review(decision: str, *, limit: int = 30, offset: int = 0) -> Dict[str, Any]:
+def list_review(decision: str, *, limit: int = 30, offset: int = 0, report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, Any]:
     decision = decision if decision in ("selected", "backup") else "selected"
-    logger.info("Listing review items: decision=%s limit=%s offset=%s", decision, limit, offset)
-    return _paginate_by_status(decision, limit=limit, offset=offset, only_ready=False)
+    target_report_type = _normalize_report_type(report_type)
+    logger.info("Listing review items: decision=%s limit=%s offset=%s report_type=%s", decision, limit, offset, target_report_type)
+    return _paginate_by_status(decision, limit=limit, offset=offset, only_ready=False, report_type=target_report_type)
 
 
-def list_discarded(*, limit: int = 30, offset: int = 0) -> Dict[str, Any]:
-    logger.info("Listing discarded items: limit=%s offset=%s", limit, offset)
-    return _paginate_by_status("discarded", limit=limit, offset=offset, only_ready=False)
+def list_discarded(*, limit: int = 30, offset: int = 0, report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, Any]:
+    target_report_type = _normalize_report_type(report_type)
+    logger.info("Listing discarded items: limit=%s offset=%s report_type=%s", limit, offset, target_report_type)
+    return _paginate_by_status("discarded", limit=limit, offset=offset, only_ready=False, report_type=target_report_type)
 
 
-def status_counts() -> Dict[str, int]:
+def status_counts(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, int]:
     adapter = get_adapter()
-    return adapter.manual_review_status_counts()  # type: ignore[attr-defined]
+    target_report_type = _normalize_report_type(report_type)
+    return adapter.manual_review_status_counts(report_type=target_report_type)  # type: ignore[attr-defined]
 
 
 def _apply_decision(
@@ -402,9 +455,11 @@ def _apply_decision(
     status: str,
     ids: Sequence[str],
     actor: Optional[str] = None,
+    report_type: str = DEFAULT_REPORT_TYPE,
 ) -> int:
     adapter = get_adapter()
     now_ts = datetime.now(timezone.utc)
+    target_report_type = _normalize_report_type(report_type)
     payload: List[Dict[str, Any]] = []
     for article_id in ids:
         if not article_id:
@@ -414,18 +469,20 @@ def _apply_decision(
                 "article_id": article_id,
                 "status": status,
                 "rank": None,
+                "report_type": target_report_type,
                 "decided_by": actor,
                 "decided_at": now_ts,
             }
         )
     if not payload:
         return 0
-    return adapter.update_manual_review_statuses(payload)  # type: ignore[attr-defined]
+    return adapter.update_manual_review_statuses(payload, report_type=target_report_type)  # type: ignore[attr-defined]
 
 
-def _next_rank(status: str) -> float:
+def _next_rank(status: str, *, report_type: str) -> float:
     adapter = get_adapter()
-    return adapter.manual_review_max_rank(status)  # type: ignore[attr-defined]
+    target_report_type = _normalize_report_type(report_type)
+    return adapter.manual_review_max_rank(status, report_type=target_report_type)  # type: ignore[attr-defined]
 
 
 def _apply_ranked_decision(
@@ -434,9 +491,11 @@ def _apply_ranked_decision(
     ids: Sequence[str],
     actor: Optional[str],
     start_rank: float,
+    report_type: str,
 ) -> int:
     adapter = get_adapter()
     now_ts = datetime.now(timezone.utc)
+    target_report_type = _normalize_report_type(report_type)
     payload: List[Dict[str, Any]] = []
     rank = start_rank
     for article_id in ids:
@@ -447,6 +506,7 @@ def _apply_ranked_decision(
                 "article_id": article_id,
                 "status": status,
                 "rank": rank,
+                "report_type": target_report_type,
                 "decided_by": actor,
                 "decided_at": now_ts,
             }
@@ -454,7 +514,7 @@ def _apply_ranked_decision(
         rank += 1
     if not payload:
         return 0
-    return adapter.update_manual_review_statuses(payload)  # type: ignore[attr-defined]
+    return adapter.update_manual_review_statuses(payload, report_type=target_report_type)  # type: ignore[attr-defined]
 
 
 def bulk_decide(
@@ -464,35 +524,40 @@ def bulk_decide(
     discarded_ids: Sequence[str],
     pending_ids: Sequence[str] = (),
     actor: Optional[str] = None,
+    report_type: str = DEFAULT_REPORT_TYPE,
 ) -> Dict[str, int]:
     selected = _normalize_ids(selected_ids)
     backups = _normalize_ids(backup_ids)
     discarded = _normalize_ids(discarded_ids)
     pending = _normalize_ids(pending_ids)
+    target_report_type = _normalize_report_type(report_type)
     logger.info(
-        "Applying decisions: selected=%s backup=%s discarded=%s pending=%s actor=%s",
+        "Applying decisions: selected=%s backup=%s discarded=%s pending=%s actor=%s report_type=%s",
         len(selected),
         len(backups),
         len(discarded),
         len(pending),
         actor,
+        target_report_type,
     )
-    selected_rank_base = _next_rank("selected")
-    backup_rank_base = _next_rank("backup")
+    selected_rank_base = _next_rank("selected", report_type=target_report_type)
+    backup_rank_base = _next_rank("backup", report_type=target_report_type)
     updated_selected = _apply_ranked_decision(
         status="selected",
         ids=selected,
         actor=actor,
         start_rank=selected_rank_base + 1,
+        report_type=target_report_type,
     )
     updated_backup = _apply_ranked_decision(
         status="backup",
         ids=backups,
         actor=actor,
         start_rank=backup_rank_base + 1,
+        report_type=target_report_type,
     )
-    updated_discarded = _apply_decision(status="discarded", ids=discarded, actor=actor)
-    updated_pending = reset_to_pending(pending, actor=actor)
+    updated_discarded = _apply_decision(status="discarded", ids=discarded, actor=actor, report_type=target_report_type)
+    updated_pending = reset_to_pending(pending, actor=actor, report_type=target_report_type)
     logger.info(
         "Decision result: selected=%s backup=%s discarded=%s pending=%s",
         updated_selected,
@@ -514,12 +579,14 @@ def update_ranks(
     selected_order: Sequence[str],
     backup_order: Sequence[str],
     actor: Optional[str] = None,
+    report_type: str = DEFAULT_REPORT_TYPE,
 ) -> Dict[str, int]:
     """
     Persist manual ordering for review lists and keep statuses in sync with list membership.
     """
     adapter = get_adapter()
     now_ts = datetime.now(timezone.utc)
+    target_report_type = _normalize_report_type(report_type)
     payload: List[Dict[str, Any]] = []
     selected_ids = _normalize_ids(selected_order)
     backup_ids = _normalize_ids(backup_order)
@@ -530,6 +597,7 @@ def update_ranks(
                 "article_id": aid,
                 "status": "selected",
                 "rank": float(index),
+                "report_type": target_report_type,
                 "decided_by": actor,
                 "decided_at": now_ts,
             }
@@ -540,6 +608,7 @@ def update_ranks(
                 "article_id": aid,
                 "status": "backup",
                 "rank": float(index),
+                "report_type": target_report_type,
                 "decided_by": actor,
                 "decided_at": now_ts,
             }
@@ -548,29 +617,32 @@ def update_ranks(
     if not payload:
         return {"selected": 0, "backup": 0}
 
-    updated_rows = adapter.update_manual_review_statuses(payload)  # type: ignore[attr-defined]
+    updated_rows = adapter.update_manual_review_statuses(payload, report_type=target_report_type)  # type: ignore[attr-defined]
     logger.info(
-        "Updated manual ranks: selected=%s backup=%s rows=%s",
+        "Updated manual ranks: selected=%s backup=%s rows=%s report_type=%s",
         len(selected_ids),
         len(backup_ids),
         updated_rows,
+        target_report_type,
     )
     return {"selected": len(selected_ids), "backup": len(backup_ids), "updated_rows": updated_rows}
 
 
-def reset_to_pending(ids: Sequence[str], *, actor: Optional[str] = None) -> int:
+def reset_to_pending(ids: Sequence[str], *, actor: Optional[str] = None, report_type: str = DEFAULT_REPORT_TYPE) -> int:
     target_ids = _normalize_ids(ids)
     if not target_ids:
         return 0
-    logger.info("Resetting to pending: count=%s actor=%s", len(target_ids), actor)
+    target_report_type = _normalize_report_type(report_type)
+    logger.info("Resetting to pending: count=%s actor=%s report_type=%s", len(target_ids), actor, target_report_type)
     adapter = get_adapter()
-    return adapter.reset_manual_reviews_to_pending(target_ids, actor=actor)  # type: ignore[attr-defined]
+    return adapter.reset_manual_reviews_to_pending(target_ids, actor=actor, report_type=target_report_type)  # type: ignore[attr-defined]
 
 
-def save_edits(edits: Dict[str, Dict[str, Any]], *, actor: Optional[str] = None) -> int:
+def save_edits(edits: Dict[str, Dict[str, Any]], *, actor: Optional[str] = None, report_type: str = DEFAULT_REPORT_TYPE) -> int:
     adapter = get_adapter()
     if not edits:
         return 0
+    target_report_type = _normalize_report_type(report_type)
     normalized: Dict[str, Dict[str, Any]] = {}
     for aid, payload in (edits or {}).items():
         summary = payload.get("summary")
@@ -582,9 +654,10 @@ def save_edits(edits: Dict[str, Dict[str, Any]], *, actor: Optional[str] = None)
             "manual_llm_source": (llm_source or "").strip() if llm_source is not None else None,
             "notes": notes,
             "score": score,
+            "report_type": target_report_type,
         }
-    logger.info("Saving manual edits: count=%s actor=%s", len(edits), actor)
-    return adapter.update_manual_review_summaries(normalized, actor=actor)  # type: ignore[attr-defined]
+    logger.info("Saving manual edits: count=%s actor=%s report_type=%s", len(edits), actor, target_report_type)
+    return adapter.update_manual_review_summaries(normalized, actor=actor, report_type=target_report_type)  # type: ignore[attr-defined]
 
 
 def export_batch(
@@ -597,13 +670,15 @@ def export_batch(
     period: Optional[int] = None,
     total_period: Optional[int] = None,
     dry_run: bool = False,
+    report_type: str = DEFAULT_REPORT_TYPE,
 ) -> Dict[str, Any]:
     # 预览模式永不落盘或标记
     if dry_run:
         mark_exported = False
+    target_report_type = _normalize_report_type(report_type)
 
     adapter = get_adapter()
-    rows = adapter.fetch_manual_selected_for_export()  # type: ignore[attr-defined]
+    rows = adapter.fetch_manual_selected_for_export(report_type=target_report_type)  # type: ignore[attr-defined]
     items: List[Dict[str, Any]] = []
     candidates: List[Tuple[ExportCandidate, str]] = []
     for row in rows:
@@ -635,6 +710,7 @@ def export_batch(
         items.append(
             {
                 "article_id": article_id,
+                "report_type": record.get("report_type") or target_report_type,
                 "title": title,
                 "summary": summary_text,
                 "score": candidate.score,
@@ -658,6 +734,7 @@ def export_batch(
             "total_period": total_period,
             "template": template,
             "dry_run": dry_run,
+            "report_type": target_report_type,
         }
     logger.info("Preparing export payload: %s candidates found", len(candidates))
 
@@ -711,7 +788,12 @@ def export_batch(
         key = ("internal", sentiment_bucket) if cand.is_beijing_related else ("external", sentiment_bucket)
         bucket_index[key].append(cand)
 
-    period_value, total_value, meta_state, today_iso = _resolve_periods(template, period, total_period)
+    period_value, total_value, meta_state, today_iso = _resolve_periods(
+        template,
+        period,
+        total_period,
+        report_type=target_report_type,
+    )
     today_date = datetime.fromisoformat(f"{today_iso}").date()
 
     bucket_defs = _bucket_definitions(template)
@@ -789,9 +871,10 @@ def export_batch(
         )
         if mark_exported:
             ids = [cid.filtered_article_id for cid, _ in export_payload]
-            updated = _apply_decision(status="exported", ids=ids, actor=None)
+            updated = _apply_decision(status="exported", ids=ids, actor=None, report_type=target_report_type)
             logger.info("Marked %s articles as exported", updated)
-        meta_state[template] = {"period": period_value, "total": total_value, "date": today_iso}
+        meta_state.setdefault(target_report_type, {})
+        meta_state[target_report_type][template] = {"period": period_value, "total": total_value, "date": today_iso}
         try:
             _save_export_meta(meta_state)
         except Exception as exc:  # pragma: no cover - best effort
@@ -809,6 +892,7 @@ def export_batch(
         "total_period": total_value,
         "template": template,
         "dry_run": dry_run,
+        "report_type": target_report_type,
     }
 
 

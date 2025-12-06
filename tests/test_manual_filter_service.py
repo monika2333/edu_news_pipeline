@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -13,6 +14,14 @@ class FakeAdapter:
         # Each row represents a join of manual_reviews with news_summaries fields
         self.rows = rows
         self.export_calls: List[Dict[str, Any]] = []
+        for row in self.rows:
+            if not row.get("report_type"):
+                row["report_type"] = "zongbao"
+
+    @staticmethod
+    def _normalized_report_type(value: Optional[str]) -> str:
+        normalized = (value or "zongbao").strip().lower()
+        return normalized if normalized in ("zongbao", "wanbao") else "zongbao"
 
     # ------------------------------------------------------------------
     # Manual review helpers
@@ -26,8 +35,14 @@ class FakeAdapter:
         only_ready: bool = False,
         region: Optional[str] = None,
         sentiment: Optional[str] = None,
+        report_type: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
-        filtered = [row for row in self.rows if row.get("status") == status]
+        target_type = self._normalized_report_type(report_type)
+        filtered = [
+            row
+            for row in self.rows
+            if row.get("status") == status and self._normalized_report_type(row.get("report_type")) == target_type
+        ]
         if only_ready:
             filtered = [row for row in filtered if row.get("news_status") == "ready_for_export"]
         if region in ("internal", "external"):
@@ -53,6 +68,7 @@ class FakeAdapter:
         region: Optional[str] = None,
         sentiment: Optional[str] = None,
         fetch_limit: int = 5000,
+        report_type: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         rows, _ = self.fetch_manual_reviews(
             status="pending",
@@ -61,21 +77,38 @@ class FakeAdapter:
             only_ready=True,
             region=region,
             sentiment=sentiment,
+            report_type=report_type,
         )
         return rows
 
-    def manual_review_status_counts(self) -> Dict[str, int]:
+    def manual_review_status_counts(self, *, report_type: Optional[str] = None) -> Dict[str, int]:
         counts: Dict[str, int] = {"pending": 0, "selected": 0, "backup": 0, "discarded": 0, "exported": 0}
+        target_type = self._normalized_report_type(report_type)
         for row in self.rows:
+            if self._normalized_report_type(row.get("report_type")) != target_type:
+                continue
             key = row.get("status") or "pending"
             counts[key] = counts.get(key, 0) + 1
         return counts
 
-    def manual_review_pending_count(self) -> int:
-        return sum(1 for row in self.rows if (row.get("status") or "pending") == "pending")
+    def manual_review_pending_count(self, *, report_type: Optional[str] = None) -> int:
+        target_type = self._normalized_report_type(report_type)
+        return sum(
+            1
+            for row in self.rows
+            if (row.get("status") or "pending") == "pending"
+            and self._normalized_report_type(row.get("report_type")) == target_type
+        )
 
-    def manual_review_max_rank(self, status: str) -> float:
-        ranks = [r.get("rank") for r in self.rows if r.get("status") == status and r.get("rank") is not None]
+    def manual_review_max_rank(self, status: str, *, report_type: Optional[str] = None) -> float:
+        target_type = self._normalized_report_type(report_type)
+        ranks = [
+            r.get("rank")
+            for r in self.rows
+            if r.get("status") == status
+            and r.get("rank") is not None
+            and self._normalized_report_type(r.get("report_type")) == target_type
+        ]
         if not ranks:
             return 0.0
         try:
@@ -83,10 +116,12 @@ class FakeAdapter:
         except Exception:
             return 0.0
 
-    def update_manual_review_statuses(self, updates: Sequence[Mapping[str, Any]]) -> int:
+    def update_manual_review_statuses(self, updates: Sequence[Mapping[str, Any]], *, report_type: Optional[str] = None) -> int:
+        default_report_type = self._normalized_report_type(report_type)
         updated = 0
         for item in updates:
             aid = str(item.get("article_id") or "")
+            target_type = self._normalized_report_type(item.get("report_type") or default_report_type)
             for row in self.rows:
                 if str(row.get("article_id")) != aid:
                     continue
@@ -94,6 +129,7 @@ class FakeAdapter:
                 row["rank"] = item.get("rank", row.get("rank"))
                 row["decided_by"] = item.get("decided_by") or row.get("decided_by")
                 row["decided_at"] = item.get("decided_at") or row.get("decided_at")
+                row["report_type"] = target_type
                 updated += 1
                 break
         return updated
@@ -104,6 +140,7 @@ class FakeAdapter:
         *,
         actor: Optional[str] = None,
         decided_at: Optional[Any] = None,
+        report_type: Optional[str] = None,
     ) -> int:
         updates = []
         for aid in article_ids:
@@ -112,11 +149,12 @@ class FakeAdapter:
                     "article_id": aid,
                     "status": "pending",
                     "rank": None,
+                    "report_type": report_type,
                     "decided_by": actor,
                     "decided_at": decided_at,
                 }
             )
-        return self.update_manual_review_statuses(updates)
+        return self.update_manual_review_statuses(updates, report_type=report_type)
 
     def update_manual_review_summaries(
         self,
@@ -124,9 +162,12 @@ class FakeAdapter:
         *,
         actor: Optional[str] = None,
         decided_at: Optional[Any] = None,
+        report_type: Optional[str] = None,
     ) -> int:
         updated = 0
+        target_report_type = self._normalized_report_type(report_type)
         for aid, edit in edits.items():
+            item_report_type = self._normalized_report_type(edit.get("report_type") or target_report_type)
             for row in self.rows:
                 if str(row.get("article_id")) != str(aid):
                     continue
@@ -138,12 +179,13 @@ class FakeAdapter:
                     row["manual_score"] = edit.get("score")
                 row["decided_by"] = actor or row.get("decided_by")
                 row["decided_at"] = decided_at or row.get("decided_at")
+                row["report_type"] = item_report_type
                 updated += 1
                 break
         return updated
 
-    def fetch_manual_selected_for_export(self) -> List[Dict[str, Any]]:
-        rows, _ = self.fetch_manual_reviews(status="selected", limit=10_000, offset=0)
+    def fetch_manual_selected_for_export(self, *, report_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        rows, _ = self.fetch_manual_reviews(status="selected", limit=10_000, offset=0, report_type=report_type)
         return rows
 
     # ------------------------------------------------------------------
@@ -157,6 +199,9 @@ class FakeAdapter:
         self.export_calls.append(
             {"tag": report_tag, "exported": list(exported), "output_path": output_path}
         )
+
+    def record_manual_export(self, report_tag: str, exported, *, output_path: str):
+        self.record_export(report_tag, exported, output_path=output_path)
 
 
 @pytest.fixture()
@@ -196,7 +241,7 @@ def fake_adapter(monkeypatch):
             "source": "src2",
             "publish_time_iso": "2025-01-02T00:00:00Z",
             "publish_time": None,
-            "sentiment_label": "positive",
+            "sentiment_label": "negative",
             "sentiment_confidence": 0.8,
             "is_beijing_related": False,
             "external_importance_score": 60,
@@ -210,6 +255,13 @@ def fake_adapter(monkeypatch):
     adapter = FakeAdapter(rows)
     monkeypatch.setattr(manual_filter, "get_adapter", lambda: adapter)
     return adapter
+
+
+@pytest.fixture(autouse=True)
+def override_export_meta_path(monkeypatch, tmp_path: Path):
+    meta_path = tmp_path / "export_meta.json"
+    monkeypatch.setattr(manual_filter, "EXPORT_META_PATH", meta_path)
+    yield
 
 
 def test_list_candidates_returns_pending_with_bonus(fake_adapter):
@@ -249,6 +301,57 @@ def test_export_batch_writes_file_and_marks_exported(fake_adapter, tmp_path: Pat
     exported_status = {r["article_id"]: r["status"] for r in fake_adapter.rows}
     assert exported_status == {"a1": "exported", "a2": "exported"}
     assert fake_adapter.export_calls, "record_export should be invoked"
+
+
+def test_report_type_filters_and_meta(fake_adapter, tmp_path: Path):
+    manual_filter.bulk_decide(selected_ids=["a1"], backup_ids=[], discarded_ids=[], actor=None, report_type="zongbao")
+    fake_adapter.rows.append(
+        {
+            "article_id": "a3",
+            "title": "Wanbao Only",
+            "llm_summary": "wb",
+            "manual_summary": None,
+            "rank": 1,
+            "score": 50,
+            "news_status": "ready_for_export",
+            "status": "selected",
+            "source": "src3",
+            "publish_time_iso": "2025-01-03T00:00:00Z",
+            "publish_time": None,
+            "sentiment_label": "negative",
+            "sentiment_confidence": 0.7,
+            "is_beijing_related": False,
+            "external_importance_score": 40,
+            "decided_by": None,
+            "decided_at": None,
+            "content_markdown": "body3",
+            "url": "http://example.com/a3",
+            "score_details": {"matched_rules": []},
+            "report_type": "wanbao",
+        }
+    )
+    zb_review = manual_filter.list_review("selected", limit=10, offset=0, report_type="zongbao")
+    wb_review = manual_filter.list_review("selected", limit=10, offset=0, report_type="wanbao")
+    assert [item["article_id"] for item in zb_review["items"]] == ["a1"]
+    assert [item["article_id"] for item in wb_review["items"]] == ["a3"]
+
+    zb_output = tmp_path / "zb.txt"
+    wb_output = tmp_path / "wb.txt"
+    manual_filter.export_batch(
+        report_tag="zb",
+        output_path=str(zb_output),
+        report_type="zongbao",
+        template="zongbao",
+    )
+    manual_filter.export_batch(
+        report_tag="wb",
+        output_path=str(wb_output),
+        report_type="wanbao",
+        template="wanbao",
+    )
+    meta = json.loads(manual_filter.EXPORT_META_PATH.read_text(encoding="utf-8"))
+    assert "zongbao" in meta and "wanbao" in meta
+    assert "zongbao" in meta["zongbao"] and "wanbao" in meta["wanbao"]
 
 
 def test_reset_to_pending_and_discarded_listing(fake_adapter):

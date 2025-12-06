@@ -591,6 +591,54 @@ h1 {
     display: block;
 }
 
+.review-grid.sort-mode .article-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    margin-bottom: 10px;
+}
+
+.review-grid.sort-mode .card-header {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.review-grid.sort-mode .article-title {
+    margin: 0;
+    font-size: 1rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.review-grid.sort-mode .drag-handle {
+    display: block;
+}
+
+.review-grid.sort-mode .meta-row,
+.review-grid.sort-mode .summary-box,
+.review-grid.sort-mode .status-select,
+.review-grid.sort-mode .review-select-wrap,
+.review-grid.sort-mode .source-box {
+    display: none;
+}
+
+.group-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #e0f2fe;
+    color: #0ea5e9;
+    font-weight: 700;
+    font-size: 0.9rem;
+    white-space: nowrap;
+}
+
 /* Modal */
 .modal {
     display: none;

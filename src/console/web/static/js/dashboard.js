@@ -802,7 +802,7 @@ async function loadReviewData() {
 function renderReviewView() {
     const currentView = state.reviewView === 'backup' ? 'backup' : 'selected';
     const items = state.reviewData[currentView] || [];
-    const content = renderGroupedReviewItems(items);
+    const content = isSortMode ? renderSortableReviewItems(items) : renderGroupedReviewItems(items);
 
     elements.reviewList.innerHTML = `
         <div class="review-grid single-view" data-view="${currentView}">
@@ -817,21 +817,21 @@ function renderReviewView() {
 }
 
 function applySortModeState() {
-    const container = document.querySelector('#review-items');
+    const grid = document.querySelector('.review-grid');
     const toggleBtn = elements.sortToggleBtn;
-    if (container) {
-        container.classList.toggle('compact-mode', isSortMode);
+    if (grid) {
+        grid.classList.toggle('compact-mode', isSortMode);
+        grid.classList.toggle('sort-mode', isSortMode);
     }
     if (toggleBtn) {
         toggleBtn.classList.toggle('active', isSortMode);
         toggleBtn.innerHTML = `<span class="icon">⇅</span> ${isSortMode ? '退出排序' : '排序模式'}`;
     }
-    initReviewSortable();
 }
 
 function toggleSortMode() {
     isSortMode = !isSortMode;
-    applySortModeState();
+    renderReviewView();
 }
 
 function resolveGroupKey(item) {
@@ -872,6 +872,33 @@ function renderGroupedReviewItems(items) {
     return html;
 }
 
+function getGroupLabel(key) {
+    const found = GROUP_ORDER.find(g => g.key === key);
+    return found ? found.label : (key || '未分组');
+}
+
+function renderSortableReviewItems(items) {
+    if (!items || !items.length) {
+        return '<div class="empty">当前列表为空</div>';
+    }
+    return items.map(item => {
+        const currentStatus = item.manual_status || item.status || state.reviewView || 'selected';
+        const groupKey = resolveGroupKey(item);
+        const groupLabel = getGroupLabel(groupKey);
+        const title = item.title || '(No Title)';
+        const link = item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">${title}</a>` : title;
+        return `
+            <div class="article-card sort-card" data-id="${item.article_id || ''}" data-status="${currentStatus}">
+                <div class="card-header sort-header">
+                    <span class="drag-handle" title="拖动排序">&#8942;</span>
+                    <span class="group-pill">${groupLabel}</span>
+                    <h4 class="article-title">${link}</h4>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
 function renderReviewCard(item) {
     const currentStatus = item.manual_status || item.status || state.reviewView || 'selected';
     const placeholder = item.llm_source_raw ? `(LLM: ${item.llm_source_raw})` : '留空则回退抓取来源';
@@ -909,14 +936,13 @@ function renderReviewCard(item) {
 }
 
 function initReviewSortable() {
-    if (typeof Sortable === 'undefined') return;
-    const list = document.querySelector('#review-items');
-    if (!list) return;
     if (reviewSortableInstance) {
         reviewSortableInstance.destroy();
         reviewSortableInstance = null;
     }
-    if (!isSortMode) return;
+    if (!isSortMode || typeof Sortable === 'undefined') return;
+    const list = document.querySelector('#review-items');
+    if (!list) return;
     const isMobileSort = window.innerWidth <= MOBILE_REVIEW_BREAKPOINT;
     reviewSortableInstance = new Sortable(list, {
         animation: 150,

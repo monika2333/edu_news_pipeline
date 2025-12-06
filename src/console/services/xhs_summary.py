@@ -155,6 +155,8 @@ def run_codex(prompt: str, workdir: Path, output_file: Path) -> RunResult:
         "--full-auto",
         "--sandbox",
         "danger-full-access",
+        "-o",
+        str(output_file),
         prompt,
     ]
     try:

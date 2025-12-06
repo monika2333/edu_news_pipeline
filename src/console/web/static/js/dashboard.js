@@ -459,20 +459,52 @@ function renderClusteredList(clusters) {
         return;
     }
 
-    elements.filterList.innerHTML = clusters.map(cluster => {
+    const buckets = {
+        internalPositive: [],
+        internalNegative: [],
+        externalPositive: [],
+        externalNegative: [],
+    };
+
+    clusters.forEach(cluster => {
         const items = cluster.items || [];
-        const size = items.length;
-        const clusterStatus = cluster.status || 'pending';
+        if (!items.length) return;
+        const first = items[0];
+        const isInternal = !!first.is_beijing_related;
+        const sentiment = (first.sentiment_label || '').toLowerCase() === 'negative' ? 'negative' : 'positive';
 
-        // Single-item cluster: render as a plain article card (no cluster frame).
-        if (size <= 1) {
-            return renderArticleCard(items[0], { showStatus: true, collapsed: false });
-        }
+        if (isInternal && sentiment === 'positive') buckets.internalPositive.push(cluster);
+        else if (isInternal && sentiment === 'negative') buckets.internalNegative.push(cluster);
+        else if (!isInternal && sentiment === 'positive') buckets.externalPositive.push(cluster);
+        else buckets.externalNegative.push(cluster);
+    });
 
-        const [first, ...rest] = items;
-        const hiddenCount = rest.length;
+    const sections = [
+        { key: 'internalPositive', label: '京内正面', category: 'internal_positive' },
+        { key: 'internalNegative', label: '京内负面', category: 'internal_negative' },
+        { key: 'externalPositive', label: '京外正面', category: 'external_positive' },
+        { key: 'externalNegative', label: '京外负面', category: 'external_negative' },
+    ];
 
-        return `
+    elements.filterList.innerHTML = sections.map(sec => {
+        const clusterList = buckets[sec.key] || [];
+        if (!clusterList.length) return '';
+        const count = state.filterCounts[sec.category] || 0;
+
+        const clustersHtml = clusterList.map(cluster => {
+            const items = cluster.items || [];
+            const size = items.length;
+            const clusterStatus = cluster.status || 'pending';
+
+            // Single-item cluster: render as a plain article card (no cluster frame).
+            if (size <= 1) {
+                return renderArticleCard(items[0], { showStatus: true, collapsed: false });
+            }
+
+            const [first, ...rest] = items;
+            const hiddenCount = rest.length;
+
+            return `
     <div class="filter-cluster" data-cluster-id="${cluster.cluster_id}" data-size="${size}" data-status="${clusterStatus}">
         <div class="cluster-header">
             <div class="radio-group cluster-radio" data-cluster="${cluster.cluster_id}">
@@ -490,14 +522,22 @@ function renderClusteredList(clusters) {
                 </div>
             </div>
         </div>
-        <div class="filter-section">
+        <div class="cluster-items">
             ${renderArticleCard(first, { showStatus: false, collapsed: false })}
             ${rest.map(item => renderArticleCard(item, { showStatus: false, collapsed: true })).join('')}
         </div>
         ${hiddenCount ? `<div class="cluster-toggle-row"><button type="button" class="btn btn-link cluster-toggle" data-target="${cluster.cluster_id}">展开其余${hiddenCount}条</button></div>` : ''}
     </div>
 `;
-    }).join('');
+        }).join('');
+
+        return `
+    <div class="filter-section">
+        <h3 class="filter-section-title">${sec.label} (${count})</h3>
+        ${clustersHtml}
+    </div>
+        `;
+    }).join('') || '<div class="empty">No pending articles</div>';
 
     elements.filterList.querySelectorAll('.cluster-toggle').forEach(btn => {
         btn.addEventListener('click', () => {

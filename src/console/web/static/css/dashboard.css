@@ -249,7 +249,7 @@ h1 {
     background: #fee2e2;
 }
 
-.filter-section h3 {
+.filter-section-title {
     margin: 12px 0;
     color: var(--primary-color);
     font-weight: 700;

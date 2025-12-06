@@ -185,6 +185,7 @@ def _paginate_by_status(
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
     report_type: str = DEFAULT_REPORT_TYPE,
+    order_by_decided_at: bool = False,
 ) -> Dict[str, Any]:
     adapter = get_adapter()
     limit = max(1, min(int(limit or 30), 200))
@@ -198,6 +199,7 @@ def _paginate_by_status(
         region=region,
         sentiment=sentiment,
         report_type=target_report_type,
+        order_by_decided_at=order_by_decided_at,
     )
     items: List[Dict[str, Any]] = []
     for record in rows:
@@ -450,7 +452,14 @@ def list_review(decision: str, *, limit: int = 30, offset: int = 0, report_type:
 def list_discarded(*, limit: int = 30, offset: int = 0, report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, Any]:
     target_report_type = _normalize_report_type(report_type)
     logger.info("Listing discarded items: limit=%s offset=%s report_type=%s", limit, offset, target_report_type)
-    return _paginate_by_status("discarded", limit=limit, offset=offset, only_ready=False, report_type=target_report_type)
+    return _paginate_by_status(
+        "discarded",
+        limit=limit,
+        offset=offset,
+        only_ready=False,
+        report_type=target_report_type,
+        order_by_decided_at=True,
+    )
 
 
 def status_counts(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, int]:

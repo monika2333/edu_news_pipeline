@@ -1159,6 +1159,7 @@ class PostgresAdapter:
         region: Optional[str] = None,
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
+        order_by_decided_at: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         limit = max(1, min(int(limit or 30), 200))
         offset = max(0, int(offset or 0))
@@ -1204,22 +1205,24 @@ class PostgresAdapter:
                 ns.content_markdown,
                 ns.url,
                 ns.source,
-                ns.publish_time_iso,
-                ns.publish_time,
-                ns.sentiment_label,
-                ns.sentiment_confidence,
-                ns.is_beijing_related,
+            ns.publish_time_iso,
+            ns.publish_time,
+            ns.sentiment_label,
+            ns.sentiment_confidence,
+            ns.is_beijing_related,
                 ns.external_importance_score,
                 ns.external_importance_checked_at,
                 ns.score_details
             FROM manual_reviews mr
             JOIN news_summaries ns ON ns.article_id = mr.article_id
             WHERE {where_sql}
-            ORDER BY ns.external_importance_score DESC NULLS LAST,
-                     mr.rank ASC NULLS LAST,
-                     ns.score DESC NULLS LAST,
-                     ns.publish_time_iso DESC NULLS LAST,
-                     mr.article_id ASC
+            ORDER BY
+                {"mr.decided_at DESC NULLS LAST," if order_by_decided_at else ""}
+                ns.external_importance_score DESC NULLS LAST,
+                mr.rank ASC NULLS LAST,
+                ns.score DESC NULLS LAST,
+                ns.publish_time_iso DESC NULLS LAST,
+                mr.article_id ASC
             LIMIT %s OFFSET %s
         """
         with self._cursor() as cur:

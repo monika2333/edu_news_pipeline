@@ -531,7 +531,6 @@ function renderClusteredList(clusters) {
 
         return `
     <div class="filter-section">
-        <h3 class="filter-section-title">${sec.label} (${count})</h3>
         ${clustersHtml}
     </div>
         `;

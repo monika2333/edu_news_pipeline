@@ -251,7 +251,9 @@ h1 {
 
 .filter-section h3 {
     margin: 12px 0;
-    color: var(--text-primary);
+    color: var(--primary-color);
+    font-weight: 700;
+    font-size: 1rem;
 }
 
 .filter-cluster {

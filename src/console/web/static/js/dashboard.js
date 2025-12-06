@@ -434,17 +434,19 @@ function renderFilterList(data) {
     });
 
     const sections = [
-        { key: 'internalPositive', label: '' },
-        { key: 'internalNegative', label: '' },
-        { key: 'externalPositive', label: '' },
-        { key: 'externalNegative', label: '' },
+        { key: 'internalPositive', label: '京内正面', category: 'internal_positive' },
+        { key: 'internalNegative', label: '京内负面', category: 'internal_negative' },
+        { key: 'externalPositive', label: '京外正面', category: 'external_positive' },
+        { key: 'externalNegative', label: '京外负面', category: 'external_negative' },
     ];
 
     elements.filterList.innerHTML = sections.map(sec => {
         const list = buckets[sec.key] || [];
         if (!list.length) return '';
+        const count = state.filterCounts[sec.category] || list.length;
         return `
     <div class="filter-section">
+        <h3 class="filter-section-title">${sec.label} (${count})</h3>
         ${list.map(item => renderArticleCard(item, { showStatus: true, collapsed: false })).join('')}
             </div>
     `;

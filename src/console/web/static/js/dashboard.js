@@ -348,7 +348,7 @@ async function loadFilterCounts() {
                 const params = new URLSearchParams({
                     limit: '1',
                     offset: '0',
-                    cluster: 'true'
+                    cluster: 'false'
                 });
                 if (cat.startsWith('internal')) params.set('region', 'internal');
                 if (cat.startsWith('external')) params.set('region', 'external');

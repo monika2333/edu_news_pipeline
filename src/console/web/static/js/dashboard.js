@@ -1075,6 +1075,7 @@ async function applyReviewBulkStatus() {
 
     try {
         isBulkUpdatingReview = true;
+        const scrollY = window.scrollY;
         await fetch(`${API_BASE}/decide`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1088,6 +1089,7 @@ async function applyReviewBulkStatus() {
             })
         });
         await loadReviewData();
+        window.scrollTo({ top: scrollY, behavior: 'auto' });
         loadStats();
         showToast('批量移动完成');
     } catch (e) {
@@ -1171,6 +1173,7 @@ async function handleReviewStatusChange(e) {
 
     select.disabled = true;
     try {
+        const scrollY = window.scrollY;
         await fetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1191,6 +1194,7 @@ async function handleReviewStatusChange(e) {
         });
 
         await loadReviewData();
+        window.scrollTo({ top: scrollY, behavior: 'auto' });
         loadStats();
         showToast('已更新状态');
     } catch (err) {

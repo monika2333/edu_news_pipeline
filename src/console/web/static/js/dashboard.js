@@ -839,8 +839,9 @@ function renderReviewCard(item) {
     const sourceText = item.source || item.llm_source_display || '-';
     const scoreVal = item.external_importance_score ?? item.score ?? '-';
     const bonusText = (item.bonus_keywords && item.bonus_keywords.length) ? item.bonus_keywords.join(', ') : '';
+    const bonusClass = bonusText ? ' has-bonus' : '';
     return `
-        <div class="article-card" data-id="${item.article_id || ''}" data-status="${currentStatus}">
+        <div class="article-card${bonusClass}" data-id="${item.article_id || ''}" data-status="${currentStatus}">
             <div class="card-header">
                 <label class="review-select-wrap" title="选择">
                     <input type="checkbox" class="review-select">

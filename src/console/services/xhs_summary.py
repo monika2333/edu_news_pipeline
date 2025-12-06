@@ -133,6 +133,13 @@ def _write_links_temp(links: List[str]) -> Optional[Path]:
 
 
 def run_codex(prompt: str, workdir: Path, output_file: Path) -> RunResult:
+    if os.getenv("XHS_SUMMARY_FAKE_OUTPUT"):
+        workdir.mkdir(parents=True, exist_ok=True)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        fake_text = os.getenv("XHS_SUMMARY_FAKE_TEXT") or "fake output for testing"
+        output_file.write_text(fake_text, encoding="utf-8")
+        return RunResult(stdout=fake_text, stderr="", returncode=0, output_path=output_file)
+
     if not shutil.which("codex"):
         return RunResult(
             stdout="",

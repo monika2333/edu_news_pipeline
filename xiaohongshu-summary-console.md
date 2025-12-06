@@ -51,9 +51,9 @@ CLI 路径注意事项：
 3) 新建前端模板与 JS，完成输入区、提取区、生成区、状态区，以及调用上述 API 的 fetch 逻辑。（已完成）  
 4) 落地 Codex CLI 调用（必要时再提供 SDK 兜底），在服务层实现安全的命令组装与错误捕获，并校验 CLI 是否已安装。（已完成）  
 5) 为 `xiaohongshu-summary - origin` 目录路径增加配置项或常量，确保引用一致。（已完成，支持环境变量 `XHS_SUMMARY_ROOT`）  
-6) 自测流程：  
+6) 自测流程：（已完成，支持 `XHS_SUMMARY_FAKE_OUTPUT=1` 快速跑通）  
    - 用 `xiaohongshu-summary - origin/input_task.txt` 作为输入，验证能提取链接并正常显示。  
-   - 模拟 Codex 调用（可先用 `echo "fake output" > YYYYMMDDxiaohongshu-summaries.txt(1)` 代替）验证前端状态流转与文件命名。  
+   - 模拟 Codex 调用（可先用 `XHS_SUMMARY_FAKE_OUTPUT=1` 或 `echo "fake output" > YYYYMMDDxiaohongshu-summaries.txt(1)` 代替）验证前端状态流转与文件命名。  
    - 正式串起 Codex，确认能生成并回显 `YYYYMMDDxiaohongshu-summaries.txt(1)` 形态文件。
 7) 补充 README 或控制台帮助文案，说明需要的环境变量与 CLI 依赖。
 

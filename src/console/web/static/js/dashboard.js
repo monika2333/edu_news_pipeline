@@ -36,6 +36,7 @@ let state = {
 
 let shouldForceClusterRefresh = false;
 let emptyFilterPageReloadTimer = null;
+let reviewSortableInstance = null;
 
 // UI mode
 let isSortMode = false;
@@ -812,7 +813,6 @@ function renderReviewView() {
     `;
     applyReviewViewMode();
     bindReviewSelectionControls();
-    initReviewSortable();
     applySortModeState();
 }
 
@@ -826,7 +826,7 @@ function applySortModeState() {
         toggleBtn.classList.toggle('active', isSortMode);
         toggleBtn.innerHTML = `<span class="icon">⇅</span> ${isSortMode ? '退出排序' : '排序模式'}`;
     }
-    applyReviewViewMode();
+    initReviewSortable();
 }
 
 function toggleSortMode() {
@@ -912,9 +912,13 @@ function initReviewSortable() {
     if (typeof Sortable === 'undefined') return;
     const list = document.querySelector('#review-items');
     if (!list) return;
-
+    if (reviewSortableInstance) {
+        reviewSortableInstance.destroy();
+        reviewSortableInstance = null;
+    }
+    if (!isSortMode) return;
     const isMobileSort = window.innerWidth <= MOBILE_REVIEW_BREAKPOINT;
-    new Sortable(list, {
+    reviewSortableInstance = new Sortable(list, {
         animation: 150,
         handle: isMobileSort ? undefined : '.drag-handle',
         ghostClass: 'review-ghost',
@@ -1047,6 +1051,7 @@ function applyReviewViewMode() {
         });
     }
     updateReviewRailCounts();
+    initReviewSortable();
 }
 
 function getActiveReviewContainer() {

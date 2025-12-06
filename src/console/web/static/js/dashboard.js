@@ -443,10 +443,8 @@ function renderFilterList(data) {
     elements.filterList.innerHTML = sections.map(sec => {
         const list = buckets[sec.key] || [];
         if (!list.length) return '';
-        const count = state.filterCounts[sec.category] || list.length;
         return `
     <div class="filter-section">
-        <h3 class="filter-section-title">${sec.label} (${count})</h3>
         ${list.map(item => renderArticleCard(item, { showStatus: true, collapsed: false })).join('')}
             </div>
     `;

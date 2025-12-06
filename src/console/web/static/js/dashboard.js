@@ -687,18 +687,10 @@ async function loadReviewData() {
 function renderReviewView() {
     const currentView = state.reviewView === 'backup' ? 'backup' : 'selected';
     const items = state.reviewData[currentView] || [];
-    const typeLabel = state.reviewReportType === 'wanbao' ? '晚报' : '综报';
-    const viewLabel = currentView === 'backup' ? '备选' : '采纳';
     const content = renderGroupedReviewItems(items);
 
     elements.reviewList.innerHTML = `
         <div class="review-grid single-view" data-view="${currentView}">
-            <div class="review-meta-bar">
-                <span class="meta-chip">报型：${typeLabel}</span>
-                <span class="meta-chip">列表：${viewLabel}</span>
-                <span class="meta-chip">数量：${items.length}</span>
-                <span class="meta-chip">分组：${state.showGroups ? '显示' : '隐藏'}</span>
-            </div>
             <div class="review-items" id="review-items">
                 ${content}
             </div>

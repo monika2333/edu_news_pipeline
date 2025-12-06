@@ -152,14 +152,10 @@ def run_codex(prompt: str, workdir: Path, output_file: Path) -> RunResult:
     cmd = [
         "codex",
         "exec",
-        prompt,
         "--full-auto",
         "--sandbox",
         "danger-full-access",
-        "--working-dir",
-        str(workdir),
-        "-o",
-        str(output_file),
+        prompt,
     ]
     try:
         completed = subprocess.run(
@@ -168,6 +164,7 @@ def run_codex(prompt: str, workdir: Path, output_file: Path) -> RunResult:
             capture_output=True,
             text=True,
             env=env,
+            cwd=str(workdir),
         )
         return RunResult(
             stdout=completed.stdout or "",

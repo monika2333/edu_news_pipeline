@@ -837,7 +837,7 @@ function renderReviewCard(item) {
     const currentStatus = item.manual_status || item.status || state.reviewView || 'selected';
     const placeholder = item.llm_source_raw ? `(LLM: ${item.llm_source_raw})` : '留空则回退抓取来源';
     const sourceText = item.llm_source_display || item.source || '-';
-    const scoreVal = (item.external_importance_score ?? item.score ?? '-') as any;
+    const scoreVal = item.external_importance_score ?? item.score ?? '-';
     const bonusText = (item.bonus_keywords && item.bonus_keywords.length) ? item.bonus_keywords.join(', ') : '';
     return `
         <div class="article-card" data-id="${item.article_id || ''}" data-status="${currentStatus}">
@@ -860,8 +860,8 @@ function renderReviewCard(item) {
             <div class="meta-row">
                 <div class="meta-item">来源: ${sourceText}</div>
                 <div class="meta-item">分数: ${scoreVal === '-' ? '-' : scoreVal}</div>
+                ${bonusText ? `<div class="meta-item">Bonus: ${bonusText}</div>` : ''}
             </div>
-            ${bonusText ? `<div class="meta-row"><div class="meta-item">Bonus: ${bonusText}</div></div>` : ''}
             <textarea class="summary-box" data-id="${item.article_id || ''}">${item.summary || ''}</textarea>
             <input class="source-box" data-id="${item.article_id || ''}" value="${item.llm_source_display || ''}" placeholder="${placeholder}">
         </div>

@@ -56,6 +56,7 @@ const elements = {
         backup: document.getElementById('stat-backup'),
         exported: document.getElementById('stat-exported')
     },
+    reviewRailButtons: document.querySelectorAll('.review-category-btn'),
     modal: document.getElementById('export-modal'),
     modalText: document.getElementById('export-text'),
     toast: document.getElementById('toast')
@@ -100,6 +101,16 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.addEventListener('click', () => {
                 const view = btn.dataset.view || 'selected';
                 setReviewView(view);
+            });
+        });
+    }
+    if (elements.reviewRailButtons && elements.reviewRailButtons.length) {
+        elements.reviewRailButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetType = btn.dataset.reportType || 'zongbao';
+                const targetView = btn.dataset.view || 'selected';
+                setReviewReportType(targetType);
+                setReviewView(targetView);
             });
         });
     }
@@ -226,6 +237,14 @@ function setReviewReportType(value) {
             btn.classList.toggle('active', btn.dataset.type === normalized);
         });
     }
+    if (elements.reviewRailButtons && elements.reviewRailButtons.length) {
+        elements.reviewRailButtons.forEach(btn => {
+            btn.classList.toggle(
+                'active',
+                btn.dataset.reportType === normalized && btn.dataset.view === state.reviewView
+            );
+        });
+    }
     loadReviewData();
 }
 
@@ -238,6 +257,14 @@ function setReviewView(view) {
     if (elements.reviewViewButtons && elements.reviewViewButtons.length) {
         elements.reviewViewButtons.forEach(btn => {
             btn.classList.toggle('active', btn.dataset.view === normalized);
+        });
+    }
+    if (elements.reviewRailButtons && elements.reviewRailButtons.length) {
+        elements.reviewRailButtons.forEach(btn => {
+            btn.classList.toggle(
+                'active',
+                btn.dataset.reportType === state.reviewReportType && btn.dataset.view === normalized
+            );
         });
     }
     renderReviewView();
@@ -928,6 +955,14 @@ function applyReviewViewMode() {
     if (elements.reviewViewButtons && elements.reviewViewButtons.length) {
         elements.reviewViewButtons.forEach(btn => {
             btn.classList.toggle('active', btn.dataset.view === state.reviewView);
+        });
+    }
+    if (elements.reviewRailButtons && elements.reviewRailButtons.length) {
+        elements.reviewRailButtons.forEach(btn => {
+            btn.classList.toggle(
+                'active',
+                btn.dataset.reportType === state.reviewReportType && btn.dataset.view === state.reviewView
+            );
         });
     }
 }

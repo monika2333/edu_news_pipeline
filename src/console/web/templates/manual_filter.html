@@ -80,43 +80,49 @@
 
         <!-- Review Tab -->
         <div class="tab-content" id="review-tab">
-            <div class="toolbar review-toolbar">
-                <div class="report-type-toggle">
-                    <button class="btn btn-secondary report-type-btn active" data-type="zongbao">综报</button>
-                    <button class="btn btn-secondary report-type-btn" data-type="wanbao">晚报</button>
+            <div class="filter-layout review-layout">
+                <div class="filter-sidebar review-sidebar">
+                    <button class="filter-tab-btn review-category-btn active" data-report-type="zongbao" data-view="selected">综报采纳</button>
+                    <button class="filter-tab-btn review-category-btn" data-report-type="zongbao" data-view="backup">综报备选</button>
+                    <button class="filter-tab-btn review-category-btn" data-report-type="wanbao" data-view="selected">晚报采纳</button>
+                    <button class="filter-tab-btn review-category-btn" data-report-type="wanbao" data-view="backup">晚报备选</button>
                 </div>
-                <div class="bulk-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="review-select-all">
-                        <span>全选</span>
-                    </label>
-                    <select id="review-bulk-status" class="bulk-select">
-                        <option value="">移动到</option>
-                        <option value="zongbao:selected">综报采纳</option>
-                        <option value="zongbao:backup">综报备选</option>
-                        <option value="wanbao:selected">晚报采纳</option>
-                        <option value="wanbao:backup">晚报备选</option>
-                        <option value="discarded">放弃</option>
-                        <option value="pending">待处理</option>
-                    </select>
-                </div>
-                <div class="review-view-toggle">
-                    <div class="review-view-tabs">
-                        <button class="btn btn-secondary review-view-btn active" data-view="selected">采纳</button>
-                        <button class="btn btn-secondary review-view-btn" data-view="backup">备选</button>
+                <div class="filter-content review-main">
+                    <div class="toolbar review-toolbar">
+                        <div class="bulk-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="review-select-all">
+                                <span>全选</span>
+                            </label>
+                            <select id="review-bulk-status" class="bulk-select">
+                                <option value="">移动到</option>
+                                <option value="zongbao:selected">综报采纳</option>
+                                <option value="zongbao:backup">综报备选</option>
+                                <option value="wanbao:selected">晚报采纳</option>
+                                <option value="wanbao:backup">晚报备选</option>
+                                <option value="discarded">放弃</option>
+                                <option value="pending">待处理</option>
+                            </select>
+                        </div>
+                        <div class="review-view-toggle">
+                            <div class="review-view-tabs">
+                                <button class="btn btn-secondary review-view-btn active" data-view="selected">采纳</button>
+                                <button class="btn btn-secondary review-view-btn" data-view="backup">备选</button>
+                            </div>
+                            <select id="review-view-select" class="review-view-select">
+                                <option value="selected">采纳</option>
+                                <option value="backup">备选</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-secondary" id="btn-toggle-sort">
+                            <span class="icon">🔃</span> 排序模式
+                        </button>
+                        <button class="btn btn-primary" id="btn-export">导出 (仅采纳)</button>
                     </div>
-                    <select id="review-view-select" class="review-view-select">
-                        <option value="selected">采纳</option>
-                        <option value="backup">备选</option>
-                    </select>
+                    <div id="review-list">
+                        <!-- Grid will be injected here -->
+                    </div>
                 </div>
-                <button class="btn btn-secondary" id="btn-toggle-sort">
-                    <span class="icon">🔃</span> 排序模式
-                </button>
-                <button class="btn btn-primary" id="btn-export">导出 (仅采纳)</button>
-            </div>
-            <div id="review-list">
-                <!-- Grid will be injected here -->
             </div>
         </div>
 

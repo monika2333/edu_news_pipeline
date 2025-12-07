@@ -101,6 +101,7 @@ class ExportCandidate:
     score_details: Dict[str, Any] = field(default_factory=dict)
     external_importance_score: Optional[float] = None
     external_importance_checked_at: Optional[str] = None
+    manual_rank: Optional[float] = None
 
 
 @dataclass(slots=True)

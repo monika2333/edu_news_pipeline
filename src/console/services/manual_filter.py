@@ -723,6 +723,7 @@ def export_batch(
             is_beijing_related=record.get("is_beijing_related"),
             external_importance_score=record.get("external_importance_score"),
             external_importance_checked_at=record.get("external_importance_checked_at"),
+            manual_rank=float(record["manual_rank"]) if record.get("manual_rank") is not None else None,
         )
         candidates.append((candidate, section))
         items.append(
@@ -769,10 +770,13 @@ def export_batch(
         except (TypeError, ValueError):
             return float("-inf")
 
-    def _rank_key(candidate: ExportCandidate) -> Tuple[float, float]:
+    def _rank_key(candidate: ExportCandidate) -> Tuple[float, float, float, float]:
         ext_val = candidate.external_importance_score
         ext_score = float(ext_val) if isinstance(ext_val, (int, float)) else float("-inf")
-        return (ext_score, _score_value(candidate))
+        score = _score_value(candidate)
+        if candidate.manual_rank is not None:
+            return (1.0, -float(candidate.manual_rank), 0.0, 0.0)
+        return (0.0, 0.0, ext_score, score)
 
     def _chinese_date(dt: date) -> str:
         return f"{dt.year}年{dt.month}月{dt.day}日"

@@ -262,12 +262,15 @@ function updateFilterCountsUI() {
 
 function setReviewReportType(value) {
     const normalized = value === 'wanbao' ? 'wanbao' : 'zongbao';
+    if (state.reviewReportType === normalized) return;
+
     state.reviewReportType = normalized;
     if (elements.reportTypeButtons && elements.reportTypeButtons.length) {
         elements.reportTypeButtons.forEach(btn => {
             btn.classList.toggle('active', btn.dataset.type === normalized);
         });
     }
+    // Update rail buttons active state based on new report type
     if (elements.reviewRailButtons && elements.reviewRailButtons.length) {
         elements.reviewRailButtons.forEach(btn => {
             btn.classList.toggle(
@@ -282,6 +285,11 @@ function setReviewReportType(value) {
 
 function setReviewView(view) {
     const normalized = view === 'backup' ? 'backup' : 'selected';
+    if (state.reviewView === normalized && state.reviewData[normalized]?.length) {
+        // Optional: if view is same and we have data, we could just render (or do nothing if already rendered?)
+        // But let's allow re-render in case of sort mode toggles etc, 
+        // Just don't reload data.
+    }
     state.reviewView = normalized;
     if (elements.reviewRailButtons && elements.reviewRailButtons.length) {
         elements.reviewRailButtons.forEach(btn => {
@@ -775,17 +783,24 @@ async function discardRemainingItems() {
 // --- Review Tab Logic ---
 
 async function loadReviewData() {
-    elements.reviewList.innerHTML = '<div class="loading">Loading...</div>';
+    const listEmpty = !elements.reviewList.querySelector('.article-card');
+    const hasData = state.reviewData && (state.reviewData.selected.length || state.reviewData.backup.length);
+    if (!hasData || listEmpty) {
+        elements.reviewList.innerHTML = '<div class="loading">Loading...</div>';
+    }
     try {
+        const now = Date.now();
         const paramsSelected = new URLSearchParams({
             decision: 'selected',
             limit: '200',
-            report_type: state.reviewReportType
+            report_type: state.reviewReportType,
+            _t: now
         });
         const paramsBackup = new URLSearchParams({
             decision: 'backup',
             limit: '200',
-            report_type: state.reviewReportType
+            report_type: state.reviewReportType,
+            _t: now
         });
 
         const [selRes, bakRes] = await Promise.all([

@@ -67,6 +67,7 @@ const elements = {
         exported: document.getElementById('stat-exported')
     },
     reviewRailButtons: document.querySelectorAll('.review-category-btn'),
+    reviewSearchInput: document.getElementById('review-search-input'),
     modal: document.getElementById('export-modal'),
     modalText: document.getElementById('export-text'),
     toast: document.getElementById('toast')
@@ -141,6 +142,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         elements.reportTypeButtons.forEach(btn => {
             btn.classList.toggle('active', btn.dataset.type === state.reviewReportType);
+        });
+    }
+    if (elements.reviewSearchInput) {
+        elements.reviewSearchInput.addEventListener('input', (e) => {
+            const term = e.target.value.trim().toLowerCase();
+            filterReviewItems(term);
         });
     }
 
@@ -793,10 +800,30 @@ async function loadReviewData() {
             selected: selData.items || [],
             backup: bakData.items || []
         };
-        renderReviewView();
     } catch (e) {
         elements.reviewList.innerHTML = '<div class="error">Failed to load review data</div>';
     }
+}
+
+function filterReviewItems(term) {
+    if (!elements.reviewList) return;
+    const cards = elements.reviewList.querySelectorAll('.article-card');
+    cards.forEach(card => {
+        if (!term) {
+            card.style.display = '';
+            return;
+        }
+        const titleEl = card.querySelector('.article-title');
+        const summaryEl = card.querySelector('.summary-box');
+        const title = titleEl ? titleEl.textContent.toLowerCase() : '';
+        const summary = summaryEl ? summaryEl.value.toLowerCase() : '';
+
+        if (title.includes(term) || summary.includes(term)) {
+            card.style.display = '';
+        } else {
+            card.style.display = 'none';
+        }
+    });
 }
 
 function renderReviewView() {
@@ -900,10 +927,10 @@ function renderSortableReviewItems(items) {
                 <div class="review-group-header">${group.label}(${groupItems.length})</div>
                 <div class="review-group-body sort-group-body">
                     ${groupItems.map(item => {
-                        const currentStatus = item.manual_status || item.status || state.reviewView || 'selected';
-                        const title = item.title || '(No Title)';
-                        const link = item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">${title}</a>` : title;
-                        return `
+            const currentStatus = item.manual_status || item.status || state.reviewView || 'selected';
+            const title = item.title || '(No Title)';
+            const link = item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">${title}</a>` : title;
+            return `
                             <div class="article-card sort-card" data-id="${item.article_id || ''}" data-status="${currentStatus}">
                                 <div class="card-header sort-header">
                                     <span class="drag-handle" title="拖动排序">&#8942;</span>
@@ -911,7 +938,7 @@ function renderSortableReviewItems(items) {
                                 </div>
                             </div>
                         `;
-                    }).join('')}
+        }).join('')}
                 </div>
             </div>
         `;

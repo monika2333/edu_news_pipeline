@@ -449,6 +449,41 @@ h1 {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
+.review-toolbar .search-group {
+    display: flex;
+    align-items: center;
+    margin-right: auto; 
+}
+
+.review-toolbar .search-input {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: #ffffff;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    min-width: 200px;
+}
+
+.review-toolbar .search-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+@media (max-width: 768px) {
+    .review-toolbar .search-group {
+        width: 100%;
+        margin-right: 0;
+        margin-bottom: 10px;
+    }
+    
+    .review-toolbar .search-input {
+        width: 100%;
+        min-width: 0;
+    }
+}
+
 .review-view-toggle {
     display: flex;
     align-items: center;

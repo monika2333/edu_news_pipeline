@@ -80,12 +80,10 @@ def compose_prompt(links: List[str], links_file: Optional[Path], summaries_file:
         f"链接已写入 {links_file.name}，如需可自行读取；" if links_file else "链接列表直接附在下方；"
     )
     prompt = (
-        f"你是舆情分析助手，请严格遵循《小红书帖文分析指南》({guide_ref}) 的格式和口径。\n"
-        f"{links_hint}输出总结文件名：{summaries_file.name}。\n"
-        "请提炼关键信息、风险点和重点描述，保持条理化输出。\n"
-        "链接列表：\n"
+        f"请调用 chrome-devtools mcp，按照《小红书帖文分析指南》({guide_ref}) 执行。\n"
+        f"{links_hint}依次处理以下链接：\n"
         f"{links_section}\n"
-        "生成完成后直接给出最终总结内容。"
+        f"将结果写入 {summaries_file.name}，并直接返回最终总结内容。"
     )
     return prompt
 

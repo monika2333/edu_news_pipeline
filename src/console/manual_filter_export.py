@@ -20,6 +20,7 @@ from .manual_filter_helpers import (
     _attach_source_fields,
     _normalize_report_type,
 )
+from .manual_filter_decisions import _apply_decision
 
 logger = logging.getLogger(__name__)
 
@@ -89,39 +90,6 @@ def _resolve_periods(
         total = (last_total + inc * days) if last_total else inc
 
     return period, total, meta, today.isoformat()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Apply decision helper (local, to avoid circular import)
-# ─────────────────────────────────────────────────────────────────────────────
-def _apply_decision_for_export(
-    *,
-    status: str,
-    ids: List[str],
-    actor: Optional[str] = None,
-    report_type: str = DEFAULT_REPORT_TYPE,
-) -> int:
-    """Apply status update for export marking. Duplicated to avoid circular imports."""
-    adapter = get_adapter()
-    now_ts = datetime.now(timezone.utc)
-    target_report_type = _normalize_report_type(report_type)
-    payload: List[Dict[str, Any]] = []
-    for article_id in ids:
-        if not article_id:
-            continue
-        payload.append(
-            {
-                "article_id": article_id,
-                "status": status,
-                "rank": None,
-                "report_type": target_report_type,
-                "decided_by": actor,
-                "decided_at": now_ts,
-            }
-        )
-    if not payload:
-        return 0
-    return adapter.update_manual_review_statuses(payload, report_type=target_report_type)  # type: ignore[attr-defined]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -342,7 +310,7 @@ def export_batch(
         )
         if mark_exported:
             ids = [cid.filtered_article_id for cid, _ in export_payload]
-            updated = _apply_decision_for_export(status="exported", ids=ids, actor=None, report_type=target_report_type)
+            updated = _apply_decision(status="exported", ids=ids, actor=None, report_type=target_report_type)
             logger.info("Marked %s articles as exported", updated)
         meta_state.setdefault(target_report_type, {})
         meta_state[target_report_type][template] = {"period": period_value, "total": total_value, "date": today_iso}

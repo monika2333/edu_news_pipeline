@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 
 import streamlit as st
 
-from src.console.services import manual_filter
+from src.console import manual_filter_service as manual_filter
 
 PAGE_SIZE = 30
 DEFAULT_EXPORT_PATH = "outputs/manual_filter_export.txt"

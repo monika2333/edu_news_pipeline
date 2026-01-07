@@ -106,7 +106,7 @@ def status_counts_api(report_type: str = "zongbao") -> Dict[str, int]:
 def export_batch_api(req: ExportRequest) -> Dict[str, Any]:
     result = manual_filter_service.export_batch(
         report_tag=req.report_tag,
-        output_path=req.output_path or "outputs/manual_filter_service_export.txt",
+        output_path=req.output_path or "outputs/manual_filter_export.txt",
         template=req.template,
         period=req.period,
         total_period=req.total_period,

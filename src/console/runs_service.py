@@ -150,7 +150,7 @@ def get_dashboard_snapshot(limit: int = 10) -> Dict[str, Any]:
     latest_run = get_latest_pipeline_run(include_steps=True)
     latest_export = None
     try:
-        from src.console.services import exports as exports_service
+        from src.console import exports_service
 
         latest_export = exports_service.get_latest_export(include_items=False)
     except Exception as exc:  # pragma: no cover - dashboard should degrade gracefully

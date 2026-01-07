@@ -254,14 +254,23 @@ def fake_adapter(monkeypatch):
         },
     ]
     adapter = FakeAdapter(rows)
+    # Patch get_adapter in all modules that use it
+    from src.console import manual_filter_cluster, manual_filter_export, manual_filter_decisions
     monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_cluster, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_export, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_decisions, "get_adapter", lambda: adapter)
     return adapter
 
 
 @pytest.fixture(autouse=True)
 def override_export_meta_path(monkeypatch, tmp_path: Path):
     meta_path = tmp_path / "export_meta.json"
+    # Patch EXPORT_META_PATH in all modules that use it
+    from src.console import manual_filter_helpers, manual_filter_export
     monkeypatch.setattr(manual_filter_service, "EXPORT_META_PATH", meta_path)
+    monkeypatch.setattr(manual_filter_helpers, "EXPORT_META_PATH", meta_path)
+    monkeypatch.setattr(manual_filter_export, "EXPORT_META_PATH", meta_path)
     yield
 
 

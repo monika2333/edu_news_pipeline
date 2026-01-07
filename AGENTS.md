@@ -240,10 +240,13 @@ db_config = {
 - **Follow existing patterns**:
   - `src/` - Main application code
   - `src/cli/` - Command-line interface
-  - `src/console/` - Web console (FastAPI)
+  - `src/console/` - Web console (FastAPI), flat modules:
+    - `*_routes.py`, `*_service.py`, `*_schemas.py`
+    - `web_templates/`, `web_static/`
   - `src/workers/` - Background processing workers
   - `src/adapters/` - External service integrations
   - `src/domain/` - Business logic and models
+    - `src/domain/reporting/` - Shared export formatting and bucketing
   - `tests/` - Test files
   - `scripts/` - Utility scripts
   - `docs/` - Documentation
@@ -299,5 +302,4 @@ db_config = {
 3. **Mock external calls** in tests
 4. **Log API interactions** for debugging
 
-Remember: This codebase emphasizes **type safety**, **clear separation of concerns**, and **testable code**. Always prioritize maintainability and correctness over short-term speed gains.</content>
-<parameter name="filePath">AGENTS.md
+Remember: This codebase emphasizes **type safety**, **clear separation of concerns**, and **testable code**. Always prioritize maintainability and correctness over short-term speed gains.

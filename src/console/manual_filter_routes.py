@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from src.console.services import manual_filter
+from src.console import manual_filter_service
 
 router = APIRouter(prefix="/api/manual_filter", tags=["manual_filter"])
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ def list_candidates_api(
     force_refresh: bool = False,
     report_type: str = "zongbao",
 ) -> Dict[str, Any]:
-    return manual_filter.list_candidates(
+    return manual_filter_service.list_candidates(
         limit=limit,
         offset=offset,
         region=region,
@@ -70,7 +70,7 @@ def list_candidates_api(
 
 @router.post("/decide")
 def bulk_decide_api(req: BulkDecideRequest) -> Dict[str, int]:
-    return manual_filter.bulk_decide(
+    return manual_filter_service.bulk_decide(
         selected_ids=req.selected_ids,
         backup_ids=req.backup_ids,
         discarded_ids=req.discarded_ids,
@@ -82,31 +82,31 @@ def bulk_decide_api(req: BulkDecideRequest) -> Dict[str, int]:
 
 @router.get("/review")
 def list_review_api(decision: str = "selected", limit: int = 30, offset: int = 0, report_type: str = "zongbao") -> Dict[str, Any]:
-    return manual_filter.list_review(decision, limit=limit, offset=offset, report_type=report_type)
+    return manual_filter_service.list_review(decision, limit=limit, offset=offset, report_type=report_type)
 
 
 @router.get("/discarded")
 def list_discarded_api(limit: int = 30, offset: int = 0, report_type: str = "zongbao") -> Dict[str, Any]:
-    return manual_filter.list_discarded(limit=limit, offset=offset, report_type=report_type)
+    return manual_filter_service.list_discarded(limit=limit, offset=offset, report_type=report_type)
 
 
 @router.post("/edit")
 def save_edits_api(req: SaveEditsRequest) -> Dict[str, int]:
     # The service expects Dict[str, Dict[str, Any]], which matches the pydantic model
-    count = manual_filter.save_edits(req.edits, actor=req.actor, report_type=req.report_type)
+    count = manual_filter_service.save_edits(req.edits, actor=req.actor, report_type=req.report_type)
     return {"updated": count}
 
 
 @router.get("/stats")
 def status_counts_api(report_type: str = "zongbao") -> Dict[str, int]:
-    return manual_filter.status_counts(report_type=report_type)
+    return manual_filter_service.status_counts(report_type=report_type)
 
 
 @router.post("/export")
 def export_batch_api(req: ExportRequest) -> Dict[str, Any]:
-    result = manual_filter.export_batch(
+    result = manual_filter_service.export_batch(
         report_tag=req.report_tag,
-        output_path=req.output_path or "outputs/manual_filter_export.txt",
+        output_path=req.output_path or "outputs/manual_filter_service_export.txt",
         template=req.template,
         period=req.period,
         total_period=req.total_period,
@@ -128,7 +128,7 @@ def export_batch_api(req: ExportRequest) -> Dict[str, Any]:
 
 @router.post("/order")
 def update_order_api(req: UpdateOrderRequest) -> Dict[str, int]:
-    return manual_filter.update_ranks(
+    return manual_filter_service.update_ranks(
         selected_order=req.selected_order,
         backup_order=req.backup_order,
         actor=req.actor,

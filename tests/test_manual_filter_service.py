@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import pytest
 
-from src.console.services import manual_filter
+from src.console import manual_filter_service
 
 
 class FakeAdapter:
@@ -36,6 +36,7 @@ class FakeAdapter:
         region: Optional[str] = None,
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
+        order_by_decided_at: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         target_type = self._normalized_report_type(report_type)
         filtered = [
@@ -253,19 +254,19 @@ def fake_adapter(monkeypatch):
         },
     ]
     adapter = FakeAdapter(rows)
-    monkeypatch.setattr(manual_filter, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
     return adapter
 
 
 @pytest.fixture(autouse=True)
 def override_export_meta_path(monkeypatch, tmp_path: Path):
     meta_path = tmp_path / "export_meta.json"
-    monkeypatch.setattr(manual_filter, "EXPORT_META_PATH", meta_path)
+    monkeypatch.setattr(manual_filter_service, "EXPORT_META_PATH", meta_path)
     yield
 
 
 def test_list_candidates_returns_pending_with_bonus(fake_adapter):
-    result = manual_filter.list_candidates(limit=10, offset=0)
+    result = manual_filter_service.list_candidates(limit=10, offset=0)
     assert result["total"] == 2
     assert len(result["items"]) == 2
     assert "教育政策" in result["items"][0]["bonus_keywords"]
@@ -273,7 +274,7 @@ def test_list_candidates_returns_pending_with_bonus(fake_adapter):
 
 
 def test_bulk_decide_updates_states(fake_adapter):
-    res = manual_filter.bulk_decide(
+    res = manual_filter_service.bulk_decide(
         selected_ids=["a1"],
         backup_ids=["a2"],
         discarded_ids=[],
@@ -285,17 +286,17 @@ def test_bulk_decide_updates_states(fake_adapter):
 
 
 def test_save_edits_and_review(fake_adapter):
-    manual_filter.bulk_decide(selected_ids=["a1"], backup_ids=[], discarded_ids=[], actor=None)
-    manual_filter.save_edits({"a1": {"summary": "edited"}}, actor="tester")
-    review = manual_filter.list_review("selected", limit=10, offset=0)
+    manual_filter_service.bulk_decide(selected_ids=["a1"], backup_ids=[], discarded_ids=[], actor=None)
+    manual_filter_service.save_edits({"a1": {"summary": "edited"}}, actor="tester")
+    review = manual_filter_service.list_review("selected", limit=10, offset=0)
     assert review["items"][0]["summary"] == "edited"
     assert review["items"][0]["bonus_keywords"]  # still present
 
 
 def test_export_batch_writes_file_and_marks_exported(fake_adapter, tmp_path: Path):
-    manual_filter.bulk_decide(selected_ids=["a1", "a2"], backup_ids=[], discarded_ids=[], actor=None)
+    manual_filter_service.bulk_decide(selected_ids=["a1", "a2"], backup_ids=[], discarded_ids=[], actor=None)
     output_file = tmp_path / "out.txt"
-    res = manual_filter.export_batch(report_tag="test", output_path=str(output_file))
+    res = manual_filter_service.export_batch(report_tag="test", output_path=str(output_file))
     assert res["count"] == 2
     assert Path(res["output_path"]).exists()
     exported_status = {r["article_id"]: r["status"] for r in fake_adapter.rows}
@@ -304,7 +305,7 @@ def test_export_batch_writes_file_and_marks_exported(fake_adapter, tmp_path: Pat
 
 
 def test_report_type_filters_and_meta(fake_adapter, tmp_path: Path):
-    manual_filter.bulk_decide(selected_ids=["a1"], backup_ids=[], discarded_ids=[], actor=None, report_type="zongbao")
+    manual_filter_service.bulk_decide(selected_ids=["a1"], backup_ids=[], discarded_ids=[], actor=None, report_type="zongbao")
     fake_adapter.rows.append(
         {
             "article_id": "a3",
@@ -330,35 +331,35 @@ def test_report_type_filters_and_meta(fake_adapter, tmp_path: Path):
             "report_type": "wanbao",
         }
     )
-    zb_review = manual_filter.list_review("selected", limit=10, offset=0, report_type="zongbao")
-    wb_review = manual_filter.list_review("selected", limit=10, offset=0, report_type="wanbao")
+    zb_review = manual_filter_service.list_review("selected", limit=10, offset=0, report_type="zongbao")
+    wb_review = manual_filter_service.list_review("selected", limit=10, offset=0, report_type="wanbao")
     assert [item["article_id"] for item in zb_review["items"]] == ["a1"]
     assert [item["article_id"] for item in wb_review["items"]] == ["a3"]
 
     zb_output = tmp_path / "zb.txt"
     wb_output = tmp_path / "wb.txt"
-    manual_filter.export_batch(
+    manual_filter_service.export_batch(
         report_tag="zb",
         output_path=str(zb_output),
         report_type="zongbao",
         template="zongbao",
     )
-    manual_filter.export_batch(
+    manual_filter_service.export_batch(
         report_tag="wb",
         output_path=str(wb_output),
         report_type="wanbao",
         template="wanbao",
     )
-    meta = json.loads(manual_filter.EXPORT_META_PATH.read_text(encoding="utf-8"))
+    meta = json.loads(manual_filter_service.EXPORT_META_PATH.read_text(encoding="utf-8"))
     assert "zongbao" in meta and "wanbao" in meta
     assert "zongbao" in meta["zongbao"] and "wanbao" in meta["wanbao"]
 
 
 def test_reset_to_pending_and_discarded_listing(fake_adapter):
-    manual_filter.bulk_decide(selected_ids=[], backup_ids=[], discarded_ids=["a1", "a2"], actor=None)
-    discarded = manual_filter.list_discarded(limit=10, offset=0)
+    manual_filter_service.bulk_decide(selected_ids=[], backup_ids=[], discarded_ids=["a1", "a2"], actor=None)
+    discarded = manual_filter_service.list_discarded(limit=10, offset=0)
     assert discarded["total"] == 2
-    updated = manual_filter.reset_to_pending(["a1"])
+    updated = manual_filter_service.reset_to_pending(["a1"])
     assert updated == 1
     status_map = {r["article_id"]: r["status"] for r in fake_adapter.rows}
     assert status_map["a1"] == "pending"

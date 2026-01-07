@@ -1,9 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from src.console.schemas.export import LatestExport
-from src.console.services import exports as exports_service
+from src.console.exports_schemas import LatestExport
+from src.console import exports_service
 
 router = APIRouter(prefix="/exports", tags=["exports"])
 

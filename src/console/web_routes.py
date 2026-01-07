@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import date, datetime
 from pathlib import Path
@@ -8,13 +8,13 @@ from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from src.console.services import articles as articles_service
-from src.console.services import exports as exports_service
-from src.console.services import runs as runs_service
+from src.console import articles_service
+from src.console import exports_service
+from src.console import runs_service
 
 router = APIRouter(tags=["console"], include_in_schema=False)
 
-_TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "web" / "templates"
+_TEMPLATE_DIR = Path(__file__).resolve().parent / "web_templates"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
 

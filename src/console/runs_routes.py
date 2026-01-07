@@ -1,15 +1,15 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import List
 
 from fastapi import APIRouter, HTTPException, Query
 
-from src.console.schemas.run import (
+from src.console.runs_schemas import (
     PipelineRun,
     PipelineRunDetail,
     PipelineRunTriggerRequest,
 )
-from src.console.services import runs as runs_service
+from src.console import runs_service
 
 router = APIRouter(prefix="/runs", tags=["pipeline"])
 

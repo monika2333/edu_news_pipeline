@@ -5,8 +5,8 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Query
 
-from src.console.schemas.article import NewsArticleSearchResponse
-from src.console.services import articles as articles_service
+from src.console.articles_schemas import NewsArticleSearchResponse
+from src.console import articles_service
 
 router = APIRouter(prefix="/api/articles", tags=["articles"])
 

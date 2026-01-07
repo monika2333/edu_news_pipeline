@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from src.adapters.db import get_adapter
 from src.adapters.title_cluster import cluster_titles
-from src.core.reporting.buckets import normalize_sentiment, candidate_rank_key_simple
+from src.domain.reporting.buckets import normalize_sentiment, candidate_rank_key_simple
 from src.domain import ExportCandidate
 from src.notifications.feishu import FeishuConfigError, FeishuRequestError, notify_export_summary
 from src.workers import log_info, log_summary, worker_session

@@ -51,7 +51,7 @@ from .manual_filter_export import (
 )
 
 # Re-export period functions from core/reporting for backward compatibility
-from src.core.reporting.periods import (
+from src.domain.reporting.periods import (
     period_increment_for_template as _period_increment_for_template,
     resolve_periods as _resolve_periods,
 )

@@ -1,6 +1,6 @@
 # Reporting Refactor Plan
 
-Goal: extract shared export formatting and bucketing into `src/core/reporting` and reuse it in:
+Goal: extract shared export formatting and bucketing into `src/domain/reporting` and reuse it in:
 - `src/console/manual_filter_export.py`
 - `src/workers/export_brief.py`
 
@@ -12,16 +12,16 @@ Goal: extract shared export formatting and bucketing into `src/core/reporting` a
 
 ## Proposed structure
 
-- `src/core/reporting/__init__.py`
-- `src/core/reporting/buckets.py`
+- `src/domain/reporting/__init__.py`
+- `src/domain/reporting/buckets.py`
   - Sentiment/region bucketing
   - Sorting and ordering
   - Category counts
-- `src/core/reporting/formatters.py`
+- `src/domain/reporting/formatters.py`
   - Text block generation
   - Titles/summaries/source suffix
   - Header generation
-- `src/core/reporting/periods.py`
+- `src/domain/reporting/periods.py`
   - Period/total calculation with meta state
 
 ## Common interfaces
@@ -65,7 +65,7 @@ def resolve_periods(
 
 ## Migration steps
 
-1) Create `src/core/reporting/` with the three modules above and minimal `__init__.py`.
+1) Create `src/domain/reporting/` with the three modules above and minimal `__init__.py`.
 2) Move period calculation from `manual_filter_export.py` into `periods.py`.
 3) Move bucketing/sorting logic into `buckets.py`.
 4) Move text generation (headers + section texts) into `formatters.py`.
@@ -78,4 +78,3 @@ def resolve_periods(
 - Export output structure and ordering unchanged for both console and worker.
 - No new dependencies from core to console/worker/adapters.
 - Existing tests pass; add a small unit test for core/reporting if needed.
-

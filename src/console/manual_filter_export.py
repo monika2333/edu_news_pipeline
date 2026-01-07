@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.adapters.db import get_adapter
-from src.core.reporting import build_buckets, format_export_text, resolve_periods
+from src.domain.reporting import build_buckets, format_export_text, resolve_periods
 from src.domain.models import ExportCandidate
 
 from .manual_filter_helpers import (

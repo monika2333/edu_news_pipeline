@@ -1,5 +1,5 @@
 """
-src/core/reporting
+src/domain/reporting
 
 Shared export formatting, bucketing, and period calculation utilities.
 Used by both manual_filter_export and export_brief workers.

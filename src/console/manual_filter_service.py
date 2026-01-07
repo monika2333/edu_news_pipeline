@@ -46,10 +46,14 @@ from .manual_filter_cluster import (
 # ─────────────────────────────────────────────────────────────────────────────
 from .manual_filter_export import (
     _load_export_meta,
-    _period_increment_for_template,
-    _resolve_periods,
     _save_export_meta,
     export_batch,
+)
+
+# Re-export period functions from core/reporting for backward compatibility
+from src.core.reporting.periods import (
+    period_increment_for_template as _period_increment_for_template,
+    resolve_periods as _resolve_periods,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────

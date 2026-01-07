@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from src.adapters.db import get_adapter
 from src.adapters.title_cluster import cluster_titles
+from src.core.reporting.buckets import normalize_sentiment, candidate_rank_key_simple
 from src.domain import ExportCandidate
 from src.notifications.feishu import FeishuConfigError, FeishuRequestError, notify_export_summary
 from src.workers import log_info, log_summary, worker_session
@@ -108,12 +109,6 @@ def run(
             else:
                 external_candidates.append(cand)
 
-        def _normalized_sentiment(candidate: ExportCandidate) -> str:
-            label = (candidate.sentiment_label or "").strip().lower()
-            if label == "negative":
-                return "negative"
-            return "positive"
-
         def _external_importance_value(candidate: ExportCandidate) -> float:
             value = candidate.external_importance_score
             if value is None:
@@ -131,9 +126,6 @@ def run(
                 return float(value)
             except (TypeError, ValueError):
                 return float("-inf")
-
-        def _candidate_rank_key(candidate: ExportCandidate) -> Tuple[float, float]:
-            return (_external_importance_value(candidate), _score_value(candidate))
 
         def _format_entry(candidate: ExportCandidate) -> str:
             title_line = (candidate.title or "").strip()
@@ -215,9 +207,9 @@ def run(
         }
 
         for cand in internal_candidates:
-            bucket_index[("internal", _normalized_sentiment(cand))].append(cand)
+            bucket_index[("internal", normalize_sentiment(cand))].append(cand)
         for cand in external_candidates:
-            bucket_index[("external", _normalized_sentiment(cand))].append(cand)
+            bucket_index[("external", normalize_sentiment(cand))].append(cand)
 
         text_entries: List[str] = []
         export_payload: List[Tuple[ExportCandidate, str]] = []
@@ -248,12 +240,12 @@ def run(
                 cluster_candidates = [items[idx] for idx in cluster if 0 <= idx < len(items)]
                 if not cluster_candidates:
                     continue
-                cluster_candidates.sort(key=_candidate_rank_key, reverse=True)
-                cluster_key = max((_candidate_rank_key(c) for c in cluster_candidates), default=(float("-inf"), float("-inf")))
+                cluster_candidates.sort(key=candidate_rank_key_simple, reverse=True)
+                cluster_key = max((candidate_rank_key_simple(c) for c in cluster_candidates), default=(float("-inf"), float("-inf")))
                 cluster_structs.append((cluster_key, cluster_candidates))
 
             if not cluster_structs:
-                fallback_candidates = sorted(items, key=_candidate_rank_key, reverse=True)
+                fallback_candidates = sorted(items, key=candidate_rank_key_simple, reverse=True)
                 cluster_structs.append(((float("-inf"), float("-inf")), fallback_candidates))
 
             cluster_structs.sort(key=lambda entry: entry[0], reverse=True)

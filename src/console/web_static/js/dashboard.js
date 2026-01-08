@@ -1632,7 +1632,7 @@ function renderDrawerSearchResults(data) {
             </h4>
             <div class="search-meta">
                 <span>${item.source || '-'}</span>
-                <span>${item.publish_time ? item.publish_time.substring(0, 10) : '-'}</span>
+                <span>${(item.publish_time && typeof item.publish_time === 'string') ? item.publish_time.substring(0, 10) : (item.publish_time || '-')}</span>
                 <span class="badge ${getSentimentClass(item.sentiment_label)}">${item.sentiment_label || '-'}</span>
                 <span>STATUS: ${item.status || 'unknown'}</span>
             </div>

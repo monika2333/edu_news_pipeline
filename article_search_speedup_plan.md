@@ -11,7 +11,7 @@
 ## Plan
 
 ### Phase 1: UI + API Simplification
-- UI: simplify search form to keywords input + page size only.
+- UI (drawer + `/articles/search` page): simplify search form to keywords input + page size only.
 - API: accept only `q`, `page`, `limit` (other filters removed).
 
 ### Phase 2: Trigram Index on a Combined Search Field (Chosen)
@@ -63,6 +63,7 @@ Then use the same concatenation expression in the query predicate.
 - `src/console/articles_routes.py`: drop unused query params, keep `q`, `page`, `limit`.
 - `src/console/web_routes.py`: simplify `/articles/search` form handling to only accept keywords and pagination.
 - `src/console/web_templates/search.html`: remove filter inputs for source/sentiment/status/date.
+- `src/console/web_templates/manual_filter.html`: keep only the keywords search UI inside the drawer.
 - `README.md`: update the `/articles/search` description to "keywords only".
 
 ## Migration Checklist

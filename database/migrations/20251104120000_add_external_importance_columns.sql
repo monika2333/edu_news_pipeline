@@ -1,3 +1,4 @@
+-- migrate:up
 -- Add external importance fields for news_summaries external filter
 -- Run with: psql -f database/migrations/20251104120000_add_external_importance_columns.sql
 
@@ -13,3 +14,5 @@ create index if not exists news_summaries_external_filter_idx
     on public.news_summaries (is_beijing_related, sentiment_label, external_importance_status);
 
 commit;
+
+-- migrate:down

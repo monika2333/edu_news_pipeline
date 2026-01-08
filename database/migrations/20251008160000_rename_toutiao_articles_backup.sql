@@ -1,3 +1,4 @@
+-- migrate:up
 -- Rename toutiao_articles to toutiao_articles_backup for observation period
 -- Safe to run multiple times.
 
@@ -13,3 +14,5 @@ end$$;
 
 commit;
 
+
+-- migrate:down

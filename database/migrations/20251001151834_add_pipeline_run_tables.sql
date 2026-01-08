@@ -1,3 +1,4 @@
+-- migrate:up
 ﻿-- Add pipeline run metadata tables
 create table if not exists public.pipeline_runs (
     id uuid primary key default gen_random_uuid(),
@@ -29,3 +30,5 @@ create table if not exists public.pipeline_run_steps (
 
 create index if not exists pipeline_run_steps_run_id_idx on public.pipeline_run_steps(run_id);
 create index if not exists pipeline_run_steps_step_name_idx on public.pipeline_run_steps(step_name);
+
+-- migrate:down

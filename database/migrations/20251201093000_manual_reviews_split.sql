@@ -1,3 +1,4 @@
+-- migrate:up
 begin;
 
 -- Ensure pgcrypto is available for gen_random_uuid
@@ -101,3 +102,5 @@ begin
 end $$;
 
 commit;
+
+-- migrate:down

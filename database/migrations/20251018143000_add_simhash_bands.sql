@@ -1,3 +1,4 @@
+-- migrate:up
 -- Add SimHash bigint and band columns for near-duplicate detection
 begin;
 
@@ -21,3 +22,5 @@ create index if not exists filtered_articles_simhash_band4_idx
     on public.filtered_articles (simhash_band4);
 
 commit;
+
+-- migrate:down

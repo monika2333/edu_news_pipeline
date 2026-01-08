@@ -1,3 +1,4 @@
+-- migrate:up
 -- Add granular scoring columns to primary_articles and news_summaries
 -- Run with: psql -f database/migrations/20251021103000_add_scoring_breakdown_columns.sql
 
@@ -26,3 +27,5 @@ set
     score_details = coalesce(score_details, '{}'::jsonb);
 
 commit;
+
+-- migrate:down

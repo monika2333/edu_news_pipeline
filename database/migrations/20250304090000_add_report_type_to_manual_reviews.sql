@@ -1,3 +1,4 @@
+-- migrate:up
 begin;
 
 alter table if exists public.manual_reviews
@@ -21,3 +22,5 @@ create index if not exists manual_reviews_status_report_type_rank_idx
     on public.manual_reviews (status, coalesce(report_type, 'zongbao'), rank asc nulls last, article_id);
 
 commit;
+
+-- migrate:down

@@ -1,3 +1,4 @@
+-- migrate:up
 -- Create tables for manual export history, isolated from worker exports
 
 create table if not exists public.manual_export_batches (
@@ -43,3 +44,5 @@ create trigger manual_export_items_set_updated_at
     before update on public.manual_export_items
     for each row execute function public.set_updated_at();
 
+
+-- migrate:down

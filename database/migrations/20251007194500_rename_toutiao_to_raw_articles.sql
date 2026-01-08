@@ -1,3 +1,4 @@
+-- migrate:up
 -- Rename toutiao_articles to raw_articles and align indexes/triggers
 -- Safe to run multiple times.
 
@@ -58,3 +59,5 @@ end$$;
 
 commit;
 
+
+-- migrate:down

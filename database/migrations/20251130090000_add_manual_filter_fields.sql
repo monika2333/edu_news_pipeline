@@ -1,3 +1,4 @@
+-- migrate:up
 begin;
 
 alter table if exists public.news_summaries
@@ -19,3 +20,5 @@ create index if not exists news_summaries_manual_status_idx
     on public.news_summaries (manual_status);
 
 commit;
+
+-- migrate:down

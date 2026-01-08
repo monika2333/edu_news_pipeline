@@ -1,3 +1,4 @@
+-- migrate:up
 -- Adjust filtered_articles indexes to allow duplicate hashes
 begin;
 
@@ -7,3 +8,5 @@ create index if not exists filtered_articles_content_hash_idx
     where content_hash is not null;
 
 commit;
+
+-- migrate:down

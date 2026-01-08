@@ -15,6 +15,7 @@ bin-release/
 *.air
 *.ipa
 *.apk
+*.exe
 
 # Python bytecode cache
 __pycache__/

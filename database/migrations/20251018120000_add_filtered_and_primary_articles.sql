@@ -1,3 +1,4 @@
+-- migrate:up
 -- Introduce filtered_articles and primary_articles tables, plus extend news_summaries
 -- Run with: psql -f database/migrations/20251018120000_add_filtered_and_primary_articles.sql
 
@@ -108,3 +109,5 @@ create index if not exists news_summaries_score_idx
     on public.news_summaries (score desc nulls last);
 
 commit;
+
+-- migrate:down

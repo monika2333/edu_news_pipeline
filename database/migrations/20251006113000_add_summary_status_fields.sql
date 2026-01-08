@@ -1,3 +1,4 @@
+-- migrate:up
 -- Two-stage summary status columns
 ALTER TABLE IF EXISTS public.news_summaries
     ADD COLUMN IF NOT EXISTS summary_status text NOT NULL DEFAULT 'pending',
@@ -13,3 +14,5 @@ SET summary_status = CASE
 
 CREATE INDEX IF NOT EXISTS news_summaries_status_attempt_idx
     ON public.news_summaries (summary_status, summary_attempted_at);
+
+-- migrate:down

@@ -1,3 +1,4 @@
+-- migrate:up
 -- Migrate correlation -> score and remove deprecated column/index
 BEGIN;
 
@@ -15,3 +16,5 @@ ALTER TABLE public.news_summaries
 
 COMMIT;
 
+
+-- migrate:down

@@ -1,3 +1,4 @@
+-- migrate:up
 -- Add Beijing gate staging fields for two-step classification
 -- Run with: psql -f database/migrations/20251105100000_add_beijing_gate_fields.sql
 
@@ -18,3 +19,5 @@ comment on column public.news_summaries.is_beijing_related_llm is 'LLM-based Bei
 comment on column public.news_summaries.beijing_gate_checked_at is 'Timestamp when the LLM Beijing gate returned a definitive result';
 
 commit;
+
+-- migrate:down

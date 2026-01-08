@@ -1,3 +1,4 @@
+-- migrate:up
 begin;
 
 drop index if exists public.news_summaries_manual_status_idx;
@@ -12,3 +13,5 @@ alter table if exists public.news_summaries
     drop column if exists manual_rank;
 
 commit;
+
+-- migrate:down

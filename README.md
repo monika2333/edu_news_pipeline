@@ -45,6 +45,30 @@ python -m src.cli.main export
 - 抓取/评分：如 `TOUTIAO_AUTHORS_PATH`、`TENCENT_AUTHORS_PATH`、`PROCESS_LIMIT` 等。
 - 控制台认证：`CONSOLE_BASIC_USERNAME` / `CONSOLE_BASIC_PASSWORD` 或 `CONSOLE_API_TOKEN`。
 
+## 数据库管理 (Database)
+
+本项目使用 **Dbmate** 进行数据库版本控制。为了方便使用 `.env.local` 配置，请使用根目录下的 `dbmate.ps1` 脚本。
+
+### 常用命令
+```powershell
+# 查看迁移状态
+.\dbmate.ps1 status
+
+# 应用最新迁移 (部署)
+.\dbmate.ps1 up
+
+# 创建新迁移文件
+.\dbmate.ps1 new <migration_name>
+# 例如: .\dbmate.ps1 new add_users_table
+
+# 回滚最近一次迁移
+.\dbmate.ps1 down
+```
+
+### 注意事项
+- 所有迁移文件位于 `database/migrations/`。
+- 本地开发请尽量使用 `.\dbmate.ps1` 而不是直接调用 `dbmate.exe`，确保环境变量（如 DB 密码）能正确加载。
+
 ## 目录速览
 - `run_console.py`：控制台入口。
 - `src/console/app.py`：FastAPI 应用与路由挂载。

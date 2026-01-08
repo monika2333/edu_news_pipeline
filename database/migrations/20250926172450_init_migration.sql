@@ -1,3 +1,4 @@
+-- migrate:up
 ﻿-- Postgres schema for Edu News Automation System
 -- Run with `psql -f` after copying into database/migrations
 
@@ -58,3 +59,5 @@ $$ language plpgsql;
 create trigger set_updated_at_brief_items
 before update on public.brief_items
 for each row execute function public.set_updated_at();
+
+-- migrate:down

@@ -1,3 +1,4 @@
+-- migrate:up
 -- Merge existing Toutiao rows into raw_articles without duplication
 -- Safe to run multiple times.
 
@@ -51,3 +52,5 @@ end$$;
 
 commit;
 
+
+-- migrate:down

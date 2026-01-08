@@ -131,7 +131,7 @@ def run(
             title_line = (candidate.title or "").strip()
             summary_line = (candidate.summary or "").strip()
             display_source = (candidate.llm_source or candidate.source or "").strip()
-            sentiment_bucket = _normalized_sentiment(candidate)
+            sentiment_bucket = normalize_sentiment(candidate)
             is_positive = sentiment_bucket == "positive"
             is_internal = candidate.is_beijing_related is True
 

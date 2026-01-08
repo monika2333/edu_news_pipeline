@@ -58,6 +58,10 @@ def _prune_cluster_cache(decided_ids: Sequence[str]) -> None:
         _cluster_cache[key] = {"clusters": pruned, "total": len(pruned)}
 
 
+def _invalidate_cluster_cache() -> None:
+    _cluster_cache.clear()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Pending total helper
 # ─────────────────────────────────────────────────────────────────────────────

@@ -573,6 +573,14 @@ function setupFilterRealtimeDecisionHandlers() {
     if (!elements.filterList) return;
     elements.filterList.addEventListener('change', (e) => {
         const target = e.target;
+        if (target instanceof HTMLTextAreaElement && target.classList.contains('summary-box')) {
+            handleFilterEditChange(target);
+            return;
+        }
+        if (target instanceof HTMLInputElement && target.classList.contains('source-box')) {
+            handleFilterEditChange(target);
+            return;
+        }
         if (!(target instanceof HTMLInputElement) || target.type !== 'radio') return;
 
         if (target.name.startsWith('cluster-')) {
@@ -581,6 +589,19 @@ function setupFilterRealtimeDecisionHandlers() {
             handleCardDecisionChange(target);
         }
     });
+}
+
+async function handleFilterEditChange(target) {
+    const card = target.closest('.article-card');
+    if (!card) return;
+    const edits = {};
+    collectCardEdits(card, edits);
+    try {
+        await persistEdits(edits);
+        showToast('已保存');
+    } catch (err) {
+        showToast('保存失败', 'error');
+    }
 }
 
 async function handleCardDecisionChange(input) {
@@ -1261,6 +1282,7 @@ async function handleSummaryUpdate(e) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor, report_type: state.reviewReportType })
         });
+        applyReviewEditsToState(id, summary, llm_source);
         showToast('摘要已保存');
     } catch (err) {
         showToast('摘要保存失败', 'error');
@@ -1281,10 +1303,30 @@ async function handleSourceUpdate(e) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor, report_type: state.reviewReportType })
         });
+        applyReviewEditsToState(id, summary, llm_source);
         showToast('来源已保存');
     } catch (err) {
         showToast('来源保存失败', 'error');
     }
+}
+
+function applyReviewEditsToState(articleId, summary, llm_source) {
+    if (!articleId) return;
+    const normalizedSource = (llm_source || '').trim();
+    ['selected', 'backup'].forEach(status => {
+        const items = state.reviewData[status] || [];
+        const target = items.find(item => item && item.article_id === articleId);
+        if (!target) return;
+        if (summary !== undefined) {
+            target.summary = summary;
+        }
+        if (llm_source !== undefined) {
+            target.llm_source_manual = normalizedSource;
+            const raw = (target.llm_source_raw || '').trim();
+            const source = (target.source || '').trim();
+            target.llm_source_display = normalizedSource || raw || source;
+        }
+    });
 }
 
 // --- Discard Tab Logic ---

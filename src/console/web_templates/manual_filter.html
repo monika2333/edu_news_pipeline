@@ -160,6 +160,62 @@
         </div>
     </div>
 
+    <!-- Search Drawer -->
+    <button id="search-drawer-toggle" class="search-drawer-toggle" aria-label="Open search">
+        <span class="icon">🔍</span>
+    </button>
+    <div id="search-overlay" class="search-overlay"></div>
+    <div id="search-drawer" class="search-drawer">
+        <div class="drawer-header">
+            <h3>Search Articles</h3>
+            <button id="search-drawer-close" class="btn-icon">✕</button>
+        </div>
+        <div class="drawer-content">
+            <div class="search-form-container">
+                <div class="form-grid">
+                    <label>
+                        Keywords
+                        <input type="text" id="search-q" placeholder="title, summary..." />
+                    </label>
+                    <label>
+                        Source
+                        <input type="text" id="search-source" placeholder="toutiao..." />
+                    </label>
+                    <div class="row-2">
+                         <label>
+                            Sentiment
+                            <select id="search-sentiment">
+                                <option value="">Any</option>
+                                <option value="positive">Positive</option>
+                                <option value="negative">Negative</option>
+                            </select>
+                        </label>
+                        <label>
+                            Status
+                            <input type="text" id="search-status" placeholder="ready..." />
+                        </label>
+                    </div>
+                    <div class="row-2">
+                        <label>
+                            Start Date
+                            <input type="date" id="search-start-date" />
+                        </label>
+                        <label>
+                            End Date
+                            <input type="date" id="search-end-date" />
+                        </label>
+                    </div>
+                </div>
+                <button id="btn-drawer-search" class="btn btn-primary full-width">Search</button>
+            </div>
+            <div id="search-results-stats" class="search-stats"></div>
+            <div id="search-results-list" class="search-results">
+                <!-- Results injected here -->
+            </div>
+            <div id="search-pagination" class="pagination"></div>
+        </div>
+    </div>
+
     <!-- Toast -->
     <div class="toast" id="toast">Operation successful</div>
 

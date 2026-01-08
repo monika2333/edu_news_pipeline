@@ -1632,7 +1632,7 @@ function renderDrawerSearchResults(data) {
             </h4>
             <div class="search-meta">
                 <span>${item.source || '-'}</span>
-                <span>${(item.publish_time && typeof item.publish_time === 'string') ? item.publish_time.substring(0, 10) : (item.publish_time || '-')}</span>
+                <span>${item.publish_time_iso ? item.publish_time_iso.substring(0, 10) : (item.publish_time ? new Date(item.publish_time * 1000).toISOString().split('T')[0] : '-')}</span>
                 <span class="badge ${getSentimentClass(item.sentiment_label)}">${item.sentiment_label || '-'}</span>
                 <span>STATUS: ${item.status || 'unknown'}</span>
             </div>

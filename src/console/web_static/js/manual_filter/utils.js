@@ -178,12 +178,63 @@ function getSentimentClass(label) {
     return 'neutral';
 }
 
-function showToast(msg, type = 'success') {
-    elements.toast.textContent = msg;
+// Global timeout variable to clear previous timeouts
+let toastTimeout;
+
+function showToast(msg, type = 'success', action = null) {
+    if (toastTimeout) {
+        clearTimeout(toastTimeout);
+        toastTimeout = null;
+    }
+
+    // Reset content first
+    elements.toast.innerHTML = '';
+    elements.toast.textContent = '';
+
+    const span = document.createElement('span');
+    span.textContent = msg;
+    elements.toast.appendChild(span);
+
+    if (action && (action.text || action.icon) && action.callback) {
+        const btn = document.createElement('button');
+        if (action.icon) {
+            btn.innerHTML = action.icon;
+            btn.title = action.title || '撤销'; // Tooltip
+        } else {
+            btn.textContent = action.text;
+        }
+
+        btn.className = 'btn-action';
+        btn.style.marginLeft = '12px';
+        btn.style.color = '#60a5fa'; // Light blue
+        btn.style.background = 'transparent';
+        btn.style.border = 'none';
+        btn.style.cursor = 'pointer';
+        btn.style.padding = '4px';
+        btn.style.display = 'inline-flex';
+        btn.style.alignItems = 'center';
+
+        if (action.text) {
+            btn.style.textDecoration = 'underline';
+            btn.style.fontSize = 'inherit';
+        }
+
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            action.callback();
+            elements.toast.classList.remove('show');
+        };
+        elements.toast.appendChild(btn);
+    }
+
     elements.toast.className = `toast show ${type}`;
-    setTimeout(() => {
+
+    // Increase timeout if there is an action to give user more time
+    const duration = action ? 5000 : 3000;
+
+    toastTimeout = setTimeout(() => {
         elements.toast.classList.remove('show');
-    }, 3000);
+    }, duration);
 }
 
 function updatePagination(tab, total, currentPage) {

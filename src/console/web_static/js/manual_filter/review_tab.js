@@ -335,6 +335,10 @@ async function applyReviewBulkStatus() {
         return;
     }
 
+    const movedIds = [...selected_ids, ...backup_ids, ...discarded_ids, ...pending_ids];
+    const previousView = state.reviewView; // 'selected' or 'backup'
+    const previousReportType = state.reviewReportType; // 'zongbao' or 'wanbao'
+
     try {
         isBulkUpdatingReview = true;
         const scrollY = window.scrollY;
@@ -353,7 +357,7 @@ async function applyReviewBulkStatus() {
         await loadReviewData();
         window.scrollTo({ top: scrollY, behavior: 'auto' });
         loadStats();
-        const totalMoved = selected_ids.length + backup_ids.length + discarded_ids.length + pending_ids.length;
+        const totalMoved = movedIds.length;
         let targetLabel = '';
         if (value === 'zongbao:selected') targetLabel = '综报采纳';
         else if (value === 'zongbao:backup') targetLabel = '综报备选';
@@ -362,7 +366,44 @@ async function applyReviewBulkStatus() {
         else if (value === 'discarded') targetLabel = '放弃';
         else if (value === 'pending') targetLabel = '待处理';
 
-        showToast(`已批量移动 ${totalMoved} 条文章到 ${targetLabel}`);
+        // Undo Action
+        const undoAction = {
+            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+</svg>`,
+            title: '撤销操作',
+            callback: async () => {
+                try {
+                    // Determine which list to put them back into based on previousView
+                    const undoPayload = {
+                        selected_ids: [],
+                        backup_ids: [],
+                        discarded_ids: [],
+                        pending_ids: [],
+                        actor: state.actor,
+                        report_type: previousReportType
+                    };
+
+                    if (previousView === 'selected') undoPayload.selected_ids = movedIds;
+                    else if (previousView === 'backup') undoPayload.backup_ids = movedIds;
+                    else undoPayload.pending_ids = movedIds; // Fallback
+
+                    await fetch(`${API_BASE}/decide`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(undoPayload)
+                    });
+
+                    showToast('已撤销操作');
+                    await loadReviewData(); // Reload to show items back
+                    loadStats();
+                } catch (e) {
+                    showToast('撤销失败', 'error');
+                }
+            }
+        };
+
+        showToast(`已批量移动 ${totalMoved} 条文章到 ${targetLabel}`, 'success', undoAction);
     } catch (e) {
         showToast('批量移动失败', 'error');
     } finally {
@@ -467,7 +508,40 @@ async function handleReviewStatusChange(e) {
         await loadReviewData();
         window.scrollTo({ top: scrollY, behavior: 'auto' });
         loadStats();
-        showToast('已更新状态');
+
+        // Undo Logic
+        const prevStatus = card.dataset.status;
+        const prevReportType = card.dataset.reportType || state.reviewReportType;
+
+        const undoAction = {
+            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+</svg>`,
+            title: '撤销操作',
+            callback: async () => {
+                try {
+                    await fetch(`${API_BASE}/decide`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            selected_ids: prevStatus === 'selected' ? [id] : [],
+                            backup_ids: prevStatus === 'backup' ? [id] : [],
+                            discarded_ids: prevStatus === 'discarded' ? [id] : [],
+                            pending_ids: prevStatus === 'pending' ? [id] : [],
+                            actor: state.actor,
+                            report_type: prevReportType
+                        })
+                    });
+                    showToast('已撤销操作');
+                    await loadReviewData();
+                    loadStats();
+                } catch (e) {
+                    showToast('撤销失败', 'error');
+                }
+            }
+        };
+
+        showToast('已更新状态', 'success', undoAction);
     } catch (err) {
         showToast('更新失败，请重试', 'error');
     } finally {

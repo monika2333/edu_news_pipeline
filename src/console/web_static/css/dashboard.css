@@ -452,7 +452,7 @@ h1 {
 .review-toolbar .search-group {
     display: flex;
     align-items: center;
-    margin-right: auto; 
+    margin-right: auto;
 }
 
 .review-toolbar .search-input {
@@ -477,7 +477,7 @@ h1 {
         margin-right: 0;
         margin-bottom: 10px;
     }
-    
+
     .review-toolbar .search-input {
         width: 100%;
         min-width: 0;
@@ -820,18 +820,41 @@ h1 {
 @media (max-width: 768px) {
     header {
         flex-direction: column;
-        align-items: flex-start;
-        padding: 14px 16px;
+        align-items: stretch;
+        padding: 16px;
+        gap: 12px;
     }
 
-    .header-right,
     .header-left,
+    .header-right {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .header-right {
+        gap: 10px;
+    }
+
+    .header-right input {
+        flex: 1;
+    }
+
     .stats {
         width: 100%;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        justify-content: space-between;
+        text-align: center;
+        background: #f8fafc;
+        padding: 10px;
+        border-radius: 8px;
     }
 
-    .stats {
-        justify-content: space-between;
+    .stat-item {
+        min-width: 0;
     }
 
     h1 {
@@ -840,11 +863,17 @@ h1 {
 
     .tabs {
         width: 100%;
+        display: flex;
+        padding: 4px;
+        background: #e2e8f0;
+        border-radius: 8px;
     }
 
     .tab-btn {
         flex: 1;
         text-align: center;
+        padding: 10px 0;
+        font-size: 0.95rem;
     }
 
     .filter-layout {
@@ -854,37 +883,69 @@ h1 {
 
     .filter-sidebar {
         gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        margin-bottom: 8px;
+    }
+
+    /* Force buttons in filter sidebar to have min width for touch */
+    .filter-tab-btn {
+        white-space: nowrap;
+        flex: 0 0 auto;
+        padding: 8px 16px;
     }
 
     .article-card {
-        padding: 14px;
+        padding: 16px;
+        margin-bottom: 12px;
     }
 
     .card-header {
         flex-direction: column;
         align-items: flex-start;
+        gap: 10px;
     }
 
     .radio-group {
         width: 100%;
+        justify-content: space-between;
+    }
+
+    .radio-option {
+        flex: 1;
+        text-align: center;
+    }
+
+    .radio-label {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 0;
     }
 
     .meta-row {
         flex-direction: column;
-        gap: 8px;
+        gap: 6px;
     }
 
     .actions-bar {
         position: static;
+        border-radius: 8px;
         box-shadow: none;
-        flex-direction: column;
-        align-items: stretch;
-        gap: 10px;
-        padding: 12px 14px;
+        z-index: auto;
+        padding: 12px;
+        flex-direction: row;
+        justify-content: space-between;
+        background: var(--card-bg);
+        margin-top: 20px;
     }
 
-    .actions-bar .btn {
-        width: 100%;
+    .container {
+        padding-bottom: 20px;
+    }
+
+    .actions-bar span {
+        font-weight: 600;
+        font-size: 0.9rem;
     }
 
     .review-main {
@@ -898,24 +959,79 @@ h1 {
         order: -1;
         position: static;
         margin-top: 0;
-        margin-bottom: 20px;
+        margin-bottom: 16px;
         box-shadow: none;
         z-index: auto;
+        padding: 12px;
+        gap: 10px;
+    }
+
+    .review-toolbar .search-group {
+        width: 100%;
+        margin: 0;
+    }
+
+    .review-toolbar .search-input {
+        width: 100%;
+        min-width: 0;
     }
 
     .review-toolbar .bulk-group {
         width: 100%;
         justify-content: space-between;
+        flex-wrap: wrap;
     }
 
-    .review-toolbar .bulk-select,
-    .review-toolbar button {
-        width: 100%;
+    .review-toolbar .bulk-select {
+        flex: 1;
+        min-width: 120px;
+    }
+
+    /* Wrap buttons in a row to save vertical space */
+    .review-toolbar-buttons {
+        display: flex;
+        gap: 10px;
+    }
+
+    .review-toolbar-buttons button {
+        flex: 1;
+    }
+
+    /* Hide original buttons direct children if we restructure JS or just target them via CSS order/flex? 
+       CSS only solution: We can't wrap existing elements in a new div with CSS. 
+       We have: search-group, bulk-group, btn-toggle-sort, btn-export.
+       We can set the buttons to be flex: 1 and use flex-wrap on the toolbar?
+    */
+    .review-toolbar {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+            "search search"
+            "bulk bulk"
+            "sort export";
+        gap: 10px;
+    }
+
+    .review-toolbar .search-group {
+        grid-area: search;
+    }
+
+    .review-toolbar .bulk-group {
+        grid-area: bulk;
+    }
+
+    .review-toolbar #btn-toggle-sort {
+        grid-area: sort;
+    }
+
+    .review-toolbar #btn-export {
+        grid-area: export;
     }
 
     .review-view-toggle {
         display: flex;
         width: 100%;
+        margin-bottom: 12px;
     }
 
     .review-view-tabs {
@@ -927,16 +1043,26 @@ h1 {
         width: 100%;
     }
 
-    .review-col h3 {
-        margin-bottom: 10px;
-    }
-
     .status-select {
         width: 100%;
+        margin-top: 6px;
     }
 
     .review-grid.compact-mode .drag-handle {
         display: none;
+        /* Mobile sort usually handled by long press or dedicated mode, but here we just hide handle to save space? Or keep it if sort mode is on? */
+        /* If sort mode is on, we NEED the handle or draggable card. */
+    }
+
+    /* In sort mode on mobile, maybe we want handles visible */
+    .review-grid.sort-mode .drag-handle {
+        display: block;
+        padding: 10px;
+        font-size: 1.2rem;
+    }
+
+    .review-grid.sort-mode .article-card {
+        padding: 8px;
     }
 
     .pagination {
@@ -945,10 +1071,12 @@ h1 {
         justify-content: center;
         gap: 8px;
         flex-wrap: wrap;
+        margin-top: 16px;
     }
 
     .pagination .btn {
         flex: 1 1 auto;
+        padding: 8px 16px;
     }
 
     .modal {
@@ -958,19 +1086,15 @@ h1 {
 
     .modal-content {
         width: 100%;
-        max-height: 92vh;
+        max-height: 85vh;
         border-radius: 16px 16px 0 0;
-        padding: 16px;
-    }
-
-    .modal-body textarea {
-        max-height: none;
-        min-height: 140px;
+        padding: 20px;
     }
 
     .modal-footer {
         flex-direction: column;
         gap: 10px;
+        margin-top: 10px;
     }
 
     .modal-footer .btn {
@@ -1041,7 +1165,8 @@ h1 {
 .search-drawer {
     position: fixed;
     top: 0;
-    right: -600px; /* Start hidden */
+    right: -600px;
+    /* Start hidden */
     width: 600px;
     max-width: 90vw;
     height: 100vh;
@@ -1117,7 +1242,8 @@ h1 {
     color: var(--text-secondary);
 }
 
-.form-grid input, .form-grid select {
+.form-grid input,
+.form-grid select {
     padding: 8px 10px;
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -1189,7 +1315,8 @@ h1 {
 
 @media (max-width: 768px) {
     .search-drawer-toggle {
-        display: none; /* Hide on mobile as per requirement */
+        display: none;
+        /* Hide on mobile as per requirement */
     }
 }
 
@@ -1231,7 +1358,15 @@ h1 {
 }
 
 @keyframes pulse {
-    0% { opacity: 0.6; }
-    50% { opacity: 0.3; }
-    100% { opacity: 0.6; }
+    0% {
+        opacity: 0.6;
+    }
+
+    50% {
+        opacity: 0.3;
+    }
+
+    100% {
+        opacity: 0.6;
+    }
 }

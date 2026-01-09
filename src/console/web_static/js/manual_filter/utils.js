@@ -205,7 +205,7 @@ function showToast(msg, type = 'success', action = null) {
         }
 
         btn.className = 'btn-action';
-        btn.style.marginLeft = '12px';
+        // marginLeft removed, handled by gap in .toast flex container
         btn.style.color = '#60a5fa'; // Light blue
         btn.style.background = 'transparent';
         btn.style.border = 'none';

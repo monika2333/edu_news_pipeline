@@ -300,8 +300,9 @@ async function handleCardDecisionChange(input) {
 
         // Undo Logic
         const undoAction = {
-            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-  <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M9 10h7a4 4 0 0 1 0 8h-1" />
+  <path d="M12 7l-3 3 3 3" />
 </svg>`,
             title: '撤销操作',
             callback: async () => {
@@ -366,8 +367,9 @@ async function handleClusterDecisionChange(input) {
 
         // Undo Logic
         const undoAction = {
-            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-  <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M9 10h7a4 4 0 0 1 0 8h-1" />
+  <path d="M12 7l-3 3 3 3" />
 </svg>`,
             title: '撤销操作',
             callback: async () => {
@@ -512,8 +514,9 @@ async function discardRemainingItems() {
 
         // Undo Logic
         const undoAction = {
-            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-  <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M9 10h7a4 4 0 0 1 0 8h-1" />
+  <path d="M12 7l-3 3 3 3" />
 </svg>`,
             title: '撤销操作',
             callback: async () => {

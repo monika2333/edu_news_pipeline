@@ -99,7 +99,7 @@ async function performDrawerSearch() {
     const statsInfo = document.getElementById('search-results-stats');
     const pagination = document.getElementById('search-pagination');
 
-    container.innerHTML = '<div class="loading">搜索中...</div>';
+    container.innerHTML = renderSkeleton(3);
     statsInfo.textContent = '';
     pagination.innerHTML = '';
 

@@ -6,7 +6,7 @@ async function loadReviewData() {
     const listEmpty = !elements.reviewList.querySelector('.article-card');
     const hasData = state.reviewData && (state.reviewData.selected.length || state.reviewData.backup.length);
     if (!hasData || listEmpty) {
-        elements.reviewList.innerHTML = '<div class="loading">加载中...</div>';
+        elements.reviewList.innerHTML = renderSkeleton(5);
     }
     try {
         const now = Date.now();
@@ -353,7 +353,16 @@ async function applyReviewBulkStatus() {
         await loadReviewData();
         window.scrollTo({ top: scrollY, behavior: 'auto' });
         loadStats();
-        showToast('批量移动完成');
+        const totalMoved = selected_ids.length + backup_ids.length + discarded_ids.length + pending_ids.length;
+        let targetLabel = '';
+        if (value === 'zongbao:selected') targetLabel = '综报采纳';
+        else if (value === 'zongbao:backup') targetLabel = '综报备选';
+        else if (value === 'wanbao:selected') targetLabel = '晚报采纳';
+        else if (value === 'wanbao:backup') targetLabel = '晚报备选';
+        else if (value === 'discarded') targetLabel = '放弃';
+        else if (value === 'pending') targetLabel = '待处理';
+
+        showToast(`已批量移动 ${totalMoved} 条文章到 ${targetLabel}`);
     } catch (e) {
         showToast('批量移动失败', 'error');
     } finally {

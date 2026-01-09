@@ -205,6 +205,17 @@ window.changePage = function (tab, page) {
     reloadCurrentTab();
 };
 
-function setupPagination() {
-    // Handled dynamically
+
+function renderSkeleton(count = 3) {
+    return Array(count).fill(0).map(() => `
+        <div class="skeleton-card">
+            <div class="skeleton-header">
+                <div class="skeleton-line title"></div>
+                <div class="skeleton-line short"></div>
+            </div>
+            <div class="skeleton-line full"></div>
+            <div class="skeleton-line full"></div>
+            <div class="skeleton-line short"></div>
+        </div>
+    `).join('');
 }

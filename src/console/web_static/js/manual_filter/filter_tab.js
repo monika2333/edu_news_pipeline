@@ -5,7 +5,7 @@
 async function loadFilterData(options = {}) {
     const forceClusterRefresh = Boolean(options.forceClusterRefresh) || shouldForceClusterRefresh;
     shouldForceClusterRefresh = false;
-    elements.filterList.innerHTML = '<div class="loading">加载中...</div>';
+    elements.filterList.innerHTML = renderSkeleton(3);
     try {
         const params = new URLSearchParams({
             limit: '10',

@@ -43,11 +43,11 @@
 ### 1. 架构调整：引入异步任务与预计算 (Pre-computation)
 **核心思路**: 既然"现场聚类"太慢，我们就改为"后台预聚类"。用户访问时，只读取已经聚类好的结果 (Read-Model)。
 
-- **新增 `manual_clusters` 表**: 用于存储聚类结果。结构大致为 `cluster_id`, `items (JSON)`, `status` 等。
+- **新增 `manual_clusters` 表**: 用于存储聚类结果。结构大致为 `cluster_id`, `item_ids`, `report_type`, `status`, `rank_key` 等（读取时 join）。
 - **后台 Worker (Re-clustering Worker)**:
   - **触发机制**: 定期（如每 5-15 分钟）或由"新数据入库"事件触发。
   - **全量重算策略 (Snapshot Strategy)**:
-    1. Worker 从 `filtered_articles` 拉取**所有**当前状态为 `pending` 的新闻（包括之前的旧闻和刚爬取的新闻）。
+    1. Worker 从 `manual_reviews` + `news_summaries` 拉取**所有**当前状态为 `pending` 且 `ready_for_export` 的新闻（按 report_type 分桶）。
     2. 对这整个集合进行一次完整的 `cluster_titles` 聚类计算。
     3. 将生成的聚类结果生成一个新的快照 (Snapshot)，覆盖或标记旧的聚类结果失效。
   - **优势**: 这完全满足您的需求——只要新闻还在 `pending` 池中，每次有新数据进来，它都会和新数据重新尝试"抱团"。
@@ -98,9 +98,11 @@
 
 - 向量检索：保留 BGE，优先 pgvector 作为向量存储/检索方案。
 - 刷新策略：准实时 + 手动刷新兜底。
-- 协作冲突：用户规模较小，暂不引入锁；采用乐观并发控制（基于 `updated_at` / 版本号或 compare-and-swap）。
+- 协作冲突：用户规模较小，暂不引入锁；采用 version 作为主校验，允许部分成功；`actor` 字符串占位审计。
 - 账号体系：先预留字段和接口（本地用户表 + 角色 + 审计字段），保留 Basic/Token 作为管理员后门。
 - 重构范围：以 `src/console` 为目标整理结构，融入新功能后保持高内聚低耦合。
+- pgvector：允许安装扩展；索引使用 hnsw。
+- manual_clusters：仅存 `item_ids`（读时 join），保留 `report_type` 与 `status` 字段。
 
 ---
 
@@ -112,7 +114,7 @@
   - `updated_by`：最后一次写入的用户标识（审计字段）。
   - `updated_at`：最后一次写入时间（已存在）。
 
-> 说明：版本字段用于强一致 CAS；`updated_at` 可作为弱一致兜底（仅比对时间）。
+> 说明：版本字段用于强一致 CAS；`updated_at` 可作为弱一致兜底（仅比对时间）。本期选择 version 作为主校验。
 
 ### 2) 接口/请求响应
 - **列表/详情接口**返回 `version` + `updated_at`（用于前端携带）：
@@ -238,10 +240,10 @@
 - `cluster_id text primary key`
 - `bucket_key text`（internal_positive 等）
 - `report_type text`（zongbao/wanbao）
-- `status text`（pending/selected/backup/discarded；或仅保持 pending）
+- `status text`（pending/selected/backup/discarded）
 - `size integer`
 - `representative_title text`
-- `item_ids text[]`（或 jsonb 保存 items）
+- `item_ids text[]`（读取时 join）
 - `rank_key jsonb`（用于排序的分值）
 - `snapshot_id uuid`（用于标记本次批次）
 - `created_at`, `updated_at`
@@ -252,21 +254,27 @@
 - `generated_at timestamptz`
 - `source_note text`
 
-> 说明：可选择只保留最新 snapshot（旧的软删除）以减少空间。
+> 说明：本方案按 `report_type` 分开生成 snapshot，并每个报型保留最近 3 个（旧的软删除或删除）。
+
+#### (D) Snapshot 说明与保留建议
+- **含义**：snapshot 表示一次“全量聚类结果”的批次 ID，用来保证读写隔离与一致性。
+- **现状**：当前系统没有持久化 snapshot。
+- **建议**：新增 `manual_cluster_snapshots` 并按 `report_type` 保留最近 3 个；前端只读取对应报型最新 snapshot。
 
 ### 3) 后台任务（准实时刷新）
 - **触发策略**：
-  - 每 N 分钟定时执行（例如 3 分钟）。
+  - 定时任务由业务侧自行配置（例如 3-5 分钟），此处仅提供启动脚本。
+  - 若 `pending_total` 无变化可跳过重算（降低空转）。
   - 手动刷新按钮触发“立即生成新 snapshot”。
 - **任务步骤**：
-  1. 拉取所有 `pending` 且 `ready_for_export` 的文章（按 report_type 分桶）。
+  1. 拉取 `manual_reviews` 中 `pending` 且 `news_summaries` 为 `ready_for_export` 的文章（按 report_type 分桶）。
   2. 若新文章标题无 embedding，则写入 `manual_title_embeddings`。
   3. 对每个 bucket 使用 `cluster_titles` 聚类（可分批/分区并行）。
   4. 写入 `manual_clusters`，关联新的 `snapshot_id`。
   5. 更新 `manual_cluster_snapshots`。
 
 ### 4) API 与前端改造
-- `GET /api/manual_filter/candidates` 改为读取 `manual_clusters`（按 bucket + snapshot_id 过滤）。
+- `GET /api/manual_filter/candidates` 改为读取 `manual_clusters`（按 bucket + snapshot_id 过滤，读时 join 详情）。
 - 加入 `snapshot_id` 作为返回字段，用于前端判定是否刷新。
 - 前端刷新：
   - 定时轮询最新 `snapshot_id`，变化则刷新列表。

@@ -1,4 +1,5 @@
 // Manual Filter JS - Filter Tab
+// Depends on: api.js, ui_templates.js, core.js, utils.js
 
 // --- Filter Tab Logic ---
 
@@ -7,112 +8,69 @@ async function loadFilterData(options = {}) {
     shouldForceClusterRefresh = false;
     elements.filterList.innerHTML = renderSkeleton(3);
     try {
-        const params = new URLSearchParams({
+        // Prepare params
+        const params = {
             limit: '10',
             offset: `${(state.filterPage - 1) * 10}`,
             cluster: 'true',
-        });
+        };
         const cat = state.filterCategory || 'internal_positive';
         if (cat) {
-            if (cat.startsWith('internal')) params.set('region', 'internal');
-            if (cat.startsWith('external')) params.set('region', 'external');
-            if (cat.endsWith('positive')) params.set('sentiment', 'positive');
-            if (cat.endsWith('negative')) params.set('sentiment', 'negative');
+            if (cat.startsWith('internal')) params.region = 'internal';
+            if (cat.startsWith('external')) params.region = 'external';
+            if (cat.endsWith('positive')) params.sentiment = 'positive';
+            if (cat.endsWith('negative')) params.sentiment = 'negative';
         }
-        if (forceClusterRefresh) params.set('force_refresh', 'true');
-        const res = await fetch(`${API_BASE}/candidates?${params.toString()}`);
-        const data = await res.json();
+        if (forceClusterRefresh) params.force_refresh = 'true';
+
+        // Call API
+        const data = await manualFilterApi.fetchCandidates(params);
+
         renderFilterList(data);
         updatePagination('filter', data.total || 0, state.filterPage);
         state.filterCounts[cat] = data.total || 0;
         updateFilterCountsUI();
     } catch (e) {
+        console.error(e);
         elements.filterList.innerHTML = '<div class="error">加载数据失败</div>';
     }
 }
 
 async function loadFilterCounts() {
     try {
-        await Promise.all(
-            FILTER_CATEGORIES.map(async (cat) => {
-                const params = new URLSearchParams({
-                    limit: '1',
-                    offset: '0',
-                    cluster: 'false'
-                });
-                if (cat.startsWith('internal')) params.set('region', 'internal');
-                if (cat.startsWith('external')) params.set('region', 'external');
-                if (cat.endsWith('positive')) params.set('sentiment', 'positive');
-                if (cat.endsWith('negative')) params.set('sentiment', 'negative');
-                const res = await fetch(`${API_BASE}/candidates?${params.toString()}`);
-                const data = await res.json();
-                state.filterCounts[cat] = data.total || 0;
-            })
-        );
+        const counts = await manualFilterApi.fetchFilterCounts(FILTER_CATEGORIES);
+        counts.forEach(c => {
+            state.filterCounts[c.category] = c.total;
+        });
         updateFilterCountsUI();
     } catch (e) {
         // Silent fail; counts remain previous
+        console.error('Failed to load filter counts', e);
     }
 }
 
 function renderFilterList(data) {
     const items = data.items || [];
+
+    // Cluster View
     if (data.clusters && Array.isArray(data.clusters) && data.clusters.length) {
         renderClusteredList(data.clusters);
         return;
     }
+
+    // Flat List View
     if (!items.length) {
         elements.filterList.innerHTML = '<div class="empty">无待处理文章</div>';
         return;
     }
 
+    // Bucketing
     const buckets = {
         internalPositive: [],
         internalNegative: [],
         externalPositive: [],
         externalNegative: [],
     };
-
-    const renderCard = (item) => `
-        <div class="article-card" data-id="${item.article_id}">
-            <div class="card-header">
-                <h3 class="article-title">
-                    ${item.title || '(No Title)'}
-                    ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
-                </h3>
-                <div class="radio-group" role="radiogroup">
-                    <div class="radio-option">
-                        <input type="radio" name="status-${item.article_id}" value="selected" id="sel-${item.article_id}">
-                        <label for="sel-${item.article_id}" class="radio-label">采纳</label>
-                    </div>
-                    <div class="radio-option">
-                        <input type="radio" name="status-${item.article_id}" value="backup" id="bak-${item.article_id}">
-                        <label for="bak-${item.article_id}" class="radio-label">备选</label>
-                    </div>
-                    <div class="radio-option">
-                        <input type="radio" name="status-${item.article_id}" value="discarded" id="dis-${item.article_id}" checked>
-                        <label for="dis-${item.article_id}" class="radio-label">放弃</label>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="meta-row">
-                <div class="meta-item">来源: ${item.source || '-'}</div>
-                <div class="meta-item">分数: ${item.score || '-'}</div>
-                <div class="meta-item">
-                    <span class="badge ${getSentimentClass(item.sentiment_label)}">${item.sentiment_label || '-'}</span>
-                </div>
-                <div class="meta-item">京内: ${item.is_beijing_related ? '是' : '否'
-        }</div>
-    ${item.bonus_keywords && item.bonus_keywords.length ?
-            `<div class="meta-item">Bonus: ${item.bonus_keywords.join(', ')}</div>` : ''
-        }
-            </div>
-
-    <textarea class="summary-box" id="summary-${item.article_id}">${item.summary || ''}</textarea>
-    <input class="source-box" id="source-${item.article_id}" value="${item.llm_source_display || ''}" placeholder="${item.llm_source_raw ? `(LLM: ${item.llm_source_raw})` : '留空则回退抓取来源'}">
-        </div>
-    `;
 
     items.forEach(item => {
         const isInternal = !!item.is_beijing_related;
@@ -130,15 +88,17 @@ function renderFilterList(data) {
         { key: 'externalNegative', label: '京外负面', category: 'external_negative' },
     ];
 
-    elements.filterList.innerHTML = sections.map(sec => {
+    const html = sections.map(sec => {
         const list = buckets[sec.key] || [];
         if (!list.length) return '';
         return `
-    <div class="filter-section">
-        ${list.map(item => renderArticleCard(item, { showStatus: true, collapsed: false })).join('')}
+            <div class="filter-section">
+                ${list.map(item => manualFilterUi.renderFilterArticleCard(item, { showStatus: true, collapsed: false })).join('')}
             </div>
-    `;
-    }).filter(Boolean).join('') || '<div class="empty">无待处理文章</div>';
+        `;
+    }).filter(Boolean).join('');
+
+    elements.filterList.innerHTML = html || '<div class="empty">无待处理文章</div>';
 }
 
 function renderClusteredList(clusters) {
@@ -174,58 +134,22 @@ function renderClusteredList(clusters) {
         { key: 'externalNegative', label: '京外负面', category: 'external_negative' },
     ];
 
-    elements.filterList.innerHTML = sections.map(sec => {
+    const html = sections.map(sec => {
         const clusterList = buckets[sec.key] || [];
         if (!clusterList.length) return '';
-        const count = state.filterCounts[sec.category] || 0;
 
-        const clustersHtml = clusterList.map(cluster => {
-            const items = cluster.items || [];
-            const size = items.length;
-            const clusterStatus = cluster.status || 'pending';
-
-            // Single-item cluster: render as a plain article card (no cluster frame).
-            if (size <= 1) {
-                return renderArticleCard(items[0], { showStatus: true, collapsed: false });
-            }
-
-            const [first, ...rest] = items;
-            const hiddenCount = rest.length;
-
-            return `
-    <div class="filter-cluster" data-cluster-id="${cluster.cluster_id}" data-size="${size}" data-status="${clusterStatus}">
-        <div class="cluster-header">
-            <div class="radio-group cluster-radio" data-cluster="${cluster.cluster_id}">
-                <div class="radio-option">
-                    <input type="radio" name="cluster-${cluster.cluster_id}" value="selected" id="cluster-sel-${cluster.cluster_id}" ${clusterStatus === 'selected' ? 'checked' : ''}>
-                    <label for="cluster-sel-${cluster.cluster_id}" class="radio-label">采纳</label>
-                </div>
-                <div class="radio-option">
-                    <input type="radio" name="cluster-${cluster.cluster_id}" value="backup" id="cluster-bak-${cluster.cluster_id}" ${clusterStatus === 'backup' ? 'checked' : ''}>
-                    <label for="cluster-bak-${cluster.cluster_id}" class="radio-label">备选</label>
-                </div>
-                <div class="radio-option">
-                    <input type="radio" name="cluster-${cluster.cluster_id}" value="discarded" id="cluster-dis-${cluster.cluster_id}" ${clusterStatus === 'discarded' ? 'checked' : ''}>
-                    <label for="cluster-dis-${cluster.cluster_id}" class="radio-label">放弃</label>
-                </div>
-            </div>
-        </div>
-        <div class="cluster-items">
-            ${renderArticleCard(first, { showStatus: false, collapsed: false })}
-            ${rest.map(item => renderArticleCard(item, { showStatus: false, collapsed: true })).join('')}
-        </div>
-        ${hiddenCount ? `<div class="cluster-toggle-row"><button type="button" class="btn btn-link cluster-toggle" data-target="${cluster.cluster_id}">展开其余${hiddenCount}条</button></div>` : ''}
-    </div>
-`;
-        }).join('');
+        const clustersHtml = clusterList.map(cluster => manualFilterUi.renderCluster(cluster)).join('');
 
         return `
-    <div class="filter-section">
-        ${clustersHtml}
-    </div>
+            <div class="filter-section">
+                ${clustersHtml}
+            </div>
         `;
-    }).join('') || '<div class="empty">无待处理文章</div>';
+    }).join('');
 
+    elements.filterList.innerHTML = html || '<div class="empty">无待处理文章</div>';
+
+    // Bind Toggle Events
     elements.filterList.querySelectorAll('.cluster-toggle').forEach(btn => {
         btn.addEventListener('click', () => {
             const target = btn.dataset.target;
@@ -408,29 +332,11 @@ function collectCardEdits(card, edits) {
 
 async function persistEdits(edits) {
     if (!Object.keys(edits || {}).length) return;
-    const res = await fetch(`${API_BASE}/edit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ edits, actor: state.actor })
-    });
-    if (!res.ok) throw new Error('failed to save edits');
+    await manualFilterApi.postEdits(edits, state.actor);
 }
 
 async function submitDecisions(ids, status) {
-    const payload = {
-        selected_ids: status === 'selected' ? ids : [],
-        backup_ids: status === 'backup' ? ids : [],
-        discarded_ids: status === 'discarded' ? ids : [],
-        pending_ids: status === 'pending' ? ids : [],
-        actor: state.actor
-    };
-
-    const res = await fetch(`${API_BASE}/decide`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-    if (!res.ok) throw new Error('failed to update status');
+    await manualFilterApi.postDecisions(ids, status, state.actor);
 }
 
 function setInputsDisabled(nodes, disabled) {

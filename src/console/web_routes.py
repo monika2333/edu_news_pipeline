@@ -159,7 +159,9 @@ async def articles_search_page(
 
 @router.get("/manual_filter", response_class=HTMLResponse)
 async def manual_filter_page(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("manual_filter.html", {"request": request})
+    # Use current timestamp for cache busting, or could be a build version
+    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    return templates.TemplateResponse("manual_filter.html", {"request": request, "version": version})
 
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)

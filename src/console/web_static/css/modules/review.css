@@ -91,6 +91,14 @@
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
+.review-toolbar .bulk-select:required:invalid {
+    color: var(--text-secondary);
+}
+
+.review-toolbar .bulk-select option {
+    color: var(--text-primary);
+}
+
 .review-toolbar .bulk-select:focus {
     outline: none;
     border-color: var(--primary-color);

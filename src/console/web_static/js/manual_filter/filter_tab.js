@@ -297,7 +297,28 @@ async function handleCardDecisionChange(input) {
         await submitDecisions([id], status);
         removeCardAndMaybeCluster(card);
         loadStats();
-        showToast('已更新并移除');
+
+        // Undo Logic
+        const undoAction = {
+            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+</svg>`,
+            title: '撤销操作',
+            callback: async () => {
+                try {
+                    // Revert to pending
+                    await submitDecisions([id], 'pending');
+                    showToast('已撤销操作');
+                    // Reload data to show the item again
+                    await loadFilterData();
+                    loadStats();
+                } catch (e) {
+                    showToast('撤销失败', 'error');
+                }
+            }
+        };
+
+        showToast('已更新并移除', 'success', undoAction);
     } catch (err) {
         revertRadioSelection(radios, previousStatus);
         card.dataset.status = previousStatus;
@@ -342,7 +363,26 @@ async function handleClusterDecisionChange(input) {
         await submitDecisions(ids, status);
         cluster.remove();
         loadStats();
-        showToast('已更新并移除');
+
+        // Undo Logic
+        const undoAction = {
+            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+</svg>`,
+            title: '撤销操作',
+            callback: async () => {
+                try {
+                    await submitDecisions(ids, 'pending');
+                    showToast('已撤销操作');
+                    await loadFilterData();
+                    loadStats();
+                } catch (e) {
+                    showToast('撤销失败', 'error');
+                }
+            }
+        };
+
+        showToast('已更新并移除', 'success', undoAction);
     } catch (err) {
         revertRadioSelection(radios, previousStatus);
         cluster.dataset.status = previousStatus;
@@ -469,7 +509,26 @@ async function discardRemainingItems() {
         await submitDecisions(ids, 'discarded');
         removeCardsAndClusters(cards);
         loadStats();
-        showToast(`已放弃${ids.length}条`);
+
+        // Undo Logic
+        const undoAction = {
+            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+</svg>`,
+            title: '撤销操作',
+            callback: async () => {
+                try {
+                    await submitDecisions(ids, 'pending');
+                    showToast('已撤销操作');
+                    await loadFilterData();
+                    loadStats();
+                } catch (e) {
+                    showToast('撤销失败', 'error');
+                }
+            }
+        };
+
+        showToast(`已放弃${ids.length}条`, 'success', undoAction);
     } catch (e) {
         showToast('批量放弃失败', 'error');
     }

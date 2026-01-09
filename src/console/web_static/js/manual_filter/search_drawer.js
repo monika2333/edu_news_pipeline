@@ -143,40 +143,87 @@ function renderDrawerSearchResults(data) {
 
     statsInfo.textContent = `共找到 ${total} 条结果`;
 
+    clearEl(container);
+
     if (!items.length) {
-        container.innerHTML = '<div class="empty">未找到结果</div>';
+        container.appendChild(createEl('div', 'empty', '未找到结果'));
         return;
     }
 
-    container.innerHTML = items.map(item => `
-        <div class="search-item">
-            <h4>
-                <a href="${item.url || '#'}" target="_blank" rel="noopener">${item.title || 'Untitled'}</a>
-            </h4>
-            <div class="search-meta">
-                <span>${item.source || '-'}</span>
-                <span>${item.publish_time_iso ? item.publish_time_iso.substring(0, 10) : (item.publish_time ? new Date(item.publish_time * 1000).toISOString().split('T')[0] : '-')}</span>
-                <span class="badge ${getSentimentClass(item.sentiment_label)}">${item.sentiment_label || '-'}</span>
-                <span>状态: ${item.status || '未知'}</span>
-            </div>
-            <div class="search-summary">${item.summary || item.llm_summary || '(无摘要)'}</div>
-        </div>
-    `).join('');
+    const fragment = document.createDocumentFragment();
+
+    items.forEach(item => {
+        const itemEl = createEl('div', 'search-item');
+
+        // Header: Title Link
+        const header = createEl('h4');
+        const link = createEl('a', '', item.title || 'Untitled', {
+            href: item.url || '#',
+            target: '_blank',
+            rel: 'noopener'
+        });
+        header.appendChild(link);
+        itemEl.appendChild(header);
+
+        // Meta: Source, Time, Sentiment, Status
+        const meta = createEl('div', 'search-meta');
+
+        const sourceSpan = createEl('span', '', item.source || '-');
+
+        const publishTime = item.publish_time_iso ? item.publish_time_iso.substring(0, 10) : (
+            item.publish_time ? new Date(item.publish_time * 1000).toISOString().split('T')[0] : '-'
+        );
+        const timeSpan = createEl('span', '', publishTime);
+
+        const sentimentSpan = createEl('span',
+            `badge ${getSentimentClass(item.sentiment_label)}`,
+            item.sentiment_label || '-'
+        );
+
+        const statusSpan = createEl('span', '', `状态: ${item.status || '未知'}`);
+
+        meta.appendChild(sourceSpan);
+        meta.appendChild(timeSpan);
+        meta.appendChild(sentimentSpan);
+        meta.appendChild(statusSpan);
+
+        itemEl.appendChild(meta);
+
+        // Summary
+        const summary = createEl('div', 'search-summary', item.summary || item.llm_summary || '(无摘要)');
+        itemEl.appendChild(summary);
+
+        fragment.appendChild(itemEl);
+    });
+
+    container.appendChild(fragment);
 
     // Pagination
-    let pagHtml = '';
-    if (page > 1) {
-        pagHtml += `<button class="btn btn-secondary btn-sm" onclick="changeSearchPage(${page - 1})">上一页</button>`;
-    } else {
-        pagHtml += `<button class="btn btn-secondary btn-sm" disabled>上一页</button>`;
-    }
-    pagHtml += `<span style="margin: 0 10px">第 ${page} 页 / 共 ${pages} 页</span>`;
-    if (page < pages) {
-        pagHtml += `<button class="btn btn-secondary btn-sm" onclick="changeSearchPage(${page + 1})">下一页</button>`;
-    } else {
-        pagHtml += `<button class="btn btn-secondary btn-sm" disabled>下一页</button>`;
-    }
-    pagination.innerHTML = pagHtml;
+    clearEl(pagination);
+
+    // Prev Button
+    const prevBtn = createEl('button', 'btn btn-secondary btn-sm', '上一页', {
+        onclick: page > 1 ? () => changeSearchPage(page - 1) : undefined,
+        disabled: page <= 1 ? 'disabled' : undefined
+    });
+
+    // Page Info
+    const pageInfo = createEl('span', '', `第 ${page} 页 / 共 ${pages} 页`, {
+        style: { margin: '0 10px' }
+    });
+
+    // Next Button
+    const nextBtn = createEl('button', 'btn btn-secondary btn-sm', '下一页', {
+        onclick: page < pages ? () => changeSearchPage(page + 1) : undefined,
+        disabled: page >= pages ? 'disabled' : undefined
+    });
+
+    if (page <= 1) prevBtn.disabled = true;
+    if (page >= pages) nextBtn.disabled = true;
+
+    pagination.appendChild(prevBtn);
+    pagination.appendChild(pageInfo);
+    pagination.appendChild(nextBtn);
 }
 
 function changeSearchPage(newPage) {

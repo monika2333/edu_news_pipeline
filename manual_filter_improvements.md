@@ -1,13 +1,6 @@
 # Manual Filter 改进建议
 ## 2. 代码质量与工程化
 
-### 2.1 安全性：避免直接 `innerHTML`
-- **位置**: `src/console/web_static/js/manual_filter/search_drawer.js` (`renderDrawerSearchResults`)
-- **问题**: 直接使用 template literal 拼接 HTML 字符串并赋值给 `innerHTML` 存在风险。
-- **推荐方案**: **使用 `document.createElement`**。
-    - **理由**: 项目当前采用原生 JavaScript (Vanilla JS) 开发，并未引入 Vue/React 等构建流程。为了保持项目轻量且无需增加复杂的 Build Chain，直接使用原生的 DOM API 是最稳妥、最标准的做法。
-    - **示例**: 编写一个简单的 `createEl(tag, class, text)` 辅助函数来减少代码冗余。
-
 ### 2.3 配置硬编码
 - **问题**: `src/console/web_templates/manual_filter.html` 中直接硬编码了如 `src="/static/js/..."`，版本号 `v=20250110153000` 也是硬编码的。
 - **建议**:

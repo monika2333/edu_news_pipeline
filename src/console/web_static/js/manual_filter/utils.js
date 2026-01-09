@@ -206,6 +206,49 @@ window.changePage = function (tab, page) {
 };
 
 
+const safeHtml = (str) => {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+};
+
+// --- DOM Helpers ---
+function createEl(tag, className, textOrChildren = '', attributes = {}) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+
+    // Check if textOrChildren is a string (text/HTML) or an array/Node (children)
+    if (typeof textOrChildren === 'string') {
+        el.textContent = textOrChildren;
+    } else if (Array.isArray(textOrChildren)) {
+        textOrChildren.forEach(child => {
+            if (child) el.appendChild(child);
+        });
+    } else if (textOrChildren instanceof Node) {
+        el.appendChild(textOrChildren);
+    }
+
+    Object.entries(attributes).forEach(([key, value]) => {
+        if (key === 'dataset') {
+            Object.entries(value).forEach(([dKey, dVal]) => el.dataset[dKey] = dVal);
+        } else if (key === 'style' && typeof value === 'object') {
+            Object.assign(el.style, value);
+        } else if (key === 'onclick' && typeof value === 'function') {
+            el.addEventListener('click', value);
+        } else {
+            el.setAttribute(key, value);
+        }
+    });
+
+    return el;
+}
+
+function clearEl(el) {
+    if (typeof el === 'string') el = document.getElementById(el);
+    if (el) el.innerHTML = '';
+}
+
 function renderSkeleton(count = 3) {
     return Array(count).fill(0).map(() => `
         <div class="skeleton-card">

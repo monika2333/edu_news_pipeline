@@ -18,8 +18,46 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('btn-submit-filter').addEventListener('click', discardRemainingItems);
-    document.getElementById('btn-export').addEventListener('click', openExportModal);
-    document.getElementById('btn-close-modal').addEventListener('click', closeModal);
+
+    // New Export/Archive Handlers
+    const btnPreview = document.getElementById('btn-preview-copy');
+    if (btnPreview) {
+        btnPreview.addEventListener('click', handlePreviewCopy);
+    }
+    const btnArchive = document.getElementById('btn-archive');
+    if (btnArchive) {
+        btnArchive.addEventListener('click', handleArchive);
+    }
+
+    // Preview Modal Handlers
+    const btnClosePreview = document.getElementById('btn-close-preview');
+    if (btnClosePreview) {
+        btnClosePreview.addEventListener('click', () => {
+            const modal = document.getElementById('preview-modal');
+            if (modal) modal.classList.remove('active');
+        });
+    }
+    const btnCopyPreview = document.getElementById('btn-copy-preview');
+    if (btnCopyPreview) {
+        btnCopyPreview.addEventListener('click', async () => {
+            const textarea = document.getElementById('preview-text');
+            if (!textarea) return;
+            const text = textarea.value;
+            if (!text) return;
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    textarea.select();
+                    document.execCommand('copy');
+                }
+                showToast('已复制到剪贴板');
+            } catch (err) {
+                showToast('复制失败', 'error');
+            }
+        });
+    }
+
     if (elements.sortToggleBtn) {
         elements.sortToggleBtn.addEventListener('click', toggleSortMode);
     }
@@ -53,12 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         updateFilterCountsUI();
     }
-    if (elements.exportPreviewBtn) {
-        elements.exportPreviewBtn.addEventListener('click', refreshPreviewAndCopy);
-    }
-    if (elements.exportConfirmBtn) {
-        elements.exportConfirmBtn.addEventListener('click', confirmExportAndCopy);
-    }
+    // Removed old export modal listeners
     if (elements.reportTypeButtons && elements.reportTypeButtons.length) {
         elements.reportTypeButtons.forEach(btn => {
             btn.addEventListener('click', () => {

@@ -126,7 +126,12 @@
                         <button class="btn btn-secondary" id="btn-toggle-sort">
                             <span class="icon">🔃</span> 排序模式
                         </button>
-                        <button class="btn btn-primary" id="btn-export">导出 (仅采纳)</button>
+                        <button class="btn btn-secondary" id="btn-preview-copy">
+                            预览
+                        </button>
+                        <button class="btn btn-primary" id="btn-archive">
+                            归档
+                        </button>
                     </div>
                 </div>
             </div>
@@ -141,39 +146,9 @@
         </div>
     </div>
 
-    <!-- Export Modal -->
-    <div class="modal" id="export-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>导出结果</h3>
-                <button class="btn btn-secondary" id="btn-close-modal">关闭</button>
-            </div>
-            <div class="modal-body">
-                <div class="export-form">
-                    <div class="form-row">
-                        <label for="export-template">模板</label>
-                        <select id="export-template">
-                            <option value="zongbao">综报</option>
-                            <option value="wanbao">晚报</option>
-                        </select>
-                    </div>
-                    <div class="form-row">
-                        <label for="export-period">期号</label>
-                        <input type="number" id="export-period" placeholder="期号">
-                        <label for="export-total">总期号</label>
-                        <input type="number" id="export-total" placeholder="总期号">
-                    </div>
-                </div>
-                <textarea id="export-text" readonly></textarea>
-            </div>
-            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
-                <button class="btn btn-secondary" id="btn-export-preview">刷新预览</button>
-                <button class="btn btn-primary" id="btn-export-confirm">确认为终版</button>
-            </div>
-        </div>
-    </div>
 
     <!-- Search Drawer -->
+
     <button id="search-drawer-toggle" class="search-drawer-toggle" aria-label="Open search">
         <span class="icon">🔍</span>
     </button>
@@ -229,6 +204,23 @@
         </div>
     </div>
 
+    <!-- Preview Modal -->
+    <div class="modal" id="preview-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>预览内容</h3>
+                <button class="btn btn-secondary" id="btn-close-preview">关闭</button>
+            </div>
+            <div class="modal-body">
+                <textarea id="preview-text" readonly
+                    style="height: 400px; resize: vertical; width: 100%; border: 1px solid #d9d9d9; padding: 10px; font-family: monospace;"></textarea>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
+                <button class="btn btn-primary" id="btn-copy-preview">复制内容</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast -->
     <div class="toast" id="toast">操作成功</div>
 
@@ -238,7 +230,6 @@
     <script src="/static/js/manual_filter/filter_tab.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/review_tab.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/discard_tab.js?v={{ version }}"></script>
-    <script src="/static/js/manual_filter/export_modal.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/search_drawer.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/init.js?v={{ version }}"></script>
 </body>

@@ -611,3 +611,145 @@ function applyReviewEditsToState(articleId, summary, llm_source) {
         }
     });
 }
+
+function generatePreviewText() {
+    const reportType = state.reviewReportType;
+    const isWanbao = reportType === 'wanbao';
+    const view = state.reviewView || 'selected';
+    const items = state.reviewData[view] || [];
+
+    if (!items.length) return '';
+
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
+    // Approximate period calculation is not easily done on frontend without backend logic, 
+    // but the user wants "splice content". We will use a generic header or omit period if unknown.
+    // For now, hardcode a placeholder or try to read from input if it existed, but we removed inputs.
+    // We will just use Title + Date.
+
+    let header = isWanbao ? '首都教育每日舆情晚报' : '首都教育每日舆情综报';
+    header += `\n${dateStr}\n`;
+
+    // Grouping
+    const groups = {
+        'internal_negative': [],
+        'internal_positive': [],
+        'external_negative': [],
+        'external_positive': []
+    };
+
+    items.forEach(item => {
+        const key = resolveGroupKey(item);
+        if (groups[key]) groups[key].push(item);
+        else {
+            // Fallback for unexpected keys
+            if (!groups['other']) groups['other'] = [];
+            groups['other'].push(item);
+        }
+    });
+
+    let content = header;
+
+    // Define sections order and labels
+    // Zongbao: Internal Neg -> Internal Pos -> External Neg -> (External Pos?)
+    // Wanbao: Internal Pos -> External Pos (Wanbao usually focuses on positive/neutral?)
+    // We will list ALL content present in the view, as requested "splice current page content".
+
+    const sections = [];
+    if (isWanbao) {
+        sections.push({ key: 'internal_positive', label: '【舆情速览】' });
+        sections.push({ key: 'external_positive', label: '【舆情参考】' });
+        // Include others if present, to be safe
+        sections.push({ key: 'internal_negative', label: '【关注】' });
+        sections.push({ key: 'external_negative', label: '【关注】' });
+    } else {
+        sections.push({ key: 'internal_negative', label: '【重点关注舆情】', marker: '★' });
+        sections.push({ key: 'internal_positive', label: '【新闻信息纵览】', marker: '■' });
+        sections.push({ key: 'external_negative', label: '【国内教育热点】', marker: '▲' });
+        sections.push({ key: 'external_positive', label: '【京外正面】', marker: '●' }); // Added to ensure visibility
+    }
+
+    if (groups['other'] && groups['other'].length) {
+        sections.push({ key: 'other', label: '【其他】' });
+    }
+
+    sections.forEach(section => {
+        const sectionItems = groups[section.key] || [];
+        if (!sectionItems.length) return;
+
+        content += `\n${section.label}\n`;
+        sectionItems.forEach((item, index) => {
+            const title = (item.title || '').trim();
+            const summary = (item.summary || item.manual_summary || item.llm_summary || '').trim();
+            const source = (item.llm_source_display || item.source || '').trim();
+            const marker = section.marker ? `${section.marker} ` : '';
+            const idxStr = isWanbao ? `${index + 1}. ` : ''; // Wanbao is numbered
+
+            content += `${marker}${idxStr}${title}\n`;
+            if (summary) content += `${summary}\n`;
+            if (source) content += `（来源：${source}）\n`;
+            content += '\n';
+        });
+    });
+
+    return content;
+}
+
+async function handlePreviewCopy() {
+    try {
+        const text = generatePreviewText();
+
+        if (!text) {
+            showToast('当前列表为空，无内容可生成', 'error');
+            return;
+        }
+
+        const modal = document.getElementById('preview-modal');
+        const textarea = document.getElementById('preview-text');
+        if (modal && textarea) {
+            textarea.value = text;
+            modal.classList.add('active');
+        } else {
+            // Fallback if modal not present
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+            }
+            showToast('已复制到剪贴板(弹窗未找到)');
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('预览生成失败', 'error');
+    }
+}
+
+async function handleArchive() {
+    if (!confirm('确定要归档当前列表吗？归档后文章将标记为已导出并从列表中移除。')) {
+        return;
+    }
+
+    const reportType = state.reviewReportType;
+    const template = reportType === 'wanbao' ? 'wanbao' : 'zongbao';
+    const payload = {
+        report_tag: new Date().toISOString().split('T')[0],
+        template: template,
+        dry_run: false,
+        mark_exported: true,
+        report_type: reportType
+    };
+
+    try {
+        const res = await fetch(`${API_BASE}/export`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+
+        const count = result.count || 0;
+        showToast(`归档成功，已标记 ${count} 条文章`);
+        await loadReviewData();
+        loadStats();
+    } catch (e) {
+        showToast('归档失败', 'error');
+    }
+}

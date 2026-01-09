@@ -612,6 +612,18 @@ function applyReviewEditsToState(articleId, summary, llm_source) {
     });
 }
 
+function toChineseNum(num) {
+    const chineseNums = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+    if (num < 10) return chineseNums[num];
+    if (num < 20) return '十' + (num % 10 !== 0 ? chineseNums[num % 10] : '');
+    if (num < 100) {
+        const ten = Math.floor(num / 10);
+        const unit = num % 10;
+        return chineseNums[ten] + '十' + (unit !== 0 ? chineseNums[unit] : '');
+    }
+    return num.toString();
+}
+
 function generatePreviewText() {
     const reportType = state.reviewReportType;
     const isWanbao = reportType === 'wanbao';
@@ -619,16 +631,6 @@ function generatePreviewText() {
     const items = state.reviewData[view] || [];
 
     if (!items.length) return '';
-
-    const today = new Date();
-    const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
-    // Approximate period calculation is not easily done on frontend without backend logic, 
-    // but the user wants "splice content". We will use a generic header or omit period if unknown.
-    // For now, hardcode a placeholder or try to read from input if it existed, but we removed inputs.
-    // We will just use Title + Date.
-
-    let header = isWanbao ? '首都教育每日舆情晚报' : '首都教育每日舆情综报';
-    header += `\n${dateStr}\n`;
 
     // Grouping
     const groups = {
@@ -642,57 +644,77 @@ function generatePreviewText() {
         const key = resolveGroupKey(item);
         if (groups[key]) groups[key].push(item);
         else {
-            // Fallback for unexpected keys
             if (!groups['other']) groups['other'] = [];
             groups['other'].push(item);
         }
     });
 
-    let content = header;
-
-    // Define sections order and labels
-    // Zongbao: Internal Neg -> Internal Pos -> External Neg -> (External Pos?)
-    // Wanbao: Internal Pos -> External Pos (Wanbao usually focuses on positive/neutral?)
-    // We will list ALL content present in the view, as requested "splice current page content".
+    let content = '';
 
     const sections = [];
     if (isWanbao) {
-        sections.push({ key: 'internal_positive', label: '【舆情速览】' });
-        sections.push({ key: 'external_positive', label: '【舆情参考】' });
-        // Include others if present, to be safe
-        sections.push({ key: 'internal_negative', label: '【关注】' });
-        sections.push({ key: 'external_negative', label: '【关注】' });
+        // Wanbao: Internal (Pos+Neg) -> 【舆情速览】, External (Pos+Neg) -> 【舆情参考】
+        sections.push({
+            label: '【舆情速览】',
+            items: [...groups['internal_positive'], ...groups['internal_negative']],
+            numbered: true
+        });
+        sections.push({
+            label: '【舆情参考】',
+            items: [...groups['external_positive'], ...groups['external_negative']],
+            numbered: true
+        });
     } else {
-        sections.push({ key: 'internal_negative', label: '【重点关注舆情】', marker: '★' });
-        sections.push({ key: 'internal_positive', label: '【新闻信息纵览】', marker: '■' });
-        sections.push({ key: 'external_negative', label: '【国内教育热点】', marker: '▲' });
-        sections.push({ key: 'external_positive', label: '【京外正面】', marker: '●' }); // Added to ensure visibility
-    }
-
-    if (groups['other'] && groups['other'].length) {
-        sections.push({ key: 'other', label: '【其他】' });
+        // Zongbao
+        // 1. Internal Negative -> 【重点关注舆情】
+        sections.push({
+            label: '【重点关注舆情】',
+            items: groups['internal_negative'],
+            marker: '★'
+        });
+        // 2. Internal Positive + External Positive -> 【新闻信息纵览】
+        const mergedPositive = [...groups['internal_positive'], ...groups['external_positive']];
+        sections.push({
+            label: '【新闻信息纵览】',
+            items: mergedPositive,
+            marker: '■'
+        });
+        // 3. External Negative -> 【国内教育热点】
+        sections.push({
+            label: '【国内教育热点】',
+            items: groups['external_negative'],
+            marker: '▲'
+        });
     }
 
     sections.forEach(section => {
-        const sectionItems = groups[section.key] || [];
+        const sectionItems = section.items || [];
         if (!sectionItems.length) return;
 
-        content += `\n${section.label}\n`;
+        content += `${section.label}\n`;
         sectionItems.forEach((item, index) => {
             const title = (item.title || '').trim();
-            const summary = (item.summary || item.manual_summary || item.llm_summary || '').trim();
+            // Use manual_summary if available, else llm_summary, else summary
+            // Assuming order: manual > llm > raw. The backend usually normalizes this into 'summary' but we check properties.
+            const summary = (item.manual_summary || item.summary || '').trim();
             const source = (item.llm_source_display || item.source || '').trim();
-            const marker = section.marker ? `${section.marker} ` : '';
-            const idxStr = isWanbao ? `${index + 1}. ` : ''; // Wanbao is numbered
 
-            content += `${marker}${idxStr}${title}\n`;
-            if (summary) content += `${summary}\n`;
-            if (source) content += `（来源：${source}）\n`;
-            content += '\n';
+            let prefix = '';
+            if (section.marker) {
+                prefix = `${section.marker}`;
+            } else if (section.numbered) {
+                prefix = `${toChineseNum(index + 1)}、`;
+            }
+
+            content += `${prefix}${title}\n`;
+            if (summary) content += `${summary}`;
+            if (source) content += `（来源：${source}）`;
+            content += '\n\n'; // Empty line between items for readability? User example shows distinct blocks.
         });
+        content += '\n'; // Separator between sections
     });
 
-    return content;
+    return content.trim(); // Clean up trailing newlines
 }
 
 async function handlePreviewCopy() {

@@ -421,7 +421,7 @@ async function submitDecisions(ids, status) {
         selected_ids: status === 'selected' ? ids : [],
         backup_ids: status === 'backup' ? ids : [],
         discarded_ids: status === 'discarded' ? ids : [],
-        pending_ids: [],
+        pending_ids: status === 'pending' ? ids : [],
         actor: state.actor
     };
 

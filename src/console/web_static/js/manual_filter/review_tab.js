@@ -7,7 +7,7 @@ async function loadReviewData() {
     elements.reviewList.innerHTML = renderSkeleton(3);
     try {
         // Fetch all reviewed items (server returns { selected: [...], backup: [...] })
-        const data = await manualFilterApi.fetchReviewItems();
+        const data = await manualFilterApi.fetchReviewItems(state.reviewReportType);
 
         state.reviewData = data;
         state.reviewCounts.zongbao = {
@@ -208,7 +208,7 @@ async function applyReviewBulkStatus() {
 
     try {
         isBulkUpdatingReview = true;
-        await manualFilterApi.postDecisions(ids, status, state.actor);
+        await manualFilterApi.postDecisions(ids, status, state.actor, state.reviewReportType);
 
         // Remove from current view
         ids.forEach(id => {
@@ -266,7 +266,7 @@ async function handleReviewStatusChange(e) {
     if (!id || !newStatus) return;
 
     try {
-        await manualFilterApi.postDecisions([id], newStatus, state.actor);
+        await manualFilterApi.postDecisions([id], newStatus, state.actor, state.reviewReportType);
 
         // Remove card from UI
         const card = select.closest('.review-card');
@@ -298,7 +298,7 @@ async function handleSummaryUpdate(e) {
     }
 
     try {
-        await manualFilterApi.postEdits(edits, state.actor);
+        await manualFilterApi.postEdits(edits, state.actor, state.reviewReportType);
         // Note: Update state.reviewData in memory too so preview is correct
         updateLocalStateReviewData(id, isSource ? { llm_source: val } : { summary: val });
         showToast('已保存修改');

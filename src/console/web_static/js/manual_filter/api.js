@@ -1,13 +1,13 @@
 // Manual Filter JS - API Service
 // Handles all network requests
 
-const API_BASE = '/api/manual_filter';
+const MANUAL_FILTER_API_BASE = '/api/manual_filter';
 
 const api = {
     // --- Candidates (Filter Tab) ---
     async fetchCandidates(params = {}) {
         const query = new URLSearchParams(params);
-        const res = await fetch(`${API_BASE}/candidates?${query.toString()}`);
+        const res = await fetch(`${MANUAL_FILTER_API_BASE}/candidates?${query.toString()}`);
         if (!res.ok) throw new Error(`Fetch candidates failed: ${res.status}`);
         return await res.json();
     },
@@ -25,7 +25,7 @@ const api = {
             if (cat.endsWith('negative')) params.set('sentiment', 'negative');
 
             try {
-                const res = await fetch(`${API_BASE}/candidates?${params.toString()}`);
+                const res = await fetch(`${MANUAL_FILTER_API_BASE}/candidates?${params.toString()}`);
                 const data = await res.json();
                 return { category: cat, total: data.total || 0 };
             } catch (e) {
@@ -37,19 +37,21 @@ const api = {
     },
 
     // --- Edits (Summary/Source) ---
-    async postEdits(edits, actor) {
+    async postEdits(edits, actor, reportType) {
         if (!Object.keys(edits || {}).length) return;
-        const res = await fetch(`${API_BASE}/edit`, {
+        const payload = { edits, actor };
+        if (reportType) payload.report_type = reportType;
+        const res = await fetch(`${MANUAL_FILTER_API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ edits, actor })
+            body: JSON.stringify(payload)
         });
         if (!res.ok) throw new Error('Failed to save edits');
         return res;
     },
 
     // --- Decisions (Accept/Reject/Backup) ---
-    async postDecisions(ids, status, actor) {
+    async postDecisions(ids, status, actor, reportType) {
         const payload = {
             selected_ids: status === 'selected' ? ids : [],
             backup_ids: status === 'backup' ? ids : [],
@@ -57,8 +59,9 @@ const api = {
             pending_ids: status === 'pending' ? ids : [],
             actor: actor
         };
+        if (reportType) payload.report_type = reportType;
 
-        const res = await fetch(`${API_BASE}/decide`, {
+        const res = await fetch(`${MANUAL_FILTER_API_BASE}/decide`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -69,24 +72,41 @@ const api = {
 
     // --- Review Data ---
     async fetchReviewItems(reportType) {
-        // reportType matches server param: 'zongbao' or 'wanbao'
-        // Although the server might just accept no params and return all, 
-        // the original code had distinct logic for different tabs if needed, 
-        // but looking at original `loadReviewData`, it fetches `/reviewed`.
-        // Let's check if it supports params. Original `loadReviewData` in `review_tab.js` 
-        // calls `${API_BASE}/reviewed`.
-        const res = await fetch(`${API_BASE}/reviewed`);
-        if (!res.ok) throw new Error(`Fetch review items failed: ${res.status}`);
-        return await res.json();
-        // Note: The original returned { selected: [...], backup: [...] }
+        const params = new URLSearchParams({
+            decision: 'selected',
+            limit: '200',
+            offset: '0'
+        });
+        if (reportType) params.set('report_type', reportType);
+        const selectedRes = await fetch(`${MANUAL_FILTER_API_BASE}/review?${params.toString()}`);
+        if (!selectedRes.ok) throw new Error(`Fetch review items failed: ${selectedRes.status}`);
+
+        params.set('decision', 'backup');
+        const backupRes = await fetch(`${MANUAL_FILTER_API_BASE}/review?${params.toString()}`);
+        if (!backupRes.ok) throw new Error(`Fetch review items failed: ${backupRes.status}`);
+
+        const selectedData = await selectedRes.json();
+        const backupData = await backupRes.json();
+        return {
+            selected: selectedData.items || [],
+            backup: backupData.items || []
+        };
     },
 
     async postReviewOrder(payload) {
         // payload: { type: 'zongbao'|'wanbao', status: 'selected'|'backup', order: [id1, id2...] }
-        const res = await fetch(`${API_BASE}/reorder`, {
+        const reportType = payload.report_type || payload.type;
+        const status = payload.status === 'backup' ? 'backup' : 'selected';
+        const body = {
+            selected_order: status === 'selected' ? payload.order : [],
+            backup_order: status === 'backup' ? payload.order : [],
+            actor: payload.actor
+        };
+        if (reportType) body.report_type = reportType;
+        const res = await fetch(`${MANUAL_FILTER_API_BASE}/order`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(body)
         });
         if (!res.ok) throw new Error('Failed to save order');
         return res;

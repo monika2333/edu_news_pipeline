@@ -1,0 +1,167 @@
+/* Layout */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: clamp(12px, 3vw, 24px);
+}
+
+/* Header */
+header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    background: var(--card-bg);
+    padding: 16px 24px;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.stats {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 72px;
+}
+
+.stat-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+/* Tabs */
+.tabs {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 20px;
+    background: #e2e8f0;
+    padding: 4px;
+    border-radius: 8px;
+    width: fit-content;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.tab-btn {
+    padding: 10px 24px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-radius: 6px;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.tab-btn.active {
+    background: var(--card-bg);
+    color: var(--primary-color);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .container {
+        padding: clamp(12px, 4vw, 20px);
+    }
+}
+
+@media (max-width: 1024px) {
+    header {
+        gap: 16px;
+    }
+}
+
+@media (max-width: 768px) {
+    header {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 16px;
+        gap: 12px;
+    }
+
+    .header-left,
+    .header-right {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .header-right {
+        gap: 10px;
+    }
+
+    .header-right input {
+        flex: 1;
+    }
+
+    .stats {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        justify-content: space-between;
+        text-align: center;
+        background: #f8fafc;
+        padding: 10px;
+        border-radius: 8px;
+    }
+
+    .stat-item {
+        min-width: 0;
+    }
+
+    h1 {
+        font-size: 1.25rem;
+    }
+
+    .tabs {
+        width: 100%;
+        display: flex;
+        padding: 4px;
+        background: #e2e8f0;
+        border-radius: 8px;
+    }
+
+    .tab-btn {
+        flex: 1;
+        text-align: center;
+        padding: 10px 0;
+        font-size: 0.95rem;
+    }
+
+    .container {
+        padding-bottom: 20px;
+    }
+}

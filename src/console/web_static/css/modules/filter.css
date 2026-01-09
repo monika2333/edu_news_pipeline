@@ -1,0 +1,101 @@
+/* Filter Tab Layout */
+.filter-layout {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 16px;
+    align-items: start;
+}
+
+.filter-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: sticky;
+    top: 100px;
+}
+
+.filter-tab-btn {
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: white;
+    cursor: pointer;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-primary);
+    transition: all 0.2s;
+}
+
+.filter-tab-btn.active {
+    background: #eef2ff;
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+.filter-content {
+    min-width: 0;
+}
+
+/* Filter Cluster */
+.filter-cluster {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 16px;
+    background: #fff;
+}
+
+.cluster-header {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+/* Responsive Filter */
+@media (max-width: 1024px) {
+    .filter-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .filter-sidebar {
+        flex-direction: row;
+        position: static;
+        overflow-x: auto;
+        padding-bottom: 6px;
+    }
+
+    .filter-tab-btn {
+        white-space: nowrap;
+        flex: 0 0 auto;
+    }
+}
+
+@media (max-width: 768px) {
+    .filter-layout {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .filter-sidebar {
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        margin-bottom: 8px;
+    }
+
+    /* Force buttons in filter sidebar to have min width for touch */
+    .filter-tab-btn {
+        white-space: nowrap;
+        flex: 0 0 auto;
+        padding: 8px 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    .filter-tab-btn {
+        padding: 8px 10px;
+        font-size: 0.9rem;
+    }
+}

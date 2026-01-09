@@ -166,7 +166,7 @@ async function loadStats() {
         };
         updateReviewRailCounts();
     } catch (e) {
-        showToast('Failed to load stats', 'error');
+        showToast('加载统计信息失败', 'error');
     }
 }
 
@@ -193,9 +193,9 @@ function updatePagination(tab, total, currentPage) {
     if (!container) return;
 
     container.innerHTML = `
-        <button class="btn btn-secondary" ${currentPage <= 1 ? 'disabled' : ''} onclick="changePage('${tab}', ${currentPage - 1})">Previous</button>
-        <span>Page ${currentPage} of ${totalPages}</span>
-        <button class="btn btn-secondary" ${currentPage >= totalPages ? 'disabled' : ''} onclick="changePage('${tab}', ${currentPage + 1})">Next</button>
+        <button class="btn btn-secondary" ${currentPage <= 1 ? 'disabled' : ''} onclick="changePage('${tab}', ${currentPage - 1})">上一页</button>
+        <span>第 ${currentPage} 页 / 共 ${totalPages} 页</span>
+        <button class="btn btn-secondary" ${currentPage >= totalPages ? 'disabled' : ''} onclick="changePage('${tab}', ${currentPage + 1})">下一页</button>
     `;
 }
 

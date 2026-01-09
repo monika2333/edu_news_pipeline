@@ -6,7 +6,7 @@ async function loadReviewData() {
     const listEmpty = !elements.reviewList.querySelector('.article-card');
     const hasData = state.reviewData && (state.reviewData.selected.length || state.reviewData.backup.length);
     if (!hasData || listEmpty) {
-        elements.reviewList.innerHTML = '<div class="loading">Loading...</div>';
+        elements.reviewList.innerHTML = '<div class="loading">加载中...</div>';
     }
     try {
         const now = Date.now();
@@ -36,7 +36,7 @@ async function loadReviewData() {
             backup: bakData.items || []
         };
     } catch (e) {
-        elements.reviewList.innerHTML = '<div class="error">Failed to load review data</div>';
+        elements.reviewList.innerHTML = '<div class="error">加载审阅数据失败</div>';
     }
 }
 
@@ -409,9 +409,9 @@ async function persistReviewOrder() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        showToast('Order saved');
+        showToast('排序已保存');
     } catch (e) {
-        showToast('Failed to save order', 'error');
+        showToast('保存排序失败', 'error');
     }
 }
 

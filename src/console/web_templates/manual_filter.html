@@ -82,10 +82,14 @@
         <div class="tab-content" id="review-tab">
             <div class="filter-layout review-layout">
                 <div class="filter-sidebar review-sidebar">
-                    <button class="filter-tab-btn review-category-btn active" data-report-type="zongbao" data-view="selected">综报采纳</button>
-                    <button class="filter-tab-btn review-category-btn" data-report-type="zongbao" data-view="backup">综报备选</button>
-                    <button class="filter-tab-btn review-category-btn" data-report-type="wanbao" data-view="selected">晚报采纳</button>
-                    <button class="filter-tab-btn review-category-btn" data-report-type="wanbao" data-view="backup">晚报备选</button>
+                    <button class="filter-tab-btn review-category-btn active" data-report-type="zongbao"
+                        data-view="selected">综报采纳</button>
+                    <button class="filter-tab-btn review-category-btn" data-report-type="zongbao"
+                        data-view="backup">综报备选</button>
+                    <button class="filter-tab-btn review-category-btn" data-report-type="wanbao"
+                        data-view="selected">晚报采纳</button>
+                    <button class="filter-tab-btn review-category-btn" data-report-type="wanbao"
+                        data-view="backup">晚报备选</button>
                 </div>
                 <div class="filter-content review-main">
                     <div id="review-list">
@@ -106,10 +110,10 @@
                                 <option value="zongbao:backup">综报备选</option>
                                 <option value="wanbao:selected">晚报采纳</option>
                                 <option value="wanbao:backup">晚报备选</option>
-                        <option value="discarded">放弃</option>
-                        <option value="pending">待处理</option>
-                    </select>
-                </div>
+                                <option value="discarded">放弃</option>
+                                <option value="pending">待处理</option>
+                            </select>
+                        </div>
                         <button class="btn btn-secondary" id="btn-toggle-sort">
                             <span class="icon">🔃</span> 排序模式
                         </button>
@@ -167,46 +171,46 @@
     <div id="search-overlay" class="search-overlay"></div>
     <div id="search-drawer" class="search-drawer">
         <div class="drawer-header">
-            <h3>Search Articles</h3>
+            <h3>搜索文章</h3>
             <button id="search-drawer-close" class="btn-icon">✕</button>
         </div>
         <div class="drawer-content">
             <div class="search-form-container">
                 <div class="form-grid">
                     <label>
-                        Keywords
-                        <input type="text" id="search-q" placeholder="title, summary..." />
+                        关键词
+                        <input type="text" id="search-q" placeholder="标题, 摘要..." />
                     </label>
                     <label>
-                        Source
-                        <input type="text" id="search-source" placeholder="toutiao..." />
+                        来源
+                        <input type="text" id="search-source" placeholder="头条..." />
                     </label>
                     <div class="row-2">
-                         <label>
-                            Sentiment
+                        <label>
+                            情感倾向
                             <select id="search-sentiment">
-                                <option value="">Any</option>
-                                <option value="positive">Positive</option>
-                                <option value="negative">Negative</option>
+                                <option value="">全部</option>
+                                <option value="positive">正面</option>
+                                <option value="negative">负面</option>
                             </select>
                         </label>
                         <label>
-                            Status
-                            <input type="text" id="search-status" placeholder="ready..." />
+                            状态
+                            <input type="text" id="search-status" placeholder="pending, selected..." />
                         </label>
                     </div>
                     <div class="row-2">
                         <label>
-                            Start Date
+                            开始日期
                             <input type="date" id="search-start-date" />
                         </label>
                         <label>
-                            End Date
+                            结束日期
                             <input type="date" id="search-end-date" />
                         </label>
                     </div>
                 </div>
-                <button id="btn-drawer-search" class="btn btn-primary full-width">Search</button>
+                <button id="btn-drawer-search" class="btn btn-primary full-width">搜索</button>
             </div>
             <div id="search-results-stats" class="search-stats"></div>
             <div id="search-results-list" class="search-results">
@@ -217,7 +221,7 @@
     </div>
 
     <!-- Toast -->
-    <div class="toast" id="toast">Operation successful</div>
+    <div class="toast" id="toast">操作成功</div>
 
     <script src="/static/vendor/Sortable.min.js?v=20250110153000"></script>
     <script src="/static/js/manual_filter/core.js?v=20250110153000"></script>

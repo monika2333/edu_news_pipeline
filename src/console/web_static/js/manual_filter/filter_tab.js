@@ -5,7 +5,7 @@
 async function loadFilterData(options = {}) {
     const forceClusterRefresh = Boolean(options.forceClusterRefresh) || shouldForceClusterRefresh;
     shouldForceClusterRefresh = false;
-    elements.filterList.innerHTML = '<div class="loading">Loading...</div>';
+    elements.filterList.innerHTML = '<div class="loading">加载中...</div>';
     try {
         const params = new URLSearchParams({
             limit: '10',
@@ -27,7 +27,7 @@ async function loadFilterData(options = {}) {
         state.filterCounts[cat] = data.total || 0;
         updateFilterCountsUI();
     } catch (e) {
-        elements.filterList.innerHTML = '<div class="error">Failed to load data</div>';
+        elements.filterList.innerHTML = '<div class="error">加载数据失败</div>';
     }
 }
 
@@ -62,7 +62,7 @@ function renderFilterList(data) {
         return;
     }
     if (!items.length) {
-        elements.filterList.innerHTML = '<div class="empty">No pending articles</div>';
+        elements.filterList.innerHTML = '<div class="empty">无待处理文章</div>';
         return;
     }
 
@@ -138,12 +138,12 @@ function renderFilterList(data) {
         ${list.map(item => renderArticleCard(item, { showStatus: true, collapsed: false })).join('')}
             </div>
     `;
-    }).filter(Boolean).join('') || '<div class="empty">No pending articles</div>';
+    }).filter(Boolean).join('') || '<div class="empty">无待处理文章</div>';
 }
 
 function renderClusteredList(clusters) {
     if (!clusters.length) {
-        elements.filterList.innerHTML = '<div class="empty">No pending articles</div>';
+        elements.filterList.innerHTML = '<div class="empty">无待处理文章</div>';
         return;
     }
 
@@ -224,7 +224,7 @@ function renderClusteredList(clusters) {
         ${clustersHtml}
     </div>
         `;
-    }).join('') || '<div class="empty">No pending articles</div>';
+    }).join('') || '<div class="empty">无待处理文章</div>';
 
     elements.filterList.querySelectorAll('.cluster-toggle').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -255,7 +255,7 @@ function setupFilterRealtimeDecisionHandlers() {
             return;
         }
         if (!(target instanceof HTMLInputElement) || target.type !== 'radio') return;
- 
+
         if (target.name.startsWith('cluster-')) {
             handleClusterDecisionChange(target);
         } else if (target.name.startsWith('status-')) {
@@ -263,7 +263,7 @@ function setupFilterRealtimeDecisionHandlers() {
         }
     });
 }
- 
+
 async function handleFilterEditChange(target) {
     const card = target.closest('.article-card');
     if (!card) return;
@@ -276,7 +276,7 @@ async function handleFilterEditChange(target) {
         showToast('保存失败', 'error');
     }
 }
- 
+
 async function handleCardDecisionChange(input) {
     const card = input.closest('.article-card');
     if (!card) return;
@@ -308,7 +308,7 @@ async function handleCardDecisionChange(input) {
         }
     }
 }
- 
+
 async function handleClusterDecisionChange(input) {
     const cluster = input.closest('.filter-cluster');
     if (!cluster) return;
@@ -353,7 +353,7 @@ async function handleClusterDecisionChange(input) {
         }
     }
 }
- 
+
 function collectCardEdits(card, edits) {
     const id = card.dataset.id;
     if (!id) return;
@@ -363,7 +363,7 @@ function collectCardEdits(card, edits) {
     const llm_source = sourceBox ? sourceBox.value : '';
     edits[id] = { summary, llm_source };
 }
- 
+
 async function persistEdits(edits) {
     if (!Object.keys(edits || {}).length) return;
     const res = await fetch(`${API_BASE}/edit`, {
@@ -373,7 +373,7 @@ async function persistEdits(edits) {
     });
     if (!res.ok) throw new Error('failed to save edits');
 }
- 
+
 async function submitDecisions(ids, status) {
     const payload = {
         selected_ids: status === 'selected' ? ids : [],
@@ -390,19 +390,19 @@ async function submitDecisions(ids, status) {
     });
     if (!res.ok) throw new Error('failed to update status');
 }
- 
+
 function setInputsDisabled(nodes, disabled) {
     nodes.forEach(node => {
         node.disabled = disabled;
     });
 }
- 
+
 function revertRadioSelection(radios, status) {
     radios.forEach(r => {
         r.checked = r.value === status;
     });
 }
- 
+
 function removeCardAndMaybeCluster(card) {
     const cluster = card.closest('.filter-cluster');
     card.remove();
@@ -411,7 +411,7 @@ function removeCardAndMaybeCluster(card) {
     }
     scheduleReloadIfFilterPageEmpty();
 }
- 
+
 function removeCardsAndClusters(cards) {
     const clusters = new Set();
     cards.forEach(card => {
@@ -424,7 +424,7 @@ function removeCardsAndClusters(cards) {
     });
     scheduleReloadIfFilterPageEmpty();
 }
- 
+
 function scheduleReloadIfFilterPageEmpty() {
     if (emptyFilterPageReloadTimer) clearTimeout(emptyFilterPageReloadTimer);
     emptyFilterPageReloadTimer = setTimeout(async () => {
@@ -442,7 +442,7 @@ function scheduleReloadIfFilterPageEmpty() {
         }
     }, 120);
 }
- 
+
 async function discardRemainingItems() {
     const cards = elements.filterList ? elements.filterList.querySelectorAll('.article-card') : [];
     if (!cards || !cards.length) {

@@ -99,7 +99,7 @@ async function performDrawerSearch() {
     const statsInfo = document.getElementById('search-results-stats');
     const pagination = document.getElementById('search-pagination');
 
-    container.innerHTML = '<div class="loading">Searching...</div>';
+    container.innerHTML = '<div class="loading">搜索中...</div>';
     statsInfo.textContent = '';
     pagination.innerHTML = '';
 
@@ -127,7 +127,7 @@ async function performDrawerSearch() {
 
         renderDrawerSearchResults(data);
     } catch (e) {
-        container.innerHTML = `<div class="error">Search failed: ${e.message}</div>`;
+        container.innerHTML = `<div class="error">搜索失败: ${e.message}</div>`;
     }
 }
 
@@ -141,10 +141,10 @@ function renderDrawerSearchResults(data) {
     const page = data.page || 1;
     const pages = data.pages || 1;
 
-    statsInfo.textContent = `Found ${total} items`;
+    statsInfo.textContent = `共找到 ${total} 条结果`;
 
     if (!items.length) {
-        container.innerHTML = '<div class="empty">No results found</div>';
+        container.innerHTML = '<div class="empty">未找到结果</div>';
         return;
     }
 
@@ -157,24 +157,24 @@ function renderDrawerSearchResults(data) {
                 <span>${item.source || '-'}</span>
                 <span>${item.publish_time_iso ? item.publish_time_iso.substring(0, 10) : (item.publish_time ? new Date(item.publish_time * 1000).toISOString().split('T')[0] : '-')}</span>
                 <span class="badge ${getSentimentClass(item.sentiment_label)}">${item.sentiment_label || '-'}</span>
-                <span>STATUS: ${item.status || 'unknown'}</span>
+                <span>状态: ${item.status || '未知'}</span>
             </div>
-            <div class="search-summary">${item.summary || item.llm_summary || '(No summary)'}</div>
+            <div class="search-summary">${item.summary || item.llm_summary || '(无摘要)'}</div>
         </div>
     `).join('');
 
     // Pagination
     let pagHtml = '';
     if (page > 1) {
-        pagHtml += `<button class="btn btn-secondary btn-sm" onclick="changeSearchPage(${page - 1})">Prev</button>`;
+        pagHtml += `<button class="btn btn-secondary btn-sm" onclick="changeSearchPage(${page - 1})">上一页</button>`;
     } else {
-        pagHtml += `<button class="btn btn-secondary btn-sm" disabled>Prev</button>`;
+        pagHtml += `<button class="btn btn-secondary btn-sm" disabled>上一页</button>`;
     }
-    pagHtml += `<span style="margin: 0 10px">Page ${page} of ${pages}</span>`;
+    pagHtml += `<span style="margin: 0 10px">第 ${page} 页 / 共 ${pages} 页</span>`;
     if (page < pages) {
-        pagHtml += `<button class="btn btn-secondary btn-sm" onclick="changeSearchPage(${page + 1})">Next</button>`;
+        pagHtml += `<button class="btn btn-secondary btn-sm" onclick="changeSearchPage(${page + 1})">下一页</button>`;
     } else {
-        pagHtml += `<button class="btn btn-secondary btn-sm" disabled>Next</button>`;
+        pagHtml += `<button class="btn btn-secondary btn-sm" disabled>下一页</button>`;
     }
     pagination.innerHTML = pagHtml;
 }

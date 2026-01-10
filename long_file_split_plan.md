@@ -12,20 +12,20 @@
 
 ## Principles
 - Prefer small helper functions over deep class hierarchies.
-- Keep imports stable; add new modules and re-export from old entry points.
+- Keep imports stable; add new modules and re-export from old entry points; db_postgres.py must re-export the full public surface via `__all__`.
 - Move only cohesive blocks (query building, row mapping, ranking, batching).
 - Avoid renaming public functions unless a wrapper is kept.
 - Keep behavior identical (no logic changes) and public APIs stable.
 - New modules must include `from __future__ import annotations`, `__all__`, and follow import ordering.
-- Aim for file size <= 500 lines, but prioritize clear boundaries over strict limits.
+- db_postgres.py must re-export the full public surface via `__all__`.
+- Aim for file size <= 500 lines (except crawl_sources.py), but prioritize clear boundaries over strict limits.
 - Avoid over-splitting: keep related helpers in the same file unless size or clarity forces a split.
-- crawl_sources.py is an exception to the 500-line target; keep it single-file with a few helpers.
 - Enforce one-way deps: db_postgres.py (facade) -> db_postgres_core.py -> domain modules -> db_postgres_shared.py.
 - Core owns connection/transaction lifecycle and passes conn/cursor into domain functions.
 - Domain functions accept conn/cursor and do not import db_postgres_core.py.
 - Domain modules must not import each other; share code via db_postgres_shared.py.
 
-Dependency diagram (one-way):
+Dependency diagram (one-way; no domain-to-domain imports, no core imports in domain modules):
 db_postgres.py
   -> db_postgres_core.py (PostgresAdapter, connection)
     -> db_postgres_ingest.py
@@ -102,4 +102,5 @@ Plan:
 - [ ] Run targeted tests related to manual_filter and workers
 - [ ] Run at least one pipeline step end-to-end (crawl/score/summarize)
 - [ ] Spot-check console endpoints (manual_filter candidates/export)
+- [ ] Smoke-check db_postgres SQL paths for manual reviews/export/news summaries
 - [ ] Verify no import cycles introduced

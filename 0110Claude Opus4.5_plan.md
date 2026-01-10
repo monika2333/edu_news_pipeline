@@ -19,16 +19,16 @@
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `report_type` | text NOT NULL | 固定 `zongbao`（保留字段用于兼容审阅页） |
+| `report_type` | text NOT NULL | 固定 `zongbao`（保留字段用于兼容审阅页，写入时不显式赋值） |
 | `bucket_key` | text NOT NULL | 分桶标识（internal_positive 等） |
-| `cluster_id` | text NOT NULL | 格式: `{report_type}-{bucket_key}-{index}` |
+| `cluster_id` | text NOT NULL | 格式: `{bucket_key}-{index}` |
 | `item_ids` | text[] NOT NULL | 该聚类包含的文章 ID 列表 |
 | `created_at` | timestamptz | 默认 now() |
 
-**索引**：`(report_type, bucket_key)`
+**索引**：`(bucket_key)`
 
 **约束建议**：
-- `UNIQUE (report_type, bucket_key, cluster_id)`
+- `UNIQUE (bucket_key, cluster_id)`
 - `CHECK (bucket_key IN ('internal_positive','internal_negative','external_positive','external_negative'))`
 
 **字段说明补充**：
@@ -46,13 +46,13 @@
 ## 三、刷新流程（Write Path）
 
 ```python
-def refresh_clusters(report_type: str) -> None:
-    lock_key = f"manual_cluster_refresh:{report_type}"
+def refresh_clusters() -> None:
+    lock_key = "manual_cluster_refresh:zongbao"
     if not adapter.try_advisory_lock(lock_key):
         return
 
     rows = adapter.fetch_manual_pending_for_cluster(
-        report_type=report_type, region=None, sentiment=None, fetch_limit=5000
+        report_type="zongbao", region=None, sentiment=None, fetch_limit=5000
     )
 
     buckets = bucket_by_region_and_sentiment(rows)
@@ -71,15 +71,14 @@ def refresh_clusters(report_type: str) -> None:
                 continue
             group_items.sort(key=_candidate_rank_key_by_record, reverse=True)
             clusters.append({
-                "cluster_id": f"{report_type}-{bucket_key}-{idx}",
-                "report_type": report_type,
+                "cluster_id": f"{bucket_key}-{idx}",
                 "bucket_key": bucket_key,
                 "item_ids": [i["article_id"] for i in group_items],
             })
 
     try:
         with adapter.transaction():
-            adapter.delete_manual_clusters(report_type=report_type)
+            adapter.delete_manual_clusters()
             adapter.insert_manual_clusters(clusters)
     finally:
         adapter.release_advisory_lock(lock_key)
@@ -154,7 +153,7 @@ publish_time）→ 选首条为 representative_title → cluster 级排序（按
 ```json
 {
   "clusters": [{
-    "cluster_id": "zongbao-internal_positive-0",
+    "cluster_id": "internal_positive-0",
     "report_type": "zongbao",
     "bucket_key": "internal_positive",
     "size": 5,
@@ -177,7 +176,7 @@ publish_time）→ 选首条为 representative_title → cluster 级排序（按
 
 | 方法 | 说明 |
 |------|------|
-| `delete_manual_clusters(report_type)` | 删除指定报型的聚类结果 |
+| `delete_manual_clusters()` | 删除聚类结果（固定 zongbao） |
 | `insert_manual_clusters(clusters)` | 批量插入聚类结果 |
 | `fetch_manual_clusters(bucket_key)` | 读取聚类 + join 过滤（固定 zongbao） |
 | `try_advisory_lock(name)` / `release_advisory_lock(name)` | 并发控制 |

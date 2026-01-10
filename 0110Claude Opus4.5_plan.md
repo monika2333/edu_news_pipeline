@@ -33,9 +33,9 @@
 
 **字段说明补充**：
 - `report_type`：与审阅页的综报/晚报一致；条目从审阅页回退为 pending 时强制设为
-  `zongbao`，避免 wanbao pending 消失。落点：`manual_filter_decisions.reset_to_pending`
-  强制 `report_type=DEFAULT_REPORT_TYPE`，最终由
-  `adapters.db_postgres.reset_manual_reviews_to_pending` 写入。
+  `zongbao`，避免 wanbao pending 消失。所有回退 pending 操作统一走
+  `manual_filter_decisions.reset_to_pending`（内部强制 `report_type=DEFAULT_REPORT_TYPE`），
+  最终由 `adapters.db_postgres.reset_manual_reviews_to_pending` 写入。
 - `bucket_key`：与筛选页的 4 个分类一一对应，便于按 region/sentiment 快速读取。
 - `created_at`：用于审计与排错，接口不依赖时间字段。
 
@@ -149,9 +149,6 @@ publish_time）→ 选首条为 representative_title → cluster 级排序（按
 - `report_type`：默认 `zongbao`，用于按报型过滤 pending；筛选页当前无切换 UI，默认仅展示 zongbao 的 pending。
   回退为 pending 时强制写入 `report_type=zongbao`。
 
-**请求参数（POST）**：
-- `report_type`：默认 `zongbao`（wanbao 暂不启用）。
-
 ### 返回结构
 
 ```json
@@ -195,3 +192,4 @@ publish_time）→ 选首条为 representative_title → cluster 级排序（按
 | **并发冲突** | advisory lock + 事务保证原子性 |
 | **cluster 代表过期** | 读时重算 size 和 representative |
 | **刷新失败** | 事务回滚保留旧数据 |
+| **缓存一致性** | cluster=true 全部从 DB 读取，移除内存缓存分支，避免多实例不一致 |

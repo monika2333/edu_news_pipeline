@@ -19,7 +19,7 @@
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `report_type` | text NOT NULL | 固定 `zongbao`（保留字段用于兼容审阅页，写入时不显式赋值） |
+| `report_type` | text NOT NULL DEFAULT 'zongbao' | 固定 `zongbao`（保留字段用于兼容审阅页，不参与读写过滤） |
 | `bucket_key` | text NOT NULL | 分桶标识（internal_positive 等） |
 | `cluster_id` | text NOT NULL | 格式: `{bucket_key}-{index}` |
 | `item_ids` | text[] NOT NULL | 该聚类包含的文章 ID 列表 |
@@ -28,7 +28,7 @@
 **索引**：`(bucket_key)`
 
 **约束建议**：
-- `UNIQUE (bucket_key, cluster_id)`
+- `UNIQUE (cluster_id)`
 - `CHECK (bucket_key IN ('internal_positive','internal_negative','external_positive','external_negative'))`
 
 **字段说明补充**：
@@ -46,13 +46,15 @@
 ## 三、刷新流程（Write Path）
 
 ```python
+MANUAL_CLUSTER_LOCK_ID = 9001001
+
 def refresh_clusters() -> None:
-    lock_key = "manual_cluster_refresh:zongbao"
-    if not adapter.try_advisory_lock(lock_key):
+    lock_id = MANUAL_CLUSTER_LOCK_ID
+    if not adapter.try_advisory_lock(lock_id):
         return
 
     rows = adapter.fetch_manual_pending_for_cluster(
-        report_type="zongbao", region=None, sentiment=None, fetch_limit=5000
+        region=None, sentiment=None, fetch_limit=5000
     )
 
     buckets = bucket_by_region_and_sentiment(rows)
@@ -81,10 +83,10 @@ def refresh_clusters() -> None:
             adapter.delete_manual_clusters()
             adapter.insert_manual_clusters(clusters)
     finally:
-        adapter.release_advisory_lock(lock_key)
+        adapter.release_advisory_lock(lock_id)
 ```
 
-**要点**：advisory lock 防并发，事务内 delete + insert，失败回滚保留旧数据。
+**要点**：advisory lock 使用固定 BIGINT 常量，防并发；事务内 delete + insert，失败回滚保留旧数据。
 
 ---
 
@@ -94,7 +96,7 @@ def refresh_clusters() -> None:
 WITH cluster_base AS (
     SELECT cluster_id, bucket_key, item_ids
     FROM manual_clusters
-    WHERE report_type = 'zongbao' AND ($1::text IS NULL OR bucket_key = $1)
+    WHERE ($1::text IS NULL OR bucket_key = $1)
 ),
 cluster_items AS (
     SELECT cb.cluster_id, cb.bucket_key, unnest(cb.item_ids) AS article_id
@@ -145,6 +147,9 @@ publish_time）→ 选首条为 representative_title → cluster 级排序（按
 - `region` / `sentiment`：筛选 bucket，对应 internal/external + positive/negative。
 - `cluster`：true 返回聚类；false 返回原列表。
 - `force_refresh`：尽力触发刷新；若锁占用则直接返回当前 manual_clusters 结果。
+  前端默认同时传 `region` 与 `sentiment`，用于确定唯一 bucket_key。
+  映射关系：internal + positive => internal_positive，internal + negative => internal_negative，
+  external + positive => external_positive，external + negative => external_negative。
 
 **请求参数（POST）**：无需参数（固定触发 zongbao 刷新）。
 
@@ -179,4 +184,4 @@ publish_time）→ 选首条为 representative_title → cluster 级排序（按
 | `delete_manual_clusters()` | 删除聚类结果（固定 zongbao） |
 | `insert_manual_clusters(clusters)` | 批量插入聚类结果 |
 | `fetch_manual_clusters(bucket_key)` | 读取聚类 + join 过滤（固定 zongbao） |
-| `try_advisory_lock(name)` / `release_advisory_lock(name)` | 并发控制 |
+| `try_advisory_lock(lock_id)` / `release_advisory_lock(lock_id)` | 并发控制（`lock_id` 为固定 BIGINT 常量） |

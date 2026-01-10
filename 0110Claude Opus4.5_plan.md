@@ -7,7 +7,7 @@
 | **Embedding 模型** | `BAAI/bge-large-zh`，维度 1024，归一化 |
 | **聚类算法** | 现有 Python 聚类逻辑，阈值 0.9 |
 | **数据源** | 完全以 DB 为准，cluster=true 时禁用本地缓存（不走内存缓存） |
-| **刷新策略** | 定时 5 分钟 + 手动触发 + 读时过滤（立即剔除）；默认仅刷新 zongbao，wanbao 可按需启用 |
+| **刷新策略** | 定时 5 分钟 + 手动触发 + 读时过滤（立即剔除）；默认仅刷新 zongbao，回退 pending 强制设为 zongbao |
 | **存储形态** | 使用 `item_ids`（读时 join） |
 | **返回策略** | summary-only（manual_summary 优先，llm_summary 兜底），按现有接口分页（单页上限 200），聚类输入上限 5000 |
 
@@ -24,7 +24,6 @@
 | `cluster_id` | text NOT NULL | 格式: `{report_type}-{bucket_key}-{index}` |
 | `item_ids` | text[] NOT NULL | 该聚类包含的文章 ID 列表 |
 | `created_at` | timestamptz | 默认 now() |
-| `updated_at` | timestamptz | 默认 now() |
 
 **索引**：`(report_type, bucket_key)`
 
@@ -33,10 +32,14 @@
 - `CHECK (bucket_key IN ('internal_positive','internal_negative','external_positive','external_negative'))`
 
 **字段说明补充**：
-- `report_type`：与审阅页的综报/晚报一致；条目从审阅页回退为 pending 时仍保留
-  report_type，因此聚类结果需要按报型隔离。
+- `report_type`：与审阅页的综报/晚报一致；条目从审阅页回退为 pending 时强制设为
+  `zongbao`，避免 wanbao pending 消失。落点：`manual_filter_decisions.reset_to_pending`
+  强制 `report_type=DEFAULT_REPORT_TYPE`，最终由
+  `adapters.db_postgres.reset_manual_reviews_to_pending` 写入。
 - `bucket_key`：与筛选页的 4 个分类一一对应，便于按 region/sentiment 快速读取。
-- `created_at`/`updated_at`：用于审计与排错，接口不依赖时间字段。
+- `created_at`：用于审计与排错，接口不依赖时间字段。
+
+**缓存说明**：cluster=true 仅走 DB 结果，现有 `_cluster_cache` 与内存聚类分支将移除/不再使用。
 
 ---
 
@@ -90,15 +93,15 @@ def refresh_clusters(report_type: str) -> None:
 
 ```sql
 WITH cluster_base AS (
-    SELECT cluster_id, bucket_key, item_ids, updated_at
+    SELECT cluster_id, bucket_key, item_ids
     FROM manual_clusters
     WHERE report_type = $1 AND ($2::text IS NULL OR bucket_key = $2)
 ),
 cluster_items AS (
-    SELECT cb.cluster_id, cb.bucket_key, cb.updated_at, unnest(cb.item_ids) AS article_id
+    SELECT cb.cluster_id, cb.bucket_key, unnest(cb.item_ids) AS article_id
     FROM cluster_base cb
 )
-SELECT ci.cluster_id, ci.bucket_key, ci.updated_at,
+SELECT ci.cluster_id, ci.bucket_key,
        mr.article_id, mr.summary AS manual_summary, mr.rank AS manual_rank,
        mr.manual_llm_source,
        ns.title, ns.llm_summary, ns.llm_source, ns.source, ns.url, ns.score,
@@ -136,7 +139,7 @@ publish_time）→ 选首条为 representative_title → cluster 级排序（按
 | 接口 | 方法 | 说明 |
 |------|------|------|
 | `/api/manual_filter/candidates` | GET | 保持现有接口；使用 `cluster=true` 返回聚类列表 |
-| `/api/manual_filter/trigger_clustering` | POST | 手动触发刷新（可选新增，支持按报型） |
+| `/api/manual_filter/trigger_clustering` | POST | 手动触发刷新（可选新增，默认 zongbao） |
 
 **请求参数（GET）**：
 - `limit` / `offset`：cluster 级分页，沿用现有接口逻辑。
@@ -144,9 +147,10 @@ publish_time）→ 选首条为 representative_title → cluster 级排序（按
 - `cluster`：true 返回聚类；false 返回原列表。
 - `force_refresh`：尽力触发刷新；若锁占用则直接返回当前 manual_clusters 结果。
 - `report_type`：默认 `zongbao`，用于按报型过滤 pending；筛选页当前无切换 UI，默认仅展示 zongbao 的 pending。
+  回退为 pending 时强制写入 `report_type=zongbao`。
 
 **请求参数（POST）**：
-- `report_type`：默认 `zongbao`；支持传 `wanbao` 触发对应报型刷新。
+- `report_type`：默认 `zongbao`（wanbao 暂不启用）。
 
 ### 返回结构
 

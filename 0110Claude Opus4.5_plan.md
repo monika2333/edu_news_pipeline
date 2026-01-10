@@ -6,8 +6,8 @@
 |------|------|
 | **Embedding 模型** | `BAAI/bge-large-zh`，维度 1024，归一化 |
 | **聚类算法** | 现有 Python 聚类逻辑，阈值 0.9 |
-| **数据源** | 完全以 DB 为准，禁用本地缓存 |
-| **刷新策略** | 定时 5 分钟 + 手动触发 + 读时过滤（立即剔除） |
+| **数据源** | 完全以 DB 为准，cluster=true 时禁用本地缓存（不走内存缓存） |
+| **刷新策略** | 定时 5 分钟 + 手动触发 + 读时过滤（立即剔除）；默认仅刷新 zongbao，wanbao 可按需启用 |
 | **存储形态** | 使用 `item_ids`（读时 join） |
 | **返回策略** | summary-only（manual_summary 优先，llm_summary 兜底），按现有接口分页（单页上限 200），聚类输入上限 5000 |
 
@@ -36,6 +36,7 @@
 - `report_type`：与审阅页的综报/晚报一致；条目从审阅页回退为 pending 时仍保留
   report_type，因此聚类结果需要按报型隔离。
 - `bucket_key`：与筛选页的 4 个分类一一对应，便于按 region/sentiment 快速读取。
+- `created_at`/`updated_at`：用于审计与排错，接口不依赖时间字段。
 
 ---
 
@@ -114,10 +115,10 @@ ORDER BY ci.cluster_id, ns.external_importance_score DESC NULLS LAST,
 
 **SQL 排序说明**：SQL 的 ORDER BY 仅用于稳定读取，同一 cluster 的最终排序以读时重建为准。
 
-**读时重建**：过滤 pending + ready_for_export → items 按 `_candidate_rank_key_by_record`
-排序（external_importance_score → rank → score → publish_time）→ 选首条为
-representative_title → cluster 级排序（按 representative 的 rank_key）→ 重算 size
-→ 丢弃空 cluster → cluster 级分页（沿用现有 limit/offset）。
+**读时重建**：先按 cluster_id 分组 → 过滤 pending + ready_for_export → items 按
+`_candidate_rank_key_by_record` 排序（external_importance_score → rank → score →
+publish_time）→ 选首条为 representative_title → cluster 级排序（按 representative
+的 rank_key）→ 重算 size → 丢弃空 cluster → cluster 级分页（沿用现有 limit/offset）。
 
 **排序时间说明**：`publish_time` 仅用于排序，不对用户展示，时区不敏感，直接取字段值即可。
 
@@ -135,14 +136,17 @@ representative_title → cluster 级排序（按 representative 的 rank_key）�
 | 接口 | 方法 | 说明 |
 |------|------|------|
 | `/api/manual_filter/candidates` | GET | 保持现有接口；使用 `cluster=true` 返回聚类列表 |
-| `/api/manual_filter/trigger_clustering` | POST | 手动触发刷新（可选新增） |
+| `/api/manual_filter/trigger_clustering` | POST | 手动触发刷新（可选新增，支持按报型） |
 
 **请求参数（GET）**：
 - `limit` / `offset`：cluster 级分页，沿用现有接口逻辑。
 - `region` / `sentiment`：筛选 bucket，对应 internal/external + positive/negative。
 - `cluster`：true 返回聚类；false 返回原列表。
-- `force_refresh`：尽力触发刷新；若锁占用则直接返回缓存结果。
+- `force_refresh`：尽力触发刷新；若锁占用则直接返回当前 manual_clusters 结果。
 - `report_type`：默认 `zongbao`，用于按报型过滤 pending；筛选页当前无切换 UI，默认仅展示 zongbao 的 pending。
+
+**请求参数（POST）**：
+- `report_type`：默认 `zongbao`；支持传 `wanbao` 触发对应报型刷新。
 
 ### 返回结构
 
@@ -164,6 +168,8 @@ representative_title → cluster 级排序（按 representative 的 rank_key）�
 }
 ```
 
+**total 说明**：total 为“过滤并丢弃空 cluster 后的 cluster 总数”，用于分页与计数。
+
 ---
 
 ## 六、Adapter 新增方法
@@ -181,7 +187,7 @@ representative_title → cluster 级排序（按 representative 的 rank_key）�
 
 | 风险 | 应对措施 |
 |------|----------|
-| **分钟级延迟** | 前端显示"最后更新时间"，提供手动刷新按钮 |
+| **分钟级延迟** | 提供手动刷新按钮 |
 | **并发冲突** | advisory lock + 事务保证原子性 |
 | **cluster 代表过期** | 读时重算 size 和 representative |
 | **刷新失败** | 事务回滚保留旧数据 |

@@ -32,15 +32,22 @@
 - `UNIQUE (report_type, bucket_key, cluster_id)`
 - `CHECK (bucket_key IN ('internal_positive','internal_negative','external_positive','external_negative'))`
 
+**字段说明补充**：
+- `report_type`：与审阅页的综报/晚报一致；条目从审阅页回退为 pending 时仍保留
+  report_type，因此聚类结果需要按报型隔离。
+- `bucket_key`：与筛选页的 4 个分类一一对应，便于按 region/sentiment 快速读取。
+
 ---
 
 ## 三、刷新流程（Write Path）
 
 ```python
 def refresh_clusters(report_type: str) -> None:
-    if not adapter.try_advisory_lock("manual_cluster_refresh"):
+    lock_key = f"manual_cluster_refresh:{report_type}"
+    if not adapter.try_advisory_lock(lock_key):
         return
 
+    refresh_ts = utc_now()
     rows = adapter.fetch_manual_pending_for_cluster(
         report_type=report_type, region=None, sentiment=None, fetch_limit=5000
     )
@@ -70,9 +77,9 @@ def refresh_clusters(report_type: str) -> None:
     try:
         with adapter.transaction():
             adapter.delete_manual_clusters(report_type=report_type)
-            adapter.insert_manual_clusters(clusters)
+            adapter.insert_manual_clusters(clusters, updated_at=refresh_ts)
     finally:
-        adapter.release_advisory_lock("manual_cluster_refresh")
+        adapter.release_advisory_lock(lock_key)
 ```
 
 **要点**：advisory lock 防并发，事务内 delete + insert，失败回滚保留旧数据。
@@ -108,8 +115,8 @@ ORDER BY ci.cluster_id, ns.external_importance_score DESC NULLS LAST,
 
 **读时重建**：过滤 pending + ready_for_export → items 按 `_candidate_rank_key_by_record`
 排序（external_importance_score → rank → score → publish_time）→ 选首条为
-representative_title → 重算 size → 丢弃空 cluster → cluster 级分页（沿用现有
-limit/offset）。
+representative_title → cluster 级排序（按 representative 的 rank_key）→ 重算 size
+→ 丢弃空 cluster → cluster 级分页（沿用现有 limit/offset）。
 
 **字段生成规则**：
 - `llm_source_*`：沿用 `_attach_source_fields`，`llm_source_manual` 来自
@@ -126,6 +133,14 @@ limit/offset）。
 |------|------|------|
 | `/api/manual_filter/candidates` | GET | 保持现有接口；使用 `cluster=true` 返回聚类列表 |
 | `/api/manual_filter/trigger_clustering` | POST | 手动触发刷新（可选新增） |
+
+**请求参数（GET）**：
+- `limit` / `offset`：cluster 级分页，沿用现有接口逻辑。
+- `region` / `sentiment`：筛选 bucket，对应 internal/external + positive/negative。
+- `cluster`：true 返回聚类；false 返回原列表。
+- `force_refresh`：尽力触发刷新；若锁占用则直接返回缓存结果。
+- `report_type`：默认 `zongbao`，用于按报型过滤 pending。
+- `cluster_threshold`：保留兼容；实际固定 0.9（可忽略非 0.9 值并记录日志）。
 
 ### 返回结构
 
@@ -147,6 +162,9 @@ limit/offset）。
   "refreshed_at": "2026-01-10T10:00:00Z"
 }
 ```
+
+**refreshed_at 规则**：使用写入批次的 `refresh_ts`（或 `MAX(updated_at)`），确保每次刷新
+返回一致的时间戳。
 
 ---
 

@@ -1,12 +1,5 @@
 # Long File Split Plan
 
-## Goals
-- Improve readability and editability for a weaker AI.
-- Keep behavior identical (no logic changes).
-- Keep public APIs stable (no external call sites break).
-- Keep most files <= 500 lines where feasible.
-- Keep most functions in the 50-80 line range where feasible.
-
 ## Scope (current hotspots)
 - src/adapters/db_postgres.py (~2765 lines)
 - src/workers/crawl_sources.py (~1284 lines)
@@ -15,8 +8,6 @@
 - src/workers/hash_primary.py:run (~161 lines)
 - src/workers/external_filter.py:run (~141 lines)
 - src/workers/score.py:run (~123 lines)
-- src/console/manual_filter_export.py:export_batch (~157 lines)
-- src/console/manual_filter_cluster.py:cluster_pending (~119 lines)
 - src/adapters/http_*.py: list_items/fetch_detail/crawl (~80-95 lines)
 
 ## Principles
@@ -26,9 +17,21 @@
 - Avoid renaming public functions unless a wrapper is kept.
 - Aim for file size <= 500 lines, but prioritize clear boundaries over strict limits.
 - Avoid over-splitting: keep related helpers in the same file unless size or clarity forces a split.
+- Enforce one-way deps: db_postgres.py (facade) -> db_postgres_core.py -> domain modules -> db_postgres_shared.py.
+- Domain functions accept conn/cursor and do not import db_postgres_core.py.
+
+Dependency diagram (one-way):
+db_postgres.py
+  -> db_postgres_core.py (PostgresAdapter, connection)
+    -> db_postgres_ingest.py
+    -> db_postgres_news_summaries.py
+    -> db_postgres_process.py
+    -> db_postgres_manual_reviews.py
+    -> db_postgres_export.py
+    -> db_postgres_shared.py
 
 ## Granularity Guardrails
-- Do not split db_postgres into more than 6 domain modules.
+- Do not split db_postgres into more than 6 domain modules; shared helpers live in db_postgres_shared.py.
 - Keep worker/console helpers in the same file unless a file exceeds ~600 lines.
 - For HTTP adapters, keep only two layers (request + parse).
 - For crawl_sources, keep a single file and only 3-4 helpers; no new helper module unless it grows beyond ~1600 lines.
@@ -39,7 +42,8 @@
 Problem: One file owns many unrelated queries and helpers.
 Plan:
 - Extract domain-specific modules:
-  - src/adapters/db_postgres_core.py (connection, cursor helpers, transaction)
+  - src/adapters/db_postgres_core.py (PostgresAdapter, connection, cursor helpers, transaction)
+  - src/adapters/db_postgres_shared.py (shared SQL fragments, row mapping, small utilities)
   - src/adapters/db_postgres_ingest.py (raw/filtered/primary upserts)
   - src/adapters/db_postgres_news_summaries.py (summary CRUD, search)
   - src/adapters/db_postgres_process.py (scoring, gating, pipeline metadata)
@@ -47,6 +51,7 @@ Plan:
   - src/adapters/db_postgres_export.py (export candidates, batches, history, recording)
 - Keep src/adapters/db_postgres.py as a thin facade that imports/re-exports.
 - Preserve function names so external call sites remain unchanged.
+- Adopt option B: PostgresAdapter lives in db_postgres_core.py; db_postgres.py only re-exports.
 
 ### 2) src/workers/crawl_sources.py
 Problem: Orchestration + per-source logic in one large run.
@@ -68,17 +73,7 @@ Plan:
   - summary logging
 - Target: run() <= 80-100 lines, each helper <= 80 lines.
 
-### 4) Console batch handlers
-Files: manual_filter_export.py, manual_filter_cluster.py
-Plan:
-- Move heavy logic into service helpers:
-  - build query params
-  - execute adapter calls
-  - transform rows to response shape
-  - sorting/grouping/pagination
-- Keep console entry functions small and I/O focused.
-
-### 5) HTTP adapter modules
+### 4) HTTP adapter modules
 Files: http_*.py
 Plan:
 - Split network request from parsing:
@@ -90,7 +85,7 @@ Plan:
 
 ## Execution Order (low risk first)
 - [ ] Split worker run() helpers (no API changes)
-- [ ] Split console batch handlers into helper modules
+- [ ] Split crawl_sources.py helpers (no API changes)
 - [ ] Split HTTP adapters (keep function names intact)
 - [ ] Split db_postgres.py last (largest surface area)
 

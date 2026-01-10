@@ -1,0 +1,101 @@
+# Long File Split Plan
+
+## Goals
+- Improve readability and editability for a weaker AI.
+- Keep behavior identical (no logic changes).
+- Keep public APIs stable (no external call sites break).
+- Keep most files <= 500 lines where feasible.
+- Keep most functions in the 50-80 line range where feasible.
+
+## Scope (current hotspots)
+- src/adapters/db_postgres.py (~2765 lines)
+- src/workers/crawl_sources.py (~1284 lines)
+- src/workers/export_brief.py:run (~260 lines)
+- src/workers/summarize.py:run (~179 lines)
+- src/workers/hash_primary.py:run (~161 lines)
+- src/workers/external_filter.py:run (~141 lines)
+- src/workers/score.py:run (~123 lines)
+- src/console/manual_filter_export.py:export_batch (~157 lines)
+- src/console/manual_filter_cluster.py:cluster_pending (~119 lines)
+- src/adapters/http_*.py: list_items/fetch_detail/crawl (~80-95 lines)
+
+## Principles
+- Prefer small helper functions over deep class hierarchies.
+- Keep imports stable; add new modules and re-export from old entry points.
+- Move only cohesive blocks (query building, row mapping, ranking, batching).
+- Avoid renaming public functions unless a wrapper is kept.
+- Aim for file size <= 500 lines, but prioritize clear boundaries over strict limits.
+- Avoid over-splitting: keep related helpers in the same file unless size or clarity forces a split.
+
+## Granularity Guardrails
+- Do not split db_postgres into more than 6 domain modules.
+- Keep worker/console helpers in the same file unless a file exceeds ~600 lines.
+- For HTTP adapters, keep only two layers (request + parse).
+- For crawl_sources, keep a single file and only 3-4 helpers; no new helper module unless it grows beyond ~1600 lines.
+
+## Proposed Splits
+
+### 1) src/adapters/db_postgres.py
+Problem: One file owns many unrelated queries and helpers.
+Plan:
+- Extract domain-specific modules:
+  - src/adapters/db_postgres_core.py (connection, cursor helpers, transaction)
+  - src/adapters/db_postgres_ingest.py (raw/filtered/primary upserts)
+  - src/adapters/db_postgres_news_summaries.py (summary CRUD, search)
+  - src/adapters/db_postgres_process.py (scoring, gating, pipeline metadata)
+  - src/adapters/db_postgres_manual_reviews.py (manual reviews + clustering candidates)
+  - src/adapters/db_postgres_export.py (export candidates, batches, history, recording)
+- Keep src/adapters/db_postgres.py as a thin facade that imports/re-exports.
+- Preserve function names so external call sites remain unchanged.
+
+### 2) src/workers/crawl_sources.py
+Problem: Orchestration + per-source logic in one large run.
+Plan:
+- Keep a single file and split into only a few stages:
+  - _prepare_sources_and_tasks()
+  - _fetch_and_parse_items()
+  - _persist_results_and_log()
+- Keep crawl_sources.py run() as a thin orchestrator calling helpers.
+
+### 3) Worker run() methods
+Files: export_brief.py, summarize.py, hash_primary.py, external_filter.py, score.py
+Plan:
+- Extract discrete steps:
+  - fetch rows
+  - pre-validate / filter
+  - per-item processing
+  - bulk write
+  - summary logging
+- Target: run() <= 80-100 lines, each helper <= 80 lines.
+
+### 4) Console batch handlers
+Files: manual_filter_export.py, manual_filter_cluster.py
+Plan:
+- Move heavy logic into service helpers:
+  - build query params
+  - execute adapter calls
+  - transform rows to response shape
+  - sorting/grouping/pagination
+- Keep console entry functions small and I/O focused.
+
+### 5) HTTP adapter modules
+Files: http_*.py
+Plan:
+- Split network request from parsing:
+  - _fetch_list_response()
+  - _parse_list_items()
+  - _fetch_detail()
+  - _parse_detail()
+- Keep list_items()/fetch_detail()/crawl() as thin wrappers.
+
+## Execution Order (low risk first)
+- [ ] Split worker run() helpers (no API changes)
+- [ ] Split console batch handlers into helper modules
+- [ ] Split HTTP adapters (keep function names intact)
+- [ ] Split db_postgres.py last (largest surface area)
+
+## Validation Checklist
+- [ ] Run targeted tests related to manual_filter and workers
+- [ ] Run at least one pipeline step end-to-end (crawl/score/summarize)
+- [ ] Spot-check console endpoints (manual_filter candidates/export)
+- [ ] Verify no import cycles introduced

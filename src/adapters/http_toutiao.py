@@ -184,7 +184,8 @@ def extract_article_id(value: str) -> str:
         return match.group(1)
     raise ValueError(f"Could not extract article_id from: {value}")
 
-def fetch_info(article_id: str, timeout: int = 15, lang: Optional[str] = None) -> Dict[str, Any]:
+
+def _fetch_info_response(article_id: str, timeout: int = 15, lang: Optional[str] = None) -> bytes:
     url = INFO_ENDPOINT.format(article_id=article_id)
     headers = {"User-Agent": USER_AGENT}
     if lang:
@@ -195,8 +196,7 @@ def fetch_info(article_id: str, timeout: int = 15, lang: Optional[str] = None) -
         req = Request(url, headers=headers)
         try:
             with urlopen(req, timeout=timeout) as resp:
-                payload = resp.read()
-            break
+                return resp.read()
         except HTTPError as exc:
             runtime_error = RuntimeError(f"HTTP error {exc.code}: {exc.reason}")
             source_exc = exc
@@ -211,6 +211,8 @@ def fetch_info(article_id: str, timeout: int = 15, lang: Optional[str] = None) -
         attempt += 1
         continue
 
+
+def _parse_info_response(payload: bytes) -> Dict[str, Any]:
     try:
         data = json.loads(payload.decode("utf-8", errors="replace"))
     except json.JSONDecodeError as exc:
@@ -218,6 +220,12 @@ def fetch_info(article_id: str, timeout: int = 15, lang: Optional[str] = None) -
     if not data.get("success"):
         raise RuntimeError("Toutiao info API responded with success=false")
     return data.get("data") or {}
+
+
+def fetch_info(article_id: str, timeout: int = 15, lang: Optional[str] = None) -> Dict[str, Any]:
+    payload = _fetch_info_response(article_id, timeout, lang)
+    return _parse_info_response(payload)
+
 
 def html_to_text(html_str: str) -> str:
     text = html.unescape(html_str or "")
@@ -265,13 +273,60 @@ def parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
                 return None
         return None
 
+
+async def _fetch_feed_page_payload(page, token: str, max_behot_time: str) -> Dict[str, Any]:
+    try:
+        return await page.evaluate(FETCH_FEED_JS, {"token": token, "max_behot_time": max_behot_time})
+    except Exception as exc:
+        print(f"[warn] Failed to fetch feed page for token {token}: {exc}", file=sys.stderr)
+        return {}
+
+
+def _parse_feed_payload(
+    payload: Dict[str, Any], 
+    token: str, 
+    profile_url: str,
+    limit: Optional[int],
+    collected_count: int,
+    existing_ids: Optional[Set[str]],
+    consecutive_stop: int,
+    consecutive_hits: int
+) -> Tuple[List[FeedItem], bool, bool, str, int]:
+    new_items: List[FeedItem] = []
+    reached_existing = False
+    
+    for raw in payload.get("data", []):
+        if not raw.get("title"):
+            continue
+        item = FeedItem.from_raw(token, profile_url, raw)
+        article_id = try_resolve_article_id_from_feed(item) if existing_ids is not None else None
+        if article_id and existing_ids is not None and article_id in existing_ids:
+            if consecutive_stop == 0:
+                continue
+            consecutive_hits += 1
+            if consecutive_hits >= consecutive_stop:
+                reached_existing = True
+                break
+            continue
+        else:
+            consecutive_hits = 0
+            
+        new_items.append(item)
+        if limit is not None and (collected_count + len(new_items)) >= limit:
+            break
+            
+    has_more = bool(payload.get("has_more"))
+    next_max_behot = str(payload.get("next", {}).get("max_behot_time") or "0")
+    
+    return new_items, reached_existing, has_more, next_max_behot, consecutive_hits
+
+
 async def _collect_feed_from_page(
     page, token: str, profile_url: str, limit: Optional[int], existing_ids: Optional[Set[str]]
 ) -> Tuple[List[FeedItem], bool]:
     if limit == 0:
         return [], False
     collected: List[FeedItem] = []
-    # Stop after hitting N consecutive items that already exist locally
     try:
         consecutive_stop = int(os.getenv("TOUTIAO_EXISTING_CONSECUTIVE_STOP", "5"))
     except Exception:
@@ -281,41 +336,28 @@ async def _collect_feed_from_page(
     consecutive_hits = 0
     max_behot_time = "0"
     reached_existing = False
+    
     for _ in range(200):
-        try:
-            payload = await page.evaluate(FETCH_FEED_JS, {"token": token, "max_behot_time": max_behot_time})
-        except Exception as exc:
-            print(f"[warn] Failed to fetch feed page for token {token}: {exc}", file=sys.stderr)
+        payload = await _fetch_feed_page_payload(page, token, max_behot_time)
+        if not payload:
             break
-        for raw in payload.get("data", []):
-            if not raw.get("title"):
-                continue
-            item = FeedItem.from_raw(token, profile_url, raw)
-            article_id = try_resolve_article_id_from_feed(item) if existing_ids is not None else None
-            if article_id and existing_ids is not None and article_id in existing_ids:
-                if consecutive_stop == 0:
-                    # Never early-stop on existing items
-                    continue
-                consecutive_hits += 1
-                if consecutive_hits >= consecutive_stop:
-                    reached_existing = True
-                    break
-                # Do not collect existing items; continue scanning within this page
-                continue
-            else:
-                consecutive_hits = 0
-            collected.append(item)
-            if limit is not None and len(collected) >= limit:
-                break
+            
+        new_items, reached_existing, has_more, next_max_behot, consecutive_hits = _parse_feed_payload(
+            payload, token, profile_url, limit, len(collected), existing_ids, consecutive_stop, consecutive_hits
+        )
+        collected.extend(new_items)
+        
         if reached_existing:
             break
         if limit is not None and len(collected) >= limit:
             break
-        if not payload.get("has_more"):
+        if not has_more:
             break
-        max_behot_time = str(payload.get("next", {}).get("max_behot_time") or "0")
+        
+        max_behot_time = next_max_behot
         if max_behot_time in {"0", "None", ""}:
             break
+            
     if limit is not None:
         collected = collected[:limit]
     return collected, reached_existing

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from src.adapters.db import get_adapter
 from src.adapters.title_cluster import cluster_titles
@@ -50,6 +50,214 @@ def _ensure_unique_output(path: Path) -> Path:
         counter += 1
 
 
+def _format_number(value: Optional[float]) -> Optional[str]:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.2f}".rstrip("0").rstrip(".")
+
+
+def _format_entry(candidate: ExportCandidate) -> str:
+    title_line = (candidate.title or "").strip()
+    summary_line = (candidate.summary or "").strip()
+    display_source = (candidate.llm_source or candidate.source or "").strip()
+    sentiment_bucket = normalize_sentiment(candidate)
+    is_positive = sentiment_bucket == "positive"
+    is_internal = candidate.is_beijing_related is True
+
+    suffix_parts: List[str] = []
+    if display_source:
+        suffix_parts.append(display_source)
+    # Use full-width Chinese parentheses for source suffix
+    suffix = f"（{' / '.join(suffix_parts)}）" if suffix_parts else ""
+
+    metrics_parts: List[str] = []
+    ext_score_value = candidate.external_importance_score
+    if ext_score_value is not None:
+        ext_score_text = _format_number(ext_score_value) or str(ext_score_value)
+        metrics_parts.append(f"external_importance={ext_score_text}")
+
+    if is_internal and is_positive:
+        keyword_bonus_total = candidate.keyword_bonus_score
+        details = candidate.score_details if isinstance(candidate.score_details, dict) else {}
+
+        bonus_value: Optional[float] = None
+        if keyword_bonus_total is not None:
+            try:
+                bonus_value = float(keyword_bonus_total)
+            except (TypeError, ValueError):
+                bonus_value = None
+        if bonus_value is None and isinstance(details, dict):
+            bonus_from_details = details.get("keyword_bonus_score")
+            if bonus_from_details is not None:
+                try:
+                    bonus_value = float(bonus_from_details)
+                except (TypeError, ValueError):
+                    bonus_value = None
+
+        matched_labels: List[str] = []
+        if isinstance(details, dict):
+            matched = details.get("matched_rules")
+            if isinstance(matched, list):
+                for rule in matched:
+                    if isinstance(rule, dict):
+                        label = rule.get("label") or rule.get("rule_id")
+                        if label:
+                            matched_labels.append(str(label))
+
+        if bonus_value is not None:
+            keyword_bonus_text = _format_number(bonus_value) or str(bonus_value)
+            if matched_labels:
+                # Use full-width Chinese parentheses around matched labels
+                keyword_bonus_text = f"{keyword_bonus_text}（{', '.join(matched_labels)}）"
+            metrics_parts.append(f"keyword_bonuses={keyword_bonus_text}")
+
+    # Use full-width Chinese parentheses for metrics suffix
+    metrics_suffix = f"（{'; '.join(metrics_parts)}）" if metrics_parts else ""
+
+    return "\n".join(
+        filter(None, [title_line, summary_line + suffix + metrics_suffix])
+    )
+
+
+def _cluster_and_format_block(
+    label: str,
+    key: Tuple[str, str],
+    section_key: str,
+    items: List[ExportCandidate]
+) -> Tuple[str, int, List[Tuple[ExportCandidate, str]]]:
+    if not items:
+        return "", 0, []
+
+    # Cluster titles within each bucket
+    title_sequence = [candidate.title or "" for candidate in items]
+    clusters = cluster_titles(title_sequence)
+    if not clusters:
+        clusters = [list(range(len(items)))]
+
+    cluster_structs: List[Tuple[Tuple[float, float], List[ExportCandidate]]] = []
+    for cluster in clusters:
+        cluster_candidates = [items[idx] for idx in cluster if 0 <= idx < len(items)]
+        if not cluster_candidates:
+            continue
+        cluster_candidates.sort(key=candidate_rank_key_simple, reverse=True)
+        cluster_key = max((candidate_rank_key_simple(c) for c in cluster_candidates), default=(float("-inf"), float("-inf")))
+        cluster_structs.append((cluster_key, cluster_candidates))
+
+    if not cluster_structs:
+        fallback_candidates = sorted(items, key=candidate_rank_key_simple, reverse=True)
+        cluster_structs.append(((float("-inf"), float("-inf")), fallback_candidates))
+
+    cluster_structs.sort(key=lambda entry: entry[0], reverse=True)
+
+    ordered_items: List[ExportCandidate] = []
+    cluster_texts: List[str] = []
+    for _, cluster_candidates in cluster_structs:
+        ordered_items.extend(cluster_candidates)
+        cluster_lines = [_format_entry(item) for item in cluster_candidates]
+        if cluster_lines:
+            cluster_texts.append("\n\n".join(cluster_lines))
+
+    count = len(ordered_items)
+    header_line = f"【{label}】共 {count} 条"
+    payload_chunk = [(item, section_key) for item in ordered_items]
+
+    if cluster_texts:
+        block_text = header_line + "\n\n" + "\n\n---\n\n".join(cluster_texts)
+    else:
+        block_text = header_line
+    
+    return block_text, count, payload_chunk
+
+
+def _generate_text_content(
+    candidates: List[ExportCandidate]
+) -> Tuple[List[str], Dict[str, int], List[Tuple[ExportCandidate, str]]]:
+    internal_candidates: List[ExportCandidate] = []
+    external_candidates: List[ExportCandidate] = []
+    for cand in candidates:
+        if cand.is_beijing_related is True:
+            internal_candidates.append(cand)
+        else:
+            external_candidates.append(cand)
+
+    bucket_index: Dict[Tuple[str, str], List[ExportCandidate]] = {
+        ("internal", "positive"): [],
+        ("internal", "negative"): [],
+        ("external", "positive"): [],
+        ("external", "negative"): [],
+    }
+
+    for cand in internal_candidates:
+        bucket_index[("internal", normalize_sentiment(cand))].append(cand)
+    for cand in external_candidates:
+        bucket_index[("external", normalize_sentiment(cand))].append(cand)
+
+    text_entries: List[str] = []
+    category_counts: Dict[str, int] = {}
+    export_payload: List[Tuple[ExportCandidate, str]] = []
+
+    bucket_definitions: List[Tuple[str, Tuple[str, str], str]] = [
+        ("京内正面", ("internal", "positive"), "jingnei_positive"),
+        ("京内负面", ("internal", "negative"), "jingnei_negative"),
+        ("京外正面", ("external", "positive"), "jingwai_positive"),
+        ("京外负面", ("external", "negative"), "jingwai_negative"),
+    ]
+
+    for label, key, section_key in bucket_definitions:
+        items = bucket_index[key]
+        block_text, count, payload = _cluster_and_format_block(label, key, section_key, items)
+        if not items:
+            category_counts[label] = 0
+            continue
+        
+        category_counts[label] = count
+        export_payload.extend(payload)
+        text_entries.append(block_text)
+
+    return text_entries, category_counts, export_payload
+
+
+def _filter_candidates(
+    candidates: List[ExportCandidate],
+    skip_exported: bool,
+    limit: Optional[int],
+    tag: str,
+    adapter: Any  # untyped because adapter module is dynamic or abstract
+) -> Tuple[List[ExportCandidate], int, int]:
+    if not candidates:
+        return [], 0, 0
+
+    existing_ids: Set[str] = set()
+    global_exported: Set[str] = set()
+    if skip_exported:
+        existing_ids, _ = adapter.get_export_history(tag)
+        global_exported = adapter.get_all_exported_article_ids()
+
+    skipped_current_tag = 0
+    skipped_previous_reports = 0
+
+    selected_candidates: List[ExportCandidate] = []
+    for cand in candidates:
+        aid = cand.filtered_article_id
+        if skip_exported and aid in global_exported:
+            if aid in existing_ids:
+                skipped_current_tag += 1
+            else:
+                skipped_previous_reports += 1
+            continue
+        selected_candidates.append(cand)
+        if limit is not None and len(selected_candidates) >= max(0, limit):
+            break
+            
+    return selected_candidates, skipped_current_tag, skipped_previous_reports
+
+
 def run(
     limit: Optional[int] = None,
     *,
@@ -74,199 +282,15 @@ def run(
             log_info(WORKER, "No filtered articles meet the score threshold.")
             return
 
-        existing_ids: Set[str] = set()
-        global_exported: Set[str] = set()
-        if skip_exported:
-            existing_ids, _ = adapter.get_export_history(tag)
-            global_exported = adapter.get_all_exported_article_ids()
-
-        skipped_current_tag = 0
-        skipped_previous_reports = 0
-
-        # Filter out exported items first, then enforce the limit
-        selected_candidates: List[ExportCandidate] = []
-        for cand in candidates:
-            aid = cand.filtered_article_id
-            if skip_exported and aid in global_exported:
-                if aid in existing_ids:
-                    skipped_current_tag += 1
-                else:
-                    skipped_previous_reports += 1
-                continue
-            selected_candidates.append(cand)
-            if limit is not None and len(selected_candidates) >= max(0, limit):
-                break
+        selected_candidates, skipped_current_tag, skipped_previous_reports = _filter_candidates(
+            candidates, skip_exported, limit, tag, adapter
+        )
 
         if not selected_candidates:
             log_info(WORKER, "No entries to export after filtering/skip logic.")
             return
 
-        internal_candidates: List[ExportCandidate] = []
-        external_candidates: List[ExportCandidate] = []
-        for cand in selected_candidates:
-            if cand.is_beijing_related is True:
-                internal_candidates.append(cand)
-            else:
-                external_candidates.append(cand)
-
-        def _external_importance_value(candidate: ExportCandidate) -> float:
-            value = candidate.external_importance_score
-            if value is None:
-                return float("-inf")
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                return float("-inf")
-
-        def _score_value(candidate: ExportCandidate) -> float:
-            value = candidate.score
-            if value is None:
-                return float("-inf")
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                return float("-inf")
-
-        def _format_entry(candidate: ExportCandidate) -> str:
-            title_line = (candidate.title or "").strip()
-            summary_line = (candidate.summary or "").strip()
-            display_source = (candidate.llm_source or candidate.source or "").strip()
-            sentiment_bucket = normalize_sentiment(candidate)
-            is_positive = sentiment_bucket == "positive"
-            is_internal = candidate.is_beijing_related is True
-
-            def _format_number(value: Optional[float]) -> Optional[str]:
-                if value is None:
-                    return None
-                try:
-                    number = float(value)
-                except (TypeError, ValueError):
-                    return str(value)
-                if number.is_integer():
-                    return str(int(number))
-                return f"{number:.2f}".rstrip("0").rstrip(".")
-
-            suffix_parts: List[str] = []
-            if display_source:
-                suffix_parts.append(display_source)
-            # Use full-width Chinese parentheses for source suffix
-            suffix = f"（{' / '.join(suffix_parts)}）" if suffix_parts else ""
-
-            metrics_parts: List[str] = []
-            ext_score_value = candidate.external_importance_score
-            if ext_score_value is not None:
-                ext_score_text = _format_number(ext_score_value) or str(ext_score_value)
-                metrics_parts.append(f"external_importance={ext_score_text}")
-
-            if is_internal and is_positive:
-                keyword_bonus_total = candidate.keyword_bonus_score
-                details = candidate.score_details if isinstance(candidate.score_details, dict) else {}
-
-                bonus_value: Optional[float] = None
-                if keyword_bonus_total is not None:
-                    try:
-                        bonus_value = float(keyword_bonus_total)
-                    except (TypeError, ValueError):
-                        bonus_value = None
-                if bonus_value is None and isinstance(details, dict):
-                    bonus_from_details = details.get("keyword_bonus_score")
-                    if bonus_from_details is not None:
-                        try:
-                            bonus_value = float(bonus_from_details)
-                        except (TypeError, ValueError):
-                            bonus_value = None
-
-                matched_labels: List[str] = []
-                if isinstance(details, dict):
-                    matched = details.get("matched_rules")
-                    if isinstance(matched, list):
-                        for rule in matched:
-                            if isinstance(rule, dict):
-                                label = rule.get("label") or rule.get("rule_id")
-                                if label:
-                                    matched_labels.append(str(label))
-
-                if bonus_value is not None:
-                    keyword_bonus_text = _format_number(bonus_value) or str(bonus_value)
-                    if matched_labels:
-                        # Use full-width Chinese parentheses around matched labels
-                        keyword_bonus_text = f"{keyword_bonus_text}（{', '.join(matched_labels)}）"
-                    metrics_parts.append(f"keyword_bonuses={keyword_bonus_text}")
-
-            # Use full-width Chinese parentheses for metrics suffix
-            metrics_suffix = f"（{'; '.join(metrics_parts)}）" if metrics_parts else ""
-
-            return "\n".join(
-                filter(None, [title_line, summary_line + suffix + metrics_suffix])
-            )
-        bucket_index: Dict[Tuple[str, str], List[ExportCandidate]] = {
-            ("internal", "positive"): [],
-            ("internal", "negative"): [],
-            ("external", "positive"): [],
-            ("external", "negative"): [],
-        }
-
-        for cand in internal_candidates:
-            bucket_index[("internal", normalize_sentiment(cand))].append(cand)
-        for cand in external_candidates:
-            bucket_index[("external", normalize_sentiment(cand))].append(cand)
-
-        text_entries: List[str] = []
-        export_payload: List[Tuple[ExportCandidate, str]] = []
-
-        bucket_definitions: List[Tuple[str, Tuple[str, str], str]] = [
-            ("京内正面", ("internal", "positive"), "jingnei_positive"),
-            ("京内负面", ("internal", "negative"), "jingnei_negative"),
-            ("京外正面", ("external", "positive"), "jingwai_positive"),
-            ("京外负面", ("external", "negative"), "jingwai_negative"),
-        ]
-
-        category_counts: Dict[str, int] = {}
-
-        for label, key, section_key in bucket_definitions:
-            items = bucket_index[key]
-            if not items:
-                category_counts[label] = 0
-                continue
-
-            # Cluster titles within each bucket
-            title_sequence = [candidate.title or "" for candidate in items]
-            clusters = cluster_titles(title_sequence)
-            if not clusters:
-                clusters = [list(range(len(items)))]
-
-            cluster_structs: List[Tuple[Tuple[float, float], List[ExportCandidate]]] = []
-            for cluster in clusters:
-                cluster_candidates = [items[idx] for idx in cluster if 0 <= idx < len(items)]
-                if not cluster_candidates:
-                    continue
-                cluster_candidates.sort(key=candidate_rank_key_simple, reverse=True)
-                cluster_key = max((candidate_rank_key_simple(c) for c in cluster_candidates), default=(float("-inf"), float("-inf")))
-                cluster_structs.append((cluster_key, cluster_candidates))
-
-            if not cluster_structs:
-                fallback_candidates = sorted(items, key=candidate_rank_key_simple, reverse=True)
-                cluster_structs.append(((float("-inf"), float("-inf")), fallback_candidates))
-
-            cluster_structs.sort(key=lambda entry: entry[0], reverse=True)
-
-            ordered_items: List[ExportCandidate] = []
-            cluster_texts: List[str] = []
-            for _, cluster_candidates in cluster_structs:
-                ordered_items.extend(cluster_candidates)
-                cluster_lines = [_format_entry(item) for item in cluster_candidates]
-                if cluster_lines:
-                    cluster_texts.append("\n\n".join(cluster_lines))
-
-            category_counts[label] = len(ordered_items)
-            header_line = f"【{label}】共 {len(ordered_items)} 条"
-            export_payload.extend((item, section_key) for item in ordered_items)
-
-            if cluster_texts:
-                block_text = header_line + "\n\n" + "\n\n---\n\n".join(cluster_texts)
-            else:
-                block_text = header_line
-            text_entries.append(block_text)
+        text_entries, category_counts, export_payload = _generate_text_content(selected_candidates)
 
         if not text_entries:
             log_info(WORKER, "No entries to export after sentiment bucketing.")

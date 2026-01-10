@@ -248,6 +248,90 @@ def _summaries_from_payload(payload: Dict[str, Any]) -> Iterable[Dict[str, Any]]
     return items
 
 
+def _fetch_feed_page_payload(
+    session: requests.Session, 
+    author_id: str, 
+    tab_id: str, 
+    offset: str
+) -> Dict[str, Any]:
+    params = {
+        "guestSuid": author_id,
+        "tabId": tab_id,
+        "caller": "1",
+        "from_scene": "103",
+        "visit_type": "guest",
+        "offset_info": offset,
+        # Some Tencent endpoints require apptype=web for proper routing
+        "apptype": "web",
+    }
+    return _safe_request_json(session, ARTICLE_LIST_API, params)
+
+
+def _parse_feed_payload(
+    payload: Dict[str, Any], 
+    entry: AuthorEntry, 
+    author_name: Optional[str],
+    existing_ids: Optional[Set[str]], 
+    consecutive_stop: int, 
+    consecutive_hits: int,
+    limit: Optional[int],
+    collected_count: int,
+    per_author_seen: Set[str]
+) -> Tuple[List[FeedItem], bool, bool, str, int]:
+    collected: List[FeedItem] = []
+    reached_existing = False
+    
+    for item in _summaries_from_payload(payload):
+        raw_article_id = item.get("id") or item.get("article_id")
+        title = (item.get("title") or "").strip()
+        url = (item.get("url") or item.get("surl") or "").strip()
+        if not (raw_article_id and title and url):
+            continue
+        try:
+            article_id = make_article_id(raw_article_id)
+        except ValueError:
+            continue
+        if article_id in per_author_seen:
+            continue
+        per_author_seen.add(article_id)
+        if existing_ids is not None and article_id in existing_ids:
+            if consecutive_stop == 0:
+                continue
+            consecutive_hits += 1
+            if consecutive_hits >= consecutive_stop:
+                reached_existing = True
+                break
+            continue
+        consecutive_hits = 0
+        publish_raw = item.get("time") or item.get("pubtime") or item.get("publish_time")
+        publish_ts, publish_iso = _parse_publish_time(publish_raw)
+        source_value = (item.get("source") or author_name or "").strip() or None
+        summary_value = (item.get("abstract") or item.get("summary") or "").strip()
+        collected.append(
+            FeedItem(
+                author_id=entry.author_id,
+                profile_url=entry.profile_url,
+                article_id=article_id,
+                title=title,
+                url=url,
+                source=source_value,
+                publish_time=publish_ts,
+                publish_time_iso=publish_iso,
+                summary=summary_value,
+                raw=item,
+            )
+        )
+        if existing_ids is not None:
+            existing_ids.add(article_id)
+        if limit is not None and (collected_count + len(collected)) >= limit:
+            break
+            
+    has_next = bool(payload.get("hasNext"))
+    offset = payload.get("offsetInfo") or ""
+    
+    return collected, reached_existing, has_next, offset, consecutive_hits
+
+
 def list_feed_items_for_author(
     entry: AuthorEntry,
     *,
@@ -269,66 +353,16 @@ def list_feed_items_for_author(
     if consecutive_stop < 0:
         consecutive_stop = 0
     consecutive_hits = 0
-    reached_existing = False
     per_author_seen: Set[str] = set()
+    
     for page in range(max_pages):
-        params = {
-            "guestSuid": entry.author_id,
-            "tabId": tab_id,
-            "caller": "1",
-            "from_scene": "103",
-            "visit_type": "guest",
-            "offset_info": offset,
-            # Some Tencent endpoints require apptype=web for proper routing
-            "apptype": "web",
-        }
-        payload = _safe_request_json(sess, ARTICLE_LIST_API, params)
-        for item in _summaries_from_payload(payload):
-            raw_article_id = item.get("id") or item.get("article_id")
-            title = (item.get("title") or "").strip()
-            url = (item.get("url") or item.get("surl") or "").strip()
-            if not (raw_article_id and title and url):
-                continue
-            try:
-                article_id = make_article_id(raw_article_id)
-            except ValueError:
-                continue
-            if article_id in per_author_seen:
-                continue
-            per_author_seen.add(article_id)
-            if existing_ids is not None and article_id in existing_ids:
-                if consecutive_stop == 0:
-                    continue
-                consecutive_hits += 1
-                if consecutive_hits >= consecutive_stop:
-                    reached_existing = True
-                    break
-                continue
-            consecutive_hits = 0
-            publish_raw = item.get("time") or item.get("pubtime") or item.get("publish_time")
-            publish_ts, publish_iso = _parse_publish_time(publish_raw)
-            source_value = (item.get("source") or author_name or "").strip() or None
-            summary_value = (item.get("abstract") or item.get("summary") or "").strip()
-            collected.append(
-                FeedItem(
-                    author_id=entry.author_id,
-                    profile_url=entry.profile_url,
-                    article_id=article_id,
-                    title=title,
-                    url=url,
-                    source=source_value,
-                    publish_time=publish_ts,
-                    publish_time_iso=publish_iso,
-                    summary=summary_value,
-                    raw=item,
-                )
-            )
-            if existing_ids is not None:
-                existing_ids.add(article_id)
-            if limit is not None and len(collected) >= limit:
-                break
-        has_next = bool(payload.get("hasNext"))
-        offset = payload.get("offsetInfo") or ""
+        payload = _fetch_feed_page_payload(sess, entry.author_id, tab_id, offset)
+        
+        items, reached_existing, has_next, offset, consecutive_hits = _parse_feed_payload(
+            payload, entry, author_name, existing_ids, consecutive_stop, consecutive_hits, limit, len(collected), per_author_seen
+        )
+        collected.extend(items)
+        
         if reached_existing:
             break
         if limit is not None and len(collected) >= limit:
@@ -337,6 +371,7 @@ def list_feed_items_for_author(
             break
         if delay_seconds:
             time.sleep(delay_seconds)
+            
     if reached_existing:
         print("[info] Reached existing Tencent data; stopping pagination for this author.", file=sys.stderr)
     print(f"[info] Tencent author {entry.author_id} returned {len(collected)} items", file=sys.stderr)
@@ -427,13 +462,10 @@ def _clean_html_to_markdown(html_fragment: str) -> str:
     return markdown
 
 
-def fetch_article_detail(
-    item: FeedItem,
-    *,
-    session: Optional[requests.Session] = None,
-) -> ArticleDetail:
-    sess = session or _session()
-
+def _fetch_detail_response_text(
+    session: requests.Session, 
+    item: FeedItem
+) -> Tuple[str, str]:
     article_id_raw = item.article_id.split(":", 1)[1] if ":" in item.article_id else item.article_id
     url_candidates: List[str] = []
     primary_url = item.url.strip()
@@ -451,7 +483,7 @@ def fetch_article_detail(
     last_exc: Optional[Exception] = None
     for candidate in url_candidates:
         try:
-            resp = _request_with_retries(sess, candidate, timeout=10)
+            resp = _request_with_retries(session, candidate, timeout=10)
             if resp is not None:
                 primary_url = candidate
                 break
@@ -462,8 +494,14 @@ def fetch_article_detail(
         if last_exc:
             raise last_exc
         raise RuntimeError(f"Unable to fetch Tencent article detail for {item.article_id}")
+    return resp.text, primary_url
 
-    data_block = _extract_data_block(resp.text)
+def _parse_detail_response(
+    text: str, 
+    item: FeedItem,
+    primary_url: str
+) -> ArticleDetail:
+    data_block = _extract_data_block(text)
     origin = data_block.get("originContent") or {}
     markdown = _clean_html_to_markdown(origin.get("text") or "")
     publish_raw = data_block.get("pubtime") or data_block.get("publish_time")
@@ -484,6 +522,15 @@ def fetch_article_detail(
         summary=item.summary,
         content_markdown=markdown,
     )
+
+def fetch_article_detail(
+    item: FeedItem,
+    *,
+    session: Optional[requests.Session] = None,
+) -> ArticleDetail:
+    sess = session or _session()
+    text, primary_url = _fetch_detail_response_text(sess, item)
+    return _parse_detail_response(text, item, primary_url)
 
 
 def feed_item_to_row(item: FeedItem, *, fetched_at: datetime) -> Dict[str, Any]:

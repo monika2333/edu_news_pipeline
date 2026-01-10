@@ -120,11 +120,32 @@ def _extract_publish_iso(text: Optional[str]) -> Optional[str]:
     except Exception:
         return None
 
+def _fetch_listing_html(session: requests.Session, page_url: str, timeout: float) -> str:
+    last_exc: Optional[Exception] = None
+    for attempt in range(3):
+        try:
+            resp = session.get(page_url, timeout=timeout)
+            resp.raise_for_status()
+            return _response_text(resp)
+        except Exception as exc:
+            last_exc = exc
+            time.sleep(0.5 * (2 ** attempt))
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("empty listing response")
 
-def _parse_listing_page(html: str, page_url: str) -> Tuple[List[FeedItemLike], Optional[str]]:
+def _parse_listing_page(
+    html: str, 
+    page_url: str,
+    existing_ids: Optional[Set[str]],
+    consecutive_stop: int,
+    consecutive_hits: int
+) -> Tuple[List[FeedItemLike], Optional[str], int]:
     soup = BeautifulSoup(html, "html.parser")
     items: List[FeedItemLike] = []
-
+    
+    # Extract items
+    extracted_items = []
     for h3 in soup.select("div.left-liebiao h3"):
         a = h3.find("a", href=True)
         if not a:
@@ -144,7 +165,22 @@ def _parse_listing_page(html: str, page_url: str) -> Tuple[List[FeedItemLike], O
             if not publish_iso:
                 publish_iso = _extract_publish_iso(p.get_text(" ", strip=True))
 
-        items.append(FeedItemLike(title=title, url=href, section=None, publish_time_iso=publish_iso, raw={}))
+        extracted_items.append(FeedItemLike(title=title, url=href, section=None, publish_time_iso=publish_iso, raw={}))
+
+    # Filter loop
+    for it in extracted_items:
+        aid = make_article_id(it.url)
+        if existing_ids is not None and aid in existing_ids:
+            if consecutive_stop == 0:
+                 continue
+            consecutive_hits += 1
+            if consecutive_hits >= consecutive_stop:
+                # Early stop
+                return items, None, consecutive_hits
+            continue
+        else:
+            consecutive_hits = 0
+        items.append(it)
 
     next_page_url: Optional[str] = None
     for anchor in soup.select("a.pagestyle[href]"):
@@ -154,7 +190,7 @@ def _parse_listing_page(html: str, page_url: str) -> Tuple[List[FeedItemLike], O
             if next_page_url:
                 break
 
-    return items, next_page_url
+    return items, next_page_url, consecutive_hits
 
 
 def list_items(limit: Optional[int] = None, pages: Optional[int] = None, *, existing_ids: Optional[Set[str]] = None) -> List[FeedItemLike]:
@@ -183,40 +219,27 @@ def list_items(limit: Optional[int] = None, pages: Optional[int] = None, *, exis
 
     while page_url and page_idx < max_pages:
         page_idx += 1
-        # retry listing fetch
-        last_exc: Optional[Exception] = None
-        html = ""
-        for attempt in range(3):
-            try:
-                resp = sess.get(page_url, timeout=timeout)
-                resp.raise_for_status()
-                html = _response_text(resp)
-                break
-            except Exception as exc:
-                last_exc = exc
-                time.sleep(0.5 * (2 ** attempt))
-        if not html:
-            if last_exc:
-                raise last_exc
-            else:
-                raise RuntimeError("empty listing response")
-        entries, next_page = _parse_listing_page(html, page_url)
-        for it in entries:
-            aid = make_article_id(it.url)
-            if existing_ids is not None and aid in existing_ids:
-                if consecutive_stop == 0:
-                    # Skip existing items but never early-stop
-                    continue
-                consecutive_hits += 1
-                if consecutive_hits >= consecutive_stop:
-                    return collected
-                continue
-            else:
-                consecutive_hits = 0
-            collected.append(it)
-            if limit is not None and len(collected) >= limit:
-                return collected
+        
+        try:
+            html = _fetch_listing_html(sess, page_url, timeout)
+        except Exception:
+             # simple retry or break handled inside _fetch or here
+             break
+        
+        items, next_page, consecutive_hits = _parse_listing_page(
+            html, page_url, existing_ids, consecutive_stop, consecutive_hits
+        )
+        
+        collected.extend(items)
+        if limit is not None and len(collected) >= limit:
+            collected = collected[:limit]
+            break
+            
+        if consecutive_stop > 0 and consecutive_hits >= consecutive_stop:
+            break
+            
         page_url = next_page
+        
     return collected
 
 
@@ -232,27 +255,21 @@ def _get_meta(soup: BeautifulSoup, *, names: Sequence[str] = (), props: Sequence
             return (el.get("content") or "").strip()
     return None
 
-
-def fetch_detail(url: str) -> Dict[str, Any]:
-    sess = _session()
-    timeout = float(os.getenv("CHINADAILY_TIMEOUT", "20"))
-    # retry detail fetch
-    html_text = ""
+def _fetch_detail_html(session: requests.Session, url: str, timeout: float) -> str:
     last_exc: Optional[Exception] = None
     for attempt in range(3):
         try:
-            resp = sess.get(normalize_url(url), timeout=timeout)
+            resp = session.get(normalize_url(url), timeout=timeout)
             resp.raise_for_status()
-            html_text = _response_text(resp)
-            break
+            return _response_text(resp)
         except Exception as exc:
             last_exc = exc
             time.sleep(0.5 * (2 ** attempt))
-    if not html_text:
-        if last_exc:
-            raise last_exc
-        else:
-            raise RuntimeError("empty detail response")
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("empty detail response")
+
+def _parse_detail_html(html_text: str, url: str) -> Dict[str, Any]:
     soup = BeautifulSoup(html_text, "html.parser")
 
     title = None
@@ -304,6 +321,13 @@ def fetch_detail(url: str) -> Dict[str, Any]:
         "content": content_html,
         "content_markdown": text_md,
     }
+
+
+def fetch_detail(url: str) -> Dict[str, Any]:
+    sess = _session()
+    timeout = float(os.getenv("CHINADAILY_TIMEOUT", "20"))
+    html = _fetch_detail_html(sess, url, timeout)
+    return _parse_detail_html(html, url)
 
 
 def feed_item_to_row(item: FeedItemLike, article_id: str, *, fetched_at: datetime) -> Dict[str, Any]:

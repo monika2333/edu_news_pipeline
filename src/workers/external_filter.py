@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import Any, Optional, Tuple, Mapping
+from typing import Any, Optional, Tuple, Mapping, List
 
 from src.adapters.db import get_adapter
 from src.adapters.external_filter_model import (
@@ -62,9 +62,9 @@ def _beijing_gate_raw_payload(result: Mapping[str, Any], raw_text: str) -> dict[
 
 
 def _process_beijing_gate(
-    adapter,
-    candidates: list[BeijingGateCandidate],
-    executor,
+    adapter: Any,
+    candidates: List[BeijingGateCandidate],
+    executor: ThreadPoolExecutor,
     *,
     llm_retries: int,
     max_failures: int,
@@ -159,6 +159,69 @@ def _process_beijing_gate(
     return confirmed, rerouted, failures, promoted
 
 
+def _process_external_filter_batch(
+    adapter: Any,
+    candidates: List[ExternalFilterCandidate],
+    executor: ThreadPoolExecutor,
+    thresholds: Mapping[str, int],
+    max_retries: int,
+    remaining_limit: Optional[int],
+) -> Tuple[int, int, int]:
+    processed = 0
+    failed = 0
+    filter_ready = 0
+
+    future_map = {
+        executor.submit(
+            _score_candidate,
+            candidate,
+            retries=max_retries,
+            thresholds=thresholds,
+        ): candidate
+        for candidate in candidates
+    }
+
+    for future in as_completed(future_map):
+        candidate = future_map[future]
+        if remaining_limit is not None and processed >= remaining_limit:
+            future.cancel()
+            continue
+        try:
+            score_value, raw_output, passed, category = future.result()
+            adapter.complete_external_filter(
+                candidate.article_id,
+                passed=passed,
+                score=score_value,
+                raw_output=raw_output,
+                category=category,
+            )
+            state = "ready_for_export" if passed else "external_filtered"
+            log_info(
+                WORKER,
+                f"{category.upper()} OK {candidate.article_id}: score={score_value} -> {state}",
+            )
+            if passed:
+                filter_ready += 1
+            processed += 1
+        except Exception as exc:
+            failed += 1
+            new_fail_count = candidate.external_filter_fail_count + 1
+            final_failure = new_fail_count >= max_retries
+            adapter.mark_external_filter_failure(
+                candidate.article_id,
+                fail_count=new_fail_count,
+                final_failure=final_failure,
+                error=str(exc),
+            )
+            log_error(
+                WORKER,
+                f"{candidate.candidate_category.upper()} {candidate.article_id}",
+                exc,
+            )
+            
+    return processed, failed, filter_ready
+
+
 def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
     settings = get_settings()
     adapter = get_adapter()
@@ -167,18 +230,16 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
     total_processed = 0
     total_failed = 0
     max_retries = settings.external_filter_max_retries
-    external_positive_threshold = settings.external_filter_threshold
-    external_negative_threshold = settings.external_filter_negative_threshold
-    internal_positive_threshold = settings.internal_filter_threshold
-    internal_negative_threshold = settings.internal_filter_negative_threshold
+    
     thresholds: Mapping[str, int] = {
-        "external": external_positive_threshold,
-        "external_positive": external_positive_threshold,
-        "external_negative": external_negative_threshold,
-        "internal": internal_positive_threshold,
-        "internal_positive": internal_positive_threshold,
-        "internal_negative": internal_negative_threshold,
+        "external": settings.external_filter_threshold,
+        "external_positive": settings.external_filter_threshold,
+        "external_negative": settings.external_filter_negative_threshold,
+        "internal": settings.internal_filter_threshold,
+        "internal_positive": settings.internal_filter_threshold,
+        "internal_negative": settings.internal_filter_negative_threshold,
     }
+    
     workers = concurrency or settings.default_concurrency or 5
     workers = max(1, workers)
     beijing_gate_max_failures = max(1, settings.beijing_gate_max_retries or 1)
@@ -198,6 +259,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                     if remaining <= 0:
                         break
                     fetch_size = min(fetch_size, remaining)
+                    
                 beijing_candidates = adapter.fetch_beijing_gate_candidates(
                     fetch_size,
                     max_failures=beijing_gate_max_failures,
@@ -215,6 +277,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                     gate_failures += failures
                     gate_ready += promoted
                     continue
+                
                 candidates = adapter.fetch_external_filter_candidates(
                     fetch_size,
                     max_failures=max_retries,
@@ -223,59 +286,20 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                     if total_processed + total_failed == 0:
                         log_info(WORKER, "No pending external filter candidates.")
                     break
-
-                future_map = {
-                    executor.submit(
-                        _score_candidate,
-                        candidate,
-                        retries=max_retries,
-                        thresholds=thresholds,
-                    ): candidate
-                    for candidate in candidates
-                }
-
-                processed = 0
-                failed = 0
-                for future in as_completed(future_map):
-                    candidate = future_map[future]
-                    if remaining is not None and processed >= remaining:
-                        future.cancel()
-                        continue
-                    try:
-                        score_value, raw_output, passed, category = future.result()
-                        adapter.complete_external_filter(
-                            candidate.article_id,
-                            passed=passed,
-                            score=score_value,
-                            raw_output=raw_output,
-                            category=category,
-                        )
-                        state = "ready_for_export" if passed else "external_filtered"
-                        log_info(
-                            WORKER,
-                            f"{category.upper()} OK {candidate.article_id}: score={score_value} -> {state}",
-                        )
-                        if passed:
-                            filter_ready += 1
-                        processed += 1
-                    except Exception as exc:
-                        failed += 1
-                        new_fail_count = candidate.external_filter_fail_count + 1
-                        final_failure = new_fail_count >= max_retries
-                        adapter.mark_external_filter_failure(
-                            candidate.article_id,
-                            fail_count=new_fail_count,
-                            final_failure=final_failure,
-                            error=str(exc),
-                        )
-                        log_error(
-                            WORKER,
-                            f"{candidate.candidate_category.upper()} {candidate.article_id}",
-                            exc,
-                        )
-
+                    
+                processed, failed, ready_count = _process_external_filter_batch(
+                    adapter,
+                    candidates,
+                    executor,
+                    thresholds,
+                    max_retries,
+                    remaining
+                )
+                
                 total_processed += processed
                 total_failed += failed
+                filter_ready += ready_count
+                
                 if remaining is not None:
                     remaining -= processed
 

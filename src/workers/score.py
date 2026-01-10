@@ -16,6 +16,8 @@ DEFAULT_KEYWORD_BONUS_RULES: Dict[str, int] = {
     "\u5317\u4eac\u5e02\u6559\u80b2\u59d4\u5458\u4f1a": 100,
 }
 
+ScoreSuccess = Tuple[PrimaryArticleForScoring, Optional[int], int, Optional[int], Dict[str, Any]]
+
 
 def _score_item(item: PrimaryArticleForScoring) -> Optional[int]:
     text = item.content or ""
@@ -73,6 +75,126 @@ def _compose_score_details(
     }
 
 
+def _process_scores_single_worker(
+    rows: List[PrimaryArticleForScoring],
+    bonus_rules: Dict[str, int]
+) -> Tuple[List[ScoreSuccess], List[str]]:
+    successes: List[ScoreSuccess] = []
+    failures: List[str] = []
+    
+    for row in rows:
+        try:
+            raw_score = _score_item(row)
+            bonus_score = 0
+            matched_rules: List[Dict[str, Any]] = []
+            final_score: Optional[int] = None
+            if raw_score is not None:
+                bonus_score, matched_rules = _calculate_keyword_bonus(row, bonus_rules)
+                final_score = raw_score + bonus_score
+            score_details = _compose_score_details(raw_score, bonus_score, final_score, matched_rules)
+            successes.append((row, raw_score, bonus_score, final_score, score_details))
+            rules_info = ",".join(rule["rule_id"] for rule in matched_rules) if matched_rules else "-"
+            log_info(
+                WORKER,
+                f"OK {row.article_id}: raw={raw_score} bonus={bonus_score} final={final_score} rules={rules_info}",
+            )
+        except Exception as exc:
+            failures.append(row.article_id)
+            log_error(WORKER, row.article_id, exc)
+            
+    return successes, failures
+
+
+def _process_scores_multi_worker(
+    rows: List[PrimaryArticleForScoring],
+    workers: int,
+    bonus_rules: Dict[str, int]
+) -> Tuple[List[ScoreSuccess], List[str]]:
+    successes: List[ScoreSuccess] = []
+    failures: List[str] = []
+    
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        future_map = {pool.submit(_score_item, row): row for row in rows}
+        for future in as_completed(future_map):
+            item = future_map[future]
+            article_id = item.article_id
+            try:
+                raw_score = future.result()
+                bonus_score = 0
+                matched_rules: List[Dict[str, Any]] = []
+                final_score: Optional[int] = None
+                if raw_score is not None:
+                    bonus_score, matched_rules = _calculate_keyword_bonus(item, bonus_rules)
+                    final_score = raw_score + bonus_score
+                score_details = _compose_score_details(raw_score, bonus_score, final_score, matched_rules)
+                successes.append((item, raw_score, bonus_score, final_score, score_details))
+                rules_info = ",".join(rule["rule_id"] for rule in matched_rules) if matched_rules else "-"
+                log_info(
+                    WORKER,
+                    f"OK {article_id}: raw={raw_score} bonus={bonus_score} final={final_score} rules={rules_info}",
+                )
+            except Exception as exc:
+                failures.append(article_id)
+                log_error(WORKER, article_id, exc)
+                
+    return successes, failures
+
+
+def _prepare_updates(
+    successes: List[ScoreSuccess],
+    failures: List[str],
+    threshold: int
+) -> Tuple[List[dict], List[dict]]:
+    updates: List[dict] = []
+    promotion_payloads: List[dict] = []
+    for item, raw_score, bonus_score, final_score, score_details in successes:
+        threshold_met = final_score is not None and final_score >= threshold
+        status = "scored" if threshold_met else "filtered_out"
+        updates.append(
+            {
+                "article_id": item.article_id,
+                "score": final_score,
+                "raw_relevance_score": raw_score,
+                "keyword_bonus_score": bonus_score,
+                "score_details": score_details,
+                "status": status,
+            }
+        )
+        if threshold_met:
+            promotion_payloads.append(
+                {
+                    "article_id": item.article_id,
+                    "title": item.title,
+                    "source": item.source,
+                    "publish_time": item.publish_time,
+                    "publish_time_iso": item.publish_time_iso,
+                    "url": item.url,
+                    "content_markdown": item.content,
+                    "score": final_score,
+                    "raw_relevance_score": raw_score,
+                    "keyword_bonus_score": bonus_score,
+                    "score_details": score_details,
+                    "status": "pending",
+                    "keywords": list(item.keywords),
+                }
+            )
+
+    if failures:
+        updates.extend(
+            {
+                "article_id": article_id,
+                "score": None,
+                "raw_relevance_score": None,
+                "keyword_bonus_score": 0,
+                "score_details": {},
+                "status": "failed",
+            }
+            for article_id in failures
+        )
+        
+    return updates, promotion_payloads
+
+
 def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
     settings = get_settings()
     adapter = get_adapter()
@@ -84,106 +206,16 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
             log_info(WORKER, "No primary articles pending relevance scoring.")
             return
 
-        workers = concurrency or settings.default_concurrency
+        workers = concurrency or settings.default_concurrency or 5
         workers = max(1, workers)
         bonus_rules = settings.score_keyword_bonus_rules or DEFAULT_KEYWORD_BONUS_RULES
 
-        successes: List[
-            Tuple[PrimaryArticleForScoring, Optional[int], int, Optional[int], Dict[str, Any]]
-        ] = []
-        failures: List[str] = []
-
         if workers == 1:
-            for row in rows:
-                try:
-                    raw_score = _score_item(row)
-                    bonus_score = 0
-                    matched_rules: List[Dict[str, Any]] = []
-                    final_score: Optional[int] = None
-                    if raw_score is not None:
-                        bonus_score, matched_rules = _calculate_keyword_bonus(row, bonus_rules)
-                        final_score = raw_score + bonus_score
-                    score_details = _compose_score_details(raw_score, bonus_score, final_score, matched_rules)
-                    successes.append((row, raw_score, bonus_score, final_score, score_details))
-                    rules_info = ",".join(rule["rule_id"] for rule in matched_rules) if matched_rules else "-"
-                    log_info(
-                        WORKER,
-                        f"OK {row.article_id}: raw={raw_score} bonus={bonus_score} final={final_score} rules={rules_info}",
-                    )
-                except Exception as exc:
-                    failures.append(row.article_id)
-                    log_error(WORKER, row.article_id, exc)
+            successes, failures = _process_scores_single_worker(rows, bonus_rules)
         else:
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                future_map = {pool.submit(_score_item, row): row for row in rows}
-                for future in as_completed(future_map):
-                    item = future_map[future]
-                    article_id = item.article_id
-                    try:
-                        raw_score = future.result()
-                        bonus_score = 0
-                        matched_rules: List[Dict[str, Any]] = []
-                        final_score: Optional[int] = None
-                        if raw_score is not None:
-                            bonus_score, matched_rules = _calculate_keyword_bonus(item, bonus_rules)
-                            final_score = raw_score + bonus_score
-                        score_details = _compose_score_details(raw_score, bonus_score, final_score, matched_rules)
-                        successes.append((item, raw_score, bonus_score, final_score, score_details))
-                        rules_info = ",".join(rule["rule_id"] for rule in matched_rules) if matched_rules else "-"
-                        log_info(
-                            WORKER,
-                            f"OK {article_id}: raw={raw_score} bonus={bonus_score} final={final_score} rules={rules_info}",
-                        )
-                    except Exception as exc:
-                        failures.append(article_id)
-                        log_error(WORKER, article_id, exc)
+            successes, failures = _process_scores_multi_worker(rows, workers, bonus_rules)
 
-        updates: List[dict] = []
-        promotion_payloads: List[dict] = []
-        for item, raw_score, bonus_score, final_score, score_details in successes:
-            threshold_met = final_score is not None and final_score >= threshold
-            status = "scored" if threshold_met else "filtered_out"
-            updates.append(
-                {
-                    "article_id": item.article_id,
-                    "score": final_score,
-                    "raw_relevance_score": raw_score,
-                    "keyword_bonus_score": bonus_score,
-                    "score_details": score_details,
-                    "status": status,
-                }
-            )
-            if threshold_met:
-                promotion_payloads.append(
-                    {
-                        "article_id": item.article_id,
-                        "title": item.title,
-                        "source": item.source,
-                        "publish_time": item.publish_time,
-                        "publish_time_iso": item.publish_time_iso,
-                        "url": item.url,
-                        "content_markdown": item.content,
-                        "score": final_score,
-                        "raw_relevance_score": raw_score,
-                        "keyword_bonus_score": bonus_score,
-                        "score_details": score_details,
-                        "status": "pending",
-                        "keywords": list(item.keywords),
-                    }
-                )
-
-        if failures:
-            updates.extend(
-                {
-                    "article_id": article_id,
-                    "score": None,
-                    "raw_relevance_score": None,
-                    "keyword_bonus_score": 0,
-                    "score_details": {},
-                    "status": "failed",
-                }
-                for article_id in failures
-            )
+        updates, promotion_payloads = _prepare_updates(successes, failures, threshold)
 
         if updates:
             adapter.update_primary_article_scores(updates)

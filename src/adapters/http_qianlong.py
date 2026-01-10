@@ -180,34 +180,42 @@ def _markdown_from_content(content: Tag, base_url: str) -> str:
     markdown = "\n\n".join(line.strip() for line in chunks if line.strip())
     return markdown
 
+def _fetch_listing_response(session: requests.Session, page_url: str) -> requests.Response:
+    resp = session.get(page_url)
+    resp.raise_for_status()
+    return resp
 
-def _extract_article(session: requests.Session, url: str) -> Optional[QianlongArticle]:
-    LOGGER.info("Fetching Qianlong article: %s", url)
-    response = session.get(url)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.content, "html.parser")
-    title_tag = soup.find("h1") or soup.find("title")
-    title = title_tag.get_text(strip=True) if title_tag else url
-
-    content_tag = soup.select_one("#contentStr, .article-content, .content, article")
-    if not content_tag:
-        LOGGER.warning("Content container missing for %s", url)
-        return None
-
-    publish_ts, publish_dt, raw_publish = _extract_publish_time(response.text)
-    markdown = _markdown_from_content(content_tag, url)
-    if not markdown:
-        LOGGER.warning("Empty markdown extracted for %s", url)
-        return None
-
-    return QianlongArticle(
-        title=title,
-        url=url,
-        publish_time=publish_ts,
-        publish_time_iso=publish_dt,
-        content_markdown=markdown,
-        raw_publish_text=raw_publish,
-    )
+def _parse_listing_response(
+    resp_content: bytes, 
+    page_url: str, 
+    seen: Set[str], 
+    existing_ids: Optional[Set[str]], 
+    consecutive_stop: Optional[int], 
+    consecutive_hits: int
+) -> Tuple[List[str], int, int]:
+    collected: List[str] = []
+    page_added = 0
+    
+    for link in _extract_article_links(resp_content, page_url):
+        if link in seen:
+            continue
+        seen.add(link)
+        article_id = make_article_id(link)
+        if existing_ids and article_id in existing_ids:
+            consecutive_hits += 1
+            if consecutive_stop and consecutive_stop > 0 and consecutive_hits >= consecutive_stop:
+                LOGGER.info(
+                    "Qianlong consecutive existing articles reached %s, stopping listing crawl.",
+                    consecutive_stop,
+                )
+                return collected, page_added, consecutive_hits
+            continue
+        
+        consecutive_hits = 0
+        collected.append(link)
+        page_added += 1
+        
+    return collected, page_added, consecutive_hits
 
 
 def _collect_article_urls(
@@ -223,46 +231,75 @@ def _collect_article_urls(
     seen: Set[str] = set()
     consecutive_hits = 0
     consecutive_empty_pages = 0
+    
     for page_index, page_url in enumerate(_iter_listing_urls(base_url, max_pages), start=1):
         try:
-            resp = session.get(page_url)
-            resp.raise_for_status()
+            resp = _fetch_listing_response(session, page_url)
         except Exception as exc:
             LOGGER.warning("Failed to fetch Qianlong listing %s: %s", page_url, exc)
             continue
-        page_added = 0
-        for link in _extract_article_links(resp.content, page_url):
-            if link in seen:
-                continue
-            seen.add(link)
-            article_id = make_article_id(link)
-            if existing_ids and article_id in existing_ids:
-                consecutive_hits += 1
-                if consecutive_stop and consecutive_stop > 0 and consecutive_hits >= consecutive_stop:
-                    LOGGER.info(
-                        "Qianlong consecutive existing articles reached %s, stopping listing crawl.",
-                        consecutive_stop,
-                    )
-                    return collected
-                continue
-            consecutive_hits = 0
-            collected.append(link)
-            page_added += 1
-            if limit is not None and len(collected) >= limit:
-                return collected
+            
+        links, page_added, consecutive_hits = _parse_listing_response(
+            resp.content, page_url, seen, existing_ids, consecutive_stop, consecutive_hits
+        )
+        
+        collected.extend(links)
+        
+        # Check stop conditions
+        if consecutive_stop and consecutive_stop > 0 and consecutive_hits >= consecutive_stop:
+            return collected
+        
         if limit is not None and len(collected) >= limit:
-            break
+            return collected
+
         if page_added == 0:
             consecutive_empty_pages += 1
             if max_pages is None and consecutive_empty_pages >= 3:
-                LOGGER.info(
+                 LOGGER.info(
                     "No new Qianlong articles after %s listing pages; stopping listing crawl.",
                     consecutive_empty_pages,
                 )
-                break
+                 break
         else:
             consecutive_empty_pages = 0
+            
     return collected
+
+
+def _fetch_article_html(session: requests.Session, url: str) -> requests.Response:
+    LOGGER.info("Fetching Qianlong article: %s", url)
+    response = session.get(url)
+    response.raise_for_status()
+    return response
+
+def _parse_article_html(html_content: bytes, html_text: str, url: str) -> Optional[QianlongArticle]:
+    soup = BeautifulSoup(html_content, "html.parser")
+    title_tag = soup.find("h1") or soup.find("title")
+    title = title_tag.get_text(strip=True) if title_tag else url
+
+    content_tag = soup.select_one("#contentStr, .article-content, .content, article")
+    if not content_tag:
+        LOGGER.warning("Content container missing for %s", url)
+        return None
+
+    publish_ts, publish_dt, raw_publish = _extract_publish_time(html_text)
+    markdown = _markdown_from_content(content_tag, url)
+    if not markdown:
+        LOGGER.warning("Empty markdown extracted for %s", url)
+        return None
+
+    return QianlongArticle(
+        title=title,
+        url=url,
+        publish_time=publish_ts,
+        publish_time_iso=publish_dt,
+        content_markdown=markdown,
+        raw_publish_text=raw_publish,
+    )
+
+def _extract_article(session: requests.Session, url: str) -> Optional[QianlongArticle]:
+    response = _fetch_article_html(session, url)
+    return _parse_article_html(response.content, response.text, url)
 
 
 def fetch_articles(

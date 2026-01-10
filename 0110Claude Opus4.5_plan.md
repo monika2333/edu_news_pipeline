@@ -96,6 +96,7 @@ SELECT ci.cluster_id, ci.bucket_key, ci.updated_at,
        mr.manual_llm_source,
        ns.title, ns.llm_summary, ns.llm_source, ns.source, ns.url, ns.score,
        ns.external_importance_score, ns.sentiment_label, ns.is_beijing_related,
+       ns.publish_time_iso, ns.publish_time,
        ns.score_details
 FROM cluster_items ci
 JOIN manual_reviews mr ON mr.article_id = ci.article_id
@@ -109,6 +110,13 @@ ORDER BY ci.cluster_id, ns.external_importance_score DESC NULLS LAST,
 排序（external_importance_score → rank → score → publish_time）→ 选首条为
 representative_title → 重算 size → 丢弃空 cluster → cluster 级分页（沿用现有
 limit/offset）。
+
+**字段生成规则**：
+- `llm_source_*`：沿用 `_attach_source_fields`，`llm_source_manual` 来自
+  `manual_llm_source`，`llm_source_raw` 来自 `llm_source`，`llm_source_display`
+  取手动覆盖 > LLM 识别 > 原始来源。
+- `bonus_keywords`：沿用 `_bonus_keywords(score_details)`，从
+  `score_details.matched_rules` 的 `label`/`rule_id` 提取。
 
 ---
 

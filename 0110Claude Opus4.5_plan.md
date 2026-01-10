@@ -47,7 +47,6 @@ def refresh_clusters(report_type: str) -> None:
     if not adapter.try_advisory_lock(lock_key):
         return
 
-    refresh_ts = utc_now()
     rows = adapter.fetch_manual_pending_for_cluster(
         report_type=report_type, region=None, sentiment=None, fetch_limit=5000
     )
@@ -77,7 +76,7 @@ def refresh_clusters(report_type: str) -> None:
     try:
         with adapter.transaction():
             adapter.delete_manual_clusters(report_type=report_type)
-            adapter.insert_manual_clusters(clusters, updated_at=refresh_ts)
+            adapter.insert_manual_clusters(clusters)
     finally:
         adapter.release_advisory_lock(lock_key)
 ```
@@ -113,10 +112,14 @@ ORDER BY ci.cluster_id, ns.external_importance_score DESC NULLS LAST,
          mr.rank ASC NULLS LAST, ns.score DESC NULLS LAST;
 ```
 
+**SQL 排序说明**：SQL 的 ORDER BY 仅用于稳定读取，同一 cluster 的最终排序以读时重建为准。
+
 **读时重建**：过滤 pending + ready_for_export → items 按 `_candidate_rank_key_by_record`
 排序（external_importance_score → rank → score → publish_time）→ 选首条为
 representative_title → cluster 级排序（按 representative 的 rank_key）→ 重算 size
 → 丢弃空 cluster → cluster 级分页（沿用现有 limit/offset）。
+
+**排序时间说明**：`publish_time` 仅用于排序，不对用户展示，时区不敏感，直接取字段值即可。
 
 **字段生成规则**：
 - `llm_source_*`：沿用 `_attach_source_fields`，`llm_source_manual` 来自
@@ -139,8 +142,7 @@ representative_title → cluster 级排序（按 representative 的 rank_key）�
 - `region` / `sentiment`：筛选 bucket，对应 internal/external + positive/negative。
 - `cluster`：true 返回聚类；false 返回原列表。
 - `force_refresh`：尽力触发刷新；若锁占用则直接返回缓存结果。
-- `report_type`：默认 `zongbao`，用于按报型过滤 pending。
-- `cluster_threshold`：保留兼容；实际固定 0.9（可忽略非 0.9 值并记录日志）。
+- `report_type`：默认 `zongbao`，用于按报型过滤 pending；筛选页当前无切换 UI，默认仅展示 zongbao 的 pending。
 
 ### 返回结构
 
@@ -158,13 +160,9 @@ representative_title → cluster 级排序（按 representative 的 rank_key）�
       "llm_source_display", "llm_source_raw", "llm_source_manual", "bonus_keywords"
     }]
   }],
-  "total": 10,
-  "refreshed_at": "2026-01-10T10:00:00Z"
+  "total": 10
 }
 ```
-
-**refreshed_at 规则**：使用写入批次的 `refresh_ts`（或 `MAX(updated_at)`），确保每次刷新
-返回一致的时间戳。
 
 ---
 

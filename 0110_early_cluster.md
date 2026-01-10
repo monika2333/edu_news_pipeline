@@ -26,110 +26,62 @@
   - 由于数据库操作是同步的，任何慢查询都会阻塞 Worker 线程。
   - 结合 CPU 密集的聚类操作，这导致了"单线程卡死"现象。一个用户的操作（如查询）会阻塞事件循环，导致其他请求（甚至同一用户的后续请求）无法被处理。
 
-# 三、具体方案：pgvector + 准实时聚类
+# 三、具体方案：pgvector + 极简准实时聚类
 
 ### 1) 总体思路
 
-- 保留 BGE 向量模型，向量落库（pgvector），聚类结果预计算。
-- 前端读取“已聚类结果表”，避免请求内现场聚类。
-- 准实时：后台任务周期性/触发式更新（例如 5 分钟一次）+ 手动刷新兜底。
+- **向量内置 (Embedding In-place)**：不再维护独立的向量表，直接在 `manual_reviews` 表中扩展 `title_embedding` 字段，简化管理并避免 Join。
+- **预聚类结果表 (Results Cache)**：引入一张 `manual_clusters` 表作为“结果缓存”，后台任务定期计算聚类并写入，前端直接读取该表以实现“秒开”。
+- **准实时更新**：后台任务周期性触发（如每 5 分钟），计算并全量替换 `manual_clusters` 记录。利用 `created_at` 标识批次，取消复杂的快照管理表。
 
-### 2) 数据表设计（建议）
+### 2) 数据库设计（1.5 表方案）
 
-#### (A) 向量表 `manual_title_embeddings`
+#### (A) 业务表扩展 `manual_reviews`
+在现有的 `manual_reviews` 表中增加向量字段：
+- **字段**：`title_embedding vector(1024)` (适配 BGE-large-zh 维度 1024)。
+- **索引**：建议使用 `hnsw` 索引：
+  ```sql
+  CREATE INDEX ON manual_reviews USING hnsw (title_embedding vector_l2_ops);
+  ```
 
-- `article_id text primary key`
-- `title text`
-- `embedding vector(1024)`  (BGE-large-zh 维度 1024)
-- `updated_at timestamptz not null default now()`
-- 索引：`ivfflat` 或 `hnsw`（pgvector v0.5+ 支持 hnsw）。
+#### (B) 聚类结果表 `manual_clusters` (新增)
+作为前端读取的“缓存”表。
+| **字段**                 | **类型**    | **说明**                                 |
+| ------------------------ | ----------- | ---------------------------------------- |
+| **cluster_id**           | text (PK)   | 聚类 ID（如 UUID 或 Hash）。             |
+| **report_type**          | text        | 标识是“总报”还是“晚报”。                 |
+| **bucket_key**           | text        | 分桶标识（如 internal_positive）。       |
+| **representative_title** | text        | 这一组新闻的代表性标题。                 |
+| **item_ids**             | text[]      | 这一组包含的所有文章 ID 列表。           |
+| **size**                 | integer     | 这一组包含的文章数量。                   |
+| **created_at**           | timestamptz | 生成时间（用于前端判断数据刷新时间）。   |
 
-#### (B) 聚类结果表 `manual_clusters`
+---
 
-- `cluster_id text primary key`
-- `bucket_key text`（internal_positive 等）
-- `report_type text`（zongbao/wanbao）
-- `status text`（pending/selected/backup/discarded）
-- `size integer`
-- `representative_title text`
-- `item_ids text[]`（读取时 join）
-- `rank_key jsonb`（用于排序的分值）
-- `snapshot_id uuid`（用于标记本次批次）
-- `created_at`, `updated_at`
+### 3) 核心处理流程
 
-#### (C) 聚类快照表 `manual_cluster_snapshots`
+1. **向量化 (In-flow/Async)**：
+   - 建议在文章进入 `manual_reviews` 或进行摘要生成后，计算其标题的 Embedding 并更新到 `title_embedding` 字段。
+2. **后台聚类任务 (Background Job)**：
+   - **频率**：周期性（如每 5 分钟）或由管理后台手动触发。
+   - **步骤**：
+     1. 从 `manual_reviews` 拉取 `pending` 状态且已有向量的数据。
+     2. 按 `report_type` + `bucket_key` 进行分组聚类计算。
+     3. **全量更新缓存**：在一个事务中，删除旧的 `manual_clusters` 记录并写入新批次结果。
+3. **前端渲染 (Frontend)**：
+   - 前端切换标签页或打开控制台时，直接 `SELECT * FROM manual_clusters WHERE report_type = ...`。
+   - 拿到聚类列表后，再根据 `item_ids` 拉取文章详情（或通过 Join 一次性获取）。
 
-- `snapshot_id uuid primary key`
-- `pending_total integer`
-- `generated_at timestamptz`
-- `source_note text`
+### 4) API 改造建议
 
-> 说明：本方案按 `report_type` 分开生成 snapshot，并每个报型保留最近 3 个（旧的软删除或删除）。
+- `GET /api/manual_filter/clusters`: 返回预计算好的聚类列表。
+- `POST /api/manual_filter/trigger_clustering`: (选做) 允许手动触发后台任务，立即刷新缓存。
 
+### 5) 优势与风险
 
-
-> 修改思路：将三张表精简为 **1.5 张**（一张实表，一张扩展表）：
->
-> #### **建议 A：取消“快照表 (Snapshots)”，改为字段**
->
-> - **理由**：快照表的目的是为了标记“这一批聚类是什么时候生成的”。我们完全可以把这个信息直接写在 `manual_clusters` 表的 `created_at` 字段里。
-> - **做法**：每次重新聚类时，删除该报型旧的记录，直接插入新的。查询时只查最新的记录即可。这样就**砍掉了 (C) 表**。
->
-> #### **建议 B：取消“向量表 (Embeddings)”，合并入业务表**
->
-> - **理由**：没必要为向量单独开一张表。
-> - **做法**：直接在manual_reviews里增加一个 `title_embedding` 字段。
-> - **好处**：查询时不需要 Join，一行代码就能拿到文章和它的向量，管理起来最简单。
->
-> ------
->
-> ### 最简方案：只需要增加一张表
->
-> 如果你想通过“后台预聚类”来解决卡顿问题，**唯一必须新建**的表只有一张：
->
-> #### **精简后的 `manual_clusters` (聚类结果表)**
->
-> 这张表的作用是充当“缓存”，让前端不用现场计算。
->
-> | **字段**                 | **类型**    | **说明**                                 |
-> | ------------------------ | ----------- | ---------------------------------------- |
-> | **cluster_id**           | text (PK)   | 聚类 ID。                                |
-> | **report_type**          | text        | 标识是“总报”还是“晚报”。                 |
-> | **representative_title** | text        | 这一组新闻的代表性标题（用于前端显示）。 |
-> | **item_ids**             | text[]      | 这一组包含的所有文章 ID 列表。           |
-> | **created_at**           | timestamptz | 记录这是什么时候生成的。                 |
-
-
-
-#### (D) Snapshot 说明与保留建议
-
-- **含义**：snapshot 表示一次“全量聚类结果”的批次 ID，用来保证读写隔离与一致性。
-- **现状**：当前系统没有持久化 snapshot。
-- **建议**：新增 `manual_cluster_snapshots` 并按 `report_type` 保留最近 3 个；前端只读取对应报型最新 snapshot。
-
-### 3) 后台任务（准实时刷新）
-
-- **触发策略**：
-  - 定时任务由业务侧自行配置（例如 5 分钟），此处仅提供启动脚本。
-  - 若 `pending_total` 无变化可跳过重算（降低空转）。
-  - 手动刷新按钮触发“立即生成新 snapshot”。
-- **任务步骤**：
-  1. 拉取 `manual_reviews` 中 `pending` 且 `news_summaries` 为 `ready_for_export` 的文章（按 report_type 分桶）。
-  2. 若新文章标题无 embedding，则写入 `manual_title_embeddings`。
-  3. 对每个 bucket 使用 `cluster_titles` 聚类（可分批/分区并行）。
-  4. 写入 `manual_clusters`，关联新的 `snapshot_id`。
-  5. 更新 `manual_cluster_snapshots`。
-
-### 4) API 与前端改造
-
-- `GET /api/manual_filter/candidates` 改为读取 `manual_clusters`（按 bucket + snapshot_id 过滤，读时 join 详情）。
-- 加入 `snapshot_id` 作为返回字段，用于前端判定是否刷新。
-- 前端刷新：
-  - 定时轮询最新 `snapshot_id`，变化则刷新列表。
-  - 手动刷新按钮调用“触发聚类”接口。
-
-### 5) 风险与应对
-
-- **向量维度变更**：更换模型需重建向量表。
-- **聚类延迟**：准实时存在分钟级延迟，通过手动刷新弥补。
-- **数据一致性**：批次写入使用 `snapshot_id` 保证读写隔离。
+- **优势**：
+  - **极简架构**：仅需一张结果表和现有表的一个字段，维护成本极低。
+  - **秒级响应**：前端查询直接命中缓存表，无需在 Web 请求内进行 CPU 密集计算。
+- **风险与应对**：
+  - **实时性**：会有分钟级延迟。*应对*：前端显示“最后更新时间”，并提供手动刷新按钮。
+  - **并发冲突**：全量更新时可能存在短暂的读取空窗。*应对*：使用数据库事务 (Transaction) 确保更新过程原子化。

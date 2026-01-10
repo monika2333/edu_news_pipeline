@@ -19,7 +19,7 @@
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `report_type` | text NOT NULL | 报型（zongbao / wanbao） |
+| `report_type` | text NOT NULL | 固定 `zongbao`（保留字段用于兼容审阅页） |
 | `bucket_key` | text NOT NULL | 分桶标识（internal_positive 等） |
 | `cluster_id` | text NOT NULL | 格式: `{report_type}-{bucket_key}-{index}` |
 | `item_ids` | text[] NOT NULL | 该聚类包含的文章 ID 列表 |
@@ -32,8 +32,8 @@
 - `CHECK (bucket_key IN ('internal_positive','internal_negative','external_positive','external_negative'))`
 
 **字段说明补充**：
-- `report_type`：与审阅页的综报/晚报一致；条目从审阅页回退为 pending 时强制设为
-  `zongbao`，避免 wanbao pending 消失。所有回退 pending 操作统一走
+- `report_type`：固定 `zongbao`，保留字段仅为兼容审阅页；条目从审阅页回退为 pending
+  时强制设为 `zongbao`，避免 wanbao pending 消失。所有回退 pending 操作统一走
   `manual_filter_decisions.reset_to_pending`（内部强制 `report_type=DEFAULT_REPORT_TYPE`），
   最终由 `adapters.db_postgres.reset_manual_reviews_to_pending` 写入。
 - `bucket_key`：与筛选页的 4 个分类一一对应，便于按 region/sentiment 快速读取。
@@ -95,7 +95,7 @@ def refresh_clusters(report_type: str) -> None:
 WITH cluster_base AS (
     SELECT cluster_id, bucket_key, item_ids
     FROM manual_clusters
-    WHERE report_type = $1 AND ($2::text IS NULL OR bucket_key = $2)
+    WHERE report_type = 'zongbao' AND ($1::text IS NULL OR bucket_key = $1)
 ),
 cluster_items AS (
     SELECT cb.cluster_id, cb.bucket_key, unnest(cb.item_ids) AS article_id
@@ -139,15 +139,15 @@ publish_time）→ 选首条为 representative_title → cluster 级排序（按
 | 接口 | 方法 | 说明 |
 |------|------|------|
 | `/api/manual_filter/candidates` | GET | 保持现有接口；使用 `cluster=true` 返回聚类列表 |
-| `/api/manual_filter/trigger_clustering` | POST | 手动触发刷新（可选新增，默认 zongbao） |
+| `/api/manual_filter/trigger_clustering` | POST | 手动触发刷新（可选新增，固定 zongbao） |
 
 **请求参数（GET）**：
 - `limit` / `offset`：cluster 级分页，沿用现有接口逻辑。
 - `region` / `sentiment`：筛选 bucket，对应 internal/external + positive/negative。
 - `cluster`：true 返回聚类；false 返回原列表。
 - `force_refresh`：尽力触发刷新；若锁占用则直接返回当前 manual_clusters 结果。
-- `report_type`：默认 `zongbao`，用于按报型过滤 pending；筛选页当前无切换 UI，默认仅展示 zongbao 的 pending。
-  回退为 pending 时强制写入 `report_type=zongbao`。
+
+**请求参数（POST）**：无需参数（固定触发 zongbao 刷新）。
 
 ### 返回结构
 
@@ -179,17 +179,5 @@ publish_time）→ 选首条为 representative_title → cluster 级排序（按
 |------|------|
 | `delete_manual_clusters(report_type)` | 删除指定报型的聚类结果 |
 | `insert_manual_clusters(clusters)` | 批量插入聚类结果 |
-| `fetch_manual_clusters(report_type, bucket_key)` | 读取聚类 + join 过滤 |
+| `fetch_manual_clusters(bucket_key)` | 读取聚类 + join 过滤（固定 zongbao） |
 | `try_advisory_lock(name)` / `release_advisory_lock(name)` | 并发控制 |
-
----
-
-## 七、风险与应对
-
-| 风险 | 应对措施 |
-|------|----------|
-| **分钟级延迟** | 提供手动刷新按钮 |
-| **并发冲突** | advisory lock + 事务保证原子性 |
-| **cluster 代表过期** | 读时重算 size 和 representative |
-| **刷新失败** | 事务回滚保留旧数据 |
-| **缓存一致性** | cluster=true 全部从 DB 读取，移除内存缓存分支，避免多实例不一致 |

@@ -9,7 +9,7 @@
 | **数据源** | 完全以 DB 为准，禁用本地缓存 |
 | **刷新策略** | 定时 5 分钟 + 手动触发 + 读时过滤（立即剔除） |
 | **存储形态** | 使用 `item_ids`（读时 join） |
-| **返回策略** | summary-only 全量返回，上限 500/1000 |
+| **返回策略** | summary-only（manual_summary 优先，llm_summary 兜底），按现有接口分页（单页上限 200），聚类输入上限 5000 |
 
 ---
 
@@ -27,6 +27,10 @@
 | `updated_at` | timestamptz | 默认 now() |
 
 **索引**：`(report_type, bucket_key)`
+
+**约束建议**：
+- `UNIQUE (report_type, bucket_key, cluster_id)`
+- `CHECK (bucket_key IN ('internal_positive','internal_negative','external_positive','external_negative'))`
 
 ---
 
@@ -63,11 +67,12 @@ def refresh_clusters(report_type: str) -> None:
                 "item_ids": [i["article_id"] for i in group_items],
             })
 
-    with adapter.transaction():
-        adapter.delete_manual_clusters(report_type=report_type)
-        adapter.insert_manual_clusters(clusters)
-
-    adapter.release_advisory_lock("manual_cluster_refresh")
+    try:
+        with adapter.transaction():
+            adapter.delete_manual_clusters(report_type=report_type)
+            adapter.insert_manual_clusters(clusters)
+    finally:
+        adapter.release_advisory_lock("manual_cluster_refresh")
 ```
 
 **要点**：advisory lock 防并发，事务内 delete + insert，失败回滚保留旧数据。
@@ -88,8 +93,10 @@ cluster_items AS (
 )
 SELECT ci.cluster_id, ci.bucket_key, ci.updated_at,
        mr.article_id, mr.summary AS manual_summary, mr.rank AS manual_rank,
-       ns.title, ns.llm_summary, ns.source, ns.url, ns.score,
-       ns.external_importance_score, ns.sentiment_label, ns.is_beijing_related
+       mr.manual_llm_source,
+       ns.title, ns.llm_summary, ns.llm_source, ns.source, ns.url, ns.score,
+       ns.external_importance_score, ns.sentiment_label, ns.is_beijing_related,
+       ns.score_details
 FROM cluster_items ci
 JOIN manual_reviews mr ON mr.article_id = ci.article_id
 JOIN news_summaries ns ON ns.article_id = ci.article_id
@@ -98,7 +105,10 @@ ORDER BY ci.cluster_id, ns.external_importance_score DESC NULLS LAST,
          mr.rank ASC NULLS LAST, ns.score DESC NULLS LAST;
 ```
 
-**读时重建**：过滤 pending + ready_for_export → 重算 size 和 representative_title → 丢弃空 cluster → 分页。
+**读时重建**：过滤 pending + ready_for_export → items 按 `_candidate_rank_key_by_record`
+排序（external_importance_score → rank → score → publish_time）→ 选首条为
+representative_title → 重算 size → 丢弃空 cluster → cluster 级分页（沿用现有
+limit/offset）。
 
 ---
 
@@ -106,8 +116,8 @@ ORDER BY ci.cluster_id, ns.external_importance_score DESC NULLS LAST,
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/api/manual_filter/clusters` | GET | 返回预计算的聚类列表 |
-| `/api/manual_filter/trigger_clustering` | POST | 手动触发刷新 |
+| `/api/manual_filter/candidates` | GET | 保持现有接口；使用 `cluster=true` 返回聚类列表 |
+| `/api/manual_filter/trigger_clustering` | POST | 手动触发刷新（可选新增） |
 
 ### 返回结构
 
@@ -119,7 +129,11 @@ ORDER BY ci.cluster_id, ns.external_importance_score DESC NULLS LAST,
     "bucket_key": "internal_positive",
     "size": 5,
     "representative_title": "...",
-    "items": [{ "article_id", "title", "summary", "source", "url", "score", ... }]
+    "items": [{
+      "article_id", "title", "summary", "source", "url", "score",
+      "external_importance_score", "is_beijing_related", "sentiment_label",
+      "llm_source_display", "llm_source_raw", "llm_source_manual", "bonus_keywords"
+    }]
   }],
   "total": 10,
   "refreshed_at": "2026-01-10T10:00:00Z"

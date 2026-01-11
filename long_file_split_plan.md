@@ -93,9 +93,9 @@ Plan:
 - Keep list_items()/fetch_detail()/crawl() as thin wrappers.
 
 ## Execution Order (low risk first)
-- [ ] Split worker run() helpers (no API changes)
-- [ ] Split crawl_sources.py helpers (no API changes)
-- [ ] Split HTTP adapters (keep function names intact)
+- [X] Split worker run() helpers (no API changes)
+- [X] Split crawl_sources.py helpers (no API changes)
+- [X] Split HTTP adapters (keep function names intact)
 - [ ] Split db_postgres.py last (largest surface area)
 
 ## Validation Checklist

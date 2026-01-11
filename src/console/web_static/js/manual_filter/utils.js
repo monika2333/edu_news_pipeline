@@ -62,6 +62,25 @@ function setupTabs() {
             document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
             state.currentTab = tab.dataset.tab;
 
+            // Reset tab state to defaults
+            if (state.currentTab === 'filter') {
+                state.filterCategory = 'internal_positive';
+                state.filterPage = 1;
+                if (elements.filterTabButtons) {
+                    elements.filterTabButtons.forEach(btn => {
+                        btn.classList.toggle('active', btn.dataset.category === 'internal_positive');
+                    });
+                }
+            } else if (state.currentTab === 'review') {
+                state.reviewReportType = 'zongbao';
+                state.reviewView = 'selected';
+                if (elements.reportTypeButtons) {
+                    elements.reportTypeButtons.forEach(btn => {
+                        btn.classList.toggle('active', btn.dataset.type === 'zongbao');
+                    });
+                }
+            }
+
             reloadCurrentTab();
         });
     });

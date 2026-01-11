@@ -35,6 +35,8 @@ async function loadReviewData() {
             selected: selData.items || [],
             backup: bakData.items || []
         };
+        updateReviewRailCounts();
+        renderReviewView();
     } catch (e) {
         elements.reviewList.innerHTML = '<div class="error">加载审阅数据失败</div>';
     }

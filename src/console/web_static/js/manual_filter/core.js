@@ -51,7 +51,7 @@ const elements = {
     tabs: document.querySelectorAll('.tab-btn'),
     contents: document.querySelectorAll('.tab-content'),
     filterList: document.getElementById('filter-list'),
-    filterTabButtons: document.querySelectorAll('.filter-tab-btn'),
+    filterTabButtons: document.querySelectorAll('.filter-tab-btn[data-category]'),
     reviewList: document.getElementById('review-list'),
     reviewSelectAll: document.getElementById('review-select-all'),
     reviewBulkStatus: document.getElementById('review-bulk-status'),

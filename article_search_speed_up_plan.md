@@ -49,10 +49,10 @@ WHERE (
 Use parameterized SQL (no string interpolation) for the query pattern.
 Wrap the query parameter with wildcards (e.g., `%{q}%`) to preserve substring matching.
 
-### Phase 3: Cleanup
-- Remove deprecated filter fields from `/articles/search` and manual filter drawer UI/docs (source/sentiment/status/date).
-- Docs cleanup scope: `README.md` and `article_search_speed_up_plan.md` (currently known references).
-- Update drawer reset/clear handlers to stop referencing removed inputs.
+### Phase 3: Cleanup (Completed)
+- Removed deprecated filter fields from `/articles/search` and manual filter drawer UI/docs (source/sentiment/status/date).
+- Updated docs in `README.md` and `article_search_speed_up_plan.md`.
+- Updated drawer handlers to stop referencing removed inputs.
 
 ## Code Touchpoints
 - `src/adapters/db_postgres_news_summaries.py` (`search_news_summaries`): replace the three-column `ILIKE` clause with the combined expression `ILIKE`.

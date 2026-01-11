@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 from src.adapters.title_cluster import cluster_titles
 from src.domain.reporting.buckets import normalize_sentiment, candidate_rank_key_simple
 from src.domain import ExportCandidate

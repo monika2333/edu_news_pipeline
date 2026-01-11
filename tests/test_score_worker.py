@@ -25,12 +25,6 @@ class FakeAdapter:
         self.promotions.extend(payloads)
 
 
-@pytest.fixture(autouse=True)
-def _autopatch_env(monkeypatch):
-    monkeypatch.setattr(score, "SCORE_THRESHOLD", 60)
-    yield
-
-
 def test_keyword_bonus_applied(monkeypatch):
     item = PrimaryArticleForScoring(
         article_id="test-article",
@@ -53,6 +47,7 @@ def test_keyword_bonus_applied(monkeypatch):
             {
                 "default_concurrency": 1,
                 "score_keyword_bonus_rules": {"target keyword": 25},
+                "score_promotion_threshold": 60,
             },
         )(),
     )
@@ -97,6 +92,7 @@ def test_promotion_uses_final_threshold(monkeypatch):
             {
                 "default_concurrency": 1,
                 "score_keyword_bonus_rules": {"Beijing Municipal Party Committee": 100},
+                "score_promotion_threshold": 60,
             },
         )(),
     )

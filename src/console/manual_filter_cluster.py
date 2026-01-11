@@ -9,7 +9,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 from src.adapters.title_cluster import cluster_titles
 
 from .manual_filter_helpers import (

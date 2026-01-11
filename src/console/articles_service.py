@@ -4,7 +4,7 @@ from datetime import date
 from math import ceil
 from typing import Any, Dict, List, Optional, Sequence
 
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 
 
 def _get_adapter_safe():

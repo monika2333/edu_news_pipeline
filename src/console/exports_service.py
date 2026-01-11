@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from typing import Any, Dict, List, Optional
 
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 
 
 def _get_adapter_safe():

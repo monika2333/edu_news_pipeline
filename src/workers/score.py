@@ -3,7 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 from src.adapters.llm_scoring import score_text
 from src.config import get_settings
 from src.domain import PrimaryArticleForScoring

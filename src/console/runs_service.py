@@ -5,7 +5,7 @@ import sys
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
 from scripts.run_pipeline_once import DEFAULT_PIPELINE, run_pipeline_once
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 
 _ALLOWED_STEPS: Set[str] = set(DEFAULT_PIPELINE)
 _DEFAULT_LIST_LIMIT = 20

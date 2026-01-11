@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 
 from .manual_filter_helpers import (
     DEFAULT_REPORT_TYPE,

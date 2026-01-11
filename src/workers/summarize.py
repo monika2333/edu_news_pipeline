@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 from src.adapters.llm_source import detect_source
 from src.adapters.llm_summary import summarise
 from src.adapters.sentiment_classifier import classify_sentiment

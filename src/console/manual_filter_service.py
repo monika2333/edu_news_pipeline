@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Re-export constants from helpers

@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Optional, Tuple, Mapping, List
 
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 from src.adapters.external_filter_model import (
     call_external_filter_model,
     parse_external_filter_score,

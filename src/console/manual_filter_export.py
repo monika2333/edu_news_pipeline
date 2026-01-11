@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 from src.domain.reporting import build_buckets, format_export_text, resolve_periods
 from src.domain.models import ExportCandidate
 

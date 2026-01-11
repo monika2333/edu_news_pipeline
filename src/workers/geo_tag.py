@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 from src.config import get_settings
 from src.domain import is_beijing_related, load_beijing_keywords
 from src.workers import log_info, log_summary, worker_session

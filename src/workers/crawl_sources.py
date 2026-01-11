@@ -16,7 +16,7 @@ from src.adapters.http_toutiao import (
     load_author_tokens,
     resolve_article_id_from_feed,
 )
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 from src.config import get_settings
 from src.workers import log_error, log_info, log_summary, worker_session
 from src.adapters.http_chinanews import (

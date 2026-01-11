@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 from src.adapters.http_toutiao import FeedItem, build_detail_update as tt_build_detail_update, fetch_info as tt_fetch_info
 from src.adapters.http_chinanews import (
     FeedItemLike as CNFeedItem,

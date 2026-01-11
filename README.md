@@ -52,7 +52,7 @@ python -m src.cli.main export
 ### 常用操作
 ```powershell
 # 设置环境变量 (PowerShell)
-$env:DATABASE_URL="postgres://postgres:Postgres2025@localhost:5432/edu_backup?sslmode=disable"
+$env:DATABASE_URL="postgres://postgres:Postgres2025@localhost:5432/edu_news_pipeline?sslmode=disable"
 
 # 查看迁移状态
 dbmate status

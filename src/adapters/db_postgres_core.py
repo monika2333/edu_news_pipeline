@@ -549,6 +549,14 @@ class PostgresAdapter:
         with self._cursor() as cur:
             return manual_reviews.fetch_manual_clusters(cur, bucket_key=bucket_key, report_type=report_type)
 
+    def try_advisory_lock(self, lock_id: int) -> bool:
+        with self._cursor() as cur:
+            return manual_reviews.try_advisory_lock(cur, lock_id)
+
+    def release_advisory_lock(self, lock_id: int) -> None:
+        with self._cursor() as cur:
+            manual_reviews.release_advisory_lock(cur, lock_id)
+
     def manual_review_status_counts(self, *, report_type: Optional[str] = None) -> Dict[str, int]:
         with self._cursor() as cur:
             return manual_reviews.manual_review_status_counts(cur, report_type=report_type)

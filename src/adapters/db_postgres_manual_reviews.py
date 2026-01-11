@@ -293,6 +293,16 @@ def fetch_manual_clusters(
     return [dict(row) for row in rows]
 
 
+def try_advisory_lock(cur: psycopg.Cursor, lock_id: int) -> bool:
+    cur.execute("SELECT pg_try_advisory_lock(%s) AS locked", (int(lock_id),))
+    row = cur.fetchone() or {}
+    return bool(row.get("locked"))
+
+
+def release_advisory_lock(cur: psycopg.Cursor, lock_id: int) -> None:
+    cur.execute("SELECT pg_advisory_unlock(%s)", (int(lock_id),))
+
+
 def manual_review_status_counts(cur: psycopg.Cursor, *, report_type: Optional[str] = None) -> Dict[str, int]:
     counts: Dict[str, int] = {"pending": 0, "selected": 0, "backup": 0, "discarded": 0, "exported": 0}
     type_expr = report_type_expr()
@@ -531,6 +541,8 @@ __all__ = [
     "normalize_report_type_value",
     "report_type_expr",
     "reset_manual_reviews_to_pending",
+    "release_advisory_lock",
+    "try_advisory_lock",
     "update_manual_review_statuses",
     "update_manual_review_summaries",
 ]

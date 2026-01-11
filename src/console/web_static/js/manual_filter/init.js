@@ -61,6 +61,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (elements.sortToggleBtn) {
         elements.sortToggleBtn.addEventListener('click', toggleSortMode);
     }
+    const btnAutoReorder = document.getElementById('btn-auto-reorder');
+    if (btnAutoReorder) {
+        btnAutoReorder.addEventListener('click', autoReorderReviewItems);
+    }
     if (elements.reviewSelectAll) {
         elements.reviewSelectAll.addEventListener('change', (e) => {
             toggleReviewSelectAll(Boolean(e.target.checked));

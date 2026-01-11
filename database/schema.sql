@@ -1,4 +1,4 @@
-\restrict 6ANkAvrVAtUwdGy8l2nJroUUMInAfy3l1aFELdsgYvOwkJwyxH5y2DpumqhfNhr
+\restrict sas1vez51DCxa5kwENjNVsmZPPNHJa6Jd7npkfKM9fvhJIVktNiTeDlWDTFbcTy
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
@@ -14,13 +14,6 @@ SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
-
---
--- Name: public; Type: SCHEMA; Schema: -; Owner: -
---
-
--- *not* creating schema, since initdb creates it
-
 
 --
 -- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
@@ -354,7 +347,7 @@ CREATE TABLE public.raw_articles (
 --
 
 CREATE TABLE public.schema_migrations (
-    version character varying NOT NULL
+    version character varying(128) NOT NULL
 );
 
 
@@ -843,7 +836,7 @@ ALTER TABLE ONLY public.primary_articles
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 6ANkAvrVAtUwdGy8l2nJroUUMInAfy3l1aFELdsgYvOwkJwyxH5y2DpumqhfNhr
+\unrestrict sas1vez51DCxa5kwENjNVsmZPPNHJa6Jd7npkfKM9fvhJIVktNiTeDlWDTFbcTy
 
 
 --

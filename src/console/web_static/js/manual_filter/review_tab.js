@@ -63,6 +63,12 @@ function filterReviewItems(term) {
     });
 }
 
+function applyReviewSearchFilter() {
+    if (!elements.reviewSearchInput) return;
+    const term = elements.reviewSearchInput.value.trim().toLowerCase();
+    filterReviewItems(term);
+}
+
 function renderReviewView() {
     const currentView = state.reviewView === 'backup' ? 'backup' : 'selected';
     const items = state.reviewData[currentView] || [];
@@ -78,6 +84,7 @@ function renderReviewView() {
     applyReviewViewMode();
     bindReviewSelectionControls();
     applySortModeState();
+    applyReviewSearchFilter();
 }
 
 function applySortModeState() {

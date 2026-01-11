@@ -708,7 +708,7 @@ function generatePreviewText() {
 
             content += `${prefix}${title}\n`;
             if (summary) content += `${summary}`;
-            if (source) content += `（来源：${source}）`;
+            if (source) content += `（${source}）`;
             content += '\n\n'; // Empty line between items for readability? User example shows distinct blocks.
         });
         content += '\n'; // Separator between sections

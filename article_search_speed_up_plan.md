@@ -3,7 +3,8 @@
 ## Goal
 - Improve `/articles/search` responsiveness while keeping `content_markdown` in the keyword search scope.
 - Keep the UI focused on keyword search (remove unused filters).
-- Reduce response payload by returning `llm_summary` only, and fetch `content_markdown` on demand.
+- Reduce response payload by omitting `content_markdown` from search responses while keeping current metadata fields.
+- Fetch `content_markdown` on demand via a content endpoint.
 
 ## Current Bottleneck (Observed)
 - `ILIKE` search across `title`, `content_markdown`, and `llm_summary` in `news_summaries` forces large sequential scans.
@@ -14,9 +15,11 @@
 ### Phase 1: UI + API Simplification
 - UI (manual filter drawer + `/articles/search` page): simplify search form to keywords + page size.
 - API: accept only `q`, `page`, `limit` (other filters removed).
-- Response payload: return `llm_summary` only; add a shared "load content" action (used by `/articles/search` and the drawer) to fetch `content_markdown` by article id.
+- Response payload: keep current metadata fields (title/source/url/score/etc.) and `llm_summary`, but omit `content_markdown`; add a shared "load content" action (used by `/articles/search` and the drawer) to fetch `content_markdown` by article id.
+- Content fetch endpoint: `GET /api/articles/{article_id}/content`.
+- Content fetch response: `{ "article_id": "...", "content_markdown": "..." }`.
 - Content fetch scope: only expose the action for items in the current search result set (UI-level constraint; no server-side session/state).
-- Empty search results are expected and should return an empty list (no error).
+- Keep existing empty-state behavior/messages (drawer: `未找到结果`; search page: `No articles match the current filters.`).
 
 ### Phase 2: Trigram Index on a Combined Search Expression (Chosen)
 - Use a combined search expression (title + llm_summary + content_markdown).
@@ -44,12 +47,16 @@ WHERE (
 ) ILIKE %s
 ```
 Use parameterized SQL (no string interpolation) for the query pattern.
+Wrap the query parameter with wildcards (e.g., `%{q}%`) to preserve substring matching.
 
 ### Phase 3: Cleanup
 - Remove deprecated filter fields from `/articles/search` and manual filter drawer UI/docs (source/sentiment/status/date).
+- Docs cleanup scope: `README.md` and `article_search_speed_up_plan.md` (currently known references).
+ - Update drawer reset/clear handlers to stop referencing removed inputs.
 
 ## Code Touchpoints
 - `src/adapters/db_postgres_news_summaries.py` (`search_news_summaries`): replace the three-column `ILIKE` clause with the combined expression `ILIKE`.
+- `src/adapters/db_postgres_news_summaries.py`: define the combined search expression as a shared constant and reuse it in both the index SQL and query SQL to prevent drift.
 - `src/adapters/db_postgres_news_summaries.py` (`search_news_summaries`): trim the SELECT list to exclude `content_markdown` so search responses stay lightweight.
 - `src/adapters/db_postgres_news_summaries.py`: add a lightweight fetch for `content_markdown` by `article_id` (on-demand content).
 - `src/adapters/db_postgres_core.py`: pass-through stays the same, but ensure it exposes the updated search query.
@@ -57,6 +64,7 @@ Use parameterized SQL (no string interpolation) for the query pattern.
 - `src/console/articles_service.py`: remove unused filter arguments (`sources`, `sentiments`, `statuses`, `start_date`, `end_date`).
 - `src/console/articles_routes.py`: drop unused query params, keep `q`, `page`, `limit`.
 - `src/console/articles_routes.py`: add a content fetch endpoint (e.g., `/api/articles/{article_id}/content`) protected by the same console auth, response shape `{ "article_id": "...", "content_markdown": "..." }`.
+- `src/console/articles_schemas.py`: adjust search response schema so `content_markdown` is omitted in search responses.
 - `src/console/web_routes.py`: simplify `/articles/search` form handling to only accept keywords + pagination.
 - `src/console/web_templates/search.html`: remove filter inputs for source/sentiment/status/date.
 - `src/console/web_templates/search.html`: add "load content" action that fetches content on demand.
@@ -66,6 +74,7 @@ Use parameterized SQL (no string interpolation) for the query pattern.
 
 ## Migration Checklist
 - Run the SQL (extension + expression GIN index).
+- `CREATE INDEX CONCURRENTLY` cannot run inside a transaction; ensure migrations are executed without a transaction (or run the index step manually).
 - Verify index creation finished (`CREATE INDEX CONCURRENTLY` can take time).
 - Deploy code change that uses the combined expression `ILIKE`.
 
@@ -79,6 +88,7 @@ Use parameterized SQL (no string interpolation) for the query pattern.
 - Trigram indexes can be large; expect extra disk usage and slower writes on `news_summaries`.
 - If the dataset is small, the index might be less noticeable.
 - Very short queries may not benefit from the trigram index; results remain correct but can fall back to slower scans.
+- Removing date filters can yield large result sets for common keywords; this is an accepted trade-off.
 
 ## Rollback
 - Keep old query as a fallback (feature flag or simple revert).

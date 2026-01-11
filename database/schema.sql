@@ -233,6 +233,24 @@ create index if not exists manual_reviews_status_report_type_rank_idx
 
 
 -- ---------------------------------------------------------------------------
+-- Manual review clustering cache
+-- ---------------------------------------------------------------------------
+create table if not exists public.manual_clusters (
+    report_type text not null default 'zongbao',
+    bucket_key text not null,
+    cluster_id text not null,
+    item_ids text[] not null,
+    created_at timestamptz not null default now(),
+    constraint manual_clusters_cluster_id_unique unique (cluster_id),
+    constraint manual_clusters_bucket_key_check check (
+        bucket_key in ('internal_positive', 'internal_negative', 'external_positive', 'external_negative')
+    )
+);
+
+create index if not exists manual_clusters_bucket_key_idx
+    on public.manual_clusters (bucket_key);
+
+-- ---------------------------------------------------------------------------
 -- Export history (Feishu brief batches)
 -- ---------------------------------------------------------------------------
 create table if not exists public.brief_batches (

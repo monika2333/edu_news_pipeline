@@ -4,7 +4,7 @@
 
 ## 功能总览
 - **流水线**：抓取 → 去重 → 评分 → 摘要/情感 → 北京/外地分流与重要性评分 → 导出简报。
-- **Web 控制台**：`/manual_filter` 进行人工筛选/审阅（簇展示、状态自动保存、排序模式、导出弹窗）；`/dashboard` 查看最近运行与最新导出并可手动触发；`/articles/search` 直接按关键词/来源/情感/状态检索。
+- **Web 控制台**：`/manual_filter` 进行人工筛选/审阅（簇展示、状态自动保存、排序模式、导出弹窗）；`/dashboard` 查看最近运行与最新导出并可手动触发；`/articles/search` keywords-only search.
 - **导出/预览**：支持在审阅页导出文本或预览（可选标记为已导出）。
 
 ## 快速开始
@@ -38,7 +38,7 @@ python -m src.cli.main export
 - **/dashboard**
   - 查看最近流水线运行和最新导出概况，可从页面触发一次运行。
 - **/articles/search**
-  - 按关键词、来源、情感、状态、日期过滤；查看摘要与原文链接。
+  - Keywords-only search; summaries and links, content loads on demand.
 
 ## 配置要点（.env / .env.local）
 - 数据库：`DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`、`DB_SCHEMA`。

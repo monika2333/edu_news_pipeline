@@ -375,11 +375,18 @@
         button.textContent = isLoading ? 'Loading...' : button.dataset.loaded === 'true' ? 'Hide content' : 'Load content';
     }
 
+    function escapeSelector(value) {
+        if (window.CSS && CSS.escape) {
+            return CSS.escape(value);
+        }
+        return value.replace(/["\\]/g, '\\$&');
+    }
+
     async function fetchContent(articleId) {
         if (contentCache.has(articleId)) {
             return contentCache.get(articleId);
         }
-        const response = await fetch(`/api/articles/${articleId}/content`);
+        const response = await fetch(`/api/articles/${encodeURIComponent(articleId)}/content`);
         if (!response.ok) {
             throw new Error('Failed to load content');
         }
@@ -391,8 +398,9 @@
     document.querySelectorAll('.load-content-btn').forEach((button) => {
         button.addEventListener('click', async () => {
             const articleId = button.dataset.articleId;
-            const wrapper = document.querySelector(`[data-content-wrapper="${articleId}"]`);
-            const target = document.querySelector(`[data-content-target="${articleId}"]`);
+            const safeId = escapeSelector(articleId);
+            const wrapper = document.querySelector(`[data-content-wrapper="${safeId}"]`);
+            const target = document.querySelector(`[data-content-target="${safeId}"]`);
             if (!wrapper || !target) {
                 return;
             }

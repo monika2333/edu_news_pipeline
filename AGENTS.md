@@ -167,13 +167,13 @@ __all__ = [
 ```
 
 ### Database Operations
-- **Use the adapter pattern** (`src/adapters/db.py`)
+- **Use the adapter pattern** (`src/adapters/db_postgres_core.py`)
 - **Handle transactions appropriately**
 - **Use typed parameters** for SQL queries
 - **Log database operations** for debugging
 
 ```python
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 
 adapter = get_adapter()
 articles = adapter.fetch_primary_articles_for_scoring(limit=100)

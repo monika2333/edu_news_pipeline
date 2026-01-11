@@ -9,6 +9,16 @@ from psycopg.types.json import Json
 
 from src.adapters.db_postgres_shared import MISSING
 
+SEARCH_TEXT_EXPRESSION = (
+    "(coalesce(title, '') || ' ' || coalesce(llm_summary, '') || ' ' || coalesce(content_markdown, ''))"
+)
+SEARCH_TRGM_INDEX_SQL = f"""
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+    CREATE INDEX CONCURRENTLY IF NOT EXISTS news_summaries_search_expr_trgm
+    ON news_summaries
+    USING gin ({SEARCH_TEXT_EXPRESSION} gin_trgm_ops);
+"""
+
 
 def insert_pending_summary(
     cur: psycopg.Cursor,
@@ -242,14 +252,8 @@ def search_news_summaries(
     params: List[Any] = []
     if normalized_query:
         like_pattern = f"%{normalized_query}%"
-        clauses.append(
-            "("
-            "COALESCE(title, '') ILIKE %s "
-            "OR COALESCE(content_markdown, '') ILIKE %s "
-            "OR COALESCE(llm_summary, '') ILIKE %s"
-            ")"
-        )
-        params.extend([like_pattern, like_pattern, like_pattern])
+        clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
+        params.append(like_pattern)
 
     normalized_sources = [item.strip() for item in (sources or []) if item and item.strip()]
     if normalized_sources:

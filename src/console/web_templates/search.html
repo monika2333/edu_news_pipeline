@@ -170,6 +170,22 @@
             flex-wrap: wrap;
             gap: 6px;
         }
+        .secondary {
+            background: #e2e8f0;
+            color: #1e293b;
+            border: none;
+            border-radius: 6px;
+            padding: 0.4rem 0.9rem;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .secondary:hover {
+            background: #cbd5f5;
+        }
+        .content-block {
+            margin-top: 10px;
+        }
         .tag {
             background: #e0f2fe;
             color: #0369a1;
@@ -270,30 +286,6 @@
                     <input type="text" name="q" placeholder="title, summary, body..." value="{{ query }}" />
                 </label>
                 <label>
-                    Source
-                    <input type="text" name="source" placeholder="toutiao, tencent..." value="{{ source }}" />
-                </label>
-                <label>
-                    Sentiment
-                    <select name="sentiment">
-                        <option value="" {% if not sentiment %}selected{% endif %}>Any</option>
-                        <option value="positive" {% if sentiment == 'positive' %}selected{% endif %}>Positive</option>
-                        <option value="negative" {% if sentiment == 'negative' %}selected{% endif %}>Negative</option>
-                    </select>
-                </label>
-                <label>
-                    Status
-                    <input type="text" name="status" placeholder="ready_for_export..." value="{{ status }}" />
-                </label>
-                <label>
-                    Start Date
-                    <input type="date" name="start_date" value="{{ start_date }}" />
-                </label>
-                <label>
-                    End Date
-                    <input type="date" name="end_date" value="{{ end_date }}" />
-                </label>
-                <label>
                     Page Size
                     <select name="limit">
                         {% for option in [10, 20, 50, 100] %}
@@ -334,12 +326,12 @@
             <div class="section-title">LLM Summary</div>
             <p class="summary">{{ item.llm_summary }}</p>
             {% endif %}
-            {% if item.content_markdown %}
-            <details>
-                <summary>Show raw content</summary>
-                <pre>{{ item.content_markdown }}</pre>
-            </details>
-            {% endif %}
+            <button type="button" class="secondary load-content-btn" data-article-id="{{ item.article_id }}">
+                Load content
+            </button>
+            <div class="content-block" data-content-wrapper="{{ item.article_id }}" hidden>
+                <pre data-content-target="{{ item.article_id }}"></pre>
+            </div>
             {% if item.keywords or item.llm_keywords %}
             <div class="tags">
                 {% for kw in item.keywords %}
@@ -375,5 +367,61 @@
         {% endif %}
     </section>
 </div>
+<script>
+    const contentCache = new Map();
+
+    function setContentLoading(button, isLoading) {
+        button.disabled = isLoading;
+        button.textContent = isLoading ? 'Loading...' : button.dataset.loaded === 'true' ? 'Hide content' : 'Load content';
+    }
+
+    async function fetchContent(articleId) {
+        if (contentCache.has(articleId)) {
+            return contentCache.get(articleId);
+        }
+        const response = await fetch(`/api/articles/${articleId}/content`);
+        if (!response.ok) {
+            throw new Error('Failed to load content');
+        }
+        const data = await response.json();
+        contentCache.set(articleId, data.content_markdown || '');
+        return data.content_markdown || '';
+    }
+
+    document.querySelectorAll('.load-content-btn').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const articleId = button.dataset.articleId;
+            const wrapper = document.querySelector(`[data-content-wrapper="${articleId}"]`);
+            const target = document.querySelector(`[data-content-target="${articleId}"]`);
+            if (!wrapper || !target) {
+                return;
+            }
+            if (button.dataset.loaded === 'true') {
+                const isHidden = wrapper.hasAttribute('hidden');
+                if (isHidden) {
+                    wrapper.removeAttribute('hidden');
+                    button.textContent = 'Hide content';
+                } else {
+                    wrapper.setAttribute('hidden', '');
+                    button.textContent = 'Load content';
+                }
+                return;
+            }
+            setContentLoading(button, true);
+            try {
+                const content = await fetchContent(articleId);
+                target.textContent = content || 'No content available.';
+                wrapper.removeAttribute('hidden');
+                button.dataset.loaded = 'true';
+                button.textContent = 'Hide content';
+            } catch (err) {
+                target.textContent = 'Failed to load content.';
+                wrapper.removeAttribute('hidden');
+            } finally {
+                setContentLoading(button, false);
+            }
+        });
+    });
+</script>
 </body>
 </html>

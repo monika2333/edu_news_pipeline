@@ -162,37 +162,18 @@
             <div class="search-form-container">
                 <div class="form-grid">
                     <label>
-                        关键词
-                        <input type="text" id="search-q" placeholder="标题, 摘要..." />
+                        Keywords
+                        <input type="text" id="search-q" placeholder="title, summary..." />
                     </label>
                     <label>
-                        来源
-                        <input type="text" id="search-source" placeholder="头条..." />
+                        Page size
+                        <select id="search-limit">
+                            <option value="10">10</option>
+                            <option value="20" selected>20</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
                     </label>
-                    <div class="row-2">
-                        <label>
-                            情感倾向
-                            <select id="search-sentiment">
-                                <option value="">全部</option>
-                                <option value="positive">正面</option>
-                                <option value="negative">负面</option>
-                            </select>
-                        </label>
-                        <label>
-                            状态
-                            <input type="text" id="search-status" placeholder="pending, selected..." />
-                        </label>
-                    </div>
-                    <div class="row-2">
-                        <label>
-                            开始日期
-                            <input type="date" id="search-start-date" />
-                        </label>
-                        <label>
-                            结束日期
-                            <input type="date" id="search-end-date" />
-                        </label>
-                    </div>
                 </div>
                 <button id="btn-drawer-search" class="btn btn-primary full-width">搜索</button>
             </div>

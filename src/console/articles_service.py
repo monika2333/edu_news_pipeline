@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from datetime import date
 from math import ceil
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
 from src.adapters.db_postgres_core import get_adapter
 
@@ -48,7 +47,6 @@ def _serialize_article(row: Dict[str, Any]) -> Dict[str, Any]:
         "publish_time": _to_int(row.get("publish_time")),
         "publish_time_iso": row.get("publish_time_iso"),
         "url": row.get("url"),
-        "content_markdown": row.get("content_markdown"),
         "llm_summary": row.get("llm_summary"),
         "keywords": keywords,
         "llm_keywords": llm_keywords,
@@ -70,23 +68,11 @@ def _serialize_article(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _normalize(values: Optional[Sequence[str]]) -> Optional[List[str]]:
-    if not values:
-        return None
-    cleaned = [item.strip() for item in values if item and item.strip()]
-    return cleaned or None
-
-
 def search_articles(
     *,
     query: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
-    sources: Optional[Sequence[str]] = None,
-    sentiments: Optional[Sequence[str]] = None,
-    statuses: Optional[Sequence[str]] = None,
-    start_date: Optional[date] = None,
-    end_date: Optional[date] = None,
 ) -> Dict[str, Any]:
     adapter = _get_adapter_safe()
     limit = max(1, min(int(limit or 20), 100))
@@ -102,11 +88,6 @@ def search_articles(
         }
     raw = adapter.search_news_summaries(
         query=query,
-        sources=_normalize(sources),
-        sentiments=_normalize(sentiments),
-        statuses=_normalize(statuses),
-        start_date=start_date,
-        end_date=end_date,
         limit=limit,
         offset=offset,
     )
@@ -122,4 +103,18 @@ def search_articles(
     }
 
 
-__all__ = ["search_articles"]
+def get_article_content(*, article_id: str) -> Dict[str, Any]:
+    adapter = _get_adapter_safe()
+    safe_article_id = str(article_id or "")
+    if adapter is None:
+        return {"article_id": safe_article_id, "content_markdown": None}
+    row = adapter.fetch_news_summary_content(safe_article_id)
+    if not row:
+        return {"article_id": safe_article_id, "content_markdown": None}
+    return {
+        "article_id": str(row.get("article_id") or safe_article_id),
+        "content_markdown": row.get("content_markdown"),
+    }
+
+
+__all__ = ["search_articles", "get_article_content"]

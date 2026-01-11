@@ -1,17 +1,11 @@
 // Manual Filter JS - Search Drawer
 
-// --- Search Drawer Logic ---
+const contentCache = new Map();
 
 let searchState = {
     page: 1,
     limit: 20,
-    loading: false,
-    query: '',
-    source: '',
-    sentiment: '',
-    status: '',
-    startDate: '',
-    endDate: ''
+    loading: false
 };
 
 function setupSearchDrawer() {
@@ -20,15 +14,17 @@ function setupSearchDrawer() {
     const overlay = document.getElementById('search-overlay');
     const drawer = document.getElementById('search-drawer');
     const searchBtn = document.getElementById('btn-drawer-search');
+    const limitSelect = document.getElementById('search-limit');
     const inputs = document.querySelectorAll('.search-form-container input, .search-form-container select');
 
     if (!drawer) return;
 
-    // Toggle logic
     function toggleDrawer(show) {
         drawer.classList.toggle('active', show);
         overlay.classList.toggle('active', show);
-        toggleBtn.style.display = show ? 'none' : 'flex'; // Hide toggle when drawer is open
+        if (toggleBtn) {
+            toggleBtn.style.display = show ? 'none' : 'flex';
+        }
         localStorage.setItem('search_drawer_open', show);
     }
 
@@ -41,14 +37,19 @@ function setupSearchDrawer() {
         }
     });
 
-    // Check persistence
     if (localStorage.getItem('search_drawer_open') === 'true') {
         toggleDrawer(true);
     }
 
-    // Search logic
     if (searchBtn) {
         searchBtn.addEventListener('click', () => {
+            searchState.page = 1;
+            performDrawerSearch();
+        });
+    }
+
+    if (limitSelect) {
+        limitSelect.addEventListener('change', () => {
             searchState.page = 1;
             performDrawerSearch();
         });
@@ -63,35 +64,49 @@ function setupSearchDrawer() {
         });
     });
 
-    // Load persisted filters
     loadSearchFilters();
 }
 
 function loadSearchFilters() {
     try {
         const saved = JSON.parse(localStorage.getItem('search_filters') || '{}');
-        if (saved) {
-            if (saved.q) document.getElementById('search-q').value = saved.q;
-            if (saved.source) document.getElementById('search-source').value = saved.source;
-            if (saved.sentiment) document.getElementById('search-sentiment').value = saved.sentiment;
-            if (saved.status) document.getElementById('search-status').value = saved.status;
-            if (saved.startDate) document.getElementById('search-start-date').value = saved.startDate;
-            if (saved.endDate) document.getElementById('search-end-date').value = saved.endDate;
+        if (saved && saved.q) {
+            const qInput = document.getElementById('search-q');
+            if (qInput) qInput.value = saved.q;
         }
-    } catch (e) { console.error('Failed to load search filters', e); }
+        if (saved && saved.limit) {
+            const limitSelect = document.getElementById('search-limit');
+            if (limitSelect) {
+                limitSelect.value = String(saved.limit);
+                searchState.limit = parseInt(limitSelect.value, 10) || 20;
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load search filters', e);
+    }
 }
 
 function saveSearchFilters() {
+    const qInput = document.getElementById('search-q');
+    const limitSelect = document.getElementById('search-limit');
     const filters = {
-        q: document.getElementById('search-q').value,
-        source: document.getElementById('search-source').value,
-        sentiment: document.getElementById('search-sentiment').value,
-        status: document.getElementById('search-status').value,
-        startDate: document.getElementById('search-start-date').value,
-        endDate: document.getElementById('search-end-date').value
+        q: qInput ? qInput.value : '',
+        limit: limitSelect ? limitSelect.value : '20'
     };
     localStorage.setItem('search_filters', JSON.stringify(filters));
     return filters;
+}
+
+async function fetchContent(articleId) {
+    if (contentCache.has(articleId)) {
+        return contentCache.get(articleId);
+    }
+    const res = await fetch(`/api/articles/${articleId}/content`);
+    if (!res.ok) throw new Error('Content fetch failed');
+    const data = await res.json();
+    const content = data.content_markdown || '';
+    contentCache.set(articleId, content);
+    return content;
 }
 
 async function performDrawerSearch() {
@@ -99,11 +114,14 @@ async function performDrawerSearch() {
     const statsInfo = document.getElementById('search-results-stats');
     const pagination = document.getElementById('search-pagination');
 
+    if (!container || !statsInfo || !pagination) return;
+
     container.innerHTML = renderSkeleton(3);
     statsInfo.textContent = '';
     pagination.innerHTML = '';
 
     const filters = saveSearchFilters();
+    searchState.limit = parseInt(filters.limit, 10) || 20;
 
     const params = new URLSearchParams({
         page: searchState.page.toString(),
@@ -111,23 +129,14 @@ async function performDrawerSearch() {
     });
 
     if (filters.q) params.set('q', filters.q);
-    if (filters.source) params.set('source', filters.source); // API expects list but single value works if handled or pass multiple
-    // Checking API implementation: sources=source (List[str]). URL param source=...&source=... for list.
-    // Dashboard inputs are single text fields, so single value is fine.
-
-    if (filters.sentiment) params.set('sentiment', filters.sentiment);
-    if (filters.status) params.set('status', filters.status);
-    if (filters.startDate) params.set('start_date', filters.startDate);
-    if (filters.endDate) params.set('end_date', filters.endDate);
 
     try {
         const res = await fetch(`/api/articles/search?${params.toString()}`);
         if (!res.ok) throw new Error('Search failed');
         const data = await res.json();
-
         renderDrawerSearchResults(data);
     } catch (e) {
-        container.innerHTML = `<div class="error">搜索失败: ${e.message}</div>`;
+        container.innerHTML = `<div class="error">Search failed: ${e.message}</div>`;
     }
 }
 
@@ -136,13 +145,14 @@ function renderDrawerSearchResults(data) {
     const statsInfo = document.getElementById('search-results-stats');
     const pagination = document.getElementById('search-pagination');
 
+    if (!container || !statsInfo || !pagination) return;
+
     const items = data.items || [];
     const total = data.total || 0;
     const page = data.page || 1;
     const pages = data.pages || 1;
 
-    statsInfo.textContent = `共找到 ${total} 条结果`;
-
+    statsInfo.textContent = `Found ${total} results`;
     clearEl(container);
 
     if (!items.length) {
@@ -155,7 +165,6 @@ function renderDrawerSearchResults(data) {
     items.forEach(item => {
         const itemEl = createEl('div', 'search-item');
 
-        // Header: Title Link
         const header = createEl('h4');
         const link = createEl('a', '', item.title || 'Untitled', {
             href: item.url || '#',
@@ -165,55 +174,70 @@ function renderDrawerSearchResults(data) {
         header.appendChild(link);
         itemEl.appendChild(header);
 
-        // Meta: Source, Time, Sentiment, Status
         const meta = createEl('div', 'search-meta');
-
         const sourceSpan = createEl('span', '', item.source || '-');
-
         const publishTime = item.publish_time_iso ? item.publish_time_iso.substring(0, 10) : (
             item.publish_time ? new Date(item.publish_time * 1000).toISOString().split('T')[0] : '-'
         );
         const timeSpan = createEl('span', '', publishTime);
-
-        const sentimentSpan = createEl('span',
-            `badge ${getSentimentClass(item.sentiment_label)}`,
-            item.sentiment_label || '-'
-        );
-
-        const statusSpan = createEl('span', '', `状态: ${item.status || '未知'}`);
+        const sentimentSpan = createEl('span', `badge ${getSentimentClass(item.sentiment_label)}`, item.sentiment_label || '-');
+        const statusSpan = createEl('span', '', `Status: ${item.status || '-'}`);
 
         meta.appendChild(sourceSpan);
         meta.appendChild(timeSpan);
         meta.appendChild(sentimentSpan);
         meta.appendChild(statusSpan);
-
         itemEl.appendChild(meta);
 
-        // Summary
-        const summary = createEl('div', 'search-summary', item.summary || item.llm_summary || '(无摘要)');
+        const summary = createEl('div', 'search-summary', item.llm_summary || 'No summary available.');
         itemEl.appendChild(summary);
+
+        const contentWrapper = createEl('div', 'search-content');
+        const contentButton = createEl('button', 'btn btn-secondary btn-sm', 'Load content');
+        const contentPre = createEl('pre', 'search-content-body');
+        contentPre.style.display = 'none';
+
+        contentButton.addEventListener('click', async () => {
+            const isVisible = contentPre.style.display !== 'none';
+            if (isVisible) {
+                contentPre.style.display = 'none';
+                contentButton.textContent = 'Load content';
+                return;
+            }
+            contentButton.disabled = true;
+            contentButton.textContent = 'Loading...';
+            try {
+                const content = await fetchContent(item.article_id);
+                contentPre.textContent = content || 'No content available.';
+                contentPre.style.display = 'block';
+                contentButton.textContent = 'Hide content';
+            } catch (err) {
+                contentPre.textContent = 'Failed to load content.';
+                contentPre.style.display = 'block';
+                contentButton.textContent = 'Load content';
+            } finally {
+                contentButton.disabled = false;
+            }
+        });
+
+        contentWrapper.appendChild(contentButton);
+        contentWrapper.appendChild(contentPre);
+        itemEl.appendChild(contentWrapper);
 
         fragment.appendChild(itemEl);
     });
 
     container.appendChild(fragment);
-
-    // Pagination
     clearEl(pagination);
 
-    // Prev Button
-    const prevBtn = createEl('button', 'btn btn-secondary btn-sm', '上一页', {
+    const prevBtn = createEl('button', 'btn btn-secondary btn-sm', 'Prev', {
         onclick: page > 1 ? () => changeSearchPage(page - 1) : undefined,
         disabled: page <= 1 ? 'disabled' : undefined
     });
-
-    // Page Info
-    const pageInfo = createEl('span', '', `第 ${page} 页 / 共 ${pages} 页`, {
+    const pageInfo = createEl('span', '', `Page ${page} / ${pages}`, {
         style: { margin: '0 10px' }
     });
-
-    // Next Button
-    const nextBtn = createEl('button', 'btn btn-secondary btn-sm', '下一页', {
+    const nextBtn = createEl('button', 'btn btn-secondary btn-sm', 'Next', {
         onclick: page < pages ? () => changeSearchPage(page + 1) : undefined,
         disabled: page >= pages ? 'disabled' : undefined
     });

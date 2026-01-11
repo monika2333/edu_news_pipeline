@@ -263,6 +263,10 @@ class PostgresAdapter:
                 offset=offset,
             )
 
+    def fetch_news_summary_content(self, article_id: str) -> Optional[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return news_summaries.fetch_news_summary_content(cur, article_id)
+
     def fetch_raw_articles_for_summary(
         self,
         *,

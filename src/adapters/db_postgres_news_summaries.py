@@ -286,7 +286,6 @@ def search_news_summaries(
             publish_time,
             publish_time_iso,
             url,
-            content_markdown,
             llm_summary,
             COALESCE(llm_keywords, '{{}}'::text[]) AS llm_keywords,
             score,
@@ -323,6 +322,19 @@ def search_news_summaries(
         "limit": limit,
         "offset": offset,
     }
+
+
+def fetch_news_summary_content(cur: psycopg.Cursor, article_id: str) -> Optional[Dict[str, Any]]:
+    if not article_id:
+        return None
+    query = """
+        SELECT article_id, content_markdown
+        FROM news_summaries
+        WHERE article_id = %s
+    """
+    cur.execute(query, (article_id,))
+    row = cur.fetchone()
+    return dict(row) if row else None
 
 
 def fetch_raw_articles_for_summary(
@@ -528,6 +540,7 @@ def upsert_news_summaries_from_primary(cur: psycopg.Cursor, rows: Sequence[Mappi
 __all__ = [
     "complete_summary",
     "fetch_pending_summaries",
+    "fetch_news_summary_content",
     "fetch_raw_articles_for_summary",
     "get_existing_news_summary_ids",
     "insert_pending_summary",

@@ -68,6 +68,11 @@ def list_candidates_api(
     )
 
 
+@router.post("/trigger_clustering")
+def trigger_clustering_api() -> Dict[str, Any]:
+    return manual_filter_service.trigger_clustering()
+
+
 @router.post("/decide")
 def bulk_decide_api(req: BulkDecideRequest) -> Dict[str, int]:
     return manual_filter_service.bulk_decide(

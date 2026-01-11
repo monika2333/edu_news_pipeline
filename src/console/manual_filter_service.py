@@ -39,6 +39,7 @@ from .manual_filter_cluster import (
     _pending_total,
     _prune_cluster_cache,
     cluster_pending,
+    refresh_clusters,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -193,6 +194,12 @@ def status_counts(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, int]:
     return adapter.manual_review_status_counts(report_type=target_report_type)  # type: ignore[attr-defined]
 
 
+def trigger_clustering(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, Any]:
+    target_report_type = _normalize_report_type(report_type)
+    refreshed = refresh_clusters(report_type=target_report_type)
+    return {"refreshed": refreshed}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Public API
 # ─────────────────────────────────────────────────────────────────────────────
@@ -202,6 +209,7 @@ __all__ = [
     "list_review",
     "list_discarded",
     "status_counts",
+    "trigger_clustering",
     # Decision APIs
     "bulk_decide",
     "update_ranks",

@@ -45,29 +45,32 @@ python -m src.cli.main export
 - 抓取/评分：如 `TOUTIAO_AUTHORS_PATH`、`TENCENT_AUTHORS_PATH`、`PROCESS_LIMIT` 等。
 - 控制台认证：`CONSOLE_BASIC_USERNAME` / `CONSOLE_BASIC_PASSWORD` 或 `CONSOLE_API_TOKEN`。
 
-## 数据库管理 (Database)
+## 数据库迁移 (Database)
 
-本项目使用 **Dbmate** 进行数据库版本控制。为了方便使用 `.env.local` 配置，请使用根目录下的 `dbmate.ps1` 脚本。
+我们使用 **Dbmate** 进行数据库版本管理。请确保设置了 `DATABASE_URL` 环境变量，以便 dbmate 识别。
 
-### 常用命令
+### 常用操作
 ```powershell
-# 查看迁移状态
-.\dbmate.ps1 status
+# 设置环境变量 (PowerShell)
+$env:DATABASE_URL="postgres://postgres:Postgres2025@localhost:5432/edu_backup?sslmode=disable"
 
-# 应用最新迁移 (部署)
-.\dbmate.ps1 up
+# 查看迁移状态
+dbmate status
+
+# 执行迁移 (升级)
+dbmate up
 
 # 创建新迁移文件
-.\dbmate.ps1 new <migration_name>
-# 例如: .\dbmate.ps1 new add_users_table
+dbmate new <migration_name>
+# 示例: dbmate new add_users_table
 
-# 回滚最近一次迁移
-.\dbmate.ps1 down
+# 回滚迁移 (撤销)
+dbmate down
 ```
 
 ### 注意事项
-- 所有迁移文件位于 `database/migrations/`。
-- 本地开发请尽量使用 `.\dbmate.ps1` 而不是直接调用 `dbmate.exe`，确保环境变量（如 DB 密码）能正确加载。
+- 迁移文件保存在 `database/migrations/`。
+- 如果 `DATABASE_URL` 格式不正确，dbmate 会提示 "invalid url"。
 
 ## 目录速览
 - `run_console.py`：控制台入口。

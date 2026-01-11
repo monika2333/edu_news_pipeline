@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import psycopg
 
-from src.adapters import db as db_factory
+from src.adapters import db_postgres_core as db_factory
 from src.adapters.http_toutiao import ArticleRecord, format_article_rows
 from src.config import get_settings
 
@@ -49,6 +49,25 @@ def test_postgres_adapter_core_roundtrip() -> None:
     try:
         rows = format_article_rows([article_record])
         adapter.upsert_toutiao_articles(rows)
+        adapter.update_raw_article_details(
+            [
+                {
+                    "article_id": article_id,
+                    "token": article_record.token,
+                    "profile_url": article_record.profile_url,
+                    "title": article_record.title,
+                    "source": article_record.source,
+                    "publish_time": article_record.publish_time,
+                    "publish_time_iso": article_record.publish_time_iso,
+                    "url": article_record.url,
+                    "summary": article_record.summary,
+                    "comment_count": article_record.comment_count,
+                    "digg_count": article_record.digg_count,
+                    "content_markdown": article_record.content_markdown,
+                    "detail_fetched_at": fetched_at.isoformat(),
+                }
+            ]
+        )
 
         fetched_articles = adapter.fetch_toutiao_articles_for_summary(
             after_fetched_at=fetched_at.isoformat(),

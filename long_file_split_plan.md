@@ -100,7 +100,7 @@ Plan:
 
 ## Validation Checklist
 - [x] Run targeted tests related to manual_filter and workers
-- [ ] Run at least one pipeline step end-to-end (crawl/score/summarize)
-- [ ] Spot-check console endpoints (manual_filter candidates/export)
-- [ ] Smoke-check db_postgres SQL paths for manual reviews/export/news summaries
-- [ ] Verify no import cycles introduced
+- [x] Run at least one pipeline step end-to-end (crawl/score/summarize)
+- [x] Spot-check console endpoints (manual_filter candidates/export)
+- [x] Smoke-check db_postgres SQL paths for manual reviews/export/news summaries
+- [x] Verify no import cycles introduced

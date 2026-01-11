@@ -275,8 +275,7 @@ function bindReviewSelectionControls() {
 function updateReviewSelectAllState() {
     const selectAll = elements.reviewSelectAll;
     if (!selectAll) return;
-    const scope = getActiveReviewContainer();
-    const checkboxes = scope.querySelectorAll('.review-select');
+    const checkboxes = getVisibleReviewCheckboxes();
     const total = checkboxes.length;
     const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
     selectAll.indeterminate = checkedCount > 0 && checkedCount < total;
@@ -284,12 +283,21 @@ function updateReviewSelectAllState() {
 }
 
 function toggleReviewSelectAll(checked) {
-    const scope = getActiveReviewContainer();
-    const checkboxes = scope.querySelectorAll('.review-select');
+    const checkboxes = getVisibleReviewCheckboxes();
     checkboxes.forEach(cb => {
         cb.checked = checked;
     });
     updateReviewSelectAllState();
+}
+
+function getVisibleReviewCheckboxes() {
+    const scope = getActiveReviewContainer();
+    const checkboxes = scope.querySelectorAll('.review-select');
+    return Array.from(checkboxes).filter(cb => {
+        const card = cb.closest('.article-card');
+        if (!card) return false;
+        return card.style.display !== 'none';
+    });
 }
 
 async function applyReviewBulkStatus() {

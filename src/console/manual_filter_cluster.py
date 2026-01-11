@@ -88,7 +88,7 @@ def _pending_total(adapter: Any, *, report_type: str = DEFAULT_REPORT_TYPE) -> i
 # ─────────────────────────────────────────────────────────────────────────────
 # Rank key for sorting
 # ─────────────────────────────────────────────────────────────────────────────
-def _candidate_rank_key_by_record(record: Dict[str, Any]) -> Tuple[float, float, float]:
+def _candidate_rank_key_by_record(record: Dict[str, Any]) -> Tuple[float, float, float, float]:
     def _num(val: Any, default: float = float("-inf")) -> float:
         try:
             return float(val)
@@ -109,9 +109,16 @@ def _candidate_rank_key_by_record(record: Dict[str, Any]) -> Tuple[float, float,
                 return 0.0
 
     ext_score = _num(record.get("external_importance_score"))
+    manual_rank = _num(record.get("manual_rank"))
     score = _num(record.get("score"))
     ts_val = _ts(record.get("publish_time_iso") or record.get("publish_time"))
-    return (ext_score, score, ts_val)
+    return (ext_score, manual_rank, score, ts_val)
+
+
+def _bucket_key_from_filters(region: Optional[str], sentiment: Optional[str]) -> Optional[str]:
+    if region in ("internal", "external") and sentiment in ("positive", "negative"):
+        return f"{region}_{sentiment}"
+    return None
 
 
 def _bucket_key_for_record(record: Dict[str, Any]) -> str:
@@ -203,6 +210,7 @@ def _collect_pending(
 # ─────────────────────────────────────────────────────────────────────────────
 # Cluster pending entries
 # ─────────────────────────────────────────────────────────────────────────────
+
 def cluster_pending(
     *,
     region: Optional[str] = None,
@@ -213,7 +221,6 @@ def cluster_pending(
     force_refresh: bool = False,
     report_type: str = DEFAULT_REPORT_TYPE,
 ) -> Dict[str, Any]:
-    fetch_limit = 5000
     adapter = get_adapter()
     target_report_type = _normalize_report_type(report_type)
     try:
@@ -222,109 +229,77 @@ def cluster_pending(
         threshold_val = DEFAULT_CLUSTER_THRESHOLD
     threshold_val = max(0.0, min(threshold_val, 1.0))
 
-    cache_key = _cluster_cache_key(region, sentiment, threshold_val, target_report_type)
-    current_pending_total = _pending_total(adapter, report_type=target_report_type)
-    if not force_refresh and cache_key in _cluster_cache:
-        cached = _cluster_cache[cache_key]
-        clusters = cached.get("clusters", [])
-        total_clusters = cached.get("total", len(clusters))
-        cached_pending_total = cached.get("pending_total")
-        if cached_pending_total is not None and cached_pending_total == current_pending_total:
-            return _paginate_clusters(clusters, limit=limit, offset=offset, total=total_clusters)
+    if force_refresh:
+        refresh_clusters(cluster_threshold=threshold_val, report_type=target_report_type)
 
-    records = _collect_pending(region, sentiment, fetch_limit=fetch_limit, adapter=adapter, report_type=target_report_type)
-    if not records:
-        _cluster_cache[cache_key] = {
-            "clusters": [],
-            "total": 0,
-            "item_total": 0,
-            "pending_total": current_pending_total,
-        }
+    bucket_key = _bucket_key_from_filters(region, sentiment)
+    rows = adapter.fetch_manual_clusters(bucket_key=bucket_key, report_type=target_report_type)  # type: ignore[attr-defined]
+    if not rows:
         return {"clusters": [], "total": 0}
-    item_total = len(records)
 
-    buckets: Dict[Tuple[str, str], List[Dict[str, Any]]] = {
-        ("internal", "positive"): [],
-        ("internal", "negative"): [],
-        ("external", "positive"): [],
-        ("external", "negative"): [],
-    }
-    for rec in records:
-        reg_key = "internal" if rec.get("is_beijing_related") else "external"
-        sent_key = "negative" if (rec.get("sentiment_label") or "").lower() == "negative" else "positive"
-        bucket_key = (reg_key, sent_key)
-        buckets[bucket_key].append(rec)
+    grouped: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        record = _attach_source_fields(dict(row))
+        record["summary"] = record.get("manual_summary") or record.get("llm_summary") or ""
+        record["bonus_keywords"] = _bonus_keywords(record.get("score_details"))
+        record["report_type"] = target_report_type
+        cluster_id = record.get("cluster_id")
+        bucket = record.get("bucket_key")
+        if not cluster_id or not bucket:
+            continue
+        cluster = grouped.setdefault(
+            cluster_id,
+            {
+                "cluster_id": cluster_id,
+                "report_type": target_report_type,
+                "bucket_key": bucket,
+                "items": [],
+            },
+        )
+        cluster["items"].append(
+            {
+                "article_id": record.get("article_id"),
+                "title": record.get("title"),
+                "summary": record.get("summary"),
+                "source": record.get("source"),
+                "url": record.get("url"),
+                "score": record.get("score"),
+                "external_importance_score": record.get("external_importance_score"),
+                "sentiment_label": record.get("sentiment_label"),
+                "is_beijing_related": record.get("is_beijing_related"),
+                "llm_source_display": record.get("llm_source_display"),
+                "llm_source_raw": record.get("llm_source_raw"),
+                "llm_source_manual": record.get("llm_source_manual"),
+                "bonus_keywords": record.get("bonus_keywords"),
+                "manual_rank": record.get("manual_rank"),
+                "publish_time": record.get("publish_time"),
+                "publish_time_iso": record.get("publish_time_iso"),
+            }
+        )
 
     clusters: List[Dict[str, Any]] = []
-    for bucket_key, items in buckets.items():
+    for cluster in grouped.values():
+        items = cluster.get("items") or []
         if not items:
             continue
-        items_sorted = sorted(items, key=_candidate_rank_key_by_record, reverse=True)
-        titles = [itm.get("title") or "" for itm in items_sorted]
-        groups = cluster_titles(titles, threshold=threshold_val)
-        if not groups:
-            groups = [list(range(len(items_sorted)))]
+        items.sort(key=_candidate_rank_key_by_record, reverse=True)
+        for item in items:
+            item.pop("manual_rank", None)
+            item.pop("publish_time", None)
+            item.pop("publish_time_iso", None)
+        rep = items[0]
+        cluster["size"] = len(items)
+        cluster["representative_title"] = rep.get("title")
+        cluster["rank_key"] = _candidate_rank_key_by_record(rep)
+        clusters.append(cluster)
 
-        cluster_structs: List[Tuple[Tuple[float, float, float], List[Dict[str, Any]]]] = []
-        for idx, group in enumerate(groups):
-            group_items = [items_sorted[i] for i in group if 0 <= i < len(items_sorted)]
-            if not group_items:
-                continue
-            group_items.sort(key=_candidate_rank_key_by_record, reverse=True)
-            key_val = _candidate_rank_key_by_record(group_items[0])
-            cluster_structs.append((key_val, group_items))
-
-        if not cluster_structs:
-            cluster_structs.append((_candidate_rank_key_by_record(items_sorted[0]), items_sorted))
-
-        cluster_structs.sort(key=lambda x: x[0], reverse=True)
-        for idx, (_, group_items) in enumerate(cluster_structs):
-            rep = group_items[0]
-            cluster_id = f"{bucket_key[0]}-{bucket_key[1]}-{idx}"
-            clusters.append(
-                {
-                    "cluster_id": cluster_id,
-                    "region": bucket_key[0],
-                    "sentiment": bucket_key[1],
-                    "size": len(group_items),
-                    "representative": rep.get("title"),
-                    "items": [
-                        {
-                            "article_id": itm.get("article_id"),
-                            "title": itm.get("title"),
-                            "summary": itm.get("summary"),
-                            "source": itm.get("source"),
-                            "llm_source_display": itm.get("llm_source_display"),
-                            "llm_source_raw": itm.get("llm_source_raw"),
-                            "llm_source_manual": itm.get("llm_source_manual"),
-                            "score": itm.get("score"),
-                            "external_importance_score": itm.get("external_importance_score"),
-                            "sentiment_label": itm.get("sentiment_label"),
-                            "is_beijing_related": itm.get("is_beijing_related"),
-                            "url": itm.get("url"),
-                            "bonus_keywords": itm.get("bonus_keywords"),
-                        }
-                        for itm in group_items
-                    ],
-                    "rank_key": _candidate_rank_key_by_record(rep),
-                }
-            )
-
-    # 排序簇（与 export 类似，按代表项 rank 值）
-    clusters.sort(key=lambda c: c.get("rank_key", (float("-inf"), float("-inf"), float("-inf"))), reverse=True)
+    clusters.sort(
+        key=lambda c: c.get("rank_key", (float("-inf"), float("-inf"), float("-inf"), float("-inf"))),
+        reverse=True,
+    )
     total_clusters = len(clusters)
-
-    _cluster_cache[cache_key] = {
-        "clusters": clusters,
-        "total": total_clusters,
-        "item_total": item_total,
-        "pending_total": current_pending_total,
-    }
-
     return _paginate_clusters(clusters, limit=limit, offset=offset, total=total_clusters)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Pagination helper
 # ─────────────────────────────────────────────────────────────────────────────
 def _paginate_clusters(clusters: List[Dict[str, Any]], *, limit: int, offset: int, total: int) -> Dict[str, Any]:

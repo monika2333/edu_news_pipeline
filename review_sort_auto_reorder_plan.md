@@ -19,9 +19,10 @@ Add a one-click "auto reorder" action that is available only in Review tab sort 
 - `src/console/web_static/js/manual_filter/review_tab.js` (auto reorder logic + wiring)
 - `src/console/web_static/js/manual_filter/init.js` (bind button)
 - `src/console/web_static/css/modules/review.css` (show/hide button in sort mode)
+- `reorder_brief.py` (remove after implementation)
 
-## Reorder Logic (JS port of `reorder_brief.py`)
-1. Define the category rules and order from `reorder_brief.py`:
+## Reorder Logic (JS rules defined in this plan)
+1. Define the category rules and order exactly as below (JS is the single source of truth):
    - `市委教委`: ["市委", "市委教育工委", "市教委", "教工委", "教育工委", "教育委员会", "首都教育两委", "教育两委"]
    - `中小学`: ["中小学", "小学", "初中", "高中", "义务教育", "基础教育", "幼儿园", "幼儿", "托育", "K12", "班主任", "青少年", "少儿", "少年"]
    - `高校`: ["高校", "大学", "学院", "本科", "研究生", "硕士", "博士"]
@@ -52,7 +53,7 @@ Add a one-click "auto reorder" action that is available only in Review tab sort 
    - Add a class to hide the button by default (e.g. `.sort-only { display: none; }`).
    - Toggle visibility via a parent class set in `applySortModeState` on `#review-tab` (e.g. `#review-tab.review-sort-mode .sort-only { display: inline-flex; }`).
 3. JS - core logic in `review_tab.js`:
-   - Add `CATEGORY_RULES` + `CATEGORY_ORDER` mirrors in JS.
+   - Define `CATEGORY_RULES` + `CATEGORY_ORDER` in JS as the single source of truth.
    - Treat JS as the single source of truth; remove `reorder_brief.py` after implementation.
    - Add `classifyCategory(text)` and `autoReorderReviewItems()` functions.
    - `autoReorderReviewItems()`:

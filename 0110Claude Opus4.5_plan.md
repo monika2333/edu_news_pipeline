@@ -197,4 +197,4 @@ publish_time）→ 选首条为 representative_title → cluster 级排序（按
 - [x] 读取流程：按 `bucket_key` 读取 clusters → 展开 item_ids → join → 读时重建排序/代表标题/size → cluster 级分页
 - [x] API 调整：`/api/manual_filter/candidates` 支持 `cluster` / `force_refresh`；需要时新增 `/api/manual_filter/trigger_clustering`
 - [x] 移除 `_cluster_cache` 与旧内存聚类分支
-- [ ] 基本验证：刷新一次并检查接口返回结构与排序
+- [ ] 基本验证：刷新一次并检查接口返回结构与排序（需要本地DB环境，未执行）

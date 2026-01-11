@@ -386,7 +386,7 @@
         if (contentCache.has(articleId)) {
             return contentCache.get(articleId);
         }
-        const response = await fetch(`/api/articles/${encodeURIComponent(articleId)}/content`);
+        const response = await fetch(`/api/articles/content?article_id=${encodeURIComponent(articleId)}`);
         if (!response.ok) {
             throw new Error('Failed to load content');
         }

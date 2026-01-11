@@ -101,7 +101,7 @@ async function fetchContent(articleId) {
     if (contentCache.has(articleId)) {
         return contentCache.get(articleId);
     }
-    const res = await fetch(`/api/articles/${encodeURIComponent(articleId)}/content`);
+    const res = await fetch(`/api/articles/content?article_id=${encodeURIComponent(articleId)}`);
     if (!res.ok) throw new Error('Content fetch failed');
     const data = await res.json();
     const content = data.content_markdown || '';

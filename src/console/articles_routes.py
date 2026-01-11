@@ -29,11 +29,23 @@ def search_articles_api(
 
 
 @router.get(
+    "/content",
+    response_model=NewsArticleContentResponse,
+    summary="Fetch article content markdown",
+)
+def get_article_content_api(
+    article_id: str = Query(..., min_length=1, max_length=400),
+) -> NewsArticleContentResponse:
+    result = articles_service.get_article_content(article_id=article_id)
+    return NewsArticleContentResponse.model_validate(result)
+
+
+@router.get(
     "/{article_id}/content",
     response_model=NewsArticleContentResponse,
     summary="Fetch article content markdown",
 )
-def get_article_content_api(article_id: str) -> NewsArticleContentResponse:
+def get_article_content_legacy_api(article_id: str) -> NewsArticleContentResponse:
     result = articles_service.get_article_content(article_id=article_id)
     return NewsArticleContentResponse.model_validate(result)
 

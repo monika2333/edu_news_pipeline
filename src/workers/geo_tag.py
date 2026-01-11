@@ -16,6 +16,13 @@ def _build_detection_payload(row: dict) -> List[str]:
     summary = row.get("llm_summary")
     if summary:
         payload.append(str(summary))
+    content = row.get("content_markdown")
+    if content:
+        payload.append(str(content))
+    keywords = row.get("llm_keywords") or []
+    for keyword in keywords:
+        if keyword:
+            payload.append(str(keyword))
     return payload
 
 

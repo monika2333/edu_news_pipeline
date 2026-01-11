@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import os
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 from src.config import load_environment
 from src.workers.crawl_sources import run as run_crawl
 from src.workers.export_brief import run as run_export

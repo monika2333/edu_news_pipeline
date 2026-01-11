@@ -99,7 +99,7 @@ Plan:
 - [ ] Split db_postgres.py last (largest surface area)
 
 ## Validation Checklist
-- [ ] Run targeted tests related to manual_filter and workers
+- [x] Run targeted tests related to manual_filter and workers
 - [ ] Run at least one pipeline step end-to-end (crawl/score/summarize)
 - [ ] Spot-check console endpoints (manual_filter candidates/export)
 - [ ] Smoke-check db_postgres SQL paths for manual reviews/export/news summaries

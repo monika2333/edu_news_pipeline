@@ -10,7 +10,7 @@ import requests
 import urllib3
 from bs4 import BeautifulSoup
 
-from src.adapters.db_postgres import PostgresAdapter
+from src.adapters.db_postgres_core import PostgresAdapter
 from src.adapters.http_laodongwubao import (
     parse_article,
     article_to_feed_row,

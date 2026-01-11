@@ -4,7 +4,7 @@ import argparse
 from typing import Optional
 from datetime import date
 
-from src.adapters.db import get_adapter
+from src.adapters.db_postgres_core import get_adapter
 
 
 def _positive_int(value: str) -> int:

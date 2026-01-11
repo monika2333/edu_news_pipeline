@@ -680,20 +680,20 @@ function generatePreviewText() {
         sections.push({
             label: '【重点关注舆情】',
             items: groups['internal_negative'],
-            marker: '★'
+            marker: '★ '
         });
         // 2. Internal Positive + External Positive -> 【新闻信息纵览】
         const mergedPositive = [...groups['internal_positive'], ...groups['external_positive']];
         sections.push({
             label: '【新闻信息纵览】',
             items: mergedPositive,
-            marker: '■'
+            marker: '■ '
         });
         // 3. External Negative -> 【国内教育热点】
         sections.push({
             label: '【国内教育热点】',
             items: groups['external_negative'],
-            marker: '▲'
+            marker: '▲ '
         });
     }
 

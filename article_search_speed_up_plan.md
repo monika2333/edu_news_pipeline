@@ -52,7 +52,7 @@ Wrap the query parameter with wildcards (e.g., `%{q}%`) to preserve substring ma
 ### Phase 3: Cleanup
 - Remove deprecated filter fields from `/articles/search` and manual filter drawer UI/docs (source/sentiment/status/date).
 - Docs cleanup scope: `README.md` and `article_search_speed_up_plan.md` (currently known references).
- - Update drawer reset/clear handlers to stop referencing removed inputs.
+- Update drawer reset/clear handlers to stop referencing removed inputs.
 
 ## Code Touchpoints
 - `src/adapters/db_postgres_news_summaries.py` (`search_news_summaries`): replace the three-column `ILIKE` clause with the combined expression `ILIKE`.
@@ -90,5 +90,3 @@ Wrap the query parameter with wildcards (e.g., `%{q}%`) to preserve substring ma
 - Very short queries may not benefit from the trigram index; results remain correct but can fall back to slower scans.
 - Removing date filters can yield large result sets for common keywords; this is an accepted trade-off.
 
-## Rollback
-- Keep old query as a fallback (feature flag or simple revert).

@@ -26,6 +26,13 @@ logger = logging.getLogger(__name__)
 # Constants
 # ─────────────────────────────────────────────────────────────────────────────
 DEFAULT_CLUSTER_THRESHOLD = 0.9
+MANUAL_CLUSTER_LOCK_ID = 9001001
+CLUSTER_BUCKET_KEYS = (
+    "internal_positive",
+    "internal_negative",
+    "external_positive",
+    "external_negative",
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -106,6 +113,62 @@ def _candidate_rank_key_by_record(record: Dict[str, Any]) -> Tuple[float, float,
     ts_val = _ts(record.get("publish_time_iso") or record.get("publish_time"))
     return (ext_score, score, ts_val)
 
+
+def _bucket_key_for_record(record: Dict[str, Any]) -> str:
+    region = "internal" if record.get("is_beijing_related") else "external"
+    sentiment = "negative" if (record.get("sentiment_label") or "").lower() == "negative" else "positive"
+    return f"{region}_{sentiment}"
+
+
+def refresh_clusters(
+    *,
+    cluster_threshold: Optional[float] = None,
+    report_type: str = DEFAULT_REPORT_TYPE,
+) -> bool:
+    adapter = get_adapter()
+    target_report_type = _normalize_report_type(report_type)
+    try:
+        threshold_val = float(cluster_threshold) if cluster_threshold is not None else DEFAULT_CLUSTER_THRESHOLD
+    except Exception:
+        threshold_val = DEFAULT_CLUSTER_THRESHOLD
+    threshold_val = max(0.0, min(threshold_val, 1.0))
+
+    if not adapter.try_advisory_lock(MANUAL_CLUSTER_LOCK_ID):
+        return False
+
+    try:
+        records = _collect_pending(None, None, fetch_limit=5000, adapter=adapter, report_type=target_report_type)
+        buckets: Dict[str, List[Dict[str, Any]]] = {key: [] for key in CLUSTER_BUCKET_KEYS}
+        for record in records:
+            bucket_key = _bucket_key_for_record(record)
+            buckets.setdefault(bucket_key, []).append(record)
+
+        clusters: List[Dict[str, Any]] = []
+        for bucket_key, items in buckets.items():
+            if not items:
+                continue
+            items_sorted = sorted(items, key=_candidate_rank_key_by_record, reverse=True)
+            titles = [item.get("title") or "" for item in items_sorted]
+            groups = cluster_titles(titles, threshold=threshold_val) or [list(range(len(items_sorted)))]
+
+            for idx, group in enumerate(groups):
+                group_items = [items_sorted[i] for i in group if 0 <= i < len(items_sorted)]
+                if not group_items:
+                    continue
+                group_items.sort(key=_candidate_rank_key_by_record, reverse=True)
+                clusters.append(
+                    {
+                        "cluster_id": f"{bucket_key}-{idx}",
+                        "bucket_key": bucket_key,
+                        "item_ids": [item["article_id"] for item in group_items if item.get("article_id")],
+                        "report_type": target_report_type,
+                    }
+                )
+
+        adapter.replace_manual_clusters(clusters, report_type=target_report_type)  # type: ignore[attr-defined]
+        return True
+    finally:
+        adapter.release_advisory_lock(MANUAL_CLUSTER_LOCK_ID)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Collect pending items for clustering

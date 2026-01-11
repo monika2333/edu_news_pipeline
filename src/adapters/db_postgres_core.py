@@ -56,6 +56,24 @@ class PostgresAdapter:
         return self._conn.cursor(row_factory=dict_row)
 
     @contextlib.contextmanager
+    def transaction(self):
+        if self._conn.closed:
+            self._conn = _get_connection()
+        prev_autocommit = self._conn.autocommit
+        if prev_autocommit:
+            self._conn.autocommit = False
+        cur = self._conn.cursor(row_factory=dict_row)
+        try:
+            yield cur
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+        finally:
+            cur.close()
+            self._conn.autocommit = prev_autocommit
+
+    @contextlib.contextmanager
     def _cursor(self):
         cur = self._conn_cursor()
         try:
@@ -538,6 +556,16 @@ class PostgresAdapter:
         report_type: Optional[str] = None,
     ) -> int:
         with self._cursor() as cur:
+            return manual_reviews.insert_manual_clusters(cur, clusters, report_type=report_type)
+
+    def replace_manual_clusters(
+        self,
+        clusters: Sequence[Mapping[str, Any]],
+        *,
+        report_type: Optional[str] = None,
+    ) -> int:
+        with self.transaction() as cur:
+            manual_reviews.delete_manual_clusters(cur, report_type=report_type)
             return manual_reviews.insert_manual_clusters(cur, clusters, report_type=report_type)
 
     def fetch_manual_clusters(

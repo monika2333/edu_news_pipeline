@@ -206,6 +206,93 @@ def fetch_manual_pending_for_cluster(
     return [dict(row) for row in rows]
 
 
+def delete_manual_clusters(cur: psycopg.Cursor, *, report_type: Optional[str] = None) -> int:
+    normalized_report_type = normalize_report_type_value(report_type) or "zongbao"
+    cur.execute("DELETE FROM manual_clusters WHERE report_type = %s", (normalized_report_type,))
+    return cur.rowcount
+
+
+def insert_manual_clusters(
+    cur: psycopg.Cursor,
+    clusters: Sequence[Mapping[str, Any]],
+    *,
+    report_type: Optional[str] = None,
+) -> int:
+    if not clusters:
+        return 0
+    default_report_type = normalize_report_type_value(report_type) or "zongbao"
+    payload: List[Tuple[Any, ...]] = []
+    for cluster in clusters:
+        cluster_id = str(cluster.get("cluster_id") or "").strip()
+        bucket_key = str(cluster.get("bucket_key") or "").strip()
+        item_ids = cluster.get("item_ids") or []
+        if not cluster_id or not bucket_key:
+            continue
+        target_report_type = normalize_report_type_value(cluster.get("report_type")) or default_report_type
+        payload.append((target_report_type, bucket_key, cluster_id, list(item_ids)))
+    if not payload:
+        return 0
+    query = """
+        INSERT INTO manual_clusters (report_type, bucket_key, cluster_id, item_ids)
+        VALUES (%s, %s, %s, %s)
+    """
+    cur.executemany(query, payload)
+    return len(payload)
+
+
+def fetch_manual_clusters(
+    cur: psycopg.Cursor,
+    *,
+    bucket_key: Optional[str] = None,
+    report_type: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    normalized_report_type = normalize_report_type_value(report_type) or "zongbao"
+    query = """
+        WITH cluster_base AS (
+            SELECT cluster_id, bucket_key, item_ids
+            FROM manual_clusters
+            WHERE report_type = %s
+              AND (%s::text IS NULL OR bucket_key = %s)
+        ),
+        cluster_items AS (
+            SELECT cb.cluster_id, cb.bucket_key, unnest(cb.item_ids) AS article_id
+            FROM cluster_base cb
+        )
+        SELECT
+            ci.cluster_id,
+            ci.bucket_key,
+            mr.article_id,
+            mr.summary AS manual_summary,
+            mr.rank AS manual_rank,
+            mr.manual_llm_source,
+            ns.title,
+            ns.llm_summary,
+            ns.llm_source,
+            ns.source,
+            ns.url,
+            ns.score,
+            ns.external_importance_score,
+            ns.sentiment_label,
+            ns.is_beijing_related,
+            ns.publish_time_iso,
+            ns.publish_time,
+            ns.score_details
+        FROM cluster_items ci
+        JOIN manual_reviews mr ON mr.article_id = ci.article_id
+        JOIN news_summaries ns ON ns.article_id = ci.article_id
+        WHERE mr.status = 'pending'
+          AND ns.status = 'ready_for_export'
+        ORDER BY
+            ci.cluster_id,
+            ns.external_importance_score DESC NULLS LAST,
+            mr.rank ASC NULLS LAST,
+            ns.score DESC NULLS LAST
+    """
+    cur.execute(query, (normalized_report_type, bucket_key, bucket_key))
+    rows = cur.fetchall()
+    return [dict(row) for row in rows]
+
+
 def manual_review_status_counts(cur: psycopg.Cursor, *, report_type: Optional[str] = None) -> Dict[str, int]:
     counts: Dict[str, int] = {"pending": 0, "selected": 0, "backup": 0, "discarded": 0, "exported": 0}
     type_expr = report_type_expr()
@@ -431,10 +518,13 @@ def fetch_manual_selected_for_export(
 
 
 __all__ = [
+    "delete_manual_clusters",
     "enqueue_manual_review",
+    "fetch_manual_clusters",
     "fetch_manual_pending_for_cluster",
     "fetch_manual_reviews",
     "fetch_manual_selected_for_export",
+    "insert_manual_clusters",
     "manual_review_max_rank",
     "manual_review_pending_count",
     "manual_review_status_counts",

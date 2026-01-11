@@ -527,6 +527,28 @@ class PostgresAdapter:
                 report_type=report_type,
             )
 
+    def delete_manual_clusters(self, *, report_type: Optional[str] = None) -> int:
+        with self._cursor() as cur:
+            return manual_reviews.delete_manual_clusters(cur, report_type=report_type)
+
+    def insert_manual_clusters(
+        self,
+        clusters: Sequence[Mapping[str, Any]],
+        *,
+        report_type: Optional[str] = None,
+    ) -> int:
+        with self._cursor() as cur:
+            return manual_reviews.insert_manual_clusters(cur, clusters, report_type=report_type)
+
+    def fetch_manual_clusters(
+        self,
+        *,
+        bucket_key: Optional[str] = None,
+        report_type: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return manual_reviews.fetch_manual_clusters(cur, bucket_key=bucket_key, report_type=report_type)
+
     def manual_review_status_counts(self, *, report_type: Optional[str] = None) -> Dict[str, int]:
         with self._cursor() as cur:
             return manual_reviews.manual_review_status_counts(cur, report_type=report_type)

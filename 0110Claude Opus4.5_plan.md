@@ -191,7 +191,7 @@ publish_time）→ 选首条为 representative_title → cluster 级排序（按
 ## 七、修改执行清单
 
 - [x] 新增 `manual_clusters` 表结构（字段/索引/约束）与迁移脚本
-- [ ] Adapter 实现：`delete_manual_clusters` / `insert_manual_clusters` / `fetch_manual_clusters`
+- [x] Adapter 实现：`delete_manual_clusters` / `insert_manual_clusters` / `fetch_manual_clusters`
 - [ ] Adapter 实现：`try_advisory_lock` / `release_advisory_lock`（使用固定 BIGINT `MANUAL_CLUSTER_LOCK_ID`）
 - [ ] 写入刷新流程：拉取 pending + ready_for_export → 分桶 → 聚类 → 事务内 delete+insert → 释放锁
 - [ ] 读取流程：按 `bucket_key` 读取 clusters → 展开 item_ids → join → 读时重建排序/代表标题/size → cluster 级分页

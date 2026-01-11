@@ -1,7 +1,5 @@
 // Manual Filter JS - Search Drawer
 
-const contentCache = new Map();
-
 let searchState = {
     page: 1,
     limit: 20,
@@ -97,18 +95,6 @@ function saveSearchFilters() {
     return filters;
 }
 
-async function fetchContent(articleId) {
-    if (contentCache.has(articleId)) {
-        return contentCache.get(articleId);
-    }
-    const res = await fetch(`/api/articles/content?article_id=${encodeURIComponent(articleId)}`);
-    if (!res.ok) throw new Error('Content fetch failed');
-    const data = await res.json();
-    const content = data.content_markdown || '';
-    contentCache.set(articleId, content);
-    return content;
-}
-
 async function performDrawerSearch() {
     const container = document.getElementById('search-results-list');
     const statsInfo = document.getElementById('search-results-stats');
@@ -191,38 +177,6 @@ function renderDrawerSearchResults(data) {
 
         const summary = createEl('div', 'search-summary', item.llm_summary || 'No summary available.');
         itemEl.appendChild(summary);
-
-        const contentWrapper = createEl('div', 'search-content');
-        const contentButton = createEl('button', 'btn btn-secondary btn-sm', 'Load content');
-        const contentPre = createEl('pre', 'search-content-body');
-        contentPre.style.display = 'none';
-
-        contentButton.addEventListener('click', async () => {
-            const isVisible = contentPre.style.display !== 'none';
-            if (isVisible) {
-                contentPre.style.display = 'none';
-                contentButton.textContent = 'Load content';
-                return;
-            }
-            contentButton.disabled = true;
-            contentButton.textContent = 'Loading...';
-            try {
-                const content = await fetchContent(item.article_id);
-                contentPre.textContent = content || 'No content available.';
-                contentPre.style.display = 'block';
-                contentButton.textContent = 'Hide content';
-            } catch (err) {
-                contentPre.textContent = 'Failed to load content.';
-                contentPre.style.display = 'block';
-                contentButton.textContent = 'Load content';
-            } finally {
-                contentButton.disabled = false;
-            }
-        });
-
-        contentWrapper.appendChild(contentButton);
-        contentWrapper.appendChild(contentPre);
-        itemEl.appendChild(contentWrapper);
 
         fragment.appendChild(itemEl);
     });

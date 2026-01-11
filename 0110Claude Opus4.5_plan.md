@@ -196,5 +196,5 @@ publish_time）→ 选首条为 representative_title → cluster 级排序（按
 - [x] 写入刷新流程：拉取 pending + ready_for_export → 分桶 → 聚类 → 事务内 delete+insert → 释放锁
 - [x] 读取流程：按 `bucket_key` 读取 clusters → 展开 item_ids → join → 读时重建排序/代表标题/size → cluster 级分页
 - [x] API 调整：`/api/manual_filter/candidates` 支持 `cluster` / `force_refresh`；需要时新增 `/api/manual_filter/trigger_clustering`
-- [ ] 移除 `_cluster_cache` 与旧内存聚类分支
+- [x] 移除 `_cluster_cache` 与旧内存聚类分支
 - [ ] 基本验证：刷新一次并检查接口返回结构与排序

@@ -36,56 +36,6 @@ CLUSTER_BUCKET_KEYS = (
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# In-memory cluster cache
-# ─────────────────────────────────────────────────────────────────────────────
-_cluster_cache: Dict[Tuple[str, str, str, float], Dict[str, Any]] = {}
-
-
-def _cluster_cache_key(region: Optional[str], sentiment: Optional[str], threshold: float, report_type: str) -> Tuple[str, str, str, float]:
-    return (region or "all", sentiment or "all", report_type, threshold)
-
-
-def _prune_cluster_cache(decided_ids: Sequence[str]) -> None:
-    decided = {str(i).strip() for i in decided_ids if i}
-    if not decided or not _cluster_cache:
-        return
-    for key, payload in list(_cluster_cache.items()):
-        clusters = payload.get("clusters", [])
-        if not clusters:
-            continue
-        pruned: List[Dict[str, Any]] = []
-        for cluster in clusters:
-            items = cluster.get("items") or []
-            kept = [itm for itm in items if str(itm.get("article_id") or "").strip() not in decided]
-            if not kept:
-                continue
-            cluster["items"] = kept
-            cluster["size"] = len(kept)
-            pruned.append(cluster)
-        _cluster_cache[key] = {"clusters": pruned, "total": len(pruned)}
-
-
-def _invalidate_cluster_cache() -> None:
-    _cluster_cache.clear()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Pending total helper
-# ─────────────────────────────────────────────────────────────────────────────
-def _pending_total(adapter: Any, *, report_type: str = DEFAULT_REPORT_TYPE) -> int:
-    """Lightweight pending count; falls back to status counts on adapter that lacks the method."""
-    target_type = _normalize_report_type(report_type)
-    try:
-        return int(adapter.manual_review_pending_count(report_type=target_type))  # type: ignore[attr-defined]
-    except Exception:
-        try:
-            counts = adapter.manual_review_status_counts(report_type=target_type)  # type: ignore[attr-defined]
-            return int(counts.get("pending", 0)) if isinstance(counts, dict) else 0
-        except Exception:
-            return 0
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Rank key for sorting
 # ─────────────────────────────────────────────────────────────────────────────
 def _candidate_rank_key_by_record(record: Dict[str, Any]) -> Tuple[float, float, float, float]:

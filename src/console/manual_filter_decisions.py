@@ -16,7 +16,6 @@ from .manual_filter_helpers import (
     _normalize_ids,
     _normalize_report_type,
 )
-from .manual_filter_cluster import _invalidate_cluster_cache, _prune_cluster_cache
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +147,6 @@ def bulk_decide(
         updated_discarded,
         updated_pending,
     )
-    _prune_cluster_cache(selected + backups + discarded + pending)
     return {
         "selected": updated_selected,
         "backup": updated_backup,
@@ -250,6 +248,4 @@ def save_edits(edits: Dict[str, Dict[str, Any]], *, actor: Optional[str] = None,
         }
     logger.info("Saving manual edits: count=%s actor=%s report_type=%s", len(edits), actor, target_report_type)
     updated = adapter.update_manual_review_summaries(normalized, actor=actor, report_type=target_report_type)  # type: ignore[attr-defined]
-    if updated:
-        _invalidate_cluster_cache()
     return updated

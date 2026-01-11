@@ -32,12 +32,7 @@ from .manual_filter_helpers import (
 from .manual_filter_cluster import (
     DEFAULT_CLUSTER_THRESHOLD,
     _candidate_rank_key_by_record,
-    _cluster_cache,
-    _cluster_cache_key,
-    _collect_pending,
     _paginate_clusters,
-    _pending_total,
-    _prune_cluster_cache,
     cluster_pending,
     refresh_clusters,
 )

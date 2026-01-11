@@ -1,7 +1,7 @@
 # Review Tab Auto-Reorder Plan
 
 ## Goal
-Add a one-click "auto reorder" action that is available only in Review tab sort mode. The reorder logic should follow `reorder_brief.py` (category-based ordering: "市委教委", "中小学", "高校", "其他").
+Add a one-click "auto reorder" action that is available only in Review tab sort mode. The reorder logic mirrors the category rules defined in this plan (category-based ordering: "市委教委", "中小学", "高校", "其他"). `reorder_brief.py` is temporary reference only and should be removed after implementation.
 
 ## Scope
 - Review tab only.
@@ -28,9 +28,10 @@ Add a one-click "auto reorder" action that is available only in Review tab sort 
    - default: `其他`
 2. Build a `classifyCategory(text)` helper:
    - Lowercase comparison.
-   - `text` is a join of title + summary (and optionally source) so it behaves like the brief entries.
+   - `text` is a join of title + summary + llm_source_display from `state.reviewData` (not DOM) so it behaves like the brief entries.
+   - Use `item.title`, `item.summary`, `item.llm_source_display` (no fallback logic).
 3. Sort strategy:
-   - For the current review list, build buckets by category in the order above.
+   - For the current review list (`state.reviewData[state.reviewView]`, already scoped by `loadReviewData()` to the active `report_type`), build buckets by category in the order above (UI stays unchanged).
    - Preserve original relative order within each category (stable).
    - Apply within each review group (internal/external + sentiment) so the group structure remains consistent with existing UI.
 
@@ -46,12 +47,13 @@ Add a one-click "auto reorder" action that is available only in Review tab sort 
 
 ## Implementation Steps
 1. HTML:
-   - Add a new button in `manual_filter.html` near `#btn-toggle-sort` with id `btn-auto-reorder`.
+   - Add a new button in `manual_filter.html` near `#btn-toggle-sort` with id `btn-auto-reorder` and class `sort-only`.
 2. CSS:
    - Add a class to hide the button by default (e.g. `.sort-only { display: none; }`).
-   - Toggle visibility via a parent class set in `applySortModeState` (e.g. `.review-sort-mode .sort-only { display: inline-flex; }`).
+   - Toggle visibility via a parent class set in `applySortModeState` on `#review-tab` (e.g. `#review-tab.review-sort-mode .sort-only { display: inline-flex; }`).
 3. JS - core logic in `review_tab.js`:
    - Add `CATEGORY_RULES` + `CATEGORY_ORDER` mirrors in JS.
+   - Treat JS as the single source of truth; remove `reorder_brief.py` after implementation.
    - Add `classifyCategory(text)` and `autoReorderReviewItems()` functions.
    - `autoReorderReviewItems()`:
      - Guard: `state.currentTab === 'review'` and `isSortMode === true`.
@@ -62,7 +64,7 @@ Add a one-click "auto reorder" action that is available only in Review tab sort 
 4. JS - wiring in `init.js`:
    - Bind `#btn-auto-reorder` click to `autoReorderReviewItems`.
 5. JS - view state in `applySortModeState`:
-   - Toggle a parent class on the Review tab or toolbar container to show/hide the button.
+   - Toggle a parent class on `#review-tab` to show/hide the button.
 
 ## Testing Checklist
 - Enter review tab and toggle sort mode on; verify "自动排序" appears.
@@ -70,4 +72,3 @@ Add a one-click "auto reorder" action that is available only in Review tab sort 
 - Toggle sort mode off; ensure the button hides and does not run.
 - Verify manual dragging still works after auto reorder.
 - Ensure persisted order is saved by refreshing and confirming order.
-

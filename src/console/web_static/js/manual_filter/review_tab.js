@@ -134,10 +134,14 @@ function renderReviewView() {
 
 function applySortModeState() {
     const grid = document.querySelector('.review-grid');
+    const reviewTab = document.getElementById('review-tab');
     const toggleBtn = elements.sortToggleBtn;
     if (grid) {
         grid.classList.toggle('compact-mode', isSortMode);
         grid.classList.toggle('sort-mode', isSortMode);
+    }
+    if (reviewTab) {
+        reviewTab.classList.toggle('review-sort-mode', isSortMode);
     }
     if (toggleBtn) {
         toggleBtn.classList.toggle('active', isSortMode);

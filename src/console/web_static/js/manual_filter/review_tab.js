@@ -106,6 +106,7 @@ function filterReviewItems(term) {
             card.style.display = 'none';
         }
     });
+    updateReviewSelectAllState();
 }
 
 function applyReviewSearchFilter() {
@@ -307,6 +308,7 @@ function bindReviewGroupToggles() {
             const group = header.closest('.review-group');
             if (group) {
                 group.classList.toggle('collapsed');
+                updateReviewSelectAllState();
             }
         });
     });
@@ -464,7 +466,7 @@ function getVisibleReviewCheckboxes() {
     return Array.from(checkboxes).filter(cb => {
         const card = cb.closest('.article-card');
         if (!card) return false;
-        return card.style.display !== 'none';
+        return card.getClientRects().length > 0;
     });
 }
 

@@ -270,6 +270,25 @@ def html_to_markdown(html_str: str) -> str:
     return text
 
 
+def _extract_detail_title(soup: BeautifulSoup) -> Optional[str]:
+    h1 = soup.find("h1")
+    if not h1:
+        return None
+    h1_text = h1.get_text(strip=True)
+    if not h1_text:
+        return None
+    parent = h1.parent
+    if not parent:
+        return h1_text
+    h3 = parent.find("h3")
+    h4 = parent.find("h4")
+    pre_title = h3.get_text(strip=True) if h3 else ""
+    post_title = h4.get_text(strip=True) if h4 else ""
+    if pre_title or post_title:
+        return f"{pre_title}{h1_text}{post_title}"
+    return h1_text
+
+
 def fetch_detail(url: str) -> Dict[str, Any]:
     sess = _session()
     timeout = float(os.getenv("JYB_TIMEOUT", "20"))
@@ -292,9 +311,9 @@ def fetch_detail(url: str) -> Dict[str, Any]:
     title = None
     if soup.title and soup.title.string:
         title = soup.title.string.strip()
-    h1 = soup.find("h1")
-    if h1 and h1.get_text(strip=True):
-        title = h1.get_text(strip=True)
+    detail_title = _extract_detail_title(soup)
+    if detail_title:
+        title = detail_title
 
     publish_iso = _extract_iso_from_text(soup.get_text(" ", strip=True))
     content_node = _find_content_container(soup)

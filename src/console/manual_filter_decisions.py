@@ -226,6 +226,18 @@ def reset_to_pending(ids: Sequence[str], *, actor: Optional[str] = None, report_
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Archive (mark exported)
+# ─────────────────────────────────────────────────────────────────────────────
+def archive_items(ids: Sequence[str], *, actor: Optional[str] = None, report_type: str = DEFAULT_REPORT_TYPE) -> int:
+    target_ids = _normalize_ids(ids)
+    if not target_ids:
+        return 0
+    target_report_type = _normalize_report_type(report_type)
+    logger.info("Archiving manual review items: count=%s actor=%s report_type=%s", len(target_ids), actor, target_report_type)
+    return _apply_decision(status="exported", ids=target_ids, actor=actor, report_type=target_report_type)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Save edits
 # ─────────────────────────────────────────────────────────────────────────────
 def save_edits(edits: Dict[str, Dict[str, Any]], *, actor: Optional[str] = None, report_type: str = DEFAULT_REPORT_TYPE) -> int:

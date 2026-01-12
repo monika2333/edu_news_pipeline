@@ -6,13 +6,11 @@ These utilities are intentionally kept dependency-free to avoid circular imports
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Constants
 # ─────────────────────────────────────────────────────────────────────────────
-EXPORT_META_PATH = Path("outputs/manual_filter_export_meta.json")
 DEFAULT_REPORT_TYPE = "zongbao"
 VALID_REPORT_TYPES = {"zongbao", "wanbao"}
 

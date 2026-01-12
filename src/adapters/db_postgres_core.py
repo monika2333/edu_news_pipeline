@@ -659,10 +659,6 @@ class PostgresAdapter:
         with self._cursor() as cur:
             return export.get_batch_by_tag(cur, report_tag)
 
-    def _get_manual_batch_by_tag(self, report_tag: str) -> Optional[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return export.get_manual_batch_by_tag(cur, report_tag)
-
     def _parse_report_tag(self, report_tag: str) -> Tuple[date, str]:
         return export.parse_report_tag(report_tag)
 
@@ -670,17 +666,9 @@ class PostgresAdapter:
         with self._cursor() as cur:
             return export.create_batch(cur, report_tag)
 
-    def _create_manual_batch(self, report_tag: str) -> Dict[str, Any]:
-        with self._cursor() as cur:
-            return export.create_manual_batch(cur, report_tag)
-
     def get_export_history(self, report_tag: str) -> Tuple[Set[str], Optional[str]]:
         with self._cursor() as cur:
             return export.get_export_history(cur, report_tag)
-
-    def get_manual_export_history(self, report_tag: str) -> Tuple[Set[str], Optional[str]]:
-        with self._cursor() as cur:
-            return export.get_manual_export_history(cur, report_tag)
 
     def get_all_exported_article_ids(self) -> Set[str]:
         with self._cursor() as cur:
@@ -696,16 +684,6 @@ class PostgresAdapter:
         with self._cursor() as cur:
             export.record_export(cur, report_tag, exported, output_path=output_path)
 
-    def record_manual_export(
-        self,
-        report_tag: str,
-        exported: Sequence[Tuple[ExportCandidate, str]],
-        *,
-        output_path: str,
-    ) -> None:
-        with self._cursor() as cur:
-            export.record_manual_export(cur, report_tag, exported, output_path=output_path)
-
     def fetch_latest_brief_batch(self) -> Optional[Dict[str, Any]]:
         with self._cursor() as cur:
             return export.fetch_latest_brief_batch(cur)
@@ -717,18 +695,6 @@ class PostgresAdapter:
     def fetch_brief_item_count(self, batch_id: str) -> int:
         with self._cursor() as cur:
             return export.fetch_brief_item_count(cur, batch_id)
-
-    def fetch_latest_manual_export_batch(self) -> Optional[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return export.fetch_latest_manual_export_batch(cur)
-
-    def fetch_manual_export_items_by_batch(self, batch_id: str) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return export.fetch_manual_export_items_by_batch(cur, batch_id)
-
-    def fetch_manual_export_item_count(self, batch_id: str) -> int:
-        with self._cursor() as cur:
-            return export.fetch_manual_export_item_count(cur, batch_id)
 
     # ------------------------------------------------------------------
     # Pipeline run metadata

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter
@@ -9,7 +8,6 @@ from pydantic import BaseModel, Field
 from src.console import manual_filter_service
 
 router = APIRouter(prefix="/api/manual_filter", tags=["manual_filter"])
-logger = logging.getLogger(__name__)
 
 
 class BulkDecideRequest(BaseModel):
@@ -27,14 +25,9 @@ class SaveEditsRequest(BaseModel):
     report_type: str = "zongbao"
 
 
-class ExportRequest(BaseModel):
-    report_tag: str
-    template: str = "zongbao"
-    period: Optional[int] = None
-    total_period: Optional[int] = None
-    mark_exported: bool = True
-    dry_run: bool = False
-    output_path: Optional[str] = None
+class ArchiveRequest(BaseModel):
+    article_ids: List[str] = Field(default_factory=list)
+    actor: Optional[str] = None
     report_type: str = "zongbao"
 
 
@@ -107,28 +100,14 @@ def status_counts_api(report_type: str = "zongbao") -> Dict[str, int]:
     return manual_filter_service.status_counts(report_type=report_type)
 
 
-@router.post("/export")
-def export_batch_api(req: ExportRequest) -> Dict[str, Any]:
-    result = manual_filter_service.export_batch(
-        report_tag=req.report_tag,
-        output_path=req.output_path or "outputs/manual_filter_export.txt",
-        template=req.template,
-        period=req.period,
-        total_period=req.total_period,
-        mark_exported=req.mark_exported,
-        dry_run=req.dry_run,
+@router.post("/archive")
+def archive_api(req: ArchiveRequest) -> Dict[str, int]:
+    count = manual_filter_service.archive_items(
+        req.article_ids,
+        actor=req.actor,
         report_type=req.report_type,
     )
-
-    if not result.get("content"):
-        try:
-            with open(result["output_path"], "r", encoding="utf-8") as f:
-                result["content"] = f.read()
-        except Exception as exc:  # pragma: no cover - defensive logging for runtime issues
-            logger.warning("Failed to read export content from %s: %s", result.get("output_path"), exc)
-            result["content"] = ""
-
-    return result
+    return {"exported": count}
 
 
 @router.post("/order")

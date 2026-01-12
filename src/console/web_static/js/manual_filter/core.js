@@ -58,11 +58,6 @@ const elements = {
     discardList: document.getElementById('discard-list'),
     actorInput: document.getElementById('actor-input'),
     sortToggleBtn: document.getElementById('btn-toggle-sort'),
-    exportTemplate: document.getElementById('export-template'),
-    exportPeriod: document.getElementById('export-period'),
-    exportTotal: document.getElementById('export-total'),
-    exportPreviewBtn: document.getElementById('btn-export-preview'),
-    exportConfirmBtn: document.getElementById('btn-export-confirm'),
     reportTypeButtons: document.querySelectorAll('.report-type-btn'),
     stats: {
         pending: document.getElementById('stat-pending'),
@@ -72,8 +67,6 @@ const elements = {
     },
     reviewRailButtons: document.querySelectorAll('.review-category-btn'),
     reviewSearchInput: document.getElementById('review-search-input'),
-    modal: document.getElementById('export-modal'),
-    modalText: document.getElementById('export-text'),
     toast: document.getElementById('toast')
 };
 

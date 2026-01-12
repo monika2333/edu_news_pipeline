@@ -933,25 +933,224 @@ async function handleArchive() {
         return;
     }
 
+    if (!card) return;
+    const id = card.dataset.id;
+    const summary = box.value;
+    const sourceBox = card.querySelector('.source-box');
+    const llm_source = sourceBox ? sourceBox.value : '';
+    try {
+        await fetch(`${API_BASE}/edit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor, report_type: state.reviewReportType })
+        });
+        applyReviewEditsToState(id, summary, llm_source);
+        showToast('摘要已保存');
+    } catch (err) {
+        showToast('摘要保存失败', 'error');
+    }
+}
+
+async function handleSourceUpdate(e) {
+    const input = e.target;
+    const card = input.closest('.article-card');
+    if (!card) return;
+    const id = input.dataset.id;
+    const llm_source = input.value;
+    const summaryBox = card.querySelector('.summary-box');
+    const summary = summaryBox ? summaryBox.value : '';
+    try {
+        await fetch(`${API_BASE}/edit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor, report_type: state.reviewReportType })
+        });
+        applyReviewEditsToState(id, summary, llm_source);
+        showToast('来源已保存');
+    } catch (err) {
+        showToast('来源保存失败', 'error');
+    }
+}
+
+function applyReviewEditsToState(articleId, summary, llm_source) {
+    if (!articleId) return;
+    const normalizedSource = (llm_source || '').trim();
+    ['selected', 'backup'].forEach(status => {
+        const items = state.reviewData[status] || [];
+        const target = items.find(item => item && item.article_id === articleId);
+        if (!target) return;
+        if (summary !== undefined) {
+            target.summary = summary;
+        }
+        if (llm_source !== undefined) {
+            target.llm_source_manual = normalizedSource;
+            const raw = (target.llm_source_raw || '').trim();
+            const source = (target.source || '').trim();
+            target.llm_source_display = normalizedSource || raw || source;
+        }
+    });
+}
+
+function toChineseNum(num) {
+    const chineseNums = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+    if (num < 10) return chineseNums[num];
+    if (num < 20) return '十' + (num % 10 !== 0 ? chineseNums[num % 10] : '');
+    if (num < 100) {
+        const ten = Math.floor(num / 10);
+        const unit = num % 10;
+        return chineseNums[ten] + '十' + (unit !== 0 ? chineseNums[unit] : '');
+    }
+    return num.toString();
+}
+
+function generatePreviewText() {
     const reportType = state.reviewReportType;
-    const template = reportType === 'wanbao' ? 'wanbao' : 'zongbao';
+    const isWanbao = reportType === 'wanbao';
+    const view = state.reviewView || 'selected';
+    const items = state.reviewData[view] || [];
+
+    if (!items.length) return '';
+
+    // Grouping
+    const groups = {
+        'internal_negative': [],
+        'internal_positive': [],
+        'external_negative': [],
+        'external_positive': []
+    };
+
+    items.forEach(item => {
+        const key = resolveGroupKey(item);
+        if (groups[key]) groups[key].push(item);
+        else {
+            if (!groups['other']) groups['other'] = [];
+            groups['other'].push(item);
+        }
+    });
+
+    let content = '';
+
+    const sections = [];
+    if (isWanbao) {
+        // Wanbao: Internal (Pos+Neg) -> 【舆情速览】, External (Pos+Neg) -> 【舆情参考】
+        sections.push({
+            label: '【舆情速览】',
+            items: [...groups['internal_positive'], ...groups['internal_negative']],
+            numbered: true
+        });
+        sections.push({
+            label: '【舆情参考】',
+            items: [...groups['external_positive'], ...groups['external_negative']],
+            numbered: true
+        });
+    } else {
+        // Zongbao
+        // 1. Internal Negative -> 【重点关注舆情】
+        sections.push({
+            label: '【重点关注舆情】',
+            items: groups['internal_negative'],
+            marker: '★ '
+        });
+        // 2. Internal Positive + External Positive -> 【新闻信息纵览】
+        const mergedPositive = [...groups['internal_positive'], ...groups['external_positive']];
+        sections.push({
+            label: '【新闻信息纵览】',
+            items: mergedPositive,
+            marker: '■ '
+        });
+        // 3. External Negative -> 【国内教育热点】
+        sections.push({
+            label: '【国内教育热点】',
+            items: groups['external_negative'],
+            marker: '▲ '
+        });
+    }
+
+    sections.forEach(section => {
+        const sectionItems = section.items || [];
+        if (!sectionItems.length) return;
+
+        content += `${section.label}\n`;
+        sectionItems.forEach((item, index) => {
+            const title = (item.title || '').trim();
+            // Use manual_summary if available, else llm_summary, else summary
+            // Assuming order: manual > llm > raw. The backend usually normalizes this into 'summary' but we check properties.
+            const summary = (item.manual_summary || item.summary || '').trim();
+            const source = (item.llm_source_display || item.source || '').trim();
+
+            let prefix = '';
+            if (section.marker) {
+                prefix = `${section.marker}`;
+            } else if (section.numbered) {
+                prefix = `${toChineseNum(index + 1)}、`;
+            }
+
+            content += `${prefix}${title}\n`;
+            if (summary) content += `${summary}`;
+            if (source) content += `（${source}）`;
+            content += '\n\n'; // Empty line between items for readability? User example shows distinct blocks.
+        });
+        content += '\n'; // Separator between sections
+    });
+
+    return content.trim(); // Clean up trailing newlines
+}
+
+async function handlePreviewCopy() {
+    try {
+        const text = generatePreviewText();
+
+        if (!text) {
+            showToast('当前列表为空，无内容可生成', 'error');
+            return;
+        }
+
+        const modal = document.getElementById('preview-modal');
+        const textarea = document.getElementById('preview-text');
+        if (modal && textarea) {
+            textarea.value = text;
+            modal.classList.add('active');
+        } else {
+            // Fallback if modal not present
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+            }
+            showToast('已复制到剪贴板(弹窗未找到)');
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('预览生成失败', 'error');
+    }
+}
+
+async function handleArchive() {
+    if (!confirm('确定要归档当前列表吗？归档后文章将标记为已导出并从列表中移除。')) {
+        return;
+    }
+
+    const reportType = state.reviewReportType;
+    const view = state.reviewView === 'backup' ? 'backup' : 'selected';
+    const items = state.reviewData[view] || [];
+    const articleIds = items.map(item => item.article_id).filter(Boolean);
+    if (!articleIds.length) {
+        showToast('当前列表为空', 'error');
+        return;
+    }
     const payload = {
-        report_tag: new Date().toISOString().split('T')[0],
-        template: template,
-        dry_run: false,
-        mark_exported: true,
+        article_ids: articleIds,
+        actor: state.actor,
         report_type: reportType
     };
 
     try {
-        const res = await fetch(`${API_BASE}/export`, {
+        const res = await fetch(`${API_BASE}/archive`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
         const result = await res.json();
 
-        const count = result.count || 0;
+        const count = result.exported || 0;
         showToast(`归档成功，已标记 ${count} 条文章`);
         await loadReviewData();
         loadStats();

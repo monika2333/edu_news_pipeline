@@ -17,12 +17,10 @@ from src.adapters.db_postgres_core import get_adapter
 # ─────────────────────────────────────────────────────────────────────────────
 from .manual_filter_helpers import (
     DEFAULT_REPORT_TYPE,
-    EXPORT_META_PATH,
     VALID_REPORT_TYPES,
     _attach_group_fields,
     _attach_source_fields,
     _bonus_keywords,
-    _normalize_ids,
     _normalize_report_type,
 )
 
@@ -38,27 +36,13 @@ from .manual_filter_cluster import (
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Re-export export functions
-# ─────────────────────────────────────────────────────────────────────────────
-from .manual_filter_export import (
-    _load_export_meta,
-    _save_export_meta,
-    export_batch,
-)
-
-# Re-export period functions from core/reporting for backward compatibility
-from src.domain.reporting.periods import (
-    period_increment_for_template as _period_increment_for_template,
-    resolve_periods as _resolve_periods,
-)
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Re-export decision functions
 # ─────────────────────────────────────────────────────────────────────────────
 from .manual_filter_decisions import (
     _apply_decision,
     _apply_ranked_decision,
     _next_rank,
+    archive_items,
     bulk_decide,
     reset_to_pending,
     save_edits,
@@ -210,10 +194,9 @@ __all__ = [
     "update_ranks",
     "save_edits",
     "reset_to_pending",
-    # Export APIs
-    "export_batch",
+    # Archive APIs
+    "archive_items",
     # Constants (for backward compatibility)
-    "EXPORT_META_PATH",
     "DEFAULT_REPORT_TYPE",
     "VALID_REPORT_TYPES",
     "DEFAULT_CLUSTER_THRESHOLD",

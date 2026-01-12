@@ -35,6 +35,26 @@
     color: var(--text-primary);
     font-weight: 700;
     font-size: 1.2rem;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.review-group-header .toggle-icon {
+    display: inline-block;
+    transition: transform 0.2s ease;
+    font-size: 0.8em;
+    color: var(--text-secondary);
+}
+
+.review-group.collapsed .toggle-icon {
+    transform: rotate(-90deg);
+}
+
+.review-group.collapsed .review-group-body {
+    display: none;
 }
 
 /* Toolbar */

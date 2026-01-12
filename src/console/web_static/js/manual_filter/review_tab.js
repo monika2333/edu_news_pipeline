@@ -130,6 +130,7 @@ function renderReviewView() {
     bindReviewSelectionControls();
     applySortModeState();
     applyReviewSearchFilter();
+    bindReviewGroupToggles();
 }
 
 function applySortModeState() {
@@ -277,7 +278,10 @@ function renderGroupedReviewItems(items) {
         if (state.showGroups) {
             html += `
                 <div class="review-group" data-group="${group.key}">
-                    <div class="review-group-header">${group.label} (${groupItems.length})</div>
+                    <div class="review-group-header" title="点击展开/收起">
+                        <span class="toggle-icon">▼</span>
+                         ${group.label} (${groupItems.length})
+                    </div>
                     <div class="review-group-body">
                         ${renderCards(groupItems)}
                     </div>
@@ -293,6 +297,19 @@ function renderGroupedReviewItems(items) {
 function getGroupLabel(key) {
     const found = GROUP_ORDER.find(g => g.key === key);
     return found ? found.label : (key || '未分组');
+}
+
+function bindReviewGroupToggles() {
+    if (!elements.reviewList) return;
+    const headers = elements.reviewList.querySelectorAll('.review-group-header');
+    headers.forEach(header => {
+        header.addEventListener('click', () => {
+            const group = header.closest('.review-group');
+            if (group) {
+                group.classList.toggle('collapsed');
+            }
+        });
+    });
 }
 
 function renderSortableReviewItems(items) {

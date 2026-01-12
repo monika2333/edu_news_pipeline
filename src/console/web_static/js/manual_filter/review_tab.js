@@ -602,6 +602,10 @@ function applyReviewViewMode() {
             );
         });
     }
+    const archiveBtn = document.getElementById('btn-archive');
+    if (archiveBtn) {
+        archiveBtn.style.display = state.reviewView === 'backup' ? 'none' : '';
+    }
     updateReviewRailCounts();
     initReviewSortable();
 }

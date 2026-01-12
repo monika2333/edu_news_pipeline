@@ -272,10 +272,13 @@ def html_to_markdown(html_str: str) -> str:
 
 def _extract_detail_title(soup: BeautifulSoup) -> Optional[str]:
     h1 = soup.find("h1")
-    if not h1:
-        return None
-    h1_text = h1.get_text(strip=True)
+    h1_text = h1.get_text(strip=True) if h1 else ""
     if not h1_text:
+        alt_title = soup.select_one(".title")
+        if alt_title:
+            alt_text = alt_title.get_text(strip=True)
+            if alt_text:
+                return alt_text
         return None
     parent = h1.parent
     if not parent:

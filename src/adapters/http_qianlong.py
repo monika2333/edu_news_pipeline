@@ -124,8 +124,19 @@ def _extract_publish_time(html_text: str) -> Tuple[Optional[int], Optional[datet
     return timestamp, localized, raw
 
 
-def _tag_text(tag: Tag) -> str:
-    return tag.get_text(" ", strip=True)
+def _render_content_node(node: Tag | NavigableString, base_url: str) -> str:
+    if isinstance(node, NavigableString):
+        return str(node)
+    if node.name == "br":
+        return "\n"
+    if node.name == "img":
+        src = (node.get("src") or "").strip()
+        if not src or src.startswith("data:"):
+            return ""
+        absolute = urljoin(base_url, src)
+        alt = (node.get("alt") or "").strip()
+        return f"![{alt}]({absolute})"
+    return "".join(_render_content_node(child, base_url) for child in node.children)
 
 
 def _markdown_from_content(content: Tag, base_url: str) -> str:
@@ -134,48 +145,15 @@ def _markdown_from_content(content: Tag, base_url: str) -> str:
 
     chunks: List[str] = []
 
-    def handle_paragraph(node: Tag) -> None:
-        parts: List[str] = []
-        for child in node.descendants:
-            if isinstance(child, NavigableString):
-                parts.append(str(child))
-            elif isinstance(child, Tag):
-                if child.name == "br":
-                    parts.append("\n")
-                elif child.name == "img":
-                    src = child.get("src")
-                    if not src:
-                        continue
-                    absolute = urljoin(base_url, src)
-                    alt = (child.get("alt") or "").strip()
-                    parts.append(f"![{alt}]({absolute})")
-                else:
-                    text = _tag_text(child)
-                    if text:
-                        parts.append(text)
-        joined = "".join(parts).strip()
-        if joined:
-            chunks.append(joined)
-
     for block in content.children:
         if isinstance(block, NavigableString):
             text = str(block).strip()
             if text:
                 chunks.append(text)
         elif isinstance(block, Tag):
-            if block.name in {"p", "div", "section"}:
-                handle_paragraph(block)
-            elif block.name == "img":
-                src = block.get("src")
-                if not src:
-                    continue
-                absolute = urljoin(base_url, src)
-                alt = (block.get("alt") or "").strip()
-                chunks.append(f"![{alt}]({absolute})")
-            else:
-                text = _tag_text(block)
-                if text:
-                    chunks.append(text)
+            rendered = _render_content_node(block, base_url).strip()
+            if rendered:
+                chunks.append(rendered)
 
     markdown = "\n\n".join(line.strip() for line in chunks if line.strip())
     return markdown
@@ -277,7 +255,12 @@ def _parse_article_html(html_content: bytes, html_text: str, url: str) -> Option
     title_tag = soup.find("h1") or soup.find("title")
     title = title_tag.get_text(strip=True) if title_tag else url
 
-    content_tag = soup.select_one("#contentStr, .article-content, .content, article")
+    content_tag = (
+        soup.select_one("#contentStr")
+        or soup.select_one(".article-content")
+        or soup.select_one(".content")
+        or soup.select_one("article")
+    )
     if not content_tag:
         LOGGER.warning("Content container missing for %s", url)
         return None
@@ -300,6 +283,14 @@ def _parse_article_html(html_content: bytes, html_text: str, url: str) -> Option
 def _extract_article(session: requests.Session, url: str) -> Optional[QianlongArticle]:
     response = _fetch_article_html(session, url)
     return _parse_article_html(response.content, response.text, url)
+
+
+def fetch_article(url: str, *, timeout: float = DEFAULT_TIMEOUT) -> Optional[QianlongArticle]:
+    session = _create_session(timeout)
+    try:
+        return _extract_article(session, url)
+    finally:
+        session.close()
 
 
 def fetch_articles(
@@ -404,6 +395,7 @@ def article_to_detail_row(article: QianlongArticle, article_id: str, *, detail_f
 
 __all__ = [
     "QianlongArticle",
+    "fetch_article",
     "fetch_articles",
     "make_article_id",
     "article_to_feed_row",

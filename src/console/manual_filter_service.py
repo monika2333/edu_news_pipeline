@@ -237,7 +237,8 @@ def discard_candidates_before_date(
     *,
     region: str,
     sentiment: str,
-    published_before: date,
+    query: Optional[str] = None,
+    published_before: Optional[date] = None,
     actor: Optional[str] = None,
     dry_run: bool = True,
 ) -> Dict[str, int]:
@@ -250,6 +251,7 @@ def discard_candidates_before_date(
     matched = adapter.count_manual_candidates_before_date(  # type: ignore[attr-defined]
         region=normalized_region,
         sentiment=normalized_sentiment,
+        query=(query or "").strip() or None,
         published_before=published_before,
         report_type=target_report_type,
     )
@@ -258,6 +260,7 @@ def discard_candidates_before_date(
     updated = adapter.discard_manual_candidates_before_date(  # type: ignore[attr-defined]
         region=normalized_region,
         sentiment=normalized_sentiment,
+        query=(query or "").strip() or None,
         published_before=published_before,
         actor=actor,
         report_type=target_report_type,

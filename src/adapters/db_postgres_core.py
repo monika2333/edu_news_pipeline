@@ -577,7 +577,8 @@ class PostgresAdapter:
         *,
         region: str,
         sentiment: str,
-        published_before: date,
+        query: Optional[str] = None,
+        published_before: Optional[date] = None,
         report_type: Optional[str] = None,
     ) -> int:
         with self._cursor() as cur:
@@ -585,6 +586,7 @@ class PostgresAdapter:
                 cur,
                 region=region,
                 sentiment=sentiment,
+                query=query,
                 published_before=published_before,
                 report_type=report_type,
             )
@@ -594,7 +596,8 @@ class PostgresAdapter:
         *,
         region: str,
         sentiment: str,
-        published_before: date,
+        query: Optional[str] = None,
+        published_before: Optional[date] = None,
         actor: Optional[str] = None,
         decided_at: Optional[datetime] = None,
         report_type: Optional[str] = None,
@@ -604,6 +607,7 @@ class PostgresAdapter:
                 cur,
                 region=region,
                 sentiment=sentiment,
+                query=query,
                 published_before=published_before,
                 actor=actor,
                 decided_at=decided_at,

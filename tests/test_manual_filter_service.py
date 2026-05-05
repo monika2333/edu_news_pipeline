@@ -147,11 +147,12 @@ class FakeAdapter:
         *,
         region: str,
         sentiment: str,
-        published_before: date,
+        query: Optional[str] = None,
+        published_before: Optional[date] = None,
         report_type: Optional[str] = None,
     ) -> int:
         _, total = self.search_manual_candidates(
-            query=None,
+            query=query,
             published_before=published_before,
             limit=10_000,
             offset=0,
@@ -166,13 +167,14 @@ class FakeAdapter:
         *,
         region: str,
         sentiment: str,
-        published_before: date,
+        query: Optional[str] = None,
+        published_before: Optional[date] = None,
         actor: Optional[str] = None,
         decided_at: Optional[Any] = None,
         report_type: Optional[str] = None,
     ) -> int:
         rows, _ = self.search_manual_candidates(
-            query=None,
+            query=query,
             published_before=published_before,
             limit=10_000,
             offset=0,
@@ -514,3 +516,38 @@ def test_discard_candidates_before_date_supports_preview_and_apply(fake_adapter)
     )
     assert applied == {"matched": 1, "updated": 1}
     assert next(row for row in fake_adapter.rows if row["article_id"] == "a1")["status"] == "discarded"
+
+
+def test_discard_candidates_before_date_supports_keyword_only(fake_adapter):
+    preview = manual_filter_service.discard_candidates_before_date(
+        region="internal",
+        sentiment="positive",
+        query="Internal",
+        published_before=None,
+        actor="tester",
+        dry_run=True,
+    )
+    assert preview == {"matched": 1, "updated": 0}
+
+    applied = manual_filter_service.discard_candidates_before_date(
+        region="internal",
+        sentiment="positive",
+        query="Internal",
+        published_before=None,
+        actor="tester",
+        dry_run=False,
+    )
+    assert applied == {"matched": 1, "updated": 1}
+    assert next(row for row in fake_adapter.rows if row["article_id"] == "a1")["status"] == "discarded"
+
+
+def test_discard_candidates_before_date_supports_empty_filters(fake_adapter):
+    preview = manual_filter_service.discard_candidates_before_date(
+        region="internal",
+        sentiment="positive",
+        query=None,
+        published_before=None,
+        actor="tester",
+        dry_run=True,
+    )
+    assert preview == {"matched": 1, "updated": 0}

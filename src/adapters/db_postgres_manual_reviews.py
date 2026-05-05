@@ -300,27 +300,52 @@ def search_manual_candidates(
     return [dict(row) for row in rows], total
 
 
-def count_manual_candidates_before_date(
-    cur: psycopg.Cursor,
+def _build_manual_candidate_filters(
     *,
     region: str,
     sentiment: str,
-    published_before: date,
+    query: Optional[str] = None,
+    published_before: Optional[date] = None,
     report_type: Optional[str] = None,
-) -> int:
+) -> Tuple[List[str], List[Any]]:
     clauses = [
         "mr.status = 'pending'",
         "ns.status = 'ready_for_export'",
         "ns.is_beijing_related = %s",
         "ns.sentiment_label = %s",
-        f"{PUBLISHED_LOCAL_DATE_EXPRESSION} < %s",
     ]
-    params: List[Any] = [region == "internal", sentiment, published_before]
+    params: List[Any] = [region == "internal", sentiment]
     type_expr = report_type_expr("mr")
     normalized_report_type = normalize_report_type_value(report_type)
     if normalized_report_type:
         clauses.append(f"{type_expr} = %s")
         params.append(normalized_report_type)
+    normalized_query = (query or "").strip()
+    if normalized_query:
+        clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
+        params.append(f"%{normalized_query}%")
+    if published_before:
+        clauses.append(f"{PUBLISHED_LOCAL_DATE_EXPRESSION} < %s")
+        params.append(published_before)
+    return clauses, params
+
+
+def count_manual_candidates_before_date(
+    cur: psycopg.Cursor,
+    *,
+    region: str,
+    sentiment: str,
+    query: Optional[str] = None,
+    published_before: Optional[date] = None,
+    report_type: Optional[str] = None,
+) -> int:
+    clauses, params = _build_manual_candidate_filters(
+        region=region,
+        sentiment=sentiment,
+        query=query,
+        published_before=published_before,
+        report_type=report_type,
+    )
     where_sql = " AND ".join(clauses)
     query = f"""
         SELECT COUNT(*) AS total
@@ -341,24 +366,19 @@ def discard_manual_candidates_before_date(
     *,
     region: str,
     sentiment: str,
-    published_before: date,
+    query: Optional[str] = None,
+    published_before: Optional[date] = None,
     actor: Optional[str] = None,
     decided_at: Optional[datetime] = None,
     report_type: Optional[str] = None,
 ) -> int:
-    clauses = [
-        "mr.status = 'pending'",
-        "ns.status = 'ready_for_export'",
-        "ns.is_beijing_related = %s",
-        "ns.sentiment_label = %s",
-        f"{PUBLISHED_LOCAL_DATE_EXPRESSION} < %s",
-    ]
-    filter_params: List[Any] = [region == "internal", sentiment, published_before]
-    type_expr = report_type_expr("mr")
-    normalized_report_type = normalize_report_type_value(report_type)
-    if normalized_report_type:
-        clauses.append(f"{type_expr} = %s")
-        filter_params.append(normalized_report_type)
+    clauses, filter_params = _build_manual_candidate_filters(
+        region=region,
+        sentiment=sentiment,
+        query=query,
+        published_before=published_before,
+        report_type=report_type,
+    )
     where_sql = " AND ".join(clauses)
     query = f"""
         WITH matched AS (

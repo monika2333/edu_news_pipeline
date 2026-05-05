@@ -472,12 +472,8 @@ async function clearFilterSearch() {
 
 async function discardBeforeDate() {
     const publishedBefore = elements.filterDateBefore ? elements.filterDateBefore.value : '';
-    if (!publishedBefore) {
-        showToast('Pick a date first', 'error');
-        return;
-    }
-
     const { region, sentiment } = getCurrentFilterBucket();
+    const query = state.filterQuery || (elements.filterSearchInput ? elements.filterSearchInput.value.trim() : '');
     try {
         const previewRes = await fetch(`${API_BASE}/discard_before_date`, {
             method: 'POST',
@@ -485,7 +481,8 @@ async function discardBeforeDate() {
             body: JSON.stringify({
                 region,
                 sentiment,
-                published_before: publishedBefore,
+                q: query || null,
+                published_before: publishedBefore || null,
                 actor: state.actor,
                 dry_run: true
             })
@@ -493,11 +490,15 @@ async function discardBeforeDate() {
         if (!previewRes.ok) throw new Error('failed preview');
         const preview = await previewRes.json();
         if (!preview.matched) {
-            showToast('No matched articles before that date');
+            showToast('No matched articles for current filters');
             return;
         }
 
-        const confirmed = window.confirm(`Discard ${preview.matched} pending articles before ${publishedBefore}?`);
+        const filterSummary = [];
+        if (query) filterSummary.push(`keyword "${query}"`);
+        if (publishedBefore) filterSummary.push(`published before ${publishedBefore}`);
+        const summaryText = filterSummary.length ? filterSummary.join(' and ') : 'the current bucket';
+        const confirmed = window.confirm(`Discard ${preview.matched} pending articles matching ${summaryText}?`);
         if (!confirmed) return;
 
         const applyRes = await fetch(`${API_BASE}/discard_before_date`, {
@@ -506,7 +507,8 @@ async function discardBeforeDate() {
             body: JSON.stringify({
                 region,
                 sentiment,
-                published_before: publishedBefore,
+                q: query || null,
+                published_before: publishedBefore || null,
                 actor: state.actor,
                 dry_run: false
             })

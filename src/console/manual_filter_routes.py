@@ -42,7 +42,8 @@ class UpdateOrderRequest(BaseModel):
 class DiscardBeforeDateRequest(BaseModel):
     region: Literal["internal", "external"]
     sentiment: Literal["positive", "negative"]
-    published_before: date
+    q: Optional[str] = None
+    published_before: Optional[date] = None
     actor: Optional[str] = None
     dry_run: bool = True
 
@@ -140,6 +141,7 @@ def discard_before_date_api(req: DiscardBeforeDateRequest) -> Dict[str, int]:
     return manual_filter_service.discard_candidates_before_date(
         region=req.region,
         sentiment=req.sentiment,
+        query=req.q,
         published_before=req.published_before,
         actor=req.actor,
         dry_run=req.dry_run,

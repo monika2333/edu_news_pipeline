@@ -2,6 +2,29 @@
 
 // --- Review Tab View ---
 
+function buildReviewSearchText(item) {
+    return [
+        item.title,
+        item.summary,
+        item.llm_summary,
+        item.llm_source_display,
+        item.llm_source_raw,
+        item.source
+    ]
+        .map(value => String(value || '').trim())
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+}
+
+function escapeReviewAttr(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 function filterReviewItems(term) {
     if (!elements.reviewList) return;
     const cards = elements.reviewList.querySelectorAll('.article-card');
@@ -14,8 +37,13 @@ function filterReviewItems(term) {
         const summaryEl = card.querySelector('.summary-box');
         const title = titleEl ? titleEl.textContent.toLowerCase() : '';
         const summary = summaryEl ? summaryEl.value.toLowerCase() : '';
+        const searchText = [
+            card.dataset.searchText || '',
+            title,
+            summary
+        ].join(' ').toLowerCase();
 
-        if (title.includes(term) || summary.includes(term)) {
+        if (searchText.includes(term)) {
             card.style.display = '';
         } else {
             card.style.display = 'none';
@@ -128,8 +156,9 @@ function renderSortableReviewItems(items) {
             const currentStatus = item.manual_status || item.status || state.reviewView || 'selected';
             const title = item.title || '(No Title)';
             const link = item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">${title}</a>` : title;
+            const searchText = escapeReviewAttr(buildReviewSearchText(item));
             return `
-                            <div class="article-card sort-card" data-id="${item.article_id || ''}" data-status="${currentStatus}">
+                            <div class="article-card sort-card" data-id="${item.article_id || ''}" data-status="${currentStatus}" data-search-text="${searchText}">
                                 <div class="card-header sort-header">
                                     <span class="drag-handle" title="拖动排序">&#8942;</span>
                                     <h4 class="article-title">${link}</h4>
@@ -152,12 +181,13 @@ function renderReviewCard(item) {
     const scoreVal = item.external_importance_score ?? item.score ?? '-';
     const bonusText = (item.bonus_keywords && item.bonus_keywords.length) ? item.bonus_keywords.join(', ') : '';
     const bonusClass = bonusText ? ' has-bonus' : '';
+    const searchText = escapeReviewAttr(buildReviewSearchText(item));
     const selectValue =
         currentStatus === 'selected' || currentStatus === 'backup'
             ? `${currentReportType}:${currentStatus}`
             : currentStatus;
     return `
-        <div class="article-card${bonusClass}" data-id="${item.article_id || ''}" data-status="${currentStatus}" data-report-type="${currentReportType}">
+        <div class="article-card${bonusClass}" data-id="${item.article_id || ''}" data-status="${currentStatus}" data-report-type="${currentReportType}" data-search-text="${searchText}">
             <div class="card-header">
                 <label class="review-select-wrap" title="选择">
                     <input type="checkbox" class="review-select">

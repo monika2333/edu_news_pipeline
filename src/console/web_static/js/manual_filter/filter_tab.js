@@ -1,33 +1,68 @@
 // Manual Filter JS - Filter Tab
 
-// --- Filter Tab Logic ---
+function getCurrentFilterBucket() {
+    const cat = state.filterCategory || 'internal_positive';
+    const region = cat.startsWith('external') ? 'external' : 'internal';
+    const sentiment = cat.endsWith('negative') ? 'negative' : 'positive';
+    return { cat, region, sentiment };
+}
+
+function isFilterSearchMode() {
+    return Boolean(state.filterQuery || state.filterPublishedBefore || state.filterViewMode === 'search');
+}
+
+function syncFilterToolbarState() {
+    if (elements.filterSearchInput) elements.filterSearchInput.value = state.filterQuery || '';
+    if (elements.filterDateBefore) elements.filterDateBefore.value = state.filterPublishedBefore || '';
+    if (!elements.filterSearchMeta) return;
+
+    const bucketTotal = state.filterCounts[state.filterCategory || 'internal_positive'] || 0;
+    if (isFilterSearchMode()) {
+        elements.filterSearchMeta.textContent = `Matched ${state.filterSearchTotal} items in current bucket. Bucket total: ${bucketTotal}.`;
+        return;
+    }
+    elements.filterSearchMeta.textContent = `Bucket total: ${bucketTotal}.`;
+}
 
 async function loadFilterData(options = {}) {
     const forceClusterRefresh = Boolean(options.forceClusterRefresh) || shouldForceClusterRefresh;
     shouldForceClusterRefresh = false;
+    syncFilterToolbarState();
     elements.filterList.innerHTML = renderSkeleton(3);
+
     try {
+        const searchMode = isFilterSearchMode();
+        const { cat, region, sentiment } = getCurrentFilterBucket();
         const params = new URLSearchParams({
             limit: '10',
             offset: `${(state.filterPage - 1) * 10}`,
-            cluster: 'true',
+            cluster: searchMode ? 'false' : 'true',
+            region,
+            sentiment,
         });
-        const cat = state.filterCategory || 'internal_positive';
-        if (cat) {
-            if (cat.startsWith('internal')) params.set('region', 'internal');
-            if (cat.startsWith('external')) params.set('region', 'external');
-            if (cat.endsWith('positive')) params.set('sentiment', 'positive');
-            if (cat.endsWith('negative')) params.set('sentiment', 'negative');
+        if (searchMode) {
+            params.set('view_mode', 'search');
+            if (state.filterQuery) params.set('q', state.filterQuery);
+            if (state.filterPublishedBefore) params.set('published_before', state.filterPublishedBefore);
         }
         if (forceClusterRefresh) params.set('force_refresh', 'true');
+
         const res = await fetch(`${API_BASE}/candidates?${params.toString()}`);
+        if (!res.ok) throw new Error('failed to load candidates');
         const data = await res.json();
+
+        state.filterViewMode = data.view_mode || (searchMode ? 'search' : 'browse');
+        state.filterSearchTotal = searchMode ? (data.total || 0) : 0;
+
         renderFilterList(data);
         updatePagination('filter', data.total || 0, state.filterPage);
-        state.filterCounts[cat] = data.total || 0;
-        updateFilterCountsUI();
-    } catch (e) {
-        elements.filterList.innerHTML = '<div class="error">加载数据失败</div>';
+        if (!searchMode) {
+            state.filterCounts[cat] = data.total || 0;
+            updateFilterCountsUI();
+        }
+        syncFilterToolbarState();
+    } catch (error) {
+        elements.filterList.innerHTML = '<div class="error">Failed to load data</div>';
     }
 }
 
@@ -38,20 +73,23 @@ async function loadFilterCounts() {
                 const params = new URLSearchParams({
                     limit: '1',
                     offset: '0',
-                    cluster: 'false'
+                    cluster: 'false',
                 });
                 if (cat.startsWith('internal')) params.set('region', 'internal');
                 if (cat.startsWith('external')) params.set('region', 'external');
                 if (cat.endsWith('positive')) params.set('sentiment', 'positive');
                 if (cat.endsWith('negative')) params.set('sentiment', 'negative');
+
                 const res = await fetch(`${API_BASE}/candidates?${params.toString()}`);
+                if (!res.ok) throw new Error('failed to load counts');
                 const data = await res.json();
                 state.filterCounts[cat] = data.total || 0;
             })
         );
         updateFilterCountsUI();
-    } catch (e) {
-        // Silent fail; counts remain previous
+        syncFilterToolbarState();
+    } catch (error) {
+        // Keep previous counts on failure.
     }
 }
 
@@ -62,129 +100,29 @@ function renderFilterList(data) {
         return;
     }
     if (!items.length) {
-        elements.filterList.innerHTML = '<div class="empty">无待处理文章</div>';
+        const message = isFilterSearchMode() ? 'No matched articles in current bucket' : 'No pending articles';
+        elements.filterList.innerHTML = `<div class="empty">${message}</div>`;
         return;
     }
 
-    const buckets = {
-        internalPositive: [],
-        internalNegative: [],
-        externalPositive: [],
-        externalNegative: [],
-    };
-
-    const renderCard = (item) => `
-        <div class="article-card" data-id="${item.article_id}">
-            <div class="card-header">
-                <h3 class="article-title">
-                    ${item.title || '(No Title)'}
-                    ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
-                </h3>
-                <div class="radio-group" role="radiogroup">
-                    <div class="radio-option">
-                        <input type="radio" name="status-${item.article_id}" value="selected" id="sel-${item.article_id}">
-                        <label for="sel-${item.article_id}" class="radio-label">采纳</label>
-                    </div>
-                    <div class="radio-option">
-                        <input type="radio" name="status-${item.article_id}" value="backup" id="bak-${item.article_id}">
-                        <label for="bak-${item.article_id}" class="radio-label">备选</label>
-                    </div>
-                    <div class="radio-option">
-                        <input type="radio" name="status-${item.article_id}" value="discarded" id="dis-${item.article_id}" checked>
-                        <label for="dis-${item.article_id}" class="radio-label">放弃</label>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="meta-row">
-                <div class="meta-item">来源: ${item.source || '-'}</div>
-                <div class="meta-item">分数: ${item.score || '-'}</div>
-                <div class="meta-item">
-                    <span class="badge ${getSentimentClass(item.sentiment_label)}">${item.sentiment_label || '-'}</span>
-                </div>
-                <div class="meta-item">京内: ${item.is_beijing_related ? '是' : '否'
-        }</div>
-    ${item.bonus_keywords && item.bonus_keywords.length ?
-            `<div class="meta-item">Bonus: ${item.bonus_keywords.join(', ')}</div>` : ''
-        }
-            </div>
-
-    <textarea class="summary-box" id="summary-${item.article_id}">${item.summary || ''}</textarea>
-    <input class="source-box" id="source-${item.article_id}" value="${item.llm_source_display || ''}" placeholder="${item.llm_source_raw ? `(LLM: ${item.llm_source_raw})` : '留空则回退抓取来源'}">
-        </div>
-    `;
-
-    items.forEach(item => {
-        const isInternal = !!item.is_beijing_related;
-        const sentiment = (item.sentiment_label || '').toLowerCase() === 'negative' ? 'negative' : 'positive';
-        if (isInternal && sentiment === 'positive') buckets.internalPositive.push(item);
-        else if (isInternal && sentiment === 'negative') buckets.internalNegative.push(item);
-        else if (!isInternal && sentiment === 'positive') buckets.externalPositive.push(item);
-        else buckets.externalNegative.push(item);
-    });
-
-    const sections = [
-        { key: 'internalPositive', label: '京内正面', category: 'internal_positive' },
-        { key: 'internalNegative', label: '京内负面', category: 'internal_negative' },
-        { key: 'externalPositive', label: '京外正面', category: 'external_positive' },
-        { key: 'externalNegative', label: '京外负面', category: 'external_negative' },
-    ];
-
-    elements.filterList.innerHTML = sections.map(sec => {
-        const list = buckets[sec.key] || [];
-        if (!list.length) return '';
-        return `
-    <div class="filter-section">
-        ${list.map(item => renderArticleCard(item, { showStatus: true, collapsed: false })).join('')}
-            </div>
-    `;
-    }).filter(Boolean).join('') || '<div class="empty">无待处理文章</div>';
+    elements.filterList.innerHTML = items
+        .map((item) => renderArticleCard(item, { showStatus: true, collapsed: false }))
+        .join('');
 }
 
 function renderClusteredList(clusters) {
     if (!clusters.length) {
-        elements.filterList.innerHTML = '<div class="empty">无待处理文章</div>';
+        elements.filterList.innerHTML = '<div class="empty">No pending articles</div>';
         return;
     }
 
-    const buckets = {
-        internalPositive: [],
-        internalNegative: [],
-        externalPositive: [],
-        externalNegative: [],
-    };
-
-    clusters.forEach(cluster => {
-        const items = cluster.items || [];
-        if (!items.length) return;
-        const first = items[0];
-        const isInternal = !!first.is_beijing_related;
-        const sentiment = (first.sentiment_label || '').toLowerCase() === 'negative' ? 'negative' : 'positive';
-
-        if (isInternal && sentiment === 'positive') buckets.internalPositive.push(cluster);
-        else if (isInternal && sentiment === 'negative') buckets.internalNegative.push(cluster);
-        else if (!isInternal && sentiment === 'positive') buckets.externalPositive.push(cluster);
-        else buckets.externalNegative.push(cluster);
-    });
-
-    const sections = [
-        { key: 'internalPositive', label: '京内正面', category: 'internal_positive' },
-        { key: 'internalNegative', label: '京内负面', category: 'internal_negative' },
-        { key: 'externalPositive', label: '京外正面', category: 'external_positive' },
-        { key: 'externalNegative', label: '京外负面', category: 'external_negative' },
-    ];
-
-    elements.filterList.innerHTML = sections.map(sec => {
-        const clusterList = buckets[sec.key] || [];
-        if (!clusterList.length) return '';
-        const count = state.filterCounts[sec.category] || 0;
-
-        const clustersHtml = clusterList.map(cluster => {
+    const clustersHtml = clusters
+        .map((cluster) => {
             const items = cluster.items || [];
+            if (!items.length) return '';
             const size = items.length;
             const clusterStatus = cluster.status || 'pending';
 
-            // Single-item cluster: render as a plain article card (no cluster frame).
             if (size <= 1) {
                 return renderArticleCard(items[0], { showStatus: true, collapsed: false });
             }
@@ -198,54 +136,50 @@ function renderClusteredList(clusters) {
             <div class="radio-group cluster-radio" data-cluster="${cluster.cluster_id}">
                 <div class="radio-option">
                     <input type="radio" name="cluster-${cluster.cluster_id}" value="selected" id="cluster-sel-${cluster.cluster_id}" ${clusterStatus === 'selected' ? 'checked' : ''}>
-                    <label for="cluster-sel-${cluster.cluster_id}" class="radio-label">采纳</label>
+                    <label for="cluster-sel-${cluster.cluster_id}" class="radio-label">Adopt</label>
                 </div>
                 <div class="radio-option">
                     <input type="radio" name="cluster-${cluster.cluster_id}" value="backup" id="cluster-bak-${cluster.cluster_id}" ${clusterStatus === 'backup' ? 'checked' : ''}>
-                    <label for="cluster-bak-${cluster.cluster_id}" class="radio-label">备选</label>
+                    <label for="cluster-bak-${cluster.cluster_id}" class="radio-label">Backup</label>
                 </div>
                 <div class="radio-option">
                     <input type="radio" name="cluster-${cluster.cluster_id}" value="discarded" id="cluster-dis-${cluster.cluster_id}" ${clusterStatus === 'discarded' ? 'checked' : ''}>
-                    <label for="cluster-dis-${cluster.cluster_id}" class="radio-label">放弃</label>
+                    <label for="cluster-dis-${cluster.cluster_id}" class="radio-label">Discard</label>
                 </div>
             </div>
         </div>
         <div class="cluster-items">
             ${renderArticleCard(first, { showStatus: false, collapsed: false })}
-            ${rest.map(item => renderArticleCard(item, { showStatus: false, collapsed: true })).join('')}
+            ${rest.map((item) => renderArticleCard(item, { showStatus: false, collapsed: true })).join('')}
         </div>
-        ${hiddenCount ? `<div class="cluster-toggle-row"><button type="button" class="btn btn-link cluster-toggle" data-target="${cluster.cluster_id}">展开其余${hiddenCount}条</button></div>` : ''}
+        ${hiddenCount ? `<div class="cluster-toggle-row"><button type="button" class="btn btn-link cluster-toggle" data-target="${cluster.cluster_id}">Show ${hiddenCount} more</button></div>` : ''}
     </div>
 `;
-        }).join('');
+        })
+        .filter(Boolean)
+        .join('');
 
-        return `
-    <div class="filter-section">
-        ${clustersHtml}
-    </div>
-        `;
-    }).join('') || '<div class="empty">无待处理文章</div>';
+    elements.filterList.innerHTML = clustersHtml || '<div class="empty">No pending articles</div>';
 
-    elements.filterList.querySelectorAll('.cluster-toggle').forEach(btn => {
+    elements.filterList.querySelectorAll('.cluster-toggle').forEach((btn) => {
         btn.addEventListener('click', () => {
             const target = btn.dataset.target;
             const container = elements.filterList.querySelector(`[data-cluster-id="${target}"]`);
             if (!container) return;
             const hiddenCards = container.querySelectorAll('.article-card.collapsed');
             const isHidden = hiddenCards.length ? hiddenCards[0].style.display === 'none' : true;
-            hiddenCards.forEach(card => {
+            hiddenCards.forEach((card) => {
                 card.style.display = isHidden ? '' : 'none';
             });
-            const count = hiddenCards.length;
-            btn.textContent = isHidden ? '收起其余' + count + '条' : '展开其余' + count + '条';
+            btn.textContent = isHidden ? `Hide ${hiddenCards.length}` : `Show ${hiddenCards.length} more`;
         });
     });
 }
 
 function setupFilterRealtimeDecisionHandlers() {
     if (!elements.filterList) return;
-    elements.filterList.addEventListener('change', (e) => {
-        const target = e.target;
+    elements.filterList.addEventListener('change', (event) => {
+        const target = event.target;
         if (target instanceof HTMLTextAreaElement && target.classList.contains('summary-box')) {
             handleFilterEditChange(target);
             return;
@@ -271,9 +205,9 @@ async function handleFilterEditChange(target) {
     collectCardEdits(card, edits);
     try {
         await persistEdits(edits);
-        showToast('已保存');
-    } catch (err) {
-        showToast('保存失败', 'error');
+        showToast('Saved');
+    } catch (error) {
+        showToast('Save failed', 'error');
     }
 }
 
@@ -281,10 +215,10 @@ async function handleCardDecisionChange(input) {
     const card = input.closest('.article-card');
     if (!card) return;
 
-    const id = card.dataset.id;
+    const articleId = card.dataset.id;
     const status = input.value;
     const previousStatus = card.dataset.status || 'pending';
-    if (!id || status === previousStatus) return;
+    if (!articleId || status === previousStatus) return;
 
     const radios = card.querySelectorAll('input[type="radio"][name^="status-"]');
     setInputsDisabled(radios, true);
@@ -294,40 +228,31 @@ async function handleCardDecisionChange(input) {
 
     try {
         await persistEdits(edits);
-        await submitDecisions([id], status);
+        await submitDecisions([articleId], status);
         removeCardAndMaybeCluster(card);
         loadStats();
 
-        // Undo Logic
         const undoAction = {
-            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M9 10h7a4 4 0 0 1 0 8h-1" />
-  <path d="M12 7l-3 3 3 3" />
-</svg>`,
-            title: '撤销操作',
+            text: 'Undo',
             callback: async () => {
                 try {
-                    // Revert to pending
-                    await submitDecisions([id], 'pending');
-                    showToast('已撤销操作');
-                    // Reload data to show the item again
+                    await submitDecisions([articleId], 'pending');
+                    showToast('Undone');
                     await loadFilterData();
                     loadStats();
-                } catch (e) {
-                    showToast('撤销失败', 'error');
+                } catch (error) {
+                    showToast('Undo failed', 'error');
                 }
             }
         };
 
-        showToast('已更新并移除', 'success', undoAction);
-    } catch (err) {
+        showToast('Updated', 'success', undoAction);
+    } catch (error) {
         revertRadioSelection(radios, previousStatus);
         card.dataset.status = previousStatus;
-        showToast('更新失败，请重试', 'error');
+        showToast('Update failed', 'error');
     } finally {
-        if (card.isConnected) {
-            setInputsDisabled(radios, false);
-        }
+        if (card.isConnected) setInputsDisabled(radios, false);
     }
 }
 
@@ -347,10 +272,10 @@ async function handleClusterDecisionChange(input) {
 
     const edits = {};
     const ids = [];
-    cards.forEach(card => {
-        const id = card.dataset.id;
-        if (!id) return;
-        ids.push(id);
+    cards.forEach((card) => {
+        const articleId = card.dataset.id;
+        if (!articleId) return;
+        ids.push(articleId);
         collectCardEdits(card, edits);
     });
 
@@ -365,45 +290,38 @@ async function handleClusterDecisionChange(input) {
         cluster.remove();
         loadStats();
 
-        // Undo Logic
         const undoAction = {
-            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M9 10h7a4 4 0 0 1 0 8h-1" />
-  <path d="M12 7l-3 3 3 3" />
-</svg>`,
-            title: '撤销操作',
+            text: 'Undo',
             callback: async () => {
                 try {
                     await submitDecisions(ids, 'pending');
-                    showToast('已撤销操作');
+                    showToast('Undone');
                     await loadFilterData();
                     loadStats();
-                } catch (e) {
-                    showToast('撤销失败', 'error');
+                } catch (error) {
+                    showToast('Undo failed', 'error');
                 }
             }
         };
 
-        showToast('已更新并移除', 'success', undoAction);
-    } catch (err) {
+        showToast('Updated', 'success', undoAction);
+    } catch (error) {
         revertRadioSelection(radios, previousStatus);
         cluster.dataset.status = previousStatus;
-        showToast('更新失败，请重试', 'error');
+        showToast('Update failed', 'error');
     } finally {
-        if (cluster.isConnected) {
-            setInputsDisabled(radios, false);
-        }
+        if (cluster.isConnected) setInputsDisabled(radios, false);
     }
 }
 
 function collectCardEdits(card, edits) {
-    const id = card.dataset.id;
-    if (!id) return;
+    const articleId = card.dataset.id;
+    if (!articleId) return;
     const summaryBox = card.querySelector('.summary-box');
     const sourceBox = card.querySelector('.source-box');
     const summary = summaryBox ? summaryBox.value : '';
     const llm_source = sourceBox ? sourceBox.value : '';
-    edits[id] = { summary, llm_source };
+    edits[articleId] = { summary, llm_source };
 }
 
 async function persistEdits(edits) {
@@ -434,14 +352,14 @@ async function submitDecisions(ids, status) {
 }
 
 function setInputsDisabled(nodes, disabled) {
-    nodes.forEach(node => {
+    nodes.forEach((node) => {
         node.disabled = disabled;
     });
 }
 
 function revertRadioSelection(radios, status) {
-    radios.forEach(r => {
-        r.checked = r.value === status;
+    radios.forEach((radio) => {
+        radio.checked = radio.value === status;
     });
 }
 
@@ -456,12 +374,12 @@ function removeCardAndMaybeCluster(card) {
 
 function removeCardsAndClusters(cards) {
     const clusters = new Set();
-    cards.forEach(card => {
+    cards.forEach((card) => {
         const cluster = card.closest('.filter-cluster');
         if (cluster) clusters.add(cluster);
         card.remove();
     });
-    clusters.forEach(cluster => {
+    clusters.forEach((cluster) => {
         if (!cluster.querySelector('.article-card')) cluster.remove();
     });
     scheduleReloadIfFilterPageEmpty();
@@ -488,21 +406,21 @@ function scheduleReloadIfFilterPageEmpty() {
 async function discardRemainingItems() {
     const cards = elements.filterList ? elements.filterList.querySelectorAll('.article-card') : [];
     if (!cards || !cards.length) {
-        showToast('当前无可放弃内容');
+        showToast('No visible articles to discard');
         return;
     }
 
     const edits = {};
     const ids = [];
-    cards.forEach(card => {
-        const id = card.dataset.id;
-        if (!id) return;
-        ids.push(id);
+    cards.forEach((card) => {
+        const articleId = card.dataset.id;
+        if (!articleId) return;
+        ids.push(articleId);
         collectCardEdits(card, edits);
     });
 
     if (!ids.length) {
-        showToast('当前无可放弃内容');
+        showToast('No visible articles to discard');
         return;
     }
 
@@ -512,27 +430,95 @@ async function discardRemainingItems() {
         removeCardsAndClusters(cards);
         loadStats();
 
-        // Undo Logic
         const undoAction = {
-            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M9 10h7a4 4 0 0 1 0 8h-1" />
-  <path d="M12 7l-3 3 3 3" />
-</svg>`,
-            title: '撤销操作',
+            text: 'Undo',
             callback: async () => {
                 try {
                     await submitDecisions(ids, 'pending');
-                    showToast('已撤销操作');
+                    showToast('Undone');
                     await loadFilterData();
                     loadStats();
-                } catch (e) {
-                    showToast('撤销失败', 'error');
+                } catch (error) {
+                    showToast('Undo failed', 'error');
                 }
             }
         };
 
-        showToast(`已放弃${ids.length}条`, 'success', undoAction);
-    } catch (e) {
-        showToast('批量放弃失败', 'error');
+        showToast(`Discarded ${ids.length} articles`, 'success', undoAction);
+    } catch (error) {
+        showToast('Bulk discard failed', 'error');
+    }
+}
+
+async function applyFilterSearch() {
+    state.filterQuery = elements.filterSearchInput ? elements.filterSearchInput.value.trim() : '';
+    state.filterPublishedBefore = elements.filterDateBefore ? elements.filterDateBefore.value : '';
+    state.filterViewMode = (state.filterQuery || state.filterPublishedBefore) ? 'search' : 'browse';
+    state.filterSearchTotal = 0;
+    state.filterPage = 1;
+    syncFilterToolbarState();
+    await loadFilterData();
+}
+
+async function clearFilterSearch() {
+    state.filterQuery = '';
+    state.filterPublishedBefore = '';
+    state.filterViewMode = 'browse';
+    state.filterSearchTotal = 0;
+    state.filterPage = 1;
+    syncFilterToolbarState();
+    await loadFilterData();
+}
+
+async function discardBeforeDate() {
+    const publishedBefore = elements.filterDateBefore ? elements.filterDateBefore.value : '';
+    if (!publishedBefore) {
+        showToast('Pick a date first', 'error');
+        return;
+    }
+
+    const { region, sentiment } = getCurrentFilterBucket();
+    try {
+        const previewRes = await fetch(`${API_BASE}/discard_before_date`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                region,
+                sentiment,
+                published_before: publishedBefore,
+                actor: state.actor,
+                dry_run: true
+            })
+        });
+        if (!previewRes.ok) throw new Error('failed preview');
+        const preview = await previewRes.json();
+        if (!preview.matched) {
+            showToast('No matched articles before that date');
+            return;
+        }
+
+        const confirmed = window.confirm(`Discard ${preview.matched} pending articles before ${publishedBefore}?`);
+        if (!confirmed) return;
+
+        const applyRes = await fetch(`${API_BASE}/discard_before_date`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                region,
+                sentiment,
+                published_before: publishedBefore,
+                actor: state.actor,
+                dry_run: false
+            })
+        });
+        if (!applyRes.ok) throw new Error('failed apply');
+        const result = await applyRes.json();
+        showToast(`Discarded ${result.updated} articles`);
+        state.filterPage = 1;
+        await loadFilterCounts();
+        await loadFilterData({ forceClusterRefresh: true });
+        loadStats();
+    } catch (error) {
+        showToast('Discard before date failed', 'error');
     }
 }

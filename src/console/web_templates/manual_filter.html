@@ -74,6 +74,16 @@
                     <button class="filter-tab-btn" data-category="external_negative">京外负面</button>
                 </div>
                 <div class="filter-content">
+                    <div class="filter-toolbar">
+                        <div class="filter-toolbar-main">
+                            <input type="text" id="filter-search-input" class="search-input" placeholder="Search current bucket">
+                            <input type="date" id="filter-date-before" class="search-input">
+                            <button class="btn btn-secondary" id="btn-filter-search">Search</button>
+                            <button class="btn btn-secondary" id="btn-filter-clear">Clear</button>
+                            <button class="btn btn-primary" id="btn-filter-discard-before-date">Discard Before Date</button>
+                        </div>
+                        <div class="filter-toolbar-meta" id="filter-search-meta"></div>
+                    </div>
                     <div id="filter-list">
                         <!-- Items will be injected here -->
                     </div>

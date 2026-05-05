@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from datetime import date
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -38,6 +39,14 @@ class UpdateOrderRequest(BaseModel):
     report_type: str = "zongbao"
 
 
+class DiscardBeforeDateRequest(BaseModel):
+    region: Literal["internal", "external"]
+    sentiment: Literal["positive", "negative"]
+    published_before: date
+    actor: Optional[str] = None
+    dry_run: bool = True
+
+
 @router.get("/candidates")
 def list_candidates_api(
     limit: int = 30,
@@ -47,6 +56,9 @@ def list_candidates_api(
     cluster: bool = False,
     cluster_threshold: Optional[float] = None,
     force_refresh: bool = False,
+    q: Optional[str] = None,
+    published_before: Optional[date] = None,
+    view_mode: Optional[str] = None,
     report_type: str = "zongbao",
 ) -> Dict[str, Any]:
     return manual_filter_service.list_candidates(
@@ -57,6 +69,9 @@ def list_candidates_api(
         cluster=cluster,
         cluster_threshold=cluster_threshold,
         force_refresh=force_refresh,
+        q=q,
+        published_before=published_before,
+        view_mode=view_mode,
         report_type=report_type,
     )
 
@@ -117,4 +132,15 @@ def update_order_api(req: UpdateOrderRequest) -> Dict[str, int]:
         backup_order=req.backup_order,
         actor=req.actor,
         report_type=req.report_type,
+    )
+
+
+@router.post("/discard_before_date")
+def discard_before_date_api(req: DiscardBeforeDateRequest) -> Dict[str, int]:
+    return manual_filter_service.discard_candidates_before_date(
+        region=req.region,
+        sentiment=req.sentiment,
+        published_before=req.published_before,
+        actor=req.actor,
+        dry_run=req.dry_run,
     )

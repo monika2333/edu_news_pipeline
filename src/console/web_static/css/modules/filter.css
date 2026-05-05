@@ -36,6 +36,34 @@
     min-width: 0;
 }
 
+.filter-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: #fff;
+}
+
+.filter-toolbar-main {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.filter-toolbar-main .search-input {
+    min-width: 180px;
+    flex: 1 1 180px;
+}
+
+.filter-toolbar-meta {
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+}
+
 /* Filter Cluster */
 .filter-cluster {
     border: 1px solid var(--border-color);
@@ -91,11 +119,20 @@
         flex: 0 0 auto;
         padding: 8px 16px;
     }
+
+    .filter-toolbar {
+        padding: 10px;
+    }
 }
 
 @media (max-width: 480px) {
     .filter-tab-btn {
         padding: 8px 10px;
         font-size: 0.9rem;
+    }
+
+    .filter-toolbar-main {
+        flex-direction: column;
+        align-items: stretch;
     }
 }

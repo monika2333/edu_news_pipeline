@@ -7,6 +7,7 @@ All existing imports should continue to work as before.
 """
 from __future__ import annotations
 
+from datetime import date
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -51,6 +52,21 @@ from .manual_filter_decisions import (
 
 
 logger = logging.getLogger(__name__)
+FILTER_TAB_REPORT_TYPE = DEFAULT_REPORT_TYPE
+
+
+def _serialize_manual_filter_item(
+    record: Dict[str, Any],
+    *,
+    fallback_status: str,
+    report_type: str,
+) -> Dict[str, Any]:
+    item = _attach_group_fields(_attach_source_fields(dict(record)))
+    item["manual_status"] = item.get("status") or fallback_status
+    item["summary"] = item.get("manual_summary") or item.get("llm_summary") or ""
+    item["bonus_keywords"] = _bonus_keywords(item.get("score_details"))
+    item["report_type"] = item.get("report_type") or report_type
+    return item
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -83,13 +99,85 @@ def _paginate_by_status(
     )
     items: List[Dict[str, Any]] = []
     for record in rows:
-        record = _attach_group_fields(_attach_source_fields(dict(record)))
-        record["manual_status"] = record.get("status") or manual_status
-        record["summary"] = record.get("manual_summary") or record.get("llm_summary") or ""
-        record["bonus_keywords"] = _bonus_keywords(record.get("score_details"))
-        record["report_type"] = record.get("report_type") or target_report_type
-        items.append(record)
+        items.append(
+            _serialize_manual_filter_item(
+                dict(record),
+                fallback_status=manual_status,
+                report_type=target_report_type,
+            )
+        )
     return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+def _list_candidate_search(
+    *,
+    limit: int,
+    offset: int,
+    region: Optional[str],
+    sentiment: Optional[str],
+    query: Optional[str],
+    published_before: Optional[date],
+    report_type: str,
+) -> Dict[str, Any]:
+    adapter = get_adapter()
+    rows, total = adapter.search_manual_candidates(  # type: ignore[attr-defined]
+        query=query,
+        published_before=published_before,
+        limit=limit,
+        offset=offset,
+        region=region,
+        sentiment=sentiment,
+        report_type=report_type,
+    )
+    items = [
+        _serialize_manual_filter_item(
+            dict(record),
+            fallback_status="pending",
+            report_type=report_type,
+        )
+        for record in rows
+    ]
+    return {
+        "items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "view_mode": "search",
+    }
+
+
+def _list_candidate_browse(
+    *,
+    limit: int,
+    offset: int,
+    region: Optional[str],
+    sentiment: Optional[str],
+    cluster: bool,
+    cluster_threshold: Optional[float],
+    force_refresh: bool,
+    report_type: str,
+) -> Dict[str, Any]:
+    if cluster:
+        return cluster_pending(
+            region=region,
+            sentiment=sentiment,
+            limit=limit,
+            offset=offset,
+            cluster_threshold=cluster_threshold,
+            force_refresh=force_refresh,
+            report_type=report_type,
+        )
+    result = _paginate_by_status(
+        "pending",
+        limit=limit,
+        offset=offset,
+        only_ready=True,
+        region=region,
+        sentiment=sentiment,
+        report_type=report_type,
+    )
+    result["view_mode"] = "browse"
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -104,38 +192,77 @@ def list_candidates(
     cluster: bool = False,
     cluster_threshold: Optional[float] = None,
     force_refresh: bool = False,
+    q: Optional[str] = None,
+    published_before: Optional[date] = None,
+    view_mode: Optional[str] = None,
     report_type: str = DEFAULT_REPORT_TYPE,
 ) -> Dict[str, Any]:
     region = region if region in ("internal", "external") else None
     sentiment = sentiment if sentiment in ("positive", "negative") else None
-    target_report_type = _normalize_report_type(report_type)
+    target_report_type = FILTER_TAB_REPORT_TYPE
+    normalized_query = (q or "").strip() or None
+    search_mode = (view_mode or "").strip().lower() == "search" or normalized_query is not None or published_before is not None
     logger.info(
-        "Listing candidates: limit=%s offset=%s region=%s sentiment=%s report_type=%s",
+        "Listing candidates: limit=%s offset=%s region=%s sentiment=%s report_type=%s view_mode=%s",
         limit,
         offset,
         region,
         sentiment,
         target_report_type,
+        "search" if search_mode else "browse",
     )
-    if cluster:
-        return cluster_pending(
+    if search_mode:
+        return _list_candidate_search(
             region=region,
             sentiment=sentiment,
             limit=limit,
             offset=offset,
-            cluster_threshold=cluster_threshold,
-            force_refresh=force_refresh,
+            query=normalized_query,
+            published_before=published_before,
             report_type=target_report_type,
         )
-    return _paginate_by_status(
-        "pending",
+    return _list_candidate_browse(
         limit=limit,
         offset=offset,
-        only_ready=True,
         region=region,
         sentiment=sentiment,
+        cluster=cluster,
+        cluster_threshold=cluster_threshold,
+        force_refresh=force_refresh,
         report_type=target_report_type,
     )
+
+
+def discard_candidates_before_date(
+    *,
+    region: str,
+    sentiment: str,
+    published_before: date,
+    actor: Optional[str] = None,
+    dry_run: bool = True,
+) -> Dict[str, int]:
+    normalized_region = region if region in ("internal", "external") else None
+    normalized_sentiment = sentiment if sentiment in ("positive", "negative") else None
+    if normalized_region is None or normalized_sentiment is None:
+        raise ValueError("discard_before_date requires explicit filter bucket")
+    adapter = get_adapter()
+    target_report_type = FILTER_TAB_REPORT_TYPE
+    matched = adapter.count_manual_candidates_before_date(  # type: ignore[attr-defined]
+        region=normalized_region,
+        sentiment=normalized_sentiment,
+        published_before=published_before,
+        report_type=target_report_type,
+    )
+    if dry_run or matched <= 0:
+        return {"matched": matched, "updated": 0}
+    updated = adapter.discard_manual_candidates_before_date(  # type: ignore[attr-defined]
+        region=normalized_region,
+        sentiment=normalized_sentiment,
+        published_before=published_before,
+        actor=actor,
+        report_type=target_report_type,
+    )
+    return {"matched": matched, "updated": updated}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -187,6 +314,7 @@ __all__ = [
     "list_candidates",
     "list_review",
     "list_discarded",
+    "discard_candidates_before_date",
     "status_counts",
     "trigger_clustering",
     # Decision APIs

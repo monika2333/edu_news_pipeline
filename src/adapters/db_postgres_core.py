@@ -549,6 +549,67 @@ class PostgresAdapter:
                 report_type=report_type,
             )
 
+    def search_manual_candidates(
+        self,
+        *,
+        query: Optional[str] = None,
+        published_before: Optional[date] = None,
+        limit: int = 30,
+        offset: int = 0,
+        region: Optional[str] = None,
+        sentiment: Optional[str] = None,
+        report_type: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        with self._cursor() as cur:
+            return manual_reviews.search_manual_candidates(
+                cur,
+                query=query,
+                published_before=published_before,
+                limit=limit,
+                offset=offset,
+                region=region,
+                sentiment=sentiment,
+                report_type=report_type,
+            )
+
+    def count_manual_candidates_before_date(
+        self,
+        *,
+        region: str,
+        sentiment: str,
+        published_before: date,
+        report_type: Optional[str] = None,
+    ) -> int:
+        with self._cursor() as cur:
+            return manual_reviews.count_manual_candidates_before_date(
+                cur,
+                region=region,
+                sentiment=sentiment,
+                published_before=published_before,
+                report_type=report_type,
+            )
+
+    def discard_manual_candidates_before_date(
+        self,
+        *,
+        region: str,
+        sentiment: str,
+        published_before: date,
+        actor: Optional[str] = None,
+        decided_at: Optional[datetime] = None,
+        report_type: Optional[str] = None,
+    ) -> int:
+        with self._cursor() as cur:
+            return manual_reviews.discard_manual_candidates_before_date(
+                cur,
+                region=region,
+                sentiment=sentiment,
+                published_before=published_before,
+                actor=actor,
+                decided_at=decided_at,
+                report_type=report_type,
+            )
+
     def delete_manual_clusters(self, *, report_type: Optional[str] = None) -> int:
         with self._cursor() as cur:
             return manual_reviews.delete_manual_clusters(cur, report_type=report_type)

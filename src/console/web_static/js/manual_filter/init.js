@@ -18,6 +18,29 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('btn-submit-filter').addEventListener('click', discardRemainingItems);
+    const btnFilterSearch = document.getElementById('btn-filter-search');
+    if (btnFilterSearch) {
+        btnFilterSearch.addEventListener('click', applyFilterSearch);
+    }
+    const btnFilterClear = document.getElementById('btn-filter-clear');
+    if (btnFilterClear) {
+        btnFilterClear.addEventListener('click', clearFilterSearch);
+    }
+    const btnFilterDiscardBeforeDate = document.getElementById('btn-filter-discard-before-date');
+    if (btnFilterDiscardBeforeDate) {
+        btnFilterDiscardBeforeDate.addEventListener('click', discardBeforeDate);
+    }
+    if (elements.filterSearchInput) {
+        elements.filterSearchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') applyFilterSearch();
+        });
+    }
+    if (elements.filterDateBefore) {
+        elements.filterDateBefore.addEventListener('change', () => {
+            state.filterPublishedBefore = elements.filterDateBefore.value || '';
+            syncFilterToolbarState();
+        });
+    }
 
     // New Export/Archive Handlers
     const btnPreview = document.getElementById('btn-preview-copy');
@@ -90,6 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 btn.classList.add('active');
                 state.filterCategory = btn.dataset.category || 'all';
                 state.filterPage = 1;
+                syncFilterToolbarState();
                 loadFilterData();
             });
         });

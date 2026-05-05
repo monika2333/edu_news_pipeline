@@ -1,9 +1,17 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import psycopg
+
+SEARCH_TEXT_EXPRESSION = (
+    "(coalesce(ns.title, '') || ' ' || coalesce(ns.llm_summary, '') || ' ' || coalesce(ns.content_markdown, ''))"
+)
+PUBLISHED_LOCAL_DATE_EXPRESSION = (
+    "COALESCE((ns.publish_time_iso AT TIME ZONE 'Asia/Shanghai')::date, "
+    "timezone('Asia/Shanghai', to_timestamp(ns.publish_time))::date)"
+)
 
 
 def normalize_report_type_value(report_type: Optional[str]) -> Optional[str]:
@@ -204,6 +212,173 @@ def fetch_manual_pending_for_cluster(
     cur.execute(query, tuple(params + [fetch_limit]))
     rows = cur.fetchall()
     return [dict(row) for row in rows]
+
+
+def search_manual_candidates(
+    cur: psycopg.Cursor,
+    *,
+    query: Optional[str] = None,
+    published_before: Optional[date] = None,
+    limit: int,
+    offset: int,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    report_type: Optional[str] = None,
+) -> Tuple[List[Dict[str, Any]], int]:
+    limit = max(1, min(int(limit or 30), 200))
+    offset = max(0, int(offset or 0))
+    clauses = ["mr.status = 'pending'", "ns.status = 'ready_for_export'"]
+    params: List[Any] = []
+    type_expr = report_type_expr("mr")
+    normalized_report_type = normalize_report_type_value(report_type)
+    if normalized_report_type:
+        clauses.append(f"{type_expr} = %s")
+        params.append(normalized_report_type)
+    if region in ("internal", "external"):
+        clauses.append("ns.is_beijing_related = %s")
+        params.append(region == "internal")
+    if sentiment in ("positive", "negative"):
+        clauses.append("ns.sentiment_label = %s")
+        params.append(sentiment)
+    normalized_query = (query or "").strip()
+    if normalized_query:
+        clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
+        params.append(f"%{normalized_query}%")
+    if published_before:
+        clauses.append(f"{PUBLISHED_LOCAL_DATE_EXPRESSION} < %s")
+        params.append(published_before)
+    where_sql = " AND ".join(clauses)
+    count_query = f"""
+        SELECT COUNT(*) AS total
+        FROM manual_reviews mr
+        JOIN news_summaries ns ON ns.article_id = mr.article_id
+        WHERE {where_sql}
+    """
+    query_sql = f"""
+        SELECT
+            mr.article_id,
+            mr.status,
+            mr.summary AS manual_summary,
+            mr.manual_llm_source,
+            mr.rank AS manual_rank,
+            mr.notes AS manual_notes,
+            mr.score AS manual_score,
+            {type_expr} AS report_type,
+            mr.decided_by,
+            mr.decided_at,
+            ns.title,
+            ns.llm_summary,
+            ns.llm_source,
+            ns.score,
+            ns.content_markdown,
+            ns.url,
+            ns.source,
+            ns.publish_time_iso,
+            ns.publish_time,
+            ns.sentiment_label,
+            ns.sentiment_confidence,
+            ns.is_beijing_related,
+            ns.external_importance_score,
+            ns.external_importance_checked_at,
+            ns.score_details
+        FROM manual_reviews mr
+        JOIN news_summaries ns ON ns.article_id = mr.article_id
+        WHERE {where_sql}
+        ORDER BY
+            ns.external_importance_score DESC NULLS LAST,
+            mr.rank ASC NULLS LAST,
+            ns.score DESC NULLS LAST,
+            ns.publish_time_iso DESC NULLS LAST,
+            mr.article_id ASC
+        LIMIT %s OFFSET %s
+    """
+    cur.execute(count_query, tuple(params))
+    total_row = cur.fetchone()
+    total = int(total_row["total"]) if total_row else 0
+    cur.execute(query_sql, tuple(params + [limit, offset]))
+    rows = cur.fetchall()
+    return [dict(row) for row in rows], total
+
+
+def count_manual_candidates_before_date(
+    cur: psycopg.Cursor,
+    *,
+    region: str,
+    sentiment: str,
+    published_before: date,
+    report_type: Optional[str] = None,
+) -> int:
+    clauses = [
+        "mr.status = 'pending'",
+        "ns.status = 'ready_for_export'",
+        "ns.is_beijing_related = %s",
+        "ns.sentiment_label = %s",
+        f"{PUBLISHED_LOCAL_DATE_EXPRESSION} < %s",
+    ]
+    params: List[Any] = [region == "internal", sentiment, published_before]
+    type_expr = report_type_expr("mr")
+    normalized_report_type = normalize_report_type_value(report_type)
+    if normalized_report_type:
+        clauses.append(f"{type_expr} = %s")
+        params.append(normalized_report_type)
+    where_sql = " AND ".join(clauses)
+    query = f"""
+        SELECT COUNT(*) AS total
+        FROM manual_reviews mr
+        JOIN news_summaries ns ON ns.article_id = mr.article_id
+        WHERE {where_sql}
+    """
+    cur.execute(query, tuple(params))
+    row = cur.fetchone() or {}
+    try:
+        return int(row.get("total") or 0)
+    except Exception:
+        return 0
+
+
+def discard_manual_candidates_before_date(
+    cur: psycopg.Cursor,
+    *,
+    region: str,
+    sentiment: str,
+    published_before: date,
+    actor: Optional[str] = None,
+    decided_at: Optional[datetime] = None,
+    report_type: Optional[str] = None,
+) -> int:
+    clauses = [
+        "mr.status = 'pending'",
+        "ns.status = 'ready_for_export'",
+        "ns.is_beijing_related = %s",
+        "ns.sentiment_label = %s",
+        f"{PUBLISHED_LOCAL_DATE_EXPRESSION} < %s",
+    ]
+    filter_params: List[Any] = [region == "internal", sentiment, published_before]
+    type_expr = report_type_expr("mr")
+    normalized_report_type = normalize_report_type_value(report_type)
+    if normalized_report_type:
+        clauses.append(f"{type_expr} = %s")
+        filter_params.append(normalized_report_type)
+    where_sql = " AND ".join(clauses)
+    query = f"""
+        WITH matched AS (
+            SELECT mr.article_id
+            FROM manual_reviews mr
+            JOIN news_summaries ns ON ns.article_id = mr.article_id
+            WHERE {where_sql}
+        )
+        UPDATE manual_reviews mr
+        SET status = 'discarded',
+            rank = NULL,
+            decided_by = %s,
+            decided_at = %s
+        FROM matched
+        WHERE mr.article_id = matched.article_id
+    """
+    params = list(filter_params)
+    params.extend([actor, decided_at or datetime.now(timezone.utc)])
+    cur.execute(query, tuple(params))
+    return cur.rowcount
 
 
 def delete_manual_clusters(cur: psycopg.Cursor, *, report_type: Optional[str] = None) -> int:

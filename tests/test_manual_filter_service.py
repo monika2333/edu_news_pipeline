@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -79,6 +81,117 @@ class FakeAdapter:
             report_type=report_type,
         )
         return rows
+
+    @staticmethod
+    def _published_local_date(row: Mapping[str, Any]) -> Optional[date]:
+        publish_time_iso = row.get("publish_time_iso")
+        if publish_time_iso:
+            try:
+                value = str(publish_time_iso).replace("Z", "+00:00")
+                return datetime.fromisoformat(value).astimezone(ZoneInfo("Asia/Shanghai")).date()
+            except ValueError:
+                return None
+        publish_time = row.get("publish_time")
+        if publish_time is None:
+            return None
+        try:
+            return datetime.fromtimestamp(float(publish_time), tz=ZoneInfo("Asia/Shanghai")).date()
+        except (TypeError, ValueError, OSError):
+            return None
+
+    def search_manual_candidates(
+        self,
+        *,
+        query: Optional[str] = None,
+        published_before: Optional[date] = None,
+        limit: int,
+        offset: int,
+        region: Optional[str] = None,
+        sentiment: Optional[str] = None,
+        report_type: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        rows, _ = self.fetch_manual_reviews(
+            status="pending",
+            limit=10_000,
+            offset=0,
+            only_ready=True,
+            region=region,
+            sentiment=sentiment,
+            report_type=report_type,
+        )
+        normalized_query = (query or "").strip().lower()
+        filtered = list(rows)
+        if normalized_query:
+            filtered = [
+                row
+                for row in filtered
+                if normalized_query in " ".join(
+                    [
+                        str(row.get("title") or "").lower(),
+                        str(row.get("llm_summary") or "").lower(),
+                        str(row.get("content_markdown") or "").lower(),
+                    ]
+                )
+            ]
+        if published_before:
+            filtered = [
+                row
+                for row in filtered
+                if self._published_local_date(row) is not None and self._published_local_date(row) < published_before
+            ]
+        total = len(filtered)
+        return filtered[offset : offset + limit], total
+
+    def count_manual_candidates_before_date(
+        self,
+        *,
+        region: str,
+        sentiment: str,
+        published_before: date,
+        report_type: Optional[str] = None,
+    ) -> int:
+        _, total = self.search_manual_candidates(
+            query=None,
+            published_before=published_before,
+            limit=10_000,
+            offset=0,
+            region=region,
+            sentiment=sentiment,
+            report_type=report_type,
+        )
+        return total
+
+    def discard_manual_candidates_before_date(
+        self,
+        *,
+        region: str,
+        sentiment: str,
+        published_before: date,
+        actor: Optional[str] = None,
+        decided_at: Optional[Any] = None,
+        report_type: Optional[str] = None,
+    ) -> int:
+        rows, _ = self.search_manual_candidates(
+            query=None,
+            published_before=published_before,
+            limit=10_000,
+            offset=0,
+            region=region,
+            sentiment=sentiment,
+            report_type=report_type,
+        )
+        updates = [
+            {
+                "article_id": row["article_id"],
+                "status": "discarded",
+                "rank": None,
+                "report_type": report_type,
+                "decided_by": actor,
+                "decided_at": decided_at,
+            }
+            for row in rows
+        ]
+        return self.update_manual_review_statuses(updates, report_type=report_type)
 
     def manual_review_status_counts(self, *, report_type: Optional[str] = None) -> Dict[str, int]:
         counts: Dict[str, int] = {"pending": 0, "selected": 0, "backup": 0, "discarded": 0, "exported": 0}
@@ -328,3 +441,76 @@ def test_reset_to_pending_and_discarded_listing(fake_adapter):
     assert updated == 1
     status_map = {r["article_id"]: r["status"] for r in fake_adapter.rows}
     assert status_map["a1"] == "pending"
+
+
+def test_list_candidates_search_mode_returns_flat_items(fake_adapter):
+    result = manual_filter_service.list_candidates(
+        limit=10,
+        offset=0,
+        region="internal",
+        sentiment="positive",
+        cluster=True,
+        q="Internal",
+    )
+    assert result["view_mode"] == "search"
+    assert result["total"] == 1
+    assert "clusters" not in result
+    assert [item["article_id"] for item in result["items"]] == ["a1"]
+
+
+def test_list_candidates_search_mode_uses_shanghai_calendar_day(fake_adapter):
+    fake_adapter.rows.append(
+        {
+            "article_id": "a3",
+            "title": "Boundary Case",
+            "llm_summary": "boundary",
+            "manual_summary": None,
+            "rank": None,
+            "score": 55,
+            "news_status": "ready_for_export",
+            "status": "pending",
+            "source": "src3",
+            "publish_time_iso": "2024-12-31T16:30:00Z",
+            "publish_time": None,
+            "sentiment_label": "positive",
+            "sentiment_confidence": 0.6,
+            "is_beijing_related": True,
+            "external_importance_score": 45,
+            "decided_by": None,
+            "decided_at": None,
+            "content_markdown": "body3",
+            "url": "http://example.com/a3",
+            "score_details": {"matched_rules": []},
+        }
+    )
+    result = manual_filter_service.list_candidates(
+        limit=10,
+        offset=0,
+        region="internal",
+        sentiment="positive",
+        published_before=date(2025, 1, 1),
+    )
+    assert result["view_mode"] == "search"
+    assert [item["article_id"] for item in result["items"]] == []
+
+
+def test_discard_candidates_before_date_supports_preview_and_apply(fake_adapter):
+    preview = manual_filter_service.discard_candidates_before_date(
+        region="internal",
+        sentiment="positive",
+        published_before=date(2025, 1, 2),
+        actor="tester",
+        dry_run=True,
+    )
+    assert preview == {"matched": 1, "updated": 0}
+    assert next(row for row in fake_adapter.rows if row["article_id"] == "a1")["status"] == "pending"
+
+    applied = manual_filter_service.discard_candidates_before_date(
+        region="internal",
+        sentiment="positive",
+        published_before=date(2025, 1, 2),
+        actor="tester",
+        dry_run=False,
+    )
+    assert applied == {"matched": 1, "updated": 1}
+    assert next(row for row in fake_adapter.rows if row["article_id"] == "a1")["status"] == "discarded"

@@ -11,8 +11,11 @@ class _DummyAdapter:
     def __init__(self) -> None:
         self.feed_rows: Optional[List[Dict[str, Any]]] = None
         self.detail_rows: Optional[List[Dict[str, Any]]] = None
-        self.pending_payloads: List[Dict[str, Any]] = []
-        self.pending_keywords: List[Sequence[str]] = []
+        self.filtered_rows: Optional[List[Dict[str, Any]]] = None
+
+    @staticmethod
+    def get_existing_raw_article_ids() -> set[str]:
+        return set()
 
     def upsert_raw_feed_rows(self, rows: Sequence[Dict[str, Any]]) -> int:
         self.feed_rows = list(rows)
@@ -22,17 +25,9 @@ class _DummyAdapter:
         self.detail_rows = list(rows)
         return len(rows)
 
-    def insert_pending_summary(
-        self,
-        payload: Dict[str, Any],
-        *,
-        keywords: Optional[Sequence[str]] = None,
-        fetched_at: Optional[str] = None,
-    ) -> None:
-        payload_copy = dict(payload)
-        payload_copy["fetched_at"] = fetched_at
-        self.pending_payloads.append(payload_copy)
-        self.pending_keywords.append(tuple(keywords or ()))
+    def upsert_filtered_articles(self, rows: Sequence[Dict[str, Any]]) -> int:
+        self.filtered_rows = list(rows)
+        return len(rows)
 
 
 @pytest.fixture
@@ -48,7 +43,7 @@ def sample_article() -> GMWArticle:
 
 
 def test_gmw_flow_processes_article(monkeypatch: pytest.MonkeyPatch, sample_article: GMWArticle) -> None:
-    def _fake_fetch_articles(*, limit=None, base_url=None, timeout=None):  # pragma: no cover - signature compatibility
+    def _fake_fetch_articles(*, limit=None, base_url=None, timeout=None, existing_ids=None, consecutive_stop=None):  # pragma: no cover - signature compatibility
         return [sample_article]
 
     monkeypatch.setattr(crawl_sources, "gmw_fetch_articles", _fake_fetch_articles)
@@ -67,11 +62,11 @@ def test_gmw_flow_processes_article(monkeypatch: pytest.MonkeyPatch, sample_arti
     assert stats["failed"] == 0
     assert adapter.feed_rows is not None and adapter.feed_rows[0]["article_id"].startswith("gmw:")
     assert adapter.detail_rows is not None and adapter.detail_rows[0]["content_markdown"].startswith("This article")
-    assert adapter.pending_payloads and adapter.pending_keywords[0] == ("education",)
+    assert adapter.filtered_rows and adapter.filtered_rows[0]["keywords"] == ["education"]
 
 
 def test_gmw_flow_counts_duplicates(monkeypatch: pytest.MonkeyPatch, sample_article: GMWArticle) -> None:
-    def _fake_fetch_articles(*, limit=None, base_url=None, timeout=None):  # pragma: no cover - signature compatibility
+    def _fake_fetch_articles(*, limit=None, base_url=None, timeout=None, existing_ids=None, consecutive_stop=None):  # pragma: no cover - signature compatibility
         return [sample_article, sample_article]
 
     monkeypatch.setattr(crawl_sources, "gmw_fetch_articles", _fake_fetch_articles)
@@ -88,4 +83,4 @@ def test_gmw_flow_counts_duplicates(monkeypatch: pytest.MonkeyPatch, sample_arti
     assert stats["consumed"] == 1
     assert stats["skipped"] == 1
     assert adapter.feed_rows is not None and len(adapter.feed_rows) == 1
-    assert adapter.pending_payloads and len(adapter.pending_payloads) == 1
+    assert adapter.filtered_rows is not None and len(adapter.filtered_rows) == 1

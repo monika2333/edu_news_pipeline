@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import pytest
@@ -189,21 +187,6 @@ class FakeAdapter:
         rows, _ = self.fetch_manual_reviews(status="selected", limit=10_000, offset=0, report_type=report_type)
         return rows
 
-    # ------------------------------------------------------------------
-    # Misc
-    # ------------------------------------------------------------------
-    @staticmethod
-    def _article_hash(article_id: Optional[str], original_url: Optional[str], title: Optional[str]) -> str:
-        return f"hash-{article_id or original_url or title}"
-
-    def record_export(self, report_tag: str, exported, *, output_path: str):
-        self.export_calls.append(
-            {"tag": report_tag, "exported": list(exported), "output_path": output_path}
-        )
-
-    def record_manual_export(self, report_tag: str, exported, *, output_path: str):
-        self.record_export(report_tag, exported, output_path=output_path)
-
 
 @pytest.fixture()
 def fake_adapter(monkeypatch):
@@ -255,23 +238,11 @@ def fake_adapter(monkeypatch):
     ]
     adapter = FakeAdapter(rows)
     # Patch get_adapter in all modules that use it
-    from src.console import manual_filter_cluster, manual_filter_export, manual_filter_decisions
+    from src.console import manual_filter_cluster, manual_filter_decisions
     monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
     monkeypatch.setattr(manual_filter_cluster, "get_adapter", lambda: adapter)
-    monkeypatch.setattr(manual_filter_export, "get_adapter", lambda: adapter)
     monkeypatch.setattr(manual_filter_decisions, "get_adapter", lambda: adapter)
     return adapter
-
-
-@pytest.fixture(autouse=True)
-def override_export_meta_path(monkeypatch, tmp_path: Path):
-    meta_path = tmp_path / "export_meta.json"
-    # Patch EXPORT_META_PATH in all modules that use it
-    from src.console import manual_filter_helpers, manual_filter_export
-    monkeypatch.setattr(manual_filter_service, "EXPORT_META_PATH", meta_path)
-    monkeypatch.setattr(manual_filter_helpers, "EXPORT_META_PATH", meta_path)
-    monkeypatch.setattr(manual_filter_export, "EXPORT_META_PATH", meta_path)
-    yield
 
 
 def test_list_candidates_returns_pending_with_bonus(fake_adapter):
@@ -302,18 +273,15 @@ def test_save_edits_and_review(fake_adapter):
     assert review["items"][0]["bonus_keywords"]  # still present
 
 
-def test_export_batch_writes_file_and_marks_exported(fake_adapter, tmp_path: Path):
+def test_archive_items_marks_items_exported(fake_adapter):
     manual_filter_service.bulk_decide(selected_ids=["a1", "a2"], backup_ids=[], discarded_ids=[], actor=None)
-    output_file = tmp_path / "out.txt"
-    res = manual_filter_service.export_batch(report_tag="test", output_path=str(output_file))
-    assert res["count"] == 2
-    assert Path(res["output_path"]).exists()
+    exported = manual_filter_service.archive_items(["a1", "a2"])
+    assert exported == 2
     exported_status = {r["article_id"]: r["status"] for r in fake_adapter.rows}
     assert exported_status == {"a1": "exported", "a2": "exported"}
-    assert fake_adapter.export_calls, "record_export should be invoked"
 
 
-def test_report_type_filters_and_meta(fake_adapter, tmp_path: Path):
+def test_report_type_filters_and_archive_scope(fake_adapter):
     manual_filter_service.bulk_decide(selected_ids=["a1"], backup_ids=[], discarded_ids=[], actor=None, report_type="zongbao")
     fake_adapter.rows.append(
         {
@@ -345,23 +313,11 @@ def test_report_type_filters_and_meta(fake_adapter, tmp_path: Path):
     assert [item["article_id"] for item in zb_review["items"]] == ["a1"]
     assert [item["article_id"] for item in wb_review["items"]] == ["a3"]
 
-    zb_output = tmp_path / "zb.txt"
-    wb_output = tmp_path / "wb.txt"
-    manual_filter_service.export_batch(
-        report_tag="zb",
-        output_path=str(zb_output),
-        report_type="zongbao",
-        template="zongbao",
-    )
-    manual_filter_service.export_batch(
-        report_tag="wb",
-        output_path=str(wb_output),
-        report_type="wanbao",
-        template="wanbao",
-    )
-    meta = json.loads(manual_filter_service.EXPORT_META_PATH.read_text(encoding="utf-8"))
-    assert "zongbao" in meta and "wanbao" in meta
-    assert "zongbao" in meta["zongbao"] and "wanbao" in meta["wanbao"]
+    updated = manual_filter_service.archive_items(["a1"], report_type="zongbao")
+    assert updated == 1
+    status_map = {r["article_id"]: r["status"] for r in fake_adapter.rows}
+    assert status_map["a1"] == "exported"
+    assert status_map["a3"] == "selected"
 
 
 def test_reset_to_pending_and_discarded_listing(fake_adapter):

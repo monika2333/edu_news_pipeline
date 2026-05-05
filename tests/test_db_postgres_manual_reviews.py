@@ -35,8 +35,8 @@ def test_discard_manual_candidates_before_date_places_filter_params_first() -> N
     assert updated == 1
     assert cur.query is not None
     assert "decided_by = %s" in cur.query
-    assert "WHERE mr.status = 'pending'" in cur.query
+    assert "WHERE mr.status = %s" in cur.query
     assert cur.params is not None
-    assert cur.params[:5] == (True, "positive", "zongbao", "%keyword%", date(2025, 1, 2))
-    assert cur.params[5] == "tester"
-    assert cur.params[6] == decided_at
+    assert cur.params[:6] == ("pending", "zongbao", True, "positive", "%keyword%", date(2025, 1, 2))
+    assert cur.params[6] == "tester"
+    assert cur.params[7] == decided_at

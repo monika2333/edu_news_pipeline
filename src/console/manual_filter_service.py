@@ -2,187 +2,45 @@
 manual_filter_service.py
 
 Public facade for manual filter operations.
-This module re-exports functions from sub-modules and provides list/filter APIs.
-All existing imports should continue to work as before.
+This module keeps legacy imports stable while delegating to focused sub-services.
 """
 from __future__ import annotations
 
 from datetime import date
-import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional, Sequence
 
 from src.adapters.db_postgres_core import get_adapter
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Re-export constants from helpers
-# ─────────────────────────────────────────────────────────────────────────────
-from .manual_filter_helpers import (
-    DEFAULT_REPORT_TYPE,
-    VALID_REPORT_TYPES,
-    _attach_group_fields,
-    _attach_source_fields,
-    _bonus_keywords,
-    _normalize_report_type,
+from . import manual_filter_action_service
+from .manual_filter_action_service import (
+    archive_items as _archive_items,
+    bulk_decide as _bulk_decide,
+    discard_candidates_before_date as _discard_candidates_before_date,
+    reset_to_pending as _reset_to_pending,
+    save_edits as _save_edits,
+    update_ranks as _update_ranks,
 )
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Re-export cluster functions
-# ─────────────────────────────────────────────────────────────────────────────
-from .manual_filter_cluster import (
-    DEFAULT_CLUSTER_THRESHOLD,
-    _candidate_rank_key_by_record,
-    _paginate_clusters,
-    cluster_pending,
-    refresh_clusters,
-)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Re-export decision functions
-# ─────────────────────────────────────────────────────────────────────────────
-from .manual_filter_decisions import (
-    _apply_decision,
-    _apply_ranked_decision,
-    _next_rank,
-    archive_items,
-    bulk_decide,
-    reset_to_pending,
-    save_edits,
-    update_ranks,
+from .manual_filter_cluster import DEFAULT_CLUSTER_THRESHOLD
+from .manual_filter_helpers import DEFAULT_REPORT_TYPE, VALID_REPORT_TYPES
+from .manual_filter_query_service import (
+    list_candidates as _list_candidates,
+    list_discarded as _list_discarded,
+    list_review as _list_review,
+    status_counts as _status_counts,
+    trigger_clustering as _trigger_clustering,
 )
 
 
-logger = logging.getLogger(__name__)
-FILTER_TAB_REPORT_TYPE = DEFAULT_REPORT_TYPE
+def _sync_query_dependencies() -> None:
+    from . import manual_filter_query_service
+
+    manual_filter_query_service.get_adapter = get_adapter
 
 
-def _serialize_manual_filter_item(
-    record: Dict[str, Any],
-    *,
-    fallback_status: str,
-    report_type: str,
-) -> Dict[str, Any]:
-    item = _attach_group_fields(_attach_source_fields(dict(record)))
-    item["manual_status"] = item.get("status") or fallback_status
-    item["summary"] = item.get("manual_summary") or item.get("llm_summary") or ""
-    item["bonus_keywords"] = _bonus_keywords(item.get("score_details"))
-    item["report_type"] = item.get("report_type") or report_type
-    return item
+def _sync_action_dependencies() -> None:
+    manual_filter_action_service.get_adapter = get_adapter
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Paginate by status (internal helper for list APIs)
-# ─────────────────────────────────────────────────────────────────────────────
-def _paginate_by_status(
-    manual_status: str,
-    *,
-    limit: int,
-    offset: int,
-    only_ready: bool = False,
-    region: Optional[str] = None,
-    sentiment: Optional[str] = None,
-    report_type: str = DEFAULT_REPORT_TYPE,
-    order_by_decided_at: bool = False,
-) -> Dict[str, Any]:
-    adapter = get_adapter()
-    limit = max(1, min(int(limit or 30), 200))
-    offset = max(0, int(offset or 0))
-    target_report_type = _normalize_report_type(report_type)
-    rows, total = adapter.fetch_manual_reviews(  # type: ignore[attr-defined]
-        status=manual_status,
-        limit=limit,
-        offset=offset,
-        only_ready=only_ready,
-        region=region,
-        sentiment=sentiment,
-        report_type=target_report_type,
-        order_by_decided_at=order_by_decided_at,
-    )
-    items: List[Dict[str, Any]] = []
-    for record in rows:
-        items.append(
-            _serialize_manual_filter_item(
-                dict(record),
-                fallback_status=manual_status,
-                report_type=target_report_type,
-            )
-        )
-    return {"items": items, "total": total, "limit": limit, "offset": offset}
-
-
-def _list_candidate_search(
-    *,
-    limit: int,
-    offset: int,
-    region: Optional[str],
-    sentiment: Optional[str],
-    query: Optional[str],
-    published_before: Optional[date],
-    report_type: str,
-) -> Dict[str, Any]:
-    adapter = get_adapter()
-    rows, total = adapter.search_manual_candidates(  # type: ignore[attr-defined]
-        query=query,
-        published_before=published_before,
-        limit=limit,
-        offset=offset,
-        region=region,
-        sentiment=sentiment,
-        report_type=report_type,
-    )
-    items = [
-        _serialize_manual_filter_item(
-            dict(record),
-            fallback_status="pending",
-            report_type=report_type,
-        )
-        for record in rows
-    ]
-    return {
-        "items": items,
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "view_mode": "search",
-    }
-
-
-def _list_candidate_browse(
-    *,
-    limit: int,
-    offset: int,
-    region: Optional[str],
-    sentiment: Optional[str],
-    cluster: bool,
-    cluster_threshold: Optional[float],
-    force_refresh: bool,
-    report_type: str,
-) -> Dict[str, Any]:
-    if cluster:
-        return cluster_pending(
-            region=region,
-            sentiment=sentiment,
-            limit=limit,
-            offset=offset,
-            cluster_threshold=cluster_threshold,
-            force_refresh=force_refresh,
-            report_type=report_type,
-        )
-    result = _paginate_by_status(
-        "pending",
-        limit=limit,
-        offset=offset,
-        only_ready=True,
-        region=region,
-        sentiment=sentiment,
-        report_type=report_type,
-    )
-    result["view_mode"] = "browse"
-    return result
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# List candidates (pending items, with optional clustering)
-# ─────────────────────────────────────────────────────────────────────────────
 def list_candidates(
     *,
     limit: int = 30,
@@ -197,31 +55,8 @@ def list_candidates(
     view_mode: Optional[str] = None,
     report_type: str = DEFAULT_REPORT_TYPE,
 ) -> Dict[str, Any]:
-    region = region if region in ("internal", "external") else None
-    sentiment = sentiment if sentiment in ("positive", "negative") else None
-    target_report_type = FILTER_TAB_REPORT_TYPE
-    normalized_query = (q or "").strip() or None
-    search_mode = (view_mode or "").strip().lower() == "search" or normalized_query is not None or published_before is not None
-    logger.info(
-        "Listing candidates: limit=%s offset=%s region=%s sentiment=%s report_type=%s view_mode=%s",
-        limit,
-        offset,
-        region,
-        sentiment,
-        target_report_type,
-        "search" if search_mode else "browse",
-    )
-    if search_mode:
-        return _list_candidate_search(
-            region=region,
-            sentiment=sentiment,
-            limit=limit,
-            offset=offset,
-            query=normalized_query,
-            published_before=published_before,
-            report_type=target_report_type,
-        )
-    return _list_candidate_browse(
+    _sync_query_dependencies()
+    return _list_candidates(
         limit=limit,
         offset=offset,
         region=region,
@@ -229,8 +64,87 @@ def list_candidates(
         cluster=cluster,
         cluster_threshold=cluster_threshold,
         force_refresh=force_refresh,
-        report_type=target_report_type,
+        q=q,
+        published_before=published_before,
+        view_mode=view_mode,
+        report_type=report_type,
     )
+
+def list_review(
+    decision: str,
+    *,
+    limit: int = 30,
+    offset: int = 0,
+    report_type: str = DEFAULT_REPORT_TYPE,
+) -> Dict[str, Any]:
+    _sync_query_dependencies()
+    return _list_review(decision, limit=limit, offset=offset, report_type=report_type)
+
+
+def list_discarded(*, limit: int = 30, offset: int = 0, report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, Any]:
+    _sync_query_dependencies()
+    return _list_discarded(limit=limit, offset=offset, report_type=report_type)
+
+
+def status_counts(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, int]:
+    _sync_query_dependencies()
+    return _status_counts(report_type=report_type)
+
+
+def trigger_clustering(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, Any]:
+    _sync_query_dependencies()
+    return _trigger_clustering(report_type=report_type)
+
+
+def bulk_decide(
+    *,
+    selected_ids: Sequence[str],
+    backup_ids: Sequence[str],
+    discarded_ids: Sequence[str],
+    pending_ids: Sequence[str] = (),
+    actor: Optional[str] = None,
+    report_type: str = DEFAULT_REPORT_TYPE,
+) -> Dict[str, int]:
+    return _bulk_decide(
+        selected_ids=selected_ids,
+        backup_ids=backup_ids,
+        discarded_ids=discarded_ids,
+        pending_ids=pending_ids,
+        actor=actor,
+        report_type=report_type,
+    )
+
+
+def update_ranks(
+    *,
+    selected_order: Sequence[str],
+    backup_order: Sequence[str],
+    actor: Optional[str] = None,
+    report_type: str = DEFAULT_REPORT_TYPE,
+) -> Dict[str, int]:
+    return _update_ranks(
+        selected_order=selected_order,
+        backup_order=backup_order,
+        actor=actor,
+        report_type=report_type,
+    )
+
+
+def save_edits(
+    edits: Dict[str, Dict[str, Any]],
+    *,
+    actor: Optional[str] = None,
+    report_type: str = DEFAULT_REPORT_TYPE,
+) -> int:
+    return _save_edits(edits, actor=actor, report_type=report_type)
+
+
+def reset_to_pending(ids: Sequence[str], *, actor: Optional[str] = None, report_type: str = DEFAULT_REPORT_TYPE) -> int:
+    return _reset_to_pending(ids, actor=actor, report_type=report_type)
+
+
+def archive_items(ids: Sequence[str], *, actor: Optional[str] = None, report_type: str = DEFAULT_REPORT_TYPE) -> int:
+    return _archive_items(ids, actor=actor, report_type=report_type)
 
 
 def discard_candidates_before_date(
@@ -242,92 +156,29 @@ def discard_candidates_before_date(
     actor: Optional[str] = None,
     dry_run: bool = True,
 ) -> Dict[str, int]:
-    normalized_region = region if region in ("internal", "external") else None
-    normalized_sentiment = sentiment if sentiment in ("positive", "negative") else None
-    if normalized_region is None or normalized_sentiment is None:
-        raise ValueError("discard_before_date requires explicit filter bucket")
-    adapter = get_adapter()
-    target_report_type = FILTER_TAB_REPORT_TYPE
-    matched = adapter.count_manual_candidates_before_date(  # type: ignore[attr-defined]
-        region=normalized_region,
-        sentiment=normalized_sentiment,
-        query=(query or "").strip() or None,
-        published_before=published_before,
-        report_type=target_report_type,
-    )
-    if dry_run or matched <= 0:
-        return {"matched": matched, "updated": 0}
-    updated = adapter.discard_manual_candidates_before_date(  # type: ignore[attr-defined]
-        region=normalized_region,
-        sentiment=normalized_sentiment,
-        query=(query or "").strip() or None,
+    _sync_action_dependencies()
+    return _discard_candidates_before_date(
+        region=region,
+        sentiment=sentiment,
+        query=query,
         published_before=published_before,
         actor=actor,
-        report_type=target_report_type,
-    )
-    return {"matched": matched, "updated": updated}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# List review items (selected or backup)
-# ─────────────────────────────────────────────────────────────────────────────
-def list_review(decision: str, *, limit: int = 30, offset: int = 0, report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, Any]:
-    decision = decision if decision in ("selected", "backup") else "selected"
-    target_report_type = _normalize_report_type(report_type)
-    logger.info("Listing review items: decision=%s limit=%s offset=%s report_type=%s", decision, limit, offset, target_report_type)
-    return _paginate_by_status(decision, limit=limit, offset=offset, only_ready=False, report_type=target_report_type)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# List discarded items
-# ─────────────────────────────────────────────────────────────────────────────
-def list_discarded(*, limit: int = 30, offset: int = 0, report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, Any]:
-    target_report_type = _normalize_report_type(report_type)
-    logger.info("Listing discarded items: limit=%s offset=%s report_type=%s", limit, offset, target_report_type)
-    return _paginate_by_status(
-        "discarded",
-        limit=limit,
-        offset=offset,
-        only_ready=False,
-        report_type=target_report_type,
-        order_by_decided_at=True,
+        dry_run=dry_run,
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Status counts
-# ─────────────────────────────────────────────────────────────────────────────
-def status_counts(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, int]:
-    adapter = get_adapter()
-    target_report_type = _normalize_report_type(report_type)
-    return adapter.manual_review_status_counts(report_type=target_report_type)  # type: ignore[attr-defined]
-
-
-def trigger_clustering(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, Any]:
-    target_report_type = _normalize_report_type(report_type)
-    refreshed = refresh_clusters(report_type=target_report_type)
-    return {"refreshed": refreshed}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Public API
-# ─────────────────────────────────────────────────────────────────────────────
 __all__ = [
-    # List APIs
     "list_candidates",
     "list_review",
     "list_discarded",
     "discard_candidates_before_date",
     "status_counts",
     "trigger_clustering",
-    # Decision APIs
     "bulk_decide",
     "update_ranks",
     "save_edits",
     "reset_to_pending",
-    # Archive APIs
     "archive_items",
-    # Constants (for backward compatibility)
     "DEFAULT_REPORT_TYPE",
     "VALID_REPORT_TYPES",
     "DEFAULT_CLUSTER_THRESHOLD",

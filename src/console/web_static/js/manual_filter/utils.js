@@ -269,6 +269,10 @@ function updatePagination(tab, total, currentPage) {
     `;
 }
 
+function setupPagination() {
+    // Pagination buttons are rendered with inline changePage handlers.
+}
+
 window.changePage = function (tab, page) {
     if (tab === 'filter') state.filterPage = page;
     else if (tab === 'discard') state.discardPage = page;

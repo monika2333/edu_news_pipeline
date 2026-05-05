@@ -14,11 +14,9 @@ from src.adapters.title_cluster import cluster_titles
 
 from .manual_filter_helpers import (
     DEFAULT_REPORT_TYPE,
-    _attach_group_fields,
-    _attach_source_fields,
-    _bonus_keywords,
     _normalize_report_type,
 )
+from .manual_filter_serializers import serialize_manual_filter_item
 
 logger = logging.getLogger(__name__)
 
@@ -148,11 +146,11 @@ def _collect_pending(
     )
     records: List[Dict[str, Any]] = []
     for row in rows:
-        record = _attach_group_fields(_attach_source_fields(dict(row)))
-        record["summary"] = record.get("manual_summary") or record.get("llm_summary") or ""
-        record["bonus_keywords"] = _bonus_keywords(record.get("score_details"))
-        record["external_importance_score"] = record.get("external_importance_score")
-        record["report_type"] = record.get("report_type") or target_report_type
+        record = serialize_manual_filter_item(
+            dict(row),
+            fallback_status="pending",
+            report_type=target_report_type,
+        )
         records.append(record)
     return records
 
@@ -189,10 +187,11 @@ def cluster_pending(
 
     grouped: Dict[str, Dict[str, Any]] = {}
     for row in rows:
-        record = _attach_source_fields(dict(row))
-        record["summary"] = record.get("manual_summary") or record.get("llm_summary") or ""
-        record["bonus_keywords"] = _bonus_keywords(record.get("score_details"))
-        record["report_type"] = target_report_type
+        record = serialize_manual_filter_item(
+            dict(row),
+            fallback_status="pending",
+            report_type=target_report_type,
+        )
         cluster_id = record.get("cluster_id")
         bucket = record.get("bucket_key")
         if not cluster_id or not bucket:

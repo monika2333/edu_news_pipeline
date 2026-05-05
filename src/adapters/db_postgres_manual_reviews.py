@@ -12,6 +12,33 @@ PUBLISHED_LOCAL_DATE_EXPRESSION = (
     "COALESCE((ns.publish_time_iso AT TIME ZONE 'Asia/Shanghai')::date, "
     "timezone('Asia/Shanghai', to_timestamp(ns.publish_time))::date)"
 )
+MANUAL_REVIEW_SELECT_COLUMNS = """
+    mr.article_id,
+    mr.status,
+    mr.summary AS manual_summary,
+    mr.manual_llm_source,
+    mr.rank AS manual_rank,
+    mr.notes AS manual_notes,
+    mr.score AS manual_score,
+    {type_expr} AS report_type,
+    mr.decided_by,
+    mr.decided_at,
+    ns.title,
+    ns.llm_summary,
+    ns.llm_source,
+    ns.score,
+    ns.content_markdown,
+    ns.url,
+    ns.source,
+    ns.publish_time_iso,
+    ns.publish_time,
+    ns.sentiment_label,
+    ns.sentiment_confidence,
+    ns.is_beijing_related,
+    ns.external_importance_score,
+    ns.external_importance_checked_at,
+    ns.score_details
+"""
 
 
 def normalize_report_type_value(report_type: Optional[str]) -> Optional[str]:
@@ -26,6 +53,35 @@ def normalize_report_type_value(report_type: Optional[str]) -> Optional[str]:
 def report_type_expr(alias: str = "") -> str:
     prefix = f"{alias}." if alias else ""
     return f"COALESCE({prefix}report_type, 'zongbao')"
+
+
+def _build_manual_review_filters(
+    *,
+    status: Optional[str] = None,
+    only_ready: bool = False,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    report_type: Optional[str] = None,
+) -> Tuple[List[str], List[Any]]:
+    clauses: List[str] = []
+    params: List[Any] = []
+    if status:
+        clauses.append("mr.status = %s")
+        params.append(status)
+    if only_ready:
+        clauses.append("ns.status = 'ready_for_export'")
+    type_expr = report_type_expr("mr")
+    normalized_report_type = normalize_report_type_value(report_type)
+    if normalized_report_type:
+        clauses.append(f"{type_expr} = %s")
+        params.append(normalized_report_type)
+    if region in ("internal", "external"):
+        clauses.append("ns.is_beijing_related = %s")
+        params.append(region == "internal")
+    if sentiment in ("positive", "negative"):
+        clauses.append("ns.sentiment_label = %s")
+        params.append(sentiment)
+    return clauses, params
 
 
 def enqueue_manual_review(
@@ -80,21 +136,14 @@ def fetch_manual_reviews(
 ) -> Tuple[List[Dict[str, Any]], int]:
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
-    clauses = ["mr.status = %s"]
-    params: List[Any] = [status]
     type_expr = report_type_expr("mr")
-    normalized_report_type = normalize_report_type_value(report_type)
-    if normalized_report_type:
-        clauses.append(f"{type_expr} = %s")
-        params.append(normalized_report_type)
-    if only_ready:
-        clauses.append("ns.status = 'ready_for_export'")
-    if region in ("internal", "external"):
-        clauses.append("ns.is_beijing_related = %s")
-        params.append(True if region == "internal" else False)
-    if sentiment in ("positive", "negative"):
-        clauses.append("ns.sentiment_label = %s")
-        params.append(sentiment)
+    clauses, params = _build_manual_review_filters(
+        status=status,
+        only_ready=only_ready,
+        region=region,
+        sentiment=sentiment,
+        report_type=report_type,
+    )
     where_sql = " AND ".join(clauses)
     base_params = list(params)
     count_query = f"""
@@ -105,31 +154,7 @@ def fetch_manual_reviews(
     """
     query = f"""
         SELECT
-            mr.article_id,
-            mr.status,
-            mr.summary AS manual_summary,
-            mr.manual_llm_source,
-            mr.rank AS manual_rank,
-            mr.notes AS manual_notes,
-            mr.score AS manual_score,
-            {type_expr} AS report_type,
-            mr.decided_by,
-            mr.decided_at,
-            ns.title,
-            ns.llm_summary,
-            ns.llm_source,
-            ns.score,
-            ns.content_markdown,
-            ns.url,
-            ns.source,
-            ns.publish_time_iso,
-            ns.publish_time,
-            ns.sentiment_label,
-            ns.sentiment_confidence,
-            ns.is_beijing_related,
-            ns.external_importance_score,
-            ns.external_importance_checked_at,
-            ns.score_details
+            {MANUAL_REVIEW_SELECT_COLUMNS.format(type_expr=type_expr)}
         FROM manual_reviews mr
         JOIN news_summaries ns ON ns.article_id = mr.article_id
         WHERE {where_sql}
@@ -159,46 +184,18 @@ def fetch_manual_pending_for_cluster(
     fetch_limit: int = 5000,
     report_type: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    clauses = ["mr.status = 'pending'", "ns.status = 'ready_for_export'"]
-    params: List[Any] = []
     type_expr = report_type_expr("mr")
-    normalized_report_type = normalize_report_type_value(report_type)
-    if normalized_report_type:
-        clauses.append(f"{type_expr} = %s")
-        params.append(normalized_report_type)
-    if region in ("internal", "external"):
-        clauses.append("ns.is_beijing_related = %s")
-        params.append(True if region == "internal" else False)
-    if sentiment in ("positive", "negative"):
-        clauses.append("ns.sentiment_label = %s")
-        params.append(sentiment)
+    clauses, params = _build_manual_review_filters(
+        status="pending",
+        only_ready=True,
+        region=region,
+        sentiment=sentiment,
+        report_type=report_type,
+    )
     where_sql = " AND ".join(clauses)
     query = f"""
         SELECT
-            mr.article_id,
-            mr.summary AS manual_summary,
-            mr.manual_llm_source,
-            mr.rank AS manual_rank,
-            mr.notes AS manual_notes,
-            mr.score AS manual_score,
-            {type_expr} AS report_type,
-            mr.decided_by,
-            mr.decided_at,
-            ns.title,
-            ns.llm_summary,
-            ns.llm_source,
-            ns.score,
-            ns.content_markdown,
-            ns.url,
-            ns.source,
-            ns.publish_time_iso,
-            ns.publish_time,
-            ns.sentiment_label,
-            ns.sentiment_confidence,
-            ns.is_beijing_related,
-            ns.external_importance_score,
-            ns.external_importance_checked_at,
-            ns.score_details
+            {MANUAL_REVIEW_SELECT_COLUMNS.format(type_expr=type_expr)}
         FROM manual_reviews mr
         JOIN news_summaries ns ON ns.article_id = mr.article_id
         WHERE {where_sql}
@@ -227,19 +224,14 @@ def search_manual_candidates(
 ) -> Tuple[List[Dict[str, Any]], int]:
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
-    clauses = ["mr.status = 'pending'", "ns.status = 'ready_for_export'"]
-    params: List[Any] = []
     type_expr = report_type_expr("mr")
-    normalized_report_type = normalize_report_type_value(report_type)
-    if normalized_report_type:
-        clauses.append(f"{type_expr} = %s")
-        params.append(normalized_report_type)
-    if region in ("internal", "external"):
-        clauses.append("ns.is_beijing_related = %s")
-        params.append(region == "internal")
-    if sentiment in ("positive", "negative"):
-        clauses.append("ns.sentiment_label = %s")
-        params.append(sentiment)
+    clauses, params = _build_manual_review_filters(
+        status="pending",
+        only_ready=True,
+        region=region,
+        sentiment=sentiment,
+        report_type=report_type,
+    )
     normalized_query = (query or "").strip()
     if normalized_query:
         clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
@@ -256,31 +248,7 @@ def search_manual_candidates(
     """
     query_sql = f"""
         SELECT
-            mr.article_id,
-            mr.status,
-            mr.summary AS manual_summary,
-            mr.manual_llm_source,
-            mr.rank AS manual_rank,
-            mr.notes AS manual_notes,
-            mr.score AS manual_score,
-            {type_expr} AS report_type,
-            mr.decided_by,
-            mr.decided_at,
-            ns.title,
-            ns.llm_summary,
-            ns.llm_source,
-            ns.score,
-            ns.content_markdown,
-            ns.url,
-            ns.source,
-            ns.publish_time_iso,
-            ns.publish_time,
-            ns.sentiment_label,
-            ns.sentiment_confidence,
-            ns.is_beijing_related,
-            ns.external_importance_score,
-            ns.external_importance_checked_at,
-            ns.score_details
+            {MANUAL_REVIEW_SELECT_COLUMNS.format(type_expr=type_expr)}
         FROM manual_reviews mr
         JOIN news_summaries ns ON ns.article_id = mr.article_id
         WHERE {where_sql}
@@ -308,18 +276,13 @@ def _build_manual_candidate_filters(
     published_before: Optional[date] = None,
     report_type: Optional[str] = None,
 ) -> Tuple[List[str], List[Any]]:
-    clauses = [
-        "mr.status = 'pending'",
-        "ns.status = 'ready_for_export'",
-        "ns.is_beijing_related = %s",
-        "ns.sentiment_label = %s",
-    ]
-    params: List[Any] = [region == "internal", sentiment]
-    type_expr = report_type_expr("mr")
-    normalized_report_type = normalize_report_type_value(report_type)
-    if normalized_report_type:
-        clauses.append(f"{type_expr} = %s")
-        params.append(normalized_report_type)
+    clauses, params = _build_manual_review_filters(
+        status="pending",
+        only_ready=True,
+        region=region,
+        sentiment=sentiment,
+        report_type=report_type,
+    )
     normalized_query = (query or "").strip()
     if normalized_query:
         clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")

@@ -18,10 +18,10 @@ function syncFilterToolbarState() {
 
     const bucketTotal = state.filterCounts[state.filterCategory || 'internal_positive'] || 0;
     if (isFilterSearchMode()) {
-        elements.filterSearchMeta.textContent = `Matched ${state.filterSearchTotal} items in current bucket. Bucket total: ${bucketTotal}.`;
+        elements.filterSearchMeta.textContent = `当前桶命中 ${state.filterSearchTotal} 条，总数 ${bucketTotal} 条。`;
         return;
     }
-    elements.filterSearchMeta.textContent = `Bucket total: ${bucketTotal}.`;
+    elements.filterSearchMeta.textContent = `当前桶共 ${bucketTotal} 条。`;
 }
 
 function renderFilterList(data) {
@@ -31,7 +31,7 @@ function renderFilterList(data) {
         return;
     }
     if (!items.length) {
-        const message = isFilterSearchMode() ? 'No matched articles in current bucket' : 'No pending articles';
+        const message = isFilterSearchMode() ? '当前桶内没有匹配到新闻' : '当前没有待处理新闻';
         elements.filterList.innerHTML = `<div class="empty">${message}</div>`;
         return;
     }
@@ -43,7 +43,7 @@ function renderFilterList(data) {
 
 function renderClusteredList(clusters) {
     if (!clusters.length) {
-        elements.filterList.innerHTML = '<div class="empty">No pending articles</div>';
+        elements.filterList.innerHTML = '<div class="empty">当前没有待处理新闻</div>';
         return;
     }
 
@@ -67,15 +67,15 @@ function renderClusteredList(clusters) {
             <div class="radio-group cluster-radio" data-cluster="${cluster.cluster_id}">
                 <div class="radio-option">
                     <input type="radio" name="cluster-${cluster.cluster_id}" value="selected" id="cluster-sel-${cluster.cluster_id}" ${clusterStatus === 'selected' ? 'checked' : ''}>
-                    <label for="cluster-sel-${cluster.cluster_id}" class="radio-label">Adopt</label>
+                    <label for="cluster-sel-${cluster.cluster_id}" class="radio-label">采纳</label>
                 </div>
                 <div class="radio-option">
                     <input type="radio" name="cluster-${cluster.cluster_id}" value="backup" id="cluster-bak-${cluster.cluster_id}" ${clusterStatus === 'backup' ? 'checked' : ''}>
-                    <label for="cluster-bak-${cluster.cluster_id}" class="radio-label">Backup</label>
+                    <label for="cluster-bak-${cluster.cluster_id}" class="radio-label">备选</label>
                 </div>
                 <div class="radio-option">
                     <input type="radio" name="cluster-${cluster.cluster_id}" value="discarded" id="cluster-dis-${cluster.cluster_id}" ${clusterStatus === 'discarded' ? 'checked' : ''}>
-                    <label for="cluster-dis-${cluster.cluster_id}" class="radio-label">Discard</label>
+                    <label for="cluster-dis-${cluster.cluster_id}" class="radio-label">放弃</label>
                 </div>
             </div>
         </div>
@@ -83,14 +83,14 @@ function renderClusteredList(clusters) {
             ${renderArticleCard(first, { showStatus: false, collapsed: false })}
             ${rest.map((item) => renderArticleCard(item, { showStatus: false, collapsed: true })).join('')}
         </div>
-        ${hiddenCount ? `<div class="cluster-toggle-row"><button type="button" class="btn btn-link cluster-toggle" data-target="${cluster.cluster_id}">Show ${hiddenCount} more</button></div>` : ''}
+        ${hiddenCount ? `<div class="cluster-toggle-row"><button type="button" class="btn btn-link cluster-toggle" data-target="${cluster.cluster_id}">展开其余 ${hiddenCount} 条</button></div>` : ''}
     </div>
 `;
         })
         .filter(Boolean)
         .join('');
 
-    elements.filterList.innerHTML = clustersHtml || '<div class="empty">No pending articles</div>';
+    elements.filterList.innerHTML = clustersHtml || '<div class="empty">当前没有待处理新闻</div>';
 
     elements.filterList.querySelectorAll('.cluster-toggle').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -102,7 +102,7 @@ function renderClusteredList(clusters) {
             hiddenCards.forEach((card) => {
                 card.style.display = isHidden ? '' : 'none';
             });
-            btn.textContent = isHidden ? `Hide ${hiddenCards.length}` : `Show ${hiddenCards.length} more`;
+            btn.textContent = isHidden ? `收起额外 ${hiddenCards.length} 条` : `展开其余 ${hiddenCards.length} 条`;
         });
     });
 }

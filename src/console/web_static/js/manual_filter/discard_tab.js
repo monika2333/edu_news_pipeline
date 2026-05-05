@@ -3,7 +3,7 @@
 // --- Discard Tab Logic ---
 
 async function loadDiscardData() {
-    elements.discardList.innerHTML = '<div class="loading">Loading...</div>';
+    elements.discardList.innerHTML = '<div class="loading">加载中...</div>';
     try {
         const params = new URLSearchParams({
             limit: '30',
@@ -15,13 +15,13 @@ async function loadDiscardData() {
         renderDiscardList(data.items);
         updatePagination('discard', data.total, state.discardPage);
     } catch (e) {
-        elements.discardList.innerHTML = '<div class="error">Failed to load data</div>';
+        elements.discardList.innerHTML = '<div class="error">加载数据失败</div>';
     }
 }
 
 function renderDiscardList(items) {
     if (!items.length) {
-        elements.discardList.innerHTML = '<div class="empty">No discarded articles</div>';
+        elements.discardList.innerHTML = '<div class="empty">当前没有已放弃新闻</div>';
         return;
     }
 
@@ -52,10 +52,10 @@ window.restoreToBackup = async function (id) {
                 report_type: state.reviewReportType
             })
         });
-        showToast('Restored to backup');
+        showToast('已恢复到备选');
         loadStats();
         loadDiscardData();
     } catch (e) {
-        showToast('Failed to restore', 'error');
+        showToast('恢复失败', 'error');
     }
 };

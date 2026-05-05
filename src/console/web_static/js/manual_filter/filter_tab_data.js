@@ -38,7 +38,7 @@ async function loadFilterData(options = {}) {
         }
         syncFilterToolbarState();
     } catch (error) {
-        elements.filterList.innerHTML = '<div class="error">Failed to load data</div>';
+        elements.filterList.innerHTML = '<div class="error">加载数据失败</div>';
     }
 }
 

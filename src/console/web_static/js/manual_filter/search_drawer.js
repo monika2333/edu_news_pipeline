@@ -80,7 +80,7 @@ function loadSearchFilters() {
             }
         }
     } catch (e) {
-        console.error('Failed to load search filters', e);
+        console.error('加载搜索筛选条件失败', e);
     }
 }
 
@@ -118,11 +118,11 @@ async function performDrawerSearch() {
 
     try {
         const res = await fetch(`/api/articles/search?${params.toString()}`);
-        if (!res.ok) throw new Error('Search failed');
+        if (!res.ok) throw new Error('检索失败');
         const data = await res.json();
         renderDrawerSearchResults(data);
     } catch (e) {
-        container.innerHTML = `<div class="error">Search failed: ${e.message}</div>`;
+        container.innerHTML = `<div class="error">检索失败：${e.message}</div>`;
     }
 }
 
@@ -138,7 +138,7 @@ function renderDrawerSearchResults(data) {
     const page = data.page || 1;
     const pages = data.pages || 1;
 
-    statsInfo.textContent = `Found ${total} results`;
+    statsInfo.textContent = `共找到 ${total} 条结果`;
     clearEl(container);
 
     if (!items.length) {
@@ -152,7 +152,7 @@ function renderDrawerSearchResults(data) {
         const itemEl = createEl('div', 'search-item');
 
         const header = createEl('h4');
-        const link = createEl('a', '', item.title || 'Untitled', {
+        const link = createEl('a', '', item.title || '未命名标题', {
             href: item.url || '#',
             target: '_blank',
             rel: 'noopener'
@@ -167,7 +167,7 @@ function renderDrawerSearchResults(data) {
         );
         const timeSpan = createEl('span', '', publishTime);
         const sentimentSpan = createEl('span', `badge ${getSentimentClass(item.sentiment_label)}`, item.sentiment_label || '-');
-        const statusSpan = createEl('span', '', `Status: ${item.status || '-'}`);
+        const statusSpan = createEl('span', '', `状态：${item.status || '-'}`);
 
         meta.appendChild(sourceSpan);
         meta.appendChild(timeSpan);
@@ -175,7 +175,7 @@ function renderDrawerSearchResults(data) {
         meta.appendChild(statusSpan);
         itemEl.appendChild(meta);
 
-        const summary = createEl('div', 'search-summary', item.llm_summary || 'No summary available.');
+        const summary = createEl('div', 'search-summary', item.llm_summary || '暂无摘要。');
         itemEl.appendChild(summary);
 
         fragment.appendChild(itemEl);
@@ -184,14 +184,14 @@ function renderDrawerSearchResults(data) {
     container.appendChild(fragment);
     clearEl(pagination);
 
-    const prevBtn = createEl('button', 'btn btn-secondary btn-sm', 'Prev', {
+    const prevBtn = createEl('button', 'btn btn-secondary btn-sm', '上一页', {
         onclick: page > 1 ? () => changeSearchPage(page - 1) : undefined,
         disabled: page <= 1 ? 'disabled' : undefined
     });
-    const pageInfo = createEl('span', '', `Page ${page} / ${pages}`, {
+    const pageInfo = createEl('span', '', `第 ${page} 页 / 共 ${pages} 页`, {
         style: { margin: '0 10px' }
     });
-    const nextBtn = createEl('button', 'btn btn-secondary btn-sm', 'Next', {
+    const nextBtn = createEl('button', 'btn btn-secondary btn-sm', '下一页', {
         onclick: page < pages ? () => changeSearchPage(page + 1) : undefined,
         disabled: page >= pages ? 'disabled' : undefined
     });

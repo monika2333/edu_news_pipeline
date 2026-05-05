@@ -29,9 +29,9 @@ async function handleFilterEditChange(target) {
     collectCardEdits(card, edits);
     try {
         await persistEdits(edits);
-        showToast('Saved');
+        showToast('已保存');
     } catch (error) {
-        showToast('Save failed', 'error');
+        showToast('保存失败', 'error');
     }
 }
 
@@ -57,24 +57,24 @@ async function handleCardDecisionChange(input) {
         loadStats();
 
         const undoAction = {
-            text: 'Undo',
+            text: '撤销',
             callback: async () => {
                 try {
                     await submitDecisions([articleId], 'pending');
-                    showToast('Undone');
+                    showToast('已撤销');
                     await loadFilterData();
                     loadStats();
                 } catch (error) {
-                    showToast('Undo failed', 'error');
+                    showToast('撤销失败', 'error');
                 }
             }
         };
 
-        showToast('Updated', 'success', undoAction);
+        showToast('已更新', 'success', undoAction);
     } catch (error) {
         revertRadioSelection(radios, previousStatus);
         card.dataset.status = previousStatus;
-        showToast('Update failed', 'error');
+        showToast('更新失败', 'error');
     } finally {
         if (card.isConnected) setInputsDisabled(radios, false);
     }
@@ -115,24 +115,24 @@ async function handleClusterDecisionChange(input) {
         loadStats();
 
         const undoAction = {
-            text: 'Undo',
+            text: '撤销',
             callback: async () => {
                 try {
                     await submitDecisions(ids, 'pending');
-                    showToast('Undone');
+                    showToast('已撤销');
                     await loadFilterData();
                     loadStats();
                 } catch (error) {
-                    showToast('Undo failed', 'error');
+                    showToast('撤销失败', 'error');
                 }
             }
         };
 
-        showToast('Updated', 'success', undoAction);
+        showToast('已更新', 'success', undoAction);
     } catch (error) {
         revertRadioSelection(radios, previousStatus);
         cluster.dataset.status = previousStatus;
-        showToast('Update failed', 'error');
+        showToast('更新失败', 'error');
     } finally {
         if (cluster.isConnected) setInputsDisabled(radios, false);
     }
@@ -203,7 +203,7 @@ function scheduleReloadIfFilterPageEmpty() {
 async function discardRemainingItems() {
     const cards = elements.filterList ? elements.filterList.querySelectorAll('.article-card') : [];
     if (!cards || !cards.length) {
-        showToast('No visible articles to discard');
+        showToast('当前没有可放弃的可见新闻');
         return;
     }
 
@@ -217,7 +217,7 @@ async function discardRemainingItems() {
     });
 
     if (!ids.length) {
-        showToast('No visible articles to discard');
+        showToast('当前没有可放弃的可见新闻');
         return;
     }
 
@@ -228,22 +228,22 @@ async function discardRemainingItems() {
         loadStats();
 
         const undoAction = {
-            text: 'Undo',
+            text: '撤销',
             callback: async () => {
                 try {
                     await submitDecisions(ids, 'pending');
-                    showToast('Undone');
+                    showToast('已撤销');
                     await loadFilterData();
                     loadStats();
                 } catch (error) {
-                    showToast('Undo failed', 'error');
+                    showToast('撤销失败', 'error');
                 }
             }
         };
 
-        showToast(`Discarded ${ids.length} articles`, 'success', undoAction);
+        showToast(`已放弃 ${ids.length} 条新闻`, 'success', undoAction);
     } catch (error) {
-        showToast('Bulk discard failed', 'error');
+        showToast('批量放弃失败', 'error');
     }
 }
 
@@ -267,15 +267,15 @@ async function discardBeforeDate() {
         if (!previewRes.ok) throw new Error('failed preview');
         const preview = await previewRes.json();
         if (!preview.matched) {
-            showToast('No matched articles for current filters');
+            showToast('当前条件下没有匹配到新闻');
             return;
         }
 
         const filterSummary = [];
-        if (query) filterSummary.push(`keyword "${query}"`);
-        if (publishedBefore) filterSummary.push(`published before ${publishedBefore}`);
-        const summaryText = filterSummary.length ? filterSummary.join(' and ') : 'the current bucket';
-        const confirmed = window.confirm(`Discard ${preview.matched} pending articles matching ${summaryText}?`);
+        if (query) filterSummary.push(`关键词“${query}”`);
+        if (publishedBefore) filterSummary.push(`${publishedBefore} 之前发布`);
+        const summaryText = filterSummary.length ? filterSummary.join('，且') : '当前桶内全部待处理新闻';
+        const confirmed = window.confirm(`确定放弃符合${summaryText}的 ${preview.matched} 条待处理新闻吗？`);
         if (!confirmed) return;
 
         const applyRes = await fetch(`${API_BASE}/discard_before_date`, {
@@ -292,12 +292,12 @@ async function discardBeforeDate() {
         });
         if (!applyRes.ok) throw new Error('failed apply');
         const result = await applyRes.json();
-        showToast(`Discarded ${result.updated} articles`);
+        showToast(`已放弃 ${result.updated} 条新闻`);
         state.filterPage = 1;
         await loadFilterCounts();
         await loadFilterData({ forceClusterRefresh: true });
         loadStats();
     } catch (error) {
-        showToast('Discard before date failed', 'error');
+        showToast('全部放弃失败', 'error');
     }
 }

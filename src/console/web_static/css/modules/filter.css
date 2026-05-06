@@ -48,15 +48,42 @@
 }
 
 .filter-toolbar-main {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) minmax(150px, 190px) repeat(3, auto);
+    gap: 8px;
     align-items: center;
 }
 
 .filter-toolbar-main .search-input {
-    min-width: 180px;
-    flex: 1 1 180px;
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding: 8px 10px;
+    box-sizing: border-box;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text-primary);
+    font: inherit;
+}
+
+.filter-toolbar-main .search-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.filter-toolbar-main .btn {
+    white-space: nowrap;
+    padding-inline: 16px;
+}
+
+.filter-discard-action {
+    background: #dc2626;
+}
+
+.filter-discard-action:hover {
+    background: #b91c1c;
 }
 
 .filter-toolbar-meta {
@@ -122,6 +149,11 @@
 
     .filter-toolbar {
         padding: 10px;
+        border-radius: 10px;
+    }
+
+    .filter-toolbar-main {
+        grid-template-columns: minmax(0, 1fr) minmax(136px, 180px) auto;
     }
 }
 
@@ -131,8 +163,44 @@
         font-size: 0.9rem;
     }
 
+    .filter-toolbar {
+        gap: 8px;
+        padding: 8px;
+        margin-bottom: 12px;
+    }
+
     .filter-toolbar-main {
-        flex-direction: column;
-        align-items: stretch;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 8px;
+    }
+
+    .filter-toolbar-main #filter-search-input {
+        grid-column: 1 / -1;
+    }
+
+    .filter-toolbar-main #filter-date-before {
+        grid-column: 1;
+    }
+
+    .filter-toolbar-main #btn-filter-search {
+        grid-column: 2;
+        width: 100%;
+    }
+
+    .filter-toolbar-main #btn-filter-clear,
+    .filter-toolbar-main .filter-discard-action {
+        grid-column: auto;
+        width: 100%;
+    }
+
+    .filter-toolbar-main .btn {
+        min-height: 38px;
+        padding-inline: 12px;
+        font-size: 0.9rem;
+    }
+
+    .filter-toolbar-meta {
+        font-size: 0.84rem;
+        line-height: 1.35;
     }
 }

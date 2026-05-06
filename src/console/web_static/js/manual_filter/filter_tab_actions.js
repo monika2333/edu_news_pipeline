@@ -271,9 +271,7 @@ async function discardBeforeDate() {
             return;
         }
 
-        const filterSummary = [];
-        if (query) filterSummary.push(`关键词“${query}”`);
-        if (publishedBefore) filterSummary.push(`${publishedBefore} 之前发布`);
+        const filterSummary = buildFilterConditionParts(query, publishedBefore);
         const summaryText = filterSummary.length ? filterSummary.join('，且') : '当前桶内全部待处理新闻';
         const confirmed = window.confirm(`确定放弃符合${summaryText}的 ${preview.matched} 条待处理新闻吗？`);
         if (!confirmed) return;

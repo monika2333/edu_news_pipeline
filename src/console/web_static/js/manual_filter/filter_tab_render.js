@@ -11,14 +11,23 @@ function isFilterSearchMode() {
     return Boolean(state.filterQuery || state.filterPublishedBefore || state.filterViewMode === 'search');
 }
 
+function buildFilterConditionParts(query, publishedBefore) {
+    const parts = [];
+    if (query) parts.push(`关键词“${query}”`);
+    if (publishedBefore) parts.push(`发布日期早于 ${publishedBefore}，不含当天`);
+    return parts;
+}
+
 function syncFilterToolbarState() {
     if (elements.filterSearchInput) elements.filterSearchInput.value = state.filterQuery || '';
     if (elements.filterDateBefore) elements.filterDateBefore.value = state.filterPublishedBefore || '';
     if (!elements.filterSearchMeta) return;
 
     const bucketTotal = state.filterCounts[state.filterCategory || 'internal_positive'] || 0;
+    const conditionParts = buildFilterConditionParts(state.filterQuery, state.filterPublishedBefore);
+    const conditionText = conditionParts.length ? `条件：${conditionParts.join('，且')}。` : '';
     if (isFilterSearchMode()) {
-        elements.filterSearchMeta.textContent = `当前桶命中 ${state.filterSearchTotal} 条，总数 ${bucketTotal} 条。`;
+        elements.filterSearchMeta.textContent = `当前桶命中 ${state.filterSearchTotal} 条，总数 ${bucketTotal} 条。${conditionText}`;
         return;
     }
     elements.filterSearchMeta.textContent = `当前桶共 ${bucketTotal} 条。`;

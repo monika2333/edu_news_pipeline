@@ -4,7 +4,7 @@
 
 ## 功能总览
 - **流水线**：抓取 → 去重 → 评分 → 摘要/情感 → 北京/外地分流与重要性评分 → 导出简报。
-- **Web 控制台**：`/manual_filter` 进行人工筛选/审阅（簇展示、状态自动保存、排序模式、导出弹窗）；`/dashboard` 查看最近运行与最新导出并可手动触发；`/articles/search` keywords-only search.
+- **Web 控制台**：`/manual_filter` 进行人工筛选/审阅（簇展示、状态自动保存、排序模式、导出弹窗）；`/dashboard` 查看最近运行与最新导出并可手动触发；`/articles/search` 提供关键词检索。
 - **导出/预览**：支持在审阅页导出文本或预览（可选标记为已导出）。
 
 ## 快速开始
@@ -29,7 +29,7 @@ python -m src.cli.main export
 ```
 可用 `-h` 查看每个步骤的参数。
 
--## Web 控制台
+## Web 控制台
 - 默认地址：`http://127.0.0.1:8000`
 - **/manual_filter**
   - 默认按地域/情感聚类展示，可切换桶（京内正/京内负/京外正/京外负/全部）。
@@ -38,7 +38,7 @@ python -m src.cli.main export
 - **/dashboard**
   - 查看最近流水线运行和最新导出概况，可从页面触发一次运行。
 - **/articles/search**
-  - Keywords-only search; summaries and links, content loads on demand.
+  - 关键词检索；默认返回摘要与链接，正文按需加载。
 
 ## 配置要点（.env / .env.local）
 - 数据库：`DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`、`DB_SCHEMA`。
@@ -75,11 +75,18 @@ dbmate down
 ## 目录速览
 - `run_console.py`：控制台入口。
 - `src/console/app.py`：FastAPI 应用与路由挂载。
-- `src/console/routes/`：API 与页面路由（manual_filter、dashboard、articles/search 等）。
-- `src/console/services/`：对应的业务逻辑。
-- `src/console/web/templates/`：Jinja2 模板。
-- `src/console/web/static/`：前端 JS / CSS 资源。
-- `docs/`：提示词与流程文档。
+- `src/cli/main.py`：流水线命令行入口。
+- `src/workers/`：抓取、去重、评分、摘要、外部过滤、导出等流水线步骤。
+- `src/adapters/`：数据库、HTTP 源、LLM、通知等外部系统适配器。
+- `src/domain/`：领域模型、评分、地域判断、导出格式等业务规则。
+- `src/console/*_routes.py`：API 与页面路由（manual_filter、dashboard、articles/search 等）。
+- `src/console/*_service.py`：控制台业务逻辑。
+- `src/console/*_schemas.py`：控制台请求/响应结构。
+- `src/console/web_templates/`：Jinja2 模板。
+- `src/console/web_static/`：前端 JS / CSS 资源。
+- `database/migrations/`：Dbmate 数据库迁移。
+- `docs/`：提示词、控制台认证和流程文档。
+- `AGENTS.md`：面向 AI agent 的全局开发约束与命令说明。
 
 ## 说明
 - 控制台访问默认仅监听本机，部署到外网时务必开启认证。

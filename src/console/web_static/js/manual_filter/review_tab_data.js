@@ -119,13 +119,8 @@ async function applyReviewBulkStatus() {
         else if (value === 'pending') targetLabel = '待处理';
 
         // Undo Action
-        const undoAction = {
-            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M9 10h7a4 4 0 0 1 0 8h-1" />
-  <path d="M12 7l-3 3 3 3" />
-</svg>`,
-            title: '撤销操作',
-            callback: async () => {
+        const undoAction = buildUndoToastAction(
+            async () => {
                 try {
                     // Determine which list to put them back into based on previousView
                     const undoPayload = {
@@ -154,7 +149,7 @@ async function applyReviewBulkStatus() {
                     showToast('撤销失败', 'error');
                 }
             }
-        };
+        );
 
         showToast(`已批量移动 ${totalMoved} 条文章到 ${targetLabel}`, 'success', undoAction);
     } catch (e) {
@@ -213,13 +208,8 @@ function parseReviewDecision(rawValue, card) {
 }
 
 function buildReviewUndoAction(id, prevStatus, prevReportType) {
-    return {
-        icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M9 10h7a4 4 0 0 1 0 8h-1" />
-  <path d="M12 7l-3 3 3 3" />
-</svg>`,
-        title: '撤销操作',
-        callback: async () => {
+    return buildUndoToastAction(
+        async () => {
             try {
                 await fetch(`${API_BASE}/decide`, {
                     method: 'POST',
@@ -240,7 +230,7 @@ function buildReviewUndoAction(id, prevStatus, prevReportType) {
                 showToast('撤销失败', 'error');
             }
         }
-    };
+    );
 }
 
 async function applyReviewCardDecision(card, rawValue, successMessage = '已更新状态') {

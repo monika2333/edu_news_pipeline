@@ -56,9 +56,8 @@ async function handleCardDecisionChange(input) {
         removeCardAndMaybeCluster(card);
         loadStats();
 
-        const undoAction = {
-            text: '撤销',
-            callback: async () => {
+        const undoAction = buildUndoToastAction(
+            async () => {
                 try {
                     await submitDecisions([articleId], 'pending');
                     showToast('已撤销');
@@ -68,7 +67,7 @@ async function handleCardDecisionChange(input) {
                     showToast('撤销失败', 'error');
                 }
             }
-        };
+        );
 
         showToast('已更新', 'success', undoAction);
     } catch (error) {
@@ -114,9 +113,8 @@ async function handleClusterDecisionChange(input) {
         cluster.remove();
         loadStats();
 
-        const undoAction = {
-            text: '撤销',
-            callback: async () => {
+        const undoAction = buildUndoToastAction(
+            async () => {
                 try {
                     await submitDecisions(ids, 'pending');
                     showToast('已撤销');
@@ -126,7 +124,7 @@ async function handleClusterDecisionChange(input) {
                     showToast('撤销失败', 'error');
                 }
             }
-        };
+        );
 
         showToast('已更新', 'success', undoAction);
     } catch (error) {
@@ -227,9 +225,8 @@ async function discardRemainingItems() {
         removeCardsAndClusters(cards);
         loadStats();
 
-        const undoAction = {
-            text: '撤销',
-            callback: async () => {
+        const undoAction = buildUndoToastAction(
+            async () => {
                 try {
                     await submitDecisions(ids, 'pending');
                     showToast('已撤销');
@@ -239,7 +236,7 @@ async function discardRemainingItems() {
                     showToast('撤销失败', 'error');
                 }
             }
-        };
+        );
 
         showToast(`已放弃 ${ids.length} 条新闻`, 'success', undoAction);
     } catch (error) {

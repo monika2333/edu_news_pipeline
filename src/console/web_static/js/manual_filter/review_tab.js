@@ -197,14 +197,17 @@ function renderReviewCard(item) {
                     ${item.title || '(No Title)'}
                     ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
                 </h4>
-                <select class="status-select" data-id="${item.article_id || ''}">
-                    <option value="zongbao:selected" ${selectValue === 'zongbao:selected' ? 'selected' : ''}>综报采纳</option>
-                    <option value="zongbao:backup" ${selectValue === 'zongbao:backup' ? 'selected' : ''}>综报备选</option>
-                    <option value="wanbao:selected" ${selectValue === 'wanbao:selected' ? 'selected' : ''}>晚报采纳</option>
-                    <option value="wanbao:backup" ${selectValue === 'wanbao:backup' ? 'selected' : ''}>晚报备选</option>
-                    <option value="discarded" ${selectValue === 'discarded' ? 'selected' : ''}>放弃</option>
-                    <option value="pending" ${selectValue === 'pending' ? 'selected' : ''}>待处理</option>
-                </select>
+                <div class="review-card-actions">
+                    <button type="button" class="review-discard-btn" data-id="${item.article_id || ''}" title="放弃新闻" aria-label="放弃新闻">🗑️</button>
+                    <select class="status-select" data-id="${item.article_id || ''}">
+                        <option value="zongbao:selected" ${selectValue === 'zongbao:selected' ? 'selected' : ''}>综报采纳</option>
+                        <option value="zongbao:backup" ${selectValue === 'zongbao:backup' ? 'selected' : ''}>综报备选</option>
+                        <option value="wanbao:selected" ${selectValue === 'wanbao:selected' ? 'selected' : ''}>晚报采纳</option>
+                        <option value="wanbao:backup" ${selectValue === 'wanbao:backup' ? 'selected' : ''}>晚报备选</option>
+                        <option value="discarded" ${selectValue === 'discarded' ? 'selected' : ''}>放弃</option>
+                        <option value="pending" ${selectValue === 'pending' ? 'selected' : ''}>待处理</option>
+                    </select>
+                </div>
             </div>
             <div class="meta-row">
                 <div class="meta-item">来源: ${sourceText}</div>
@@ -226,6 +229,11 @@ function bindReviewSelectionControls() {
     const statusSelects = elements.reviewList.querySelectorAll('.status-select');
     statusSelects.forEach(sel => {
         sel.addEventListener('change', handleReviewStatusChange);
+    });
+
+    const discardButtons = elements.reviewList.querySelectorAll('.review-discard-btn');
+    discardButtons.forEach(btn => {
+        btn.addEventListener('click', handleReviewDiscardClick);
     });
 
     const summaries = elements.reviewList.querySelectorAll('.summary-box');

@@ -200,12 +200,7 @@ async function persistReviewOrder() {
     }
 }
 
-async function handleReviewStatusChange(e) {
-    const select = e.target;
-    const card = select.closest('.article-card');
-    if (!card) return;
-    const id = card.dataset.id;
-    const rawValue = select.value;
+function parseReviewDecision(rawValue, card) {
     let status = rawValue;
     let targetReportType = card.dataset.reportType || state.reviewReportType;
     if (rawValue.includes(':')) {
@@ -213,12 +208,57 @@ async function handleReviewStatusChange(e) {
         targetReportType = rt === 'wanbao' ? 'wanbao' : 'zongbao';
         status = st;
     }
+
+    return { status, targetReportType };
+}
+
+function buildReviewUndoAction(id, prevStatus, prevReportType) {
+    return {
+        icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M9 10h7a4 4 0 0 1 0 8h-1" />
+  <path d="M12 7l-3 3 3 3" />
+</svg>`,
+        title: '撤销操作',
+        callback: async () => {
+            try {
+                await fetch(`${API_BASE}/decide`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        selected_ids: prevStatus === 'selected' ? [id] : [],
+                        backup_ids: prevStatus === 'backup' ? [id] : [],
+                        discarded_ids: prevStatus === 'discarded' ? [id] : [],
+                        pending_ids: prevStatus === 'pending' ? [id] : [],
+                        actor: state.actor,
+                        report_type: prevReportType
+                    })
+                });
+                showToast('已撤销操作');
+                await loadReviewData();
+                loadStats();
+            } catch (e) {
+                showToast('撤销失败', 'error');
+            }
+        }
+    };
+}
+
+async function applyReviewCardDecision(card, rawValue, successMessage = '已更新状态') {
+    const id = card.dataset.id;
+    if (!id) return;
+
+    const { status, targetReportType } = parseReviewDecision(rawValue, card);
     const summaryBox = card.querySelector('.summary-box');
     const summary = summaryBox ? summaryBox.value : '';
     const sourceBox = card.querySelector('.source-box');
     const llm_source = sourceBox ? sourceBox.value : '';
+    const controls = card.querySelectorAll('.status-select, .review-discard-btn');
+    const prevStatus = card.dataset.status || state.reviewView || 'selected';
+    const prevReportType = card.dataset.reportType || state.reviewReportType;
 
-    select.disabled = true;
+    controls.forEach(control => {
+        control.disabled = true;
+    });
     try {
         const scrollY = window.scrollY;
         await fetch(`${API_BASE}/edit`, {
@@ -244,45 +284,28 @@ async function handleReviewStatusChange(e) {
         window.scrollTo({ top: scrollY, behavior: 'auto' });
         loadStats();
 
-        // Undo Logic
-        const prevStatus = card.dataset.status;
-        const prevReportType = card.dataset.reportType || state.reviewReportType;
-
-        const undoAction = {
-            icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M9 10h7a4 4 0 0 1 0 8h-1" />
-  <path d="M12 7l-3 3 3 3" />
-</svg>`,
-            title: '撤销操作',
-            callback: async () => {
-                try {
-                    await fetch(`${API_BASE}/decide`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            selected_ids: prevStatus === 'selected' ? [id] : [],
-                            backup_ids: prevStatus === 'backup' ? [id] : [],
-                            discarded_ids: prevStatus === 'discarded' ? [id] : [],
-                            pending_ids: prevStatus === 'pending' ? [id] : [],
-                            actor: state.actor,
-                            report_type: prevReportType
-                        })
-                    });
-                    showToast('已撤销操作');
-                    await loadReviewData();
-                    loadStats();
-                } catch (e) {
-                    showToast('撤销失败', 'error');
-                }
-            }
-        };
-
-        showToast('已更新状态', 'success', undoAction);
+        showToast(successMessage, 'success', buildReviewUndoAction(id, prevStatus, prevReportType));
     } catch (err) {
         showToast('更新失败，请重试', 'error');
     } finally {
-        select.disabled = false;
+        controls.forEach(control => {
+            control.disabled = false;
+        });
     }
+}
+
+async function handleReviewStatusChange(e) {
+    const select = e.target;
+    const card = select.closest('.article-card');
+    if (!card) return;
+    await applyReviewCardDecision(card, select.value);
+}
+
+async function handleReviewDiscardClick(e) {
+    const button = e.currentTarget;
+    const card = button.closest('.article-card');
+    if (!card) return;
+    await applyReviewCardDecision(card, 'discarded', '已放弃新闻');
 }
 
 async function handleSummaryUpdate(e) {

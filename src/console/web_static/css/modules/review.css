@@ -184,6 +184,46 @@
 }
 
 /* Status Select in Review Card */
+.review-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.review-discard-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    background: #fff7f7;
+    color: var(--danger-color);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    transition: background 0.2s, border-color 0.2s, transform 0.2s;
+}
+
+.review-discard-btn:hover {
+    background: #fee2e2;
+    border-color: #fca5a5;
+    transform: translateY(-1px);
+}
+
+.review-discard-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.16);
+}
+
+.review-discard-btn:disabled {
+    cursor: wait;
+    opacity: 0.6;
+    transform: none;
+}
+
 .status-select {
     padding: 6px 12px;
     border-radius: 8px;
@@ -232,6 +272,10 @@
 
 .review-grid.compact-mode .status-select {
     min-width: 140px;
+}
+
+.review-grid.compact-mode .review-card-actions {
+    margin-left: auto;
 }
 
 .review-ghost {
@@ -405,6 +449,23 @@
     .status-select {
         width: 100%;
         margin-top: 6px;
+    }
+
+    .review-card-actions {
+        width: 100%;
+        align-items: stretch;
+    }
+
+    .review-discard-btn {
+        width: 42px;
+        height: 38px;
+        margin-top: 6px;
+        flex: 0 0 auto;
+    }
+
+    .review-card-actions .status-select {
+        flex: 1 1 auto;
+        min-width: 0;
     }
 
     .review-grid.compact-mode .drag-handle {

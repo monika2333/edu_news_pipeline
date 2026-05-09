@@ -25,6 +25,24 @@ function escapeReviewAttr(value) {
         .replace(/>/g, '&gt;');
 }
 
+function countReviewSummaryChars(value) {
+    const plainText = String(value || '')
+        .replace(/\s+/g, '');
+    return Array.from(plainText).length;
+}
+
+function formatReviewSummaryCount(value) {
+    return Number(value || 0).toLocaleString('zh-CN');
+}
+
+function updateReviewSummaryCount(box) {
+    const wrap = box.closest('.review-summary-wrap');
+    if (!wrap) return;
+    const countEl = wrap.querySelector('.review-summary-count');
+    if (!countEl) return;
+    countEl.textContent = `${formatReviewSummaryCount(countReviewSummaryChars(box.value))}字`;
+}
+
 function filterReviewItems(term) {
     if (!elements.reviewList) return;
     const cards = elements.reviewList.querySelectorAll('.article-card');
@@ -182,6 +200,7 @@ function renderReviewCard(item) {
     const bonusText = (item.bonus_keywords && item.bonus_keywords.length) ? item.bonus_keywords.join(', ') : '';
     const bonusClass = bonusText ? ' has-bonus' : '';
     const searchText = escapeReviewAttr(buildReviewSearchText(item));
+    const summaryCount = countReviewSummaryChars(item.summary);
     const selectValue =
         currentStatus === 'selected' || currentStatus === 'backup'
             ? `${currentReportType}:${currentStatus}`
@@ -214,7 +233,10 @@ function renderReviewCard(item) {
                 <div class="meta-item">分数: ${scoreVal === '-' ? '-' : scoreVal}</div>
                 ${bonusText ? `<div class="meta-item">Bonus: ${bonusText}</div>` : ''}
             </div>
-            <textarea class="summary-box" data-id="${item.article_id || ''}">${item.summary || ''}</textarea>
+            <div class="review-summary-wrap">
+                <textarea class="summary-box" data-id="${item.article_id || ''}">${item.summary || ''}</textarea>
+                <span class="review-summary-count" title="摘要非空白字符数">${formatReviewSummaryCount(summaryCount)}字</span>
+            </div>
             <input class="source-box" data-id="${item.article_id || ''}" value="${item.llm_source_display || ''}" placeholder="${placeholder}">
         </div>
     `;
@@ -238,6 +260,7 @@ function bindReviewSelectionControls() {
 
     const summaries = elements.reviewList.querySelectorAll('.summary-box');
     summaries.forEach(box => {
+        box.addEventListener('input', () => updateReviewSummaryCount(box));
         box.addEventListener('change', handleSummaryUpdate);
     });
     const sources = elements.reviewList.querySelectorAll('.source-box');

@@ -244,6 +244,25 @@
     min-width: 144px;
 }
 
+.review-summary-wrap {
+    position: relative;
+}
+
+.review-summary-wrap .summary-box {
+    padding-bottom: 32px;
+}
+
+.review-summary-count {
+    position: absolute;
+    right: 20px;
+    bottom: 8px;
+    color: #94a3b8;
+    font-size: 0.78rem;
+    line-height: 1;
+    pointer-events: none;
+    user-select: none;
+}
+
 /* Compact Mode */
 .review-grid.compact-mode .article-card {
     padding: 8px 16px;
@@ -273,7 +292,8 @@
 .review-grid.compact-mode .meta-row,
 .review-grid.compact-mode .status-select,
 .review-grid.compact-mode .review-select-wrap,
-.review-grid.compact-mode .source-box {
+.review-grid.compact-mode .source-box,
+.review-grid.compact-mode .review-summary-wrap {
     display: none;
 }
 
@@ -340,7 +360,8 @@
 .review-grid.sort-mode .summary-box,
 .review-grid.sort-mode .status-select,
 .review-grid.sort-mode .review-select-wrap,
-.review-grid.sort-mode .source-box {
+.review-grid.sort-mode .source-box,
+.review-grid.sort-mode .review-summary-wrap {
     display: none;
 }
 

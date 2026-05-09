@@ -10,7 +10,7 @@
 - `*_schemas.py` 放可复用的请求/响应模型；如果某个 API 契约开始超出单个 route 的局部使用，应放到这里。
 - `manual_filter_service.py` 是为了稳定导入而保留的 public facade；更细的人工筛选逻辑放在相邻的 `manual_filter_*` 模块中。
 - `web_templates/` 管理 Jinja markup；`web_static/` 管理 CSS 和 JavaScript。
-- `src/console/modules/` 不是当前活跃的 Python 模块组织方式。除非明确要迁移结构，不要把新的控制台代码放进去。
+- 当前 Web 页面入口以人工筛选为主：`/` 重定向到 `/manual_filter`，`web_routes.py` 负责这两个页面入口。
 
 ## 人工筛选规则
 
@@ -32,6 +32,7 @@
 
 - CSS 保持现有 core/module 拆分：共享样式放在 `base.css`、`layout.css`、`components.css`、`utilities.css`，页面专属样式放在 `css/modules/`。
 - 除非样式确实很小且只服务于局部元素，否则避免在模板中写 inline style。
+- 人工筛选页的搜索抽屉依赖 `/api/articles/search`，相关 API、JS 和 CSS 变更需要一起检查。
 - JavaScript 状态变更尽量集中在现有 manual-filter 模块中，避免多个模块重复发起同类 API 请求。
 - 模板和 JS 通过 DOM id 与 `data-*` 属性紧密耦合；修改时必须一起处理。
 
@@ -39,6 +40,6 @@
 
 - 人工筛选 service 或 decision 变更：`python -m pytest tests/test_manual_filter_service.py`
 - 人工筛选 route/API 变更：`python -m pytest tests/test_manual_filter_routes.py`
+- 控制台 Web 入口或页面路由变更：`python -m pytest tests/test_console_web_routes.py`
 - export、run 或 article service 变更：运行最接近的 `tests/test_*` 文件；如果影响 CLI 触发行为，再运行 `python -m pytest tests/test_cli_parser.py`
 - 较大的控制台重构：`python -m pytest tests/test_manual_filter_service.py tests/test_manual_filter_routes.py`
-

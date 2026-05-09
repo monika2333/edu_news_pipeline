@@ -188,7 +188,35 @@
 
 @media (max-width: 768px) {
     .search-drawer-toggle {
-        display: none;
-        /* Hide on mobile as per requirement */
+        display: flex;
+        top: auto;
+        right: 16px;
+        bottom: calc(18px + env(safe-area-inset-bottom));
+        transform: none;
+        width: 48px;
+        height: 48px;
+        padding: 0;
+        border: 1px solid var(--border-color);
+        border-radius: 50%;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+        font-size: 1.15rem;
+    }
+
+    .search-drawer-toggle:hover {
+        padding-right: 0;
+    }
+
+    .search-drawer {
+        right: -100vw;
+        width: 100vw;
+        max-width: 100vw;
+    }
+
+    .search-drawer.active {
+        transform: translateX(-100vw);
+    }
+
+    .drawer-content {
+        padding: 16px;
     }
 }

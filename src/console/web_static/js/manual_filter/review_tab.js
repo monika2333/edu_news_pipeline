@@ -43,6 +43,20 @@ function updateReviewSummaryCount(box) {
     countEl.textContent = `${formatReviewSummaryCount(countReviewSummaryChars(box.value))}字`;
 }
 
+function resizeReviewSummaryBox(box) {
+    const style = window.getComputedStyle(box);
+    const bottomPadding = parseFloat(style.paddingBottom) || 0;
+    const baseBottomPadding = 12;
+    const reservedPadding = Math.max(0, bottomPadding - baseBottomPadding);
+    box.style.height = 'auto';
+    box.style.height = `${box.scrollHeight - reservedPadding}px`;
+}
+
+function refreshReviewSummaryBox(box) {
+    updateReviewSummaryCount(box);
+    resizeReviewSummaryBox(box);
+}
+
 function filterReviewItems(term) {
     if (!elements.reviewList) return;
     const cards = elements.reviewList.querySelectorAll('.article-card');
@@ -260,7 +274,8 @@ function bindReviewSelectionControls() {
 
     const summaries = elements.reviewList.querySelectorAll('.summary-box');
     summaries.forEach(box => {
-        box.addEventListener('input', () => updateReviewSummaryCount(box));
+        resizeReviewSummaryBox(box);
+        box.addEventListener('input', () => refreshReviewSummaryBox(box));
         box.addEventListener('change', handleSummaryUpdate);
     });
     const sources = elements.reviewList.querySelectorAll('.source-box');

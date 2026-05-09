@@ -250,12 +250,14 @@
 
 .review-summary-wrap .summary-box {
     padding-bottom: 32px;
+    overflow: hidden;
+    resize: none;
 }
 
 .review-summary-count {
     position: absolute;
-    right: 20px;
-    bottom: 8px;
+    right: 12px;
+    bottom: 14px;
     color: #94a3b8;
     font-size: 0.78rem;
     line-height: 1;

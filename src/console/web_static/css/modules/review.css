@@ -191,6 +191,13 @@
     flex-shrink: 0;
 }
 
+.discard-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
 .review-discard-btn {
     display: inline-flex;
     align-items: center;
@@ -231,6 +238,10 @@
     background: #ffffff;
     color: var(--text-primary);
     font-size: 0.95rem;
+}
+
+.discard-restore-select {
+    min-width: 144px;
 }
 
 /* Compact Mode */
@@ -456,6 +467,10 @@
         align-items: stretch;
     }
 
+    .discard-card-actions {
+        width: 100%;
+    }
+
     .review-discard-btn {
         width: 42px;
         height: 38px;
@@ -465,6 +480,11 @@
 
     .review-card-actions .status-select {
         flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .discard-restore-select {
+        width: 100%;
         min-width: 0;
     }
 

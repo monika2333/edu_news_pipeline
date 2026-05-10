@@ -42,6 +42,23 @@ async function loadReviewData() {
     }
 }
 
+function getReviewDecisionLabel(rawValue) {
+    if (rawValue === 'zongbao:selected') return '综报采纳';
+    if (rawValue === 'zongbao:backup') return '综报备选';
+    if (rawValue === 'wanbao:selected') return '晚报采纳';
+    if (rawValue === 'wanbao:backup') return '晚报备选';
+    if (rawValue === 'discarded') return '放弃';
+    if (rawValue === 'pending') return '待处理';
+    return '目标栏目';
+}
+
+function buildReviewMoveMessage(count, rawValue) {
+    if (rawValue === 'discarded') {
+        return `已放弃 ${count} 条新闻`;
+    }
+    return `已将 ${count} 条新闻移动到${getReviewDecisionLabel(rawValue)}`;
+}
+
 async function applyReviewBulkStatus() {
     if (!elements.reviewBulkStatus) return;
     const value = elements.reviewBulkStatus.value;
@@ -110,13 +127,6 @@ async function applyReviewBulkStatus() {
         window.scrollTo({ top: scrollY, behavior: 'auto' });
         loadStats();
         const totalMoved = movedIds.length;
-        let targetLabel = '';
-        if (value === 'zongbao:selected') targetLabel = '综报采纳';
-        else if (value === 'zongbao:backup') targetLabel = '综报备选';
-        else if (value === 'wanbao:selected') targetLabel = '晚报采纳';
-        else if (value === 'wanbao:backup') targetLabel = '晚报备选';
-        else if (value === 'discarded') targetLabel = '放弃';
-        else if (value === 'pending') targetLabel = '待处理';
 
         // Undo Action
         const undoAction = buildUndoToastAction(
@@ -151,7 +161,7 @@ async function applyReviewBulkStatus() {
             }
         );
 
-        showToast(`已批量移动 ${totalMoved} 条文章到 ${targetLabel}`, 'success', undoAction);
+        showToast(buildReviewMoveMessage(totalMoved, value), 'success', undoAction);
     } catch (e) {
         showToast('批量移动失败', 'error');
     } finally {
@@ -288,14 +298,14 @@ async function handleReviewStatusChange(e) {
     const select = e.target;
     const card = select.closest('.article-card');
     if (!card) return;
-    await applyReviewCardDecision(card, select.value);
+    await applyReviewCardDecision(card, select.value, buildReviewMoveMessage(1, select.value));
 }
 
 async function handleReviewDiscardClick(e) {
     const button = e.currentTarget;
     const card = button.closest('.article-card');
     if (!card) return;
-    await applyReviewCardDecision(card, 'discarded', '已放弃新闻');
+    await applyReviewCardDecision(card, 'discarded', buildReviewMoveMessage(1, 'discarded'));
 }
 
 async function handleSummaryUpdate(e) {

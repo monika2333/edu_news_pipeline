@@ -52,6 +52,12 @@ function resizeReviewSummaryBox(box) {
     box.style.height = `${box.scrollHeight - reservedPadding}px`;
 }
 
+function resizeReviewSummaryBoxes() {
+    if (!elements.reviewList) return;
+    const summaries = elements.reviewList.querySelectorAll('.summary-box');
+    summaries.forEach(box => resizeReviewSummaryBox(box));
+}
+
 function refreshReviewSummaryBox(box) {
     updateReviewSummaryCount(box);
     resizeReviewSummaryBox(box);

@@ -140,5 +140,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Pagination listeners (delegated or specific)
     setupPagination();
-    window.addEventListener('resize', applyReviewViewMode);
+    let reviewResizeTimer = null;
+    window.addEventListener('resize', () => {
+        applyReviewViewMode();
+        window.clearTimeout(reviewResizeTimer);
+        reviewResizeTimer = window.setTimeout(resizeReviewSummaryBoxes, 120);
+    });
 });

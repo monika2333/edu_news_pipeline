@@ -75,6 +75,7 @@ const elements = {
     },
     reviewRailButtons: document.querySelectorAll('.review-category-btn'),
     reviewSearchInput: document.getElementById('review-search-input'),
+    reviewSearchClear: document.getElementById('review-search-clear'),
     toast: document.getElementById('toast')
 };
 

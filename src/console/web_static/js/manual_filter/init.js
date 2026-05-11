@@ -132,9 +132,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     if (elements.reviewSearchInput) {
-        elements.reviewSearchInput.addEventListener('input', (e) => {
-            const term = e.target.value.trim().toLowerCase();
-            filterReviewItems(term);
+        elements.reviewSearchInput.addEventListener('input', applyReviewSearchFilter);
+        syncReviewSearchClearButton();
+    }
+    if (elements.reviewSearchClear && elements.reviewSearchInput) {
+        elements.reviewSearchClear.addEventListener('click', () => {
+            elements.reviewSearchInput.value = '';
+            applyReviewSearchFilter();
+            elements.reviewSearchInput.focus();
         });
     }
 

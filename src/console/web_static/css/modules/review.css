@@ -137,16 +137,60 @@
     display: flex;
     align-items: center;
     margin-right: auto;
+    position: relative;
 }
 
 .review-toolbar .search-input {
-    padding: 8px 12px;
+    padding: 8px 44px 8px 12px;
     border-radius: 8px;
     border: 1px solid var(--border-color);
     background: #ffffff;
     color: var(--text-primary);
     font-size: 0.95rem;
     min-width: 200px;
+}
+
+.review-search-clear {
+    position: absolute;
+    top: 50%;
+    right: 7px;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #334155;
+    cursor: pointer;
+}
+
+.review-search-clear[hidden] {
+    display: none;
+}
+
+.review-search-clear svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+}
+
+.review-search-clear:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+
+.review-search-clear:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
 .review-toolbar .search-input:focus {

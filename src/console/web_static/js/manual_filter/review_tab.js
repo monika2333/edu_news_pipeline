@@ -109,10 +109,16 @@ function filterReviewItems(term) {
     updateReviewSelectAllState();
 }
 
+function syncReviewSearchClearButton() {
+    if (!elements.reviewSearchClear || !elements.reviewSearchInput) return;
+    elements.reviewSearchClear.hidden = !elements.reviewSearchInput.value;
+}
+
 function applyReviewSearchFilter() {
     if (!elements.reviewSearchInput) return;
     const term = elements.reviewSearchInput.value.trim().toLowerCase();
     filterReviewItems(term);
+    syncReviewSearchClearButton();
 }
 
 function renderReviewView() {

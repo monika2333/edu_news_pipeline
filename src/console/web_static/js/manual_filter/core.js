@@ -26,6 +26,7 @@ let state = {
     reviewView: 'selected',
     reviewReportType: 'zongbao',
     showGroups: true,
+    reviewCollapsedGroups: {},
     reviewData: {
         selected: [],
         backup: []

@@ -35,6 +35,25 @@ function formatReviewSummaryCount(value) {
     return Number(value || 0).toLocaleString('zh-CN');
 }
 
+function getReviewGroupStateKey(groupKey) {
+    const reportType = state.reviewReportType || 'zongbao';
+    const view = state.reviewView === 'backup' ? 'backup' : 'selected';
+    return `${reportType}:${view}:${groupKey}`;
+}
+
+function isReviewGroupCollapsed(groupKey) {
+    return Boolean(state.reviewCollapsedGroups[getReviewGroupStateKey(groupKey)]);
+}
+
+function setReviewGroupCollapsed(groupKey, collapsed) {
+    const stateKey = getReviewGroupStateKey(groupKey);
+    if (collapsed) {
+        state.reviewCollapsedGroups[stateKey] = true;
+    } else {
+        delete state.reviewCollapsedGroups[stateKey];
+    }
+}
+
 function updateReviewSummaryCount(box) {
     const wrap = box.closest('.review-summary-wrap');
     if (!wrap) return;
@@ -134,8 +153,9 @@ function renderGroupedReviewItems(items) {
             return;
         }
         if (state.showGroups) {
+            const collapsedClass = isReviewGroupCollapsed(group.key) ? ' collapsed' : '';
             html += `
-                <div class="review-group" data-group="${group.key}">
+                <div class="review-group${collapsedClass}" data-group="${group.key}">
                     <div class="review-group-header" title="点击展开/收起">
                         <span class="toggle-icon">▼</span>
                          ${group.label} (${groupItems.length})
@@ -164,7 +184,8 @@ function bindReviewGroupToggles() {
         header.addEventListener('click', () => {
             const group = header.closest('.review-group');
             if (group) {
-                group.classList.toggle('collapsed');
+                const isCollapsed = group.classList.toggle('collapsed');
+                setReviewGroupCollapsed(group.dataset.group, isCollapsed);
                 updateReviewSelectAllState();
             }
         });

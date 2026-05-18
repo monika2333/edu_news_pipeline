@@ -101,7 +101,6 @@ function generatePreviewText() {
             if (source) content += `（${source}）`;
             content += '\n\n'; // Empty line between items for readability? User example shows distinct blocks.
         });
-        content += '\n'; // Separator between sections
     });
 
     return content.trim(); // Clean up trailing newlines

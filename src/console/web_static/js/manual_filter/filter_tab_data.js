@@ -33,7 +33,8 @@ async function loadFilterData(options = {}) {
         renderFilterList(data);
         updatePagination('filter', data.total || 0, state.filterPage);
         if (!searchMode) {
-            state.filterCounts[cat] = data.total || 0;
+            const bucketTotal = typeof data.item_total === 'number' ? data.item_total : data.total;
+            state.filterCounts[cat] = bucketTotal || 0;
             updateFilterCountsUI();
         }
         syncFilterToolbarState();

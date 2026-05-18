@@ -183,7 +183,7 @@ def cluster_pending(
     bucket_key = _bucket_key_from_filters(region, sentiment)
     rows = adapter.fetch_manual_clusters(bucket_key=bucket_key, report_type=target_report_type)  # type: ignore[attr-defined]
     if not rows:
-        return {"clusters": [], "total": 0}
+        return {"clusters": [], "total": 0, "item_total": 0}
 
     grouped: Dict[str, Dict[str, Any]] = {}
     for row in rows:
@@ -247,11 +247,19 @@ def cluster_pending(
         reverse=True,
     )
     total_clusters = len(clusters)
-    return _paginate_clusters(clusters, limit=limit, offset=offset, total=total_clusters)
+    total_items = sum(len(cluster.get("items") or []) for cluster in clusters)
+    return _paginate_clusters(clusters, limit=limit, offset=offset, total=total_clusters, item_total=total_items)
 
 # Pagination helper
 # ─────────────────────────────────────────────────────────────────────────────
-def _paginate_clusters(clusters: List[Dict[str, Any]], *, limit: int, offset: int, total: int) -> Dict[str, Any]:
+def _paginate_clusters(
+    clusters: List[Dict[str, Any]],
+    *,
+    limit: int,
+    offset: int,
+    total: int,
+    item_total: int,
+) -> Dict[str, Any]:
     limit_val = max(1, min(int(limit or 10), 200))
     offset_val = max(0, int(offset or 0))
     start = offset_val
@@ -261,4 +269,4 @@ def _paginate_clusters(clusters: List[Dict[str, Any]], *, limit: int, offset: in
     for c in paged_clusters:
         c.pop("rank_key", None)
 
-    return {"clusters": paged_clusters, "total": total}
+    return {"clusters": paged_clusters, "total": total, "item_total": item_total}

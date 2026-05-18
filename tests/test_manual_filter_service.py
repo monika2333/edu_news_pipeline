@@ -83,6 +83,35 @@ class FakeAdapter:
         return rows
 
     @staticmethod
+    def _bucket_key_for_row(row: Mapping[str, Any]) -> str:
+        region = "internal" if row.get("is_beijing_related") else "external"
+        sentiment = "negative" if (row.get("sentiment_label") or "").lower() == "negative" else "positive"
+        return f"{region}_{sentiment}"
+
+    def fetch_manual_clusters(
+        self,
+        *,
+        bucket_key: Optional[str] = None,
+        report_type: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        target_type = self._normalized_report_type(report_type)
+        rows: List[Dict[str, Any]] = []
+        for row in self.rows:
+            row_bucket = self._bucket_key_for_row(row)
+            if bucket_key and row_bucket != bucket_key:
+                continue
+            if row.get("status") != "pending" or row.get("news_status") != "ready_for_export":
+                continue
+            if self._normalized_report_type(row.get("report_type")) != target_type:
+                continue
+            cluster_row = dict(row)
+            cluster_row["bucket_key"] = row_bucket
+            cluster_row["cluster_id"] = row.get("cluster_id") or f"{row_bucket}-{row.get('article_id')}"
+            cluster_row["manual_rank"] = row.get("rank")
+            rows.append(cluster_row)
+        return rows
+
+    @staticmethod
     def _published_local_date(row: Mapping[str, Any]) -> Optional[date]:
         publish_time_iso = row.get("publish_time_iso")
         if publish_time_iso:
@@ -458,6 +487,72 @@ def test_list_candidates_search_mode_returns_flat_items(fake_adapter):
     assert result["total"] == 1
     assert "clusters" not in result
     assert [item["article_id"] for item in result["items"]] == ["a1"]
+
+
+def test_list_candidates_cluster_mode_returns_item_total(fake_adapter):
+    fake_adapter.rows[0]["cluster_id"] = "internal_positive-0"
+    fake_adapter.rows.extend(
+        [
+            {
+                "article_id": "a3",
+                "title": "Internal Positive Similar",
+                "llm_summary": "llm3",
+                "manual_summary": None,
+                "rank": None,
+                "score": 85,
+                "news_status": "ready_for_export",
+                "status": "pending",
+                "source": "src3",
+                "publish_time_iso": "2025-01-03T00:00:00Z",
+                "publish_time": None,
+                "sentiment_label": "positive",
+                "sentiment_confidence": 0.7,
+                "is_beijing_related": True,
+                "external_importance_score": 75,
+                "decided_by": None,
+                "decided_at": None,
+                "content_markdown": "body3",
+                "url": "http://example.com/a3",
+                "score_details": {"matched_rules": []},
+                "cluster_id": "internal_positive-0",
+            },
+            {
+                "article_id": "a4",
+                "title": "Internal Positive Other",
+                "llm_summary": "llm4",
+                "manual_summary": None,
+                "rank": None,
+                "score": 65,
+                "news_status": "ready_for_export",
+                "status": "pending",
+                "source": "src4",
+                "publish_time_iso": "2025-01-04T00:00:00Z",
+                "publish_time": None,
+                "sentiment_label": "positive",
+                "sentiment_confidence": 0.7,
+                "is_beijing_related": True,
+                "external_importance_score": 55,
+                "decided_by": None,
+                "decided_at": None,
+                "content_markdown": "body4",
+                "url": "http://example.com/a4",
+                "score_details": {"matched_rules": []},
+                "cluster_id": "internal_positive-1",
+            },
+        ]
+    )
+
+    result = manual_filter_service.list_candidates(
+        limit=10,
+        offset=0,
+        region="internal",
+        sentiment="positive",
+        cluster=True,
+    )
+
+    assert result["total"] == 2
+    assert result["item_total"] == 3
+    assert sum(cluster["size"] for cluster in result["clusters"]) == 3
 
 
 def test_list_candidates_search_mode_uses_shanghai_calendar_day(fake_adapter):

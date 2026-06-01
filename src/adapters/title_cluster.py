@@ -2,8 +2,8 @@ from __future__ import annotations
 
 """Reusable title clustering utility based on BGE embeddings."""
 
-from typing import List, Sequence
 import threading
+from typing import Sequence
 
 from sentence_transformers import SentenceTransformer, util
 
@@ -14,18 +14,25 @@ _model: SentenceTransformer | None = None
 _model_lock = threading.Lock()
 
 
+def _load_model() -> SentenceTransformer:
+    try:
+        return SentenceTransformer(_DEFAULT_MODEL_NAME, local_files_only=True)
+    except OSError:
+        return SentenceTransformer(_DEFAULT_MODEL_NAME)
+
+
 def _get_model() -> SentenceTransformer:
     global _model
     if _model is None:
         with _model_lock:
             if _model is None:
-                _model = SentenceTransformer(_DEFAULT_MODEL_NAME)
+                _model = _load_model()
     return _model
 
 
-def _greedy_grouping(sim_matrix, threshold: float) -> List[List[int]]:
+def _greedy_grouping(sim_matrix, threshold: float) -> list[list[int]]:
     visited = set()
-    groups: List[List[int]] = []
+    groups: list[list[int]] = []
     size = len(sim_matrix)
     for i in range(size):
         if i in visited:
@@ -40,7 +47,7 @@ def _greedy_grouping(sim_matrix, threshold: float) -> List[List[int]]:
     return groups
 
 
-def cluster_titles(titles: Sequence[str], *, threshold: float = _DEFAULT_THRESHOLD) -> List[List[int]]:
+def cluster_titles(titles: Sequence[str], *, threshold: float = _DEFAULT_THRESHOLD) -> list[list[int]]:
     """
     Cluster titles using cosine similarity on BGE embeddings.
 

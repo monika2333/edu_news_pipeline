@@ -84,6 +84,34 @@ def _build_manual_review_filters(
     return clauses, params
 
 
+def _manual_review_order_by(*, status: str, order_by_decided_at: bool) -> str:
+    parts: List[str] = []
+    if order_by_decided_at:
+        parts.append("mr.decided_at DESC NULLS LAST")
+    if status in ("selected", "backup"):
+        parts.extend(
+            [
+                "mr.rank ASC NULLS LAST",
+                "ns.external_importance_score DESC NULLS LAST",
+            ]
+        )
+    else:
+        parts.extend(
+            [
+                "ns.external_importance_score DESC NULLS LAST",
+                "mr.rank ASC NULLS LAST",
+            ]
+        )
+    parts.extend(
+        [
+            "ns.score DESC NULLS LAST",
+            "ns.publish_time_iso DESC NULLS LAST",
+            "mr.article_id ASC",
+        ]
+    )
+    return ",\n            ".join(parts)
+
+
 def enqueue_manual_review(
     cur: psycopg.Cursor,
     article_id: str,
@@ -145,6 +173,7 @@ def fetch_manual_reviews(
         report_type=report_type,
     )
     where_sql = " AND ".join(clauses)
+    order_by_sql = _manual_review_order_by(status=status, order_by_decided_at=order_by_decided_at)
     base_params = list(params)
     count_query = f"""
         SELECT COUNT(*) AS total
@@ -159,12 +188,7 @@ def fetch_manual_reviews(
         JOIN news_summaries ns ON ns.article_id = mr.article_id
         WHERE {where_sql}
         ORDER BY
-            {"mr.decided_at DESC NULLS LAST," if order_by_decided_at else ""}
-            ns.external_importance_score DESC NULLS LAST,
-            mr.rank ASC NULLS LAST,
-            ns.score DESC NULLS LAST,
-            ns.publish_time_iso DESC NULLS LAST,
-            mr.article_id ASC
+            {order_by_sql}
         LIMIT %s OFFSET %s
     """
     cur.execute(count_query, tuple(base_params))

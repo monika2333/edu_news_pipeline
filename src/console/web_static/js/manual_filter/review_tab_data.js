@@ -359,6 +359,7 @@ function applyReviewEditsToState(articleId, summary, llm_source) {
         if (!target) return;
         if (summary !== undefined) {
             target.summary = summary;
+            target.manual_summary = summary;
         }
         if (llm_source !== undefined) {
             target.llm_source_manual = normalizedSource;

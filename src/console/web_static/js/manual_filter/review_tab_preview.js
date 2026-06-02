@@ -106,8 +106,29 @@ function generatePreviewText() {
     return content.trim(); // Clean up trailing newlines
 }
 
+function syncReviewDomEditsToState() {
+    const scope = getActiveReviewContainer();
+    if (!scope) return;
+    const cards = scope.querySelectorAll('.article-card');
+    cards.forEach(card => {
+        const articleId = card.dataset.id;
+        if (!articleId) return;
+
+        const summaryBox = card.querySelector('.summary-box');
+        const sourceBox = card.querySelector('.source-box');
+        if (!summaryBox && !sourceBox) return;
+
+        applyReviewEditsToState(
+            articleId,
+            summaryBox ? summaryBox.value : undefined,
+            sourceBox ? sourceBox.value : undefined
+        );
+    });
+}
+
 async function handlePreviewCopy() {
     try {
+        syncReviewDomEditsToState();
         const text = generatePreviewText();
 
         if (!text) {

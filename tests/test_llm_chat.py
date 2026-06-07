@@ -18,31 +18,25 @@ def test_apply_reasoning_config_uses_openrouter_reasoning_field():
     apply_reasoning_config(
         payload,
         settings=settings,
-        base_url="https://openrouter.ai/api/v1",
         enabled=True,
     )
 
     assert payload == {
-        "reasoning": {
-            "enabled": True,
-            "effort": "high",
-            "exclude": True,
-        }
+        "reasoning": {"enabled": True, "effort": "high", "exclude": True}
     }
 
 
-def test_apply_reasoning_config_keeps_legacy_provider_field():
+def test_apply_reasoning_config_does_nothing_when_disabled():
     settings = get_settings()
     payload = {}
 
     apply_reasoning_config(
         payload,
         settings=settings,
-        base_url="https://api.siliconflow.cn/v1",
-        enabled=True,
+        enabled=False,
     )
 
-    assert payload == {"enable_thinking": True}
+    assert payload == {}
 
 
 def test_extract_message_text_reads_openrouter_message_reasoning():

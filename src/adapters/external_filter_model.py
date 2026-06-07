@@ -107,8 +107,7 @@ def call_external_filter_model(
     apply_reasoning_config(
         payload,
         settings=settings,
-        base_url=settings.llm_base_url,
-        enabled=settings.llm_enable_thinking,
+        enabled=settings.llm_reasoning_enabled,
     )
     headers = build_headers(
         api_key=api_key,

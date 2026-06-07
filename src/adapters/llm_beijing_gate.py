@@ -118,8 +118,7 @@ def call_beijing_gate(candidate: BeijingGateCandidate, *, retries: int = 3) -> B
     apply_reasoning_config(
         payload,
         settings=settings,
-        base_url=settings.llm_base_url,
-        enabled=settings.llm_enable_thinking,
+        enabled=settings.llm_reasoning_enabled,
     )
     timeout = _resolve_timeout(settings)
     raw_output = _post_chat_completion(payload, retries=retries, timeout=timeout)

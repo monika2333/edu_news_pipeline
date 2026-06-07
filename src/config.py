@@ -120,11 +120,11 @@ class Settings:
     source_model_name: str
     score_model_name: str
     sentiment_model_name: str
-    llm_enable_thinking: bool
+    llm_reasoning_enabled: bool
     llm_reasoning_effort: Optional[str]
     llm_reasoning_max_tokens: Optional[int]
     llm_reasoning_exclude: bool
-    summary_llm_enable_thinking: bool
+    summary_llm_reasoning_enabled: bool
     llm_timeout_score: int
     llm_timeout_summary: int
     llm_timeout_external_filter: int
@@ -179,14 +179,8 @@ def get_settings() -> Settings:
     source_model_name = os.getenv("SOURCE_MODEL_NAME", summarize_model_name)
     score_model_name = os.getenv("SCORE_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
     sentiment_model_name = os.getenv("SENTIMENT_MODEL_NAME", summarize_model_name)
-    llm_enable_thinking = _bool_from_env(
-        _get_env(
-            "LLM_REASONING_ENABLED",
-            "OPENROUTER_REASONING_ENABLED",
-            "LLM_ENABLE_THINKING",
-            "OPENROUTER_ENABLE_THINKING",
-            "ENABLE_THINKING",
-        ),
+    llm_reasoning_enabled = _bool_from_env(
+        _get_env("LLM_REASONING_ENABLED", "OPENROUTER_REASONING_ENABLED"),
         default=False,
     )
     raw_reasoning_effort = (
@@ -204,9 +198,9 @@ def get_settings() -> Settings:
     summary_llm_api_key = _get_env("SUMMARY_LLM_API_KEY", "SILICONFLOW_API_KEY") or llm_api_key
     summary_llm_http_referer = _get_env("SUMMARY_LLM_HTTP_REFERER", "SILICONFLOW_HTTP_REFERER") or llm_http_referer
     summary_llm_title = _get_env("SUMMARY_LLM_TITLE", "SILICONFLOW_TITLE") or llm_title
-    summary_llm_enable_thinking = _bool_from_env(
-        _get_env("SUMMARY_LLM_ENABLE_THINKING", "SILICONFLOW_ENABLE_THINKING"),
-        default=llm_enable_thinking,
+    summary_llm_reasoning_enabled = _bool_from_env(
+        _get_env("SUMMARY_LLM_REASONING_ENABLED", "SUMMARY_OPENROUTER_REASONING_ENABLED"),
+        default=llm_reasoning_enabled,
     )
 
     # LLM timeout configuration (in seconds)
@@ -359,11 +353,11 @@ def get_settings() -> Settings:
         source_model_name=source_model_name,
         score_model_name=score_model_name,
         sentiment_model_name=sentiment_model_name,
-        llm_enable_thinking=llm_enable_thinking,
+        llm_reasoning_enabled=llm_reasoning_enabled,
         llm_reasoning_effort=llm_reasoning_effort,
         llm_reasoning_max_tokens=llm_reasoning_max_tokens,
         llm_reasoning_exclude=llm_reasoning_exclude,
-        summary_llm_enable_thinking=summary_llm_enable_thinking,
+        summary_llm_reasoning_enabled=summary_llm_reasoning_enabled,
         llm_timeout_score=llm_timeout_score,
         llm_timeout_summary=llm_timeout_summary,
         llm_timeout_external_filter=llm_timeout_external_filter,

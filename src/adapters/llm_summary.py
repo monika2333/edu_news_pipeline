@@ -50,8 +50,7 @@ def summarise(
     apply_reasoning_config(
         payload,
         settings=settings,
-        base_url=settings.summary_llm_base_url,
-        enabled=settings.summary_llm_enable_thinking,
+        enabled=settings.summary_llm_reasoning_enabled,
     )
 
     url = f"{settings.summary_llm_base_url.rstrip('/')}/chat/completions"

@@ -5,10 +5,6 @@ from typing import Any, Mapping, MutableMapping, Optional
 from src.config import Settings
 
 
-def _is_openrouter_base_url(base_url: str) -> bool:
-    return "openrouter.ai" in (base_url or "").lower()
-
-
 def build_headers(
     *,
     api_key: str,
@@ -30,7 +26,6 @@ def apply_reasoning_config(
     payload: MutableMapping[str, Any],
     *,
     settings: Settings,
-    base_url: str,
     enabled: bool,
 ) -> None:
     if not enabled:
@@ -40,18 +35,14 @@ def apply_reasoning_config(
     max_tokens = settings.llm_reasoning_max_tokens
     exclude = settings.llm_reasoning_exclude
 
-    if _is_openrouter_base_url(base_url):
-        reasoning: dict[str, Any] = {"enabled": True}
-        if effort:
-            reasoning["effort"] = effort
-        if max_tokens is not None and max_tokens > 0:
-            reasoning["max_tokens"] = max_tokens
-        if exclude:
-            reasoning["exclude"] = True
-        payload["reasoning"] = reasoning
-        return
-
-    payload["enable_thinking"] = True
+    reasoning: dict[str, Any] = {"enabled": True}
+    if effort:
+        reasoning["effort"] = effort
+    if max_tokens is not None and max_tokens > 0:
+        reasoning["max_tokens"] = max_tokens
+    if exclude:
+        reasoning["exclude"] = True
+    payload["reasoning"] = reasoning
 
 
 def extract_message_text(choice: Mapping[str, Any]) -> str:

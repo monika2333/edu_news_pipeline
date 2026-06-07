@@ -65,7 +65,7 @@ def test_call_external_filter_model_sends_openrouter_reasoning_payload():
         llm_api_key="test-key",
         llm_base_url="https://openrouter.ai/api/v1",
         external_filter_model_name="deepseek/deepseek-v4-flash",
-        llm_enable_thinking=True,
+        llm_reasoning_enabled=True,
         llm_reasoning_effort="high",
         llm_reasoning_max_tokens=None,
         llm_reasoning_exclude=True,

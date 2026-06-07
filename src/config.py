@@ -121,6 +121,9 @@ class Settings:
     score_model_name: str
     sentiment_model_name: str
     llm_enable_thinking: bool
+    llm_reasoning_effort: Optional[str]
+    llm_reasoning_max_tokens: Optional[int]
+    llm_reasoning_exclude: bool
     summary_llm_enable_thinking: bool
     llm_timeout_score: int
     llm_timeout_summary: int
@@ -177,7 +180,24 @@ def get_settings() -> Settings:
     score_model_name = os.getenv("SCORE_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
     sentiment_model_name = os.getenv("SENTIMENT_MODEL_NAME", summarize_model_name)
     llm_enable_thinking = _bool_from_env(
-        _get_env("LLM_ENABLE_THINKING", "OPENROUTER_ENABLE_THINKING", "ENABLE_THINKING"),
+        _get_env(
+            "LLM_REASONING_ENABLED",
+            "OPENROUTER_REASONING_ENABLED",
+            "LLM_ENABLE_THINKING",
+            "OPENROUTER_ENABLE_THINKING",
+            "ENABLE_THINKING",
+        ),
+        default=False,
+    )
+    raw_reasoning_effort = (
+        _get_env("LLM_REASONING_EFFORT", "OPENROUTER_REASONING_EFFORT") or ""
+    ).strip().lower()
+    llm_reasoning_effort = raw_reasoning_effort if raw_reasoning_effort in {"low", "medium", "high"} else None
+    llm_reasoning_max_tokens = _optional_int(
+        _get_env("LLM_REASONING_MAX_TOKENS", "OPENROUTER_REASONING_MAX_TOKENS")
+    )
+    llm_reasoning_exclude = _bool_from_env(
+        _get_env("LLM_REASONING_EXCLUDE", "OPENROUTER_REASONING_EXCLUDE"),
         default=False,
     )
     summary_llm_base_url = _get_env("SUMMARY_LLM_BASE_URL", "SILICONFLOW_BASE_URL") or llm_base_url
@@ -340,6 +360,9 @@ def get_settings() -> Settings:
         score_model_name=score_model_name,
         sentiment_model_name=sentiment_model_name,
         llm_enable_thinking=llm_enable_thinking,
+        llm_reasoning_effort=llm_reasoning_effort,
+        llm_reasoning_max_tokens=llm_reasoning_max_tokens,
+        llm_reasoning_exclude=llm_reasoning_exclude,
         summary_llm_enable_thinking=summary_llm_enable_thinking,
         llm_timeout_score=llm_timeout_score,
         llm_timeout_summary=llm_timeout_summary,

@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
+from src.adapters.llm_chat import apply_reasoning_config, build_headers
 from src.config import get_settings
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
@@ -46,20 +47,17 @@ def summarise(
             "temperature": 0.2,
         }
     )
-    if settings.summary_llm_enable_thinking:
-        payload["enable_thinking"] = True
+    apply_reasoning_config(
+        payload,
+        settings=settings,
+        base_url=settings.summary_llm_base_url,
+        enabled=settings.summary_llm_enable_thinking,
+    )
 
     url = f"{settings.summary_llm_base_url.rstrip('/')}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
     referer = settings.summary_llm_http_referer or settings.llm_http_referer
     title = settings.summary_llm_title or settings.llm_title
-    if referer:
-        headers["HTTP-Referer"] = referer
-    if title:
-        headers["X-Title"] = title
+    headers = build_headers(api_key=api_key, referer=referer, title=title)
 
     backoff = 1.0
     last_error: Optional[Exception] = None

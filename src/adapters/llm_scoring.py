@@ -6,6 +6,7 @@ from typing import Optional
 
 import requests
 
+from src.adapters.llm_chat import apply_reasoning_config, build_headers, extract_message_text
 from src.config import get_settings
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
@@ -31,17 +32,18 @@ def call_relevance_api(text: str, *, retries: int = 4, timeout: Optional[int] = 
         "messages": [{"role": "user", "content": _build_prompt(text)}],
         "temperature": 0.0,
     }
-    if settings.llm_enable_thinking:
-        payload["enable_thinking"] = True
+    apply_reasoning_config(
+        payload,
+        settings=settings,
+        base_url=settings.llm_base_url,
+        enabled=settings.llm_enable_thinking,
+    )
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    if settings.llm_http_referer:
-        headers["HTTP-Referer"] = settings.llm_http_referer
-    if settings.llm_title:
-        headers["X-Title"] = settings.llm_title
+    headers = build_headers(
+        api_key=api_key,
+        referer=settings.llm_http_referer,
+        title=settings.llm_title,
+    )
 
     backoff = 1.0
     last_error: Optional[Exception] = None
@@ -54,14 +56,7 @@ def call_relevance_api(text: str, *, retries: int = 4, timeout: Optional[int] = 
             if resp.status_code == 200:
                 data = resp.json()
                 choice = data.get("choices", [{}])[0]
-                message_content = (choice.get("message", {}).get("content") or "").strip()
-                if not message_content:
-                    reasoning = choice.get("reasoning_content")
-                    if isinstance(reasoning, str):
-                        message_content = reasoning.strip()
-                    elif isinstance(reasoning, list):
-                        message_content = " ".join(str(part) for part in reasoning).strip()
-                return message_content
+                return extract_message_text(choice)
             if resp.status_code in _RETRYABLE_STATUS:
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 8)

@@ -7,6 +7,7 @@ from typing import Dict, Optional
 
 import requests
 
+from src.adapters.llm_chat import apply_reasoning_config, build_headers, extract_message_text
 from src.adapters.llm_scoring import parse_score
 from src.config import get_settings
 from src.domain import ExternalFilterCandidate
@@ -103,16 +104,17 @@ def call_external_filter_model(
         "messages": [{"role": "user", "content": build_prompt(candidate, category=category)}],
         "temperature": 0.0,
     }
-    if settings.llm_enable_thinking:
-        payload["enable_thinking"] = True
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    if settings.llm_http_referer:
-        headers["HTTP-Referer"] = settings.llm_http_referer
-    if settings.llm_title:
-        headers["X-Title"] = settings.llm_title
+    apply_reasoning_config(
+        payload,
+        settings=settings,
+        base_url=settings.llm_base_url,
+        enabled=settings.llm_enable_thinking,
+    )
+    headers = build_headers(
+        api_key=api_key,
+        referer=settings.llm_http_referer,
+        title=settings.llm_title,
+    )
     backoff = 1.0
     last_error: Optional[Exception] = None
     # Resolve timeout from settings if not explicitly provided
@@ -124,13 +126,7 @@ def call_external_filter_model(
             if resp.status_code == 200:
                 data = resp.json()
                 choice = data.get("choices", [{}])[0]
-                message_content = (choice.get("message", {}).get("content") or "").strip()
-                if not message_content:
-                    reasoning = choice.get("reasoning_content")
-                    if isinstance(reasoning, str):
-                        message_content = reasoning.strip()
-                    elif isinstance(reasoning, list):
-                        message_content = " ".join(str(part) for part in reasoning).strip()
+                message_content = extract_message_text(choice)
                 if not message_content:
                     raise RuntimeError("Empty response from external filter model")
                 return message_content

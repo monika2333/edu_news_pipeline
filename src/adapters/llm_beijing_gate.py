@@ -9,6 +9,7 @@ from typing import Any, Mapping, Optional
 
 import requests
 
+from src.adapters.llm_chat import apply_reasoning_config, build_headers, extract_message_text
 from src.config import get_settings
 from src.domain import BeijingGateCandidate
 
@@ -78,14 +79,11 @@ def _post_chat_completion(payload: Mapping[str, Any], retries: int, timeout: int
     if not api_key:
         raise RuntimeError("Missing LLM API key (set OPENROUTER_API_KEY or LLM_API_KEY)")
     url = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    if settings.llm_http_referer:
-        headers["HTTP-Referer"] = settings.llm_http_referer
-    if settings.llm_title:
-        headers["X-Title"] = settings.llm_title
+    headers = build_headers(
+        api_key=api_key,
+        referer=settings.llm_http_referer,
+        title=settings.llm_title,
+    )
     backoff = 1.0
     last_error: Optional[Exception] = None
     for _ in range(max(1, retries)):
@@ -94,16 +92,9 @@ def _post_chat_completion(payload: Mapping[str, Any], retries: int, timeout: int
             if response.status_code == 200:
                 data = response.json()
                 choice = data.get("choices", [{}])[0]
-                message = (choice.get("message", {}) or {}).get("content")
+                message = extract_message_text(choice)
                 if message:
-                    return str(message).strip()
-                reasoning = choice.get("reasoning_content")
-                if isinstance(reasoning, str) and reasoning.strip():
-                    return reasoning.strip()
-                if isinstance(reasoning, list):
-                    flattened = " ".join(str(part).strip() for part in reasoning if part)
-                    if flattened.strip():
-                        return flattened.strip()
+                    return message
                 raise RuntimeError("Empty response from Beijing gate model")
             if response.status_code in RETRYABLE_STATUS:
                 time.sleep(backoff)
@@ -124,8 +115,12 @@ def call_beijing_gate(candidate: BeijingGateCandidate, *, retries: int = 3) -> B
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0,
     }
-    if getattr(settings, "llm_enable_thinking", False):
-        payload["enable_thinking"] = True
+    apply_reasoning_config(
+        payload,
+        settings=settings,
+        base_url=settings.llm_base_url,
+        enabled=settings.llm_enable_thinking,
+    )
     timeout = _resolve_timeout(settings)
     raw_output = _post_chat_completion(payload, retries=retries, timeout=timeout)
     decision = _parse_decision(raw_output)

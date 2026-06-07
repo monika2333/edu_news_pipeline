@@ -1,6 +1,10 @@
+from __future__ import annotations
+
+from dataclasses import replace
 from unittest.mock import patch
 
 from src.adapters import external_filter_model as model
+from src.config import get_settings
 from src.domain.external_filter import ExternalFilterCandidate
 
 
@@ -52,3 +56,39 @@ def test_build_prompt_external_negative_skips_keyword_section():
         prompt = model.build_prompt(candidate, category="external_negative")
     assert "Bonus Keywords" not in prompt
     assert "PROMPT" in prompt
+
+
+def test_call_external_filter_model_sends_openrouter_reasoning_payload():
+    candidate = _candidate()
+    settings = replace(
+        get_settings(),
+        llm_api_key="test-key",
+        llm_base_url="https://openrouter.ai/api/v1",
+        external_filter_model_name="deepseek/deepseek-v4-flash",
+        llm_enable_thinking=True,
+        llm_reasoning_effort="high",
+        llm_reasoning_max_tokens=None,
+        llm_reasoning_exclude=True,
+    )
+
+    class _Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"choices": [{"message": {"content": "80"}}]}
+
+    with patch("src.adapters.external_filter_model.get_settings", return_value=settings), patch(
+        "src.adapters.external_filter_model._load_prompt_template",
+        return_value="PROMPT",
+    ), patch("src.adapters.external_filter_model.requests.post", return_value=_Response()) as post:
+        assert model.call_external_filter_model(candidate, category="internal_positive") == "80"
+
+    payload = post.call_args.kwargs["json"]
+    assert payload["model"] == "deepseek/deepseek-v4-flash"
+    assert payload["reasoning"] == {
+        "enabled": True,
+        "effort": "high",
+        "exclude": True,
+    }
+    assert "enable_thinking" not in payload

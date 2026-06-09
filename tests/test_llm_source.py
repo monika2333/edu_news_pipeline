@@ -42,3 +42,20 @@ def test_detect_source_returns_none_for_unknown_response() -> None:
         result = llm_source.detect_source(article, retries=1)
 
     assert result["llm_source"] is None
+
+
+def test_detect_source_uses_source_reasoning_setting() -> None:
+    class _Response:
+        status_code = 200
+
+        @staticmethod
+        def json() -> dict[str, object]:
+            return {"choices": [{"message": {"content": "测试媒体"}}]}
+
+    article = {"title": "测试标题", "content": "正文内容"}
+    with patch("src.adapters.llm_source.requests.post", return_value=_Response()) as post:
+        result = llm_source.detect_source(article, retries=1)
+
+    payload = post.call_args.kwargs["json"]
+    assert result["llm_source"] == "测试媒体"
+    assert payload["reasoning"]["enabled"] is True

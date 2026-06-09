@@ -5,7 +5,7 @@ import pytest
 from src.adapters.llm_summary import build_summary_payload
 
 
-def test_build_summary_payload_requests_around_200_chinese_chars() -> None:
+def test_build_summary_payload_requests_around_250_chinese_chars() -> None:
     payload = build_summary_payload(
         {
             "title": "测试标题",
@@ -14,7 +14,7 @@ def test_build_summary_payload_requests_around_200_chinese_chars() -> None:
     )
 
     message = payload["messages"][0]["content"]
-    assert "约200字" in message
+    assert "约250字" in message
     assert "一段" in message
     assert "不要分条" in message
     assert "不要添加原文没有的信息" in message

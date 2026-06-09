@@ -6,7 +6,7 @@ from typing import Dict, Optional, Tuple
 
 import requests
 
-from src.adapters.llm_chat import build_headers
+from src.adapters.llm_chat import apply_reasoning_config, build_headers
 from src.config import get_settings
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
@@ -70,6 +70,11 @@ def classify_sentiment(content: str, *, retries: int = 4, timeout: Optional[int]
         "messages": [message],
         "temperature": 0.0,
     }
+    apply_reasoning_config(
+        payload,
+        settings=settings,
+        enabled=settings.llm_sentiment_reasoning_enabled,
+    )
     url = f"{settings.llm_api_base_url.rstrip('/')}/chat/completions"
     headers = build_headers(
         api_key=api_key,

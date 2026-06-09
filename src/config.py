@@ -121,6 +121,8 @@ class Settings:
     llm_reasoning_max_tokens: Optional[int]
     llm_reasoning_exclude: bool
     llm_summary_reasoning_enabled: bool
+    llm_source_reasoning_enabled: bool
+    llm_sentiment_reasoning_enabled: bool
     llm_scoring_timeout: int
     llm_summary_timeout: int
     llm_external_filter_timeout: int
@@ -185,7 +187,15 @@ def get_settings() -> Settings:
     )
     llm_summary_reasoning_enabled = _bool_from_env(
         os.getenv("LLM_SUMMARY_REASONING_ENABLED"),
-        default=llm_reasoning_enabled,
+        default=False,
+    )
+    llm_source_reasoning_enabled = _bool_from_env(
+        os.getenv("LLM_SOURCE_REASONING_ENABLED"),
+        default=True,
+    )
+    llm_sentiment_reasoning_enabled = _bool_from_env(
+        os.getenv("LLM_SENTIMENT_REASONING_ENABLED"),
+        default=True,
     )
 
     # LLM timeout configuration (in seconds)
@@ -303,6 +313,8 @@ def get_settings() -> Settings:
         llm_reasoning_max_tokens=llm_reasoning_max_tokens,
         llm_reasoning_exclude=llm_reasoning_exclude,
         llm_summary_reasoning_enabled=llm_summary_reasoning_enabled,
+        llm_source_reasoning_enabled=llm_source_reasoning_enabled,
+        llm_sentiment_reasoning_enabled=llm_sentiment_reasoning_enabled,
         llm_scoring_timeout=llm_scoring_timeout,
         llm_summary_timeout=llm_summary_timeout,
         llm_external_filter_timeout=llm_external_filter_timeout,

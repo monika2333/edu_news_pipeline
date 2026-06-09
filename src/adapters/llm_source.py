@@ -71,7 +71,7 @@ def detect_source(
     apply_reasoning_config(
         payload,
         settings=settings,
-        enabled=settings.llm_summary_reasoning_enabled,
+        enabled=settings.llm_source_reasoning_enabled,
     )
 
     url = f"{settings.llm_api_base_url.rstrip('/')}/chat/completions"

@@ -1,6 +1,7 @@
 ﻿import json
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -33,3 +34,19 @@ if __name__ == "__main__":
     print("\n=== Sentiment API Response ===")
     result = classify_sentiment(NEGATIVE_SAMPLE)
     print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def test_classify_sentiment_uses_sentiment_reasoning_setting():
+    class _Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"choices": [{"message": {"content": "{\"label\":\"positive\",\"confidence\":0.8}"}}]}
+
+    with patch("src.adapters.sentiment_classifier.requests.post", return_value=_Response()) as post:
+        result = classify_sentiment("学校举办实践教学活动。", retries=1)
+
+    payload = post.call_args.kwargs["json"]
+    assert result["label"] == "positive"
+    assert payload["reasoning"]["enabled"] is True

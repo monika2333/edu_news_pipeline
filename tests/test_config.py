@@ -19,6 +19,8 @@ LLM_ENV_KEYS = (
     "LLM_EXTERNAL_FILTER_MODEL",
     "LLM_BEIJING_GATE_MODEL",
     "LLM_SUMMARY_REASONING_ENABLED",
+    "LLM_SOURCE_REASONING_ENABLED",
+    "LLM_SENTIMENT_REASONING_ENABLED",
     "LLM_SCORING_TIMEOUT",
     "LLM_SUMMARY_TIMEOUT",
     "LLM_EXTERNAL_FILTER_TIMEOUT",
@@ -62,6 +64,8 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
     monkeypatch.setenv("LLM_EXTERNAL_FILTER_MODEL", "model-external-filter")
     monkeypatch.setenv("LLM_BEIJING_GATE_MODEL", "model-beijing-gate")
     monkeypatch.setenv("LLM_SUMMARY_REASONING_ENABLED", "true")
+    monkeypatch.setenv("LLM_SOURCE_REASONING_ENABLED", "false")
+    monkeypatch.setenv("LLM_SENTIMENT_REASONING_ENABLED", "false")
     monkeypatch.setenv("LLM_SCORING_TIMEOUT", "11")
     monkeypatch.setenv("LLM_SUMMARY_TIMEOUT", "22")
     monkeypatch.setenv("LLM_EXTERNAL_FILTER_TIMEOUT", "33")
@@ -80,6 +84,8 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
     assert settings.llm_external_filter_model == "model-external-filter"
     assert settings.llm_beijing_gate_model == "model-beijing-gate"
     assert settings.llm_summary_reasoning_enabled is True
+    assert settings.llm_source_reasoning_enabled is False
+    assert settings.llm_sentiment_reasoning_enabled is False
     assert settings.llm_scoring_timeout == 11
     assert settings.llm_summary_timeout == 22
     assert settings.llm_external_filter_timeout == 33
@@ -106,3 +112,6 @@ def test_settings_ignores_removed_llm_variable_names(
     assert settings.llm_summary_model == "Qwen/Qwen2.5-14B-Instruct"
     assert settings.llm_external_filter_model == settings.llm_scoring_model
     assert settings.llm_beijing_gate_model == settings.llm_scoring_model
+    assert settings.llm_summary_reasoning_enabled is False
+    assert settings.llm_source_reasoning_enabled is True
+    assert settings.llm_sentiment_reasoning_enabled is True

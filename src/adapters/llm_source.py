@@ -19,8 +19,10 @@ def build_source_payload(article: Dict[str, Any]) -> Dict[str, Any]:
     if not content:
         raise ValueError("Article content is required for source detection")
     prompt_parts = [
-        "请阅读以下文章内容，并判断原始发布的媒体名称。",
-        "如果无法确定，请回答“未知”。",
+        "请阅读以下新闻内容，并判断这篇文章的发布/署名媒体名称。",
+        "优先依据文章标题附近、正文开头或结尾中的“来源：”“转载自”“发布机构”“作者/署名”等明确来源信息。",
+        "正文中出现的“某媒体报道”“某媒体了解到”“据某媒体”等通常只是引用报道来源，不要优先当作整篇文章的发布媒体。",
+        "如果多个媒体同时出现，选择最像页面署名或版权来源的媒体；如果无法确定，请回答“未知”。",
         "仅返回媒体名称本身，不要包含额外说明。",
     ]
     if title:
@@ -90,7 +92,7 @@ def detect_source(
                 raw_text = (data.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
                 llm_source = _normalise_response(raw_text)
                 if llm_source == "未知":
-                    llm_source = ""
+                    llm_source = None
                 return {
                     "llm_source": llm_source,
                     "model": settings.llm_source_model,

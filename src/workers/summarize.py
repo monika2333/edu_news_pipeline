@@ -100,7 +100,9 @@ def _process_result(
                 'content': content,
             }
             source_result = detect_source(source_payload)
-            llm_source = (source_result.get('llm_source') or '').strip()
+            raw_llm_source = source_result.get('llm_source')
+            if isinstance(raw_llm_source, str) and raw_llm_source.strip():
+                llm_source = raw_llm_source.strip()
         except Exception as source_exc:
             log_info(WORKER, f'Source detection skipped {article_id}: {source_exc}')
             

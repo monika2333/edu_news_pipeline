@@ -6,6 +6,7 @@ from typing import Dict, Optional, Tuple
 
 import requests
 
+from src.adapters.llm_chat import build_headers
 from src.config import get_settings
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
@@ -59,31 +60,26 @@ def _parse_response(raw_text: str) -> Tuple[str, float]:
 
 def classify_sentiment(content: str, *, retries: int = 4, timeout: Optional[int] = None) -> Dict[str, object]:
     settings = get_settings()
-    api_key = settings.summary_llm_api_key or settings.llm_api_key
+    api_key = settings.llm_api_key
     if not api_key:
-        raise RuntimeError("Missing summary LLM API key (set SUMMARY_LLM_API_KEY or OPENROUTER_API_KEY)")
+        raise RuntimeError("Missing LLM API key (set LLM_API_KEY)")
 
     message = _build_prompt(content)
     payload = {
-        "model": settings.sentiment_model_name,
+        "model": settings.llm_sentiment_model,
         "messages": [message],
         "temperature": 0.0,
     }
-    url = f"{settings.summary_llm_base_url.rstrip('/')}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    referer = settings.summary_llm_http_referer or settings.llm_http_referer
-    title = settings.summary_llm_title or settings.llm_title
-    if referer:
-        headers["HTTP-Referer"] = referer
-    if title:
-        headers["X-Title"] = title
+    url = f"{settings.llm_api_base_url.rstrip('/')}/chat/completions"
+    headers = build_headers(
+        api_key=api_key,
+        referer=settings.llm_api_http_referer,
+        title=settings.llm_api_title,
+    )
 
     backoff = 1.0
     last_error: Optional[Exception] = None
-    resolved_timeout = timeout or settings.summary_llm_timeout
+    resolved_timeout = timeout or settings.llm_summary_timeout
     for _ in range(max(1, retries)):
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=resolved_timeout)

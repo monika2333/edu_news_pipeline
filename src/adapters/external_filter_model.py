@@ -97,10 +97,10 @@ def call_external_filter_model(
     settings = get_settings()
     api_key = settings.llm_api_key
     if not api_key:
-        raise RuntimeError("Missing LLM API key (set OPENROUTER_API_KEY or LLM_API_KEY)")
-    url = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
+        raise RuntimeError("Missing LLM API key (set LLM_API_KEY)")
+    url = f"{settings.llm_api_base_url.rstrip('/')}/chat/completions"
     payload = {
-        "model": settings.external_filter_model_name,
+        "model": settings.llm_external_filter_model,
         "messages": [{"role": "user", "content": build_prompt(candidate, category=category)}],
         "temperature": 0.0,
     }
@@ -111,13 +111,13 @@ def call_external_filter_model(
     )
     headers = build_headers(
         api_key=api_key,
-        referer=settings.llm_http_referer,
-        title=settings.llm_title,
+        referer=settings.llm_api_http_referer,
+        title=settings.llm_api_title,
     )
     backoff = 1.0
     last_error: Optional[Exception] = None
     # Resolve timeout from settings if not explicitly provided
-    resolved_timeout = timeout or settings.llm_timeout_external_filter
+    resolved_timeout = timeout or settings.llm_external_filter_timeout
 
     for _ in range(max(1, retries)):
         try:

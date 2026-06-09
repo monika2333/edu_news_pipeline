@@ -63,26 +63,26 @@ def build_prompt(candidate: BeijingGateCandidate) -> str:
 
 
 def _resolve_model_name(settings) -> str:
-    return getattr(settings, "beijing_gate_model_name", None) or settings.score_model_name
+    return settings.llm_beijing_gate_model
 
 
 def _resolve_timeout(settings) -> int:
-    value = getattr(settings, "llm_timeout_beijing_gate", None)
+    value = getattr(settings, "llm_beijing_gate_timeout", None)
     if isinstance(value, int) and value > 0:
         return value
-    return settings.llm_timeout_external_filter
+    return settings.llm_external_filter_timeout
 
 
 def _post_chat_completion(payload: Mapping[str, Any], retries: int, timeout: int) -> str:
     settings = get_settings()
     api_key = settings.llm_api_key
     if not api_key:
-        raise RuntimeError("Missing LLM API key (set OPENROUTER_API_KEY or LLM_API_KEY)")
-    url = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
+        raise RuntimeError("Missing LLM API key (set LLM_API_KEY)")
+    url = f"{settings.llm_api_base_url.rstrip('/')}/chat/completions"
     headers = build_headers(
         api_key=api_key,
-        referer=settings.llm_http_referer,
-        title=settings.llm_title,
+        referer=settings.llm_api_http_referer,
+        title=settings.llm_api_title,
     )
     backoff = 1.0
     last_error: Optional[Exception] = None

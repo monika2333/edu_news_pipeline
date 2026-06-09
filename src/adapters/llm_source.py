@@ -55,31 +55,33 @@ def detect_source(
     """Call the configured LLM chat completions API to infer the article source."""
 
     settings = get_settings()
-    api_key = settings.summary_llm_api_key or settings.llm_api_key
+    api_key = settings.llm_api_key
     if not api_key:
-        raise RuntimeError("Missing summary LLM API key (set SUMMARY_LLM_API_KEY or OPENROUTER_API_KEY)")
+        raise RuntimeError("Missing LLM API key (set LLM_API_KEY)")
 
     payload = build_source_payload(article)
     payload.update(
         {
-            "model": settings.source_model_name,
+            "model": settings.llm_source_model,
             "temperature": 0,
         }
     )
     apply_reasoning_config(
         payload,
         settings=settings,
-        enabled=settings.summary_llm_reasoning_enabled,
+        enabled=settings.llm_summary_reasoning_enabled,
     )
 
-    url = f"{settings.summary_llm_base_url.rstrip('/')}/chat/completions"
-    referer = settings.summary_llm_http_referer or settings.llm_http_referer
-    title = settings.summary_llm_title or settings.llm_title
-    headers = build_headers(api_key=api_key, referer=referer, title=title)
+    url = f"{settings.llm_api_base_url.rstrip('/')}/chat/completions"
+    headers = build_headers(
+        api_key=api_key,
+        referer=settings.llm_api_http_referer,
+        title=settings.llm_api_title,
+    )
 
     backoff = 1.0
     last_error: Optional[Exception] = None
-    resolved_timeout = timeout or settings.summary_llm_timeout
+    resolved_timeout = timeout or settings.llm_summary_timeout
     for _ in range(max(1, retries)):
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=resolved_timeout)
@@ -91,7 +93,7 @@ def detect_source(
                     llm_source = ""
                 return {
                     "llm_source": llm_source,
-                    "model": settings.source_model_name,
+                    "model": settings.llm_source_model,
                     "raw": data,
                 }
             if response.status_code in _RETRYABLE_STATUS:

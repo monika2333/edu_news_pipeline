@@ -6,7 +6,7 @@ from src.adapters.llm_chat import apply_reasoning_config, extract_message_text
 from src.config import get_settings
 
 
-def test_apply_reasoning_config_uses_openrouter_reasoning_field():
+def test_apply_reasoning_config_uses_reasoning_field():
     settings = replace(
         get_settings(),
         llm_reasoning_effort="high",
@@ -39,7 +39,7 @@ def test_apply_reasoning_config_does_nothing_when_disabled():
     assert payload == {}
 
 
-def test_extract_message_text_reads_openrouter_message_reasoning():
+def test_extract_message_text_reads_message_reasoning():
     choice = {"message": {"content": "", "reasoning": "42"}}
 
     assert extract_message_text(choice) == "42"

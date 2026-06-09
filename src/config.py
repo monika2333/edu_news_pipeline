@@ -108,29 +108,24 @@ class Settings:
     db_user: str
     db_password: Optional[str]
     db_schema: str
-    llm_base_url: str
+    llm_api_base_url: str
     llm_api_key: Optional[str]
-    llm_http_referer: Optional[str]
-    llm_title: Optional[str]
-    summary_llm_base_url: str
-    summary_llm_api_key: Optional[str]
-    summary_llm_http_referer: Optional[str]
-    summary_llm_title: Optional[str]
-    summarize_model_name: str
-    source_model_name: str
-    score_model_name: str
-    sentiment_model_name: str
+    llm_api_http_referer: Optional[str]
+    llm_api_title: Optional[str]
+    llm_summary_model: str
+    llm_source_model: str
+    llm_scoring_model: str
+    llm_sentiment_model: str
     llm_reasoning_enabled: bool
     llm_reasoning_effort: Optional[str]
     llm_reasoning_max_tokens: Optional[int]
     llm_reasoning_exclude: bool
-    summary_llm_reasoning_enabled: bool
-    llm_timeout_score: int
-    llm_timeout_summary: int
-    llm_timeout_external_filter: int
-    llm_timeout_beijing_gate: int
+    llm_summary_reasoning_enabled: bool
+    llm_scoring_timeout: int
+    llm_summary_timeout: int
+    llm_external_filter_timeout: int
+    llm_beijing_gate_timeout: int
     score_promotion_threshold: int
-    summary_llm_timeout: int
     process_limit: Optional[int]
     default_concurrency: int
     summary_concurrency: int
@@ -144,7 +139,7 @@ class Settings:
     feishu_receive_id_type: str
     beijing_keywords_path: Path
     score_keyword_bonus_rules: Dict[str, int]
-    external_filter_model_name: str
+    llm_external_filter_model: str
     external_filter_threshold: int
     external_filter_negative_threshold: int
     internal_filter_threshold: int
@@ -152,7 +147,7 @@ class Settings:
     internal_filter_prompt_path: Path
     external_filter_batch_size: int
     external_filter_max_retries: int
-    beijing_gate_model_name: str
+    llm_beijing_gate_model: str
     beijing_gate_max_retries: int
 
 
@@ -168,90 +163,44 @@ def get_settings() -> Settings:
     db_password = _get_env("DB_PASSWORD", "POSTGRES_PASSWORD")
     db_schema = _get_env("DB_SCHEMA", "POSTGRES_SCHEMA") or "public"
 
-    llm_base_url = (
-        _get_env("LLM_BASE_URL", "OPENROUTER_BASE_URL", "SILICONFLOW_BASE_URL")
-        or "https://openrouter.ai/api/v1"
-    )
-    llm_api_key = _get_env("LLM_API_KEY", "OPENROUTER_API_KEY", "SILICONFLOW_API_KEY")
-    llm_http_referer = _get_env("LLM_HTTP_REFERER", "OPENROUTER_HTTP_REFERER", "OPENROUTER_REFERER", "HTTP_REFERER")
-    llm_title = _get_env("LLM_TITLE", "OPENROUTER_TITLE", "OPENROUTER_SITE_NAME", "X_TITLE")
-    summarize_model_name = os.getenv("SUMMARIZE_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
-    source_model_name = os.getenv("SOURCE_MODEL_NAME", summarize_model_name)
-    score_model_name = os.getenv("SCORE_MODEL_NAME", os.getenv("MODEL_NAME", "Qwen/Qwen2.5-14B-Instruct"))
-    sentiment_model_name = os.getenv("SENTIMENT_MODEL_NAME", summarize_model_name)
+    default_llm_model = "Qwen/Qwen2.5-14B-Instruct"
+    llm_api_base_url = os.getenv("LLM_API_BASE_URL") or "https://openrouter.ai/api/v1"
+    llm_api_key = os.getenv("LLM_API_KEY")
+    llm_api_http_referer = os.getenv("LLM_API_HTTP_REFERER")
+    llm_api_title = os.getenv("LLM_API_TITLE")
+    llm_summary_model = os.getenv("LLM_SUMMARY_MODEL") or default_llm_model
+    llm_source_model = os.getenv("LLM_SOURCE_MODEL") or llm_summary_model
+    llm_scoring_model = os.getenv("LLM_SCORING_MODEL") or default_llm_model
+    llm_sentiment_model = os.getenv("LLM_SENTIMENT_MODEL") or llm_summary_model
     llm_reasoning_enabled = _bool_from_env(
-        _get_env("LLM_REASONING_ENABLED", "OPENROUTER_REASONING_ENABLED"),
+        os.getenv("LLM_REASONING_ENABLED"),
         default=False,
     )
-    raw_reasoning_effort = (
-        _get_env("LLM_REASONING_EFFORT", "OPENROUTER_REASONING_EFFORT") or ""
-    ).strip().lower()
+    raw_reasoning_effort = (os.getenv("LLM_REASONING_EFFORT") or "").strip().lower()
     llm_reasoning_effort = raw_reasoning_effort if raw_reasoning_effort in {"low", "medium", "high"} else None
-    llm_reasoning_max_tokens = _optional_int(
-        _get_env("LLM_REASONING_MAX_TOKENS", "OPENROUTER_REASONING_MAX_TOKENS")
-    )
+    llm_reasoning_max_tokens = _optional_int(os.getenv("LLM_REASONING_MAX_TOKENS"))
     llm_reasoning_exclude = _bool_from_env(
-        _get_env("LLM_REASONING_EXCLUDE", "OPENROUTER_REASONING_EXCLUDE"),
+        os.getenv("LLM_REASONING_EXCLUDE"),
         default=False,
     )
-    summary_llm_base_url = _get_env("SUMMARY_LLM_BASE_URL", "SILICONFLOW_BASE_URL") or llm_base_url
-    summary_llm_api_key = _get_env("SUMMARY_LLM_API_KEY", "SILICONFLOW_API_KEY") or llm_api_key
-    summary_llm_http_referer = _get_env("SUMMARY_LLM_HTTP_REFERER", "SILICONFLOW_HTTP_REFERER") or llm_http_referer
-    summary_llm_title = _get_env("SUMMARY_LLM_TITLE", "SILICONFLOW_TITLE") or llm_title
-    summary_llm_reasoning_enabled = _bool_from_env(
-        _get_env("SUMMARY_LLM_REASONING_ENABLED", "SUMMARY_OPENROUTER_REASONING_ENABLED"),
+    llm_summary_reasoning_enabled = _bool_from_env(
+        os.getenv("LLM_SUMMARY_REASONING_ENABLED"),
         default=llm_reasoning_enabled,
     )
 
     # LLM timeout configuration (in seconds)
-    # Fallback order: specific -> global -> hardcoded default
-    _llm_global_timeout = _optional_int(_get_env("LLM_TIMEOUT", "OPENROUTER_TIMEOUT", "SILICONFLOW_TIMEOUT"))
-    llm_timeout_score = (
-        _optional_int(_get_env("LLM_TIMEOUT_SCORE", "OPENROUTER_TIMEOUT_SCORE", "SILICONFLOW_TIMEOUT_SCORE"))
-        or _llm_global_timeout
-        or 30
+    llm_global_timeout = _optional_int(os.getenv("LLM_TIMEOUT"))
+    llm_scoring_timeout = _optional_int(os.getenv("LLM_SCORING_TIMEOUT")) or llm_global_timeout or 30
+    llm_summary_timeout = (
+        _optional_int(os.getenv("LLM_SUMMARY_TIMEOUT")) or llm_global_timeout or 60
     )
-    llm_timeout_summary = (
-        _optional_int(
-            _get_env("LLM_TIMEOUT_SUMMARY", "OPENROUTER_TIMEOUT_SUMMARY", "SILICONFLOW_TIMEOUT_SUMMARY")
-        )
-        or _llm_global_timeout
-        or 60
+    llm_external_filter_timeout = (
+        _optional_int(os.getenv("LLM_EXTERNAL_FILTER_TIMEOUT")) or llm_global_timeout or 30
     )
-    summary_llm_timeout = (
-        _optional_int(
-            _get_env(
-                "SUMMARY_LLM_TIMEOUT",
-                "SUMMARY_LLM_TIMEOUT_SUMMARY",
-                "SILICONFLOW_TIMEOUT_SUMMARY",
-                "SILICONFLOW_TIMEOUT",
-            )
-        )
-        or llm_timeout_summary
+    llm_beijing_gate_timeout = (
+        _optional_int(os.getenv("LLM_BEIJING_GATE_TIMEOUT")) or llm_global_timeout or 60
     )
-    llm_timeout_external_filter = (
-        _optional_int(
-            _get_env(
-                "LLM_TIMEOUT_EXTERNAL_FILTER",
-                "OPENROUTER_TIMEOUT_EXTERNAL_FILTER",
-                "SILICONFLOW_TIMEOUT_EXTERNAL_FILTER",
-            )
-        )
-        or _llm_global_timeout
-        or 30
-    )
-    llm_timeout_beijing_gate = (
-        _optional_int(
-            _get_env(
-                "LLM_TIMEOUT_BEIJING_GATE",
-                "OPENROUTER_TIMEOUT_BEIJING_GATE",
-                "SILICONFLOW_TIMEOUT_BEIJING_GATE",
-            )
-        )
-        or _llm_global_timeout
-        or 60
-    )
-    external_filter_model_name = os.getenv("EXTERNAL_FILTER_MODEL_NAME", score_model_name)
+    llm_external_filter_model = os.getenv("LLM_EXTERNAL_FILTER_MODEL") or llm_scoring_model
     raw_score_threshold = _optional_int(
         _get_env("SCORE_PROMOTION_THRESHOLD", "SCORE_THRESHOLD")
     )
@@ -274,7 +223,7 @@ def get_settings() -> Settings:
     )
     external_filter_batch_size = _optional_int(os.getenv("EXTERNAL_FILTER_BATCH_SIZE")) or 50
     external_filter_max_retries = _optional_int(os.getenv("EXTERNAL_FILTER_MAX_RETRIES")) or 3
-    beijing_gate_model_name = os.getenv("BEIJING_GATE_MODEL_NAME", score_model_name)
+    llm_beijing_gate_model = os.getenv("LLM_BEIJING_GATE_MODEL") or llm_scoring_model
     beijing_gate_max_retries = _optional_int(os.getenv("BEIJING_GATE_MAX_RETRIES")) or 3
 
     process_limit = _optional_int(os.getenv("PROCESS_LIMIT"))
@@ -341,29 +290,24 @@ def get_settings() -> Settings:
         db_user=db_user,
         db_password=db_password,
         db_schema=db_schema,
-        llm_base_url=llm_base_url,
+        llm_api_base_url=llm_api_base_url,
         llm_api_key=llm_api_key,
-        llm_http_referer=llm_http_referer,
-        llm_title=llm_title,
-        summary_llm_base_url=summary_llm_base_url,
-        summary_llm_api_key=summary_llm_api_key,
-        summary_llm_http_referer=summary_llm_http_referer,
-        summary_llm_title=summary_llm_title,
-        summarize_model_name=summarize_model_name,
-        source_model_name=source_model_name,
-        score_model_name=score_model_name,
-        sentiment_model_name=sentiment_model_name,
+        llm_api_http_referer=llm_api_http_referer,
+        llm_api_title=llm_api_title,
+        llm_summary_model=llm_summary_model,
+        llm_source_model=llm_source_model,
+        llm_scoring_model=llm_scoring_model,
+        llm_sentiment_model=llm_sentiment_model,
         llm_reasoning_enabled=llm_reasoning_enabled,
         llm_reasoning_effort=llm_reasoning_effort,
         llm_reasoning_max_tokens=llm_reasoning_max_tokens,
         llm_reasoning_exclude=llm_reasoning_exclude,
-        summary_llm_reasoning_enabled=summary_llm_reasoning_enabled,
-        llm_timeout_score=llm_timeout_score,
-        llm_timeout_summary=llm_timeout_summary,
-        llm_timeout_external_filter=llm_timeout_external_filter,
-        llm_timeout_beijing_gate=llm_timeout_beijing_gate,
+        llm_summary_reasoning_enabled=llm_summary_reasoning_enabled,
+        llm_scoring_timeout=llm_scoring_timeout,
+        llm_summary_timeout=llm_summary_timeout,
+        llm_external_filter_timeout=llm_external_filter_timeout,
+        llm_beijing_gate_timeout=llm_beijing_gate_timeout,
         score_promotion_threshold=score_promotion_threshold,
-        summary_llm_timeout=summary_llm_timeout,
         process_limit=process_limit,
         default_concurrency=default_concurrency,
         summary_concurrency=summary_concurrency,
@@ -377,7 +321,7 @@ def get_settings() -> Settings:
         feishu_receive_id_type=feishu_receive_id_type,
         beijing_keywords_path=beijing_keywords_path,
         score_keyword_bonus_rules=keyword_bonus_rules,
-        external_filter_model_name=external_filter_model_name,
+        llm_external_filter_model=llm_external_filter_model,
         external_filter_threshold=external_filter_threshold,
         external_filter_negative_threshold=external_filter_negative_threshold,
         internal_filter_threshold=internal_filter_threshold,
@@ -385,7 +329,7 @@ def get_settings() -> Settings:
         internal_filter_prompt_path=internal_filter_prompt_path,
         external_filter_batch_size=external_filter_batch_size,
         external_filter_max_retries=external_filter_max_retries,
-        beijing_gate_model_name=beijing_gate_model_name,
+        llm_beijing_gate_model=llm_beijing_gate_model,
         beijing_gate_max_retries=beijing_gate_max_retries,
     )
 

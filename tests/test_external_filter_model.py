@@ -58,13 +58,13 @@ def test_build_prompt_external_negative_skips_keyword_section():
     assert "PROMPT" in prompt
 
 
-def test_call_external_filter_model_sends_openrouter_reasoning_payload():
+def test_call_external_filter_model_sends_reasoning_payload():
     candidate = _candidate()
     settings = replace(
         get_settings(),
         llm_api_key="test-key",
-        llm_base_url="https://openrouter.ai/api/v1",
-        external_filter_model_name="deepseek/deepseek-v4-flash",
+        llm_api_base_url="https://openrouter.ai/api/v1",
+        llm_external_filter_model="deepseek/deepseek-v4-flash",
         llm_reasoning_enabled=True,
         llm_reasoning_effort="high",
         llm_reasoning_max_tokens=None,

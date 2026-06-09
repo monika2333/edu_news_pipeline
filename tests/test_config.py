@@ -12,6 +12,7 @@ LLM_ENV_KEYS = (
     "LLM_API_KEY",
     "LLM_API_HTTP_REFERER",
     "LLM_API_TITLE",
+    "LLM_MODEL",
     "LLM_SUMMARY_MODEL",
     "LLM_SOURCE_MODEL",
     "LLM_SCORING_MODEL",
@@ -21,6 +22,9 @@ LLM_ENV_KEYS = (
     "LLM_SUMMARY_REASONING_ENABLED",
     "LLM_SOURCE_REASONING_ENABLED",
     "LLM_SENTIMENT_REASONING_ENABLED",
+    "LLM_REASONING_ENABLED",
+    "LLM_REASONING_EFFORT",
+    "LLM_REASONING_EXCLUDE",
     "LLM_SCORING_TIMEOUT",
     "LLM_SUMMARY_TIMEOUT",
     "LLM_EXTERNAL_FILTER_TIMEOUT",
@@ -57,6 +61,7 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     monkeypatch.setenv("LLM_API_HTTP_REFERER", "https://console.example.test")
     monkeypatch.setenv("LLM_API_TITLE", "Edu News Pipeline")
+    monkeypatch.setenv("LLM_MODEL", "model-default")
     monkeypatch.setenv("LLM_SUMMARY_MODEL", "model-summary")
     monkeypatch.setenv("LLM_SOURCE_MODEL", "model-source")
     monkeypatch.setenv("LLM_SCORING_MODEL", "model-scoring")
@@ -92,6 +97,22 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
     assert settings.llm_beijing_gate_timeout == 44
 
 
+def test_settings_uses_llm_model_for_all_task_models(
+    clean_settings_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_MODEL", "model-shared")
+
+    settings = config.get_settings()
+
+    assert settings.llm_summary_model == "model-shared"
+    assert settings.llm_source_model == "model-shared"
+    assert settings.llm_scoring_model == "model-shared"
+    assert settings.llm_sentiment_model == "model-shared"
+    assert settings.llm_external_filter_model == "model-shared"
+    assert settings.llm_beijing_gate_model == "model-shared"
+
+
 def test_settings_ignores_removed_llm_variable_names(
     clean_settings_env: None,
     monkeypatch: pytest.MonkeyPatch,
@@ -108,10 +129,17 @@ def test_settings_ignores_removed_llm_variable_names(
 
     assert settings.llm_api_base_url == "https://openrouter.ai/api/v1"
     assert settings.llm_api_key is None
-    assert settings.llm_scoring_model == "Qwen/Qwen2.5-14B-Instruct"
-    assert settings.llm_summary_model == "Qwen/Qwen2.5-14B-Instruct"
+    assert settings.llm_scoring_model == "deepseek/deepseek-v4-flash"
+    assert settings.llm_summary_model == "deepseek/deepseek-v4-flash"
     assert settings.llm_external_filter_model == settings.llm_scoring_model
     assert settings.llm_beijing_gate_model == settings.llm_scoring_model
+    assert settings.llm_reasoning_enabled is True
+    assert settings.llm_reasoning_effort is None
+    assert settings.llm_reasoning_exclude is True
     assert settings.llm_summary_reasoning_enabled is False
     assert settings.llm_source_reasoning_enabled is True
     assert settings.llm_sentiment_reasoning_enabled is True
+    assert settings.llm_scoring_timeout == 90
+    assert settings.llm_summary_timeout == 90
+    assert settings.llm_external_filter_timeout == 90
+    assert settings.llm_beijing_gate_timeout == 90

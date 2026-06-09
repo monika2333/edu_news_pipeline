@@ -165,7 +165,7 @@ def get_settings() -> Settings:
     db_password = _get_env("DB_PASSWORD", "POSTGRES_PASSWORD")
     db_schema = _get_env("DB_SCHEMA", "POSTGRES_SCHEMA") or "public"
 
-    default_llm_model = "Qwen/Qwen2.5-14B-Instruct"
+    default_llm_model = os.getenv("LLM_MODEL") or "deepseek/deepseek-v4-flash"
     llm_api_base_url = os.getenv("LLM_API_BASE_URL") or "https://openrouter.ai/api/v1"
     llm_api_key = os.getenv("LLM_API_KEY")
     llm_api_http_referer = os.getenv("LLM_API_HTTP_REFERER")
@@ -176,14 +176,14 @@ def get_settings() -> Settings:
     llm_sentiment_model = os.getenv("LLM_SENTIMENT_MODEL") or llm_summary_model
     llm_reasoning_enabled = _bool_from_env(
         os.getenv("LLM_REASONING_ENABLED"),
-        default=False,
+        default=True,
     )
     raw_reasoning_effort = (os.getenv("LLM_REASONING_EFFORT") or "").strip().lower()
     llm_reasoning_effort = raw_reasoning_effort if raw_reasoning_effort in {"low", "medium", "high"} else None
     llm_reasoning_max_tokens = _optional_int(os.getenv("LLM_REASONING_MAX_TOKENS"))
     llm_reasoning_exclude = _bool_from_env(
         os.getenv("LLM_REASONING_EXCLUDE"),
-        default=False,
+        default=True,
     )
     llm_summary_reasoning_enabled = _bool_from_env(
         os.getenv("LLM_SUMMARY_REASONING_ENABLED"),
@@ -199,7 +199,7 @@ def get_settings() -> Settings:
     )
 
     # LLM timeout configuration (in seconds)
-    llm_global_timeout = _optional_int(os.getenv("LLM_TIMEOUT"))
+    llm_global_timeout = _optional_int(os.getenv("LLM_TIMEOUT")) or 90
     llm_scoring_timeout = _optional_int(os.getenv("LLM_SCORING_TIMEOUT")) or llm_global_timeout or 30
     llm_summary_timeout = (
         _optional_int(os.getenv("LLM_SUMMARY_TIMEOUT")) or llm_global_timeout or 60

@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from src.adapters.http_toutiao import (
     FeedItem,
-    build_detail_update,
+    build_detail_update as tt_build_detail_update,
     fetch_feed_items,
     fetch_info,
     feed_item_to_row,
@@ -58,6 +58,7 @@ from src.adapters.http_chinaeducationdaily import (
     list_items as jyb_list_items,
     fetch_detail as jyb_fetch_detail,
     feed_item_to_row as jyb_feed_item_to_row,
+    is_detail_url as jyb_is_detail_url,
     make_article_id as jyb_make_article_id,
     build_detail_update as jyb_build_detail_update,
 )
@@ -237,6 +238,47 @@ def _prepare_feed_rows(feed_items):
     return rows, items_by_id, unresolved, duplicates
 
 
+def _build_toutiao_detail_update(
+    item: FeedItem,
+    article_id: str,
+    detail_payload: Mapping[str, Any],
+    *,
+    detail_fetched_at: datetime,
+) -> Dict[str, Any]:
+    detail_url = str(detail_payload.get("url") or item.article_url or "").strip()
+    if detail_url and jyb_is_detail_url(detail_url):
+        try:
+            jyb_payload = jyb_fetch_detail(detail_url)
+            jyb_item = JYBFeedItem(
+                title=item.title,
+                url=detail_url,
+                section=item.source,
+                publish_time_iso=item.publish_time_iso,
+                raw=item.raw,
+            )
+            row = jyb_build_detail_update(
+                jyb_item,
+                article_id,
+                jyb_payload,
+                detail_fetched_at=detail_fetched_at,
+            )
+            row["token"] = item.token
+            row["profile_url"] = item.profile_url
+            row["summary"] = row.get("summary") or item.summary
+            row["comment_count"] = item.comment_count
+            row["digg_count"] = item.digg_count
+            return row
+        except Exception as exc:  # pylint: disable=broad-except
+            log_error(WORKER, f"toutiao_jyb_detail:{article_id}", exc)
+
+    return tt_build_detail_update(
+        item,
+        article_id,
+        dict(detail_payload),
+        detail_fetched_at=detail_fetched_at,
+    )
+
+
 def _run_toutiao_flow(
     *,
     adapter,
@@ -308,7 +350,7 @@ def _run_toutiao_flow(
             log_error(WORKER, f"detail_fetch:{article_id}", exc)
             continue
         detail_rows.append(
-            build_detail_update(
+            _build_toutiao_detail_update(
                 item,
                 article_id,
                 detail_payload,

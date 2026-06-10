@@ -68,9 +68,15 @@ def normalize_url(url: str) -> str:
     return (url or "").strip()
 
 
+def is_detail_url(url: str) -> bool:
+    parsed = urlparse(normalize_url(url))
+    host = (parsed.netloc or "").lower()
+    return host.endswith("jyb.cn") and bool(parsed.path)
+
+
 def make_article_id(url: str) -> str:
-    u = normalize_url(url)
-    path = re.sub(r"^https?://[^/]+", "", u)
+    parsed = urlparse(normalize_url(url))
+    path = parsed.path or "/"
     path = re.sub(r"\.s?html?$", "", path)
     path = re.sub(r"/+", "/", path).strip()
     if not path:
@@ -388,6 +394,7 @@ def build_detail_update(item: FeedItemLike, article_id: str, data: Dict[str, Any
 __all__ = [
     'FeedItemLike',
     'normalize_url',
+    'is_detail_url',
     'make_article_id',
     'list_items',
     'fetch_detail',

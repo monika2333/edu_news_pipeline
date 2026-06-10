@@ -10,6 +10,12 @@ from src.adapters.http_chinanews import (
     fetch_detail as cn_fetch_detail,
     build_detail_update as cn_build_detail_update,
 )
+from src.adapters.http_chinaeducationdaily import (
+    FeedItemLike as JYBFeedItem,
+    build_detail_update as jyb_build_detail_update,
+    fetch_detail as jyb_fetch_detail,
+    is_detail_url as jyb_is_detail_url,
+)
 from src.workers import log_error, log_info, log_summary, worker_session
 
 WORKER = "repair"
@@ -37,6 +43,19 @@ def _row_to_toutiao_item(row: Dict[str, Any]) -> FeedItem:
     )
 
 
+def _row_to_jyb_item(row: Dict[str, Any], url: str) -> JYBFeedItem:
+    publish_iso = row.get('publish_time_iso')
+    if isinstance(publish_iso, datetime):
+        publish_iso = publish_iso.isoformat()
+    return JYBFeedItem(
+        title=str(row.get('title') or ''),
+        url=url,
+        section=str(row.get('source') or ''),
+        publish_time_iso=publish_iso,
+        raw={},
+    )
+
+
 def run(limit: Optional[int] = None) -> None:
     adapter = get_adapter()
 
@@ -53,9 +72,9 @@ def run(limit: Optional[int] = None) -> None:
             article_id = str(row.get('article_id') or '')
             if not article_id:
                 continue
-            # Route by source prefix: chinanews:* vs toutiao numeric IDs
+            url = str(row.get('url') or '').strip()
+            # Route website-backed records by URL/prefix before falling back to Toutiao numeric IDs.
             if article_id.startswith('chinanews:'):
-                url = str(row.get('url') or '').strip()
                 if not url:
                     failures += 1
                     log_error(WORKER, f"missing_url:{article_id}", RuntimeError('missing url for chinanews row'))
@@ -103,6 +122,49 @@ def run(limit: Optional[int] = None) -> None:
                 except Exception as exc:
                     failures += 1
                     log_error(WORKER, f"cn_build_update:{article_id}", exc)
+            elif article_id.startswith('jyb:') or (url and jyb_is_detail_url(url)):
+                if not url:
+                    failures += 1
+                    log_error(WORKER, f"missing_url:{article_id}", RuntimeError('missing url for jyb row'))
+                    continue
+                try:
+                    jyb_item = _row_to_jyb_item(row, url)
+                except Exception as exc:
+                    failures += 1
+                    log_error(WORKER, f"row_to_jyb_item:{article_id}", exc)
+                    continue
+                attempts = 0
+                detail_payload = None
+                while attempts < DEFAULT_RETRY_LIMIT:
+                    attempts += 1
+                    try:
+                        detail_payload = jyb_fetch_detail(url)
+                        break
+                    except Exception as exc:
+                        if attempts >= DEFAULT_RETRY_LIMIT:
+                            failures += 1
+                            log_error(WORKER, f"jyb_fetch_detail:{article_id}", exc)
+                        else:
+                            continue
+                if detail_payload is None:
+                    continue
+                try:
+                    row_update = jyb_build_detail_update(
+                        jyb_item,
+                        article_id,
+                        detail_payload,
+                        detail_fetched_at=datetime.now(timezone.utc),
+                    )
+                    if not article_id.startswith("jyb:"):
+                        row_update["token"] = row.get("token")
+                        row_update["profile_url"] = row.get("profile_url")
+                        row_update["summary"] = row.get("summary")
+                        row_update["comment_count"] = row.get("comment_count")
+                        row_update["digg_count"] = row.get("digg_count")
+                    detail_rows.append(row_update)
+                except Exception as exc:
+                    failures += 1
+                    log_error(WORKER, f"jyb_build_update:{article_id}", exc)
             else:
                 # Toutiao fallback (numeric IDs)
                 try:

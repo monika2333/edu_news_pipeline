@@ -2,8 +2,12 @@ from __future__ import annotations
 
 """Reusable title clustering utility based on BGE embeddings."""
 
+import os
 import threading
 from typing import Sequence
+
+_DEFAULT_HF_HUB_ETAG_TIMEOUT = "20"
+os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", _DEFAULT_HF_HUB_ETAG_TIMEOUT)
 
 from sentence_transformers import SentenceTransformer, util
 

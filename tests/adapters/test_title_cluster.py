@@ -5,6 +5,10 @@ from typing import Any
 from src.adapters import title_cluster
 
 
+def test_hf_hub_etag_timeout_default_is_20() -> None:
+    assert title_cluster._DEFAULT_HF_HUB_ETAG_TIMEOUT == "20"
+
+
 class _FakeSentenceTransformer:
     calls: list[tuple[str, bool]] = []
     fail_local = False

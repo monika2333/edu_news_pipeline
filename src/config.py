@@ -237,7 +237,7 @@ def get_settings() -> Settings:
     beijing_gate_max_retries = _optional_int(os.getenv("BEIJING_GATE_MAX_RETRIES")) or 3
 
     process_limit = _optional_int(os.getenv("PROCESS_LIMIT"))
-    default_concurrency = _optional_int(os.getenv("CONCURRENCY")) or 5
+    default_concurrency = _optional_int(os.getenv("CONCURRENCY")) or 50
     summary_concurrency = _optional_int(os.getenv("SUMMARY_CONCURRENCY")) or default_concurrency
 
     def _resolve_path(env_value: Optional[str], *, default: Path) -> Path:

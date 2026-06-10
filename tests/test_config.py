@@ -143,3 +143,5 @@ def test_settings_ignores_removed_llm_variable_names(
     assert settings.llm_summary_timeout == 90
     assert settings.llm_external_filter_timeout == 90
     assert settings.llm_beijing_gate_timeout == 90
+    assert settings.default_concurrency == 50
+    assert settings.summary_concurrency == 50

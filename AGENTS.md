@@ -271,10 +271,9 @@ db_config = {
 - `src/console/`：Web 控制台，当前使用 flat modules：
   - `*_routes.py`、`*_service.py`、`*_schemas.py`
   - `web_templates/`、`web_static/`
-- `src/workers/`：后台流水线 worker。
+- `src/workers/`：后台流水线 worker；TXT 简报导出格式由 `src/workers/export_brief.py` 负责。
 - `src/adapters/`：外部系统适配器。
-- `src/domain/`：业务规则和领域模型。
-- `src/domain/reporting/`：导出格式和分桶逻辑。
+- `src/domain/`：业务规则和领域模型。不要在这里新增 TXT/综报/晚报格式抽象；当前综报/晚报预览与人工导出格式归 `src/console/` 维护。
 - `tests/`：测试文件。
 - `scripts/`：工具脚本。
 - `docs/`：提示词和流程文档。

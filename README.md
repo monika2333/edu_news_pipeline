@@ -5,7 +5,7 @@
 ## 功能总览
 - **流水线**：抓取 → 去重 → 评分 → 摘要/情感 → 北京/外地分流与重要性评分 → 导出简报。
 - **Web 控制台**：默认进入 `/manual_filter` 进行人工筛选/审阅（簇展示、状态自动保存、排序模式、导出弹窗）。
-- **导出/预览**：支持在审阅页导出文本或预览（可选标记为已导出）。
+- **导出/预览**：支持在审阅页按综报/晚报预览文本并归档为已导出；流水线 `export` 命令仍可生成 TXT 简报并推送飞书。
 
 ## 快速开始
 1) 安装依赖
@@ -70,14 +70,14 @@ dbmate down
 - `run_console.py`：控制台入口。
 - `src/console/app.py`：FastAPI 应用与路由挂载。
 - `src/cli/main.py`：流水线命令行入口。
-- `src/workers/`：抓取、去重、评分、摘要、外部过滤、导出等流水线步骤。
+- `src/workers/`：抓取、去重、评分、摘要、外部过滤、TXT 简报导出等流水线步骤。
 - `src/adapters/`：数据库、HTTP 源、LLM、通知等外部系统适配器。
-- `src/domain/`：领域模型、评分、地域判断、导出格式等业务规则。
+- `src/domain/`：领域模型、评分、地域判断等业务规则。
 - `src/console/*_routes.py`：API 与页面路由（人工筛选页面及其所需 API）。
 - `src/console/*_service.py`：控制台业务逻辑。
 - `src/console/*_schemas.py`：控制台请求/响应结构。
 - `src/console/web_templates/`：Jinja2 模板。
-- `src/console/web_static/`：前端 JS / CSS 资源。
+- `src/console/web_static/`：前端 JS / CSS 资源；人工审阅的综报/晚报预览格式在这里维护。
 - `database/migrations/`：Dbmate 数据库迁移。
 - `docs/`：提示词、控制台认证和流程文档。
 - `AGENTS.md`：面向 AI agent 的全局开发约束与命令说明。

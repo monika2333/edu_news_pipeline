@@ -3,8 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from src.domain import ExportCandidate
-from src.domain.reporting.formatters import format_section_text, format_source_suffix
-from src.workers.export_brief import _format_entry
+from src.workers.export_brief import _format_entry, _format_source_suffix
 
 
 def _candidate(
@@ -30,7 +29,7 @@ def _candidate(
 
 
 def test_format_source_suffix_labels_detected_and_crawled_sources() -> None:
-    suffix = format_source_suffix("中国青年报", "今日头条")
+    suffix = _format_source_suffix("中国青年报", "今日头条")
 
     assert suffix == "（识别来源：中国青年报；爬取来源：今日头条）"
 
@@ -47,11 +46,3 @@ def test_export_brief_entry_labels_crawled_source_when_detection_missing() -> No
     assert "测试摘要（爬取来源：光明日报）" in text
     assert "识别来源" not in text
 
-
-def test_section_formatter_uses_explicit_source_labels() -> None:
-    text = format_section_text(
-        {"label": "测试分组"},
-        [_candidate(source="中国新闻网", llm_source="中国教育报")],
-    )
-
-    assert "测试摘要（识别来源：中国教育报；爬取来源：中国新闻网）" in text

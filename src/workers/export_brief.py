@@ -7,8 +7,6 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.title_cluster import cluster_titles
 from src.domain import ExportCandidate
-from src.domain.reporting.buckets import normalize_sentiment, candidate_rank_key_simple
-from src.domain.reporting.formatters import format_source_suffix
 from src.notifications.feishu import FeishuConfigError, FeishuRequestError, notify_export_summary
 from src.workers import log_info, log_summary, worker_session
 
@@ -63,14 +61,57 @@ def _format_number(value: Optional[float]) -> Optional[str]:
     return f"{number:.2f}".rstrip("0").rstrip(".")
 
 
+def _format_source_suffix(
+    llm_source: Optional[str],
+    crawl_source: Optional[str],
+) -> str:
+    source_parts: List[str] = []
+    detected_source = (llm_source or "").strip()
+    original_source = (crawl_source or "").strip()
+    if detected_source:
+        source_parts.append(f"识别来源：{detected_source}")
+    if original_source:
+        source_parts.append(f"爬取来源：{original_source}")
+    return f"（{'；'.join(source_parts)}）" if source_parts else ""
+
+
+def _normalize_sentiment(candidate: ExportCandidate) -> str:
+    label = (candidate.sentiment_label or "").strip().lower()
+    return "negative" if label == "negative" else "positive"
+
+
+def _external_importance_value(candidate: ExportCandidate) -> float:
+    value = candidate.external_importance_score
+    if value is None:
+        return float("-inf")
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float("-inf")
+
+
+def _score_value(candidate: ExportCandidate) -> float:
+    value = candidate.score
+    if value is None:
+        return float("-inf")
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float("-inf")
+
+
+def _candidate_rank_key(candidate: ExportCandidate) -> Tuple[float, float]:
+    return (_external_importance_value(candidate), _score_value(candidate))
+
+
 def _format_entry(candidate: ExportCandidate) -> str:
     title_line = (candidate.title or "").strip()
     summary_line = (candidate.summary or "").strip()
-    sentiment_bucket = normalize_sentiment(candidate)
+    sentiment_bucket = _normalize_sentiment(candidate)
     is_positive = sentiment_bucket == "positive"
     is_internal = candidate.is_beijing_related is True
 
-    suffix = format_source_suffix(candidate.llm_source, candidate.source)
+    suffix = _format_source_suffix(candidate.llm_source, candidate.source)
 
     metrics_parts: List[str] = []
     ext_score_value = candidate.external_importance_score
@@ -141,12 +182,12 @@ def _cluster_and_format_block(
         cluster_candidates = [items[idx] for idx in cluster if 0 <= idx < len(items)]
         if not cluster_candidates:
             continue
-        cluster_candidates.sort(key=candidate_rank_key_simple, reverse=True)
-        cluster_key = max((candidate_rank_key_simple(c) for c in cluster_candidates), default=(float("-inf"), float("-inf")))
+        cluster_candidates.sort(key=_candidate_rank_key, reverse=True)
+        cluster_key = max((_candidate_rank_key(c) for c in cluster_candidates), default=(float("-inf"), float("-inf")))
         cluster_structs.append((cluster_key, cluster_candidates))
 
     if not cluster_structs:
-        fallback_candidates = sorted(items, key=candidate_rank_key_simple, reverse=True)
+        fallback_candidates = sorted(items, key=_candidate_rank_key, reverse=True)
         cluster_structs.append(((float("-inf"), float("-inf")), fallback_candidates))
 
     cluster_structs.sort(key=lambda entry: entry[0], reverse=True)
@@ -190,9 +231,9 @@ def _generate_text_content(
     }
 
     for cand in internal_candidates:
-        bucket_index[("internal", normalize_sentiment(cand))].append(cand)
+        bucket_index[("internal", _normalize_sentiment(cand))].append(cand)
     for cand in external_candidates:
-        bucket_index[("external", normalize_sentiment(cand))].append(cand)
+        bucket_index[("external", _normalize_sentiment(cand))].append(cand)
 
     text_entries: List[str] = []
     category_counts: Dict[str, int] = {}

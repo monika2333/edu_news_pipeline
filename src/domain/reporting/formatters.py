@@ -6,7 +6,7 @@ Text block generation for export reports including headers, titles, summaries, a
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.domain.models import ExportCandidate
 
@@ -25,6 +25,21 @@ def chinese_number(idx: int) -> str:
     if 1 <= idx <= len(numerals):
         return numerals[idx - 1]
     return str(idx)
+
+
+def format_source_suffix(
+    llm_source: Optional[str],
+    crawl_source: Optional[str],
+) -> str:
+    """Format detected and crawled source labels for export text."""
+    source_parts: List[str] = []
+    detected_source = (llm_source or "").strip()
+    original_source = (crawl_source or "").strip()
+    if detected_source:
+        source_parts.append(f"识别来源：{detected_source}")
+    if original_source:
+        source_parts.append(f"爬取来源：{original_source}")
+    return f"（{'；'.join(source_parts)}）" if source_parts else ""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -56,8 +71,7 @@ def format_section_text(
     for idx, cand in enumerate(items, start=1):
         title_text = (cand.title or "").strip()
         summary_text = (cand.summary or "").strip()
-        source_text = (cand.llm_source or cand.source or "").strip()
-        source_suffix = f"（{source_text}）" if source_text else ""
+        source_suffix = format_source_suffix(cand.llm_source, cand.source)
         summary_line = f"{summary_text}{source_suffix}".strip()
         
         # Determine prefix

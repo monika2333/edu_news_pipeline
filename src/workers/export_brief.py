@@ -6,8 +6,9 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.title_cluster import cluster_titles
-from src.domain.reporting.buckets import normalize_sentiment, candidate_rank_key_simple
 from src.domain import ExportCandidate
+from src.domain.reporting.buckets import normalize_sentiment, candidate_rank_key_simple
+from src.domain.reporting.formatters import format_source_suffix
 from src.notifications.feishu import FeishuConfigError, FeishuRequestError, notify_export_summary
 from src.workers import log_info, log_summary, worker_session
 
@@ -65,16 +66,11 @@ def _format_number(value: Optional[float]) -> Optional[str]:
 def _format_entry(candidate: ExportCandidate) -> str:
     title_line = (candidate.title or "").strip()
     summary_line = (candidate.summary or "").strip()
-    display_source = (candidate.llm_source or candidate.source or "").strip()
     sentiment_bucket = normalize_sentiment(candidate)
     is_positive = sentiment_bucket == "positive"
     is_internal = candidate.is_beijing_related is True
 
-    suffix_parts: List[str] = []
-    if display_source:
-        suffix_parts.append(display_source)
-    # Use full-width Chinese parentheses for source suffix
-    suffix = f"（{' / '.join(suffix_parts)}）" if suffix_parts else ""
+    suffix = format_source_suffix(candidate.llm_source, candidate.source)
 
     metrics_parts: List[str] = []
     ext_score_value = candidate.external_importance_score

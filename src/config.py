@@ -127,6 +127,9 @@ class Settings:
     llm_summary_timeout: int
     llm_external_filter_timeout: int
     llm_beijing_gate_timeout: int
+    llm_quota_alert_enabled: bool
+    llm_quota_alert_cooldown_seconds: int
+    llm_quota_alert_state_path: Path
     score_promotion_threshold: int
     process_limit: Optional[int]
     default_concurrency: int
@@ -210,6 +213,13 @@ def get_settings() -> Settings:
     llm_beijing_gate_timeout = (
         _optional_int(os.getenv("LLM_BEIJING_GATE_TIMEOUT")) or llm_global_timeout or 60
     )
+    llm_quota_alert_enabled = _bool_from_env(
+        os.getenv("LLM_QUOTA_ALERT_ENABLED"),
+        default=True,
+    )
+    llm_quota_alert_cooldown_seconds = (
+        _optional_int(os.getenv("LLM_QUOTA_ALERT_COOLDOWN_SECONDS")) or 21600
+    )
     llm_external_filter_model = os.getenv("LLM_EXTERNAL_FILTER_MODEL") or llm_scoring_model
     raw_score_threshold = _optional_int(
         _get_env("SCORE_PROMOTION_THRESHOLD", "SCORE_THRESHOLD")
@@ -266,6 +276,12 @@ def get_settings() -> Settings:
         default=_REPO_ROOT / "docs" / "internal_importance_prompt.md",
     )
 
+    raw_quota_alert_state_path = os.getenv("LLM_QUOTA_ALERT_STATE_PATH")
+    llm_quota_alert_state_path = _resolve_path(
+        raw_quota_alert_state_path,
+        default=_REPO_ROOT / "logs" / "llm_quota_alert_state.json",
+    )
+
     keyword_bonus_rules = _parse_keyword_bonus_rules(os.getenv("SCORE_KEYWORD_BONUSES"))
     raw_bonus_path_env = os.getenv("SCORE_KEYWORD_BONUSES_PATH")
     keyword_bonus_rules_path = _resolve_path(
@@ -292,6 +308,7 @@ def get_settings() -> Settings:
     keywords_path = keywords_path.resolve()
     beijing_keywords_path = beijing_keywords_path.resolve()
     internal_filter_prompt_path = internal_filter_prompt_path.resolve()
+    llm_quota_alert_state_path = llm_quota_alert_state_path.resolve()
 
     return Settings(
         db_host=db_host,
@@ -319,6 +336,9 @@ def get_settings() -> Settings:
         llm_summary_timeout=llm_summary_timeout,
         llm_external_filter_timeout=llm_external_filter_timeout,
         llm_beijing_gate_timeout=llm_beijing_gate_timeout,
+        llm_quota_alert_enabled=llm_quota_alert_enabled,
+        llm_quota_alert_cooldown_seconds=llm_quota_alert_cooldown_seconds,
+        llm_quota_alert_state_path=llm_quota_alert_state_path,
         score_promotion_threshold=score_promotion_threshold,
         process_limit=process_limit,
         default_concurrency=default_concurrency,

@@ -116,6 +116,18 @@ LLM_EXTERNAL_FILTER_TIMEOUT=90
 LLM_BEIJING_GATE_TIMEOUT=90
 ```
 
+### 额度不足飞书提醒
+
+默认启用被动告警：当 LLM 调用返回明确的余额、额度、计费、欠费或 payment 类错误时，系统会复用飞书应用凭证发送文本提醒。普通 429 限速不会触发，除非响应正文明确指向余额或计费问题。
+
+```env
+LLM_QUOTA_ALERT_ENABLED=true
+LLM_QUOTA_ALERT_COOLDOWN_SECONDS=21600
+LLM_QUOTA_ALERT_STATE_PATH=logs/llm_quota_alert_state.json
+```
+
+`LLM_QUOTA_ALERT_COOLDOWN_SECONDS` 默认 21600 秒，即同类 LLM 额度/计费问题 6 小时内最多提醒一次。`LLM_QUOTA_ALERT_STATE_PATH` 用于跨定时任务进程记录最近一次提醒时间。
+
 ## 控制台认证
 
 本地开发可以不设置。部署到外网或多人使用时必须启用至少一种：
@@ -236,7 +248,7 @@ LDWB_VERIFY_TLS=true
 
 ## Feishu 通知
 
-只有需要飞书推送导出结果时才设置：
+需要飞书推送导出结果或 LLM 额度不足提醒时设置：
 
 ```env
 FEISHU_APP_ID=replace-with-feishu-app-id
@@ -246,6 +258,8 @@ FEISHU_RECEIVE_ID_TYPE=open_id
 ```
 
 `FEISHU_RECEIVE_ID_TYPE` 可选：`open_id`、`user_id`、`union_id`。
+
+如果未配置飞书凭证，LLM 额度类错误仍会按原异常失败并写日志，但不会发送提醒。
 
 ## Hugging Face / title clustering
 

@@ -5,7 +5,12 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from src.adapters.llm_chat import apply_reasoning_config, build_headers
+from src.adapters.llm_chat import (
+    LLMQuotaError,
+    apply_reasoning_config,
+    build_headers,
+    raise_for_llm_quota_error,
+)
 from src.config import get_settings
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
@@ -98,11 +103,19 @@ def detect_source(
                     "model": settings.llm_source_model,
                     "raw": data,
                 }
+            raise_for_llm_quota_error(
+                status_code=response.status_code,
+                response_text=response.text,
+                operation="source_detection",
+                model=settings.llm_source_model,
+            )
             if response.status_code in _RETRYABLE_STATUS:
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 8)
                 continue
             last_error = RuntimeError(f"API {response.status_code}: {response.text[:160]}")
+        except LLMQuotaError:
+            raise
         except Exception as exc:
             last_error = exc
         time.sleep(backoff)

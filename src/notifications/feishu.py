@@ -80,6 +80,27 @@ def notify_export_summary(
     return True
 
 
+def notify_llm_quota_alert(
+    *,
+    operation: str,
+    model: str,
+    status_code: int,
+    response_text: str,
+) -> bool:
+    """Send a Feishu text notification for LLM quota or billing failures."""
+    config = _load_config()
+    occurred_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    message = _render_llm_quota_alert_message(
+        operation=operation,
+        model=model,
+        status_code=status_code,
+        response_text=response_text,
+        occurred_at=occurred_at,
+    )
+    _send_text_message(config, message)
+    return True
+
+
 def is_configured() -> bool:
     """Return True if Feishu credentials are present."""
     try:
@@ -87,6 +108,29 @@ def is_configured() -> bool:
     except FeishuConfigError:
         return False
     return True
+
+
+def _render_llm_quota_alert_message(
+    *,
+    operation: str,
+    model: str,
+    status_code: int,
+    response_text: str,
+    occurred_at: str,
+) -> str:
+    lines = [
+        "Edu News Pipeline - LLM quota/billing alert",
+        f"Problem: LLM provider reported a quota, balance, billing, or payment issue.",
+        f"Operation: {operation}",
+        f"Model: {model}",
+        f"HTTP status: {status_code}",
+        f"Occurred at: {occurred_at}",
+        "",
+        f"Provider response: {_truncate(response_text, 600)}",
+        "",
+        "Action: check the LLM account balance, billing status, quota, and API key.",
+    ]
+    return _truncate("\n".join(lines), 1800)
 
 
 def _render_message(
@@ -300,4 +344,5 @@ __all__ = [
     "FeishuRequestError",
     "is_configured",
     "notify_export_summary",
+    "notify_llm_quota_alert",
 ]

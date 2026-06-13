@@ -6,7 +6,12 @@ from typing import Dict, Optional, Tuple
 
 import requests
 
-from src.adapters.llm_chat import apply_reasoning_config, build_headers
+from src.adapters.llm_chat import (
+    LLMQuotaError,
+    apply_reasoning_config,
+    build_headers,
+    raise_for_llm_quota_error,
+)
 from src.config import get_settings
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
@@ -97,11 +102,19 @@ def classify_sentiment(content: str, *, retries: int = 4, timeout: Optional[int]
                     "confidence": confidence,
                     "raw": data,
                 }
+            raise_for_llm_quota_error(
+                status_code=response.status_code,
+                response_text=response.text,
+                operation="sentiment",
+                model=settings.llm_sentiment_model,
+            )
             if response.status_code in _RETRYABLE_STATUS:
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 8)
                 continue
             last_error = RuntimeError(f"API {response.status_code}: {response.text[:160]}")
+        except LLMQuotaError:
+            raise
         except Exception as exc:
             last_error = exc
         time.sleep(backoff)

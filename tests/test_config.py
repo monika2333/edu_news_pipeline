@@ -29,6 +29,9 @@ LLM_ENV_KEYS = (
     "LLM_SUMMARY_TIMEOUT",
     "LLM_EXTERNAL_FILTER_TIMEOUT",
     "LLM_BEIJING_GATE_TIMEOUT",
+    "LLM_QUOTA_ALERT_ENABLED",
+    "LLM_QUOTA_ALERT_COOLDOWN_SECONDS",
+    "LLM_QUOTA_ALERT_STATE_PATH",
     "LLM_BASE_URL",
     "OPENROUTER_BASE_URL",
     "OPENROUTER_API_KEY",
@@ -75,6 +78,9 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
     monkeypatch.setenv("LLM_SUMMARY_TIMEOUT", "22")
     monkeypatch.setenv("LLM_EXTERNAL_FILTER_TIMEOUT", "33")
     monkeypatch.setenv("LLM_BEIJING_GATE_TIMEOUT", "44")
+    monkeypatch.setenv("LLM_QUOTA_ALERT_ENABLED", "false")
+    monkeypatch.setenv("LLM_QUOTA_ALERT_COOLDOWN_SECONDS", "99")
+    monkeypatch.setenv("LLM_QUOTA_ALERT_STATE_PATH", "logs/test_quota_state.json")
 
     settings = config.get_settings()
 
@@ -95,6 +101,9 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
     assert settings.llm_summary_timeout == 22
     assert settings.llm_external_filter_timeout == 33
     assert settings.llm_beijing_gate_timeout == 44
+    assert settings.llm_quota_alert_enabled is False
+    assert settings.llm_quota_alert_cooldown_seconds == 99
+    assert settings.llm_quota_alert_state_path.name == "test_quota_state.json"
 
 
 def test_settings_uses_llm_model_for_all_task_models(
@@ -143,5 +152,8 @@ def test_settings_ignores_removed_llm_variable_names(
     assert settings.llm_summary_timeout == 90
     assert settings.llm_external_filter_timeout == 90
     assert settings.llm_beijing_gate_timeout == 90
+    assert settings.llm_quota_alert_enabled is True
+    assert settings.llm_quota_alert_cooldown_seconds == 21600
+    assert settings.llm_quota_alert_state_path.name == "llm_quota_alert_state.json"
     assert settings.default_concurrency == 50
     assert settings.summary_concurrency == 50

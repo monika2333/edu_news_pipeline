@@ -7,7 +7,13 @@ from typing import Dict, Optional
 
 import requests
 
-from src.adapters.llm_chat import apply_reasoning_config, build_headers, extract_message_text
+from src.adapters.llm_chat import (
+    LLMQuotaError,
+    apply_reasoning_config,
+    build_headers,
+    extract_message_text,
+    raise_for_llm_quota_error,
+)
 from src.adapters.llm_scoring import parse_score
 from src.config import get_settings
 from src.domain import ExternalFilterCandidate
@@ -129,11 +135,19 @@ def call_external_filter_model(
                 if not message_content:
                     raise RuntimeError("Empty response from external filter model")
                 return message_content
+            raise_for_llm_quota_error(
+                status_code=resp.status_code,
+                response_text=resp.text,
+                operation=f"external_filter:{category}",
+                model=settings.llm_external_filter_model,
+            )
             if resp.status_code in _RETRYABLE_STATUS:
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 8)
                 continue
             last_error = RuntimeError(f"API {resp.status_code}: {resp.text[:160]}")
+        except LLMQuotaError:
+            raise
         except Exception as exc:
             last_error = exc
         time.sleep(backoff)

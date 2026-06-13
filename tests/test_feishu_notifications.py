@@ -71,3 +71,46 @@ def test_notify_export_summary_missing_config(monkeypatch, tmp_path):
             entries=["item"],
             category_counts={},
         )
+
+
+def test_notify_llm_quota_alert_builds_text_message(monkeypatch, fake_settings):
+    captured = {}
+
+    def fake_send(config, message):
+        captured["config"] = config
+        captured["message"] = message
+
+    monkeypatch.setattr(feishu, "_send_text_message", fake_send)
+
+    result = feishu.notify_llm_quota_alert(
+        operation="score",
+        model="model-a",
+        status_code=402,
+        response_text="insufficient credits",
+    )
+
+    assert result is True
+    assert captured["config"].receive_id == "openid"
+    assert "LLM quota/billing alert" in captured["message"]
+    assert "Operation: score" in captured["message"]
+    assert "Model: model-a" in captured["message"]
+    assert "HTTP status: 402" in captured["message"]
+    assert "insufficient credits" in captured["message"]
+
+
+def test_notify_llm_quota_alert_missing_config(monkeypatch):
+    empty_settings = SimpleNamespace(
+        feishu_app_id=None,
+        feishu_app_secret=None,
+        feishu_receive_id=None,
+        feishu_receive_id_type="open_id",
+    )
+    monkeypatch.setattr(feishu, "get_settings", lambda: empty_settings)
+
+    with pytest.raises(feishu.FeishuConfigError):
+        feishu.notify_llm_quota_alert(
+            operation="score",
+            model="model-a",
+            status_code=402,
+            response_text="insufficient credits",
+        )

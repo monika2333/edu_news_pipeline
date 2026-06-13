@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.adapters.db_postgres_core import get_adapter
+from src.adapters.llm_chat import LLMQuotaError
 from src.adapters.llm_source import detect_source
 from src.adapters.llm_summary import summarise
 from src.adapters.sentiment_classifier import classify_sentiment
@@ -103,6 +104,8 @@ def _process_result(
             raw_llm_source = source_result.get('llm_source')
             if isinstance(raw_llm_source, str) and raw_llm_source.strip():
                 llm_source = raw_llm_source.strip()
+        except LLMQuotaError:
+            raise
         except Exception as source_exc:
             log_info(WORKER, f'Source detection skipped {article_id}: {source_exc}')
             

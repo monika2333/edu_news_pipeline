@@ -9,7 +9,13 @@ from typing import Any, Mapping, Optional
 
 import requests
 
-from src.adapters.llm_chat import apply_reasoning_config, build_headers, extract_message_text
+from src.adapters.llm_chat import (
+    LLMQuotaError,
+    apply_reasoning_config,
+    build_headers,
+    extract_message_text,
+    raise_for_llm_quota_error,
+)
 from src.config import get_settings
 from src.domain import BeijingGateCandidate
 
@@ -96,11 +102,19 @@ def _post_chat_completion(payload: Mapping[str, Any], retries: int, timeout: int
                 if message:
                     return message
                 raise RuntimeError("Empty response from Beijing gate model")
+            raise_for_llm_quota_error(
+                status_code=response.status_code,
+                response_text=response.text,
+                operation="beijing_gate",
+                model=_resolve_model_name(settings),
+            )
             if response.status_code in RETRYABLE_STATUS:
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 8)
                 continue
             last_error = RuntimeError(f"API {response.status_code}: {response.text[:160]}")
+        except LLMQuotaError:
+            raise
         except Exception as exc:  # noqa: BLE001
             last_error = exc
         time.sleep(backoff)

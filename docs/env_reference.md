@@ -193,10 +193,12 @@ SCORE_KEYWORD_BONUSES={"高考":10,"中考":8}
 一次性流水线可用 `CRAWL_SOURCES` 选择来源：
 
 ```env
-CRAWL_SOURCES=toutiao,tencent,chinanews,jyb,chinadaily,gmw,qianlong,laodongwubao,bjrb
+CRAWL_SOURCES=toutiao,tencent,chinanews,jyb,chinadaily,gmw,qianlong,laodongwubao
 ```
 
 当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`laodongwubao`/`ldwb`、`bjrb`/`beijingdaily`。
+
+北京日报不建议加入常规小时流水线的全局 `CRAWL_SOURCES`。服务器每日定时抓取时，优先调用 `scripts/run_bjrb_daily.ps1`；该脚本会在任务进程内临时设置 `CRAWL_SOURCES=bjrb`。
 
 部分来源可选配置：
 

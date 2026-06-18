@@ -76,6 +76,15 @@ from src.adapters.http_laodongwubao import (
     article_to_feed_row as ldwb_article_to_feed_row,
     article_to_detail_row as ldwb_article_to_detail_row,
 )
+from src.adapters.http_bjrb import (
+    DEFAULT_DELAY as BJRB_DEFAULT_DELAY,
+    DEFAULT_TIMEOUT as BJRB_DEFAULT_TIMEOUT,
+    BjrbIssueItem,
+    article_to_detail_row as bjrb_article_to_detail_row,
+    article_to_feed_row as bjrb_article_to_feed_row,
+    fetch_article as bjrb_fetch_article,
+    list_issue_items as bjrb_list_issue_items,
+)
 
 WORKER = "crawl"
 DEFAULT_AUTHORS_FILE = Path("config/toutiao_author.txt")
@@ -833,6 +842,116 @@ def _run_ldwb_flow(
     return stats
 
 
+def _run_bjrb_flow(
+    *,
+    adapter,
+    keywords: Sequence[str],
+    remaining_limit: Optional[int],
+    timeout_value: float,
+    delay_value: float,
+) -> Dict[str, Any]:
+    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
+    try:
+        items = bjrb_list_issue_items(limit=remaining_limit, timeout=timeout_value)
+    except Exception as exc:
+        log_error(WORKER, "bjrb_list", exc)
+        return stats
+
+    if not items:
+        log_info(WORKER, "No articles returned from Beijing Daily.")
+        return stats
+
+    feed_rows: List[Dict[str, Any]] = []
+    index: Dict[str, BjrbIssueItem] = {}
+    duplicates = 0
+    for item in items:
+        article_id = str(item.article_id or "").strip()
+        if not article_id:
+            stats["failed"] += 1
+            log_error(WORKER, "bjrb_feed_id", ValueError("Empty article_id encountered"))
+            continue
+        if article_id in index:
+            duplicates += 1
+            continue
+        index[article_id] = item
+        feed_rows.append(bjrb_article_to_feed_row(item, fetched_at=datetime.now(timezone.utc)))
+
+    stats["consumed"] = len(index)
+    stats["skipped"] += duplicates
+    if duplicates:
+        log_info(WORKER, f"bjrb duplicate articles skipped: {duplicates}")
+    if not feed_rows:
+        log_info(WORKER, "No Beijing Daily rows to upsert after filtering.")
+        return stats
+
+    try:
+        upserted = adapter.upsert_raw_feed_rows(feed_rows)
+    except Exception as exc:
+        stats["failed"] += len(feed_rows)
+        log_error(WORKER, "bjrb_postgres_feed", exc)
+        return stats
+    log_info(WORKER, f"bjrb feed rows upserted: {upserted}")
+
+    try:
+        missing_ids = adapter.get_raw_articles_missing_content(list(index.keys()))
+    except Exception as exc:
+        log_error(WORKER, "bjrb_missing_content", exc)
+        missing_ids = set(index.keys())
+
+    targets = [(aid, index[aid]) for aid in index if aid in missing_ids]
+    already = len(index) - len(targets)
+    stats["skipped"] += already
+    if already:
+        log_info(WORKER, f"bjrb articles already populated: {already}")
+    if targets:
+        log_info(WORKER, f"bjrb articles needing detail refresh: {len(targets)}")
+
+    detail_rows: List[Dict[str, Any]] = []
+    for position, (article_id, item) in enumerate(targets, start=1):
+        try:
+            article = bjrb_fetch_article(item, timeout=timeout_value)
+        except Exception as exc:
+            stats["failed"] += 1
+            log_error(WORKER, f"bjrb_detail_fetch:{article_id}", exc)
+            continue
+        detail_rows.append(
+            bjrb_article_to_detail_row(
+                article,
+                detail_fetched_at=datetime.now(timezone.utc),
+            )
+        )
+        if delay_value and position < len(targets):
+            time.sleep(delay_value)
+
+    if detail_rows:
+        try:
+            adapter.update_raw_article_details(detail_rows)
+        except Exception as exc:
+            stats["failed"] += len(detail_rows)
+            log_error(WORKER, "bjrb_postgres_detail", exc)
+            detail_rows = []
+        else:
+            for row in detail_rows:
+                log_info(WORKER, f"BJRB DETAIL OK {row['article_id']}")
+
+    stats["ok"] = len(detail_rows)
+    filtered_candidates: List[Dict[str, Any]] = []
+    for row in detail_rows:
+        article_id = str(row.get("article_id") or "").strip()
+        content = str(row.get("content_markdown") or "").strip()
+        if not article_id or not content:
+            continue
+        ok_hit, hits = _contains_keywords(content, keywords)
+        if not ok_hit:
+            continue
+        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
+        if candidate:
+            filtered_candidates.append(candidate)
+    if filtered_candidates:
+        _persist_filtered_candidates(adapter, filtered_candidates, source="bjrb")
+    return stats
+
+
 def _run_qianlong_flow(
     *,
     adapter,
@@ -1222,6 +1341,19 @@ def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Option
     if qianlong_consecutive_stop < 0:
         qianlong_consecutive_stop = 0
 
+    bjrb_timeout_env = os.getenv("BJRB_TIMEOUT")
+    try:
+        bjrb_timeout = float(bjrb_timeout_env) if bjrb_timeout_env is not None else BJRB_DEFAULT_TIMEOUT
+    except ValueError:
+        bjrb_timeout = BJRB_DEFAULT_TIMEOUT
+    bjrb_delay_env = os.getenv("BJRB_DELAY")
+    try:
+        bjrb_delay = float(bjrb_delay_env) if bjrb_delay_env is not None else BJRB_DEFAULT_DELAY
+    except ValueError:
+        bjrb_delay = BJRB_DEFAULT_DELAY
+    if bjrb_delay < 0:
+        bjrb_delay = 0.0
+
     keywords_path_value = getattr(settings, 'keywords_path', None)
     keywords_file: Optional[Path]
     if keywords_path_value:
@@ -1288,6 +1420,14 @@ def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Option
                     adapter=adapter,
                     keywords=keywords,
                     remaining_limit=remaining_limit,
+                )
+            elif source in {'bjrb', 'beijingdaily'}:
+                stats = _run_bjrb_flow(
+                    adapter=adapter,
+                    keywords=keywords,
+                    remaining_limit=remaining_limit,
+                    timeout_value=bjrb_timeout,
+                    delay_value=bjrb_delay,
                 )
             elif source == 'toutiao':
                 stats = _run_toutiao_flow(

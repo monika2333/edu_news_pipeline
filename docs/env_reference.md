@@ -193,10 +193,10 @@ SCORE_KEYWORD_BONUSES={"高考":10,"中考":8}
 一次性流水线可用 `CRAWL_SOURCES` 选择来源：
 
 ```env
-CRAWL_SOURCES=toutiao,tencent,chinanews,jyb,chinadaily,gmw,qianlong,laodongwubao
+CRAWL_SOURCES=toutiao,tencent,chinanews,jyb,chinadaily,gmw,qianlong,laodongwubao,bjrb
 ```
 
-当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`laodongwubao`/`ldwb`。
+当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`laodongwubao`/`ldwb`、`bjrb`/`beijingdaily`。
 
 部分来源可选配置：
 
@@ -244,7 +244,15 @@ QIANLONG_EXISTING_CONSECUTIVE_STOP=5
 # Laodongwubao
 LDWB_TIMEOUT=20
 LDWB_VERIFY_TLS=true
+
+# Beijing Daily / BJRB
+BJRB_DATE=
+BJRB_TIMEOUT=20
+BJRB_DELAY=0.2
+BJRB_BASE_URL=https://bjrbdzb.bjd.com.cn/bjrb
 ```
+
+`BJRB_DATE` 为空时默认抓取当前北京时间日期；历史回补可临时设置为 `YYYYMMDD`。北京日报建议在服务器每日北京时间 06:00 调用 `scripts/run_bjrb_daily.ps1`，08:00 可补偿重跑一次；本仓库不在开发机注册该定时任务。
 
 ## Feishu 通知
 

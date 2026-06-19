@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import html
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 import urllib3
@@ -14,6 +15,7 @@ from bs4 import BeautifulSoup, Comment, Tag
 
 
 BASE_URL = "https://ldwb.workerbj.cn/"
+HTTP_BASE_URL = "http://ldwb.workerbj.cn/"
 SOURCE_NAME = "劳动午报"
 DEFAULT_HEADERS = {
     "User-Agent": (
@@ -26,6 +28,7 @@ CHINA_TZ = timezone(timedelta(hours=8))
 DEFAULT_TIMEOUT = 20.0
 DEFAULT_VERIFY_TLS = False
 DEFAULT_PUBLISH_HOUR = 0
+CHALLENGE_MAX_COUNTER = 1_000_000
 
 
 @dataclass
@@ -83,15 +86,55 @@ def _fetch_text(session: requests.Session, url: str, *, timeout: float, verify: 
     resp = session.get(url, timeout=timeout, verify=verify)
     resp.raise_for_status()
     resp.encoding = "utf-8"
-    return resp.text
+    text = resp.text
+    if _maybe_solve_verification_challenge(session, url, text):
+        resp = session.get(url, timeout=timeout, verify=verify)
+        resp.raise_for_status()
+        resp.encoding = "utf-8"
+        text = resp.text
+    return text
+
+
+def _maybe_solve_verification_challenge(session: requests.Session, url: str, html_text: str) -> bool:
+    prefix_match = re.search(r'var\s+stampPrefix\s*=\s*"([^"]+)"', html_text)
+    zero_match = re.search(r"var\s+zeroLen\s*=\s*(\d+)", html_text)
+    if not prefix_match or not zero_match:
+        return False
+
+    stamp_prefix = prefix_match.group(1)
+    zero_len = int(zero_match.group(1))
+    if zero_len <= 0:
+        return False
+
+    target = "0" * zero_len
+    for counter in range(CHALLENGE_MAX_COUNTER):
+        digest = hashlib.sha1(f"{stamp_prefix}{counter}".encode("utf-8")).hexdigest()
+        if digest.startswith(target):
+            hostname = urlparse(url).hostname
+            if hostname:
+                session.cookies.set("ctwjcode", str(counter), domain=hostname, path="/")
+                session.cookies.set("stampprefix", stamp_prefix, domain=hostname, path="/")
+            else:
+                session.cookies.set("ctwjcode", str(counter), path="/")
+                session.cookies.set("stampprefix", stamp_prefix, path="/")
+            return True
+    raise RuntimeError("Unable to solve Laodong Wubao verification challenge.")
 
 
 def _latest_issue_url(session: requests.Session, *, timeout: float, verify: bool) -> str:
-    html_text = _fetch_text(session, BASE_URL, timeout=timeout, verify=verify)
-    match = re.search(r'URL=([^"\']+)', html_text)
-    if not match:
-        raise RuntimeError("Failed to locate redirect URL for the latest issue.")
-    return urljoin(BASE_URL, match.group(1))
+    errors: List[str] = []
+    for base_url in (BASE_URL, HTTP_BASE_URL):
+        try:
+            html_text = _fetch_text(session, base_url, timeout=timeout, verify=verify)
+        except requests.RequestException as exc:
+            errors.append(f"{base_url}: {exc}")
+            continue
+        match = re.search(r'URL=([^"\']+)', html_text)
+        if match:
+            return urljoin(base_url, match.group(1).strip())
+        errors.append(f"{base_url}: redirect URL not found")
+    detail = "; ".join(errors)
+    raise RuntimeError(f"Failed to locate redirect URL for the latest issue. {detail}")
 
 
 def _extract_page_links(issue_html: str, issue_url: str) -> List[Tuple[str, str]]:

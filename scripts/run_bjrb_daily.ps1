@@ -13,6 +13,16 @@ if (-not $repoRoot) {
     throw "Unable to resolve repository root from script location."
 }
 
+if (-not $LogDirectory) {
+    $LogDirectory = Join-Path $repoRoot "logs"
+}
+if (-not (Test-Path -LiteralPath $LogDirectory)) {
+    New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
+}
+
+$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$logFile = Join-Path $LogDirectory "pipeline_bjrb_$timestamp.log"
+
 if (-not $LockDirectory) {
     $LockDirectory = Join-Path $repoRoot "locks"
 }
@@ -25,19 +35,9 @@ $lockFile = $null
 try {
     $lockFile = [System.IO.File]::Open($lockPath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
 } catch {
-    Write-Output "Beijing Daily run already in progress; skipping."
+    "Beijing Daily run already in progress; skipping." | Tee-Object -FilePath $logFile -Append
     exit 0
 }
-
-if (-not $LogDirectory) {
-    $LogDirectory = Join-Path $repoRoot "logs"
-}
-if (-not (Test-Path -LiteralPath $LogDirectory)) {
-    New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
-}
-
-$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$logFile = Join-Path $LogDirectory "pipeline_bjrb_$timestamp.log"
 
 $arguments = @(
     "-m",
@@ -63,7 +63,7 @@ Push-Location $repoRoot
 try {
     $prevErr = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & $Python @arguments 2>&1 | Tee-Object -FilePath $logFile
+    & $Python @arguments 2>&1 | Tee-Object -FilePath $logFile -Append
     $exitCode = $LASTEXITCODE
     $ErrorActionPreference = $prevErr
 } finally {

@@ -44,10 +44,6 @@ $arguments = @(
     "scripts.run_pipeline_once",
     "--steps",
     "crawl",
-    "hash-primary",
-    "score",
-    "summarize",
-    "external-filter",
     "--trigger-source",
     "scheduler-bjrb"
 )

@@ -173,7 +173,13 @@ BEIJING_GATE_MAX_RETRIES=3
 
 ## 关键词和提示词路径
 
-通常使用仓库默认文件即可：
+关键词加分规则使用本地配置文件，该文件不会被 Git 跟踪。首次使用时从示例复制：
+
+```powershell
+Copy-Item config/score_keyword_bonuses.example.json config/score_keyword_bonuses.json
+```
+
+默认路径及其他关键词、提示词路径如下：
 
 ```env
 KEYWORDS_PATH=config/education_keywords.txt

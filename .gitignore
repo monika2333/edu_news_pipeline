@@ -41,6 +41,7 @@ pipeline_venv/
 # Configuration and generated outputs
 config/*.env
 config/**/*.env
+config/score_keyword_bonuses.json
 outputs/
 
 # Claude Code configuration

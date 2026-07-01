@@ -1,4 +1,4 @@
-# External Negative Filter Prompt
+# External Negative Importance Prompt
 
 <prompt>
 

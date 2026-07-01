@@ -20,9 +20,9 @@ from src.domain import ExternalFilterCandidate
 
 _PROMPT_CACHE: Dict[str, str] = {}
 _DEFAULT_PROMPT_PATHS = {
-    "external": Path(__file__).resolve().parents[2] / "docs" / "external_filter_prompt.md",
-    "external_negative": Path(__file__).resolve().parents[2] / "docs" / "external_negative_filter_prompt.md",
-    "internal": Path(__file__).resolve().parents[2] / "docs" / "internal_importance_prompt.md",
+    "external": Path(__file__).resolve().parents[2] / "docs" / "external_positive_importance_prompt.md",
+    "external_negative": Path(__file__).resolve().parents[2] / "docs" / "external_negative_importance_prompt.md",
+    "internal": Path(__file__).resolve().parents[2] / "docs" / "internal_positive_importance_prompt.md",
     "internal_negative": Path(__file__).resolve().parents[2] / "docs" / "internal_negative_importance_prompt.md",
 }
 _PROMPT_TAG_PATTERN = re.compile(r"<prompt>(.*?)</prompt>", re.DOTALL)

@@ -46,6 +46,12 @@ LLM_ENV_KEYS = (
     "EXTERNAL_FILTER_MODEL_NAME",
     "BEIJING_GATE_MODEL_NAME",
     "MODEL_NAME",
+    "EXTERNAL_FILTER_POSITIVE_THRESHOLD",
+    "EXTERNAL_FILTER_THRESHOLD",
+    "EXTERNAL_FILTER_NEGATIVE_THRESHOLD",
+    "INTERNAL_FILTER_POSITIVE_THRESHOLD",
+    "INTERNAL_FILTER_THRESHOLD",
+    "INTERNAL_FILTER_NEGATIVE_THRESHOLD",
 )
 
 
@@ -120,6 +126,38 @@ def test_settings_uses_llm_model_for_all_task_models(
     assert settings.llm_sentiment_model == "model-shared"
     assert settings.llm_external_filter_model == "model-shared"
     assert settings.llm_beijing_gate_model == "model-shared"
+
+
+def test_settings_prefers_positive_filter_threshold_names(
+    clean_settings_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EXTERNAL_FILTER_POSITIVE_THRESHOLD", "70")
+    monkeypatch.setenv("EXTERNAL_FILTER_THRESHOLD", "21")
+    monkeypatch.setenv("EXTERNAL_FILTER_NEGATIVE_THRESHOLD", "5")
+    monkeypatch.setenv("INTERNAL_FILTER_POSITIVE_THRESHOLD", "20")
+    monkeypatch.setenv("INTERNAL_FILTER_THRESHOLD", "22")
+    monkeypatch.setenv("INTERNAL_FILTER_NEGATIVE_THRESHOLD", "10")
+
+    settings = config.get_settings()
+
+    assert settings.external_filter_threshold == 70
+    assert settings.external_filter_negative_threshold == 5
+    assert settings.internal_filter_threshold == 20
+    assert settings.internal_filter_negative_threshold == 10
+
+
+def test_settings_supports_legacy_positive_filter_threshold_names(
+    clean_settings_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EXTERNAL_FILTER_THRESHOLD", "65")
+    monkeypatch.setenv("INTERNAL_FILTER_THRESHOLD", "55")
+
+    settings = config.get_settings()
+
+    assert settings.external_filter_threshold == 65
+    assert settings.internal_filter_threshold == 55
 
 
 def test_settings_ignores_removed_llm_variable_names(

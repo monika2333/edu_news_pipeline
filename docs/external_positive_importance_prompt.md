@@ -1,4 +1,4 @@
-﻿# External Filter Prompt
+﻿# External Positive Importance Prompt
 
 <prompt>
 你是一名教育政策分析专家，熟悉中国教育治理体系与北京市教工委的工作重点。

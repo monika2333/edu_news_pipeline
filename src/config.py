@@ -225,13 +225,17 @@ def get_settings() -> Settings:
         _get_env("SCORE_PROMOTION_THRESHOLD", "SCORE_THRESHOLD")
     )
     score_promotion_threshold = raw_score_threshold if raw_score_threshold is not None else 60
-    raw_external_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_THRESHOLD"))
+    raw_external_threshold = _optional_int(
+        _get_env("EXTERNAL_FILTER_POSITIVE_THRESHOLD", "EXTERNAL_FILTER_THRESHOLD")
+    )
     external_filter_threshold = raw_external_threshold if raw_external_threshold is not None else 20
     raw_external_negative_threshold = _optional_int(os.getenv("EXTERNAL_FILTER_NEGATIVE_THRESHOLD"))
     external_filter_negative_threshold = (
         raw_external_negative_threshold if raw_external_negative_threshold is not None else external_filter_threshold
     )
-    raw_internal_threshold = _optional_int(os.getenv("INTERNAL_FILTER_THRESHOLD"))
+    raw_internal_threshold = _optional_int(
+        _get_env("INTERNAL_FILTER_POSITIVE_THRESHOLD", "INTERNAL_FILTER_THRESHOLD")
+    )
     internal_filter_threshold = (
         raw_internal_threshold if raw_internal_threshold is not None else external_filter_threshold
     )
@@ -273,7 +277,7 @@ def get_settings() -> Settings:
     raw_internal_prompt = os.getenv("INTERNAL_FILTER_PROMPT_PATH")
     internal_filter_prompt_path = _resolve_path(
         raw_internal_prompt,
-        default=_REPO_ROOT / "docs" / "internal_importance_prompt.md",
+        default=_REPO_ROOT / "docs" / "internal_positive_importance_prompt.md",
     )
 
     raw_quota_alert_state_path = os.getenv("LLM_QUOTA_ALERT_STATE_PATH")

@@ -157,11 +157,13 @@ SUMMARY_CONCURRENCY=50
 
 ```env
 SCORE_PROMOTION_THRESHOLD=60
-EXTERNAL_FILTER_THRESHOLD=20
+EXTERNAL_FILTER_POSITIVE_THRESHOLD=20
 EXTERNAL_FILTER_NEGATIVE_THRESHOLD=20
-INTERNAL_FILTER_THRESHOLD=20
+INTERNAL_FILTER_POSITIVE_THRESHOLD=20
 INTERNAL_FILTER_NEGATIVE_THRESHOLD=20
 ```
+
+旧名称 `EXTERNAL_FILTER_THRESHOLD` 和 `INTERNAL_FILTER_THRESHOLD` 仍可兼容读取，但新配置应使用带 `POSITIVE` 的名称。
 
 外部过滤批处理和重试：
 
@@ -185,7 +187,7 @@ Copy-Item config/score_keyword_bonuses.example.json config/score_keyword_bonuses
 KEYWORDS_PATH=config/education_keywords.txt
 BEIJING_KEYWORDS_PATH=config/beijing_keywords.txt
 SCORE_KEYWORD_BONUSES_PATH=config/score_keyword_bonuses.json
-INTERNAL_FILTER_PROMPT_PATH=docs/internal_importance_prompt.md
+INTERNAL_FILTER_PROMPT_PATH=docs/internal_positive_importance_prompt.md
 ```
 
 也可以直接内联关键词加分规则：

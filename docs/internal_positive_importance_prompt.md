@@ -1,4 +1,4 @@
-# Internal Filter Prompt
+# Internal Positive Importance Prompt
 
 <prompt>
 

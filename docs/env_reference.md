@@ -185,7 +185,11 @@ Copy-Item config/score_keyword_bonuses.example.json config/score_keyword_bonuses
 KEYWORDS_PATH=config/education_keywords.txt
 BEIJING_KEYWORDS_PATH=config/beijing_keywords.txt
 SCORE_KEYWORD_BONUSES_PATH=config/score_keyword_bonuses.json
-INTERNAL_FILTER_PROMPT_PATH=docs/internal_positive_importance_prompt.md
+EXTERNAL_FILTER_PROMPT_PATH=config/prompts/external_positive_importance_prompt.md
+EXTERNAL_NEGATIVE_FILTER_PROMPT_PATH=config/prompts/external_negative_importance_prompt.md
+INTERNAL_FILTER_PROMPT_PATH=config/prompts/internal_positive_importance_prompt.md
+INTERNAL_NEGATIVE_FILTER_PROMPT_PATH=config/prompts/internal_negative_importance_prompt.md
+BEIJING_GATE_PROMPT_PATH=config/prompts/beijing_gate_prompt.md
 ```
 
 也可以直接内联关键词加分规则：

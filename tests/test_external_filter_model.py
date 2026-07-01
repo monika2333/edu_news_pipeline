@@ -16,6 +16,21 @@ def test_prompt_key_for_category_variants():
     assert model._prompt_key_for_category(None) == "external"
 
 
+def test_prompt_paths_come_from_settings() -> None:
+    settings = get_settings()
+
+    assert model._get_prompt_path("external") == settings.external_filter_prompt_path
+    assert (
+        model._get_prompt_path("external_negative")
+        == settings.external_negative_filter_prompt_path
+    )
+    assert model._get_prompt_path("internal") == settings.internal_filter_prompt_path
+    assert (
+        model._get_prompt_path("internal_negative")
+        == settings.internal_negative_filter_prompt_path
+    )
+
+
 def _candidate(**overrides) -> ExternalFilterCandidate:
     base = dict(
         article_id="article-1",

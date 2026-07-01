@@ -149,7 +149,11 @@ class Settings:
     external_filter_negative_threshold: int
     internal_filter_threshold: int
     internal_filter_negative_threshold: int
+    external_filter_prompt_path: Path
+    external_negative_filter_prompt_path: Path
     internal_filter_prompt_path: Path
+    internal_negative_filter_prompt_path: Path
+    beijing_gate_prompt_path: Path
     external_filter_batch_size: int
     external_filter_max_retries: int
     llm_beijing_gate_model: str
@@ -274,10 +278,36 @@ def get_settings() -> Settings:
         default=config_dir / "beijing_keywords.txt",
     )
 
+    prompts_dir = config_dir / "prompts"
+
+    raw_external_prompt = os.getenv("EXTERNAL_FILTER_PROMPT_PATH")
+    external_filter_prompt_path = _resolve_path(
+        raw_external_prompt,
+        default=prompts_dir / "external_positive_importance_prompt.md",
+    )
+
+    raw_external_negative_prompt = os.getenv("EXTERNAL_NEGATIVE_FILTER_PROMPT_PATH")
+    external_negative_filter_prompt_path = _resolve_path(
+        raw_external_negative_prompt,
+        default=prompts_dir / "external_negative_importance_prompt.md",
+    )
+
     raw_internal_prompt = os.getenv("INTERNAL_FILTER_PROMPT_PATH")
     internal_filter_prompt_path = _resolve_path(
         raw_internal_prompt,
-        default=_REPO_ROOT / "docs" / "internal_positive_importance_prompt.md",
+        default=prompts_dir / "internal_positive_importance_prompt.md",
+    )
+
+    raw_internal_negative_prompt = os.getenv("INTERNAL_NEGATIVE_FILTER_PROMPT_PATH")
+    internal_negative_filter_prompt_path = _resolve_path(
+        raw_internal_negative_prompt,
+        default=prompts_dir / "internal_negative_importance_prompt.md",
+    )
+
+    raw_beijing_gate_prompt = os.getenv("BEIJING_GATE_PROMPT_PATH")
+    beijing_gate_prompt_path = _resolve_path(
+        raw_beijing_gate_prompt,
+        default=prompts_dir / "beijing_gate_prompt.md",
     )
 
     raw_quota_alert_state_path = os.getenv("LLM_QUOTA_ALERT_STATE_PATH")
@@ -311,7 +341,11 @@ def get_settings() -> Settings:
 
     keywords_path = keywords_path.resolve()
     beijing_keywords_path = beijing_keywords_path.resolve()
+    external_filter_prompt_path = external_filter_prompt_path.resolve()
+    external_negative_filter_prompt_path = external_negative_filter_prompt_path.resolve()
     internal_filter_prompt_path = internal_filter_prompt_path.resolve()
+    internal_negative_filter_prompt_path = internal_negative_filter_prompt_path.resolve()
+    beijing_gate_prompt_path = beijing_gate_prompt_path.resolve()
     llm_quota_alert_state_path = llm_quota_alert_state_path.resolve()
 
     return Settings(
@@ -362,7 +396,11 @@ def get_settings() -> Settings:
         external_filter_negative_threshold=external_filter_negative_threshold,
         internal_filter_threshold=internal_filter_threshold,
         internal_filter_negative_threshold=internal_filter_negative_threshold,
+        external_filter_prompt_path=external_filter_prompt_path,
+        external_negative_filter_prompt_path=external_negative_filter_prompt_path,
         internal_filter_prompt_path=internal_filter_prompt_path,
+        internal_negative_filter_prompt_path=internal_negative_filter_prompt_path,
+        beijing_gate_prompt_path=beijing_gate_prompt_path,
         external_filter_batch_size=external_filter_batch_size,
         external_filter_max_retries=external_filter_max_retries,
         llm_beijing_gate_model=llm_beijing_gate_model,

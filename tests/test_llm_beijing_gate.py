@@ -1,4 +1,12 @@
+from __future__ import annotations
+
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+
 from src.adapters import llm_beijing_gate as gate
+from src.config import get_settings
 from src.domain import BeijingGateCandidate
 
 
@@ -27,6 +35,19 @@ def test_build_prompt_includes_core_fields():
     assert "北京高校招生" in prompt
     assert "摘要信息" in prompt
     assert "情感标签：" not in prompt
+
+
+def test_prompt_path_comes_from_settings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prompt_path = tmp_path / "beijing_gate.md"
+    prompt_path.write_text("<prompt>自定义北京判定提示词</prompt>", encoding="utf-8")
+    settings = replace(get_settings(), beijing_gate_prompt_path=prompt_path)
+    monkeypatch.setattr(gate, "get_settings", lambda: settings)
+    monkeypatch.setattr(gate, "_PROMPT_CACHE", None)
+
+    assert gate._load_prompt_template() == "自定义北京判定提示词"
 
 
 def test_parse_decision_with_valid_json():

@@ -4,7 +4,6 @@ import json
 import re
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Mapping, Optional
 
 import requests
@@ -19,7 +18,6 @@ from src.adapters.llm_chat import (
 from src.config import get_settings
 from src.domain import BeijingGateCandidate
 
-PROMPT_PATH = Path(__file__).resolve().parents[2] / "docs" / "beijing_gate_prompt.md"
 PROMPT_TAG_PATTERN = re.compile(r"<prompt>(.*?)</prompt>", re.DOTALL)
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 
@@ -37,10 +35,11 @@ def _load_prompt_template() -> str:
     global _PROMPT_CACHE
     if _PROMPT_CACHE is not None:
         return _PROMPT_CACHE
-    if not PROMPT_PATH.exists():
+    prompt_path = get_settings().beijing_gate_prompt_path
+    if not prompt_path.exists():
         _PROMPT_CACHE = ""
         return _PROMPT_CACHE
-    content = PROMPT_PATH.read_text(encoding="utf-8")
+    content = prompt_path.read_text(encoding="utf-8")
     match = PROMPT_TAG_PATTERN.search(content)
     template = match.group(1).strip() if match else content.strip()
     _PROMPT_CACHE = template

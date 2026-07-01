@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -52,6 +53,11 @@ LLM_ENV_KEYS = (
     "INTERNAL_FILTER_POSITIVE_THRESHOLD",
     "INTERNAL_FILTER_THRESHOLD",
     "INTERNAL_FILTER_NEGATIVE_THRESHOLD",
+    "EXTERNAL_FILTER_PROMPT_PATH",
+    "EXTERNAL_NEGATIVE_FILTER_PROMPT_PATH",
+    "INTERNAL_FILTER_PROMPT_PATH",
+    "INTERNAL_NEGATIVE_FILTER_PROMPT_PATH",
+    "BEIJING_GATE_PROMPT_PATH",
 )
 
 
@@ -193,3 +199,36 @@ def test_settings_ignores_removed_llm_variable_names(
     assert settings.llm_quota_alert_state_path.name == "llm_quota_alert_state.json"
     assert settings.default_concurrency == 50
     assert settings.summary_concurrency == 50
+
+
+def test_settings_uses_versioned_prompt_defaults(clean_settings_env: None) -> None:
+    settings = config.get_settings()
+
+    prompt_paths = {
+        settings.external_filter_prompt_path,
+        settings.external_negative_filter_prompt_path,
+        settings.internal_filter_prompt_path,
+        settings.internal_negative_filter_prompt_path,
+        settings.beijing_gate_prompt_path,
+    }
+
+    assert {path.parent.name for path in prompt_paths} == {"prompts"}
+    assert all(path.parent.parent.name == "config" for path in prompt_paths)
+    assert all(path.is_file() for path in prompt_paths)
+
+
+def test_settings_resolves_prompt_path_overrides(
+    clean_settings_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    custom_prompt = tmp_path / "custom_prompt.md"
+    monkeypatch.setenv("BEIJING_GATE_PROMPT_PATH", str(custom_prompt))
+    monkeypatch.setenv("EXTERNAL_FILTER_PROMPT_PATH", "custom/external.md")
+
+    settings = config.get_settings()
+
+    assert settings.beijing_gate_prompt_path == custom_prompt.resolve()
+    assert settings.external_filter_prompt_path == (
+        config._REPO_ROOT / "custom" / "external.md"
+    ).resolve()

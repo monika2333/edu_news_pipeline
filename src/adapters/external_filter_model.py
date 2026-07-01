@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 import requests
 
@@ -18,13 +18,10 @@ from src.adapters.llm_scoring import parse_score
 from src.config import get_settings
 from src.domain import ExternalFilterCandidate
 
-_PROMPT_CACHE: Dict[str, str] = {}
-_DEFAULT_PROMPT_PATHS = {
-    "external": Path(__file__).resolve().parents[2] / "docs" / "external_positive_importance_prompt.md",
-    "external_negative": Path(__file__).resolve().parents[2] / "docs" / "external_negative_importance_prompt.md",
-    "internal": Path(__file__).resolve().parents[2] / "docs" / "internal_positive_importance_prompt.md",
-    "internal_negative": Path(__file__).resolve().parents[2] / "docs" / "internal_negative_importance_prompt.md",
-}
+_PROMPT_CACHE: dict[str, str] = {}
+_PROMPT_KEYS = frozenset(
+    {"external", "external_negative", "internal", "internal_negative"}
+)
 _PROMPT_TAG_PATTERN = re.compile(r"<prompt>(.*?)</prompt>", re.DOTALL)
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
@@ -32,7 +29,7 @@ _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 def _prompt_key_for_category(category: Optional[str]) -> str:
     raw = (category or "external").strip().lower()
-    if raw in _DEFAULT_PROMPT_PATHS:
+    if raw in _PROMPT_KEYS:
         return raw
     if raw.startswith("internal"):
         return "internal_negative" if "negative" in raw else "internal"
@@ -43,9 +40,13 @@ def _prompt_key_for_category(category: Optional[str]) -> str:
 
 def _get_prompt_path(prompt_key: str) -> Path:
     settings = get_settings()
-    if prompt_key == "internal":
-        return settings.internal_filter_prompt_path
-    return _DEFAULT_PROMPT_PATHS.get(prompt_key, _DEFAULT_PROMPT_PATHS["external"])
+    prompt_paths = {
+        "external": settings.external_filter_prompt_path,
+        "external_negative": settings.external_negative_filter_prompt_path,
+        "internal": settings.internal_filter_prompt_path,
+        "internal_negative": settings.internal_negative_filter_prompt_path,
+    }
+    return prompt_paths.get(prompt_key, settings.external_filter_prompt_path)
 
 
 def _load_prompt_template(category: str = "external") -> str:

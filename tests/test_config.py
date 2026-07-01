@@ -133,10 +133,8 @@ def test_settings_prefers_positive_filter_threshold_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EXTERNAL_FILTER_POSITIVE_THRESHOLD", "70")
-    monkeypatch.setenv("EXTERNAL_FILTER_THRESHOLD", "21")
     monkeypatch.setenv("EXTERNAL_FILTER_NEGATIVE_THRESHOLD", "5")
     monkeypatch.setenv("INTERNAL_FILTER_POSITIVE_THRESHOLD", "20")
-    monkeypatch.setenv("INTERNAL_FILTER_THRESHOLD", "22")
     monkeypatch.setenv("INTERNAL_FILTER_NEGATIVE_THRESHOLD", "10")
 
     settings = config.get_settings()
@@ -147,7 +145,7 @@ def test_settings_prefers_positive_filter_threshold_names(
     assert settings.internal_filter_negative_threshold == 10
 
 
-def test_settings_supports_legacy_positive_filter_threshold_names(
+def test_settings_ignores_legacy_positive_filter_threshold_names(
     clean_settings_env: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -156,8 +154,8 @@ def test_settings_supports_legacy_positive_filter_threshold_names(
 
     settings = config.get_settings()
 
-    assert settings.external_filter_threshold == 65
-    assert settings.internal_filter_threshold == 55
+    assert settings.external_filter_threshold == 20
+    assert settings.internal_filter_threshold == 20
 
 
 def test_settings_ignores_removed_llm_variable_names(

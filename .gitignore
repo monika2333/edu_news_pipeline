@@ -47,6 +47,9 @@ outputs/
 # Claude Code configuration
 .claude/
 
+# Local agent skills and configuration
+.agents/
+
 # Replace news JGW txt files
 config/toutiao_author.txt
 config/qq_author.txt

@@ -3,10 +3,16 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from src.console import manual_filter_service
+from src.console.manual_filter_duplicate_service import (
+    DuplicateReviewInvalidResponseError,
+    DuplicateReviewLimitError,
+    DuplicateReviewTimeoutError,
+    DuplicateReviewUnavailableError,
+)
 
 router = APIRouter(prefix="/api/manual_filter", tags=["manual_filter"])
 
@@ -46,6 +52,11 @@ class DiscardBeforeDateRequest(BaseModel):
     published_before: Optional[date] = None
     actor: Optional[str] = None
     dry_run: bool = True
+
+
+class DuplicateCheckRequest(BaseModel):
+    report_type: Literal["zongbao", "wanbao"]
+    decision: Literal["selected", "backup"]
 
 
 @router.get("/candidates")
@@ -97,6 +108,24 @@ def bulk_decide_api(req: BulkDecideRequest) -> Dict[str, int]:
 @router.get("/review")
 def list_review_api(decision: str = "selected", limit: int = 30, offset: int = 0, report_type: str = "zongbao") -> Dict[str, Any]:
     return manual_filter_service.list_review(decision, limit=limit, offset=offset, report_type=report_type)
+
+
+@router.post("/duplicate-check")
+def duplicate_check_api(req: DuplicateCheckRequest) -> Dict[str, Any]:
+    """Check the active review column for duplicate news events."""
+    try:
+        return manual_filter_service.check_duplicates(
+            report_type=req.report_type,
+            decision=req.decision,
+        )
+    except DuplicateReviewLimitError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except DuplicateReviewTimeoutError as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except DuplicateReviewInvalidResponseError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except DuplicateReviewUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("/discarded")

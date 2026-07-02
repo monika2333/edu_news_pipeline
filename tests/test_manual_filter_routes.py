@@ -5,6 +5,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
+import pytest
 
 from src.console.app import create_app
 from src.console.security import ConsoleUser, require_console_user
@@ -320,3 +321,72 @@ def test_discard_before_date_api_supports_empty_optional_filters(monkeypatch) ->
 
     assert response.status_code == 200
     assert response.json() == {"matched": 2, "updated": 0}
+
+
+def test_duplicate_check_api_returns_review_groups(monkeypatch) -> None:
+    from src.console import manual_filter_service
+
+    expected = {
+        "checked_count": 2,
+        "model": "score-model",
+        "groups": [{"group_id": "duplicate-1", "items": []}],
+    }
+    monkeypatch.setattr(manual_filter_service, "check_duplicates", lambda **kwargs: expected)
+
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/manual_filter/duplicate-check",
+        json={"report_type": "zongbao", "decision": "selected"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
+@pytest.mark.parametrize(
+    ("error_type", "status_code"),
+    [
+        ("limit", 422),
+        ("invalid", 502),
+        ("unavailable", 503),
+        ("timeout", 504),
+    ],
+)
+def test_duplicate_check_api_maps_errors(
+    error_type: str,
+    status_code: int,
+    monkeypatch,
+) -> None:
+    from src.console import manual_filter_service
+    from src.console.manual_filter_duplicate_service import (
+        DuplicateReviewInvalidResponseError,
+        DuplicateReviewLimitError,
+        DuplicateReviewTimeoutError,
+        DuplicateReviewUnavailableError,
+    )
+
+    error_types = {
+        "limit": DuplicateReviewLimitError,
+        "invalid": DuplicateReviewInvalidResponseError,
+        "unavailable": DuplicateReviewUnavailableError,
+        "timeout": DuplicateReviewTimeoutError,
+    }
+
+    def raise_error(**kwargs):
+        raise error_types[error_type]("duplicate check failed")
+
+    monkeypatch.setattr(manual_filter_service, "check_duplicates", raise_error)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/manual_filter/duplicate-check",
+        json={"report_type": "wanbao", "decision": "backup"},
+    )
+
+    assert response.status_code == status_code
+    assert response.json() == {"detail": "duplicate check failed"}

@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="/static/css/components.css">
     <!-- CSS Modules -->
     <link rel="stylesheet" href="/static/css/modules/filter.css">
-    <link rel="stylesheet" href="/static/css/modules/review.css">
+    <link rel="stylesheet" href="/static/css/modules/review.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/search.css">
     <style>
         .source-box {
@@ -144,6 +144,9 @@
                                 <option value="pending">待处理</option>
                             </select>
                         </div>
+                        <button class="btn btn-secondary" id="btn-check-duplicates">
+                            检查重复
+                        </button>
                         <button class="btn btn-secondary" id="btn-toggle-sort">
                             <span class="icon">🔃</span> 排序模式
                         </button>
@@ -226,6 +229,27 @@
         </div>
     </div>
 
+    <!-- Duplicate Review Modal -->
+    <div class="modal" id="duplicate-review-modal" role="dialog" aria-modal="true"
+        aria-labelledby="duplicate-review-title" aria-hidden="true">
+        <div class="modal-content duplicate-review-modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 id="duplicate-review-title">查重结果</h3>
+                    <p id="duplicate-review-meta" class="duplicate-review-meta" aria-live="polite"></p>
+                </div>
+                <button type="button" class="btn btn-secondary" id="btn-close-duplicate-review">关闭</button>
+            </div>
+            <div class="modal-body duplicate-review-body" id="duplicate-review-results">
+                <!-- Duplicate groups will be injected here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="btn-recheck-duplicates">重新检查</button>
+                <button type="button" class="btn btn-primary" id="btn-finish-duplicate-review">关闭并刷新列表</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast -->
     <div class="toast" id="toast">操作成功</div>
 
@@ -239,6 +263,7 @@
     <script src="/static/js/manual_filter/review_tab.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/review_tab_data.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/review_tab_preview.js?v={{ version }}"></script>
+    <script src="/static/js/manual_filter/review_tab_duplicates.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/discard_tab.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/search_drawer.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/init.js?v={{ version }}"></script>

@@ -21,6 +21,7 @@ from .manual_filter_action_service import (
     update_ranks as _update_ranks,
 )
 from .manual_filter_cluster import DEFAULT_CLUSTER_THRESHOLD
+from .manual_filter_duplicate_service import check_duplicates as _check_duplicates
 from .manual_filter_helpers import DEFAULT_REPORT_TYPE, VALID_REPORT_TYPES
 from .manual_filter_query_service import (
     list_candidates as _list_candidates,
@@ -94,6 +95,11 @@ def status_counts(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, int]:
 def trigger_clustering(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, Any]:
     _sync_query_dependencies()
     return _trigger_clustering(report_type=report_type)
+
+
+def check_duplicates(*, report_type: str, decision: str) -> Dict[str, Any]:
+    _sync_query_dependencies()
+    return _check_duplicates(report_type=report_type, decision=decision)
 
 
 def bulk_decide(
@@ -174,6 +180,7 @@ __all__ = [
     "discard_candidates_before_date",
     "status_counts",
     "trigger_clustering",
+    "check_duplicates",
     "bulk_decide",
     "update_ranks",
     "save_edits",

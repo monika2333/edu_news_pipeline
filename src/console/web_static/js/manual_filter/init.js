@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadFilterCounts();
     setupFilterRealtimeDecisionHandlers();
     setupSearchDrawer();
+    setupDuplicateReview();
 
     // Global event listeners
     document.getElementById('btn-refresh').addEventListener('click', () => {

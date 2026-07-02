@@ -30,3 +30,13 @@ def test_removed_console_pages_are_not_registered() -> None:
 
     assert client.get("/dashboard").status_code == 404
     assert client.get("/articles/search").status_code == 404
+
+
+def test_duplicate_check_button_is_before_sort_mode() -> None:
+    response = _build_client().get("/manual_filter")
+
+    assert response.status_code == 200
+    html = response.text
+    assert html.index('id="btn-check-duplicates"') < html.index('id="btn-toggle-sort"')
+    assert 'id="duplicate-review-modal"' in html
+    assert '/static/css/modules/review.css?v=' in html

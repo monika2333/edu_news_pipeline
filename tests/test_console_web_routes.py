@@ -39,4 +39,6 @@ def test_duplicate_check_button_is_before_sort_mode() -> None:
     html = response.text
     assert html.index('id="btn-check-duplicates"') < html.index('id="btn-toggle-sort"')
     assert 'id="duplicate-review-modal"' in html
+    assert 'id="duplicate-review-select-all"' in html
+    assert 'id="duplicate-review-bulk-status"' in html
     assert '/static/css/modules/review.css?v=' in html

@@ -23,6 +23,8 @@ def _item(
         "url": f"https://example.com/{article_id}",
         "manual_status": status,
         "report_type": report_type,
+        "external_importance_score": 88,
+        "bonus_keywords": ["重点"],
     }
 
 
@@ -63,6 +65,8 @@ def test_check_duplicates_merges_overlaps_and_filters_unknown_ids(
     assert [[item["article_id"] for item in group["items"]] for group in result["groups"]] == [
         ["a1", "a2", "a3"]
     ]
+    assert result["groups"][0]["items"][0]["score"] == 88
+    assert result["groups"][0]["items"][0]["bonus_keywords"] == ["重点"]
 
 
 @pytest.mark.parametrize("count", [0, 1])

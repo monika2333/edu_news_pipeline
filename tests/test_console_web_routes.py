@@ -41,4 +41,6 @@ def test_duplicate_check_button_is_before_sort_mode() -> None:
     assert 'id="duplicate-review-modal"' in html
     assert 'id="duplicate-review-select-all"' in html
     assert 'id="duplicate-review-bulk-status"' in html
+    assert 'id="btn-duplicate-prev-group"' in html
+    assert 'id="btn-duplicate-next-group"' in html
     assert '/static/css/modules/review.css?v=' in html

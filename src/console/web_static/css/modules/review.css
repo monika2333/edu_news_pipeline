@@ -438,9 +438,37 @@ body.duplicate-review-open .search-drawer-toggle {
 }
 
 .duplicate-review-selection-count {
-    margin-left: auto;
     color: var(--text-secondary);
     font-size: 0.85rem;
+}
+
+.duplicate-review-pager {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.duplicate-review-pager[hidden] {
+    display: none;
+}
+
+.duplicate-review-pager .btn {
+    min-height: 36px;
+    padding: 7px 12px;
+    white-space: nowrap;
+}
+
+.duplicate-review-pager span {
+    min-width: 82px;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-align: center;
+}
+
+.duplicate-review-group[hidden] {
+    display: none;
 }
 
 .duplicate-review-body {
@@ -729,7 +757,12 @@ body.duplicate-review-open .search-drawer-toggle {
     }
 
     .duplicate-review-selection-count {
+        margin-left: 0;
+    }
+
+    .duplicate-review-pager {
         width: 100%;
+        justify-content: space-between;
         margin-left: 0;
     }
 

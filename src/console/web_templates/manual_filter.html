@@ -243,7 +243,7 @@
             <div class="duplicate-review-toolbar" id="duplicate-review-toolbar" hidden>
                 <label class="checkbox-label">
                     <input type="checkbox" id="duplicate-review-select-all">
-                    <span>全选</span>
+                    <span>全选本组</span>
                 </label>
                 <select id="duplicate-review-bulk-status" class="bulk-select" required>
                     <option value="" disabled selected hidden>移动到</option>
@@ -254,7 +254,12 @@
                     <option value="discarded">放弃</option>
                     <option value="pending">待处理</option>
                 </select>
-                <span class="duplicate-review-selection-count" id="duplicate-review-selection-count">已选择 0 条</span>
+                <span class="duplicate-review-selection-count" id="duplicate-review-selection-count">本组已选择 0 条</span>
+                <nav class="duplicate-review-pager" id="duplicate-review-pager" aria-label="重复组分页">
+                    <button type="button" class="btn btn-secondary" id="btn-duplicate-prev-group">上一组</button>
+                    <span id="duplicate-review-page-indicator" aria-live="polite">第 1 / 1 组</span>
+                    <button type="button" class="btn btn-secondary" id="btn-duplicate-next-group">下一组</button>
+                </nav>
             </div>
             <div class="modal-body duplicate-review-body" id="duplicate-review-results">
                 <!-- Duplicate groups will be injected here -->

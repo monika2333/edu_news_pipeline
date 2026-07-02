@@ -1,6 +1,7 @@
 // Manual Filter JS - Duplicate Review
 
 let duplicateReviewTrigger = null;
+let duplicateReviewActiveGroupIndex = 0;
 
 function escapeDuplicateHtml(value) {
     return String(value ?? '')
@@ -101,7 +102,8 @@ function renderDuplicateReviewResult(result) {
         `;
     } else {
         results.innerHTML = groups.map((group, index) => `
-            <section class="duplicate-review-group" data-group-id="${escapeDuplicateHtml(group.group_id)}">
+            <section class="duplicate-review-group" data-group-id="${escapeDuplicateHtml(group.group_id)}"
+                data-group-index="${index}" ${index === 0 ? '' : 'hidden'}>
                 <div class="duplicate-review-group-heading">
                     <h4>重复组 ${index + 1}</h4>
                     <span>${group.items.length} 条新闻</span>
@@ -112,16 +114,58 @@ function renderDuplicateReviewResult(result) {
             </section>
         `).join('');
     }
+    duplicateReviewActiveGroupIndex = 0;
     bindDuplicateReviewStatusControls();
-    updateDuplicateReviewSelectionState();
-    results.querySelectorAll('.duplicate-review-summary-box').forEach(box => {
-        refreshReviewSummaryBox(box);
-    });
+    showDuplicateReviewGroup(0);
     modal.classList.add('active');
     modal.setAttribute('aria-hidden', 'false');
     document.body.classList.add('duplicate-review-open');
     const closeButton = document.getElementById('btn-close-duplicate-review');
     if (closeButton) closeButton.focus();
+}
+
+function getDuplicateReviewGroups() {
+    return Array.from(document.querySelectorAll('.duplicate-review-group'));
+}
+
+function getActiveDuplicateReviewGroup() {
+    const groups = getDuplicateReviewGroups();
+    return groups[duplicateReviewActiveGroupIndex] || null;
+}
+
+function showDuplicateReviewGroup(index) {
+    const groups = getDuplicateReviewGroups();
+    const pager = document.getElementById('duplicate-review-pager');
+    const indicator = document.getElementById('duplicate-review-page-indicator');
+    const previousButton = document.getElementById('btn-duplicate-prev-group');
+    const nextButton = document.getElementById('btn-duplicate-next-group');
+    if (!groups.length) {
+        if (pager) pager.hidden = true;
+        return;
+    }
+
+    duplicateReviewActiveGroupIndex = Math.max(0, Math.min(index, groups.length - 1));
+    groups.forEach((group, groupIndex) => {
+        group.hidden = groupIndex !== duplicateReviewActiveGroupIndex;
+    });
+    if (pager) pager.hidden = groups.length <= 1;
+    if (indicator) indicator.textContent = `第 ${duplicateReviewActiveGroupIndex + 1} / ${groups.length} 组`;
+    if (previousButton) previousButton.disabled = duplicateReviewActiveGroupIndex === 0;
+    if (nextButton) nextButton.disabled = duplicateReviewActiveGroupIndex === groups.length - 1;
+
+    const activeGroup = getActiveDuplicateReviewGroup();
+    if (activeGroup) {
+        activeGroup.querySelectorAll('.duplicate-review-summary-box').forEach(box => {
+            refreshReviewSummaryBox(box);
+        });
+    }
+    const results = document.getElementById('duplicate-review-results');
+    if (results) results.scrollTop = 0;
+    updateDuplicateReviewSelectionState();
+}
+
+function moveDuplicateReviewGroup(offset) {
+    showDuplicateReviewGroup(duplicateReviewActiveGroupIndex + offset);
 }
 
 function collectDuplicateReviewEdits(items = null, { onlyDirty = false } = {}) {
@@ -358,7 +402,9 @@ async function handleDuplicateSourceUpdate(event) {
 }
 
 function getSelectableDuplicateItems() {
-    return Array.from(document.querySelectorAll('.duplicate-review-item:not(.is-processed)'));
+    const activeGroup = getActiveDuplicateReviewGroup();
+    if (!activeGroup) return [];
+    return Array.from(activeGroup.querySelectorAll('.duplicate-review-item:not(.is-processed)'));
 }
 
 function updateDuplicateReviewSelectionState() {
@@ -372,7 +418,7 @@ function updateDuplicateReviewSelectionState() {
     selectAll.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
     selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
     selectAll.disabled = !checkboxes.length;
-    count.textContent = `已选择 ${checkedCount} 条`;
+    count.textContent = `本组已选择 ${checkedCount} 条`;
 }
 
 function toggleDuplicateReviewSelectAll(checked) {
@@ -496,6 +542,8 @@ function setupDuplicateReview() {
     const recheckButton = document.getElementById('btn-recheck-duplicates');
     const selectAll = document.getElementById('duplicate-review-select-all');
     const bulkStatus = document.getElementById('duplicate-review-bulk-status');
+    const previousGroup = document.getElementById('btn-duplicate-prev-group');
+    const nextGroup = document.getElementById('btn-duplicate-next-group');
     if (checkButton) checkButton.addEventListener('click', handleDuplicateCheck);
     if (closeButton) closeButton.addEventListener('click', finishDuplicateReview);
     if (finishButton) finishButton.addEventListener('click', finishDuplicateReview);
@@ -506,6 +554,8 @@ function setupDuplicateReview() {
         });
     }
     if (bulkStatus) bulkStatus.addEventListener('change', applyDuplicateBulkStatus);
+    if (previousGroup) previousGroup.addEventListener('click', () => moveDuplicateReviewGroup(-1));
+    if (nextGroup) nextGroup.addEventListener('click', () => moveDuplicateReviewGroup(1));
     document.addEventListener('keydown', event => {
         const modal = document.getElementById('duplicate-review-modal');
         if (event.key === 'Escape' && modal && modal.classList.contains('active')) {

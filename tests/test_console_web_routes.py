@@ -46,18 +46,22 @@ def test_duplicate_check_button_is_before_sort_mode() -> None:
     assert 'id="btn-duplicate-prev-group"' in html
     assert 'id="btn-duplicate-next-group"' in html
     assert '/static/css/modules/review.css?v=' in html
+    assert '/static/js/manual_filter/review_duplicates_state.js?v=' in html
+    assert '/static/js/manual_filter/review_duplicates_modal.js?v=' in html
 
 
 def test_duplicate_check_tracks_loading_state_by_review_column() -> None:
-    script_path = (
-        Path(__file__).parents[1]
-        / "src/console/web_static/js/manual_filter/review_tab_duplicates.js"
+    scripts_dir = Path(__file__).parents[1] / "src/console/web_static/js/manual_filter"
+    state_script = (scripts_dir / "review_duplicates_state.js").read_text(
+        encoding="utf-8"
     )
-    script = script_path.read_text(encoding="utf-8")
+    controller_script = (scripts_dir / "review_tab_duplicates.js").read_text(
+        encoding="utf-8"
+    )
 
-    assert "const duplicateReviewJobs = new Map()" in script
-    assert "getDuplicateReviewScopeKey(scope)" in script
-    assert "status: 'running'" in script
-    assert "status: 'ready'" in script
-    assert "setDuplicateReviewModalBusy(true)" in script
-    assert "查看查重结果" in script
+    assert "const duplicateReviewJobs = new Map()" in state_script
+    assert "getDuplicateReviewScopeKey(scope)" in state_script
+    assert "status: 'running'" in controller_script
+    assert "status: 'ready'" in controller_script
+    assert "setDuplicateReviewModalBusy(true)" in controller_script
+    assert "查看查重结果" in state_script

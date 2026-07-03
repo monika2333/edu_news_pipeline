@@ -117,6 +117,9 @@ function updateReviewRailCounts() {
         const count = (state.reviewCounts[rt] && state.reviewCounts[rt][view]) || 0;
         btn.textContent = `${baseLabel} (${count})`;
     });
+    if (typeof updateDuplicateReviewJobUI === 'function') {
+        updateDuplicateReviewJobUI();
+    }
 }
 
 function updateFilterCountsUI() {

@@ -48,14 +48,16 @@ def test_duplicate_check_button_is_before_sort_mode() -> None:
     assert '/static/css/modules/review.css?v=' in html
 
 
-def test_duplicate_recheck_uses_clicked_button_loading_state() -> None:
+def test_duplicate_check_tracks_loading_state_by_review_column() -> None:
     script_path = (
         Path(__file__).parents[1]
         / "src/console/web_static/js/manual_filter/review_tab_duplicates.js"
     )
     script = script_path.read_text(encoding="utf-8")
 
-    assert "event && event.currentTarget ? event.currentTarget : fallbackButton" in script
-    assert "duplicateReviewCheckInFlight" in script
-    assert "setDuplicateReviewCheckLoading(true, button)" in script
-    assert "['btn-check-duplicates', 'btn-recheck-duplicates']" in script
+    assert "const duplicateReviewJobs = new Map()" in script
+    assert "getDuplicateReviewScopeKey(scope)" in script
+    assert "status: 'running'" in script
+    assert "status: 'ready'" in script
+    assert "setDuplicateReviewModalBusy(true)" in script
+    assert "查看查重结果" in script

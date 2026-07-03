@@ -69,6 +69,51 @@ def test_check_duplicates_merges_overlaps_and_filters_unknown_ids(
     assert result["groups"][0]["items"][0]["bonus_keywords"] == ["重点"]
 
 
+def test_check_duplicates_refreshes_items_and_filters_moved_news(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    initial_items = [_item("a1"), _item("a2"), _item("a3")]
+    latest_a1 = _item("a1")
+    latest_a1["summary"] = "最新摘要"
+    latest_a1["llm_source_display"] = "最新来源"
+    latest_items = [latest_a1, _item("a3"), _item("a4")]
+    review_results = iter(
+        [
+            {"items": initial_items, "total": len(initial_items)},
+            {"items": latest_items, "total": len(latest_items)},
+        ]
+    )
+    monkeypatch.setattr(
+        duplicate_service,
+        "list_review",
+        lambda *args, **kwargs: next(review_results),
+    )
+    monkeypatch.setattr(
+        duplicate_service,
+        "call_duplicate_review",
+        lambda model_items: [["a1", "a2", "a3"]],
+    )
+    _patch_settings(monkeypatch)
+
+    result = duplicate_service.check_duplicates(
+        report_type="zongbao",
+        decision="selected",
+    )
+
+    assert result["checked_count"] == 3
+    assert result["current_count"] == 3
+    assert result["added_count"] == 1
+    assert result["removed_count"] == 1
+    assert result["report_type"] == "zongbao"
+    assert result["decision"] == "selected"
+    assert [item["article_id"] for item in result["groups"][0]["items"]] == [
+        "a1",
+        "a3",
+    ]
+    assert result["groups"][0]["items"][0]["summary"] == "最新摘要"
+    assert result["groups"][0]["items"][0]["source"] == "最新来源"
+
+
 @pytest.mark.parametrize("count", [0, 1])
 def test_check_duplicates_skips_model_for_short_lists(
     count: int,

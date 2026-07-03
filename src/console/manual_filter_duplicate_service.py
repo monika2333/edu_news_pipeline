@@ -127,21 +127,45 @@ def check_duplicates(*, report_type: str, decision: str) -> dict[str, Any]:
     items = list(review.get("items") or [])
     settings = get_settings()
     if len(items) < 2:
+        checked_article_ids = [
+            str(item.get("article_id")) for item in items if item.get("article_id")
+        ]
         return {
             "checked_count": len(items),
+            "checked_article_ids": checked_article_ids,
+            "current_count": len(items),
+            "added_count": 0,
+            "removed_count": 0,
             "model": settings.llm_scoring_model,
+            "report_type": target_report_type,
+            "decision": target_decision,
             "groups": [],
         }
 
     model_items = [_model_input_item(item) for item in items]
     raw_groups = _call_model(model_items)
-    article_order = [item["article_id"] for item in model_items if item["article_id"]]
+    latest_review = list_review(
+        target_decision,
+        limit=MAX_DUPLICATE_REVIEW_ITEMS,
+        offset=0,
+        report_type=target_report_type,
+    )
+    latest_items = list(latest_review.get("items") or [])
+    checked_ids = {item["article_id"] for item in model_items if item["article_id"]}
+    current_ids = {
+        str(item.get("article_id")) for item in latest_items if item.get("article_id")
+    }
+    article_order = [
+        str(item.get("article_id"))
+        for item in latest_items
+        if str(item.get("article_id") or "") in checked_ids
+    ]
     groups = _merge_duplicate_groups(
         raw_groups,
-        allowed_ids=set(article_order),
+        allowed_ids=checked_ids & current_ids,
         article_order=article_order,
     )
-    item_lookup = {str(item.get("article_id")): item for item in items}
+    item_lookup = {str(item.get("article_id")): item for item in latest_items}
     response_groups = [
         {
             "group_id": f"duplicate-{index}",
@@ -158,7 +182,15 @@ def check_duplicates(*, report_type: str, decision: str) -> dict[str, Any]:
     )
     return {
         "checked_count": len(items),
+        "checked_article_ids": [
+            item["article_id"] for item in model_items if item["article_id"]
+        ],
+        "current_count": len(latest_items),
+        "added_count": len(current_ids - checked_ids),
+        "removed_count": len(checked_ids - current_ids),
         "model": settings.llm_scoring_model,
+        "report_type": target_report_type,
+        "decision": target_decision,
         "groups": response_groups,
     }
 

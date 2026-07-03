@@ -382,8 +382,58 @@
 }
 
 /* Duplicate Review */
+.review-category-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.review-category-btn.duplicate-check-running::after,
+.review-category-btn.duplicate-check-ready::after {
+    flex: 0 0 auto;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.review-category-btn.duplicate-check-running::after {
+    content: "查重中";
+    background: #fff7ed;
+    color: #c2410c;
+}
+
+.review-category-btn.duplicate-check-ready::after {
+    content: "有结果";
+    background: #ecfdf5;
+    color: #047857;
+}
+
+#btn-check-duplicates.has-result {
+    border-color: #86efac;
+    background: #f0fdf4;
+    color: #047857;
+}
+
 .duplicate-review-modal-content {
+    position: relative;
     width: min(1180px, 96vw);
+}
+
+.duplicate-review-modal-content.is-checking::after {
+    content: "正在重新检查…";
+    position: absolute;
+    z-index: 20;
+    inset: 72px 0 0;
+    display: grid;
+    place-items: center;
+    border-radius: 0 0 12px 12px;
+    background: rgba(248, 250, 252, 0.9);
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 700;
+    backdrop-filter: blur(2px);
 }
 
 body.duplicate-review-open .search-drawer-toggle {

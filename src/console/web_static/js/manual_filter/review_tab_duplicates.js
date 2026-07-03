@@ -2,7 +2,9 @@
 
 let duplicateReviewTrigger = null;
 let duplicateReviewActiveGroupIndex = 0;
-let duplicateReviewCheckInFlight = false;
+let duplicateReviewDisplayedScope = null;
+let duplicateReviewRequestSequence = 0;
+const duplicateReviewJobs = new Map();
 
 function escapeDuplicateHtml(value) {
     return String(value ?? '')
@@ -13,10 +15,27 @@ function escapeDuplicateHtml(value) {
         .replace(/'/g, '&#039;');
 }
 
-function getDuplicateReviewColumnLabel() {
-    const reportLabel = state.reviewReportType === 'wanbao' ? '晚报' : '综报';
-    const decisionLabel = state.reviewView === 'backup' ? '备选' : '采纳';
+function getDuplicateReviewScope(reportType = state.reviewReportType, decision = state.reviewView) {
+    return {
+        reportType: reportType === 'wanbao' ? 'wanbao' : 'zongbao',
+        decision: decision === 'backup' ? 'backup' : 'selected'
+    };
+}
+
+function getDuplicateReviewScopeKey(scope) {
+    return `${scope.reportType}:${scope.decision}`;
+}
+
+function getDuplicateReviewColumnLabel(scope = getDuplicateReviewScope()) {
+    const reportLabel = scope.reportType === 'wanbao' ? '晚报' : '综报';
+    const decisionLabel = scope.decision === 'backup' ? '备选' : '采纳';
     return `${reportLabel}${decisionLabel}`;
+}
+
+function isDuplicateReviewScopeActive(scope) {
+    return state.currentTab === 'review'
+        && state.reviewReportType === scope.reportType
+        && state.reviewView === scope.decision;
 }
 
 function safeDuplicateUrl(value) {
@@ -84,16 +103,55 @@ function renderDuplicateReviewItem(item) {
     `;
 }
 
-function renderDuplicateReviewResult(result) {
+function reconcileDuplicateReviewResult(result, scope) {
+    if (!isDuplicateReviewScopeActive(scope)) return result;
+    const currentItems = state.reviewData[scope.decision] || [];
+    const itemLookup = new Map(
+        currentItems.filter(item => item.article_id).map(item => [item.article_id, item])
+    );
+    const checkedIds = new Set(result.checked_article_ids || []);
+    const groups = (result.groups || []).map(group => ({
+        ...group,
+        items: (group.items || []).filter(item => itemLookup.has(item.article_id)).map(item => {
+            const current = itemLookup.get(item.article_id);
+            return {
+                ...item,
+                title: current.title || item.title,
+                summary: current.summary || '',
+                source: current.llm_source_display || current.source || '',
+                url: current.url || item.url,
+                status: current.manual_status || current.status || scope.decision,
+                report_type: current.report_type || scope.reportType,
+                score: current.external_importance_score ?? current.score ?? item.score,
+                bonus_keywords: current.bonus_keywords || item.bonus_keywords || []
+            };
+        })
+    })).filter(group => group.items.length >= 2);
+    const currentIds = new Set(itemLookup.keys());
+    return {
+        ...result,
+        current_count: currentItems.length,
+        added_count: Array.from(currentIds).filter(articleId => !checkedIds.has(articleId)).length,
+        removed_count: Array.from(checkedIds).filter(articleId => !currentIds.has(articleId)).length,
+        groups
+    };
+}
+
+function renderDuplicateReviewResult(rawResult, scope = getDuplicateReviewScope()) {
     const modal = document.getElementById('duplicate-review-modal');
     const meta = document.getElementById('duplicate-review-meta');
     const results = document.getElementById('duplicate-review-results');
     const toolbar = document.getElementById('duplicate-review-toolbar');
     if (!modal || !meta || !results || !toolbar) return;
 
+    const result = reconcileDuplicateReviewResult(rawResult, scope);
     const groups = result.groups || [];
+    duplicateReviewDisplayedScope = scope;
     toolbar.hidden = !groups.length;
-    meta.textContent = `${getDuplicateReviewColumnLabel()} · 已检查 ${result.checked_count || 0} 条 · 发现 ${groups.length} 组重复`;
+    const addedText = result.added_count
+        ? ` · ${result.added_count} 条新增新闻未参与本次检查`
+        : '';
+    meta.textContent = `${getDuplicateReviewColumnLabel(scope)} · 已检查 ${result.checked_count || 0} 条 · 发现 ${groups.length} 组重复${addedText}`;
     if (!groups.length) {
         results.innerHTML = `
             <div class="duplicate-review-empty">
@@ -190,12 +248,12 @@ function collectDuplicateReviewEdits(items = null, { onlyDirty = false } = {}) {
     return edits;
 }
 
-async function saveDuplicateReviewEdits(edits) {
+async function saveDuplicateReviewEdits(edits, reportType = state.reviewReportType) {
     if (!Object.keys(edits).length) return;
     const response = await fetch(`${API_BASE}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ edits, actor: state.actor, report_type: state.reviewReportType })
+        body: JSON.stringify({ edits, actor: state.actor, report_type: reportType })
     });
     if (!response.ok) throw new Error('保存编辑失败');
     Object.entries(edits).forEach(([articleId, edit]) => {
@@ -209,19 +267,23 @@ async function saveDuplicateReviewEdits(edits) {
 async function flushDuplicateModalEdits() {
     const modal = document.getElementById('duplicate-review-modal');
     if (!modal || !modal.classList.contains('active')) return;
-    await saveDuplicateReviewEdits(collectDuplicateReviewEdits(null, { onlyDirty: true }));
+    const reportType = duplicateReviewDisplayedScope?.reportType || state.reviewReportType;
+    await saveDuplicateReviewEdits(
+        collectDuplicateReviewEdits(null, { onlyDirty: true }),
+        reportType
+    );
 }
 
-async function flushReviewEditsBeforeDuplicateCheck() {
-    const view = state.reviewView === 'backup' ? 'backup' : 'selected';
+async function flushReviewEditsBeforeDuplicateCheck(scope = getDuplicateReviewScope()) {
+    const view = scope.decision;
     const items = state.reviewData[view] || [];
     const itemLookup = {};
     items.forEach(item => {
         if (item.article_id) itemLookup[item.article_id] = item;
     });
     const edits = {};
-    const scope = getActiveReviewContainer();
-    scope.querySelectorAll('.article-card').forEach(card => {
+    const reviewContainer = getActiveReviewContainer();
+    reviewContainer.querySelectorAll('.article-card').forEach(card => {
         const articleId = card.dataset.id;
         const item = itemLookup[articleId];
         if (!articleId || !item) return;
@@ -238,7 +300,7 @@ async function flushReviewEditsBeforeDuplicateCheck() {
     const response = await fetch(`${API_BASE}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ edits, actor: state.actor, report_type: state.reviewReportType })
+        body: JSON.stringify({ edits, actor: state.actor, report_type: scope.reportType })
     });
     if (!response.ok) throw new Error('保存当前编辑失败');
     Object.entries(edits).forEach(([articleId, edit]) => {
@@ -255,48 +317,121 @@ async function readDuplicateError(response) {
     }
 }
 
-function setDuplicateReviewCheckLoading(isLoading, activeButton = null) {
-    ['btn-check-duplicates', 'btn-recheck-duplicates'].forEach(buttonId => {
+function updateDuplicateReviewJobUI() {
+    const scope = getDuplicateReviewScope();
+    const job = duplicateReviewJobs.get(getDuplicateReviewScopeKey(scope));
+    const checkButton = document.getElementById('btn-check-duplicates');
+    if (checkButton) {
+        checkButton.disabled = job?.status === 'running';
+        checkButton.classList.toggle('has-result', job?.status === 'ready');
+        if (job?.status === 'running') checkButton.textContent = '正在检查…';
+        else if (job?.status === 'ready') {
+            checkButton.textContent = `查看查重结果（${(job.result?.groups || []).length}组）`;
+        } else if (job?.status === 'error') checkButton.textContent = '重新检查';
+        else checkButton.textContent = '检查重复';
+    }
+    elements.reviewRailButtons.forEach(button => {
+        const buttonScope = getDuplicateReviewScope(button.dataset.reportType, button.dataset.view);
+        const buttonJob = duplicateReviewJobs.get(getDuplicateReviewScopeKey(buttonScope));
+        button.classList.toggle('duplicate-check-running', buttonJob?.status === 'running');
+        button.classList.toggle('duplicate-check-ready', buttonJob?.status === 'ready');
+    });
+    const recheckButton = document.getElementById('btn-recheck-duplicates');
+    if (recheckButton && duplicateReviewDisplayedScope) {
+        const displayedJob = duplicateReviewJobs.get(
+            getDuplicateReviewScopeKey(duplicateReviewDisplayedScope)
+        );
+        recheckButton.disabled = displayedJob?.status === 'running';
+        recheckButton.textContent = displayedJob?.status === 'running' ? '正在检查…' : '重新检查';
+    }
+}
+
+function setDuplicateReviewModalBusy(isBusy) {
+    const modal = document.getElementById('duplicate-review-modal');
+    if (!modal || !modal.classList.contains('active')) return;
+    const content = modal.querySelector('.duplicate-review-modal-content');
+    const results = document.getElementById('duplicate-review-results');
+    const toolbar = document.getElementById('duplicate-review-toolbar');
+    if (content) content.classList.toggle('is-checking', isBusy);
+    if (results) results.inert = isBusy;
+    if (toolbar) toolbar.inert = isBusy;
+    modal.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+    ['btn-close-duplicate-review', 'btn-finish-duplicate-review'].forEach(buttonId => {
         const button = document.getElementById(buttonId);
-        if (!button) return;
-        if (isLoading) {
-            button.dataset.originalText = button.textContent;
-            button.disabled = true;
-            if (button === activeButton) button.textContent = '正在检查…';
-            return;
-        }
-        button.disabled = false;
-        if (button.dataset.originalText) button.textContent = button.dataset.originalText;
-        delete button.dataset.originalText;
+        if (button) button.disabled = isBusy;
     });
 }
 
-async function handleDuplicateCheck(event = null) {
-    const fallbackButton = document.getElementById('btn-check-duplicates');
-    const button = event && event.currentTarget ? event.currentTarget : fallbackButton;
-    if (!button || button.disabled || duplicateReviewCheckInFlight) return;
-    if (button === fallbackButton) duplicateReviewTrigger = button;
-    duplicateReviewCheckInFlight = true;
-    setDuplicateReviewCheckLoading(true, button);
+function notifyDuplicateReviewComplete(scope, result) {
+    const groupCount = (result.groups || []).length;
+    showToast(`${getDuplicateReviewColumnLabel(scope)}查重完成，发现 ${groupCount} 组重复`);
+}
+
+async function startDuplicateReviewCheck(scope) {
+    const scopeKey = getDuplicateReviewScopeKey(scope);
+    const existingJob = duplicateReviewJobs.get(scopeKey);
+    if (existingJob?.status === 'running') return;
+    const requestId = ++duplicateReviewRequestSequence;
+    duplicateReviewJobs.set(scopeKey, { status: 'running', requestId, result: null });
+    updateDuplicateReviewJobUI();
+    const modal = document.getElementById('duplicate-review-modal');
+    const isModalRecheck = modal?.classList.contains('active')
+        && duplicateReviewDisplayedScope
+        && getDuplicateReviewScopeKey(duplicateReviewDisplayedScope) === scopeKey;
+    if (isModalRecheck) setDuplicateReviewModalBusy(true);
     try {
         await flushDuplicateModalEdits();
-        await flushReviewEditsBeforeDuplicateCheck();
+        if (isDuplicateReviewScopeActive(scope)) {
+            await flushReviewEditsBeforeDuplicateCheck(scope);
+        }
         const response = await fetch(`${API_BASE}/duplicate-check`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                report_type: state.reviewReportType,
-                decision: state.reviewView === 'backup' ? 'backup' : 'selected'
+                report_type: scope.reportType,
+                decision: scope.decision
             })
         });
         if (!response.ok) throw new Error(await readDuplicateError(response));
-        renderDuplicateReviewResult(await response.json());
+        const result = await response.json();
+        const currentJob = duplicateReviewJobs.get(scopeKey);
+        if (!currentJob || currentJob.requestId !== requestId) return;
+        duplicateReviewJobs.set(scopeKey, { status: 'ready', requestId, result });
+        if (isDuplicateReviewScopeActive(scope)) renderDuplicateReviewResult(result, scope);
+        else notifyDuplicateReviewComplete(scope, result);
     } catch (error) {
-        showToast(error.message || 'AI 查重失败，请稍后重试', 'error');
+        const currentJob = duplicateReviewJobs.get(scopeKey);
+        if (currentJob?.requestId === requestId) {
+            duplicateReviewJobs.set(scopeKey, {
+                status: 'error',
+                requestId,
+                result: null,
+                error: error.message || 'AI 查重失败，请稍后重试'
+            });
+            showToast(`${getDuplicateReviewColumnLabel(scope)}：${error.message || 'AI 查重失败，请稍后重试'}`, 'error');
+        }
     } finally {
-        duplicateReviewCheckInFlight = false;
-        setDuplicateReviewCheckLoading(false);
+        if (isModalRecheck) setDuplicateReviewModalBusy(false);
+        updateDuplicateReviewJobUI();
     }
+}
+
+async function handleDuplicateCheck(event = null) {
+    const checkButton = document.getElementById('btn-check-duplicates');
+    const button = event && event.currentTarget ? event.currentTarget : checkButton;
+    if (!button || button.disabled) return;
+    const isRecheck = button.id === 'btn-recheck-duplicates';
+    const scope = isRecheck && duplicateReviewDisplayedScope
+        ? duplicateReviewDisplayedScope
+        : getDuplicateReviewScope();
+    const job = duplicateReviewJobs.get(getDuplicateReviewScopeKey(scope));
+    if (!isRecheck && job?.status === 'ready' && job.result) {
+        duplicateReviewTrigger = checkButton;
+        renderDuplicateReviewResult(job.result, scope);
+        return;
+    }
+    if (!isRecheck) duplicateReviewTrigger = checkButton;
+    await startDuplicateReviewCheck(scope);
 }
 
 function buildDuplicateDecisionPayload(value, articleId, reportType) {
@@ -342,7 +477,10 @@ async function handleDuplicateStatusChange(event) {
 
     select.disabled = true;
     try {
-        await saveDuplicateReviewEdits(collectDuplicateReviewEdits(item));
+        await saveDuplicateReviewEdits(
+            collectDuplicateReviewEdits(item, { onlyDirty: true }),
+            previousReportType
+        );
         await postDuplicateDecision(buildDuplicateDecisionPayload(select.value, articleId, previousReportType));
         markDuplicateReviewItemProcessed(item);
         await loadReviewData();
@@ -471,8 +609,11 @@ async function applyDuplicateBulkStatus() {
     bulkSelect.disabled = true;
     try {
         const edits = {};
-        selectedItems.forEach(item => Object.assign(edits, collectDuplicateReviewEdits(item)));
-        await saveDuplicateReviewEdits(edits);
+        selectedItems.forEach(item => Object.assign(
+            edits,
+            collectDuplicateReviewEdits(item, { onlyDirty: true })
+        ));
+        await saveDuplicateReviewEdits(edits, previousReportType);
         const payload = buildDuplicateDecisionPayload(targetValue, articleIds[0], previousReportType);
         ['selected_ids', 'backup_ids', 'discarded_ids', 'pending_ids'].forEach(key => {
             if (payload[key].length) payload[key] = articleIds;
@@ -542,9 +683,15 @@ function closeDuplicateReviewModal() {
 }
 
 async function finishDuplicateReview() {
+    const displayedScopeKey = duplicateReviewDisplayedScope
+        ? getDuplicateReviewScopeKey(duplicateReviewDisplayedScope)
+        : null;
     try {
         await flushDuplicateModalEdits();
         closeDuplicateReviewModal();
+        if (displayedScopeKey) duplicateReviewJobs.delete(displayedScopeKey);
+        duplicateReviewDisplayedScope = null;
+        updateDuplicateReviewJobUI();
         await loadReviewData();
         loadStats();
     } catch (error) {

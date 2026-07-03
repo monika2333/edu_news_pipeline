@@ -147,17 +147,24 @@ function renderDrawerSearchResults(data) {
     }
 
     const fragment = document.createDocumentFragment();
+    const summaryToggles = [];
 
     items.forEach(item => {
         const itemEl = createEl('div', 'search-item');
 
         const header = createEl('h4');
-        const link = createEl('a', '', item.title || '未命名标题', {
-            href: item.url || '#',
-            target: '_blank',
-            rel: 'noopener'
-        });
-        header.appendChild(link);
+        const title = item.title || '未命名标题';
+        header.appendChild(document.createTextNode(title));
+        if (item.url) {
+            const link = createEl('a', 'search-source-link', '🔗', {
+                href: item.url,
+                target: '_blank',
+                rel: 'noopener noreferrer',
+                'aria-label': `打开《${title}》的原始链接`,
+                title: '打开原始链接'
+            });
+            header.appendChild(link);
+        }
         itemEl.appendChild(header);
 
         const meta = createEl('div', 'search-meta');
@@ -166,22 +173,56 @@ function renderDrawerSearchResults(data) {
             item.publish_time ? new Date(item.publish_time * 1000).toISOString().split('T')[0] : '-'
         );
         const timeSpan = createEl('span', '', publishTime);
+        const scoreSpan = createEl('span', '', `分数：${formatScore(item.external_importance_score)}`);
         const sentimentSpan = createEl('span', `badge ${getSentimentClass(item.sentiment_label)}`, item.sentiment_label || '-');
         const statusSpan = createEl('span', '', `状态：${item.status || '-'}`);
 
         meta.appendChild(sourceSpan);
         meta.appendChild(timeSpan);
+        meta.appendChild(scoreSpan);
         meta.appendChild(sentimentSpan);
         meta.appendChild(statusSpan);
         itemEl.appendChild(meta);
 
-        const summary = createEl('div', 'search-summary', item.llm_summary || '暂无摘要。');
-        itemEl.appendChild(summary);
+        const details = createEl('div', 'search-details');
+        const summaryText = String(item.llm_summary || '').trim();
+        const summary = createEl(
+            'div',
+            'search-summary',
+            summaryText || '暂无摘要。'
+        );
+        details.appendChild(summary);
+        if (summaryText) {
+            const toggle = createEl('button', 'search-summary-toggle', '▾', {
+                type: 'button',
+                'aria-expanded': 'false',
+                'aria-label': '展开摘要',
+                title: '展开摘要'
+            });
+            toggle.hidden = true;
+            toggle.addEventListener('click', () => {
+                const expanded = summary.classList.toggle('expanded');
+                const actionLabel = expanded ? '收起摘要' : '展开摘要';
+                toggle.textContent = expanded ? '▴' : '▾';
+                toggle.setAttribute('aria-expanded', String(expanded));
+                toggle.setAttribute('aria-label', actionLabel);
+                toggle.setAttribute('title', actionLabel);
+            });
+            details.appendChild(toggle);
+            summaryToggles.push({ summary, toggle });
+        }
+        itemEl.appendChild(details);
 
         fragment.appendChild(itemEl);
     });
 
     container.appendChild(fragment);
+    requestAnimationFrame(() => {
+        summaryToggles.forEach(({ summary, toggle }) => {
+            const truncated = summary.scrollHeight > summary.clientHeight + 1;
+            toggle.hidden = !truncated;
+        });
+    });
     clearEl(pagination);
 
     const prevBtn = createEl('button', 'btn btn-secondary btn-sm', '上一页', {

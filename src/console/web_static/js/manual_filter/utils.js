@@ -1,10 +1,16 @@
 // Manual Filter JS - Utils
 
+function formatScore(value) {
+    if (value === null || value === undefined || value === '') return '-';
+    const score = Number(value);
+    return Number.isFinite(score) ? String(Math.round(score)) : '-';
+}
+
 function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) {
     const safe = item || {};
     const currentStatus = safe.manual_status || safe.status || 'pending';
     const importanceScoreRaw = safe.external_importance_score ?? safe.score;
-    const importanceScore = (importanceScoreRaw === undefined || importanceScoreRaw === null) ? '-' : importanceScoreRaw;
+    const importanceScore = formatScore(importanceScoreRaw);
     const sourcePlaceholder = safe.llm_source_raw ? `(LLM: ${safe.llm_source_raw})` : '留空则回退抓取来源';
     const bonusClass = safe.bonus_keywords && safe.bonus_keywords.length ? ' has-bonus' : '';
     const statusGroup = showStatus ? `

@@ -43,7 +43,7 @@ function renderDuplicateReviewItem(item) {
     const source = escapeDuplicateHtml(item.source || '-');
     const summary = escapeDuplicateHtml(item.summary || '');
     const summaryCount = formatReviewSummaryCount(countReviewSummaryChars(item.summary));
-    const score = item.score ?? '-';
+    const score = formatScore(item.score);
     const bonusText = (item.bonus_keywords || []).join(', ');
     const safeUrl = safeDuplicateUrl(item.url);
     const link = safeUrl

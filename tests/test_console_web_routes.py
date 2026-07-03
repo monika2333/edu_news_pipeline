@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from src.console.app import create_app
@@ -44,3 +46,16 @@ def test_duplicate_check_button_is_before_sort_mode() -> None:
     assert 'id="btn-duplicate-prev-group"' in html
     assert 'id="btn-duplicate-next-group"' in html
     assert '/static/css/modules/review.css?v=' in html
+
+
+def test_duplicate_recheck_uses_clicked_button_loading_state() -> None:
+    script_path = (
+        Path(__file__).parents[1]
+        / "src/console/web_static/js/manual_filter/review_tab_duplicates.js"
+    )
+    script = script_path.read_text(encoding="utf-8")
+
+    assert "event && event.currentTarget ? event.currentTarget : fallbackButton" in script
+    assert "duplicateReviewCheckInFlight" in script
+    assert "setDuplicateReviewCheckLoading(true, button)" in script
+    assert "['btn-check-duplicates', 'btn-recheck-duplicates']" in script

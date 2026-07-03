@@ -2,6 +2,7 @@
 
 let duplicateReviewTrigger = null;
 let duplicateReviewActiveGroupIndex = 0;
+let duplicateReviewCheckInFlight = false;
 
 function escapeDuplicateHtml(value) {
     return String(value ?? '')
@@ -254,13 +255,29 @@ async function readDuplicateError(response) {
     }
 }
 
-async function handleDuplicateCheck() {
-    const button = document.getElementById('btn-check-duplicates');
-    if (!button || button.disabled) return;
-    duplicateReviewTrigger = button;
-    const originalText = button.textContent;
-    button.disabled = true;
-    button.textContent = '正在检查…';
+function setDuplicateReviewCheckLoading(isLoading, activeButton = null) {
+    ['btn-check-duplicates', 'btn-recheck-duplicates'].forEach(buttonId => {
+        const button = document.getElementById(buttonId);
+        if (!button) return;
+        if (isLoading) {
+            button.dataset.originalText = button.textContent;
+            button.disabled = true;
+            if (button === activeButton) button.textContent = '正在检查…';
+            return;
+        }
+        button.disabled = false;
+        if (button.dataset.originalText) button.textContent = button.dataset.originalText;
+        delete button.dataset.originalText;
+    });
+}
+
+async function handleDuplicateCheck(event = null) {
+    const fallbackButton = document.getElementById('btn-check-duplicates');
+    const button = event && event.currentTarget ? event.currentTarget : fallbackButton;
+    if (!button || button.disabled || duplicateReviewCheckInFlight) return;
+    if (button === fallbackButton) duplicateReviewTrigger = button;
+    duplicateReviewCheckInFlight = true;
+    setDuplicateReviewCheckLoading(true, button);
     try {
         await flushDuplicateModalEdits();
         await flushReviewEditsBeforeDuplicateCheck();
@@ -277,8 +294,8 @@ async function handleDuplicateCheck() {
     } catch (error) {
         showToast(error.message || 'AI 查重失败，请稍后重试', 'error');
     } finally {
-        button.disabled = false;
-        button.textContent = originalText;
+        duplicateReviewCheckInFlight = false;
+        setDuplicateReviewCheckLoading(false);
     }
 }
 

@@ -461,6 +461,30 @@ def update_summary_score(cur: psycopg.Cursor, article_id: str, score: Optional[f
     )
 
 
+def update_summary_categories(cur: psycopg.Cursor, updates: Sequence[Mapping[str, Any]]) -> int:
+    payload: List[Tuple[bool, str, str]] = []
+    for item in updates:
+        article_id = str(item.get("article_id") or "").strip()
+        sentiment_label = str(item.get("sentiment_label") or "").strip().lower()
+        is_beijing_related = item.get("is_beijing_related")
+        if not article_id or sentiment_label not in {"positive", "negative"}:
+            continue
+        if not isinstance(is_beijing_related, bool):
+            continue
+        payload.append((is_beijing_related, sentiment_label, article_id))
+    if not payload:
+        return 0
+    query = """
+        UPDATE news_summaries
+        SET is_beijing_related = %s,
+            sentiment_label = %s,
+            updated_at = NOW()
+        WHERE article_id = %s
+    """
+    cur.executemany(query, payload)
+    return cur.rowcount
+
+
 def upsert_news_summaries_from_primary(cur: psycopg.Cursor, rows: Sequence[Mapping[str, Any]]) -> int:
     if not rows:
         return 0
@@ -551,6 +575,7 @@ __all__ = [
     "mark_summary_attempt",
     "mark_summary_failed",
     "search_news_summaries",
+    "update_summary_categories",
     "update_summary_score",
     "upsert_news_summary",
     "upsert_news_summaries_from_primary",

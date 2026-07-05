@@ -277,6 +277,25 @@ class FakeAdapter:
                 break
         return updated
 
+    def update_manual_review_order_and_categories(
+        self,
+        review_updates: Sequence[Mapping[str, Any]],
+        category_updates: Sequence[Mapping[str, Any]],
+        *,
+        report_type: Optional[str] = None,
+    ) -> Tuple[int, int]:
+        updated_reviews = self.update_manual_review_statuses(review_updates, report_type=report_type)
+        updated_categories = 0
+        for item in category_updates:
+            for row in self.rows:
+                if row.get("article_id") != item.get("article_id"):
+                    continue
+                row["is_beijing_related"] = item["is_beijing_related"]
+                row["sentiment_label"] = item["sentiment_label"]
+                updated_categories += 1
+                break
+        return updated_reviews, updated_categories
+
     def reset_manual_reviews_to_pending(
         self,
         article_ids: Sequence[str],
@@ -407,6 +426,50 @@ def test_bulk_decide_updates_states(fake_adapter):
     assert res == {"selected": 1, "backup": 1, "discarded": 0, "pending": 0}
     status_map = {r["article_id"]: r["status"] for r in fake_adapter.rows}
     assert status_map == {"a1": "selected", "a2": "backup"}
+
+
+def test_update_ranks_persists_cross_group_category_change(fake_adapter):
+    manual_filter_service.bulk_decide(
+        selected_ids=["a1", "a2"],
+        backup_ids=[],
+        discarded_ids=[],
+        actor="tester",
+    )
+
+    result = manual_filter_service.update_ranks(
+        selected_order=["a2", "a1"],
+        backup_order=[],
+        group_orders={
+            "internal_positive": ["a2", "a1"],
+            "internal_negative": [],
+            "external_positive": [],
+            "external_negative": [],
+        },
+        actor="tester",
+    )
+
+    assert result == {
+        "selected": 2,
+        "backup": 0,
+        "updated_rows": 2,
+        "updated_categories": 2,
+    }
+    rows = {row["article_id"]: row for row in fake_adapter.rows}
+    assert rows["a2"]["is_beijing_related"] is True
+    assert rows["a2"]["sentiment_label"] == "positive"
+    assert rows["a2"]["rank"] == 1.0
+
+
+def test_update_ranks_rejects_article_in_multiple_groups(fake_adapter):
+    with pytest.raises(ValueError, match="multiple review groups"):
+        manual_filter_service.update_ranks(
+            selected_order=["a1"],
+            backup_order=[],
+            group_orders={
+                "internal_positive": ["a1"],
+                "external_positive": ["a1"],
+            },
+        )
 
 
 def test_save_edits_and_review(fake_adapter):

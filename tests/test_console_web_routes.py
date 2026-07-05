@@ -99,3 +99,19 @@ def test_discarded_duplicate_items_are_hidden_until_undo() -> None:
     assert "if (!itemCount) group.hidden = true" in modal
     assert "duplicate-review-session-empty" in modal
     assert ".duplicate-review-group:not(.is-empty)" in modal
+
+
+def test_review_sort_mode_supports_cross_group_dragging() -> None:
+    root = Path(__file__).parents[1]
+    scripts_dir = root / "src/console/web_static/js/manual_filter"
+    render_script = (scripts_dir / "review_tab.js").read_text(encoding="utf-8")
+    sort_script = (scripts_dir / "review_tab_sort.js").read_text(encoding="utf-8")
+    data_script = (scripts_dir / "review_tab_data.js").read_text(encoding="utf-8")
+    review_css = (root / "src/console/web_static/css/modules/review.css").read_text(encoding="utf-8")
+
+    assert "if (!groupItems.length) return" not in render_script
+    assert "sort-group-body${groupItems.length ? '' : ' is-empty'}" in render_script
+    assert "group: { name: 'review-groups', pull: true, put: true }" in sort_script
+    assert "group_orders: groupOrders" in data_script
+    assert "if (!response.ok) throw new Error" in data_script
+    assert ".sort-group-body.is-empty" in review_css

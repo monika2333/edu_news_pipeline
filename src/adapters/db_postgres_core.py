@@ -532,6 +532,22 @@ class PostgresAdapter:
                 order_by_decided_at=order_by_decided_at,
             )
 
+    def update_manual_review_order_and_categories(
+        self,
+        review_updates: Sequence[Mapping[str, Any]],
+        category_updates: Sequence[Mapping[str, Any]],
+        *,
+        report_type: Optional[str] = None,
+    ) -> Tuple[int, int]:
+        with self.transaction() as cur:
+            updated_reviews = manual_reviews.update_manual_review_statuses(
+                cur,
+                review_updates,
+                report_type=report_type,
+            )
+            updated_categories = news_summaries.update_summary_categories(cur, category_updates)
+        return updated_reviews, updated_categories
+
     def fetch_manual_pending_for_cluster(
         self,
         *,

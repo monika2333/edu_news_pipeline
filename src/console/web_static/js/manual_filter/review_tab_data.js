@@ -179,29 +179,69 @@ function syncReviewStateOrder(status, orderedIds) {
     state.reviewData[status] = orderedItems;
 }
 
+function collectReviewGroupOrders(list) {
+    const groupOrders = {};
+    list.querySelectorAll('.sort-group').forEach(group => {
+        const key = group.dataset.group;
+        if (!key) return;
+        groupOrders[key] = Array.from(group.querySelectorAll('.article-card'))
+            .map(card => card.dataset.id)
+            .filter(Boolean);
+    });
+    return groupOrders;
+}
+
+function syncReviewStateGroups(groupOrders) {
+    const lookup = {};
+    [...(state.reviewData.selected || []), ...(state.reviewData.backup || [])].forEach(item => {
+        if (item && item.article_id) lookup[item.article_id] = item;
+    });
+    Object.entries(groupOrders).forEach(([groupKey, articleIds]) => {
+        const [region, sentiment] = groupKey.split('_');
+        articleIds.forEach(articleId => {
+            const item = lookup[articleId];
+            if (!item) return;
+            item.group_key = groupKey;
+            item.region = region;
+            item.sentiment_key = sentiment;
+            item.is_beijing_related = region === 'internal';
+            item.sentiment_label = sentiment;
+        });
+    });
+}
+
 async function persistReviewOrder() {
     const list = document.querySelector('#review-items');
-    if (!list) return;
+    if (!list) return false;
 
-    const orderedIds = Array.from(list.querySelectorAll('.article-card')).map(card => card.dataset.id);
+    const orderedIds = Array.from(list.querySelectorAll('.article-card'))
+        .map(card => card.dataset.id)
+        .filter(Boolean);
+    const groupOrders = collectReviewGroupOrders(list);
+    syncReviewStateGroups(groupOrders);
     syncReviewStateOrder(state.reviewView, orderedIds);
 
     const payload = {
         selected_order: (state.reviewData.selected || []).map(item => item.article_id),
         backup_order: (state.reviewData.backup || []).map(item => item.article_id),
+        group_orders: groupOrders,
         actor: state.actor,
         report_type: state.reviewReportType
     };
 
     try {
-        await fetch(`${API_BASE}/order`, {
+        const response = await fetch(`${API_BASE}/order`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
+        if (!response.ok) throw new Error(`Order update failed: ${response.status}`);
         showToast('排序已保存');
+        return true;
     } catch (e) {
         showToast('保存排序失败', 'error');
+        await loadReviewData();
+        return false;
     }
 }
 

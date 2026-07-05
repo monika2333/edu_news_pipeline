@@ -57,6 +57,12 @@
     display: none;
 }
 
+.review-grid.sort-mode .sort-group-body.is-empty {
+    min-height: 52px;
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
+}
+
 /* Toolbar */
 .review-toolbar {
     display: flex;

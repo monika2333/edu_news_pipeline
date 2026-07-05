@@ -157,7 +157,61 @@ function renderDuplicateReviewResult(rawResult, scope = getDuplicateReviewScope(
 }
 
 function getDuplicateReviewGroups() {
-    return Array.from(document.querySelectorAll('.duplicate-review-group'));
+    return Array.from(document.querySelectorAll('.duplicate-review-group:not(.is-empty)'));
+}
+
+function getVisibleDuplicateReviewItems(group) {
+    return Array.from(group.querySelectorAll('.duplicate-review-item:not([hidden])'));
+}
+
+function updateDuplicateReviewResultCounts() {
+    const groups = getDuplicateReviewGroups();
+    const meta = document.getElementById('duplicate-review-meta');
+    const toolbar = document.getElementById('duplicate-review-toolbar');
+    const results = document.getElementById('duplicate-review-results');
+    if (meta) {
+        meta.textContent = meta.textContent.replace(/发现 \d+ 组重复/, `发现 ${groups.length} 组重复`);
+    }
+    if (toolbar) toolbar.hidden = !groups.length;
+    if (!results) return;
+
+    let empty = results.querySelector('.duplicate-review-session-empty');
+    if (!groups.length && !empty) {
+        empty = document.createElement('div');
+        empty.className = 'duplicate-review-empty duplicate-review-session-empty';
+        empty.innerHTML = '<strong>当前结果已处理完毕</strong><span>已删除的新闻不再显示，可通过提示撤销刚才的操作。</span>';
+        results.appendChild(empty);
+    } else if (groups.length && empty) {
+        empty.remove();
+    }
+}
+
+function updateDuplicateReviewGroupAfterRemoval(group) {
+    const itemCount = getVisibleDuplicateReviewItems(group).length;
+    const count = group.querySelector('.duplicate-review-group-heading span');
+    if (count) count.textContent = `${itemCount} 条新闻`;
+    group.classList.toggle('is-empty', itemCount === 0);
+    if (!itemCount) group.hidden = true;
+    updateDuplicateReviewResultCounts();
+}
+
+function hideDiscardedDuplicateReviewItem(item) {
+    const group = item.closest('.duplicate-review-group');
+    item.hidden = true;
+    const checkbox = item.querySelector('.duplicate-review-select');
+    if (checkbox) checkbox.checked = false;
+    if (!group) return;
+    updateDuplicateReviewGroupAfterRemoval(group);
+    showDuplicateReviewGroup(duplicateReviewActiveGroupIndex);
+}
+
+function restoreDiscardedDuplicateReviewItem(item) {
+    const group = item.closest('.duplicate-review-group');
+    item.hidden = false;
+    if (!group) return;
+    updateDuplicateReviewGroupAfterRemoval(group);
+    const groupIndex = getDuplicateReviewGroups().indexOf(group);
+    showDuplicateReviewGroup(groupIndex >= 0 ? groupIndex : 0);
 }
 
 function getActiveDuplicateReviewGroup() {
@@ -173,6 +227,7 @@ function showDuplicateReviewGroup(index) {
     const nextButton = document.getElementById('btn-duplicate-next-group');
     if (!groups.length) {
         if (pager) pager.hidden = true;
+        updateDuplicateReviewSelectionState();
         return;
     }
 

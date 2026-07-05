@@ -80,3 +80,22 @@ def test_processed_duplicate_items_remain_editable_and_selectable() -> None:
     assert ".duplicate-review-item:not(.is-processed)" not in script
     assert "control.disabled = true" not in mark_section
     assert "activeGroup.querySelectorAll('.duplicate-review-item')" in script
+
+
+def test_discarded_duplicate_items_are_hidden_until_undo() -> None:
+    root = Path(__file__).parents[1]
+    controller = (
+        root / "src/console/web_static/js/manual_filter/review_tab_duplicates.js"
+    ).read_text(encoding="utf-8")
+    modal = (
+        root / "src/console/web_static/js/manual_filter/review_duplicates_modal.js"
+    ).read_text(encoding="utf-8")
+
+    assert "if (shouldHideAfterUpdate) hideDiscardedDuplicateReviewItem(item)" in controller
+    assert "if (targetValue === 'discarded') hideDiscardedDuplicateReviewItem(item)" in controller
+    assert controller.count("restoreDiscardedDuplicateReviewItem(item)") == 2
+    assert "item.hidden = true" in modal
+    assert "item.hidden = false" in modal
+    assert "if (!itemCount) group.hidden = true" in modal
+    assert "duplicate-review-session-empty" in modal
+    assert ".duplicate-review-group:not(.is-empty)" in modal

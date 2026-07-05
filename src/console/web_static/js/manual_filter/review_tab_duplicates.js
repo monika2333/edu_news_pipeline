@@ -221,6 +221,7 @@ async function handleDuplicateStatusChange(event) {
     const previousReportType = item.dataset.reportType || state.reviewReportType;
     const previousValue = getDuplicateDecisionValue(previousStatus, previousReportType);
     if (select.value === previousValue) return;
+    const shouldHideAfterUpdate = select.value === 'discarded';
 
     select.disabled = true;
     try {
@@ -231,6 +232,7 @@ async function handleDuplicateStatusChange(event) {
         await postDuplicateDecision(buildDuplicateDecisionPayload(select.value, articleId, previousReportType));
         updateDuplicateItemDecisionState(item, select.value, previousReportType);
         markDuplicateReviewItemProcessed(item);
+        if (shouldHideAfterUpdate) hideDiscardedDuplicateReviewItem(item);
         await loadReviewData();
         loadStats();
         const undoAction = buildUndoToastAction(async () => {
@@ -238,6 +240,7 @@ async function handleDuplicateStatusChange(event) {
                 await postDuplicateDecision(buildDuplicateDecisionPayload(previousValue, articleId, previousReportType));
                 updateDuplicateItemDecisionState(item, previousValue, previousReportType);
                 restoreDuplicateReviewItem(item);
+                if (shouldHideAfterUpdate) restoreDiscardedDuplicateReviewItem(item);
                 select.value = previousValue;
                 await loadReviewData();
                 loadStats();
@@ -373,6 +376,7 @@ async function applyDuplicateBulkStatus() {
         selectedItems.forEach(item => {
             updateDuplicateItemDecisionState(item, targetValue, previousReportType);
             markDuplicateReviewItemProcessed(item);
+            if (targetValue === 'discarded') hideDiscardedDuplicateReviewItem(item);
         });
         await loadReviewData();
         loadStats();
@@ -389,6 +393,7 @@ async function applyDuplicateBulkStatus() {
                 selectedItems.forEach(item => {
                     updateDuplicateItemDecisionState(item, previousValue, previousReportType);
                     restoreDuplicateReviewItem(item);
+                    if (targetValue === 'discarded') restoreDiscardedDuplicateReviewItem(item);
                 });
                 await loadReviewData();
                 loadStats();

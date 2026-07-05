@@ -6,9 +6,9 @@ function collectDuplicateReviewEdits(items = null, { onlyDirty = false } = {}) {
     const scope = items || document.getElementById('duplicate-review-results');
     const edits = {};
     if (!scope) return edits;
-    const targets = scope.matches && scope.matches('.duplicate-review-item:not(.is-processed)')
+    const targets = scope.matches && scope.matches('.duplicate-review-item')
         ? [scope]
-        : Array.from(scope.querySelectorAll('.duplicate-review-item:not(.is-processed)'));
+        : Array.from(scope.querySelectorAll('.duplicate-review-item'));
     targets.forEach(item => {
         if (onlyDirty && !item.classList.contains('is-dirty')) return;
         const articleId = item.dataset.id;
@@ -181,6 +181,28 @@ function buildDuplicateDecisionPayload(value, articleId, reportType) {
     return payload;
 }
 
+function parseDuplicateDecisionState(value, fallbackReportType) {
+    if (value.includes(':')) {
+        const [reportType, status] = value.split(':');
+        return {
+            reportType: reportType === 'wanbao' ? 'wanbao' : 'zongbao',
+            status
+        };
+    }
+    return { reportType: fallbackReportType, status: value };
+}
+
+function getDuplicateDecisionValue(status, reportType) {
+    if (status === 'selected' || status === 'backup') return `${reportType}:${status}`;
+    return status;
+}
+
+function updateDuplicateItemDecisionState(item, value, fallbackReportType) {
+    const nextState = parseDuplicateDecisionState(value, fallbackReportType);
+    item.dataset.reportType = nextState.reportType;
+    item.dataset.status = nextState.status;
+}
+
 async function postDuplicateDecision(payload) {
     const response = await fetch(`${API_BASE}/decide`, {
         method: 'POST',
@@ -197,7 +219,7 @@ async function handleDuplicateStatusChange(event) {
     const articleId = item.dataset.id;
     const previousStatus = item.dataset.status;
     const previousReportType = item.dataset.reportType || state.reviewReportType;
-    const previousValue = `${previousReportType}:${previousStatus}`;
+    const previousValue = getDuplicateDecisionValue(previousStatus, previousReportType);
     if (select.value === previousValue) return;
 
     select.disabled = true;
@@ -207,12 +229,14 @@ async function handleDuplicateStatusChange(event) {
             previousReportType
         );
         await postDuplicateDecision(buildDuplicateDecisionPayload(select.value, articleId, previousReportType));
+        updateDuplicateItemDecisionState(item, select.value, previousReportType);
         markDuplicateReviewItemProcessed(item);
         await loadReviewData();
         loadStats();
         const undoAction = buildUndoToastAction(async () => {
             try {
                 await postDuplicateDecision(buildDuplicateDecisionPayload(previousValue, articleId, previousReportType));
+                updateDuplicateItemDecisionState(item, previousValue, previousReportType);
                 restoreDuplicateReviewItem(item);
                 select.value = previousValue;
                 await loadReviewData();
@@ -225,8 +249,9 @@ async function handleDuplicateStatusChange(event) {
         showToast('状态已更新', 'success', undoAction);
     } catch (error) {
         select.value = previousValue;
-        select.disabled = false;
         showToast(error.message || '状态更新失败', 'error');
+    } finally {
+        select.disabled = false;
     }
 }
 
@@ -234,9 +259,6 @@ function markDuplicateReviewItemProcessed(item) {
     item.classList.add('is-processed');
     const processed = item.querySelector('.duplicate-review-processed');
     if (processed) processed.hidden = false;
-    item.querySelectorAll('textarea, input, select, button').forEach(control => {
-        control.disabled = true;
-    });
     updateDuplicateReviewSelectionState();
 }
 
@@ -244,9 +266,6 @@ function restoreDuplicateReviewItem(item) {
     item.classList.remove('is-processed');
     const processed = item.querySelector('.duplicate-review-processed');
     if (processed) processed.hidden = true;
-    item.querySelectorAll('textarea, input, select, button').forEach(control => {
-        control.disabled = false;
-    });
     updateDuplicateReviewSelectionState();
 }
 
@@ -263,7 +282,10 @@ async function handleDuplicateSummaryUpdate(event) {
     const item = event.target.closest('.duplicate-review-item');
     if (!item) return;
     try {
-        await saveDuplicateReviewEdits(collectDuplicateReviewEdits(item));
+        await saveDuplicateReviewEdits(
+            collectDuplicateReviewEdits(item),
+            item.dataset.reportType || state.reviewReportType
+        );
         showToast('摘要已保存');
     } catch (error) {
         showToast('摘要保存失败', 'error');
@@ -274,7 +296,10 @@ async function handleDuplicateSourceUpdate(event) {
     const item = event.target.closest('.duplicate-review-item');
     if (!item) return;
     try {
-        await saveDuplicateReviewEdits(collectDuplicateReviewEdits(item));
+        await saveDuplicateReviewEdits(
+            collectDuplicateReviewEdits(item),
+            item.dataset.reportType || state.reviewReportType
+        );
         showToast('来源已保存');
     } catch (error) {
         showToast('来源保存失败', 'error');
@@ -284,7 +309,7 @@ async function handleDuplicateSourceUpdate(event) {
 function getSelectableDuplicateItems() {
     const activeGroup = getActiveDuplicateReviewGroup();
     if (!activeGroup) return [];
-    return Array.from(activeGroup.querySelectorAll('.duplicate-review-item:not(.is-processed)'));
+    return Array.from(activeGroup.querySelectorAll('.duplicate-review-item'));
 }
 
 function updateDuplicateReviewSelectionState() {
@@ -327,7 +352,8 @@ async function applyDuplicateBulkStatus() {
     const articleIds = selectedItems.map(item => item.dataset.id).filter(Boolean);
     const previousReportType = selectedItems[0].dataset.reportType || state.reviewReportType;
     const previousStatus = selectedItems[0].dataset.status || state.reviewView;
-    if (targetValue === `${previousReportType}:${previousStatus}`) {
+    const previousValue = getDuplicateDecisionValue(previousStatus, previousReportType);
+    if (targetValue === previousValue) {
         showToast('所选新闻已在当前栏目', 'error');
         return;
     }
@@ -344,17 +370,26 @@ async function applyDuplicateBulkStatus() {
             if (payload[key].length) payload[key] = articleIds;
         });
         await postDuplicateDecision(payload);
-        selectedItems.forEach(markDuplicateReviewItemProcessed);
+        selectedItems.forEach(item => {
+            updateDuplicateItemDecisionState(item, targetValue, previousReportType);
+            markDuplicateReviewItemProcessed(item);
+        });
         await loadReviewData();
         loadStats();
         const undoAction = buildUndoToastAction(async () => {
             try {
-                const previousValue = `${previousReportType}:${previousStatus}`;
-                const undoPayload = buildDuplicateDecisionPayload(previousValue, articleIds[0], previousReportType);
+                const undoPayload = buildDuplicateDecisionPayload(
+                    previousValue,
+                    articleIds[0],
+                    previousReportType
+                );
                 if (previousStatus === 'selected') undoPayload.selected_ids = articleIds;
                 if (previousStatus === 'backup') undoPayload.backup_ids = articleIds;
                 await postDuplicateDecision(undoPayload);
-                selectedItems.forEach(restoreDuplicateReviewItem);
+                selectedItems.forEach(item => {
+                    updateDuplicateItemDecisionState(item, previousValue, previousReportType);
+                    restoreDuplicateReviewItem(item);
+                });
                 await loadReviewData();
                 loadStats();
                 showToast('已撤销操作');

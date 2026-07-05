@@ -570,7 +570,6 @@ body.duplicate-review-open .search-drawer-toggle {
 .duplicate-review-item.is-processed {
     border-color: #bbf7d0;
     background: #f0fdf4;
-    opacity: 0.75;
 }
 
 .duplicate-review-item-header {

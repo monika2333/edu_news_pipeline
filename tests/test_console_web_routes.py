@@ -65,3 +65,18 @@ def test_duplicate_check_tracks_loading_state_by_review_column() -> None:
     assert "status: 'ready'" in controller_script
     assert "setDuplicateReviewModalBusy(true)" in controller_script
     assert "查看查重结果" in state_script
+
+
+def test_processed_duplicate_items_remain_editable_and_selectable() -> None:
+    script_path = (
+        Path(__file__).parents[1]
+        / "src/console/web_static/js/manual_filter/review_tab_duplicates.js"
+    )
+    script = script_path.read_text(encoding="utf-8")
+    mark_section = script.split("function markDuplicateReviewItemProcessed", 1)[1].split(
+        "function restoreDuplicateReviewItem", 1
+    )[0]
+
+    assert ".duplicate-review-item:not(.is-processed)" not in script
+    assert "control.disabled = true" not in mark_section
+    assert "activeGroup.querySelectorAll('.duplicate-review-item')" in script

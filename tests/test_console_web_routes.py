@@ -50,6 +50,21 @@ def test_duplicate_check_button_is_before_sort_mode() -> None:
     assert '/static/js/manual_filter/review_duplicates_modal.js?v=' in html
 
 
+def test_sort_mode_hides_incompatible_review_toolbar_controls() -> None:
+    root = Path(__file__).parents[1]
+    response = _build_client().get("/manual_filter")
+    review_css = (
+        root / "src/console/web_static/css/modules/review.css"
+    ).read_text(encoding="utf-8")
+
+    assert response.status_code == 200
+    html = response.text
+    assert 'class="search-group sort-incompatible"' in html
+    assert 'class="bulk-group sort-incompatible"' in html
+    assert 'class="btn btn-secondary sort-incompatible" id="btn-check-duplicates"' in html
+    assert "#review-tab.review-sort-mode .sort-incompatible" in review_css
+
+
 def test_duplicate_check_tracks_loading_state_by_review_column() -> None:
     scripts_dir = Path(__file__).parents[1] / "src/console/web_static/js/manual_filter"
     state_script = (scripts_dir / "review_duplicates_state.js").read_text(

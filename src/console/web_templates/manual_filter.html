@@ -118,7 +118,7 @@
                         <!-- Grid will be injected here -->
                     </div>
                     <div class="toolbar review-toolbar">
-                        <div class="search-group">
+                        <div class="search-group sort-incompatible">
                             <input type="text" id="review-search-input" placeholder="搜索本页..." class="search-input">
                             <button type="button" id="review-search-clear" class="review-search-clear" aria-label="清空搜索"
                                 title="清空搜索" hidden>
@@ -129,7 +129,7 @@
                                 </svg>
                             </button>
                         </div>
-                        <div class="bulk-group">
+                        <div class="bulk-group sort-incompatible">
                             <label class="checkbox-label">
                                 <input type="checkbox" id="review-select-all">
                                 <span>全选</span>
@@ -144,7 +144,7 @@
                                 <option value="pending">待处理</option>
                             </select>
                         </div>
-                        <button class="btn btn-secondary" id="btn-check-duplicates">
+                        <button class="btn btn-secondary sort-incompatible" id="btn-check-duplicates">
                             检查重复
                         </button>
                         <button class="btn btn-secondary" id="btn-toggle-sort">

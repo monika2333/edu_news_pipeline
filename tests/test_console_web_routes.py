@@ -46,6 +46,8 @@ def test_duplicate_check_button_is_before_sort_mode() -> None:
     assert 'id="btn-duplicate-prev-group"' in html
     assert 'id="btn-duplicate-next-group"' in html
     assert 'id="btn-recheck-duplicates"' not in html
+    assert 'id="btn-close-duplicate-review"' not in html
+    assert '>关闭并刷新列表</button>' in html
     assert '/static/css/modules/review.css?v=' in html
     assert '/static/js/manual_filter/review_duplicates_state.js?v=' in html
     assert '/static/js/manual_filter/review_duplicates_modal.js?v=' in html

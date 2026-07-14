@@ -447,14 +447,12 @@ async function finishDuplicateReview() {
 
 function setupDuplicateReview() {
     const checkButton = document.getElementById('btn-check-duplicates');
-    const closeButton = document.getElementById('btn-close-duplicate-review');
     const finishButton = document.getElementById('btn-finish-duplicate-review');
     const selectAll = document.getElementById('duplicate-review-select-all');
     const bulkStatus = document.getElementById('duplicate-review-bulk-status');
     const previousGroup = document.getElementById('btn-duplicate-prev-group');
     const nextGroup = document.getElementById('btn-duplicate-next-group');
     if (checkButton) checkButton.addEventListener('click', handleDuplicateCheck);
-    if (closeButton) closeButton.addEventListener('click', finishDuplicateReview);
     if (finishButton) finishButton.addEventListener('click', finishDuplicateReview);
     if (selectAll) {
         selectAll.addEventListener('change', event => {

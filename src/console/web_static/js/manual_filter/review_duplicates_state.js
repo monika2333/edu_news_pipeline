@@ -46,30 +46,6 @@ function updateDuplicateReviewJobUI() {
         button.classList.toggle('duplicate-check-running', buttonJob?.status === 'running');
         button.classList.toggle('duplicate-check-ready', buttonJob?.status === 'ready');
     });
-    const recheckButton = document.getElementById('btn-recheck-duplicates');
-    if (recheckButton && duplicateReviewDisplayedScope) {
-        const displayedJob = duplicateReviewJobs.get(
-            getDuplicateReviewScopeKey(duplicateReviewDisplayedScope)
-        );
-        recheckButton.disabled = displayedJob?.status === 'running';
-        recheckButton.textContent = displayedJob?.status === 'running' ? '正在检查…' : '重新检查';
-    }
-}
-
-function setDuplicateReviewModalBusy(isBusy) {
-    const modal = document.getElementById('duplicate-review-modal');
-    if (!modal || !modal.classList.contains('active')) return;
-    const content = modal.querySelector('.duplicate-review-modal-content');
-    const results = document.getElementById('duplicate-review-results');
-    const toolbar = document.getElementById('duplicate-review-toolbar');
-    if (content) content.classList.toggle('is-checking', isBusy);
-    if (results) results.inert = isBusy;
-    if (toolbar) toolbar.inert = isBusy;
-    modal.setAttribute('aria-busy', isBusy ? 'true' : 'false');
-    ['btn-close-duplicate-review', 'btn-finish-duplicate-review'].forEach(buttonId => {
-        const button = document.getElementById(buttonId);
-        if (button) button.disabled = isBusy;
-    });
 }
 
 function notifyDuplicateReviewComplete(scope, result) {

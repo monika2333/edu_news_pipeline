@@ -99,11 +99,6 @@ async function startDuplicateReviewCheck(scope) {
     const requestId = ++duplicateReviewRequestSequence;
     duplicateReviewJobs.set(scopeKey, { status: 'running', requestId, result: null });
     updateDuplicateReviewJobUI();
-    const modal = document.getElementById('duplicate-review-modal');
-    const isModalRecheck = modal?.classList.contains('active')
-        && duplicateReviewDisplayedScope
-        && getDuplicateReviewScopeKey(duplicateReviewDisplayedScope) === scopeKey;
-    if (isModalRecheck) setDuplicateReviewModalBusy(true);
     try {
         await flushDuplicateModalEdits();
         if (isDuplicateReviewScopeActive(scope)) {
@@ -136,26 +131,21 @@ async function startDuplicateReviewCheck(scope) {
             showToast(`${getDuplicateReviewColumnLabel(scope)}：${error.message || 'AI 查重失败，请稍后重试'}`, 'error');
         }
     } finally {
-        if (isModalRecheck) setDuplicateReviewModalBusy(false);
         updateDuplicateReviewJobUI();
     }
 }
 
-async function handleDuplicateCheck(event = null) {
+async function handleDuplicateCheck() {
     const checkButton = document.getElementById('btn-check-duplicates');
-    const button = event && event.currentTarget ? event.currentTarget : checkButton;
-    if (!button || button.disabled) return;
-    const isRecheck = button.id === 'btn-recheck-duplicates';
-    const scope = isRecheck && duplicateReviewDisplayedScope
-        ? duplicateReviewDisplayedScope
-        : getDuplicateReviewScope();
+    if (!checkButton || checkButton.disabled) return;
+    const scope = getDuplicateReviewScope();
     const job = duplicateReviewJobs.get(getDuplicateReviewScopeKey(scope));
-    if (!isRecheck && job?.status === 'ready' && job.result) {
+    if (job?.status === 'ready' && job.result) {
         duplicateReviewTrigger = checkButton;
         renderDuplicateReviewResult(job.result, scope);
         return;
     }
-    if (!isRecheck) duplicateReviewTrigger = checkButton;
+    duplicateReviewTrigger = checkButton;
     await startDuplicateReviewCheck(scope);
 }
 
@@ -459,7 +449,6 @@ function setupDuplicateReview() {
     const checkButton = document.getElementById('btn-check-duplicates');
     const closeButton = document.getElementById('btn-close-duplicate-review');
     const finishButton = document.getElementById('btn-finish-duplicate-review');
-    const recheckButton = document.getElementById('btn-recheck-duplicates');
     const selectAll = document.getElementById('duplicate-review-select-all');
     const bulkStatus = document.getElementById('duplicate-review-bulk-status');
     const previousGroup = document.getElementById('btn-duplicate-prev-group');
@@ -467,7 +456,6 @@ function setupDuplicateReview() {
     if (checkButton) checkButton.addEventListener('click', handleDuplicateCheck);
     if (closeButton) closeButton.addEventListener('click', finishDuplicateReview);
     if (finishButton) finishButton.addEventListener('click', finishDuplicateReview);
-    if (recheckButton) recheckButton.addEventListener('click', handleDuplicateCheck);
     if (selectAll) {
         selectAll.addEventListener('change', event => {
             toggleDuplicateReviewSelectAll(Boolean(event.target.checked));

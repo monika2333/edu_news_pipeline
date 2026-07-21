@@ -57,6 +57,12 @@
     display: none;
 }
 
+.review-grid.sort-mode .sort-group-body.is-empty {
+    min-height: 52px;
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
+}
+
 /* Toolbar */
 .review-toolbar {
     display: flex;
@@ -87,6 +93,10 @@
 
 #review-tab.review-sort-mode .sort-only {
     display: inline-flex;
+}
+
+#review-tab.review-sort-mode .sort-incompatible {
+    display: none;
 }
 
 .review-toolbar .bulk-group {
@@ -419,21 +429,6 @@
 .duplicate-review-modal-content {
     position: relative;
     width: min(1180px, 96vw);
-}
-
-.duplicate-review-modal-content.is-checking::after {
-    content: "正在重新检查…";
-    position: absolute;
-    z-index: 20;
-    inset: 72px 0 0;
-    display: grid;
-    place-items: center;
-    border-radius: 0 0 12px 12px;
-    background: rgba(248, 250, 252, 0.9);
-    color: var(--text-primary);
-    font-size: 1rem;
-    font-weight: 700;
-    backdrop-filter: blur(2px);
 }
 
 body.duplicate-review-open .search-drawer-toggle {

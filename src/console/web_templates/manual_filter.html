@@ -118,7 +118,7 @@
                         <!-- Grid will be injected here -->
                     </div>
                     <div class="toolbar review-toolbar">
-                        <div class="search-group">
+                        <div class="search-group sort-incompatible">
                             <input type="text" id="review-search-input" placeholder="搜索本页..." class="search-input">
                             <button type="button" id="review-search-clear" class="review-search-clear" aria-label="清空搜索"
                                 title="清空搜索" hidden>
@@ -129,7 +129,7 @@
                                 </svg>
                             </button>
                         </div>
-                        <div class="bulk-group">
+                        <div class="bulk-group sort-incompatible">
                             <label class="checkbox-label">
                                 <input type="checkbox" id="review-select-all">
                                 <span>全选</span>
@@ -144,7 +144,7 @@
                                 <option value="pending">待处理</option>
                             </select>
                         </div>
-                        <button class="btn btn-secondary" id="btn-check-duplicates">
+                        <button class="btn btn-secondary sort-incompatible" id="btn-check-duplicates">
                             检查重复
                         </button>
                         <button class="btn btn-secondary" id="btn-toggle-sort">
@@ -238,7 +238,6 @@
                     <h3 id="duplicate-review-title">查重结果</h3>
                     <p id="duplicate-review-meta" class="duplicate-review-meta" aria-live="polite"></p>
                 </div>
-                <button type="button" class="btn btn-secondary" id="btn-close-duplicate-review">关闭</button>
             </div>
             <div class="duplicate-review-toolbar" id="duplicate-review-toolbar" hidden>
                 <label class="checkbox-label">
@@ -265,7 +264,6 @@
                 <!-- Duplicate groups will be injected here -->
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" id="btn-recheck-duplicates">重新检查</button>
                 <button type="button" class="btn btn-primary" id="btn-finish-duplicate-review">关闭并刷新列表</button>
             </div>
         </div>

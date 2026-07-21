@@ -38,9 +38,18 @@ class ArchiveRequest(BaseModel):
     report_type: str = "zongbao"
 
 
+ReviewGroupKey = Literal[
+    "internal_positive",
+    "internal_negative",
+    "external_positive",
+    "external_negative",
+]
+
+
 class UpdateOrderRequest(BaseModel):
     selected_order: List[str] = Field(default_factory=list)
     backup_order: List[str] = Field(default_factory=list)
+    group_orders: Dict[ReviewGroupKey, List[str]] = Field(default_factory=dict)
     actor: Optional[str] = None
     report_type: str = "zongbao"
 
@@ -157,12 +166,16 @@ def archive_api(req: ArchiveRequest) -> Dict[str, int]:
 
 @router.post("/order")
 def update_order_api(req: UpdateOrderRequest) -> Dict[str, int]:
-    return manual_filter_service.update_ranks(
-        selected_order=req.selected_order,
-        backup_order=req.backup_order,
-        actor=req.actor,
-        report_type=req.report_type,
-    )
+    try:
+        return manual_filter_service.update_ranks(
+            selected_order=req.selected_order,
+            backup_order=req.backup_order,
+            group_orders=req.group_orders,
+            actor=req.actor,
+            report_type=req.report_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/discard_before_date")

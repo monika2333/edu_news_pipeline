@@ -117,7 +117,7 @@ function reorderReviewItemsByCategory(items, categoryCounts) {
     return ordered;
 }
 
-function autoReorderReviewItems() {
+async function autoReorderReviewItems() {
     if (state.currentTab !== 'review') {
         showToast('请先进入审阅页');
         return;
@@ -165,10 +165,28 @@ function autoReorderReviewItems() {
 
     state.reviewData[view] = ordered;
     renderReviewView();
-    persistReviewOrder();
-    showToast(
-        `自动排序完成：市教委 ${categoryCounts['市教委']}，中小学 ${categoryCounts['中小学']}，高校 ${categoryCounts['高校']}，其他 ${categoryCounts['其他']}`
-    );
+    const saved = await persistReviewOrder();
+    if (saved) {
+        showToast(
+            `自动排序完成：市教委 ${categoryCounts['市教委']}，中小学 ${categoryCounts['中小学']}，高校 ${categoryCounts['高校']}，其他 ${categoryCounts['其他']}`
+        );
+    }
+}
+
+function updateReviewSortGroupCounts() {
+    document.querySelectorAll('.sort-group').forEach(group => {
+        const key = group.dataset.group || '';
+        const header = group.querySelector('.review-group-header');
+        const body = group.querySelector('.sort-group-body');
+        const count = body ? body.querySelectorAll('.article-card').length : 0;
+        if (header) header.textContent = `${getGroupLabel(key)}(${count})`;
+        if (body) body.classList.toggle('is-empty', count === 0);
+    });
+}
+
+async function handleReviewSortEnd() {
+    updateReviewSortGroupCounts();
+    await persistReviewOrder();
 }
 
 function initReviewSortable() {
@@ -188,8 +206,8 @@ function initReviewSortable() {
             forceFallback: true,
             fallbackOnBody: true,
             draggable: '.article-card',
-            group: { name: 'review-groups', pull: false, put: false },
-            onEnd: persistReviewOrder,
+            group: { name: 'review-groups', pull: true, put: true },
+            onEnd: handleReviewSortEnd,
         });
         reviewSortableInstances.push(inst);
     });

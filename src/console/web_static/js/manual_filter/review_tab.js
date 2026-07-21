@@ -212,11 +212,10 @@ function renderSortableReviewItems(items) {
     let html = '';
     GROUP_ORDER.forEach(group => {
         const groupItems = buckets[group.key] || [];
-        if (!groupItems.length) return;
         html += `
             <div class="review-group sort-group" data-group="${group.key}">
                 <div class="review-group-header">${group.label}(${groupItems.length})</div>
-                <div class="review-group-body sort-group-body">
+                <div class="review-group-body sort-group-body${groupItems.length ? '' : ' is-empty'}">
                     ${groupItems.map(item => {
             const currentStatus = item.manual_status || item.status || state.reviewView || 'selected';
             const title = item.title || '(No Title)';

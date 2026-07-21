@@ -162,6 +162,7 @@ def update_ranks(
     *,
     selected_order: Sequence[str],
     backup_order: Sequence[str],
+    group_orders: Optional[Dict[str, Sequence[str]]] = None,
     actor: Optional[str] = None,
     report_type: str = DEFAULT_REPORT_TYPE,
 ) -> Dict[str, int]:
@@ -174,6 +175,30 @@ def update_ranks(
     payload: List[Dict[str, Any]] = []
     selected_ids = _normalize_ids(selected_order)
     backup_ids = _normalize_ids(backup_order)
+    ordered_ids = set(selected_ids) | set(backup_ids)
+    category_payload: List[Dict[str, Any]] = []
+    seen_category_ids: set[str] = set()
+
+    for group_key, group_ids in (group_orders or {}).items():
+        try:
+            region, sentiment = group_key.split("_", maxsplit=1)
+        except ValueError as exc:
+            raise ValueError(f"Invalid review group: {group_key}") from exc
+        if region not in {"internal", "external"} or sentiment not in {"positive", "negative"}:
+            raise ValueError(f"Invalid review group: {group_key}")
+        for aid in _normalize_ids(group_ids):
+            if aid not in ordered_ids:
+                raise ValueError(f"Grouped article is missing from review order: {aid}")
+            if aid in seen_category_ids:
+                raise ValueError(f"Article appears in multiple review groups: {aid}")
+            seen_category_ids.add(aid)
+            category_payload.append(
+                {
+                    "article_id": aid,
+                    "is_beijing_related": region == "internal",
+                    "sentiment_label": sentiment,
+                }
+            )
 
     for index, aid in enumerate(selected_ids, start=1):
         payload.append(
@@ -201,7 +226,15 @@ def update_ranks(
     if not payload:
         return {"selected": 0, "backup": 0}
 
-    updated_rows = adapter.update_manual_review_statuses(payload, report_type=target_report_type)  # type: ignore[attr-defined]
+    if category_payload:
+        updated_rows, updated_categories = adapter.update_manual_review_order_and_categories(
+            payload,
+            category_payload,
+            report_type=target_report_type,
+        )
+    else:
+        updated_rows = adapter.update_manual_review_statuses(payload, report_type=target_report_type)  # type: ignore[attr-defined]
+        updated_categories = 0
     logger.info(
         "Updated manual ranks: selected=%s backup=%s rows=%s report_type=%s",
         len(selected_ids),
@@ -209,7 +242,12 @@ def update_ranks(
         updated_rows,
         target_report_type,
     )
-    return {"selected": len(selected_ids), "backup": len(backup_ids), "updated_rows": updated_rows}
+    return {
+        "selected": len(selected_ids),
+        "backup": len(backup_ids),
+        "updated_rows": updated_rows,
+        "updated_categories": updated_categories,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

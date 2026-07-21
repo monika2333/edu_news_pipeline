@@ -323,6 +323,51 @@ def test_discard_before_date_api_supports_empty_optional_filters(monkeypatch) ->
     assert response.json() == {"matched": 2, "updated": 0}
 
 
+def test_update_order_api_passes_review_groups(monkeypatch) -> None:
+    from src.console import manual_filter_service
+
+    captured: Dict[str, Any] = {}
+
+    def update_ranks(**kwargs: Any) -> Dict[str, int]:
+        captured.update(kwargs)
+        return {"selected": 1, "backup": 0, "updated_rows": 1, "updated_categories": 1}
+
+    monkeypatch.setattr(manual_filter_service, "update_ranks", update_ranks)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/manual_filter/order",
+        json={
+            "selected_order": ["a1"],
+            "backup_order": [],
+            "group_orders": {"external_positive": ["a1"]},
+            "actor": "tester",
+            "report_type": "zongbao",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["group_orders"] == {"external_positive": ["a1"]}
+
+
+def test_update_order_api_rejects_unknown_review_group() -> None:
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/manual_filter/order",
+        json={
+            "selected_order": ["a1"],
+            "group_orders": {"unknown": ["a1"]},
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_duplicate_check_api_returns_review_groups(monkeypatch) -> None:
     from src.console import manual_filter_service
 

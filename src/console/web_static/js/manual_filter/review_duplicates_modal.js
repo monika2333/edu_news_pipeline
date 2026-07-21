@@ -152,8 +152,8 @@ function renderDuplicateReviewResult(rawResult, scope = getDuplicateReviewScope(
     modal.classList.add('active');
     modal.setAttribute('aria-hidden', 'false');
     document.body.classList.add('duplicate-review-open');
-    const closeButton = document.getElementById('btn-close-duplicate-review');
-    if (closeButton) closeButton.focus();
+    const finishButton = document.getElementById('btn-finish-duplicate-review');
+    if (finishButton) finishButton.focus();
 }
 
 function getDuplicateReviewGroups() {

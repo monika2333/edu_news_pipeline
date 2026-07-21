@@ -125,12 +125,14 @@ def update_ranks(
     *,
     selected_order: Sequence[str],
     backup_order: Sequence[str],
+    group_orders: Optional[Dict[str, Sequence[str]]] = None,
     actor: Optional[str] = None,
     report_type: str = DEFAULT_REPORT_TYPE,
 ) -> Dict[str, int]:
     return _update_ranks(
         selected_order=selected_order,
         backup_order=backup_order,
+        group_orders=group_orders,
         actor=actor,
         report_type=report_type,
     )

@@ -45,9 +45,27 @@ def test_duplicate_check_button_is_before_sort_mode() -> None:
     assert 'id="duplicate-review-bulk-status"' in html
     assert 'id="btn-duplicate-prev-group"' in html
     assert 'id="btn-duplicate-next-group"' in html
+    assert 'id="btn-recheck-duplicates"' not in html
+    assert 'id="btn-close-duplicate-review"' not in html
+    assert '>关闭并刷新列表</button>' in html
     assert '/static/css/modules/review.css?v=' in html
     assert '/static/js/manual_filter/review_duplicates_state.js?v=' in html
     assert '/static/js/manual_filter/review_duplicates_modal.js?v=' in html
+
+
+def test_sort_mode_hides_incompatible_review_toolbar_controls() -> None:
+    root = Path(__file__).parents[1]
+    response = _build_client().get("/manual_filter")
+    review_css = (
+        root / "src/console/web_static/css/modules/review.css"
+    ).read_text(encoding="utf-8")
+
+    assert response.status_code == 200
+    html = response.text
+    assert 'class="search-group sort-incompatible"' in html
+    assert 'class="bulk-group sort-incompatible"' in html
+    assert 'class="btn btn-secondary sort-incompatible" id="btn-check-duplicates"' in html
+    assert "#review-tab.review-sort-mode .sort-incompatible" in review_css
 
 
 def test_duplicate_check_tracks_loading_state_by_review_column() -> None:
@@ -63,8 +81,9 @@ def test_duplicate_check_tracks_loading_state_by_review_column() -> None:
     assert "getDuplicateReviewScopeKey(scope)" in state_script
     assert "status: 'running'" in controller_script
     assert "status: 'ready'" in controller_script
-    assert "setDuplicateReviewModalBusy(true)" in controller_script
     assert "查看查重结果" in state_script
+    assert "btn-recheck-duplicates" not in state_script
+    assert "btn-recheck-duplicates" not in controller_script
 
 
 def test_processed_duplicate_items_remain_editable_and_selectable() -> None:
@@ -99,3 +118,19 @@ def test_discarded_duplicate_items_are_hidden_until_undo() -> None:
     assert "if (!itemCount) group.hidden = true" in modal
     assert "duplicate-review-session-empty" in modal
     assert ".duplicate-review-group:not(.is-empty)" in modal
+
+
+def test_review_sort_mode_supports_cross_group_dragging() -> None:
+    root = Path(__file__).parents[1]
+    scripts_dir = root / "src/console/web_static/js/manual_filter"
+    render_script = (scripts_dir / "review_tab.js").read_text(encoding="utf-8")
+    sort_script = (scripts_dir / "review_tab_sort.js").read_text(encoding="utf-8")
+    data_script = (scripts_dir / "review_tab_data.js").read_text(encoding="utf-8")
+    review_css = (root / "src/console/web_static/css/modules/review.css").read_text(encoding="utf-8")
+
+    assert "if (!groupItems.length) return" not in render_script
+    assert "sort-group-body${groupItems.length ? '' : ' is-empty'}" in render_script
+    assert "group: { name: 'review-groups', pull: true, put: true }" in sort_script
+    assert "group_orders: groupOrders" in data_script
+    assert "if (!response.ok) throw new Error" in data_script
+    assert ".sort-group-body.is-empty" in review_css

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, Future
+import time
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Optional, Sequence
 
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.llm_chat import LLMQuotaError
@@ -20,18 +20,40 @@ DEFAULT_FETCH_MULTIPLIER = 4
 MAX_RETRIES = 3
 
 
-@dataclass
+@dataclass(slots=True)
 class SummaryStats:
     success: int = 0
     failed: int = 0
     skipped: int = 0
-    failure_ids: List[str] = field(default_factory=list)
+    failure_ids: list[str] = field(default_factory=list)
+    summary_seconds: float = 0.0
+    sentiment_seconds: float = 0.0
+    source_seconds: float = 0.0
 
 
-def _normalize_keywords(value: Optional[Sequence[str]]) -> List[str]:
+@dataclass(slots=True)
+class SummaryResult:
+    summary_text: str
+    sentiment_label: Optional[str]
+    sentiment_confidence: Optional[float]
+    llm_source: Optional[str]
+    source_error: Optional[str]
+    summary_seconds: float
+    sentiment_seconds: float
+    source_seconds: float
+
+    @property
+    def total_seconds(self) -> float:
+        return self.summary_seconds + self.sentiment_seconds + self.source_seconds
+
+
+PendingTask = tuple[Future[SummaryResult], dict[str, Any], str, int]
+
+
+def _normalize_keywords(value: Optional[Sequence[str]]) -> list[str]:
     if not value:
         return []
-    result: List[str] = []
+    result: list[str] = []
     for item in value:
         if item is None:
             continue
@@ -41,138 +63,188 @@ def _normalize_keywords(value: Optional[Sequence[str]]) -> List[str]:
     return result
 
 
-def _content_from_row(article: Dict[str, Any]) -> str:
+def _content_from_row(article: dict[str, Any]) -> str:
     return str(article.get('content_markdown') or '').strip()
 
 
+def _optional_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _run_llm_pipeline(article: dict[str, Any]) -> SummaryResult:
+    content = _content_from_row(article)
+    summary_started = time.perf_counter()
+    summary_payload = {'title': article.get('title'), 'content': content}
+    summary_payload_result = summarise(summary_payload)
+    summary_seconds = time.perf_counter() - summary_started
+    summary_text = str(summary_payload_result.get('summary') or '').strip()
+    if not summary_text:
+        raise RuntimeError('Summarisation returned empty text')
+
+    sentiment_started = time.perf_counter()
+    sentiment_payload = classify_sentiment(summary_text)
+    sentiment_seconds = time.perf_counter() - sentiment_started
+    sentiment_label = str(sentiment_payload.get("label") or "").strip() or None
+    sentiment_confidence = _optional_float(sentiment_payload.get("confidence"))
+
+    llm_source = None
+    source_error = None
+    source_started = time.perf_counter()
+    try:
+        source_result = detect_source(
+            {'title': article.get('title'), 'content_markdown': content, 'content': content}
+        )
+        raw_llm_source = source_result.get('llm_source')
+        if isinstance(raw_llm_source, str) and raw_llm_source.strip():
+            llm_source = raw_llm_source.strip()
+    except LLMQuotaError:
+        raise
+    except Exception as exc:
+        source_error = str(exc)
+    source_seconds = time.perf_counter() - source_started
+
+    return SummaryResult(
+        summary_text=summary_text,
+        sentiment_label=sentiment_label,
+        sentiment_confidence=sentiment_confidence,
+        llm_source=llm_source,
+        source_error=source_error,
+        summary_seconds=summary_seconds,
+        sentiment_seconds=sentiment_seconds,
+        source_seconds=source_seconds,
+    )
+
+
 def _submit_article(
-    article: Dict[str, Any],
+    article: dict[str, Any],
     executor: ThreadPoolExecutor,
     adapter: Any,
-    pending_tasks: List[Tuple[Future, Dict[str, Any], str, int]],
-    stats: SummaryStats
-) -> None:
+    stats: SummaryStats,
+) -> Optional[PendingTask]:
     article_id = str(article.get('article_id') or '').strip()
     if not article_id:
         stats.skipped += 1
-        return
+        return None
     content = _content_from_row(article)
     if not content:
         stats.skipped += 1
         adapter.mark_summary_failed(article_id, message='empty content')
-        return
+        return None
     previous_failures = int(article.get('summary_fail_count') or 0)
     attempt_count = previous_failures + 1
     if not adapter.mark_summary_attempt(article_id):
         stats.skipped += 1
-        return
-    summary_payload = {
-        'title': article.get('title'),
-        'content': content,
-    }
-    future = executor.submit(summarise, summary_payload)
-    article['summary_fail_count'] = attempt_count
-    pending_tasks.append((future, article, article_id, attempt_count))
+        return None
+    future = executor.submit(_run_llm_pipeline, article)
+    return future, article, article_id, attempt_count
+
+
+def _determine_route(
+    result: SummaryResult,
+    article: dict[str, Any],
+    beijing_keywords: list[str],
+) -> tuple[Optional[bool], str, str]:
+    beijing_related: Optional[bool] = None
+    if beijing_keywords:
+        detection_payload = [
+            result.summary_text,
+            str(article.get("title") or "").strip(),
+            _content_from_row(article),
+        ]
+        beijing_related = is_beijing_related(detection_payload, beijing_keywords)
+
+    sentiment_value = (result.sentiment_label or "").lower()
+    if beijing_related is True:
+        return beijing_related, "pending_beijing_gate", "pending_beijing_gate"
+    if sentiment_value in {"positive", "negative"}:
+        return beijing_related, "pending_external_filter", "pending_external_filter"
+    return beijing_related, "ready_for_export", "ready_for_export"
+
+
+def _complete_summary(
+    adapter: Any,
+    article_id: str,
+    result: SummaryResult,
+    keywords: list[str],
+    beijing_related: Optional[bool],
+    next_status: str,
+    external_importance_status: str,
+) -> None:
+    adapter.complete_summary(
+        article_id,
+        result.summary_text,
+        llm_source=result.llm_source,
+        keywords=keywords,
+        beijing_related=beijing_related,
+        sentiment_label=result.sentiment_label,
+        sentiment_confidence=result.sentiment_confidence,
+        status=next_status,
+        external_importance_status=external_importance_status,
+        external_importance_score=None,
+        external_importance_checked_at=None,
+        external_importance_raw=None,
+        external_filter_attempted_at=None,
+        external_filter_fail_count=0,
+        is_beijing_related_llm=None,
+        beijing_gate_checked_at=None,
+        beijing_gate_raw=None,
+        beijing_gate_attempted_at=None,
+        beijing_gate_fail_count=0,
+    )
 
 
 def _process_result(
-    entry: Tuple[Future, Dict[str, Any], str, int],
+    entry: PendingTask,
     adapter: Any,
-    beijing_keywords: List[str],
-    stats: SummaryStats
+    beijing_keywords: list[str],
+    stats: SummaryStats,
 ) -> None:
     future, article, article_id, attempt_count = entry
-    content = _content_from_row(article)
     try:
         result = future.result()
-        summary_text = (result.get('summary', '')).strip()
-        if not summary_text:
-            raise RuntimeError('Summarisation returned empty text')
-        
-        sentiment_payload = classify_sentiment(summary_text)
-        sentiment_label = str(sentiment_payload.get("label") or "").strip() or None
-        sentiment_confidence = sentiment_payload.get("confidence")
-        
-        llm_source = None
-        try:
-            source_payload = {
-                'title': article.get('title'),
-                'content_markdown': content,
-                'content': content,
-            }
-            source_result = detect_source(source_payload)
-            raw_llm_source = source_result.get('llm_source')
-            if isinstance(raw_llm_source, str) and raw_llm_source.strip():
-                llm_source = raw_llm_source.strip()
-        except LLMQuotaError:
-            raise
-        except Exception as source_exc:
-            log_info(WORKER, f'Source detection skipped {article_id}: {source_exc}')
-            
-        keywords = _normalize_keywords(article.get('llm_keywords'))
-        beijing_related: Optional[bool] = None
-        if beijing_keywords:
-            detection_payload: List[str] = [
-                summary_text,
-                str(article.get("title") or "").strip(),
-                content,
-            ]
-            beijing_related = is_beijing_related(detection_payload, beijing_keywords)
-            
-        sentiment_value = (sentiment_label or "").lower()
-        sentiment_positive = sentiment_value == "positive"
-        sentiment_negative = sentiment_value == "negative"
-        
-        if beijing_related is True:
-            next_status = "pending_beijing_gate"
-            external_importance_status = "pending_beijing_gate"
-        elif beijing_related is not True and (sentiment_positive or sentiment_negative):
-            next_status = "pending_external_filter"
-            external_importance_status = "pending_external_filter"
-        else:
-            next_status = "ready_for_export"
-            external_importance_status = "ready_for_export"
+        if result.source_error:
+            log_info(WORKER, f'Source detection skipped {article_id}: {result.source_error}')
 
-        beijing_gate_defaults = {
-            "is_beijing_related_llm": None,
-            "beijing_gate_checked_at": None,
-            "beijing_gate_raw": None,
-            "beijing_gate_attempted_at": None,
-            "beijing_gate_fail_count": 0,
-        }
-        
-        adapter.complete_summary(
-            article_id,
-            summary_text,
-            llm_source=llm_source,
-            keywords=keywords,
-            beijing_related=beijing_related,
-            sentiment_label=sentiment_label,
-            sentiment_confidence=sentiment_confidence,
-            status=next_status,
-            external_importance_status=external_importance_status,
-            external_importance_score=None,
-            external_importance_checked_at=None,
-            external_importance_raw=None,
-            external_filter_attempted_at=None,
-            external_filter_fail_count=0,
-            **beijing_gate_defaults,
+        keywords = _normalize_keywords(article.get('llm_keywords'))
+        beijing_related, next_status, external_importance_status = _determine_route(
+            result, article, beijing_keywords
         )
-        
+        _complete_summary(
+            adapter,
+            article_id,
+            result,
+            keywords,
+            beijing_related,
+            next_status,
+            external_importance_status,
+        )
+
         stats.success += 1
-        if sentiment_label:
-            log_info(WORKER, f'OK {article_id} sentiment={sentiment_label} ({sentiment_confidence})')
-        else:
-            log_info(WORKER, f'OK {article_id}')
-            
+        stats.summary_seconds += result.summary_seconds
+        stats.sentiment_seconds += result.sentiment_seconds
+        stats.source_seconds += result.source_seconds
+        sentiment = (
+            f" sentiment={result.sentiment_label} ({result.sentiment_confidence})"
+            if result.sentiment_label
+            else ""
+        )
+        log_info(
+            WORKER,
+            f"OK {article_id}{sentiment} timing="
+            f"summary:{result.summary_seconds:.2f}s sentiment:{result.sentiment_seconds:.2f}s "
+            f"source:{result.source_seconds:.2f}s total:{result.total_seconds:.2f}s",
+        )
     except Exception as exc:
         stats.failed += 1
         stats.failure_ids.append(article_id)
         log_error(WORKER, article_id, exc)
         if attempt_count >= MAX_RETRIES:
             adapter.mark_summary_failed(article_id, message=str(exc))
-    finally:
-        future = None  # allow GC
 
 
 def run(limit: int = 500, *, concurrency: Optional[int] = None, keywords_path: Optional[Path] = None) -> None:
@@ -213,31 +285,54 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None, keywords_path: O
             return
 
         stats = SummaryStats()
-        pending_tasks: List[Tuple[Future, Dict[str, Any], str, int]] = []
+        pending_tasks: dict[Future[SummaryResult], tuple[dict[str, Any], str, int]] = {}
+        row_iterator = iter(rows)
+        rows_exhausted = False
+
+        log_info(WORKER, f"Using {max_workers} workers for end-to-end LLM processing")
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for article in rows:
-                if limit_value is not None and stats.success >= limit_value:
-                    break
-                
-                _submit_article(article, executor, adapter, pending_tasks, stats)
-                
-                while pending_tasks and len(pending_tasks) >= max_workers:
-                    entry = pending_tasks.pop(0)
-                    _process_result(entry, adapter, beijing_keywords, stats)
-                    if limit_value is not None and stats.success >= limit_value:
+            while pending_tasks or not rows_exhausted:
+                target_workers = max_workers
+                if limit_value is not None:
+                    target_workers = min(target_workers, limit_value - stats.success)
+
+                while not rows_exhausted and len(pending_tasks) < target_workers:
+                    try:
+                        article = next(row_iterator)
+                    except StopIteration:
+                        rows_exhausted = True
                         break
-                
+                    entry = _submit_article(article, executor, adapter, stats)
+                    if entry is not None:
+                        future, pending_article, article_id, attempt_count = entry
+                        pending_tasks[future] = (pending_article, article_id, attempt_count)
+
+                if not pending_tasks:
+                    if rows_exhausted or target_workers <= 0:
+                        break
+                    continue
+
+                completed, _ = wait(pending_tasks, return_when=FIRST_COMPLETED)
+                for future in completed:
+                    pending_article, article_id, attempt_count = pending_tasks.pop(future)
+                    _process_result(
+                        (future, pending_article, article_id, attempt_count),
+                        adapter,
+                        beijing_keywords,
+                        stats,
+                    )
+
                 if limit_value is not None and stats.success >= limit_value:
                     break
 
-            while pending_tasks:
-                entry = pending_tasks.pop(0)
-                _process_result(entry, adapter, beijing_keywords, stats)
-                if limit_value is not None and stats.success >= limit_value:
-                    for future, *_ in pending_tasks:
-                        future.cancel()
-                    break
+        if stats.success:
+            log_info(
+                WORKER,
+                f"LLM timing averages: summary={stats.summary_seconds / stats.success:.2f}s "
+                f"sentiment={stats.sentiment_seconds / stats.success:.2f}s "
+                f"source={stats.source_seconds / stats.success:.2f}s",
+            )
 
         log_summary(
             WORKER,

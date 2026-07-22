@@ -53,6 +53,8 @@ def test_complete_external_filter_scores_and_enqueues_in_one_transaction(
         score=80,
         raw_output="80",
         category="internal_positive",
+        prompt_key="internal_positive",
+        prompt_version="v1",
     )
 
     assert transaction_events == ["begin", "commit"]

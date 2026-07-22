@@ -416,6 +416,27 @@ def test_list_candidates_returns_pending_with_bonus(fake_adapter):
     assert result["items"][0]["manual_status"] == "pending"
 
 
+def test_list_candidates_serializes_current_score_feedback(fake_adapter):
+    fake_adapter.rows[0].update(
+        {
+            "score_feedback_type": "too_high",
+            "score_feedback_score_value": 80,
+            "score_feedback_notes": "分数偏高",
+            "score_feedback_updated_at": "2026-07-22T10:00:00Z",
+        }
+    )
+
+    result = manual_filter_service.list_candidates(limit=10, offset=0)
+
+    assert result["items"][0]["score_feedback"] == {
+        "feedback_type": "too_high",
+        "score_value": 80,
+        "notes": "分数偏高",
+        "updated_at": "2026-07-22T10:00:00Z",
+    }
+    assert result["items"][1]["score_feedback"] is None
+
+
 def test_bulk_decide_updates_states(fake_adapter):
     res = manual_filter_service.bulk_decide(
         selected_ids=["a1"],

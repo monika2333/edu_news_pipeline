@@ -52,7 +52,7 @@ def test_score_candidate_uses_internal_threshold_and_category():
     with patch(
         "src.workers.external_filter.call_external_filter_model", return_value="88"
     ) as mock_call:
-        score, raw, passed, category = external_filter._score_candidate(
+        score, raw, passed, category, prompt_key, prompt_version = external_filter._score_candidate(
             candidate,
             retries=2,
             thresholds=thresholds,
@@ -62,6 +62,8 @@ def test_score_candidate_uses_internal_threshold_and_category():
     assert raw == "88"
     assert passed is True
     assert category == "internal_positive"
+    assert prompt_key == "internal_positive"
+    assert prompt_version == "v1"
 
 
 def test_score_candidate_respects_internal_threshold():
@@ -70,7 +72,7 @@ def test_score_candidate_respects_internal_threshold():
     with patch(
         "src.workers.external_filter.call_external_filter_model", return_value="40"
     ):
-        score, raw, passed, category = external_filter._score_candidate(
+        score, raw, passed, category, prompt_key, prompt_version = external_filter._score_candidate(
             candidate,
             retries=1,
             thresholds=thresholds,
@@ -78,6 +80,8 @@ def test_score_candidate_respects_internal_threshold():
     assert score == 40
     assert passed is False
     assert category == "internal_positive"
+    assert prompt_key == "internal_positive"
+    assert prompt_version == "v1"
 
 
 class _DummyFuture:
@@ -175,7 +179,7 @@ def test_score_candidate_uses_external_negative_threshold():
         "src.workers.external_filter.call_external_filter_model",
         return_value="40",
     ) as mock_call:
-        score, raw, passed, category = external_filter._score_candidate(
+        score, raw, passed, category, prompt_key, prompt_version = external_filter._score_candidate(
             candidate,
             retries=1,
             thresholds=thresholds,
@@ -185,6 +189,8 @@ def test_score_candidate_uses_external_negative_threshold():
     assert raw == "40"
     assert passed is True  # uses the lower negative threshold
     assert category == "external_negative"
+    assert prompt_key == "external_negative"
+    assert prompt_version == "v1"
 
 
 def test_internal_prompt_includes_bonus_keywords():

@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupFilterRealtimeDecisionHandlers();
     setupSearchDrawer();
     setupDuplicateReview();
+    setupScoreFeedback();
 
     // Global event listeners
     document.getElementById('btn-refresh').addEventListener('click', () => {

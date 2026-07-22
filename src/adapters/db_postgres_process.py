@@ -263,9 +263,13 @@ def complete_external_filter(
     score: int,
     raw_output: str,
     category: Optional[str] = None,
+    prompt_key: str,
+    prompt_version: str,
 ) -> datetime:
     if not article_id:
         raise ValueError("complete_external_filter requires article_id")
+    if not prompt_key or not prompt_version:
+        raise ValueError("complete_external_filter requires prompt_key and prompt_version")
     target_status = "ready_for_export" if passed else "external_filtered"
     timestamp = datetime.now(timezone.utc)
     payload = {
@@ -278,6 +282,8 @@ def complete_external_filter(
                 "model_output": raw_output,
                 "decided_at": timestamp.isoformat(),
                 "category": (category or "").strip().lower() or None,
+                "prompt_key": prompt_key,
+                "prompt_version": prompt_version,
             }
         ),
         "external_filter_attempted_at": timestamp,

@@ -182,6 +182,28 @@ CREATE TABLE public.manual_reviews (
 
 
 --
+-- Name: score_feedbacks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.score_feedbacks (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    article_id text NOT NULL,
+    feedback_type text NOT NULL,
+    score_value numeric(6,3) NOT NULL,
+    prompt_key text NOT NULL,
+    prompt_version text NOT NULL,
+    notes text,
+    score_context jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT score_feedbacks_feedback_type_check CHECK ((feedback_type = ANY (ARRAY['too_high'::text, 'too_low'::text]))),
+    CONSTRAINT score_feedbacks_notes_length_check CHECK (((notes IS NULL) OR (char_length(notes) <= 500))),
+    CONSTRAINT score_feedbacks_prompt_key_check CHECK ((prompt_key = ANY (ARRAY['external_positive'::text, 'external_negative'::text, 'internal_positive'::text, 'internal_negative'::text]))),
+    CONSTRAINT score_feedbacks_prompt_version_check CHECK ((btrim(prompt_version) <> ''::text))
+);
+
+
+--
 -- Name: news_summaries; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -440,6 +462,22 @@ ALTER TABLE ONLY public.manual_reviews
 
 
 --
+-- Name: score_feedbacks score_feedbacks_article_prompt_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_feedbacks
+    ADD CONSTRAINT score_feedbacks_article_prompt_unique UNIQUE (article_id, prompt_key, prompt_version);
+
+
+--
+-- Name: score_feedbacks score_feedbacks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_feedbacks
+    ADD CONSTRAINT score_feedbacks_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: news_summaries news_summaries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -570,6 +608,13 @@ CREATE INDEX filtered_articles_status_idx ON public.filtered_articles USING btre
 --
 
 CREATE INDEX manual_clusters_bucket_key_idx ON public.manual_clusters USING btree (bucket_key);
+
+
+--
+-- Name: score_feedbacks_prompt_version_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX score_feedbacks_prompt_version_idx ON public.score_feedbacks USING btree (prompt_key, prompt_version);
 
 
 --
@@ -806,6 +851,14 @@ ALTER TABLE ONLY public.manual_export_items
 
 ALTER TABLE ONLY public.manual_reviews
     ADD CONSTRAINT manual_reviews_article_id_fkey FOREIGN KEY (article_id) REFERENCES public.news_summaries(article_id) ON DELETE CASCADE;
+
+
+--
+-- Name: score_feedbacks score_feedbacks_article_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_feedbacks
+    ADD CONSTRAINT score_feedbacks_article_id_fkey FOREIGN KEY (article_id) REFERENCES public.news_summaries(article_id) ON DELETE CASCADE;
 
 
 --

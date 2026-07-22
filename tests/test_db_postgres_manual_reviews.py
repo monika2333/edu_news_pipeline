@@ -142,6 +142,9 @@ def test_fetch_manual_reviews_orders_selected_items_by_manual_rank_first() -> No
     assert total == 0
     assert len(cur.queries) == 2
     list_query = cur.queries[1]
+    assert "LEFT JOIN score_feedbacks sf" in list_query
+    assert "sf.prompt_key = ns.external_importance_raw ->> 'prompt_key'" in list_query
+    assert "sf.prompt_version = ns.external_importance_raw ->> 'prompt_version'" in list_query
     rank_index = list_query.index("mr.rank ASC NULLS LAST")
     score_index = list_query.index("ns.external_importance_score DESC NULLS LAST")
     assert rank_index < score_index

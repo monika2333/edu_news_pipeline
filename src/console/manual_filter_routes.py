@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import date
-from typing import Any, Dict, List, Literal, Optional
+from datetime import date, datetime
+from typing import Any, Dict, List, Literal, NoReturn, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from src.console import manual_filter_service
+from src.console import manual_filter_service, score_feedback_service
 from src.console.manual_filter_duplicate_service import (
     DuplicateReviewInvalidResponseError,
     DuplicateReviewLimitError,
@@ -24,6 +24,27 @@ class BulkDecideRequest(BaseModel):
     pending_ids: List[str] = Field(default_factory=list)
     actor: Optional[str] = None
     report_type: str = "zongbao"
+
+
+class ScoreFeedbackRequest(BaseModel):
+    article_id: str = Field(min_length=1)
+    feedback_type: Literal["too_high", "too_low"]
+    notes: Optional[str] = Field(default=None, max_length=score_feedback_service.MAX_NOTES_LENGTH)
+
+
+class ClearScoreFeedbackRequest(BaseModel):
+    article_id: str = Field(min_length=1)
+
+
+class ScoreFeedbackData(BaseModel):
+    feedback_type: Literal["too_high", "too_low"]
+    score_value: float
+    notes: Optional[str] = None
+    updated_at: datetime
+
+
+class ScoreFeedbackResponse(BaseModel):
+    score_feedback: Optional[ScoreFeedbackData] = None
 
 
 class SaveEditsRequest(BaseModel):
@@ -68,6 +89,14 @@ class DuplicateCheckRequest(BaseModel):
     decision: Literal["selected", "backup"]
 
 
+def _raise_score_feedback_http_error(exc: ValueError) -> NoReturn:
+    if isinstance(exc, score_feedback_service.ScoreFeedbackNotFoundError):
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if isinstance(exc, score_feedback_service.ScoreFeedbackContextError):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.get("/candidates")
 def list_candidates_api(
     limit: int = 30,
@@ -100,6 +129,30 @@ def list_candidates_api(
 @router.post("/trigger_clustering")
 def trigger_clustering_api() -> Dict[str, Any]:
     return manual_filter_service.trigger_clustering()
+
+
+@router.put("/score-feedback", response_model=ScoreFeedbackResponse)
+def save_score_feedback_api(req: ScoreFeedbackRequest) -> ScoreFeedbackResponse:
+    """Create or update feedback for the article's current external score."""
+    try:
+        feedback = score_feedback_service.save_score_feedback(
+            article_id=req.article_id,
+            feedback_type=req.feedback_type,
+            notes=req.notes,
+        )
+    except ValueError as exc:
+        _raise_score_feedback_http_error(exc)
+    return ScoreFeedbackResponse(score_feedback=feedback)
+
+
+@router.post("/score-feedback/clear", response_model=ScoreFeedbackResponse)
+def clear_score_feedback_api(req: ClearScoreFeedbackRequest) -> ScoreFeedbackResponse:
+    """Clear feedback for the article's current external score."""
+    try:
+        score_feedback_service.clear_score_feedback(article_id=req.article_id)
+    except ValueError as exc:
+        _raise_score_feedback_http_error(exc)
+    return ScoreFeedbackResponse(score_feedback=None)
 
 
 @router.post("/decide")

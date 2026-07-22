@@ -242,7 +242,6 @@ function renderReviewCard(item) {
     const currentReportType = item.report_type || state.reviewReportType || 'zongbao';
     const placeholder = item.llm_source_raw ? `(LLM: ${item.llm_source_raw})` : '留空则回退抓取来源';
     const sourceText = item.source || item.llm_source_display || '-';
-    const scoreVal = formatScore(item.external_importance_score);
     const bonusText = (item.bonus_keywords && item.bonus_keywords.length) ? item.bonus_keywords.join(', ') : '';
     const bonusClass = bonusText ? ' has-bonus' : '';
     const searchText = escapeReviewAttr(buildReviewSearchText(item));
@@ -276,7 +275,7 @@ function renderReviewCard(item) {
             </div>
             <div class="meta-row">
                 <div class="meta-item">来源: ${sourceText}</div>
-                <div class="meta-item">分数: ${scoreVal}</div>
+                ${renderScoreFeedbackControl(item)}
                 ${bonusText ? `<div class="meta-item">Bonus: ${bonusText}</div>` : ''}
             </div>
             <div class="review-summary-wrap">

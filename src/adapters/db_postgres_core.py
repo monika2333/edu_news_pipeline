@@ -14,6 +14,7 @@ from src.adapters import (
     db_postgres_manual_reviews as manual_reviews,
     db_postgres_news_summaries as news_summaries,
     db_postgres_process as process,
+    db_postgres_score_feedback as score_feedback,
 )
 from src.adapters.db_postgres_shared import MISSING as _MISSING
 from src.adapters.db_postgres_shared import article_hash, iso_datetime, json_safe, to_iso
@@ -411,6 +412,8 @@ class PostgresAdapter:
         score: int,
         raw_output: str,
         category: Optional[str] = None,
+        prompt_key: str,
+        prompt_version: str,
     ) -> None:
         with self.transaction() as cur:
             timestamp = process.complete_external_filter(
@@ -420,6 +423,8 @@ class PostgresAdapter:
                 score=score,
                 raw_output=raw_output,
                 category=category,
+                prompt_key=prompt_key,
+                prompt_version=prompt_version,
             )
             if passed:
                 manual_reviews.enqueue_manual_review(cur, article_id, status="pending")
@@ -434,6 +439,25 @@ class PostgresAdapter:
                         }
                     ],
                 )
+
+    def upsert_score_feedback(
+        self,
+        article_id: str,
+        *,
+        feedback_type: str,
+        notes: Optional[str],
+    ) -> Dict[str, Any]:
+        with self.transaction() as cur:
+            return score_feedback.upsert_score_feedback(
+                cur,
+                article_id,
+                feedback_type=feedback_type,
+                notes=notes,
+            )
+
+    def clear_score_feedback(self, article_id: str) -> bool:
+        with self.transaction() as cur:
+            return score_feedback.clear_score_feedback(cur, article_id)
 
     def mark_external_filter_failure(
         self,

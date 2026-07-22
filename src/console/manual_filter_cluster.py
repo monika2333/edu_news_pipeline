@@ -214,6 +214,7 @@ def cluster_pending(
                 "url": record.get("url"),
                 "score": record.get("score"),
                 "external_importance_score": record.get("external_importance_score"),
+                "score_feedback": record.get("score_feedback"),
                 "sentiment_label": record.get("sentiment_label"),
                 "is_beijing_related": record.get("is_beijing_related"),
                 "llm_source_display": record.get("llm_source_display"),

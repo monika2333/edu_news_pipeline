@@ -391,6 +391,64 @@ def test_duplicate_check_api_returns_review_groups(monkeypatch) -> None:
     assert response.json() == expected
 
 
+def test_score_feedback_api_saves_and_clears(monkeypatch) -> None:
+    from src.console import score_feedback_service
+
+    captured: Dict[str, Any] = {}
+
+    def save_score_feedback(**kwargs: Any) -> Dict[str, Any]:
+        captured.update(kwargs)
+        return {
+            "feedback_type": kwargs["feedback_type"],
+            "score_value": 82,
+            "notes": kwargs["notes"],
+            "updated_at": "2026-07-22T10:00:00Z",
+        }
+
+    monkeypatch.setattr(score_feedback_service, "save_score_feedback", save_score_feedback)
+    monkeypatch.setattr(score_feedback_service, "clear_score_feedback", lambda **kwargs: True)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    saved = client.put(
+        "/api/manual_filter/score-feedback",
+        json={
+            "article_id": "source/item/1",
+            "feedback_type": "too_high",
+            "notes": "分数偏高",
+        },
+    )
+    cleared = client.post(
+        "/api/manual_filter/score-feedback/clear",
+        json={"article_id": "source/item/1"},
+    )
+
+    assert saved.status_code == 200
+    assert saved.json()["score_feedback"]["feedback_type"] == "too_high"
+    assert captured["article_id"] == "source/item/1"
+    assert cleared.status_code == 200
+    assert cleared.json() == {"score_feedback": None}
+
+
+def test_score_feedback_api_rejects_invalid_payload() -> None:
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    invalid_type = client.put(
+        "/api/manual_filter/score-feedback",
+        json={"article_id": "a1", "feedback_type": "correct"},
+    )
+    long_notes = client.put(
+        "/api/manual_filter/score-feedback",
+        json={"article_id": "a1", "feedback_type": "too_low", "notes": "a" * 501},
+    )
+
+    assert invalid_type.status_code == 422
+    assert long_notes.status_code == 422
+
+
 @pytest.mark.parametrize(
     ("error_type", "status_code"),
     [

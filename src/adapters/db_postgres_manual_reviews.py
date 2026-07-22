@@ -37,7 +37,18 @@ MANUAL_REVIEW_SELECT_COLUMNS = """
     ns.is_beijing_related,
     ns.external_importance_score,
     ns.external_importance_checked_at,
-    ns.score_details
+    ns.score_details,
+    sf.feedback_type AS score_feedback_type,
+    sf.score_value AS score_feedback_score_value,
+    sf.notes AS score_feedback_notes,
+    sf.updated_at AS score_feedback_updated_at
+"""
+
+SCORE_FEEDBACK_JOIN = """
+    LEFT JOIN score_feedbacks sf
+      ON sf.article_id = ns.article_id
+     AND sf.prompt_key = ns.external_importance_raw ->> 'prompt_key'
+     AND sf.prompt_version = ns.external_importance_raw ->> 'prompt_version'
 """
 
 
@@ -204,6 +215,7 @@ def fetch_manual_reviews(
             {MANUAL_REVIEW_SELECT_COLUMNS.format(type_expr=type_expr)}
         FROM manual_reviews mr
         JOIN news_summaries ns ON ns.article_id = mr.article_id
+        {SCORE_FEEDBACK_JOIN}
         WHERE {where_sql}
         ORDER BY
             {order_by_sql}
@@ -240,6 +252,7 @@ def fetch_manual_pending_for_cluster(
             {MANUAL_REVIEW_SELECT_COLUMNS.format(type_expr=type_expr)}
         FROM manual_reviews mr
         JOIN news_summaries ns ON ns.article_id = mr.article_id
+        {SCORE_FEEDBACK_JOIN}
         WHERE {where_sql}
         ORDER BY ns.external_importance_score DESC NULLS LAST,
                  mr.rank ASC NULLS LAST,
@@ -293,6 +306,7 @@ def search_manual_candidates(
             {MANUAL_REVIEW_SELECT_COLUMNS.format(type_expr=type_expr)}
         FROM manual_reviews mr
         JOIN news_summaries ns ON ns.article_id = mr.article_id
+        {SCORE_FEEDBACK_JOIN}
         WHERE {where_sql}
         ORDER BY
             ns.external_importance_score DESC NULLS LAST,
@@ -476,10 +490,18 @@ def fetch_manual_clusters(
             ns.is_beijing_related,
             ns.publish_time_iso,
             ns.publish_time,
-            ns.score_details
+            ns.score_details,
+            sf.feedback_type AS score_feedback_type,
+            sf.score_value AS score_feedback_score_value,
+            sf.notes AS score_feedback_notes,
+            sf.updated_at AS score_feedback_updated_at
         FROM cluster_items ci
         JOIN manual_reviews mr ON mr.article_id = ci.article_id
         JOIN news_summaries ns ON ns.article_id = ci.article_id
+        LEFT JOIN score_feedbacks sf
+          ON sf.article_id = ns.article_id
+         AND sf.prompt_key = ns.external_importance_raw ->> 'prompt_key'
+         AND sf.prompt_version = ns.external_importance_raw ->> 'prompt_version'
         WHERE mr.status = 'pending'
           AND ns.status = 'ready_for_export'
         ORDER BY

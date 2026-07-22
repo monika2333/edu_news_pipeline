@@ -9,7 +9,6 @@ function formatScore(value) {
 function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) {
     const safe = item || {};
     const currentStatus = safe.manual_status || safe.status || 'pending';
-    const importanceScore = formatScore(safe.external_importance_score);
     const sourcePlaceholder = safe.llm_source_raw ? `(LLM: ${safe.llm_source_raw})` : '留空则回退抓取来源';
     const bonusClass = safe.bonus_keywords && safe.bonus_keywords.length ? ' has-bonus' : '';
     const statusGroup = showStatus ? `
@@ -41,7 +40,7 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
 
             <div class="meta-row">
                 <div class="meta-item">来源: ${safe.source || '-'}</div>
-                <div class="meta-item">分数: ${importanceScore}</div>
+                ${renderScoreFeedbackControl(safe)}
                 <div class="meta-item">
                     <span class="badge ${getSentimentClass(safe.sentiment_label)}">${safe.sentiment_label || '-'}</span>
                 </div>

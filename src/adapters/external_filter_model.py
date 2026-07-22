@@ -28,11 +28,12 @@ _PROMPT_KEYS = frozenset(
     }
 )
 _PROMPT_TAG_PATTERN = re.compile(r"<prompt>(.*?)</prompt>", re.DOTALL)
+_PROMPT_VERSIONS_PATH = Path(__file__).resolve().parents[2] / "config" / "prompts" / "VERSIONS"
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
-def _prompt_key_for_category(category: Optional[str]) -> str:
+def prompt_key_for_category(category: Optional[str]) -> str:
     raw = (category or "external").strip().lower()
     if raw in _PROMPT_KEYS:
         return raw
@@ -41,6 +42,37 @@ def _prompt_key_for_category(category: Optional[str]) -> str:
     if raw.startswith("external"):
         return "external_negative" if "negative" in raw else "external_positive"
     return "external_positive"
+
+
+def load_prompt_versions(path: Optional[Path] = None) -> dict[str, str]:
+    versions_path = path or _PROMPT_VERSIONS_PATH
+    versions: dict[str, str] = {}
+    for line_number, raw_line in enumerate(
+        versions_path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, separator, version = line.partition(":")
+        prompt_key = key.strip()
+        prompt_version = version.strip()
+        if not separator or prompt_key not in _PROMPT_KEYS or not prompt_version:
+            raise ValueError(f"Invalid prompt version entry at {versions_path}:{line_number}")
+        if prompt_key in versions:
+            raise ValueError(f"Duplicate prompt version entry for {prompt_key}")
+        versions[prompt_key] = prompt_version
+    missing = _PROMPT_KEYS.difference(versions)
+    if missing:
+        raise ValueError(f"Missing prompt versions: {', '.join(sorted(missing))}")
+    return versions
+
+
+def prompt_version_for_key(prompt_key: str, path: Optional[Path] = None) -> str:
+    normalized_key = prompt_key.strip().lower()
+    if normalized_key not in _PROMPT_KEYS:
+        raise ValueError(f"Unknown prompt key: {prompt_key}")
+    return load_prompt_versions(path)[normalized_key]
 
 
 def _get_prompt_path(prompt_key: str) -> Path:
@@ -55,7 +87,7 @@ def _get_prompt_path(prompt_key: str) -> Path:
 
 
 def _load_prompt_template(category: str = "external") -> str:
-    prompt_key = _prompt_key_for_category(category)
+    prompt_key = prompt_key_for_category(category)
     if prompt_key in _PROMPT_CACHE:
         return _PROMPT_CACHE[prompt_key]
     prompt_path = _get_prompt_path(prompt_key)
@@ -78,7 +110,7 @@ def _truncate(text: str, limit: int = 1500) -> str:
 
 def build_prompt(candidate: ExternalFilterCandidate, *, category: str = "external") -> str:
     template = _load_prompt_template(category)
-    prompt_key = _prompt_key_for_category(category)
+    prompt_key = prompt_key_for_category(category)
     is_internal_category = prompt_key.startswith("internal")
     title = candidate.title or "（无标题）"
     source = candidate.source or "（未知来源）"
@@ -164,4 +196,11 @@ def parse_external_filter_score(raw_output: str) -> Optional[int]:
     return parse_score(raw_output)
 
 
-__all__ = ["build_prompt", "call_external_filter_model", "parse_external_filter_score"]
+__all__ = [
+    "build_prompt",
+    "call_external_filter_model",
+    "load_prompt_versions",
+    "parse_external_filter_score",
+    "prompt_key_for_category",
+    "prompt_version_for_key",
+]

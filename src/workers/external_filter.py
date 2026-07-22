@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import Any, Optional, Tuple, Mapping, List
+from typing import Any, List, Mapping, Optional, Tuple
 
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.external_filter_model import (
     call_external_filter_model,
     parse_external_filter_score,
+    prompt_key_for_category,
+    prompt_version_for_key,
 )
 from src.adapters.llm_beijing_gate import call_beijing_gate
 from src.config import get_settings
@@ -30,8 +32,10 @@ def _score_candidate(
     *,
     retries: int,
     thresholds: Mapping[str, int],
-) -> Tuple[int, str, bool, str]:
+) -> Tuple[int, str, bool, str, str, str]:
     category = candidate.candidate_category
+    prompt_key = prompt_key_for_category(category)
+    prompt_version = prompt_version_for_key(prompt_key)
     base_category = (category.split("_", 1)[0] if category else "").strip().lower()
     if base_category not in {"internal", "external"}:
         base_category = "external"
@@ -50,7 +54,7 @@ def _score_candidate(
     if score_value is None:
         raise RuntimeError("Model did not return a numeric score")
     passed = _should_pass(score_value, threshold)
-    return score_value, raw_output, passed, category
+    return score_value, raw_output, passed, category, prompt_key, prompt_version
 
 
 def _beijing_gate_raw_payload(result: Mapping[str, Any], raw_text: str) -> dict[str, Any]:
@@ -187,13 +191,15 @@ def _process_external_filter_batch(
             future.cancel()
             continue
         try:
-            score_value, raw_output, passed, category = future.result()
+            score_value, raw_output, passed, category, prompt_key, prompt_version = future.result()
             adapter.complete_external_filter(
                 candidate.article_id,
                 passed=passed,
                 score=score_value,
                 raw_output=raw_output,
                 category=category,
+                prompt_key=prompt_key,
+                prompt_version=prompt_version,
             )
             state = "ready_for_export" if passed else "external_filtered"
             log_info(

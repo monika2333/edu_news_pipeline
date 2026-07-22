@@ -9,13 +9,30 @@ from src.domain.external_filter import ExternalFilterCandidate
 
 
 def test_prompt_key_for_category_variants():
-    assert model._prompt_key_for_category("internal") == "internal_positive"
-    assert model._prompt_key_for_category("internal_positive") == "internal_positive"
-    assert model._prompt_key_for_category("internal_negative") == "internal_negative"
-    assert model._prompt_key_for_category("external") == "external_positive"
-    assert model._prompt_key_for_category("external_positive") == "external_positive"
-    assert model._prompt_key_for_category("external_negative") == "external_negative"
-    assert model._prompt_key_for_category(None) == "external_positive"
+    assert model.prompt_key_for_category("internal") == "internal_positive"
+    assert model.prompt_key_for_category("internal_positive") == "internal_positive"
+    assert model.prompt_key_for_category("internal_negative") == "internal_negative"
+    assert model.prompt_key_for_category("external") == "external_positive"
+    assert model.prompt_key_for_category("external_positive") == "external_positive"
+    assert model.prompt_key_for_category("external_negative") == "external_negative"
+    assert model.prompt_key_for_category(None) == "external_positive"
+
+
+def test_load_prompt_versions_tracks_each_prompt_independently(tmp_path) -> None:
+    versions_path = tmp_path / "VERSIONS"
+    versions_path.write_text(
+        "external_positive: v2\n"
+        "external_negative: v1\n"
+        "internal_positive: v1\n"
+        "internal_negative: v1\n",
+        encoding="utf-8",
+    )
+
+    versions = model.load_prompt_versions(versions_path)
+
+    assert versions["external_positive"] == "v2"
+    assert versions["external_negative"] == "v1"
+    assert model.prompt_version_for_key("external_positive", versions_path) == "v2"
 
 
 def test_prompt_paths_come_from_settings() -> None:

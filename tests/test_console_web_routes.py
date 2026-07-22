@@ -134,3 +134,21 @@ def test_review_sort_mode_supports_cross_group_dragging() -> None:
     assert "group_orders: groupOrders" in data_script
     assert "if (!response.ok) throw new Error" in data_script
     assert ".sort-group-body.is-empty" in review_css
+
+
+def test_manual_review_pages_only_display_external_importance_score() -> None:
+    root = Path(__file__).parents[1]
+    scripts_dir = root / "src/console/web_static/js/manual_filter"
+    utils_script = (scripts_dir / "utils.js").read_text(encoding="utf-8")
+    review_script = (scripts_dir / "review_tab.js").read_text(encoding="utf-8")
+    duplicate_script = (scripts_dir / "review_duplicates_modal.js").read_text(encoding="utf-8")
+    discard_script = (scripts_dir / "discard_tab.js").read_text(encoding="utf-8")
+
+    assert "formatScore(safe.external_importance_score)" in utils_script
+    assert "safe.external_importance_score ?? safe.score" not in utils_script
+    assert "formatScore(item.external_importance_score)" in review_script
+    assert "item.external_importance_score ?? item.score" not in review_script
+    assert "score: current.external_importance_score" in duplicate_script
+    assert "current.external_importance_score ?? current.score" not in duplicate_script
+    assert "formatScore(item.external_importance_score)" in discard_script
+    assert "formatScore(item.score)" not in discard_script

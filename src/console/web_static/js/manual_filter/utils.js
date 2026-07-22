@@ -9,8 +9,7 @@ function formatScore(value) {
 function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) {
     const safe = item || {};
     const currentStatus = safe.manual_status || safe.status || 'pending';
-    const importanceScoreRaw = safe.external_importance_score ?? safe.score;
-    const importanceScore = formatScore(importanceScoreRaw);
+    const importanceScore = formatScore(safe.external_importance_score);
     const sourcePlaceholder = safe.llm_source_raw ? `(LLM: ${safe.llm_source_raw})` : '留空则回退抓取来源';
     const bonusClass = safe.bonus_keywords && safe.bonus_keywords.length ? ' has-bonus' : '';
     const statusGroup = showStatus ? `

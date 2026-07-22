@@ -69,6 +69,16 @@ def test_check_duplicates_merges_overlaps_and_filters_unknown_ids(
     assert result["groups"][0]["items"][0]["bonus_keywords"] == ["重点"]
 
 
+def test_response_item_does_not_fall_back_to_primary_score() -> None:
+    item = _item("a1")
+    item["external_importance_score"] = None
+    item["score"] = 55
+
+    result = duplicate_service._response_item(item)
+
+    assert result["score"] is None
+
+
 def test_check_duplicates_refreshes_items_and_filters_moved_news(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

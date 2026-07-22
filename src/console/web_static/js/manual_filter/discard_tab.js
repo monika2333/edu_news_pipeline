@@ -42,7 +42,7 @@ function renderDiscardList(items) {
             </div>
             <div class="meta-row">
                 <div class="meta-item">来源: ${escapeDiscardHtml(item.source || '-')}</div>
-                <div class="meta-item">分数: ${escapeDiscardHtml(formatScore(item.score))}</div>
+                <div class="meta-item">分数: ${escapeDiscardHtml(formatScore(item.external_importance_score))}</div>
             </div>
         </div>
     `).join('');

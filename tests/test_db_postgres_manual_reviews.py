@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Any, Optional
 
+import pytest
+
 from src.adapters import db_postgres_manual_reviews, db_postgres_news_summaries
 
 
@@ -43,6 +45,61 @@ class FakeUpdateCursor:
         self.query = query
         self.payload = payload
         self.rowcount = len(payload)
+
+
+class FakeEnqueueCursor:
+    def __init__(self, article: Optional[dict[str, Any]]) -> None:
+        self.article = article
+        self.queries: list[str] = []
+        self.params: list[tuple[Any, ...]] = []
+
+    def execute(self, query: str, params: tuple[Any, ...]) -> None:
+        self.queries.append(query)
+        self.params.append(params)
+
+    def fetchone(self) -> Optional[dict[str, Any]]:
+        return self.article
+
+
+def test_enqueue_manual_review_requires_completed_external_score() -> None:
+    cur = FakeEnqueueCursor(
+        {
+            "external_importance_score": 0,
+            "external_importance_checked_at": datetime(2026, 7, 22, tzinfo=timezone.utc),
+        }
+    )
+
+    db_postgres_manual_reviews.enqueue_manual_review(cur, "article-1")
+
+    assert len(cur.queries) == 2
+    assert "SELECT external_importance_score" in cur.queries[0]
+    assert "INSERT INTO manual_reviews" in cur.queries[1]
+    assert cur.params[0] == ("article-1",)
+
+
+@pytest.mark.parametrize(
+    "article",
+    [
+        None,
+        {
+            "external_importance_score": None,
+            "external_importance_checked_at": datetime(2026, 7, 22, tzinfo=timezone.utc),
+        },
+        {
+            "external_importance_score": 80,
+            "external_importance_checked_at": None,
+        },
+    ],
+)
+def test_enqueue_manual_review_rejects_missing_or_unscored_article(
+    article: Optional[dict[str, Any]],
+) -> None:
+    cur = FakeEnqueueCursor(article)
+
+    with pytest.raises(ValueError):
+        db_postgres_manual_reviews.enqueue_manual_review(cur, "article-1")
+
+    assert len(cur.queries) == 1
 
 
 def test_discard_manual_candidates_before_date_places_filter_params_first() -> None:

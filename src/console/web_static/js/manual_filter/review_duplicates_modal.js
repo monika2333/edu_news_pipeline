@@ -95,7 +95,7 @@ function reconcileDuplicateReviewResult(result, scope) {
                 url: current.url || item.url,
                 status: current.manual_status || current.status || scope.decision,
                 report_type: current.report_type || scope.reportType,
-                score: current.external_importance_score ?? current.score ?? item.score,
+                score: current.external_importance_score,
                 bonus_keywords: current.bonus_keywords || item.bonus_keywords || []
             };
         })

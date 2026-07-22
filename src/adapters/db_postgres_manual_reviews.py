@@ -127,6 +127,24 @@ def enqueue_manual_review(
 ) -> None:
     if not article_id:
         return
+    cur.execute(
+        """
+        SELECT external_importance_score, external_importance_checked_at
+        FROM news_summaries
+        WHERE article_id = %s
+        """,
+        (article_id,),
+    )
+    article = cur.fetchone()
+    if not article:
+        raise ValueError(f"Unable to enqueue missing news summary {article_id}")
+    if (
+        article.get("external_importance_score") is None
+        or article.get("external_importance_checked_at") is None
+    ):
+        raise ValueError(
+            f"Manual review requires completed external importance scoring for {article_id}"
+        )
     normalized_report_type = normalize_report_type_value(report_type) or "zongbao"
     query = """
         INSERT INTO manual_reviews (article_id, status, report_type, summary, manual_llm_source, rank, notes, score, decided_by, decided_at)

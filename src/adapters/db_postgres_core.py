@@ -412,7 +412,7 @@ class PostgresAdapter:
         raw_output: str,
         category: Optional[str] = None,
     ) -> None:
-        with self._cursor() as cur:
+        with self.transaction() as cur:
             timestamp = process.complete_external_filter(
                 cur,
                 article_id,
@@ -421,11 +421,9 @@ class PostgresAdapter:
                 raw_output=raw_output,
                 category=category,
             )
-        if passed:
-            with self._cursor() as cur:
+            if passed:
                 manual_reviews.enqueue_manual_review(cur, article_id, status="pending")
-        else:
-            with self._cursor() as cur:
+            else:
                 manual_reviews.update_manual_review_statuses(
                     cur,
                     [

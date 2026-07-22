@@ -78,9 +78,6 @@ def _merge_duplicate_groups(
 
 
 def _response_item(item: Mapping[str, Any]) -> dict[str, Any]:
-    score = item.get("external_importance_score")
-    if score is None:
-        score = item.get("score")
     return {
         "article_id": item.get("article_id"),
         "title": item.get("title") or "",
@@ -89,7 +86,7 @@ def _response_item(item: Mapping[str, Any]) -> dict[str, Any]:
         "url": item.get("url") or "",
         "status": item.get("manual_status") or item.get("status") or "",
         "report_type": item.get("report_type") or "",
-        "score": score,
+        "score": item.get("external_importance_score"),
         "bonus_keywords": item.get("bonus_keywords") or [],
     }
 

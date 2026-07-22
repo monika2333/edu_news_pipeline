@@ -170,6 +170,7 @@ def test_score_feedback_control_is_shared_across_manual_filter_tabs() -> None:
     assert '/static/css/modules/score_feedback.css?v=' in response.text
     assert "aria-haspopup=\"dialog\"" in feedback_script
     assert "aria-pressed" in feedback_script
+    assert "symbol: 'ⓘ'" in feedback_script
     assert "maxlength=\"${SCORE_FEEDBACK_MAX_NOTES}\"" in feedback_script
     assert "requestScoreFeedback('/score-feedback', 'PUT'" in feedback_script
     assert "requestScoreFeedback('/score-feedback/clear', 'POST'" in feedback_script

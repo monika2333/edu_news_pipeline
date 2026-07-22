@@ -19,7 +19,7 @@ function getScoreFeedbackPresentation(feedbackType) {
     if (feedbackType === 'too_low') {
         return { symbol: '▼', label: '评分反馈：偏低', className: 'is-too-low' };
     }
-    return { symbol: '?', label: '评分反馈', className: 'is-empty' };
+    return { symbol: 'ⓘ', label: '评分反馈', className: 'is-empty' };
 }
 
 function renderScoreFeedbackControl(item) {

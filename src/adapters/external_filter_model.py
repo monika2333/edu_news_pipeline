@@ -20,7 +20,12 @@ from src.domain import ExternalFilterCandidate
 
 _PROMPT_CACHE: dict[str, str] = {}
 _PROMPT_KEYS = frozenset(
-    {"external", "external_negative", "internal", "internal_negative"}
+    {
+        "external_positive",
+        "external_negative",
+        "internal_positive",
+        "internal_negative",
+    }
 )
 _PROMPT_TAG_PATTERN = re.compile(r"<prompt>(.*?)</prompt>", re.DOTALL)
 
@@ -32,18 +37,18 @@ def _prompt_key_for_category(category: Optional[str]) -> str:
     if raw in _PROMPT_KEYS:
         return raw
     if raw.startswith("internal"):
-        return "internal_negative" if "negative" in raw else "internal"
+        return "internal_negative" if "negative" in raw else "internal_positive"
     if raw.startswith("external"):
-        return "external_negative" if "negative" in raw else "external"
-    return "external"
+        return "external_negative" if "negative" in raw else "external_positive"
+    return "external_positive"
 
 
 def _get_prompt_path(prompt_key: str) -> Path:
     settings = get_settings()
     prompt_paths = {
-        "external": settings.external_filter_prompt_path,
+        "external_positive": settings.external_filter_prompt_path,
         "external_negative": settings.external_negative_filter_prompt_path,
-        "internal": settings.internal_filter_prompt_path,
+        "internal_positive": settings.internal_filter_prompt_path,
         "internal_negative": settings.internal_negative_filter_prompt_path,
     }
     return prompt_paths.get(prompt_key, settings.external_filter_prompt_path)

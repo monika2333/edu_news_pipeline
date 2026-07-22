@@ -9,22 +9,30 @@ from src.domain.external_filter import ExternalFilterCandidate
 
 
 def test_prompt_key_for_category_variants():
-    assert model._prompt_key_for_category("internal_positive") == "internal"
+    assert model._prompt_key_for_category("internal") == "internal_positive"
+    assert model._prompt_key_for_category("internal_positive") == "internal_positive"
     assert model._prompt_key_for_category("internal_negative") == "internal_negative"
+    assert model._prompt_key_for_category("external") == "external_positive"
+    assert model._prompt_key_for_category("external_positive") == "external_positive"
     assert model._prompt_key_for_category("external_negative") == "external_negative"
-    assert model._prompt_key_for_category("external_positive") == "external"
-    assert model._prompt_key_for_category(None) == "external"
+    assert model._prompt_key_for_category(None) == "external_positive"
 
 
 def test_prompt_paths_come_from_settings() -> None:
     settings = get_settings()
 
-    assert model._get_prompt_path("external") == settings.external_filter_prompt_path
+    assert (
+        model._get_prompt_path("external_positive")
+        == settings.external_filter_prompt_path
+    )
     assert (
         model._get_prompt_path("external_negative")
         == settings.external_negative_filter_prompt_path
     )
-    assert model._get_prompt_path("internal") == settings.internal_filter_prompt_path
+    assert (
+        model._get_prompt_path("internal_positive")
+        == settings.internal_filter_prompt_path
+    )
     assert (
         model._get_prompt_path("internal_negative")
         == settings.internal_negative_filter_prompt_path

@@ -31,7 +31,7 @@ python -m src.cli.main hash-primary --limit 5000
 python -m src.cli.main score --limit 2500
 python -m src.cli.main summarize --limit 2500
 python -m src.cli.main enrich-summary --limit 2500
-python -m src.cli.main route-summary --limit 2500
+python -m src.cli.main geo-classify --limit 2500
 python -m src.cli.main external-filter --limit 2000
 python -m src.cli.main export --min-score 60
 

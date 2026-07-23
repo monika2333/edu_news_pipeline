@@ -5,7 +5,7 @@ from src.cli.main import build_parser
 
 @pytest.mark.parametrize(
     "command",
-    ["crawl", "summarize", "enrich-summary", "route-summary", "score", "export"],
+    ["crawl", "summarize", "enrich-summary", "geo-classify", "score", "export"],
 )
 def test_cli_supports_expected_subcommands(command: str) -> None:
     parser = build_parser()
@@ -17,5 +17,5 @@ def test_cli_help_available() -> None:
     parser = build_parser()
     help_text = parser.format_help()
     assert "Edu news pipeline" in help_text
-    for keyword in ["crawl", "summarize", "enrich-summary", "route-summary", "score", "export"]:
+    for keyword in ["crawl", "summarize", "enrich-summary", "geo-classify", "score", "export"]:
         assert keyword in help_text

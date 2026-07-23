@@ -7,10 +7,10 @@ from src.workers.crawl_sources import run as crawl_sources
 from src.workers.enrich_summary import run as enrich_summaries
 from src.workers.export_brief import run as export_brief
 from src.workers.external_filter import run as run_external_filter
+from src.workers.geo_classify import run as classify_geography
 from src.workers.geo_tag import run as geo_tag
 from src.workers.hash_primary import run as hash_primary
 from src.workers.repair_missing_content import run as repair_missing
-from src.workers.route_summary import run as route_summaries
 from src.workers.score import run as score_summaries
 from src.workers.summarize import run as summarize_articles
 
@@ -54,12 +54,13 @@ def _add_enrich_summary(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional LLM worker concurrency override")
 
 
-def _add_route_summary(subparsers: argparse._SubParsersAction) -> None:
+def _add_geo_classify(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
-        "route-summary",
-        help="Apply local Beijing matching and route enriched summaries",
+        "geo-classify",
+        help="Classify geography using local matching and the Beijing LLM gate",
     )
-    parser.add_argument("--limit", type=_positive_int, default=2500, help="Max number of enriched summaries to route")
+    parser.add_argument("--limit", type=_positive_int, default=2500, help="Max number of summaries to classify")
+    parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional Beijing gate concurrency override")
 
 
 def _add_hash_primary(subparsers: argparse._SubParsersAction) -> None:
@@ -79,7 +80,7 @@ def _add_score(subparsers: argparse._SubParsersAction) -> None:
 def _add_external_filter(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "external-filter",
-        help="Run external importance filter for pending Jingwai positives",
+        help="Run importance scoring after geographic classification",
     )
     parser.add_argument("--limit", type=_positive_int, default=2000, help="Max number of rows to process")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional concurrency override for LLM calls")
@@ -116,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_hash_primary(subparsers)
     _add_summarize(subparsers)
     _add_enrich_summary(subparsers)
-    _add_route_summary(subparsers)
+    _add_geo_classify(subparsers)
     _add_score(subparsers)
     _add_external_filter(subparsers)
     _add_export(subparsers)
@@ -139,8 +140,8 @@ def main(argv: list[str] | None = None) -> None:
         summarize_articles(limit=args.limit, concurrency=args.concurrency, keywords_path=args.keywords)
     elif command == "enrich-summary":
         enrich_summaries(limit=args.limit, concurrency=args.concurrency)
-    elif command == "route-summary":
-        route_summaries(limit=args.limit)
+    elif command == "geo-classify":
+        classify_geography(limit=args.limit, concurrency=args.concurrency)
     elif command == "score":
         score_summaries(limit=args.limit, concurrency=args.concurrency)
     elif command == "external-filter":

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from src.adapters import external_filter_model
-from src.domain.external_filter import BeijingGateCandidate, ExternalFilterCandidate
+from src.domain.external_filter import ExternalFilterCandidate
 from src.workers import external_filter
 
 
@@ -25,25 +24,6 @@ def _external_candidate(**overrides) -> ExternalFilterCandidate:
     )
     base.update(overrides)
     return ExternalFilterCandidate(**base)
-
-
-def _beijing_gate_candidate(**overrides) -> BeijingGateCandidate:
-    base = dict(
-        article_id="article-2",
-        title="北京教育改革",
-        source="示例来源",
-        publish_time_iso=None,
-        summary="摘要内容",
-        content="正文内容",
-        sentiment_label="positive",
-        is_beijing_related=True,
-        is_beijing_related_llm=None,
-        external_importance_status="pending_beijing_gate",
-        beijing_gate_fail_count=0,
-        beijing_gate_attempted_at=None,
-    )
-    base.update(overrides)
-    return BeijingGateCandidate(**base)
 
 
 def test_score_candidate_uses_internal_threshold_and_category():
@@ -82,90 +62,6 @@ def test_score_candidate_respects_internal_threshold():
     assert category == "internal_positive"
     assert prompt_key == "internal_positive"
     assert prompt_version == "v1"
-
-
-class _DummyFuture:
-    def __init__(self, result):
-        self._result = result
-
-    def result(self):
-        return self._result
-
-
-class _DummyExecutor:
-    def __init__(self, result_map):
-        self._result_map = result_map
-        self.submitted = []
-
-    def submit(self, func, candidate, retries):
-        # record submission for assertion if needed
-        self.submitted.append((func, candidate, retries))
-        decision = self._result_map.get(candidate.article_id)
-        return _DummyFuture(decision)
-
-
-def test_process_beijing_gate_passes_internal_category():
-    candidate = _beijing_gate_candidate()
-    decision = SimpleNamespace(
-        is_beijing_related=True,
-        reason="明确属于北京市范围",
-        raw_text="raw text",
-    )
-    adapter = MagicMock()
-    executor = _DummyExecutor({candidate.article_id: decision})
-
-    with patch(
-        "src.workers.external_filter.as_completed", lambda futures: list(futures)
-    ):
-        confirmed, rerouted, failures, promoted = external_filter._process_beijing_gate(
-            adapter,
-            [candidate],
-            executor,
-            llm_retries=1,
-            max_failures=3,
-        )
-
-    assert confirmed == 1
-    assert rerouted == 0
-    assert failures == 0
-    assert promoted == 1
-    adapter.complete_beijing_gate.assert_called_once()
-    kwargs = adapter.complete_beijing_gate.call_args.kwargs
-    assert kwargs["candidate_category"] == "internal_positive"
-    assert kwargs["sentiment_label"] == "positive"
-    assert kwargs["status"] == "ready_for_export"
-
-
-def test_process_beijing_gate_reroutes_external_category():
-    candidate = _beijing_gate_candidate(is_beijing_related=False)
-    decision = SimpleNamespace(
-        is_beijing_related=False,
-        reason="判定为外省内容",
-        raw_text="raw text",
-    )
-    adapter = MagicMock()
-    executor = _DummyExecutor({candidate.article_id: decision})
-
-    with patch(
-        "src.workers.external_filter.as_completed", lambda futures: list(futures)
-    ):
-        confirmed, rerouted, failures, promoted = external_filter._process_beijing_gate(
-            adapter,
-            [candidate],
-            executor,
-            llm_retries=1,
-            max_failures=3,
-        )
-
-    assert confirmed == 0
-    assert rerouted == 1
-    assert failures == 0
-    assert promoted == 0
-    adapter.complete_beijing_gate.assert_called_once()
-    kwargs = adapter.complete_beijing_gate.call_args.kwargs
-    assert kwargs["candidate_category"] == "external_positive"
-    assert kwargs["status"] == "pending_external_filter"
-    assert kwargs["reset_external_filter"] is True
 
 
 def test_score_candidate_uses_external_negative_threshold():

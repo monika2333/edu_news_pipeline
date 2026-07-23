@@ -25,7 +25,7 @@ python -m src.cli.main hash-primary
 python -m src.cli.main score
 python -m src.cli.main summarize
 python -m src.cli.main enrich-summary
-python -m src.cli.main route-summary
+python -m src.cli.main geo-classify
 python -m src.cli.main external-filter
 python -m src.cli.main export
 ```

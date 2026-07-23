@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
-from typing import Any, List, Mapping, Optional, Tuple
+from typing import Any, Mapping, Optional
 
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.external_filter_model import (
@@ -11,13 +10,8 @@ from src.adapters.external_filter_model import (
     prompt_key_for_category,
     prompt_version_for_key,
 )
-from src.adapters.llm_beijing_gate import call_beijing_gate
 from src.config import get_settings
-from src.domain import (
-    BeijingGateCandidate,
-    ExternalFilterCandidate,
-    determine_candidate_category,
-)
+from src.domain import ExternalFilterCandidate
 from src.workers import log_error, log_info, log_summary, worker_session
 
 WORKER = "external_filter"
@@ -32,7 +26,7 @@ def _score_candidate(
     *,
     retries: int,
     thresholds: Mapping[str, int],
-) -> Tuple[int, str, bool, str, str, str]:
+) -> tuple[int, str, bool, str, str, str]:
     category = candidate.candidate_category
     prompt_key = prompt_key_for_category(category)
     prompt_version = prompt_version_for_key(prompt_key)
@@ -57,124 +51,17 @@ def _score_candidate(
     return score_value, raw_output, passed, category, prompt_key, prompt_version
 
 
-def _beijing_gate_raw_payload(result: Mapping[str, Any], raw_text: str) -> dict[str, Any]:
-    return {
-        "model_output": raw_text,
-        "parsed_is_beijing_related": result.get("is_beijing_related"),
-        "parsed_reason": result.get("reason"),
-    }
-
-
-def _process_beijing_gate(
-    adapter: Any,
-    candidates: List[BeijingGateCandidate],
-    executor: ThreadPoolExecutor,
-    *,
-    llm_retries: int,
-    max_failures: int,
-) -> Tuple[int, int, int, int]:
-    confirmed = 0
-    rerouted = 0
-    failures = 0
-    promoted = 0
-
-    future_map = {
-        executor.submit(call_beijing_gate, candidate, retries=llm_retries): candidate
-        for candidate in candidates
-    }
-
-    for future in as_completed(future_map):
-        candidate = future_map[future]
-        try:
-            decision = future.result()
-            decision_raw = {
-                "is_beijing_related": decision.is_beijing_related,
-                "reason": decision.reason,
-            }
-            raw_payload = _beijing_gate_raw_payload(decision_raw, decision.raw_text)
-            if decision.is_beijing_related is True:
-                category_label = determine_candidate_category(True, candidate.sentiment_label)
-                adapter.complete_beijing_gate(
-                    candidate.article_id,
-                    status="ready_for_export",
-                    is_beijing_related=True,
-                    is_beijing_related_llm=True,
-                    raw_output=raw_payload,
-                    external_importance_status="ready_for_export",
-                    reset_external_filter=False,
-                    sentiment_label=candidate.sentiment_label,
-                    candidate_category=category_label,
-                )
-                confirmed += 1
-                promoted += 1
-                log_info(WORKER, f"Gate OK {candidate.article_id}: confirmed Beijing")
-            elif decision.is_beijing_related is False:
-                category_label = determine_candidate_category(False, candidate.sentiment_label)
-                adapter.complete_beijing_gate(
-                    candidate.article_id,
-                    status="pending_external_filter",
-                    is_beijing_related=False,
-                    is_beijing_related_llm=False,
-                    raw_output=raw_payload,
-                    external_importance_status="pending_external_filter",
-                    reset_external_filter=True,
-                    sentiment_label=candidate.sentiment_label,
-                    candidate_category=category_label,
-                )
-                rerouted += 1
-                log_info(WORKER, f"Gate REROUTE {candidate.article_id}: sent to external filter")
-            else:
-                raise RuntimeError("Beijing gate returned indeterminate result")
-        except Exception as exc:
-            failures += 1
-            new_fail_count = candidate.beijing_gate_fail_count + 1
-            if new_fail_count >= max_failures:
-                fallback_payload = {
-                    "error": str(exc),
-                    "fail_count": new_fail_count,
-                    "fallback": "ready_for_export",
-                }
-                fallback_is_beijing = candidate.is_beijing_related if candidate.is_beijing_related is not None else True
-                category_label = determine_candidate_category(fallback_is_beijing, candidate.sentiment_label)
-                adapter.complete_beijing_gate(
-                    candidate.article_id,
-                    status="ready_for_export",
-                    is_beijing_related=fallback_is_beijing,
-                    is_beijing_related_llm=None,
-                    raw_output=fallback_payload,
-                    external_importance_status="ready_for_export",
-                    reset_external_filter=False,
-                    sentiment_label=candidate.sentiment_label,
-                    candidate_category=category_label,
-                )
-                log_error(WORKER, candidate.article_id, exc)
-                log_info(
-                    WORKER,
-                    f"Gate FALLBACK {candidate.article_id}: fail_count={new_fail_count}, defaulting to ready_for_export",
-                )
-                promoted += 1
-            else:
-                adapter.mark_beijing_gate_failure(
-                    candidate.article_id,
-                    fail_count=new_fail_count,
-                    error=str(exc),
-                )
-                log_error(WORKER, candidate.article_id, exc)
-    return confirmed, rerouted, failures, promoted
-
-
 def _process_external_filter_batch(
     adapter: Any,
-    candidates: List[ExternalFilterCandidate],
+    candidates: list[ExternalFilterCandidate],
     executor: ThreadPoolExecutor,
     thresholds: Mapping[str, int],
     max_retries: int,
     remaining_limit: Optional[int],
-) -> Tuple[int, int, int]:
+) -> tuple[int, int, int]:
     processed = 0
     failed = 0
     filter_ready = 0
-
     future_map = {
         executor.submit(
             _score_candidate,
@@ -191,40 +78,31 @@ def _process_external_filter_batch(
             future.cancel()
             continue
         try:
-            score_value, raw_output, passed, category, prompt_key, prompt_version = future.result()
+            score, raw, passed, category, prompt_key, prompt_version = future.result()
             adapter.complete_external_filter(
                 candidate.article_id,
                 passed=passed,
-                score=score_value,
-                raw_output=raw_output,
+                score=score,
+                raw_output=raw,
                 category=category,
                 prompt_key=prompt_key,
                 prompt_version=prompt_version,
             )
             state = "ready_for_export" if passed else "external_filtered"
-            log_info(
-                WORKER,
-                f"{category.upper()} OK {candidate.article_id}: score={score_value} -> {state}",
-            )
+            log_info(WORKER, f"{category.upper()} OK {candidate.article_id}: score={score} -> {state}")
             if passed:
                 filter_ready += 1
             processed += 1
         except Exception as exc:
             failed += 1
             new_fail_count = candidate.external_filter_fail_count + 1
-            final_failure = new_fail_count >= max_retries
             adapter.mark_external_filter_failure(
                 candidate.article_id,
                 fail_count=new_fail_count,
-                final_failure=final_failure,
+                final_failure=new_fail_count >= max_retries,
                 error=str(exc),
             )
-            log_error(
-                WORKER,
-                f"{candidate.candidate_category.upper()} {candidate.article_id}",
-                exc,
-            )
-            
+            log_error(WORKER, f"{candidate.candidate_category.upper()} {candidate.article_id}", exc)
     return processed, failed, filter_ready
 
 
@@ -235,8 +113,8 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
     remaining = None if limit is None else max(limit, 0)
     total_processed = 0
     total_failed = 0
+    filter_ready = 0
     max_retries = settings.external_filter_max_retries
-    
     thresholds: Mapping[str, int] = {
         "external": settings.external_filter_threshold,
         "external_positive": settings.external_filter_threshold,
@@ -245,17 +123,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
         "internal_positive": settings.internal_filter_threshold,
         "internal_negative": settings.internal_filter_negative_threshold,
     }
-    
-    workers = concurrency or settings.default_concurrency or 5
-    workers = max(1, workers)
-    beijing_gate_max_failures = max(1, settings.beijing_gate_max_retries or 1)
-    beijing_gate_llm_retries = max(1, settings.beijing_gate_max_retries or 1)
-
-    gate_confirmed = 0
-    gate_rerouted = 0
-    gate_failures = 0
-    gate_ready = 0
-    filter_ready = 0
+    workers = max(1, concurrency or settings.default_concurrency or 5)
 
     with worker_session(WORKER, limit=limit):
         with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -265,71 +133,33 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                     if remaining <= 0:
                         break
                     fetch_size = min(fetch_size, remaining)
-                    
-                beijing_candidates = adapter.fetch_beijing_gate_candidates(
-                    fetch_size,
-                    max_failures=beijing_gate_max_failures,
-                )
-                if beijing_candidates:
-                    confirmed, rerouted, failures, promoted = _process_beijing_gate(
-                        adapter,
-                        beijing_candidates,
-                        executor,
-                        llm_retries=beijing_gate_llm_retries,
-                        max_failures=beijing_gate_max_failures,
-                    )
-                    gate_confirmed += confirmed
-                    gate_rerouted += rerouted
-                    gate_failures += failures
-                    gate_ready += promoted
-                    continue
-                
                 candidates = adapter.fetch_external_filter_candidates(
                     fetch_size,
                     max_failures=max_retries,
                 )
                 if not candidates:
                     if total_processed + total_failed == 0:
-                        log_info(WORKER, "No pending external filter candidates.")
+                        log_info(WORKER, "No pending importance filter candidates.")
                     break
-                    
+
                 processed, failed, ready_count = _process_external_filter_batch(
                     adapter,
                     candidates,
                     executor,
                     thresholds,
                     max_retries,
-                    remaining
+                    remaining,
                 )
-                
                 total_processed += processed
                 total_failed += failed
                 filter_ready += ready_count
-                
                 if remaining is not None:
                     remaining -= processed
-
                 if processed == 0 and failed == 0:
                     break
 
-        if gate_confirmed or gate_rerouted or gate_failures:
-            log_info(
-                WORKER,
-                f"Beijing gate summary: confirmed={gate_confirmed}, rerouted={gate_rerouted}, failures={gate_failures}",
-            )
-
-        total_ready = gate_ready + filter_ready
-        log_info(
-            WORKER,
-            f"Promoted {total_ready} articles to ready_for_export (beijing_gate={gate_ready}, external_filter={filter_ready})",
-        )
-
-        log_summary(
-            WORKER,
-            ok=total_processed,
-            failed=total_failed or None,
-            skipped=None,
-        )
+        log_info(WORKER, f"Promoted {filter_ready} articles to ready_for_export")
+        log_summary(WORKER, ok=total_processed, failed=total_failed)
 
 
 __all__ = ["run"]

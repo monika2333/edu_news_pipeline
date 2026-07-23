@@ -21,7 +21,7 @@ DB_SCHEMA=public
 
 ### LLM API
 
-运行 `score`、`summarize`、`enrich-summary`、`external-filter` 等 LLM 步骤时必须设置 API key。`route-summary` 只执行本地规则，不调用 LLM：
+运行 `score`、`summarize`、`enrich-summary`、`geo-classify`、`external-filter` 等 LLM 步骤时必须设置 API key。`geo-classify` 会先执行本地规则，再对疑似北京文章调用 Beijing Gate：
 
 ```env
 LLM_API_KEY=replace-with-your-llm-api-key

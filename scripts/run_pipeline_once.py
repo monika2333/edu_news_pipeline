@@ -16,8 +16,8 @@ from src.workers.crawl_sources import run as run_crawl
 from src.workers.enrich_summary import run as run_enrich_summary
 from src.workers.export_brief import run as run_export
 from src.workers.external_filter import run as run_external_filter
+from src.workers.geo_classify import run as run_geo_classify
 from src.workers.hash_primary import run as run_hash_primary
-from src.workers.route_summary import run as run_route_summary
 from src.workers.score import run as run_score
 from src.workers.summarize import run as run_summarize
 
@@ -28,7 +28,7 @@ DEFAULT_PIPELINE: Sequence[str] = (
     "score",
     "summarize",
     "enrich-summary",
-    "route-summary",
+    "geo-classify",
     "external-filter",
     "export",
 )
@@ -197,8 +197,8 @@ def _run_enrich_summary_step() -> Dict[str, str]:
     return {}
 
 
-def _run_route_summary_step() -> Dict[str, str]:
-    run_route_summary()
+def _run_geo_classify_step() -> Dict[str, str]:
+    run_geo_classify()
     return {}
 
 
@@ -224,7 +224,7 @@ STEP_REGISTRY: Dict[str, StepHandler] = {
     "hash-primary": _run_hash_primary_step,
     "summarize": _run_summarize_step,
     "enrich-summary": _run_enrich_summary_step,
-    "route-summary": _run_route_summary_step,
+    "geo-classify": _run_geo_classify_step,
     "score": _run_score_step,
     "external-filter": _run_external_filter_step,
     "export": _run_export_step,
@@ -326,7 +326,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         choices=list(STEP_REGISTRY.keys()),
         help=(
             "Explicit step order to run (default: crawl hash-primary score summarize "
-            "enrich-summary route-summary external-filter export)"
+            "enrich-summary geo-classify external-filter export)"
         ),
     )
     parser.add_argument(

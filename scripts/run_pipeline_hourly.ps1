@@ -50,7 +50,7 @@ $arguments = @(
     "score",
     "summarize",
     "enrich-summary",
-    "route-summary",
+    "geo-classify",
     "external-filter",
     "--trigger-source",
     "scheduler-hourly"

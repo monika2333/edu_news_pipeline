@@ -3,7 +3,7 @@
 面向教育新闻的自动化采集、评分、摘要与导出流水线，并提供 Web 控制台进行人工筛选与复核。
 
 ## 功能总览
-- **流水线**：抓取 → 去重 → 评分 → 摘要/情感 → 北京/外地分流与重要性评分 → 导出简报。
+- **流水线**：抓取 → 去重 → 评分 → 摘要 → 情感/来源补充 → 北京/外地分流与重要性评分 → 导出简报。
 - **Web 控制台**：默认进入 `/manual_filter` 进行人工筛选/审阅（簇展示、状态自动保存、排序模式、导出弹窗）。
 - **导出/预览**：支持在审阅页按综报/晚报预览文本并归档为已导出；流水线 `export` 命令仍可生成 TXT 简报并推送飞书。
 
@@ -24,6 +24,8 @@ python -m src.cli.main crawl --sources toutiao,tencent --limit 5000
 python -m src.cli.main hash-primary
 python -m src.cli.main score
 python -m src.cli.main summarize
+python -m src.cli.main enrich-summary
+python -m src.cli.main route-summary
 python -m src.cli.main external-filter
 python -m src.cli.main export
 ```

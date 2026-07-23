@@ -39,7 +39,7 @@ if (-not (Test-Path $LogDirectory)) {
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $logFile = Join-Path $LogDirectory "pipeline_hourly_$timestamp.log"
 
-# Restrict to crawl -> hash-primary -> score -> summarize
+# Run through routing and filtering; export remains on its separate schedule.
 # Prefer module execution so project root stays on sys.path
 $arguments = @(
     "-m",
@@ -49,6 +49,8 @@ $arguments = @(
     "hash-primary",
     "score",
     "summarize",
+    "enrich-summary",
+    "route-summary",
     "external-filter",
     "--trigger-source",
     "scheduler-hourly"

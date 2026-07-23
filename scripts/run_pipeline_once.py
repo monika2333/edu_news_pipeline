@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import sys
 import traceback
 import uuid
@@ -9,18 +10,28 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
-import os
 from src.adapters.db_postgres_core import get_adapter
 from src.config import load_environment
 from src.workers.crawl_sources import run as run_crawl
+from src.workers.enrich_summary import run as run_enrich_summary
 from src.workers.export_brief import run as run_export
+from src.workers.external_filter import run as run_external_filter
 from src.workers.hash_primary import run as run_hash_primary
+from src.workers.route_summary import run as run_route_summary
 from src.workers.score import run as run_score
 from src.workers.summarize import run as run_summarize
-from src.workers.external_filter import run as run_external_filter
 
 StepHandler = Callable[[], Optional[Dict[str, str]]]
-DEFAULT_PIPELINE: Sequence[str] = ("crawl", "hash-primary", "score", "summarize", "external-filter", "export")
+DEFAULT_PIPELINE: Sequence[str] = (
+    "crawl",
+    "hash-primary",
+    "score",
+    "summarize",
+    "enrich-summary",
+    "route-summary",
+    "external-filter",
+    "export",
+)
 
 
 @dataclass
@@ -181,6 +192,16 @@ def _run_summarize_step() -> Dict[str, str]:
     return {}
 
 
+def _run_enrich_summary_step() -> Dict[str, str]:
+    run_enrich_summary()
+    return {}
+
+
+def _run_route_summary_step() -> Dict[str, str]:
+    run_route_summary()
+    return {}
+
+
 def _run_score_step() -> Dict[str, str]:
     run_score()
     return {}
@@ -202,6 +223,8 @@ STEP_REGISTRY: Dict[str, StepHandler] = {
     "crawl": _run_crawl_step,
     "hash-primary": _run_hash_primary_step,
     "summarize": _run_summarize_step,
+    "enrich-summary": _run_enrich_summary_step,
+    "route-summary": _run_route_summary_step,
     "score": _run_score_step,
     "external-filter": _run_external_filter_step,
     "export": _run_export_step,
@@ -301,7 +324,10 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--steps",
         nargs="+",
         choices=list(STEP_REGISTRY.keys()),
-        help="Explicit step order to run (default: crawl hash-primary score summarize external-filter export)",
+        help=(
+            "Explicit step order to run (default: crawl hash-primary score summarize "
+            "enrich-summary route-summary external-filter export)"
+        ),
     )
     parser.add_argument(
         "--skip",

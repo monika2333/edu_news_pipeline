@@ -87,7 +87,25 @@ def test_postgres_adapter_core_roundtrip() -> None:
         }
 
         adapter.upsert_news_summary(article_payload, summary_text, keywords=["unit", "test"])
-        adapter.complete_summary(article_id, summary_text, llm_source="unit-test", keywords=["unit", "test"], beijing_related=True)
+        assert adapter.mark_summary_attempt(article_id) is True
+        adapter.complete_summary_generation(article_id, summary_text)
+
+        enrichment_rows = adapter.fetch_pending_summary_enrichments(20)
+        assert any(row.get("article_id") == article_id for row in enrichment_rows)
+        adapter.complete_summary_enrichment(
+            article_id,
+            label="positive",
+            confidence=0.9,
+            llm_source="unit-test",
+        )
+
+        route_rows = adapter.fetch_pending_summary_routes(20)
+        assert any(row.get("article_id") == article_id for row in route_rows)
+        adapter.complete_summary_routing(
+            article_id,
+            beijing_related=True,
+            status="ready_for_export",
+        )
         existing_ids = adapter.get_existing_news_summary_ids([article_id])
         assert article_id in existing_ids
 

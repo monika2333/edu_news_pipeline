@@ -21,7 +21,7 @@ DB_SCHEMA=public
 
 ### LLM API
 
-运行 `score`、`summarize`、`external-filter` 等 LLM 步骤时必须设置 API key：
+运行 `score`、`summarize`、`enrich-summary`、`external-filter` 等 LLM 步骤时必须设置 API key。`route-summary` 只执行本地规则，不调用 LLM：
 
 ```env
 LLM_API_KEY=replace-with-your-llm-api-key

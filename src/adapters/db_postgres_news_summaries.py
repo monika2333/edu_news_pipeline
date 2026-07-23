@@ -217,6 +217,125 @@ def complete_summary(
         raise ValueError(f"Unable to complete summary for {article_id}")
 
 
+def complete_summary_generation(cur: psycopg.Cursor, article_id: str, summary_text: str) -> None:
+    if not article_id:
+        raise ValueError("complete_summary_generation requires article_id")
+    if not summary_text.strip():
+        raise ValueError("complete_summary_generation requires summary_text")
+    query = """
+        UPDATE news_summaries
+        SET llm_summary = %s,
+            summary_status = 'completed',
+            summary_generated_at = NOW(),
+            summary_attempted_at = NOW(),
+            status = 'pending_enrichment',
+            updated_at = NOW()
+        WHERE article_id = %s
+          AND summary_status = 'pending'
+          AND status = 'pending'
+    """
+    cur.execute(query, (summary_text, article_id))
+    if cur.rowcount != 1:
+        raise ValueError(f"Unable to complete summary generation for {article_id}")
+
+
+def fetch_pending_summary_enrichments(
+    cur: psycopg.Cursor,
+    limit: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    params: List[Any] = []
+    query_parts = [
+        "SELECT article_id, title, content_markdown, llm_summary",
+        "FROM news_summaries",
+        "WHERE summary_status = 'completed'",
+        "  AND status = 'pending_enrichment'",
+        "ORDER BY summary_generated_at ASC, article_id ASC",
+    ]
+    if limit and limit > 0:
+        query_parts.append("LIMIT %s")
+        params.append(limit)
+    cur.execute(" ".join(query_parts), tuple(params))
+    return [dict(row) for row in cur.fetchall()]
+
+
+def complete_summary_enrichment(
+    cur: psycopg.Cursor,
+    article_id: str,
+    *,
+    label: str,
+    confidence: Optional[float],
+    llm_source: Optional[str],
+) -> None:
+    normalized_label = label.strip().lower()
+    if normalized_label not in {"positive", "negative"}:
+        raise ValueError(f"Unsupported sentiment label: {label}")
+    query = """
+        UPDATE news_summaries
+        SET sentiment_label = %s,
+            sentiment_confidence = %s,
+            llm_source = COALESCE(%s, llm_source),
+            status = 'pending_routing',
+            updated_at = NOW()
+        WHERE article_id = %s
+          AND summary_status = 'completed'
+          AND status = 'pending_enrichment'
+    """
+    cur.execute(query, (normalized_label, confidence, llm_source, article_id))
+    if cur.rowcount != 1:
+        raise ValueError(f"Unable to complete summary enrichment for {article_id}")
+
+
+def fetch_pending_summary_routes(
+    cur: psycopg.Cursor,
+    limit: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    params: List[Any] = []
+    query_parts = [
+        "SELECT article_id, title, content_markdown, llm_summary, sentiment_label",
+        "FROM news_summaries",
+        "WHERE summary_status = 'completed'",
+        "  AND status = 'pending_routing'",
+        "ORDER BY summary_generated_at ASC, article_id ASC",
+    ]
+    if limit and limit > 0:
+        query_parts.append("LIMIT %s")
+        params.append(limit)
+    cur.execute(" ".join(query_parts), tuple(params))
+    return [dict(row) for row in cur.fetchall()]
+
+
+def complete_summary_routing(
+    cur: psycopg.Cursor,
+    article_id: str,
+    *,
+    beijing_related: Optional[bool],
+    status: str,
+) -> None:
+    query = """
+        UPDATE news_summaries
+        SET is_beijing_related = %s,
+            status = %s,
+            external_importance_status = %s,
+            external_importance_score = NULL,
+            external_importance_checked_at = NULL,
+            external_importance_raw = NULL,
+            external_filter_attempted_at = NULL,
+            external_filter_fail_count = 0,
+            is_beijing_related_llm = NULL,
+            beijing_gate_checked_at = NULL,
+            beijing_gate_raw = NULL,
+            beijing_gate_attempted_at = NULL,
+            beijing_gate_fail_count = 0,
+            updated_at = NOW()
+        WHERE article_id = %s
+          AND summary_status = 'completed'
+          AND status = 'pending_routing'
+    """
+    cur.execute(query, (beijing_related, status, status, article_id))
+    if cur.rowcount != 1:
+        raise ValueError(f"Unable to complete summary routing for {article_id}")
+
+
 def mark_summary_failed(cur: psycopg.Cursor, article_id: str, *, message: Optional[str] = None) -> None:
     if not article_id:
         return
@@ -567,7 +686,12 @@ def upsert_news_summaries_from_primary(cur: psycopg.Cursor, rows: Sequence[Mappi
 
 __all__ = [
     "complete_summary",
+    "complete_summary_enrichment",
+    "complete_summary_generation",
+    "complete_summary_routing",
     "fetch_pending_summaries",
+    "fetch_pending_summary_enrichments",
+    "fetch_pending_summary_routes",
     "fetch_news_summary_content",
     "fetch_raw_articles_for_summary",
     "get_existing_news_summary_ids",

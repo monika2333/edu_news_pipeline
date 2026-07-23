@@ -5,7 +5,10 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Optional
 
 from src.adapters.db_postgres_core import get_adapter
-from src.adapters.llm_beijing_gate import call_beijing_gate
+from src.adapters.llm_beijing_gate import (
+    BeijingGateIndeterminateError,
+    call_beijing_gate,
+)
 from src.config import get_settings
 from src.domain import (
     BeijingGateCandidate,
@@ -80,11 +83,33 @@ def _beijing_gate_raw_payload(
     result: Mapping[str, Any],
     raw_text: str,
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "model_output": raw_text,
         "parsed_is_beijing_related": result.get("is_beijing_related"),
         "parsed_reason": result.get("reason"),
     }
+    for field in ("provider", "model", "attempts"):
+        value = result.get(field)
+        if value is not None:
+            payload[field] = value
+    return payload
+
+
+def _beijing_gate_failure_payload(
+    exc: Exception,
+    *,
+    fail_count: int,
+    fallback: Optional[str] = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "error": str(exc),
+        "fail_count": fail_count,
+    }
+    if isinstance(exc, BeijingGateIndeterminateError):
+        payload.update(exc.diagnostic_payload())
+    if fallback:
+        payload["fallback"] = fallback
+    return payload
 
 
 def _process_beijing_gate(
@@ -112,6 +137,9 @@ def _process_beijing_gate(
                 {
                     "is_beijing_related": decision.is_beijing_related,
                     "reason": decision.reason,
+                    "provider": getattr(decision, "provider", None),
+                    "model": getattr(decision, "model", None),
+                    "attempts": getattr(decision, "attempts", None),
                 },
                 decision.raw_text,
             )
@@ -165,11 +193,11 @@ def _process_beijing_gate(
                     status="ready_for_export",
                     is_beijing_related=fallback_is_beijing,
                     is_beijing_related_llm=None,
-                    raw_output={
-                        "error": str(exc),
-                        "fail_count": new_fail_count,
-                        "fallback": "ready_for_export",
-                    },
+                    raw_output=_beijing_gate_failure_payload(
+                        exc,
+                        fail_count=new_fail_count,
+                        fallback="ready_for_export",
+                    ),
                     external_importance_status="ready_for_export",
                     reset_external_filter=False,
                     sentiment_label=candidate.sentiment_label,
@@ -186,6 +214,10 @@ def _process_beijing_gate(
                     candidate.article_id,
                     fail_count=new_fail_count,
                     error=str(exc),
+                    raw_output=_beijing_gate_failure_payload(
+                        exc,
+                        fail_count=new_fail_count,
+                    ),
                 )
                 log_error(WORKER, candidate.article_id, exc)
     return confirmed, rerouted, failures, fallback_completed
@@ -202,14 +234,21 @@ def _process_gate_backlog(
 ) -> tuple[int, int, int, int]:
     totals = [0, 0, 0, 0]
     remaining = limit
+    attempted_article_ids: set[str] = set()
     while remaining is None or remaining > 0:
         fetch_size = batch_size if remaining is None else min(batch_size, remaining)
-        candidates = adapter.fetch_beijing_gate_candidates(
+        fetched_candidates = adapter.fetch_beijing_gate_candidates(
             fetch_size,
             max_failures=max_failures,
         )
+        candidates = [
+            candidate
+            for candidate in fetched_candidates
+            if candidate.article_id not in attempted_article_ids
+        ]
         if not candidates:
             break
+        attempted_article_ids.update(candidate.article_id for candidate in candidates)
         result = _process_beijing_gate(
             adapter,
             candidates,

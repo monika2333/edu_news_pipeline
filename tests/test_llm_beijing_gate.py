@@ -74,3 +74,81 @@ def test_parse_decision_with_text_fallback_false():
     raw = "结论：否，与北京无关。"
     result = gate._parse_decision(raw)
     assert result["is_beijing_related"] is False
+
+
+def test_parse_decision_rejects_valid_json_with_wrong_contract_field():
+    raw = '{"is_behind_related": true, "reason": "活动在北京举行。"}'
+
+    result = gate._parse_decision(raw)
+
+    assert result["is_beijing_related"] is None
+    assert result["reason"] == "活动在北京举行。"
+
+
+def test_call_beijing_gate_uses_json_schema_and_retries_indeterminate_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    responses = iter(
+        [
+            gate.BeijingGateResponse(
+                raw_text='{"is_behind_related": true, "reason": "字段错误"}',
+                provider="provider-a",
+                model="model-a",
+            ),
+            gate.BeijingGateResponse(
+                raw_text='{"is_beijing_related": true, "reason": "活动在北京举行"}',
+                provider="provider-b",
+                model="model-b",
+            ),
+        ]
+    )
+    calls: list[tuple[dict[str, object], int]] = []
+
+    def fake_post(
+        payload: dict[str, object],
+        retries: int,
+        timeout: int,
+    ) -> gate.BeijingGateResponse:
+        assert timeout > 0
+        calls.append((payload, retries))
+        return next(responses)
+
+    monkeypatch.setattr(gate, "_post_chat_completion", fake_post)
+
+    decision = gate.call_beijing_gate(_candidate(), retries=3)
+
+    assert decision.is_beijing_related is True
+    assert decision.attempts == 2
+    assert decision.provider == "provider-b"
+    assert decision.model == "model-b"
+    assert [retries for _, retries in calls] == [3, 1]
+    response_format = calls[0][0]["response_format"]
+    assert isinstance(response_format, dict)
+    assert response_format["type"] == "json_schema"
+    assert response_format["json_schema"]["strict"] is True
+
+
+def test_call_beijing_gate_preserves_final_indeterminate_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invalid_response = gate.BeijingGateResponse(
+        raw_text='{"is_behind_related": true, "reason": "字段错误"}',
+        provider="provider-a",
+        model="model-a",
+    )
+    monkeypatch.setattr(
+        gate,
+        "_post_chat_completion",
+        lambda payload, retries, timeout: invalid_response,
+    )
+
+    with pytest.raises(gate.BeijingGateIndeterminateError) as exc_info:
+        gate.call_beijing_gate(_candidate(), retries=2)
+
+    payload = exc_info.value.diagnostic_payload()
+    assert payload == {
+        "model_output": invalid_response.raw_text,
+        "provider": "provider-a",
+        "model": "model-a",
+        "semantic_attempts": 2,
+    }

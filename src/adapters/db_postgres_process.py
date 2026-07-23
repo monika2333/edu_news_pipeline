@@ -226,21 +226,25 @@ def mark_beijing_gate_failure(
     *,
     fail_count: int,
     error: str,
+    raw_output: Optional[Mapping[str, Any]] = None,
     final_status: Optional[str] = None,
     external_importance_status: Optional[str] = None,
 ) -> None:
     if not article_id:
         return
     timestamp = datetime.now(timezone.utc)
+    failure_payload = dict(raw_output or {})
+    failure_payload.update(
+        {
+            "error": str(error)[:500],
+            "fail_count": fail_count,
+            "recorded_at": timestamp.isoformat(),
+        }
+    )
     payload: Dict[str, Any] = {
         "beijing_gate_fail_count": fail_count,
         "beijing_gate_attempted_at": timestamp,
-        "beijing_gate_raw": Json(
-            {
-                "error": str(error)[:500],
-                "recorded_at": timestamp.isoformat(),
-            }
-        ),
+        "beijing_gate_raw": Json(failure_payload),
     }
     if final_status:
         payload["status"] = final_status

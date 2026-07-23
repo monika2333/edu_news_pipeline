@@ -441,6 +441,7 @@ class PostgresAdapter:
         *,
         fail_count: int,
         error: str,
+        raw_output: Optional[Mapping[str, Any]] = None,
         final_status: Optional[str] = None,
         external_importance_status: Optional[str] = None,
     ) -> None:
@@ -450,6 +451,7 @@ class PostgresAdapter:
                 article_id,
                 fail_count=fail_count,
                 error=error,
+                raw_output=raw_output,
                 final_status=final_status,
                 external_importance_status=external_importance_status,
             )

@@ -35,3 +35,30 @@ def test_complete_external_filter_records_prompt_metadata() -> None:
     assert raw_payload["category"] == "internal"
     assert raw_payload["prompt_key"] == "internal_positive"
     assert raw_payload["prompt_version"] == "v2"
+
+
+def test_mark_beijing_gate_failure_preserves_diagnostic_payload() -> None:
+    cur = FakeCursor()
+
+    db_postgres_process.mark_beijing_gate_failure(
+        cur,
+        "article-1",
+        fail_count=2,
+        error="Beijing gate returned indeterminate result",
+        raw_output={
+            "model_output": '{"is_behind_related": true}',
+            "provider": "provider-a",
+            "model": "model-a",
+            "semantic_attempts": 3,
+        },
+    )
+
+    assert cur.params is not None
+    raw_payload = cur.params[2].obj
+    assert raw_payload["error"] == "Beijing gate returned indeterminate result"
+    assert raw_payload["fail_count"] == 2
+    assert raw_payload["model_output"] == '{"is_behind_related": true}'
+    assert raw_payload["provider"] == "provider-a"
+    assert raw_payload["model"] == "model-a"
+    assert raw_payload["semantic_attempts"] == 3
+    assert raw_payload["recorded_at"]

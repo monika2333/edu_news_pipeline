@@ -3,6 +3,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from src.adapters.llm_beijing_gate import (
+    BeijingGateIndeterminateError,
+    BeijingGateResponse,
+)
 from src.domain.external_filter import BeijingGateCandidate
 from src.workers import geo_classify
 
@@ -31,6 +35,8 @@ class _DummyFuture:
         self._result = result
 
     def result(self):
+        if isinstance(self._result, BaseException):
+            raise self._result
         return self._result
 
 
@@ -107,6 +113,70 @@ def test_process_beijing_gate_reroutes_external_category() -> None:
     assert kwargs["candidate_category"] == "external_positive"
     assert kwargs["status"] == "pending_external_filter"
     assert kwargs["reset_external_filter"] is True
+
+
+def test_process_beijing_gate_persists_indeterminate_response() -> None:
+    candidate = _beijing_gate_candidate()
+    error = BeijingGateIndeterminateError(
+        BeijingGateResponse(
+            raw_text='{"is_behind_related": true, "reason": "字段错误"}',
+            provider="provider-a",
+            model="model-a",
+        ),
+        attempts=3,
+    )
+    adapter = MagicMock()
+    executor = _DummyExecutor({candidate.article_id: error})
+
+    with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
+        confirmed, rerouted, failures, fallbacks = geo_classify._process_beijing_gate(
+            adapter,
+            [candidate],
+            executor,
+            llm_retries=3,
+            max_failures=3,
+        )
+
+    assert (confirmed, rerouted, failures, fallbacks) == (0, 0, 1, 0)
+    kwargs = adapter.mark_beijing_gate_failure.call_args.kwargs
+    assert kwargs["fail_count"] == 1
+    assert kwargs["raw_output"] == {
+        "error": "Beijing gate returned indeterminate result",
+        "fail_count": 1,
+        "model_output": error.raw_text,
+        "provider": "provider-a",
+        "model": "model-a",
+        "semantic_attempts": 3,
+    }
+
+
+def test_gate_backlog_does_not_retry_failed_candidate_in_same_run() -> None:
+    candidate = _beijing_gate_candidate()
+    error = BeijingGateIndeterminateError(
+        BeijingGateResponse(
+            raw_text='{"is_behind_related": true}',
+            provider="provider-a",
+            model="model-a",
+        ),
+        attempts=3,
+    )
+    adapter = MagicMock()
+    adapter.fetch_beijing_gate_candidates.return_value = [candidate]
+    executor = _DummyExecutor({candidate.article_id: error})
+
+    with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
+        result = geo_classify._process_gate_backlog(
+            adapter,
+            executor,
+            limit=10,
+            batch_size=5,
+            llm_retries=3,
+            max_failures=3,
+        )
+
+    assert result == (0, 0, 1, 0)
+    assert adapter.fetch_beijing_gate_candidates.call_count == 2
+    adapter.mark_beijing_gate_failure.assert_called_once()
 
 
 class _RunAdapter:

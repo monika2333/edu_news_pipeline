@@ -36,7 +36,7 @@ LLM_MODEL=deepseek/deepseek-v4-flash
 
 ## 建议填写
 
-控制台如果不是严格只在本机访问，建议启用至少一种认证方式：
+浏览器控制台使用数据库账号登录。下面两项只为旧 Basic 认证兼容保留：
 
 ```env
 CONSOLE_BASIC_USERNAME=admin
@@ -130,18 +130,29 @@ LLM_QUOTA_ALERT_STATE_PATH=logs/llm_quota_alert_state.json
 
 ## 控制台认证
 
-本地开发可以不设置。部署到外网或多人使用时必须启用至少一种：
+浏览器使用数据库账号和可撤销的服务端会话。先执行迁移，再通过
+`python -m src.cli.main create-console-user` 创建管理员账号。
 
 ```env
-# Browser-friendly basic auth
+# HTTPS 部署必须设为 true；本地 HTTP 开发保持 false
+CONSOLE_COOKIE_SECURE=false
+
+# 服务端会话有效期，默认 14 天
+CONSOLE_SESSION_DAYS=14
+
+# 每日班次边界，默认北京时间 22 点
+DUTY_SHIFT_BOUNDARY_HOUR=22
+
+# 兼容期共享 Basic 认证，仅用于旧入口
 CONSOLE_BASIC_USERNAME=admin
 CONSOLE_BASIC_PASSWORD=replace-with-a-strong-password
 
-# API client bearer token
+# 受控自动化调用的 Bearer token，不可用于值班班次接口
 CONSOLE_API_TOKEN=replace-with-a-long-random-token
 ```
 
-两种同时设置时，任一认证方式都可通过。
+共享 Basic 认证和 Bearer token 是迁移兼容路径，不代替真实用户账号。生产环境应通过
+HTTPS 暴露控制台，并设置 `CONSOLE_COOKIE_SECURE=true`。
 
 ## 流水线运行参数
 

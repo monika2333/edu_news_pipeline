@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="/static/css/modules/review.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/search.css">
     <link rel="stylesheet" href="/static/css/modules/score_feedback.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/modules/auth.css?v={{ version }}">
     <style>
         .source-box {
             width: 100%;
@@ -54,8 +55,13 @@
                 </div>
             </div>
             <div class="header-right">
-                <input type="text" id="actor-input" placeholder="操作者姓名" class="actor-input">
+                <span class="current-user" id="current-user">
+                    {{ current_user.display_name }} · 管理员
+                </span>
+                <a class="btn btn-secondary" href="/admin">用户与排班</a>
+                <a class="btn btn-secondary" href="/admin/duty-summary">值班汇总</a>
                 <button class="btn btn-secondary" id="btn-refresh">刷新</button>
+                <button class="btn btn-secondary" id="btn-logout">退出</button>
             </div>
         </header>
 
@@ -274,6 +280,7 @@
     <div class="toast" id="toast">操作成功</div>
 
     <script src="/static/vendor/Sortable.min.js?v={{ version }}"></script>
+    <script src="/static/js/auth.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/core.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/utils.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/score_feedback.js?v={{ version }}"></script>

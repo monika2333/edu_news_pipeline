@@ -1,0 +1,171 @@
+body {
+    margin: 0;
+    background: #f4f6fa;
+    color: #172033;
+}
+
+.admin-shell {
+    width: min(1320px, calc(100% - 32px));
+    margin: 0 auto;
+    padding: 24px 0 56px;
+}
+
+.admin-header,
+.admin-panel {
+    border: 1px solid #dde5f0;
+    border-radius: 15px;
+    background: #fff;
+}
+
+.admin-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 22px 26px;
+}
+
+.admin-header p,
+.admin-panel-heading p {
+    margin: 0 0 4px;
+    color: #2563eb;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
+.admin-header h1,
+.admin-panel-heading h2 {
+    margin: 0;
+}
+
+.admin-header-actions,
+.admin-panel-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.admin-panel {
+    margin-top: 16px;
+    padding: 22px;
+}
+
+.admin-create-user {
+    display: grid;
+    grid-template-columns: 1fr 1fr 160px 1.2fr auto;
+    gap: 9px;
+    margin: 18px 0;
+}
+
+.admin-create-user input,
+.admin-create-user select,
+.schedule-grid select,
+.shift-assignee {
+    min-width: 0;
+    padding: 9px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    font: inherit;
+}
+
+.admin-table-wrap {
+    overflow-x: auto;
+}
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+}
+
+.admin-table th,
+.admin-table td {
+    padding: 11px 10px;
+    border-bottom: 1px solid #e7edf5;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.admin-table th {
+    color: #64748b;
+    font-size: 0.76rem;
+    letter-spacing: 0.04em;
+}
+
+.admin-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.admin-actions button {
+    padding: 6px 9px;
+}
+
+.status-pill {
+    display: inline-flex;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #dcfce7;
+    color: #166534;
+    font-size: 0.75rem;
+}
+
+.status-pill.is-inactive,
+.status-pill.is-cancelled {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.schedule-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.schedule-day {
+    display: grid;
+    gap: 7px;
+    color: #475569;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.admin-alert {
+    padding: 12px 14px;
+    border: 1px solid #fbbf24;
+    border-radius: 9px;
+    background: #fffbeb;
+    color: #92400e;
+}
+
+.admin-alert[hidden] {
+    display: none;
+}
+
+@media (max-width: 900px) {
+    .admin-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .admin-create-user,
+    .schedule-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 560px) {
+    .admin-shell {
+        width: calc(100% - 20px);
+    }
+
+    .admin-create-user,
+    .schedule-grid {
+        grid-template-columns: 1fr;
+    }
+}

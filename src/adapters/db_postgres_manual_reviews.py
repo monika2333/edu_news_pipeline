@@ -22,7 +22,9 @@ MANUAL_REVIEW_SELECT_COLUMNS = """
     mr.score AS manual_score,
     {type_expr} AS report_type,
     mr.decided_by,
+    mr.decided_by_user_id,
     mr.decided_at,
+    mr.version,
     ns.title,
     ns.llm_summary,
     ns.llm_source,
@@ -696,6 +698,164 @@ def update_manual_review_summaries(
     return cur.rowcount
 
 
+def import_shift_reviews_into_manual(
+    cur: psycopg.Cursor,
+    *,
+    shift_id: str,
+    article_ids: Sequence[str],
+    target_status: str,
+    report_type: str,
+    actor_username: str,
+    actor_user_id: str,
+) -> list[dict[str, Any]]:
+    normalized_ids = [
+        str(article_id).strip()
+        for article_id in article_ids
+        if str(article_id).strip()
+    ]
+    if not normalized_ids:
+        return []
+    if target_status not in {"selected", "backup"}:
+        raise ValueError("Imported duty results must be selected or backup")
+    normalized_report_type = normalize_report_type_value(report_type)
+    if not normalized_report_type:
+        raise ValueError("A report type is required")
+    cur.execute(
+        """
+        SELECT
+            sr.article_id,
+            sr.edited_summary,
+            sr.manual_llm_source,
+            sr.notes,
+            ns.llm_summary,
+            ns.score
+        FROM shift_reviews sr
+        JOIN news_summaries ns ON ns.article_id = sr.article_id
+        WHERE sr.shift_id = %s
+          AND sr.article_id = ANY(%s)
+        ORDER BY array_position(%s::text[], sr.article_id)
+        FOR UPDATE OF sr
+        """,
+        (shift_id, normalized_ids, normalized_ids),
+    )
+    rows = [dict(row) for row in cur.fetchall()]
+    if len(rows) != len(set(normalized_ids)):
+        found = {str(row["article_id"]) for row in rows}
+        missing = sorted(set(normalized_ids) - found)
+        raise ValueError(f"Shift reviews not found: {missing}")
+    next_rank = manual_review_max_rank(
+        cur,
+        target_status,
+        report_type=normalized_report_type,
+    )
+    imported: list[dict[str, Any]] = []
+    for offset, row in enumerate(rows, start=1):
+        rank = next_rank + offset
+        cur.execute(
+            """
+            INSERT INTO manual_reviews (
+                article_id,
+                status,
+                summary,
+                rank,
+                notes,
+                score,
+                decided_by,
+                decided_by_user_id,
+                decided_at,
+                manual_llm_source,
+                report_type,
+                version
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now(), %s, %s, 1)
+            ON CONFLICT (article_id) DO UPDATE SET
+                status = EXCLUDED.status,
+                summary = EXCLUDED.summary,
+                rank = EXCLUDED.rank,
+                notes = EXCLUDED.notes,
+                score = COALESCE(EXCLUDED.score, manual_reviews.score),
+                decided_by = EXCLUDED.decided_by,
+                decided_by_user_id = EXCLUDED.decided_by_user_id,
+                decided_at = EXCLUDED.decided_at,
+                manual_llm_source = EXCLUDED.manual_llm_source,
+                report_type = EXCLUDED.report_type,
+                version = manual_reviews.version + 1,
+                updated_at = now()
+            RETURNING
+                id,
+                article_id,
+                status,
+                summary,
+                rank,
+                notes,
+                score,
+                decided_by,
+                decided_by_user_id,
+                decided_at,
+                manual_llm_source,
+                report_type,
+                version,
+                created_at,
+                updated_at
+            """,
+            (
+                row["article_id"],
+                target_status,
+                row.get("edited_summary") or row.get("llm_summary"),
+                rank,
+                row.get("notes"),
+                row.get("score"),
+                actor_username,
+                actor_user_id,
+                row.get("manual_llm_source"),
+                normalized_report_type,
+            ),
+        )
+        imported_row = cur.fetchone()
+        if not imported_row:
+            raise RuntimeError("Failed to import duty review")
+        imported.append(dict(imported_row))
+    return imported
+
+
+def fetch_manual_review_rows(
+    cur: psycopg.Cursor,
+    article_ids: Sequence[str],
+) -> list[dict[str, Any]]:
+    normalized_ids = [
+        str(article_id).strip()
+        for article_id in article_ids
+        if str(article_id).strip()
+    ]
+    if not normalized_ids:
+        return []
+    cur.execute(
+        """
+        SELECT
+            id,
+            article_id,
+            status,
+            summary,
+            rank,
+            notes,
+            score,
+            decided_by,
+            decided_by_user_id,
+            decided_at,
+            manual_llm_source,
+            report_type,
+            version,
+            created_at,
+            updated_at
+        FROM manual_reviews
+        WHERE article_id = ANY(%s)
+        ORDER BY article_id
+        """,
+        (normalized_ids,),
+    )
+    return [dict(row) for row in cur.fetchall()]
+
+
 def fetch_manual_selected_for_export(
     cur: psycopg.Cursor,
     *,
@@ -755,7 +915,9 @@ __all__ = [
     "fetch_manual_clusters",
     "fetch_manual_pending_for_cluster",
     "fetch_manual_reviews",
+    "fetch_manual_review_rows",
     "fetch_manual_selected_for_export",
+    "import_shift_reviews_into_manual",
     "insert_manual_clusters",
     "manual_review_max_rank",
     "manual_review_pending_count",

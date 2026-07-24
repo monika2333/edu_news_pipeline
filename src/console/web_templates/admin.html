@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户与排班管理</title>
+    <link rel="stylesheet" href="/static/css/variables.css">
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/modules/auth.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/modules/admin.css?v={{ version }}">
+</head>
+
+<body>
+    <div class="admin-shell">
+        <header class="admin-header">
+            <div>
+                <p>控制台管理</p>
+                <h1>用户与排班</h1>
+            </div>
+            <div class="admin-header-actions">
+                <span class="current-user">{{ current_user.display_name }} · 管理员</span>
+                <a class="btn btn-secondary" href="/admin/duty-summary">值班汇总</a>
+                <a class="btn btn-secondary" href="/manual_filter">返回人工筛选</a>
+                <button class="btn btn-secondary" id="btn-logout">退出</button>
+            </div>
+        </header>
+
+        <p class="admin-alert" id="admin-alert" hidden></p>
+
+        <section class="admin-panel">
+            <div class="admin-panel-heading">
+                <div>
+                    <p>账号</p>
+                    <h2>控制台用户</h2>
+                </div>
+            </div>
+            <form class="admin-create-user" id="create-user-form">
+                <input name="username" placeholder="用户名" required>
+                <input name="display_name" placeholder="显示名" required>
+                <select name="role">
+                    <option value="duty_editor">值班编辑</option>
+                    <option value="admin">管理员</option>
+                </select>
+                <input name="password" type="password" minlength="10" placeholder="初始密码（至少 10 位）" required>
+                <button class="btn btn-primary" type="submit">创建账号</button>
+            </form>
+            <div class="admin-table-wrap">
+                <table class="admin-table">
+                    <thead>
+                        <tr><th>显示名</th><th>用户名</th><th>角色</th><th>状态</th><th>最近登录</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="users-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="admin-panel">
+            <div class="admin-panel-heading">
+                <div>
+                    <p>轮值模板</p>
+                    <h2>周一至周日</h2>
+                </div>
+                <button class="btn btn-primary" id="btn-save-schedule">保存轮值表</button>
+            </div>
+            <div class="schedule-grid" id="schedule-grid"></div>
+        </section>
+
+        <section class="admin-panel">
+            <div class="admin-panel-heading">
+                <div>
+                    <p>具体班次</p>
+                    <h2>排班日历</h2>
+                </div>
+                <button class="btn btn-secondary" id="btn-generate-shifts">补齐未来 14 天</button>
+            </div>
+            <div class="admin-table-wrap">
+                <table class="admin-table">
+                    <thead>
+                        <tr><th>覆盖范围</th><th>负责人</th><th>状态</th><th>备注</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="shifts-body"></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="toast" id="toast">操作成功</div>
+    <script src="/static/js/auth.js?v={{ version }}"></script>
+    <script src="/static/js/admin.js?v={{ version }}"></script>
+</body>
+
+</html>

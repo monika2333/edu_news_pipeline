@@ -6,3 +6,4 @@ uvicorn[standard]==0.30.1
 python-multipart==0.0.9
 beautifulsoup4>=4.12.0
 sentence-transformers>=3.0.0
+argon2-cffi>=23.1.0

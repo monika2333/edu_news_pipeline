@@ -119,7 +119,6 @@ async function applyReviewBulkStatus() {
                 backup_ids,
                 discarded_ids,
                 pending_ids,
-                actor: state.actor,
                 report_type: targetReportType
             })
         });
@@ -138,7 +137,6 @@ async function applyReviewBulkStatus() {
                         backup_ids: [],
                         discarded_ids: [],
                         pending_ids: [],
-                        actor: state.actor,
                         report_type: previousReportType
                     };
 
@@ -225,7 +223,6 @@ async function persistReviewOrder() {
         selected_order: (state.reviewData.selected || []).map(item => item.article_id),
         backup_order: (state.reviewData.backup || []).map(item => item.article_id),
         group_orders: groupOrders,
-        actor: state.actor,
         report_type: state.reviewReportType
     };
 
@@ -269,7 +266,6 @@ function buildReviewUndoAction(id, prevStatus, prevReportType) {
                         backup_ids: prevStatus === 'backup' ? [id] : [],
                         discarded_ids: prevStatus === 'discarded' ? [id] : [],
                         pending_ids: prevStatus === 'pending' ? [id] : [],
-                        actor: state.actor,
                         report_type: prevReportType
                     })
                 });
@@ -304,7 +300,7 @@ async function applyReviewCardDecision(card, rawValue, successMessage = '已更�
         await fetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor, report_type: state.reviewReportType })
+            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, report_type: state.reviewReportType })
         });
 
         await fetch(`${API_BASE}/decide`, {
@@ -315,7 +311,6 @@ async function applyReviewCardDecision(card, rawValue, successMessage = '已更�
                 backup_ids: status === 'backup' ? [id] : [],
                 discarded_ids: status === 'discarded' ? [id] : [],
                 pending_ids: status === 'pending' ? [id] : [],
-                actor: state.actor,
                 report_type: targetReportType
             })
         });
@@ -360,7 +355,7 @@ async function handleSummaryUpdate(e) {
         await fetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor, report_type: state.reviewReportType })
+            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, report_type: state.reviewReportType })
         });
         applyReviewEditsToState(id, summary, llm_source);
         showToast('摘要已保存');
@@ -381,7 +376,7 @@ async function handleSourceUpdate(e) {
         await fetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, actor: state.actor, report_type: state.reviewReportType })
+            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, report_type: state.reviewReportType })
         });
         applyReviewEditsToState(id, summary, llm_source);
         showToast('来源已保存');
@@ -425,7 +420,6 @@ async function handleArchive() {
     }
     const payload = {
         article_ids: articleIds,
-        actor: state.actor,
         report_type: reportType
     };
 

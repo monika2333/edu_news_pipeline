@@ -138,6 +138,9 @@ class Settings:
     console_basic_username: Optional[str]
     console_basic_password: Optional[str]
     console_api_token: Optional[str]
+    console_cookie_secure: bool
+    console_session_days: int
+    duty_shift_boundary_hour: int
     feishu_app_id: Optional[str]
     feishu_app_secret: Optional[str]
     feishu_receive_id: Optional[str]
@@ -331,6 +334,20 @@ def get_settings() -> Settings:
     console_basic_username = os.getenv("CONSOLE_BASIC_USERNAME")
     console_basic_password = os.getenv("CONSOLE_BASIC_PASSWORD")
     console_api_token = os.getenv("CONSOLE_API_TOKEN")
+    console_cookie_secure = _bool_from_env(
+        os.getenv("CONSOLE_COOKIE_SECURE"),
+        default=False,
+    )
+    console_session_days = _optional_int(os.getenv("CONSOLE_SESSION_DAYS")) or 14
+    raw_shift_boundary_hour = _optional_int(
+        os.getenv("DUTY_SHIFT_BOUNDARY_HOUR")
+    )
+    duty_shift_boundary_hour = (
+        raw_shift_boundary_hour
+        if raw_shift_boundary_hour is not None
+        and 0 <= raw_shift_boundary_hour <= 23
+        else 22
+    )
 
     feishu_app_id = _get_env("FEISHU_APP_ID", "feishu_APP_ID")
     feishu_app_secret = _get_env("FEISHU_APP_SECRET", "feishu_APP_Secret")
@@ -385,6 +402,9 @@ def get_settings() -> Settings:
         console_basic_username=console_basic_username,
         console_basic_password=console_basic_password,
         console_api_token=console_api_token,
+        console_cookie_secure=console_cookie_secure,
+        console_session_days=console_session_days,
+        duty_shift_boundary_hour=duty_shift_boundary_hour,
         feishu_app_id=feishu_app_id,
         feishu_app_secret=feishu_app_secret,
         feishu_receive_id=feishu_receive_id,

@@ -16,7 +16,6 @@ let state = {
     filterPage: 1,
     reviewPage: 1,
     discardPage: 1,
-    actor: localStorage.getItem('actor') || '',
     currentTab: 'filter',
     filterCategory: 'internal_positive',
     filterQuery: '',
@@ -64,7 +63,6 @@ const elements = {
     reviewSelectAll: document.getElementById('review-select-all'),
     reviewBulkStatus: document.getElementById('review-bulk-status'),
     discardList: document.getElementById('discard-list'),
-    actorInput: document.getElementById('actor-input'),
     sortToggleBtn: document.getElementById('btn-toggle-sort'),
     reportTypeButtons: document.querySelectorAll('.report-type-btn'),
     stats: {

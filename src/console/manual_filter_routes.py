@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Dict, List, Literal, NoReturn, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from src.console import manual_filter_service, score_feedback_service
@@ -13,6 +13,7 @@ from src.console.manual_filter_duplicate_service import (
     DuplicateReviewTimeoutError,
     DuplicateReviewUnavailableError,
 )
+from src.console.security import ConsoleUser, require_console_user
 
 router = APIRouter(prefix="/api/manual_filter", tags=["manual_filter"])
 
@@ -22,7 +23,6 @@ class BulkDecideRequest(BaseModel):
     backup_ids: List[str] = Field(default_factory=list)
     discarded_ids: List[str] = Field(default_factory=list)
     pending_ids: List[str] = Field(default_factory=list)
-    actor: Optional[str] = None
     report_type: str = "zongbao"
 
 
@@ -49,13 +49,11 @@ class ScoreFeedbackResponse(BaseModel):
 
 class SaveEditsRequest(BaseModel):
     edits: Dict[str, Dict[str, Any]] = Field(default_factory=dict)  # article_id -> {"summary": "...", "llm_source": "..."}
-    actor: Optional[str] = None
     report_type: str = "zongbao"
 
 
 class ArchiveRequest(BaseModel):
     article_ids: List[str] = Field(default_factory=list)
-    actor: Optional[str] = None
     report_type: str = "zongbao"
 
 
@@ -71,7 +69,6 @@ class UpdateOrderRequest(BaseModel):
     selected_order: List[str] = Field(default_factory=list)
     backup_order: List[str] = Field(default_factory=list)
     group_orders: Dict[ReviewGroupKey, List[str]] = Field(default_factory=dict)
-    actor: Optional[str] = None
     report_type: str = "zongbao"
 
 
@@ -80,7 +77,6 @@ class DiscardBeforeDateRequest(BaseModel):
     sentiment: Literal["positive", "negative"]
     q: Optional[str] = None
     published_before: Optional[date] = None
-    actor: Optional[str] = None
     dry_run: bool = True
 
 
@@ -156,13 +152,16 @@ def clear_score_feedback_api(req: ClearScoreFeedbackRequest) -> ScoreFeedbackRes
 
 
 @router.post("/decide")
-def bulk_decide_api(req: BulkDecideRequest) -> Dict[str, int]:
+def bulk_decide_api(
+    req: BulkDecideRequest,
+    user: ConsoleUser = Depends(require_console_user),
+) -> Dict[str, int]:
     return manual_filter_service.bulk_decide(
         selected_ids=req.selected_ids,
         backup_ids=req.backup_ids,
         discarded_ids=req.discarded_ids,
         pending_ids=req.pending_ids,
-        actor=req.actor,
+        actor=user.username,
         report_type=req.report_type,
     )
 
@@ -196,9 +195,16 @@ def list_discarded_api(limit: int = 30, offset: int = 0, report_type: str = "zon
 
 
 @router.post("/edit")
-def save_edits_api(req: SaveEditsRequest) -> Dict[str, int]:
+def save_edits_api(
+    req: SaveEditsRequest,
+    user: ConsoleUser = Depends(require_console_user),
+) -> Dict[str, int]:
     # The service expects Dict[str, Dict[str, Any]], which matches the pydantic model
-    count = manual_filter_service.save_edits(req.edits, actor=req.actor, report_type=req.report_type)
+    count = manual_filter_service.save_edits(
+        req.edits,
+        actor=user.username,
+        report_type=req.report_type,
+    )
     return {"updated": count}
 
 
@@ -208,23 +214,29 @@ def status_counts_api(report_type: str = "zongbao") -> Dict[str, int]:
 
 
 @router.post("/archive")
-def archive_api(req: ArchiveRequest) -> Dict[str, int]:
+def archive_api(
+    req: ArchiveRequest,
+    user: ConsoleUser = Depends(require_console_user),
+) -> Dict[str, int]:
     count = manual_filter_service.archive_items(
         req.article_ids,
-        actor=req.actor,
+        actor=user.username,
         report_type=req.report_type,
     )
     return {"exported": count}
 
 
 @router.post("/order")
-def update_order_api(req: UpdateOrderRequest) -> Dict[str, int]:
+def update_order_api(
+    req: UpdateOrderRequest,
+    user: ConsoleUser = Depends(require_console_user),
+) -> Dict[str, int]:
     try:
         return manual_filter_service.update_ranks(
             selected_order=req.selected_order,
             backup_order=req.backup_order,
             group_orders=req.group_orders,
-            actor=req.actor,
+            actor=user.username,
             report_type=req.report_type,
         )
     except ValueError as exc:
@@ -232,12 +244,15 @@ def update_order_api(req: UpdateOrderRequest) -> Dict[str, int]:
 
 
 @router.post("/discard_before_date")
-def discard_before_date_api(req: DiscardBeforeDateRequest) -> Dict[str, int]:
+def discard_before_date_api(
+    req: DiscardBeforeDateRequest,
+    user: ConsoleUser = Depends(require_console_user),
+) -> Dict[str, int]:
     return manual_filter_service.discard_candidates_before_date(
         region=req.region,
         sentiment=req.sentiment,
         query=req.q,
         published_before=req.published_before,
-        actor=req.actor,
+        actor=user.username,
         dry_run=req.dry_run,
     )

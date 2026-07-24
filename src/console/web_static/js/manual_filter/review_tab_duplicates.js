@@ -28,7 +28,7 @@ async function saveDuplicateReviewEdits(edits, reportType = state.reviewReportTy
     const response = await fetch(`${API_BASE}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ edits, actor: state.actor, report_type: reportType })
+        body: JSON.stringify({ edits, report_type: reportType })
     });
     if (!response.ok) throw new Error('保存编辑失败');
     Object.entries(edits).forEach(([articleId, edit]) => {
@@ -75,7 +75,7 @@ async function flushReviewEditsBeforeDuplicateCheck(scope = getDuplicateReviewSc
     const response = await fetch(`${API_BASE}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ edits, actor: state.actor, report_type: scope.reportType })
+        body: JSON.stringify({ edits, report_type: scope.reportType })
     });
     if (!response.ok) throw new Error('保存当前编辑失败');
     Object.entries(edits).forEach(([articleId, edit]) => {
@@ -155,7 +155,6 @@ function buildDuplicateDecisionPayload(value, articleId, reportType) {
         backup_ids: [],
         discarded_ids: [],
         pending_ids: [],
-        actor: state.actor,
         report_type: reportType
     };
     if (value.includes(':')) {

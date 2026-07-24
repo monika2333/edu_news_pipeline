@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 · 教育新闻控制台</title>
+    <link rel="stylesheet" href="/static/css/variables.css">
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/modules/login.css?v={{ version }}">
+</head>
+
+<body class="login-page">
+    <main class="login-card">
+        <div class="login-heading">
+            <p class="login-eyebrow">EDU NEWS PIPELINE</p>
+            <h1>教育新闻控制台</h1>
+            <p>使用管理员分配的账号登录。</p>
+        </div>
+        <form id="login-form" class="login-form">
+            <label for="login-username">用户名</label>
+            <input id="login-username" name="username" type="text" autocomplete="username" required autofocus>
+
+            <label for="login-password">密码</label>
+            <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+
+            <p class="login-error" id="login-error" role="alert" hidden></p>
+            <button class="btn btn-primary login-submit" id="login-submit" type="submit">登录</button>
+        </form>
+    </main>
+    <script src="/static/js/login.js?v={{ version }}"></script>
+</body>
+
+</html>

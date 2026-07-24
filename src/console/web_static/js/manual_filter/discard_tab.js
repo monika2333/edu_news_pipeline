@@ -91,7 +91,6 @@ function buildDiscardRestorePayload(id, status, reportType) {
         backup_ids: status === 'backup' ? [id] : [],
         discarded_ids: [],
         pending_ids: status === 'pending' ? [id] : [],
-        actor: state.actor,
         report_type: reportType
     };
 }

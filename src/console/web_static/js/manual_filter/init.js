@@ -3,7 +3,6 @@
 // Init
 document.addEventListener('DOMContentLoaded', () => {
     setupTabs();
-    setupActor();
     loadStats();
     loadFilterData();
     loadFilterCounts();

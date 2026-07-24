@@ -257,7 +257,6 @@ async function discardBeforeDate() {
                 sentiment,
                 q: query || null,
                 published_before: publishedBefore || null,
-                actor: state.actor,
                 dry_run: true
             })
         });
@@ -281,7 +280,6 @@ async function discardBeforeDate() {
                 sentiment,
                 q: query || null,
                 published_before: publishedBefore || null,
-                actor: state.actor,
                 dry_run: false
             })
         });

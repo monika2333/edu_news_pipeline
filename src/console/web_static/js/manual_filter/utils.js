@@ -91,14 +91,6 @@ function setupTabs() {
     });
 }
 
-function setupActor() {
-    elements.actorInput.value = state.actor;
-    elements.actorInput.addEventListener('change', (e) => {
-        state.actor = e.target.value.trim();
-        localStorage.setItem('actor', state.actor);
-    });
-}
-
 function reloadCurrentTab(options = {}) {
     if (state.currentTab === 'filter') loadFilterData(options);
     else if (state.currentTab === 'review') loadReviewData();

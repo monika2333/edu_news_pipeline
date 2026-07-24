@@ -9,12 +9,16 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 from src.adapters import (
+    db_postgres_audit as audit,
     db_postgres_export as export,
     db_postgres_ingest as ingest,
     db_postgres_manual_reviews as manual_reviews,
     db_postgres_news_summaries as news_summaries,
     db_postgres_process as process,
     db_postgres_score_feedback as score_feedback,
+    db_postgres_shift_reviews as shift_reviews,
+    db_postgres_shifts as shifts,
+    db_postgres_users as users,
 )
 from src.adapters.db_postgres_shared import MISSING as _MISSING
 from src.adapters.db_postgres_shared import article_hash, iso_datetime, json_safe, to_iso
@@ -106,6 +110,535 @@ class PostgresAdapter:
     @staticmethod
     def _json_safe(value: Any) -> Any:
         return json_safe(value)
+
+    # ------------------------------------------------------------------
+    # Console users + sessions
+    # ------------------------------------------------------------------
+    def create_console_user(
+        self,
+        *,
+        username: str,
+        display_name: str,
+        password_hash: str,
+        role: str,
+        actor_user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        with self.transaction() as cur:
+            created = users.create_console_user(
+                cur,
+                username=username,
+                display_name=display_name,
+                password_hash=password_hash,
+                role=role,
+            )
+            if actor_user_id:
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action="user.create",
+                    target_type="console_user",
+                    target_id=str(created["id"]),
+                    before_data=None,
+                    after_data=created,
+                )
+            return created
+
+    def fetch_console_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return users.fetch_console_user_by_username(cur, username)
+
+    def fetch_console_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return users.fetch_console_user_by_id(cur, user_id)
+
+    def fetch_console_users(self) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return users.fetch_console_users(cur)
+
+    def update_console_user(
+        self,
+        *,
+        user_id: str,
+        actor_user_id: str,
+        display_name: Optional[str] = None,
+        set_display_name: bool = False,
+        role: Optional[str] = None,
+        set_role: bool = False,
+        is_active: Optional[bool] = None,
+        set_is_active: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        with self.transaction() as cur:
+            before = users.fetch_console_user_for_update(cur, user_id)
+            if not before:
+                return None
+            removes_active_admin = (
+                before["role"] == "admin"
+                and bool(before["is_active"])
+                and (
+                    (set_role and role != "admin")
+                    or (set_is_active and is_active is False)
+                )
+            )
+            if removes_active_admin:
+                active_admin_ids = users.lock_active_admin_ids(cur)
+                if len(active_admin_ids) <= 1:
+                    raise ValueError("At least one active administrator is required")
+            disables_editor = (
+                before["role"] == "duty_editor"
+                and bool(before["is_active"])
+                and (
+                    (set_is_active and is_active is False)
+                    or (set_role and role != "duty_editor")
+                )
+            )
+            if disables_editor:
+                future_shifts = users.fetch_future_shifts_for_user(cur, user_id)
+                if future_shifts:
+                    shift_ids = ", ".join(str(item["id"]) for item in future_shifts)
+                    raise ValueError(
+                        f"Reassign future shifts before disabling this user: {shift_ids}"
+                    )
+            after = users.update_console_user(
+                cur,
+                user_id=user_id,
+                display_name=display_name,
+                set_display_name=set_display_name,
+                role=role,
+                set_role=set_role,
+                is_active=is_active,
+                set_is_active=set_is_active,
+            )
+            if after:
+                if set_is_active and is_active is False:
+                    users.revoke_console_user_sessions(cur, user_id=user_id)
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action="user.update",
+                    target_type="console_user",
+                    target_id=user_id,
+                    before_data=before,
+                    after_data=after,
+                )
+            return after
+
+    def reset_console_user_password(
+        self,
+        *,
+        user_id: str,
+        actor_user_id: str,
+        password_hash: str,
+    ) -> bool:
+        with self.transaction() as cur:
+            before = users.fetch_console_user_for_update(cur, user_id)
+            if not before:
+                return False
+            updated = users.update_console_user_password(
+                cur,
+                user_id=user_id,
+                password_hash=password_hash,
+            )
+            if not updated:
+                return False
+            revoked = users.revoke_console_user_sessions(cur, user_id=user_id)
+            audit.insert_review_event(
+                cur,
+                actor_user_id=actor_user_id,
+                action="user.reset_password",
+                target_type="console_user",
+                target_id=user_id,
+                before_data={"password_changed_at": before["password_changed_at"]},
+                after_data={"sessions_revoked": revoked},
+            )
+            return True
+
+    def create_console_session(
+        self,
+        *,
+        user_id: str,
+        token_hash: str,
+        csrf_token_hash: str,
+        expires_at: datetime,
+    ) -> Dict[str, Any]:
+        with self.transaction() as cur:
+            session = users.create_console_session(
+                cur,
+                user_id=user_id,
+                token_hash=token_hash,
+                csrf_token_hash=csrf_token_hash,
+                expires_at=expires_at,
+            )
+            users.record_console_user_login(cur, user_id)
+            return session
+
+    def fetch_console_session_by_token_hash(
+        self,
+        token_hash: str,
+    ) -> Optional[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return users.fetch_console_session_by_token_hash(cur, token_hash)
+
+    def touch_console_session(self, session_id: str) -> None:
+        with self._cursor() as cur:
+            users.touch_console_session(cur, session_id)
+
+    def revoke_console_session_by_token_hash(self, token_hash: str) -> bool:
+        with self._cursor() as cur:
+            return users.revoke_console_session_by_token_hash(cur, token_hash)
+
+    def change_console_user_password(
+        self,
+        *,
+        user_id: str,
+        password_hash: str,
+        current_session_id: Optional[str],
+    ) -> bool:
+        with self.transaction() as cur:
+            updated = users.update_console_user_password(
+                cur,
+                user_id=user_id,
+                password_hash=password_hash,
+            )
+            if updated:
+                users.revoke_console_user_sessions(
+                    cur,
+                    user_id=user_id,
+                    except_session_id=current_session_id,
+                )
+            return updated
+
+    def delete_expired_console_sessions(self) -> int:
+        with self._cursor() as cur:
+            return users.delete_expired_console_sessions(cur)
+
+    # ------------------------------------------------------------------
+    # Duty schedules + shifts
+    # ------------------------------------------------------------------
+    def fetch_active_duty_editors(self) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return shifts.fetch_active_duty_editors(cur)
+
+    def fetch_duty_schedule(self) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return shifts.fetch_duty_schedule(cur)
+
+    def upsert_duty_schedule(
+        self,
+        assignments: Mapping[int, str],
+        *,
+        actor_user_id: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        with self.transaction() as cur:
+            before = shifts.fetch_duty_schedule(cur)
+            after = shifts.upsert_duty_schedule(cur, assignments)
+            audit.insert_review_event(
+                cur,
+                actor_user_id=actor_user_id,
+                action="schedule.update",
+                target_type="duty_schedule",
+                target_id="weekly",
+                before_data={"assignments": before},
+                after_data={"assignments": after},
+            )
+            return after
+
+    def insert_duty_shifts(
+        self,
+        rows: Sequence[Mapping[str, Any]],
+    ) -> int:
+        with self._cursor() as cur:
+            return shifts.insert_duty_shifts(cur, rows)
+
+    def create_duty_shift(
+        self,
+        *,
+        user_id: str,
+        starts_at: datetime,
+        ends_at: datetime,
+        notes: Optional[str],
+        actor_user_id: Optional[str],
+    ) -> Dict[str, Any]:
+        with self.transaction() as cur:
+            created = shifts.create_duty_shift(
+                cur,
+                user_id=user_id,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                notes=notes,
+                created_by_user_id=actor_user_id,
+            )
+            audit.insert_review_event(
+                cur,
+                actor_user_id=actor_user_id,
+                action="shift.create",
+                target_type="duty_shift",
+                target_id=str(created["id"]),
+                before_data=None,
+                after_data=created,
+            )
+            return created
+
+    def fetch_duty_shift(self, shift_id: str) -> Optional[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return shifts.fetch_duty_shift(cur, shift_id)
+
+    def fetch_duty_shifts(
+        self,
+        *,
+        user_id: Optional[str] = None,
+        starts_before: Optional[datetime] = None,
+        ends_after: Optional[datetime] = None,
+        include_cancelled: bool = True,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return shifts.fetch_duty_shifts(
+                cur,
+                user_id=user_id,
+                starts_before=starts_before,
+                ends_after=ends_after,
+                include_cancelled=include_cancelled,
+                limit=limit,
+            )
+
+    def fetch_overlapping_duty_shift(
+        self,
+        *,
+        starts_at: datetime,
+        ends_at: datetime,
+        exclude_shift_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return shifts.fetch_overlapping_duty_shift(
+                cur,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                exclude_shift_id=exclude_shift_id,
+            )
+
+    def update_duty_shift(
+        self,
+        *,
+        shift_id: str,
+        actor_user_id: Optional[str],
+        user_id: Optional[str] = None,
+        set_user_id: bool = False,
+        notes: Optional[str] = None,
+        set_notes: bool = False,
+        cancelled: Optional[bool] = None,
+    ) -> Optional[Dict[str, Any]]:
+        with self.transaction() as cur:
+            before = shifts.fetch_duty_shift(cur, shift_id)
+            if not before:
+                return None
+            after = shifts.update_duty_shift(
+                cur,
+                shift_id=shift_id,
+                user_id=user_id,
+                set_user_id=set_user_id,
+                notes=notes,
+                set_notes=set_notes,
+                cancelled=cancelled,
+            )
+            if after:
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action="shift.update",
+                    target_type="duty_shift",
+                    target_id=shift_id,
+                    before_data=before,
+                    after_data=after,
+                )
+            return after
+
+    def fetch_shift_coverage_end(self) -> Optional[datetime]:
+        with self._cursor() as cur:
+            return shifts.fetch_shift_coverage_end(cur)
+
+    # ------------------------------------------------------------------
+    # Duty reviews
+    # ------------------------------------------------------------------
+    def fetch_shift_review_items(
+        self,
+        *,
+        shift_id: str,
+        decision: Optional[str],
+        report_type: Optional[str],
+        limit: int,
+        offset: int,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        with self._cursor() as cur:
+            return shift_reviews.fetch_shift_review_items(
+                cur,
+                shift_id=shift_id,
+                decision=decision,
+                report_type=report_type,
+                limit=limit,
+                offset=offset,
+            )
+
+    def fetch_shift_clusters(
+        self,
+        *,
+        shift_id: str,
+        report_type: str,
+    ) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return shift_reviews.fetch_shift_clusters(
+                cur,
+                shift_id=shift_id,
+                report_type=report_type,
+            )
+
+    def save_shift_review(
+        self,
+        *,
+        shift_id: str,
+        article_id: str,
+        actor_user_id: str,
+        expected_version: Optional[int],
+        patch: Mapping[str, Any],
+        request_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        with self.transaction() as cur:
+            if not shift_reviews.shift_contains_article(
+                cur,
+                shift_id=shift_id,
+                article_id=article_id,
+            ):
+                raise ValueError("Article does not belong to this active shift")
+            before, after = shift_reviews.upsert_shift_review(
+                cur,
+                shift_id=shift_id,
+                article_id=article_id,
+                actor_user_id=actor_user_id,
+                expected_version=expected_version,
+                patch=patch,
+            )
+            audit.insert_review_event(
+                cur,
+                actor_user_id=actor_user_id,
+                action="shift_review.update",
+                target_type="shift_review",
+                target_id=f"{shift_id}:{article_id}",
+                before_data=before,
+                after_data=after,
+                request_id=request_id,
+            )
+            return after
+
+    def update_shift_review_order(
+        self,
+        *,
+        shift_id: str,
+        actor_user_id: str,
+        selected_order: Sequence[str],
+        backup_order: Sequence[str],
+        request_id: Optional[str] = None,
+    ) -> int:
+        with self.transaction() as cur:
+            updated = shift_reviews.update_shift_review_order(
+                cur,
+                shift_id=shift_id,
+                actor_user_id=actor_user_id,
+                selected_order=selected_order,
+                backup_order=backup_order,
+            )
+            audit.insert_review_event(
+                cur,
+                actor_user_id=actor_user_id,
+                action="shift_review.reorder",
+                target_type="duty_shift",
+                target_id=shift_id,
+                before_data=None,
+                after_data={
+                    "selected_order": list(selected_order),
+                    "backup_order": list(backup_order),
+                },
+                request_id=request_id,
+            )
+            return updated
+
+    def fetch_shift_stats(self, shift_id: str) -> Dict[str, Any]:
+        with self._cursor() as cur:
+            return shift_reviews.fetch_shift_stats(cur, shift_id)
+
+    def fetch_admin_shift_summaries(
+        self,
+        *,
+        limit: int = 60,
+    ) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return shift_reviews.fetch_admin_shift_summaries(cur, limit=limit)
+
+    def fetch_uncovered_news(
+        self,
+        *,
+        limit: int,
+        offset: int,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        with self._cursor() as cur:
+            return shift_reviews.fetch_uncovered_news(
+                cur,
+                limit=limit,
+                offset=offset,
+            )
+
+    def import_shift_reviews_into_manual(
+        self,
+        *,
+        shift_id: str,
+        article_ids: Sequence[str],
+        target_status: str,
+        report_type: str,
+        actor_username: str,
+        actor_user_id: str,
+        request_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        with self.transaction() as cur:
+            before = manual_reviews.fetch_manual_review_rows(cur, article_ids)
+            imported = manual_reviews.import_shift_reviews_into_manual(
+                cur,
+                shift_id=shift_id,
+                article_ids=article_ids,
+                target_status=target_status,
+                report_type=report_type,
+                actor_username=actor_username,
+                actor_user_id=actor_user_id,
+            )
+            audit.insert_review_event(
+                cur,
+                actor_user_id=actor_user_id,
+                action="duty_summary.import",
+                target_type="duty_shift",
+                target_id=shift_id,
+                before_data={"manual_reviews": before},
+                after_data={
+                    "manual_reviews": imported,
+                    "target_status": target_status,
+                    "report_type": report_type,
+                },
+                request_id=request_id,
+            )
+            return imported
+
+    def fetch_review_events(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        actor_user_id: Optional[str] = None,
+        target_type: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        with self._cursor() as cur:
+            return audit.fetch_review_events(
+                cur,
+                limit=limit,
+                offset=offset,
+                actor_user_id=actor_user_id,
+                target_type=target_type,
+            )
 
     # ------------------------------------------------------------------
     # Ingest

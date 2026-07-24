@@ -4,7 +4,7 @@
 
 ## 功能总览
 - **流水线**：抓取 → 去重 → 评分 → 摘要 → 情感/来源补充 → 北京/外地分流与重要性评分 → 导出简报。
-- **Web 控制台**：默认进入 `/manual_filter` 进行人工筛选/审阅（簇展示、状态自动保存、排序模式、导出弹窗）。
+- **Web 控制台**：管理员使用 `/manual_filter` 全量复核，值班编辑使用 `/duty` 处理本人班次，用户与排班在 `/admin` 管理。
 - **导出/预览**：支持在审阅页按综报/晚报预览文本并归档为已导出；流水线 `export` 命令仍可生成 TXT 简报并推送飞书。
 
 ## 快速开始
@@ -12,13 +12,19 @@
 ```bash
 pip install -r requirements.txt
 ```
-2) 启动控制台（默认 8000）
+2) 应用数据库迁移并创建至少两个管理员账号
+```bash
+dbmate --migrations-dir database/migrations --schema-file database/schema.sql up
+python -m src.cli.main create-console-user --username admin-a --display-name "管理员 A" --role admin
+python -m src.cli.main create-console-user --username admin-b --display-name "管理员 B" --role admin
+```
+
+3) 启动控制台（默认 8000）
 ```bash
 python run_console.py
 ```
-- 建议设置 `CONSOLE_BASIC_USERNAME` / `CONSOLE_BASIC_PASSWORD` 或 `CONSOLE_API_TOKEN` 保护接口。
 
-3) 运行流水线单步（示例）
+4) 运行流水线单步（示例）
 ```bash
 python -m src.cli.main crawl --sources toutiao,tencent --limit 5000
 python -m src.cli.main hash-primary
@@ -32,11 +38,15 @@ python -m src.cli.main export
 可用 `-h` 查看每个步骤的参数。
 
 ## Web 控制台
-- 默认地址：`http://127.0.0.1:8000`，会自动进入人工筛选控制台。
+- 默认地址：`http://127.0.0.1:8000`，未登录时进入登录页，登录后按角色进入对应工作台。
 - **/manual_filter**
   - 默认按地域/情感聚类展示，可切换桶（京内正/京内负/京外正/京外负/全部）。
   - 卡片摘要可编辑，状态下拉/批量设置会自动保存并移动到对应列，放弃/待处理会移出视图。
   - 审阅页支持排序模式（紧凑卡片 + 拖拽），导出弹窗支持预览/正式导出。
+- **/duty**
+  - 值班编辑只能读取和修改本人班次，可筛选、排序、编辑综报/晚报归属并预览草稿，不能归档。
+- **/admin** 与 **/admin/duty-summary**
+  - 管理账号、七天轮值模板与具体班次，查看值班结果、未覆盖新闻并选择性送入管理员工作区。
 
 ## 配置要点（.env / .env.local）
 完整环境变量说明、必填项和示例模板见 [docs/env_reference.md](docs/env_reference.md)。

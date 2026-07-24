@@ -1,4 +1,4 @@
-\restrict sas1vez51DCxa5kwENjNVsmZPPNHJa6Jd7npkfKM9fvhJIVktNiTeDlWDTFbcTy
+\restrict frANWTjMaZJ9e4glCosIQjUIopJylCthJPl7jmKqkOihi5iwqxSlDtvgpPJgGl9
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
@@ -14,6 +14,27 @@ SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
+
+--
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
+--
+
+-- *not* creating schema, since initdb creates it
+
+
+--
+-- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION pg_trgm; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
+
 
 --
 -- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
@@ -79,6 +100,74 @@ CREATE TABLE public.brief_items (
     metadata jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: console_user_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.console_user_sessions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    token_hash text NOT NULL,
+    csrf_token_hash text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    last_seen_at timestamp with time zone,
+    revoked_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: console_users; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.console_users (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    username text NOT NULL,
+    display_name text NOT NULL,
+    password_hash text NOT NULL,
+    role text NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    password_changed_at timestamp with time zone,
+    last_login_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT console_users_display_name_not_blank CHECK ((btrim(display_name) <> ''::text)),
+    CONSTRAINT console_users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'duty_editor'::text]))),
+    CONSTRAINT console_users_username_not_blank CHECK ((btrim(username) <> ''::text))
+);
+
+
+--
+-- Name: duty_schedules; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.duty_schedules (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    weekday smallint NOT NULL,
+    user_id uuid NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT duty_schedules_weekday_check CHECK (((weekday >= 0) AND (weekday <= 6)))
+);
+
+
+--
+-- Name: duty_shifts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.duty_shifts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    starts_at timestamp with time zone NOT NULL,
+    ends_at timestamp with time zone NOT NULL,
+    cancelled_at timestamp with time zone,
+    notes text,
+    created_by_user_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT duty_shifts_range_check CHECK ((ends_at > starts_at))
 );
 
 
@@ -176,30 +265,11 @@ CREATE TABLE public.manual_reviews (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     manual_llm_source text,
     report_type text,
+    decided_by_user_id uuid,
+    version integer DEFAULT 1 NOT NULL,
     CONSTRAINT manual_reviews_report_type_check CHECK ((report_type = ANY (ARRAY['zongbao'::text, 'wanbao'::text]))),
-    CONSTRAINT manual_reviews_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'selected'::text, 'backup'::text, 'discarded'::text, 'exported'::text])))
-);
-
-
---
--- Name: score_feedbacks; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.score_feedbacks (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    article_id text NOT NULL,
-    feedback_type text NOT NULL,
-    score_value numeric(6,3) NOT NULL,
-    prompt_key text NOT NULL,
-    prompt_version text NOT NULL,
-    notes text,
-    score_context jsonb,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT score_feedbacks_feedback_type_check CHECK ((feedback_type = ANY (ARRAY['too_high'::text, 'too_low'::text]))),
-    CONSTRAINT score_feedbacks_notes_length_check CHECK (((notes IS NULL) OR (char_length(notes) <= 500))),
-    CONSTRAINT score_feedbacks_prompt_key_check CHECK ((prompt_key = ANY (ARRAY['external_positive'::text, 'external_negative'::text, 'internal_positive'::text, 'internal_negative'::text]))),
-    CONSTRAINT score_feedbacks_prompt_version_check CHECK ((btrim(prompt_version) <> ''::text))
+    CONSTRAINT manual_reviews_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'selected'::text, 'backup'::text, 'discarded'::text, 'exported'::text]))),
+    CONSTRAINT manual_reviews_version_check CHECK ((version > 0))
 );
 
 
@@ -365,12 +435,105 @@ CREATE TABLE public.raw_articles (
 
 
 --
+-- Name: review_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.review_events (
+    id bigint NOT NULL,
+    actor_user_id uuid,
+    action text NOT NULL,
+    target_type text NOT NULL,
+    target_id text,
+    before_data jsonb,
+    after_data jsonb,
+    request_id text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: review_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.review_events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: review_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.review_events_id_seq OWNED BY public.review_events.id;
+
+
+--
 -- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.schema_migrations (
-    version character varying(128) NOT NULL
+    version character varying NOT NULL
 );
+
+
+--
+-- Name: score_feedbacks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.score_feedbacks (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    article_id text NOT NULL,
+    feedback_type text NOT NULL,
+    score_value numeric(6,3) NOT NULL,
+    prompt_key text NOT NULL,
+    prompt_version text NOT NULL,
+    notes text,
+    score_context jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT score_feedbacks_feedback_type_check CHECK ((feedback_type = ANY (ARRAY['too_high'::text, 'too_low'::text]))),
+    CONSTRAINT score_feedbacks_notes_length_check CHECK (((notes IS NULL) OR (char_length(notes) <= 500))),
+    CONSTRAINT score_feedbacks_prompt_key_check CHECK ((prompt_key = ANY (ARRAY['external_positive'::text, 'external_negative'::text, 'internal_positive'::text, 'internal_negative'::text]))),
+    CONSTRAINT score_feedbacks_prompt_version_check CHECK ((btrim(prompt_version) <> ''::text))
+);
+
+
+--
+-- Name: shift_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.shift_reviews (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    shift_id uuid NOT NULL,
+    article_id text NOT NULL,
+    created_by_user_id uuid NOT NULL,
+    updated_by_user_id uuid NOT NULL,
+    report_type text,
+    decision text DEFAULT 'pending'::text NOT NULL,
+    rank integer,
+    excerpt_text text,
+    edited_summary text,
+    manual_llm_source text,
+    notes text,
+    version integer DEFAULT 1 NOT NULL,
+    decided_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT shift_reviews_decision_check CHECK ((decision = ANY (ARRAY['pending'::text, 'selected'::text, 'backup'::text, 'discarded'::text]))),
+    CONSTRAINT shift_reviews_rank_check CHECK (((rank IS NULL) OR (rank > 0))),
+    CONSTRAINT shift_reviews_report_type_check CHECK (((report_type IS NULL) OR (report_type = ANY (ARRAY['zongbao'::text, 'wanbao'::text])))),
+    CONSTRAINT shift_reviews_version_check CHECK ((version > 0))
+);
+
+
+--
+-- Name: review_events id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_events ALTER COLUMN id SET DEFAULT nextval('public.review_events_id_seq'::regclass);
 
 
 --
@@ -395,6 +558,62 @@ ALTER TABLE ONLY public.brief_batches
 
 ALTER TABLE ONLY public.brief_items
     ADD CONSTRAINT brief_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: console_user_sessions console_user_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.console_user_sessions
+    ADD CONSTRAINT console_user_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: console_user_sessions console_user_sessions_token_hash_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.console_user_sessions
+    ADD CONSTRAINT console_user_sessions_token_hash_unique UNIQUE (token_hash);
+
+
+--
+-- Name: console_users console_users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.console_users
+    ADD CONSTRAINT console_users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: duty_schedules duty_schedules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.duty_schedules
+    ADD CONSTRAINT duty_schedules_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: duty_schedules duty_schedules_weekday_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.duty_schedules
+    ADD CONSTRAINT duty_schedules_weekday_unique UNIQUE (weekday);
+
+
+--
+-- Name: duty_shifts duty_shifts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.duty_shifts
+    ADD CONSTRAINT duty_shifts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: duty_shifts duty_shifts_starts_at_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.duty_shifts
+    ADD CONSTRAINT duty_shifts_starts_at_unique UNIQUE (starts_at);
 
 
 --
@@ -462,22 +681,6 @@ ALTER TABLE ONLY public.manual_reviews
 
 
 --
--- Name: score_feedbacks score_feedbacks_article_prompt_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.score_feedbacks
-    ADD CONSTRAINT score_feedbacks_article_prompt_unique UNIQUE (article_id, prompt_key, prompt_version);
-
-
---
--- Name: score_feedbacks score_feedbacks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.score_feedbacks
-    ADD CONSTRAINT score_feedbacks_pkey PRIMARY KEY (id);
-
-
---
 -- Name: news_summaries news_summaries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -526,11 +729,51 @@ ALTER TABLE ONLY public.raw_articles
 
 
 --
+-- Name: review_events review_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_events
+    ADD CONSTRAINT review_events_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.schema_migrations
     ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
+
+
+--
+-- Name: score_feedbacks score_feedbacks_article_prompt_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_feedbacks
+    ADD CONSTRAINT score_feedbacks_article_prompt_unique UNIQUE (article_id, prompt_key, prompt_version);
+
+
+--
+-- Name: score_feedbacks score_feedbacks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_feedbacks
+    ADD CONSTRAINT score_feedbacks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: shift_reviews shift_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_reviews
+    ADD CONSTRAINT shift_reviews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: shift_reviews shift_reviews_shift_article_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_reviews
+    ADD CONSTRAINT shift_reviews_shift_article_unique UNIQUE (shift_id, article_id);
 
 
 --
@@ -545,6 +788,41 @@ CREATE INDEX brief_items_batch_idx ON public.brief_items USING btree (brief_batc
 --
 
 CREATE INDEX brief_items_section_idx ON public.brief_items USING btree (section);
+
+
+--
+-- Name: console_user_sessions_expires_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX console_user_sessions_expires_at_idx ON public.console_user_sessions USING btree (expires_at);
+
+
+--
+-- Name: console_user_sessions_user_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX console_user_sessions_user_id_idx ON public.console_user_sessions USING btree (user_id);
+
+
+--
+-- Name: console_users_username_lower_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX console_users_username_lower_idx ON public.console_users USING btree (lower(username));
+
+
+--
+-- Name: duty_shifts_starts_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX duty_shifts_starts_at_idx ON public.duty_shifts USING btree (starts_at DESC);
+
+
+--
+-- Name: duty_shifts_user_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX duty_shifts_user_id_idx ON public.duty_shifts USING btree (user_id);
 
 
 --
@@ -611,13 +889,6 @@ CREATE INDEX manual_clusters_bucket_key_idx ON public.manual_clusters USING btre
 
 
 --
--- Name: score_feedbacks_prompt_version_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX score_feedbacks_prompt_version_idx ON public.score_feedbacks USING btree (prompt_key, prompt_version);
-
-
---
 -- Name: manual_export_items_batch_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -671,6 +942,13 @@ CREATE INDEX news_summaries_external_filter_idx ON public.news_summaries USING b
 --
 
 CREATE INDEX news_summaries_score_idx ON public.news_summaries USING btree (score DESC NULLS LAST);
+
+
+--
+-- Name: news_summaries_search_expr_trgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX news_summaries_search_expr_trgm ON public.news_summaries USING gin ((((((COALESCE(title, ''::text) || ' '::text) || COALESCE(llm_summary, ''::text)) || ' '::text) || COALESCE(content_markdown, ''::text))) public.gin_trgm_ops);
 
 
 --
@@ -751,6 +1029,62 @@ CREATE INDEX raw_articles_fetched_at_idx ON public.raw_articles USING btree (fet
 
 
 --
+-- Name: review_events_actor_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX review_events_actor_idx ON public.review_events USING btree (actor_user_id);
+
+
+--
+-- Name: review_events_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX review_events_created_at_idx ON public.review_events USING btree (created_at DESC);
+
+
+--
+-- Name: review_events_target_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX review_events_target_idx ON public.review_events USING btree (target_type, target_id);
+
+
+--
+-- Name: score_feedbacks_prompt_version_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX score_feedbacks_prompt_version_idx ON public.score_feedbacks USING btree (prompt_key, prompt_version);
+
+
+--
+-- Name: shift_reviews_article_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX shift_reviews_article_id_idx ON public.shift_reviews USING btree (article_id);
+
+
+--
+-- Name: shift_reviews_created_by_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX shift_reviews_created_by_idx ON public.shift_reviews USING btree (created_by_user_id);
+
+
+--
+-- Name: shift_reviews_shift_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX shift_reviews_shift_id_idx ON public.shift_reviews USING btree (shift_id);
+
+
+--
+-- Name: shift_reviews_updated_by_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX shift_reviews_updated_by_idx ON public.shift_reviews USING btree (updated_by_user_id);
+
+
+--
 -- Name: brief_batches brief_batches_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -822,6 +1156,38 @@ ALTER TABLE ONLY public.brief_items
 
 
 --
+-- Name: console_user_sessions console_user_sessions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.console_user_sessions
+    ADD CONSTRAINT console_user_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: duty_schedules duty_schedules_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.duty_schedules
+    ADD CONSTRAINT duty_schedules_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: duty_shifts duty_shifts_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.duty_shifts
+    ADD CONSTRAINT duty_shifts_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: duty_shifts duty_shifts_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.duty_shifts
+    ADD CONSTRAINT duty_shifts_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: filtered_articles filtered_articles_primary_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -854,11 +1220,11 @@ ALTER TABLE ONLY public.manual_reviews
 
 
 --
--- Name: score_feedbacks score_feedbacks_article_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: manual_reviews manual_reviews_decided_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.score_feedbacks
-    ADD CONSTRAINT score_feedbacks_article_id_fkey FOREIGN KEY (article_id) REFERENCES public.news_summaries(article_id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.manual_reviews
+    ADD CONSTRAINT manual_reviews_decided_by_user_id_fkey FOREIGN KEY (decided_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
 
 
 --
@@ -886,10 +1252,42 @@ ALTER TABLE ONLY public.primary_articles
 
 
 --
+-- Name: score_feedbacks score_feedbacks_article_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_feedbacks
+    ADD CONSTRAINT score_feedbacks_article_id_fkey FOREIGN KEY (article_id) REFERENCES public.news_summaries(article_id) ON DELETE CASCADE;
+
+
+--
+-- Name: shift_reviews shift_reviews_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_reviews
+    ADD CONSTRAINT shift_reviews_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: shift_reviews shift_reviews_shift_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_reviews
+    ADD CONSTRAINT shift_reviews_shift_id_fkey FOREIGN KEY (shift_id) REFERENCES public.duty_shifts(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: shift_reviews shift_reviews_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_reviews
+    ADD CONSTRAINT shift_reviews_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
 -- PostgreSQL database dump complete
 --
 
-\unrestrict sas1vez51DCxa5kwENjNVsmZPPNHJa6Jd7npkfKM9fvhJIVktNiTeDlWDTFbcTy
+\unrestrict frANWTjMaZJ9e4glCosIQjUIopJylCthJPl7jmKqkOihi5iwqxSlDtvgpPJgGl9
 
 
 --
@@ -921,4 +1319,7 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20251201100000'),
     ('20251202090000'),
     ('20260111090000'),
-    ('20260722090000');
+    ('20260722090000'),
+    ('20260724190000'),
+    ('20260724200000'),
+    ('20260724210000');

@@ -230,6 +230,38 @@ def _anonymous_console_user() -> ConsoleUser:
     return ConsoleUser(method="test")
 
 
+def test_decide_uses_authenticated_user_instead_of_forged_actor(monkeypatch) -> None:
+    from src.console import manual_filter_service
+
+    captured: Dict[str, Any] = {}
+
+    def bulk_decide(**kwargs: Any) -> Dict[str, int]:
+        captured.update(kwargs)
+        return {"selected": 1, "backup": 0, "discarded": 0, "pending": 0}
+
+    monkeypatch.setattr(manual_filter_service, "bulk_decide", bulk_decide)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = lambda: ConsoleUser(
+        method="test",
+        username="real-admin",
+        display_name="真实管理员",
+        role="admin",
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/manual_filter/decide",
+        json={
+            "selected_ids": ["a1"],
+            "actor": "forged-user",
+            "report_type": "zongbao",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["actor"] == "real-admin"
+
+
 def test_candidates_api_returns_search_mode_items(monkeypatch) -> None:
     from src.console import manual_filter_service
 

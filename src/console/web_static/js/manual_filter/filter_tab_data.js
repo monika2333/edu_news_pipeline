@@ -75,7 +75,7 @@ async function persistEdits(edits) {
     const res = await fetch(`${API_BASE}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ edits, actor: state.actor })
+        body: JSON.stringify({ edits })
     });
     if (!res.ok) throw new Error('failed to save edits');
 }
@@ -85,8 +85,7 @@ async function submitDecisions(ids, status) {
         selected_ids: status === 'selected' ? ids : [],
         backup_ids: status === 'backup' ? ids : [],
         discarded_ids: status === 'discarded' ? ids : [],
-        pending_ids: status === 'pending' ? ids : [],
-        actor: state.actor
+        pending_ids: status === 'pending' ? ids : []
     };
 
     const res = await fetch(`${API_BASE}/decide`, {

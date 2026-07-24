@@ -1,6 +1,8 @@
 ﻿from __future__ import annotations
 
 import argparse
+import getpass
+import os
 from pathlib import Path
 
 from src.workers.crawl_sources import run as crawl_sources
@@ -109,6 +111,89 @@ def _add_geo_tag(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_create_console_user(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "create-console-user",
+        help="Create an administrator-managed console account",
+    )
+    parser.add_argument("--username", required=True, help="Unique login name")
+    parser.add_argument("--display-name", required=True, help="Name shown in the console")
+    parser.add_argument(
+        "--role",
+        choices=("admin", "duty_editor"),
+        default="admin",
+        help="Console role (default: admin)",
+    )
+    parser.add_argument(
+        "--password-env",
+        default=None,
+        help="Read the initial password from this environment variable",
+    )
+
+
+def _add_cleanup_console_sessions(subparsers: argparse._SubParsersAction) -> None:
+    subparsers.add_parser(
+        "cleanup-console-sessions",
+        help="Delete expired and long-revoked console sessions",
+    )
+
+
+def _add_generate_shifts(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "generate-shifts",
+        help="Generate upcoming duty shifts from the weekly schedule",
+    )
+    parser.add_argument(
+        "--days",
+        type=_positive_int,
+        default=14,
+        help="Number of coverage days to ensure (default: 14)",
+    )
+
+
+def _read_initial_password(password_env: str | None) -> str:
+    if password_env:
+        password = os.getenv(password_env)
+        if password is None:
+            raise ValueError(f"Environment variable is not set: {password_env}")
+        return password
+    password = getpass.getpass("Initial password: ")
+    confirmation = getpass.getpass("Confirm password: ")
+    if password != confirmation:
+        raise ValueError("Passwords do not match")
+    return password
+
+
+def _create_console_user(args: argparse.Namespace) -> None:
+    from src.console.auth_service import create_console_user
+
+    password = _read_initial_password(args.password_env)
+    user = create_console_user(
+        username=args.username,
+        display_name=args.display_name,
+        password=password,
+        role=args.role,
+    )
+    print(f"Created console user {user['username']} ({user['role']})")
+
+
+def _cleanup_console_sessions() -> None:
+    from src.console.auth_service import cleanup_expired_sessions
+
+    deleted = cleanup_expired_sessions()
+    print(f"Deleted {deleted} expired console sessions")
+
+
+def _generate_shifts(days: int) -> None:
+    from src.console.shifts_service import generate_shifts
+
+    result = generate_shifts(days=days)
+    print(
+        "Generated duty shifts: "
+        f"{result['inserted']} inserted, {result['requested']} requested"
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="edu-news", description="Edu news pipeline controller")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -122,6 +207,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_external_filter(subparsers)
     _add_export(subparsers)
     _add_geo_tag(subparsers)
+    _add_create_console_user(subparsers)
+    _add_cleanup_console_sessions(subparsers)
+    _add_generate_shifts(subparsers)
     return parser
 
 
@@ -158,6 +246,12 @@ def main(argv: list[str] | None = None) -> None:
         )
     elif command == "geo-tag":
         geo_tag(limit=args.limit, batch_size=args.batch_size)
+    elif command == "create-console-user":
+        _create_console_user(args)
+    elif command == "cleanup-console-sessions":
+        _cleanup_console_sessions()
+    elif command == "generate-shifts":
+        _generate_shifts(args.days)
     else:
         parser.error(f"Unknown command: {command}")
 

@@ -202,7 +202,7 @@ def fetch_overlapping_duty_shift(
         WHERE s.cancelled_at IS NULL
           AND s.starts_at < %s
           AND s.ends_at > %s
-          AND (%s IS NULL OR s.id <> %s)
+          AND (%s::uuid IS NULL OR s.id <> %s::uuid)
         ORDER BY s.starts_at
         LIMIT 1
         """,

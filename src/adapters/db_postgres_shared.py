@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any, Optional
+from uuid import UUID
 
 MISSING = object()
 
@@ -34,10 +35,19 @@ def iso_datetime(value: Any) -> Optional[str]:
 
 
 def json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(key): json_safe(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [json_safe(item) for item in value]
     if isinstance(value, Decimal):
         return float(value)
-    if isinstance(value, datetime):
+    if isinstance(value, (date, datetime)):
         return value.isoformat()
+    if isinstance(value, UUID):
+        return str(value)
     return value
 
 

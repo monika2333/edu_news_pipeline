@@ -222,7 +222,7 @@ function renderSortableReviewItems(items) {
             const link = item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">${title}</a>` : title;
             const searchText = escapeReviewAttr(buildReviewSearchText(item));
             return `
-                            <div class="article-card sort-card" data-id="${item.article_id || ''}" data-status="${currentStatus}" data-search-text="${searchText}">
+                            <div class="article-card sort-card" data-id="${item.article_id || ''}" data-status="${currentStatus}" data-version="${item.version || 0}" data-search-text="${searchText}">
                                 <div class="card-header sort-header">
                                     <span class="drag-handle" title="拖动排序">&#8942;</span>
                                     <h4 class="article-title">${link}</h4>
@@ -251,7 +251,7 @@ function renderReviewCard(item) {
             ? `${currentReportType}:${currentStatus}`
             : currentStatus;
     return `
-        <div class="article-card${bonusClass}" data-id="${item.article_id || ''}" data-status="${currentStatus}" data-report-type="${currentReportType}" data-search-text="${searchText}">
+        <div class="article-card${bonusClass}" data-id="${item.article_id || ''}" data-status="${currentStatus}" data-version="${item.version || 0}" data-report-type="${currentReportType}" data-search-text="${searchText}">
             <div class="card-header">
                 <label class="review-select-wrap" title="选择">
                     <input type="checkbox" class="review-select">

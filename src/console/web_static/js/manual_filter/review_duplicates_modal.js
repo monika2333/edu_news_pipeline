@@ -45,6 +45,7 @@ function renderDuplicateReviewItem(item) {
     return `
         <article class="article-card duplicate-review-item" data-id="${escapeDuplicateHtml(item.article_id)}"
             data-status="${escapeDuplicateHtml(item.status)}"
+            data-version="${Number(item.version) || 0}"
             data-report-type="${escapeDuplicateHtml(item.report_type)}">
             <div class="duplicate-review-item-header">
                 <label class="review-select-wrap" title="选择">
@@ -95,6 +96,7 @@ function reconcileDuplicateReviewResult(result, scope) {
                 url: current.url || item.url,
                 status: current.manual_status || current.status || scope.decision,
                 report_type: current.report_type || scope.reportType,
+                version: current.version,
                 score: current.external_importance_score,
                 bonus_keywords: current.bonus_keywords || item.bonus_keywords || []
             };

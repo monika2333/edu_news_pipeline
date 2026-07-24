@@ -34,6 +34,11 @@ def serialize_review_item(
     item["edited_summary"] = source.get("edited_summary")
     item["updated_by_user_id"] = source.get("updated_by_user_id")
     item["updated_by_display_name"] = source.get("updated_by_display_name")
+    item["admin_status"] = source.get("admin_status")
+    item["admin_report_type"] = source.get("admin_report_type")
+    item["admin_decided_by"] = source.get("admin_decided_by")
+    item["admin_decided_at"] = source.get("admin_decided_at")
+    item["admin_version"] = source.get("admin_version")
     return item
 
 

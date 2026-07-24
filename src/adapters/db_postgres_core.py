@@ -131,16 +131,15 @@ class PostgresAdapter:
                 password_hash=password_hash,
                 role=role,
             )
-            if actor_user_id:
-                audit.insert_review_event(
-                    cur,
-                    actor_user_id=actor_user_id,
-                    action="user.create",
-                    target_type="console_user",
-                    target_id=str(created["id"]),
-                    before_data=None,
-                    after_data=created,
-                )
+            audit.insert_review_event(
+                cur,
+                actor_user_id=actor_user_id,
+                action="user.create",
+                target_type="console_user",
+                target_id=str(created["id"]),
+                before_data=None,
+                after_data=created,
+            )
             return created
 
     def fetch_console_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
@@ -269,7 +268,40 @@ class PostgresAdapter:
                 expires_at=expires_at,
             )
             users.record_console_user_login(cur, user_id)
+            audit.insert_review_event(
+                cur,
+                actor_user_id=user_id,
+                action="auth.login.success",
+                target_type="console_user",
+                target_id=user_id,
+                before_data=None,
+                after_data={
+                    "session_id": session["id"],
+                    "expires_at": expires_at,
+                },
+            )
             return session
+
+    def record_console_auth_event(
+        self,
+        *,
+        action: str,
+        target_id: Optional[str],
+        actor_user_id: Optional[str],
+        after_data: Mapping[str, Any],
+        request_id: Optional[str] = None,
+    ) -> int:
+        with self.transaction() as cur:
+            return audit.insert_review_event(
+                cur,
+                actor_user_id=actor_user_id,
+                action=action,
+                target_type="console_auth",
+                target_id=target_id,
+                before_data=None,
+                after_data=after_data,
+                request_id=request_id,
+            )
 
     def fetch_console_session_by_token_hash(
         self,
@@ -282,9 +314,25 @@ class PostgresAdapter:
         with self._cursor() as cur:
             users.touch_console_session(cur, session_id)
 
-    def revoke_console_session_by_token_hash(self, token_hash: str) -> bool:
-        with self._cursor() as cur:
-            return users.revoke_console_session_by_token_hash(cur, token_hash)
+    def revoke_console_session_by_token_hash(
+        self,
+        token_hash: str,
+        *,
+        actor_user_id: Optional[str] = None,
+    ) -> bool:
+        with self.transaction() as cur:
+            revoked = users.revoke_console_session_by_token_hash(cur, token_hash)
+            if revoked:
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action="auth.logout",
+                    target_type="console_user",
+                    target_id=actor_user_id,
+                    before_data=None,
+                    after_data={"revoked": True},
+                )
+            return revoked
 
     def change_console_user_password(
         self,
@@ -300,10 +348,19 @@ class PostgresAdapter:
                 password_hash=password_hash,
             )
             if updated:
-                users.revoke_console_user_sessions(
+                revoked = users.revoke_console_user_sessions(
                     cur,
                     user_id=user_id,
                     except_session_id=current_session_id,
+                )
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=user_id,
+                    action="auth.password.change",
+                    target_type="console_user",
+                    target_id=user_id,
+                    before_data=None,
+                    after_data={"other_sessions_revoked": revoked},
                 )
             return updated
 
@@ -467,6 +524,8 @@ class PostgresAdapter:
         report_type: Optional[str],
         limit: int,
         offset: int,
+        mismatch_only: bool = False,
+        include_admin_state: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         with self._cursor() as cur:
             return shift_reviews.fetch_shift_review_items(
@@ -476,6 +535,8 @@ class PostgresAdapter:
                 report_type=report_type,
                 limit=limit,
                 offset=offset,
+                mismatch_only=mismatch_only,
+                include_admin_state=include_admin_state,
             )
 
     def fetch_shift_clusters(
@@ -1155,6 +1216,44 @@ class PostgresAdapter:
             updated_categories = news_summaries.update_summary_categories(cur, category_updates)
         return updated_reviews, updated_categories
 
+    def update_manual_review_order_as_user(
+        self,
+        review_updates: Sequence[Mapping[str, Any]],
+        category_updates: Sequence[Mapping[str, Any]],
+        *,
+        actor_username: str,
+        actor_user_id: Optional[str],
+        report_type: Optional[str] = None,
+        request_id: Optional[str] = None,
+    ) -> Tuple[int, int]:
+        with self.transaction() as cur:
+            before, after = manual_reviews.update_manual_review_order_as_user(
+                cur,
+                review_updates,
+                actor_username=actor_username,
+                actor_user_id=actor_user_id,
+                report_type=report_type,
+            )
+            updated_categories = news_summaries.update_summary_categories(
+                cur,
+                category_updates,
+            )
+            if after:
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action="manual_review.reorder",
+                    target_type="manual_review_batch",
+                    target_id=report_type,
+                    before_data={"items": before},
+                    after_data={
+                        "items": after,
+                        "category_updates": list(category_updates),
+                    },
+                    request_id=request_id,
+                )
+            return len(after), updated_categories
+
     def fetch_manual_pending_for_cluster(
         self,
         *,
@@ -1298,6 +1397,52 @@ class PostgresAdapter:
         with self._cursor() as cur:
             return manual_reviews.update_manual_review_statuses(cur, updates, report_type=report_type)
 
+    def update_manual_review_statuses_as_user(
+        self,
+        updates: Sequence[Mapping[str, Any]],
+        *,
+        actor_username: str,
+        actor_user_id: Optional[str],
+        expected_versions: Mapping[str, int],
+        require_versions: bool,
+        action: str,
+        report_type: Optional[str] = None,
+        request_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        with self.transaction() as cur:
+            effective_updates = (
+                manual_reviews.allocate_manual_review_decision_ranks(
+                    cur,
+                    updates,
+                    report_type=report_type,
+                )
+                if action == "manual_review.decide"
+                else [dict(item) for item in updates]
+            )
+            before, after = (
+                manual_reviews.update_manual_review_statuses_with_versions(
+                    cur,
+                    effective_updates,
+                    actor_username=actor_username,
+                    actor_user_id=actor_user_id,
+                    expected_versions=expected_versions,
+                    require_versions=require_versions,
+                    report_type=report_type,
+                )
+            )
+            if after:
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action=action,
+                    target_type="manual_review_batch",
+                    target_id=report_type,
+                    before_data={"items": before},
+                    after_data={"items": after},
+                    request_id=request_id,
+                )
+            return after
+
     def reset_manual_reviews_to_pending(
         self,
         article_ids: Sequence[str],
@@ -1331,6 +1476,102 @@ class PostgresAdapter:
                 decided_at=decided_at,
                 report_type=report_type,
             )
+
+    def discard_manual_candidates_before_date_as_user(
+        self,
+        *,
+        region: str,
+        sentiment: str,
+        query: Optional[str],
+        published_before: Optional[date],
+        report_type: str,
+        actor_username: str,
+        actor_user_id: Optional[str],
+        request_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        with self.transaction() as cur:
+            targets = (
+                manual_reviews.fetch_manual_candidates_before_date_for_update(
+                    cur,
+                    region=region,
+                    sentiment=sentiment,
+                    query=query,
+                    published_before=published_before,
+                    report_type=report_type,
+                )
+            )
+            updates = [
+                {
+                    "article_id": str(row["article_id"]),
+                    "status": "discarded",
+                    "rank": None,
+                    "report_type": report_type,
+                }
+                for row in targets
+            ]
+            expected_versions = {
+                str(row["article_id"]): int(row["version"])
+                for row in targets
+            }
+            before, after = (
+                manual_reviews.update_manual_review_statuses_with_versions(
+                    cur,
+                    updates,
+                    actor_username=actor_username,
+                    actor_user_id=actor_user_id,
+                    expected_versions=expected_versions,
+                    require_versions=True,
+                    report_type=report_type,
+                )
+            )
+            if after:
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action="manual_review.bulk_discard",
+                    target_type="manual_review_batch",
+                    target_id=report_type,
+                    before_data={"items": before},
+                    after_data={"items": after},
+                    request_id=request_id,
+                )
+            return after
+
+    def update_manual_review_summaries_as_user(
+        self,
+        edits: Mapping[str, Mapping[str, Any]],
+        *,
+        actor_username: str,
+        actor_user_id: Optional[str],
+        expected_versions: Mapping[str, int],
+        require_versions: bool,
+        report_type: Optional[str] = None,
+        request_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        with self.transaction() as cur:
+            before, after = (
+                manual_reviews.update_manual_review_summaries_with_versions(
+                    cur,
+                    edits,
+                    actor_username=actor_username,
+                    actor_user_id=actor_user_id,
+                    expected_versions=expected_versions,
+                    require_versions=require_versions,
+                    report_type=report_type,
+                )
+            )
+            if after:
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action="manual_review.edit",
+                    target_type="manual_review_batch",
+                    target_id=report_type,
+                    before_data={"items": before},
+                    after_data={"items": after},
+                    request_id=request_id,
+                )
+            return after
 
     def fetch_manual_selected_for_export(self, *, report_type: Optional[str] = None) -> List[Dict[str, Any]]:
         with self._cursor() as cur:

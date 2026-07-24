@@ -3,10 +3,14 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Dict, List, Literal, NoReturn, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from src.console import manual_filter_service, score_feedback_service
+from src.console import (
+    manual_filter_admin_service,
+    manual_filter_service,
+    score_feedback_service,
+)
 from src.console.manual_filter_duplicate_service import (
     DuplicateReviewInvalidResponseError,
     DuplicateReviewLimitError,
@@ -23,6 +27,7 @@ class BulkDecideRequest(BaseModel):
     backup_ids: List[str] = Field(default_factory=list)
     discarded_ids: List[str] = Field(default_factory=list)
     pending_ids: List[str] = Field(default_factory=list)
+    versions: Dict[str, int] = Field(default_factory=dict)
     report_type: str = "zongbao"
 
 
@@ -49,11 +54,13 @@ class ScoreFeedbackResponse(BaseModel):
 
 class SaveEditsRequest(BaseModel):
     edits: Dict[str, Dict[str, Any]] = Field(default_factory=dict)  # article_id -> {"summary": "...", "llm_source": "..."}
+    versions: Dict[str, int] = Field(default_factory=dict)
     report_type: str = "zongbao"
 
 
 class ArchiveRequest(BaseModel):
     article_ids: List[str] = Field(default_factory=list)
+    versions: Dict[str, int] = Field(default_factory=dict)
     report_type: str = "zongbao"
 
 
@@ -89,6 +96,12 @@ def _raise_score_feedback_http_error(exc: ValueError) -> NoReturn:
     if isinstance(exc, score_feedback_service.ScoreFeedbackNotFoundError):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if isinstance(exc, score_feedback_service.ScoreFeedbackContextError):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _raise_manual_write_http_error(exc: Exception) -> NoReturn:
+    if isinstance(exc, manual_filter_admin_service.ManualReviewConflictError):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -155,15 +168,21 @@ def clear_score_feedback_api(req: ClearScoreFeedbackRequest) -> ScoreFeedbackRes
 def bulk_decide_api(
     req: BulkDecideRequest,
     user: ConsoleUser = Depends(require_console_user),
-) -> Dict[str, int]:
-    return manual_filter_service.bulk_decide(
-        selected_ids=req.selected_ids,
-        backup_ids=req.backup_ids,
-        discarded_ids=req.discarded_ids,
-        pending_ids=req.pending_ids,
-        actor=user.username,
-        report_type=req.report_type,
-    )
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
+) -> Dict[str, Any]:
+    try:
+        return manual_filter_admin_service.bulk_decide(
+            selected_ids=req.selected_ids,
+            backup_ids=req.backup_ids,
+            discarded_ids=req.discarded_ids,
+            pending_ids=req.pending_ids,
+            versions=req.versions,
+            actor=user,
+            report_type=req.report_type,
+            request_id=request_id,
+        )
+    except (ValueError, RuntimeError) as exc:
+        _raise_manual_write_http_error(exc)
 
 
 @router.get("/review")
@@ -198,14 +217,18 @@ def list_discarded_api(limit: int = 30, offset: int = 0, report_type: str = "zon
 def save_edits_api(
     req: SaveEditsRequest,
     user: ConsoleUser = Depends(require_console_user),
-) -> Dict[str, int]:
-    # The service expects Dict[str, Dict[str, Any]], which matches the pydantic model
-    count = manual_filter_service.save_edits(
-        req.edits,
-        actor=user.username,
-        report_type=req.report_type,
-    )
-    return {"updated": count}
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
+) -> Dict[str, Any]:
+    try:
+        return manual_filter_admin_service.save_edits(
+            req.edits,
+            versions=req.versions,
+            actor=user,
+            report_type=req.report_type,
+            request_id=request_id,
+        )
+    except (ValueError, RuntimeError) as exc:
+        _raise_manual_write_http_error(exc)
 
 
 @router.get("/stats")
@@ -217,27 +240,34 @@ def status_counts_api(report_type: str = "zongbao") -> Dict[str, int]:
 def archive_api(
     req: ArchiveRequest,
     user: ConsoleUser = Depends(require_console_user),
-) -> Dict[str, int]:
-    count = manual_filter_service.archive_items(
-        req.article_ids,
-        actor=user.username,
-        report_type=req.report_type,
-    )
-    return {"exported": count}
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
+) -> Dict[str, Any]:
+    try:
+        return manual_filter_admin_service.archive_items(
+            req.article_ids,
+            versions=req.versions,
+            actor=user,
+            report_type=req.report_type,
+            request_id=request_id,
+        )
+    except (ValueError, RuntimeError) as exc:
+        _raise_manual_write_http_error(exc)
 
 
 @router.post("/order")
 def update_order_api(
     req: UpdateOrderRequest,
     user: ConsoleUser = Depends(require_console_user),
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ) -> Dict[str, int]:
     try:
-        return manual_filter_service.update_ranks(
+        return manual_filter_admin_service.update_ranks(
             selected_order=req.selected_order,
             backup_order=req.backup_order,
             group_orders=req.group_orders,
-            actor=user.username,
+            actor=user,
             report_type=req.report_type,
+            request_id=request_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -247,12 +277,17 @@ def update_order_api(
 def discard_before_date_api(
     req: DiscardBeforeDateRequest,
     user: ConsoleUser = Depends(require_console_user),
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ) -> Dict[str, int]:
-    return manual_filter_service.discard_candidates_before_date(
-        region=req.region,
-        sentiment=req.sentiment,
-        query=req.q,
-        published_before=req.published_before,
-        actor=user.username,
-        dry_run=req.dry_run,
-    )
+    try:
+        return manual_filter_admin_service.discard_candidates_before_date(
+            region=req.region,
+            sentiment=req.sentiment,
+            query=req.q,
+            published_before=req.published_before,
+            dry_run=req.dry_run,
+            actor=user,
+            request_id=request_id,
+        )
+    except (ValueError, RuntimeError) as exc:
+        _raise_manual_write_http_error(exc)

@@ -72,20 +72,25 @@ async function loadFilterCounts() {
 
 async function persistEdits(edits) {
     if (!Object.keys(edits || {}).length) return;
+    const articleIds = Object.keys(edits);
     const res = await fetch(`${API_BASE}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ edits })
+        body: JSON.stringify({
+            edits,
+            versions: collectManualReviewVersions(articleIds)
+        })
     });
-    if (!res.ok) throw new Error('failed to save edits');
+    await requireManualMutationSuccess(res, 'failed to save edits');
 }
 
-async function submitDecisions(ids, status) {
+async function submitDecisions(ids, status, versions = null) {
     const payload = {
         selected_ids: status === 'selected' ? ids : [],
         backup_ids: status === 'backup' ? ids : [],
         discarded_ids: status === 'discarded' ? ids : [],
-        pending_ids: status === 'pending' ? ids : []
+        pending_ids: status === 'pending' ? ids : [],
+        versions: versions || collectManualReviewVersions(ids)
     };
 
     const res = await fetch(`${API_BASE}/decide`, {
@@ -93,7 +98,7 @@ async function submitDecisions(ids, status) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
-    if (!res.ok) throw new Error('failed to update status');
+    return requireManualMutationSuccess(res, 'failed to update status');
 }
 
 async function applyFilterSearch() {

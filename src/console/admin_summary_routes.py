@@ -54,6 +54,7 @@ def shift_results(
     shift_id: str,
     decision: Optional[str] = None,
     report_type: Optional[str] = None,
+    mismatch_only: bool = False,
     limit: int = 200,
     offset: int = 0,
     user: ConsoleUser = Depends(require_role("admin")),
@@ -64,6 +65,7 @@ def shift_results(
             shift_id=shift_id,
             decision=decision,
             report_type=report_type,
+            mismatch_only=mismatch_only,
             limit=limit,
             offset=offset,
         )

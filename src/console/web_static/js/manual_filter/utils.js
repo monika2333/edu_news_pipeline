@@ -6,6 +6,56 @@ function formatScore(value) {
     return Number.isFinite(score) ? String(Math.round(score)) : '-';
 }
 
+function getManualReviewVersion(articleId) {
+    const card = Array.from(document.querySelectorAll('.article-card[data-id]'))
+        .find(candidate => candidate.dataset.id === articleId);
+    const domVersion = Number(card?.dataset.version);
+    if (Number.isInteger(domVersion) && domVersion > 0) return domVersion;
+    const reviewItems = [
+        ...(state.reviewData?.selected || []),
+        ...(state.reviewData?.backup || [])
+    ];
+    const item = reviewItems.find(candidate => candidate?.article_id === articleId);
+    const stateVersion = Number(item?.version);
+    return Number.isInteger(stateVersion) && stateVersion > 0 ? stateVersion : null;
+}
+
+function collectManualReviewVersions(articleIds) {
+    const versions = {};
+    (articleIds || []).forEach(articleId => {
+        const version = getManualReviewVersion(articleId);
+        if (version !== null) versions[articleId] = version;
+    });
+    return versions;
+}
+
+function applyManualReviewVersions(versions) {
+    Object.entries(versions || {}).forEach(([articleId, rawVersion]) => {
+        const version = Number(rawVersion);
+        if (!Number.isInteger(version) || version <= 0) return;
+        document.querySelectorAll('.article-card[data-id]').forEach(card => {
+            if (card.dataset.id === articleId) card.dataset.version = String(version);
+        });
+        ['selected', 'backup'].forEach(status => {
+            const item = (state.reviewData?.[status] || [])
+                .find(candidate => candidate?.article_id === articleId);
+            if (item) item.version = version;
+        });
+    });
+}
+
+async function requireManualMutationSuccess(response, fallbackMessage) {
+    const payload = await response.json().catch(() => ({}));
+    if (response.status === 409) {
+        throw new Error('该记录已被其他操作更新，请刷新后重试');
+    }
+    if (!response.ok) {
+        throw new Error(payload.detail || fallbackMessage);
+    }
+    applyManualReviewVersions(payload.versions);
+    return payload;
+}
+
 function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) {
     const safe = item || {};
     const currentStatus = safe.manual_status || safe.status || 'pending';
@@ -29,7 +79,7 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
     ` : '';
 
     return `
-        <div class="article-card${bonusClass}${collapsed ? ' collapsed' : ''}" data-id="${safe.article_id || ''}" data-status="${currentStatus}" ${collapsed ? 'style="display:none;"' : ''}>
+        <div class="article-card${bonusClass}${collapsed ? ' collapsed' : ''}" data-id="${safe.article_id || ''}" data-status="${currentStatus}" data-version="${safe.version || 0}" ${collapsed ? 'style="display:none;"' : ''}>
             <div class="card-header">
                 <h3 class="article-title">
                     ${safe.title || '(No Title)'}

@@ -26,7 +26,7 @@ function renderDiscardList(items) {
     }
 
     elements.discardList.innerHTML = items.map(item => `
-        <div class="article-card" data-id="${escapeDiscardAttr(item.article_id || '')}">
+        <div class="article-card" data-id="${escapeDiscardAttr(item.article_id || '')}" data-version="${Number(item.version) || 0}">
             <div class="card-header">
                 <h4 class="article-title">${escapeDiscardHtml(item.title || '(No Title)')}</h4>
                 <div class="discard-card-actions">
@@ -91,6 +91,7 @@ function buildDiscardRestorePayload(id, status, reportType) {
         backup_ids: status === 'backup' ? [id] : [],
         discarded_ids: [],
         pending_ids: status === 'pending' ? [id] : [],
+        versions: collectManualReviewVersions([id]),
         report_type: reportType
     };
 }
@@ -125,13 +126,13 @@ async function handleDiscardRestoreChange(event) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(buildDiscardRestorePayload(id, status, reportType))
         });
-        if (!res.ok) throw new Error('failed to restore discarded item');
+        await requireManualMutationSuccess(res, 'failed to restore discarded item');
 
         showToast(`已恢复到${getDiscardRestoreLabel(rawValue)}`);
         loadStats();
         loadDiscardData();
     } catch (e) {
-        showToast('恢复失败', 'error');
+        showToast(e.message || '恢复失败', 'error');
         select.value = '';
         select.disabled = false;
     }

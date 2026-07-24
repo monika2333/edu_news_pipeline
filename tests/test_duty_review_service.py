@@ -104,6 +104,31 @@ def test_save_review_uses_authenticated_editor_id(monkeypatch) -> None:
     assert result["decision"] == "selected"
 
 
+def test_serialize_review_item_preserves_admin_comparison_state() -> None:
+    result = duty_review_service.serialize_review_item(
+        {
+            "article_id": "article-id",
+            "decision": "backup",
+            "report_type": "wanbao",
+            "version": 2,
+            "title": "测试新闻",
+            "llm_summary": "机器摘要",
+            "score_details": {},
+            "admin_status": "selected",
+            "admin_report_type": "zongbao",
+            "admin_decided_by": "admin-a",
+            "admin_version": 5,
+        },
+        fallback_report_type="wanbao",
+    )
+
+    assert result["decision"] == "backup"
+    assert result["admin_status"] == "selected"
+    assert result["admin_report_type"] == "zongbao"
+    assert result["admin_decided_by"] == "admin-a"
+    assert result["admin_version"] == 5
+
+
 def test_order_rejects_duplicate_article_ids(monkeypatch) -> None:
     monkeypatch.setattr(
         duty_review_service,

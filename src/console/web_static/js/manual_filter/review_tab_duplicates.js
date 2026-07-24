@@ -25,12 +25,17 @@ function collectDuplicateReviewEdits(items = null, { onlyDirty = false } = {}) {
 
 async function saveDuplicateReviewEdits(edits, reportType = state.reviewReportType) {
     if (!Object.keys(edits).length) return;
+    const articleIds = Object.keys(edits);
     const response = await fetch(`${API_BASE}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ edits, report_type: reportType })
+        body: JSON.stringify({
+            edits,
+            versions: collectManualReviewVersions(articleIds),
+            report_type: reportType
+        })
     });
-    if (!response.ok) throw new Error('保存编辑失败');
+    await requireManualMutationSuccess(response, '保存编辑失败');
     Object.entries(edits).forEach(([articleId, edit]) => {
         applyReviewEditsToState(articleId, edit.summary, edit.llm_source);
         document.querySelectorAll('.duplicate-review-item').forEach(item => {
@@ -75,9 +80,13 @@ async function flushReviewEditsBeforeDuplicateCheck(scope = getDuplicateReviewSc
     const response = await fetch(`${API_BASE}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ edits, report_type: scope.reportType })
+        body: JSON.stringify({
+            edits,
+            versions: collectManualReviewVersions(Object.keys(edits)),
+            report_type: scope.reportType
+        })
     });
-    if (!response.ok) throw new Error('保存当前编辑失败');
+    await requireManualMutationSuccess(response, '保存当前编辑失败');
     Object.entries(edits).forEach(([articleId, edit]) => {
         applyReviewEditsToState(articleId, edit.summary, edit.llm_source);
     });
@@ -155,7 +164,8 @@ function buildDuplicateDecisionPayload(value, articleId, reportType) {
         backup_ids: [],
         discarded_ids: [],
         pending_ids: [],
-        report_type: reportType
+        report_type: reportType,
+        versions: collectManualReviewVersions([articleId])
     };
     if (value.includes(':')) {
         const [targetReportType, targetStatus] = value.split(':');
@@ -198,7 +208,7 @@ async function postDuplicateDecision(payload) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
-    if (!response.ok) throw new Error('状态更新失败');
+    return requireManualMutationSuccess(response, '状态更新失败');
 }
 
 async function handleDuplicateStatusChange(event) {
@@ -235,7 +245,7 @@ async function handleDuplicateStatusChange(event) {
                 loadStats();
                 showToast('已撤销操作');
             } catch (error) {
-                showToast('撤销失败', 'error');
+                showToast(error.message || '撤销失败', 'error');
             }
         });
         showToast('状态已更新', 'success', undoAction);
@@ -280,7 +290,7 @@ async function handleDuplicateSummaryUpdate(event) {
         );
         showToast('摘要已保存');
     } catch (error) {
-        showToast('摘要保存失败', 'error');
+        showToast(error.message || '摘要保存失败', 'error');
     }
 }
 
@@ -294,7 +304,7 @@ async function handleDuplicateSourceUpdate(event) {
         );
         showToast('来源已保存');
     } catch (error) {
-        showToast('来源保存失败', 'error');
+        showToast(error.message || '来源保存失败', 'error');
     }
 }
 
@@ -361,6 +371,7 @@ async function applyDuplicateBulkStatus() {
         ['selected_ids', 'backup_ids', 'discarded_ids', 'pending_ids'].forEach(key => {
             if (payload[key].length) payload[key] = articleIds;
         });
+        payload.versions = collectManualReviewVersions(articleIds);
         await postDuplicateDecision(payload);
         selectedItems.forEach(item => {
             updateDuplicateItemDecisionState(item, targetValue, previousReportType);
@@ -378,6 +389,7 @@ async function applyDuplicateBulkStatus() {
                 );
                 if (previousStatus === 'selected') undoPayload.selected_ids = articleIds;
                 if (previousStatus === 'backup') undoPayload.backup_ids = articleIds;
+                undoPayload.versions = collectManualReviewVersions(articleIds);
                 await postDuplicateDecision(undoPayload);
                 selectedItems.forEach(item => {
                     updateDuplicateItemDecisionState(item, previousValue, previousReportType);
@@ -388,7 +400,7 @@ async function applyDuplicateBulkStatus() {
                 loadStats();
                 showToast('已撤销操作');
             } catch (error) {
-                showToast('撤销失败', 'error');
+                showToast(error.message || '撤销失败', 'error');
             }
         });
         showToast(`已更新 ${articleIds.length} 条新闻`, 'success', undoAction);
@@ -440,7 +452,7 @@ async function finishDuplicateReview() {
         await loadReviewData();
         loadStats();
     } catch (error) {
-        showToast('保存编辑失败，请重试', 'error');
+        showToast(error.message || '保存编辑失败，请重试', 'error');
     }
 }
 

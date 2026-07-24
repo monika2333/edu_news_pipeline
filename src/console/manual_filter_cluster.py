@@ -222,6 +222,7 @@ def cluster_pending(
                 "llm_source_manual": record.get("llm_source_manual"),
                 "bonus_keywords": record.get("bonus_keywords"),
                 "manual_rank": record.get("manual_rank"),
+                "version": record.get("version"),
                 "publish_time": record.get("publish_time"),
                 "publish_time_iso": record.get("publish_time_iso"),
             }

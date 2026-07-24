@@ -217,10 +217,41 @@ def resolve_session(raw_token: str) -> Optional[ConsoleUser]:
     )
 
 
-def revoke_session(raw_token: str) -> bool:
+def revoke_session(
+    raw_token: str,
+    *,
+    user: Optional[ConsoleUser] = None,
+) -> bool:
     if not raw_token:
         return False
-    return get_adapter().revoke_console_session_by_token_hash(_hash_token(raw_token))
+    return get_adapter().revoke_console_session_by_token_hash(
+        _hash_token(raw_token),
+        actor_user_id=user.user_id if user else None,
+    )
+
+
+def record_login_failure_audit(
+    *,
+    username: str,
+    client_host: str,
+    rate_limited: bool,
+    request_id: Optional[str] = None,
+) -> None:
+    normalized_username = username.strip().lower()[:100] or "<blank>"
+    get_adapter().record_console_auth_event(
+        action=(
+            "auth.login.rate_limited"
+            if rate_limited
+            else "auth.login.failed"
+        ),
+        target_id=normalized_username,
+        actor_user_id=None,
+        after_data={
+            "client_host": client_host,
+            "rate_limited": rate_limited,
+        },
+        request_id=request_id,
+    )
 
 
 def change_password(
@@ -269,6 +300,7 @@ __all__ = [
     "ensure_login_allowed",
     "hash_password",
     "record_login_failure",
+    "record_login_failure_audit",
     "resolve_session",
     "revoke_session",
     "verify_password",

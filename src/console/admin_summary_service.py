@@ -3,6 +3,10 @@ from __future__ import annotations
 from typing import Any, Optional, Sequence
 
 from src.adapters.db_postgres_core import get_adapter
+from src.adapters.db_postgres_shift_reviews import (
+    VALID_DECISIONS,
+    VALID_REPORT_TYPES,
+)
 from src.console import duty_review_service
 from src.console.auth_service import ConsoleUser
 from src.console.shifts_service import ShiftNotFoundError
@@ -28,17 +32,24 @@ def list_shift_results(
     shift_id: str,
     decision: Optional[str],
     report_type: Optional[str],
+    mismatch_only: bool,
     limit: int,
     offset: int,
 ) -> dict[str, Any]:
     if not get_adapter().fetch_duty_shift(shift_id):
         raise ShiftNotFoundError("Duty shift not found")
+    if decision and decision not in VALID_DECISIONS:
+        raise ValueError(f"Invalid review decision: {decision}")
+    if report_type and report_type not in VALID_REPORT_TYPES:
+        raise ValueError(f"Invalid report type: {report_type}")
     rows, total = get_adapter().fetch_shift_review_items(
         shift_id=shift_id,
         decision=decision,
         report_type=report_type,
         limit=limit,
         offset=offset,
+        mismatch_only=mismatch_only,
+        include_admin_state=True,
     )
     return {
         "items": [

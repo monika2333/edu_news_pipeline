@@ -31,7 +31,7 @@ async function handleFilterEditChange(target) {
         await persistEdits(edits);
         showToast('已保存');
     } catch (error) {
-        showToast('保存失败', 'error');
+        showToast(error.message || '保存失败', 'error');
     }
 }
 
@@ -52,19 +52,23 @@ async function handleCardDecisionChange(input) {
 
     try {
         await persistEdits(edits);
-        await submitDecisions([articleId], status);
+        const mutation = await submitDecisions([articleId], status);
         removeCardAndMaybeCluster(card);
         loadStats();
 
         const undoAction = buildUndoToastAction(
             async () => {
                 try {
-                    await submitDecisions([articleId], 'pending');
+                    await submitDecisions(
+                        [articleId],
+                        'pending',
+                        mutation.versions || {}
+                    );
                     showToast('已撤销');
                     await loadFilterData();
                     loadStats();
                 } catch (error) {
-                    showToast('撤销失败', 'error');
+                    showToast(error.message || '撤销失败', 'error');
                 }
             }
         );
@@ -73,7 +77,7 @@ async function handleCardDecisionChange(input) {
     } catch (error) {
         revertRadioSelection(radios, previousStatus);
         card.dataset.status = previousStatus;
-        showToast('更新失败', 'error');
+        showToast(error.message || '更新失败', 'error');
     } finally {
         if (card.isConnected) setInputsDisabled(radios, false);
     }
@@ -109,19 +113,19 @@ async function handleClusterDecisionChange(input) {
 
     try {
         await persistEdits(edits);
-        await submitDecisions(ids, status);
+        const mutation = await submitDecisions(ids, status);
         cluster.remove();
         loadStats();
 
         const undoAction = buildUndoToastAction(
             async () => {
                 try {
-                    await submitDecisions(ids, 'pending');
+                    await submitDecisions(ids, 'pending', mutation.versions || {});
                     showToast('已撤销');
                     await loadFilterData();
                     loadStats();
                 } catch (error) {
-                    showToast('撤销失败', 'error');
+                    showToast(error.message || '撤销失败', 'error');
                 }
             }
         );
@@ -130,7 +134,7 @@ async function handleClusterDecisionChange(input) {
     } catch (error) {
         revertRadioSelection(radios, previousStatus);
         cluster.dataset.status = previousStatus;
-        showToast('更新失败', 'error');
+        showToast(error.message || '更新失败', 'error');
     } finally {
         if (cluster.isConnected) setInputsDisabled(radios, false);
     }
@@ -221,26 +225,26 @@ async function discardRemainingItems() {
 
     try {
         await persistEdits(edits);
-        await submitDecisions(ids, 'discarded');
+        const mutation = await submitDecisions(ids, 'discarded');
         removeCardsAndClusters(cards);
         loadStats();
 
         const undoAction = buildUndoToastAction(
             async () => {
                 try {
-                    await submitDecisions(ids, 'pending');
+                    await submitDecisions(ids, 'pending', mutation.versions || {});
                     showToast('已撤销');
                     await loadFilterData();
                     loadStats();
                 } catch (error) {
-                    showToast('撤销失败', 'error');
+                    showToast(error.message || '撤销失败', 'error');
                 }
             }
         );
 
         showToast(`已放弃 ${ids.length} 条新闻`, 'success', undoAction);
     } catch (error) {
-        showToast('批量放弃失败', 'error');
+        showToast(error.message || '批量放弃失败', 'error');
     }
 }
 

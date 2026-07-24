@@ -172,6 +172,34 @@ class FakeManualFilterAdapter:
                 break
         return updated
 
+    def discard_manual_candidates_before_date_as_user(
+        self,
+        *,
+        region: str,
+        sentiment: str,
+        query: Optional[str],
+        published_before: Optional[date],
+        report_type: str,
+        actor_username: str,
+        actor_user_id: Optional[str],
+        request_id: Optional[str],
+    ) -> list[Dict[str, Any]]:
+        del actor_user_id, request_id
+        rows, _ = self.search_manual_candidates(
+            query=query,
+            published_before=published_before,
+            limit=10_000,
+            offset=0,
+            region=region,
+            sentiment=sentiment,
+            report_type=report_type,
+        )
+        for row in rows:
+            row["status"] = "discarded"
+            row["decided_by"] = actor_username
+            row["version"] = int(row.get("version") or 1) + 1
+        return rows
+
 
 def _build_rows() -> list[Dict[str, Any]]:
     return [
@@ -231,15 +259,21 @@ def _anonymous_console_user() -> ConsoleUser:
 
 
 def test_decide_uses_authenticated_user_instead_of_forged_actor(monkeypatch) -> None:
-    from src.console import manual_filter_service
+    from src.console import manual_filter_admin_service
 
     captured: Dict[str, Any] = {}
 
-    def bulk_decide(**kwargs: Any) -> Dict[str, int]:
+    def bulk_decide(**kwargs: Any) -> Dict[str, Any]:
         captured.update(kwargs)
-        return {"selected": 1, "backup": 0, "discarded": 0, "pending": 0}
+        return {
+            "selected": 1,
+            "backup": 0,
+            "discarded": 0,
+            "pending": 0,
+            "versions": {"a1": 2},
+        }
 
-    monkeypatch.setattr(manual_filter_service, "bulk_decide", bulk_decide)
+    monkeypatch.setattr(manual_filter_admin_service, "bulk_decide", bulk_decide)
     app = create_app()
     app.dependency_overrides[require_console_user] = lambda: ConsoleUser(
         method="test",
@@ -259,7 +293,40 @@ def test_decide_uses_authenticated_user_instead_of_forged_actor(monkeypatch) -> 
     )
 
     assert response.status_code == 200
-    assert captured["actor"] == "real-admin"
+    assert captured["actor"].username == "real-admin"
+
+
+def test_decide_api_returns_conflict_for_stale_manual_review(
+    monkeypatch,
+) -> None:
+    from src.console import manual_filter_admin_service
+
+    def bulk_decide(**kwargs: Any) -> Dict[str, Any]:
+        del kwargs
+        raise manual_filter_admin_service.ManualReviewConflictError(
+            "Manual review version is stale for a1"
+        )
+
+    monkeypatch.setattr(manual_filter_admin_service, "bulk_decide", bulk_decide)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = lambda: ConsoleUser(
+        method="test",
+        user_id="real-user-id",
+        username="real-admin",
+        display_name="真实管理员",
+        role="admin",
+    )
+    response = TestClient(app).post(
+        "/api/manual_filter/decide",
+        json={
+            "selected_ids": ["a1"],
+            "versions": {"a1": 7},
+            "report_type": "zongbao",
+        },
+    )
+
+    assert response.status_code == 409
+    assert "stale" in response.json()["detail"]
 
 
 def test_candidates_api_returns_search_mode_items(monkeypatch) -> None:
@@ -290,10 +357,11 @@ def test_candidates_api_returns_search_mode_items(monkeypatch) -> None:
 
 
 def test_discard_before_date_api_supports_keyword_only_preview_and_apply(monkeypatch) -> None:
-    from src.console import manual_filter_service
+    from src.console import manual_filter_admin_service, manual_filter_service
 
     adapter = FakeManualFilterAdapter(_build_rows())
     monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
 
     app = create_app()
     app.dependency_overrides[require_console_user] = _anonymous_console_user
@@ -330,10 +398,11 @@ def test_discard_before_date_api_supports_keyword_only_preview_and_apply(monkeyp
 
 
 def test_discard_before_date_api_supports_empty_optional_filters(monkeypatch) -> None:
-    from src.console import manual_filter_service
+    from src.console import manual_filter_admin_service, manual_filter_service
 
     adapter = FakeManualFilterAdapter(_build_rows())
     monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
 
     app = create_app()
     app.dependency_overrides[require_console_user] = _anonymous_console_user
@@ -356,7 +425,7 @@ def test_discard_before_date_api_supports_empty_optional_filters(monkeypatch) ->
 
 
 def test_update_order_api_passes_review_groups(monkeypatch) -> None:
-    from src.console import manual_filter_service
+    from src.console import manual_filter_admin_service
 
     captured: Dict[str, Any] = {}
 
@@ -364,7 +433,7 @@ def test_update_order_api_passes_review_groups(monkeypatch) -> None:
         captured.update(kwargs)
         return {"selected": 1, "backup": 0, "updated_rows": 1, "updated_categories": 1}
 
-    monkeypatch.setattr(manual_filter_service, "update_ranks", update_ranks)
+    monkeypatch.setattr(manual_filter_admin_service, "update_ranks", update_ranks)
     app = create_app()
     app.dependency_overrides[require_console_user] = _anonymous_console_user
     client = TestClient(app)

@@ -68,6 +68,8 @@ def fetch_shift_review_items(
     report_type: Optional[str],
     limit: int,
     offset: int,
+    mismatch_only: bool = False,
+    include_admin_state: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
     bounded_limit = max(1, min(limit, 200))
     bounded_offset = max(0, offset)
@@ -85,7 +87,37 @@ def fetch_shift_review_items(
     if report_type:
         clauses.append("COALESCE(sr.report_type, 'zongbao') = %s")
         params.append(report_type)
+    if mismatch_only:
+        clauses.extend(
+            [
+                "sr.id IS NOT NULL",
+                """(
+                    CASE
+                        WHEN mr.status = 'exported' THEN 'selected'
+                        ELSE COALESCE(mr.status, 'pending')
+                    END IS DISTINCT FROM sr.decision
+                    OR COALESCE(mr.report_type, 'zongbao')
+                       IS DISTINCT FROM COALESCE(sr.report_type, 'zongbao')
+                )""",
+            ]
+        )
     where_sql = " AND ".join(clauses)
+    manual_join_sql = (
+        "LEFT JOIN manual_reviews mr ON mr.article_id = ns.article_id"
+        if mismatch_only or include_admin_state
+        else ""
+    )
+    admin_select_sql = (
+        """,
+        mr.status AS admin_status,
+        mr.report_type AS admin_report_type,
+        mr.decided_by AS admin_decided_by,
+        mr.decided_at AS admin_decided_at,
+        mr.version AS admin_version
+        """
+        if include_admin_state
+        else ""
+    )
     cur.execute(
         f"""
         SELECT count(*) AS total
@@ -96,6 +128,7 @@ def fetch_shift_review_items(
         LEFT JOIN shift_reviews sr
           ON sr.shift_id = s.id
          AND sr.article_id = ns.article_id
+        {manual_join_sql}
         WHERE {where_sql}
         """,
         tuple(params),
@@ -111,6 +144,7 @@ def fetch_shift_review_items(
     cur.execute(
         f"""
         SELECT {SHIFT_REVIEW_SELECT}
+        {admin_select_sql}
         FROM duty_shifts s
         JOIN news_summaries ns
           ON ns.created_at >= s.starts_at
@@ -118,6 +152,7 @@ def fetch_shift_review_items(
         LEFT JOIN shift_reviews sr
           ON sr.shift_id = s.id
          AND sr.article_id = ns.article_id
+        {manual_join_sql}
         LEFT JOIN console_users creator ON creator.id = sr.created_by_user_id
         LEFT JOIN console_users updater ON updater.id = sr.updated_by_user_id
         {SCORE_FEEDBACK_JOIN}

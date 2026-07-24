@@ -150,6 +150,42 @@ def test_login_sets_http_only_session_and_readable_csrf_cookie(monkeypatch) -> N
     )
 
 
+def test_failed_login_is_audited_without_password(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def reject_login(**kwargs: Any) -> LoginSession:
+        del kwargs
+        raise auth_service.AuthenticationError("invalid credentials")
+
+    def capture_audit(**kwargs: Any) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(auth_service, "ensure_login_allowed", lambda key: None)
+    monkeypatch.setattr(auth_service, "record_login_failure", lambda key: None)
+    monkeypatch.setattr(
+        auth_service,
+        "authenticate_and_create_session",
+        reject_login,
+    )
+    monkeypatch.setattr(
+        auth_service,
+        "record_login_failure_audit",
+        capture_audit,
+    )
+
+    response = TestClient(create_app()).post(
+        "/api/auth/login",
+        headers={"X-Request-ID": "request-1"},
+        json={"username": "Admin-A", "password": "must-not-be-audited"},
+    )
+
+    assert response.status_code == 401
+    assert captured["username"] == "Admin-A"
+    assert captured["rate_limited"] is False
+    assert captured["request_id"] == "request-1"
+    assert "password" not in captured
+
+
 def test_session_write_requires_matching_origin_and_csrf_token() -> None:
     csrf_token = "csrf-token"
     user = ConsoleUser(

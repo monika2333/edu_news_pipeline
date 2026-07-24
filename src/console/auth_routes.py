@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
 
 from src.config import get_settings
 from src.console import auth_service
@@ -26,8 +34,11 @@ def _user_response(user: ConsoleUser) -> ConsoleUserResponse:
 
 
 def _login_key(request: Request, username: str) -> str:
-    client_host = request.client.host if request.client else "unknown"
-    return f"{client_host}:{username.strip().lower()}"
+    return f"{_client_host(request)}:{username.strip().lower()}"
+
+
+def _client_host(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
 
 
 @router.post("/api/auth/login", response_model=LoginResponse)
@@ -35,6 +46,7 @@ def login(
     request: Request,
     response: Response,
     payload: LoginRequest,
+    request_id: str | None = Header(default=None, alias="X-Request-ID"),
 ) -> LoginResponse:
     login_key = _login_key(request, payload.username)
     try:
@@ -44,12 +56,24 @@ def login(
             password=payload.password,
         )
     except auth_service.LoginRateLimitError as exc:
+        auth_service.record_login_failure_audit(
+            username=payload.username,
+            client_host=_client_host(request),
+            rate_limited=True,
+            request_id=request_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=str(exc),
         ) from exc
     except (auth_service.AuthenticationError, ValueError) as exc:
         auth_service.record_login_failure(login_key)
+        auth_service.record_login_failure_audit(
+            username=payload.username,
+            client_host=_client_host(request),
+            rate_limited=False,
+            request_id=request_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名或密码错误",
@@ -89,9 +113,8 @@ def logout(
     response: Response,
     user: ConsoleUser = Depends(require_console_user),
 ) -> MessageResponse:
-    del user
     raw_token = request.cookies.get(auth_service.SESSION_COOKIE_NAME) or ""
-    auth_service.revoke_session(raw_token)
+    auth_service.revoke_session(raw_token, user=user)
     settings = get_settings()
     response.delete_cookie(
         auth_service.SESSION_COOKIE_NAME,

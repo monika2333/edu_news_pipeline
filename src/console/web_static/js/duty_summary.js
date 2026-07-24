@@ -88,8 +88,10 @@
                 <div>
                     <h3>${escapeHtml(item.title || '无标题')}</h3>
                     <div class="summary-item-meta">
-                        <span>${escapeHtml(item.decision || '未覆盖')}</span>
+                        <span>值班：${escapeHtml(item.decision || '未覆盖')}</span>
                         <span>${escapeHtml(item.report_type || '')}</span>
+                        ${state.uncovered ? '' : `<span>管理员：${escapeHtml(item.admin_status || 'pending')}</span>`}
+                        ${state.uncovered ? '' : `<span>${escapeHtml(item.admin_report_type || 'zongbao')}</span>`}
                         <span>${escapeHtml(item.source || item.llm_source || '未知来源')}</span>
                         <span>${escapeHtml(formatDateTime(item.publish_time_iso || item.created_at))}</span>
                     </div>
@@ -123,7 +125,11 @@
         }
         if (!state.shiftId) return;
         const params = new URLSearchParams({ limit: '200' });
-        if (elements.decision.value) params.set('decision', elements.decision.value);
+        if (elements.decision.value === 'mismatch') {
+            params.set('mismatch_only', 'true');
+        } else if (elements.decision.value) {
+            params.set('decision', elements.decision.value);
+        }
         if (elements.reportType.value) params.set('report_type', elements.reportType.value);
         const payload = await request(
             `/api/admin/duty-summary/${encodeURIComponent(state.shiftId)}/reviews?${params}`

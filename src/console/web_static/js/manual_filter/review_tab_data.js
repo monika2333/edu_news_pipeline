@@ -111,7 +111,7 @@ async function applyReviewBulkStatus() {
     try {
         isBulkUpdatingReview = true;
         const scrollY = window.scrollY;
-        await fetch(`${API_BASE}/decide`, {
+        const response = await fetch(`${API_BASE}/decide`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -119,9 +119,11 @@ async function applyReviewBulkStatus() {
                 backup_ids,
                 discarded_ids,
                 pending_ids,
+                versions: collectManualReviewVersions(movedIds),
                 report_type: targetReportType
             })
         });
+        const mutation = await requireManualMutationSuccess(response, '批量移动失败');
         await loadReviewData();
         window.scrollTo({ top: scrollY, behavior: 'auto' });
         loadStats();
@@ -137,6 +139,7 @@ async function applyReviewBulkStatus() {
                         backup_ids: [],
                         discarded_ids: [],
                         pending_ids: [],
+                        versions: mutation.versions || {},
                         report_type: previousReportType
                     };
 
@@ -144,24 +147,25 @@ async function applyReviewBulkStatus() {
                     else if (previousView === 'backup') undoPayload.backup_ids = movedIds;
                     else undoPayload.pending_ids = movedIds; // Fallback
 
-                    await fetch(`${API_BASE}/decide`, {
+                    const undoResponse = await fetch(`${API_BASE}/decide`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(undoPayload)
                     });
+                    await requireManualMutationSuccess(undoResponse, '撤销失败');
 
                     showToast('已撤销操作');
                     await loadReviewData(); // Reload to show items back
                     loadStats();
                 } catch (e) {
-                    showToast('撤销失败', 'error');
+                    showToast(e.message || '撤销失败', 'error');
                 }
             }
         );
 
         showToast(buildReviewMoveMessage(totalMoved, value), 'success', undoAction);
     } catch (e) {
-        showToast('批量移动失败', 'error');
+        showToast(e.message || '批量移动失败', 'error');
     } finally {
         isBulkUpdatingReview = false;
         updateReviewSelectAllState();
@@ -254,11 +258,11 @@ function parseReviewDecision(rawValue, card) {
     return { status, targetReportType };
 }
 
-function buildReviewUndoAction(id, prevStatus, prevReportType) {
+function buildReviewUndoAction(id, prevStatus, prevReportType, versions) {
     return buildUndoToastAction(
         async () => {
             try {
-                await fetch(`${API_BASE}/decide`, {
+                const response = await fetch(`${API_BASE}/decide`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -266,14 +270,16 @@ function buildReviewUndoAction(id, prevStatus, prevReportType) {
                         backup_ids: prevStatus === 'backup' ? [id] : [],
                         discarded_ids: prevStatus === 'discarded' ? [id] : [],
                         pending_ids: prevStatus === 'pending' ? [id] : [],
+                        versions,
                         report_type: prevReportType
                     })
                 });
+                await requireManualMutationSuccess(response, '撤销失败');
                 showToast('已撤销操作');
                 await loadReviewData();
                 loadStats();
             } catch (e) {
-                showToast('撤销失败', 'error');
+                showToast(e.message || '撤销失败', 'error');
             }
         }
     );
@@ -297,13 +303,18 @@ async function applyReviewCardDecision(card, rawValue, successMessage = '已更�
     });
     try {
         const scrollY = window.scrollY;
-        await fetch(`${API_BASE}/edit`, {
+        const editResponse = await fetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, report_type: state.reviewReportType })
+            body: JSON.stringify({
+                edits: { [id]: { summary, llm_source } },
+                versions: collectManualReviewVersions([id]),
+                report_type: state.reviewReportType
+            })
         });
+        const editMutation = await requireManualMutationSuccess(editResponse, '保存编辑失败');
 
-        await fetch(`${API_BASE}/decide`, {
+        const decisionResponse = await fetch(`${API_BASE}/decide`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -311,17 +322,31 @@ async function applyReviewCardDecision(card, rawValue, successMessage = '已更�
                 backup_ids: status === 'backup' ? [id] : [],
                 discarded_ids: status === 'discarded' ? [id] : [],
                 pending_ids: status === 'pending' ? [id] : [],
+                versions: editMutation.versions || collectManualReviewVersions([id]),
                 report_type: targetReportType
             })
         });
+        const decisionMutation = await requireManualMutationSuccess(
+            decisionResponse,
+            '更新状态失败'
+        );
 
         await loadReviewData();
         window.scrollTo({ top: scrollY, behavior: 'auto' });
         loadStats();
 
-        showToast(successMessage, 'success', buildReviewUndoAction(id, prevStatus, prevReportType));
+        showToast(
+            successMessage,
+            'success',
+            buildReviewUndoAction(
+                id,
+                prevStatus,
+                prevReportType,
+                decisionMutation.versions || {}
+            )
+        );
     } catch (err) {
-        showToast('更新失败，请重试', 'error');
+        showToast(err.message || '更新失败，请重试', 'error');
     } finally {
         controls.forEach(control => {
             control.disabled = false;
@@ -352,15 +377,20 @@ async function handleSummaryUpdate(e) {
     const sourceBox = card.querySelector('.source-box');
     const llm_source = sourceBox ? sourceBox.value : '';
     try {
-        await fetch(`${API_BASE}/edit`, {
+        const response = await fetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, report_type: state.reviewReportType })
+            body: JSON.stringify({
+                edits: { [id]: { summary, llm_source } },
+                versions: collectManualReviewVersions([id]),
+                report_type: state.reviewReportType
+            })
         });
+        await requireManualMutationSuccess(response, '摘要保存失败');
         applyReviewEditsToState(id, summary, llm_source);
         showToast('摘要已保存');
     } catch (err) {
-        showToast('摘要保存失败', 'error');
+        showToast(err.message || '摘要保存失败', 'error');
     }
 }
 
@@ -373,15 +403,20 @@ async function handleSourceUpdate(e) {
     const summaryBox = card.querySelector('.summary-box');
     const summary = summaryBox ? summaryBox.value : '';
     try {
-        await fetch(`${API_BASE}/edit`, {
+        const response = await fetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ edits: { [id]: { summary, llm_source } }, report_type: state.reviewReportType })
+            body: JSON.stringify({
+                edits: { [id]: { summary, llm_source } },
+                versions: collectManualReviewVersions([id]),
+                report_type: state.reviewReportType
+            })
         });
+        await requireManualMutationSuccess(response, '来源保存失败');
         applyReviewEditsToState(id, summary, llm_source);
         showToast('来源已保存');
     } catch (err) {
-        showToast('来源保存失败', 'error');
+        showToast(err.message || '来源保存失败', 'error');
     }
 }
 
@@ -420,6 +455,7 @@ async function handleArchive() {
     }
     const payload = {
         article_ids: articleIds,
+        versions: collectManualReviewVersions(articleIds),
         report_type: reportType
     };
 
@@ -429,13 +465,13 @@ async function handleArchive() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        const result = await res.json();
+        const result = await requireManualMutationSuccess(res, '归档失败');
 
         const count = result.exported || 0;
         showToast(`归档成功，已标记 ${count} 条文章`);
         await loadReviewData();
         loadStats();
     } catch (e) {
-        showToast('归档失败', 'error');
+        showToast(e.message || '归档失败', 'error');
     }
 }

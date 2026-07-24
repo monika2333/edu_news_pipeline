@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>注册值班账号 · 教育新闻控制台</title>
+    <link rel="stylesheet" href="/static/css/variables.css">
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/modules/login.css?v={{ version }}">
+</head>
+
+<body class="login-page">
+    <main class="login-card register-card">
+        <a class="auth-back-link" href="/login">← 返回登录</a>
+        <div class="login-heading">
+            <p class="login-eyebrow">INTERNAL REGISTRATION</p>
+            <h1>建立值班账号</h1>
+            <p>登记真实姓名和首选值班日，管理员会据此安排正式班次。</p>
+        </div>
+
+        <div class="registration-note">
+            <strong>注册不会自动排班</strong>
+            <span>账号创建后可以登录，但只有管理员分配的班次才能进入审核。</span>
+        </div>
+
+        <form id="register-form" class="login-form">
+            <div class="auth-form-grid">
+                <div>
+                    <label for="register-display-name">姓名</label>
+                    <input
+                        id="register-display-name"
+                        name="display_name"
+                        type="text"
+                        autocomplete="name"
+                        minlength="2"
+                        maxlength="100"
+                        placeholder="例如：张明"
+                        required
+                        autofocus
+                    >
+                </div>
+                <div>
+                    <label for="register-weekday">首选值班日</label>
+                    <select id="register-weekday" name="preferred_weekday" required>
+                        <option value="" selected disabled>请选择星期</option>
+                        <option value="0">周一</option>
+                        <option value="1">周二</option>
+                        <option value="2">周三</option>
+                        <option value="3">周四</option>
+                        <option value="4">周五</option>
+                        <option value="5">周六</option>
+                        <option value="6">周日</option>
+                    </select>
+                </div>
+            </div>
+
+            <label for="register-username">用户名</label>
+            <input
+                id="register-username"
+                name="username"
+                type="text"
+                autocomplete="username"
+                minlength="3"
+                maxlength="50"
+                placeholder="用于登录，至少 3 位"
+                required
+            >
+
+            <div class="auth-form-grid">
+                <div>
+                    <label for="register-password">密码</label>
+                    <input
+                        id="register-password"
+                        name="password"
+                        type="password"
+                        autocomplete="new-password"
+                        minlength="10"
+                        placeholder="至少 10 位"
+                        required
+                    >
+                </div>
+                <div>
+                    <label for="register-password-confirm">确认密码</label>
+                    <input
+                        id="register-password-confirm"
+                        name="password_confirm"
+                        type="password"
+                        autocomplete="new-password"
+                        minlength="10"
+                        required
+                    >
+                </div>
+            </div>
+
+            <p class="login-error" id="register-error" role="alert" hidden></p>
+            <button class="btn btn-primary login-submit" id="register-submit" type="submit">提交注册</button>
+        </form>
+    </main>
+    <script src="/static/js/register.js?v={{ version }}"></script>
+</body>
+
+</html>

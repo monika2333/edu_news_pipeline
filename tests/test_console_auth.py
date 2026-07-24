@@ -4,6 +4,7 @@ import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
+import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
@@ -101,14 +102,117 @@ def test_login_page_is_public_and_protected_page_redirects() -> None:
     client = TestClient(create_app())
 
     login_response = client.get("/login")
+    register_response = client.get("/register")
     protected_response = client.get("/manual_filter", follow_redirects=False)
 
     assert login_response.status_code == 200
     assert 'id="login-form"' in login_response.text
+    assert register_response.status_code == 200
+    assert 'id="register-form"' in register_response.text
+    assert "注册不会自动排班" in register_response.text
     assert protected_response.status_code == 303
     assert protected_response.headers["location"].startswith(
         "/login?next=/manual_filter"
     )
+
+
+def test_self_registration_creates_unassigned_duty_editor(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class RegisterAdapter:
+        def create_console_user(self, **kwargs: Any) -> dict[str, object]:
+            captured.update(kwargs)
+            return {
+                "id": "new-user-id",
+                "username": kwargs["username"],
+                "display_name": kwargs["display_name"],
+                "role": kwargs["role"],
+                "preferred_weekday": kwargs["preferred_weekday"],
+            }
+
+    monkeypatch.setattr(auth_service, "get_adapter", lambda: RegisterAdapter())
+
+    user = auth_service.register_console_user(
+        username="zhangming",
+        display_name="张明",
+        password="a-secure-password",
+        preferred_weekday=2,
+    )
+
+    assert user["role"] == "duty_editor"
+    assert captured["role"] == "duty_editor"
+    assert captured["preferred_weekday"] == 2
+    assert captured["actor_user_id"] is None
+
+
+def test_register_api_accepts_name_and_preferred_weekday(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(
+        auth_service,
+        "register_console_user",
+        lambda **kwargs: captured.update(kwargs) or {"id": "new-user-id"},
+    )
+
+    response = TestClient(create_app()).post(
+        "/api/auth/register",
+        json={
+            "username": "zhangming",
+            "display_name": "张明",
+            "password": "a-secure-password",
+            "preferred_weekday": 2,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["message"] == "注册成功，请登录"
+    assert captured == {
+        "username": "zhangming",
+        "display_name": "张明",
+        "password": "a-secure-password",
+        "preferred_weekday": 2,
+    }
+
+
+def test_self_registration_validates_trimmed_identity_fields() -> None:
+    with pytest.raises(ValueError, match="Username"):
+        auth_service.register_console_user(
+            username="  a",
+            display_name="张明",
+            password="a-secure-password",
+            preferred_weekday=2,
+        )
+    with pytest.raises(ValueError, match="Display name"):
+        auth_service.register_console_user(
+            username="zhangming",
+            display_name=" 张",
+            password="a-secure-password",
+            preferred_weekday=2,
+        )
+
+
+def test_register_api_rejects_duplicate_username(monkeypatch) -> None:
+    def reject_registration(**kwargs: Any) -> dict[str, object]:
+        del kwargs
+        raise auth_service.UserAlreadyExistsError("duplicate")
+
+    monkeypatch.setattr(
+        auth_service,
+        "register_console_user",
+        reject_registration,
+    )
+
+    response = TestClient(create_app()).post(
+        "/api/auth/register",
+        json={
+            "username": "zhangming",
+            "display_name": "张明",
+            "password": "a-secure-password",
+            "preferred_weekday": 2,
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "该用户名已被使用"
 
 
 def test_login_sets_http_only_session_and_readable_csrf_cookie(monkeypatch) -> None:

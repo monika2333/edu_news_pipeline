@@ -54,7 +54,7 @@ body {
 
 .admin-create-user {
     display: grid;
-    grid-template-columns: 1fr 1fr 160px 1.2fr auto;
+    grid-template-columns: 1fr 1fr 140px 160px 1.2fr auto;
     gap: 9px;
     margin: 18px 0;
 }
@@ -112,6 +112,16 @@ body {
     background: #dcfce7;
     color: #166534;
     font-size: 0.75rem;
+}
+
+.preference-pill {
+    display: inline-flex;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.75rem;
+    white-space: nowrap;
 }
 
 .status-pill.is-inactive,

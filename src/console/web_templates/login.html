@@ -16,7 +16,7 @@
         <div class="login-heading">
             <p class="login-eyebrow">EDU NEWS PIPELINE</p>
             <h1>教育新闻控制台</h1>
-            <p>使用管理员分配的账号登录。</p>
+            <p>登录你的值班工作台，班次仍由管理员统一安排。</p>
         </div>
         <form id="login-form" class="login-form">
             <label for="login-username">用户名</label>
@@ -25,9 +25,14 @@
             <label for="login-password">密码</label>
             <input id="login-password" name="password" type="password" autocomplete="current-password" required>
 
+            <p class="login-success" id="login-success" role="status" hidden></p>
             <p class="login-error" id="login-error" role="alert" hidden></p>
             <button class="btn btn-primary login-submit" id="login-submit" type="submit">登录</button>
         </form>
+        <div class="auth-switch">
+            <span>第一次使用？</span>
+            <a href="/register">注册值班账号</a>
+        </div>
     </main>
     <script src="/static/js/login.js?v={{ version }}"></script>
 </body>

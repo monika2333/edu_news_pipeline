@@ -25,7 +25,7 @@ SHIFT_SELECT = """
 def fetch_active_duty_editors(cur: psycopg.Cursor) -> list[dict[str, Any]]:
     cur.execute(
         """
-        SELECT id, username, display_name, role, is_active
+        SELECT id, username, display_name, role, preferred_weekday, is_active
         FROM console_users
         WHERE role = 'duty_editor'
           AND is_active = true

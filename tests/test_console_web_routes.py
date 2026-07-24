@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from pytest import MonkeyPatch
 
 from src.console.app import create_app
 from src.console.security import ConsoleUser, require_console_user
@@ -32,6 +33,35 @@ def test_removed_console_pages_are_not_registered() -> None:
 
     assert client.get("/dashboard").status_code == 404
     assert client.get("/articles/search").status_code == 404
+
+
+def test_account_page_exposes_personal_password_change_form() -> None:
+    response = _build_client().get("/account")
+
+    assert response.status_code == 200
+    assert 'id="change-password-form"' in response.text
+    assert 'src="/static/js/account.js?v=' in response.text
+    assert 'href="/">← 返回工作台</a>' in response.text
+
+
+def test_admin_page_shows_registration_preferences_for_scheduling(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.console.web_routes.generate_shifts",
+        lambda **kwargs: {"inserted": 0},
+    )
+    response = _build_client().get("/admin")
+    root = Path(__file__).parents[1]
+    admin_script = (
+        root / "src/console/web_static/js/admin.js"
+    ).read_text(encoding="utf-8")
+
+    assert response.status_code == 200
+    assert 'name="preferred_weekday"' in response.text
+    assert "<th>首选值班日</th>" in response.text
+    assert "editor.preferred_weekday" in admin_script
+    assert "首选${preference}" in admin_script
 
 
 def test_duplicate_check_button_is_before_sort_mode() -> None:

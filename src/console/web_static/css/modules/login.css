@@ -18,6 +18,14 @@
     box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
 }
 
+.register-card {
+    width: min(100%, 660px);
+}
+
+.account-card {
+    width: min(100%, 480px);
+}
+
 .login-heading h1 {
     margin: 6px 0 8px;
     color: #0f172a;
@@ -49,7 +57,8 @@
     font-weight: 600;
 }
 
-.login-form input {
+.login-form input,
+.login-form select {
     width: 100%;
     box-sizing: border-box;
     padding: 12px 14px;
@@ -59,14 +68,120 @@
     font: inherit;
 }
 
-.login-form input:focus {
+.login-form input:focus,
+.login-form select:focus {
     border-color: #2563eb;
     outline: 3px solid rgba(37, 99, 235, 0.14);
+}
+
+.auth-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.auth-form-grid > div {
+    display: grid;
+    gap: 10px;
+}
+
+.auth-form-grid label {
+    margin-top: 8px;
+}
+
+.registration-note {
+    display: grid;
+    gap: 4px;
+    margin-top: 24px;
+    padding: 14px 16px;
+    border-left: 3px solid #2563eb;
+    border-radius: 0 10px 10px 0;
+    background: #eff6ff;
+    color: #475569;
+    font-size: 0.875rem;
+    line-height: 1.55;
+}
+
+.registration-note strong {
+    color: #1e3a8a;
+}
+
+.auth-switch {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid #e2e8f0;
+    color: #64748b;
+    font-size: 0.875rem;
+}
+
+.auth-switch a,
+.auth-back-link {
+    color: #1d4ed8;
+    font-weight: 650;
+    text-decoration: none;
+}
+
+.auth-switch a:hover,
+.auth-back-link:hover {
+    text-decoration: underline;
+}
+
+.auth-back-link {
+    display: inline-block;
+    margin-bottom: 22px;
+    font-size: 0.875rem;
+}
+
+.account-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 22px;
+}
+
+.account-topbar .auth-back-link {
+    margin-bottom: 0;
+}
+
+.account-identity {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 24px;
+    padding: 12px 14px;
+    border: 1px solid #dbeafe;
+    border-radius: 10px;
+    background: #f8fbff;
+    color: #64748b;
+    font-size: 0.875rem;
+}
+
+.account-identity strong {
+    color: #1e3a8a;
+}
+
+.field-hint {
+    margin: 6px 0 0;
+    color: #64748b;
+    font-size: 0.8125rem;
+    line-height: 1.5;
 }
 
 .login-error {
     margin: 8px 0 0;
     color: #b91c1c;
+    font-size: 0.875rem;
+}
+
+.login-success {
+    margin: 8px 0 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #ecfdf5;
+    color: #047857;
     font-size: 0.875rem;
 }
 
@@ -79,5 +194,10 @@
 @media (max-width: 520px) {
     .login-card {
         padding: 28px 22px;
+    }
+
+    .auth-form-grid {
+        grid-template-columns: 1fr;
+        gap: 0;
     }
 }

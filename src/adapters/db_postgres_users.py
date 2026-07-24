@@ -13,6 +13,7 @@ def create_console_user(
     display_name: str,
     password_hash: str,
     role: str,
+    preferred_weekday: Optional[int] = None,
 ) -> dict[str, Any]:
     cur.execute(
         """
@@ -21,21 +22,23 @@ def create_console_user(
             display_name,
             password_hash,
             role,
+            preferred_weekday,
             password_changed_at
         )
-        VALUES (%s, %s, %s, %s, now())
+        VALUES (%s, %s, %s, %s, %s, now())
         RETURNING
             id,
             username,
             display_name,
             role,
+            preferred_weekday,
             is_active,
             password_changed_at,
             last_login_at,
             created_at,
             updated_at
         """,
-        (username, display_name, password_hash, role),
+        (username, display_name, password_hash, role, preferred_weekday),
     )
     row = cur.fetchone()
     if not row:
@@ -55,6 +58,7 @@ def fetch_console_user_by_username(
             display_name,
             password_hash,
             role,
+            preferred_weekday,
             is_active,
             password_changed_at,
             last_login_at,
@@ -81,6 +85,7 @@ def fetch_console_user_by_id(
             display_name,
             password_hash,
             role,
+            preferred_weekday,
             is_active,
             password_changed_at,
             last_login_at,
@@ -103,6 +108,7 @@ def fetch_console_users(cur: psycopg.Cursor) -> list[dict[str, Any]]:
             username,
             display_name,
             role,
+            preferred_weekday,
             is_active,
             password_changed_at,
             last_login_at,
@@ -130,6 +136,7 @@ def fetch_console_user_for_update(
             display_name,
             password_hash,
             role,
+            preferred_weekday,
             is_active,
             password_changed_at,
             last_login_at,
@@ -184,6 +191,8 @@ def update_console_user(
     set_display_name: bool = False,
     role: Optional[str] = None,
     set_role: bool = False,
+    preferred_weekday: Optional[int] = None,
+    set_preferred_weekday: bool = False,
     is_active: Optional[bool] = None,
     set_is_active: bool = False,
 ) -> Optional[dict[str, Any]]:
@@ -192,6 +201,10 @@ def update_console_user(
         UPDATE console_users
         SET display_name = CASE WHEN %s THEN %s ELSE display_name END,
             role = CASE WHEN %s THEN %s ELSE role END,
+            preferred_weekday = CASE
+                WHEN %s THEN %s
+                ELSE preferred_weekday
+            END,
             is_active = CASE WHEN %s THEN %s ELSE is_active END,
             updated_at = now()
         WHERE id = %s
@@ -200,6 +213,7 @@ def update_console_user(
             username,
             display_name,
             role,
+            preferred_weekday,
             is_active,
             password_changed_at,
             last_login_at,
@@ -211,6 +225,8 @@ def update_console_user(
             display_name,
             set_role,
             role,
+            set_preferred_weekday,
+            preferred_weekday,
             set_is_active,
             is_active,
             user_id,
@@ -351,7 +367,7 @@ def revoke_console_user_sessions(
         SET revoked_at = now()
         WHERE user_id = %s
           AND revoked_at IS NULL
-          AND (%s IS NULL OR id <> %s)
+          AND (%s::uuid IS NULL OR id <> %s::uuid)
         """,
         (user_id, except_session_id, except_session_id),
     )

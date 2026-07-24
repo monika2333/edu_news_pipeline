@@ -32,7 +32,7 @@
 - 不支持多租户,不引入 `team_id`。
 - 不为用户建立独立数据库或数据表。
 - 不使用 PostgreSQL Row-Level Security。
-- 不开放自行注册;账号由管理员创建和停用。
+- 不开放管理员角色注册;内网用户可自行注册 `duty_editor`,正式班次仍由管理员分配。
 - 值班工作台不提供查重功能(去重后续由后端流水线实现)。
 - 不提供新闻改派、班次重叠、管理员替班。
 
@@ -46,6 +46,7 @@
 
 **可以:**
 
+- 在内网自行注册值班编辑账号并修改自己的密码。
 - 登录,查看自己的当前班次和历史班次。
 - 查看归属于自己班次的新闻。
 - 设置 `pending` / `selected` / `backup` / `discarded`。
@@ -213,12 +214,15 @@ create table if not exists public.console_users (
     display_name text not null,
     password_hash text not null,
     role text not null,
+    preferred_weekday smallint,
     is_active boolean not null default true,
     password_changed_at timestamptz,
     last_login_at timestamptz,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
-    constraint console_users_role_check check (role in ('admin', 'duty_editor'))
+    constraint console_users_role_check check (role in ('admin', 'duty_editor')),
+    constraint console_users_preferred_weekday_check
+        check (preferred_weekday is null or preferred_weekday between 0 and 6)
 );
 
 create unique index if not exists console_users_username_lower_idx
@@ -230,6 +234,7 @@ drop table if exists public.console_users;
 
 **Service 层约束:**
 
+- 自注册账号的角色固定为 `duty_editor`,注册时必须填写姓名和首选值班日;首选值班日只供管理员参考,不得自动写入轮值模板或具体班次。
 - 至少保留一个启用的管理员账号。停用或降级最后一个管理员时拒绝。有两个管理员时,应允许停用其中一个、拒绝停用两个。
 - 停用账号时查询该用户是否有未来班次,有则列出并提示管理员改派。否则那些班次归属一个登不进来的账号,新闻在那些时段对所有值班编辑不可见,且不会报错。
 
@@ -512,7 +517,7 @@ console_users → console_user_sessions → duty_schedules → duty_shifts → s
 
 ## 6. 认证与会话
 
-- 新增登录页面和账号密码登录接口。
+- 新增登录、内网注册和个人改密页面及对应接口。
 - 登录成功后建立服务端可撤销会话。
 - 每个受保护请求通过统一依赖得到包含 `user_id`、`username`、`display_name`、`role` 的 `ConsoleUser`。
 - 账号停用、密码重置或管理员撤销会话后,旧会话立即失效。
@@ -551,6 +556,7 @@ src/adapters/db_postgres_audit.py
 
 ```
 POST /api/auth/login
+POST /api/auth/register
 POST /api/auth/logout
 GET  /api/me
 POST /api/me/change-password
@@ -732,7 +738,7 @@ filtered = [aid for aid in cluster.item_ids if aid in shift_article_ids]
 纯新增,完全不碰现有表。**建议先单独上线跑一两周确认稳定,再进入阶段二。**
 
 - 新增 `console_users`、`console_user_sessions` 表和迁移。
-- 新增登录、退出、当前用户、修改密码接口。
+- 新增登录、内网注册、退出、当前用户、修改密码接口。
 - 将 `ConsoleUser` 扩展为真实业务用户。
 - 建立 `require_role('admin')` 等统一权限依赖。
 - 创建两个管理员账号。

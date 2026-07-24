@@ -21,6 +21,7 @@ def create_user(
     display_name: str,
     password: str,
     role: str,
+    preferred_weekday: Optional[int],
     actor: ConsoleUser,
 ) -> dict[str, object]:
     return auth_service.create_console_user(
@@ -28,6 +29,7 @@ def create_user(
         display_name=display_name,
         password=password,
         role=role,
+        preferred_weekday=preferred_weekday,
         actor_user_id=actor.user_id,
     )
 
@@ -40,6 +42,8 @@ def update_user(
     set_display_name: bool = False,
     role: Optional[str] = None,
     set_role: bool = False,
+    preferred_weekday: Optional[int] = None,
+    set_preferred_weekday: bool = False,
     is_active: Optional[bool] = None,
     set_is_active: bool = False,
 ) -> dict[str, Any]:
@@ -47,6 +51,12 @@ def update_user(
         raise ValueError("Display name must not be blank")
     if set_role and role not in auth_service.VALID_ROLES:
         raise ValueError(f"Invalid console role: {role}")
+    if (
+        set_preferred_weekday
+        and preferred_weekday is not None
+        and preferred_weekday not in range(7)
+    ):
+        raise ValueError("Preferred weekday must be between 0 and 6")
     if not actor.user_id:
         raise PermissionError("A business administrator account is required")
     updated = get_adapter().update_console_user(
@@ -56,6 +66,8 @@ def update_user(
         set_display_name=set_display_name,
         role=role,
         set_role=set_role,
+        preferred_weekday=preferred_weekday,
+        set_preferred_weekday=set_preferred_weekday,
         is_active=is_active,
         set_is_active=set_is_active,
     )

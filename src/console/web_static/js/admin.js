@@ -31,6 +31,14 @@
         }).format(new Date(value));
     }
 
+    function weekdayLabel(value) {
+        if (value === null || value === undefined || value === '') return '未填写';
+        const weekday = Number(value);
+        return Number.isInteger(weekday) && weekdays[weekday]
+            ? weekdays[weekday]
+            : '未填写';
+    }
+
     function showToast(message) {
         elements.toast.textContent = message;
         elements.toast.classList.add('show');
@@ -45,9 +53,13 @@
     }
 
     function editorOptions(selectedId) {
-        return state.editors.map(editor => (
-            `<option value="${escapeHtml(editor.id)}" ${editor.id === selectedId ? 'selected' : ''}>${escapeHtml(editor.display_name)}</option>`
-        )).join('');
+        return state.editors.map(editor => {
+            const preference = weekdayLabel(editor.preferred_weekday);
+            const preferenceText = preference === '未填写'
+                ? '未填首选'
+                : `首选${preference}`;
+            return `<option value="${escapeHtml(editor.id)}" ${editor.id === selectedId ? 'selected' : ''}>${escapeHtml(editor.display_name)} · ${escapeHtml(preferenceText)}</option>`;
+        }).join('');
     }
 
     function renderUsers() {
@@ -56,6 +68,7 @@
                 <td>${escapeHtml(user.display_name)}</td>
                 <td>${escapeHtml(user.username)}</td>
                 <td>${user.role === 'admin' ? '管理员' : '值班编辑'}</td>
+                <td><span class="preference-pill">${escapeHtml(weekdayLabel(user.preferred_weekday))}</span></td>
                 <td><span class="status-pill ${user.is_active ? '' : 'is-inactive'}">${user.is_active ? '启用' : '停用'}</span></td>
                 <td>${escapeHtml(formatDateTime(user.last_login_at))}</td>
                 <td><div class="admin-actions">
@@ -175,10 +188,14 @@
         event.preventDefault();
         const form = new FormData(event.currentTarget);
         try {
+            const payload = Object.fromEntries(form.entries());
+            payload.preferred_weekday = payload.preferred_weekday === ''
+                ? null
+                : Number(payload.preferred_weekday);
             await request('/api/admin/users', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(Object.fromEntries(form.entries()))
+                body: JSON.stringify(payload)
             });
             event.currentTarget.reset();
             showToast('账号已创建');

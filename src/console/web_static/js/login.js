@@ -1,10 +1,20 @@
 (() => {
     const form = document.getElementById('login-form');
     const errorBox = document.getElementById('login-error');
+    const successBox = document.getElementById('login-success');
     const submitButton = document.getElementById('login-submit');
+    const usernameInput = document.getElementById('login-username');
+
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('registered') === '1') {
+        successBox.textContent = '账号注册成功。管理员排班后即可开始值班。';
+        successBox.hidden = false;
+        usernameInput.value = query.get('username') || '';
+        document.getElementById('login-password').focus();
+    }
 
     function safeNextPath() {
-        const value = new URLSearchParams(window.location.search).get('next');
+        const value = query.get('next');
         if (!value || !value.startsWith('/') || value.startsWith('//')) return '/';
         return value;
     }

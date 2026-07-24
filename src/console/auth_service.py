@@ -126,6 +126,7 @@ def create_console_user(
     display_name: str,
     password: str,
     role: str,
+    preferred_weekday: Optional[int] = None,
     actor_user_id: Optional[str] = None,
 ) -> dict[str, object]:
     normalized_username = _normalize_username(username)
@@ -134,6 +135,8 @@ def create_console_user(
         raise ValueError("Display name must not be blank")
     if role not in VALID_ROLES:
         raise ValueError(f"Invalid console role: {role}")
+    if preferred_weekday is not None and preferred_weekday not in range(7):
+        raise ValueError("Preferred weekday must be between 0 and 6")
     password_hash = hash_password(password)
     try:
         return get_adapter().create_console_user(
@@ -141,12 +144,35 @@ def create_console_user(
             display_name=normalized_display_name,
             password_hash=password_hash,
             role=role,
+            preferred_weekday=preferred_weekday,
             actor_user_id=actor_user_id,
         )
     except UniqueViolation as exc:
         raise UserAlreadyExistsError(
             f"Console user already exists: {normalized_username}"
         ) from exc
+
+
+def register_console_user(
+    *,
+    username: str,
+    display_name: str,
+    password: str,
+    preferred_weekday: int,
+) -> dict[str, object]:
+    """Create a self-registered editor without assigning any duty shift."""
+    if len(username.strip()) < 3:
+        raise ValueError("Username must contain at least 3 characters")
+    if len(display_name.strip()) < 2:
+        raise ValueError("Display name must contain at least 2 characters")
+    return create_console_user(
+        username=username,
+        display_name=display_name,
+        password=password,
+        role="duty_editor",
+        preferred_weekday=preferred_weekday,
+        actor_user_id=None,
+    )
 
 
 def authenticate_user(username: str, password: str) -> dict[str, object]:
@@ -301,6 +327,7 @@ __all__ = [
     "hash_password",
     "record_login_failure",
     "record_login_failure_audit",
+    "register_console_user",
     "resolve_session",
     "revoke_session",
     "verify_password",

@@ -97,4 +97,25 @@ async def login_page(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request) -> HTMLResponse:
+    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    return templates.TemplateResponse(
+        "register.html",
+        {"request": request, "version": version},
+    )
+
+
+@router.get("/account", response_class=HTMLResponse)
+async def account_page(
+    request: Request,
+    user: ConsoleUser = Depends(require_console_user),
+) -> HTMLResponse:
+    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    return templates.TemplateResponse(
+        "account.html",
+        {"request": request, "version": version, "current_user": user},
+    )
+
+
 __all__ = ["router"]

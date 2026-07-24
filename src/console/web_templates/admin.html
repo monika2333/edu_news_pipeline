@@ -23,6 +23,7 @@
                 <span class="current-user">{{ current_user.display_name }} · 管理员</span>
                 <a class="btn btn-secondary" href="/admin/duty-summary">值班汇总</a>
                 <a class="btn btn-secondary" href="/manual_filter">返回人工筛选</a>
+                <a class="btn btn-secondary" href="/account">账号设置</a>
                 <button class="btn btn-secondary" id="btn-logout">退出</button>
             </div>
         </header>
@@ -38,10 +39,20 @@
             </div>
             <form class="admin-create-user" id="create-user-form">
                 <input name="username" placeholder="用户名" required>
-                <input name="display_name" placeholder="显示名" required>
+                <input name="display_name" placeholder="姓名" required>
                 <select name="role">
                     <option value="duty_editor">值班编辑</option>
                     <option value="admin">管理员</option>
+                </select>
+                <select name="preferred_weekday" aria-label="首选值班日">
+                    <option value="">首选值班日（可选）</option>
+                    <option value="0">周一</option>
+                    <option value="1">周二</option>
+                    <option value="2">周三</option>
+                    <option value="3">周四</option>
+                    <option value="4">周五</option>
+                    <option value="5">周六</option>
+                    <option value="6">周日</option>
                 </select>
                 <input name="password" type="password" minlength="10" placeholder="初始密码（至少 10 位）" required>
                 <button class="btn btn-primary" type="submit">创建账号</button>
@@ -49,7 +60,7 @@
             <div class="admin-table-wrap">
                 <table class="admin-table">
                     <thead>
-                        <tr><th>显示名</th><th>用户名</th><th>角色</th><th>状态</th><th>最近登录</th><th>操作</th></tr>
+                        <tr><th>姓名</th><th>用户名</th><th>角色</th><th>首选值班日</th><th>状态</th><th>最近登录</th><th>操作</th></tr>
                     </thead>
                     <tbody id="users-body"></tbody>
                 </table>

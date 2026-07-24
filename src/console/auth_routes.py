@@ -18,6 +18,7 @@ from src.console.auth_schemas import (
     LoginRequest,
     LoginResponse,
     MessageResponse,
+    RegisterRequest,
 )
 from src.console.security import ConsoleUser, require_console_user, require_csrf
 
@@ -39,6 +40,33 @@ def _login_key(request: Request, username: str) -> str:
 
 def _client_host(request: Request) -> str:
     return request.client.host if request.client else "unknown"
+
+
+@router.post(
+    "/api/auth/register",
+    response_model=MessageResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def register(payload: RegisterRequest) -> MessageResponse:
+    """Create an unassigned duty-editor account for the internal console."""
+    try:
+        auth_service.register_console_user(
+            username=payload.username,
+            display_name=payload.display_name,
+            password=payload.password,
+            preferred_weekday=payload.preferred_weekday,
+        )
+    except auth_service.UserAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="该用户名已被使用",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return MessageResponse(message="注册成功，请登录")
 
 
 @router.post("/api/auth/login", response_model=LoginResponse)

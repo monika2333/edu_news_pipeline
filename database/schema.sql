@@ -1,4 +1,4 @@
-\restrict frANWTjMaZJ9e4glCosIQjUIopJylCthJPl7jmKqkOihi5iwqxSlDtvgpPJgGl9
+\restrict osDcDA3NpAGp71mLlZ7kno2Cez6h0OA74psYLej9RHKRv9egPXMg8JqaNMCqVje
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
@@ -134,7 +134,9 @@ CREATE TABLE public.console_users (
     last_login_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    preferred_weekday smallint,
     CONSTRAINT console_users_display_name_not_blank CHECK ((btrim(display_name) <> ''::text)),
+    CONSTRAINT console_users_preferred_weekday_check CHECK (((preferred_weekday IS NULL) OR ((preferred_weekday >= 0) AND (preferred_weekday <= 6)))),
     CONSTRAINT console_users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'duty_editor'::text]))),
     CONSTRAINT console_users_username_not_blank CHECK ((btrim(username) <> ''::text))
 );
@@ -1287,7 +1289,7 @@ ALTER TABLE ONLY public.shift_reviews
 -- PostgreSQL database dump complete
 --
 
-\unrestrict frANWTjMaZJ9e4glCosIQjUIopJylCthJPl7jmKqkOihi5iwqxSlDtvgpPJgGl9
+\unrestrict osDcDA3NpAGp71mLlZ7kno2Cez6h0OA74psYLej9RHKRv9egPXMg8JqaNMCqVje
 
 
 --
@@ -1322,4 +1324,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260722090000'),
     ('20260724190000'),
     ('20260724200000'),
-    ('20260724210000');
+    ('20260724210000'),
+    ('20260725100000');

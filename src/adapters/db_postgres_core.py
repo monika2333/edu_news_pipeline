@@ -121,6 +121,7 @@ class PostgresAdapter:
         display_name: str,
         password_hash: str,
         role: str,
+        preferred_weekday: Optional[int] = None,
         actor_user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         with self.transaction() as cur:
@@ -130,6 +131,7 @@ class PostgresAdapter:
                 display_name=display_name,
                 password_hash=password_hash,
                 role=role,
+                preferred_weekday=preferred_weekday,
             )
             audit.insert_review_event(
                 cur,
@@ -163,6 +165,8 @@ class PostgresAdapter:
         set_display_name: bool = False,
         role: Optional[str] = None,
         set_role: bool = False,
+        preferred_weekday: Optional[int] = None,
+        set_preferred_weekday: bool = False,
         is_active: Optional[bool] = None,
         set_is_active: bool = False,
     ) -> Optional[Dict[str, Any]]:
@@ -204,6 +208,8 @@ class PostgresAdapter:
                 set_display_name=set_display_name,
                 role=role,
                 set_role=set_role,
+                preferred_weekday=preferred_weekday,
+                set_preferred_weekday=set_preferred_weekday,
                 is_active=is_active,
                 set_is_active=set_is_active,
             )

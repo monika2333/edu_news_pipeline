@@ -18,11 +18,13 @@ class UserCreateRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=10, max_length=1024)
     role: Literal["admin", "duty_editor"]
+    preferred_weekday: Optional[int] = Field(default=None, ge=0, le=6)
 
 
 class UserUpdateRequest(BaseModel):
     display_name: Optional[str] = Field(default=None, max_length=200)
     role: Optional[Literal["admin", "duty_editor"]] = None
+    preferred_weekday: Optional[int] = Field(default=None, ge=0, le=6)
     is_active: Optional[bool] = None
 
 
@@ -59,6 +61,7 @@ def create_user(
             display_name=payload.display_name,
             password=payload.password,
             role=payload.role,
+            preferred_weekday=payload.preferred_weekday,
             actor=user,
         )
     except ValueError as exc:
@@ -81,6 +84,8 @@ def update_user(
             set_display_name="display_name" in fields,
             role=payload.role,
             set_role="role" in fields,
+            preferred_weekday=payload.preferred_weekday,
+            set_preferred_weekday="preferred_weekday" in fields,
             is_active=payload.is_active,
             set_is_active="is_active" in fields,
         )

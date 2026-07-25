@@ -28,6 +28,20 @@ def test_duty_editor_cannot_call_admin_schedule_api() -> None:
     assert response.status_code == 403
 
 
+def test_duty_editor_cannot_call_admin_manual_filter_api() -> None:
+    editor = ConsoleUser(
+        method="test",
+        user_id="editor-id",
+        username="editor",
+        display_name="值班编辑",
+        role="duty_editor",
+    )
+
+    response = _client_for(editor).get("/api/manual_filter/candidates")
+
+    assert response.status_code == 403
+
+
 def test_admin_cannot_use_editor_shift_workspace() -> None:
     admin = ConsoleUser(
         method="test",

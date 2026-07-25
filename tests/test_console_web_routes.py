@@ -19,6 +19,18 @@ def _build_client() -> TestClient:
     return TestClient(app)
 
 
+def _build_editor_client() -> TestClient:
+    app = create_app()
+    app.dependency_overrides[require_console_user] = lambda: ConsoleUser(
+        method="test",
+        user_id="editor-id",
+        username="editor",
+        display_name="周一编辑",
+        role="duty_editor",
+    )
+    return TestClient(app)
+
+
 def test_console_root_redirects_to_manual_filter() -> None:
     client = _build_client()
 
@@ -62,6 +74,42 @@ def test_admin_page_shows_registration_preferences_for_scheduling(
     assert "<th>首选值班日</th>" in response.text
     assert "editor.preferred_weekday" in admin_script
     assert "首选${preference}" in admin_script
+
+
+def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> None:
+    response = _build_editor_client().get("/duty")
+
+    assert response.status_code == 200
+    html = response.text
+    assert "<title>值班编辑工作台</title>" in html
+    assert 'data-workspace-mode="duty"' in html
+    assert 'id="workspace-shift-select"' in html
+    assert 'data-tab="filter">筛选</button>' in html
+    assert 'data-tab="review">审阅</button>' in html
+    assert 'data-tab="discard">放弃</button>' in html
+    assert '/static/js/manual_filter/workspace.js?v=' in html
+    assert '/static/js/manual_filter/filter_tab_data.js?v=' in html
+    assert 'src="/static/js/duty.js' not in html
+    assert 'href="/admin">用户与排班</a>' not in html
+    assert 'href="/admin/duty-summary">值班汇总</a>' not in html
+    assert 'id="btn-check-duplicates"' not in html
+    assert 'id="btn-archive"' not in html
+    assert 'id="btn-filter-discard-before-date"' not in html
+    assert 'id="search-drawer-toggle"' not in html
+
+
+def test_admin_manual_filter_keeps_admin_only_entries() -> None:
+    response = _build_client().get("/manual_filter")
+
+    assert response.status_code == 200
+    html = response.text
+    assert 'data-workspace-mode="admin"' in html
+    assert 'href="/admin">用户与排班</a>' in html
+    assert 'href="/admin/duty-summary">值班汇总</a>' in html
+    assert 'id="btn-check-duplicates"' in html
+    assert 'id="btn-archive"' in html
+    assert 'id="btn-filter-discard-before-date"' in html
+    assert 'id="search-drawer-toggle"' in html
 
 
 def test_duplicate_check_button_is_before_sort_mode() -> None:

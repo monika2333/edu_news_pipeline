@@ -24,6 +24,10 @@ function getScoreFeedbackPresentation(feedbackType) {
 
 function renderScoreFeedbackControl(item) {
     const safe = item || {};
+    if (IS_DUTY_WORKSPACE) {
+        const score = escapeScoreFeedbackHtml(formatScore(safe.external_importance_score));
+        return `<div class="meta-item">分数: ${score}</div>`;
+    }
     const feedback = safe.score_feedback || null;
     const feedbackType = feedback && ['too_high', 'too_low'].includes(feedback.feedback_type)
         ? feedback.feedback_type
@@ -105,7 +109,7 @@ function setScoreFeedbackState(control, feedbackType, notes) {
 }
 
 async function requestScoreFeedback(path, method, payload) {
-    const response = await fetch(`${API_BASE}${path}`, {
+    const response = await workspaceFetch(`${API_BASE}${path}`, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

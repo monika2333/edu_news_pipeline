@@ -117,7 +117,7 @@ async function performDrawerSearch() {
     if (filters.q) params.set('q', filters.q);
 
     try {
-        const res = await fetch(`/api/articles/search?${params.toString()}`);
+        const res = await workspaceFetch(`/api/articles/search?${params.toString()}`);
         if (!res.ok) throw new Error('检索失败');
         const data = await res.json();
         renderDrawerSearchResults(data);

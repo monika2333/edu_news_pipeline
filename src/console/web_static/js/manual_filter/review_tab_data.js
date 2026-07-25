@@ -24,8 +24,8 @@ async function loadReviewData() {
         });
 
         const [selRes, bakRes] = await Promise.all([
-            fetch(`${API_BASE}/review?${paramsSelected.toString()}`),
-            fetch(`${API_BASE}/review?${paramsBackup.toString()}`)
+            workspaceFetch(`${API_BASE}/review?${paramsSelected.toString()}`),
+            workspaceFetch(`${API_BASE}/review?${paramsBackup.toString()}`)
         ]);
 
         const selData = await selRes.json();
@@ -111,7 +111,7 @@ async function applyReviewBulkStatus() {
     try {
         isBulkUpdatingReview = true;
         const scrollY = window.scrollY;
-        const response = await fetch(`${API_BASE}/decide`, {
+        const response = await workspaceFetch(`${API_BASE}/decide`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -147,7 +147,7 @@ async function applyReviewBulkStatus() {
                     else if (previousView === 'backup') undoPayload.backup_ids = movedIds;
                     else undoPayload.pending_ids = movedIds; // Fallback
 
-                    const undoResponse = await fetch(`${API_BASE}/decide`, {
+                    const undoResponse = await workspaceFetch(`${API_BASE}/decide`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(undoPayload)
@@ -231,7 +231,7 @@ async function persistReviewOrder() {
     };
 
     try {
-        const response = await fetch(`${API_BASE}/order`, {
+        const response = await workspaceFetch(`${API_BASE}/order`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -262,7 +262,7 @@ function buildReviewUndoAction(id, prevStatus, prevReportType, versions) {
     return buildUndoToastAction(
         async () => {
             try {
-                const response = await fetch(`${API_BASE}/decide`, {
+                const response = await workspaceFetch(`${API_BASE}/decide`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -303,7 +303,7 @@ async function applyReviewCardDecision(card, rawValue, successMessage = '已更�
     });
     try {
         const scrollY = window.scrollY;
-        const editResponse = await fetch(`${API_BASE}/edit`, {
+        const editResponse = await workspaceFetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -314,7 +314,7 @@ async function applyReviewCardDecision(card, rawValue, successMessage = '已更�
         });
         const editMutation = await requireManualMutationSuccess(editResponse, '保存编辑失败');
 
-        const decisionResponse = await fetch(`${API_BASE}/decide`, {
+        const decisionResponse = await workspaceFetch(`${API_BASE}/decide`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -377,7 +377,7 @@ async function handleSummaryUpdate(e) {
     const sourceBox = card.querySelector('.source-box');
     const llm_source = sourceBox ? sourceBox.value : '';
     try {
-        const response = await fetch(`${API_BASE}/edit`, {
+        const response = await workspaceFetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -403,7 +403,7 @@ async function handleSourceUpdate(e) {
     const summaryBox = card.querySelector('.summary-box');
     const summary = summaryBox ? summaryBox.value : '';
     try {
-        const response = await fetch(`${API_BASE}/edit`, {
+        const response = await workspaceFetch(`${API_BASE}/edit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -460,7 +460,7 @@ async function handleArchive() {
     };
 
     try {
-        const res = await fetch(`${API_BASE}/archive`, {
+        const res = await workspaceFetch(`${API_BASE}/archive`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)

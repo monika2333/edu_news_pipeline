@@ -26,6 +26,35 @@ h1 {
     color: var(--text-primary);
 }
 
+.header-left {
+    display: grid;
+    gap: 4px;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.workspace-coverage {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.workspace-shift-select {
+    max-width: 280px;
+    min-height: 40px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+    color: var(--text-primary);
+}
+
 .stats {
     display: flex;
     gap: 16px;
@@ -120,10 +149,13 @@ h1 {
 
     .header-right {
         gap: 10px;
+        flex-wrap: wrap;
     }
 
-    .header-right input {
+    .header-right input,
+    .workspace-shift-select {
         flex: 1;
+        max-width: none;
     }
 
     .stats {

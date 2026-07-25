@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+{% set is_duty_workspace = workspace_mode|default('admin') == 'duty' %}
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>人工筛选控制台</title>
+    <title>{{ '值班编辑工作台' if is_duty_workspace else '人工筛选控制台' }}</title>
     <!-- CSS Core -->
     <link rel="stylesheet" href="/static/css/variables.css">
     <link rel="stylesheet" href="/static/css/base.css">
@@ -30,11 +31,14 @@
     </style>
 </head>
 
-<body>
+<body data-workspace-mode="{{ workspace_mode|default('admin') }}">
     <div class="container">
         <header>
             <div class="header-left">
-                <h1>人工筛选控制台</h1>
+                <h1>{{ '值班编辑工作台' if is_duty_workspace else '人工筛选控制台' }}</h1>
+                {% if is_duty_workspace %}
+                <p class="workspace-coverage" id="workspace-shift-coverage">正在加载班次…</p>
+                {% endif %}
             </div>
             <div class="stats">
                 <div class="stat-item">
@@ -51,15 +55,19 @@
                 </div>
                 <div class="stat-item">
                     <span class="stat-value" id="stat-exported">-</span>
-                    <span class="stat-label">已导出</span>
+                    <span class="stat-label">{{ '已放弃' if is_duty_workspace else '已导出' }}</span>
                 </div>
             </div>
             <div class="header-right">
                 <span class="current-user" id="current-user">
-                    {{ current_user.display_name }} · 管理员
+                    {{ current_user.display_name }} · {{ '值班编辑' if is_duty_workspace else '管理员' }}
                 </span>
+                {% if is_duty_workspace %}
+                <select class="workspace-shift-select" id="workspace-shift-select" aria-label="选择班次"></select>
+                {% else %}
                 <a class="btn btn-secondary" href="/admin">用户与排班</a>
                 <a class="btn btn-secondary" href="/admin/duty-summary">值班汇总</a>
+                {% endif %}
                 <a class="btn btn-secondary" href="/account">账号设置</a>
                 <button class="btn btn-secondary" id="btn-refresh">刷新</button>
                 <button class="btn btn-secondary" id="btn-logout">退出</button>
@@ -90,8 +98,10 @@
                                 aria-label="发布日期早于，不含当天" title="发布日期早于，不含当天">
                             <button class="btn btn-secondary" id="btn-filter-search">检索</button>
                             <button class="btn btn-secondary" id="btn-filter-clear">清除检索</button>
+                            {% if not is_duty_workspace %}
                             <button class="btn btn-primary filter-discard-action"
                                 id="btn-filter-discard-before-date">全部放弃</button>
+                            {% endif %}
                         </div>
                         <div class="filter-toolbar-meta" id="filter-search-meta"></div>
                     </div>
@@ -152,9 +162,11 @@
                                 <option value="pending">待处理</option>
                             </select>
                         </div>
+                        {% if not is_duty_workspace %}
                         <button class="btn btn-secondary sort-incompatible" id="btn-check-duplicates">
                             检查重复
                         </button>
+                        {% endif %}
                         <button class="btn btn-secondary" id="btn-toggle-sort">
                             <span class="icon">🔃</span> 排序模式
                         </button>
@@ -164,9 +176,11 @@
                         <button class="btn btn-secondary" id="btn-preview-copy">
                             预览
                         </button>
+                        {% if not is_duty_workspace %}
                         <button class="btn btn-primary" id="btn-archive">
                             归档
                         </button>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -184,6 +198,7 @@
 
     <!-- Search Drawer -->
 
+    {% if not is_duty_workspace %}
     <button id="search-drawer-toggle" class="search-drawer-toggle" aria-label="打开搜索">
         <span class="icon">🔍</span>
     </button>
@@ -219,6 +234,7 @@
             <div id="search-pagination" class="pagination"></div>
         </div>
     </div>
+    {% endif %}
 
     <!-- Preview Modal -->
     <div class="modal" id="preview-modal">
@@ -238,6 +254,7 @@
     </div>
 
     <!-- Duplicate Review Modal -->
+    {% if not is_duty_workspace %}
     <div class="modal" id="duplicate-review-modal" role="dialog" aria-modal="true"
         aria-labelledby="duplicate-review-title" aria-hidden="true">
         <div class="modal-content duplicate-review-modal-content">
@@ -276,6 +293,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
     <!-- Toast -->
     <div class="toast" id="toast">操作成功</div>
@@ -283,6 +301,7 @@
     <script src="/static/vendor/Sortable.min.js?v={{ version }}"></script>
     <script src="/static/js/auth.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/core.js?v={{ version }}"></script>
+    <script src="/static/js/manual_filter/workspace.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/utils.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/score_feedback.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/filter_tab_render.js?v={{ version }}"></script>

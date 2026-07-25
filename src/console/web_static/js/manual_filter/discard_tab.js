@@ -10,7 +10,7 @@ async function loadDiscardData() {
             offset: `${(state.discardPage - 1) * 30}`,
             report_type: state.reviewReportType
         });
-        const res = await fetch(`${API_BASE}/discarded?${params.toString()}`);
+        const res = await workspaceFetch(`${API_BASE}/discarded?${params.toString()}`);
         const data = await res.json();
         renderDiscardList(data.items);
         updatePagination('discard', data.total, state.discardPage);
@@ -121,7 +121,7 @@ async function handleDiscardRestoreChange(event) {
     const { status, reportType } = parseDiscardRestoreTarget(rawValue);
     select.disabled = true;
     try {
-        const res = await fetch(`${API_BASE}/decide`, {
+        const res = await workspaceFetch(`${API_BASE}/decide`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(buildDiscardRestorePayload(id, status, reportType))

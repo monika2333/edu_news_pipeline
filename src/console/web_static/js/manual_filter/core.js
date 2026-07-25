@@ -1,6 +1,7 @@
 // Manual Filter JS - Core
 
-const API_BASE = '/api/manual_filter';
+let API_BASE = '/api/manual_filter';
+const IS_DUTY_WORKSPACE = document.body.dataset.workspaceMode === 'duty';
 
 const GROUP_ORDER = [
     { key: 'internal_negative', label: '京内负面' },

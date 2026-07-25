@@ -23,7 +23,7 @@ async function loadFilterData(options = {}) {
         }
         if (forceClusterRefresh) params.set('force_refresh', 'true');
 
-        const res = await fetch(`${API_BASE}/candidates?${params.toString()}`);
+        const res = await workspaceFetch(`${API_BASE}/candidates?${params.toString()}`);
         if (!res.ok) throw new Error('failed to load candidates');
         const data = await res.json();
 
@@ -57,7 +57,7 @@ async function loadFilterCounts() {
                 if (cat.endsWith('positive')) params.set('sentiment', 'positive');
                 if (cat.endsWith('negative')) params.set('sentiment', 'negative');
 
-                const res = await fetch(`${API_BASE}/candidates?${params.toString()}`);
+                const res = await workspaceFetch(`${API_BASE}/candidates?${params.toString()}`);
                 if (!res.ok) throw new Error('failed to load counts');
                 const data = await res.json();
                 state.filterCounts[cat] = data.total || 0;
@@ -73,7 +73,7 @@ async function loadFilterCounts() {
 async function persistEdits(edits) {
     if (!Object.keys(edits || {}).length) return;
     const articleIds = Object.keys(edits);
-    const res = await fetch(`${API_BASE}/edit`, {
+    const res = await workspaceFetch(`${API_BASE}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -93,7 +93,7 @@ async function submitDecisions(ids, status, versions = null) {
         versions: versions || collectManualReviewVersions(ids)
     };
 
-    const res = await fetch(`${API_BASE}/decide`, {
+    const res = await workspaceFetch(`${API_BASE}/decide`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

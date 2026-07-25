@@ -26,7 +26,7 @@ function collectDuplicateReviewEdits(items = null, { onlyDirty = false } = {}) {
 async function saveDuplicateReviewEdits(edits, reportType = state.reviewReportType) {
     if (!Object.keys(edits).length) return;
     const articleIds = Object.keys(edits);
-    const response = await fetch(`${API_BASE}/edit`, {
+    const response = await workspaceFetch(`${API_BASE}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -77,7 +77,7 @@ async function flushReviewEditsBeforeDuplicateCheck(scope = getDuplicateReviewSc
         if (Object.keys(edit).length) edits[articleId] = edit;
     });
     if (!Object.keys(edits).length) return;
-    const response = await fetch(`${API_BASE}/edit`, {
+    const response = await workspaceFetch(`${API_BASE}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -113,7 +113,7 @@ async function startDuplicateReviewCheck(scope) {
         if (isDuplicateReviewScopeActive(scope)) {
             await flushReviewEditsBeforeDuplicateCheck(scope);
         }
-        const response = await fetch(`${API_BASE}/duplicate-check`, {
+        const response = await workspaceFetch(`${API_BASE}/duplicate-check`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -203,7 +203,7 @@ function updateDuplicateItemDecisionState(item, value, fallbackReportType) {
 }
 
 async function postDuplicateDecision(payload) {
-    const response = await fetch(`${API_BASE}/decide`, {
+    const response = await workspaceFetch(`${API_BASE}/decide`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

@@ -219,9 +219,9 @@ function setReviewView(view) {
 async function loadStats() {
     try {
         const [allRes, zbRes, wbRes] = await Promise.all([
-            fetch(`${API_BASE}/stats`),
-            fetch(`${API_BASE}/stats?report_type=zongbao`),
-            fetch(`${API_BASE}/stats?report_type=wanbao`)
+            workspaceFetch(`${API_BASE}/stats`),
+            workspaceFetch(`${API_BASE}/stats?report_type=zongbao`),
+            workspaceFetch(`${API_BASE}/stats?report_type=wanbao`)
         ]);
         const allData = await allRes.json();
         const zbData = await zbRes.json();

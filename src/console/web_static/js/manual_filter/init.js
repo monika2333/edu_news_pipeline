@@ -1,14 +1,27 @@
 // Manual Filter JS - Init
 
 // Init
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const workspaceReady = await prepareManualFilterWorkspace();
+        if (!workspaceReady) {
+            elements.filterList.innerHTML = '<div class="empty">暂无可用班次，请联系管理员安排班次。</div>';
+            return;
+        }
+    } catch (error) {
+        elements.filterList.innerHTML = '<div class="error">班次加载失败，请刷新后重试。</div>';
+        return;
+    }
+
     setupTabs();
     loadStats();
     loadFilterData();
     loadFilterCounts();
     setupFilterRealtimeDecisionHandlers();
-    setupSearchDrawer();
-    setupDuplicateReview();
+    if (!IS_DUTY_WORKSPACE) {
+        setupSearchDrawer();
+        setupDuplicateReview();
+    }
     setupScoreFeedback();
 
     // Global event listeners

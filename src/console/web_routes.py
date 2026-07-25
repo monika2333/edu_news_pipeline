@@ -29,7 +29,12 @@ async def manual_filter_page(
     version = datetime.now().strftime("%Y%m%d%H%M%S")
     return templates.TemplateResponse(
         "manual_filter.html",
-        {"request": request, "version": version, "current_user": user},
+        {
+            "request": request,
+            "version": version,
+            "current_user": user,
+            "workspace_mode": "admin",
+        },
     )
 
 
@@ -51,8 +56,13 @@ async def duty_page(
 ) -> HTMLResponse:
     version = datetime.now().strftime("%Y%m%d%H%M%S")
     return templates.TemplateResponse(
-        "duty.html",
-        {"request": request, "version": version, "current_user": user},
+        "manual_filter.html",
+        {
+            "request": request,
+            "version": version,
+            "current_user": user,
+            "workspace_mode": "duty",
+        },
     )
 
 

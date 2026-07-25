@@ -89,23 +89,6 @@
     margin-top: 8px;
 }
 
-.registration-note {
-    display: grid;
-    gap: 4px;
-    margin-top: 24px;
-    padding: 14px 16px;
-    border-left: 3px solid #2563eb;
-    border-radius: 0 10px 10px 0;
-    background: #eff6ff;
-    color: #475569;
-    font-size: 0.875rem;
-    line-height: 1.55;
-}
-
-.registration-note strong {
-    color: #1e3a8a;
-}
-
 .auth-switch {
     display: flex;
     justify-content: center;

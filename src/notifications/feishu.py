@@ -16,6 +16,7 @@ _TOKEN_URL = f"{_FEISHU_API_ROOT}/auth/v3/tenant_access_token/internal/"
 _MESSAGE_URL = f"{_FEISHU_API_ROOT}/im/v1/messages"
 _FILE_URL = f"{_FEISHU_API_ROOT}/im/v1/files"
 _DEFAULT_TIMEOUT = 10
+_WEEKDAY_LABELS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
 
 class FeishuConfigError(RuntimeError):
@@ -101,6 +102,29 @@ def notify_llm_quota_alert(
     return True
 
 
+def notify_console_registration(
+    *,
+    username: str,
+    display_name: str,
+    preferred_weekday: int,
+) -> bool:
+    """Notify the configured recipient after an editor self-registers."""
+    if preferred_weekday not in range(7):
+        raise ValueError("preferred_weekday must be between 0 and 6")
+    config = _load_config()
+    occurred_at = datetime.now(timezone.utc).astimezone().isoformat(
+        timespec="seconds"
+    )
+    message = _render_console_registration_message(
+        username=username,
+        display_name=display_name,
+        preferred_weekday=preferred_weekday,
+        occurred_at=occurred_at,
+    )
+    _send_text_message(config, message)
+    return True
+
+
 def is_configured() -> bool:
     """Return True if Feishu credentials are present."""
     try:
@@ -131,6 +155,27 @@ def _render_llm_quota_alert_message(
         "Action: check the LLM account balance, billing status, quota, and API key.",
     ]
     return _truncate("\n".join(lines), 1800)
+
+
+def _render_console_registration_message(
+    *,
+    username: str,
+    display_name: str,
+    preferred_weekday: int,
+    occurred_at: str,
+) -> str:
+    safe_username = " ".join(username.split())
+    safe_display_name = " ".join(display_name.split())
+    lines = [
+        "Edu News Pipeline - 新用户注册",
+        f"姓名：{_truncate(safe_display_name, 100)}",
+        f"用户名：{_truncate(safe_username, 100)}",
+        f"首选值班日：{_WEEKDAY_LABELS[preferred_weekday]}",
+        f"注册时间：{occurred_at}",
+        "",
+        "账号尚未自动排班，请前往“用户与排班”页面确认安排。",
+    ]
+    return "\n".join(lines)
 
 
 def _render_message(
@@ -343,6 +388,7 @@ __all__ = [
     "FeishuConfigError",
     "FeishuRequestError",
     "is_configured",
+    "notify_console_registration",
     "notify_export_summary",
     "notify_llm_quota_alert",
 ]

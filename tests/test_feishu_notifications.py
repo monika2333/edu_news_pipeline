@@ -114,3 +114,30 @@ def test_notify_llm_quota_alert_missing_config(monkeypatch):
             status_code=402,
             response_text="insufficient credits",
         )
+
+
+def test_notify_console_registration_builds_text_message(
+    monkeypatch,
+    fake_settings,
+):
+    captured = {}
+
+    def fake_send(config, message):
+        captured["config"] = config
+        captured["message"] = message
+
+    monkeypatch.setattr(feishu, "_send_text_message", fake_send)
+
+    result = feishu.notify_console_registration(
+        username="zhangming",
+        display_name="张明",
+        preferred_weekday=3,
+    )
+
+    assert result is True
+    assert captured["config"].receive_id == "openid"
+    assert "新用户注册" in captured["message"]
+    assert "姓名：张明" in captured["message"]
+    assert "用户名：zhangming" in captured["message"]
+    assert "首选值班日：周四" in captured["message"]
+    assert "尚未自动排班" in captured["message"]

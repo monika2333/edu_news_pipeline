@@ -518,6 +518,7 @@ console_users → console_user_sessions → duty_schedules → duty_shifts → s
 ## 6. 认证与会话
 
 - 新增登录、内网注册和个人改密页面及对应接口。
+- 自注册成功后异步发送飞书提醒,内容仅包含姓名、用户名和首选值班日,不得包含密码;飞书失败不得回滚已创建的账号。
 - 登录成功后建立服务端可撤销会话。
 - 每个受保护请求通过统一依赖得到包含 `user_id`、`username`、`display_name`、`role` 的 `ConsoleUser`。
 - 账号停用、密码重置或管理员撤销会话后,旧会话立即失效。

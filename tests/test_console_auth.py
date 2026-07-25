@@ -8,7 +8,7 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from src.console import auth_service
+from src.console import auth_routes, auth_service
 from src.console.app import create_app
 from src.console.auth_service import ConsoleUser, LoginSession
 from src.console.security import require_console_user, require_csrf
@@ -107,9 +107,11 @@ def test_login_page_is_public_and_protected_page_redirects() -> None:
 
     assert login_response.status_code == 200
     assert 'id="login-form"' in login_response.text
+    assert "登录你的值班工作台" not in login_response.text
     assert register_response.status_code == 200
     assert 'id="register-form"' in register_response.text
-    assert "注册不会自动排班" in register_response.text
+    assert "登记真实姓名和首选值班日" not in register_response.text
+    assert "注册不会自动排班" not in register_response.text
     assert protected_response.status_code == 303
     assert protected_response.headers["location"].startswith(
         "/login?next=/manual_filter"
@@ -147,10 +149,16 @@ def test_self_registration_creates_unassigned_duty_editor(monkeypatch) -> None:
 
 def test_register_api_accepts_name_and_preferred_weekday(monkeypatch) -> None:
     captured: dict[str, Any] = {}
+    notified: dict[str, Any] = {}
     monkeypatch.setattr(
         auth_service,
         "register_console_user",
         lambda **kwargs: captured.update(kwargs) or {"id": "new-user-id"},
+    )
+    monkeypatch.setattr(
+        auth_routes.feishu,
+        "notify_console_registration",
+        lambda **kwargs: notified.update(kwargs) or True,
     )
 
     response = TestClient(create_app()).post(
@@ -169,6 +177,11 @@ def test_register_api_accepts_name_and_preferred_weekday(monkeypatch) -> None:
         "username": "zhangming",
         "display_name": "张明",
         "password": "a-secure-password",
+        "preferred_weekday": 2,
+    }
+    assert notified == {
+        "username": "zhangming",
+        "display_name": "张明",
         "preferred_weekday": 2,
     }
 
@@ -213,6 +226,37 @@ def test_register_api_rejects_duplicate_username(monkeypatch) -> None:
 
     assert response.status_code == 409
     assert response.json()["detail"] == "该用户名已被使用"
+
+
+def test_registration_succeeds_when_feishu_notification_fails(monkeypatch) -> None:
+    monkeypatch.setattr(
+        auth_service,
+        "register_console_user",
+        lambda **kwargs: {"id": "new-user-id", **kwargs},
+    )
+
+    def fail_notification(**kwargs: Any) -> bool:
+        del kwargs
+        raise auth_routes.feishu.FeishuRequestError("network unavailable")
+
+    monkeypatch.setattr(
+        auth_routes.feishu,
+        "notify_console_registration",
+        fail_notification,
+    )
+
+    response = TestClient(create_app()).post(
+        "/api/auth/register",
+        json={
+            "username": "zhangming",
+            "display_name": "张明",
+            "password": "a-secure-password",
+            "preferred_weekday": 2,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["message"] == "注册成功，请登录"
 
 
 def test_login_sets_http_only_session_and_readable_csrf_cookie(monkeypatch) -> None:

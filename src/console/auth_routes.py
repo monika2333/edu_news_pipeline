@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     Header,
     HTTPException,
@@ -21,8 +24,10 @@ from src.console.auth_schemas import (
     RegisterRequest,
 )
 from src.console.security import ConsoleUser, require_console_user, require_csrf
+from src.notifications import feishu
 
 router = APIRouter(tags=["auth"])
+logger = logging.getLogger(__name__)
 
 
 def _user_response(user: ConsoleUser) -> ConsoleUserResponse:
@@ -42,12 +47,33 @@ def _client_host(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _notify_registration(
+    *,
+    username: str,
+    display_name: str,
+    preferred_weekday: int,
+) -> None:
+    try:
+        feishu.notify_console_registration(
+            username=username,
+            display_name=display_name,
+            preferred_weekday=preferred_weekday,
+        )
+    except (feishu.FeishuConfigError, feishu.FeishuRequestError) as exc:
+        logger.warning("Feishu registration notification failed: %s", exc)
+    except Exception:
+        logger.exception("Unexpected Feishu registration notification failure")
+
+
 @router.post(
     "/api/auth/register",
     response_model=MessageResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def register(payload: RegisterRequest) -> MessageResponse:
+def register(
+    payload: RegisterRequest,
+    background_tasks: BackgroundTasks,
+) -> MessageResponse:
     """Create an unassigned duty-editor account for the internal console."""
     try:
         auth_service.register_console_user(
@@ -66,6 +92,12 @@ def register(payload: RegisterRequest) -> MessageResponse:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
+    background_tasks.add_task(
+        _notify_registration,
+        username=payload.username.strip(),
+        display_name=payload.display_name.strip(),
+        preferred_weekday=payload.preferred_weekday,
+    )
     return MessageResponse(message="注册成功，请登录")
 
 

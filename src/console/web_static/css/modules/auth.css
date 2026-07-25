@@ -3,3 +3,170 @@
     font-size: 0.875rem;
     white-space: nowrap;
 }
+
+.account-menu {
+    position: relative;
+    z-index: 20;
+}
+
+.account-menu-trigger {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 40px;
+    box-sizing: border-box;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+    cursor: pointer;
+    user-select: none;
+    transition:
+        border-color 160ms ease,
+        box-shadow 160ms ease,
+        color 160ms ease;
+}
+
+.account-menu-trigger::-webkit-details-marker {
+    display: none;
+}
+
+.account-menu-trigger::after {
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    content: "";
+    transform: translateY(-2px) rotate(45deg);
+    transition: transform 160ms ease;
+}
+
+.account-menu-trigger:hover,
+.account-menu-trigger:focus-visible,
+.account-menu[open] .account-menu-trigger {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    outline: none;
+    box-shadow: 0 0 0 3px rgb(37 99 235 / 10%);
+}
+
+.account-menu[open] .account-menu-trigger::after {
+    transform: translateY(2px) rotate(225deg);
+}
+
+.account-menu-panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    display: grid;
+    min-width: 180px;
+    padding: 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--card-bg);
+    box-shadow: 0 16px 36px rgb(15 23 42 / 16%);
+    animation: account-menu-enter 140ms ease-out;
+}
+
+.account-menu-item {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.9rem;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.account-menu-item:hover,
+.account-menu-item:focus-visible {
+    background: #eff6ff;
+    color: var(--primary-color);
+    outline: none;
+}
+
+.admin-view-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 4px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: #f1f5f9;
+}
+
+.admin-view-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    box-sizing: border-box;
+    padding: 8px 14px;
+    border-radius: 7px;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+    text-decoration: none;
+    white-space: nowrap;
+    transition:
+        background 160ms ease,
+        box-shadow 160ms ease,
+        color 160ms ease;
+}
+
+.admin-view-link:hover,
+.admin-view-link:focus-visible {
+    color: var(--primary-color);
+    outline: none;
+}
+
+.admin-view-link.is-active {
+    background: var(--card-bg);
+    color: var(--primary-color);
+    box-shadow: 0 1px 3px rgb(15 23 42 / 12%);
+}
+
+@keyframes account-menu-enter {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .account-menu-trigger,
+    .account-menu-trigger::after,
+    .account-menu-panel,
+    .admin-view-link {
+        transition: none;
+        animation: none;
+    }
+}
+
+@media (max-width: 768px) {
+    .admin-view-switch {
+        order: -1;
+        width: 100%;
+    }
+
+    .admin-view-link {
+        flex: 1;
+        white-space: normal;
+    }
+
+    .summary-header-actions .account-menu {
+        margin-left: auto;
+    }
+}

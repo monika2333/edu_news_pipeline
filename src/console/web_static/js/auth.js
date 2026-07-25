@@ -35,6 +35,29 @@
     };
 
     document.addEventListener('DOMContentLoaded', () => {
+        const accountMenus = [...document.querySelectorAll('details.account-menu')];
+        accountMenus.forEach(menu => {
+            menu.addEventListener('toggle', () => {
+                if (!menu.open) return;
+                accountMenus.forEach(other => {
+                    if (other !== menu) other.open = false;
+                });
+            });
+        });
+        document.addEventListener('click', event => {
+            accountMenus.forEach(menu => {
+                if (menu.open && !menu.contains(event.target)) menu.open = false;
+            });
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key !== 'Escape') return;
+            accountMenus.forEach(menu => {
+                if (!menu.open) return;
+                menu.open = false;
+                menu.querySelector('summary')?.focus();
+            });
+        });
+
         const logoutButton = document.getElementById('btn-logout');
         if (!logoutButton) return;
         logoutButton.addEventListener('click', async () => {

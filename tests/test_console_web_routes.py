@@ -51,6 +51,8 @@ def test_account_page_exposes_personal_password_change_form() -> None:
     response = _build_client().get("/account")
 
     assert response.status_code == 200
+    assert "<title>修改密码 · 教育新闻控制台</title>" in response.text
+    assert 'id="btn-logout" type="button">退出登录</button>' in response.text
     assert 'id="change-password-form"' in response.text
     assert 'src="/static/js/account.js?v=' in response.text
     assert 'href="/">← 返回工作台</a>' in response.text
@@ -81,7 +83,8 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
 
     assert response.status_code == 200
     html = response.text
-    assert "<title>值班编辑工作台</title>" in html
+    assert "<title>新闻筛选控制台</title>" in html
+    assert "<h1>新闻筛选控制台</h1>" in html
     assert 'data-workspace-mode="duty"' in html
     assert 'id="workspace-shift-select"' in html
     assert 'data-tab="filter">筛选</button>' in html
@@ -96,6 +99,8 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'id="btn-archive"' not in html
     assert 'id="btn-filter-discard-before-date"' in html
     assert 'id="search-drawer-toggle"' in html
+    assert 'id="stat-exported"' not in html
+    assert "已放弃" not in html
 
 
 def test_admin_manual_filter_keeps_admin_only_entries() -> None:
@@ -103,6 +108,8 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
 
     assert response.status_code == 200
     html = response.text
+    assert "<title>新闻筛选控制台</title>" in html
+    assert "<h1>新闻筛选控制台</h1>" in html
     assert 'data-workspace-mode="admin"' in html
     assert 'href="/admin">用户与排班</a>' in html
     assert 'href="/admin/duty-summary">值班汇总</a>' in html
@@ -110,6 +117,10 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert 'id="btn-archive"' in html
     assert 'id="btn-filter-discard-before-date"' in html
     assert 'id="search-drawer-toggle"' in html
+    assert 'href="/account">修改密码</a>' in html
+    assert 'id="btn-logout">退出登录</button>' in html
+    assert 'id="stat-exported"' not in html
+    assert "已导出" not in html
 
 
 def test_duty_summary_collapses_shift_panel_by_default(

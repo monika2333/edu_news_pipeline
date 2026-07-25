@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>值班编辑工作台</title>
+    <title>新闻筛选控制台</title>
     <link rel="stylesheet" href="/static/css/variables.css">
     <link rel="stylesheet" href="/static/css/base.css">
     <link rel="stylesheet" href="/static/css/components.css">
@@ -16,7 +16,7 @@
     <div class="duty-shell">
         <header class="duty-header">
             <div>
-                <p class="duty-kicker">值班编辑工作台</p>
+                <p class="duty-kicker">新闻筛选控制台</p>
                 <h1 id="shift-heading">正在加载班次…</h1>
                 <p class="duty-coverage" id="shift-coverage"></p>
             </div>
@@ -24,8 +24,8 @@
                 <span class="current-user">{{ current_user.display_name }} · 值班编辑</span>
                 <select id="shift-select" aria-label="选择班次"></select>
                 <button class="btn btn-secondary" id="btn-duty-refresh">刷新</button>
-                <a class="btn btn-secondary" href="/account">账号设置</a>
-                <button class="btn btn-secondary" id="btn-logout">退出</button>
+                <a class="btn btn-secondary" href="/account">修改密码</a>
+                <button class="btn btn-secondary" id="btn-logout">退出登录</button>
             </div>
         </header>
 

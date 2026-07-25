@@ -5,7 +5,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ '值班编辑工作台' if is_duty_workspace else '人工筛选控制台' }}</title>
+    <title>新闻筛选控制台</title>
     <!-- CSS Core -->
     <link rel="stylesheet" href="/static/css/variables.css">
     <link rel="stylesheet" href="/static/css/base.css">
@@ -35,7 +35,7 @@
     <div class="container">
         <header>
             <div class="header-left">
-                <h1>{{ '值班编辑工作台' if is_duty_workspace else '人工筛选控制台' }}</h1>
+                <h1>新闻筛选控制台</h1>
                 {% if is_duty_workspace %}
                 <p class="workspace-coverage" id="workspace-shift-coverage">正在加载班次…</p>
                 {% endif %}
@@ -53,10 +53,6 @@
                     <span class="stat-value" id="stat-backup">-</span>
                     <span class="stat-label">备选</span>
                 </div>
-                <div class="stat-item">
-                    <span class="stat-value" id="stat-exported">-</span>
-                    <span class="stat-label">{{ '已放弃' if is_duty_workspace else '已导出' }}</span>
-                </div>
             </div>
             <div class="header-right">
                 <span class="current-user" id="current-user">
@@ -68,9 +64,9 @@
                 <a class="btn btn-secondary" href="/admin">用户与排班</a>
                 <a class="btn btn-secondary" href="/admin/duty-summary">值班汇总</a>
                 {% endif %}
-                <a class="btn btn-secondary" href="/account">账号设置</a>
+                <a class="btn btn-secondary" href="/account">修改密码</a>
                 <button class="btn btn-secondary" id="btn-refresh">刷新</button>
-                <button class="btn btn-secondary" id="btn-logout">退出</button>
+                <button class="btn btn-secondary" id="btn-logout">退出登录</button>
             </div>
         </header>
 

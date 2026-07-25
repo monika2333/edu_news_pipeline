@@ -18,8 +18,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadFilterData();
     loadFilterCounts();
     setupFilterRealtimeDecisionHandlers();
+    setupSearchDrawer();
     if (!IS_DUTY_WORKSPACE) {
-        setupSearchDrawer();
         setupDuplicateReview();
     }
     setupScoreFeedback();

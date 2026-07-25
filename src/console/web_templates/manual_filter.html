@@ -98,10 +98,8 @@
                                 aria-label="发布日期早于，不含当天" title="发布日期早于，不含当天">
                             <button class="btn btn-secondary" id="btn-filter-search">检索</button>
                             <button class="btn btn-secondary" id="btn-filter-clear">清除检索</button>
-                            {% if not is_duty_workspace %}
                             <button class="btn btn-primary filter-discard-action"
                                 id="btn-filter-discard-before-date">全部放弃</button>
-                            {% endif %}
                         </div>
                         <div class="filter-toolbar-meta" id="filter-search-meta"></div>
                     </div>
@@ -198,7 +196,6 @@
 
     <!-- Search Drawer -->
 
-    {% if not is_duty_workspace %}
     <button id="search-drawer-toggle" class="search-drawer-toggle" aria-label="打开搜索">
         <span class="icon">🔍</span>
     </button>
@@ -234,7 +231,6 @@
             <div id="search-pagination" class="pagination"></div>
         </div>
     </div>
-    {% endif %}
 
     <!-- Preview Modal -->
     <div class="modal" id="preview-modal">

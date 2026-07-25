@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from src.console import duty_review_service, shifts_service
+from src.console import articles_service, duty_review_service, shifts_service
 from src.console.app import create_app
 from src.console.auth_service import ConsoleUser
 from src.console.security import require_console_user
@@ -40,6 +40,32 @@ def test_duty_editor_cannot_call_admin_manual_filter_api() -> None:
     response = _client_for(editor).get("/api/manual_filter/candidates")
 
     assert response.status_code == 403
+
+
+def test_duty_editor_can_use_read_only_article_search(monkeypatch) -> None:
+    editor = ConsoleUser(
+        method="test",
+        user_id="editor-id",
+        username="editor",
+        display_name="值班编辑",
+        role="duty_editor",
+    )
+    monkeypatch.setattr(
+        articles_service,
+        "search_articles",
+        lambda **kwargs: {
+            "items": [],
+            "total": 0,
+            "limit": kwargs["limit"],
+            "page": kwargs["page"],
+            "pages": 1,
+        },
+    )
+
+    response = _client_for(editor).get("/api/articles/search?q=教育")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 0
 
 
 def test_admin_cannot_use_editor_shift_workspace() -> None:

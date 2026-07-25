@@ -66,7 +66,7 @@ def create_app() -> FastAPI:
     app.include_router(health_routes.router)
     app.include_router(auth_routes.router)
     app.include_router(runs_routes.router, dependencies=admin_dependencies)
-    app.include_router(articles_routes.router, dependencies=admin_dependencies)
+    app.include_router(articles_routes.router, dependencies=protected_dependencies)
     app.include_router(exports_routes.router, dependencies=admin_dependencies)
     app.include_router(manual_filter_routes.router, dependencies=admin_dependencies)
     app.include_router(

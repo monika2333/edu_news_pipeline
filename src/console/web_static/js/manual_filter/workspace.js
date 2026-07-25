@@ -351,6 +351,40 @@ async function dutyDecideResponse(options) {
     });
 }
 
+async function dutyDiscardBeforeDateResponse(options) {
+    const payload = JSON.parse(options.body || '{}');
+    const params = new URLSearchParams();
+    ['region', 'sentiment', 'q', 'published_before'].forEach(key => {
+        if (payload[key]) params.set(key, payload[key]);
+    });
+    const items = filterDutyCandidates(
+        await loadAllDutyItems('pending'),
+        params
+    );
+    if (payload.dry_run) {
+        return workspaceJsonResponse({ matched: items.length, updated: 0 });
+    }
+
+    let updated = 0;
+    for (const item of items) {
+        const result = await updateDutyReview(
+            item.article_id,
+            item.version,
+            { decision: 'discarded', report_type: itemReportType(item) }
+        );
+        if (!result.response.ok) {
+            clearDutyWorkspaceCache();
+            return workspaceJsonResponse(
+                { ...result.payload, matched: items.length, updated },
+                result.response.status
+            );
+        }
+        updated += 1;
+    }
+    clearDutyWorkspaceCache();
+    return workspaceJsonResponse({ matched: items.length, updated });
+}
+
 async function dutyOrderResponse(options) {
     const payload = JSON.parse(options.body || '{}');
     const response = await window.fetch(`${API_BASE}/order`, {
@@ -381,6 +415,7 @@ async function workspaceFetch(input, options = {}) {
     if (action === '/stats') return dutyStatsResponse(url.searchParams);
     if (action === '/edit') return dutyEditResponse(options);
     if (action === '/decide') return dutyDecideResponse(options);
+    if (action === '/discard_before_date') return dutyDiscardBeforeDateResponse(options);
     if (action === '/order') return dutyOrderResponse(options);
     return workspaceJsonResponse({ detail: '值班账号不能执行此操作' }, 403);
 }

@@ -94,8 +94,8 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'href="/admin/duty-summary">值班汇总</a>' not in html
     assert 'id="btn-check-duplicates"' not in html
     assert 'id="btn-archive"' not in html
-    assert 'id="btn-filter-discard-before-date"' not in html
-    assert 'id="search-drawer-toggle"' not in html
+    assert 'id="btn-filter-discard-before-date"' in html
+    assert 'id="search-drawer-toggle"' in html
 
 
 def test_admin_manual_filter_keeps_admin_only_entries() -> None:
@@ -110,6 +110,54 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert 'id="btn-archive"' in html
     assert 'id="btn-filter-discard-before-date"' in html
     assert 'id="search-drawer-toggle"' in html
+
+
+def test_duty_summary_collapses_shift_panel_by_default(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.console.web_routes.generate_shifts",
+        lambda **kwargs: {"inserted": 0},
+    )
+
+    response = _build_client().get("/admin/duty-summary")
+
+    assert response.status_code == 200
+    assert 'class="summary-layout is-shifts-collapsed"' in response.text
+    assert 'id="summary-shifts-panel" hidden' in response.text
+    assert 'id="btn-toggle-shifts"' in response.text
+    assert 'aria-expanded="false"' in response.text
+
+
+def test_duty_summary_exposes_column_tabs_search_and_select_all(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.console.web_routes.generate_shifts",
+        lambda **kwargs: {"inserted": 0},
+    )
+    response = _build_client().get("/admin/duty-summary")
+    script = (
+        Path(__file__).parents[1]
+        / "src/console/web_static/js/duty_summary.js"
+    ).read_text(encoding="utf-8")
+
+    assert response.status_code == 200
+    html = response.text
+    assert html.count('data-report-type=') == 4
+    assert "综报采纳" in html
+    assert "综报备选" in html
+    assert "晚报采纳" in html
+    assert "晚报备选" in html
+    assert 'id="summary-search-input"' in html
+    assert 'id="summary-select-all"' in html
+    assert 'id="summary-report-type"' not in html
+    assert 'id="summary-import-target"' not in html
+    assert "function getVisibleItems()" in script
+    assert "elements.selectAll.indeterminate" in script
+    assert "tab.dataset.reportType" in script
+    assert "tab.dataset.targetStatus" in script
+    assert "params.set('report_type', state.targetReportType)" in script
 
 
 def test_duplicate_check_button_is_before_sort_mode() -> None:

@@ -508,6 +508,7 @@ def fetch_admin_shift_summaries(
         LEFT JOIN shift_reviews sr
           ON sr.shift_id = s.id
          AND sr.article_id = ns.article_id
+        WHERE s.starts_at <= CURRENT_TIMESTAMP
         GROUP BY
             s.id,
             s.user_id,
@@ -517,7 +518,7 @@ def fetch_admin_shift_summaries(
             s.starts_at,
             s.ends_at,
             s.cancelled_at
-        ORDER BY s.starts_at DESC
+        ORDER BY s.ends_at DESC
         LIMIT %s
         """,
         (max(1, min(limit, 365)),),

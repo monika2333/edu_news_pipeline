@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Optional, Sequence
 
 from src.adapters.db_postgres_core import get_adapter
@@ -12,8 +13,21 @@ from src.console.auth_service import ConsoleUser
 from src.console.shifts_service import ShiftNotFoundError
 
 
-def list_shift_summaries(*, limit: int = 60) -> list[dict[str, Any]]:
-    rows = get_adapter().fetch_admin_shift_summaries(limit=limit)
+def list_shift_summaries(
+    *,
+    limit: int = 60,
+    now: Optional[datetime] = None,
+) -> list[dict[str, Any]]:
+    current = now or datetime.now(timezone.utc)
+    rows = [
+        row
+        for row in get_adapter().fetch_admin_shift_summaries(limit=limit)
+        if row.get("starts_at") and row["starts_at"] <= current
+    ]
+    rows.sort(
+        key=lambda row: row.get("ends_at") or row["starts_at"],
+        reverse=True,
+    )
     return [
         {
             **row,
@@ -23,7 +37,7 @@ def list_shift_summaries(*, limit: int = 60) -> list[dict[str, Any]]:
             "backup": int(row.get("backup") or 0),
             "discarded": int(row.get("discarded") or 0),
         }
-        for row in rows
+        for row in rows[: max(1, min(limit, 365))]
     ]
 
 

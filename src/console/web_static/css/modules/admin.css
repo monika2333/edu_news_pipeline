@@ -30,15 +30,45 @@
     padding: 22px;
 }
 
-.admin-create-user {
-    display: grid;
-    grid-template-columns: 1fr 1fr 140px 160px 1.2fr auto;
-    gap: 9px;
+.admin-user-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     margin: 18px 0;
 }
 
-.admin-create-user input,
-.admin-create-user select,
+.admin-user-toolbar input {
+    width: min(460px, 100%);
+    min-height: 42px;
+    box-sizing: border-box;
+    padding: 9px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    color: #172033;
+    font: inherit;
+}
+
+.admin-user-toolbar input:focus {
+    border-color: #2563eb;
+    outline: 3px solid rgb(37 99 235 / 12%);
+}
+
+.admin-create-user-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    text-decoration: none;
+}
+
+.admin-empty-row {
+    padding: 32px 10px !important;
+    color: #64748b;
+    text-align: center !important;
+}
+
 .schedule-grid select,
 .shift-assignee {
     min-width: 0;
@@ -213,14 +243,22 @@
 }
 
 @media (max-width: 900px) {
-    .admin-create-user,
     .schedule-grid {
         grid-template-columns: 1fr 1fr;
     }
 }
 
 @media (max-width: 560px) {
-    .admin-create-user,
+    .admin-user-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .admin-user-toolbar input,
+    .admin-create-user-link {
+        width: 100%;
+    }
+
     .schedule-grid {
         grid-template-columns: 1fr;
     }

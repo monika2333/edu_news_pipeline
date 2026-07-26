@@ -49,6 +49,10 @@ def test_removed_console_pages_are_not_registered() -> None:
 
 def test_account_page_exposes_personal_password_change_form() -> None:
     response = _build_client().get("/account")
+    login_stylesheet = (
+        Path(__file__).parents[1]
+        / "src/console/web_static/css/modules/login.css"
+    ).read_text(encoding="utf-8")
 
     assert response.status_code == 200
     assert "<title>修改密码 · 教育新闻控制台</title>" in response.text
@@ -56,9 +60,14 @@ def test_account_page_exposes_personal_password_change_form() -> None:
     assert 'id="change-password-form"' in response.text
     assert 'src="/static/js/account.js?v=' in response.text
     assert 'href="/">← 返回工作台</a>' in response.text
+    assert ".account-card .login-heading h1" in login_stylesheet
+    assert ".account-card .login-form input," in login_stylesheet
+    assert "min-height: 42px;" in login_stylesheet
+    assert ".login-page {" in login_stylesheet
+    assert "box-sizing: border-box;" in login_stylesheet
 
 
-def test_admin_page_shows_registration_preferences_for_scheduling(
+def test_admin_page_separates_user_search_from_account_creation(
     monkeypatch: MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -90,17 +99,25 @@ def test_admin_page_shows_registration_preferences_for_scheduling(
     assert 'class="admin-view-stage-divider" aria-hidden="true"' in html
     assert 'class="admin-view-link" href="/admin/review">汇总审阅</a>' in html
     assert '<details class="account-menu">' in html
-    assert 'class="account-menu-item is-active" href="/admin" aria-current="page">用户与排班</a>' in html
+    assert 'class="account-menu-item is-active" href="/admin"' in html
+    assert 'aria-current="page">用户与排班</a>' in html
     assert 'class="account-menu-item" href="/account">修改密码</a>' in html
-    assert 'class="account-menu-item" id="btn-logout" type="button">退出登录</button>' in html
+    assert 'class="account-menu-item" id="btn-logout"' in html
+    assert 'type="button">退出登录</button>' in html
     assert "返回人工筛选" not in html
     assert ">值班汇总</a>" not in html
-    assert 'name="preferred_weekday"' in html
+    assert 'id="admin-user-search"' in html
+    assert 'href="/admin/users/new">创建账号</a>' in html
+    assert 'id="create-user-form"' not in html
+    assert 'name="password"' not in html
     assert "<th>首选值班日</th>" in html
     assert "<th>值班日期</th>" in html
     assert 'src="/static/js/shift_date.js?v=' in html
     assert "editor.preferred_weekday" in admin_script
     assert "首选${preference}" in admin_script
+    assert "const query = elements.userSearch.value" in admin_script
+    assert "window.addEventListener('pageshow', renderUsers)" in admin_script
+    assert "没有找到匹配的用户。" in admin_script
     assert 'data-user-action="delete">删除</button>' in admin_script
     assert admin_script.index('data-user-action="password"') < admin_script.index(
         'data-user-action="toggle"'
@@ -126,6 +143,44 @@ def test_admin_page_shows_registration_preferences_for_scheduling(
     assert ".admin-delete-user.is-confirming" not in admin_stylesheet
     assert ".admin-delete-modal-content" in admin_stylesheet
     assert ".admin-confirm-delete:disabled" in admin_stylesheet
+
+
+def test_admin_create_user_page_reuses_account_form_layout() -> None:
+    response = _build_client().get("/admin/users/new")
+    root = Path(__file__).parents[1]
+    create_script = (
+        root / "src/console/web_static/js/admin_user_create.js"
+    ).read_text(encoding="utf-8")
+
+    assert response.status_code == 200
+    html = response.text
+    assert "<title>创建账号 · 用户与排班</title>" in html
+    assert '<body class="login-page">' in html
+    assert '<main class="login-card account-card">' in html
+    assert 'class="auth-back-link" href="/admin"' in html
+    assert "← 返回用户与排班" in html
+    assert "<h1>创建账号</h1>" in html
+    assert "ACCOUNT MANAGEMENT" in html
+    assert 'aria-label="管理员主视图"' not in html
+    assert 'id="btn-logout"' not in html
+    assert 'id="admin-create-user-form"' in html
+    assert 'name="display_name"' in html
+    assert 'name="username"' in html
+    assert 'name="role"' in html
+    assert 'name="preferred_weekday"' in html
+    assert 'name="password"' in html
+    assert 'href="/admin">取消</a>' not in html
+    assert 'href="/static/css/modules/admin.css' not in html
+    assert 'href="/static/css/modules/login.css?v=' in html
+    assert 'src="/static/js/admin_user_create.js?v=' in html
+    assert "fetch('/api/admin/users'" in create_script
+    assert "window.location.assign('/admin?created=1')" in create_script
+
+
+def test_duty_editor_cannot_open_admin_create_user_page() -> None:
+    response = _build_editor_client().get("/admin/users/new")
+
+    assert response.status_code == 403
 
 
 def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> None:

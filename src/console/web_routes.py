@@ -102,6 +102,18 @@ async def admin_page(
     )
 
 
+@router.get("/admin/users/new", response_class=HTMLResponse)
+async def admin_user_create_page(
+    request: Request,
+    user: ConsoleUser = Depends(require_role("admin")),
+) -> HTMLResponse:
+    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    return templates.TemplateResponse(
+        "admin_user_create.html",
+        {"request": request, "version": version, "current_user": user},
+    )
+
+
 @router.get("/admin/duty-summary", response_class=HTMLResponse)
 async def duty_summary_page(
     request: Request,

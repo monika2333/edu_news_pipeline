@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>创建账号 · 用户与排班</title>
+    <link rel="stylesheet" href="/static/css/variables.css">
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/modules/login.css?v={{ version }}">
+</head>
+
+<body class="login-page">
+    <main class="login-card account-card">
+        <a class="auth-back-link" href="/admin">← 返回用户与排班</a>
+
+        <div class="login-heading">
+            <p class="login-eyebrow">ACCOUNT MANAGEMENT</p>
+            <h1>创建账号</h1>
+        </div>
+
+        <form class="login-form" id="admin-create-user-form">
+            <label for="admin-create-display-name">姓名</label>
+            <input id="admin-create-display-name" name="display_name"
+                type="text" autocomplete="name" maxlength="200"
+                placeholder="例如：张明" required autofocus>
+
+            <label for="admin-create-username">用户名</label>
+            <input id="admin-create-username" name="username"
+                type="text" autocomplete="username" maxlength="100"
+                placeholder="用于登录" required>
+
+            <label for="admin-create-role">角色</label>
+            <select id="admin-create-role" name="role">
+                <option value="duty_editor">值班编辑</option>
+                <option value="admin">管理员</option>
+            </select>
+
+            <label for="admin-create-weekday">首选值班日</label>
+            <select id="admin-create-weekday" name="preferred_weekday">
+                <option value="">暂不设置</option>
+                <option value="0">周一</option>
+                <option value="1">周二</option>
+                <option value="2">周三</option>
+                <option value="3">周四</option>
+                <option value="4">周五</option>
+                <option value="5">周六</option>
+                <option value="6">周日</option>
+            </select>
+
+            <label for="admin-create-password">初始密码</label>
+            <input id="admin-create-password" name="password"
+                type="password" autocomplete="new-password" minlength="10"
+                placeholder="至少 10 位" required>
+
+            <p class="login-error" id="admin-create-user-error"
+                role="alert" hidden></p>
+            <button class="btn btn-primary login-submit"
+                id="admin-create-user-submit" type="submit">创建账号</button>
+        </form>
+    </main>
+
+    <script src="/static/js/auth.js?v={{ version }}"></script>
+    <script src="/static/js/admin_user_create.js?v={{ version }}"></script>
+</body>
+
+</html>

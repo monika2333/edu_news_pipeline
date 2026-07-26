@@ -10,6 +10,7 @@
     };
     const elements = {
         usersBody: document.getElementById('users-body'),
+        userSearch: document.getElementById('admin-user-search'),
         scheduleGrid: document.getElementById('schedule-grid'),
         shiftsBody: document.getElementById('shifts-body'),
         alert: document.getElementById('admin-alert'),
@@ -115,7 +116,28 @@
     }
 
     function renderUsers() {
-        elements.usersBody.innerHTML = state.users.map(user => `
+        const query = elements.userSearch.value
+            .trim()
+            .toLocaleLowerCase('zh-CN');
+        const visibleUsers = query
+            ? state.users.filter(user => [
+                user.display_name,
+                user.username
+            ].some(value => (
+                String(value ?? '')
+                    .toLocaleLowerCase('zh-CN')
+                    .includes(query)
+            )))
+            : state.users;
+        if (!visibleUsers.length) {
+            elements.usersBody.innerHTML = `
+                <tr><td class="admin-empty-row" colspan="7">
+                    ${query ? '没有找到匹配的用户。' : '暂无控制台用户。'}
+                </td></tr>
+            `;
+            return;
+        }
+        elements.usersBody.innerHTML = visibleUsers.map(user => `
             <tr data-user-id="${escapeHtml(user.id)}">
                 <td>${escapeHtml(user.display_name)}</td>
                 <td>${escapeHtml(user.username)}</td>
@@ -240,26 +262,10 @@
         }
     }
 
-    document.getElementById('create-user-form').addEventListener('submit', async event => {
-        event.preventDefault();
-        const form = new FormData(event.currentTarget);
-        try {
-            const payload = Object.fromEntries(form.entries());
-            payload.preferred_weekday = payload.preferred_weekday === ''
-                ? null
-                : Number(payload.preferred_weekday);
-            await request('/api/admin/users', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            event.currentTarget.reset();
-            showToast('账号已创建');
-            await loadAll();
-        } catch (error) {
-            window.alert(error.message);
-        }
+    elements.userSearch.addEventListener('input', () => {
+        renderUsers();
     });
+    window.addEventListener('pageshow', renderUsers);
 
     document.getElementById('btn-save-schedule').addEventListener('click', async () => {
         const assignments = {};
@@ -314,6 +320,12 @@
             setDeleteModalOpen(false);
         }
     });
+
+    const pageParams = new URLSearchParams(window.location.search);
+    if (pageParams.get('created') === '1') {
+        showToast('账号已创建');
+        window.history.replaceState({}, '', '/admin');
+    }
 
     loadAll().catch(error => {
         elements.alert.hidden = false;

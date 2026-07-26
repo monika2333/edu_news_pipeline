@@ -15,30 +15,9 @@
 
 <body>
     <div class="container admin-shell">
-        <header>
-            <div class="header-left">
-                <p class="admin-header-eyebrow">控制台管理</p>
-                <h1>用户与排班</h1>
-            </div>
-            <div class="header-right">
-                <nav class="admin-view-switch" aria-label="管理员主视图">
-                    <a class="admin-view-link" href="/manual_filter">全量新闻筛选</a>
-                    <a class="admin-view-link" href="/admin/duty-summary">值班结果筛选</a>
-                    <span class="admin-view-stage-divider" aria-hidden="true"></span>
-                    <a class="admin-view-link" href="/admin/review">汇总审阅</a>
-                </nav>
-                <details class="account-menu">
-                    <summary class="account-menu-trigger current-user" id="current-user">
-                        <span>{{ current_user.display_name }} · 管理员</span>
-                    </summary>
-                    <div class="account-menu-panel">
-                        <a class="account-menu-item is-active" href="/admin" aria-current="page">用户与排班</a>
-                        <a class="account-menu-item" href="/account">修改密码</a>
-                        <button class="account-menu-item" id="btn-logout" type="button">退出登录</button>
-                    </div>
-                </details>
-            </div>
-        </header>
+        {% set page_eyebrow = "控制台管理" %}
+        {% set page_title = "用户与排班" %}
+        {% include "_admin_header.html" %}
 
         <main>
             <p class="admin-alert" id="admin-alert" hidden></p>
@@ -50,26 +29,12 @@
                         <h2>控制台用户</h2>
                     </div>
                 </div>
-                <form class="admin-create-user" id="create-user-form">
-                    <input name="username" placeholder="用户名" required>
-                    <input name="display_name" placeholder="姓名" required>
-                    <select name="role">
-                        <option value="duty_editor">值班编辑</option>
-                        <option value="admin">管理员</option>
-                    </select>
-                    <select name="preferred_weekday" aria-label="首选值班日">
-                        <option value="">首选值班日（可选）</option>
-                        <option value="0">周一</option>
-                        <option value="1">周二</option>
-                        <option value="2">周三</option>
-                        <option value="3">周四</option>
-                        <option value="4">周五</option>
-                        <option value="5">周六</option>
-                        <option value="6">周日</option>
-                    </select>
-                    <input name="password" type="password" minlength="10" placeholder="初始密码（至少 10 位）" required>
-                    <button class="btn btn-primary" type="submit">创建账号</button>
-                </form>
+                <div class="admin-user-toolbar">
+                    <input id="admin-user-search" type="search"
+                        placeholder="搜索姓名或用户名…" aria-label="搜索姓名或用户名">
+                    <a class="btn btn-primary admin-create-user-link"
+                        href="/admin/users/new">创建账号</a>
+                </div>
                 <div class="admin-table-wrap">
                     <table class="admin-table">
                         <thead>

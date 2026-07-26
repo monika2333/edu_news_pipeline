@@ -2,6 +2,7 @@
     min-height: 100vh;
     display: grid;
     place-items: center;
+    box-sizing: border-box;
     margin: 0;
     padding: 24px;
     background:
@@ -172,6 +173,78 @@
     width: 100%;
     margin-top: 12px;
     padding: 12px;
+}
+
+.account-card {
+    padding: 32px 36px;
+}
+
+.account-card .auth-back-link {
+    margin-bottom: 16px;
+    font-size: 0.8125rem;
+}
+
+.account-card .account-topbar {
+    margin-bottom: 16px;
+}
+
+.account-card .account-topbar .auth-back-link {
+    margin-bottom: 0;
+}
+
+.account-card .account-topbar .btn {
+    min-height: 38px;
+    padding: 8px 16px;
+    font-size: 0.85rem;
+}
+
+.account-card .login-heading h1 {
+    margin: 4px 0 6px;
+    font-size: 1.5rem;
+}
+
+.account-card .login-heading > p:not(.login-eyebrow) {
+    font-size: 0.875rem;
+}
+
+.account-card .login-eyebrow {
+    font-size: 0.6875rem;
+}
+
+.account-card .account-identity {
+    margin-top: 18px;
+    padding: 10px 12px;
+    font-size: 0.8125rem;
+}
+
+.account-card .login-form {
+    gap: 7px;
+    margin-top: 24px;
+}
+
+.account-card .login-form label {
+    margin-top: 4px;
+    font-size: 0.8125rem;
+}
+
+.account-card .login-form input,
+.account-card .login-form select {
+    min-height: 42px;
+    padding: 9px 12px;
+    font-size: 0.9rem;
+}
+
+.account-card .field-hint,
+.account-card .login-error,
+.account-card .login-success {
+    font-size: 0.78rem;
+}
+
+.account-card .login-submit {
+    min-height: 40px;
+    margin-top: 8px;
+    padding: 9px 12px;
+    font-size: 0.875rem;
 }
 
 @media (max-width: 520px) {

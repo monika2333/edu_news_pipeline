@@ -8,6 +8,7 @@
         searchQuery: '',
         targetReportType: 'zongbao',
         targetStatus: 'selected',
+        adminDiscarded: false,
         selected: new Set(),
         pendingImport: null,
         importConflicts: [],
@@ -20,6 +21,7 @@
         context: document.getElementById('summary-context'),
         title: document.getElementById('summary-title'),
         comparison: document.getElementById('summary-comparison'),
+        importButton: document.getElementById('btn-import-results'),
         importBar: document.getElementById('summary-import-bar'),
         searchInput: document.getElementById('summary-search-input'),
         selectAll: document.getElementById('summary-select-all'),
@@ -104,6 +106,7 @@
     }
 
     function activeColumnLabel() {
+        if (state.adminDiscarded) return '放弃';
         return reviewColumnLabel(state.targetReportType, state.targetStatus);
     }
 
@@ -165,9 +168,10 @@
             })
         });
         state.selected.clear();
-        const actionLabel = payload.target_status === 'discarded'
-            ? '已放弃'
-            : `已送入${reviewColumnLabel(payload.report_type, payload.target_status)}`;
+        const actionLabel = `已送入${reviewColumnLabel(
+            payload.report_type,
+            payload.target_status
+        )}`;
         showToast(`${actionLabel} ${result.imported} 条`);
         await Promise.all([loadSummary(), loadResults()]);
     }
@@ -221,7 +225,8 @@
             item.llm_summary,
             item.source,
             item.llm_source,
-            item.decision
+            item.decision,
+            item.admin_discarded_by_display_name
         ].some(value => String(value ?? '').toLocaleLowerCase('zh-CN').includes(query)));
     }
 
@@ -263,11 +268,15 @@
     }
 
     function updateSelection(visibleItems = getVisibleItems()) {
+        const canImport = !state.adminDiscarded && !state.uncovered && Boolean(state.shiftId);
+        elements.selectAll.closest('.summary-select-all').hidden = !canImport;
+        elements.selectionCount.hidden = !canImport;
+        elements.importButton.hidden = !canImport;
         elements.selectionCount.textContent = `已选择 ${state.selected.size} 条`;
         elements.importBar.hidden = state.uncovered || !state.shiftId;
         const visibleIds = visibleItems.map(item => item.article_id);
         const selectedVisibleCount = visibleIds.filter(id => state.selected.has(id)).length;
-        elements.selectAll.disabled = !visibleIds.length || state.uncovered;
+        elements.selectAll.disabled = !visibleIds.length || !canImport;
         elements.selectAll.checked = Boolean(visibleIds.length)
             && selectedVisibleCount === visibleIds.length;
         elements.selectAll.indeterminate = selectedVisibleCount > 0
@@ -289,11 +298,9 @@
             const adminReportType = item.admin_report_type || 'zongbao';
             const selectedActive = item.admin_status === 'selected'
                 && adminReportType === state.targetReportType;
-            const discardedActive = item.admin_status === 'discarded'
-                && adminReportType === state.targetReportType;
             return `
             <article class="summary-item">
-                ${state.uncovered ? '' : `<input type="checkbox" data-article-id="${escapeHtml(item.article_id)}" ${state.selected.has(item.article_id) ? 'checked' : ''}>`}
+                ${state.uncovered || state.adminDiscarded ? '' : `<input type="checkbox" data-article-id="${escapeHtml(item.article_id)}" ${state.selected.has(item.article_id) ? 'checked' : ''}>`}
                 <div>
                     <h3>${escapeHtml(item.title || '无标题')}</h3>
                     <div class="summary-item-meta">
@@ -301,28 +308,38 @@
                         <span>${escapeHtml(item.report_type || '')}</span>
                         ${state.uncovered ? '' : `<span>管理员：${escapeHtml(item.admin_status || 'pending')}</span>`}
                         ${state.uncovered ? '' : `<span>${escapeHtml(item.admin_report_type || 'zongbao')}</span>`}
+                        ${state.adminDiscarded ? `<span>放弃人：${escapeHtml(item.admin_discarded_by_display_name || '管理员')}</span>` : ''}
                         <span>${escapeHtml(item.source || item.llm_source || '未知来源')}</span>
                         <span>${escapeHtml(formatDateTime(item.publish_time_iso || item.created_at))}</span>
                     </div>
                     <p>${escapeHtml(item.edited_summary || item.summary || item.llm_summary || '')}</p>
                 </div>
                 ${state.uncovered ? '' : `
-                    <div class="summary-item-actions" role="group" aria-label="单条新闻操作">
-                        <button class="summary-quick-action summary-quick-accept${selectedActive ? ' is-active' : ''}"
-                            type="button" data-quick-status="selected"
-                            data-article-id="${escapeHtml(item.article_id)}"
-                            aria-label="采纳这条新闻" title="采纳"
-                            aria-pressed="${String(selectedActive)}" ${selectedActive ? 'disabled' : ''}>
-                            ✅
-                        </button>
-                        <button class="summary-quick-action summary-quick-discard${discardedActive ? ' is-active' : ''}"
-                            type="button" data-quick-status="discarded"
-                            data-article-id="${escapeHtml(item.article_id)}"
-                            aria-label="放弃这条新闻" title="放弃"
-                            aria-pressed="${String(discardedActive)}" ${discardedActive ? 'disabled' : ''}>
-                            ❌
-                        </button>
-                    </div>
+                    ${state.adminDiscarded ? `
+                        <div class="summary-item-actions is-restore" role="group" aria-label="放弃新闻操作">
+                            <button class="btn btn-secondary summary-restore-action" type="button"
+                                data-admin-discard-action="restore"
+                                data-article-id="${escapeHtml(item.article_id)}">
+                                恢复
+                            </button>
+                        </div>
+                    ` : `
+                        <div class="summary-item-actions" role="group" aria-label="单条新闻操作">
+                            <button class="summary-quick-action summary-quick-accept${selectedActive ? ' is-active' : ''}"
+                                type="button" data-quick-status="selected"
+                                data-article-id="${escapeHtml(item.article_id)}"
+                                aria-label="采纳这条新闻" title="采纳"
+                                aria-pressed="${String(selectedActive)}" ${selectedActive ? 'disabled' : ''}>
+                                ✅
+                            </button>
+                            <button class="summary-quick-action summary-quick-discard"
+                                type="button" data-quick-status="discarded"
+                                data-article-id="${escapeHtml(item.article_id)}"
+                                aria-label="放弃这条新闻" title="放弃">
+                                ❌
+                            </button>
+                        </div>
+                    `}
                 `}
             </article>
         `;
@@ -340,10 +357,19 @@
                 quickDecideItem(button);
             });
         });
+        elements.items.querySelectorAll('[data-admin-discard-action]').forEach(button => {
+            button.addEventListener('click', () => {
+                setAdminDiscarded(button, false);
+            });
+        });
     }
 
     async function quickDecideItem(button) {
         if (button.disabled || !state.shiftId) return;
+        if (button.dataset.quickStatus === 'discarded') {
+            await setAdminDiscarded(button, true);
+            return;
+        }
         const payload = {
             shift_id: state.shiftId,
             article_ids: [button.dataset.articleId],
@@ -363,6 +389,28 @@
                 return;
             }
             await submitDutyImport(payload);
+        } catch (error) {
+            button.disabled = false;
+            window.alert(error.message);
+        }
+    }
+
+    async function setAdminDiscarded(button, discarded) {
+        if (button.disabled || !state.shiftId) return;
+        button.disabled = true;
+        try {
+            await request('/api/admin/duty-summary/discard', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    shift_id: state.shiftId,
+                    article_id: button.dataset.articleId,
+                    discarded
+                })
+            });
+            state.selected.delete(button.dataset.articleId);
+            showToast(discarded ? '已移入放弃栏目' : '已恢复到原栏目');
+            await loadResults();
         } catch (error) {
             button.disabled = false;
             window.alert(error.message);
@@ -394,11 +442,15 @@
         }
         if (!state.shiftId) return;
         const params = new URLSearchParams({ limit: '200' });
-        params.set('decision', state.targetStatus);
-        if (elements.comparison.value === 'mismatch') {
-            params.set('mismatch_only', 'true');
+        if (state.adminDiscarded) {
+            params.set('admin_discarded_only', 'true');
+        } else {
+            params.set('decision', state.targetStatus);
+            if (elements.comparison.value === 'mismatch') {
+                params.set('mismatch_only', 'true');
+            }
+            params.set('report_type', state.targetReportType);
         }
-        params.set('report_type', state.targetReportType);
         const payload = await request(
             `/api/admin/duty-summary/${encodeURIComponent(state.shiftId)}/reviews?${params}`
         );
@@ -445,8 +497,14 @@
 
     elements.columnTabs.forEach(tab => {
         tab.addEventListener('click', () => {
-            state.targetReportType = tab.dataset.reportType;
-            state.targetStatus = tab.dataset.targetStatus;
+            state.adminDiscarded = tab.dataset.adminDiscarded === 'true';
+            if (!state.adminDiscarded) {
+                state.targetReportType = tab.dataset.reportType;
+                state.targetStatus = tab.dataset.targetStatus;
+            } else {
+                elements.comparison.value = '';
+            }
+            elements.comparison.disabled = state.adminDiscarded;
             state.selected.clear();
             elements.columnTabs.forEach(item => {
                 const active = item === tab;
@@ -457,7 +515,7 @@
         });
     });
 
-    document.getElementById('btn-import-results').addEventListener('click', async () => {
+    elements.importButton.addEventListener('click', async () => {
         if (!state.shiftId || !state.selected.size) {
             window.alert('请先选择要送入汇总审阅的新闻。');
             return;

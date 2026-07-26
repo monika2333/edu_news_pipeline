@@ -1,4 +1,4 @@
-\restrict osDcDA3NpAGp71mLlZ7kno2Cez6h0OA74psYLej9RHKRv9egPXMg8JqaNMCqVje
+\restrict 0vJAjf1ONSo32OpgcxNujxaK9yc9ds0zR9s5rXwmAXWOG2o526faLHJljJdeLfu
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
@@ -525,6 +525,8 @@ CREATE TABLE public.shift_reviews (
     decided_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    admin_discarded_at timestamp with time zone,
+    admin_discarded_by_user_id uuid,
     CONSTRAINT shift_reviews_decision_check CHECK ((decision = ANY (ARRAY['pending'::text, 'selected'::text, 'backup'::text, 'discarded'::text]))),
     CONSTRAINT shift_reviews_rank_check CHECK (((rank IS NULL) OR (rank > 0))),
     CONSTRAINT shift_reviews_report_type_check CHECK (((report_type IS NULL) OR (report_type = ANY (ARRAY['zongbao'::text, 'wanbao'::text])))),
@@ -1060,6 +1062,13 @@ CREATE INDEX score_feedbacks_prompt_version_idx ON public.score_feedbacks USING 
 
 
 --
+-- Name: shift_reviews_admin_discarded_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX shift_reviews_admin_discarded_idx ON public.shift_reviews USING btree (shift_id, admin_discarded_at DESC) WHERE (admin_discarded_at IS NOT NULL);
+
+
+--
 -- Name: shift_reviews_article_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1263,6 +1272,14 @@ ALTER TABLE ONLY public.score_feedbacks
 
 
 --
+-- Name: shift_reviews shift_reviews_admin_discarded_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_reviews
+    ADD CONSTRAINT shift_reviews_admin_discarded_by_user_id_fkey FOREIGN KEY (admin_discarded_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: shift_reviews shift_reviews_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1290,7 +1307,7 @@ ALTER TABLE ONLY public.shift_reviews
 -- PostgreSQL database dump complete
 --
 
-\unrestrict osDcDA3NpAGp71mLlZ7kno2Cez6h0OA74psYLej9RHKRv9egPXMg8JqaNMCqVje
+\unrestrict 0vJAjf1ONSo32OpgcxNujxaK9yc9ds0zR9s5rXwmAXWOG2o526faLHJljJdeLfu
 
 
 --
@@ -1326,4 +1343,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260724190000'),
     ('20260724200000'),
     ('20260724210000'),
-    ('20260725100000');
+    ('20260725100000'),
+    ('20260726110000'),
+    ('20260726130000');

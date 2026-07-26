@@ -846,10 +846,8 @@ def import_shift_reviews_into_manual(
     ]
     if not normalized_ids:
         return []
-    if target_status not in {"selected", "backup", "discarded"}:
-        raise ValueError(
-            "Imported duty results must be selected, backup, or discarded"
-        )
+    if target_status not in {"selected", "backup"}:
+        raise ValueError("Imported duty results must be selected or backup")
     normalized_report_type = normalize_report_type_value(report_type)
     if not normalized_report_type:
         raise ValueError("A report type is required")

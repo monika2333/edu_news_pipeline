@@ -70,6 +70,8 @@ def fetch_shift_review_items(
     offset: int,
     mismatch_only: bool = False,
     include_admin_state: bool = False,
+    admin_discarded_only: bool = False,
+    exclude_admin_discarded: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
     bounded_limit = max(1, min(limit, 200))
     bounded_offset = max(0, offset)
@@ -87,6 +89,10 @@ def fetch_shift_review_items(
     if report_type:
         clauses.append("COALESCE(sr.report_type, 'zongbao') = %s")
         params.append(report_type)
+    if admin_discarded_only:
+        clauses.append("sr.admin_discarded_at IS NOT NULL")
+    elif exclude_admin_discarded:
+        clauses.append("sr.admin_discarded_at IS NULL")
     if mismatch_only:
         clauses.extend(
             [
@@ -118,6 +124,21 @@ def fetch_shift_review_items(
         if include_admin_state
         else ""
     )
+    admin_discard_select_sql = (
+        """,
+        sr.admin_discarded_at,
+        sr.admin_discarded_by_user_id,
+        admin_discarder.display_name AS admin_discarded_by_display_name
+        """
+        if include_admin_state
+        else ""
+    )
+    admin_discard_join_sql = (
+        """LEFT JOIN console_users admin_discarder
+          ON admin_discarder.id = sr.admin_discarded_by_user_id"""
+        if include_admin_state
+        else ""
+    )
     cur.execute(
         f"""
         SELECT count(*) AS total
@@ -144,6 +165,7 @@ def fetch_shift_review_items(
     cur.execute(
         f"""
         SELECT {SHIFT_REVIEW_SELECT}
+        {admin_discard_select_sql}
         {admin_select_sql}
         FROM duty_shifts s
         JOIN news_summaries ns
@@ -155,6 +177,7 @@ def fetch_shift_review_items(
         {manual_join_sql}
         LEFT JOIN console_users creator ON creator.id = sr.created_by_user_id
         LEFT JOIN console_users updater ON updater.id = sr.updated_by_user_id
+        {admin_discard_join_sql}
         {SCORE_FEEDBACK_JOIN}
         WHERE {where_sql}
         ORDER BY
@@ -245,6 +268,8 @@ def fetch_shift_review(
             article_id,
             created_by_user_id,
             updated_by_user_id,
+            admin_discarded_at,
+            admin_discarded_by_user_id,
             report_type,
             decision,
             rank,
@@ -366,6 +391,49 @@ def upsert_shift_review(
     row = cur.fetchone()
     if not row:
         raise RuntimeError("Failed to save shift review")
+    return existing, dict(row)
+
+
+def set_admin_discarded(
+    cur: psycopg.Cursor,
+    *,
+    shift_id: str,
+    article_id: str,
+    actor_user_id: str,
+    discarded: bool,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    existing = fetch_shift_review(
+        cur,
+        shift_id=shift_id,
+        article_id=article_id,
+        for_update=True,
+    )
+    if existing is None:
+        raise ValueError("值班审阅记录不存在")
+    cur.execute(
+        """
+        UPDATE shift_reviews
+        SET admin_discarded_at = CASE
+                WHEN %s THEN COALESCE(admin_discarded_at, now())
+                ELSE NULL
+            END,
+            admin_discarded_by_user_id = CASE
+                WHEN %s THEN %s::uuid
+                ELSE NULL
+            END
+        WHERE id = %s
+        RETURNING *
+        """,
+        (
+            discarded,
+            discarded,
+            actor_user_id,
+            existing["id"],
+        ),
+    )
+    row = cur.fetchone()
+    if not row:
+        raise RuntimeError("管理员放弃状态保存失败")
     return existing, dict(row)
 
 
@@ -584,6 +652,7 @@ __all__ = [
     "fetch_shift_clusters",
     "fetch_shift_review",
     "fetch_shift_review_items",
+    "set_admin_discarded",
     "fetch_shift_stats",
     "fetch_uncovered_news",
     "shift_contains_article",

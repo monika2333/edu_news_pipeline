@@ -134,15 +134,67 @@ def test_delete_console_user_preserves_history_and_clears_active_access(
 def test_future_shift_error_lists_human_readable_dates() -> None:
     message = db_postgres_core._future_shift_error_message(
         "删除",
+        {
+            "username": "monday",
+            "display_name": "周一值班编辑",
+        },
         [
             {
                 "starts_at": datetime(2026, 7, 28, 14, tzinfo=timezone.utc),
                 "ends_at": datetime(2026, 7, 29, 14, tzinfo=timezone.utc),
+            },
+            {
+                "starts_at": datetime(2026, 8, 4, 14, tzinfo=timezone.utc),
+                "ends_at": datetime(2026, 8, 5, 14, tzinfo=timezone.utc),
             }
         ],
     )
 
     assert message == (
-        "请先改派或取消以下未来班次，再删除该用户："
-        "7月29日"
+        "无法删除“周一值班编辑”：仍负责以下未来班次："
+        "7月29日、8月5日。请先改派或取消这些班次。"
     )
+
+
+def test_admin_discard_and_audit_share_one_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = object.__new__(db_postgres_core.PostgresAdapter)
+    cursor = object()
+    events: list[str] = []
+    before = {
+        "article_id": "article-1",
+        "admin_discarded_at": None,
+    }
+    after = {
+        "article_id": "article-1",
+        "admin_discarded_at": datetime.now(timezone.utc),
+    }
+
+    @contextmanager
+    def fake_transaction() -> Iterator[object]:
+        events.append("begin")
+        yield cursor
+        events.append("commit")
+
+    adapter.transaction = fake_transaction
+    monkeypatch.setattr(
+        db_postgres_core.shift_reviews,
+        "set_admin_discarded",
+        lambda cur, **kwargs: (before, after),
+    )
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        lambda cur, **kwargs: events.append(kwargs["action"]),
+    )
+
+    result = adapter.set_shift_review_admin_discarded(
+        shift_id="shift-1",
+        article_id="article-1",
+        actor_user_id="admin-1",
+        discarded=True,
+    )
+
+    assert result == after
+    assert events == ["begin", "duty_summary.discard", "commit"]

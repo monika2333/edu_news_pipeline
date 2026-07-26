@@ -15,8 +15,14 @@ router = APIRouter(prefix="/api/admin", tags=["duty_summary"])
 class ImportDutyPreviewRequest(BaseModel):
     shift_id: str
     article_ids: list[str] = Field(min_length=1)
-    target_status: Literal["selected", "backup", "discarded"]
+    target_status: Literal["selected", "backup"]
     report_type: Literal["zongbao", "wanbao"]
+
+
+class AdminDiscardRequest(BaseModel):
+    shift_id: str
+    article_id: str
+    discarded: bool
 
 
 class ImportConflictResolution(BaseModel):
@@ -71,6 +77,7 @@ def shift_results(
     decision: Optional[str] = None,
     report_type: Optional[str] = None,
     mismatch_only: bool = False,
+    admin_discarded_only: bool = False,
     limit: int = 200,
     offset: int = 0,
     user: ConsoleUser = Depends(require_role("admin")),
@@ -82,10 +89,29 @@ def shift_results(
             decision=decision,
             report_type=report_type,
             mismatch_only=mismatch_only,
+            admin_discarded_only=admin_discarded_only,
             limit=limit,
             offset=offset,
         )
     except ValueError as exc:
+        _raise_summary_error(exc)
+
+
+@router.patch("/duty-summary/discard")
+def set_admin_discarded(
+    payload: AdminDiscardRequest,
+    user: ConsoleUser = Depends(require_role("admin")),
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
+) -> dict[str, Any]:
+    try:
+        return admin_summary_service.set_admin_discarded(
+            shift_id=payload.shift_id,
+            article_id=payload.article_id,
+            discarded=payload.discarded,
+            actor=user,
+            request_id=request_id,
+        )
+    except (ValueError, PermissionError) as exc:
         _raise_summary_error(exc)
 
 

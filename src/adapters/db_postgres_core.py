@@ -33,13 +33,24 @@ _BUSINESS_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 def _future_shift_error_message(
     action: str,
+    user: Mapping[str, Any],
     shifts: Sequence[Mapping[str, Any]],
 ) -> str:
-    ranges = []
+    shift_dates: list[str] = []
     for shift in shifts:
         ends_at = shift["ends_at"].astimezone(_BUSINESS_TIMEZONE)
-        ranges.append(f"{ends_at.month}月{ends_at.day}日")
-    return f"请先改派或取消以下未来班次，再{action}该用户：" + "；".join(ranges)
+        label = f"{ends_at.month}月{ends_at.day}日"
+        if label not in shift_dates:
+            shift_dates.append(label)
+    display_name = str(
+        user.get("display_name")
+        or user.get("username")
+        or "该用户"
+    ).strip()
+    return (
+        f"无法{action}“{display_name}”：仍负责以下未来班次："
+        f"{'、'.join(shift_dates)}。请先改派或取消这些班次。"
+    )
 
 
 def _get_connection() -> psycopg.Connection:
@@ -211,7 +222,7 @@ class PostgresAdapter:
                 future_shifts = users.fetch_future_shifts_for_user(cur, user_id)
                 if future_shifts:
                     raise ValueError(
-                        _future_shift_error_message("停用", future_shifts)
+                        _future_shift_error_message("停用", before, future_shifts)
                     )
             after = users.update_console_user(
                 cur,
@@ -256,7 +267,7 @@ class PostgresAdapter:
             future_shifts = users.fetch_future_shifts_for_user(cur, user_id)
             if future_shifts:
                 raise ValueError(
-                    _future_shift_error_message("删除", future_shifts)
+                    _future_shift_error_message("删除", before, future_shifts)
                 )
             users.delete_duty_schedules_for_user(cur, user_id=user_id)
             after = users.soft_delete_console_user(cur, user_id=user_id)
@@ -578,6 +589,8 @@ class PostgresAdapter:
         offset: int,
         mismatch_only: bool = False,
         include_admin_state: bool = False,
+        admin_discarded_only: bool = False,
+        exclude_admin_discarded: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         with self._cursor() as cur:
             return shift_reviews.fetch_shift_review_items(
@@ -589,6 +602,8 @@ class PostgresAdapter:
                 offset=offset,
                 mismatch_only=mismatch_only,
                 include_admin_state=include_admin_state,
+                admin_discarded_only=admin_discarded_only,
+                exclude_admin_discarded=exclude_admin_discarded,
             )
 
     def fetch_shift_clusters(
@@ -633,6 +648,39 @@ class PostgresAdapter:
                 cur,
                 actor_user_id=actor_user_id,
                 action="shift_review.update",
+                target_type="shift_review",
+                target_id=f"{shift_id}:{article_id}",
+                before_data=before,
+                after_data=after,
+                request_id=request_id,
+            )
+            return after
+
+    def set_shift_review_admin_discarded(
+        self,
+        *,
+        shift_id: str,
+        article_id: str,
+        actor_user_id: str,
+        discarded: bool,
+        request_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        with self.transaction() as cur:
+            before, after = shift_reviews.set_admin_discarded(
+                cur,
+                shift_id=shift_id,
+                article_id=article_id,
+                actor_user_id=actor_user_id,
+                discarded=discarded,
+            )
+            audit.insert_review_event(
+                cur,
+                actor_user_id=actor_user_id,
+                action=(
+                    "duty_summary.discard"
+                    if discarded
+                    else "duty_summary.restore"
+                ),
                 target_type="shift_review",
                 target_id=f"{shift_id}:{article_id}",
                 before_data=before,

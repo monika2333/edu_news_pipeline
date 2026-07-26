@@ -299,7 +299,7 @@ def test_duty_import_moves_pending_candidate_without_conflict_prompt() -> None:
     assert cur.params[-1][0] == "selected"
 
 
-def test_duty_import_can_discard_without_allocating_rank() -> None:
+def test_duty_import_rejects_discarded_target() -> None:
     cur = FakeDutyImportCursor(
         [
             {
@@ -313,21 +313,20 @@ def test_duty_import_can_discard_without_allocating_rank() -> None:
         ]
     )
 
-    db_postgres_manual_reviews.import_shift_reviews_into_manual(
-        cur,
-        shift_id="shift-1",
-        article_ids=["article-1"],
-        target_status="discarded",
-        report_type="zongbao",
-        actor_username="admin",
-        actor_user_id="admin-id",
-        existing_reviews=[],
-        conflict_resolutions={},
-    )
+    with pytest.raises(ValueError, match="selected or backup"):
+        db_postgres_manual_reviews.import_shift_reviews_into_manual(
+            cur,
+            shift_id="shift-1",
+            article_ids=["article-1"],
+            target_status="discarded",
+            report_type="zongbao",
+            actor_username="admin",
+            actor_user_id="admin-id",
+            existing_reviews=[],
+            conflict_resolutions={},
+        )
 
-    assert not any("MAX(rank)" in query for query in cur.queries)
-    assert cur.params[-1][1] == "discarded"
-    assert cur.params[-1][3] is None
+    assert cur.queries == []
 
 
 def test_duty_import_can_replace_existing_version_after_explicit_choice() -> None:

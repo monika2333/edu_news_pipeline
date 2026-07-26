@@ -282,6 +282,8 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "综报备选" in html
     assert "晚报采纳" in html
     assert "晚报备选" in html
+    assert 'data-admin-discarded="true"' in html
+    assert "放弃" in html
     assert 'id="summary-search-input"' in html
     assert 'id="summary-select-all"' in html
     assert 'id="summary-report-type"' not in html
@@ -312,6 +314,10 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert 'data-quick-status="selected"' in script
     assert 'data-quick-status="discarded"' in script
     assert "async function quickDecideItem(button)" in script
+    assert "async function setAdminDiscarded(button, discarded)" in script
+    assert "/api/admin/duty-summary/discard" in script
+    assert "params.set('admin_discarded_only', 'true')" in script
+    assert 'data-admin-discard-action="restore"' in script
     assert "window.confirm" not in script
 
 

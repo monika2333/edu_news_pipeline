@@ -47,6 +47,27 @@ def test_duty_editor_cannot_delete_console_user() -> None:
     assert response.status_code == 403
 
 
+def test_duty_editor_cannot_change_admin_duty_discard_state() -> None:
+    editor = ConsoleUser(
+        method="test",
+        user_id="editor-id",
+        username="editor",
+        display_name="值班编辑",
+        role="duty_editor",
+    )
+
+    response = _client_for(editor).patch(
+        "/api/admin/duty-summary/discard",
+        json={
+            "shift_id": "shift-1",
+            "article_id": "article-1",
+            "discarded": True,
+        },
+    )
+
+    assert response.status_code == 403
+
+
 def test_admin_can_delete_console_user(monkeypatch) -> None:
     admin = ConsoleUser(
         method="test",

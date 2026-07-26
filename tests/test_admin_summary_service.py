@@ -27,6 +27,8 @@ class FakeAdminSummaryAdapter:
         offset: int,
         mismatch_only: bool,
         include_admin_state: bool,
+        admin_discarded_only: bool,
+        exclude_admin_discarded: bool,
     ) -> tuple[list[dict[str, Any]], int]:
         self.review_query = {
             "shift_id": shift_id,
@@ -36,6 +38,8 @@ class FakeAdminSummaryAdapter:
             "offset": offset,
             "mismatch_only": mismatch_only,
             "include_admin_state": include_admin_state,
+            "admin_discarded_only": admin_discarded_only,
+            "exclude_admin_discarded": exclude_admin_discarded,
         }
         return [
             {
@@ -49,6 +53,21 @@ class FakeAdminSummaryAdapter:
                 "admin_status": "selected",
                 "admin_report_type": "zongbao",
                 "admin_version": 4,
+                "admin_discarded_at": (
+                    "2026-07-26T05:00:00+00:00"
+                    if admin_discarded_only
+                    else None
+                ),
+                "admin_discarded_by_user_id": (
+                    "admin-id"
+                    if admin_discarded_only
+                    else None
+                ),
+                "admin_discarded_by_display_name": (
+                    "管理员"
+                    if admin_discarded_only
+                    else None
+                ),
             }
         ], 1
 
@@ -68,6 +87,21 @@ class FakeAdminSummaryAdapter:
         self.import_query = kwargs
         return [{"article_id": "article-1"}]
 
+    def set_shift_review_admin_discarded(
+        self,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        self.import_query = kwargs
+        return {
+            "article_id": kwargs["article_id"],
+            "decision": "selected",
+            "report_type": "zongbao",
+            "admin_discarded_at": "2026-07-26T05:00:00+00:00",
+            "admin_discarded_by_user_id": kwargs["actor_user_id"],
+            "version": 1,
+            "score_details": {},
+        }
+
 
 def test_shift_results_requests_and_returns_admin_mismatch_state(
     monkeypatch,
@@ -86,6 +120,7 @@ def test_shift_results_requests_and_returns_admin_mismatch_state(
 
     assert adapter.review_query["mismatch_only"] is True
     assert adapter.review_query["include_admin_state"] is True
+    assert adapter.review_query["exclude_admin_discarded"] is True
     assert result["items"][0]["admin_status"] == "selected"
     assert result["items"][0]["admin_report_type"] == "zongbao"
 
@@ -227,3 +262,57 @@ def test_import_results_passes_explicit_conflict_resolution(monkeypatch) -> None
     assert result["imported"] == 1
     assert adapter.import_query["conflict_resolutions"] == resolutions
     assert adapter.import_query["actor_user_id"] == "admin-id"
+
+
+def test_admin_discarded_column_uses_shift_review_state(monkeypatch) -> None:
+    adapter = FakeAdminSummaryAdapter()
+    monkeypatch.setattr(admin_summary_service, "get_adapter", lambda: adapter)
+
+    result = admin_summary_service.list_shift_results(
+        shift_id="shift-1",
+        decision="selected",
+        report_type="zongbao",
+        mismatch_only=True,
+        admin_discarded_only=True,
+        limit=200,
+        offset=0,
+    )
+
+    assert result["total"] == 1
+    assert adapter.review_query["decision"] is None
+    assert adapter.review_query["report_type"] is None
+    assert adapter.review_query["mismatch_only"] is False
+    assert adapter.review_query["admin_discarded_only"] is True
+    assert adapter.review_query["exclude_admin_discarded"] is False
+    assert result["items"][0]["admin_discarded_by_display_name"] == "管理员"
+
+
+def test_admin_can_discard_shift_result_without_importing_manual_review(
+    monkeypatch,
+) -> None:
+    adapter = FakeAdminSummaryAdapter()
+    monkeypatch.setattr(admin_summary_service, "get_adapter", lambda: adapter)
+    actor = ConsoleUser(
+        method="session",
+        user_id="admin-id",
+        username="admin",
+        display_name="管理员",
+        role="admin",
+    )
+
+    result = admin_summary_service.set_admin_discarded(
+        shift_id="shift-1",
+        article_id="article-1",
+        discarded=True,
+        actor=actor,
+        request_id="request-2",
+    )
+
+    assert result["discarded"] is True
+    assert adapter.import_query == {
+        "shift_id": "shift-1",
+        "article_id": "article-1",
+        "actor_user_id": "admin-id",
+        "discarded": True,
+        "request_id": "request-2",
+    }

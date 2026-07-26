@@ -234,6 +234,12 @@ body {
     box-shadow: 0 4px 12px rgb(37 99 235 / 18%);
 }
 
+.summary-column-tab-discarded.is-active {
+    border-color: #dc2626;
+    background: #dc2626;
+    box-shadow: 0 4px 12px rgb(220 38 38 / 18%);
+}
+
 .summary-selection-tools {
     justify-content: flex-end;
 }
@@ -267,6 +273,12 @@ body {
     color: #334155;
     font-weight: 700;
     cursor: pointer;
+}
+
+.summary-select-all[hidden],
+.summary-selection-count[hidden],
+#btn-import-results[hidden] {
+    display: none;
 }
 
 .summary-select-all input {
@@ -321,6 +333,14 @@ body {
     display: inline-grid;
     grid-template-columns: repeat(2, 42px);
     gap: 8px;
+}
+
+.summary-item-actions.is-restore {
+    grid-template-columns: auto;
+}
+
+.summary-restore-action {
+    min-width: 64px;
 }
 
 .summary-quick-action {

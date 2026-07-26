@@ -14,6 +14,25 @@ from src.console.auth_service import ConsoleUser
 from src.console.shifts_service import ShiftNotFoundError
 
 
+def _serialize_admin_result(
+    row: dict[str, Any],
+    *,
+    fallback_report_type: str = "zongbao",
+) -> dict[str, Any]:
+    item = duty_review_service.serialize_review_item(
+        row,
+        fallback_report_type=fallback_report_type,
+    )
+    item["admin_discarded_at"] = row.get("admin_discarded_at")
+    item["admin_discarded_by_user_id"] = row.get(
+        "admin_discarded_by_user_id"
+    )
+    item["admin_discarded_by_display_name"] = row.get(
+        "admin_discarded_by_display_name"
+    )
+    return item
+
+
 def list_shift_summaries(
     *,
     limit: int = 60,
@@ -50,6 +69,7 @@ def list_shift_results(
     mismatch_only: bool,
     limit: int,
     offset: int,
+    admin_discarded_only: bool = False,
 ) -> dict[str, Any]:
     if not get_adapter().fetch_duty_shift(shift_id):
         raise ShiftNotFoundError("Duty shift not found")
@@ -59,16 +79,18 @@ def list_shift_results(
         raise ValueError(f"Invalid report type: {report_type}")
     rows, total = get_adapter().fetch_shift_review_items(
         shift_id=shift_id,
-        decision=decision,
-        report_type=report_type,
+        decision=None if admin_discarded_only else decision,
+        report_type=None if admin_discarded_only else report_type,
         limit=limit,
         offset=offset,
-        mismatch_only=mismatch_only,
+        mismatch_only=mismatch_only and not admin_discarded_only,
         include_admin_state=True,
+        admin_discarded_only=admin_discarded_only,
+        exclude_admin_discarded=not admin_discarded_only,
     )
     return {
         "items": [
-            duty_review_service.serialize_review_item(
+            _serialize_admin_result(
                 row,
                 fallback_report_type=report_type or "zongbao",
             )
@@ -77,6 +99,32 @@ def list_shift_results(
         "total": total,
         "limit": max(1, min(limit, 200)),
         "offset": max(0, offset),
+    }
+
+
+def set_admin_discarded(
+    *,
+    shift_id: str,
+    article_id: str,
+    discarded: bool,
+    actor: ConsoleUser,
+    request_id: Optional[str] = None,
+) -> dict[str, Any]:
+    if not actor.user_id:
+        raise PermissionError("需要管理员账号才能执行该操作")
+    adapter = get_adapter()
+    if not adapter.fetch_duty_shift(shift_id):
+        raise ShiftNotFoundError("Duty shift not found")
+    saved = adapter.set_shift_review_admin_discarded(
+        shift_id=shift_id,
+        article_id=article_id,
+        actor_user_id=actor.user_id,
+        discarded=discarded,
+        request_id=request_id,
+    )
+    return {
+        "item": _serialize_admin_result(saved),
+        "discarded": discarded,
     }
 
 
@@ -202,4 +250,5 @@ __all__ = [
     "list_shift_summaries",
     "list_uncovered_news",
     "preview_import_results",
+    "set_admin_discarded",
 ]

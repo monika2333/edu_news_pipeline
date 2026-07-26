@@ -566,7 +566,27 @@ def fetch_admin_shift_summaries(
             ) AS backup,
             count(ns.article_id) FILTER (
                 WHERE sr.decision = 'discarded'
-            ) AS discarded
+            ) AS discarded,
+            count(ns.article_id) FILTER (
+                WHERE sr.decision = 'selected'
+                  AND COALESCE(sr.report_type, 'zongbao') = 'zongbao'
+                  AND sr.admin_discarded_at IS NULL
+            ) AS zongbao_selected,
+            count(ns.article_id) FILTER (
+                WHERE sr.decision = 'backup'
+                  AND COALESCE(sr.report_type, 'zongbao') = 'zongbao'
+                  AND sr.admin_discarded_at IS NULL
+            ) AS zongbao_backup,
+            count(ns.article_id) FILTER (
+                WHERE sr.decision = 'selected'
+                  AND COALESCE(sr.report_type, 'zongbao') = 'wanbao'
+                  AND sr.admin_discarded_at IS NULL
+            ) AS wanbao_selected,
+            count(ns.article_id) FILTER (
+                WHERE sr.decision = 'backup'
+                  AND COALESCE(sr.report_type, 'zongbao') = 'wanbao'
+                  AND sr.admin_discarded_at IS NULL
+            ) AS wanbao_backup
         FROM duty_shifts s
         JOIN console_users u ON u.id = s.user_id
         LEFT JOIN news_summaries ns

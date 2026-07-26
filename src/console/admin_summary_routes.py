@@ -25,6 +25,12 @@ class AdminDiscardRequest(BaseModel):
     discarded: bool
 
 
+class AdminBulkDiscardRequest(BaseModel):
+    shift_id: str
+    article_ids: list[str] = Field(min_length=1)
+    discarded: bool
+
+
 class ImportConflictResolution(BaseModel):
     article_id: str
     choice: Literal["existing", "duty"]
@@ -107,6 +113,24 @@ def set_admin_discarded(
         return admin_summary_service.set_admin_discarded(
             shift_id=payload.shift_id,
             article_id=payload.article_id,
+            discarded=payload.discarded,
+            actor=user,
+            request_id=request_id,
+        )
+    except (ValueError, PermissionError) as exc:
+        _raise_summary_error(exc)
+
+
+@router.patch("/duty-summary/discard-bulk")
+def set_admin_discarded_many(
+    payload: AdminBulkDiscardRequest,
+    user: ConsoleUser = Depends(require_role("admin")),
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
+) -> dict[str, Any]:
+    try:
+        return admin_summary_service.set_admin_discarded_many(
+            shift_id=payload.shift_id,
+            article_ids=payload.article_ids,
             discarded=payload.discarded,
             actor=user,
             request_id=request_id,

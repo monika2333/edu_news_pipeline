@@ -19,13 +19,17 @@
         shiftList: document.getElementById('summary-shift-list'),
         items: document.getElementById('summary-items'),
         context: document.getElementById('summary-context'),
-        title: document.getElementById('summary-title'),
         comparison: document.getElementById('summary-comparison'),
         importButton: document.getElementById('btn-import-results'),
+        importTarget: document.getElementById('summary-import-target'),
+        discardButton: document.getElementById('btn-discard-selected'),
         importBar: document.getElementById('summary-import-bar'),
         searchInput: document.getElementById('summary-search-input'),
+        searchClear: document.getElementById('summary-search-clear'),
         selectAll: document.getElementById('summary-select-all'),
+        viewTabs: [...document.querySelectorAll('[data-summary-view]')],
         columnTabs: [...document.querySelectorAll('.summary-column-tab')],
+        filterLayout: document.getElementById('summary-filter-layout'),
         selectionCount: document.getElementById('summary-selection-count'),
         toast: document.getElementById('toast'),
         uncoveredButton: document.getElementById('btn-uncovered'),
@@ -43,6 +47,12 @@
         dutySource: document.getElementById('summary-duty-source')
     };
     const businessTimeZone = 'Asia/Shanghai';
+    const reviewColumns = [
+        ['zongbao', 'selected'],
+        ['zongbao', 'backup'],
+        ['wanbao', 'selected'],
+        ['wanbao', 'backup']
+    ];
 
     function escapeHtml(value) {
         const node = document.createElement('div');
@@ -107,11 +117,6 @@
         window.setTimeout(() => elements.toast.classList.remove('show'), 1800);
     }
 
-    function activeColumnLabel() {
-        if (state.adminDiscarded) return '放弃';
-        return reviewColumnLabel(state.targetReportType, state.targetStatus);
-    }
-
     function reviewColumnLabel(reportType, status) {
         const reportLabel = reportType === 'wanbao' ? '晚报' : '综报';
         const statusLabels = {
@@ -123,6 +128,27 @@
         };
         const statusLabel = statusLabels[status] || '待处理';
         return `${reportLabel}${statusLabel}`;
+    }
+
+    function renderImportTargets() {
+        const current = `${state.targetReportType}:${state.targetStatus}`;
+        const alternatives = reviewColumns
+            .filter(([reportType, status]) => `${reportType}:${status}` !== current)
+            .map(([reportType, status]) => (
+                `<option value="${reportType}:${status}">${reviewColumnLabel(reportType, status)}</option>`
+            ));
+        elements.importTarget.innerHTML = [
+            '<option value="">送入当前栏目</option>',
+            ...alternatives
+        ].join('');
+    }
+
+    function selectedImportTarget() {
+        const [reportType, targetStatus] = elements.importTarget.value.split(':');
+        return {
+            reportType: reportType || state.targetReportType,
+            targetStatus: targetStatus || state.targetStatus
+        };
     }
 
     function setConflictModalOpen(open) {
@@ -170,6 +196,7 @@
             })
         });
         state.selected.clear();
+        elements.importTarget.value = '';
         const actionLabel = `已送入${reviewColumnLabel(
             payload.report_type,
             payload.target_status
@@ -242,10 +269,11 @@
     function renderShifts() {
         if (!state.shifts.length) {
             elements.shiftList.innerHTML = '<div class="summary-empty">暂无当前或历史班次。</div>';
+            renderColumnCounts();
             return;
         }
         elements.shiftList.innerHTML = state.shifts.map(shift => `
-            <button class="summary-shift-card ${state.shiftId === shift.shift_id ? 'is-active' : ''}" data-shift-id="${escapeHtml(shift.shift_id)}">
+            <button class="filter-tab-btn summary-shift-card ${state.shiftId === shift.shift_id ? 'active' : ''}" data-shift-id="${escapeHtml(shift.shift_id)}">
                 <strong>
                     <span class="summary-shift-date">${escapeHtml(window.formatDutyShiftDate(shift.ends_at))}</span>
                     <span class="summary-shift-owner">${escapeHtml(shift.display_name)}</span>
@@ -262,10 +290,21 @@
                 state.uncovered = false;
                 state.selected.clear();
                 renderShifts();
-                elements.uncoveredButton.classList.remove('is-active');
+                elements.uncoveredButton.classList.remove('active');
                 setShiftPanelOpen(false);
                 loadResults();
             });
+        });
+        renderColumnCounts();
+    }
+
+    function renderColumnCounts() {
+        const shift = state.shifts.find(item => item.shift_id === state.shiftId);
+        elements.columnTabs.forEach(tab => {
+            const reportType = tab.dataset.reportType;
+            const status = tab.dataset.targetStatus;
+            const count = Number(shift?.[`${reportType}_${status}`]) || 0;
+            tab.textContent = `${reviewColumnLabel(reportType, status)}（${count}）`;
         });
     }
 
@@ -273,7 +312,11 @@
         const canImport = !state.adminDiscarded && !state.uncovered && Boolean(state.shiftId);
         elements.selectAll.closest('.summary-select-all').hidden = !canImport;
         elements.selectionCount.hidden = !canImport;
+        elements.discardButton.hidden = !canImport;
         elements.importButton.hidden = !canImport;
+        elements.importTarget.disabled = !canImport;
+        elements.discardButton.disabled = !canImport || !state.selected.size;
+        elements.importButton.disabled = !canImport || !state.selected.size;
         elements.selectionCount.textContent = `已选择 ${state.selected.size} 条`;
         elements.importBar.hidden = state.uncovered || !state.shiftId;
         const visibleIds = visibleItems.map(item => item.article_id);
@@ -289,7 +332,7 @@
         const visibleItems = getVisibleItems();
         updateSelection(visibleItems);
         if (!state.items.length) {
-            elements.items.innerHTML = '<div class="summary-empty">当前筛选没有记录。</div>';
+            elements.items.innerHTML = '<div class="summary-empty">当前没有待处理新闻</div>';
             return;
         }
         if (!visibleItems.length) {
@@ -301,11 +344,39 @@
             const selectedActive = item.admin_status === 'selected'
                 && adminReportType === state.targetReportType;
             return `
-            <article class="summary-item">
-                ${state.uncovered || state.adminDiscarded ? '' : `<input type="checkbox" data-article-id="${escapeHtml(item.article_id)}" ${state.selected.has(item.article_id) ? 'checked' : ''}>`}
-                <div>
-                    <h3>${escapeHtml(item.title || '无标题')}</h3>
-                    <div class="summary-item-meta">
+            <article class="article-card summary-item">
+                <div class="card-header">
+                    ${state.uncovered || state.adminDiscarded ? '' : `<input type="checkbox" data-article-id="${escapeHtml(item.article_id)}" ${state.selected.has(item.article_id) ? 'checked' : ''}>`}
+                    <h3 class="article-title">${escapeHtml(item.title || '无标题')}</h3>
+                    ${state.uncovered ? '' : `
+                        ${state.adminDiscarded ? `
+                            <div class="review-card-actions">
+                                <button class="btn btn-secondary summary-restore-action" type="button"
+                                    data-admin-discard-action="restore"
+                                    data-article-id="${escapeHtml(item.article_id)}">
+                                    恢复
+                                </button>
+                            </div>
+                        ` : `
+                            <div class="review-card-actions" role="group" aria-label="单条新闻操作">
+                                <button class="summary-quick-action summary-quick-accept${selectedActive ? ' is-active' : ''}"
+                                    type="button" data-quick-status="selected"
+                                    data-article-id="${escapeHtml(item.article_id)}"
+                                    aria-label="采纳这条新闻" title="采纳"
+                                    aria-pressed="${String(selectedActive)}" ${selectedActive ? 'disabled' : ''}>
+                                    ✅
+                                </button>
+                                <button class="summary-quick-action summary-quick-discard"
+                                    type="button" data-quick-status="discarded"
+                                    data-article-id="${escapeHtml(item.article_id)}"
+                                    aria-label="放弃这条新闻" title="放弃">
+                                    ❌
+                                </button>
+                            </div>
+                        `}
+                    `}
+                </div>
+                <div class="meta-row">
                         <span>值班：${escapeHtml(item.decision || '未覆盖')}</span>
                         <span>${escapeHtml(item.report_type || '')}</span>
                         ${state.uncovered ? '' : `<span>管理员：${escapeHtml(item.admin_status || 'pending')}</span>`}
@@ -313,36 +384,8 @@
                         ${state.adminDiscarded ? `<span>放弃人：${escapeHtml(item.admin_discarded_by_display_name || '管理员')}</span>` : ''}
                         <span>${escapeHtml(item.source || item.llm_source || '未知来源')}</span>
                         <span>${escapeHtml(formatDateTime(item.publish_time_iso || item.created_at))}</span>
-                    </div>
-                    <p>${escapeHtml(item.edited_summary || item.summary || item.llm_summary || '')}</p>
                 </div>
-                ${state.uncovered ? '' : `
-                    ${state.adminDiscarded ? `
-                        <div class="summary-item-actions is-restore" role="group" aria-label="放弃新闻操作">
-                            <button class="btn btn-secondary summary-restore-action" type="button"
-                                data-admin-discard-action="restore"
-                                data-article-id="${escapeHtml(item.article_id)}">
-                                恢复
-                            </button>
-                        </div>
-                    ` : `
-                        <div class="summary-item-actions" role="group" aria-label="单条新闻操作">
-                            <button class="summary-quick-action summary-quick-accept${selectedActive ? ' is-active' : ''}"
-                                type="button" data-quick-status="selected"
-                                data-article-id="${escapeHtml(item.article_id)}"
-                                aria-label="采纳这条新闻" title="采纳"
-                                aria-pressed="${String(selectedActive)}" ${selectedActive ? 'disabled' : ''}>
-                                ✅
-                            </button>
-                            <button class="summary-quick-action summary-quick-discard"
-                                type="button" data-quick-status="discarded"
-                                data-article-id="${escapeHtml(item.article_id)}"
-                                aria-label="放弃这条新闻" title="放弃">
-                                ❌
-                            </button>
-                        </div>
-                    `}
-                `}
+                <p class="summary-box">${escapeHtml(item.edited_summary || item.summary || item.llm_summary || '')}</p>
             </article>
         `;
         }).join('');
@@ -364,6 +407,10 @@
                 setAdminDiscarded(button, false);
             });
         });
+    }
+
+    function syncSearchClearButton() {
+        elements.searchClear.hidden = !elements.searchInput.value;
     }
 
     async function quickDecideItem(button) {
@@ -412,10 +459,38 @@
             });
             state.selected.delete(button.dataset.articleId);
             showToast(discarded ? '已移入放弃栏目' : '已恢复到原栏目');
+            await loadSummary();
             await loadResults();
         } catch (error) {
             button.disabled = false;
             window.alert(error.message);
+        }
+    }
+
+    async function discardSelectedItems() {
+        if (!state.shiftId || !state.selected.size) {
+            window.alert('请先选择要放弃的新闻。');
+            return;
+        }
+        const articleIds = [...state.selected];
+        elements.discardButton.disabled = true;
+        try {
+            const result = await request('/api/admin/duty-summary/discard-bulk', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    shift_id: state.shiftId,
+                    article_ids: articleIds,
+                    discarded: true
+                })
+            });
+            state.selected.clear();
+            showToast(`已放弃 ${result.updated} 条新闻`);
+            await Promise.all([loadSummary(), loadResults()]);
+        } catch (error) {
+            window.alert(error.message);
+        } finally {
+            updateSelection();
         }
     }
 
@@ -438,7 +513,6 @@
             const payload = await request('/api/admin/duty-summary/uncovered?limit=200');
             state.items = payload.items || [];
             elements.context.textContent = `共 ${payload.total} 条`;
-            elements.title.textContent = '无有效班次覆盖';
             renderItems();
             return;
         }
@@ -461,7 +535,6 @@
         elements.context.textContent = shift
             ? `${shift.display_name} · ${window.formatDutyShiftDate(shift.ends_at)}`
             : '';
-        elements.title.textContent = `${activeColumnLabel()}（${payload.total}）`;
         renderItems();
     }
 
@@ -470,7 +543,7 @@
         state.shiftId = '';
         state.selected.clear();
         renderShifts();
-        elements.uncoveredButton.classList.add('is-active');
+        elements.uncoveredButton.classList.add('active');
         setShiftPanelOpen(false);
         loadResults();
     });
@@ -486,7 +559,16 @@
 
     elements.searchInput.addEventListener('input', () => {
         state.searchQuery = elements.searchInput.value;
+        syncSearchClearButton();
         renderItems();
+    });
+
+    elements.searchClear.addEventListener('click', () => {
+        elements.searchInput.value = '';
+        state.searchQuery = '';
+        syncSearchClearButton();
+        renderItems();
+        elements.searchInput.focus();
     });
 
     elements.selectAll.addEventListener('change', () => {
@@ -499,34 +581,52 @@
 
     elements.columnTabs.forEach(tab => {
         tab.addEventListener('click', () => {
-            state.adminDiscarded = tab.dataset.adminDiscarded === 'true';
-            if (!state.adminDiscarded) {
-                state.targetReportType = tab.dataset.reportType;
-                state.targetStatus = tab.dataset.targetStatus;
-            } else {
-                elements.comparison.value = '';
-            }
-            elements.comparison.disabled = state.adminDiscarded;
+            state.targetReportType = tab.dataset.reportType;
+            state.targetStatus = tab.dataset.targetStatus;
             state.selected.clear();
+            renderImportTargets();
             elements.columnTabs.forEach(item => {
                 const active = item === tab;
-                item.classList.toggle('is-active', active);
+                item.classList.toggle('active', active);
                 item.setAttribute('aria-selected', String(active));
             });
             loadResults();
         });
     });
 
+    elements.viewTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            state.adminDiscarded = tab.dataset.summaryView === 'discarded';
+            state.searchQuery = '';
+            state.selected.clear();
+            elements.searchInput.value = '';
+            syncSearchClearButton();
+            renderImportTargets();
+            elements.comparison.value = '';
+            elements.comparison.disabled = state.adminDiscarded;
+            elements.filterLayout.classList.toggle('is-discarded', state.adminDiscarded);
+            elements.viewTabs.forEach(item => {
+                const active = item === tab;
+                item.classList.toggle('active', active);
+                item.setAttribute('aria-selected', String(active));
+            });
+            loadResults();
+        });
+    });
+
+    elements.discardButton.addEventListener('click', discardSelectedItems);
+
     elements.importButton.addEventListener('click', async () => {
         if (!state.shiftId || !state.selected.size) {
             window.alert('请先选择要送入汇总审阅的新闻。');
             return;
         }
+        const target = selectedImportTarget();
         const payload = {
             shift_id: state.shiftId,
             article_ids: [...state.selected],
-            target_status: state.targetStatus,
-            report_type: state.targetReportType
+            target_status: target.targetStatus,
+            report_type: target.reportType
         };
         try {
             const preview = await request('/api/admin/duty-summary/import-preview', {
@@ -561,6 +661,8 @@
     });
 
     setShiftPanelOpen(false);
+    syncSearchClearButton();
+    renderImportTargets();
     loadSummary()
         .then(() => {
             if (state.shiftId) return loadResults();

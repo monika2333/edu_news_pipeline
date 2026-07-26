@@ -299,7 +299,10 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert response.status_code == 200
     assert "<title>新闻筛选控制台 · 值班结果筛选</title>" in response.text
     assert "<h1>新闻筛选控制台</h1>" in response.text
+    assert '<div class="container">' in response.text
+    assert '<div class="header-right">' in response.text
     assert 'class="summary-layout is-shifts-collapsed"' in response.text
+    assert 'class="filter-sidebar summary-shifts"' in response.text
     assert 'id="summary-shifts-panel" hidden' in response.text
     assert 'id="btn-toggle-shifts"' in response.text
     assert 'aria-expanded="false"' in response.text
@@ -314,17 +317,21 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert '/static/js/shift_date.js?v=' in response.text
     assert '<details class="account-menu">' in response.text
     assert 'class="account-menu-item" href="/admin">用户与排班</a>' in response.text
+    assert 'href="/static/css/layout.css"' in response.text
+    assert 'href="/static/css/modules/filter.css"' in response.text
+    assert 'href="/static/css/modules/review.css?v=' in response.text
 
     stylesheet = (
         Path(__file__).parents[1]
         / "src/console/web_static/css/modules/duty_summary.css"
     ).read_text(encoding="utf-8")
-    assert "max-width: 1200px;" in stylesheet
-    assert "padding: clamp(12px, 3vw, 24px);" in stylesheet
-    assert "margin-bottom: 24px;" in stylesheet
+    assert ".summary-shell" not in stylesheet
+    assert ".summary-header {" not in stylesheet
     assert "grid-template-columns: minmax(0, 1fr) 330px;" in stylesheet
     assert ".summary-shifts:not([hidden])" in stylesheet
     assert "transform: translateX(18px);" in stylesheet
+    assert ".summary-filter-layout.is-discarded .summary-column-tabs" in stylesheet
+    assert ".summary-filter-layout.is-discarded .summary-import-bar .bulk-group" in stylesheet
     assert ".summary-section-heading h2" in stylesheet
     assert "font-size: 1.25rem;" in stylesheet
     assert "font-size: 0.95rem;" in stylesheet
@@ -346,20 +353,37 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert response.status_code == 200
     html = response.text
     assert html.count('data-report-type=') == 4
-    assert "综报采纳" in html
-    assert "综报备选" in html
-    assert "晚报采纳" in html
-    assert "晚报备选" in html
+    assert "综报采纳（0）" in html
+    assert "综报备选（0）" in html
+    assert "晚报采纳（0）" in html
+    assert "晚报备选（0）" in html
     assert "查看历史班次" in html
     assert "'收起历史班次'" in script
     assert "'查看历史班次'" in script
-    assert 'data-admin-discarded="true"' in html
-    assert "放弃" in html
+    assert 'class="tabs summary-workspace-tabs"' in html
+    assert 'class="workspace-tabs-row summary-workspace-row"' in html
+    assert 'data-summary-view="filter">筛选</button>' in html
+    assert 'data-summary-view="discarded">放弃</button>' in html
+    assert html.index('id="summary-context"') < html.index('id="summary-layout"')
+    assert 'id="summary-title"' not in html
+    assert 'data-admin-discarded=' not in html
+    assert 'class="filter-sidebar summary-column-tabs"' in html
     assert 'id="summary-search-input"' in html
     assert 'id="summary-select-all"' in html
+    assert 'class="toolbar review-toolbar summary-import-bar"' in html
+    assert 'class="search-group"' in html
+    assert 'class="bulk-group"' in html
+    assert 'class="filter-tab-btn summary-column-tab active"' in html
     assert 'id="summary-report-type"' not in html
-    assert 'id="summary-import-target"' not in html
+    assert 'id="summary-import-target"' in html
+    assert '<option value="">送入当前栏目</option>' in html
+    assert 'id="btn-discard-selected">放弃</button>' in html
     assert 'id="summary-decision"' not in html
+    assert 'id="summary-search-clear"' in html
+    assert 'class="review-search-clear"' in html
+    assert 'id="summary-search-input" class="search-input" type="text"' in html
+    assert "function syncSearchClearButton()" in script
+    assert "elements.searchClear.addEventListener('click'" in script
     assert 'id="summary-comparison"' in html
     assert "当前栏目全部" in html
     assert 'id="btn-import-results">送入汇总审阅</button>' in html
@@ -374,14 +398,31 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "elements.selectAll.indeterminate" in script
     assert "tab.dataset.reportType" in script
     assert "tab.dataset.targetStatus" in script
+    assert "function renderColumnCounts()" in script
+    assert "shift?.[`${reportType}_${status}`]" in script
+    assert "elements.title" not in script
+    assert "function activeColumnLabel()" not in script
+    assert "当前没有待处理新闻" in script
+    assert "当前筛选没有记录。" not in script
+    assert "tab.dataset.summaryView === 'discarded'" in script
+    assert "elements.filterLayout.classList.toggle('is-discarded'" in script
     assert "params.set('decision', state.targetStatus)" in script
     assert "params.set('report_type', state.targetReportType)" in script
+    assert "function renderImportTargets()" in script
+    assert "function selectedImportTarget()" in script
+    assert ".filter(([reportType, status]) => `${reportType}:${status}` !== current)" in script
     assert "/api/admin/duty-summary/import-preview" in script
+    assert "/api/admin/duty-summary/discard-bulk" in script
+    assert "elements.discardButton.addEventListener('click', discardSelectedItems)" in script
     assert "conflict_resolutions: conflictResolutions" in script
     assert "function chooseImportConflict(choice)" in script
     assert "window.formatDutyShiftDate(shift.ends_at)" in script
     assert "formatDateTime(shift.starts_at)" not in script
     assert "summary-shift-coverage" not in script
+    assert '<article class="article-card summary-item">' in script
+    assert '<div class="card-header">' in script
+    assert '<div class="meta-row">' in script
+    assert '<p class="summary-box">' in script
     assert 'data-quick-status="selected"' in script
     assert 'data-quick-status="discarded"' in script
     assert "async function quickDecideItem(button)" in script

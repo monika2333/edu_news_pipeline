@@ -665,29 +665,49 @@ class PostgresAdapter:
         discarded: bool,
         request_id: Optional[str] = None,
     ) -> Dict[str, Any]:
+        return self.set_shift_reviews_admin_discarded(
+            shift_id=shift_id,
+            article_ids=[article_id],
+            actor_user_id=actor_user_id,
+            discarded=discarded,
+            request_id=request_id,
+        )[0]
+
+    def set_shift_reviews_admin_discarded(
+        self,
+        *,
+        shift_id: str,
+        article_ids: Sequence[str],
+        actor_user_id: str,
+        discarded: bool,
+        request_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         with self.transaction() as cur:
-            before, after = shift_reviews.set_admin_discarded(
-                cur,
-                shift_id=shift_id,
-                article_id=article_id,
-                actor_user_id=actor_user_id,
-                discarded=discarded,
-            )
-            audit.insert_review_event(
-                cur,
-                actor_user_id=actor_user_id,
-                action=(
-                    "duty_summary.discard"
-                    if discarded
-                    else "duty_summary.restore"
-                ),
-                target_type="shift_review",
-                target_id=f"{shift_id}:{article_id}",
-                before_data=before,
-                after_data=after,
-                request_id=request_id,
-            )
-            return after
+            saved: List[Dict[str, Any]] = []
+            for article_id in article_ids:
+                before, after = shift_reviews.set_admin_discarded(
+                    cur,
+                    shift_id=shift_id,
+                    article_id=article_id,
+                    actor_user_id=actor_user_id,
+                    discarded=discarded,
+                )
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action=(
+                        "duty_summary.discard"
+                        if discarded
+                        else "duty_summary.restore"
+                    ),
+                    target_type="shift_review",
+                    target_id=f"{shift_id}:{article_id}",
+                    before_data=before,
+                    after_data=after,
+                    request_id=request_id,
+                )
+                saved.append(after)
+            return saved
 
     def update_shift_review_order(
         self,

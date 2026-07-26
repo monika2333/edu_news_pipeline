@@ -12,6 +12,7 @@ class FakeAdminSummaryAdapter:
     def __init__(self) -> None:
         self.review_query: dict[str, Any] = {}
         self.import_query: dict[str, Any] = {}
+        self.bulk_discard_query: dict[str, Any] = {}
         self.preview_rows: list[dict[str, Any]] = []
 
     def fetch_duty_shift(self, shift_id: str) -> dict[str, str]:
@@ -102,6 +103,24 @@ class FakeAdminSummaryAdapter:
             "score_details": {},
         }
 
+    def set_shift_reviews_admin_discarded(
+        self,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        self.bulk_discard_query = kwargs
+        return [
+            {
+                "article_id": article_id,
+                "decision": "selected",
+                "report_type": "zongbao",
+                "admin_discarded_at": "2026-07-26T05:00:00+00:00",
+                "admin_discarded_by_user_id": kwargs["actor_user_id"],
+                "version": 1,
+                "score_details": {},
+            }
+            for article_id in kwargs["article_ids"]
+        ]
+
 
 def test_shift_results_requests_and_returns_admin_mismatch_state(
     monkeypatch,
@@ -146,6 +165,10 @@ def test_shift_summaries_exclude_future_and_sort_latest_first(monkeypatch) -> No
                     "shift_id": "today",
                     "starts_at": now - timedelta(hours=10),
                     "ends_at": now + timedelta(hours=10),
+                    "zongbao_selected": "3",
+                    "zongbao_backup": 2,
+                    "wanbao_selected": 7,
+                    "wanbao_backup": 4,
                 },
             ]
 
@@ -158,6 +181,11 @@ def test_shift_summaries_exclude_future_and_sort_latest_first(monkeypatch) -> No
     result = admin_summary_service.list_shift_summaries(limit=60, now=now)
 
     assert [item["shift_id"] for item in result] == ["today", "previous"]
+    assert result[0]["zongbao_selected"] == 3
+    assert result[0]["zongbao_backup"] == 2
+    assert result[0]["wanbao_selected"] == 7
+    assert result[0]["wanbao_backup"] == 4
+    assert result[1]["zongbao_selected"] == 0
 
 
 def test_admin_shift_summary_query_excludes_future_shifts() -> None:
@@ -178,6 +206,11 @@ def test_admin_shift_summary_query_excludes_future_shifts() -> None:
     assert result == []
     assert "s.starts_at <= CURRENT_TIMESTAMP" in cursor.query
     assert "ORDER BY s.ends_at DESC" in cursor.query
+    assert "AS zongbao_selected" in cursor.query
+    assert "AS zongbao_backup" in cursor.query
+    assert "AS wanbao_selected" in cursor.query
+    assert "AS wanbao_backup" in cursor.query
+    assert "sr.admin_discarded_at IS NULL" in cursor.query
 
 
 def test_preview_import_results_returns_editable_conflict_versions(
@@ -315,4 +348,36 @@ def test_admin_can_discard_shift_result_without_importing_manual_review(
         "actor_user_id": "admin-id",
         "discarded": True,
         "request_id": "request-2",
+    }
+
+
+def test_admin_can_discard_multiple_shift_results(
+    monkeypatch,
+) -> None:
+    adapter = FakeAdminSummaryAdapter()
+    monkeypatch.setattr(admin_summary_service, "get_adapter", lambda: adapter)
+    actor = ConsoleUser(
+        method="session",
+        user_id="admin-id",
+        username="admin",
+        display_name="管理员",
+        role="admin",
+    )
+
+    result = admin_summary_service.set_admin_discarded_many(
+        shift_id="shift-1",
+        article_ids=["article-1", "article-2", "article-1"],
+        discarded=True,
+        actor=actor,
+        request_id="request-bulk",
+    )
+
+    assert result["updated"] == 2
+    assert result["discarded"] is True
+    assert adapter.bulk_discard_query == {
+        "shift_id": "shift-1",
+        "article_ids": ["article-1", "article-2"],
+        "actor_user_id": "admin-id",
+        "discarded": True,
+        "request_id": "request-bulk",
     }

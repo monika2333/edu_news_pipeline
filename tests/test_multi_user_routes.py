@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi.testclient import TestClient
 
 from src.console import (
+    admin_summary_service,
     articles_service,
     duty_review_service,
     shifts_service,
@@ -66,6 +69,40 @@ def test_duty_editor_cannot_change_admin_duty_discard_state() -> None:
     )
 
     assert response.status_code == 403
+
+
+def test_admin_can_bulk_discard_duty_results(monkeypatch) -> None:
+    admin = ConsoleUser(
+        method="test",
+        user_id="admin-id",
+        username="admin",
+        display_name="管理员",
+        role="admin",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_bulk_discard(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"items": [], "discarded": True, "updated": 2}
+
+    monkeypatch.setattr(
+        admin_summary_service,
+        "set_admin_discarded_many",
+        fake_bulk_discard,
+    )
+
+    response = _client_for(admin).patch(
+        "/api/admin/duty-summary/discard-bulk",
+        json={
+            "shift_id": "shift-1",
+            "article_ids": ["article-1", "article-2"],
+            "discarded": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["updated"] == 2
+    assert captured["article_ids"] == ["article-1", "article-2"]
 
 
 def test_admin_can_delete_console_user(monkeypatch) -> None:

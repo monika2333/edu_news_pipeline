@@ -198,3 +198,47 @@ def test_admin_discard_and_audit_share_one_transaction(
 
     assert result == after
     assert events == ["begin", "duty_summary.discard", "commit"]
+
+
+def test_bulk_admin_discard_uses_one_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = object.__new__(db_postgres_core.PostgresAdapter)
+    cursor = object()
+    events: list[str] = []
+
+    @contextmanager
+    def fake_transaction() -> Iterator[object]:
+        events.append("begin")
+        yield cursor
+        events.append("commit")
+
+    adapter.transaction = fake_transaction
+    monkeypatch.setattr(
+        db_postgres_core.shift_reviews,
+        "set_admin_discarded",
+        lambda cur, **kwargs: (
+            {"article_id": kwargs["article_id"]},
+            {"article_id": kwargs["article_id"], "admin_discarded_at": "now"},
+        ),
+    )
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        lambda cur, **kwargs: events.append(kwargs["action"]),
+    )
+
+    result = adapter.set_shift_reviews_admin_discarded(
+        shift_id="shift-1",
+        article_ids=["article-1", "article-2"],
+        actor_user_id="admin-1",
+        discarded=True,
+    )
+
+    assert [item["article_id"] for item in result] == ["article-1", "article-2"]
+    assert events == [
+        "begin",
+        "duty_summary.discard",
+        "duty_summary.discard",
+        "commit",
+    ]

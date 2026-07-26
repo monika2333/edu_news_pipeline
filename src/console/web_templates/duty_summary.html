@@ -7,18 +7,22 @@
     <title>新闻筛选控制台 · 值班结果筛选</title>
     <link rel="stylesheet" href="/static/css/variables.css">
     <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/utilities.css">
+    <link rel="stylesheet" href="/static/css/layout.css">
     <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/modules/filter.css">
+    <link rel="stylesheet" href="/static/css/modules/review.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/auth.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/duty_summary.css?v={{ version }}">
 </head>
 
 <body>
-    <div class="summary-shell">
-        <header class="summary-header">
-            <div class="summary-header-left">
+    <div class="container">
+        <header>
+            <div class="header-left">
                 <h1>新闻筛选控制台</h1>
             </div>
-            <div class="summary-header-actions">
+            <div class="header-right">
                 <nav class="admin-view-switch" aria-label="管理员主视图">
                     <a class="admin-view-link" href="/manual_filter">全量新闻筛选</a>
                     <a class="admin-view-link is-active" href="/admin/duty-summary" aria-current="page">
@@ -40,67 +44,90 @@
             </div>
         </header>
 
+        <div class="workspace-tabs-row summary-workspace-row">
+            <div class="tabs summary-workspace-tabs" role="tablist" aria-label="值班结果视图">
+                <button class="tab-btn active" type="button" role="tab" aria-selected="true"
+                    data-summary-view="filter">筛选</button>
+                <button class="tab-btn" type="button" role="tab" aria-selected="false"
+                    data-summary-view="discarded">放弃</button>
+            </div>
+            <p class="summary-workspace-context" id="summary-context">请选择班次</p>
+            <div class="summary-result-tools">
+                <button class="btn btn-secondary summary-shift-toggle" id="btn-toggle-shifts"
+                    aria-expanded="false" aria-controls="summary-shifts-panel">
+                    查看历史班次
+                </button>
+                <div class="summary-filters">
+                    <select id="summary-comparison" aria-label="结果对比范围">
+                        <option value="">当前栏目全部</option>
+                        <option value="mismatch">与管理员结论不同</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
         <section class="summary-layout is-shifts-collapsed" id="summary-layout">
-            <aside class="summary-shifts" id="summary-shifts-panel" hidden>
+            <aside class="filter-sidebar summary-shifts" id="summary-shifts-panel" hidden>
                 <div class="summary-section-heading">
                     <h2>班次</h2>
                 </div>
-                <button class="uncovered-button" id="btn-uncovered">无有效班次覆盖</button>
+                <button class="filter-tab-btn uncovered-button" id="btn-uncovered">无有效班次覆盖</button>
                 <div id="summary-shift-list"></div>
             </aside>
 
             <main class="summary-results">
-                <div class="summary-section-heading">
-                    <div><p id="summary-context">请选择班次</p><h2 id="summary-title">初审结果</h2></div>
-                    <div class="summary-result-tools">
-                        <button class="btn btn-secondary summary-shift-toggle" id="btn-toggle-shifts"
-                            aria-expanded="false" aria-controls="summary-shifts-panel">
-                            查看历史班次
+                <div class="filter-layout summary-filter-layout" id="summary-filter-layout">
+                    <aside class="filter-sidebar summary-column-tabs" role="tablist"
+                        aria-label="管理员工作区栏目">
+                        <button class="filter-tab-btn summary-column-tab active" type="button" role="tab"
+                            aria-selected="true" data-report-type="zongbao" data-target-status="selected">
+                            综报采纳（0）
                         </button>
-                        <div class="summary-filters">
-                            <select id="summary-comparison" aria-label="结果对比范围">
-                                <option value="">当前栏目全部</option>
-                                <option value="mismatch">与管理员结论不同</option>
-                            </select>
+                        <button class="filter-tab-btn summary-column-tab" type="button" role="tab"
+                            aria-selected="false" data-report-type="zongbao" data-target-status="backup">
+                            综报备选（0）
+                        </button>
+                        <button class="filter-tab-btn summary-column-tab" type="button" role="tab"
+                            aria-selected="false" data-report-type="wanbao" data-target-status="selected">
+                            晚报采纳（0）
+                        </button>
+                        <button class="filter-tab-btn summary-column-tab" type="button" role="tab"
+                            aria-selected="false" data-report-type="wanbao" data-target-status="backup">
+                            晚报备选（0）
+                        </button>
+                    </aside>
+
+                    <div class="filter-content review-main">
+                        <div class="summary-items" id="summary-items">
+                            <div class="summary-empty">从左侧选择一个班次。</div>
+                        </div>
+                        <div class="toolbar review-toolbar summary-import-bar" id="summary-import-bar" hidden>
+                            <div class="search-group">
+                                <input id="summary-search-input" class="search-input" type="text"
+                                    placeholder="搜索当前栏目…" aria-label="搜索当前栏目">
+                                <button type="button" id="summary-search-clear" class="review-search-clear"
+                                    aria-label="清空搜索" title="清空搜索" hidden>
+                                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                        <path d="M20 5H9.83a2 2 0 0 0-1.42.59L3 12l5.41 6.41A2 2 0 0 0 9.83 19H20a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"></path>
+                                        <path d="m12 9 5 5"></path>
+                                        <path d="m17 9-5 5"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="bulk-group">
+                                <label class="checkbox-label summary-select-all">
+                                    <input id="summary-select-all" type="checkbox">
+                                    <span>全选</span>
+                                </label>
+                                <span class="summary-selection-count" id="summary-selection-count">已选择 0 条</span>
+                                <select id="summary-import-target" class="bulk-select" aria-label="送入栏目">
+                                    <option value="">送入当前栏目</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-secondary" id="btn-discard-selected">放弃</button>
+                            <button class="btn btn-primary" id="btn-import-results">送入汇总审阅</button>
                         </div>
                     </div>
-                </div>
-                <div class="summary-import-bar" id="summary-import-bar" hidden>
-                    <div class="summary-column-tabs" role="tablist" aria-label="管理员工作区栏目">
-                        <button class="summary-column-tab is-active" type="button" role="tab"
-                            aria-selected="true" data-report-type="zongbao" data-target-status="selected">
-                            综报采纳
-                        </button>
-                        <button class="summary-column-tab" type="button" role="tab"
-                            aria-selected="false" data-report-type="zongbao" data-target-status="backup">
-                            综报备选
-                        </button>
-                        <button class="summary-column-tab" type="button" role="tab"
-                            aria-selected="false" data-report-type="wanbao" data-target-status="selected">
-                            晚报采纳
-                        </button>
-                        <button class="summary-column-tab" type="button" role="tab"
-                            aria-selected="false" data-report-type="wanbao" data-target-status="backup">
-                            晚报备选
-                        </button>
-                        <button class="summary-column-tab summary-column-tab-discarded" type="button"
-                            role="tab" aria-selected="false" data-admin-discarded="true">
-                            放弃
-                        </button>
-                    </div>
-                    <div class="summary-selection-tools">
-                        <input id="summary-search-input" type="search" placeholder="搜索当前栏目…"
-                            aria-label="搜索当前栏目">
-                        <label class="summary-select-all">
-                            <input id="summary-select-all" type="checkbox">
-                            <span>全选</span>
-                        </label>
-                        <span class="summary-selection-count" id="summary-selection-count">已选择 0 条</span>
-                        <button class="btn btn-primary" id="btn-import-results">送入汇总审阅</button>
-                    </div>
-                </div>
-                <div class="summary-items" id="summary-items">
-                    <div class="summary-empty">从左侧选择一个班次。</div>
                 </div>
             </main>
         </section>

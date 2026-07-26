@@ -13,6 +13,13 @@ from src.console import duty_review_service
 from src.console.auth_service import ConsoleUser
 from src.console.shifts_service import ShiftNotFoundError
 
+_COLUMN_COUNT_FIELDS = (
+    "zongbao_selected",
+    "zongbao_backup",
+    "wanbao_selected",
+    "wanbao_backup",
+)
+
 
 def _serialize_admin_result(
     row: dict[str, Any],
@@ -51,6 +58,10 @@ def list_shift_summaries(
     return [
         {
             **row,
+            **{
+                field: int(row.get(field) or 0)
+                for field in _COLUMN_COUNT_FIELDS
+            },
             "total": int(row.get("total") or 0),
             "pending": int(row.get("pending") or 0),
             "selected": int(row.get("selected") or 0),
@@ -125,6 +136,40 @@ def set_admin_discarded(
     return {
         "item": _serialize_admin_result(saved),
         "discarded": discarded,
+    }
+
+
+def set_admin_discarded_many(
+    *,
+    shift_id: str,
+    article_ids: Sequence[str],
+    discarded: bool,
+    actor: ConsoleUser,
+    request_id: Optional[str] = None,
+) -> dict[str, Any]:
+    if not actor.user_id:
+        raise PermissionError("需要管理员账号才能执行该操作")
+    normalized_ids = list(dict.fromkeys(
+        str(article_id).strip()
+        for article_id in article_ids
+        if str(article_id).strip()
+    ))
+    if not normalized_ids:
+        raise ValueError("请至少选择一条新闻")
+    adapter = get_adapter()
+    if not adapter.fetch_duty_shift(shift_id):
+        raise ShiftNotFoundError("Duty shift not found")
+    saved = adapter.set_shift_reviews_admin_discarded(
+        shift_id=shift_id,
+        article_ids=normalized_ids,
+        actor_user_id=actor.user_id,
+        discarded=discarded,
+        request_id=request_id,
+    )
+    return {
+        "items": [_serialize_admin_result(item) for item in saved],
+        "discarded": discarded,
+        "updated": len(saved),
     }
 
 

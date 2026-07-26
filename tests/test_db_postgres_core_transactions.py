@@ -59,3 +59,90 @@ def test_complete_external_filter_scores_and_enqueues_in_one_transaction(
 
     assert transaction_events == ["begin", "commit"]
     assert calls == [("score", cursor), ("enqueue", cursor)]
+
+
+def test_delete_console_user_preserves_history_and_clears_active_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = object.__new__(db_postgres_core.PostgresAdapter)
+    cursor = object()
+    events: list[str] = []
+    before = {
+        "id": "editor-id",
+        "role": "duty_editor",
+        "is_active": True,
+    }
+    after = {
+        **before,
+        "is_active": False,
+        "deleted_at": datetime.now(timezone.utc),
+    }
+
+    @contextmanager
+    def fake_transaction() -> Iterator[object]:
+        events.append("begin")
+        yield cursor
+        events.append("commit")
+
+    adapter.transaction = fake_transaction
+    monkeypatch.setattr(
+        db_postgres_core.users,
+        "fetch_console_user_for_update",
+        lambda cur, user_id: before,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.users,
+        "fetch_future_shifts_for_user",
+        lambda cur, user_id: [],
+    )
+    monkeypatch.setattr(
+        db_postgres_core.users,
+        "delete_duty_schedules_for_user",
+        lambda cur, user_id: events.append("schedule-cleared"),
+    )
+    monkeypatch.setattr(
+        db_postgres_core.users,
+        "soft_delete_console_user",
+        lambda cur, user_id: after,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.users,
+        "revoke_console_user_sessions",
+        lambda cur, user_id: events.append("sessions-revoked"),
+    )
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        lambda cur, **kwargs: events.append(kwargs["action"]),
+    )
+
+    result = adapter.delete_console_user(
+        user_id="editor-id",
+        actor_user_id="admin-id",
+    )
+
+    assert result == after
+    assert events == [
+        "begin",
+        "schedule-cleared",
+        "sessions-revoked",
+        "user.delete",
+        "commit",
+    ]
+
+
+def test_future_shift_error_lists_human_readable_dates() -> None:
+    message = db_postgres_core._future_shift_error_message(
+        "删除",
+        [
+            {
+                "starts_at": datetime(2026, 7, 28, 14, tzinfo=timezone.utc),
+                "ends_at": datetime(2026, 7, 29, 14, tzinfo=timezone.utc),
+            }
+        ],
+    )
+
+    assert message == (
+        "请先改派或取消以下未来班次，再删除该用户："
+        "7月29日"
+    )

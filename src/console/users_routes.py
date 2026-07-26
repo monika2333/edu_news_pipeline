@@ -94,6 +94,18 @@ def update_user(
     return {"item": item}
 
 
+@router.delete("/{user_id}", response_model=MessageResponse)
+def delete_user(
+    user_id: str,
+    user: ConsoleUser = Depends(require_role("admin")),
+) -> MessageResponse:
+    try:
+        users_service.delete_user(user_id, actor=user)
+    except (ValueError, PermissionError) as exc:
+        _raise_user_error(exc)
+    return MessageResponse(message="用户已删除，历史记录继续保留")
+
+
 @router.post("/{user_id}/reset-password", response_model=MessageResponse)
 def reset_password(
     user_id: str,

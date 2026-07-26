@@ -846,8 +846,10 @@ def import_shift_reviews_into_manual(
     ]
     if not normalized_ids:
         return []
-    if target_status not in {"selected", "backup"}:
-        raise ValueError("Imported duty results must be selected or backup")
+    if target_status not in {"selected", "backup", "discarded"}:
+        raise ValueError(
+            "Imported duty results must be selected, backup, or discarded"
+        )
     normalized_report_type = normalize_report_type_value(report_type)
     if not normalized_report_type:
         raise ValueError("A report type is required")
@@ -864,10 +866,15 @@ def import_shift_reviews_into_manual(
         str(row["article_id"]): row
         for row in existing_reviews
     }
-    next_rank = manual_review_max_rank(
-        cur,
-        target_status,
-        report_type=normalized_report_type,
+    uses_rank = target_status in {"selected", "backup"}
+    next_rank = (
+        manual_review_max_rank(
+            cur,
+            target_status,
+            report_type=normalized_report_type,
+        )
+        if uses_rank
+        else 0
     )
     imported: list[dict[str, Any]] = []
     rank_offset = 0
@@ -925,8 +932,9 @@ def import_shift_reviews_into_manual(
                 imported.append(_return_manual_import_row(cur))
                 continue
 
-        rank_offset += 1
-        rank = next_rank + rank_offset
+        if uses_rank:
+            rank_offset += 1
+        rank = next_rank + rank_offset if uses_rank else None
         summary = row.get("edited_summary") or row.get("llm_summary")
         source = row.get("manual_llm_source")
         if existing:

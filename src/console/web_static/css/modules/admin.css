@@ -83,6 +83,17 @@
     padding: 6px 9px;
 }
 
+.admin-delete-user {
+    color: #b91c1c;
+}
+
+.admin-delete-user:hover,
+.admin-delete-user.is-confirming {
+    border-color: #fecaca;
+    background: #fef2f2;
+    color: #991b1b;
+}
+
 .status-pill {
     display: inline-flex;
     padding: 3px 8px;

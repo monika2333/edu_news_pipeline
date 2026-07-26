@@ -76,6 +76,23 @@ def update_user(
     return updated
 
 
+def delete_user(
+    user_id: str,
+    *,
+    actor: ConsoleUser,
+) -> None:
+    if not actor.user_id:
+        raise PermissionError("A business administrator account is required")
+    if user_id == actor.user_id:
+        raise ValueError("不能删除当前登录账号")
+    deleted = get_adapter().delete_console_user(
+        user_id=user_id,
+        actor_user_id=actor.user_id,
+    )
+    if not deleted:
+        raise ConsoleUserNotFoundError("Console user not found")
+
+
 def reset_password(
     user_id: str,
     *,
@@ -97,6 +114,7 @@ def reset_password(
 __all__ = [
     "ConsoleUserNotFoundError",
     "create_user",
+    "delete_user",
     "list_users",
     "reset_password",
     "update_user",

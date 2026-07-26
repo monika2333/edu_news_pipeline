@@ -135,6 +135,7 @@ CREATE TABLE public.console_users (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     preferred_weekday smallint,
+    deleted_at timestamp with time zone,
     CONSTRAINT console_users_display_name_not_blank CHECK ((btrim(display_name) <> ''::text)),
     CONSTRAINT console_users_preferred_weekday_check CHECK (((preferred_weekday IS NULL) OR ((preferred_weekday >= 0) AND (preferred_weekday <= 6)))),
     CONSTRAINT console_users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'duty_editor'::text]))),

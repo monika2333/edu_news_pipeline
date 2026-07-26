@@ -70,12 +70,8 @@
             elements.coverage.textContent = '请联系管理员检查排班。';
             return;
         }
-        const coverageDate = new Date(shift.ends_at).toLocaleDateString('zh-CN', {
-            month: 'numeric',
-            day: 'numeric'
-        });
-        elements.heading.textContent = `${coverageDate}班次`;
-        elements.coverage.textContent = `覆盖 ${formatDateTime(shift.starts_at)} – ${formatDateTime(shift.ends_at)}`;
+        elements.heading.textContent = window.formatDutyShiftDate(shift.ends_at);
+        elements.coverage.textContent = shift.status;
     }
 
     function chooseInitialShift() {
@@ -89,7 +85,7 @@
         const selected = chooseInitialShift();
         state.shiftId = selected?.id || '';
         elements.shiftSelect.innerHTML = state.shifts.map(shift => {
-            const label = `${formatDateTime(shift.starts_at)} – ${formatDateTime(shift.ends_at)} · ${shift.status}`;
+            const label = `${window.formatDutyShiftDate(shift.ends_at)} · ${shift.status}`;
             return `<option value="${escapeHtml(shift.id)}">${escapeHtml(label)}</option>`;
         }).join('');
         elements.shiftSelect.value = state.shiftId;

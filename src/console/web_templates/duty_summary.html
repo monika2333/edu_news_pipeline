@@ -58,13 +58,9 @@
                             查看班次
                         </button>
                         <div class="summary-filters">
-                            <select id="summary-decision">
-                                <option value="">全部状态</option>
+                            <select id="summary-comparison" aria-label="结果对比范围">
+                                <option value="">当前栏目全部</option>
                                 <option value="mismatch">与管理员结论不同</option>
-                                <option value="pending">尚未处理</option>
-                                <option value="selected">建议采纳</option>
-                                <option value="backup">建议备选</option>
-                                <option value="discarded">建议放弃</option>
                             </select>
                         </div>
                     </div>
@@ -163,6 +159,7 @@
 
     <div class="toast" id="toast">操作成功</div>
     <script src="/static/js/auth.js?v={{ version }}"></script>
+    <script src="/static/js/shift_date.js?v={{ version }}"></script>
     <script src="/static/js/duty_summary.js?v={{ version }}"></script>
 </body>
 

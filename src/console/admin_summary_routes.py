@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/admin", tags=["duty_summary"])
 class ImportDutyPreviewRequest(BaseModel):
     shift_id: str
     article_ids: list[str] = Field(min_length=1)
-    target_status: Literal["selected", "backup"]
+    target_status: Literal["selected", "backup", "discarded"]
     report_type: Literal["zongbao", "wanbao"]
 
 

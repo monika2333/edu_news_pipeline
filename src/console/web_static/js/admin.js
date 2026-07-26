@@ -74,6 +74,7 @@
                 <td><div class="admin-actions">
                     <button class="btn btn-secondary" data-user-action="toggle">${user.is_active ? '停用' : '启用'}</button>
                     <button class="btn btn-secondary" data-user-action="password">重置密码</button>
+                    <button class="btn btn-secondary admin-delete-user" data-user-action="delete">删除</button>
                 </div></td>
             </tr>
         `).join('');
@@ -97,7 +98,7 @@
     function renderShifts() {
         elements.shiftsBody.innerHTML = state.shifts.map(shift => `
             <tr data-shift-id="${escapeHtml(shift.id)}">
-                <td>${escapeHtml(formatDateTime(shift.starts_at))} – ${escapeHtml(formatDateTime(shift.ends_at))}</td>
+                <td>${escapeHtml(window.formatDutyShiftDate(shift.ends_at))}</td>
                 <td><select class="shift-assignee">${editorOptions(shift.user_id)}</select></td>
                 <td><span class="status-pill ${shift.status === 'cancelled' ? 'is-cancelled' : ''}">${escapeHtml(shift.status)}</span></td>
                 <td>${escapeHtml(shift.notes || '')}</td>
@@ -117,7 +118,7 @@
         elements.alert.hidden = !shouldWarn;
         if (!shouldWarn) return;
         elements.alert.textContent = coverage.coverage_end
-            ? `排班已覆盖至 ${formatDateTime(coverage.coverage_end)}，还剩 ${coverage.remaining_days} 天。`
+            ? `排班已覆盖至 ${window.formatDutyShiftDate(coverage.coverage_end)}，还剩 ${coverage.remaining_days} 天。`
             : '目前没有有效班次，请先填写完整轮值表并生成班次。';
     }
 
@@ -149,7 +150,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ is_active: !user.is_active })
                 });
-            } else {
+            } else if (button.dataset.userAction === 'password') {
                 const newPassword = window.prompt(`为 ${user.display_name} 设置新密码（至少 10 位）`);
                 if (!newPassword) return;
                 await request(`/api/admin/users/${encodeURIComponent(user.id)}/reset-password`, {
@@ -157,8 +158,24 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ new_password: newPassword })
                 });
+            } else {
+                if (button.dataset.confirming !== 'true') {
+                    button.dataset.confirming = 'true';
+                    button.classList.add('is-confirming');
+                    button.textContent = '确认删除';
+                    window.setTimeout(() => {
+                        if (!button.isConnected) return;
+                        button.dataset.confirming = 'false';
+                        button.classList.remove('is-confirming');
+                        button.textContent = '删除';
+                    }, 5000);
+                    return;
+                }
+                await request(`/api/admin/users/${encodeURIComponent(user.id)}`, {
+                    method: 'DELETE'
+                });
             }
-            showToast('用户已更新');
+            showToast(button.dataset.userAction === 'delete' ? '用户已删除' : '用户已更新');
             await loadAll();
         } catch (error) {
             window.alert(error.message);

@@ -36,7 +36,8 @@ def create_console_user(
             password_changed_at,
             last_login_at,
             created_at,
-            updated_at
+            updated_at,
+            deleted_at
         """,
         (username, display_name, password_hash, role, preferred_weekday),
     )
@@ -63,9 +64,11 @@ def fetch_console_user_by_username(
             password_changed_at,
             last_login_at,
             created_at,
-            updated_at
+            updated_at,
+            deleted_at
         FROM console_users
         WHERE lower(username) = lower(%s)
+          AND deleted_at IS NULL
         """,
         (username,),
     )
@@ -90,9 +93,11 @@ def fetch_console_user_by_id(
             password_changed_at,
             last_login_at,
             created_at,
-            updated_at
+            updated_at,
+            deleted_at
         FROM console_users
         WHERE id = %s
+          AND deleted_at IS NULL
         """,
         (user_id,),
     )
@@ -113,8 +118,10 @@ def fetch_console_users(cur: psycopg.Cursor) -> list[dict[str, Any]]:
             password_changed_at,
             last_login_at,
             created_at,
-            updated_at
+            updated_at,
+            deleted_at
         FROM console_users
+        WHERE deleted_at IS NULL
         ORDER BY
             CASE role WHEN 'admin' THEN 0 ELSE 1 END,
             display_name,
@@ -141,9 +148,11 @@ def fetch_console_user_for_update(
             password_changed_at,
             last_login_at,
             created_at,
-            updated_at
+            updated_at,
+            deleted_at
         FROM console_users
         WHERE id = %s
+          AND deleted_at IS NULL
         FOR UPDATE
         """,
         (user_id,),
@@ -159,6 +168,7 @@ def lock_active_admin_ids(cur: psycopg.Cursor) -> list[str]:
         FROM console_users
         WHERE role = 'admin'
           AND is_active = true
+          AND deleted_at IS NULL
         FOR UPDATE
         """
     )
@@ -208,6 +218,7 @@ def update_console_user(
             is_active = CASE WHEN %s THEN %s ELSE is_active END,
             updated_at = now()
         WHERE id = %s
+          AND deleted_at IS NULL
         RETURNING
             id,
             username,
@@ -218,7 +229,8 @@ def update_console_user(
             password_changed_at,
             last_login_at,
             created_at,
-            updated_at
+            updated_at,
+            deleted_at
         """,
         (
             set_display_name,
@@ -262,6 +274,7 @@ def update_console_user_password(
             updated_at = now()
         WHERE id = %s
           AND is_active = true
+          AND deleted_at IS NULL
         """,
         (password_hash, user_id),
     )
@@ -317,6 +330,7 @@ def fetch_console_session_by_token_hash(
           AND s.revoked_at IS NULL
           AND s.expires_at > now()
           AND u.is_active = true
+          AND u.deleted_at IS NULL
         """,
         (token_hash,),
     )
@@ -374,6 +388,53 @@ def revoke_console_user_sessions(
     return cur.rowcount
 
 
+def delete_duty_schedules_for_user(
+    cur: psycopg.Cursor,
+    *,
+    user_id: str,
+) -> int:
+    cur.execute(
+        """
+        DELETE FROM duty_schedules
+        WHERE user_id = %s
+        """,
+        (user_id,),
+    )
+    return cur.rowcount
+
+
+def soft_delete_console_user(
+    cur: psycopg.Cursor,
+    *,
+    user_id: str,
+) -> Optional[dict[str, Any]]:
+    cur.execute(
+        """
+        UPDATE console_users
+        SET is_active = false,
+            deleted_at = now(),
+            updated_at = now()
+        WHERE id = %s
+          AND deleted_at IS NULL
+        RETURNING
+            id,
+            username,
+            display_name,
+            role,
+            preferred_weekday,
+            is_active,
+            password_changed_at,
+            last_login_at,
+            created_at,
+            updated_at,
+            deleted_at
+        """,
+        (user_id,),
+    )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
 def delete_expired_console_sessions(cur: psycopg.Cursor) -> int:
     cur.execute(
         """
@@ -388,6 +449,7 @@ def delete_expired_console_sessions(cur: psycopg.Cursor) -> int:
 __all__ = [
     "create_console_session",
     "create_console_user",
+    "delete_duty_schedules_for_user",
     "delete_expired_console_sessions",
     "fetch_console_session_by_token_hash",
     "fetch_console_user_by_id",
@@ -399,6 +461,7 @@ __all__ = [
     "record_console_user_login",
     "revoke_console_session_by_token_hash",
     "revoke_console_user_sessions",
+    "soft_delete_console_user",
     "touch_console_session",
     "update_console_user",
     "update_console_user_password",

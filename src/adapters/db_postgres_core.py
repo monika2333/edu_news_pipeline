@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from zoneinfo import ZoneInfo
 
 import psycopg
 from psycopg import sql
@@ -27,6 +28,18 @@ from src.domain import BeijingGateCandidate, ExportCandidate, ExternalFilterCand
 
 _CONNECTION: Optional[psycopg.Connection] = None
 _ADAPTER: Optional["PostgresAdapter"] = None
+_BUSINESS_TIMEZONE = ZoneInfo("Asia/Shanghai")
+
+
+def _future_shift_error_message(
+    action: str,
+    shifts: Sequence[Mapping[str, Any]],
+) -> str:
+    ranges = []
+    for shift in shifts:
+        ends_at = shift["ends_at"].astimezone(_BUSINESS_TIMEZONE)
+        ranges.append(f"{ends_at.month}月{ends_at.day}日")
+    return f"请先改派或取消以下未来班次，再{action}该用户：" + "；".join(ranges)
 
 
 def _get_connection() -> psycopg.Connection:
@@ -185,7 +198,7 @@ class PostgresAdapter:
             if removes_active_admin:
                 active_admin_ids = users.lock_active_admin_ids(cur)
                 if len(active_admin_ids) <= 1:
-                    raise ValueError("At least one active administrator is required")
+                    raise ValueError("系统至少需要保留一个启用中的管理员账号")
             disables_editor = (
                 before["role"] == "duty_editor"
                 and bool(before["is_active"])
@@ -197,9 +210,8 @@ class PostgresAdapter:
             if disables_editor:
                 future_shifts = users.fetch_future_shifts_for_user(cur, user_id)
                 if future_shifts:
-                    shift_ids = ", ".join(str(item["id"]) for item in future_shifts)
                     raise ValueError(
-                        f"Reassign future shifts before disabling this user: {shift_ids}"
+                        _future_shift_error_message("停用", future_shifts)
                     )
             after = users.update_console_user(
                 cur,
@@ -220,6 +232,40 @@ class PostgresAdapter:
                     cur,
                     actor_user_id=actor_user_id,
                     action="user.update",
+                    target_type="console_user",
+                    target_id=user_id,
+                    before_data=before,
+                    after_data=after,
+                )
+            return after
+
+    def delete_console_user(
+        self,
+        *,
+        user_id: str,
+        actor_user_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        with self.transaction() as cur:
+            before = users.fetch_console_user_for_update(cur, user_id)
+            if not before:
+                return None
+            if before["role"] == "admin" and bool(before["is_active"]):
+                active_admin_ids = users.lock_active_admin_ids(cur)
+                if len(active_admin_ids) <= 1:
+                    raise ValueError("系统至少需要保留一个启用中的管理员账号")
+            future_shifts = users.fetch_future_shifts_for_user(cur, user_id)
+            if future_shifts:
+                raise ValueError(
+                    _future_shift_error_message("删除", future_shifts)
+                )
+            users.delete_duty_schedules_for_user(cur, user_id=user_id)
+            after = users.soft_delete_console_user(cur, user_id=user_id)
+            if after:
+                users.revoke_console_user_sessions(cur, user_id=user_id)
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action="user.delete",
                     target_type="console_user",
                     target_id=user_id,
                     before_data=before,

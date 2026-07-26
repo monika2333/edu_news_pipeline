@@ -9,17 +9,6 @@ function clearDutyWorkspaceCache() {
     dutyWorkspaceClusters = null;
 }
 
-function formatWorkspaceDateTime(value) {
-    if (!value) return '-';
-    return new Date(value).toLocaleString('zh-CN', {
-        month: 'numeric',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-    });
-}
-
 function workspaceShiftStatusLabel(status) {
     return {
         active: '当前班次',
@@ -57,7 +46,7 @@ function setDutyWorkspaceShift(shift) {
     }
     API_BASE = `/api/duty/shifts/${encodeURIComponent(shift.id)}`;
     if (coverage) {
-        coverage.textContent = `${workspaceShiftStatusLabel(shift.status)} · 覆盖 ${formatWorkspaceDateTime(shift.starts_at)} – ${formatWorkspaceDateTime(shift.ends_at)}`;
+        coverage.textContent = `${workspaceShiftStatusLabel(shift.status)} · ${window.formatDutyShiftDate(shift.ends_at)}`;
     }
 }
 
@@ -105,7 +94,7 @@ async function prepareManualFilterWorkspace() {
     const initial = shifts[0];
     if (select) {
         select.innerHTML = shifts.map(shift => {
-            const label = `${formatWorkspaceDateTime(shift.starts_at)} – ${formatWorkspaceDateTime(shift.ends_at)} · ${workspaceShiftStatusLabel(shift.status)}`;
+            const label = `${window.formatDutyShiftDate(shift.ends_at)} · ${workspaceShiftStatusLabel(shift.status)}`;
             return `<option value="${escapeWorkspaceHtml(shift.id)}">${escapeWorkspaceHtml(label)}</option>`;
         }).join('');
         select.value = initial.id;

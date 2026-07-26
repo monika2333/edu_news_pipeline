@@ -29,6 +29,7 @@ def fetch_active_duty_editors(cur: psycopg.Cursor) -> list[dict[str, Any]]:
         FROM console_users
         WHERE role = 'duty_editor'
           AND is_active = true
+          AND deleted_at IS NULL
         ORDER BY display_name, username
         """
     )

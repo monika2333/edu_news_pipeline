@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from src.console import articles_service, duty_review_service, shifts_service
+from src.console import (
+    articles_service,
+    duty_review_service,
+    shifts_service,
+    users_service,
+)
 from src.console.app import create_app
 from src.console.auth_service import ConsoleUser
 from src.console.security import require_console_user
@@ -26,6 +31,46 @@ def test_duty_editor_cannot_call_admin_schedule_api() -> None:
     response = _client_for(editor).get("/api/admin/schedules")
 
     assert response.status_code == 403
+
+
+def test_duty_editor_cannot_delete_console_user() -> None:
+    editor = ConsoleUser(
+        method="test",
+        user_id="editor-id",
+        username="editor",
+        display_name="值班编辑",
+        role="duty_editor",
+    )
+
+    response = _client_for(editor).delete("/api/admin/users/another-user")
+
+    assert response.status_code == 403
+
+
+def test_admin_can_delete_console_user(monkeypatch) -> None:
+    admin = ConsoleUser(
+        method="test",
+        user_id="admin-id",
+        username="admin",
+        display_name="管理员",
+        role="admin",
+    )
+    captured: dict[str, str] = {}
+
+    def delete_user(user_id: str, *, actor: ConsoleUser) -> None:
+        captured["user_id"] = user_id
+        captured["actor_user_id"] = actor.user_id or ""
+
+    monkeypatch.setattr(users_service, "delete_user", delete_user)
+
+    response = _client_for(admin).delete("/api/admin/users/editor-id")
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "用户已删除，历史记录继续保留"
+    assert captured == {
+        "user_id": "editor-id",
+        "actor_user_id": "admin-id",
+    }
 
 
 def test_duty_editor_cannot_call_admin_manual_filter_api() -> None:

@@ -73,6 +73,9 @@ def test_admin_page_shows_registration_preferences_for_scheduling(
     admin_stylesheet = (
         root / "src/console/web_static/css/modules/admin.css"
     ).read_text(encoding="utf-8")
+    shift_date_script = (
+        root / "src/console/web_static/js/shift_date.js"
+    ).read_text(encoding="utf-8")
 
     assert response.status_code == 200
     html = response.text
@@ -94,16 +97,30 @@ def test_admin_page_shows_registration_preferences_for_scheduling(
     assert ">值班汇总</a>" not in html
     assert 'name="preferred_weekday"' in html
     assert "<th>首选值班日</th>" in html
+    assert "<th>值班日期</th>" in html
+    assert 'src="/static/js/shift_date.js?v=' in html
     assert "editor.preferred_weekday" in admin_script
     assert "首选${preference}" in admin_script
+    assert 'data-user-action="delete">删除</button>' in admin_script
+    assert "button.textContent = '确认删除'" in admin_script
+    assert "method: 'DELETE'" in admin_script
+    assert "window.formatDutyShiftDate(shift.ends_at)" in admin_script
+    assert "formatDateTime(shift.starts_at)" not in admin_script
+    assert "timeZone: businessTimeZone" in shift_date_script
+    assert "month: 'long'" in shift_date_script
     assert ".admin-header-eyebrow," in admin_stylesheet
     assert ".admin-panel-heading h2" in admin_stylesheet
     assert "font-size: 1.25rem;" in admin_stylesheet
     assert "font-size: 1.45rem;" not in admin_stylesheet
+    assert ".admin-delete-user.is-confirming" in admin_stylesheet
 
 
 def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> None:
     response = _build_editor_client().get("/duty")
+    workspace_script = (
+        Path(__file__).parents[1]
+        / "src/console/web_static/js/manual_filter/workspace.js"
+    ).read_text(encoding="utf-8")
 
     assert response.status_code == 200
     html = response.text
@@ -119,6 +136,7 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'data-tab="review">已选结果</button>' in html
     assert 'data-tab="discard">放弃</button>' in html
     assert '/static/js/manual_filter/workspace.js?v=' in html
+    assert '/static/js/shift_date.js?v=' in html
     assert '/static/js/manual_filter/filter_tab_data.js?v=' in html
     assert 'src="/static/js/duty.js' not in html
     assert 'href="/admin">用户与排班</a>' not in html
@@ -134,6 +152,8 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'class="account-menu-item" href="/admin"' not in html
     assert 'class="account-menu-item" href="/account">修改密码</a>' in html
     assert 'class="account-menu-item" id="btn-logout" type="button">退出登录</button>' in html
+    assert "window.formatDutyShiftDate(shift.ends_at)" in workspace_script
+    assert "formatWorkspaceDateTime" not in workspace_script
 
 
 def test_admin_manual_filter_keeps_admin_only_entries() -> None:
@@ -223,6 +243,7 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert "值班结果筛选" in response.text
     assert "值班结果汇总" not in response.text
     assert 'id="btn-summary-refresh"' not in response.text
+    assert '/static/js/shift_date.js?v=' in response.text
     assert '<details class="account-menu">' in response.text
     assert 'class="account-menu-item" href="/admin">用户与排班</a>' in response.text
 
@@ -265,6 +286,9 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert 'id="summary-select-all"' in html
     assert 'id="summary-report-type"' not in html
     assert 'id="summary-import-target"' not in html
+    assert 'id="summary-decision"' not in html
+    assert 'id="summary-comparison"' in html
+    assert "当前栏目全部" in html
     assert 'id="btn-import-results">送入汇总审阅</button>' in html
     assert 'id="summary-import-conflict-modal"' in html
     assert 'id="summary-existing-summary"' in html
@@ -277,10 +301,18 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "elements.selectAll.indeterminate" in script
     assert "tab.dataset.reportType" in script
     assert "tab.dataset.targetStatus" in script
+    assert "params.set('decision', state.targetStatus)" in script
     assert "params.set('report_type', state.targetReportType)" in script
     assert "/api/admin/duty-summary/import-preview" in script
     assert "conflict_resolutions: conflictResolutions" in script
     assert "function chooseImportConflict(choice)" in script
+    assert "window.formatDutyShiftDate(shift.ends_at)" in script
+    assert "formatDateTime(shift.starts_at)" not in script
+    assert "summary-shift-coverage" not in script
+    assert 'data-quick-status="selected"' in script
+    assert 'data-quick-status="discarded"' in script
+    assert "async function quickDecideItem(button)" in script
+    assert "window.confirm" not in script
 
 
 def test_duplicate_check_button_is_before_sort_mode() -> None:

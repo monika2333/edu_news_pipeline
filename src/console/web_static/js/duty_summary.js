@@ -19,7 +19,7 @@
         items: document.getElementById('summary-items'),
         context: document.getElementById('summary-context'),
         title: document.getElementById('summary-title'),
-        decision: document.getElementById('summary-decision'),
+        comparison: document.getElementById('summary-comparison'),
         importBar: document.getElementById('summary-import-bar'),
         searchInput: document.getElementById('summary-search-input'),
         selectAll: document.getElementById('summary-select-all'),
@@ -71,23 +71,6 @@
         }).formatToParts(date);
         const fields = Object.fromEntries(parts.map(part => [part.type, part.value]));
         return `${fields.year}-${fields.month}-${fields.day}`;
-    }
-
-    function formatShiftDate(value) {
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) return '日期未知';
-        const today = new Date();
-        const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-        const key = businessDateKey(date);
-        const calendarLabel = new Intl.DateTimeFormat('zh-CN', {
-            timeZone: businessTimeZone,
-            month: 'long',
-            day: 'numeric',
-            weekday: 'short'
-        }).format(date);
-        if (key === businessDateKey(today)) return `今天 · ${calendarLabel}`;
-        if (key === businessDateKey(yesterday)) return `昨天 · ${calendarLabel}`;
-        return calendarLabel;
     }
 
     function normalizeShifts(items) {
@@ -158,7 +141,7 @@
         elements.existingSource.value = conflict.existing.manual_llm_source || '';
         elements.dutyColumn.textContent = reviewColumnLabel(
             conflict.duty.report_type,
-            conflict.duty.decision
+            state.pendingImport?.target_status || conflict.duty.decision
         );
         elements.dutySummary.value = conflict.duty.summary || '';
         elements.dutySource.value = conflict.duty.manual_llm_source || '';
@@ -182,7 +165,10 @@
             })
         });
         state.selected.clear();
-        showToast(`已送入汇总审阅 ${result.imported} 条`);
+        const actionLabel = payload.target_status === 'discarded'
+            ? '已放弃'
+            : `已送入${reviewColumnLabel(payload.report_type, payload.target_status)}`;
+        showToast(`${actionLabel} ${result.imported} 条`);
         await Promise.all([loadSummary(), loadResults()]);
     }
 
@@ -254,10 +240,9 @@
         elements.shiftList.innerHTML = state.shifts.map(shift => `
             <button class="summary-shift-card ${state.shiftId === shift.shift_id ? 'is-active' : ''}" data-shift-id="${escapeHtml(shift.shift_id)}">
                 <strong>
-                    <span class="summary-shift-date">${escapeHtml(formatShiftDate(shift.ends_at))}</span>
+                    <span class="summary-shift-date">${escapeHtml(window.formatDutyShiftDate(shift.ends_at))}</span>
                     <span class="summary-shift-owner">${escapeHtml(shift.display_name)}</span>
                 </strong>
-                <div class="summary-shift-coverage">${escapeHtml(formatDateTime(shift.starts_at))} – ${escapeHtml(formatDateTime(shift.ends_at))}</div>
                 <div class="summary-shift-counts">
                     <span>总 ${shift.total}</span><span>待 ${shift.pending}</span>
                     <span>采 ${shift.selected}</span><span>备 ${shift.backup}</span>
@@ -300,7 +285,13 @@
             elements.items.innerHTML = '<div class="summary-empty">没有找到匹配的新闻。</div>';
             return;
         }
-        elements.items.innerHTML = visibleItems.map(item => `
+        elements.items.innerHTML = visibleItems.map(item => {
+            const adminReportType = item.admin_report_type || 'zongbao';
+            const selectedActive = item.admin_status === 'selected'
+                && adminReportType === state.targetReportType;
+            const discardedActive = item.admin_status === 'discarded'
+                && adminReportType === state.targetReportType;
+            return `
             <article class="summary-item">
                 ${state.uncovered ? '' : `<input type="checkbox" data-article-id="${escapeHtml(item.article_id)}" ${state.selected.has(item.article_id) ? 'checked' : ''}>`}
                 <div>
@@ -315,15 +306,67 @@
                     </div>
                     <p>${escapeHtml(item.edited_summary || item.summary || item.llm_summary || '')}</p>
                 </div>
+                ${state.uncovered ? '' : `
+                    <div class="summary-item-actions" role="group" aria-label="单条新闻操作">
+                        <button class="summary-quick-action summary-quick-accept${selectedActive ? ' is-active' : ''}"
+                            type="button" data-quick-status="selected"
+                            data-article-id="${escapeHtml(item.article_id)}"
+                            aria-label="采纳这条新闻" title="采纳"
+                            aria-pressed="${String(selectedActive)}" ${selectedActive ? 'disabled' : ''}>
+                            ✅
+                        </button>
+                        <button class="summary-quick-action summary-quick-discard${discardedActive ? ' is-active' : ''}"
+                            type="button" data-quick-status="discarded"
+                            data-article-id="${escapeHtml(item.article_id)}"
+                            aria-label="放弃这条新闻" title="放弃"
+                            aria-pressed="${String(discardedActive)}" ${discardedActive ? 'disabled' : ''}>
+                            ❌
+                        </button>
+                    </div>
+                `}
             </article>
-        `).join('');
+        `;
+        }).join('');
         elements.items.querySelectorAll('[data-article-id]').forEach(checkbox => {
+            if (checkbox.matches('[data-quick-status]')) return;
             checkbox.addEventListener('change', () => {
                 if (checkbox.checked) state.selected.add(checkbox.dataset.articleId);
                 else state.selected.delete(checkbox.dataset.articleId);
                 updateSelection(visibleItems);
             });
         });
+        elements.items.querySelectorAll('[data-quick-status]').forEach(button => {
+            button.addEventListener('click', () => {
+                quickDecideItem(button);
+            });
+        });
+    }
+
+    async function quickDecideItem(button) {
+        if (button.disabled || !state.shiftId) return;
+        const payload = {
+            shift_id: state.shiftId,
+            article_ids: [button.dataset.articleId],
+            target_status: button.dataset.quickStatus,
+            report_type: state.targetReportType
+        };
+        button.disabled = true;
+        try {
+            const preview = await request('/api/admin/duty-summary/import-preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (preview.conflicts && preview.conflicts.length) {
+                button.disabled = false;
+                openImportConflictModal(preview.conflicts, payload);
+                return;
+            }
+            await submitDutyImport(payload);
+        } catch (error) {
+            button.disabled = false;
+            window.alert(error.message);
+        }
     }
 
     async function loadSummary() {
@@ -351,10 +394,9 @@
         }
         if (!state.shiftId) return;
         const params = new URLSearchParams({ limit: '200' });
-        if (elements.decision.value === 'mismatch') {
+        params.set('decision', state.targetStatus);
+        if (elements.comparison.value === 'mismatch') {
             params.set('mismatch_only', 'true');
-        } else if (elements.decision.value) {
-            params.set('decision', elements.decision.value);
         }
         params.set('report_type', state.targetReportType);
         const payload = await request(
@@ -363,7 +405,7 @@
         state.items = payload.items || [];
         const shift = state.shifts.find(item => item.shift_id === state.shiftId);
         elements.context.textContent = shift
-            ? `${shift.display_name} · ${formatDateTime(shift.starts_at)} – ${formatDateTime(shift.ends_at)}`
+            ? `${shift.display_name} · ${window.formatDutyShiftDate(shift.ends_at)}`
             : '';
         elements.title.textContent = `${activeColumnLabel()}（${payload.total}）`;
         renderItems();
@@ -383,7 +425,7 @@
         setShiftPanelOpen(!state.shiftsOpen);
     });
 
-    elements.decision.addEventListener('change', () => {
+    elements.comparison.addEventListener('change', () => {
         state.selected.clear();
         loadResults();
     });
@@ -420,7 +462,6 @@
             window.alert('请先选择要送入汇总审阅的新闻。');
             return;
         }
-        if (!window.confirm(`确定送入${activeColumnLabel()}吗？`)) return;
         const payload = {
             shift_id: state.shiftId,
             article_ids: [...state.selected],

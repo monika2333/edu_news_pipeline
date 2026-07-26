@@ -63,11 +63,11 @@
                 <select class="workspace-shift-select" id="workspace-shift-select" aria-label="选择班次"></select>
                 {% else %}
                 <nav class="admin-view-switch" aria-label="管理员主视图">
+                    <a class="admin-view-link" href="/admin/duty-summary">值班结果筛选</a>
                     <a class="admin-view-link{% if not is_admin_review %} is-active{% endif %}" href="/manual_filter"
                         {% if not is_admin_review %}aria-current="page"{% endif %}>
                         全量新闻筛选
                     </a>
-                    <a class="admin-view-link" href="/admin/duty-summary">值班结果筛选</a>
                     <span class="admin-view-stage-divider" aria-hidden="true"></span>
                     <a class="admin-view-link{% if is_admin_review %} is-active{% endif %}" href="/admin/review"
                         {% if is_admin_review %}aria-current="page"{% endif %}>

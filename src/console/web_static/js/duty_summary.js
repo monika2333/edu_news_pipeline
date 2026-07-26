@@ -268,20 +268,13 @@
 
     function renderShifts() {
         if (!state.shifts.length) {
-            elements.shiftList.innerHTML = '<div class="summary-empty">暂无当前或历史班次。</div>';
+            elements.shiftList.innerHTML = '<div class="summary-empty empty-state">暂无当前或历史班次。</div>';
             renderColumnCounts();
             return;
         }
         elements.shiftList.innerHTML = state.shifts.map(shift => `
             <button class="filter-tab-btn summary-shift-card ${state.shiftId === shift.shift_id ? 'active' : ''}" data-shift-id="${escapeHtml(shift.shift_id)}">
-                <strong>
-                    <span class="summary-shift-date">${escapeHtml(window.formatDutyShiftDate(shift.ends_at))}</span>
-                    <span class="summary-shift-owner">${escapeHtml(shift.display_name)}</span>
-                </strong>
-                <div class="summary-shift-counts">
-                    <span>总 ${shift.total}</span><span>待 ${shift.pending}</span>
-                    <span>采 ${shift.selected}</span><span>备 ${shift.backup}</span>
-                </div>
+                <span class="summary-shift-date">${escapeHtml(window.formatDutyShiftDate(shift.ends_at))}</span>
             </button>
         `).join('');
         elements.shiftList.querySelectorAll('[data-shift-id]').forEach(button => {
@@ -332,11 +325,11 @@
         const visibleItems = getVisibleItems();
         updateSelection(visibleItems);
         if (!state.items.length) {
-            elements.items.innerHTML = '<div class="summary-empty">当前没有待处理新闻</div>';
+            elements.items.innerHTML = '<div class="summary-empty empty-state">当前没有待处理新闻</div>';
             return;
         }
         if (!visibleItems.length) {
-            elements.items.innerHTML = '<div class="summary-empty">没有找到匹配的新闻。</div>';
+            elements.items.innerHTML = '<div class="summary-empty empty-state">没有找到匹配的新闻。</div>';
             return;
         }
         elements.items.innerHTML = visibleItems.map(item => {
@@ -669,6 +662,6 @@
             return undefined;
         })
         .catch(error => {
-            elements.items.innerHTML = `<div class="summary-empty">${escapeHtml(error.message)}</div>`;
+            elements.items.innerHTML = `<div class="summary-empty empty-state">${escapeHtml(error.message)}</div>`;
         });
 })();

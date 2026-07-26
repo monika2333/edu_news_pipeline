@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const workspaceReady = await prepareManualFilterWorkspace();
         if (!workspaceReady) {
             if (elements.filterList) {
-                elements.filterList.innerHTML = '<div class="empty">暂无可用班次，请联系管理员安排班次。</div>';
+                elements.filterList.innerHTML = '<div class="empty empty-state">暂无可用班次，请联系管理员安排班次。</div>';
             }
             return;
         }

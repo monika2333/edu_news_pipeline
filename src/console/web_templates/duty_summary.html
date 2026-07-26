@@ -24,10 +24,10 @@
             </div>
             <div class="header-right">
                 <nav class="admin-view-switch" aria-label="管理员主视图">
-                    <a class="admin-view-link" href="/manual_filter">全量新闻筛选</a>
                     <a class="admin-view-link is-active" href="/admin/duty-summary" aria-current="page">
                         值班结果筛选
                     </a>
+                    <a class="admin-view-link" href="/manual_filter">全量新闻筛选</a>
                     <span class="admin-view-stage-divider" aria-hidden="true"></span>
                     <a class="admin-view-link" href="/admin/review">汇总审阅</a>
                 </nav>
@@ -53,16 +53,16 @@
             </div>
             <p class="summary-workspace-context" id="summary-context">请选择班次</p>
             <div class="summary-result-tools">
-                <button class="btn btn-secondary summary-shift-toggle" id="btn-toggle-shifts"
-                    aria-expanded="false" aria-controls="summary-shifts-panel">
-                    查看历史班次
-                </button>
                 <div class="summary-filters">
                     <select id="summary-comparison" aria-label="结果对比范围">
                         <option value="">当前栏目全部</option>
                         <option value="mismatch">与管理员结论不同</option>
                     </select>
                 </div>
+                <button class="btn btn-secondary summary-shift-toggle" id="btn-toggle-shifts"
+                    aria-expanded="false" aria-controls="summary-shifts-panel">
+                    查看历史班次
+                </button>
             </div>
         </div>
 
@@ -99,7 +99,7 @@
 
                     <div class="filter-content review-main">
                         <div class="summary-items" id="summary-items">
-                            <div class="summary-empty">从左侧选择一个班次。</div>
+                            <div class="summary-empty empty-state">从左侧选择一个班次。</div>
                         </div>
                         <div class="toolbar review-toolbar summary-import-bar" id="summary-import-bar" hidden>
                             <div class="search-group">

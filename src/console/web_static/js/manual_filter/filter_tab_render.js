@@ -41,7 +41,7 @@ function renderFilterList(data) {
     }
     if (!items.length) {
         const message = isFilterSearchMode() ? '当前桶内没有匹配到新闻' : '当前没有待处理新闻';
-        elements.filterList.innerHTML = `<div class="empty">${message}</div>`;
+        elements.filterList.innerHTML = `<div class="empty empty-state">${message}</div>`;
         return;
     }
 
@@ -52,7 +52,7 @@ function renderFilterList(data) {
 
 function renderClusteredList(clusters) {
     if (!clusters.length) {
-        elements.filterList.innerHTML = '<div class="empty">当前没有待处理新闻</div>';
+        elements.filterList.innerHTML = '<div class="empty empty-state">当前没有待处理新闻</div>';
         return;
     }
 
@@ -99,7 +99,7 @@ function renderClusteredList(clusters) {
         .filter(Boolean)
         .join('');
 
-    elements.filterList.innerHTML = clustersHtml || '<div class="empty">当前没有待处理新闻</div>';
+    elements.filterList.innerHTML = clustersHtml || '<div class="empty empty-state">当前没有待处理新闻</div>';
 
     elements.filterList.querySelectorAll('.cluster-toggle').forEach((btn) => {
         btn.addEventListener('click', () => {

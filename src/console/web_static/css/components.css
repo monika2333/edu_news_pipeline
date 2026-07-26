@@ -13,6 +13,15 @@
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 
+.empty-state {
+    padding: 70px 20px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 10px;
+    color: #64748b;
+    font-size: 0.95rem;
+    text-align: center;
+}
+
 .article-card.has-bonus {
     background: #fff5f5;
     border-color: #f5c2c7;

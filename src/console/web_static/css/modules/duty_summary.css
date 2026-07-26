@@ -6,7 +6,7 @@
 .summary-workspace-context {
     margin: 0;
     color: #2563eb;
-    font-size: 0.76rem;
+    font-size: 1rem;
     font-weight: 700;
     letter-spacing: 0.08em;
 }
@@ -18,7 +18,7 @@
 
 .summary-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 330px;
+    grid-template-columns: minmax(0, 1fr) 240px;
     gap: 16px;
 }
 
@@ -35,6 +35,11 @@
 .summary-shifts {
     grid-row: 1;
     grid-column: 2;
+    padding: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--card-bg);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 5%);
 }
 
 .summary-shifts:not([hidden]) {
@@ -76,31 +81,19 @@
     min-width: 88px;
 }
 
-.summary-shift-card strong {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
+#summary-shift-list {
+    display: grid;
     gap: 8px;
-    margin-bottom: 6px;
+}
+
+.summary-shift-card {
+    width: 100%;
 }
 
 .summary-shift-date {
     color: #172033;
     font-size: 0.94rem;
-}
-
-.summary-shift-owner {
-    color: #64748b;
-    font-size: 0.76rem;
-    font-weight: 600;
-}
-
-.summary-shift-counts {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 4px;
-    color: #64748b;
-    font-size: 0.72rem;
+    white-space: nowrap;
 }
 
 .uncovered-button {
@@ -208,15 +201,6 @@
 
 .summary-quick-action:disabled {
     cursor: default;
-}
-
-.summary-empty {
-    padding: 70px 20px;
-    border: 1px dashed #cbd5e1;
-    border-radius: 10px;
-    color: #64748b;
-    font-size: 0.95rem;
-    text-align: center;
 }
 
 .summary-conflict-modal-content {
@@ -328,6 +312,10 @@
 
     .summary-shifts {
         order: -1;
+        flex-direction: column;
+        overflow: visible;
+        margin-bottom: 0;
+        padding-bottom: 16px;
     }
 
     .summary-section-heading {

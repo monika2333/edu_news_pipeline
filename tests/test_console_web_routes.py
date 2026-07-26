@@ -96,6 +96,7 @@ def test_admin_page_separates_user_search_from_account_creation(
     assert 'aria-label="管理员主视图"' in html
     assert 'class="admin-view-link" href="/manual_filter">全量新闻筛选</a>' in html
     assert 'class="admin-view-link" href="/admin/duty-summary">值班结果筛选</a>' in html
+    assert html.index('href="/admin/duty-summary"') < html.index('href="/manual_filter"')
     assert 'class="admin-view-stage-divider" aria-hidden="true"' in html
     assert 'class="admin-view-link" href="/admin/review">汇总审阅</a>' in html
     assert '<details class="account-menu">' in html
@@ -226,6 +227,13 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
 
 def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     response = _build_client().get("/manual_filter")
+    root = Path(__file__).parents[1]
+    filter_render_script = (
+        root / "src/console/web_static/js/manual_filter/filter_tab_render.js"
+    ).read_text(encoding="utf-8")
+    components_stylesheet = (
+        root / "src/console/web_static/css/components.css"
+    ).read_text(encoding="utf-8")
 
     assert response.status_code == 200
     html = response.text
@@ -237,6 +245,7 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert 'aria-current="page"' in html
     assert "全量新闻筛选" in html
     assert 'class="admin-view-link" href="/admin/duty-summary">值班结果筛选</a>' in html
+    assert html.index('href="/admin/duty-summary"') < html.index('href="/manual_filter"')
     assert 'class="admin-view-stage-divider" aria-hidden="true"' in html
     assert 'class="admin-view-link" href="/admin/review"' in html
     assert 'class="stats"' not in html
@@ -263,6 +272,9 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert 'class="account-menu-item" id="btn-logout" type="button">退出登录</button>' in html
     assert 'id="stat-exported"' not in html
     assert "已导出" not in html
+    assert 'class="empty empty-state"' in filter_render_script
+    assert ".empty-state {" in components_stylesheet
+    assert "border: 1px dashed #cbd5e1;" in components_stylesheet
 
 
 def test_admin_review_is_an_independent_workspace() -> None:
@@ -309,6 +321,9 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert 'aria-label="管理员主视图"' in response.text
     assert 'class="admin-view-link" href="/manual_filter">全量新闻筛选</a>' in response.text
     assert 'href="/admin/duty-summary" aria-current="page">' in response.text
+    assert response.text.index('href="/admin/duty-summary"') < response.text.index(
+        'href="/manual_filter"'
+    )
     assert 'class="admin-view-stage-divider" aria-hidden="true"' in response.text
     assert 'class="admin-view-link" href="/admin/review">汇总审阅</a>' in response.text
     assert "值班结果筛选" in response.text
@@ -327,12 +342,23 @@ def test_duty_summary_collapses_shift_panel_by_default(
     ).read_text(encoding="utf-8")
     assert ".summary-shell" not in stylesheet
     assert ".summary-header {" not in stylesheet
-    assert "grid-template-columns: minmax(0, 1fr) 330px;" in stylesheet
+    assert "grid-template-columns: minmax(0, 1fr) 240px;" in stylesheet
+    assert "background: var(--card-bg);" in stylesheet
+    assert "box-shadow: 0 1px 3px rgb(0 0 0 / 5%);" in stylesheet
+    assert "#summary-shift-list" in stylesheet
+    assert ".summary-shift-card {" in stylesheet
+    assert "width: 100%;" in stylesheet
+    assert ".summary-shift-owner" not in stylesheet
+    assert ".summary-shift-counts" not in stylesheet
     assert ".summary-shifts:not([hidden])" in stylesheet
     assert "transform: translateX(18px);" in stylesheet
+    assert "overflow: visible;" in stylesheet
     assert ".summary-filter-layout.is-discarded .summary-column-tabs" in stylesheet
     assert ".summary-filter-layout.is-discarded .summary-import-bar .bulk-group" in stylesheet
     assert ".summary-section-heading h2" in stylesheet
+    assert ".summary-empty {" not in stylesheet
+    assert ".summary-workspace-context {" in stylesheet
+    assert "font-size: 1rem;" in stylesheet
     assert "font-size: 1.25rem;" in stylesheet
     assert "font-size: 0.95rem;" in stylesheet
 
@@ -360,6 +386,9 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "查看历史班次" in html
     assert "'收起历史班次'" in script
     assert "'查看历史班次'" in script
+    assert 'class="summary-shift-date"' in script
+    assert 'class="summary-shift-owner"' not in script
+    assert 'class="summary-shift-counts"' not in script
     assert 'class="tabs summary-workspace-tabs"' in html
     assert 'class="workspace-tabs-row summary-workspace-row"' in html
     assert 'data-summary-view="filter">筛选</button>' in html
@@ -385,6 +414,7 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "function syncSearchClearButton()" in script
     assert "elements.searchClear.addEventListener('click'" in script
     assert 'id="summary-comparison"' in html
+    assert html.index('id="summary-comparison"') < html.index('id="btn-toggle-shifts"')
     assert "当前栏目全部" in html
     assert 'id="btn-import-results">送入汇总审阅</button>' in html
     assert 'id="summary-import-conflict-modal"' in html
@@ -403,6 +433,7 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "elements.title" not in script
     assert "function activeColumnLabel()" not in script
     assert "当前没有待处理新闻" in script
+    assert 'class="summary-empty empty-state"' in script
     assert "当前筛选没有记录。" not in script
     assert "tab.dataset.summaryView === 'discarded'" in script
     assert "elements.filterLayout.classList.toggle('is-discarded'" in script

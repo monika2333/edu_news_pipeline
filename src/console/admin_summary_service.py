@@ -173,19 +173,6 @@ def set_admin_discarded_many(
     }
 
 
-def list_uncovered_news(*, limit: int, offset: int) -> dict[str, Any]:
-    rows, total = get_adapter().fetch_uncovered_news(
-        limit=limit,
-        offset=offset,
-    )
-    return {
-        "items": rows,
-        "total": total,
-        "limit": max(1, min(limit, 200)),
-        "offset": max(0, offset),
-    }
-
-
 def preview_import_results(
     *,
     shift_id: str,
@@ -293,7 +280,6 @@ __all__ = [
     "list_audit_events",
     "list_shift_results",
     "list_shift_summaries",
-    "list_uncovered_news",
     "preview_import_results",
     "set_admin_discarded",
 ]

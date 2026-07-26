@@ -753,19 +753,6 @@ class PostgresAdapter:
         with self._cursor() as cur:
             return shift_reviews.fetch_admin_shift_summaries(cur, limit=limit)
 
-    def fetch_uncovered_news(
-        self,
-        *,
-        limit: int,
-        offset: int,
-    ) -> Tuple[List[Dict[str, Any]], int]:
-        with self._cursor() as cur:
-            return shift_reviews.fetch_uncovered_news(
-                cur,
-                limit=limit,
-                offset=offset,
-            )
-
     def preview_shift_reviews_for_manual(
         self,
         *,

@@ -614,55 +614,6 @@ def fetch_admin_shift_summaries(
     return [dict(row) for row in cur.fetchall()]
 
 
-def fetch_uncovered_news(
-    cur: psycopg.Cursor,
-    *,
-    limit: int,
-    offset: int,
-) -> tuple[list[dict[str, Any]], int]:
-    bounded_limit = max(1, min(limit, 200))
-    bounded_offset = max(0, offset)
-    uncovered_where = """
-        ns.status = 'ready_for_export'
-        AND NOT EXISTS (
-            SELECT 1
-            FROM duty_shifts s
-            WHERE s.cancelled_at IS NULL
-              AND ns.created_at >= s.starts_at
-              AND ns.created_at < s.ends_at
-        )
-    """
-    cur.execute(
-        f"""
-        SELECT count(*) AS total
-        FROM news_summaries ns
-        WHERE {uncovered_where}
-        """
-    )
-    total_row = cur.fetchone()
-    total = int(total_row["total"]) if total_row else 0
-    cur.execute(
-        f"""
-        SELECT
-            ns.article_id,
-            ns.title,
-            ns.llm_summary,
-            ns.llm_source,
-            ns.url,
-            ns.source,
-            ns.created_at,
-            ns.publish_time_iso,
-            ns.external_importance_score
-        FROM news_summaries ns
-        WHERE {uncovered_where}
-        ORDER BY ns.created_at DESC, ns.article_id
-        LIMIT %s OFFSET %s
-        """,
-        (bounded_limit, bounded_offset),
-    )
-    return [dict(row) for row in cur.fetchall()], total
-
-
 __all__ = [
     "SHIFT_REVIEW_SELECT",
     "ShiftReviewConflictError",
@@ -674,7 +625,6 @@ __all__ = [
     "fetch_shift_review_items",
     "set_admin_discarded",
     "fetch_shift_stats",
-    "fetch_uncovered_news",
     "shift_contains_article",
     "update_shift_review_order",
     "upsert_shift_review",

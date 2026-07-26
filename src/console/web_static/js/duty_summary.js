@@ -3,7 +3,6 @@
         shifts: [],
         shiftId: '',
         shiftsOpen: false,
-        uncovered: false,
         items: [],
         searchQuery: '',
         targetReportType: 'zongbao',
@@ -32,7 +31,6 @@
         filterLayout: document.getElementById('summary-filter-layout'),
         selectionCount: document.getElementById('summary-selection-count'),
         toast: document.getElementById('toast'),
-        uncoveredButton: document.getElementById('btn-uncovered'),
         layout: document.getElementById('summary-layout'),
         shiftsPanel: document.getElementById('summary-shifts-panel'),
         shiftsToggle: document.getElementById('btn-toggle-shifts'),
@@ -280,10 +278,8 @@
         elements.shiftList.querySelectorAll('[data-shift-id]').forEach(button => {
             button.addEventListener('click', () => {
                 state.shiftId = button.dataset.shiftId;
-                state.uncovered = false;
                 state.selected.clear();
                 renderShifts();
-                elements.uncoveredButton.classList.remove('active');
                 setShiftPanelOpen(false);
                 loadResults();
             });
@@ -302,7 +298,7 @@
     }
 
     function updateSelection(visibleItems = getVisibleItems()) {
-        const canImport = !state.adminDiscarded && !state.uncovered && Boolean(state.shiftId);
+        const canImport = !state.adminDiscarded && Boolean(state.shiftId);
         elements.selectAll.closest('.summary-select-all').hidden = !canImport;
         elements.selectionCount.hidden = !canImport;
         elements.discardButton.hidden = !canImport;
@@ -311,7 +307,7 @@
         elements.discardButton.disabled = !canImport || !state.selected.size;
         elements.importButton.disabled = !canImport || !state.selected.size;
         elements.selectionCount.textContent = `已选择 ${state.selected.size} 条`;
-        elements.importBar.hidden = state.uncovered || !state.shiftId;
+        elements.importBar.hidden = !state.shiftId;
         const visibleIds = visibleItems.map(item => item.article_id);
         const selectedVisibleCount = visibleIds.filter(id => state.selected.has(id)).length;
         elements.selectAll.disabled = !visibleIds.length || !canImport;
@@ -339,41 +335,39 @@
             return `
             <article class="article-card summary-item">
                 <div class="card-header">
-                    ${state.uncovered || state.adminDiscarded ? '' : `<input type="checkbox" data-article-id="${escapeHtml(item.article_id)}" ${state.selected.has(item.article_id) ? 'checked' : ''}>`}
+                    ${state.adminDiscarded ? '' : `<input type="checkbox" data-article-id="${escapeHtml(item.article_id)}" ${state.selected.has(item.article_id) ? 'checked' : ''}>`}
                     <h3 class="article-title">${escapeHtml(item.title || '无标题')}</h3>
-                    ${state.uncovered ? '' : `
-                        ${state.adminDiscarded ? `
-                            <div class="review-card-actions">
-                                <button class="btn btn-secondary summary-restore-action" type="button"
-                                    data-admin-discard-action="restore"
-                                    data-article-id="${escapeHtml(item.article_id)}">
-                                    恢复
-                                </button>
-                            </div>
-                        ` : `
-                            <div class="review-card-actions" role="group" aria-label="单条新闻操作">
-                                <button class="summary-quick-action summary-quick-accept${selectedActive ? ' is-active' : ''}"
-                                    type="button" data-quick-status="selected"
-                                    data-article-id="${escapeHtml(item.article_id)}"
-                                    aria-label="采纳这条新闻" title="采纳"
-                                    aria-pressed="${String(selectedActive)}" ${selectedActive ? 'disabled' : ''}>
-                                    ✅
-                                </button>
-                                <button class="summary-quick-action summary-quick-discard"
-                                    type="button" data-quick-status="discarded"
-                                    data-article-id="${escapeHtml(item.article_id)}"
-                                    aria-label="放弃这条新闻" title="放弃">
-                                    ❌
-                                </button>
-                            </div>
-                        `}
+                    ${state.adminDiscarded ? `
+                        <div class="review-card-actions">
+                            <button class="btn btn-secondary summary-restore-action" type="button"
+                                data-admin-discard-action="restore"
+                                data-article-id="${escapeHtml(item.article_id)}">
+                                恢复
+                            </button>
+                        </div>
+                    ` : `
+                        <div class="review-card-actions" role="group" aria-label="单条新闻操作">
+                            <button class="summary-quick-action summary-quick-accept${selectedActive ? ' is-active' : ''}"
+                                type="button" data-quick-status="selected"
+                                data-article-id="${escapeHtml(item.article_id)}"
+                                aria-label="采纳这条新闻" title="采纳"
+                                aria-pressed="${String(selectedActive)}" ${selectedActive ? 'disabled' : ''}>
+                                ✅
+                            </button>
+                            <button class="summary-quick-action summary-quick-discard"
+                                type="button" data-quick-status="discarded"
+                                data-article-id="${escapeHtml(item.article_id)}"
+                                aria-label="放弃这条新闻" title="放弃">
+                                ❌
+                            </button>
+                        </div>
                     `}
                 </div>
                 <div class="meta-row">
                         <span>值班：${escapeHtml(item.decision || '未覆盖')}</span>
                         <span>${escapeHtml(item.report_type || '')}</span>
-                        ${state.uncovered ? '' : `<span>管理员：${escapeHtml(item.admin_status || 'pending')}</span>`}
-                        ${state.uncovered ? '' : `<span>${escapeHtml(item.admin_report_type || 'zongbao')}</span>`}
+                        <span>管理员：${escapeHtml(item.admin_status || 'pending')}</span>
+                        <span>${escapeHtml(item.admin_report_type || 'zongbao')}</span>
                         ${state.adminDiscarded ? `<span>放弃人：${escapeHtml(item.admin_discarded_by_display_name || '管理员')}</span>` : ''}
                         <span>${escapeHtml(item.source || item.llm_source || '未知来源')}</span>
                         <span>${escapeHtml(formatDateTime(item.publish_time_iso || item.created_at))}</span>
@@ -490,10 +484,7 @@
     async function loadSummary() {
         const payload = await request('/api/admin/duty-summary?limit=60');
         state.shifts = normalizeShifts(payload.items);
-        if (
-            !state.uncovered
-            && !state.shifts.some(shift => shift.shift_id === state.shiftId)
-        ) {
+        if (!state.shifts.some(shift => shift.shift_id === state.shiftId)) {
             const initial = chooseInitialShift();
             state.shiftId = initial ? initial.shift_id : '';
             state.selected.clear();
@@ -502,13 +493,6 @@
     }
 
     async function loadResults() {
-        if (state.uncovered) {
-            const payload = await request('/api/admin/duty-summary/uncovered?limit=200');
-            state.items = payload.items || [];
-            elements.context.textContent = `共 ${payload.total} 条`;
-            renderItems();
-            return;
-        }
         if (!state.shiftId) return;
         const params = new URLSearchParams({ limit: '200' });
         if (state.adminDiscarded) {
@@ -530,16 +514,6 @@
             : '';
         renderItems();
     }
-
-    elements.uncoveredButton.addEventListener('click', () => {
-        state.uncovered = true;
-        state.shiftId = '';
-        state.selected.clear();
-        renderShifts();
-        elements.uncoveredButton.classList.add('active');
-        setShiftPanelOpen(false);
-        loadResults();
-    });
 
     elements.shiftsToggle.addEventListener('click', () => {
         setShiftPanelOpen(!state.shiftsOpen);

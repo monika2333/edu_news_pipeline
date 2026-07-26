@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="/static/css/components.css">
     <link rel="stylesheet" href="/static/css/modules/filter.css">
     <link rel="stylesheet" href="/static/css/modules/review.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/modules/search.css">
     <link rel="stylesheet" href="/static/css/modules/auth.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/duty_summary.css?v={{ version }}">
 </head>
@@ -71,7 +72,6 @@
                 <div class="summary-section-heading">
                     <h2>班次</h2>
                 </div>
-                <button class="filter-tab-btn uncovered-button" id="btn-uncovered">无有效班次覆盖</button>
                 <div id="summary-shift-list"></div>
             </aside>
 
@@ -133,6 +133,8 @@
         </section>
     </div>
 
+    {% include "_search_drawer.html" %}
+
     <div class="modal" id="summary-import-conflict-modal" role="dialog" aria-modal="true"
         aria-labelledby="summary-import-conflict-title" aria-hidden="true">
         <div class="modal-content summary-conflict-modal-content">
@@ -191,6 +193,8 @@
     <div class="toast" id="toast">操作成功</div>
     <script src="/static/js/auth.js?v={{ version }}"></script>
     <script src="/static/js/shift_date.js?v={{ version }}"></script>
+    <script src="/static/js/manual_filter/utils.js?v={{ version }}"></script>
+    <script src="/static/js/manual_filter/search_drawer.js?v={{ version }}"></script>
     <script src="/static/js/duty_summary.js?v={{ version }}"></script>
 </body>
 

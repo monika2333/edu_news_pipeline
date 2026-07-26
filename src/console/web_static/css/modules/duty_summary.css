@@ -96,12 +96,6 @@
     white-space: nowrap;
 }
 
-.uncovered-button {
-    border-color: #f59e0b;
-    color: #92400e;
-    font-weight: 700;
-}
-
 .summary-filters {
     display: flex;
     align-items: center;
@@ -148,10 +142,6 @@
     color: #475569;
     font-size: 0.95rem;
     white-space: nowrap;
-}
-
-.summary-items {
-    margin-top: 16px;
 }
 
 .summary-item .card-header {

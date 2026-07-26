@@ -1,0 +1,33 @@
+<button id="search-drawer-toggle" class="search-drawer-toggle" type="button" aria-label="打开搜索">
+    <span class="icon">🔍</span>
+</button>
+<div id="search-overlay" class="search-overlay"></div>
+<div id="search-drawer" class="search-drawer">
+    <div class="drawer-header">
+        <h3>搜索文章</h3>
+        <button id="search-drawer-close" class="btn-icon" type="button" aria-label="关闭搜索">✕</button>
+    </div>
+    <div class="drawer-content">
+        <div class="search-form-container">
+            <div class="form-grid">
+                <label>
+                    关键词
+                    <input type="text" id="search-q" placeholder="标题、摘要..." />
+                </label>
+                <label>
+                    每页条数
+                    <select id="search-limit">
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </label>
+            </div>
+            <button id="btn-drawer-search" class="btn btn-primary full-width" type="button">搜索</button>
+        </div>
+        <div id="search-results-stats" class="search-stats"></div>
+        <div id="search-results-list" class="search-results"></div>
+        <div id="search-pagination" class="pagination"></div>
+    </div>
+</div>

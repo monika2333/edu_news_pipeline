@@ -45,6 +45,7 @@ def test_removed_console_pages_are_not_registered() -> None:
 
     assert client.get("/dashboard").status_code == 404
     assert client.get("/articles/search").status_code == 404
+    assert client.get("/api/admin/duty-summary/uncovered").status_code == 404
 
 
 def test_account_page_exposes_personal_password_change_form() -> None:
@@ -335,6 +336,7 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert 'href="/static/css/layout.css"' in response.text
     assert 'href="/static/css/modules/filter.css"' in response.text
     assert 'href="/static/css/modules/review.css?v=' in response.text
+    assert 'href="/static/css/modules/search.css"' in response.text
 
     stylesheet = (
         Path(__file__).parents[1]
@@ -350,6 +352,7 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert "width: 100%;" in stylesheet
     assert ".summary-shift-owner" not in stylesheet
     assert ".summary-shift-counts" not in stylesheet
+    assert ".uncovered-button" not in stylesheet
     assert ".summary-shifts:not([hidden])" in stylesheet
     assert "transform: translateX(18px);" in stylesheet
     assert "overflow: visible;" in stylesheet
@@ -357,6 +360,7 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert ".summary-filter-layout.is-discarded .summary-import-bar .bulk-group" in stylesheet
     assert ".summary-section-heading h2" in stylesheet
     assert ".summary-empty {" not in stylesheet
+    assert ".summary-items {" not in stylesheet
     assert ".summary-workspace-context {" in stylesheet
     assert "font-size: 1rem;" in stylesheet
     assert "font-size: 1.25rem;" in stylesheet
@@ -384,6 +388,13 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "晚报采纳（0）" in html
     assert "晚报备选（0）" in html
     assert "查看历史班次" in html
+    assert 'id="search-drawer-toggle"' in html
+    assert 'id="search-drawer"' in html
+    assert 'id="btn-drawer-search"' in html
+    assert 'src="/static/js/manual_filter/utils.js?v=' in html
+    assert 'src="/static/js/manual_filter/search_drawer.js?v=' in html
+    assert "无有效班次覆盖" not in html
+    assert 'id="btn-uncovered"' not in html
     assert "'收起历史班次'" in script
     assert "'查看历史班次'" in script
     assert 'class="summary-shift-date"' in script
@@ -461,6 +472,8 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "/api/admin/duty-summary/discard" in script
     assert "params.set('admin_discarded_only', 'true')" in script
     assert 'data-admin-discard-action="restore"' in script
+    assert "state.uncovered" not in script
+    assert "/api/admin/duty-summary/uncovered" not in script
     assert "window.confirm" not in script
 
 

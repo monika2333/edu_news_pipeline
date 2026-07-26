@@ -64,19 +64,6 @@ def duty_summary(
     return {"items": admin_summary_service.list_shift_summaries(limit=limit)}
 
 
-@router.get("/duty-summary/uncovered")
-def uncovered_news(
-    limit: int = 50,
-    offset: int = 0,
-    user: ConsoleUser = Depends(require_role("admin")),
-) -> dict[str, Any]:
-    del user
-    return admin_summary_service.list_uncovered_news(
-        limit=limit,
-        offset=offset,
-    )
-
-
 @router.get("/duty-summary/{shift_id}/reviews")
 def shift_results(
     shift_id: str,

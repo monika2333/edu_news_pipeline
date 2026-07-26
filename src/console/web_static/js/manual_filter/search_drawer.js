@@ -16,6 +16,8 @@ function setupSearchDrawer() {
     const inputs = document.querySelectorAll('.search-form-container input, .search-form-container select');
 
     if (!drawer) return;
+    if (drawer.dataset.searchDrawerReady === 'true') return;
+    drawer.dataset.searchDrawerReady = 'true';
 
     function toggleDrawer(show) {
         drawer.classList.toggle('active', show);
@@ -117,7 +119,10 @@ async function performDrawerSearch() {
     if (filters.q) params.set('q', filters.q);
 
     try {
-        const res = await workspaceFetch(`/api/articles/search?${params.toString()}`);
+        const searchFetch = typeof workspaceFetch === 'function'
+            ? workspaceFetch
+            : window.fetch.bind(window);
+        const res = await searchFetch(`/api/articles/search?${params.toString()}`);
         if (!res.ok) throw new Error('检索失败');
         const data = await res.json();
         renderDrawerSearchResults(data);
@@ -225,20 +230,21 @@ function renderDrawerSearchResults(data) {
     });
     clearEl(pagination);
 
-    const prevBtn = createEl('button', 'btn btn-secondary btn-sm', '上一页', {
-        onclick: page > 1 ? () => changeSearchPage(page - 1) : undefined,
-        disabled: page <= 1 ? 'disabled' : undefined
-    });
+    const prevBtn = createEl('button', 'btn btn-secondary btn-sm', '上一页');
+    if (page > 1) {
+        prevBtn.addEventListener('click', () => changeSearchPage(page - 1));
+    } else {
+        prevBtn.disabled = true;
+    }
     const pageInfo = createEl('span', '', `第 ${page} 页 / 共 ${pages} 页`, {
         style: { margin: '0 10px' }
     });
-    const nextBtn = createEl('button', 'btn btn-secondary btn-sm', '下一页', {
-        onclick: page < pages ? () => changeSearchPage(page + 1) : undefined,
-        disabled: page >= pages ? 'disabled' : undefined
-    });
-
-    if (page <= 1) prevBtn.disabled = true;
-    if (page >= pages) nextBtn.disabled = true;
+    const nextBtn = createEl('button', 'btn btn-secondary btn-sm', '下一页');
+    if (page < pages) {
+        nextBtn.addEventListener('click', () => changeSearchPage(page + 1));
+    } else {
+        nextBtn.disabled = true;
+    }
 
     pagination.appendChild(prevBtn);
     pagination.appendChild(pageInfo);
@@ -248,4 +254,10 @@ function renderDrawerSearchResults(data) {
 function changeSearchPage(newPage) {
     searchState.page = newPage;
     performDrawerSearch();
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupSearchDrawer, { once: true });
+} else {
+    setupSearchDrawer();
 }

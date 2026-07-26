@@ -70,12 +70,36 @@ def test_admin_page_shows_registration_preferences_for_scheduling(
     admin_script = (
         root / "src/console/web_static/js/admin.js"
     ).read_text(encoding="utf-8")
+    admin_stylesheet = (
+        root / "src/console/web_static/css/modules/admin.css"
+    ).read_text(encoding="utf-8")
 
     assert response.status_code == 200
-    assert 'name="preferred_weekday"' in response.text
-    assert "<th>首选值班日</th>" in response.text
+    html = response.text
+    assert "<title>用户与排班 · 新闻筛选控制台</title>" in html
+    assert '<div class="container admin-shell">' in html
+    assert '<p class="admin-header-eyebrow">控制台管理</p>' in html
+    assert "<h1>用户与排班</h1>" in html
+    assert 'class="admin-page-heading"' not in html
+    assert 'aria-label="管理员主视图"' in html
+    assert 'class="admin-view-link" href="/manual_filter">全量新闻筛选</a>' in html
+    assert 'class="admin-view-link" href="/admin/duty-summary">值班结果筛选</a>' in html
+    assert 'class="admin-view-stage-divider" aria-hidden="true"' in html
+    assert 'class="admin-view-link" href="/admin/review">汇总审阅</a>' in html
+    assert '<details class="account-menu">' in html
+    assert 'class="account-menu-item is-active" href="/admin" aria-current="page">用户与排班</a>' in html
+    assert 'class="account-menu-item" href="/account">修改密码</a>' in html
+    assert 'class="account-menu-item" id="btn-logout" type="button">退出登录</button>' in html
+    assert "返回人工筛选" not in html
+    assert ">值班汇总</a>" not in html
+    assert 'name="preferred_weekday"' in html
+    assert "<th>首选值班日</th>" in html
     assert "editor.preferred_weekday" in admin_script
     assert "首选${preference}" in admin_script
+    assert ".admin-header-eyebrow," in admin_stylesheet
+    assert ".admin-panel-heading h2" in admin_stylesheet
+    assert "font-size: 1.25rem;" in admin_stylesheet
+    assert "font-size: 1.45rem;" not in admin_stylesheet
 
 
 def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> None:
@@ -125,6 +149,7 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert 'aria-current="page"' in html
     assert "全量新闻筛选" in html
     assert 'class="admin-view-link" href="/admin/duty-summary">值班结果筛选</a>' in html
+    assert 'class="admin-view-stage-divider" aria-hidden="true"' in html
     assert 'class="admin-view-link" href="/admin/review"' in html
     assert 'class="stats"' not in html
     assert 'id="stat-pending"' not in html
@@ -161,6 +186,7 @@ def test_admin_review_is_an_independent_workspace() -> None:
     assert 'data-initial-tab="review"' in html
     assert 'href="/admin/review"' in html
     assert 'class="admin-view-link is-active" href="/admin/review"' in html
+    assert 'class="admin-view-stage-divider" aria-hidden="true"' in html
     assert 'aria-current="page"' in html
     assert 'id="review-tab"' in html
     assert 'id="filter-tab"' not in html
@@ -192,6 +218,7 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert 'aria-label="管理员主视图"' in response.text
     assert 'class="admin-view-link" href="/manual_filter">全量新闻筛选</a>' in response.text
     assert 'href="/admin/duty-summary" aria-current="page">' in response.text
+    assert 'class="admin-view-stage-divider" aria-hidden="true"' in response.text
     assert 'class="admin-view-link" href="/admin/review">汇总审阅</a>' in response.text
     assert "值班结果筛选" in response.text
     assert "值班结果汇总" not in response.text
@@ -206,6 +233,12 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert "max-width: 1200px;" in stylesheet
     assert "padding: clamp(12px, 3vw, 24px);" in stylesheet
     assert "margin-bottom: 24px;" in stylesheet
+    assert "grid-template-columns: minmax(0, 1fr) 330px;" in stylesheet
+    assert ".summary-shifts:not([hidden])" in stylesheet
+    assert "transform: translateX(18px);" in stylesheet
+    assert ".summary-section-heading h2" in stylesheet
+    assert "font-size: 1.25rem;" in stylesheet
+    assert "font-size: 0.95rem;" in stylesheet
 
 
 def test_duty_summary_exposes_column_tabs_search_and_select_all(

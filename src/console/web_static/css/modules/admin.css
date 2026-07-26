@@ -1,31 +1,10 @@
-body {
-    margin: 0;
-    background: #f4f6fa;
-    color: #172033;
-}
-
-.admin-shell {
-    width: min(1320px, calc(100% - 32px));
-    margin: 0 auto;
-    padding: 24px 0 56px;
-}
-
-.admin-header,
 .admin-panel {
     border: 1px solid #dde5f0;
     border-radius: 15px;
     background: #fff;
 }
 
-.admin-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 20px;
-    padding: 22px 26px;
-}
-
-.admin-header p,
+.admin-header-eyebrow,
 .admin-panel-heading p {
     margin: 0 0 4px;
     color: #2563eb;
@@ -34,12 +13,11 @@ body {
     letter-spacing: 0.08em;
 }
 
-.admin-header h1,
 .admin-panel-heading h2 {
     margin: 0;
+    font-size: 1.25rem;
 }
 
-.admin-header-actions,
 .admin-panel-heading {
     display: flex;
     align-items: center;
@@ -48,7 +26,7 @@ body {
 }
 
 .admin-panel {
-    margin-top: 16px;
+    margin-bottom: 16px;
     padding: 22px;
 }
 
@@ -158,11 +136,6 @@ body {
 }
 
 @media (max-width: 900px) {
-    .admin-header {
-        align-items: flex-start;
-        flex-direction: column;
-    }
-
     .admin-create-user,
     .schedule-grid {
         grid-template-columns: 1fr 1fr;
@@ -170,10 +143,6 @@ body {
 }
 
 @media (max-width: 560px) {
-    .admin-shell {
-        width: calc(100% - 20px);
-    }
-
     .admin-create-user,
     .schedule-grid {
         grid-template-columns: 1fr;

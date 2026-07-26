@@ -90,6 +90,12 @@
     outline: none;
 }
 
+.account-menu-item.is-active {
+    background: #eff6ff;
+    color: var(--primary-color);
+    font-weight: 700;
+}
+
 .admin-view-switch {
     display: inline-flex;
     align-items: center;
@@ -131,6 +137,15 @@
     background: var(--card-bg);
     color: var(--primary-color);
     box-shadow: 0 1px 3px rgb(15 23 42 / 12%);
+}
+
+.admin-view-stage-divider {
+    align-self: stretch;
+    width: 2px;
+    flex: 0 0 2px;
+    margin: 7px 5px;
+    border-radius: 999px;
+    background: #cbd5e1;
 }
 
 @keyframes account-menu-enter {

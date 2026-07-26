@@ -111,6 +111,36 @@
         </main>
     </div>
 
+    <div class="modal" id="delete-user-modal" role="dialog" aria-modal="true"
+        aria-labelledby="delete-user-modal-title" aria-hidden="true">
+        <form class="modal-content admin-delete-modal-content" id="delete-user-form">
+            <div class="modal-header">
+                <div>
+                    <p class="admin-delete-modal-eyebrow">删除账号</p>
+                    <h3 id="delete-user-modal-title">确认删除用户</h3>
+                </div>
+            </div>
+            <div class="modal-body admin-delete-modal-body">
+                <p>
+                    即将删除
+                    <strong id="delete-user-name"></strong>
+                    。该用户将无法登录，但历史值班和审阅记录会继续保留。
+                </p>
+                <label for="delete-user-confirmation">
+                    请输入“确认删除”
+                    <input id="delete-user-confirmation" type="text" autocomplete="off"
+                        spellcheck="false" placeholder="确认删除">
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel-delete-user"
+                    type="button">取消</button>
+                <button class="btn admin-confirm-delete" id="btn-confirm-delete-user"
+                    type="submit" disabled>删除用户</button>
+            </div>
+        </form>
+    </div>
+
     <div class="toast" id="toast">操作成功</div>
     <script src="/static/js/auth.js?v={{ version }}"></script>
     <script src="/static/js/shift_date.js?v={{ version }}"></script>

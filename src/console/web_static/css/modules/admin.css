@@ -88,10 +88,76 @@
 }
 
 .admin-delete-user:hover,
-.admin-delete-user.is-confirming {
+.admin-delete-user:focus-visible {
     border-color: #fecaca;
     background: #fef2f2;
     color: #991b1b;
+}
+
+.admin-delete-modal-content {
+    width: min(520px, 96vw);
+}
+
+.admin-delete-modal-eyebrow {
+    margin: 0 0 4px;
+    color: #b91c1c;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
+.admin-delete-modal-content h3,
+.admin-delete-modal-body p {
+    margin: 0;
+}
+
+.admin-delete-modal-body {
+    color: #475569;
+    line-height: 1.65;
+}
+
+.admin-delete-modal-body strong {
+    color: #172033;
+}
+
+.admin-delete-modal-body label {
+    display: grid;
+    gap: 7px;
+    color: #334155;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+.admin-delete-modal-body input {
+    width: 100%;
+    min-height: 42px;
+    box-sizing: border-box;
+    padding: 9px 11px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    color: #172033;
+    font: inherit;
+    font-weight: 400;
+}
+
+.admin-delete-modal-body input:focus {
+    border-color: #dc2626;
+    outline: 3px solid rgb(220 38 38 / 12%);
+}
+
+.admin-confirm-delete {
+    background: #b91c1c;
+    color: #fff;
+}
+
+.admin-confirm-delete:not(:disabled):hover {
+    background: #991b1b;
+}
+
+.admin-confirm-delete:disabled {
+    cursor: not-allowed;
+    opacity: 0.42;
 }
 
 .status-pill {

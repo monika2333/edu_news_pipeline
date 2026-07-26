@@ -4,14 +4,22 @@
         users: [],
         editors: [],
         schedule: [],
-        shifts: []
+        shifts: [],
+        deleteUserId: '',
+        deleteTrigger: null
     };
     const elements = {
         usersBody: document.getElementById('users-body'),
         scheduleGrid: document.getElementById('schedule-grid'),
         shiftsBody: document.getElementById('shifts-body'),
         alert: document.getElementById('admin-alert'),
-        toast: document.getElementById('toast')
+        toast: document.getElementById('toast'),
+        deleteModal: document.getElementById('delete-user-modal'),
+        deleteForm: document.getElementById('delete-user-form'),
+        deleteName: document.getElementById('delete-user-name'),
+        deleteInput: document.getElementById('delete-user-confirmation'),
+        deleteConfirm: document.getElementById('btn-confirm-delete-user'),
+        deleteCancel: document.getElementById('btn-cancel-delete-user')
     };
 
     function escapeHtml(value) {
@@ -45,6 +53,50 @@
         window.setTimeout(() => elements.toast.classList.remove('show'), 1800);
     }
 
+    function setDeleteModalOpen(open) {
+        elements.deleteModal.classList.toggle('active', open);
+        elements.deleteModal.setAttribute('aria-hidden', String(!open));
+        if (open) {
+            elements.deleteInput.focus();
+            return;
+        }
+        const trigger = state.deleteTrigger;
+        state.deleteUserId = '';
+        state.deleteTrigger = null;
+        elements.deleteInput.value = '';
+        elements.deleteConfirm.disabled = true;
+        if (trigger?.isConnected) trigger.focus();
+    }
+
+    function openDeleteUserModal(user, trigger) {
+        state.deleteUserId = user.id;
+        state.deleteTrigger = trigger;
+        elements.deleteName.textContent = `${user.display_name}（${user.username}）`;
+        elements.deleteInput.value = '';
+        elements.deleteConfirm.disabled = true;
+        setDeleteModalOpen(true);
+    }
+
+    async function confirmDeleteUser() {
+        if (
+            elements.deleteInput.value !== '确认删除'
+            || !state.deleteUserId
+        ) return;
+        elements.deleteConfirm.disabled = true;
+        try {
+            await request(
+                `/api/admin/users/${encodeURIComponent(state.deleteUserId)}`,
+                { method: 'DELETE' }
+            );
+            setDeleteModalOpen(false);
+            showToast('用户已删除');
+            await loadAll();
+        } catch (error) {
+            elements.deleteConfirm.disabled = false;
+            window.alert(error.message);
+        }
+    }
+
     async function request(path, options) {
         const response = await fetch(path, options);
         const payload = await response.json().catch(() => ({}));
@@ -72,8 +124,8 @@
                 <td><span class="status-pill ${user.is_active ? '' : 'is-inactive'}">${user.is_active ? '启用' : '停用'}</span></td>
                 <td>${escapeHtml(formatDateTime(user.last_login_at))}</td>
                 <td><div class="admin-actions">
-                    <button class="btn btn-secondary" data-user-action="toggle">${user.is_active ? '停用' : '启用'}</button>
                     <button class="btn btn-secondary" data-user-action="password">重置密码</button>
+                    <button class="btn btn-secondary" data-user-action="toggle">${user.is_active ? '停用' : '启用'}</button>
                     <button class="btn btn-secondary admin-delete-user" data-user-action="delete">删除</button>
                 </div></td>
             </tr>
@@ -159,23 +211,10 @@
                     body: JSON.stringify({ new_password: newPassword })
                 });
             } else {
-                if (button.dataset.confirming !== 'true') {
-                    button.dataset.confirming = 'true';
-                    button.classList.add('is-confirming');
-                    button.textContent = '确认删除';
-                    window.setTimeout(() => {
-                        if (!button.isConnected) return;
-                        button.dataset.confirming = 'false';
-                        button.classList.remove('is-confirming');
-                        button.textContent = '删除';
-                    }, 5000);
-                    return;
-                }
-                await request(`/api/admin/users/${encodeURIComponent(user.id)}`, {
-                    method: 'DELETE'
-                });
+                openDeleteUserModal(user, button);
+                return;
             }
-            showToast(button.dataset.userAction === 'delete' ? '用户已删除' : '用户已更新');
+            showToast('用户已更新');
             await loadAll();
         } catch (error) {
             window.alert(error.message);
@@ -251,6 +290,28 @@
             await loadAll();
         } catch (error) {
             window.alert(error.message);
+        }
+    });
+
+    elements.deleteInput.addEventListener('input', () => {
+        elements.deleteConfirm.disabled = elements.deleteInput.value !== '确认删除';
+    });
+    elements.deleteCancel.addEventListener('click', () => {
+        setDeleteModalOpen(false);
+    });
+    elements.deleteForm.addEventListener('submit', event => {
+        event.preventDefault();
+        confirmDeleteUser();
+    });
+    elements.deleteModal.addEventListener('click', event => {
+        if (event.target === elements.deleteModal) setDeleteModalOpen(false);
+    });
+    document.addEventListener('keydown', event => {
+        if (
+            event.key === 'Escape'
+            && elements.deleteModal.classList.contains('active')
+        ) {
+            setDeleteModalOpen(false);
         }
     });
 

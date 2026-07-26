@@ -102,7 +102,18 @@ def test_admin_page_shows_registration_preferences_for_scheduling(
     assert "editor.preferred_weekday" in admin_script
     assert "首选${preference}" in admin_script
     assert 'data-user-action="delete">删除</button>' in admin_script
-    assert "button.textContent = '确认删除'" in admin_script
+    assert admin_script.index('data-user-action="password"') < admin_script.index(
+        'data-user-action="toggle"'
+    )
+    assert admin_script.index('data-user-action="toggle"') < admin_script.index(
+        'data-user-action="delete"'
+    )
+    assert 'id="delete-user-modal"' in html
+    assert 'id="delete-user-confirmation"' in html
+    assert 'id="btn-confirm-delete-user"' in html
+    assert "openDeleteUserModal(user, button)" in admin_script
+    assert "elements.deleteInput.value !== '确认删除'" in admin_script
+    assert "button.textContent = '确认删除'" not in admin_script
     assert "method: 'DELETE'" in admin_script
     assert "window.formatDutyShiftDate(shift.ends_at)" in admin_script
     assert "formatDateTime(shift.starts_at)" not in admin_script
@@ -112,7 +123,9 @@ def test_admin_page_shows_registration_preferences_for_scheduling(
     assert ".admin-panel-heading h2" in admin_stylesheet
     assert "font-size: 1.25rem;" in admin_stylesheet
     assert "font-size: 1.45rem;" not in admin_stylesheet
-    assert ".admin-delete-user.is-confirming" in admin_stylesheet
+    assert ".admin-delete-user.is-confirming" not in admin_stylesheet
+    assert ".admin-delete-modal-content" in admin_stylesheet
+    assert ".admin-confirm-delete:disabled" in admin_stylesheet
 
 
 def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> None:
@@ -282,6 +295,9 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "综报备选" in html
     assert "晚报采纳" in html
     assert "晚报备选" in html
+    assert "查看历史班次" in html
+    assert "'收起历史班次'" in script
+    assert "'查看历史班次'" in script
     assert 'data-admin-discarded="true"' in html
     assert "放弃" in html
     assert 'id="summary-search-input"' in html

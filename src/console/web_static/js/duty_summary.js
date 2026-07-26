@@ -96,7 +96,9 @@
         elements.shiftsPanel.hidden = !state.shiftsOpen;
         elements.layout.classList.toggle('is-shifts-collapsed', !state.shiftsOpen);
         elements.shiftsToggle.setAttribute('aria-expanded', String(state.shiftsOpen));
-        elements.shiftsToggle.textContent = state.shiftsOpen ? '收起班次' : '查看班次';
+        elements.shiftsToggle.textContent = state.shiftsOpen
+            ? '收起历史班次'
+            : '查看历史班次';
     }
 
     function showToast(message) {

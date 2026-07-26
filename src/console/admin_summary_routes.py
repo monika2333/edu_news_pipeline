@@ -12,11 +12,25 @@ from src.console.security import require_role
 router = APIRouter(prefix="/api/admin", tags=["duty_summary"])
 
 
-class ImportDutyResultsRequest(BaseModel):
+class ImportDutyPreviewRequest(BaseModel):
     shift_id: str
     article_ids: list[str] = Field(min_length=1)
     target_status: Literal["selected", "backup"]
     report_type: Literal["zongbao", "wanbao"]
+
+
+class ImportConflictResolution(BaseModel):
+    article_id: str
+    choice: Literal["existing", "duty"]
+    summary: Optional[str] = None
+    manual_llm_source: Optional[str] = None
+    existing_version: int = Field(ge=1)
+
+
+class ImportDutyResultsRequest(ImportDutyPreviewRequest):
+    conflict_resolutions: list[ImportConflictResolution] = Field(
+        default_factory=list,
+    )
 
 
 def _raise_summary_error(exc: Exception) -> NoReturn:
@@ -24,6 +38,8 @@ def _raise_summary_error(exc: Exception) -> NoReturn:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if isinstance(exc, PermissionError):
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    if isinstance(exc, admin_summary_service.ManualReviewConflictError):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
@@ -86,9 +102,32 @@ def import_results(
             target_status=payload.target_status,
             report_type=payload.report_type,
             actor=user,
+            conflict_resolutions=[
+                resolution.model_dump()
+                for resolution in payload.conflict_resolutions
+            ],
             request_id=request_id,
         )
-    except (ValueError, PermissionError) as exc:
+    except (
+        ValueError,
+        PermissionError,
+        admin_summary_service.ManualReviewConflictError,
+    ) as exc:
+        _raise_summary_error(exc)
+
+
+@router.post("/duty-summary/import-preview")
+def preview_import_results(
+    payload: ImportDutyPreviewRequest,
+    user: ConsoleUser = Depends(require_role("admin")),
+) -> dict[str, Any]:
+    del user
+    try:
+        return admin_summary_service.preview_import_results(
+            shift_id=payload.shift_id,
+            article_ids=payload.article_ids,
+        )
+    except ValueError as exc:
         _raise_summary_error(exc)
 
 

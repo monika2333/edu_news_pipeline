@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional, Sequence
 
 from src.adapters.db_postgres_core import get_adapter
+from src.adapters.db_postgres_manual_reviews import ManualReviewConflictError
 from src.adapters.db_postgres_shift_reviews import (
     VALID_DECISIONS,
     VALID_REPORT_TYPES,
@@ -92,6 +93,56 @@ def list_uncovered_news(*, limit: int, offset: int) -> dict[str, Any]:
     }
 
 
+def preview_import_results(
+    *,
+    shift_id: str,
+    article_ids: Sequence[str],
+) -> dict[str, Any]:
+    adapter = get_adapter()
+    if not adapter.fetch_duty_shift(shift_id):
+        raise ShiftNotFoundError("Duty shift not found")
+    normalized_ids = {
+        str(article_id).strip()
+        for article_id in article_ids
+        if str(article_id).strip()
+    }
+    rows = adapter.preview_shift_reviews_for_manual(
+        shift_id=shift_id,
+        article_ids=article_ids,
+    )
+    found_ids = {str(row["article_id"]) for row in rows}
+    if found_ids != normalized_ids:
+        missing = sorted(normalized_ids - found_ids)
+        raise ValueError(f"Shift reviews not found: {missing}")
+    conflicts = [
+        {
+            "article_id": str(row["article_id"]),
+            "title": row.get("title") or "无标题",
+            "existing": {
+                "summary": row.get("existing_summary") or "",
+                "manual_llm_source": row.get("existing_source") or "",
+                "status": row.get("existing_status") or "pending",
+                "report_type": row.get("existing_report_type") or "zongbao",
+                "version": int(row.get("existing_version") or 0),
+            },
+            "duty": {
+                "summary": row.get("duty_summary") or "",
+                "manual_llm_source": row.get("duty_source") or "",
+                "decision": row.get("duty_decision") or "pending",
+                "report_type": row.get("duty_report_type") or "zongbao",
+            },
+        }
+        for row in rows
+        if row.get("existing_id")
+        and row.get("existing_status") != "pending"
+    ]
+    return {
+        "total": len(rows),
+        "ready_count": len(rows) - len(conflicts),
+        "conflicts": conflicts,
+    }
+
+
 def import_results(
     *,
     shift_id: str,
@@ -99,6 +150,7 @@ def import_results(
     target_status: str,
     report_type: str,
     actor: ConsoleUser,
+    conflict_resolutions: Sequence[dict[str, Any]],
     request_id: Optional[str] = None,
 ) -> dict[str, Any]:
     if not actor.user_id:
@@ -112,6 +164,7 @@ def import_results(
         report_type=report_type,
         actor_username=actor.username,
         actor_user_id=actor.user_id,
+        conflict_resolutions=conflict_resolutions,
         request_id=request_id,
     )
     return {
@@ -142,9 +195,11 @@ def list_audit_events(
 
 
 __all__ = [
+    "ManualReviewConflictError",
     "import_results",
     "list_audit_events",
     "list_shift_results",
     "list_shift_summaries",
     "list_uncovered_news",
+    "preview_import_results",
 ]

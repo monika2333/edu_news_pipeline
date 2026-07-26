@@ -34,6 +34,25 @@ async def manual_filter_page(
             "version": version,
             "current_user": user,
             "workspace_mode": "admin",
+            "admin_view": "filter",
+        },
+    )
+
+
+@router.get("/admin/review", response_class=HTMLResponse)
+async def admin_review_page(
+    request: Request,
+    user: ConsoleUser = Depends(require_role("admin")),
+) -> HTMLResponse:
+    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    return templates.TemplateResponse(
+        "manual_filter.html",
+        {
+            "request": request,
+            "version": version,
+            "current_user": user,
+            "workspace_mode": "admin",
+            "admin_view": "review",
         },
     )
 
@@ -62,6 +81,7 @@ async def duty_page(
             "version": version,
             "current_user": user,
             "workspace_mode": "duty",
+            "admin_view": "filter",
         },
     )
 

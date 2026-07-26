@@ -652,6 +652,19 @@ class PostgresAdapter:
                 offset=offset,
             )
 
+    def preview_shift_reviews_for_manual(
+        self,
+        *,
+        shift_id: str,
+        article_ids: Sequence[str],
+    ) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return manual_reviews.preview_shift_reviews_for_manual(
+                cur,
+                shift_id=shift_id,
+                article_ids=article_ids,
+            )
+
     def import_shift_reviews_into_manual(
         self,
         *,
@@ -661,10 +674,20 @@ class PostgresAdapter:
         report_type: str,
         actor_username: str,
         actor_user_id: str,
+        conflict_resolutions: Sequence[Mapping[str, Any]],
         request_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         with self.transaction() as cur:
-            before = manual_reviews.fetch_manual_review_rows(cur, article_ids)
+            before = manual_reviews.fetch_manual_review_rows(
+                cur,
+                article_ids,
+                for_update=True,
+            )
+            resolution_by_id = {
+                str(item["article_id"]): item
+                for item in conflict_resolutions
+                if item.get("article_id")
+            }
             imported = manual_reviews.import_shift_reviews_into_manual(
                 cur,
                 shift_id=shift_id,
@@ -673,6 +696,8 @@ class PostgresAdapter:
                 report_type=report_type,
                 actor_username=actor_username,
                 actor_user_id=actor_user_id,
+                existing_reviews=before,
+                conflict_resolutions=resolution_by_id,
             )
             audit.insert_review_event(
                 cur,

@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 {% set is_duty_workspace = workspace_mode|default('admin') == 'duty' %}
+{% set is_admin_review = not is_duty_workspace and admin_view|default('filter') == 'review' %}
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>新闻筛选控制台</title>
+    <title>新闻筛选控制台{% if is_admin_review %} · 汇总审阅{% endif %}</title>
     <!-- CSS Core -->
     <link rel="stylesheet" href="/static/css/variables.css">
     <link rel="stylesheet" href="/static/css/base.css">
@@ -31,7 +32,8 @@
     </style>
 </head>
 
-<body data-workspace-mode="{{ workspace_mode|default('admin') }}">
+<body data-workspace-mode="{{ workspace_mode|default('admin') }}"
+    data-initial-tab="{{ 'review' if is_admin_review else 'filter' }}">
     <div class="container">
         <header>
             <div class="header-left">
@@ -40,6 +42,7 @@
                 <p class="workspace-coverage" id="workspace-shift-coverage">正在加载班次…</p>
                 {% endif %}
             </div>
+            {% if is_duty_workspace %}
             <div class="stats">
                 <div class="stat-item">
                     <span class="stat-value" id="stat-pending">-</span>
@@ -54,17 +57,24 @@
                     <span class="stat-label">备选</span>
                 </div>
             </div>
+            {% endif %}
             <div class="header-right">
                 {% if is_duty_workspace %}
                 <select class="workspace-shift-select" id="workspace-shift-select" aria-label="选择班次"></select>
                 {% else %}
                 <nav class="admin-view-switch" aria-label="管理员主视图">
-                    <a class="admin-view-link is-active" href="/manual_filter" aria-current="page">
+                    <a class="admin-view-link{% if not is_admin_review %} is-active{% endif %}" href="/manual_filter"
+                        {% if not is_admin_review %}aria-current="page"{% endif %}>
                         全量新闻筛选
                     </a>
-                    <a class="admin-view-link" href="/admin/duty-summary">值班结果汇总</a>
+                    <a class="admin-view-link" href="/admin/duty-summary">值班结果筛选</a>
+                    <a class="admin-view-link{% if is_admin_review %} is-active{% endif %}" href="/admin/review"
+                        {% if is_admin_review %}aria-current="page"{% endif %}>
+                        汇总审阅
+                    </a>
                 </nav>
                 {% endif %}
+                {% if is_duty_workspace %}
                 <span class="refresh-action">
                     <button class="btn btn-secondary" id="btn-refresh" aria-describedby="refresh-cluster-hint">
                         刷新
@@ -73,6 +83,7 @@
                         刷新会重新聚类，可能需要等待约 1 分钟
                     </span>
                 </span>
+                {% endif %}
                 <details class="account-menu">
                     <summary class="account-menu-trigger current-user" id="current-user">
                         <span>{{ current_user.display_name }} · {{ '值班编辑' if is_duty_workspace else '管理员' }}</span>
@@ -88,13 +99,31 @@
             </div>
         </header>
 
+        {% if is_duty_workspace %}
         <div class="tabs">
             <button class="tab-btn active" data-tab="filter">筛选</button>
-            <button class="tab-btn" data-tab="review">审阅</button>
+            <button class="tab-btn" data-tab="review">已选结果</button>
             <button class="tab-btn" data-tab="discard">放弃</button>
         </div>
+        {% elif not is_admin_review %}
+        <div class="workspace-tabs-row">
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="filter">筛选</button>
+                <button class="tab-btn" data-tab="discard">放弃</button>
+            </div>
+            <span class="refresh-action workspace-tabs-refresh">
+                <button class="btn btn-secondary" id="btn-refresh" aria-describedby="refresh-cluster-hint">
+                    刷新
+                </button>
+                <span class="refresh-action-tooltip" id="refresh-cluster-hint" role="tooltip">
+                    刷新会重新聚类，可能需要等待约 1 分钟
+                </span>
+            </span>
+        </div>
+        {% endif %}
 
         <!-- Filter Tab -->
+        {% if is_duty_workspace or not is_admin_review %}
         <div class="tab-content active" id="filter-tab">
             <div class="filter-layout">
                 <div class="filter-sidebar">
@@ -129,9 +158,11 @@
                 </div>
             </div>
         </div>
+        {% endif %}
 
         <!-- Review Tab -->
-        <div class="tab-content" id="review-tab">
+        {% if is_duty_workspace or is_admin_review %}
+        <div class="tab-content{% if is_admin_review %} active{% endif %}" id="review-tab">
             <div class="filter-layout review-layout">
                 <div class="filter-sidebar review-sidebar">
                     <button class="filter-tab-btn review-category-btn active" data-report-type="zongbao"
@@ -197,14 +228,17 @@
                 </div>
             </div>
         </div>
+        {% endif %}
 
         <!-- Discard Tab -->
+        {% if is_duty_workspace or not is_admin_review %}
         <div class="tab-content" id="discard-tab">
             <div id="discard-list">
                 <!-- Items will be injected here -->
             </div>
             <div id="discard-pagination" class="pagination"></div>
         </div>
+        {% endif %}
     </div>
 
 
@@ -247,6 +281,7 @@
     </div>
 
     <!-- Preview Modal -->
+    {% if is_duty_workspace or is_admin_review %}
     <div class="modal" id="preview-modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -262,9 +297,10 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
     <!-- Duplicate Review Modal -->
-    {% if not is_duty_workspace %}
+    {% if is_admin_review %}
     <div class="modal" id="duplicate-review-modal" role="dialog" aria-modal="true"
         aria-labelledby="duplicate-review-title" aria-hidden="true">
         <div class="modal-content duplicate-review-modal-content">

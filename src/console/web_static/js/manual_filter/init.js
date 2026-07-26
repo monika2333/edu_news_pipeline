@@ -5,33 +5,49 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
         const workspaceReady = await prepareManualFilterWorkspace();
         if (!workspaceReady) {
-            elements.filterList.innerHTML = '<div class="empty">暂无可用班次，请联系管理员安排班次。</div>';
+            if (elements.filterList) {
+                elements.filterList.innerHTML = '<div class="empty">暂无可用班次，请联系管理员安排班次。</div>';
+            }
             return;
         }
     } catch (error) {
-        elements.filterList.innerHTML = '<div class="error">班次加载失败，请刷新后重试。</div>';
+        const errorTarget = elements.filterList || elements.reviewList || elements.discardList;
+        if (errorTarget) {
+            errorTarget.innerHTML = '<div class="error">工作区加载失败，请刷新后重试。</div>';
+        }
         return;
     }
 
     setupTabs();
     loadStats();
-    loadFilterData();
-    loadFilterCounts();
+    if (state.currentTab === 'review') {
+        loadReviewData();
+    } else {
+        loadFilterData();
+        loadFilterCounts();
+    }
     setupFilterRealtimeDecisionHandlers();
     setupSearchDrawer();
-    if (!IS_DUTY_WORKSPACE) {
+    if (!IS_DUTY_WORKSPACE && elements.reviewList) {
         setupDuplicateReview();
     }
     setupScoreFeedback();
 
     // Global event listeners
-    document.getElementById('btn-refresh').addEventListener('click', () => {
-        loadStats();
-        shouldForceClusterRefresh = true;
-        reloadCurrentTab({ forceClusterRefresh: true });
-    });
+    const btnRefresh = document.getElementById('btn-refresh');
+    if (btnRefresh) {
+        btnRefresh.addEventListener('click', () => {
+            loadStats();
+            const forceClusterRefresh = state.currentTab === 'filter';
+            shouldForceClusterRefresh = forceClusterRefresh;
+            reloadCurrentTab({ forceClusterRefresh });
+        });
+    }
 
-    document.getElementById('btn-submit-filter').addEventListener('click', discardRemainingItems);
+    const btnSubmitFilter = document.getElementById('btn-submit-filter');
+    if (btnSubmitFilter) {
+        btnSubmitFilter.addEventListener('click', discardRemainingItems);
+    }
     const btnFilterSearch = document.getElementById('btn-filter-search');
     if (btnFilterSearch) {
         btnFilterSearch.addEventListener('click', applyFilterSearch);

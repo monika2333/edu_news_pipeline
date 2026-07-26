@@ -86,10 +86,13 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "<title>新闻筛选控制台</title>" in html
     assert "<h1>新闻筛选控制台</h1>" in html
     assert 'data-workspace-mode="duty"' in html
+    assert 'class="stats"' in html
+    assert 'id="btn-refresh"' in html
+    assert 'aria-describedby="refresh-cluster-hint"' in html
     assert 'aria-label="管理员主视图"' not in html
     assert 'id="workspace-shift-select"' in html
     assert 'data-tab="filter">筛选</button>' in html
-    assert 'data-tab="review">审阅</button>' in html
+    assert 'data-tab="review">已选结果</button>' in html
     assert 'data-tab="discard">放弃</button>' in html
     assert '/static/js/manual_filter/workspace.js?v=' in html
     assert '/static/js/manual_filter/filter_tab_data.js?v=' in html
@@ -118,15 +121,27 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert "<h1>新闻筛选控制台</h1>" in html
     assert 'data-workspace-mode="admin"' in html
     assert 'aria-label="管理员主视图"' in html
-    assert 'href="/manual_filter" aria-current="page">' in html
+    assert 'class="admin-view-link is-active" href="/manual_filter"' in html
+    assert 'aria-current="page"' in html
     assert "全量新闻筛选" in html
-    assert 'class="admin-view-link" href="/admin/duty-summary">值班结果汇总</a>' in html
-    assert 'id="btn-check-duplicates"' in html
-    assert 'id="btn-archive"' in html
+    assert 'class="admin-view-link" href="/admin/duty-summary">值班结果筛选</a>' in html
+    assert 'class="admin-view-link" href="/admin/review"' in html
+    assert 'class="stats"' not in html
+    assert 'id="stat-pending"' not in html
+    assert 'id="stat-selected"' not in html
+    assert 'id="stat-backup"' not in html
+    assert 'data-tab="review"' not in html
+    assert 'id="review-tab"' not in html
+    assert 'id="btn-check-duplicates"' not in html
+    assert 'id="btn-archive"' not in html
     assert 'id="btn-filter-discard-before-date"' in html
     assert 'id="search-drawer-toggle"' in html
-    assert 'id="btn-refresh" aria-describedby="refresh-cluster-hint"' in html
+    assert 'id="btn-refresh"' in html
+    assert 'aria-describedby="refresh-cluster-hint"' in html
     assert "刷新会重新聚类，可能需要等待约 1 分钟" in html
+    assert 'class="workspace-tabs-row"' in html
+    assert html.index('data-tab="discard"') < html.index('id="btn-refresh"')
+    assert html.index('id="btn-refresh"') < html.index('id="filter-tab"')
     assert '<details class="account-menu">' in html
     assert '<summary class="account-menu-trigger current-user" id="current-user">' in html
     assert 'class="btn btn-secondary" href="/admin">用户与排班</a>' not in html
@@ -135,6 +150,26 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert 'class="account-menu-item" id="btn-logout" type="button">退出登录</button>' in html
     assert 'id="stat-exported"' not in html
     assert "已导出" not in html
+
+
+def test_admin_review_is_an_independent_workspace() -> None:
+    response = _build_client().get("/admin/review")
+
+    assert response.status_code == 200
+    html = response.text
+    assert "<title>新闻筛选控制台 · 汇总审阅</title>" in html
+    assert 'data-initial-tab="review"' in html
+    assert 'href="/admin/review"' in html
+    assert 'class="admin-view-link is-active" href="/admin/review"' in html
+    assert 'aria-current="page"' in html
+    assert 'id="review-tab"' in html
+    assert 'id="filter-tab"' not in html
+    assert 'id="discard-tab"' not in html
+    assert 'id="btn-check-duplicates"' in html
+    assert 'id="btn-archive"' in html
+    assert 'class="stats"' not in html
+    assert 'id="btn-refresh"' not in html
+    assert "刷新会重新聚类" not in html
 
 
 def test_duty_summary_collapses_shift_panel_by_default(
@@ -148,7 +183,7 @@ def test_duty_summary_collapses_shift_panel_by_default(
     response = _build_client().get("/admin/duty-summary")
 
     assert response.status_code == 200
-    assert "<title>新闻筛选控制台 · 值班结果汇总</title>" in response.text
+    assert "<title>新闻筛选控制台 · 值班结果筛选</title>" in response.text
     assert "<h1>新闻筛选控制台</h1>" in response.text
     assert 'class="summary-layout is-shifts-collapsed"' in response.text
     assert 'id="summary-shifts-panel" hidden' in response.text
@@ -157,12 +192,12 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert 'aria-label="管理员主视图"' in response.text
     assert 'class="admin-view-link" href="/manual_filter">全量新闻筛选</a>' in response.text
     assert 'href="/admin/duty-summary" aria-current="page">' in response.text
+    assert 'class="admin-view-link" href="/admin/review">汇总审阅</a>' in response.text
+    assert "值班结果筛选" in response.text
+    assert "值班结果汇总" not in response.text
+    assert 'id="btn-summary-refresh"' not in response.text
     assert '<details class="account-menu">' in response.text
     assert 'class="account-menu-item" href="/admin">用户与排班</a>' in response.text
-    assert response.text.count('id="btn-summary-refresh"') == 1
-    assert response.text.index('id="btn-summary-refresh"') < response.text.index(
-        '<details class="account-menu">'
-    )
 
     stylesheet = (
         Path(__file__).parents[1]
@@ -197,15 +232,26 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert 'id="summary-select-all"' in html
     assert 'id="summary-report-type"' not in html
     assert 'id="summary-import-target"' not in html
+    assert 'id="btn-import-results">送入汇总审阅</button>' in html
+    assert 'id="summary-import-conflict-modal"' in html
+    assert 'id="summary-existing-summary"' in html
+    assert 'id="summary-existing-source"' in html
+    assert 'id="summary-duty-summary"' in html
+    assert 'id="summary-duty-source"' in html
+    assert 'id="btn-keep-existing"' in html
+    assert 'id="btn-keep-duty"' in html
     assert "function getVisibleItems()" in script
     assert "elements.selectAll.indeterminate" in script
     assert "tab.dataset.reportType" in script
     assert "tab.dataset.targetStatus" in script
     assert "params.set('report_type', state.targetReportType)" in script
+    assert "/api/admin/duty-summary/import-preview" in script
+    assert "conflict_resolutions: conflictResolutions" in script
+    assert "function chooseImportConflict(choice)" in script
 
 
 def test_duplicate_check_button_is_before_sort_mode() -> None:
-    response = _build_client().get("/manual_filter")
+    response = _build_client().get("/admin/review")
 
     assert response.status_code == 200
     html = response.text
@@ -225,7 +271,7 @@ def test_duplicate_check_button_is_before_sort_mode() -> None:
 
 def test_sort_mode_hides_incompatible_review_toolbar_controls() -> None:
     root = Path(__file__).parents[1]
-    response = _build_client().get("/manual_filter")
+    response = _build_client().get("/admin/review")
     review_css = (
         root / "src/console/web_static/css/modules/review.css"
     ).read_text(encoding="utf-8")

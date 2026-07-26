@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>新闻筛选控制台 · 值班结果汇总</title>
+    <title>新闻筛选控制台 · 值班结果筛选</title>
     <link rel="stylesheet" href="/static/css/variables.css">
     <link rel="stylesheet" href="/static/css/base.css">
     <link rel="stylesheet" href="/static/css/components.css">
@@ -22,10 +22,10 @@
                 <nav class="admin-view-switch" aria-label="管理员主视图">
                     <a class="admin-view-link" href="/manual_filter">全量新闻筛选</a>
                     <a class="admin-view-link is-active" href="/admin/duty-summary" aria-current="page">
-                        值班结果汇总
+                        值班结果筛选
                     </a>
+                    <a class="admin-view-link" href="/admin/review">汇总审阅</a>
                 </nav>
-                <button class="btn btn-secondary" id="btn-summary-refresh">刷新</button>
                 <details class="account-menu">
                     <summary class="account-menu-trigger current-user" id="current-user">
                         <span>{{ current_user.display_name }} · 管理员</span>
@@ -95,7 +95,7 @@
                             <span>全选</span>
                         </label>
                         <span class="summary-selection-count" id="summary-selection-count">已选择 0 条</span>
-                        <button class="btn btn-primary" id="btn-import-results">送入管理员工作区</button>
+                        <button class="btn btn-primary" id="btn-import-results">送入汇总审阅</button>
                     </div>
                 </div>
                 <div class="summary-items" id="summary-items">
@@ -103,6 +103,61 @@
                 </div>
             </main>
         </section>
+    </div>
+
+    <div class="modal" id="summary-import-conflict-modal" role="dialog" aria-modal="true"
+        aria-labelledby="summary-import-conflict-title" aria-hidden="true">
+        <div class="modal-content summary-conflict-modal-content">
+            <div class="modal-header">
+                <div>
+                    <p class="summary-conflict-progress" id="summary-conflict-progress"></p>
+                    <h3 id="summary-import-conflict-title">选择要保留的版本</h3>
+                </div>
+                <button class="btn btn-secondary" id="btn-close-import-conflict" type="button">取消导入</button>
+            </div>
+            <div class="modal-body">
+                <h4 class="summary-conflict-article-title" id="summary-conflict-article-title"></h4>
+                <p class="summary-conflict-instruction">
+                    两边的摘要和来源都可以先修改；选择其中一个版本后，另一版不会写入汇总审阅。
+                </p>
+                <div class="summary-conflict-grid">
+                    <section class="summary-conflict-version">
+                        <div class="summary-conflict-version-heading">
+                            <h4>当前汇总审阅版本</h4>
+                            <span id="summary-existing-column"></span>
+                        </div>
+                        <label>
+                            摘要
+                            <textarea id="summary-existing-summary"></textarea>
+                        </label>
+                        <label>
+                            来源
+                            <input id="summary-existing-source" type="text">
+                        </label>
+                        <button class="btn btn-primary" id="btn-keep-existing" type="button">
+                            保留当前版本
+                        </button>
+                    </section>
+                    <section class="summary-conflict-version">
+                        <div class="summary-conflict-version-heading">
+                            <h4>本次值班版本</h4>
+                            <span id="summary-duty-column"></span>
+                        </div>
+                        <label>
+                            摘要
+                            <textarea id="summary-duty-summary"></textarea>
+                        </label>
+                        <label>
+                            来源
+                            <input id="summary-duty-source" type="text">
+                        </label>
+                        <button class="btn btn-primary" id="btn-keep-duty" type="button">
+                            采用值班版本
+                        </button>
+                    </section>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="toast" id="toast">操作成功</div>

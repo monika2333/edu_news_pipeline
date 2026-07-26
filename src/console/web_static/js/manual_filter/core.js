@@ -2,6 +2,7 @@
 
 let API_BASE = '/api/manual_filter';
 const IS_DUTY_WORKSPACE = document.body.dataset.workspaceMode === 'duty';
+const INITIAL_TAB = document.body.dataset.initialTab === 'review' ? 'review' : 'filter';
 
 const GROUP_ORDER = [
     { key: 'internal_negative', label: '京内负面' },
@@ -17,7 +18,7 @@ let state = {
     filterPage: 1,
     reviewPage: 1,
     discardPage: 1,
-    currentTab: 'filter',
+    currentTab: INITIAL_TAB,
     filterCategory: 'internal_positive',
     filterQuery: '',
     filterPublishedBefore: '',

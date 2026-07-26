@@ -136,6 +136,33 @@ h1 {
     overflow-x: auto;
 }
 
+.workspace-tabs-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.workspace-tabs-row .tabs {
+    margin-bottom: 0;
+}
+
+.workspace-tabs-refresh {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+.workspace-tabs-refresh .refresh-action-tooltip {
+    right: 0;
+    left: auto;
+}
+
+.workspace-tabs-refresh .refresh-action-tooltip::before {
+    right: 22px;
+    left: auto;
+}
+
 .tab-btn {
     padding: 10px 24px;
     border: none;
@@ -228,6 +255,11 @@ h1 {
         padding: 4px;
         background: #e2e8f0;
         border-radius: 8px;
+    }
+
+    .workspace-tabs-row .tabs {
+        width: auto;
+        flex: 0 1 auto;
     }
 
     .tab-btn {

@@ -300,6 +300,93 @@ body {
     text-align: center;
 }
 
+.summary-conflict-modal-content {
+    width: min(980px, 96vw);
+    overflow-y: auto;
+}
+
+.summary-conflict-progress,
+.summary-conflict-instruction {
+    margin: 0;
+    color: #64748b;
+    font-size: 0.82rem;
+}
+
+.summary-conflict-article-title {
+    margin: 0;
+    color: #172033;
+    font-size: 1.05rem;
+}
+
+.summary-conflict-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.summary-conflict-version {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid #dbe3ee;
+    border-radius: 10px;
+    background: #f8fafc;
+}
+
+.summary-conflict-version-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.summary-conflict-version-heading h4 {
+    margin: 0;
+    color: #172033;
+}
+
+.summary-conflict-version-heading span {
+    color: #64748b;
+    font-size: 0.76rem;
+}
+
+.summary-conflict-version label {
+    display: grid;
+    gap: 6px;
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.summary-conflict-version textarea,
+.summary-conflict-version input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    color: #172033;
+    font: inherit;
+    font-weight: 400;
+}
+
+.summary-conflict-version textarea {
+    min-height: 180px;
+    padding: 10px;
+    resize: vertical;
+}
+
+.summary-conflict-version input {
+    min-height: 40px;
+    padding: 8px 10px;
+}
+
+.summary-conflict-version textarea:focus,
+.summary-conflict-version input:focus {
+    border-color: #2563eb;
+    outline: 3px solid rgb(37 99 235 / 12%);
+}
+
 @media (max-width: 900px) {
     .summary-header {
         align-items: flex-start;
@@ -339,5 +426,9 @@ body {
     .summary-column-tab,
     #summary-search-input {
         width: 100%;
+    }
+
+    .summary-conflict-grid {
+        grid-template-columns: 1fr;
     }
 }

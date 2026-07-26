@@ -8,7 +8,11 @@
         searchQuery: '',
         targetReportType: 'zongbao',
         targetStatus: 'selected',
-        selected: new Set()
+        selected: new Set(),
+        pendingImport: null,
+        importConflicts: [],
+        importConflictIndex: 0,
+        conflictResolutions: []
     };
     const elements = {
         shiftList: document.getElementById('summary-shift-list'),
@@ -25,7 +29,16 @@
         uncoveredButton: document.getElementById('btn-uncovered'),
         layout: document.getElementById('summary-layout'),
         shiftsPanel: document.getElementById('summary-shifts-panel'),
-        shiftsToggle: document.getElementById('btn-toggle-shifts')
+        shiftsToggle: document.getElementById('btn-toggle-shifts'),
+        conflictModal: document.getElementById('summary-import-conflict-modal'),
+        conflictProgress: document.getElementById('summary-conflict-progress'),
+        conflictTitle: document.getElementById('summary-conflict-article-title'),
+        existingColumn: document.getElementById('summary-existing-column'),
+        existingSummary: document.getElementById('summary-existing-summary'),
+        existingSource: document.getElementById('summary-existing-source'),
+        dutyColumn: document.getElementById('summary-duty-column'),
+        dutySummary: document.getElementById('summary-duty-summary'),
+        dutySource: document.getElementById('summary-duty-source')
     };
     const businessTimeZone = 'Asia/Shanghai';
 
@@ -108,9 +121,108 @@
     }
 
     function activeColumnLabel() {
-        const reportLabel = state.targetReportType === 'zongbao' ? '综报' : '晚报';
-        const statusLabel = state.targetStatus === 'selected' ? '采纳' : '备选';
+        return reviewColumnLabel(state.targetReportType, state.targetStatus);
+    }
+
+    function reviewColumnLabel(reportType, status) {
+        const reportLabel = reportType === 'wanbao' ? '晚报' : '综报';
+        const statusLabels = {
+            selected: '采纳',
+            backup: '备选',
+            pending: '待处理',
+            discarded: '放弃',
+            exported: '已归档'
+        };
+        const statusLabel = statusLabels[status] || '待处理';
         return `${reportLabel}${statusLabel}`;
+    }
+
+    function setConflictModalOpen(open) {
+        elements.conflictModal.classList.toggle('active', open);
+        elements.conflictModal.setAttribute('aria-hidden', String(!open));
+        if (open) elements.existingSummary.focus();
+    }
+
+    function renderImportConflict() {
+        const conflict = state.importConflicts[state.importConflictIndex];
+        if (!conflict) return;
+        elements.conflictProgress.textContent = (
+            `重复新闻 ${state.importConflictIndex + 1} / ${state.importConflicts.length}`
+        );
+        elements.conflictTitle.textContent = conflict.title || '无标题';
+        elements.existingColumn.textContent = reviewColumnLabel(
+            conflict.existing.report_type,
+            conflict.existing.status
+        );
+        elements.existingSummary.value = conflict.existing.summary || '';
+        elements.existingSource.value = conflict.existing.manual_llm_source || '';
+        elements.dutyColumn.textContent = reviewColumnLabel(
+            conflict.duty.report_type,
+            conflict.duty.decision
+        );
+        elements.dutySummary.value = conflict.duty.summary || '';
+        elements.dutySource.value = conflict.duty.manual_llm_source || '';
+    }
+
+    function closeImportConflictModal() {
+        setConflictModalOpen(false);
+        state.pendingImport = null;
+        state.importConflicts = [];
+        state.importConflictIndex = 0;
+        state.conflictResolutions = [];
+    }
+
+    async function submitDutyImport(payload, conflictResolutions = []) {
+        const result = await request('/api/admin/duty-summary/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ...payload,
+                conflict_resolutions: conflictResolutions
+            })
+        });
+        state.selected.clear();
+        showToast(`已送入汇总审阅 ${result.imported} 条`);
+        await Promise.all([loadSummary(), loadResults()]);
+    }
+
+    async function chooseImportConflict(choice) {
+        const conflict = state.importConflicts[state.importConflictIndex];
+        if (!conflict || !state.pendingImport) return;
+        const keepExisting = choice === 'existing';
+        state.conflictResolutions.push({
+            article_id: conflict.article_id,
+            choice,
+            summary: keepExisting
+                ? elements.existingSummary.value
+                : elements.dutySummary.value,
+            manual_llm_source: keepExisting
+                ? elements.existingSource.value
+                : elements.dutySource.value,
+            existing_version: conflict.existing.version
+        });
+        state.importConflictIndex += 1;
+        if (state.importConflictIndex < state.importConflicts.length) {
+            renderImportConflict();
+            return;
+        }
+        const payload = state.pendingImport;
+        const resolutions = [...state.conflictResolutions];
+        closeImportConflictModal();
+        try {
+            await submitDutyImport(payload, resolutions);
+        } catch (error) {
+            window.alert(`${error.message}。汇总审阅内容可能已经变化，请重新操作。`);
+        }
+    }
+
+    function openImportConflictModal(conflicts, payload) {
+        state.pendingImport = payload;
+        state.importConflicts = conflicts;
+        state.importConflictIndex = 0;
+        state.conflictResolutions = [];
+        renderImportConflict();
+        setConflictModalOpen(true);
     }
 
     function getVisibleItems() {
@@ -305,32 +417,46 @@
 
     document.getElementById('btn-import-results').addEventListener('click', async () => {
         if (!state.shiftId || !state.selected.size) {
-            window.alert('请先选择要送入管理员工作区的新闻。');
+            window.alert('请先选择要送入汇总审阅的新闻。');
             return;
         }
         if (!window.confirm(`确定送入${activeColumnLabel()}吗？`)) return;
+        const payload = {
+            shift_id: state.shiftId,
+            article_ids: [...state.selected],
+            target_status: state.targetStatus,
+            report_type: state.targetReportType
+        };
         try {
-            const result = await request('/api/admin/duty-summary/import', {
+            const preview = await request('/api/admin/duty-summary/import-preview', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    shift_id: state.shiftId,
-                    article_ids: [...state.selected],
-                    target_status: state.targetStatus,
-                    report_type: state.targetReportType
-                })
+                body: JSON.stringify(payload)
             });
-            state.selected.clear();
-            showToast(`已送入 ${result.imported} 条`);
-            await Promise.all([loadSummary(), loadResults()]);
+            if (preview.conflicts && preview.conflicts.length) {
+                openImportConflictModal(preview.conflicts, payload);
+                return;
+            }
+            await submitDutyImport(payload);
         } catch (error) {
             window.alert(error.message);
         }
     });
 
-    document.getElementById('btn-summary-refresh').addEventListener('click', async () => {
-        await loadSummary();
-        if (state.shiftId || state.uncovered) await loadResults();
+    document.getElementById('btn-close-import-conflict').addEventListener(
+        'click',
+        closeImportConflictModal
+    );
+    document.getElementById('btn-keep-existing').addEventListener('click', () => {
+        chooseImportConflict('existing');
+    });
+    document.getElementById('btn-keep-duty').addEventListener('click', () => {
+        chooseImportConflict('duty');
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && elements.conflictModal.classList.contains('active')) {
+            closeImportConflictModal();
+        }
     });
 
     setShiftPanelOpen(false);

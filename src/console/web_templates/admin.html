@@ -24,33 +24,7 @@
 
             <section class="admin-panel">
                 <div class="admin-panel-heading">
-                    <div>
-                        <p>账号</p>
-                        <h2>控制台用户</h2>
-                    </div>
-                </div>
-                <div class="admin-user-toolbar">
-                    <input id="admin-user-search" type="search"
-                        placeholder="搜索姓名或用户名…" aria-label="搜索姓名或用户名">
-                    <a class="btn btn-primary admin-create-user-link"
-                        href="/admin/users/new">创建账号</a>
-                </div>
-                <div class="admin-table-wrap">
-                    <table class="admin-table">
-                        <thead>
-                            <tr><th>姓名</th><th>用户名</th><th>角色</th><th>首选值班日</th><th>状态</th><th>最近登录</th><th>操作</th></tr>
-                        </thead>
-                        <tbody id="users-body"></tbody>
-                    </table>
-                </div>
-            </section>
-
-            <section class="admin-panel">
-                <div class="admin-panel-heading">
-                    <div>
-                        <p>轮值模板</p>
-                        <h2>周一至周日</h2>
-                    </div>
+                    <h2>轮值模板</h2>
                     <button class="btn btn-primary" id="btn-save-schedule">保存轮值表</button>
                 </div>
                 <div class="schedule-grid" id="schedule-grid"></div>
@@ -58,10 +32,7 @@
 
             <section class="admin-panel">
                 <div class="admin-panel-heading">
-                    <div>
-                        <p>具体班次</p>
-                        <h2>排班日历</h2>
-                    </div>
+                    <h2>排班日历</h2>
                     <button class="btn btn-secondary" id="btn-generate-shifts">补齐未来 14 天</button>
                 </div>
                 <div class="shift-calendar-toolbar">
@@ -82,6 +53,26 @@
                     </div>
                     <div class="shift-calendar-grid" id="shift-calendar-grid"
                         aria-label="月度排班日历"></div>
+                </div>
+            </section>
+
+            <section class="admin-panel">
+                <div class="admin-panel-heading">
+                    <h2>账号管理</h2>
+                </div>
+                <div class="admin-user-toolbar">
+                    <input id="admin-user-search" type="search"
+                        placeholder="搜索姓名或用户名…" aria-label="搜索姓名或用户名">
+                    <a class="btn btn-primary admin-create-user-link"
+                        href="/admin/users/new">创建账号</a>
+                </div>
+                <div class="admin-table-wrap">
+                    <table class="admin-table">
+                        <thead>
+                            <tr><th>姓名</th><th>用户名</th><th>角色</th><th>首选值班日</th><th>状态</th><th>最近登录</th><th>操作</th></tr>
+                        </thead>
+                        <tbody id="users-body"></tbody>
+                    </table>
                 </div>
             </section>
         </main>

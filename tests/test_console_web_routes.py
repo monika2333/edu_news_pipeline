@@ -112,6 +112,15 @@ def test_admin_page_separates_user_search_from_account_creation(
     assert 'href="/admin/users/new">创建账号</a>' in html
     assert 'id="create-user-form"' not in html
     assert 'name="password"' not in html
+    assert "<h2>账号管理</h2>" in html
+    assert "<h2>轮值模板</h2>" in html
+    assert "<h2>排班日历</h2>" in html
+    assert html.index("<h2>轮值模板</h2>") < html.index("<h2>排班日历</h2>")
+    assert html.index("<h2>排班日历</h2>") < html.index("<h2>账号管理</h2>")
+    assert "<p>账号</p>" not in html
+    assert "<h2>控制台用户</h2>" not in html
+    assert "<h2>周一至周日</h2>" not in html
+    assert "<p>具体班次</p>" not in html
     assert "<th>首选值班日</th>" in html
     assert "<th>值班日期</th>" not in html
     assert 'id="shift-calendar-month"' in html
@@ -162,6 +171,8 @@ def test_admin_page_separates_user_search_from_account_creation(
     assert ".admin-confirm-delete:disabled" in admin_stylesheet
     assert ".shift-calendar-grid" in admin_stylesheet
     assert ".shift-calendar-day.is-today" in admin_stylesheet
+    assert "min-height: 88px;" in admin_stylesheet
+    assert "font-size: 1rem;" in admin_stylesheet
 
 
 def test_admin_create_user_page_reuses_account_form_layout() -> None:

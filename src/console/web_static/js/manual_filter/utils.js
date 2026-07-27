@@ -108,6 +108,13 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
 }
 
 function setupTabs() {
+    const syncWorkspaceTabActions = currentTab => {
+        document.querySelectorAll('[data-workspace-action-tab]').forEach(action => {
+            action.hidden = action.dataset.workspaceActionTab !== currentTab;
+        });
+    };
+
+    syncWorkspaceTabActions(state.currentTab);
     elements.tabs.forEach(tab => {
         tab.addEventListener('click', () => {
             elements.tabs.forEach(t => t.classList.remove('active'));
@@ -116,6 +123,7 @@ function setupTabs() {
             tab.classList.add('active');
             document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
             state.currentTab = tab.dataset.tab;
+            syncWorkspaceTabActions(state.currentTab);
 
             // Reset tab state to defaults
             if (state.currentTab === 'filter') {

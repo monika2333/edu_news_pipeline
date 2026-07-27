@@ -75,16 +75,6 @@
                     </a>
                 </nav>
                 {% endif %}
-                {% if is_duty_workspace %}
-                <span class="refresh-action">
-                    <button class="btn btn-secondary" id="btn-refresh" aria-describedby="refresh-cluster-hint">
-                        刷新
-                    </button>
-                    <span class="refresh-action-tooltip" id="refresh-cluster-hint" role="tooltip">
-                        刷新会重新聚类，可能需要等待约 1 分钟
-                    </span>
-                </span>
-                {% endif %}
                 <details class="account-menu">
                     <summary class="account-menu-trigger current-user" id="current-user">
                         <span>{{ current_user.display_name }} · {{ '值班编辑' if is_duty_workspace else '管理员' }}</span>
@@ -101,10 +91,27 @@
         </header>
 
         {% if is_duty_workspace %}
-        <div class="tabs">
-            <button class="tab-btn active" data-tab="filter">筛选</button>
-            <button class="tab-btn" data-tab="review">已选结果</button>
-            <button class="tab-btn" data-tab="discard">放弃</button>
+        <div class="workspace-tabs-row">
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="filter">筛选</button>
+                <button class="tab-btn" data-tab="review">已选结果</button>
+                <button class="tab-btn" data-tab="discard">放弃</button>
+            </div>
+            <div class="workspace-tab-actions">
+                <span class="refresh-action workspace-tabs-refresh workspace-tab-action"
+                    data-workspace-action-tab="filter">
+                    <button class="btn btn-secondary" id="btn-refresh" aria-describedby="refresh-cluster-hint">
+                        刷新
+                    </button>
+                    <span class="refresh-action-tooltip" id="refresh-cluster-hint" role="tooltip">
+                        刷新会重新聚类，可能需要等待约 1 分钟
+                    </span>
+                </span>
+                <button class="btn btn-secondary duty-finalization-action workspace-tab-action"
+                    id="btn-finalized-batches" data-workspace-action-tab="review" hidden>
+                    查看已定稿批次
+                </button>
+            </div>
         </div>
         {% elif not is_admin_review %}
         <div class="workspace-tabs-row">
@@ -228,9 +235,6 @@
                             预览
                         </button>
                         {% if is_duty_workspace %}
-                        <button class="btn btn-secondary duty-finalization-action" id="btn-finalized-batches">
-                            查看已定稿批次
-                        </button>
                         <button class="btn btn-primary duty-finalization-action" id="btn-finalize-review">
                             定稿并清空列表
                         </button>

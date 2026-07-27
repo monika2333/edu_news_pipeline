@@ -234,6 +234,7 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     )
     workspace_script = (scripts_dir / "workspace.js").read_text(encoding="utf-8")
     init_script = (scripts_dir / "init.js").read_text(encoding="utf-8")
+    utils_script = (scripts_dir / "utils.js").read_text(encoding="utf-8")
 
     assert response.status_code == 200
     html = response.text
@@ -248,6 +249,13 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'data-tab="filter">筛选</button>' in html
     assert 'data-tab="review">已选结果</button>' in html
     assert 'data-tab="discard">放弃</button>' in html
+    assert 'class="workspace-tabs-row"' in html
+    assert 'class="workspace-tab-actions"' in html
+    assert 'data-workspace-action-tab="filter"' in html
+    assert 'data-workspace-action-tab="review" hidden' in html
+    assert html.index('data-tab="discard"') < html.index('id="btn-refresh"')
+    assert html.index('id="btn-refresh"') < html.index('id="filter-tab"')
+    assert html.index('id="btn-finalized-batches"') < html.index('id="review-tab"')
     assert '/static/js/manual_filter/workspace.js?v=' in html
     assert '/static/js/shift_date.js?v=' in html
     assert '/static/js/manual_filter/filter_tab_data.js?v=' in html
@@ -282,6 +290,8 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "action.startsWith('/finalizations/')" in workspace_script
     assert "if (elements.reviewList)" in init_script
     assert "!IS_DUTY_WORKSPACE && elements.reviewList" not in init_script
+    assert "syncWorkspaceTabActions(state.currentTab);" in utils_script
+    assert "action.hidden = action.dataset.workspaceActionTab !== currentTab;" in utils_script
 
 
 def test_admin_manual_filter_keeps_admin_only_entries() -> None:

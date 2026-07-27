@@ -148,9 +148,19 @@ h1 {
     margin-bottom: 0;
 }
 
-.workspace-tabs-refresh {
+.workspace-tab-actions {
+    display: flex;
+    align-items: center;
     flex: 0 0 auto;
     margin-left: auto;
+}
+
+.workspace-tab-action[hidden] {
+    display: none;
+}
+
+.workspace-tabs-refresh {
+    flex: 0 0 auto;
 }
 
 .workspace-tabs-refresh .refresh-action-tooltip {
@@ -260,6 +270,10 @@ h1 {
     .workspace-tabs-row .tabs {
         width: auto;
         flex: 0 1 auto;
+    }
+
+    .workspace-tab-actions {
+        flex: 0 0 auto;
     }
 
     .tab-btn {

@@ -839,8 +839,7 @@ body.duplicate-review-open .search-drawer-toggle {
         grid-area: preview;
     }
 
-    .review-toolbar #btn-archive,
-    .review-toolbar #btn-finalized-batches {
+    .review-toolbar #btn-archive {
         grid-area: archive;
     }
 

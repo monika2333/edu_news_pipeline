@@ -1,4 +1,4 @@
-\restrict 0vJAjf1ONSo32OpgcxNujxaK9yc9ds0zR9s5rXwmAXWOG2o526faLHJljJdeLfu
+\restrict tmtdrBQ4PHXkpg8AXkhetMfgz5Fw0jVIGINCLGXINHOIzYmD8nS3ovUlKhiB4OY
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
@@ -14,13 +14,6 @@ SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
-
---
--- Name: public; Type: SCHEMA; Schema: -; Owner: -
---
-
--- *not* creating schema, since initdb creates it
-
 
 --
 -- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
@@ -478,7 +471,7 @@ ALTER SEQUENCE public.review_events_id_seq OWNED BY public.review_events.id;
 --
 
 CREATE TABLE public.schema_migrations (
-    version character varying NOT NULL
+    version character varying(128) NOT NULL
 );
 
 
@@ -505,6 +498,20 @@ CREATE TABLE public.score_feedbacks (
 
 
 --
+-- Name: shift_review_finalization_batches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.shift_review_finalization_batches (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    shift_id uuid NOT NULL,
+    report_type text NOT NULL,
+    finalized_by_user_id uuid NOT NULL,
+    finalized_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT shift_review_finalization_batches_report_type_check CHECK ((report_type = ANY (ARRAY['zongbao'::text, 'wanbao'::text])))
+);
+
+
+--
 -- Name: shift_reviews; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -527,7 +534,11 @@ CREATE TABLE public.shift_reviews (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     admin_discarded_at timestamp with time zone,
     admin_discarded_by_user_id uuid,
+    finalized_batch_id uuid,
+    finalized_rank integer,
     CONSTRAINT shift_reviews_decision_check CHECK ((decision = ANY (ARRAY['pending'::text, 'selected'::text, 'backup'::text, 'discarded'::text]))),
+    CONSTRAINT shift_reviews_finalization_pair_check CHECK ((((finalized_batch_id IS NULL) AND (finalized_rank IS NULL)) OR ((finalized_batch_id IS NOT NULL) AND (finalized_rank IS NOT NULL)))),
+    CONSTRAINT shift_reviews_finalized_rank_check CHECK (((finalized_rank IS NULL) OR (finalized_rank > 0))),
     CONSTRAINT shift_reviews_rank_check CHECK (((rank IS NULL) OR (rank > 0))),
     CONSTRAINT shift_reviews_report_type_check CHECK (((report_type IS NULL) OR (report_type = ANY (ARRAY['zongbao'::text, 'wanbao'::text])))),
     CONSTRAINT shift_reviews_version_check CHECK ((version > 0))
@@ -763,6 +774,14 @@ ALTER TABLE ONLY public.score_feedbacks
 
 ALTER TABLE ONLY public.score_feedbacks
     ADD CONSTRAINT score_feedbacks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: shift_review_finalization_batches shift_review_finalization_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_review_finalization_batches
+    ADD CONSTRAINT shift_review_finalization_batches_pkey PRIMARY KEY (id);
 
 
 --
@@ -1062,6 +1081,13 @@ CREATE INDEX score_feedbacks_prompt_version_idx ON public.score_feedbacks USING 
 
 
 --
+-- Name: shift_review_finalization_batches_shift_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX shift_review_finalization_batches_shift_idx ON public.shift_review_finalization_batches USING btree (shift_id, report_type, finalized_at);
+
+
+--
 -- Name: shift_reviews_admin_discarded_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1080,6 +1106,20 @@ CREATE INDEX shift_reviews_article_id_idx ON public.shift_reviews USING btree (a
 --
 
 CREATE INDEX shift_reviews_created_by_idx ON public.shift_reviews USING btree (created_by_user_id);
+
+
+--
+-- Name: shift_reviews_current_selected_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX shift_reviews_current_selected_idx ON public.shift_reviews USING btree (shift_id, report_type, rank) WHERE ((decision = 'selected'::text) AND (finalized_batch_id IS NULL));
+
+
+--
+-- Name: shift_reviews_finalized_batch_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX shift_reviews_finalized_batch_idx ON public.shift_reviews USING btree (finalized_batch_id, finalized_rank) WHERE (finalized_batch_id IS NOT NULL);
 
 
 --
@@ -1272,6 +1312,22 @@ ALTER TABLE ONLY public.score_feedbacks
 
 
 --
+-- Name: shift_review_finalization_batches shift_review_finalization_batches_finalized_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_review_finalization_batches
+    ADD CONSTRAINT shift_review_finalization_batches_finalized_by_user_id_fkey FOREIGN KEY (finalized_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: shift_review_finalization_batches shift_review_finalization_batches_shift_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_review_finalization_batches
+    ADD CONSTRAINT shift_review_finalization_batches_shift_id_fkey FOREIGN KEY (shift_id) REFERENCES public.duty_shifts(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: shift_reviews shift_reviews_admin_discarded_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1285,6 +1341,14 @@ ALTER TABLE ONLY public.shift_reviews
 
 ALTER TABLE ONLY public.shift_reviews
     ADD CONSTRAINT shift_reviews_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: shift_reviews shift_reviews_finalized_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_reviews
+    ADD CONSTRAINT shift_reviews_finalized_batch_id_fkey FOREIGN KEY (finalized_batch_id) REFERENCES public.shift_review_finalization_batches(id) ON DELETE RESTRICT;
 
 
 --
@@ -1307,7 +1371,7 @@ ALTER TABLE ONLY public.shift_reviews
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 0vJAjf1ONSo32OpgcxNujxaK9yc9ds0zR9s5rXwmAXWOG2o526faLHJljJdeLfu
+\unrestrict tmtdrBQ4PHXkpg8AXkhetMfgz5Fw0jVIGINCLGXINHOIzYmD8nS3ovUlKhiB4OY
 
 
 --
@@ -1345,4 +1409,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260724210000'),
     ('20260725100000'),
     ('20260726110000'),
-    ('20260726130000');
+    ('20260726130000'),
+    ('20260727100000');

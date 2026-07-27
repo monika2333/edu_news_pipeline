@@ -83,6 +83,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (btnArchive) {
         btnArchive.addEventListener('click', handleArchive);
     }
+    const btnFinalizeReview = document.getElementById('btn-finalize-review');
+    if (btnFinalizeReview) {
+        btnFinalizeReview.addEventListener('click', finalizeCurrentDutyReview);
+    }
+    const btnFinalizedBatches = document.getElementById('btn-finalized-batches');
+    if (btnFinalizedBatches) {
+        btnFinalizedBatches.addEventListener('click', openDutyFinalizationHistory);
+    }
+    const btnCloseFinalizationHistory = document.getElementById(
+        'btn-close-finalization-history'
+    );
+    if (btnCloseFinalizationHistory) {
+        btnCloseFinalizationHistory.addEventListener(
+            'click',
+            () => setFinalizationHistoryOpen(false)
+        );
+    }
 
     // Preview Modal Handlers
     const btnClosePreview = document.getElementById('btn-close-preview');

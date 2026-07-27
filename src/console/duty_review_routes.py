@@ -10,7 +10,9 @@ from src.console.duty_review_schemas import (
     DutyReviewBatchDecisionRequest,
     DutyReviewBatchEditRequest,
     DutyReviewDuplicateCheckRequest,
+    DutyReviewFinalizeRequest,
     DutyReviewOrderRequest,
+    DutyReviewRestoreFinalizationRequest,
     DutyReviewUpdateRequest,
     ReportType,
 )
@@ -229,6 +231,63 @@ def update_order(
             request_id=request_id,
         )
     except (ValueError, PermissionError) as exc:
+        _raise_review_error(exc)
+
+
+@router.get("/finalizations")
+def list_finalizations(
+    shift_id: str,
+    report_type: ReportType = "zongbao",
+    user: ConsoleUser = Depends(require_role("duty_editor")),
+) -> dict[str, Any]:
+    """List finalized batches for the owned shift and report."""
+    try:
+        return duty_review_service.list_finalized_batches(
+            shift_id=shift_id,
+            user=user,
+            report_type=report_type,
+        )
+    except (ValueError, PermissionError) as exc:
+        _raise_review_error(exc)
+
+
+@router.post("/finalizations")
+def finalize_selected_batch(
+    shift_id: str,
+    payload: DutyReviewFinalizeRequest,
+    user: ConsoleUser = Depends(require_role("duty_editor")),
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
+) -> dict[str, Any]:
+    """Finalize and clear the current selected batch for the editor."""
+    try:
+        return duty_review_service.finalize_selected_batch(
+            shift_id=shift_id,
+            user=user,
+            report_type=payload.report_type,
+            request_id=request_id,
+        )
+    except (ValueError, PermissionError, RuntimeError) as exc:
+        _raise_review_error(exc)
+
+
+@router.post("/finalizations/{batch_id}/restore")
+def restore_finalization(
+    shift_id: str,
+    batch_id: str,
+    payload: DutyReviewRestoreFinalizationRequest,
+    user: ConsoleUser = Depends(require_role("duty_editor")),
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
+) -> dict[str, Any]:
+    """Restore one finalized item or an entire batch to the selected list."""
+    try:
+        return duty_review_service.restore_finalized_batch(
+            shift_id=shift_id,
+            batch_id=batch_id,
+            user=user,
+            article_id=payload.article_id,
+            request_id=request_id,
+        )
+    except (ValueError, PermissionError, RuntimeError) as exc:
         _raise_review_error(exc)
 
 

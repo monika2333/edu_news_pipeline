@@ -345,6 +345,63 @@ def test_stale_batch_review_decision_returns_409(monkeypatch) -> None:
     assert response.status_code == 409
 
 
+def test_editor_can_finalize_and_restore_owned_shift_batch(monkeypatch) -> None:
+    editor = ConsoleUser(
+        method="test",
+        user_id="editor-id",
+        username="editor",
+        display_name="值班编辑",
+        role="duty_editor",
+    )
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def finalize(**kwargs: Any) -> dict[str, Any]:
+        calls.append(("finalize", kwargs))
+        return {
+            "batch_id": "batch-1",
+            "report_type": "zongbao",
+            "finalized_at": "2026-07-27T10:30:00+08:00",
+            "item_count": 2,
+        }
+
+    def restore(**kwargs: Any) -> dict[str, Any]:
+        calls.append(("restore", kwargs))
+        return {
+            "batch_id": "batch-1",
+            "report_type": "zongbao",
+            "restored": 1,
+            "article_ids": ["article-1"],
+        }
+
+    monkeypatch.setattr(
+        duty_review_service,
+        "finalize_selected_batch",
+        finalize,
+    )
+    monkeypatch.setattr(
+        duty_review_service,
+        "restore_finalized_batch",
+        restore,
+    )
+    client = _client_for(editor)
+
+    finalized = client.post(
+        "/api/duty/shifts/shift-id/finalizations",
+        json={"report_type": "zongbao"},
+    )
+    restored = client.post(
+        "/api/duty/shifts/shift-id/finalizations/batch-1/restore",
+        json={"article_id": "article-1"},
+    )
+
+    assert finalized.status_code == 200
+    assert finalized.json()["item_count"] == 2
+    assert restored.status_code == 200
+    assert restored.json()["restored"] == 1
+    assert calls[0][1]["user"].user_id == "editor-id"
+    assert calls[1][1]["article_id"] == "article-1"
+
+
 def test_editor_can_check_duplicates_in_owned_shift(monkeypatch) -> None:
     editor = ConsoleUser(
         method="test",

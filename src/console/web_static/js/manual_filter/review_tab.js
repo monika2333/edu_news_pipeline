@@ -307,11 +307,17 @@ function bindReviewSelectionControls() {
     summaries.forEach(box => {
         resizeReviewSummaryBox(box);
         box.addEventListener('input', () => refreshReviewSummaryBox(box));
-        box.addEventListener('change', handleSummaryUpdate);
+        box.addEventListener('change', event => {
+            pendingReviewEditPromise = pendingReviewEditPromise
+                .then(() => handleSummaryUpdate(event));
+        });
     });
     const sources = elements.reviewList.querySelectorAll('.source-box');
     sources.forEach(input => {
-        input.addEventListener('change', handleSourceUpdate);
+        input.addEventListener('change', event => {
+            pendingReviewEditPromise = pendingReviewEditPromise
+                .then(() => handleSourceUpdate(event));
+        });
     });
     updateReviewSelectAllState();
 }
@@ -357,6 +363,11 @@ function applyReviewViewMode() {
     if (archiveBtn) {
         archiveBtn.style.display = state.reviewView === 'backup' ? 'none' : '';
     }
+    const finalizeBtn = document.getElementById('btn-finalize-review');
+    const finalizedBatchesBtn = document.getElementById('btn-finalized-batches');
+    [finalizeBtn, finalizedBatchesBtn].filter(Boolean).forEach(button => {
+        button.style.display = state.reviewView === 'selected' ? '' : 'none';
+    });
     updateReviewRailCounts();
     initReviewSortable();
 }

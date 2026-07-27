@@ -80,6 +80,13 @@ def serialize_review_item(
     item["admin_decided_by"] = source.get("admin_decided_by")
     item["admin_decided_at"] = source.get("admin_decided_at")
     item["admin_version"] = source.get("admin_version")
+    item["finalized_batch_id"] = source.get("finalized_batch_id")
+    item["finalized_rank"] = source.get("finalized_rank")
+    item["finalized_at"] = source.get("finalized_at")
+    item["finalized_by_user_id"] = source.get("finalized_by_user_id")
+    item["finalized_by_display_name"] = source.get(
+        "finalized_by_display_name"
+    )
     return item
 
 
@@ -103,6 +110,9 @@ def list_items(
         report_type=report_type,
         limit=limit,
         offset=offset,
+        finalization_scope=(
+            "unfinalized" if decision == "selected" else "all"
+        ),
     )
     return {
         "items": [
@@ -327,6 +337,100 @@ def get_stats(*, shift_id: str, user: ConsoleUser) -> dict[str, Any]:
     return get_adapter().fetch_shift_stats(shift_id)
 
 
+def finalize_selected_batch(
+    *,
+    shift_id: str,
+    user: ConsoleUser,
+    report_type: str,
+    request_id: Optional[str] = None,
+) -> dict[str, Any]:
+    require_owned_shift(shift_id, user)
+    if not user.user_id:
+        raise PermissionError("A business user account is required")
+    if report_type not in VALID_REPORT_TYPES:
+        raise ValueError(f"Invalid report type: {report_type}")
+    batch = get_adapter().finalize_shift_review_batch(
+        shift_id=shift_id,
+        report_type=report_type,
+        actor_user_id=user.user_id,
+        request_id=request_id,
+    )
+    return {
+        "batch_id": str(batch["id"]),
+        "report_type": str(batch["report_type"]),
+        "finalized_at": batch["finalized_at"],
+        "item_count": int(batch["item_count"]),
+    }
+
+
+def list_finalized_batches(
+    *,
+    shift_id: str,
+    user: ConsoleUser,
+    report_type: str,
+) -> dict[str, Any]:
+    require_owned_shift(shift_id, user, allow_cancelled=True)
+    if report_type not in VALID_REPORT_TYPES:
+        raise ValueError(f"Invalid report type: {report_type}")
+    rows = get_adapter().fetch_shift_finalized_items(
+        shift_id=shift_id,
+        report_type=report_type,
+    )
+    batches: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        batch_id = str(row["finalized_batch_id"])
+        batch = batches.setdefault(
+            batch_id,
+            {
+                "batch_id": batch_id,
+                "report_type": report_type,
+                "finalized_at": row.get("finalized_at"),
+                "finalized_by_display_name": row.get(
+                    "finalized_by_display_name"
+                ),
+                "items": [],
+            },
+        )
+        batch["items"].append(
+            serialize_review_item(row, fallback_report_type=report_type)
+        )
+    return {
+        "batches": [
+            {
+                **batch,
+                "item_count": len(batch["items"]),
+            }
+            for batch in batches.values()
+        ],
+        "total": len(rows),
+    }
+
+
+def restore_finalized_batch(
+    *,
+    shift_id: str,
+    batch_id: str,
+    user: ConsoleUser,
+    article_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+) -> dict[str, Any]:
+    require_owned_shift(shift_id, user)
+    if not user.user_id:
+        raise PermissionError("A business user account is required")
+    normalized_article_id = (
+        str(article_id).strip() if article_id is not None else None
+    )
+    if article_id is not None and not normalized_article_id:
+        raise ValueError("Article id cannot be empty")
+    return get_adapter().restore_shift_review_finalization(
+        shift_id=shift_id,
+        batch_id=batch_id,
+        actor_user_id=user.user_id,
+        article_id=normalized_article_id,
+        request_id=request_id,
+    )
+
+
 def _preview_entry(item: Mapping[str, Any], index: int) -> str:
     title = str(item.get("title") or "无标题").strip()
     summary = str(
@@ -359,6 +463,7 @@ def build_preview(
         report_type=report_type,
         limit=200,
         offset=0,
+        finalization_scope="unfinalized",
     )
     backup_rows, _ = get_adapter().fetch_shift_review_items(
         shift_id=shift_id,
@@ -390,11 +495,14 @@ __all__ = [
     "bulk_decide",
     "build_preview",
     "check_duplicates",
+    "finalize_selected_batch",
     "get_stats",
+    "list_finalized_batches",
     "list_clusters",
     "list_items",
     "save_edits",
     "save_review",
     "serialize_review_item",
+    "restore_finalized_batch",
     "update_order",
 ]

@@ -262,6 +262,11 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'id="search-drawer-toggle"' in html
     assert 'id="stat-exported"' not in html
     assert "已放弃" not in html
+    assert 'id="btn-finalize-review"' in html
+    assert "定稿并清空列表" in html
+    assert 'id="btn-finalized-batches"' in html
+    assert 'id="finalization-history-modal"' in html
+    assert "/static/js/manual_filter/review_tab_finalization.js?v=" in html
     assert '<details class="account-menu">' in html
     assert '<summary class="account-menu-trigger current-user" id="current-user">' in html
     assert 'class="account-menu-item" href="/admin"' not in html
@@ -273,6 +278,8 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "window.fetch(`${API_BASE}/decide`, options)" in workspace_script
     assert "window.fetch(`${API_BASE}/duplicate-check`, options)" in workspace_script
     assert "reviews/${encodeURIComponent(articleId)}" not in workspace_script
+    assert "action === '/finalizations'" in workspace_script
+    assert "action.startsWith('/finalizations/')" in workspace_script
     assert "if (elements.reviewList)" in init_script
     assert "!IS_DUTY_WORKSPACE && elements.reviewList" not in init_script
 
@@ -314,6 +321,8 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert 'id="review-tab"' not in html
     assert 'id="btn-check-duplicates"' not in html
     assert 'id="btn-archive"' not in html
+    assert 'id="btn-finalize-review"' not in html
+    assert 'id="btn-finalized-batches"' not in html
     assert 'id="btn-filter-discard-before-date"' in html
     assert 'id="filter-search-clear"' in html
     assert 'class="review-search-clear"' in html
@@ -521,6 +530,9 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "function activeColumnLabel()" not in script
     assert "当前没有待处理新闻" in script
     assert 'class="summary-empty empty-state"' in script
+    assert 'class="summary-finalization-tag' in script
+    assert "尚未定稿" in script
+    assert "item.finalized_at" in script
     assert "当前筛选没有记录。" not in script
     assert "tab.dataset.summaryView === 'discarded'" in script
     assert "elements.filterLayout.classList.toggle('is-discarded'" in script

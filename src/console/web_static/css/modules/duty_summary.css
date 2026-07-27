@@ -145,6 +145,21 @@
     margin: 0;
 }
 
+.summary-finalization-tag {
+    padding: 3px 8px;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-weight: 700;
+}
+
+.summary-finalization-tag.is-pending {
+    border-color: #fde68a;
+    background: #fffbeb;
+    color: #92400e;
+}
+
 .summary-quick-action {
     display: inline-grid;
     width: 42px;

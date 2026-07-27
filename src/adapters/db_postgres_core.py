@@ -591,6 +591,7 @@ class PostgresAdapter:
         include_admin_state: bool = False,
         admin_discarded_only: bool = False,
         exclude_admin_discarded: bool = False,
+        finalization_scope: str = "all",
     ) -> Tuple[List[Dict[str, Any]], int]:
         with self._cursor() as cur:
             return shift_reviews.fetch_shift_review_items(
@@ -604,6 +605,7 @@ class PostgresAdapter:
                 include_admin_state=include_admin_state,
                 admin_discarded_only=admin_discarded_only,
                 exclude_admin_discarded=exclude_admin_discarded,
+                finalization_scope=finalization_scope,
             )
 
     def fetch_shift_clusters(
@@ -751,6 +753,75 @@ class PostgresAdapter:
                 )
                 saved.append(after)
             return saved
+
+    def finalize_shift_review_batch(
+        self,
+        *,
+        shift_id: str,
+        report_type: str,
+        actor_user_id: str,
+        request_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        with self.transaction() as cur:
+            batch = shift_reviews.finalize_shift_review_batch(
+                cur,
+                shift_id=shift_id,
+                report_type=report_type,
+                actor_user_id=actor_user_id,
+            )
+            audit.insert_review_event(
+                cur,
+                actor_user_id=actor_user_id,
+                action="shift_review.finalize",
+                target_type="shift_review_finalization_batch",
+                target_id=str(batch["id"]),
+                before_data=None,
+                after_data=batch,
+                request_id=request_id,
+            )
+            return batch
+
+    def fetch_shift_finalized_items(
+        self,
+        *,
+        shift_id: str,
+        report_type: str,
+    ) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return shift_reviews.fetch_shift_finalized_items(
+                cur,
+                shift_id=shift_id,
+                report_type=report_type,
+            )
+
+    def restore_shift_review_finalization(
+        self,
+        *,
+        shift_id: str,
+        batch_id: str,
+        actor_user_id: str,
+        article_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        with self.transaction() as cur:
+            result = shift_reviews.restore_shift_review_finalization(
+                cur,
+                shift_id=shift_id,
+                batch_id=batch_id,
+                actor_user_id=actor_user_id,
+                article_id=article_id,
+            )
+            audit.insert_review_event(
+                cur,
+                actor_user_id=actor_user_id,
+                action="shift_review.restore_finalization",
+                target_type="shift_review_finalization_batch",
+                target_id=batch_id,
+                before_data={"batch_id": batch_id, "article_id": article_id},
+                after_data=result,
+                request_id=request_id,
+            )
+            return result
 
     def update_shift_review_order(
         self,

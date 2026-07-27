@@ -81,3 +81,4 @@ const elements = {
 };
 
 let isBulkUpdatingReview = false;
+let pendingReviewEditPromise = Promise.resolve();

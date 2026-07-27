@@ -227,7 +227,14 @@
                         <button class="btn btn-secondary" id="btn-preview-copy">
                             预览
                         </button>
-                        {% if not is_duty_workspace %}
+                        {% if is_duty_workspace %}
+                        <button class="btn btn-secondary" id="btn-finalized-batches">
+                            查看已定稿批次
+                        </button>
+                        <button class="btn btn-primary" id="btn-finalize-review">
+                            定稿并清空列表
+                        </button>
+                        {% else %}
                         <button class="btn btn-primary" id="btn-archive">
                             归档
                         </button>
@@ -267,6 +274,22 @@
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
                 <button class="btn btn-primary" id="btn-copy-preview">复制内容</button>
             </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if is_duty_workspace %}
+    <div class="modal" id="finalization-history-modal" role="dialog" aria-modal="true"
+        aria-labelledby="finalization-history-title" aria-hidden="true">
+        <div class="modal-content finalization-history-content">
+            <div class="modal-header">
+                <div>
+                    <p class="finalization-history-kicker">历史记录</p>
+                    <h3 id="finalization-history-title">已定稿批次</h3>
+                </div>
+                <button class="btn btn-secondary" id="btn-close-finalization-history" type="button">关闭</button>
+            </div>
+            <div class="modal-body finalization-history-list" id="finalization-history-list"></div>
         </div>
     </div>
     {% endif %}
@@ -328,6 +351,7 @@
     <script src="/static/js/manual_filter/review_tab_sort.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/review_tab.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/review_tab_data.js?v={{ version }}"></script>
+    <script src="/static/js/manual_filter/review_tab_finalization.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/review_tab_preview.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/review_duplicates_state.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/review_duplicates_modal.js?v={{ version }}"></script>

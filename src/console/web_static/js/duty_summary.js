@@ -363,6 +363,13 @@
             const adminReportType = item.admin_report_type || 'zongbao';
             const selectedActive = item.admin_status === 'selected'
                 && adminReportType === state.targetReportType;
+            const finalizationTag = item.decision === 'selected'
+                ? `<span class="summary-finalization-tag${item.finalized_at ? '' : ' is-pending'}">${
+                    item.finalized_at
+                        ? `${escapeHtml(formatDateTime(item.finalized_at))} 定稿`
+                        : '尚未定稿'
+                }</span>`
+                : '';
             return `
             <article class="article-card summary-item">
                 <div class="card-header">
@@ -399,6 +406,7 @@
                         <span>${escapeHtml(item.report_type || '')}</span>
                         <span>管理员：${escapeHtml(item.admin_status || 'pending')}</span>
                         <span>${escapeHtml(item.admin_report_type || 'zongbao')}</span>
+                        ${finalizationTag}
                         ${state.adminDiscarded ? `<span>放弃人：${escapeHtml(item.admin_discarded_by_display_name || '管理员')}</span>` : ''}
                         <span>${escapeHtml(item.source || item.llm_source || '未知来源')}</span>
                         <span>${escapeHtml(formatDateTime(item.publish_time_iso || item.created_at))}</span>

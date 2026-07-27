@@ -7,6 +7,7 @@ import psycopg
 from src.adapters.db_postgres_manual_reviews import SCORE_FEEDBACK_JOIN
 
 VALID_DECISIONS = frozenset({"pending", "selected", "backup", "discarded"})
+VALID_FINALIZATION_SCOPES = frozenset({"all", "finalized", "unfinalized"})
 VALID_REPORT_TYPES = frozenset({"zongbao", "wanbao"})
 _EDITABLE_FIELDS = (
     "decision",
@@ -27,6 +28,11 @@ SHIFT_REVIEW_SELECT = """
     sr.manual_llm_source,
     sr.notes,
     sr.version,
+    sr.finalized_batch_id,
+    sr.finalized_rank,
+    finalization_batch.finalized_at,
+    finalization_batch.finalized_by_user_id,
+    finalizer.display_name AS finalized_by_display_name,
     sr.created_by_user_id,
     creator.display_name AS created_by_display_name,
     sr.updated_by_user_id,
@@ -72,7 +78,10 @@ def fetch_shift_review_items(
     include_admin_state: bool = False,
     admin_discarded_only: bool = False,
     exclude_admin_discarded: bool = False,
+    finalization_scope: str = "all",
 ) -> tuple[list[dict[str, Any]], int]:
+    if finalization_scope not in VALID_FINALIZATION_SCOPES:
+        raise ValueError(f"Invalid finalization scope: {finalization_scope}")
     bounded_limit = max(1, min(limit, 200))
     bounded_offset = max(0, offset)
     clauses = [
@@ -89,6 +98,10 @@ def fetch_shift_review_items(
     if report_type:
         clauses.append("COALESCE(sr.report_type, 'zongbao') = %s")
         params.append(report_type)
+    if finalization_scope == "finalized":
+        clauses.append("sr.finalized_batch_id IS NOT NULL")
+    elif finalization_scope == "unfinalized":
+        clauses.append("sr.finalized_batch_id IS NULL")
     if admin_discarded_only:
         clauses.append("sr.admin_discarded_at IS NOT NULL")
     elif exclude_admin_discarded:
@@ -156,12 +169,23 @@ def fetch_shift_review_items(
     )
     total_row = cur.fetchone()
     total = int(total_row["total"]) if total_row else 0
-    order_sql = (
-        "sr.rank ASC NULLS LAST, sr.created_at ASC NULLS LAST, "
-        "sr.id ASC NULLS LAST"
-        if decision in {"selected", "backup"}
-        else "ns.external_importance_score DESC NULLS LAST, sr.rank ASC NULLS LAST"
-    )
+    if decision == "selected" and finalization_scope == "all":
+        order_sql = (
+            "finalization_batch.finalized_at ASC NULLS LAST, "
+            "CASE WHEN sr.finalized_batch_id IS NOT NULL "
+            "THEN sr.finalized_rank ELSE sr.rank END ASC NULLS LAST, "
+            "sr.created_at ASC NULLS LAST, sr.id ASC NULLS LAST"
+        )
+    elif decision in {"selected", "backup"}:
+        order_sql = (
+            "sr.rank ASC NULLS LAST, sr.created_at ASC NULLS LAST, "
+            "sr.id ASC NULLS LAST"
+        )
+    else:
+        order_sql = (
+            "ns.external_importance_score DESC NULLS LAST, "
+            "sr.rank ASC NULLS LAST"
+        )
     cur.execute(
         f"""
         SELECT {SHIFT_REVIEW_SELECT}
@@ -177,6 +201,10 @@ def fetch_shift_review_items(
         {manual_join_sql}
         LEFT JOIN console_users creator ON creator.id = sr.created_by_user_id
         LEFT JOIN console_users updater ON updater.id = sr.updated_by_user_id
+        LEFT JOIN shift_review_finalization_batches finalization_batch
+          ON finalization_batch.id = sr.finalized_batch_id
+        LEFT JOIN console_users finalizer
+          ON finalizer.id = finalization_batch.finalized_by_user_id
         {admin_discard_join_sql}
         {SCORE_FEEDBACK_JOIN}
         WHERE {where_sql}
@@ -278,6 +306,8 @@ def fetch_shift_review(
             manual_llm_source,
             notes,
             version,
+            finalized_batch_id,
+            finalized_rank,
             decided_at,
             created_at,
             updated_at
@@ -307,6 +337,8 @@ def upsert_shift_review(
         article_id=article_id,
         for_update=True,
     )
+    if existing and existing.get("finalized_batch_id"):
+        raise ValueError("已定稿新闻需先撤回当前列表后再修改")
     if existing is None:
         if expected_version not in (None, 0):
             raise ShiftReviewConflictError("Review version is stale")
@@ -437,6 +469,208 @@ def set_admin_discarded(
     return existing, dict(row)
 
 
+def finalize_shift_review_batch(
+    cur: psycopg.Cursor,
+    *,
+    shift_id: str,
+    report_type: str,
+    actor_user_id: str,
+) -> dict[str, Any]:
+    cur.execute(
+        """
+        SELECT sr.article_id
+        FROM shift_reviews sr
+        JOIN duty_shifts s ON s.id = sr.shift_id
+        WHERE sr.shift_id = %s
+          AND s.cancelled_at IS NULL
+          AND sr.decision = 'selected'
+          AND COALESCE(sr.report_type, 'zongbao') = %s
+          AND sr.finalized_batch_id IS NULL
+        ORDER BY
+            sr.rank ASC NULLS LAST,
+            sr.created_at ASC,
+            sr.id ASC
+        FOR UPDATE OF sr
+        """,
+        (shift_id, report_type),
+    )
+    article_ids = [str(row["article_id"]) for row in cur.fetchall()]
+    if not article_ids:
+        raise ValueError("当前采纳列表没有可定稿的新闻")
+
+    cur.execute(
+        """
+        INSERT INTO shift_review_finalization_batches (
+            shift_id,
+            report_type,
+            finalized_by_user_id
+        )
+        VALUES (%s, %s, %s)
+        RETURNING id, shift_id, report_type, finalized_by_user_id, finalized_at
+        """,
+        (shift_id, report_type, actor_user_id),
+    )
+    batch_row = cur.fetchone()
+    if not batch_row:
+        raise RuntimeError("定稿批次创建失败")
+    batch = dict(batch_row)
+
+    cur.execute(
+        """
+        UPDATE shift_reviews AS sr
+        SET finalized_batch_id = %s,
+            finalized_rank = ordered.finalized_rank::integer,
+            updated_by_user_id = %s,
+            version = version + 1,
+            updated_at = now()
+        FROM unnest(%s::text[])
+            WITH ORDINALITY AS ordered(article_id, finalized_rank)
+        WHERE sr.shift_id = %s
+          AND sr.article_id = ordered.article_id
+          AND sr.decision = 'selected'
+          AND sr.finalized_batch_id IS NULL
+        RETURNING sr.article_id
+        """,
+        (batch["id"], actor_user_id, article_ids, shift_id),
+    )
+    updated_ids = [str(row["article_id"]) for row in cur.fetchall()]
+    if len(updated_ids) != len(article_ids):
+        raise ShiftReviewConflictError("采纳列表已变化，请刷新后重试")
+    return {
+        **batch,
+        "item_count": len(article_ids),
+        "article_ids": article_ids,
+    }
+
+
+def fetch_shift_finalized_items(
+    cur: psycopg.Cursor,
+    *,
+    shift_id: str,
+    report_type: str,
+) -> list[dict[str, Any]]:
+    cur.execute(
+        f"""
+        SELECT {SHIFT_REVIEW_SELECT}
+        FROM duty_shifts s
+        JOIN shift_reviews sr ON sr.shift_id = s.id
+        JOIN news_summaries ns ON ns.article_id = sr.article_id
+        LEFT JOIN console_users creator ON creator.id = sr.created_by_user_id
+        LEFT JOIN console_users updater ON updater.id = sr.updated_by_user_id
+        JOIN shift_review_finalization_batches finalization_batch
+          ON finalization_batch.id = sr.finalized_batch_id
+        LEFT JOIN console_users finalizer
+          ON finalizer.id = finalization_batch.finalized_by_user_id
+        {SCORE_FEEDBACK_JOIN}
+        WHERE s.id = %s
+          AND sr.decision = 'selected'
+          AND COALESCE(sr.report_type, 'zongbao') = %s
+          AND ns.status = 'ready_for_export'
+        ORDER BY
+            finalization_batch.finalized_at DESC,
+            finalization_batch.id DESC,
+            sr.finalized_rank ASC,
+            sr.article_id
+        """,
+        (shift_id, report_type),
+    )
+    return [dict(row) for row in cur.fetchall()]
+
+
+def restore_shift_review_finalization(
+    cur: psycopg.Cursor,
+    *,
+    shift_id: str,
+    batch_id: str,
+    actor_user_id: str,
+    article_id: Optional[str] = None,
+) -> dict[str, Any]:
+    cur.execute(
+        """
+        SELECT id, shift_id, report_type, finalized_at
+        FROM shift_review_finalization_batches
+        WHERE id = %s
+          AND shift_id = %s
+        FOR UPDATE
+        """,
+        (batch_id, shift_id),
+    )
+    batch_row = cur.fetchone()
+    if not batch_row:
+        raise ValueError("定稿批次不存在")
+    batch = dict(batch_row)
+
+    clauses = ["finalized_batch_id = %s", "decision = 'selected'"]
+    params: list[Any] = [batch_id]
+    if article_id is not None:
+        clauses.append("article_id = %s")
+        params.append(article_id)
+    cur.execute(
+        f"""
+        SELECT article_id, finalized_rank
+        FROM shift_reviews
+        WHERE {" AND ".join(clauses)}
+        ORDER BY finalized_rank ASC, article_id
+        FOR UPDATE
+        """,
+        tuple(params),
+    )
+    rows = [dict(row) for row in cur.fetchall()]
+    if not rows:
+        raise ValueError("该定稿批次中没有可撤回的新闻")
+
+    cur.execute(
+        """
+        SELECT COALESCE(max(rank), 0) AS max_rank
+        FROM shift_reviews
+        WHERE shift_id = %s
+          AND decision = 'selected'
+          AND COALESCE(report_type, 'zongbao') = %s
+          AND finalized_batch_id IS NULL
+        """,
+        (shift_id, batch["report_type"]),
+    )
+    rank_row = cur.fetchone() or {"max_rank": 0}
+    start_rank = int(rank_row["max_rank"] or 0)
+    article_ids = [str(row["article_id"]) for row in rows]
+    restored_ranks = list(
+        range(start_rank + 1, start_rank + len(article_ids) + 1)
+    )
+    cur.execute(
+        """
+        UPDATE shift_reviews AS sr
+        SET finalized_batch_id = NULL,
+            finalized_rank = NULL,
+            rank = restored.restored_rank,
+            updated_by_user_id = %s,
+            version = version + 1,
+            updated_at = now()
+        FROM unnest(%s::text[], %s::integer[])
+            AS restored(article_id, restored_rank)
+        WHERE sr.shift_id = %s
+          AND sr.finalized_batch_id = %s
+          AND sr.article_id = restored.article_id
+        RETURNING sr.article_id
+        """,
+        (
+            actor_user_id,
+            article_ids,
+            restored_ranks,
+            shift_id,
+            batch_id,
+        ),
+    )
+    updated_ids = [str(row["article_id"]) for row in cur.fetchall()]
+    if len(updated_ids) != len(article_ids):
+        raise ShiftReviewConflictError("定稿批次已变化，请刷新后重试")
+    return {
+        "batch_id": str(batch["id"]),
+        "report_type": str(batch["report_type"]),
+        "restored": len(updated_ids),
+        "article_ids": article_ids,
+    }
+
+
 def update_shift_review_order(
     cur: psycopg.Cursor,
     *,
@@ -464,6 +698,7 @@ def update_shift_review_order(
                     updated_at = now()
                 WHERE shift_id = %s
                   AND article_id = %s
+                  AND finalized_batch_id IS NULL
                 """,
                 (
                     decision,
@@ -618,13 +853,17 @@ __all__ = [
     "SHIFT_REVIEW_SELECT",
     "ShiftReviewConflictError",
     "VALID_DECISIONS",
+    "VALID_FINALIZATION_SCOPES",
     "VALID_REPORT_TYPES",
+    "fetch_shift_finalized_items",
     "fetch_admin_shift_summaries",
     "fetch_shift_clusters",
     "fetch_shift_review",
     "fetch_shift_review_items",
     "set_admin_discarded",
     "fetch_shift_stats",
+    "finalize_shift_review_batch",
+    "restore_shift_review_finalization",
     "shift_contains_article",
     "update_shift_review_order",
     "upsert_shift_review",

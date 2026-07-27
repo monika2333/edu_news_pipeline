@@ -42,6 +42,14 @@ class DutyReviewDuplicateCheckRequest(BaseModel):
     decision: Literal["selected", "backup"]
 
 
+class DutyReviewFinalizeRequest(BaseModel):
+    report_type: ReportType
+
+
+class DutyReviewRestoreFinalizationRequest(BaseModel):
+    article_id: Optional[str] = Field(default=None, min_length=1)
+
+
 class DutyReviewOrderRequest(BaseModel):
     selected_order: list[str] = Field(default_factory=list)
     backup_order: list[str] = Field(default_factory=list)
@@ -53,7 +61,9 @@ __all__ = [
     "DutyReviewBatchEditRequest",
     "DutyReviewDuplicateCheckRequest",
     "DutyReviewEditPayload",
+    "DutyReviewFinalizeRequest",
     "DutyReviewOrderRequest",
+    "DutyReviewRestoreFinalizationRequest",
     "DutyReviewUpdateRequest",
     "ReportType",
 ]

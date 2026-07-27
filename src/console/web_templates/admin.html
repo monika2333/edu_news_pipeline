@@ -64,13 +64,24 @@
                     </div>
                     <button class="btn btn-secondary" id="btn-generate-shifts">补齐未来 14 天</button>
                 </div>
-                <div class="admin-table-wrap">
-                    <table class="admin-table">
-                        <thead>
-                            <tr><th>值班日期</th><th>负责人</th><th>状态</th><th>备注</th><th>操作</th></tr>
-                        </thead>
-                        <tbody id="shifts-body"></tbody>
-                    </table>
+                <div class="shift-calendar-toolbar">
+                    <div class="shift-calendar-navigation" aria-label="切换排班月份">
+                        <button class="btn-icon" id="btn-calendar-previous" type="button"
+                            aria-label="上个月">‹</button>
+                        <h3 id="shift-calendar-month"></h3>
+                        <button class="btn-icon" id="btn-calendar-next" type="button"
+                            aria-label="下个月">›</button>
+                        <button class="btn btn-secondary" id="btn-calendar-today"
+                            type="button">今天</button>
+                    </div>
+                </div>
+                <div class="shift-calendar-scroll">
+                    <div class="shift-calendar-weekdays" aria-hidden="true">
+                        <span>周一</span><span>周二</span><span>周三</span><span>周四</span>
+                        <span>周五</span><span>周六</span><span>周日</span>
+                    </div>
+                    <div class="shift-calendar-grid" id="shift-calendar-grid"
+                        aria-label="月度排班日历"></div>
                 </div>
             </section>
         </main>
@@ -78,7 +89,7 @@
 
     <div class="modal" id="delete-user-modal" role="dialog" aria-modal="true"
         aria-labelledby="delete-user-modal-title" aria-hidden="true">
-        <form class="modal-content admin-delete-modal-content" id="delete-user-form">
+        <form class="modal-content admin-modal-content" id="delete-user-form">
             <div class="modal-header">
                 <div>
                     <p class="admin-delete-modal-eyebrow">删除账号</p>
@@ -106,9 +117,40 @@
         </form>
     </div>
 
+    <div class="modal" id="shift-editor-modal" role="dialog" aria-modal="true"
+        aria-labelledby="shift-editor-title" aria-hidden="true">
+        <section class="modal-content admin-modal-content">
+            <div class="modal-header">
+                <div>
+                    <p class="admin-header-eyebrow">具体班次</p>
+                    <h3 id="shift-editor-title"></h3>
+                </div>
+                <button class="btn-icon" id="btn-close-shift-editor" type="button"
+                    aria-label="关闭班次设置">✕</button>
+            </div>
+            <div class="modal-body">
+                <p class="admin-shift-current" id="shift-editor-current"></p>
+                <label class="schedule-day" for="shift-editor-assignee">
+                    负责人
+                    <select id="shift-editor-assignee">
+                        <option value="">请选择负责人</option>
+                    </select>
+                </label>
+                <p class="admin-shift-modal-hint">选择负责人后立即保存；历史班次仅供查看。</p>
+            </div>
+            <div class="modal-footer admin-shift-modal-actions">
+                <button class="btn btn-secondary"
+                    id="btn-clear-shift-assignee" type="button">清除当天负责人</button>
+                <button class="btn btn-secondary" id="btn-restore-shift-template"
+                    type="button">恢复轮值模板</button>
+            </div>
+        </section>
+    </div>
+
     <div class="toast" id="toast">操作成功</div>
     <script src="/static/js/auth.js?v={{ version }}"></script>
     <script src="/static/js/shift_date.js?v={{ version }}"></script>
+    <script src="/static/js/manual_filter/utils.js?v={{ version }}"></script>
     <script src="/static/js/admin.js?v={{ version }}"></script>
 </body>
 

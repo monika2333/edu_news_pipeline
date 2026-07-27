@@ -113,8 +113,18 @@ def test_admin_page_separates_user_search_from_account_creation(
     assert 'id="create-user-form"' not in html
     assert 'name="password"' not in html
     assert "<th>首选值班日</th>" in html
-    assert "<th>值班日期</th>" in html
+    assert "<th>值班日期</th>" not in html
+    assert 'id="shift-calendar-month"' in html
+    assert 'id="shift-calendar-grid"' in html
+    assert 'id="btn-calendar-previous"' in html
+    assert 'id="btn-calendar-next"' in html
+    assert 'id="btn-calendar-today"' in html
+    assert 'id="shift-editor-modal"' in html
+    assert 'id="shift-editor-assignee"' in html
+    assert 'id="btn-clear-shift-assignee"' in html
+    assert 'id="btn-restore-shift-template"' in html
     assert 'src="/static/js/shift_date.js?v=' in html
+    assert 'src="/static/js/manual_filter/utils.js?v=' in html
     assert "editor.preferred_weekday" in admin_script
     assert "首选${preference}" in admin_script
     assert "const query = elements.userSearch.value" in admin_script
@@ -134,8 +144,13 @@ def test_admin_page_separates_user_search_from_account_creation(
     assert "elements.deleteInput.value !== '确认删除'" in admin_script
     assert "button.textContent = '确认删除'" not in admin_script
     assert "method: 'DELETE'" in admin_script
-    assert "window.formatDutyShiftDate(shift.ends_at)" in admin_script
+    assert "window.formatDutyShiftDate(coverage.coverage_end)" in admin_script
     assert "formatDateTime(shift.starts_at)" not in admin_script
+    assert "function renderShiftCalendar()" in admin_script
+    assert "function updateActiveShift(body, successMessage)" in admin_script
+    assert "{ user_id: userId, cancelled: false }" in admin_script
+    assert "updateActiveShift({ cancelled: true }, '已清除当天负责人')" in admin_script
+    assert "buildUndoToastAction" in admin_script
     assert "timeZone: businessTimeZone" in shift_date_script
     assert "month: 'long'" in shift_date_script
     assert ".admin-header-eyebrow," in admin_stylesheet
@@ -143,8 +158,10 @@ def test_admin_page_separates_user_search_from_account_creation(
     assert "font-size: 1.25rem;" in admin_stylesheet
     assert "font-size: 1.45rem;" not in admin_stylesheet
     assert ".admin-delete-user.is-confirming" not in admin_stylesheet
-    assert ".admin-delete-modal-content" in admin_stylesheet
+    assert ".admin-modal-content" in admin_stylesheet
     assert ".admin-confirm-delete:disabled" in admin_stylesheet
+    assert ".shift-calendar-grid" in admin_stylesheet
+    assert ".shift-calendar-day.is-today" in admin_stylesheet
 
 
 def test_admin_create_user_page_reuses_account_form_layout() -> None:

@@ -990,6 +990,13 @@ CREATE INDEX news_summaries_status_attempt_idx ON public.news_summaries USING bt
 
 
 --
+-- Name: news_summaries_status_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX news_summaries_status_created_at_idx ON public.news_summaries USING btree (status, created_at);
+
+
+--
 -- Name: news_summaries_status_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1410,4 +1417,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260725100000'),
     ('20260726110000'),
     ('20260726130000'),
-    ('20260727100000');
+    ('20260727100000'),
+    ('20260727203000');

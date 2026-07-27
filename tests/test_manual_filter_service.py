@@ -571,6 +571,7 @@ def test_list_candidates_search_mode_returns_flat_items(fake_adapter):
     assert result["total"] == 1
     assert "clusters" not in result
     assert [item["article_id"] for item in result["items"]] == ["a1"]
+    assert "content_markdown" not in result["items"][0]
 
 
 def test_list_candidates_cluster_mode_returns_item_total(fake_adapter):
@@ -637,6 +638,11 @@ def test_list_candidates_cluster_mode_returns_item_total(fake_adapter):
     assert result["total"] == 2
     assert result["item_total"] == 3
     assert sum(cluster["size"] for cluster in result["clusters"]) == 3
+    assert all(
+        "content_markdown" not in item
+        for cluster in result["clusters"]
+        for item in cluster["items"]
+    )
 
 
 def test_list_candidates_search_mode_uses_shanghai_calendar_day(fake_adapter):

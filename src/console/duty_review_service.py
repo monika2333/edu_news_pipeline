@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Mapping, Optional, Sequence
 
 from src.adapters.db_postgres_core import get_adapter
@@ -109,17 +110,29 @@ def list_items(
     report_type: Optional[str],
     limit: int,
     offset: int,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    query: Optional[str] = None,
+    published_before: Optional[date] = None,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
     if decision and decision not in VALID_DECISIONS:
         raise ValueError(f"Invalid review decision: {decision}")
     _validate_report_type(report_type)
+    if region is not None and region not in {"internal", "external"}:
+        raise ValueError(f"Invalid review region: {region}")
+    if sentiment is not None and sentiment not in {"positive", "negative"}:
+        raise ValueError(f"Invalid review sentiment: {sentiment}")
     rows, total = get_adapter().fetch_shift_review_items(
         shift_id=shift_id,
         decision=decision,
         report_type=report_type,
         limit=limit,
         offset=offset,
+        region=region,
+        sentiment=sentiment,
+        query=(query or "").strip() or None,
+        published_before=published_before,
         exclude_finalized=decision == "selected",
     )
     return {

@@ -14,6 +14,7 @@ class FakeDutyReviewAdapter:
         self.saved_batch: dict[str, Any] = {}
         self.ordered: dict[str, Any] = {}
         self.fetch_scopes: list[tuple[Optional[str], bool]] = []
+        self.fetch_kwargs: list[dict[str, Any]] = []
         self.finalized: dict[str, Any] = {}
         self.restored: dict[str, Any] = {}
 
@@ -57,10 +58,22 @@ class FakeDutyReviewAdapter:
         report_type: Optional[str],
         limit: int,
         offset: int,
+        region: Optional[str] = None,
+        sentiment: Optional[str] = None,
+        query: Optional[str] = None,
+        published_before: object = None,
         exclude_finalized: bool = False,
     ) -> tuple[list[dict[str, Any]], int]:
         del shift_id, limit, offset
         self.fetch_scopes.append((decision, exclude_finalized))
+        self.fetch_kwargs.append(
+            {
+                "region": region,
+                "sentiment": sentiment,
+                "query": query,
+                "published_before": published_before,
+            }
+        )
         rows = [
             {
                 "article_id": f"{decision}-1",
@@ -230,6 +243,7 @@ def test_serialize_review_item_preserves_admin_comparison_state() -> None:
             "version": 2,
             "title": "测试新闻",
             "llm_summary": "机器摘要",
+            "content_markdown": "不应返回浏览器的正文",
             "score_details": {},
             "admin_status": "selected",
             "admin_report_type": "zongbao",
@@ -250,6 +264,32 @@ def test_serialize_review_item_preserves_admin_comparison_state() -> None:
     assert result["finalized_batch_id"] == "batch-1"
     assert result["finalized_rank"] == 2
     assert result["finalized_at"] == "2026-07-27T10:30:00+08:00"
+    assert "content_markdown" not in result
+
+
+def test_candidate_search_filters_are_forwarded_to_database(
+    fake_adapter: FakeDutyReviewAdapter,
+) -> None:
+    duty_review_service.list_items(
+        shift_id="shift-id",
+        user=_editor(),
+        decision="pending",
+        report_type="zongbao",
+        limit=10,
+        offset=0,
+        region="internal",
+        sentiment="positive",
+        query="  教育政策  ",
+    )
+
+    assert fake_adapter.fetch_kwargs == [
+        {
+            "region": "internal",
+            "sentiment": "positive",
+            "query": "教育政策",
+            "published_before": None,
+        }
+    ]
 
 
 def test_order_rejects_duplicate_article_ids(monkeypatch) -> None:

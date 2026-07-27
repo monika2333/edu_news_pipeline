@@ -25,6 +25,7 @@ def serialize_manual_filter_item(
     report_type: str,
 ) -> Dict[str, Any]:
     item = _attach_group_fields(_attach_source_fields(dict(record)))
+    item.pop("content_markdown", None)
     item["manual_status"] = item.get("status") or fallback_status
     item["summary"] = item.get("manual_summary") or item.get("llm_summary") or ""
     item["bonus_keywords"] = _bonus_keywords(item.get("score_details"))

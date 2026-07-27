@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, NoReturn, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -66,6 +67,10 @@ def list_candidates(
     limit: int = 30,
     offset: int = 0,
     report_type: Optional[ReportType] = None,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    q: Optional[str] = None,
+    published_before: Optional[date] = None,
     user: ConsoleUser = Depends(require_role("duty_editor")),
 ) -> dict[str, Any]:
     try:
@@ -76,6 +81,10 @@ def list_candidates(
             report_type=report_type,
             limit=limit,
             offset=offset,
+            region=region,
+            sentiment=sentiment,
+            query=q,
+            published_before=published_before,
         )
     except (ValueError, PermissionError) as exc:
         _raise_review_error(exc)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 import pytest
@@ -135,6 +136,39 @@ def test_admin_result_queries_separate_active_and_discarded_items() -> None:
     assert all(
         "sr.admin_discarded_at IS NOT NULL" in query
         for query in discarded_cursor.queries
+    )
+
+
+def test_shift_candidate_search_uses_body_without_selecting_it() -> None:
+    cursor = ShiftReviewListCursor()
+
+    db_postgres_shift_reviews.fetch_shift_review_items(
+        cursor,
+        shift_id="shift-1",
+        decision="pending",
+        report_type="zongbao",
+        limit=10,
+        offset=0,
+        region="internal",
+        sentiment="positive",
+        query="教育政策",
+        published_before=date(2026, 7, 27),
+    )
+
+    list_query = cursor.queries[-1]
+    select_clause = list_query.split("FROM duty_shifts", maxsplit=1)[0]
+    assert "coalesce(ns.content_markdown, '')" in list_query
+    assert "ns.content_markdown" not in select_clause
+    assert "ns.is_beijing_related = %s" in list_query
+    assert "ns.sentiment_label = %s" in list_query
+    assert "ILIKE %s" in list_query
+    assert "AT TIME ZONE 'Asia/Shanghai'" in list_query
+    assert cursor.params[-1][-6:-1] == (
+        True,
+        "positive",
+        "%教育政策%",
+        date(2026, 7, 27),
+        10,
     )
 
 

@@ -87,6 +87,31 @@ def test_editor_can_refresh_shift_clusters(monkeypatch) -> None:
     assert captured["user"].user_id == "editor-id"
 
 
+def test_editor_candidate_search_is_forwarded_to_backend(monkeypatch) -> None:
+    editor = _user("duty_editor")
+    captured: dict[str, Any] = {}
+
+    def list_items(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"items": [], "total": 0, "limit": 10, "offset": 0}
+
+    monkeypatch.setattr(duty_review_service, "list_items", list_items)
+
+    response = _client_for(editor).get(
+        "/api/duty/shifts/shift-id/candidates"
+        "?limit=10&offset=20&report_type=zongbao"
+        "&region=internal&sentiment=positive&q=教育政策"
+        "&published_before=2026-07-27"
+    )
+
+    assert response.status_code == 200
+    assert captured["decision"] == "pending"
+    assert captured["region"] == "internal"
+    assert captured["sentiment"] == "positive"
+    assert captured["query"] == "教育政策"
+    assert str(captured["published_before"]) == "2026-07-27"
+
+
 def test_admin_can_bulk_discard_duty_results(monkeypatch) -> None:
     admin = _user("admin")
     captured: dict[str, object] = {}

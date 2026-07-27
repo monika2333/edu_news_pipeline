@@ -146,42 +146,46 @@ function itemReportType(item) {
     return item.report_type === 'wanbao' ? 'wanbao' : 'zongbao';
 }
 
-function publishedDateInShanghai(item) {
-    const value = item.publish_time_iso || (
-        item.publish_time ? Number(item.publish_time) * 1000 : null
-    );
-    if (!value) return '';
-    const publishedAt = new Date(value);
-    if (Number.isNaN(publishedAt.getTime())) return '';
-    const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Shanghai',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-    }).formatToParts(publishedAt);
-    const fields = Object.fromEntries(parts.map(part => [part.type, part.value]));
-    return `${fields.year}-${fields.month}-${fields.day}`;
-}
-
 function filterDutyCandidates(items, params) {
     const region = params.get('region');
     const sentiment = params.get('sentiment');
-    const query = (params.get('q') || '').trim().toLocaleLowerCase('zh-CN');
-    const publishedBefore = params.get('published_before') || '';
     return items.filter(item => {
         if (itemReportType(item) !== 'zongbao') return false;
         if (region && Boolean(item.is_beijing_related) !== (region === 'internal')) return false;
         if (sentiment && item.sentiment_label !== sentiment) return false;
-        if (publishedBefore && publishedDateInShanghai(item) >= publishedBefore) return false;
-        if (!query) return true;
-        const text = [
-            item.title,
-            item.summary,
-            item.llm_summary,
-            item.content_markdown
-        ].filter(Boolean).join(' ').toLocaleLowerCase('zh-CN');
-        return text.includes(query);
+        return true;
     });
+}
+
+function dutyCandidateBackendParams(params, limit, offset) {
+    const backendParams = new URLSearchParams({
+        limit: String(limit),
+        offset: String(offset),
+        report_type: 'zongbao'
+    });
+    ['region', 'sentiment', 'q', 'published_before'].forEach(key => {
+        const value = params.get(key);
+        if (value) backendParams.set(key, value);
+    });
+    return backendParams;
+}
+
+async function loadAllDutyCandidateMatches(params) {
+    const items = [];
+    let offset = 0;
+    let total = 0;
+    do {
+        const backendParams = dutyCandidateBackendParams(params, 200, offset);
+        const response = await window.fetch(
+            `${API_BASE}/candidates?${backendParams.toString()}`
+        );
+        if (!response.ok) throw new Error('值班筛选数据加载失败');
+        const page = await response.json();
+        items.push(...(page.items || []));
+        total = Number(page.total) || 0;
+        offset = items.length;
+    } while (offset < total);
+    return items;
 }
 
 async function loadDutyClusters(forceRefresh = false) {
@@ -203,15 +207,20 @@ async function loadDutyClusters(forceRefresh = false) {
 }
 
 async function dutyCandidatesResponse(params) {
-    const filtered = filterDutyCandidates(
-        await loadAllDutyItems('pending'),
-        params
-    );
     const limit = Math.max(1, Math.min(Number(params.get('limit')) || 10, 200));
     const offset = Math.max(0, Number(params.get('offset')) || 0);
     const searchMode = params.get('view_mode') === 'search'
         || Boolean(params.get('q') || params.get('published_before'));
-    if (searchMode || params.get('cluster') !== 'true') {
+    if (searchMode) {
+        const backendParams = dutyCandidateBackendParams(params, limit, offset);
+        return window.fetch(`${API_BASE}/candidates?${backendParams.toString()}`);
+    }
+
+    const filtered = filterDutyCandidates(
+        await loadAllDutyItems('pending'),
+        params
+    );
+    if (params.get('cluster') !== 'true') {
         return workspaceJsonResponse({
             items: filtered.slice(offset, offset + limit),
             total: filtered.length,
@@ -292,14 +301,20 @@ async function dutyDiscardBeforeDateResponse(options) {
     ['region', 'sentiment', 'q', 'published_before'].forEach(key => {
         if (payload[key]) params.set(key, payload[key]);
     });
-    const items = filterDutyCandidates(
-        await loadAllDutyItems('pending'),
-        params
-    );
     if (payload.dry_run) {
-        return workspaceJsonResponse({ matched: items.length, updated: 0 });
+        const countParams = dutyCandidateBackendParams(params, 1, 0);
+        const countResponse = await window.fetch(
+            `${API_BASE}/candidates?${countParams.toString()}`
+        );
+        if (!countResponse.ok) return countResponse;
+        const countPayload = await countResponse.json();
+        return workspaceJsonResponse({
+            matched: Number(countPayload.total) || 0,
+            updated: 0
+        });
     }
 
+    const items = await loadAllDutyCandidateMatches(params);
     const versions = Object.fromEntries(
         items
             .filter(item => Number(item.version) > 0)

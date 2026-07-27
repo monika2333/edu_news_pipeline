@@ -298,6 +298,8 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "async function loadDutyClusters(forceRefresh = false)" in workspace_script
     assert "params.set('force_refresh', 'true');" in workspace_script
     assert "loadDutyClusters(forceClusterRefresh)" in workspace_script
+    assert "function dutyCandidateBackendParams" in workspace_script
+    assert "item.content_markdown" not in workspace_script
     assert "整批撤回" in finalization_script
     assert "撤回本条" not in finalization_script
     assert "data-finalization-restore-article" not in finalization_script

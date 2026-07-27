@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Mapping, Optional, Sequence
 
 import psycopg
 
-from src.adapters.db_postgres_manual_reviews import SCORE_FEEDBACK_JOIN
+from src.adapters.db_postgres_manual_reviews import (
+    PUBLISHED_LOCAL_DATE_EXPRESSION,
+    SCORE_FEEDBACK_JOIN,
+    SEARCH_TEXT_EXPRESSION,
+)
 
 VALID_DECISIONS = frozenset({"pending", "selected", "backup", "discarded"})
 VALID_REPORT_TYPES = frozenset({"zongbao", "wanbao"})
@@ -43,7 +48,6 @@ SHIFT_REVIEW_SELECT = """
     ns.llm_summary,
     ns.llm_source,
     ns.score,
-    ns.content_markdown,
     ns.url,
     ns.source,
     ns.publish_time_iso,
@@ -73,6 +77,10 @@ def fetch_shift_review_items(
     report_type: Optional[str],
     limit: int,
     offset: int,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    query: Optional[str] = None,
+    published_before: Optional[date] = None,
     mismatch_only: bool = False,
     include_admin_state: bool = False,
     admin_discarded_only: bool = False,
@@ -95,6 +103,19 @@ def fetch_shift_review_items(
     if report_type:
         clauses.append("COALESCE(sr.report_type, 'zongbao') = %s")
         params.append(report_type)
+    if region in {"internal", "external"}:
+        clauses.append("ns.is_beijing_related = %s")
+        params.append(region == "internal")
+    if sentiment in {"positive", "negative"}:
+        clauses.append("ns.sentiment_label = %s")
+        params.append(sentiment)
+    normalized_query = (query or "").strip()
+    if normalized_query:
+        clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
+        params.append(f"%{normalized_query}%")
+    if published_before is not None:
+        clauses.append(f"{PUBLISHED_LOCAL_DATE_EXPRESSION} < %s")
+        params.append(published_before)
     if exclude_finalized:
         clauses.append("sr.finalized_batch_id IS NULL")
     if admin_discarded_only:

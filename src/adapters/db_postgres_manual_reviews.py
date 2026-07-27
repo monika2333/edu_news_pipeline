@@ -29,7 +29,6 @@ MANUAL_REVIEW_SELECT_COLUMNS = """
     ns.llm_summary,
     ns.llm_source,
     ns.score,
-    ns.content_markdown,
     ns.url,
     ns.source,
     ns.publish_time_iso,

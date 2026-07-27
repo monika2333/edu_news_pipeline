@@ -656,6 +656,49 @@ class PostgresAdapter:
             )
             return after
 
+    def save_shift_reviews(
+        self,
+        *,
+        shift_id: str,
+        actor_user_id: str,
+        updates: Sequence[Mapping[str, Any]],
+        action: str,
+        request_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        with self.transaction() as cur:
+            before_items: List[Optional[Dict[str, Any]]] = []
+            after_items: List[Dict[str, Any]] = []
+            for update in updates:
+                article_id = str(update["article_id"])
+                if not shift_reviews.shift_contains_article(
+                    cur,
+                    shift_id=shift_id,
+                    article_id=article_id,
+                ):
+                    raise ValueError("Article does not belong to this active shift")
+                before, after = shift_reviews.upsert_shift_review(
+                    cur,
+                    shift_id=shift_id,
+                    article_id=article_id,
+                    actor_user_id=actor_user_id,
+                    expected_version=update.get("expected_version"),
+                    patch=update.get("patch") or {},
+                )
+                before_items.append(before)
+                after_items.append(after)
+            if after_items:
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action=action,
+                    target_type="shift_review_batch",
+                    target_id=shift_id,
+                    before_data={"items": before_items},
+                    after_data={"items": after_items},
+                    request_id=request_id,
+                )
+            return after_items
+
     def set_shift_review_admin_discarded(
         self,
         *,

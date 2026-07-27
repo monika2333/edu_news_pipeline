@@ -18,6 +18,25 @@ class DutyReviewUpdateRequest(BaseModel):
     notes: Optional[str] = Field(default=None, max_length=5000)
 
 
+class DutyReviewEditPayload(BaseModel):
+    summary: Optional[str] = Field(default=None, max_length=20_000)
+    llm_source: Optional[str] = Field(default=None, max_length=500)
+
+
+class DutyReviewBatchEditRequest(BaseModel):
+    edits: dict[str, DutyReviewEditPayload] = Field(default_factory=dict)
+    versions: dict[str, int] = Field(default_factory=dict)
+
+
+class DutyReviewBatchDecisionRequest(BaseModel):
+    selected_ids: list[str] = Field(default_factory=list)
+    backup_ids: list[str] = Field(default_factory=list)
+    discarded_ids: list[str] = Field(default_factory=list)
+    pending_ids: list[str] = Field(default_factory=list)
+    versions: dict[str, int] = Field(default_factory=dict)
+    report_type: ReportType = "zongbao"
+
+
 class DutyReviewOrderRequest(BaseModel):
     selected_order: list[str] = Field(default_factory=list)
     backup_order: list[str] = Field(default_factory=list)
@@ -25,6 +44,9 @@ class DutyReviewOrderRequest(BaseModel):
 
 __all__ = [
     "Decision",
+    "DutyReviewBatchDecisionRequest",
+    "DutyReviewBatchEditRequest",
+    "DutyReviewEditPayload",
     "DutyReviewOrderRequest",
     "DutyReviewUpdateRequest",
     "ReportType",

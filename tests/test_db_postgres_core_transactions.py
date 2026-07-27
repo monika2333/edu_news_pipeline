@@ -242,3 +242,143 @@ def test_bulk_admin_discard_uses_one_transaction(
         "duty_summary.discard",
         "commit",
     ]
+
+
+def test_bulk_shift_review_update_uses_one_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = object.__new__(db_postgres_core.PostgresAdapter)
+    cursor = object()
+    events: list[str] = []
+    article_ids = [
+        "article-1",
+        "chinanews:/sh/2026/07-27/10666981",
+    ]
+
+    @contextmanager
+    def fake_transaction() -> Iterator[object]:
+        events.append("begin")
+        yield cursor
+        events.append("commit")
+
+    def fake_upsert(cur: object, **kwargs: Any) -> tuple[None, dict[str, Any]]:
+        assert cur is cursor
+        events.append(f"save:{kwargs['article_id']}")
+        return None, {
+            "article_id": kwargs["article_id"],
+            "version": 1,
+        }
+
+    adapter.transaction = fake_transaction
+    monkeypatch.setattr(
+        db_postgres_core.shift_reviews,
+        "shift_contains_article",
+        lambda cur, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.shift_reviews,
+        "upsert_shift_review",
+        fake_upsert,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        lambda cur, **kwargs: events.append(kwargs["action"]),
+    )
+
+    result = adapter.save_shift_reviews(
+        shift_id="shift-1",
+        actor_user_id="editor-1",
+        updates=[
+            {
+                "article_id": article_id,
+                "expected_version": 0,
+                "patch": {"decision": "selected"},
+            }
+            for article_id in article_ids
+        ],
+        action="shift_review.decide",
+    )
+
+    assert [item["article_id"] for item in result] == article_ids
+    assert events == [
+        "begin",
+        "save:article-1",
+        "save:chinanews:/sh/2026/07-27/10666981",
+        "shift_review.decide",
+        "commit",
+    ]
+
+
+def test_bulk_shift_review_update_rolls_back_after_late_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = object.__new__(db_postgres_core.PostgresAdapter)
+    cursor = object()
+    events: list[str] = []
+
+    @contextmanager
+    def fake_transaction() -> Iterator[object]:
+        events.append("begin")
+        try:
+            yield cursor
+        except Exception:
+            events.append("rollback")
+            raise
+        else:
+            events.append("commit")
+
+    def fake_upsert(cur: object, **kwargs: Any) -> tuple[None, dict[str, Any]]:
+        article_id = kwargs["article_id"]
+        events.append(f"save:{article_id}")
+        if article_id == "article-2":
+            raise db_postgres_core.shift_reviews.ShiftReviewConflictError(
+                "Review version is stale"
+            )
+        return None, {"article_id": article_id, "version": 1}
+
+    adapter.transaction = fake_transaction
+    monkeypatch.setattr(
+        db_postgres_core.shift_reviews,
+        "shift_contains_article",
+        lambda cur, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.shift_reviews,
+        "upsert_shift_review",
+        fake_upsert,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        lambda cur, **kwargs: events.append("audit"),
+    )
+
+    with pytest.raises(
+        db_postgres_core.shift_reviews.ShiftReviewConflictError,
+        match="stale",
+    ):
+        adapter.save_shift_reviews(
+            shift_id="shift-1",
+            actor_user_id="editor-1",
+            updates=[
+                {
+                    "article_id": "article-1",
+                    "expected_version": 0,
+                    "patch": {"decision": "selected"},
+                },
+                {
+                    "article_id": "article-2",
+                    "expected_version": 0,
+                    "patch": {"decision": "selected"},
+                },
+            ],
+            action="shift_review.decide",
+        )
+
+    assert events == [
+        "begin",
+        "save:article-1",
+        "save:article-2",
+        "rollback",
+    ]

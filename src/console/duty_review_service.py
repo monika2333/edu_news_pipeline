@@ -13,6 +13,46 @@ from src.console.manual_filter_serializers import serialize_manual_filter_item
 from src.console.shifts_service import require_owned_shift
 
 
+def _version_map(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    return {
+        str(row["article_id"]): int(row["version"])
+        for row in rows
+    }
+
+
+def _validate_review_patch(patch: Mapping[str, Any]) -> None:
+    if "decision" in patch and patch["decision"] not in VALID_DECISIONS:
+        raise ValueError(f"Invalid review decision: {patch['decision']}")
+    if (
+        "report_type" in patch
+        and patch["report_type"] is not None
+        and patch["report_type"] not in VALID_REPORT_TYPES
+    ):
+        raise ValueError(f"Invalid report type: {patch['report_type']}")
+
+
+def _normalize_ids(article_ids: Sequence[str]) -> list[str]:
+    normalized: list[str] = []
+    for raw_article_id in article_ids:
+        article_id = str(raw_article_id).strip()
+        if not article_id:
+            raise ValueError("Article id cannot be empty")
+        normalized.append(article_id)
+    return normalized
+
+
+def _ensure_disjoint(groups: Mapping[str, Sequence[str]]) -> None:
+    seen: set[str] = set()
+    for name, article_ids in groups.items():
+        for article_id in article_ids:
+            if article_id in seen:
+                raise ValueError(
+                    f"Article appears in more than one decision group: "
+                    f"{article_id} ({name})"
+                )
+            seen.add(article_id)
+
+
 def serialize_review_item(
     row: Mapping[str, Any],
     *,
@@ -117,14 +157,7 @@ def save_review(
     require_owned_shift(shift_id, user)
     if not user.user_id:
         raise PermissionError("A business user account is required")
-    if "decision" in patch and patch["decision"] not in VALID_DECISIONS:
-        raise ValueError(f"Invalid review decision: {patch['decision']}")
-    if (
-        "report_type" in patch
-        and patch["report_type"] is not None
-        and patch["report_type"] not in VALID_REPORT_TYPES
-    ):
-        raise ValueError(f"Invalid report type: {patch['report_type']}")
+    _validate_review_patch(patch)
     saved = get_adapter().save_shift_review(
         shift_id=shift_id,
         article_id=article_id,
@@ -134,6 +167,98 @@ def save_review(
         request_id=request_id,
     )
     return serialize_review_item(saved)
+
+
+def save_edits(
+    *,
+    shift_id: str,
+    user: ConsoleUser,
+    edits: Mapping[str, Mapping[str, Any]],
+    versions: Mapping[str, int],
+    request_id: Optional[str] = None,
+) -> dict[str, Any]:
+    require_owned_shift(shift_id, user)
+    if not user.user_id:
+        raise PermissionError("A business user account is required")
+    updates: list[dict[str, Any]] = []
+    for raw_article_id, edit in edits.items():
+        article_id = str(raw_article_id).strip()
+        if not article_id:
+            raise ValueError("Article id cannot be empty")
+        patch = {
+            "edited_summary": edit.get("summary"),
+            "manual_llm_source": edit.get("llm_source"),
+        }
+        updates.append(
+            {
+                "article_id": article_id,
+                "expected_version": versions.get(article_id),
+                "patch": patch,
+            }
+        )
+    saved = get_adapter().save_shift_reviews(
+        shift_id=shift_id,
+        actor_user_id=user.user_id,
+        updates=updates,
+        action="shift_review.edit",
+        request_id=request_id,
+    )
+    return {
+        "updated": len(saved),
+        "versions": _version_map(saved),
+    }
+
+
+def bulk_decide(
+    *,
+    shift_id: str,
+    user: ConsoleUser,
+    selected_ids: Sequence[str],
+    backup_ids: Sequence[str],
+    discarded_ids: Sequence[str],
+    pending_ids: Sequence[str],
+    versions: Mapping[str, int],
+    report_type: str,
+    request_id: Optional[str] = None,
+) -> dict[str, Any]:
+    require_owned_shift(shift_id, user)
+    if not user.user_id:
+        raise PermissionError("A business user account is required")
+    if report_type not in VALID_REPORT_TYPES:
+        raise ValueError(f"Invalid report type: {report_type}")
+    groups = {
+        "selected": _normalize_ids(selected_ids),
+        "backup": _normalize_ids(backup_ids),
+        "discarded": _normalize_ids(discarded_ids),
+        "pending": _normalize_ids(pending_ids),
+    }
+    _ensure_disjoint(groups)
+    updates = [
+        {
+            "article_id": article_id,
+            "expected_version": versions.get(article_id),
+            "patch": {
+                "decision": decision,
+                "report_type": report_type,
+            },
+        }
+        for decision, article_ids in groups.items()
+        for article_id in article_ids
+    ]
+    saved = get_adapter().save_shift_reviews(
+        shift_id=shift_id,
+        actor_user_id=user.user_id,
+        updates=updates,
+        action="shift_review.decide",
+        request_id=request_id,
+    )
+    return {
+        **{
+            decision: len(article_ids)
+            for decision, article_ids in groups.items()
+        },
+        "versions": _version_map(saved),
+    }
 
 
 def update_order(
@@ -231,10 +356,12 @@ def build_preview(
 
 __all__ = [
     "ShiftReviewConflictError",
+    "bulk_decide",
     "build_preview",
     "get_stats",
     "list_clusters",
     "list_items",
+    "save_edits",
     "save_review",
     "serialize_review_item",
     "update_order",

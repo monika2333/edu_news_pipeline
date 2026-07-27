@@ -265,6 +265,9 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'class="account-menu-item" id="btn-logout" type="button">退出登录</button>' in html
     assert "window.formatDutyShiftDate(shift.ends_at)" in workspace_script
     assert "formatWorkspaceDateTime" not in workspace_script
+    assert "window.fetch(`${API_BASE}/edit`, options)" in workspace_script
+    assert "window.fetch(`${API_BASE}/decide`, options)" in workspace_script
+    assert "reviews/${encodeURIComponent(articleId)}" not in workspace_script
 
 
 def test_admin_manual_filter_keeps_admin_only_entries() -> None:

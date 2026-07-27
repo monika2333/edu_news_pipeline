@@ -272,72 +272,14 @@ async function dutyStatsResponse(params) {
     });
 }
 
-async function updateDutyReview(articleId, version, patch) {
-    const response = await window.fetch(
-        `${API_BASE}/reviews/${encodeURIComponent(articleId)}`,
-        {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ version, ...patch })
-        }
-    );
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) return { response, payload };
-    return { response, payload, version: payload.item?.version };
-}
-
 async function dutyEditResponse(options) {
-    const payload = JSON.parse(options.body || '{}');
-    const versions = {};
-    for (const [articleId, edit] of Object.entries(payload.edits || {})) {
-        const result = await updateDutyReview(
-            articleId,
-            payload.versions?.[articleId],
-            {
-                edited_summary: edit.summary,
-                manual_llm_source: edit.llm_source
-            }
-        );
-        if (!result.response.ok) {
-            clearDutyWorkspaceCache();
-            return workspaceJsonResponse(result.payload, result.response.status);
-        }
-        versions[articleId] = result.version;
-    }
     clearDutyWorkspaceCache();
-    return workspaceJsonResponse({ updated: Object.keys(versions).length, versions });
+    return window.fetch(`${API_BASE}/edit`, options);
 }
 
 async function dutyDecideResponse(options) {
-    const payload = JSON.parse(options.body || '{}');
-    const groups = {
-        selected: payload.selected_ids || [],
-        backup: payload.backup_ids || [],
-        discarded: payload.discarded_ids || [],
-        pending: payload.pending_ids || []
-    };
-    const versions = {};
-    for (const [decision, articleIds] of Object.entries(groups)) {
-        for (const articleId of articleIds) {
-            const result = await updateDutyReview(
-                articleId,
-                payload.versions?.[articleId],
-                { decision, report_type: payload.report_type || 'zongbao' }
-            );
-            if (!result.response.ok) {
-                clearDutyWorkspaceCache();
-                return workspaceJsonResponse(result.payload, result.response.status);
-            }
-            versions[articleId] = result.version;
-        }
-    }
     clearDutyWorkspaceCache();
-    return workspaceJsonResponse({
-        ...Object.fromEntries(
-            Object.entries(groups).map(([decision, articleIds]) => [decision, articleIds.length])
-        ),
-        versions
-    });
+    return window.fetch(`${API_BASE}/decide`, options);
 }
 
 async function dutyDiscardBeforeDateResponse(options) {
@@ -354,24 +296,33 @@ async function dutyDiscardBeforeDateResponse(options) {
         return workspaceJsonResponse({ matched: items.length, updated: 0 });
     }
 
-    let updated = 0;
-    for (const item of items) {
-        const result = await updateDutyReview(
-            item.article_id,
-            item.version,
-            { decision: 'discarded', report_type: itemReportType(item) }
-        );
-        if (!result.response.ok) {
-            clearDutyWorkspaceCache();
-            return workspaceJsonResponse(
-                { ...result.payload, matched: items.length, updated },
-                result.response.status
-            );
-        }
-        updated += 1;
-    }
+    const versions = Object.fromEntries(
+        items
+            .filter(item => Number(item.version) > 0)
+            .map(item => [item.article_id, Number(item.version)])
+    );
+    const response = await window.fetch(`${API_BASE}/decide`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            selected_ids: [],
+            backup_ids: [],
+            discarded_ids: items.map(item => item.article_id),
+            pending_ids: [],
+            versions,
+            report_type: 'zongbao'
+        })
+    });
+    const result = await response.json().catch(() => ({}));
     clearDutyWorkspaceCache();
-    return workspaceJsonResponse({ matched: items.length, updated });
+    if (!response.ok) {
+        return workspaceJsonResponse(result, response.status);
+    }
+    return workspaceJsonResponse({
+        ...result,
+        matched: items.length,
+        updated: result.discarded || 0
+    });
 }
 
 async function dutyOrderResponse(options) {

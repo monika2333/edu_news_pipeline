@@ -278,3 +278,96 @@ def test_stale_review_update_returns_409(monkeypatch) -> None:
     )
 
     assert response.status_code == 409
+
+
+def test_batch_review_edit_accepts_article_id_with_slash(monkeypatch) -> None:
+    editor = ConsoleUser(
+        method="test",
+        user_id="editor-id",
+        username="editor",
+        display_name="值班编辑",
+        role="duty_editor",
+    )
+    captured: dict[str, Any] = {}
+    article_id = "chinanews:/sh/2026/07-27/10666981"
+
+    def save_edits(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"updated": 1, "versions": {article_id: 1}}
+
+    monkeypatch.setattr(duty_review_service, "save_edits", save_edits)
+
+    response = _client_for(editor).post(
+        "/api/duty/shifts/shift-id/edit",
+        json={
+            "edits": {
+                article_id: {
+                    "summary": "人工摘要",
+                    "llm_source": "工人日报",
+                }
+            },
+            "versions": {},
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["edits"][article_id] == {
+        "summary": "人工摘要",
+        "llm_source": "工人日报",
+    }
+    assert response.json()["versions"] == {article_id: 1}
+
+
+def test_stale_batch_review_decision_returns_409(monkeypatch) -> None:
+    editor = ConsoleUser(
+        method="test",
+        user_id="editor-id",
+        username="editor",
+        display_name="值班编辑",
+        role="duty_editor",
+    )
+
+    def conflict(**kwargs: Any) -> dict[str, Any]:
+        raise duty_review_service.ShiftReviewConflictError("Review version is stale")
+
+    monkeypatch.setattr(duty_review_service, "bulk_decide", conflict)
+
+    response = _client_for(editor).post(
+        "/api/duty/shifts/shift-id/decide",
+        json={
+            "selected_ids": ["article-1"],
+            "versions": {"article-1": 1},
+            "report_type": "zongbao",
+        },
+    )
+
+    assert response.status_code == 409
+
+
+def test_single_review_route_accepts_encoded_slash_id(monkeypatch) -> None:
+    editor = ConsoleUser(
+        method="test",
+        user_id="editor-id",
+        username="editor",
+        display_name="值班编辑",
+        role="duty_editor",
+    )
+    captured: dict[str, Any] = {}
+
+    def save_review(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {
+            "article_id": kwargs["article_id"],
+            "version": 1,
+        }
+
+    monkeypatch.setattr(duty_review_service, "save_review", save_review)
+
+    response = _client_for(editor).put(
+        "/api/duty/shifts/shift-id/reviews/"
+        "chinanews%3A%2Fsh%2F2026%2F07-27%2F10666981",
+        json={"version": 0, "decision": "selected"},
+    )
+
+    assert response.status_code == 200
+    assert captured["article_id"] == "chinanews:/sh/2026/07-27/10666981"

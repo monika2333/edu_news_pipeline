@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from src.console import duty_review_service, shifts_service
 from src.console.auth_service import ConsoleUser
 from src.console.duty_review_schemas import (
+    DutyReviewBatchDecisionRequest,
+    DutyReviewBatchEditRequest,
     DutyReviewOrderRequest,
     DutyReviewUpdateRequest,
     ReportType,
@@ -96,7 +98,52 @@ def list_reviews(
         _raise_review_error(exc)
 
 
-@router.put("/reviews/{article_id}")
+@router.post("/edit")
+def save_edits(
+    shift_id: str,
+    payload: DutyReviewBatchEditRequest,
+    user: ConsoleUser = Depends(require_role("duty_editor")),
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
+) -> dict[str, Any]:
+    try:
+        return duty_review_service.save_edits(
+            shift_id=shift_id,
+            user=user,
+            edits={
+                article_id: edit.model_dump(exclude_unset=True)
+                for article_id, edit in payload.edits.items()
+            },
+            versions=payload.versions,
+            request_id=request_id,
+        )
+    except (ValueError, PermissionError, RuntimeError) as exc:
+        _raise_review_error(exc)
+
+
+@router.post("/decide")
+def bulk_decide(
+    shift_id: str,
+    payload: DutyReviewBatchDecisionRequest,
+    user: ConsoleUser = Depends(require_role("duty_editor")),
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
+) -> dict[str, Any]:
+    try:
+        return duty_review_service.bulk_decide(
+            shift_id=shift_id,
+            user=user,
+            selected_ids=payload.selected_ids,
+            backup_ids=payload.backup_ids,
+            discarded_ids=payload.discarded_ids,
+            pending_ids=payload.pending_ids,
+            versions=payload.versions,
+            report_type=payload.report_type,
+            request_id=request_id,
+        )
+    except (ValueError, PermissionError, RuntimeError) as exc:
+        _raise_review_error(exc)
+
+
+@router.put("/reviews/{article_id:path}")
 def save_review(
     shift_id: str,
     article_id: str,

@@ -363,9 +363,7 @@ function applyReviewViewMode() {
     if (archiveBtn) {
         archiveBtn.style.display = state.reviewView === 'backup' ? 'none' : '';
     }
-    const finalizeBtn = document.getElementById('btn-finalize-review');
-    const finalizedBatchesBtn = document.getElementById('btn-finalized-batches');
-    [finalizeBtn, finalizedBatchesBtn].filter(Boolean).forEach(button => {
+    document.querySelectorAll('.duty-finalization-action').forEach(button => {
         button.style.display = state.reviewView === 'selected' ? '' : 'none';
     });
     updateReviewRailCounts();

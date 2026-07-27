@@ -13,7 +13,7 @@ class FakeDutyReviewAdapter:
         self.saved: dict[str, Any] = {}
         self.saved_batch: dict[str, Any] = {}
         self.ordered: dict[str, Any] = {}
-        self.fetch_scopes: list[tuple[Optional[str], str]] = []
+        self.fetch_scopes: list[tuple[Optional[str], bool]] = []
         self.finalized: dict[str, Any] = {}
         self.restored: dict[str, Any] = {}
 
@@ -57,10 +57,10 @@ class FakeDutyReviewAdapter:
         report_type: Optional[str],
         limit: int,
         offset: int,
-        finalization_scope: str = "all",
+        exclude_finalized: bool = False,
     ) -> tuple[list[dict[str, Any]], int]:
         del shift_id, limit, offset
-        self.fetch_scopes.append((decision, finalization_scope))
+        self.fetch_scopes.append((decision, exclude_finalized))
         rows = [
             {
                 "article_id": f"{decision}-1",
@@ -87,27 +87,17 @@ class FakeDutyReviewAdapter:
         del kwargs
         return [
             {
-                "article_id": "article-1",
+                "article_id": f"article-{rank}",
                 "decision": "selected",
                 "report_type": "zongbao",
-                "title": "第一条",
+                "title": f"第 {rank} 条",
                 "score_details": {},
                 "finalized_batch_id": "batch-1",
-                "finalized_rank": 1,
+                "finalized_rank": rank,
                 "finalized_at": "2026-07-27T10:30:00+08:00",
                 "finalized_by_display_name": "值班编辑",
-            },
-            {
-                "article_id": "article-2",
-                "decision": "selected",
-                "report_type": "zongbao",
-                "title": "第二条",
-                "score_details": {},
-                "finalized_batch_id": "batch-1",
-                "finalized_rank": 2,
-                "finalized_at": "2026-07-27T10:30:00+08:00",
-                "finalized_by_display_name": "值班编辑",
-            },
+            }
+            for rank in (1, 2)
         ]
 
     def restore_shift_review_finalization(self, **kwargs: Any) -> dict[str, Any]:
@@ -148,7 +138,8 @@ def _editor() -> ConsoleUser:
     )
 
 
-def test_save_review_uses_authenticated_editor_id(monkeypatch) -> None:
+@pytest.fixture
+def fake_adapter(monkeypatch: pytest.MonkeyPatch) -> FakeDutyReviewAdapter:
     adapter = FakeDutyReviewAdapter()
     monkeypatch.setattr(duty_review_service, "get_adapter", lambda: adapter)
     monkeypatch.setattr(
@@ -156,6 +147,12 @@ def test_save_review_uses_authenticated_editor_id(monkeypatch) -> None:
         "require_owned_shift",
         lambda *args, **kwargs: {"id": "shift-id"},
     )
+    return adapter
+
+
+def test_save_review_uses_authenticated_editor_id(
+    fake_adapter: FakeDutyReviewAdapter,
+) -> None:
 
     result = duty_review_service.save_review(
         shift_id="shift-id",
@@ -165,18 +162,13 @@ def test_save_review_uses_authenticated_editor_id(monkeypatch) -> None:
         patch={"decision": "selected", "report_type": "zongbao"},
     )
 
-    assert adapter.saved["actor_user_id"] == "editor-id"
+    assert fake_adapter.saved["actor_user_id"] == "editor-id"
     assert result["decision"] == "selected"
 
 
-def test_save_edits_batches_article_ids_with_slashes(monkeypatch) -> None:
-    adapter = FakeDutyReviewAdapter()
-    monkeypatch.setattr(duty_review_service, "get_adapter", lambda: adapter)
-    monkeypatch.setattr(
-        duty_review_service,
-        "require_owned_shift",
-        lambda *args, **kwargs: {"id": "shift-id"},
-    )
+def test_save_edits_batches_article_ids_with_slashes(
+    fake_adapter: FakeDutyReviewAdapter,
+) -> None:
     article_id = "chinanews:/sh/2026/07-27/10666981"
 
     result = duty_review_service.save_edits(
@@ -191,8 +183,8 @@ def test_save_edits_batches_article_ids_with_slashes(monkeypatch) -> None:
         versions={article_id: 3},
     )
 
-    update = adapter.saved_batch["updates"][0]
-    assert adapter.saved_batch["action"] == "shift_review.edit"
+    update = fake_adapter.saved_batch["updates"][0]
+    assert fake_adapter.saved_batch["action"] == "shift_review.edit"
     assert update["article_id"] == article_id
     assert update["expected_version"] == 3
     assert update["patch"] == {
@@ -202,14 +194,9 @@ def test_save_edits_batches_article_ids_with_slashes(monkeypatch) -> None:
     assert result["versions"] == {article_id: 4}
 
 
-def test_bulk_decide_sends_one_batch_with_all_versions(monkeypatch) -> None:
-    adapter = FakeDutyReviewAdapter()
-    monkeypatch.setattr(duty_review_service, "get_adapter", lambda: adapter)
-    monkeypatch.setattr(
-        duty_review_service,
-        "require_owned_shift",
-        lambda *args, **kwargs: {"id": "shift-id"},
-    )
+def test_bulk_decide_sends_one_batch_with_all_versions(
+    fake_adapter: FakeDutyReviewAdapter,
+) -> None:
     slash_id = "chinanews:/sh/2026/07-27/10666981"
 
     result = duty_review_service.bulk_decide(
@@ -223,8 +210,8 @@ def test_bulk_decide_sends_one_batch_with_all_versions(monkeypatch) -> None:
         report_type="zongbao",
     )
 
-    updates = adapter.saved_batch["updates"]
-    assert adapter.saved_batch["action"] == "shift_review.decide"
+    updates = fake_adapter.saved_batch["updates"]
+    assert fake_adapter.saved_batch["action"] == "shift_review.decide"
     assert [update["article_id"] for update in updates] == ["article-1", slash_id]
     assert [update["expected_version"] for update in updates] == [2, 1]
     assert all(
@@ -346,14 +333,9 @@ def test_duplicate_check_loads_only_owned_shift_review_items(monkeypatch) -> Non
     assert result == {"checked_count": 1, "groups": []}
 
 
-def test_preview_uses_independent_selected_and_backup_lists(monkeypatch) -> None:
-    adapter = FakeDutyReviewAdapter()
-    monkeypatch.setattr(duty_review_service, "get_adapter", lambda: adapter)
-    monkeypatch.setattr(
-        duty_review_service,
-        "require_owned_shift",
-        lambda *args, **kwargs: {"id": "shift-id"},
-    )
+def test_preview_uses_independent_selected_and_backup_lists(
+    fake_adapter: FakeDutyReviewAdapter,
+) -> None:
 
     preview = duty_review_service.build_preview(
         shift_id="shift-id",
@@ -364,20 +346,15 @@ def test_preview_uses_independent_selected_and_backup_lists(monkeypatch) -> None
     assert preview["selected_count"] == 1
     assert preview["backup_count"] == 1
     assert "—— 备选 ——" in preview["text"]
-    assert adapter.fetch_scopes == [
-        ("selected", "unfinalized"),
-        ("backup", "all"),
+    assert fake_adapter.fetch_scopes == [
+        ("selected", True),
+        ("backup", False),
     ]
 
 
-def test_selected_list_excludes_previously_finalized_items(monkeypatch) -> None:
-    adapter = FakeDutyReviewAdapter()
-    monkeypatch.setattr(duty_review_service, "get_adapter", lambda: adapter)
-    monkeypatch.setattr(
-        duty_review_service,
-        "require_owned_shift",
-        lambda *args, **kwargs: {"id": "shift-id"},
-    )
+def test_selected_list_excludes_previously_finalized_items(
+    fake_adapter: FakeDutyReviewAdapter,
+) -> None:
 
     duty_review_service.list_items(
         shift_id="shift-id",
@@ -388,20 +365,12 @@ def test_selected_list_excludes_previously_finalized_items(monkeypatch) -> None:
         offset=0,
     )
 
-    assert adapter.fetch_scopes == [("selected", "unfinalized")]
+    assert fake_adapter.fetch_scopes == [("selected", True)]
 
 
 def test_finalize_selected_batch_uses_editor_without_changing_decision(
-    monkeypatch,
+    fake_adapter: FakeDutyReviewAdapter,
 ) -> None:
-    adapter = FakeDutyReviewAdapter()
-    monkeypatch.setattr(duty_review_service, "get_adapter", lambda: adapter)
-    monkeypatch.setattr(
-        duty_review_service,
-        "require_owned_shift",
-        lambda *args, **kwargs: {"id": "shift-id"},
-    )
-
     result = duty_review_service.finalize_selected_batch(
         shift_id="shift-id",
         user=_editor(),
@@ -409,7 +378,7 @@ def test_finalize_selected_batch_uses_editor_without_changing_decision(
         request_id="request-1",
     )
 
-    assert adapter.finalized == {
+    assert fake_adapter.finalized == {
         "shift_id": "shift-id",
         "report_type": "zongbao",
         "actor_user_id": "editor-id",
@@ -420,16 +389,8 @@ def test_finalize_selected_batch_uses_editor_without_changing_decision(
 
 
 def test_list_finalized_batches_groups_items_in_frozen_order(
-    monkeypatch,
+    fake_adapter: FakeDutyReviewAdapter,
 ) -> None:
-    adapter = FakeDutyReviewAdapter()
-    monkeypatch.setattr(duty_review_service, "get_adapter", lambda: adapter)
-    monkeypatch.setattr(
-        duty_review_service,
-        "require_owned_shift",
-        lambda *args, **kwargs: {"id": "shift-id"},
-    )
-
     result = duty_review_service.list_finalized_batches(
         shift_id="shift-id",
         user=_editor(),
@@ -445,16 +406,8 @@ def test_list_finalized_batches_groups_items_in_frozen_order(
 
 
 def test_restore_one_finalized_item_returns_it_to_current_batch(
-    monkeypatch,
+    fake_adapter: FakeDutyReviewAdapter,
 ) -> None:
-    adapter = FakeDutyReviewAdapter()
-    monkeypatch.setattr(duty_review_service, "get_adapter", lambda: adapter)
-    monkeypatch.setattr(
-        duty_review_service,
-        "require_owned_shift",
-        lambda *args, **kwargs: {"id": "shift-id"},
-    )
-
     result = duty_review_service.restore_finalized_batch(
         shift_id="shift-id",
         batch_id="batch-1",
@@ -463,7 +416,7 @@ def test_restore_one_finalized_item_returns_it_to_current_batch(
         request_id="request-2",
     )
 
-    assert adapter.restored == {
+    assert fake_adapter.restored == {
         "shift_id": "shift-id",
         "batch_id": "batch-1",
         "actor_user_id": "editor-id",

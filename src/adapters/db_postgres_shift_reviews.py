@@ -7,7 +7,6 @@ import psycopg
 from src.adapters.db_postgres_manual_reviews import SCORE_FEEDBACK_JOIN
 
 VALID_DECISIONS = frozenset({"pending", "selected", "backup", "discarded"})
-VALID_FINALIZATION_SCOPES = frozenset({"all", "finalized", "unfinalized"})
 VALID_REPORT_TYPES = frozenset({"zongbao", "wanbao"})
 _EDITABLE_FIELDS = (
     "decision",
@@ -78,10 +77,8 @@ def fetch_shift_review_items(
     include_admin_state: bool = False,
     admin_discarded_only: bool = False,
     exclude_admin_discarded: bool = False,
-    finalization_scope: str = "all",
+    exclude_finalized: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
-    if finalization_scope not in VALID_FINALIZATION_SCOPES:
-        raise ValueError(f"Invalid finalization scope: {finalization_scope}")
     bounded_limit = max(1, min(limit, 200))
     bounded_offset = max(0, offset)
     clauses = [
@@ -98,9 +95,7 @@ def fetch_shift_review_items(
     if report_type:
         clauses.append("COALESCE(sr.report_type, 'zongbao') = %s")
         params.append(report_type)
-    if finalization_scope == "finalized":
-        clauses.append("sr.finalized_batch_id IS NOT NULL")
-    elif finalization_scope == "unfinalized":
+    if exclude_finalized:
         clauses.append("sr.finalized_batch_id IS NULL")
     if admin_discarded_only:
         clauses.append("sr.admin_discarded_at IS NOT NULL")
@@ -169,7 +164,7 @@ def fetch_shift_review_items(
     )
     total_row = cur.fetchone()
     total = int(total_row["total"]) if total_row else 0
-    if decision == "selected" and finalization_scope == "all":
+    if decision == "selected" and not exclude_finalized:
         order_sql = (
             "finalization_batch.finalized_at ASC NULLS LAST, "
             "CASE WHEN sr.finalized_batch_id IS NOT NULL "
@@ -853,7 +848,6 @@ __all__ = [
     "SHIFT_REVIEW_SELECT",
     "ShiftReviewConflictError",
     "VALID_DECISIONS",
-    "VALID_FINALIZATION_SCOPES",
     "VALID_REPORT_TYPES",
     "fetch_shift_finalized_items",
     "fetch_admin_shift_summaries",

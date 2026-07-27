@@ -23,14 +23,19 @@ def _client_for(user: ConsoleUser) -> TestClient:
     return TestClient(app)
 
 
-def test_duty_editor_cannot_call_admin_schedule_api() -> None:
-    editor = ConsoleUser(
+def _user(role: str) -> ConsoleUser:
+    is_admin = role == "admin"
+    return ConsoleUser(
         method="test",
-        user_id="editor-id",
-        username="editor",
-        display_name="值班编辑",
-        role="duty_editor",
+        user_id="admin-id" if is_admin else "editor-id",
+        username="admin" if is_admin else "editor",
+        display_name="管理员" if is_admin else "值班编辑",
+        role=role,
     )
+
+
+def test_duty_editor_cannot_call_admin_schedule_api() -> None:
+    editor = _user("duty_editor")
 
     response = _client_for(editor).get("/api/admin/schedules")
 
@@ -38,13 +43,7 @@ def test_duty_editor_cannot_call_admin_schedule_api() -> None:
 
 
 def test_duty_editor_cannot_delete_console_user() -> None:
-    editor = ConsoleUser(
-        method="test",
-        user_id="editor-id",
-        username="editor",
-        display_name="值班编辑",
-        role="duty_editor",
-    )
+    editor = _user("duty_editor")
 
     response = _client_for(editor).delete("/api/admin/users/another-user")
 
@@ -52,13 +51,7 @@ def test_duty_editor_cannot_delete_console_user() -> None:
 
 
 def test_duty_editor_cannot_change_admin_duty_discard_state() -> None:
-    editor = ConsoleUser(
-        method="test",
-        user_id="editor-id",
-        username="editor",
-        display_name="值班编辑",
-        role="duty_editor",
-    )
+    editor = _user("duty_editor")
 
     response = _client_for(editor).patch(
         "/api/admin/duty-summary/discard",
@@ -73,13 +66,7 @@ def test_duty_editor_cannot_change_admin_duty_discard_state() -> None:
 
 
 def test_admin_can_bulk_discard_duty_results(monkeypatch) -> None:
-    admin = ConsoleUser(
-        method="test",
-        user_id="admin-id",
-        username="admin",
-        display_name="管理员",
-        role="admin",
-    )
+    admin = _user("admin")
     captured: dict[str, object] = {}
 
     def fake_bulk_discard(**kwargs: Any) -> dict[str, Any]:
@@ -107,13 +94,7 @@ def test_admin_can_bulk_discard_duty_results(monkeypatch) -> None:
 
 
 def test_admin_can_delete_console_user(monkeypatch) -> None:
-    admin = ConsoleUser(
-        method="test",
-        user_id="admin-id",
-        username="admin",
-        display_name="管理员",
-        role="admin",
-    )
+    admin = _user("admin")
     captured: dict[str, str] = {}
 
     def delete_user(user_id: str, *, actor: ConsoleUser) -> None:
@@ -133,13 +114,7 @@ def test_admin_can_delete_console_user(monkeypatch) -> None:
 
 
 def test_admin_password_apis_accept_single_character(monkeypatch) -> None:
-    admin = ConsoleUser(
-        method="test",
-        user_id="admin-id",
-        username="admin",
-        display_name="管理员",
-        role="admin",
-    )
+    admin = _user("admin")
     captured: dict[str, object] = {}
 
     def create_user(**kwargs: object) -> dict[str, object]:
@@ -186,13 +161,7 @@ def test_admin_password_apis_accept_single_character(monkeypatch) -> None:
 
 
 def test_duty_editor_cannot_call_admin_manual_filter_api() -> None:
-    editor = ConsoleUser(
-        method="test",
-        user_id="editor-id",
-        username="editor",
-        display_name="值班编辑",
-        role="duty_editor",
-    )
+    editor = _user("duty_editor")
 
     response = _client_for(editor).get("/api/manual_filter/candidates")
 
@@ -200,13 +169,7 @@ def test_duty_editor_cannot_call_admin_manual_filter_api() -> None:
 
 
 def test_duty_editor_can_use_read_only_article_search(monkeypatch) -> None:
-    editor = ConsoleUser(
-        method="test",
-        user_id="editor-id",
-        username="editor",
-        display_name="值班编辑",
-        role="duty_editor",
-    )
+    editor = _user("duty_editor")
     monkeypatch.setattr(
         articles_service,
         "search_articles",
@@ -226,13 +189,7 @@ def test_duty_editor_can_use_read_only_article_search(monkeypatch) -> None:
 
 
 def test_admin_cannot_use_editor_shift_workspace() -> None:
-    admin = ConsoleUser(
-        method="test",
-        user_id="admin-id",
-        username="admin",
-        display_name="管理员",
-        role="admin",
-    )
+    admin = _user("admin")
 
     response = _client_for(admin).get("/api/duty/shifts")
 
@@ -240,13 +197,7 @@ def test_admin_cannot_use_editor_shift_workspace() -> None:
 
 
 def test_editor_can_list_only_service_scoped_shifts(monkeypatch) -> None:
-    editor = ConsoleUser(
-        method="test",
-        user_id="editor-id",
-        username="editor",
-        display_name="值班编辑",
-        role="duty_editor",
-    )
+    editor = _user("duty_editor")
     monkeypatch.setattr(
         shifts_service,
         "list_user_shifts",
@@ -260,13 +211,7 @@ def test_editor_can_list_only_service_scoped_shifts(monkeypatch) -> None:
 
 
 def test_stale_review_update_returns_409(monkeypatch) -> None:
-    editor = ConsoleUser(
-        method="test",
-        user_id="editor-id",
-        username="editor",
-        display_name="值班编辑",
-        role="duty_editor",
-    )
+    editor = _user("duty_editor")
 
     def conflict(**kwargs):
         raise duty_review_service.ShiftReviewConflictError("Review version is stale")
@@ -282,13 +227,7 @@ def test_stale_review_update_returns_409(monkeypatch) -> None:
 
 
 def test_batch_review_edit_accepts_article_id_with_slash(monkeypatch) -> None:
-    editor = ConsoleUser(
-        method="test",
-        user_id="editor-id",
-        username="editor",
-        display_name="值班编辑",
-        role="duty_editor",
-    )
+    editor = _user("duty_editor")
     captured: dict[str, Any] = {}
     article_id = "chinanews:/sh/2026/07-27/10666981"
 
@@ -320,13 +259,7 @@ def test_batch_review_edit_accepts_article_id_with_slash(monkeypatch) -> None:
 
 
 def test_stale_batch_review_decision_returns_409(monkeypatch) -> None:
-    editor = ConsoleUser(
-        method="test",
-        user_id="editor-id",
-        username="editor",
-        display_name="值班编辑",
-        role="duty_editor",
-    )
+    editor = _user("duty_editor")
 
     def conflict(**kwargs: Any) -> dict[str, Any]:
         raise duty_review_service.ShiftReviewConflictError("Review version is stale")
@@ -346,13 +279,7 @@ def test_stale_batch_review_decision_returns_409(monkeypatch) -> None:
 
 
 def test_editor_can_finalize_and_restore_owned_shift_batch(monkeypatch) -> None:
-    editor = ConsoleUser(
-        method="test",
-        user_id="editor-id",
-        username="editor",
-        display_name="值班编辑",
-        role="duty_editor",
-    )
+    editor = _user("duty_editor")
     calls: list[tuple[str, dict[str, Any]]] = []
 
     def finalize(**kwargs: Any) -> dict[str, Any]:
@@ -403,13 +330,7 @@ def test_editor_can_finalize_and_restore_owned_shift_batch(monkeypatch) -> None:
 
 
 def test_editor_can_check_duplicates_in_owned_shift(monkeypatch) -> None:
-    editor = ConsoleUser(
-        method="test",
-        user_id="editor-id",
-        username="editor",
-        display_name="值班编辑",
-        role="duty_editor",
-    )
+    editor = _user("duty_editor")
     captured: dict[str, Any] = {}
     expected = {
         "checked_count": 2,
@@ -436,13 +357,7 @@ def test_editor_can_check_duplicates_in_owned_shift(monkeypatch) -> None:
 
 
 def test_duty_duplicate_check_timeout_returns_504(monkeypatch) -> None:
-    editor = ConsoleUser(
-        method="test",
-        user_id="editor-id",
-        username="editor",
-        display_name="值班编辑",
-        role="duty_editor",
-    )
+    editor = _user("duty_editor")
 
     def check_duplicates(**kwargs: Any) -> dict[str, Any]:
         raise DuplicateReviewTimeoutError("AI 查重请求超时，请稍后重试")
@@ -459,13 +374,7 @@ def test_duty_duplicate_check_timeout_returns_504(monkeypatch) -> None:
 
 
 def test_single_review_route_accepts_encoded_slash_id(monkeypatch) -> None:
-    editor = ConsoleUser(
-        method="test",
-        user_id="editor-id",
-        username="editor",
-        display_name="值班编辑",
-        role="duty_editor",
-    )
+    editor = _user("duty_editor")
     captured: dict[str, Any] = {}
 
     def save_review(**kwargs: Any) -> dict[str, Any]:

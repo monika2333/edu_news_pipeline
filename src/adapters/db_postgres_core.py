@@ -591,7 +591,7 @@ class PostgresAdapter:
         include_admin_state: bool = False,
         admin_discarded_only: bool = False,
         exclude_admin_discarded: bool = False,
-        finalization_scope: str = "all",
+        exclude_finalized: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         with self._cursor() as cur:
             return shift_reviews.fetch_shift_review_items(
@@ -605,7 +605,7 @@ class PostgresAdapter:
                 include_admin_state=include_admin_state,
                 admin_discarded_only=admin_discarded_only,
                 exclude_admin_discarded=exclude_admin_discarded,
-                finalization_scope=finalization_scope,
+                exclude_finalized=exclude_finalized,
             )
 
     def fetch_shift_clusters(

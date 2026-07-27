@@ -32,6 +32,17 @@ def _validate_review_patch(patch: Mapping[str, Any]) -> None:
         raise ValueError(f"Invalid report type: {patch['report_type']}")
 
 
+def _validate_report_type(report_type: Optional[str]) -> None:
+    if report_type is not None and report_type not in VALID_REPORT_TYPES:
+        raise ValueError(f"Invalid report type: {report_type}")
+
+
+def _require_actor_id(user: ConsoleUser) -> str:
+    if not user.user_id:
+        raise PermissionError("A business user account is required")
+    return user.user_id
+
+
 def _normalize_ids(article_ids: Sequence[str]) -> list[str]:
     normalized: list[str] = []
     for raw_article_id in article_ids:
@@ -102,17 +113,14 @@ def list_items(
     require_owned_shift(shift_id, user)
     if decision and decision not in VALID_DECISIONS:
         raise ValueError(f"Invalid review decision: {decision}")
-    if report_type and report_type not in VALID_REPORT_TYPES:
-        raise ValueError(f"Invalid report type: {report_type}")
+    _validate_report_type(report_type)
     rows, total = get_adapter().fetch_shift_review_items(
         shift_id=shift_id,
         decision=decision,
         report_type=report_type,
         limit=limit,
         offset=offset,
-        finalization_scope=(
-            "unfinalized" if decision == "selected" else "all"
-        ),
+        exclude_finalized=decision == "selected",
     )
     return {
         "items": [
@@ -135,8 +143,7 @@ def list_clusters(
     report_type: str,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
-    if report_type not in VALID_REPORT_TYPES:
-        raise ValueError(f"Invalid report type: {report_type}")
+    _validate_report_type(report_type)
     rows = get_adapter().fetch_shift_clusters(
         shift_id=shift_id,
         report_type=report_type,
@@ -196,13 +203,12 @@ def save_review(
     request_id: Optional[str] = None,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
-    if not user.user_id:
-        raise PermissionError("A business user account is required")
+    actor_user_id = _require_actor_id(user)
     _validate_review_patch(patch)
     saved = get_adapter().save_shift_review(
         shift_id=shift_id,
         article_id=article_id,
-        actor_user_id=user.user_id,
+        actor_user_id=actor_user_id,
         expected_version=expected_version,
         patch=patch,
         request_id=request_id,
@@ -219,8 +225,7 @@ def save_edits(
     request_id: Optional[str] = None,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
-    if not user.user_id:
-        raise PermissionError("A business user account is required")
+    actor_user_id = _require_actor_id(user)
     updates: list[dict[str, Any]] = []
     for raw_article_id, edit in edits.items():
         article_id = str(raw_article_id).strip()
@@ -239,7 +244,7 @@ def save_edits(
         )
     saved = get_adapter().save_shift_reviews(
         shift_id=shift_id,
-        actor_user_id=user.user_id,
+        actor_user_id=actor_user_id,
         updates=updates,
         action="shift_review.edit",
         request_id=request_id,
@@ -263,10 +268,8 @@ def bulk_decide(
     request_id: Optional[str] = None,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
-    if not user.user_id:
-        raise PermissionError("A business user account is required")
-    if report_type not in VALID_REPORT_TYPES:
-        raise ValueError(f"Invalid report type: {report_type}")
+    actor_user_id = _require_actor_id(user)
+    _validate_report_type(report_type)
     groups = {
         "selected": _normalize_ids(selected_ids),
         "backup": _normalize_ids(backup_ids),
@@ -288,7 +291,7 @@ def bulk_decide(
     ]
     saved = get_adapter().save_shift_reviews(
         shift_id=shift_id,
-        actor_user_id=user.user_id,
+        actor_user_id=actor_user_id,
         updates=updates,
         action="shift_review.decide",
         request_id=request_id,
@@ -311,8 +314,7 @@ def update_order(
     request_id: Optional[str] = None,
 ) -> dict[str, int]:
     require_owned_shift(shift_id, user)
-    if not user.user_id:
-        raise PermissionError("A business user account is required")
+    actor_user_id = _require_actor_id(user)
     selected = [article_id for article_id in selected_order if article_id]
     backup = [article_id for article_id in backup_order if article_id]
     combined = selected + backup
@@ -320,7 +322,7 @@ def update_order(
         raise ValueError("An article appears more than once in the order")
     updated = get_adapter().update_shift_review_order(
         shift_id=shift_id,
-        actor_user_id=user.user_id,
+        actor_user_id=actor_user_id,
         selected_order=selected,
         backup_order=backup,
         request_id=request_id,
@@ -345,14 +347,12 @@ def finalize_selected_batch(
     request_id: Optional[str] = None,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
-    if not user.user_id:
-        raise PermissionError("A business user account is required")
-    if report_type not in VALID_REPORT_TYPES:
-        raise ValueError(f"Invalid report type: {report_type}")
+    actor_user_id = _require_actor_id(user)
+    _validate_report_type(report_type)
     batch = get_adapter().finalize_shift_review_batch(
         shift_id=shift_id,
         report_type=report_type,
-        actor_user_id=user.user_id,
+        actor_user_id=actor_user_id,
         request_id=request_id,
     )
     return {
@@ -370,8 +370,7 @@ def list_finalized_batches(
     report_type: str,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user, allow_cancelled=True)
-    if report_type not in VALID_REPORT_TYPES:
-        raise ValueError(f"Invalid report type: {report_type}")
+    _validate_report_type(report_type)
     rows = get_adapter().fetch_shift_finalized_items(
         shift_id=shift_id,
         report_type=report_type,
@@ -415,8 +414,7 @@ def restore_finalized_batch(
     request_id: Optional[str] = None,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
-    if not user.user_id:
-        raise PermissionError("A business user account is required")
+    actor_user_id = _require_actor_id(user)
     normalized_article_id = (
         str(article_id).strip() if article_id is not None else None
     )
@@ -425,7 +423,7 @@ def restore_finalized_batch(
     return get_adapter().restore_shift_review_finalization(
         shift_id=shift_id,
         batch_id=batch_id,
-        actor_user_id=user.user_id,
+        actor_user_id=actor_user_id,
         article_id=normalized_article_id,
         request_id=request_id,
     )
@@ -454,8 +452,7 @@ def build_preview(
     user: ConsoleUser,
     report_type: str,
 ) -> dict[str, Any]:
-    if report_type not in VALID_REPORT_TYPES:
-        raise ValueError(f"Invalid report type: {report_type}")
+    _validate_report_type(report_type)
     require_owned_shift(shift_id, user, allow_cancelled=True)
     selected_rows, _ = get_adapter().fetch_shift_review_items(
         shift_id=shift_id,
@@ -463,7 +460,7 @@ def build_preview(
         report_type=report_type,
         limit=200,
         offset=0,
-        finalization_scope="unfinalized",
+        exclude_finalized=True,
     )
     backup_rows, _ = get_adapter().fetch_shift_review_items(
         shift_id=shift_id,

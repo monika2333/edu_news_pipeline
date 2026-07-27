@@ -167,7 +167,7 @@ def test_selected_queries_can_hide_finalized_items_and_sort_admin_results() -> N
         report_type="zongbao",
         limit=200,
         offset=0,
-        finalization_scope="unfinalized",
+        exclude_finalized=True,
     )
     db_postgres_shift_reviews.fetch_shift_review_items(
         admin_cursor,

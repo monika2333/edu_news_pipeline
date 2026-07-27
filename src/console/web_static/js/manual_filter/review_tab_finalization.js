@@ -18,12 +18,14 @@ function formatFinalizationDateTime(value) {
     }).format(date);
 }
 
-async function parseFinalizationResponse(response, fallbackMessage) {
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        throw new Error(payload.detail || fallbackMessage);
-    }
-    return payload;
+async function requestDutyFinalization(path, fallbackMessage, payload) {
+    const options = payload === undefined ? undefined : {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    };
+    const response = await workspaceFetch(`${API_BASE}${path}`, options);
+    return requireManualMutationSuccess(response, fallbackMessage);
 }
 
 function setFinalizationHistoryOpen(open) {
@@ -82,9 +84,11 @@ function renderFinalizationHistory(batches) {
             </div>
         </section>
     `).join('');
-    list.querySelectorAll('[data-finalization-restore-batch]').forEach(button => {
-        button.addEventListener('click', () => restoreDutyFinalization(button));
-    });
+}
+
+function handleFinalizationHistoryClick(event) {
+    const button = event.target.closest('[data-finalization-restore-batch]');
+    if (button) restoreDutyFinalization(button);
 }
 
 async function loadDutyFinalizationHistory() {
@@ -96,11 +100,8 @@ async function loadDutyFinalizationHistory() {
         report_type: state.reviewReportType,
         _t: String(Date.now())
     });
-    const response = await workspaceFetch(
-        `${API_BASE}/finalizations?${params.toString()}`
-    );
-    const payload = await parseFinalizationResponse(
-        response,
+    const payload = await requestDutyFinalization(
+        `/finalizations?${params.toString()}`,
         '已定稿批次加载失败'
     );
     renderFinalizationHistory(payload.batches || []);
@@ -140,12 +141,11 @@ async function finalizeCurrentDutyReview() {
         await pendingReviewEditPromise;
         const orderSaved = await persistReviewOrder();
         if (!orderSaved) return;
-        const response = await workspaceFetch(`${API_BASE}/finalizations`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ report_type: state.reviewReportType })
-        });
-        const result = await parseFinalizationResponse(response, '定稿失败');
+        const result = await requestDutyFinalization(
+            '/finalizations',
+            '定稿失败',
+            { report_type: state.reviewReportType }
+        );
         clearDutyWorkspaceCache();
         await Promise.all([loadReviewData(), loadStats()]);
         showToast(`已定稿 ${result.item_count} 条新闻`);
@@ -168,15 +168,11 @@ async function restoreDutyFinalization(button) {
 
     button.disabled = true;
     try {
-        const response = await workspaceFetch(
-            `${API_BASE}/finalizations/${encodeURIComponent(batchId)}/restore`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ article_id: articleId })
-            }
+        const result = await requestDutyFinalization(
+            `/finalizations/${encodeURIComponent(batchId)}/restore`,
+            '撤回失败',
+            { article_id: articleId }
         );
-        const result = await parseFinalizationResponse(response, '撤回失败');
         clearDutyWorkspaceCache();
         await Promise.all([
             loadReviewData(),

@@ -319,7 +319,7 @@
                     body: JSON.stringify({ is_active: !user.is_active })
                 });
             } else if (button.dataset.userAction === 'password') {
-                const newPassword = window.prompt(`为 ${user.display_name} 设置新密码（至少 10 位）`);
+                const newPassword = window.prompt(`为 ${user.display_name} 设置新密码`);
                 if (!newPassword) return;
                 await request(`/api/admin/users/${encodeURIComponent(user.id)}/reset-password`, {
                     method: 'POST',

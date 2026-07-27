@@ -59,6 +59,8 @@ def test_account_page_exposes_personal_password_change_form() -> None:
     assert "<title>修改密码 · 教育新闻控制台</title>" in response.text
     assert 'id="btn-logout" type="button">退出登录</button>' in response.text
     assert 'id="change-password-form"' in response.text
+    assert 'minlength="10"' not in response.text
+    assert "至少 10 位" not in response.text
     assert 'src="/static/js/account.js?v=' in response.text
     assert 'href="/">← 返回工作台</a>' in response.text
     assert ".account-card .login-heading h1" in login_stylesheet
@@ -66,6 +68,14 @@ def test_account_page_exposes_personal_password_change_form() -> None:
     assert "min-height: 42px;" in login_stylesheet
     assert ".login-page {" in login_stylesheet
     assert "box-sizing: border-box;" in login_stylesheet
+
+
+def test_register_page_has_no_fixed_password_length_requirement() -> None:
+    response = TestClient(create_app()).get("/register")
+
+    assert response.status_code == 200
+    assert 'minlength="10"' not in response.text
+    assert "至少 10 位" not in response.text
 
 
 def test_admin_page_separates_user_search_from_account_creation(
@@ -150,6 +160,7 @@ def test_admin_page_separates_user_search_from_account_creation(
     assert 'id="delete-user-confirmation"' in html
     assert 'id="btn-confirm-delete-user"' in html
     assert "openDeleteUserModal(user, button)" in admin_script
+    assert "至少 10 位" not in admin_script
     assert "elements.deleteInput.value !== '确认删除'" in admin_script
     assert "button.textContent = '确认删除'" not in admin_script
     assert "method: 'DELETE'" in admin_script
@@ -199,6 +210,8 @@ def test_admin_create_user_page_reuses_account_form_layout() -> None:
     assert 'name="role"' in html
     assert 'name="preferred_weekday"' in html
     assert 'name="password"' in html
+    assert 'minlength="10"' not in html
+    assert "至少 10 位" not in html
     assert 'href="/admin">取消</a>' not in html
     assert 'href="/static/css/modules/admin.css' not in html
     assert 'href="/static/css/modules/login.css?v=' in html

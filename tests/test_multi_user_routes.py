@@ -131,6 +131,59 @@ def test_admin_can_delete_console_user(monkeypatch) -> None:
     }
 
 
+def test_admin_password_apis_accept_single_character(monkeypatch) -> None:
+    admin = ConsoleUser(
+        method="test",
+        user_id="admin-id",
+        username="admin",
+        display_name="管理员",
+        role="admin",
+    )
+    captured: dict[str, object] = {}
+
+    def create_user(**kwargs: object) -> dict[str, object]:
+        captured["created_password"] = kwargs["password"]
+        return {"id": "editor-id", **kwargs}
+
+    def reset_password(
+        user_id: str,
+        *,
+        new_password: str,
+        actor: ConsoleUser,
+    ) -> None:
+        captured["reset_user_id"] = user_id
+        captured["reset_password"] = new_password
+        captured["reset_actor_id"] = actor.user_id
+
+    monkeypatch.setattr(users_service, "create_user", create_user)
+    monkeypatch.setattr(users_service, "reset_password", reset_password)
+    client = _client_for(admin)
+
+    create_response = client.post(
+        "/api/admin/users",
+        json={
+            "username": "editor",
+            "display_name": "Editor",
+            "password": "x",
+            "role": "duty_editor",
+            "preferred_weekday": 0,
+        },
+    )
+    reset_response = client.post(
+        "/api/admin/users/editor-id/reset-password",
+        json={"new_password": "y"},
+    )
+
+    assert create_response.status_code == 201
+    assert reset_response.status_code == 200
+    assert captured == {
+        "created_password": "x",
+        "reset_user_id": "editor-id",
+        "reset_password": "y",
+        "reset_actor_id": "admin-id",
+    }
+
+
 def test_duty_editor_cannot_call_admin_manual_filter_api() -> None:
     editor = ConsoleUser(
         method="test",

@@ -13,13 +13,13 @@ class LoginRequest(BaseModel):
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=50)
     display_name: str = Field(min_length=2, max_length=100)
-    password: str = Field(min_length=10, max_length=1024)
+    password: str = Field(min_length=1, max_length=1024)
     preferred_weekday: int = Field(ge=0, le=6)
 
 
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=1024)
-    new_password: str = Field(min_length=10, max_length=1024)
+    new_password: str = Field(min_length=1, max_length=1024)
 
 
 class ConsoleUserResponse(BaseModel):

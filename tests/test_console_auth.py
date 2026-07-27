@@ -57,6 +57,14 @@ def test_password_hash_uses_argon2_and_verifies() -> None:
     assert not auth_service.verify_password(password_hash, "wrong-password")
 
 
+def test_password_hash_accepts_any_nonempty_length() -> None:
+    password_hash = auth_service.hash_password("x")
+
+    assert auth_service.verify_password(password_hash, "x")
+    with pytest.raises(ValueError, match="must not be empty"):
+        auth_service.hash_password("")
+
+
 def test_login_session_persists_only_token_hashes(monkeypatch) -> None:
     adapter = FakeAuthAdapter()
     monkeypatch.setattr(auth_service, "get_adapter", lambda: adapter)
@@ -166,7 +174,7 @@ def test_register_api_accepts_name_and_preferred_weekday(monkeypatch) -> None:
         json={
             "username": "zhangming",
             "display_name": "张明",
-            "password": "a-secure-password",
+            "password": "x",
             "preferred_weekday": 2,
         },
     )
@@ -176,7 +184,7 @@ def test_register_api_accepts_name_and_preferred_weekday(monkeypatch) -> None:
     assert captured == {
         "username": "zhangming",
         "display_name": "张明",
-        "password": "a-secure-password",
+        "password": "x",
         "preferred_weekday": 2,
     }
     assert notified == {
@@ -184,6 +192,33 @@ def test_register_api_accepts_name_and_preferred_weekday(monkeypatch) -> None:
         "display_name": "张明",
         "preferred_weekday": 2,
     }
+
+
+def test_change_password_api_accepts_single_character(monkeypatch) -> None:
+    user = ConsoleUser(
+        method="test",
+        user_id="user-id",
+        username="editor",
+        display_name="值班编辑",
+        role="duty_editor",
+    )
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        auth_service,
+        "change_password",
+        lambda **kwargs: captured.update(kwargs),
+    )
+    app = create_app()
+    app.dependency_overrides[require_console_user] = lambda: user
+
+    response = TestClient(app).post(
+        "/api/me/change-password",
+        json={"current_password": "old-password", "new_password": "x"},
+    )
+
+    assert response.status_code == 200
+    assert captured["user"] == user
+    assert captured["new_password"] == "x"
 
 
 def test_self_registration_validates_trimmed_identity_fields() -> None:

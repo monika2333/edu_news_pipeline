@@ -71,8 +71,8 @@ def _normalize_username(username: str) -> str:
 
 
 def _validate_password(password: str) -> None:
-    if len(password) < 10:
-        raise ValueError("Password must contain at least 10 characters")
+    if not password:
+        raise ValueError("Password must not be empty")
 
 
 def hash_password(password: str) -> str:

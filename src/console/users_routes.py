@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/admin/users", tags=["console_users"])
 class UserCreateRequest(BaseModel):
     username: str = Field(min_length=1, max_length=100)
     display_name: str = Field(min_length=1, max_length=200)
-    password: str = Field(min_length=10, max_length=1024)
+    password: str = Field(min_length=1, max_length=1024)
     role: Literal["admin", "duty_editor"]
     preferred_weekday: Optional[int] = Field(default=None, ge=0, le=6)
 
@@ -29,7 +29,7 @@ class UserUpdateRequest(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    new_password: str = Field(min_length=10, max_length=1024)
+    new_password: str = Field(min_length=1, max_length=1024)
 
 
 def _raise_user_error(exc: Exception) -> NoReturn:

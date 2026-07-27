@@ -189,6 +189,26 @@ def test_selected_queries_can_hide_finalized_items_and_sort_admin_results() -> N
     assert "sr.finalized_rank" in admin_cursor.queries[-1]
 
 
+def test_shift_clusters_follow_current_representative_score_order() -> None:
+    cursor = ShiftReviewListCursor()
+
+    db_postgres_shift_reviews.fetch_shift_clusters(
+        cursor,
+        shift_id="shift-1",
+        report_type="zongbao",
+    )
+
+    query = cursor.queries[-1]
+    assert "ns.external_importance_score DESC NULLS LAST" in query
+    assert "array_agg(article_id ORDER BY item_rank)" in query
+    assert (
+        "representative_external_importance_score DESC NULLS LAST"
+        in query
+    )
+    assert "mc.created_at DESC" not in query
+    assert cursor.params[-1] == ("shift-1", "zongbao", "zongbao")
+
+
 def test_finalize_batch_preserves_selected_decision_and_freezes_order() -> None:
     cursor = FinalizationCursor()
 

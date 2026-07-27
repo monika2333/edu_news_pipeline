@@ -223,29 +223,65 @@ def fetch_shift_clusters(
 ) -> list[dict[str, Any]]:
     cur.execute(
         """
+        WITH ranked_cluster_items AS (
+            SELECT
+                mc.cluster_id,
+                mc.bucket_key,
+                cluster_item.article_id,
+                ns.external_importance_score,
+                sr.rank AS manual_rank,
+                ns.score,
+                ns.publish_time_iso,
+                row_number() OVER (
+                    PARTITION BY mc.cluster_id
+                    ORDER BY
+                        ns.external_importance_score DESC NULLS LAST,
+                        sr.rank DESC NULLS LAST,
+                        ns.score DESC NULLS LAST,
+                        ns.publish_time_iso DESC NULLS LAST,
+                        ns.article_id
+                ) AS item_rank
+            FROM manual_clusters mc
+            CROSS JOIN LATERAL unnest(mc.item_ids)
+                AS cluster_item(article_id)
+            JOIN duty_shifts s ON s.id = %s
+            JOIN news_summaries ns
+              ON ns.article_id = cluster_item.article_id
+             AND ns.created_at >= s.starts_at
+             AND ns.created_at < s.ends_at
+            LEFT JOIN shift_reviews sr
+              ON sr.shift_id = s.id
+             AND sr.article_id = ns.article_id
+            WHERE mc.report_type = %s
+              AND s.cancelled_at IS NULL
+              AND ns.status = 'ready_for_export'
+              AND COALESCE(sr.decision, 'pending') = 'pending'
+              AND COALESCE(sr.report_type, 'zongbao') = %s
+        )
         SELECT
-            mc.cluster_id,
-            mc.bucket_key,
-            array_agg(cluster_item.article_id ORDER BY cluster_item.item_position)
-                AS item_ids
-        FROM manual_clusters mc
-        CROSS JOIN LATERAL unnest(mc.item_ids)
-            WITH ORDINALITY AS cluster_item(article_id, item_position)
-        JOIN duty_shifts s ON s.id = %s
-        JOIN news_summaries ns
-          ON ns.article_id = cluster_item.article_id
-         AND ns.created_at >= s.starts_at
-         AND ns.created_at < s.ends_at
-        LEFT JOIN shift_reviews sr
-          ON sr.shift_id = s.id
-         AND sr.article_id = ns.article_id
-        WHERE mc.report_type = %s
-          AND s.cancelled_at IS NULL
-          AND ns.status = 'ready_for_export'
-          AND COALESCE(sr.decision, 'pending') = 'pending'
-          AND COALESCE(sr.report_type, 'zongbao') = %s
-        GROUP BY mc.cluster_id, mc.bucket_key, mc.created_at
-        ORDER BY mc.created_at DESC, mc.cluster_id
+            cluster_id,
+            bucket_key,
+            array_agg(article_id ORDER BY item_rank) AS item_ids,
+            max(external_importance_score)
+                FILTER (WHERE item_rank = 1)
+                AS representative_external_importance_score,
+            max(manual_rank)
+                FILTER (WHERE item_rank = 1)
+                AS representative_manual_rank,
+            max(score)
+                FILTER (WHERE item_rank = 1)
+                AS representative_score,
+            max(publish_time_iso)
+                FILTER (WHERE item_rank = 1)
+                AS representative_publish_time
+        FROM ranked_cluster_items
+        GROUP BY cluster_id, bucket_key
+        ORDER BY
+            representative_external_importance_score DESC NULLS LAST,
+            representative_manual_rank DESC NULLS LAST,
+            representative_score DESC NULLS LAST,
+            representative_publish_time DESC NULLS LAST,
+            cluster_id
         """,
         (shift_id, report_type, report_type),
     )

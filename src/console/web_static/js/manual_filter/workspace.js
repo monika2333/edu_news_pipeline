@@ -184,9 +184,12 @@ function filterDutyCandidates(items, params) {
     });
 }
 
-async function loadDutyClusters() {
+async function loadDutyClusters(forceRefresh = false) {
+    if (forceRefresh) dutyWorkspaceClusters = null;
     if (dutyWorkspaceClusters) return dutyWorkspaceClusters;
-    dutyWorkspaceClusters = window.fetch(`${API_BASE}/clusters?report_type=zongbao`)
+    const params = new URLSearchParams({ report_type: 'zongbao' });
+    if (forceRefresh) params.set('force_refresh', 'true');
+    dutyWorkspaceClusters = window.fetch(`${API_BASE}/clusters?${params.toString()}`)
         .then(response => {
             if (!response.ok) throw new Error('聚类加载失败');
             return response.json();
@@ -220,7 +223,8 @@ async function dutyCandidatesResponse(params) {
 
     const itemById = new Map(filtered.map(item => [String(item.article_id), item]));
     const used = new Set();
-    const clusters = (await loadDutyClusters()).flatMap(cluster => {
+    const forceClusterRefresh = params.get('force_refresh') === 'true';
+    const clusters = (await loadDutyClusters(forceClusterRefresh)).flatMap(cluster => {
         const items = (cluster.item_ids || [])
             .map(articleId => itemById.get(String(articleId)))
             .filter(Boolean);

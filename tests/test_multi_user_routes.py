@@ -65,6 +65,28 @@ def test_duty_editor_cannot_change_admin_duty_discard_state() -> None:
     assert response.status_code == 403
 
 
+def test_editor_can_refresh_shift_clusters(monkeypatch) -> None:
+    editor = _user("duty_editor")
+    captured: dict[str, Any] = {}
+
+    def list_clusters(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"clusters": [], "item_total": 0}
+
+    monkeypatch.setattr(duty_review_service, "list_clusters", list_clusters)
+
+    response = _client_for(editor).get(
+        "/api/duty/shifts/shift-id/clusters"
+        "?report_type=zongbao&force_refresh=true"
+    )
+
+    assert response.status_code == 200
+    assert captured["shift_id"] == "shift-id"
+    assert captured["report_type"] == "zongbao"
+    assert captured["force_refresh"] is True
+    assert captured["user"].user_id == "editor-id"
+
+
 def test_admin_can_bulk_discard_duty_results(monkeypatch) -> None:
     admin = _user("admin")
     captured: dict[str, object] = {}

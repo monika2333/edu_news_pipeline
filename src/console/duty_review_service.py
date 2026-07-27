@@ -8,7 +8,7 @@ from src.adapters.db_postgres_shift_reviews import (
     VALID_DECISIONS,
     VALID_REPORT_TYPES,
 )
-from src.console import manual_filter_duplicate_service
+from src.console import manual_filter_cluster, manual_filter_duplicate_service
 from src.console.auth_service import ConsoleUser
 from src.console.manual_filter_serializers import serialize_manual_filter_item
 from src.console.shifts_service import require_owned_shift
@@ -141,9 +141,12 @@ def list_clusters(
     shift_id: str,
     user: ConsoleUser,
     report_type: str,
+    force_refresh: bool = False,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
     _validate_report_type(report_type)
+    if force_refresh:
+        manual_filter_cluster.refresh_clusters(report_type=report_type)
     rows = get_adapter().fetch_shift_clusters(
         shift_id=shift_id,
         report_type=report_type,

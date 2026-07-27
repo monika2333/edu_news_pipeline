@@ -295,6 +295,9 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "!IS_DUTY_WORKSPACE && elements.reviewList" not in init_script
     assert "syncWorkspaceTabActions(state.currentTab);" in utils_script
     assert "action.hidden = action.dataset.workspaceActionTab !== currentTab;" in utils_script
+    assert "async function loadDutyClusters(forceRefresh = false)" in workspace_script
+    assert "params.set('force_refresh', 'true');" in workspace_script
+    assert "loadDutyClusters(forceClusterRefresh)" in workspace_script
     assert "整批撤回" in finalization_script
     assert "撤回本条" not in finalization_script
     assert "data-finalization-restore-article" not in finalization_script

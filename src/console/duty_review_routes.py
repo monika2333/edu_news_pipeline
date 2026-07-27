@@ -85,6 +85,7 @@ def list_candidates(
 def list_clusters(
     shift_id: str,
     report_type: ReportType = "zongbao",
+    force_refresh: bool = False,
     user: ConsoleUser = Depends(require_role("duty_editor")),
 ) -> dict[str, Any]:
     try:
@@ -92,6 +93,7 @@ def list_clusters(
             shift_id=shift_id,
             user=user,
             report_type=report_type,
+            force_refresh=force_refresh,
         )
     except (ValueError, PermissionError) as exc:
         _raise_review_error(exc)

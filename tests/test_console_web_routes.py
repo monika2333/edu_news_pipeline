@@ -557,9 +557,20 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
 
 def test_duplicate_check_button_is_before_sort_mode() -> None:
     response = _build_client().get("/admin/review")
+    scripts_dir = Path(__file__).parents[1] / "src/console/web_static/js/manual_filter"
+    modal_script = (scripts_dir / "review_duplicates_modal.js").read_text(
+        encoding="utf-8"
+    )
+    controller_script = (scripts_dir / "review_tab_duplicates.js").read_text(
+        encoding="utf-8"
+    )
 
     assert response.status_code == 200
     html = response.text
+    duplicate_modal = html.split('id="duplicate-review-modal"', 1)[1].split(
+        "<!-- Toast -->",
+        1,
+    )[0]
     assert html.index('id="btn-check-duplicates"') < html.index('id="btn-toggle-sort"')
     assert 'id="duplicate-review-modal"' in html
     assert 'id="duplicate-review-select-all"' in html
@@ -572,6 +583,10 @@ def test_duplicate_check_button_is_before_sort_mode() -> None:
     assert '/static/css/modules/review.css?v=' in html
     assert '/static/js/manual_filter/review_duplicates_state.js?v=' in html
     assert '/static/js/manual_filter/review_duplicates_modal.js?v=' in html
+    assert '<option value="pending">待处理</option>' not in duplicate_modal
+    assert "['pending', '待处理']" not in modal_script
+    assert "value === 'pending'" not in controller_script
+    assert "pending_ids" not in controller_script
 
 
 def test_sort_mode_hides_incompatible_review_toolbar_controls() -> None:

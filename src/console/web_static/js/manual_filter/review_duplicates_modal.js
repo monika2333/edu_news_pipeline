@@ -23,8 +23,7 @@ function duplicateStatusOptions(item) {
         ['zongbao:backup', '综报备选'],
         ['wanbao:selected', '晚报采纳'],
         ['wanbao:backup', '晚报备选'],
-        ['discarded', '放弃'],
-        ['pending', '待处理']
+        ['discarded', '放弃']
     ];
     return options.map(([value, label]) => (
         `<option value="${value}" ${value === currentValue ? 'selected' : ''}>${label}</option>`

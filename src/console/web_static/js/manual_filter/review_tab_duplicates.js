@@ -163,7 +163,6 @@ function buildDuplicateDecisionPayload(value, articleId, reportType) {
         selected_ids: [],
         backup_ids: [],
         discarded_ids: [],
-        pending_ids: [],
         report_type: reportType,
         versions: collectManualReviewVersions([articleId])
     };
@@ -174,8 +173,6 @@ function buildDuplicateDecisionPayload(value, articleId, reportType) {
         if (targetStatus === 'backup') payload.backup_ids = [articleId];
     } else if (value === 'discarded') {
         payload.discarded_ids = [articleId];
-    } else if (value === 'pending') {
-        payload.pending_ids = [articleId];
     }
     return payload;
 }
@@ -368,7 +365,7 @@ async function applyDuplicateBulkStatus() {
         ));
         await saveDuplicateReviewEdits(edits, previousReportType);
         const payload = buildDuplicateDecisionPayload(targetValue, articleIds[0], previousReportType);
-        ['selected_ids', 'backup_ids', 'discarded_ids', 'pending_ids'].forEach(key => {
+        ['selected_ids', 'backup_ids', 'discarded_ids'].forEach(key => {
             if (payload[key].length) payload[key] = articleIds;
         });
         payload.versions = collectManualReviewVersions(articleIds);

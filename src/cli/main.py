@@ -151,6 +151,19 @@ def _add_generate_shifts(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_refresh_manual_clusters(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "refresh-manual-clusters",
+        help="Refresh the manual-review title clusters",
+    )
+    parser.add_argument(
+        "--report-type",
+        choices=("zongbao", "wanbao"),
+        default="zongbao",
+        help="Manual-review workspace to refresh (default: zongbao)",
+    )
+
+
 def _read_initial_password(password_env: str | None) -> str:
     if password_env:
         password = os.getenv(password_env)
@@ -194,6 +207,14 @@ def _generate_shifts(days: int) -> None:
     )
 
 
+def _refresh_manual_clusters(report_type: str) -> None:
+    from src.console.manual_filter_service import trigger_clustering
+
+    result = trigger_clustering(report_type=report_type)
+    status = "refreshed" if result["refreshed"] else "skipped (already running)"
+    print(f"Manual clusters for {report_type}: {status}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="edu-news", description="Edu news pipeline controller")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -210,6 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_create_console_user(subparsers)
     _add_cleanup_console_sessions(subparsers)
     _add_generate_shifts(subparsers)
+    _add_refresh_manual_clusters(subparsers)
     return parser
 
 
@@ -252,6 +274,8 @@ def main(argv: list[str] | None = None) -> None:
         _cleanup_console_sessions()
     elif command == "generate-shifts":
         _generate_shifts(args.days)
+    elif command == "refresh-manual-clusters":
+        _refresh_manual_clusters(args.report_type)
     else:
         parser.error(f"Unknown command: {command}")
 

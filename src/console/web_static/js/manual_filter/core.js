@@ -59,6 +59,7 @@ const elements = {
     filterList: document.getElementById('filter-list'),
     filterTabButtons: document.querySelectorAll('.filter-tab-btn[data-category]'),
     filterSearchInput: document.getElementById('filter-search-input'),
+    filterSearchClear: document.getElementById('filter-search-clear'),
     filterDateBefore: document.getElementById('filter-date-before'),
     filterSearchMeta: document.getElementById('filter-search-meta'),
     reviewList: document.getElementById('review-list'),

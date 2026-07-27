@@ -18,9 +18,21 @@ function buildFilterConditionParts(query, publishedBefore) {
     return parts;
 }
 
+function syncFilterSearchClearButton() {
+    if (!elements.filterSearchClear) return;
+    const hasCondition = Boolean(
+        elements.filterSearchInput?.value.trim()
+        || elements.filterDateBefore?.value
+        || state.filterQuery
+        || state.filterPublishedBefore
+    );
+    elements.filterSearchClear.hidden = !hasCondition;
+}
+
 function syncFilterToolbarState() {
     if (elements.filterSearchInput) elements.filterSearchInput.value = state.filterQuery || '';
     if (elements.filterDateBefore) elements.filterDateBefore.value = state.filterPublishedBefore || '';
+    syncFilterSearchClearButton();
     if (!elements.filterSearchMeta) return;
 
     const bucketTotal = state.filterCounts[state.filterCategory || 'internal_positive'] || 0;

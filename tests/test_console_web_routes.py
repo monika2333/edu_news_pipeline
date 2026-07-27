@@ -232,6 +232,12 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     filter_render_script = (
         root / "src/console/web_static/js/manual_filter/filter_tab_render.js"
     ).read_text(encoding="utf-8")
+    filter_core_script = (
+        root / "src/console/web_static/js/manual_filter/core.js"
+    ).read_text(encoding="utf-8")
+    filter_init_script = (
+        root / "src/console/web_static/js/manual_filter/init.js"
+    ).read_text(encoding="utf-8")
     components_stylesheet = (
         root / "src/console/web_static/css/components.css"
     ).read_text(encoding="utf-8")
@@ -258,6 +264,13 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert 'id="btn-check-duplicates"' not in html
     assert 'id="btn-archive"' not in html
     assert 'id="btn-filter-discard-before-date"' in html
+    assert 'id="filter-search-clear"' in html
+    assert 'class="review-search-clear"' in html
+    assert 'aria-label="清除检索条件"' in html
+    assert 'id="btn-filter-clear"' not in html
+    assert "filterSearchClear: document.getElementById('filter-search-clear')" in filter_core_script
+    assert "function syncFilterSearchClearButton()" in filter_render_script
+    assert "elements.filterSearchClear.addEventListener('click', async () => {" in filter_init_script
     assert 'id="search-drawer-toggle"' in html
     assert 'id="btn-refresh"' in html
     assert 'aria-describedby="refresh-cluster-hint"' in html

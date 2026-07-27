@@ -51,15 +51,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (btnFilterSearch) {
         btnFilterSearch.addEventListener('click', applyFilterSearch);
     }
-    const btnFilterClear = document.getElementById('btn-filter-clear');
-    if (btnFilterClear) {
-        btnFilterClear.addEventListener('click', clearFilterSearch);
+    if (elements.filterSearchClear) {
+        elements.filterSearchClear.addEventListener('click', async () => {
+            await clearFilterSearch();
+            elements.filterSearchInput?.focus();
+        });
     }
     const btnFilterDiscardBeforeDate = document.getElementById('btn-filter-discard-before-date');
     if (btnFilterDiscardBeforeDate) {
         btnFilterDiscardBeforeDate.addEventListener('click', discardBeforeDate);
     }
     if (elements.filterSearchInput) {
+        elements.filterSearchInput.addEventListener('input', syncFilterSearchClearButton);
         elements.filterSearchInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') applyFilterSearch();
         });

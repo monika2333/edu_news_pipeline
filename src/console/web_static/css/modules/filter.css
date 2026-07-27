@@ -49,9 +49,14 @@
 
 .filter-toolbar-main {
     display: grid;
-    grid-template-columns: minmax(220px, 1fr) minmax(150px, 190px) repeat(3, auto);
+    grid-template-columns: minmax(220px, 1fr) minmax(150px, 190px) repeat(2, auto);
     gap: 8px;
     align-items: center;
+}
+
+.filter-toolbar-main .search-group {
+    position: relative;
+    min-width: 0;
 }
 
 .filter-toolbar-main .search-input {
@@ -65,6 +70,10 @@
     background: #fff;
     color: var(--text-primary);
     font: inherit;
+}
+
+.filter-toolbar-main .search-group .search-input {
+    padding-right: 44px;
 }
 
 .filter-toolbar-main .search-input:focus {
@@ -174,7 +183,7 @@
         gap: 8px;
     }
 
-    .filter-toolbar-main #filter-search-input {
+    .filter-toolbar-main .search-group {
         grid-column: 1 / -1;
     }
 
@@ -187,7 +196,6 @@
         width: 100%;
     }
 
-    .filter-toolbar-main #btn-filter-clear,
     .filter-toolbar-main .filter-discard-action {
         grid-column: auto;
         width: 100%;

@@ -136,12 +136,21 @@
                 <div class="filter-content">
                     <div class="filter-toolbar">
                         <div class="filter-toolbar-main">
-                            <input type="text" id="filter-search-input" class="search-input" placeholder="检索当前桶"
-                                aria-label="检索当前桶">
+                            <div class="search-group">
+                                <input type="text" id="filter-search-input" class="search-input"
+                                    placeholder="检索当前桶" aria-label="检索当前桶">
+                                <button type="button" id="filter-search-clear" class="review-search-clear"
+                                    aria-label="清除检索条件" title="清除检索条件" hidden>
+                                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                        <path d="M20 5H9.83a2 2 0 0 0-1.42.59L3 12l5.41 6.41A2 2 0 0 0 9.83 19H20a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"></path>
+                                        <path d="m12 9 5 5"></path>
+                                        <path d="m17 9-5 5"></path>
+                                    </svg>
+                                </button>
+                            </div>
                             <input type="date" id="filter-date-before" class="search-input" autocomplete="off"
                                 aria-label="发布日期早于，不含当天" title="发布日期早于，不含当天">
                             <button class="btn btn-secondary" id="btn-filter-search">检索</button>
-                            <button class="btn btn-secondary" id="btn-filter-clear">清除检索</button>
                             <button class="btn btn-primary filter-discard-action"
                                 id="btn-filter-discard-before-date">全部放弃</button>
                         </div>

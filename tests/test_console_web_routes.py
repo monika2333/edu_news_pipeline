@@ -306,7 +306,29 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "async function dutyStatsResponse" not in workspace_script
     assert "`${API_BASE}/stats${url.search}`" in workspace_script
     assert "if (response.ok) invalidateDutyListCache();" in workspace_script
-    assert "await Promise.all([loadFilterData(), loadStats()]);" in filter_actions_script
+    assert "detachDutyFilterRemoval(removal);" in filter_actions_script
+    assert "updateDutyFilterDecisionCounts(status, 1, 1);" in filter_actions_script
+    assert "restoreDutyFilterRemoval(removal, undoMutation.versions || {});" in filter_actions_script
+    assert "撤销失败，原操作保持不变" in filter_actions_script
+    card_handler = filter_actions_script.split(
+        "async function handleCardDecisionChange",
+        maxsplit=1,
+    )[1].split(
+        "async function handleClusterDecisionChange",
+        maxsplit=1,
+    )[0]
+    assert card_handler.index("await submitDecisions") < card_handler.index(
+        "detachDutyFilterRemoval(removal);"
+    )
+    duty_card_branch = card_handler.split(
+        "if (IS_DUTY_WORKSPACE)",
+        maxsplit=1,
+    )[1].split("} else {", maxsplit=1)[0]
+    assert "loadFilterData" not in duty_card_branch
+    assert "loadStats" not in duty_card_branch
+    assert "编辑保存失败，请重试" in (
+        scripts_dir / "filter_tab_data.js"
+    ).read_text(encoding="utf-8")
     assert "loadFilterData({ forceClusterRefresh: true })" not in filter_actions_script
     assert "item.content_markdown" not in workspace_script
     assert "整批撤回" in finalization_script

@@ -81,7 +81,7 @@ async function persistEdits(edits) {
             versions: collectManualReviewVersions(articleIds)
         })
     });
-    await requireManualMutationSuccess(res, 'failed to save edits');
+    await requireManualMutationSuccess(res, '编辑保存失败，请重试');
 }
 
 async function submitDecisions(ids, status, versions = null) {
@@ -98,7 +98,7 @@ async function submitDecisions(ids, status, versions = null) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
-    return requireManualMutationSuccess(res, 'failed to update status');
+    return requireManualMutationSuccess(res, '状态保存失败，请重试');
 }
 
 async function applyFilterSearch() {

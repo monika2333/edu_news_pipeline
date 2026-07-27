@@ -54,30 +54,40 @@ async function handleCardDecisionChange(input) {
         await persistEdits(edits);
         const mutation = await submitDecisions([articleId], status);
         if (IS_DUTY_WORKSPACE) {
-            await Promise.all([loadFilterData(), loadStats()]);
+            const removal = captureDutyFilterRemoval([card]);
+            detachDutyFilterRemoval(removal);
+            updateDutyFilterDecisionCounts(status, 1, 1);
+            attachDutyUndo(
+                removal,
+                [articleId],
+                status,
+                mutation,
+                '已更新'
+            );
         } else {
             removeCardAndMaybeCluster(card);
             loadStats();
         }
 
-        const undoAction = buildUndoToastAction(
-            async () => {
-                try {
-                    await submitDecisions(
-                        [articleId],
-                        'pending',
-                        mutation.versions || {}
-                    );
-                    showToast('已撤销');
-                    await loadFilterData();
-                    loadStats();
-                } catch (error) {
-                    showToast(error.message || '撤销失败', 'error');
+        if (!IS_DUTY_WORKSPACE) {
+            const undoAction = buildUndoToastAction(
+                async () => {
+                    try {
+                        await submitDecisions(
+                            [articleId],
+                            'pending',
+                            mutation.versions || {}
+                        );
+                        showToast('已撤销');
+                        await loadFilterData();
+                        loadStats();
+                    } catch (error) {
+                        showToast(error.message || '撤销失败', 'error');
+                    }
                 }
-            }
-        );
-
-        showToast('已更新', 'success', undoAction);
+            );
+            showToast('已更新', 'success', undoAction);
+        }
     } catch (error) {
         revertRadioSelection(radios, previousStatus);
         card.dataset.status = previousStatus;
@@ -119,26 +129,30 @@ async function handleClusterDecisionChange(input) {
         await persistEdits(edits);
         const mutation = await submitDecisions(ids, status);
         if (IS_DUTY_WORKSPACE) {
-            await Promise.all([loadFilterData(), loadStats()]);
+            const removal = captureDutyFilterRemoval(cards);
+            detachDutyFilterRemoval(removal);
+            updateDutyFilterDecisionCounts(status, ids.length, 1);
+            attachDutyUndo(removal, ids, status, mutation, '已更新');
         } else {
             cluster.remove();
             loadStats();
         }
 
-        const undoAction = buildUndoToastAction(
-            async () => {
-                try {
-                    await submitDecisions(ids, 'pending', mutation.versions || {});
-                    showToast('已撤销');
-                    await loadFilterData();
-                    loadStats();
-                } catch (error) {
-                    showToast(error.message || '撤销失败', 'error');
+        if (!IS_DUTY_WORKSPACE) {
+            const undoAction = buildUndoToastAction(
+                async () => {
+                    try {
+                        await submitDecisions(ids, 'pending', mutation.versions || {});
+                        showToast('已撤销');
+                        await loadFilterData();
+                        loadStats();
+                    } catch (error) {
+                        showToast(error.message || '撤销失败', 'error');
+                    }
                 }
-            }
-        );
-
-        showToast('已更新', 'success', undoAction);
+            );
+            showToast('已更新', 'success', undoAction);
+        }
     } catch (error) {
         revertRadioSelection(radios, previousStatus);
         cluster.dataset.status = previousStatus;
@@ -168,6 +182,106 @@ function revertRadioSelection(radios, status) {
     radios.forEach((radio) => {
         radio.checked = radio.value === status;
     });
+}
+
+function captureDutyFilterRemoval(cards) {
+    const targets = [];
+    const seen = new Set();
+    Array.from(cards || []).forEach(card => {
+        const target = card.closest('.filter-cluster') || card;
+        if (!target || seen.has(target)) return;
+        seen.add(target);
+        targets.push({
+            node: target,
+            parent: target.parentNode,
+            nextSibling: target.nextSibling
+        });
+    });
+    return targets;
+}
+
+function detachDutyFilterRemoval(removal) {
+    removal.forEach(entry => entry.node.remove());
+    if (!elements.filterList.querySelector('.article-card')) {
+        elements.filterList.insertAdjacentHTML(
+            'beforeend',
+            '<div class="empty empty-state duty-local-empty">当前页新闻已处理完</div>'
+        );
+    }
+}
+
+function restoreDutyFilterRemoval(removal, versions) {
+    elements.filterList.querySelector('.duty-local-empty')?.remove();
+    [...removal].reverse().forEach(entry => {
+        if (!entry.parent) return;
+        const anchor = entry.nextSibling?.parentNode === entry.parent
+            ? entry.nextSibling
+            : null;
+        entry.parent.insertBefore(entry.node, anchor);
+    });
+    removal.forEach(entry => {
+        entry.node.querySelectorAll('input[type="radio"]').forEach(radio => {
+            radio.checked = false;
+        });
+        entry.node.querySelectorAll('.article-card').forEach(card => {
+            card.dataset.status = 'pending';
+        });
+        if (entry.node.classList.contains('article-card')) {
+            entry.node.dataset.status = 'pending';
+        }
+    });
+    applyManualReviewVersions(versions);
+}
+
+function adjustVisibleStat(key, delta) {
+    const target = elements.stats[key];
+    const current = Number(target?.textContent);
+    if (!target || !Number.isFinite(current)) return;
+    target.textContent = String(Math.max(0, current + delta));
+}
+
+function updateDutyFilterDecisionCounts(status, itemCount, direction) {
+    const delta = Math.max(0, Number(itemCount) || 0) * direction;
+    const { cat } = getCurrentFilterBucket();
+    state.filterCounts[cat] = Math.max(
+        0,
+        (Number(state.filterCounts[cat]) || 0) - delta
+    );
+    if (isFilterSearchMode()) {
+        state.filterSearchTotal = Math.max(
+            0,
+            (Number(state.filterSearchTotal) || 0) - delta
+        );
+    }
+    adjustVisibleStat('pending', -delta);
+    if (status === 'selected' || status === 'backup') {
+        adjustVisibleStat(status, delta);
+        state.reviewCounts.zongbao[status] = Math.max(
+            0,
+            (Number(state.reviewCounts.zongbao[status]) || 0) + delta
+        );
+    }
+    updateFilterCountsUI();
+    updateReviewRailCounts();
+    syncFilterToolbarState();
+}
+
+function attachDutyUndo(removal, ids, status, mutation, successMessage) {
+    const undoAction = buildUndoToastAction(async () => {
+        try {
+            const undoMutation = await submitDecisions(
+                ids,
+                'pending',
+                mutation.versions || {}
+            );
+            restoreDutyFilterRemoval(removal, undoMutation.versions || {});
+            updateDutyFilterDecisionCounts(status, ids.length, -1);
+            showToast('已撤销');
+        } catch (error) {
+            showToast(error.message || '撤销失败，原操作保持不变', 'error');
+        }
+    });
+    showToast(successMessage, 'success', undoAction);
 }
 
 function removeCardAndMaybeCluster(card) {
@@ -235,26 +349,36 @@ async function discardRemainingItems() {
         await persistEdits(edits);
         const mutation = await submitDecisions(ids, 'discarded');
         if (IS_DUTY_WORKSPACE) {
-            await Promise.all([loadFilterData(), loadStats()]);
+            const removal = captureDutyFilterRemoval(cards);
+            detachDutyFilterRemoval(removal);
+            updateDutyFilterDecisionCounts('discarded', ids.length, 1);
+            attachDutyUndo(
+                removal,
+                ids,
+                'discarded',
+                mutation,
+                `已放弃 ${ids.length} 条新闻`
+            );
         } else {
             removeCardsAndClusters(cards);
             loadStats();
         }
 
-        const undoAction = buildUndoToastAction(
-            async () => {
-                try {
-                    await submitDecisions(ids, 'pending', mutation.versions || {});
-                    showToast('已撤销');
-                    await loadFilterData();
-                    loadStats();
-                } catch (error) {
-                    showToast(error.message || '撤销失败', 'error');
+        if (!IS_DUTY_WORKSPACE) {
+            const undoAction = buildUndoToastAction(
+                async () => {
+                    try {
+                        await submitDecisions(ids, 'pending', mutation.versions || {});
+                        showToast('已撤销');
+                        await loadFilterData();
+                        loadStats();
+                    } catch (error) {
+                        showToast(error.message || '撤销失败', 'error');
+                    }
                 }
-            }
-        );
-
-        showToast(`已放弃 ${ids.length} 条新闻`, 'success', undoAction);
+            );
+            showToast(`已放弃 ${ids.length} 条新闻`, 'success', undoAction);
+        }
     } catch (error) {
         showToast(error.message || '批量放弃失败', 'error');
     }

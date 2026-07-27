@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 Decision = Literal["pending", "selected", "backup", "discarded"]
 ReportType = Literal["zongbao", "wanbao"]
@@ -47,7 +47,7 @@ class DutyReviewFinalizeRequest(BaseModel):
 
 
 class DutyReviewRestoreFinalizationRequest(BaseModel):
-    article_id: Optional[str] = Field(default=None, min_length=1)
+    model_config = ConfigDict(extra="forbid")
 
 
 class DutyReviewOrderRequest(BaseModel):

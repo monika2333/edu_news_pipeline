@@ -578,7 +578,6 @@ def restore_shift_review_finalization(
     shift_id: str,
     batch_id: str,
     actor_user_id: str,
-    article_id: Optional[str] = None,
 ) -> dict[str, Any]:
     cur.execute(
         """
@@ -595,20 +594,16 @@ def restore_shift_review_finalization(
         raise ValueError("定稿批次不存在")
     batch = dict(batch_row)
 
-    clauses = ["finalized_batch_id = %s", "decision = 'selected'"]
-    params: list[Any] = [batch_id]
-    if article_id is not None:
-        clauses.append("article_id = %s")
-        params.append(article_id)
     cur.execute(
-        f"""
+        """
         SELECT article_id, finalized_rank
         FROM shift_reviews
-        WHERE {" AND ".join(clauses)}
+        WHERE finalized_batch_id = %s
+          AND decision = 'selected'
         ORDER BY finalized_rank ASC, article_id
         FOR UPDATE
         """,
-        tuple(params),
+        (batch_id,),
     )
     rows = [dict(row) for row in cur.fetchall()]
     if not rows:

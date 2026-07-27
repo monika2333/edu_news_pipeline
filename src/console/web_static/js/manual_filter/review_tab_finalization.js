@@ -35,7 +35,7 @@ function setFinalizationHistoryOpen(open) {
     modal.setAttribute('aria-hidden', String(!open));
 }
 
-function finalizationHistoryItemTemplate(item, batchId) {
+function finalizationHistoryItemTemplate(item) {
     const summary = item.edited_summary
         || item.summary
         || item.excerpt_text
@@ -47,11 +47,6 @@ function finalizationHistoryItemTemplate(item, batchId) {
                 <h5>${escapeWorkspaceHtml(item.title || '无标题')}</h5>
                 <p>${escapeWorkspaceHtml(summary)}</p>
             </div>
-            <button class="btn btn-secondary" type="button"
-                data-finalization-restore-batch="${escapeWorkspaceHtml(batchId)}"
-                data-finalization-restore-article="${escapeWorkspaceHtml(item.article_id)}">
-                撤回本条
-            </button>
         </article>`;
 }
 
@@ -79,7 +74,7 @@ function renderFinalizationHistory(batches) {
             </header>
             <div class="finalization-history-items">
                 ${(batch.items || []).map(item => (
-                    finalizationHistoryItemTemplate(item, batch.batch_id)
+                    finalizationHistoryItemTemplate(item)
                 )).join('')}
             </div>
         </section>
@@ -158,10 +153,8 @@ async function finalizeCurrentDutyReview() {
 
 async function restoreDutyFinalization(button) {
     const batchId = button.dataset.finalizationRestoreBatch;
-    const articleId = button.dataset.finalizationRestoreArticle || null;
-    const targetLabel = articleId ? '这条新闻' : '这一整批新闻';
     if (!batchId || !window.confirm(
-        `确定将${targetLabel}撤回当前采纳列表吗？`
+        '确定将这一整批新闻撤回当前采纳列表吗？'
     )) {
         return;
     }
@@ -171,7 +164,7 @@ async function restoreDutyFinalization(button) {
         const result = await requestDutyFinalization(
             `/finalizations/${encodeURIComponent(batchId)}/restore`,
             '撤回失败',
-            { article_id: articleId }
+            {}
         );
         clearDutyWorkspaceCache();
         await Promise.all([

@@ -154,18 +154,23 @@
 .review-toolbar .search-group {
     display: flex;
     align-items: center;
+    flex: 0 1 180px;
+    min-width: 140px;
+    max-width: 180px;
     margin-right: auto;
     position: relative;
 }
 
 .review-toolbar .search-input {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
     padding: 8px 44px 8px 12px;
     border-radius: 8px;
     border: 1px solid var(--border-color);
     background: #ffffff;
     color: var(--text-primary);
     font-size: 0.95rem;
-    min-width: 200px;
 }
 
 .review-search-clear {
@@ -729,9 +734,6 @@ body.duplicate-review-open .search-drawer-toggle {
 }
 
 .finalization-history-item {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px 12px;
     padding: 12px;
     border: 1px solid #e2e8f0;
     border-radius: 9px;
@@ -743,12 +745,6 @@ body.duplicate-review-open .search-drawer-toggle {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.finalization-history-item button {
-    align-self: center;
-    grid-column: 2;
-    grid-row: 1;
 }
 
 /* Responsive Review */
@@ -779,6 +775,7 @@ body.duplicate-review-open .search-drawer-toggle {
 
     .review-toolbar .search-group {
         width: 100%;
+        max-width: none;
         margin: 0;
     }
 

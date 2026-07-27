@@ -800,7 +800,6 @@ class PostgresAdapter:
         shift_id: str,
         batch_id: str,
         actor_user_id: str,
-        article_id: Optional[str] = None,
         request_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         with self.transaction() as cur:
@@ -809,7 +808,6 @@ class PostgresAdapter:
                 shift_id=shift_id,
                 batch_id=batch_id,
                 actor_user_id=actor_user_id,
-                article_id=article_id,
             )
             audit.insert_review_event(
                 cur,
@@ -817,7 +815,7 @@ class PostgresAdapter:
                 action="shift_review.restore_finalization",
                 target_type="shift_review_finalization_batch",
                 target_id=batch_id,
-                before_data={"batch_id": batch_id, "article_id": article_id},
+                before_data={"batch_id": batch_id},
                 after_data=result,
                 request_id=request_id,
             )

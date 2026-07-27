@@ -235,6 +235,9 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     workspace_script = (scripts_dir / "workspace.js").read_text(encoding="utf-8")
     init_script = (scripts_dir / "init.js").read_text(encoding="utf-8")
     utils_script = (scripts_dir / "utils.js").read_text(encoding="utf-8")
+    finalization_script = (
+        scripts_dir / "review_tab_finalization.js"
+    ).read_text(encoding="utf-8")
 
     assert response.status_code == 200
     html = response.text
@@ -292,6 +295,10 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "!IS_DUTY_WORKSPACE && elements.reviewList" not in init_script
     assert "syncWorkspaceTabActions(state.currentTab);" in utils_script
     assert "action.hidden = action.dataset.workspaceActionTab !== currentTab;" in utils_script
+    assert "整批撤回" in finalization_script
+    assert "撤回本条" not in finalization_script
+    assert "data-finalization-restore-article" not in finalization_script
+    assert "{ article_id: null }" not in finalization_script
 
 
 def test_admin_manual_filter_keeps_admin_only_entries() -> None:
@@ -624,6 +631,19 @@ def test_sort_mode_hides_incompatible_review_toolbar_controls() -> None:
     assert 'class="bulk-group sort-incompatible"' in html
     assert 'class="btn btn-secondary sort-incompatible" id="btn-check-duplicates"' in html
     assert "#review-tab.review-sort-mode .sort-incompatible" in review_css
+
+
+def test_review_toolbar_search_can_shrink_without_overflowing() -> None:
+    root = Path(__file__).parents[1]
+    review_css = (
+        root / "src/console/web_static/css/modules/review.css"
+    ).read_text(encoding="utf-8")
+
+    assert "flex: 0 1 180px;" in review_css
+    assert "min-width: 140px;" in review_css
+    assert "max-width: 180px;" in review_css
+    assert "box-sizing: border-box;" in review_css
+    assert "max-width: none;" in review_css
 
 
 def test_duplicate_check_tracks_loading_state_by_review_column() -> None:

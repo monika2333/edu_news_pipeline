@@ -296,8 +296,8 @@ def test_editor_can_finalize_and_restore_owned_shift_batch(monkeypatch) -> None:
         return {
             "batch_id": "batch-1",
             "report_type": "zongbao",
-            "restored": 1,
-            "article_ids": ["article-1"],
+            "restored": 2,
+            "article_ids": ["article-1", "article-2"],
         }
 
     monkeypatch.setattr(
@@ -318,15 +318,21 @@ def test_editor_can_finalize_and_restore_owned_shift_batch(monkeypatch) -> None:
     )
     restored = client.post(
         "/api/duty/shifts/shift-id/finalizations/batch-1/restore",
+        json={},
+    )
+    single_item_restore = client.post(
+        "/api/duty/shifts/shift-id/finalizations/batch-1/restore",
         json={"article_id": "article-1"},
     )
 
     assert finalized.status_code == 200
     assert finalized.json()["item_count"] == 2
     assert restored.status_code == 200
-    assert restored.json()["restored"] == 1
+    assert restored.json()["restored"] == 2
+    assert single_item_restore.status_code == 422
     assert calls[0][1]["user"].user_id == "editor-id"
-    assert calls[1][1]["article_id"] == "article-1"
+    assert "article_id" not in calls[1][1]
+    assert [name for name, _ in calls].count("restore") == 1
 
 
 def test_editor_can_check_duplicates_in_owned_shift(monkeypatch) -> None:

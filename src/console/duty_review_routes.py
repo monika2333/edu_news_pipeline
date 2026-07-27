@@ -278,13 +278,12 @@ def restore_finalization(
     user: ConsoleUser = Depends(require_role("duty_editor")),
     request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ) -> dict[str, Any]:
-    """Restore one finalized item or an entire batch to the selected list."""
+    """Restore an entire finalized batch to the selected list."""
     try:
         return duty_review_service.restore_finalized_batch(
             shift_id=shift_id,
             batch_id=batch_id,
             user=user,
-            article_id=payload.article_id,
             request_id=request_id,
         )
     except (ValueError, PermissionError, RuntimeError) as exc:

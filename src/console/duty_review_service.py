@@ -410,21 +410,14 @@ def restore_finalized_batch(
     shift_id: str,
     batch_id: str,
     user: ConsoleUser,
-    article_id: Optional[str] = None,
     request_id: Optional[str] = None,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
     actor_user_id = _require_actor_id(user)
-    normalized_article_id = (
-        str(article_id).strip() if article_id is not None else None
-    )
-    if article_id is not None and not normalized_article_id:
-        raise ValueError("Article id cannot be empty")
     return get_adapter().restore_shift_review_finalization(
         shift_id=shift_id,
         batch_id=batch_id,
         actor_user_id=actor_user_id,
-        article_id=normalized_article_id,
         request_id=request_id,
     )
 

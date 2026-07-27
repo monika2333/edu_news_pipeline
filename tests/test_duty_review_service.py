@@ -105,12 +105,8 @@ class FakeDutyReviewAdapter:
         return {
             "batch_id": kwargs["batch_id"],
             "report_type": "zongbao",
-            "restored": 1 if kwargs.get("article_id") else 2,
-            "article_ids": (
-                [kwargs["article_id"]]
-                if kwargs.get("article_id")
-                else ["article-1", "article-2"]
-            ),
+            "restored": 2,
+            "article_ids": ["article-1", "article-2"],
         }
 
     def fetch_shift_clusters(
@@ -405,14 +401,13 @@ def test_list_finalized_batches_groups_items_in_frozen_order(
     ] == ["article-1", "article-2"]
 
 
-def test_restore_one_finalized_item_returns_it_to_current_batch(
+def test_restore_finalized_batch_returns_all_items_to_current_batch(
     fake_adapter: FakeDutyReviewAdapter,
 ) -> None:
     result = duty_review_service.restore_finalized_batch(
         shift_id="shift-id",
         batch_id="batch-1",
         user=_editor(),
-        article_id="article-2",
         request_id="request-2",
     )
 
@@ -420,7 +415,7 @@ def test_restore_one_finalized_item_returns_it_to_current_batch(
         "shift_id": "shift-id",
         "batch_id": "batch-1",
         "actor_user_id": "editor-id",
-        "article_id": "article-2",
         "request_id": "request-2",
     }
-    assert result["restored"] == 1
+    assert result["restored"] == 2
+    assert result["article_ids"] == ["article-1", "article-2"]

@@ -377,7 +377,6 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert ".summary-workspace-context {" in stylesheet
     assert "font-size: 1rem;" in stylesheet
     assert "font-size: 1.25rem;" in stylesheet
-    assert "font-size: 0.95rem;" in stylesheet
 
 
 def test_duty_summary_exposes_column_tabs_search_and_select_all(
@@ -401,6 +400,9 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "晚报采纳（0）" in html
     assert "晚报备选（0）" in html
     assert "查看历史班次" in html
+    assert 'id="summary-shifts-close"' in html
+    assert 'class="btn-icon"' in html
+    assert 'aria-label="关闭班次"' in html
     assert 'id="search-drawer-toggle"' in html
     assert 'id="search-drawer"' in html
     assert 'id="btn-drawer-search"' in html
@@ -410,6 +412,8 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert 'id="btn-uncovered"' not in html
     assert "'收起历史班次'" in script
     assert "'查看历史班次'" in script
+    assert "shiftsClose: document.getElementById('summary-shifts-close')" in script
+    assert "elements.shiftsClose.addEventListener('click'" in script
     assert 'class="summary-shift-date"' in script
     assert 'class="summary-shift-owner"' not in script
     assert 'class="summary-shift-counts"' not in script
@@ -429,7 +433,13 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert 'class="filter-tab-btn summary-column-tab active"' in html
     assert 'id="summary-report-type"' not in html
     assert 'id="summary-import-target"' in html
-    assert '<option value="">送入当前栏目</option>' in html
+    assert 'id="summary-selection-count"' not in html
+    assert '<option value="" selected disabled>送入栏目</option>' in html
+    assert '<option value="zongbao:selected">综报采纳</option>' in html
+    assert '<option value="zongbao:backup">综报备选</option>' in html
+    assert '<option value="wanbao:selected">晚报采纳</option>' in html
+    assert '<option value="wanbao:backup">晚报备选</option>' in html
+    assert "送入当前栏目" not in html
     assert 'id="btn-discard-selected">放弃</button>' in html
     assert 'id="summary-decision"' not in html
     assert 'id="summary-search-clear"' in html
@@ -440,7 +450,9 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert 'id="summary-comparison"' in html
     assert html.index('id="summary-comparison"') < html.index('id="btn-toggle-shifts"')
     assert "当前栏目全部" in html
-    assert 'id="btn-import-results">送入汇总审阅</button>' in html
+    assert 'id="btn-import-results"' not in html
+    assert "elements.importTarget.addEventListener('change', importSelectedItems)" in script
+    assert "buildUndoToastAction" in script
     assert 'id="summary-import-conflict-modal"' in html
     assert 'id="summary-existing-summary"' in html
     assert 'id="summary-existing-source"' in html
@@ -463,9 +475,11 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "elements.filterLayout.classList.toggle('is-discarded'" in script
     assert "params.set('decision', state.targetStatus)" in script
     assert "params.set('report_type', state.targetReportType)" in script
-    assert "function renderImportTargets()" in script
+    assert "function renderImportTargets()" not in script
     assert "function selectedImportTarget()" in script
-    assert ".filter(([reportType, status]) => `${reportType}:${status}` !== current)" in script
+    assert "elements.importTarget.addEventListener('change'" in script
+    assert "function captureImportUndoTargets(articleIds)" in script
+    assert "'/api/manual_filter/decide'" in script
     assert "/api/admin/duty-summary/import-preview" in script
     assert "/api/admin/duty-summary/discard-bulk" in script
     assert "elements.discardButton.addEventListener('click', discardSelectedItems)" in script

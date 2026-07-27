@@ -132,16 +132,8 @@
 }
 
 .summary-select-all[hidden],
-.summary-selection-count[hidden],
-#btn-discard-selected[hidden],
-#btn-import-results[hidden] {
+#btn-discard-selected[hidden] {
     display: none;
-}
-
-.summary-selection-count {
-    color: #475569;
-    font-size: 0.95rem;
-    white-space: nowrap;
 }
 
 .summary-item .card-header {
@@ -328,8 +320,7 @@
 
     .summary-import-bar .search-group,
     .summary-import-bar .bulk-group,
-    #btn-discard-selected,
-    #btn-import-results {
+    #btn-discard-selected {
         width: 100%;
     }
 }

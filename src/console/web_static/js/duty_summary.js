@@ -10,6 +10,7 @@
         adminDiscarded: false,
         selected: new Set(),
         pendingImport: null,
+        pendingUndoTargets: [],
         importConflicts: [],
         importConflictIndex: 0,
         conflictResolutions: []
@@ -19,7 +20,6 @@
         items: document.getElementById('summary-items'),
         context: document.getElementById('summary-context'),
         comparison: document.getElementById('summary-comparison'),
-        importButton: document.getElementById('btn-import-results'),
         importTarget: document.getElementById('summary-import-target'),
         discardButton: document.getElementById('btn-discard-selected'),
         importBar: document.getElementById('summary-import-bar'),
@@ -29,11 +29,11 @@
         viewTabs: [...document.querySelectorAll('[data-summary-view]')],
         columnTabs: [...document.querySelectorAll('.summary-column-tab')],
         filterLayout: document.getElementById('summary-filter-layout'),
-        selectionCount: document.getElementById('summary-selection-count'),
         toast: document.getElementById('toast'),
         layout: document.getElementById('summary-layout'),
         shiftsPanel: document.getElementById('summary-shifts-panel'),
         shiftsToggle: document.getElementById('btn-toggle-shifts'),
+        shiftsClose: document.getElementById('summary-shifts-close'),
         conflictModal: document.getElementById('summary-import-conflict-modal'),
         conflictProgress: document.getElementById('summary-conflict-progress'),
         conflictTitle: document.getElementById('summary-conflict-article-title'),
@@ -45,13 +45,6 @@
         dutySource: document.getElementById('summary-duty-source')
     };
     const businessTimeZone = 'Asia/Shanghai';
-    const reviewColumns = [
-        ['zongbao', 'selected'],
-        ['zongbao', 'backup'],
-        ['wanbao', 'selected'],
-        ['wanbao', 'backup']
-    ];
-
     function escapeHtml(value) {
         const node = document.createElement('div');
         node.textContent = String(value ?? '');
@@ -109,10 +102,8 @@
             : '查看历史班次';
     }
 
-    function showToast(message) {
-        elements.toast.textContent = message;
-        elements.toast.classList.add('show');
-        window.setTimeout(() => elements.toast.classList.remove('show'), 1800);
+    function showToast(message, type = 'success', action = null) {
+        showToastAt(elements.toast, message, type, action);
     }
 
     function reviewColumnLabel(reportType, status) {
@@ -128,25 +119,55 @@
         return `${reportLabel}${statusLabel}`;
     }
 
-    function renderImportTargets() {
-        const current = `${state.targetReportType}:${state.targetStatus}`;
-        const alternatives = reviewColumns
-            .filter(([reportType, status]) => `${reportType}:${status}` !== current)
-            .map(([reportType, status]) => (
-                `<option value="${reportType}:${status}">${reviewColumnLabel(reportType, status)}</option>`
-            ));
-        elements.importTarget.innerHTML = [
-            '<option value="">送入当前栏目</option>',
-            ...alternatives
-        ].join('');
-    }
-
     function selectedImportTarget() {
         const [reportType, targetStatus] = elements.importTarget.value.split(':');
-        return {
-            reportType: reportType || state.targetReportType,
-            targetStatus: targetStatus || state.targetStatus
-        };
+        return { reportType, targetStatus };
+    }
+
+    function captureImportUndoTargets(articleIds) {
+        const itemsById = new Map(state.items.map(item => [item.article_id, item]));
+        const groups = new Map();
+        articleIds.forEach(articleId => {
+            const item = itemsById.get(articleId);
+            const status = ['selected', 'backup', 'discarded'].includes(item?.admin_status)
+                ? item.admin_status
+                : 'pending';
+            const reportType = item?.admin_report_type === 'wanbao' ? 'wanbao' : 'zongbao';
+            const key = `${reportType}:${status}`;
+            if (!groups.has(key)) groups.set(key, { reportType, status, articleIds: [] });
+            groups.get(key).articleIds.push(articleId);
+        });
+        return [...groups.values()];
+    }
+
+    async function undoDutyImport(importedItems, undoTargets) {
+        const versions = Object.fromEntries(
+            (importedItems || []).map(item => [item.article_id, item.version])
+        );
+        for (const target of undoTargets) {
+            const targetVersions = Object.fromEntries(
+                target.articleIds.map(articleId => [articleId, versions[articleId]])
+            );
+            if (Object.values(targetVersions).some(version => !version)) {
+                throw new Error('缺少撤销所需的记录版本，请刷新后重试');
+            }
+            const body = {
+                selected_ids: [],
+                backup_ids: [],
+                discarded_ids: [],
+                pending_ids: [],
+                versions: targetVersions,
+                report_type: target.reportType
+            };
+            body[`${target.status}_ids`] = target.articleIds;
+            await request('/api/manual_filter/decide', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+        }
+        showToast('已撤销操作');
+        await Promise.all([loadSummary(), loadResults()]);
     }
 
     function setConflictModalOpen(open) {
@@ -179,12 +200,17 @@
     function closeImportConflictModal() {
         setConflictModalOpen(false);
         state.pendingImport = null;
+        state.pendingUndoTargets = [];
         state.importConflicts = [];
         state.importConflictIndex = 0;
         state.conflictResolutions = [];
     }
 
-    async function submitDutyImport(payload, conflictResolutions = []) {
+    async function submitDutyImport(
+        payload,
+        conflictResolutions = [],
+        undoTargets = captureImportUndoTargets(payload.article_ids)
+    ) {
         const result = await request('/api/admin/duty-summary/import', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -199,7 +225,14 @@
             payload.report_type,
             payload.target_status
         )}`;
-        showToast(`${actionLabel} ${result.imported} 条`);
+        const undoAction = buildUndoToastAction(async () => {
+            try {
+                await undoDutyImport(result.items, undoTargets);
+            } catch (error) {
+                showToast(error.message || '撤销失败', 'error');
+            }
+        });
+        showToast(`${actionLabel} ${result.imported} 条`, 'success', undoAction);
         await Promise.all([loadSummary(), loadResults()]);
     }
 
@@ -225,16 +258,18 @@
         }
         const payload = state.pendingImport;
         const resolutions = [...state.conflictResolutions];
+        const undoTargets = [...state.pendingUndoTargets];
         closeImportConflictModal();
         try {
-            await submitDutyImport(payload, resolutions);
+            await submitDutyImport(payload, resolutions, undoTargets);
         } catch (error) {
             window.alert(`${error.message}。汇总审阅内容可能已经变化，请重新操作。`);
         }
     }
 
-    function openImportConflictModal(conflicts, payload) {
+    function openImportConflictModal(conflicts, payload, undoTargets) {
         state.pendingImport = payload;
+        state.pendingUndoTargets = undoTargets;
         state.importConflicts = conflicts;
         state.importConflictIndex = 0;
         state.conflictResolutions = [];
@@ -300,13 +335,9 @@
     function updateSelection(visibleItems = getVisibleItems()) {
         const canImport = !state.adminDiscarded && Boolean(state.shiftId);
         elements.selectAll.closest('.summary-select-all').hidden = !canImport;
-        elements.selectionCount.hidden = !canImport;
         elements.discardButton.hidden = !canImport;
-        elements.importButton.hidden = !canImport;
         elements.importTarget.disabled = !canImport;
         elements.discardButton.disabled = !canImport || !state.selected.size;
-        elements.importButton.disabled = !canImport || !state.selected.size;
-        elements.selectionCount.textContent = `已选择 ${state.selected.size} 条`;
         elements.importBar.hidden = !state.shiftId;
         const visibleIds = visibleItems.map(item => item.article_id);
         const selectedVisibleCount = visibleIds.filter(id => state.selected.has(id)).length;
@@ -412,6 +443,7 @@
             target_status: button.dataset.quickStatus,
             report_type: state.targetReportType
         };
+        const undoTargets = captureImportUndoTargets(payload.article_ids);
         button.disabled = true;
         try {
             const preview = await request('/api/admin/duty-summary/import-preview', {
@@ -421,10 +453,10 @@
             });
             if (preview.conflicts && preview.conflicts.length) {
                 button.disabled = false;
-                openImportConflictModal(preview.conflicts, payload);
+                openImportConflictModal(preview.conflicts, payload, undoTargets);
                 return;
             }
-            await submitDutyImport(payload);
+            await submitDutyImport(payload, [], undoTargets);
         } catch (error) {
             button.disabled = false;
             window.alert(error.message);
@@ -519,6 +551,10 @@
         setShiftPanelOpen(!state.shiftsOpen);
     });
 
+    elements.shiftsClose.addEventListener('click', () => {
+        setShiftPanelOpen(false);
+    });
+
     elements.comparison.addEventListener('change', () => {
         state.selected.clear();
         loadResults();
@@ -551,7 +587,6 @@
             state.targetReportType = tab.dataset.reportType;
             state.targetStatus = tab.dataset.targetStatus;
             state.selected.clear();
-            renderImportTargets();
             elements.columnTabs.forEach(item => {
                 const active = item === tab;
                 item.classList.toggle('active', active);
@@ -568,7 +603,6 @@
             state.selected.clear();
             elements.searchInput.value = '';
             syncSearchClearButton();
-            renderImportTargets();
             elements.comparison.value = '';
             elements.comparison.disabled = state.adminDiscarded;
             elements.filterLayout.classList.toggle('is-discarded', state.adminDiscarded);
@@ -582,19 +616,24 @@
     });
 
     elements.discardButton.addEventListener('click', discardSelectedItems);
-
-    elements.importButton.addEventListener('click', async () => {
+    async function importSelectedItems() {
+        const target = selectedImportTarget();
+        elements.importTarget.value = '';
         if (!state.shiftId || !state.selected.size) {
-            window.alert('请先选择要送入汇总审阅的新闻。');
+            showToast('请先选择要送入汇总审阅的新闻', 'error');
             return;
         }
-        const target = selectedImportTarget();
+        if (!target.reportType || !target.targetStatus) {
+            return;
+        }
         const payload = {
             shift_id: state.shiftId,
             article_ids: [...state.selected],
             target_status: target.targetStatus,
             report_type: target.reportType
         };
+        const undoTargets = captureImportUndoTargets(payload.article_ids);
+        elements.importTarget.disabled = true;
         try {
             const preview = await request('/api/admin/duty-summary/import-preview', {
                 method: 'POST',
@@ -602,14 +641,19 @@
                 body: JSON.stringify(payload)
             });
             if (preview.conflicts && preview.conflicts.length) {
-                openImportConflictModal(preview.conflicts, payload);
+                openImportConflictModal(preview.conflicts, payload, undoTargets);
                 return;
             }
-            await submitDutyImport(payload);
+            await submitDutyImport(payload, [], undoTargets);
         } catch (error) {
-            window.alert(error.message);
+            showToast(error.message || '送入栏目失败', 'error');
+        } finally {
+            elements.importTarget.disabled = false;
+            updateSelection();
         }
-    });
+    }
+
+    elements.importTarget.addEventListener('change', importSelectedItems);
 
     document.getElementById('btn-close-import-conflict').addEventListener(
         'click',
@@ -629,7 +673,6 @@
 
     setShiftPanelOpen(false);
     syncSearchClearButton();
-    renderImportTargets();
     loadSummary()
         .then(() => {
             if (state.shiftId) return loadResults();

@@ -263,19 +263,19 @@ function buildUndoToastAction(callback, title = '撤销操作') {
     };
 }
 
-function showToast(msg, type = 'success', action = null) {
+function showToastAt(toastElement, msg, type = 'success', action = null) {
     if (toastTimeout) {
         clearTimeout(toastTimeout);
         toastTimeout = null;
     }
 
     // Reset content first
-    elements.toast.innerHTML = '';
-    elements.toast.textContent = '';
+    toastElement.innerHTML = '';
+    toastElement.textContent = '';
 
     const span = document.createElement('span');
     span.textContent = msg;
-    elements.toast.appendChild(span);
+    toastElement.appendChild(span);
 
     if (action && (action.text || action.icon) && action.callback) {
         const btn = document.createElement('button');
@@ -304,19 +304,23 @@ function showToast(msg, type = 'success', action = null) {
         btn.onclick = (e) => {
             e.stopPropagation();
             action.callback();
-            elements.toast.classList.remove('show');
+            toastElement.classList.remove('show');
         };
-        elements.toast.appendChild(btn);
+        toastElement.appendChild(btn);
     }
 
-    elements.toast.className = `toast show ${type}`;
+    toastElement.className = `toast show ${type}`;
 
     // Increase timeout if there is an action to give user more time
     const duration = action ? 5000 : 3000;
 
     toastTimeout = setTimeout(() => {
-        elements.toast.classList.remove('show');
+        toastElement.classList.remove('show');
     }, duration);
+}
+
+function showToast(msg, type = 'success', action = null) {
+    showToastAt(elements.toast, msg, type, action);
 }
 
 function updatePagination(tab, total, currentPage) {

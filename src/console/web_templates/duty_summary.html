@@ -71,6 +71,8 @@
             <aside class="filter-sidebar summary-shifts" id="summary-shifts-panel" hidden>
                 <div class="summary-section-heading">
                     <h2>班次</h2>
+                    <button class="btn-icon" id="summary-shifts-close" type="button"
+                        aria-label="关闭班次">✕</button>
                 </div>
                 <div id="summary-shift-list"></div>
             </aside>
@@ -119,13 +121,15 @@
                                     <input id="summary-select-all" type="checkbox">
                                     <span>全选</span>
                                 </label>
-                                <span class="summary-selection-count" id="summary-selection-count">已选择 0 条</span>
-                                <select id="summary-import-target" class="bulk-select" aria-label="送入栏目">
-                                    <option value="">送入当前栏目</option>
+                                <select id="summary-import-target" class="bulk-select" aria-label="送入栏目" required>
+                                    <option value="" selected disabled>送入栏目</option>
+                                    <option value="zongbao:selected">综报采纳</option>
+                                    <option value="zongbao:backup">综报备选</option>
+                                    <option value="wanbao:selected">晚报采纳</option>
+                                    <option value="wanbao:backup">晚报备选</option>
                                 </select>
                             </div>
                             <button class="btn btn-secondary" id="btn-discard-selected">放弃</button>
-                            <button class="btn btn-primary" id="btn-import-results">送入汇总审阅</button>
                         </div>
                     </div>
                 </div>

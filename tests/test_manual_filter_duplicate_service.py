@@ -69,6 +69,40 @@ def test_check_duplicates_merges_overlaps_and_filters_unknown_ids(
     assert result["groups"][0]["items"][0]["bonus_keywords"] == ["重点"]
 
 
+def test_check_duplicates_uses_supplied_review_loader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    items = [_item("a1"), _item("a2")]
+    calls: list[dict[str, Any]] = []
+
+    def review_loader(decision: str, **kwargs: Any) -> dict[str, Any]:
+        calls.append({"decision": decision, **kwargs})
+        return {"items": items, "total": len(items)}
+
+    monkeypatch.setattr(
+        duplicate_service,
+        "list_review",
+        lambda *args, **kwargs: pytest.fail("default review loader should not be used"),
+    )
+    monkeypatch.setattr(
+        duplicate_service,
+        "call_duplicate_review",
+        lambda model_items: [["a1", "a2"]],
+    )
+    _patch_settings(monkeypatch)
+
+    result = duplicate_service.check_duplicates(
+        report_type="wanbao",
+        decision="backup",
+        review_loader=review_loader,
+    )
+
+    assert len(calls) == 2
+    assert all(call["decision"] == "backup" for call in calls)
+    assert all(call["report_type"] == "wanbao" for call in calls)
+    assert result["groups"][0]["group_id"] == "duplicate-1"
+
+
 def test_response_item_does_not_fall_back_to_primary_score() -> None:
     item = _item("a1")
     item["external_importance_score"] = None

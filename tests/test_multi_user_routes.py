@@ -13,6 +13,7 @@ from src.console import (
 )
 from src.console.app import create_app
 from src.console.auth_service import ConsoleUser
+from src.console.manual_filter_duplicate_service import DuplicateReviewTimeoutError
 from src.console.security import require_console_user
 
 
@@ -342,6 +343,62 @@ def test_stale_batch_review_decision_returns_409(monkeypatch) -> None:
     )
 
     assert response.status_code == 409
+
+
+def test_editor_can_check_duplicates_in_owned_shift(monkeypatch) -> None:
+    editor = ConsoleUser(
+        method="test",
+        user_id="editor-id",
+        username="editor",
+        display_name="值班编辑",
+        role="duty_editor",
+    )
+    captured: dict[str, Any] = {}
+    expected = {
+        "checked_count": 2,
+        "groups": [{"group_id": "duplicate-1", "items": []}],
+    }
+
+    def check_duplicates(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return expected
+
+    monkeypatch.setattr(duty_review_service, "check_duplicates", check_duplicates)
+
+    response = _client_for(editor).post(
+        "/api/duty/shifts/shift-id/duplicate-check",
+        json={"report_type": "wanbao", "decision": "backup"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == expected
+    assert captured["shift_id"] == "shift-id"
+    assert captured["user"].user_id == "editor-id"
+    assert captured["report_type"] == "wanbao"
+    assert captured["decision"] == "backup"
+
+
+def test_duty_duplicate_check_timeout_returns_504(monkeypatch) -> None:
+    editor = ConsoleUser(
+        method="test",
+        user_id="editor-id",
+        username="editor",
+        display_name="值班编辑",
+        role="duty_editor",
+    )
+
+    def check_duplicates(**kwargs: Any) -> dict[str, Any]:
+        raise DuplicateReviewTimeoutError("AI 查重请求超时，请稍后重试")
+
+    monkeypatch.setattr(duty_review_service, "check_duplicates", check_duplicates)
+
+    response = _client_for(editor).post(
+        "/api/duty/shifts/shift-id/duplicate-check",
+        json={"report_type": "zongbao", "decision": "selected"},
+    )
+
+    assert response.status_code == 504
+    assert response.json()["detail"] == "AI 查重请求超时，请稍后重试"
 
 
 def test_single_review_route_accepts_encoded_slash_id(monkeypatch) -> None:

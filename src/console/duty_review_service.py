@@ -8,6 +8,7 @@ from src.adapters.db_postgres_shift_reviews import (
     VALID_DECISIONS,
     VALID_REPORT_TYPES,
 )
+from src.console import manual_filter_duplicate_service
 from src.console.auth_service import ConsoleUser
 from src.console.manual_filter_serializers import serialize_manual_filter_item
 from src.console.shifts_service import require_owned_shift
@@ -143,6 +144,36 @@ def list_clusters(
         "clusters": clusters,
         "item_total": sum(len(cluster["item_ids"]) for cluster in clusters),
     }
+
+
+def check_duplicates(
+    *,
+    shift_id: str,
+    user: ConsoleUser,
+    report_type: str,
+    decision: str,
+) -> dict[str, Any]:
+    def load_review(
+        target_decision: str,
+        *,
+        limit: int,
+        offset: int,
+        report_type: str,
+    ) -> dict[str, Any]:
+        return list_items(
+            shift_id=shift_id,
+            user=user,
+            decision=target_decision,
+            report_type=report_type,
+            limit=limit,
+            offset=offset,
+        )
+
+    return manual_filter_duplicate_service.check_duplicates(
+        report_type=report_type,
+        decision=decision,
+        review_loader=load_review,
+    )
 
 
 def save_review(
@@ -358,6 +389,7 @@ __all__ = [
     "ShiftReviewConflictError",
     "bulk_decide",
     "build_preview",
+    "check_duplicates",
     "get_stats",
     "list_clusters",
     "list_items",

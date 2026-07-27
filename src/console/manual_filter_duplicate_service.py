@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Optional, Sequence
 
 import requests
 
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 MAX_DUPLICATE_REVIEW_ITEMS = 200
 VALID_REVIEW_DECISIONS = {"selected", "backup"}
+ReviewLoader = Callable[..., Mapping[str, Any]]
 
 
 class DuplicateReviewError(RuntimeError):
@@ -106,10 +107,16 @@ def _call_model(items: Sequence[Mapping[str, str]]) -> list[list[str]]:
         raise DuplicateReviewUnavailableError("AI 查重配置不可用") from exc
 
 
-def check_duplicates(*, report_type: str, decision: str) -> dict[str, Any]:
+def check_duplicates(
+    *,
+    report_type: str,
+    decision: str,
+    review_loader: Optional[ReviewLoader] = None,
+) -> dict[str, Any]:
     target_report_type = _normalize_report_type(report_type)
     target_decision = decision if decision in VALID_REVIEW_DECISIONS else "selected"
-    review = list_review(
+    load_review = review_loader or list_review
+    review = load_review(
         target_decision,
         limit=MAX_DUPLICATE_REVIEW_ITEMS,
         offset=0,
@@ -141,7 +148,7 @@ def check_duplicates(*, report_type: str, decision: str) -> dict[str, Any]:
 
     model_items = [_model_input_item(item) for item in items]
     raw_groups = _call_model(model_items)
-    latest_review = list_review(
+    latest_review = load_review(
         target_decision,
         limit=MAX_DUPLICATE_REVIEW_ITEMS,
         offset=0,

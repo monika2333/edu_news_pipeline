@@ -9,9 +9,16 @@ from src.console.auth_service import ConsoleUser
 from src.console.duty_review_schemas import (
     DutyReviewBatchDecisionRequest,
     DutyReviewBatchEditRequest,
+    DutyReviewDuplicateCheckRequest,
     DutyReviewOrderRequest,
     DutyReviewUpdateRequest,
     ReportType,
+)
+from src.console.manual_filter_duplicate_service import (
+    DuplicateReviewInvalidResponseError,
+    DuplicateReviewLimitError,
+    DuplicateReviewTimeoutError,
+    DuplicateReviewUnavailableError,
 )
 from src.console.security import require_role
 
@@ -26,6 +33,18 @@ def _raise_review_error(exc: Exception) -> NoReturn:
     if isinstance(exc, duty_review_service.ShiftReviewConflictError):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _raise_duplicate_review_error(exc: Exception) -> NoReturn:
+    if isinstance(exc, DuplicateReviewLimitError):
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if isinstance(exc, DuplicateReviewTimeoutError):
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    if isinstance(exc, DuplicateReviewInvalidResponseError):
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if isinstance(exc, DuplicateReviewUnavailableError):
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    _raise_review_error(exc)
 
 
 @router.get("/stats")
@@ -96,6 +115,31 @@ def list_reviews(
         )
     except (ValueError, PermissionError) as exc:
         _raise_review_error(exc)
+
+
+@router.post("/duplicate-check")
+def check_duplicates(
+    shift_id: str,
+    payload: DutyReviewDuplicateCheckRequest,
+    user: ConsoleUser = Depends(require_role("duty_editor")),
+) -> dict[str, Any]:
+    """Check one review column in the owned shift for duplicate news events."""
+    try:
+        return duty_review_service.check_duplicates(
+            shift_id=shift_id,
+            user=user,
+            report_type=payload.report_type,
+            decision=payload.decision,
+        )
+    except (
+        ValueError,
+        PermissionError,
+        DuplicateReviewLimitError,
+        DuplicateReviewTimeoutError,
+        DuplicateReviewInvalidResponseError,
+        DuplicateReviewUnavailableError,
+    ) as exc:
+        _raise_duplicate_review_error(exc)
 
 
 @router.post("/edit")

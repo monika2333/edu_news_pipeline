@@ -355,6 +355,7 @@ async function workspaceFetch(input, options = {}) {
     if (action === '/stats') return dutyStatsResponse(url.searchParams);
     if (action === '/edit') return dutyEditResponse(options);
     if (action === '/decide') return dutyDecideResponse(options);
+    if (action === '/duplicate-check') return window.fetch(`${API_BASE}/duplicate-check`, options);
     if (action === '/discard_before_date') return dutyDiscardBeforeDateResponse(options);
     if (action === '/order') return dutyOrderResponse(options);
     return workspaceJsonResponse({ detail: '值班账号不能执行此操作' }, 403);

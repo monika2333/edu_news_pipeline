@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadFilterCounts();
     }
     setupFilterRealtimeDecisionHandlers();
-    if (!IS_DUTY_WORKSPACE && elements.reviewList) {
+    if (elements.reviewList) {
         setupDuplicateReview();
     }
     setupScoreFeedback();

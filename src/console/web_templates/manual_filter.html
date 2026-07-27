@@ -215,11 +215,9 @@
                                 <option value="pending">待处理</option>
                             </select>
                         </div>
-                        {% if not is_duty_workspace %}
                         <button class="btn btn-secondary sort-incompatible" id="btn-check-duplicates">
                             检查重复
                         </button>
-                        {% endif %}
                         <button class="btn btn-secondary" id="btn-toggle-sort">
                             <span class="icon">🔃</span> 排序模式
                         </button>
@@ -274,7 +272,7 @@
     {% endif %}
 
     <!-- Duplicate Review Modal -->
-    {% if is_admin_review %}
+    {% if is_duty_workspace or is_admin_review %}
     <div class="modal" id="duplicate-review-modal" role="dialog" aria-modal="true"
         aria-labelledby="duplicate-review-title" aria-hidden="true">
         <div class="modal-content duplicate-review-modal-content">

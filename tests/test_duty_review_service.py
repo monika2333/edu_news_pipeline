@@ -246,6 +246,46 @@ def test_clusters_are_scoped_by_owned_shift_and_report_type(monkeypatch) -> None
     assert result["item_total"] == 2
 
 
+def test_duplicate_check_loads_only_owned_shift_review_items(monkeypatch) -> None:
+    adapter = FakeDutyReviewAdapter()
+    ownership_checks: list[str] = []
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(duty_review_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(
+        duty_review_service,
+        "require_owned_shift",
+        lambda shift_id, user: ownership_checks.append(f"{shift_id}:{user.user_id}"),
+    )
+
+    def fake_check_duplicates(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        review = kwargs["review_loader"](
+            "backup",
+            limit=200,
+            offset=0,
+            report_type="wanbao",
+        )
+        return {"checked_count": review["total"], "groups": []}
+
+    monkeypatch.setattr(
+        duty_review_service.manual_filter_duplicate_service,
+        "check_duplicates",
+        fake_check_duplicates,
+    )
+
+    result = duty_review_service.check_duplicates(
+        shift_id="shift-id",
+        user=_editor(),
+        report_type="wanbao",
+        decision="backup",
+    )
+
+    assert captured["report_type"] == "wanbao"
+    assert captured["decision"] == "backup"
+    assert ownership_checks == ["shift-id:editor-id"]
+    assert result == {"checked_count": 1, "groups": []}
+
+
 def test_preview_uses_independent_selected_and_backup_lists(monkeypatch) -> None:
     adapter = FakeDutyReviewAdapter()
     monkeypatch.setattr(duty_review_service, "get_adapter", lambda: adapter)

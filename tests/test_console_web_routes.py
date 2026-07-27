@@ -228,10 +228,12 @@ def test_duty_editor_cannot_open_admin_create_user_page() -> None:
 
 def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> None:
     response = _build_editor_client().get("/duty")
-    workspace_script = (
+    scripts_dir = (
         Path(__file__).parents[1]
-        / "src/console/web_static/js/manual_filter/workspace.js"
-    ).read_text(encoding="utf-8")
+        / "src/console/web_static/js/manual_filter"
+    )
+    workspace_script = (scripts_dir / "workspace.js").read_text(encoding="utf-8")
+    init_script = (scripts_dir / "init.js").read_text(encoding="utf-8")
 
     assert response.status_code == 200
     html = response.text
@@ -252,7 +254,9 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'src="/static/js/duty.js' not in html
     assert 'href="/admin">用户与排班</a>' not in html
     assert 'href="/admin/duty-summary">值班汇总</a>' not in html
-    assert 'id="btn-check-duplicates"' not in html
+    assert 'id="btn-check-duplicates"' in html
+    assert 'id="duplicate-review-modal"' in html
+    assert html.index('id="btn-check-duplicates"') < html.index('id="btn-toggle-sort"')
     assert 'id="btn-archive"' not in html
     assert 'id="btn-filter-discard-before-date"' in html
     assert 'id="search-drawer-toggle"' in html
@@ -267,7 +271,10 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "formatWorkspaceDateTime" not in workspace_script
     assert "window.fetch(`${API_BASE}/edit`, options)" in workspace_script
     assert "window.fetch(`${API_BASE}/decide`, options)" in workspace_script
+    assert "window.fetch(`${API_BASE}/duplicate-check`, options)" in workspace_script
     assert "reviews/${encodeURIComponent(articleId)}" not in workspace_script
+    assert "if (elements.reviewList)" in init_script
+    assert "!IS_DUTY_WORKSPACE && elements.reviewList" not in init_script
 
 
 def test_admin_manual_filter_keeps_admin_only_entries() -> None:

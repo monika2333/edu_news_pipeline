@@ -37,6 +37,11 @@ class DutyReviewBatchDecisionRequest(BaseModel):
     report_type: ReportType = "zongbao"
 
 
+class DutyReviewDuplicateCheckRequest(BaseModel):
+    report_type: ReportType
+    decision: Literal["selected", "backup"]
+
+
 class DutyReviewOrderRequest(BaseModel):
     selected_order: list[str] = Field(default_factory=list)
     backup_order: list[str] = Field(default_factory=list)
@@ -46,6 +51,7 @@ __all__ = [
     "Decision",
     "DutyReviewBatchDecisionRequest",
     "DutyReviewBatchEditRequest",
+    "DutyReviewDuplicateCheckRequest",
     "DutyReviewEditPayload",
     "DutyReviewOrderRequest",
     "DutyReviewUpdateRequest",

@@ -84,6 +84,54 @@ def test_editor_can_refresh_shift_clusters(monkeypatch) -> None:
     assert captured["shift_id"] == "shift-id"
     assert captured["report_type"] == "zongbao"
     assert captured["force_refresh"] is True
+    assert captured["region"] is None
+    assert captured["sentiment"] is None
+    assert captured["limit"] is None
+    assert captured["offset"] == 0
+    assert captured["include_items"] is False
+    assert captured["user"].user_id == "editor-id"
+
+
+def test_editor_cluster_page_parameters_are_forwarded(monkeypatch) -> None:
+    editor = _user("duty_editor")
+    captured: dict[str, Any] = {}
+
+    def list_clusters(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"clusters": [], "item_total": 0}
+
+    monkeypatch.setattr(duty_review_service, "list_clusters", list_clusters)
+
+    response = _client_for(editor).get(
+        "/api/duty/shifts/shift-id/clusters"
+        "?report_type=zongbao&region=internal&sentiment=positive"
+        "&limit=10&offset=20&include_items=true"
+    )
+
+    assert response.status_code == 200
+    assert captured["region"] == "internal"
+    assert captured["sentiment"] == "positive"
+    assert captured["limit"] == 10
+    assert captured["offset"] == 20
+    assert captured["include_items"] is True
+
+
+def test_editor_stats_report_type_is_forwarded(monkeypatch) -> None:
+    editor = _user("duty_editor")
+    captured: dict[str, Any] = {}
+
+    def get_stats(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"pending": 0}
+
+    monkeypatch.setattr(duty_review_service, "get_stats", get_stats)
+
+    response = _client_for(editor).get(
+        "/api/duty/shifts/shift-id/stats?report_type=zongbao"
+    )
+
+    assert response.status_code == 200
+    assert captured["report_type"] == "zongbao"
     assert captured["user"].user_id == "editor-id"
 
 

@@ -233,6 +233,9 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
         / "src/console/web_static/js/manual_filter"
     )
     workspace_script = (scripts_dir / "workspace.js").read_text(encoding="utf-8")
+    filter_actions_script = (
+        scripts_dir / "filter_tab_actions.js"
+    ).read_text(encoding="utf-8")
     init_script = (scripts_dir / "init.js").read_text(encoding="utf-8")
     utils_script = (scripts_dir / "utils.js").read_text(encoding="utf-8")
     finalization_script = (
@@ -295,10 +298,16 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "!IS_DUTY_WORKSPACE && elements.reviewList" not in init_script
     assert "syncWorkspaceTabActions(state.currentTab);" in utils_script
     assert "action.hidden = action.dataset.workspaceActionTab !== currentTab;" in utils_script
-    assert "async function loadDutyClusters(forceRefresh = false)" in workspace_script
-    assert "params.set('force_refresh', 'true');" in workspace_script
-    assert "loadDutyClusters(forceClusterRefresh)" in workspace_script
+    assert "async function loadDutyClusters" not in workspace_script
+    assert "include_items: 'true'" in workspace_script
+    assert "`${API_BASE}/clusters?${clusterParams.toString()}`" in workspace_script
+    assert "loadAllDutyItems('pending')" not in workspace_script
     assert "function dutyCandidateBackendParams" in workspace_script
+    assert "async function dutyStatsResponse" not in workspace_script
+    assert "`${API_BASE}/stats${url.search}`" in workspace_script
+    assert "if (response.ok) invalidateDutyListCache();" in workspace_script
+    assert "await Promise.all([loadFilterData(), loadStats()]);" in filter_actions_script
+    assert "loadFilterData({ forceClusterRefresh: true })" not in filter_actions_script
     assert "item.content_markdown" not in workspace_script
     assert "整批撤回" in finalization_script
     assert "撤回本条" not in finalization_script

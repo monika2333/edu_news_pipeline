@@ -2,11 +2,13 @@
 // to the existing shift-scoped API.
 
 let dutyWorkspaceItems = new Map();
-let dutyWorkspaceClusters = null;
+
+function invalidateDutyListCache() {
+    dutyWorkspaceItems = new Map();
+}
 
 function clearDutyWorkspaceCache() {
-    dutyWorkspaceItems = new Map();
-    dutyWorkspaceClusters = null;
+    invalidateDutyListCache();
 }
 
 function workspaceShiftStatusLabel(status) {
@@ -69,7 +71,7 @@ function resetWorkspaceViewState() {
 async function reloadDutyWorkspace() {
     resetWorkspaceViewState();
     await Promise.all([loadStats(), loadFilterCounts()]);
-    reloadCurrentTab({ forceClusterRefresh: true });
+    reloadCurrentTab();
 }
 
 async function prepareManualFilterWorkspace() {
@@ -146,17 +148,6 @@ function itemReportType(item) {
     return item.report_type === 'wanbao' ? 'wanbao' : 'zongbao';
 }
 
-function filterDutyCandidates(items, params) {
-    const region = params.get('region');
-    const sentiment = params.get('sentiment');
-    return items.filter(item => {
-        if (itemReportType(item) !== 'zongbao') return false;
-        if (region && Boolean(item.is_beijing_related) !== (region === 'internal')) return false;
-        if (sentiment && item.sentiment_label !== sentiment) return false;
-        return true;
-    });
-}
-
 function dutyCandidateBackendParams(params, limit, offset) {
     const backendParams = new URLSearchParams({
         limit: String(limit),
@@ -188,73 +179,27 @@ async function loadAllDutyCandidateMatches(params) {
     return items;
 }
 
-async function loadDutyClusters(forceRefresh = false) {
-    if (forceRefresh) dutyWorkspaceClusters = null;
-    if (dutyWorkspaceClusters) return dutyWorkspaceClusters;
-    const params = new URLSearchParams({ report_type: 'zongbao' });
-    if (forceRefresh) params.set('force_refresh', 'true');
-    dutyWorkspaceClusters = window.fetch(`${API_BASE}/clusters?${params.toString()}`)
-        .then(response => {
-            if (!response.ok) throw new Error('聚类加载失败');
-            return response.json();
-        })
-        .then(payload => payload.clusters || [])
-        .catch(error => {
-            dutyWorkspaceClusters = null;
-            throw error;
-        });
-    return dutyWorkspaceClusters;
-}
-
 async function dutyCandidatesResponse(params) {
     const limit = Math.max(1, Math.min(Number(params.get('limit')) || 10, 200));
     const offset = Math.max(0, Number(params.get('offset')) || 0);
     const searchMode = params.get('view_mode') === 'search'
         || Boolean(params.get('q') || params.get('published_before'));
-    if (searchMode) {
+    if (searchMode || params.get('cluster') !== 'true') {
         const backendParams = dutyCandidateBackendParams(params, limit, offset);
         return window.fetch(`${API_BASE}/candidates?${backendParams.toString()}`);
     }
 
-    const filtered = filterDutyCandidates(
-        await loadAllDutyItems('pending'),
-        params
-    );
-    if (params.get('cluster') !== 'true') {
-        return workspaceJsonResponse({
-            items: filtered.slice(offset, offset + limit),
-            total: filtered.length,
-            limit,
-            offset,
-            view_mode: searchMode ? 'search' : 'browse'
-        });
-    }
-
-    const itemById = new Map(filtered.map(item => [String(item.article_id), item]));
-    const used = new Set();
-    const forceClusterRefresh = params.get('force_refresh') === 'true';
-    const clusters = (await loadDutyClusters(forceClusterRefresh)).flatMap(cluster => {
-        const items = (cluster.item_ids || [])
-            .map(articleId => itemById.get(String(articleId)))
-            .filter(Boolean);
-        if (!items.length) return [];
-        items.forEach(item => used.add(String(item.article_id)));
-        return [{ ...cluster, items, size: items.length }];
+    const clusterParams = new URLSearchParams({
+        report_type: 'zongbao',
+        limit: String(limit),
+        offset: String(offset),
+        include_items: 'true'
     });
-    filtered.forEach(item => {
-        if (used.has(String(item.article_id))) return;
-        clusters.push({
-            cluster_id: `single-${item.article_id}`,
-            items: [item],
-            size: 1
-        });
+    ['region', 'sentiment', 'force_refresh'].forEach(key => {
+        const value = params.get(key);
+        if (value) clusterParams.set(key, value);
     });
-    return workspaceJsonResponse({
-        clusters: clusters.slice(offset, offset + limit),
-        total: clusters.length,
-        item_total: filtered.length,
-        view_mode: 'browse'
-    });
+    return window.fetch(`${API_BASE}/clusters?${clusterParams.toString()}`);
 }
 
 async function dutyListResponse(decision, params) {
@@ -271,28 +216,16 @@ async function dutyListResponse(decision, params) {
     });
 }
 
-async function dutyStatsResponse(params) {
-    const reportType = params.get('report_type');
-    const decisions = ['pending', 'selected', 'backup', 'discarded'];
-    const lists = await Promise.all(decisions.map(loadAllDutyItems));
-    const counts = Object.fromEntries(decisions.map((decision, index) => [
-        decision,
-        lists[index].filter(item => !reportType || itemReportType(item) === reportType).length
-    ]));
-    return workspaceJsonResponse({
-        ...counts,
-        exported: counts.discarded
-    });
-}
-
 async function dutyEditResponse(options) {
-    clearDutyWorkspaceCache();
-    return window.fetch(`${API_BASE}/edit`, options);
+    const response = await window.fetch(`${API_BASE}/edit`, options);
+    if (response.ok) invalidateDutyListCache();
+    return response;
 }
 
 async function dutyDecideResponse(options) {
-    clearDutyWorkspaceCache();
-    return window.fetch(`${API_BASE}/decide`, options);
+    const response = await window.fetch(`${API_BASE}/decide`, options);
+    if (response.ok) invalidateDutyListCache();
+    return response;
 }
 
 async function dutyDiscardBeforeDateResponse(options) {
@@ -333,10 +266,10 @@ async function dutyDiscardBeforeDateResponse(options) {
         })
     });
     const result = await response.json().catch(() => ({}));
-    clearDutyWorkspaceCache();
     if (!response.ok) {
         return workspaceJsonResponse(result, response.status);
     }
+    invalidateDutyListCache();
     return workspaceJsonResponse({
         ...result,
         matched: items.length,
@@ -354,7 +287,7 @@ async function dutyOrderResponse(options) {
             backup_order: payload.backup_order || []
         })
     });
-    if (response.ok) clearDutyWorkspaceCache();
+    if (response.ok) invalidateDutyListCache();
     return response;
 }
 
@@ -371,7 +304,7 @@ async function workspaceFetch(input, options = {}) {
         return dutyListResponse(url.searchParams.get('decision') || 'selected', url.searchParams);
     }
     if (action === '/discarded') return dutyListResponse('discarded', url.searchParams);
-    if (action === '/stats') return dutyStatsResponse(url.searchParams);
+    if (action === '/stats') return window.fetch(`${API_BASE}/stats${url.search}`, options);
     if (action === '/edit') return dutyEditResponse(options);
     if (action === '/decide') return dutyDecideResponse(options);
     if (action === '/duplicate-check') return window.fetch(`${API_BASE}/duplicate-check`, options);

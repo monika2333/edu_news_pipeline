@@ -53,8 +53,12 @@ async function handleCardDecisionChange(input) {
     try {
         await persistEdits(edits);
         const mutation = await submitDecisions([articleId], status);
-        removeCardAndMaybeCluster(card);
-        loadStats();
+        if (IS_DUTY_WORKSPACE) {
+            await Promise.all([loadFilterData(), loadStats()]);
+        } else {
+            removeCardAndMaybeCluster(card);
+            loadStats();
+        }
 
         const undoAction = buildUndoToastAction(
             async () => {
@@ -114,8 +118,12 @@ async function handleClusterDecisionChange(input) {
     try {
         await persistEdits(edits);
         const mutation = await submitDecisions(ids, status);
-        cluster.remove();
-        loadStats();
+        if (IS_DUTY_WORKSPACE) {
+            await Promise.all([loadFilterData(), loadStats()]);
+        } else {
+            cluster.remove();
+            loadStats();
+        }
 
         const undoAction = buildUndoToastAction(
             async () => {
@@ -226,8 +234,12 @@ async function discardRemainingItems() {
     try {
         await persistEdits(edits);
         const mutation = await submitDecisions(ids, 'discarded');
-        removeCardsAndClusters(cards);
-        loadStats();
+        if (IS_DUTY_WORKSPACE) {
+            await Promise.all([loadFilterData(), loadStats()]);
+        } else {
+            removeCardsAndClusters(cards);
+            loadStats();
+        }
 
         const undoAction = buildUndoToastAction(
             async () => {
@@ -291,9 +303,7 @@ async function discardBeforeDate() {
         const result = await applyRes.json();
         showToast(`已放弃 ${result.updated} 条新闻`);
         state.filterPage = 1;
-        await loadFilterCounts();
-        await loadFilterData({ forceClusterRefresh: true });
-        loadStats();
+        await Promise.all([loadFilterData(), loadStats()]);
     } catch (error) {
         showToast('全部放弃失败', 'error');
     }

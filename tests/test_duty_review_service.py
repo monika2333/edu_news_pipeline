@@ -15,6 +15,7 @@ class FakeDutyReviewAdapter:
         self.ordered: dict[str, Any] = {}
         self.fetch_scopes: list[tuple[Optional[str], bool]] = []
         self.fetch_kwargs: list[dict[str, Any]] = []
+        self.fetch_article_ids: list[Optional[list[str]]] = []
         self.finalized: dict[str, Any] = {}
         self.restored: dict[str, Any] = {}
 
@@ -62,10 +63,17 @@ class FakeDutyReviewAdapter:
         sentiment: Optional[str] = None,
         query: Optional[str] = None,
         published_before: object = None,
+        article_ids: Optional[Sequence[str]] = None,
         exclude_finalized: bool = False,
     ) -> tuple[list[dict[str, Any]], int]:
         del shift_id, limit, offset
         self.fetch_scopes.append((decision, exclude_finalized))
+        normalized_article_ids = (
+            [str(article_id) for article_id in article_ids]
+            if article_ids is not None
+            else None
+        )
+        self.fetch_article_ids.append(normalized_article_ids)
         self.fetch_kwargs.append(
             {
                 "region": region,
@@ -74,9 +82,10 @@ class FakeDutyReviewAdapter:
                 "published_before": published_before,
             }
         )
+        row_ids = normalized_article_ids or [f"{decision}-1"]
         rows = [
             {
-                "article_id": f"{decision}-1",
+                "article_id": article_id,
                 "decision": decision,
                 "report_type": report_type,
                 "title": f"{decision} 新闻",
@@ -84,8 +93,24 @@ class FakeDutyReviewAdapter:
                 "llm_source": "来源",
                 "score_details": {},
             }
+            for article_id in row_ids
         ]
         return rows, len(rows)
+
+    def fetch_shift_stats(
+        self,
+        shift_id: str,
+        *,
+        report_type: Optional[str] = None,
+    ) -> dict[str, Any]:
+        return {
+            "shift_id": shift_id,
+            "report_type": report_type,
+            "pending": 4,
+            "selected": 2,
+            "backup": 1,
+            "discarded": 3,
+        }
 
     def finalize_shift_review_batch(self, **kwargs: Any) -> dict[str, Any]:
         self.finalized = dict(kwargs)
@@ -335,6 +360,43 @@ def test_clusters_are_scoped_by_owned_shift_and_report_type(monkeypatch) -> None
     assert refreshes == [{"report_type": "wanbao"}]
     assert result["clusters"][0]["item_ids"] == ["article-1", "article-2"]
     assert result["item_total"] == 2
+
+
+def test_cluster_page_loads_only_current_bucket_items(
+    fake_adapter: FakeDutyReviewAdapter,
+) -> None:
+    result = duty_review_service.list_clusters(
+        shift_id="shift-id",
+        user=_editor(),
+        report_type="zongbao",
+        region="internal",
+        sentiment="positive",
+        limit=1,
+        offset=0,
+        include_items=True,
+    )
+
+    assert result["total"] == 1
+    assert result["item_total"] == 2
+    assert result["limit"] == 1
+    assert fake_adapter.fetch_article_ids == [["article-1", "article-2"]]
+    assert [
+        item["article_id"]
+        for item in result["clusters"][0]["items"]
+    ] == ["article-1", "article-2"]
+
+
+def test_stats_are_aggregated_for_requested_report_type(
+    fake_adapter: FakeDutyReviewAdapter,
+) -> None:
+    result = duty_review_service.get_stats(
+        shift_id="shift-id",
+        user=_editor(),
+        report_type="zongbao",
+    )
+
+    assert result["report_type"] == "zongbao"
+    assert result["pending"] == 4
 
 
 def test_duplicate_check_loads_only_owned_shift_review_items(monkeypatch) -> None:

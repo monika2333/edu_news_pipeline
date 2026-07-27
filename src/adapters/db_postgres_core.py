@@ -591,6 +591,7 @@ class PostgresAdapter:
         sentiment: Optional[str] = None,
         query: Optional[str] = None,
         published_before: Optional[date] = None,
+        article_ids: Optional[Sequence[str]] = None,
         mismatch_only: bool = False,
         include_admin_state: bool = False,
         admin_discarded_only: bool = False,
@@ -609,6 +610,7 @@ class PostgresAdapter:
                 sentiment=sentiment,
                 query=query,
                 published_before=published_before,
+                article_ids=article_ids,
                 mismatch_only=mismatch_only,
                 include_admin_state=include_admin_state,
                 admin_discarded_only=admin_discarded_only,
@@ -861,9 +863,18 @@ class PostgresAdapter:
             )
             return updated
 
-    def fetch_shift_stats(self, shift_id: str) -> Dict[str, Any]:
+    def fetch_shift_stats(
+        self,
+        shift_id: str,
+        *,
+        report_type: Optional[str] = None,
+    ) -> Dict[str, Any]:
         with self._cursor() as cur:
-            return shift_reviews.fetch_shift_stats(cur, shift_id)
+            return shift_reviews.fetch_shift_stats(
+                cur,
+                shift_id,
+                report_type=report_type,
+            )
 
     def fetch_admin_shift_summaries(
         self,

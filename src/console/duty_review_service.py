@@ -155,14 +155,28 @@ def list_clusters(
     user: ConsoleUser,
     report_type: str,
     force_refresh: bool = False,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    limit: Optional[int] = None,
+    offset: int = 0,
+    include_items: bool = False,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
     _validate_report_type(report_type)
+    if region is not None and region not in {"internal", "external"}:
+        raise ValueError(f"Invalid review region: {region}")
+    if sentiment is not None and sentiment not in {"positive", "negative"}:
+        raise ValueError(f"Invalid review sentiment: {sentiment}")
     if force_refresh:
         manual_filter_cluster.refresh_clusters(report_type=report_type)
     rows = get_adapter().fetch_shift_clusters(
         shift_id=shift_id,
         report_type=report_type,
+    )
+    bucket_key = (
+        f"{region}_{sentiment}"
+        if region is not None and sentiment is not None
+        else None
     )
     clusters = [
         {
@@ -172,10 +186,52 @@ def list_clusters(
         }
         for row in rows
         if row.get("item_ids")
+        and (bucket_key is None or str(row["bucket_key"]) == bucket_key)
     ]
+    bounded_offset = max(0, offset)
+    bounded_limit = (
+        max(1, min(limit, 200))
+        if limit is not None
+        else len(clusters) or 1
+    )
+    paged_clusters = clusters[
+        bounded_offset:bounded_offset + bounded_limit
+    ]
+    if include_items and paged_clusters:
+        article_ids = [
+            article_id
+            for cluster in paged_clusters
+            for article_id in cluster["item_ids"]
+        ]
+        item_rows, _ = get_adapter().fetch_shift_review_items(
+            shift_id=shift_id,
+            decision="pending",
+            report_type=report_type,
+            limit=max(1, len(article_ids)),
+            offset=0,
+            article_ids=article_ids,
+        )
+        item_by_id = {
+            str(row["article_id"]): serialize_review_item(
+                row,
+                fallback_report_type=report_type,
+            )
+            for row in item_rows
+        }
+        for cluster in paged_clusters:
+            cluster["items"] = [
+                item_by_id[article_id]
+                for article_id in cluster["item_ids"]
+                if article_id in item_by_id
+            ]
+            cluster["size"] = len(cluster["items"])
     return {
-        "clusters": clusters,
+        "clusters": paged_clusters,
+        "total": len(clusters),
         "item_total": sum(len(cluster["item_ids"]) for cluster in clusters),
+        "limit": bounded_limit,
+        "offset": bounded_offset,
+        "view_mode": "browse",
     }
 
 
@@ -350,9 +406,18 @@ def update_order(
     }
 
 
-def get_stats(*, shift_id: str, user: ConsoleUser) -> dict[str, Any]:
+def get_stats(
+    *,
+    shift_id: str,
+    user: ConsoleUser,
+    report_type: Optional[str] = None,
+) -> dict[str, Any]:
     require_owned_shift(shift_id, user, allow_cancelled=True)
-    return get_adapter().fetch_shift_stats(shift_id)
+    _validate_report_type(report_type)
+    return get_adapter().fetch_shift_stats(
+        shift_id,
+        report_type=report_type,
+    )
 
 
 def finalize_selected_batch(

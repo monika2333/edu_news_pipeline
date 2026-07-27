@@ -53,10 +53,15 @@ def _raise_duplicate_review_error(exc: Exception) -> NoReturn:
 @router.get("/stats")
 def shift_stats(
     shift_id: str,
+    report_type: Optional[ReportType] = None,
     user: ConsoleUser = Depends(require_role("duty_editor")),
 ) -> dict[str, Any]:
     try:
-        return duty_review_service.get_stats(shift_id=shift_id, user=user)
+        return duty_review_service.get_stats(
+            shift_id=shift_id,
+            user=user,
+            report_type=report_type,
+        )
     except (ValueError, PermissionError) as exc:
         _raise_review_error(exc)
 
@@ -95,6 +100,11 @@ def list_clusters(
     shift_id: str,
     report_type: ReportType = "zongbao",
     force_refresh: bool = False,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    limit: Optional[int] = None,
+    offset: int = 0,
+    include_items: bool = False,
     user: ConsoleUser = Depends(require_role("duty_editor")),
 ) -> dict[str, Any]:
     try:
@@ -103,6 +113,11 @@ def list_clusters(
             user=user,
             report_type=report_type,
             force_refresh=force_refresh,
+            region=region,
+            sentiment=sentiment,
+            limit=limit,
+            offset=offset,
+            include_items=include_items,
         )
     except (ValueError, PermissionError) as exc:
         _raise_review_error(exc)

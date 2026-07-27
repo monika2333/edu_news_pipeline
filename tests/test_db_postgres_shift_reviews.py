@@ -233,14 +233,41 @@ def test_shift_clusters_follow_current_representative_score_order() -> None:
     )
 
     query = cursor.queries[-1]
-    assert "ns.external_importance_score DESC NULLS LAST" in query
+    assert "external_importance_score DESC NULLS LAST" in query
     assert "array_agg(article_id ORDER BY item_rank)" in query
     assert (
         "representative_external_importance_score DESC NULLS LAST"
         in query
     )
+    assert "unclustered_items AS" in query
+    assert "'single-' || pending.article_id" in query
     assert "mc.created_at DESC" not in query
-    assert cursor.params[-1] == ("shift-1", "zongbao", "zongbao")
+    assert cursor.params[-1] == (
+        "shift-1",
+        "zongbao",
+        "zongbao",
+        "zongbao",
+    )
+
+
+def test_shift_stats_are_aggregated_in_database_by_report_type() -> None:
+    cursor = ShiftReviewListCursor()
+
+    result = db_postgres_shift_reviews.fetch_shift_stats(
+        cursor,
+        "shift-1",
+        report_type="zongbao",
+    )
+
+    aggregate_query = cursor.queries[0]
+    assert "count(*) FILTER" in aggregate_query
+    assert "sr.decision = 'selected'" in aggregate_query
+    assert "sr.finalized_batch_id IS NULL" in aggregate_query
+    assert "sr.decision = 'backup'" in aggregate_query
+    assert "sr.decision = 'discarded'" in aggregate_query
+    assert "COALESCE(sr.report_type, 'zongbao') = %s" in aggregate_query
+    assert cursor.params[0] == ("shift-1", "zongbao")
+    assert result["pending"] == 0
 
 
 def test_finalize_batch_preserves_selected_decision_and_freezes_order() -> None:

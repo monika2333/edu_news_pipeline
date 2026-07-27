@@ -81,6 +81,7 @@ def fetch_shift_review_items(
     sentiment: Optional[str] = None,
     query: Optional[str] = None,
     published_before: Optional[date] = None,
+    article_ids: Optional[Sequence[str]] = None,
     mismatch_only: bool = False,
     include_admin_state: bool = False,
     admin_discarded_only: bool = False,
@@ -116,6 +117,16 @@ def fetch_shift_review_items(
     if published_before is not None:
         clauses.append(f"{PUBLISHED_LOCAL_DATE_EXPRESSION} < %s")
         params.append(published_before)
+    if article_ids is not None:
+        normalized_article_ids = [
+            str(article_id).strip()
+            for article_id in article_ids
+            if str(article_id).strip()
+        ]
+        if not normalized_article_ids:
+            return [], 0
+        clauses.append("ns.article_id = ANY(%s)")
+        params.append(normalized_article_ids)
     if exclude_finalized:
         clauses.append("sr.finalized_batch_id IS NULL")
     if admin_discarded_only:
@@ -244,40 +255,93 @@ def fetch_shift_clusters(
 ) -> list[dict[str, Any]]:
     cur.execute(
         """
-        WITH ranked_cluster_items AS (
+        WITH shift_pending AS (
             SELECT
-                mc.cluster_id,
-                mc.bucket_key,
-                cluster_item.article_id,
+                ns.article_id,
                 ns.external_importance_score,
                 sr.rank AS manual_rank,
                 ns.score,
                 ns.publish_time_iso,
-                row_number() OVER (
-                    PARTITION BY mc.cluster_id
-                    ORDER BY
-                        ns.external_importance_score DESC NULLS LAST,
-                        sr.rank DESC NULLS LAST,
-                        ns.score DESC NULLS LAST,
-                        ns.publish_time_iso DESC NULLS LAST,
-                        ns.article_id
-                ) AS item_rank
-            FROM manual_clusters mc
-            CROSS JOIN LATERAL unnest(mc.item_ids)
-                AS cluster_item(article_id)
-            JOIN duty_shifts s ON s.id = %s
+                CASE
+                    WHEN ns.is_beijing_related THEN 'internal'
+                    ELSE 'external'
+                END || '_' || CASE
+                    WHEN lower(COALESCE(ns.sentiment_label, '')) = 'negative'
+                        THEN 'negative'
+                    ELSE 'positive'
+                END AS bucket_key
+            FROM duty_shifts s
             JOIN news_summaries ns
-              ON ns.article_id = cluster_item.article_id
-             AND ns.created_at >= s.starts_at
+              ON ns.created_at >= s.starts_at
              AND ns.created_at < s.ends_at
             LEFT JOIN shift_reviews sr
               ON sr.shift_id = s.id
              AND sr.article_id = ns.article_id
-            WHERE mc.report_type = %s
+            WHERE s.id = %s
               AND s.cancelled_at IS NULL
               AND ns.status = 'ready_for_export'
               AND COALESCE(sr.decision, 'pending') = 'pending'
               AND COALESCE(sr.report_type, 'zongbao') = %s
+        ),
+        cluster_memberships AS (
+            SELECT
+                mc.cluster_id,
+                mc.bucket_key,
+                pending.article_id,
+                pending.external_importance_score,
+                pending.manual_rank,
+                pending.score,
+                pending.publish_time_iso
+            FROM manual_clusters mc
+            CROSS JOIN LATERAL unnest(mc.item_ids)
+                AS cluster_item(article_id)
+            JOIN shift_pending pending
+              ON pending.article_id = cluster_item.article_id
+            WHERE mc.report_type = %s
+        ),
+        unclustered_items AS (
+            SELECT
+                'single-' || pending.article_id AS cluster_id,
+                pending.bucket_key,
+                pending.article_id,
+                pending.external_importance_score,
+                pending.manual_rank,
+                pending.score,
+                pending.publish_time_iso
+            FROM shift_pending pending
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM manual_clusters mc
+                CROSS JOIN LATERAL unnest(mc.item_ids)
+                    AS cluster_item(article_id)
+                WHERE mc.report_type = %s
+                  AND cluster_item.article_id = pending.article_id
+            )
+        ),
+        all_cluster_items AS (
+            SELECT * FROM cluster_memberships
+            UNION ALL
+            SELECT * FROM unclustered_items
+        ),
+        ranked_cluster_items AS (
+            SELECT
+                cluster_id,
+                bucket_key,
+                article_id,
+                external_importance_score,
+                manual_rank,
+                score,
+                publish_time_iso,
+                row_number() OVER (
+                    PARTITION BY cluster_id
+                    ORDER BY
+                        external_importance_score DESC NULLS LAST,
+                        manual_rank DESC NULLS LAST,
+                        score DESC NULLS LAST,
+                        publish_time_iso DESC NULLS LAST,
+                        article_id
+                ) AS item_rank
+            FROM all_cluster_items
         )
         SELECT
             cluster_id,
@@ -304,7 +368,7 @@ def fetch_shift_clusters(
             representative_publish_time DESC NULLS LAST,
             cluster_id
         """,
-        (shift_id, report_type, report_type),
+        (shift_id, report_type, report_type, report_type),
     )
     return [dict(row) for row in cur.fetchall()]
 
@@ -765,14 +829,32 @@ def update_shift_review_order(
 def fetch_shift_stats(
     cur: psycopg.Cursor,
     shift_id: str,
+    report_type: Optional[str] = None,
 ) -> dict[str, Any]:
+    report_clause = (
+        "AND COALESCE(sr.report_type, 'zongbao') = %s"
+        if report_type
+        else ""
+    )
+    params: tuple[Any, ...] = (
+        (shift_id, report_type) if report_type else (shift_id,)
+    )
     cur.execute(
-        """
+        f"""
         SELECT
             count(*) AS total,
             count(*) FILTER (
                 WHERE COALESCE(sr.decision, 'pending') <> 'pending'
-            ) AS decided
+            ) AS decided,
+            count(*) FILTER (
+                WHERE COALESCE(sr.decision, 'pending') = 'pending'
+            ) AS pending,
+            count(*) FILTER (
+                WHERE sr.decision = 'selected'
+                  AND sr.finalized_batch_id IS NULL
+            ) AS selected,
+            count(*) FILTER (WHERE sr.decision = 'backup') AS backup,
+            count(*) FILTER (WHERE sr.decision = 'discarded') AS discarded
         FROM duty_shifts s
         JOIN news_summaries ns
           ON ns.created_at >= s.starts_at
@@ -783,12 +865,17 @@ def fetch_shift_stats(
         WHERE s.id = %s
           AND s.cancelled_at IS NULL
           AND ns.status = 'ready_for_export'
+          {report_clause}
         """,
-        (shift_id,),
+        params,
     )
     row = cur.fetchone() or {"total": 0, "decided": 0}
-    total = int(row["total"] or 0)
-    decided = int(row["decided"] or 0)
+    total = int(row.get("total") or 0)
+    decided = int(row.get("decided") or 0)
+    pending = int(row.get("pending") or 0)
+    selected = int(row.get("selected") or 0)
+    backup = int(row.get("backup") or 0)
+    discarded = int(row.get("discarded") or 0)
     cur.execute(
         """
         SELECT
@@ -812,7 +899,11 @@ def fetch_shift_stats(
     return {
         "total": total,
         "decided": decided,
-        "pending": max(total - decided, 0),
+        "pending": pending,
+        "selected": selected,
+        "backup": backup,
+        "discarded": discarded,
+        "exported": discarded,
         "archive_status": {
             "zongbao": archive_rows.get("zongbao"),
             "wanbao": archive_rows.get("wanbao"),

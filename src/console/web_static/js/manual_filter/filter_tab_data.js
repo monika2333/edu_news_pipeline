@@ -12,7 +12,7 @@ async function loadFilterData(options = {}) {
         const params = new URLSearchParams({
             limit: '10',
             offset: `${(state.filterPage - 1) * 10}`,
-            cluster: (searchMode || state.hideSubmitted) ? 'false' : 'true',
+            cluster: searchMode ? 'false' : 'true',
             region,
             sentiment,
             hide_submitted: state.hideSubmitted ? 'true' : 'false',

@@ -232,6 +232,7 @@ def list_clusters(
     limit: Optional[int] = None,
     offset: int = 0,
     include_items: bool = False,
+    hide_submitted: bool = False,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
     _validate_report_type(report_type)
@@ -244,6 +245,7 @@ def list_clusters(
     rows = get_adapter().fetch_shift_clusters(
         shift_id=shift_id,
         report_type=report_type,
+        hide_submitted=hide_submitted,
     )
     bucket_key = (
         f"{region}_{sentiment}"
@@ -282,6 +284,7 @@ def list_clusters(
             limit=max(1, len(article_ids)),
             offset=0,
             article_ids=article_ids,
+            hide_submitted=hide_submitted,
         )
         item_by_id = {
             str(row["article_id"]): serialize_review_item(

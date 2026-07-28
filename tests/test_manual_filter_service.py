@@ -37,6 +37,7 @@ class FakeAdapter:
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
         order_by_decided_at: bool = False,
+        hide_submitted: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         target_type = self._normalized_report_type(report_type)
         filtered = [
@@ -51,6 +52,8 @@ class FakeAdapter:
             filtered = [row for row in filtered if row.get("is_beijing_related") is target]
         if sentiment in ("positive", "negative"):
             filtered = [row for row in filtered if (row.get("sentiment_label") or "").lower() == sentiment]
+        if hide_submitted:
+            filtered = [row for row in filtered if not row.get("is_submitted")]
         filtered.sort(
             key=lambda r: (
                 r.get("rank") is None,
@@ -93,6 +96,7 @@ class FakeAdapter:
         *,
         bucket_key: Optional[str] = None,
         report_type: Optional[str] = None,
+        hide_submitted: bool = False,
     ) -> List[Dict[str, Any]]:
         target_type = self._normalized_report_type(report_type)
         rows: List[Dict[str, Any]] = []
@@ -103,6 +107,8 @@ class FakeAdapter:
             if row.get("status") != "pending" or row.get("news_status") != "ready_for_export":
                 continue
             if self._normalized_report_type(row.get("report_type")) != target_type:
+                continue
+            if hide_submitted and row.get("is_submitted"):
                 continue
             cluster_row = dict(row)
             cluster_row["bucket_key"] = row_bucket
@@ -138,6 +144,7 @@ class FakeAdapter:
         region: Optional[str] = None,
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
+        hide_submitted: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         rows, _ = self.fetch_manual_reviews(
             status="pending",
@@ -147,6 +154,7 @@ class FakeAdapter:
             region=region,
             sentiment=sentiment,
             report_type=report_type,
+            hide_submitted=hide_submitted,
         )
         normalized_query = (query or "").strip().lower()
         filtered = list(rows)
@@ -649,6 +657,42 @@ def test_list_candidates_cluster_mode_returns_item_total(fake_adapter):
         for cluster in result["clusters"]
         for item in cluster["items"]
     )
+
+
+def test_list_candidates_hides_submitted_items_without_disabling_clusters(
+    fake_adapter,
+):
+    fake_adapter.rows[0]["cluster_id"] = "internal_positive-0"
+    fake_adapter.rows[0]["is_submitted"] = True
+    for article_id, score in (("a3", 85), ("a4", 75)):
+        visible_row = dict(fake_adapter.rows[0])
+        visible_row.update(
+            {
+                "article_id": article_id,
+                "title": f"Visible clustered article {article_id}",
+                "score": score,
+                "external_importance_score": score,
+                "is_submitted": False,
+            }
+        )
+        fake_adapter.rows.append(visible_row)
+
+    result = manual_filter_service.list_candidates(
+        limit=10,
+        offset=0,
+        region="internal",
+        sentiment="positive",
+        cluster=True,
+        hide_submitted=True,
+    )
+
+    assert result["total"] == 1
+    assert result["item_total"] == 2
+    assert result["clusters"][0]["cluster_id"] == "internal_positive-0"
+    assert result["clusters"][0]["size"] == 2
+    assert [
+        item["article_id"] for item in result["clusters"][0]["items"]
+    ] == ["a3", "a4"]
 
 
 def test_list_candidates_search_mode_uses_shanghai_calendar_day(fake_adapter):

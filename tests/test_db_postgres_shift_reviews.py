@@ -268,6 +268,7 @@ def test_shift_clusters_follow_current_representative_score_order() -> None:
         cursor,
         shift_id="shift-1",
         report_type="zongbao",
+        hide_submitted=True,
     )
 
     query = cursor.queries[-1]
@@ -280,9 +281,12 @@ def test_shift_clusters_follow_current_representative_score_order() -> None:
     assert "unclustered_items AS" in query
     assert "'single-' || pending.article_id" in query
     assert "mc.created_at DESC" not in query
+    assert "FROM submission_duplicate_matches sdm" in query
+    assert "sdm.state IN ('confirmed', 'suspected')" in query
     assert cursor.params[-1] == (
         "shift-1",
         "zongbao",
+        True,
         "zongbao",
         "zongbao",
     )

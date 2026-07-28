@@ -273,6 +273,7 @@ def fetch_shift_clusters(
     *,
     shift_id: str,
     report_type: str,
+    hide_submitted: bool = False,
 ) -> list[dict[str, Any]]:
     cur.execute(
         """
@@ -303,6 +304,15 @@ def fetch_shift_clusters(
               AND ns.status = 'ready_for_export'
               AND COALESCE(sr.decision, 'pending') = 'pending'
               AND COALESCE(sr.report_type, 'zongbao') = %s
+              AND (
+                  %s = FALSE
+                  OR NOT EXISTS (
+                      SELECT 1
+                      FROM submission_duplicate_matches sdm
+                      WHERE sdm.article_id = ns.article_id
+                        AND sdm.state IN ('confirmed', 'suspected')
+                  )
+              )
         ),
         cluster_memberships AS (
             SELECT
@@ -389,7 +399,13 @@ def fetch_shift_clusters(
             representative_publish_time DESC NULLS LAST,
             cluster_id
         """,
-        (shift_id, report_type, report_type, report_type),
+        (
+            shift_id,
+            report_type,
+            hide_submitted,
+            report_type,
+            report_type,
+        ),
     )
     return [dict(row) for row in cur.fetchall()]
 

@@ -521,6 +521,7 @@ def fetch_manual_clusters(
     *,
     bucket_key: Optional[str] = None,
     report_type: Optional[str] = None,
+    hide_submitted: bool = False,
 ) -> List[Dict[str, Any]]:
     normalized_report_type = normalize_report_type_value(report_type) or "zongbao"
     query = """
@@ -572,13 +573,25 @@ def fetch_manual_clusters(
           ON feedback_submitter.id = sf.submitted_by_user_id
         WHERE mr.status = 'pending'
           AND ns.status = 'ready_for_export'
+          AND (
+              %s = FALSE
+              OR NOT EXISTS (
+                  SELECT 1
+                  FROM submission_duplicate_matches sdm
+                  WHERE sdm.article_id = ns.article_id
+                    AND sdm.state IN ('confirmed', 'suspected')
+              )
+          )
         ORDER BY
             ci.cluster_id,
             ns.external_importance_score DESC NULLS LAST,
             mr.rank ASC NULLS LAST,
             ns.score DESC NULLS LAST
     """
-    cur.execute(query, (normalized_report_type, bucket_key, bucket_key))
+    cur.execute(
+        query,
+        (normalized_report_type, bucket_key, bucket_key, hide_submitted),
+    )
     rows = cur.fetchall()
     return [dict(row) for row in rows]
 

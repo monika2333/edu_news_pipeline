@@ -128,6 +128,7 @@ def _list_candidate_browse(
             cluster_threshold=cluster_threshold,
             force_refresh=force_refresh,
             report_type=report_type,
+            hide_submitted=hide_submitted,
         )
         cluster_items = [
             item
@@ -195,7 +196,7 @@ def list_candidates(
         offset=offset,
         region=region,
         sentiment=sentiment,
-        cluster=cluster and not hide_submitted,
+        cluster=cluster,
         cluster_threshold=cluster_threshold,
         force_refresh=force_refresh,
         report_type=target_report_type,

@@ -628,12 +628,14 @@ class PostgresAdapter:
         *,
         shift_id: str,
         report_type: str,
+        hide_submitted: bool = False,
     ) -> List[Dict[str, Any]]:
         with self._cursor() as cur:
             return shift_reviews.fetch_shift_clusters(
                 cur,
                 shift_id=shift_id,
                 report_type=report_type,
+                hide_submitted=hide_submitted,
             )
 
     def save_shift_review(
@@ -1655,9 +1657,15 @@ class PostgresAdapter:
         *,
         bucket_key: Optional[str] = None,
         report_type: Optional[str] = None,
+        hide_submitted: bool = False,
     ) -> List[Dict[str, Any]]:
         with self._cursor() as cur:
-            return manual_reviews.fetch_manual_clusters(cur, bucket_key=bucket_key, report_type=report_type)
+            return manual_reviews.fetch_manual_clusters(
+                cur,
+                bucket_key=bucket_key,
+                report_type=report_type,
+                hide_submitted=hide_submitted,
+            )
 
     def try_advisory_lock(self, lock_id: int) -> bool:
         with self._cursor() as cur:

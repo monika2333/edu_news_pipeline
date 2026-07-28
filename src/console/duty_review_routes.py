@@ -122,6 +122,7 @@ def list_clusters(
     limit: Optional[int] = None,
     offset: int = 0,
     include_items: bool = False,
+    hide_submitted: bool = False,
     user: ConsoleUser = Depends(require_role("duty_editor")),
 ) -> dict[str, Any]:
     try:
@@ -135,6 +136,7 @@ def list_clusters(
             limit=limit,
             offset=offset,
             include_items=include_items,
+            hide_submitted=hide_submitted,
         )
     except (ValueError, PermissionError) as exc:
         _raise_review_error(exc)

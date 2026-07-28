@@ -106,7 +106,7 @@ def test_editor_cluster_page_parameters_are_forwarded(monkeypatch) -> None:
     response = _client_for(editor).get(
         "/api/duty/shifts/shift-id/clusters"
         "?report_type=zongbao&region=internal&sentiment=positive"
-        "&limit=10&offset=20&include_items=true"
+        "&limit=10&offset=20&include_items=true&hide_submitted=true"
     )
 
     assert response.status_code == 200
@@ -115,6 +115,7 @@ def test_editor_cluster_page_parameters_are_forwarded(monkeypatch) -> None:
     assert captured["limit"] == 10
     assert captured["offset"] == 20
     assert captured["include_items"] is True
+    assert captured["hide_submitted"] is True
 
 
 def test_editor_stats_report_type_is_forwarded(monkeypatch) -> None:

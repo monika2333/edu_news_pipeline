@@ -257,6 +257,9 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     filter_actions_script = (
         scripts_dir / "filter_tab_actions.js"
     ).read_text(encoding="utf-8")
+    filter_data_script = (
+        scripts_dir / "filter_tab_data.js"
+    ).read_text(encoding="utf-8")
     init_script = (scripts_dir / "init.js").read_text(encoding="utf-8")
     utils_script = (scripts_dir / "utils.js").read_text(encoding="utf-8")
     finalization_script = (
@@ -330,7 +333,10 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "action.hidden = action.dataset.workspaceActionTab !== currentTab;" in utils_script
     assert "async function loadDutyClusters" not in workspace_script
     assert "include_items: 'true'" in workspace_script
+    assert "['region', 'sentiment', 'force_refresh', 'hide_submitted']" in workspace_script
     assert "`${API_BASE}/clusters?${clusterParams.toString()}`" in workspace_script
+    assert "cluster: searchMode ? 'false' : 'true'" in filter_data_script
+    assert "searchMode || state.hideSubmitted" not in filter_data_script
     assert "loadAllDutyItems('pending')" not in workspace_script
     assert "function dutyCandidateBackendParams" in workspace_script
     assert "async function dutyStatsResponse" not in workspace_script

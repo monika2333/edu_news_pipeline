@@ -195,7 +195,7 @@ async function dutyCandidatesResponse(params) {
         offset: String(offset),
         include_items: 'true'
     });
-    ['region', 'sentiment', 'force_refresh'].forEach(key => {
+    ['region', 'sentiment', 'force_refresh', 'hide_submitted'].forEach(key => {
         const value = params.get(key);
         if (value) clusterParams.set(key, value);
     });

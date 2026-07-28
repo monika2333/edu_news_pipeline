@@ -6,6 +6,28 @@ from typing import Any, Mapping, Optional, Sequence
 import psycopg
 
 
+# 条目对外返回字段：排除 embedding（bytea 无法 JSON 序列化）与归一化内部字段。
+_ITEM_PUBLIC_COLUMNS = """
+    i.id,
+    i.report_id,
+    i.section,
+    i.marker,
+    i.order_index,
+    i.title,
+    i.body,
+    i.source,
+    i.urls,
+    i.article_id,
+    i.link_status,
+    i.link_title_score,
+    i.link_body_score,
+    i.link_combined_score,
+    i.best_candidate_article_id,
+    i.link_matched_at,
+    i.created_at
+"""
+
+
 def find_report_conflict(
     cur: psycopg.Cursor,
     *,
@@ -199,9 +221,9 @@ def fetch_report(
         return None
     report = dict(row)
     cur.execute(
-        """
-        select *
-        from submitted_report_items
+        f"""
+        select {_ITEM_PUBLIC_COLUMNS}
+        from submitted_report_items i
         where report_id = %s
         order by order_index, id
         """,
@@ -306,9 +328,9 @@ def fetch_pending_links(
     count_row = cur.fetchone()
     total = int(count_row["total"]) if count_row else 0
     cur.execute(
-        """
+        f"""
         select
-            i.*,
+            {_ITEM_PUBLIC_COLUMNS},
             r.report_type,
             r.report_date,
             r.title_line as report_title_line,
@@ -353,7 +375,17 @@ def decide_link(
             link_matched_at = case when %s then now() else null end,
             updated_at = now()
         where id = %s and link_status = 'pending'
-        returning *
+        returning
+            id,
+            report_id,
+            article_id,
+            link_status,
+            link_title_score,
+            link_body_score,
+            link_combined_score,
+            best_candidate_article_id,
+            link_matched_at,
+            link_decided_by
         """,
         (accepted, accepted, actor_user_id, accepted, item_id),
     )
@@ -371,7 +403,16 @@ def search_items(
     cur.execute(
         """
         select
-            i.*,
+            i.id,
+            i.report_id,
+            i.section,
+            i.marker,
+            i.order_index,
+            i.title,
+            i.body,
+            i.source,
+            i.urls,
+            i.link_status,
             r.report_type,
             r.report_date,
             r.title_line as report_title_line

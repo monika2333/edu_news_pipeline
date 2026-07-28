@@ -60,6 +60,10 @@
             {% endif %}
             <div class="header-right">
                 {% if is_duty_workspace %}
+                <nav class="admin-view-switch" aria-label="值班编辑主视图">
+                    <a class="admin-view-link is-active" href="/duty" aria-current="page">新闻筛选</a>
+                    <a class="admin-view-link" href="/submission-archive">报送存档</a>
+                </nav>
                 <select class="workspace-shift-select" id="workspace-shift-select" aria-label="选择班次"></select>
                 {% else %}
                 <nav class="admin-view-switch" aria-label="管理员主视图">
@@ -73,6 +77,8 @@
                         {% if is_admin_review %}aria-current="page"{% endif %}>
                         汇总审阅
                     </a>
+                    <span class="admin-view-stage-divider" aria-hidden="true"></span>
+                    <a class="admin-view-link" href="/submission-archive">报送存档</a>
                 </nav>
                 {% endif %}
                 <details class="account-menu">
@@ -80,7 +86,6 @@
                         <span>{{ current_user.display_name }} · {{ '值班编辑' if is_duty_workspace else '管理员' }}</span>
                     </summary>
                     <div class="account-menu-panel">
-                        <a class="account-menu-item" href="/submission-archive">报送存档</a>
                         {% if not is_duty_workspace %}
                         <a class="account-menu-item" href="/admin">用户与排班</a>
                         {% endif %}

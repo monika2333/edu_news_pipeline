@@ -480,8 +480,12 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert '/static/js/shift_date.js?v=' in response.text
     assert '<details class="account-menu">' in response.text
     assert (
-        'class="account-menu-item" href="/submission-archive">报送存档</a>'
+        'class="admin-view-link" href="/submission-archive">报送存档</a>'
         in response.text
+    )
+    assert (
+        'class="account-menu-item" href="/submission-archive">报送存档</a>'
+        not in response.text
     )
     assert 'class="account-menu-item" href="/admin">用户与排班</a>' in response.text
     assert 'href="/static/css/layout.css"' in response.text

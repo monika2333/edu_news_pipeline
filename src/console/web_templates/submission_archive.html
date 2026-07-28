@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>报送存档 · 教育新闻控制台</title>
+    <title>新闻筛选控制台 · 报送存档</title>
     <link rel="stylesheet" href="/static/css/variables.css">
     <link rel="stylesheet" href="/static/css/base.css">
     <link rel="stylesheet" href="/static/css/utilities.css">
@@ -18,24 +18,30 @@
     <div class="container archive-shell">
         <header>
             <div class="header-left">
-                <p class="archive-eyebrow">SUBMISSION ARCHIVE</p>
-                <h1>报送存档</h1>
+                <h1>新闻筛选控制台</h1>
             </div>
             <div class="header-right">
-                <nav class="admin-view-switch" aria-label="报送存档视图">
-                    <a class="admin-view-link" href="/submission-archive">存档列表</a>
-                    <a class="admin-view-link" href="/submission-archive/link-queue">回链确认</a>
-                    <a class="admin-view-link" href="/submission-archive/search">全库搜索</a>
-                    {% if current_user.role == "admin" %}
-                    <a class="admin-view-link" href="/submission-archive/new">新增存档</a>
+                <nav class="admin-view-switch" aria-label="主视图">
+                    {% if current_user.role == 'admin' %}
+                    <a class="admin-view-link" href="/admin/duty-summary">值班结果筛选</a>
+                    <a class="admin-view-link" href="/manual_filter">全量新闻筛选</a>
+                    <span class="admin-view-stage-divider" aria-hidden="true"></span>
+                    <a class="admin-view-link" href="/admin/review">汇总审阅</a>
+                    <span class="admin-view-stage-divider" aria-hidden="true"></span>
+                    {% else %}
+                    <a class="admin-view-link" href="/duty">新闻筛选</a>
                     {% endif %}
+                    <a class="admin-view-link is-active" href="/submission-archive"
+                        aria-current="page">报送存档</a>
                 </nav>
                 <details class="account-menu">
                     <summary class="account-menu-trigger current-user">
                         <span>{{ current_user.display_name }} · {{ '管理员' if current_user.role == 'admin' else '值班编辑' }}</span>
                     </summary>
                     <div class="account-menu-panel">
-                        <a class="account-menu-item" href="{{ '/manual_filter' if current_user.role == 'admin' else '/duty' }}">新闻筛选</a>
+                        {% if current_user.role == 'admin' %}
+                        <a class="account-menu-item" href="/admin">用户与排班</a>
+                        {% endif %}
                         <a class="account-menu-item" href="/account">修改密码</a>
                         <button class="account-menu-item" id="btn-logout" type="button">退出登录</button>
                     </div>
@@ -43,122 +49,127 @@
             </div>
         </header>
 
+        <div class="workspace-tabs-row archive-tabs-row">
+            <nav class="tabs archive-tabs" aria-label="报送存档视图">
+                <a class="tab-btn archive-tab{% if archive_view in ('list', 'detail') %} active{% endif %}"
+                    href="/submission-archive"
+                    {% if archive_view in ('list', 'detail') %}aria-current="page"{% endif %}>存档库</a>
+                <a class="tab-btn archive-tab{% if archive_view == 'link-queue' %} active{% endif %}"
+                    href="/submission-archive/link-queue"
+                    {% if archive_view == 'link-queue' %}aria-current="page"{% endif %}>
+                    回链确认<span class="archive-tab-badge" id="archive-nav-pending" hidden></span>
+                </a>
+                <a class="tab-btn archive-tab{% if archive_view == 'search' %} active{% endif %}"
+                    href="/submission-archive/search"
+                    {% if archive_view == 'search' %}aria-current="page"{% endif %}>全库搜索</a>
+            </nav>
+            {% if current_user.role == "admin" %}
+            <div class="workspace-tab-actions">
+                <a class="btn btn-primary{% if archive_view == 'new' %} active{% endif %}"
+                    href="/submission-archive/new">新增存档</a>
+            </div>
+            {% endif %}
+        </div>
+
         <main>
-            {% if archive_view == "list" %}
-            <section class="archive-panel">
-                <div class="archive-panel-heading">
-                    <div>
-                        <h2>存档报告</h2>
-                        <p>按文档日期查看综报、晚报与反馈的入库和回链情况。</p>
+            {% if archive_view in ("list", "detail") %}
+            <div class="archive-browser">
+                <aside class="archive-browser-list" aria-label="存档报告列表">
+                    <div class="archive-type-filter" id="archive-type-filter" role="group" aria-label="按类型筛选">
+                        <button class="archive-type-option active" data-type="" type="button">全部</button>
+                        <button class="archive-type-option" data-type="zongbao" type="button">综报</button>
+                        <button class="archive-type-option" data-type="wanbao" type="button">晚报</button>
+                        <button class="archive-type-option" data-type="feedback" type="button">反馈</button>
                     </div>
-                    {% if current_user.role == "admin" %}
-                    <a class="btn btn-primary" href="/submission-archive/new">新增存档</a>
-                    {% endif %}
-                </div>
-                <form class="archive-filters" id="archive-list-filters">
-                    <select id="archive-filter-type" aria-label="报告类型">
-                        <option value="">全部类型</option>
-                        <option value="zongbao">综报</option>
-                        <option value="wanbao">晚报</option>
-                        <option value="feedback">反馈</option>
-                    </select>
-                    <input type="date" id="archive-date-from" aria-label="起始日期">
-                    <input type="date" id="archive-date-to" aria-label="结束日期">
-                    <button class="btn btn-secondary" type="submit">筛选</button>
-                </form>
-                <div class="archive-table-wrap">
-                    <table class="archive-table">
-                        <thead>
-                            <tr>
-                                <th>文档日期</th>
-                                <th>类型 / 期号</th>
-                                <th>条目</th>
-                                <th>自动回链</th>
-                                <th>待确认</th>
-                                <th>未覆盖</th>
-                            </tr>
-                        </thead>
-                        <tbody id="archive-report-list"></tbody>
-                    </table>
-                </div>
-            </section>
+                    <div class="archive-date-filter">
+                        <input type="date" id="archive-date-from" aria-label="起始日期">
+                        <span aria-hidden="true">–</span>
+                        <input type="date" id="archive-date-to" aria-label="结束日期">
+                    </div>
+                    <div class="archive-report-list" id="archive-report-list"></div>
+                    <div class="archive-report-list-footer" id="archive-list-footer" hidden>
+                        <span id="archive-list-total"></span>
+                        <button class="archive-btn-text" id="archive-list-more" type="button" hidden>加载更多</button>
+                    </div>
+                </aside>
+                <section class="archive-browser-detail" id="archive-detail" aria-label="报告详情">
+                    <div class="archive-empty">从左侧选择一份报告查看条目和回链情况。</div>
+                </section>
+            </div>
             {% elif archive_view == "new" %}
-            <section class="archive-panel">
-                <div class="archive-panel-heading">
+            <section class="archive-panel archive-step">
+                <div class="archive-step-heading">
+                    <span class="archive-step-index" aria-hidden="true">1</span>
                     <div>
-                        <h2>新增存档</h2>
-                        <p>一次粘贴一份完整报告。解析只生成预览，确认保存后才会入库。</p>
+                        <h2>粘贴报告全文</h2>
+                        <p>一次粘贴一份完整的综报、晚报或反馈，系统会自动识别类型。</p>
                     </div>
                 </div>
-                <label class="archive-field archive-paste-field">
-                    <span>报告全文</span>
-                    <textarea id="archive-pasted-text" rows="16"
-                        placeholder="粘贴综报、晚报或反馈全文"></textarea>
-                </label>
-                <div class="archive-actions">
+                <textarea id="archive-pasted-text" class="archive-paste-input" rows="14"
+                    placeholder="从标题行开始，粘贴整份报告原文…"></textarea>
+                <div class="archive-actions archive-actions-end">
                     <button class="btn btn-primary" id="archive-parse" type="button">解析</button>
                 </div>
-                <div id="archive-preview" hidden>
-                    <div id="archive-warnings" class="archive-warnings" hidden></div>
-                    <div class="archive-head-fields">
-                        <label class="archive-field">
-                            <span>类型</span>
-                            <select id="archive-report-type">
-                                <option value="zongbao">综报</option>
-                                <option value="wanbao">晚报</option>
-                                <option value="feedback">反馈</option>
-                            </select>
-                        </label>
-                        <label class="archive-field">
-                            <span>文档日期</span>
-                            <input type="date" id="archive-report-date">
-                        </label>
-                        <label class="archive-field">
-                            <span>实际整理日期</span>
-                            <input type="date" id="archive-compiled-date">
-                        </label>
-                        <label class="archive-field archive-field-wide">
-                            <span>期号</span>
-                            <input type="text" id="archive-issue-no">
-                        </label>
+            </section>
+            <section class="archive-panel archive-step" id="archive-preview" hidden>
+                <div class="archive-step-heading">
+                    <span class="archive-step-index" aria-hidden="true">2</span>
+                    <div>
+                        <h2>核对并保存</h2>
+                        <p>逐条检查拆解结果，可修改、删除或手工补录，确认无误后保存入库。</p>
                     </div>
-                    <div class="archive-preview-heading">
-                        <h3>条目预览</h3>
-                        <button class="btn btn-secondary" id="archive-add-item" type="button">手工新增</button>
-                    </div>
-                    <div id="archive-preview-items"></div>
-                    <div class="archive-actions">
+                </div>
+                <div id="archive-warnings" class="archive-warnings" hidden></div>
+                <div class="archive-head-fields">
+                    <label class="archive-field">
+                        <span>类型</span>
+                        <select id="archive-report-type">
+                            <option value="zongbao">综报</option>
+                            <option value="wanbao">晚报</option>
+                            <option value="feedback">反馈</option>
+                        </select>
+                    </label>
+                    <label class="archive-field">
+                        <span>文档日期</span>
+                        <input type="date" id="archive-report-date">
+                    </label>
+                    <label class="archive-field">
+                        <span>实际整理日期</span>
+                        <input type="date" id="archive-compiled-date">
+                    </label>
+                    <label class="archive-field">
+                        <span>期号</span>
+                        <input type="text" id="archive-issue-no" placeholder="反馈无期号可留空">
+                    </label>
+                </div>
+                <div id="archive-preview-items"></div>
+                <div class="archive-save-bar">
+                    <span class="archive-save-count" id="archive-save-count"></span>
+                    <div class="archive-save-actions">
+                        <button class="btn btn-secondary" id="archive-add-item" type="button">手工新增一条</button>
                         <button class="btn btn-primary" id="archive-save" type="button">确认保存</button>
                     </div>
                 </div>
             </section>
-            {% elif archive_view == "detail" %}
-            <section class="archive-panel">
-                <div id="archive-detail"></div>
-            </section>
             {% elif archive_view == "link-queue" %}
-            <section class="archive-panel">
-                <div class="archive-panel-heading">
+            <section class="archive-queue">
+                <div class="archive-queue-heading">
                     <div>
                         <h2>回链确认队列</h2>
-                        <p>只处理字符相似度落在灰区的条目；不会阻塞报告录入和语义查重。</p>
+                        <p>判断存档条目和系统候选是不是同一条新闻；不阻塞录入和语义查重。</p>
                     </div>
+                    <span class="archive-queue-count" id="archive-queue-count"></span>
                 </div>
                 <div id="archive-link-queue"></div>
             </section>
             {% elif archive_view == "search" %}
-            <section class="archive-panel">
-                <div class="archive-panel-heading">
-                    <div>
-                        <h2>全库搜索</h2>
-                        <p>搜索永久保留的全部存档，不受 15 天自动比对窗口限制。</p>
-                    </div>
-                </div>
+            <section class="archive-search-view">
                 <form class="archive-search" id="archive-search-form">
                     <input type="search" id="archive-search-query"
-                        placeholder="输入标题或正文关键词" autocomplete="off">
+                        placeholder="输入标题或正文关键词，确认某事以前是否报过" autocomplete="off">
                     <button class="btn btn-primary" type="submit">搜索</button>
                 </form>
+                <p class="archive-search-note">搜索永久保留的全部存档，不受 15 天自动比对窗口限制。</p>
                 <div id="archive-search-results"></div>
             </section>
             {% endif %}

@@ -688,9 +688,12 @@ body.duplicate-review-open .search-drawer-toggle {
 .duty-finalization-status {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 10px;
+    width: 230px;
     min-height: 44px;
     padding: 6px 8px 6px 12px;
+    box-sizing: border-box;
     border: 1px solid #dbe3ee;
     border-radius: 12px;
     background: #fff;

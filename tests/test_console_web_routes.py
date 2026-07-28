@@ -356,6 +356,20 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     )[1].split("} else {", maxsplit=1)[0]
     assert "loadFilterData" not in duty_card_branch
     assert "loadStats" not in duty_card_branch
+    discard_handler = filter_actions_script.split(
+        "async function discardRemainingItems",
+        maxsplit=1,
+    )[1].split(
+        "async function discardBeforeDate",
+        maxsplit=1,
+    )[0]
+    duty_discard_branch = discard_handler.split(
+        "if (IS_DUTY_WORKSPACE)",
+        maxsplit=1,
+    )[1].split("} else {", maxsplit=1)[0]
+    assert "await reloadFilterPageAfterRemoval();" in duty_discard_branch
+    assert "{ reloadOnUndo: true }" in duty_discard_branch
+    assert "await Promise.all([loadFilterData(), loadStats()]);" in filter_actions_script
     assert "编辑保存失败，请重试" in (
         scripts_dir / "filter_tab_data.js"
     ).read_text(encoding="utf-8")

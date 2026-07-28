@@ -266,7 +266,15 @@ function updateDutyFilterDecisionCounts(status, itemCount, direction) {
     syncFilterToolbarState();
 }
 
-function attachDutyUndo(removal, ids, status, mutation, successMessage) {
+function attachDutyUndo(
+    removal,
+    ids,
+    status,
+    mutation,
+    successMessage,
+    options = {}
+) {
+    const reloadOnUndo = Boolean(options.reloadOnUndo);
     const undoAction = buildUndoToastAction(async () => {
         try {
             const undoMutation = await submitDecisions(
@@ -274,8 +282,12 @@ function attachDutyUndo(removal, ids, status, mutation, successMessage) {
                 'pending',
                 mutation.versions || {}
             );
-            restoreDutyFilterRemoval(removal, undoMutation.versions || {});
-            updateDutyFilterDecisionCounts(status, ids.length, -1);
+            if (reloadOnUndo) {
+                await Promise.all([loadFilterData(), loadStats()]);
+            } else {
+                restoreDutyFilterRemoval(removal, undoMutation.versions || {});
+                updateDutyFilterDecisionCounts(status, ids.length, -1);
+            }
             showToast('已撤销');
         } catch (error) {
             showToast(error.message || '撤销失败，原操作保持不变', 'error');
@@ -314,14 +326,18 @@ function scheduleReloadIfFilterPageEmpty() {
         const remaining = elements.filterList.querySelectorAll('.article-card');
         if (remaining && remaining.length) return;
 
-        const currentPage = state.filterPage;
-        await loadFilterData();
-        const afterReload = elements.filterList.querySelectorAll('.article-card');
-        if ((!afterReload || !afterReload.length) && currentPage > 1) {
-            state.filterPage = currentPage - 1;
-            await loadFilterData();
-        }
+        await reloadFilterPageAfterRemoval();
     }, 120);
+}
+
+async function reloadFilterPageAfterRemoval() {
+    const currentPage = state.filterPage;
+    await loadFilterData();
+    const afterReload = elements.filterList.querySelectorAll('.article-card');
+    if ((!afterReload || !afterReload.length) && currentPage > 1) {
+        state.filterPage = currentPage - 1;
+        await loadFilterData();
+    }
 }
 
 async function discardRemainingItems() {
@@ -352,12 +368,14 @@ async function discardRemainingItems() {
             const removal = captureDutyFilterRemoval(cards);
             detachDutyFilterRemoval(removal);
             updateDutyFilterDecisionCounts('discarded', ids.length, 1);
+            await reloadFilterPageAfterRemoval();
             attachDutyUndo(
                 removal,
                 ids,
                 'discarded',
                 mutation,
-                `已放弃 ${ids.length} 条新闻`
+                `已放弃 ${ids.length} 条新闻`,
+                { reloadOnUndo: true }
             );
         } else {
             removeCardsAndClusters(cards);

@@ -90,6 +90,7 @@ def fetch_shift_review_items(
     admin_discarded_only: bool = False,
     exclude_admin_discarded: bool = False,
     exclude_finalized: bool = False,
+    hide_submitted: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
     bounded_limit = max(1, min(limit, 200))
     bounded_offset = max(0, offset)
@@ -132,6 +133,17 @@ def fetch_shift_review_items(
         params.append(normalized_article_ids)
     if exclude_finalized:
         clauses.append("sr.finalized_batch_id IS NULL")
+    if hide_submitted:
+        clauses.append(
+            """
+            not exists (
+                select 1
+                from submission_duplicate_matches sdm
+                where sdm.article_id = ns.article_id
+                  and sdm.state in ('confirmed', 'suspected')
+            )
+            """
+        )
     if admin_discarded_only:
         clauses.append("sr.admin_discarded_at IS NOT NULL")
     elif exclude_admin_discarded:

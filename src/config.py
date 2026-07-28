@@ -14,6 +14,7 @@ _ENV_FILES = (
     _REPO_ROOT / ".env",
     _REPO_ROOT / "config" / "abstract.env",
 )
+BGE_EMBEDDING_MODEL = "BAAI/bge-large-zh"
 
 
 def _load_env_file(path: Path) -> None:

@@ -19,6 +19,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     setupTabs();
+    if (elements.hideSubmitted) {
+        elements.hideSubmitted.checked = state.hideSubmitted;
+        elements.hideSubmitted.addEventListener('change', async () => {
+            state.hideSubmitted = elements.hideSubmitted.checked;
+            state.filterPage = 1;
+            await Promise.all([loadFilterData(), loadFilterCounts()]);
+        });
+    }
     loadStats();
     if (state.currentTab === 'review') {
         loadReviewData();
@@ -28,6 +36,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadFilterCounts();
     }
     setupFilterRealtimeDecisionHandlers();
+    if (elements.filterList) {
+        elements.filterList.addEventListener('click', async event => {
+            const button = event.target.closest('.submission-duplicate-dismiss');
+            if (!button) return;
+            const articleId = button.dataset.articleId;
+            if (!articleId) return;
+            button.disabled = true;
+            try {
+                const response = await window.fetch(
+                    `/api/submission-archive/duplicates/${encodeURIComponent(articleId)}/dismiss`,
+                    { method: 'POST' }
+                );
+                if (!response.ok) throw new Error('dismiss failed');
+                await Promise.all([loadFilterData(), loadFilterCounts()]);
+                showToast('已移除重复标记');
+            } catch (error) {
+                button.disabled = false;
+                showToast('移除重复标记失败', 'error');
+            }
+        });
+    }
     if (elements.reviewList) {
         setupDuplicateReview();
     }

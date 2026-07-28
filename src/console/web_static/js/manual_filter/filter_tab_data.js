@@ -12,9 +12,10 @@ async function loadFilterData(options = {}) {
         const params = new URLSearchParams({
             limit: '10',
             offset: `${(state.filterPage - 1) * 10}`,
-            cluster: searchMode ? 'false' : 'true',
+            cluster: (searchMode || state.hideSubmitted) ? 'false' : 'true',
             region,
             sentiment,
+            hide_submitted: state.hideSubmitted ? 'true' : 'false',
         });
         if (searchMode) {
             params.set('view_mode', 'search');
@@ -51,6 +52,7 @@ async function loadFilterCounts() {
                     limit: '1',
                     offset: '0',
                     cluster: 'false',
+                    hide_submitted: state.hideSubmitted ? 'true' : 'false',
                 });
                 if (cat.startsWith('internal')) params.set('region', 'internal');
                 if (cat.startsWith('external')) params.set('region', 'external');

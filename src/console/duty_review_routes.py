@@ -91,6 +91,7 @@ def list_candidates(
     sentiment: Optional[str] = None,
     q: Optional[str] = None,
     published_before: Optional[date] = None,
+    hide_submitted: bool = False,
     user: ConsoleUser = Depends(require_role("duty_editor")),
 ) -> dict[str, Any]:
     try:
@@ -105,6 +106,7 @@ def list_candidates(
             sentiment=sentiment,
             query=q,
             published_before=published_before,
+            hide_submitted=hide_submitted,
         )
     except (ValueError, PermissionError) as exc:
         _raise_review_error(exc)

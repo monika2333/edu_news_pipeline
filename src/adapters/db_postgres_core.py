@@ -19,6 +19,7 @@ from src.adapters import (
     db_postgres_score_feedback as score_feedback,
     db_postgres_shift_reviews as shift_reviews,
     db_postgres_shifts as shifts,
+    db_postgres_submission_archive as submission_archive,
     db_postgres_users as users,
 )
 from src.adapters.db_postgres_shared import MISSING as _MISSING
@@ -597,6 +598,7 @@ class PostgresAdapter:
         admin_discarded_only: bool = False,
         exclude_admin_discarded: bool = False,
         exclude_finalized: bool = False,
+        hide_submitted: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         with self._cursor() as cur:
             return shift_reviews.fetch_shift_review_items(
@@ -616,6 +618,7 @@ class PostgresAdapter:
                 admin_discarded_only=admin_discarded_only,
                 exclude_admin_discarded=exclude_admin_discarded,
                 exclude_finalized=exclude_finalized,
+                hide_submitted=hide_submitted,
             )
 
     def fetch_shift_clusters(
@@ -1466,6 +1469,7 @@ class PostgresAdapter:
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
         order_by_decided_at: bool = False,
+        hide_submitted: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         with self._cursor() as cur:
             return manual_reviews.fetch_manual_reviews(
@@ -1478,6 +1482,7 @@ class PostgresAdapter:
                 sentiment=sentiment,
                 report_type=report_type,
                 order_by_decided_at=order_by_decided_at,
+                hide_submitted=hide_submitted,
             )
 
     def update_manual_review_order_and_categories(
@@ -1541,6 +1546,7 @@ class PostgresAdapter:
         sentiment: Optional[str] = None,
         fetch_limit: int = 5000,
         report_type: Optional[str] = None,
+        hide_submitted: bool = False,
     ) -> List[Dict[str, Any]]:
         with self._cursor() as cur:
             return manual_reviews.fetch_manual_pending_for_cluster(
@@ -1549,6 +1555,7 @@ class PostgresAdapter:
                 sentiment=sentiment,
                 fetch_limit=fetch_limit,
                 report_type=report_type,
+                hide_submitted=hide_submitted,
             )
 
     def search_manual_candidates(
@@ -1561,6 +1568,7 @@ class PostgresAdapter:
         region: Optional[str] = None,
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
+        hide_submitted: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         with self._cursor() as cur:
             return manual_reviews.search_manual_candidates(
@@ -1572,6 +1580,7 @@ class PostgresAdapter:
                 region=region,
                 sentiment=sentiment,
                 report_type=report_type,
+                hide_submitted=hide_submitted,
             )
 
     def count_manual_candidates_before_date(
@@ -1904,6 +1913,212 @@ class PostgresAdapter:
     def fetch_brief_item_count(self, batch_id: str) -> int:
         with self._cursor() as cur:
             return export.fetch_brief_item_count(cur, batch_id)
+
+    # ------------------------------------------------------------------
+    # Submission archive + duplicate detection
+    # ------------------------------------------------------------------
+    def find_submitted_report_conflict(
+        self,
+        *,
+        report_type: str,
+        report_date: date,
+    ) -> Optional[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return submission_archive.find_report_conflict(
+                cur,
+                report_type=report_type,
+                report_date=report_date,
+            )
+
+    def create_submitted_report(
+        self,
+        *,
+        report: Mapping[str, Any],
+        items: Sequence[Mapping[str, Any]],
+        replace_report_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        with self.transaction() as cur:
+            if replace_report_id:
+                submission_archive.delete_report(cur, replace_report_id)
+            created = submission_archive.insert_report(cur, **report)
+            created["items"] = submission_archive.insert_report_items(
+                cur,
+                report_id=str(created["id"]),
+                items=items,
+            )
+            created["item_count"] = len(created["items"])
+            return created
+
+    def fetch_submitted_reports(
+        self,
+        *,
+        report_type: Optional[str],
+        date_from: Optional[date],
+        date_to: Optional[date],
+        limit: int,
+        offset: int,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        with self._cursor() as cur:
+            return submission_archive.fetch_reports(
+                cur,
+                report_type=report_type,
+                date_from=date_from,
+                date_to=date_to,
+                limit=limit,
+                offset=offset,
+            )
+
+    def fetch_submitted_report(
+        self,
+        report_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return submission_archive.fetch_report(cur, report_id)
+
+    def delete_submitted_report(self, report_id: str) -> bool:
+        with self.transaction() as cur:
+            return submission_archive.delete_report(cur, report_id)
+
+    def replace_submitted_report_items(
+        self,
+        *,
+        report_id: str,
+        items: Sequence[Mapping[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        with self.transaction() as cur:
+            return submission_archive.replace_report_items(
+                cur,
+                report_id=report_id,
+                items=items,
+            )
+
+    def fetch_submission_link_candidates(
+        self,
+        *,
+        compiled_date: date,
+        window_days: int,
+    ) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return submission_archive.fetch_link_candidates(
+                cur,
+                compiled_date=compiled_date,
+                window_days=window_days,
+            )
+
+    def update_submission_link_results(
+        self,
+        results: Sequence[Mapping[str, Any]],
+    ) -> None:
+        with self.transaction() as cur:
+            submission_archive.update_link_results(cur, results)
+
+    def fetch_pending_submission_links(
+        self,
+        *,
+        limit: int,
+        offset: int,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        with self._cursor() as cur:
+            return submission_archive.fetch_pending_links(
+                cur,
+                limit=limit,
+                offset=offset,
+            )
+
+    def decide_submission_link(
+        self,
+        *,
+        item_id: str,
+        accepted: bool,
+        actor_user_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        with self.transaction() as cur:
+            return submission_archive.decide_link(
+                cur,
+                item_id=item_id,
+                accepted=accepted,
+                actor_user_id=actor_user_id,
+            )
+
+    def search_submitted_report_items(
+        self,
+        *,
+        query: str,
+        limit: int,
+    ) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return submission_archive.search_items(
+                cur,
+                query=query,
+                limit=limit,
+            )
+
+    def fetch_submission_items_missing_embeddings(
+        self,
+        *,
+        limit: int,
+    ) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return submission_archive.fetch_items_missing_embeddings(
+                cur,
+                limit=limit,
+            )
+
+    def update_submission_item_embeddings(
+        self,
+        embeddings: Sequence[Mapping[str, Any]],
+    ) -> int:
+        with self.transaction() as cur:
+            return submission_archive.update_item_embeddings(cur, embeddings)
+
+    def fetch_submission_archive_embeddings(
+        self,
+        *,
+        lookback_days: int,
+    ) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return submission_archive.fetch_archive_embeddings(
+                cur,
+                lookback_days=lookback_days,
+            )
+
+    def fetch_news_for_submission_dedup(
+        self,
+        *,
+        limit: Optional[int],
+    ) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return submission_archive.fetch_news_for_submission_dedup(
+                cur,
+                limit=limit,
+            )
+
+    def upsert_submission_duplicate_matches(
+        self,
+        matches: Sequence[Mapping[str, Any]],
+    ) -> int:
+        with self.transaction() as cur:
+            return submission_archive.upsert_duplicate_matches(cur, matches)
+
+    def fetch_submission_duplicate_badges(
+        self,
+        article_ids: Sequence[str],
+    ) -> Dict[str, Dict[str, Any]]:
+        with self._cursor() as cur:
+            return submission_archive.fetch_duplicate_badges(cur, article_ids)
+
+    def dismiss_submission_duplicate_matches(
+        self,
+        *,
+        article_id: str,
+        actor_user_id: str,
+    ) -> int:
+        with self.transaction() as cur:
+            return submission_archive.dismiss_duplicate_matches(
+                cur,
+                article_id=article_id,
+                actor_user_id=actor_user_id,
+            )
 
     # ------------------------------------------------------------------
     # Pipeline run metadata

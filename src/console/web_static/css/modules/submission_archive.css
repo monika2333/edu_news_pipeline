@@ -1,0 +1,214 @@
+.archive-shell {
+    max-width: 1240px;
+}
+
+.archive-eyebrow {
+    margin: 0 0 0.2rem;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+}
+
+.archive-panel {
+    margin-top: 1.25rem;
+    padding: 1.35rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.9rem;
+    background: var(--card-bg);
+}
+
+.archive-panel-heading,
+.archive-preview-heading,
+.archive-detail-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.archive-panel-heading h2,
+.archive-preview-heading h3 {
+    margin: 0;
+}
+
+.archive-panel-heading p {
+    margin: 0.35rem 0 0;
+    color: var(--text-secondary);
+}
+
+.archive-filters,
+.archive-search,
+.archive-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin-top: 1rem;
+}
+
+.archive-filters input,
+.archive-filters select,
+.archive-search input,
+.archive-field input,
+.archive-field select,
+.archive-field textarea {
+    min-height: 2.45rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.55rem;
+    background: var(--input-bg, #fff);
+    color: var(--text-primary);
+}
+
+.archive-search input {
+    flex: 1;
+}
+
+.archive-table-wrap {
+    overflow-x: auto;
+    margin-top: 1rem;
+}
+
+.archive-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.archive-table th,
+.archive-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    text-align: left;
+}
+
+.archive-table th {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.archive-table a {
+    color: var(--primary-color);
+    font-weight: 650;
+}
+
+.archive-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.archive-field > span {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 650;
+}
+
+.archive-paste-field {
+    margin-top: 1rem;
+}
+
+.archive-paste-field textarea {
+    width: 100%;
+    resize: vertical;
+}
+
+.archive-head-fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+.archive-field-wide {
+    grid-column: span 3;
+}
+
+.archive-warnings {
+    margin-top: 1rem;
+    padding: 0.8rem 1rem;
+    border: 1px solid #e4b43c;
+    border-radius: 0.6rem;
+    background: #fff8df;
+    color: #765600;
+}
+
+.archive-item-editor,
+.archive-item,
+.archive-link-card,
+.archive-search-item {
+    margin-top: 0.8rem;
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.7rem;
+    background: var(--surface-muted, #fafafa);
+}
+
+.archive-item-editor-grid {
+    display: grid;
+    grid-template-columns: 1fr 0.5fr 1fr;
+    gap: 0.65rem;
+}
+
+.archive-item-editor .archive-item-body {
+    grid-column: span 3;
+}
+
+.archive-item-editor textarea {
+    min-height: 7rem;
+    resize: vertical;
+}
+
+.archive-item-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.6rem;
+}
+
+.archive-link-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.archive-link-column {
+    min-width: 0;
+}
+
+.archive-link-column p,
+.archive-item p,
+.archive-search-item p {
+    white-space: pre-wrap;
+}
+
+.archive-score-row {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+}
+
+.archive-empty {
+    padding: 2rem 1rem;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+@media (max-width: 800px) {
+    .archive-head-fields,
+    .archive-item-editor-grid,
+    .archive-link-columns {
+        grid-template-columns: 1fr;
+    }
+
+    .archive-field-wide,
+    .archive-item-editor .archive-item-body {
+        grid-column: span 1;
+    }
+
+    .archive-panel-heading,
+    .archive-detail-actions {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}

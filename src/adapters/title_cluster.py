@@ -11,7 +11,10 @@ os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", _DEFAULT_HF_HUB_ETAG_TIMEOUT)
 
 from sentence_transformers import SentenceTransformer, util
 
-_DEFAULT_MODEL_NAME = "BAAI/bge-large-zh"
+from src.config import BGE_EMBEDDING_MODEL
+
+EMBEDDING_MODEL_NAME = BGE_EMBEDDING_MODEL
+_DEFAULT_MODEL_NAME = EMBEDDING_MODEL_NAME
 _DEFAULT_THRESHOLD = 0.9
 
 _model: SentenceTransformer | None = None
@@ -32,6 +35,23 @@ def _get_model() -> SentenceTransformer:
             if _model is None:
                 _model = _load_model()
     return _model
+
+
+def get_embedding_model() -> SentenceTransformer:
+    """Return the process-wide BGE model singleton."""
+    return _get_model()
+
+
+def encode_texts(texts: Sequence[str]):
+    """Encode text as normalized NumPy vectors using the shared BGE model."""
+    values = [text or "" for text in texts]
+    if not values:
+        return []
+    return get_embedding_model().encode(
+        values,
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+    )
 
 
 def _greedy_grouping(sim_matrix, threshold: float) -> list[list[int]]:
@@ -76,4 +96,9 @@ def cluster_titles(titles: Sequence[str], *, threshold: float = _DEFAULT_THRESHO
     return _greedy_grouping(sim_matrix, threshold)
 
 
-__all__ = ["cluster_titles"]
+__all__ = [
+    "EMBEDDING_MODEL_NAME",
+    "cluster_titles",
+    "encode_texts",
+    "get_embedding_model",
+]

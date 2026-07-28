@@ -61,6 +61,31 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
     const currentStatus = safe.manual_status || safe.status || 'pending';
     const sourcePlaceholder = safe.llm_source_raw ? `(LLM: ${safe.llm_source_raw})` : '留空则回退抓取来源';
     const bonusClass = safe.bonus_keywords && safe.bonus_keywords.length ? ' has-bonus' : '';
+    const duplicate = safe.submission_duplicate;
+    const duplicateState = duplicate?.has_confirmed ? 'confirmed'
+        : duplicate?.has_suspected ? 'suspected'
+            : '';
+    const duplicateLabel = duplicateState === 'confirmed' ? '已报送' : '疑似已报送';
+    const duplicateTitle = (duplicate?.matches || []).map(match => {
+        const reportLabel = {
+            zongbao: '综报',
+            wanbao: '晚报',
+            feedback: '反馈'
+        }[match.report_type] || match.report_type || '存档';
+        const score = Number(match.similarity);
+        const scoreText = Number.isFinite(score) ? `（相似度 ${score.toFixed(2)}）` : '';
+        const extraCount = Number(match.extra_count) || 0;
+        const extraText = extraCount > 0 ? `，另有 ${extraCount} 条记录` : '';
+        return `${match.report_date || ''} ${reportLabel}：${match.title || ''}${scoreText}${extraText}`;
+    }).join('\n');
+    const duplicateBadge = duplicateState ? `
+        <span class="submission-duplicate-wrap">
+            <span class="submission-duplicate-badge ${duplicateState}"
+                title="${safeHtml(duplicateTitle)}">${duplicateLabel}</span>
+            <button type="button" class="submission-duplicate-dismiss"
+                data-article-id="${safeHtml(safe.article_id || '')}">不是重复</button>
+        </span>
+    ` : '';
     const statusGroup = showStatus ? `
         <div class="radio-group" role="radiogroup">
             <div class="radio-option">
@@ -82,8 +107,9 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
         <div class="article-card${bonusClass}${collapsed ? ' collapsed' : ''}" data-id="${safe.article_id || ''}" data-status="${currentStatus}" data-version="${safe.version || 0}" ${collapsed ? 'style="display:none;"' : ''}>
             <div class="card-header">
                 <h3 class="article-title">
-                    ${safe.title || '(No Title)'}
+                    ${safeHtml(safe.title || '(No Title)')}
                     ${safe.url ? `<a href="${safe.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
+                    ${duplicateBadge}
                 </h3>
                 ${statusGroup}
             </div>

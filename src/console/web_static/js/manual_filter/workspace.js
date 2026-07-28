@@ -154,7 +154,7 @@ function dutyCandidateBackendParams(params, limit, offset) {
         offset: String(offset),
         report_type: 'zongbao'
     });
-    ['region', 'sentiment', 'q', 'published_before'].forEach(key => {
+    ['region', 'sentiment', 'q', 'published_before', 'hide_submitted'].forEach(key => {
         const value = params.get(key);
         if (value) backendParams.set(key, value);
     });

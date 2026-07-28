@@ -548,6 +548,80 @@ CREATE TABLE public.shift_reviews (
 
 
 --
+-- Name: submission_duplicate_matches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.submission_duplicate_matches (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    article_id text NOT NULL,
+    item_id uuid NOT NULL,
+    similarity numeric(5,4) NOT NULL,
+    match_method text NOT NULL,
+    state text DEFAULT 'suspected'::text NOT NULL,
+    decided_by uuid,
+    decided_at timestamp with time zone,
+    detected_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT submission_duplicate_matches_method_check CHECK ((match_method = ANY (ARRAY['exact'::text, 'vector'::text, 'llm'::text, 'manual'::text]))),
+    CONSTRAINT submission_duplicate_matches_state_check CHECK ((state = ANY (ARRAY['suspected'::text, 'confirmed'::text, 'dismissed'::text])))
+);
+
+
+--
+-- Name: submitted_report_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.submitted_report_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    report_id uuid NOT NULL,
+    section text,
+    marker text,
+    order_index integer DEFAULT 0 NOT NULL,
+    title text NOT NULL,
+    body text DEFAULT ''::text NOT NULL,
+    source text,
+    urls text[] DEFAULT '{}'::text[] NOT NULL,
+    norm_title text NOT NULL,
+    norm_title_hash text NOT NULL,
+    embedding bytea,
+    embedding_model text,
+    embedded_at timestamp with time zone,
+    article_id text,
+    link_status text DEFAULT 'pending'::text NOT NULL,
+    link_title_score numeric(5,4),
+    link_body_score numeric(5,4),
+    link_combined_score numeric(5,4),
+    best_candidate_article_id text,
+    link_matched_at timestamp with time zone,
+    link_decided_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT submitted_report_items_link_status_check CHECK ((link_status = ANY (ARRAY['pending'::text, 'exact'::text, 'fuzzy'::text, 'manual'::text, 'unmatched'::text, 'rejected'::text])))
+);
+
+
+--
+-- Name: submitted_reports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.submitted_reports (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    report_type text NOT NULL,
+    report_date date NOT NULL,
+    compiled_date date NOT NULL,
+    issue_no text,
+    title_line text,
+    pasted_text text NOT NULL,
+    item_count integer DEFAULT 0 NOT NULL,
+    imported_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT submitted_reports_type_check CHECK ((report_type = ANY (ARRAY['zongbao'::text, 'wanbao'::text, 'feedback'::text])))
+);
+
+
+--
 -- Name: review_events id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -800,6 +874,38 @@ ALTER TABLE ONLY public.shift_reviews
 
 ALTER TABLE ONLY public.shift_reviews
     ADD CONSTRAINT shift_reviews_shift_article_unique UNIQUE (shift_id, article_id);
+
+
+--
+-- Name: submission_duplicate_matches submission_duplicate_matches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submission_duplicate_matches
+    ADD CONSTRAINT submission_duplicate_matches_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: submission_duplicate_matches submission_duplicate_matches_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submission_duplicate_matches
+    ADD CONSTRAINT submission_duplicate_matches_unique UNIQUE (article_id, item_id);
+
+
+--
+-- Name: submitted_report_items submitted_report_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submitted_report_items
+    ADD CONSTRAINT submitted_report_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: submitted_reports submitted_reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submitted_reports
+    ADD CONSTRAINT submitted_reports_pkey PRIMARY KEY (id);
 
 
 --
@@ -1153,6 +1259,62 @@ CREATE INDEX shift_reviews_updated_by_idx ON public.shift_reviews USING btree (u
 
 
 --
+-- Name: submission_duplicate_matches_article_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX submission_duplicate_matches_article_idx ON public.submission_duplicate_matches USING btree (article_id);
+
+
+--
+-- Name: submission_duplicate_matches_state_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX submission_duplicate_matches_state_idx ON public.submission_duplicate_matches USING btree (state);
+
+
+--
+-- Name: submitted_report_items_article_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX submitted_report_items_article_idx ON public.submitted_report_items USING btree (article_id) WHERE (article_id IS NOT NULL);
+
+
+--
+-- Name: submitted_report_items_link_pending_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX submitted_report_items_link_pending_idx ON public.submitted_report_items USING btree (link_status) WHERE (link_status = 'pending'::text);
+
+
+--
+-- Name: submitted_report_items_norm_hash_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX submitted_report_items_norm_hash_idx ON public.submitted_report_items USING btree (norm_title_hash);
+
+
+--
+-- Name: submitted_report_items_report_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX submitted_report_items_report_idx ON public.submitted_report_items USING btree (report_id, order_index);
+
+
+--
+-- Name: submitted_reports_report_date_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX submitted_reports_report_date_idx ON public.submitted_reports USING btree (report_date DESC);
+
+
+--
+-- Name: submitted_reports_type_date_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX submitted_reports_type_date_idx ON public.submitted_reports USING btree (report_type, report_date DESC);
+
+
+--
 -- Name: brief_batches brief_batches_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -1392,6 +1554,38 @@ ALTER TABLE ONLY public.shift_reviews
 
 
 --
+-- Name: submission_duplicate_matches submission_duplicate_matches_decided_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submission_duplicate_matches
+    ADD CONSTRAINT submission_duplicate_matches_decided_by_fkey FOREIGN KEY (decided_by) REFERENCES public.console_users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: submission_duplicate_matches submission_duplicate_matches_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submission_duplicate_matches
+    ADD CONSTRAINT submission_duplicate_matches_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.submitted_report_items(id) ON DELETE CASCADE;
+
+
+--
+-- Name: submitted_report_items submitted_report_items_link_decided_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submitted_report_items
+    ADD CONSTRAINT submitted_report_items_link_decided_by_fkey FOREIGN KEY (link_decided_by) REFERENCES public.console_users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: submitted_report_items submitted_report_items_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submitted_report_items
+    ADD CONSTRAINT submitted_report_items_report_id_fkey FOREIGN KEY (report_id) REFERENCES public.submitted_reports(id) ON DELETE CASCADE;
+
+
+--
 -- PostgreSQL database dump complete
 --
 
@@ -1435,4 +1629,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260726110000'),
     ('20260726130000'),
     ('20260727100000'),
-    ('20260727203000');
+    ('20260727203000'),
+    ('20260728100000'),
+    ('20260728120000');

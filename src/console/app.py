@@ -17,6 +17,7 @@ from src.console import (
     manual_filter_routes,
     runs_routes,
     shifts_routes,
+    submission_archive_routes,
     users_routes,
     web_routes,
 )
@@ -77,6 +78,10 @@ def create_app() -> FastAPI:
     app.include_router(users_routes.router, dependencies=protected_dependencies)
     app.include_router(
         duty_review_routes.router,
+        dependencies=protected_dependencies,
+    )
+    app.include_router(
+        submission_archive_routes.router,
         dependencies=protected_dependencies,
     )
     app.include_router(web_routes.router)

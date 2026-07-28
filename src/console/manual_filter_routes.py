@@ -103,6 +103,7 @@ def list_candidates_api(
     published_before: Optional[date] = None,
     view_mode: Optional[str] = None,
     report_type: str = "zongbao",
+    hide_submitted: bool = False,
 ) -> Dict[str, Any]:
     return manual_filter_service.list_candidates(
         limit=limit,
@@ -116,6 +117,7 @@ def list_candidates_api(
         published_before=published_before,
         view_mode=view_mode,
         report_type=report_type,
+        hide_submitted=hide_submitted,
     )
 
 

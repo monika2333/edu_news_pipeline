@@ -160,4 +160,70 @@ async def account_page(
     )
 
 
+def _submission_archive_response(
+    request: Request,
+    user: ConsoleUser,
+    *,
+    view: str,
+    report_id: str | None = None,
+) -> HTMLResponse:
+    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    return templates.TemplateResponse(
+        "submission_archive.html",
+        {
+            "request": request,
+            "version": version,
+            "current_user": user,
+            "archive_view": view,
+            "report_id": report_id,
+        },
+    )
+
+
+@router.get("/submission-archive", response_class=HTMLResponse)
+async def submission_archive_page(
+    request: Request,
+    user: ConsoleUser = Depends(require_console_user),
+) -> HTMLResponse:
+    return _submission_archive_response(request, user, view="list")
+
+
+@router.get("/submission-archive/new", response_class=HTMLResponse)
+async def submission_archive_new_page(
+    request: Request,
+    user: ConsoleUser = Depends(require_role("admin")),
+) -> HTMLResponse:
+    return _submission_archive_response(request, user, view="new")
+
+
+@router.get("/submission-archive/link-queue", response_class=HTMLResponse)
+async def submission_archive_link_queue_page(
+    request: Request,
+    user: ConsoleUser = Depends(require_console_user),
+) -> HTMLResponse:
+    return _submission_archive_response(request, user, view="link-queue")
+
+
+@router.get("/submission-archive/search", response_class=HTMLResponse)
+async def submission_archive_search_page(
+    request: Request,
+    user: ConsoleUser = Depends(require_console_user),
+) -> HTMLResponse:
+    return _submission_archive_response(request, user, view="search")
+
+
+@router.get("/submission-archive/{report_id}", response_class=HTMLResponse)
+async def submission_archive_detail_page(
+    request: Request,
+    report_id: str,
+    user: ConsoleUser = Depends(require_console_user),
+) -> HTMLResponse:
+    return _submission_archive_response(
+        request,
+        user,
+        view="detail",
+        report_id=report_id,
+    )
+
+
 __all__ = ["router"]

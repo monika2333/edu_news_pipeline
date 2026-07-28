@@ -78,6 +78,18 @@ def test_register_page_has_no_fixed_password_length_requirement() -> None:
     assert "至少 10 位" not in response.text
 
 
+def test_submission_archive_pages_follow_role_permissions() -> None:
+    admin = _build_client()
+    editor = _build_editor_client()
+
+    assert admin.get("/submission-archive").status_code == 200
+    assert admin.get("/submission-archive/new").status_code == 200
+    assert editor.get("/submission-archive").status_code == 200
+    assert editor.get("/submission-archive/link-queue").status_code == 200
+    assert editor.get("/submission-archive/search").status_code == 200
+    assert editor.get("/submission-archive/new").status_code == 403
+
+
 def test_admin_page_separates_user_search_from_account_creation(
     monkeypatch: MonkeyPatch,
 ) -> None:

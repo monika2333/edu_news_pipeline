@@ -17,6 +17,7 @@ from src.console import (
 from src.console.auth_service import ConsoleUser
 from src.console.manual_filter_serializers import serialize_manual_filter_item
 from src.console.shifts_service import require_owned_shift
+from src.console.submission_archive_service import attach_duplicate_badges
 
 
 class ShiftReviewArticleNotFoundError(ValueError):
@@ -178,6 +179,7 @@ def list_items(
     sentiment: Optional[str] = None,
     query: Optional[str] = None,
     published_before: Optional[date] = None,
+    hide_submitted: bool = False,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
     if decision and decision not in VALID_DECISIONS:
@@ -187,26 +189,32 @@ def list_items(
         raise ValueError(f"Invalid review region: {region}")
     if sentiment is not None and sentiment not in {"positive", "negative"}:
         raise ValueError(f"Invalid review sentiment: {sentiment}")
-    rows, total = get_adapter().fetch_shift_review_items(
-        shift_id=shift_id,
-        decision=decision,
-        report_type=report_type,
-        limit=limit,
-        offset=offset,
-        region=region,
-        sentiment=sentiment,
-        query=(query or "").strip() or None,
-        published_before=published_before,
-        exclude_finalized=decision == "selected",
-    )
+    adapter = get_adapter()
+    fetch_kwargs = {
+        "shift_id": shift_id,
+        "decision": decision,
+        "report_type": report_type,
+        "limit": limit,
+        "offset": offset,
+        "region": region,
+        "sentiment": sentiment,
+        "query": (query or "").strip() or None,
+        "published_before": published_before,
+        "exclude_finalized": decision == "selected",
+    }
+    if hide_submitted:
+        fetch_kwargs["hide_submitted"] = True
+    rows, total = adapter.fetch_shift_review_items(**fetch_kwargs)
+    items = [
+        serialize_review_item(
+            row,
+            fallback_report_type=report_type or "zongbao",
+        )
+        for row in rows
+    ]
+    attach_duplicate_badges(items, adapter=adapter)
     return {
-        "items": [
-            serialize_review_item(
-                row,
-                fallback_report_type=report_type or "zongbao",
-            )
-            for row in rows
-        ],
+        "items": items,
         "total": total,
         "limit": max(1, min(limit, 200)),
         "offset": max(0, offset),

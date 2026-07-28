@@ -14,6 +14,10 @@ from src.workers.geo_tag import run as geo_tag
 from src.workers.hash_primary import run as hash_primary
 from src.workers.repair_missing_content import run as repair_missing
 from src.workers.score import run as score_summaries
+from src.workers.submission_dedup import (
+    backfill_archive_embeddings,
+    run as run_submission_dedup,
+)
 from src.workers.summarize import run as summarize_articles
 
 
@@ -86,6 +90,34 @@ def _add_external_filter(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument("--limit", type=_positive_int, default=2000, help="Max number of rows to process")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional concurrency override for LLM calls")
+
+
+def _add_submission_dedup(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "submission-dedup",
+        help="Compare current news with the recent submission archive",
+    )
+    parser.add_argument(
+        "--limit",
+        type=_positive_int,
+        default=None,
+        help="Optional maximum number of current news rows",
+    )
+
+
+def _add_backfill_submission_embeddings(
+    subparsers: argparse._SubParsersAction,
+) -> None:
+    parser = subparsers.add_parser(
+        "backfill-submission-embeddings",
+        help="Fill missing submission archive embeddings",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=_positive_int,
+        default=128,
+        help="Embedding batch size (default: 128)",
+    )
 
 
 
@@ -226,6 +258,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_geo_classify(subparsers)
     _add_score(subparsers)
     _add_external_filter(subparsers)
+    _add_submission_dedup(subparsers)
+    _add_backfill_submission_embeddings(subparsers)
     _add_export(subparsers)
     _add_geo_tag(subparsers)
     _add_create_console_user(subparsers)
@@ -256,6 +290,11 @@ def main(argv: list[str] | None = None) -> None:
         score_summaries(limit=args.limit, concurrency=args.concurrency)
     elif command == "external-filter":
         run_external_filter(limit=args.limit, concurrency=args.concurrency)
+    elif command == "submission-dedup":
+        run_submission_dedup(limit=args.limit)
+    elif command == "backfill-submission-embeddings":
+        count = backfill_archive_embeddings(batch_size=args.batch_size)
+        print(f"Embedded {count} submission archive items")
     elif command == "export":
         export_brief(
             limit=args.limit,

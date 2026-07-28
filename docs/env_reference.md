@@ -182,6 +182,21 @@ EXTERNAL_FILTER_MAX_RETRIES=3
 BEIJING_GATE_MAX_RETRIES=3
 ```
 
+### 报送存档与查重
+
+以下四项都可省略；不配置时使用代码默认值：
+
+```env
+SUBMISSION_DEDUP_LOOKBACK_DAYS=15
+SUBMISSION_LINK_AUTO_THRESHOLD=0.85
+SUBMISSION_LINK_REVIEW_THRESHOLD=0.55
+SUBMISSION_DEDUP_RECALL_THRESHOLD=0.72
+```
+
+`SUBMISSION_DEDUP_LOOKBACK_DAYS` 只控制每天自动比对的日期窗口，不会
+删除历史存档。嵌入模型固定为 `BAAI/bge-large-zh`，不能通过环境变量更换；
+更换模型必须清空已有存档向量并完整重算。
+
 ## 关键词和提示词路径
 
 关键词加分规则使用本地配置文件，该文件不会被 Git 跟踪。首次使用时从示例复制：

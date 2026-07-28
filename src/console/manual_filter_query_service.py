@@ -14,6 +14,7 @@ from src.adapters.db_postgres_core import get_adapter
 from .manual_filter_cluster import cluster_pending, refresh_clusters
 from .manual_filter_helpers import DEFAULT_REPORT_TYPE, _normalize_report_type
 from .manual_filter_serializers import FILTER_TAB_REPORT_TYPE, serialize_manual_filter_item
+from .submission_archive_service import attach_duplicate_badges
 
 logger = logging.getLogger(__name__)
 
@@ -28,20 +29,26 @@ def _paginate_by_status(
     sentiment: Optional[str] = None,
     report_type: str = DEFAULT_REPORT_TYPE,
     order_by_decided_at: bool = False,
+    hide_submitted: bool = False,
 ) -> Dict[str, Any]:
     adapter = get_adapter()
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
     target_report_type = _normalize_report_type(report_type)
+    fetch_kwargs = {
+        "status": manual_status,
+        "limit": limit,
+        "offset": offset,
+        "only_ready": only_ready,
+        "region": region,
+        "sentiment": sentiment,
+        "report_type": target_report_type,
+        "order_by_decided_at": order_by_decided_at,
+    }
+    if hide_submitted:
+        fetch_kwargs["hide_submitted"] = True
     rows, total = adapter.fetch_manual_reviews(  # type: ignore[attr-defined]
-        status=manual_status,
-        limit=limit,
-        offset=offset,
-        only_ready=only_ready,
-        region=region,
-        sentiment=sentiment,
-        report_type=target_report_type,
-        order_by_decided_at=order_by_decided_at,
+        **fetch_kwargs,
     )
     items: List[Dict[str, Any]] = []
     for record in rows:
@@ -52,6 +59,7 @@ def _paginate_by_status(
                 report_type=target_report_type,
             )
         )
+    attach_duplicate_badges(items, adapter=adapter)
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
@@ -64,16 +72,22 @@ def _list_candidate_search(
     query: Optional[str],
     published_before: Optional[date],
     report_type: str,
+    hide_submitted: bool,
 ) -> Dict[str, Any]:
     adapter = get_adapter()
+    fetch_kwargs = {
+        "query": query,
+        "published_before": published_before,
+        "limit": limit,
+        "offset": offset,
+        "region": region,
+        "sentiment": sentiment,
+        "report_type": report_type,
+    }
+    if hide_submitted:
+        fetch_kwargs["hide_submitted"] = True
     rows, total = adapter.search_manual_candidates(  # type: ignore[attr-defined]
-        query=query,
-        published_before=published_before,
-        limit=limit,
-        offset=offset,
-        region=region,
-        sentiment=sentiment,
-        report_type=report_type,
+        **fetch_kwargs,
     )
     items = [
         serialize_manual_filter_item(
@@ -83,6 +97,7 @@ def _list_candidate_search(
         )
         for record in rows
     ]
+    attach_duplicate_badges(items, adapter=adapter)
     return {
         "items": items,
         "total": total,
@@ -102,9 +117,10 @@ def _list_candidate_browse(
     cluster_threshold: Optional[float],
     force_refresh: bool,
     report_type: str,
+    hide_submitted: bool,
 ) -> Dict[str, Any]:
     if cluster:
-        return cluster_pending(
+        result = cluster_pending(
             region=region,
             sentiment=sentiment,
             limit=limit,
@@ -113,6 +129,13 @@ def _list_candidate_browse(
             force_refresh=force_refresh,
             report_type=report_type,
         )
+        cluster_items = [
+            item
+            for cluster_record in result.get("clusters") or []
+            for item in cluster_record.get("items") or []
+        ]
+        attach_duplicate_badges(cluster_items, adapter=get_adapter())
+        return result
     result = _paginate_by_status(
         "pending",
         limit=limit,
@@ -121,6 +144,7 @@ def _list_candidate_browse(
         region=region,
         sentiment=sentiment,
         report_type=report_type,
+        hide_submitted=hide_submitted,
     )
     result["view_mode"] = "browse"
     return result
@@ -139,6 +163,7 @@ def list_candidates(
     published_before: Optional[date] = None,
     view_mode: Optional[str] = None,
     report_type: str = DEFAULT_REPORT_TYPE,
+    hide_submitted: bool = False,
 ) -> Dict[str, Any]:
     region = region if region in ("internal", "external") else None
     sentiment = sentiment if sentiment in ("positive", "negative") else None
@@ -163,16 +188,18 @@ def list_candidates(
             query=normalized_query,
             published_before=published_before,
             report_type=target_report_type,
+            hide_submitted=hide_submitted,
         )
     return _list_candidate_browse(
         limit=limit,
         offset=offset,
         region=region,
         sentiment=sentiment,
-        cluster=cluster,
+        cluster=cluster and not hide_submitted,
         cluster_threshold=cluster_threshold,
         force_refresh=force_refresh,
         report_type=target_report_type,
+        hide_submitted=hide_submitted,
     )
 
 

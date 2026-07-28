@@ -80,6 +80,7 @@
                         <span>{{ current_user.display_name }} · {{ '值班编辑' if is_duty_workspace else '管理员' }}</span>
                     </summary>
                     <div class="account-menu-panel">
+                        <a class="account-menu-item" href="/submission-archive">报送存档</a>
                         {% if not is_duty_workspace %}
                         <a class="account-menu-item" href="/admin">用户与排班</a>
                         {% endif %}
@@ -166,6 +167,10 @@
                             <input type="date" id="filter-date-before" class="search-input" autocomplete="off"
                                 aria-label="发布日期早于，不含当天" title="发布日期早于，不含当天">
                             <button class="btn btn-secondary" id="btn-filter-search">检索</button>
+                            <label class="filter-toggle">
+                                <input type="checkbox" id="filter-hide-submitted">
+                                <span>隐藏已报送</span>
+                            </label>
                             <button class="btn btn-primary filter-discard-action"
                                 id="btn-filter-discard-before-date">全部放弃</button>
                         </div>

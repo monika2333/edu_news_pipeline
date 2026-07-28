@@ -258,10 +258,11 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'class="workspace-tabs-row"' in html
     assert 'class="workspace-tab-actions"' in html
     assert 'data-workspace-action-tab="filter"' in html
-    assert 'data-workspace-action-tab="review" hidden' in html
+    assert 'data-workspace-action-tab="review"' in html
+    assert 'id="duty-finalization-status"' in html
     assert html.index('data-tab="discard"') < html.index('id="btn-refresh"')
     assert html.index('id="btn-refresh"') < html.index('id="filter-tab"')
-    assert html.index('id="btn-finalized-batches"') < html.index('id="review-tab"')
+    assert html.index('id="duty-finalization-status"') < html.index('id="review-tab"')
     assert '/static/js/manual_filter/workspace.js?v=' in html
     assert '/static/js/shift_date.js?v=' in html
     assert '/static/js/manual_filter/filter_tab_data.js?v=' in html
@@ -278,8 +279,13 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "已放弃" not in html
     assert 'id="btn-finalize-review"' in html
     assert "定稿并清空列表" in html
-    assert 'id="btn-finalized-batches"' in html
-    assert 'id="finalization-history-modal"' in html
+    assert 'id="duty-finalization-status"' in html
+    assert 'id="duty-finalization-status-text"' in html
+    assert 'id="btn-restore-finalization"' in html
+    assert "撤回定稿" in html
+    assert 'id="btn-finalized-batches"' not in html
+    assert 'id="finalization-history-modal"' not in html
+    assert "查看已定稿批次" not in html
     assert "/static/js/manual_filter/review_tab_finalization.js?v=" in html
     assert '<details class="account-menu">' in html
     assert '<summary class="account-menu-trigger current-user" id="current-user">' in html
@@ -331,10 +337,12 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     ).read_text(encoding="utf-8")
     assert "loadFilterData({ forceClusterRefresh: true })" not in filter_actions_script
     assert "item.content_markdown" not in workspace_script
-    assert "整批撤回" in finalization_script
-    assert "撤回本条" not in finalization_script
-    assert "data-finalization-restore-article" not in finalization_script
-    assert "{ article_id: null }" not in finalization_script
+    assert "function loadDutyFinalizationStatus()" in finalization_script
+    assert "function renderDutyFinalizationStatus(finalization)" in finalization_script
+    assert "payload.finalization" in finalization_script
+    assert "撤回定稿" not in finalization_script
+    assert "FinalizationHistory" not in finalization_script
+    assert "finalization-history" not in finalization_script
 
 
 def test_admin_manual_filter_keeps_admin_only_entries() -> None:
@@ -375,7 +383,8 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert 'id="btn-check-duplicates"' not in html
     assert 'id="btn-archive"' not in html
     assert 'id="btn-finalize-review"' not in html
-    assert 'id="btn-finalized-batches"' not in html
+    assert 'id="duty-finalization-status"' not in html
+    assert 'id="btn-restore-finalization"' not in html
     assert 'id="btn-filter-discard-before-date"' in html
     assert 'id="filter-search-clear"' in html
     assert 'class="review-search-clear"' in html

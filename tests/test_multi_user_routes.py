@@ -395,6 +395,17 @@ def test_editor_can_finalize_and_restore_owned_shift_batch(monkeypatch) -> None:
             "article_ids": ["article-1", "article-2"],
         }
 
+    def status(**kwargs: Any) -> dict[str, Any]:
+        calls.append(("status", kwargs))
+        return {
+            "finalized": True,
+            "report_type": "zongbao",
+            "finalization": {
+                "batch_id": "batch-1",
+                "item_count": 2,
+            },
+        }
+
     monkeypatch.setattr(
         duty_review_service,
         "finalize_selected_batch",
@@ -405,8 +416,16 @@ def test_editor_can_finalize_and_restore_owned_shift_batch(monkeypatch) -> None:
         "restore_finalized_batch",
         restore,
     )
+    monkeypatch.setattr(
+        duty_review_service,
+        "get_finalization_status",
+        status,
+    )
     client = _client_for(editor)
 
+    current_status = client.get(
+        "/api/duty/shifts/shift-id/finalizations?report_type=zongbao"
+    )
     finalized = client.post(
         "/api/duty/shifts/shift-id/finalizations",
         json={"report_type": "zongbao"},
@@ -420,13 +439,16 @@ def test_editor_can_finalize_and_restore_owned_shift_batch(monkeypatch) -> None:
         json={"article_id": "article-1"},
     )
 
+    assert current_status.status_code == 200
+    assert current_status.json()["finalization"]["batch_id"] == "batch-1"
     assert finalized.status_code == 200
     assert finalized.json()["item_count"] == 2
     assert restored.status_code == 200
     assert restored.json()["restored"] == 2
     assert single_item_restore.status_code == 422
+    assert calls[0][0] == "status"
     assert calls[0][1]["user"].user_id == "editor-id"
-    assert "article_id" not in calls[1][1]
+    assert "article_id" not in calls[2][1]
     assert [name for name, _ in calls].count("restore") == 1
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
+from typing import Any, Optional
 
 import pytest
 
@@ -62,13 +62,22 @@ class FinalizationCursor:
         self.queries: list[str] = []
         self.params: list[tuple[Any, ...]] = []
         self.last_query = ""
+        self.active_finalization = False
 
     def execute(self, query: str, params: tuple[Any, ...]) -> None:
         self.queries.append(query)
         self.params.append(params)
         self.last_query = query
 
-    def fetchone(self) -> dict[str, Any]:
+    def fetchone(self) -> Optional[dict[str, Any]]:
+        if "FROM duty_shifts" in self.last_query:
+            return {"id": "shift-1"}
+        if "SELECT sr.finalized_batch_id AS batch_id" in self.last_query:
+            return (
+                {"batch_id": "batch-existing"}
+                if self.active_finalization
+                else None
+            )
         if "INSERT INTO shift_review_finalization_batches" in self.last_query:
             return {
                 "id": "batch-1",
@@ -286,6 +295,47 @@ def test_finalize_batch_preserves_selected_decision_and_freezes_order() -> None:
     assert "SET finalized_batch_id" in update_query
     assert "finalized_rank = ordered.finalized_rank" in update_query
     assert "decision =" not in update_query.split("FROM unnest", maxsplit=1)[0]
+
+
+def test_finalize_batch_rejects_second_active_finalization() -> None:
+    cursor = FinalizationCursor()
+    cursor.active_finalization = True
+
+    with pytest.raises(ValueError, match="已经定稿"):
+        db_postgres_shift_reviews.finalize_shift_review_batch(
+            cursor,
+            shift_id="shift-1",
+            report_type="zongbao",
+            actor_user_id="editor-1",
+        )
+
+    assert not any(
+        "INSERT INTO shift_review_finalization_batches" in query
+        for query in cursor.queries
+    )
+
+
+def test_finalization_status_returns_metadata_without_article_list() -> None:
+    cursor = FinalizationCursor()
+    cursor.fetchone = lambda: {
+        "batch_id": "batch-1",
+        "report_type": "zongbao",
+        "finalized_at": "2026-07-27T10:30:00+08:00",
+        "finalized_by_display_name": "值班编辑",
+        "item_count": 2,
+    }
+
+    result = db_postgres_shift_reviews.fetch_shift_finalization_status(
+        cursor,
+        shift_id="shift-1",
+        report_type="zongbao",
+    )
+
+    query = cursor.queries[-1]
+    assert result and result["batch_id"] == "batch-1"
+    assert "count(sr.id) AS item_count" in query
+    assert "news_summaries" not in query
+    assert cursor.params[-1] == ("shift-1", "zongbao")
 
 
 def test_restore_batch_clears_only_finalization_and_appends_current_rank() -> None:

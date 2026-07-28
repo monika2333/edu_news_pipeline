@@ -685,66 +685,51 @@ body.duplicate-review-open .search-drawer-toggle {
     padding: 8px 16px;
 }
 
-.finalization-history-content {
-    width: min(900px, 94vw);
-    max-height: min(760px, 90vh);
-    overflow-y: auto;
-}
-
-.finalization-history-kicker {
-    margin: 0 0 4px;
-    color: #2563eb;
-    font-size: 0.76rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-}
-
-.finalization-history-list,
-.finalization-history-items {
-    display: grid;
-    gap: 12px;
-}
-
-.finalization-history-batch {
-    padding: 16px;
-    border: 1px solid #dbe3ee;
-    border-radius: 12px;
-    background: #f8fafc;
-}
-
-.finalization-history-batch > header {
+.duty-finalization-status {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
-}
-
-.finalization-history-batch h4,
-.finalization-history-batch p,
-.finalization-history-item h5,
-.finalization-history-item p {
-    margin: 0;
-}
-
-.finalization-history-batch p,
-.finalization-history-item p {
-    color: #64748b;
-    font-size: 0.8rem;
-}
-
-.finalization-history-item {
-    padding: 12px;
-    border: 1px solid #e2e8f0;
-    border-radius: 9px;
+    gap: 10px;
+    min-height: 44px;
+    padding: 6px 8px 6px 12px;
+    border: 1px solid #dbe3ee;
+    border-radius: 12px;
     background: #fff;
 }
 
-.finalization-history-item p {
-    margin-top: 4px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+.duty-finalization-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: #64748b;
+    font-size: 0.86rem;
+    font-weight: 650;
     white-space: nowrap;
+}
+
+.duty-finalization-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #94a3b8;
+}
+
+.duty-finalization-status[data-state="finalized"] {
+    border-color: #bbf7d0;
+    background: #f0fdf4;
+}
+
+.duty-finalization-status[data-state="finalized"] .duty-finalization-state {
+    color: #166534;
+}
+
+.duty-finalization-status[data-state="finalized"] .duty-finalization-dot {
+    background: #22c55e;
+}
+
+.duty-finalization-status .btn {
+    min-height: 32px;
+    padding: 6px 12px;
+    font-size: 0.82rem;
 }
 
 /* Responsive Review */

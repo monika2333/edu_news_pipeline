@@ -151,7 +151,10 @@ function setupTabs() {
 
 function reloadCurrentTab(options = {}) {
     if (state.currentTab === 'filter') loadFilterData(options);
-    else if (state.currentTab === 'review') loadReviewData();
+    else if (state.currentTab === 'review') {
+        loadReviewData();
+        if (IS_DUTY_WORKSPACE) loadDutyFinalizationStatus();
+    }
     else if (state.currentTab === 'discard') loadDiscardData();
 }
 
@@ -202,6 +205,7 @@ function setReviewReportType(value) {
     }
     updateReviewRailCounts();
     loadReviewData();
+    if (IS_DUTY_WORKSPACE) loadDutyFinalizationStatus();
 }
 
 function setReviewView(view) {

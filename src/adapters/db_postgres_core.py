@@ -804,6 +804,19 @@ class PostgresAdapter:
                 report_type=report_type,
             )
 
+    def fetch_shift_finalization_status(
+        self,
+        *,
+        shift_id: str,
+        report_type: str,
+    ) -> Optional[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return shift_reviews.fetch_shift_finalization_status(
+                cur,
+                shift_id=shift_id,
+                report_type=report_type,
+            )
+
     def restore_shift_review_finalization(
         self,
         *,

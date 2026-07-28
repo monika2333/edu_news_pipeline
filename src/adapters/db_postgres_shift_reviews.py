@@ -594,6 +594,32 @@ def finalize_shift_review_batch(
 ) -> dict[str, Any]:
     cur.execute(
         """
+        SELECT id
+        FROM duty_shifts
+        WHERE id = %s
+          AND cancelled_at IS NULL
+        FOR UPDATE
+        """,
+        (shift_id,),
+    )
+    if not cur.fetchone():
+        raise ValueError("班次不存在或已取消")
+    cur.execute(
+        """
+        SELECT sr.finalized_batch_id AS batch_id
+        FROM shift_reviews sr
+        WHERE sr.shift_id = %s
+          AND sr.decision = 'selected'
+          AND COALESCE(sr.report_type, 'zongbao') = %s
+          AND sr.finalized_batch_id IS NOT NULL
+        LIMIT 1
+        """,
+        (shift_id, report_type),
+    )
+    if cur.fetchone():
+        raise ValueError("当前报告已经定稿，请先撤回定稿")
+    cur.execute(
+        """
         SELECT sr.article_id
         FROM shift_reviews sr
         JOIN duty_shifts s ON s.id = sr.shift_id
@@ -657,6 +683,42 @@ def finalize_shift_review_batch(
         "item_count": len(article_ids),
         "article_ids": article_ids,
     }
+
+
+def fetch_shift_finalization_status(
+    cur: psycopg.Cursor,
+    *,
+    shift_id: str,
+    report_type: str,
+) -> Optional[dict[str, Any]]:
+    cur.execute(
+        """
+        SELECT
+            finalization_batch.id AS batch_id,
+            finalization_batch.report_type,
+            finalization_batch.finalized_at,
+            finalizer.display_name AS finalized_by_display_name,
+            count(sr.id) AS item_count
+        FROM shift_review_finalization_batches finalization_batch
+        JOIN shift_reviews sr
+          ON sr.finalized_batch_id = finalization_batch.id
+         AND sr.decision = 'selected'
+        LEFT JOIN console_users finalizer
+          ON finalizer.id = finalization_batch.finalized_by_user_id
+        WHERE finalization_batch.shift_id = %s
+          AND finalization_batch.report_type = %s
+        GROUP BY
+            finalization_batch.id,
+            finalization_batch.report_type,
+            finalization_batch.finalized_at,
+            finalizer.display_name
+        ORDER BY finalization_batch.finalized_at DESC
+        LIMIT 1
+        """,
+        (shift_id, report_type),
+    )
+    row = cur.fetchone()
+    return dict(row) if row else None
 
 
 def fetch_shift_finalized_items(

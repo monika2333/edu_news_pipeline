@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadStats();
     if (state.currentTab === 'review') {
         loadReviewData();
+        if (IS_DUTY_WORKSPACE) loadDutyFinalizationStatus();
     } else {
         loadFilterData();
         loadFilterCounts();
@@ -85,12 +86,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     document.getElementById('btn-finalize-review')
         ?.addEventListener('click', finalizeCurrentDutyReview);
-    document.getElementById('btn-finalized-batches')
-        ?.addEventListener('click', openDutyFinalizationHistory);
-    document.getElementById('btn-close-finalization-history')
-        ?.addEventListener('click', () => setFinalizationHistoryOpen(false));
-    document.getElementById('finalization-history-list')
-        ?.addEventListener('click', handleFinalizationHistoryClick);
+    document.getElementById('btn-restore-finalization')
+        ?.addEventListener('click', restoreDutyFinalization);
 
     // Preview Modal Handlers
     const btnClosePreview = document.getElementById('btn-close-preview');

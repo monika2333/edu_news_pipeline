@@ -138,6 +138,18 @@ class FakeDutyReviewAdapter:
             for rank in (1, 2)
         ]
 
+    def fetch_shift_finalization_status(
+        self,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        return {
+            "batch_id": "batch-1",
+            "report_type": kwargs["report_type"],
+            "finalized_at": "2026-07-27T10:30:00+08:00",
+            "finalized_by_display_name": "值班编辑",
+            "item_count": 2,
+        }
+
     def restore_shift_review_finalization(self, **kwargs: Any) -> dict[str, Any]:
         self.restored = dict(kwargs)
         return {
@@ -494,21 +506,19 @@ def test_finalize_selected_batch_uses_editor_without_changing_decision(
     assert result["item_count"] == 2
 
 
-def test_list_finalized_batches_groups_items_in_frozen_order(
+def test_finalization_status_returns_single_current_finalization(
     fake_adapter: FakeDutyReviewAdapter,
 ) -> None:
-    result = duty_review_service.list_finalized_batches(
+    result = duty_review_service.get_finalization_status(
         shift_id="shift-id",
         user=_editor(),
         report_type="zongbao",
     )
 
-    assert result["total"] == 2
-    assert len(result["batches"]) == 1
-    assert result["batches"][0]["batch_id"] == "batch-1"
-    assert [
-        item["article_id"] for item in result["batches"][0]["items"]
-    ] == ["article-1", "article-2"]
+    assert result["finalized"] is True
+    assert result["finalization"]["batch_id"] == "batch-1"
+    assert result["finalization"]["item_count"] == 2
+    assert "items" not in result["finalization"]
 
 
 def test_restore_finalized_batch_returns_all_items_to_current_batch(

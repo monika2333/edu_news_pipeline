@@ -107,10 +107,18 @@
                         刷新会重新聚类，可能需要等待约 1 分钟
                     </span>
                 </span>
-                <button class="btn btn-secondary duty-finalization-action workspace-tab-action"
-                    id="btn-finalized-batches" data-workspace-action-tab="review" hidden>
-                    查看已定稿批次
-                </button>
+                <div class="duty-finalization-status duty-finalization-action workspace-tab-action"
+                    id="duty-finalization-status" data-workspace-action-tab="review"
+                    data-state="loading" aria-live="polite" hidden>
+                    <span class="duty-finalization-state">
+                        <span class="duty-finalization-dot" aria-hidden="true"></span>
+                        <span id="duty-finalization-status-text">正在读取定稿状态…</span>
+                    </span>
+                    <button class="btn btn-secondary" id="btn-restore-finalization"
+                        type="button" hidden>
+                        撤回定稿
+                    </button>
+                </div>
             </div>
         </div>
         {% elif not is_admin_review %}
@@ -278,22 +286,6 @@
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
                 <button class="btn btn-primary" id="btn-copy-preview">复制内容</button>
             </div>
-        </div>
-    </div>
-    {% endif %}
-
-    {% if is_duty_workspace %}
-    <div class="modal" id="finalization-history-modal" role="dialog" aria-modal="true"
-        aria-labelledby="finalization-history-title" aria-hidden="true">
-        <div class="modal-content finalization-history-content">
-            <div class="modal-header">
-                <div>
-                    <p class="finalization-history-kicker">历史记录</p>
-                    <h3 id="finalization-history-title">已定稿批次</h3>
-                </div>
-                <button class="btn btn-secondary" id="btn-close-finalization-history" type="button">关闭</button>
-            </div>
-            <div class="modal-body finalization-history-list" id="finalization-history-list"></div>
         </div>
     </div>
     {% endif %}

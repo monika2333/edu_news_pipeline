@@ -444,7 +444,7 @@ def finalize_selected_batch(
     }
 
 
-def list_finalized_batches(
+def get_finalization_status(
     *,
     shift_id: str,
     user: ConsoleUser,
@@ -452,37 +452,28 @@ def list_finalized_batches(
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user, allow_cancelled=True)
     _validate_report_type(report_type)
-    rows = get_adapter().fetch_shift_finalized_items(
+    row = get_adapter().fetch_shift_finalization_status(
         shift_id=shift_id,
         report_type=report_type,
     )
-    batches: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        batch_id = str(row["finalized_batch_id"])
-        batch = batches.setdefault(
-            batch_id,
-            {
-                "batch_id": batch_id,
-                "report_type": report_type,
-                "finalized_at": row.get("finalized_at"),
-                "finalized_by_display_name": row.get(
-                    "finalized_by_display_name"
-                ),
-                "items": [],
-            },
-        )
-        batch["items"].append(
-            serialize_review_item(row, fallback_report_type=report_type)
-        )
+    if not row:
+        return {
+            "finalized": False,
+            "report_type": report_type,
+            "finalization": None,
+        }
     return {
-        "batches": [
-            {
-                **batch,
-                "item_count": len(batch["items"]),
-            }
-            for batch in batches.values()
-        ],
-        "total": len(rows),
+        "finalized": True,
+        "report_type": report_type,
+        "finalization": {
+            "batch_id": str(row["batch_id"]),
+            "report_type": report_type,
+            "finalized_at": row.get("finalized_at"),
+            "finalized_by_display_name": row.get(
+                "finalized_by_display_name"
+            ),
+            "item_count": int(row.get("item_count") or 0),
+        },
     }
 
 
@@ -567,8 +558,8 @@ __all__ = [
     "build_preview",
     "check_duplicates",
     "finalize_selected_batch",
+    "get_finalization_status",
     "get_stats",
-    "list_finalized_batches",
     "list_clusters",
     "list_items",
     "save_edits",

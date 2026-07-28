@@ -261,14 +261,14 @@ def update_order(
 
 
 @router.get("/finalizations")
-def list_finalizations(
+def get_finalization_status(
     shift_id: str,
     report_type: ReportType = "zongbao",
     user: ConsoleUser = Depends(require_role("duty_editor")),
 ) -> dict[str, Any]:
-    """List finalized batches for the owned shift and report."""
+    """Return the single current finalization for the shift and report."""
     try:
-        return duty_review_service.list_finalized_batches(
+        return duty_review_service.get_finalization_status(
             shift_id=shift_id,
             user=user,
             report_type=report_type,

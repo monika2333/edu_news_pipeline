@@ -1,21 +1,7 @@
 // Duty-editor finalization batches. This is independent from administrator archive.
 
-function finalizationReportLabel() {
-    return state.reviewReportType === 'wanbao' ? '晚报' : '综报';
-}
-
-function formatFinalizationDateTime(value) {
-    if (!value) return '未知时间';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '未知时间';
-    return new Intl.DateTimeFormat('zh-CN', {
-        timeZone: 'Asia/Shanghai',
-        month: 'numeric',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-    }).format(date);
+function finalizationReportLabel(reportType = state.reviewReportType) {
+    return reportType === 'wanbao' ? '晚报' : '综报';
 }
 
 async function requestDutyFinalization(path, fallbackMessage, payload) {
@@ -28,88 +14,58 @@ async function requestDutyFinalization(path, fallbackMessage, payload) {
     return requireManualMutationSuccess(response, fallbackMessage);
 }
 
-function setFinalizationHistoryOpen(open) {
-    const modal = document.getElementById('finalization-history-modal');
-    if (!modal) return;
-    modal.classList.toggle('active', open);
-    modal.setAttribute('aria-hidden', String(!open));
-}
+function renderDutyFinalizationStatus(finalization) {
+    const container = document.getElementById('duty-finalization-status');
+    const text = document.getElementById('duty-finalization-status-text');
+    const restoreButton = document.getElementById('btn-restore-finalization');
+    const finalizeButton = document.getElementById('btn-finalize-review');
+    if (!container || !text || !restoreButton) return;
 
-function finalizationHistoryItemTemplate(item) {
-    const summary = item.edited_summary
-        || item.summary
-        || item.excerpt_text
-        || item.llm_summary
-        || '暂无摘要';
-    return `
-        <article class="finalization-history-item">
-            <div>
-                <h5>${escapeWorkspaceHtml(item.title || '无标题')}</h5>
-                <p>${escapeWorkspaceHtml(summary)}</p>
-            </div>
-        </article>`;
-}
-
-function renderFinalizationHistory(batches) {
-    const list = document.getElementById('finalization-history-list');
-    if (!list) return;
-    if (!batches.length) {
-        list.innerHTML = '<div class="empty empty-state">当前报告还没有已定稿批次。</div>';
-        return;
+    const finalized = Boolean(finalization?.batch_id);
+    container.dataset.state = finalized ? 'finalized' : 'empty';
+    if (finalized) {
+        text.textContent = `${finalizationReportLabel()}已定稿`;
+        restoreButton.dataset.batchId = finalization.batch_id;
+        restoreButton.hidden = false;
+    } else {
+        text.textContent = `${finalizationReportLabel()}尚未定稿`;
+        delete restoreButton.dataset.batchId;
+        restoreButton.hidden = true;
     }
-    list.innerHTML = batches.map(batch => `
-        <section class="finalization-history-batch">
-            <header>
-                <div>
-                    <h4>${escapeWorkspaceHtml(formatFinalizationDateTime(batch.finalized_at))} 定稿</h4>
-                    <p>
-                        ${escapeWorkspaceHtml(batch.finalized_by_display_name || '值班编辑')}
-                        · ${Number(batch.item_count) || 0} 条
-                    </p>
-                </div>
-                <button class="btn btn-secondary" type="button"
-                    data-finalization-restore-batch="${escapeWorkspaceHtml(batch.batch_id)}">
-                    整批撤回
-                </button>
-            </header>
-            <div class="finalization-history-items">
-                ${(batch.items || []).map(item => (
-                    finalizationHistoryItemTemplate(item)
-                )).join('')}
-            </div>
-        </section>
-    `).join('');
+    if (finalizeButton) {
+        finalizeButton.hidden = finalized;
+        finalizeButton.disabled = finalized;
+    }
 }
 
-function handleFinalizationHistoryClick(event) {
-    const button = event.target.closest('[data-finalization-restore-batch]');
-    if (button) restoreDutyFinalization(button);
-}
-
-async function loadDutyFinalizationHistory() {
-    const title = document.getElementById('finalization-history-title');
-    const list = document.getElementById('finalization-history-list');
-    if (title) title.textContent = `${finalizationReportLabel()}已定稿批次`;
-    if (list) list.innerHTML = renderSkeleton(3);
+async function loadDutyFinalizationStatus() {
+    if (!IS_DUTY_WORKSPACE) return;
+    const reportType = state.reviewReportType;
+    const container = document.getElementById('duty-finalization-status');
+    const text = document.getElementById('duty-finalization-status-text');
+    const restoreButton = document.getElementById('btn-restore-finalization');
+    const finalizeButton = document.getElementById('btn-finalize-review');
+    if (container) container.dataset.state = 'loading';
+    if (text) text.textContent = `正在读取${finalizationReportLabel(reportType)}定稿状态…`;
+    if (restoreButton) restoreButton.hidden = true;
+    if (finalizeButton) finalizeButton.disabled = true;
     const params = new URLSearchParams({
-        report_type: state.reviewReportType,
+        report_type: reportType,
         _t: String(Date.now())
     });
-    const payload = await requestDutyFinalization(
-        `/finalizations?${params.toString()}`,
-        '已定稿批次加载失败'
-    );
-    renderFinalizationHistory(payload.batches || []);
-}
-
-async function openDutyFinalizationHistory() {
-    if (!IS_DUTY_WORKSPACE) return;
-    setFinalizationHistoryOpen(true);
     try {
-        await loadDutyFinalizationHistory();
+        const payload = await requestDutyFinalization(
+            `/finalizations?${params.toString()}`,
+            '定稿状态加载失败'
+        );
+        if (state.reviewReportType !== reportType) return;
+        renderDutyFinalizationStatus(payload.finalization);
     } catch (error) {
-        setFinalizationHistoryOpen(false);
-        showToast(error.message || '已定稿批次加载失败', 'error');
+        if (state.reviewReportType !== reportType) return;
+        if (container) container.dataset.state = 'error';
+        if (text) text.textContent = `${finalizationReportLabel(reportType)}定稿状态加载失败`;
+        if (finalizeButton) finalizeButton.disabled = true;
+        showToast(error.message || '定稿状态加载失败', 'error');
     }
 }
 
@@ -142,6 +98,7 @@ async function finalizeCurrentDutyReview() {
             { report_type: state.reviewReportType }
         );
         clearDutyWorkspaceCache();
+        renderDutyFinalizationStatus(result);
         await Promise.all([loadReviewData(), loadStats()]);
         showToast(`已定稿 ${result.item_count} 条新闻`);
     } catch (error) {
@@ -151,10 +108,11 @@ async function finalizeCurrentDutyReview() {
     }
 }
 
-async function restoreDutyFinalization(button) {
-    const batchId = button.dataset.finalizationRestoreBatch;
+async function restoreDutyFinalization() {
+    const button = document.getElementById('btn-restore-finalization');
+    const batchId = button?.dataset.batchId;
     if (!batchId || !window.confirm(
-        '确定将这一整批新闻撤回当前采纳列表吗？'
+        `确定撤回当前${finalizationReportLabel()}定稿吗？撤回后新闻将返回采纳列表。`
     )) {
         return;
     }
@@ -167,11 +125,8 @@ async function restoreDutyFinalization(button) {
             {}
         );
         clearDutyWorkspaceCache();
-        await Promise.all([
-            loadReviewData(),
-            loadStats(),
-            loadDutyFinalizationHistory()
-        ]);
+        renderDutyFinalizationStatus(null);
+        await Promise.all([loadReviewData(), loadStats()]);
         showToast(`已撤回 ${result.restored} 条新闻`);
     } catch (error) {
         button.disabled = false;

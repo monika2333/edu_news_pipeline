@@ -436,6 +436,7 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert 'aria-describedby="refresh-cluster-hint"' in html
     assert "刷新会重新聚类，可能需要等待约 1 分钟" in html
     assert 'class="workspace-tabs-row"' in html
+    assert 'class="workspace-tab-actions"' in html
     assert 'class="filter-toggle workspace-tab-action"' in html
     assert 'id="filter-hide-submitted" checked>' in html
     assert html.index('id="filter-hide-submitted"') < html.index('id="btn-refresh"')

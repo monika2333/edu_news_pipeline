@@ -6,6 +6,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 Decision = Literal["pending", "selected", "backup", "discarded"]
 ReportType = Literal["zongbao", "wanbao"]
+ReviewGroupKey = Literal[
+    "internal_positive",
+    "internal_negative",
+    "external_positive",
+    "external_negative",
+]
 
 
 class DutyReviewUpdateRequest(BaseModel):
@@ -53,6 +59,7 @@ class DutyReviewRestoreFinalizationRequest(BaseModel):
 class DutyReviewOrderRequest(BaseModel):
     selected_order: list[str] = Field(default_factory=list)
     backup_order: list[str] = Field(default_factory=list)
+    group_orders: dict[ReviewGroupKey, list[str]] = Field(default_factory=dict)
 
 
 __all__ = [
@@ -66,4 +73,5 @@ __all__ = [
     "DutyReviewRestoreFinalizationRequest",
     "DutyReviewUpdateRequest",
     "ReportType",
+    "ReviewGroupKey",
 ]

@@ -284,7 +284,8 @@ async function dutyOrderResponse(options) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             selected_order: payload.selected_order || [],
-            backup_order: payload.backup_order || []
+            backup_order: payload.backup_order || [],
+            group_orders: payload.group_orders || {}
         })
     });
     if (response.ok) invalidateDutyListCache();

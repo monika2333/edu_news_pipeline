@@ -858,6 +858,7 @@ class PostgresAdapter:
         actor_user_id: str,
         selected_order: Sequence[str],
         backup_order: Sequence[str],
+        category_updates: Sequence[Mapping[str, Any]] = (),
         request_id: Optional[str] = None,
     ) -> int:
         with self.transaction() as cur:
@@ -868,6 +869,7 @@ class PostgresAdapter:
                 selected_order=selected_order,
                 backup_order=backup_order,
             )
+            news_summaries.update_summary_categories(cur, category_updates)
             audit.insert_review_event(
                 cur,
                 actor_user_id=actor_user_id,
@@ -878,6 +880,7 @@ class PostgresAdapter:
                 after_data={
                     "selected_order": list(selected_order),
                     "backup_order": list(backup_order),
+                    "category_updates": list(category_updates),
                 },
                 request_id=request_id,
             )

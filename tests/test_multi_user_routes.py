@@ -455,6 +455,35 @@ def test_stale_batch_review_decision_returns_409(monkeypatch) -> None:
     assert response.status_code == 409
 
 
+def test_editor_order_forwards_review_groups(monkeypatch) -> None:
+    editor = _user("duty_editor")
+    captured: dict[str, Any] = {}
+
+    def update_order(**kwargs: Any) -> dict[str, int]:
+        captured.update(kwargs)
+        return {
+            "selected": 1,
+            "backup": 0,
+            "updated": 1,
+            "updated_categories": 1,
+        }
+
+    monkeypatch.setattr(duty_review_service, "update_order", update_order)
+
+    response = _client_for(editor).put(
+        "/api/duty/shifts/shift-id/order",
+        json={
+            "selected_order": ["article-1"],
+            "backup_order": [],
+            "group_orders": {"internal_positive": ["article-1"]},
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["group_orders"] == {"internal_positive": ["article-1"]}
+    assert captured["user"].user_id == "editor-id"
+
+
 def test_editor_can_finalize_and_restore_owned_shift_batch(monkeypatch) -> None:
     editor = _user("duty_editor")
     calls: list[tuple[str, dict[str, Any]]] = []

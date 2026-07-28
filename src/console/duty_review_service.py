@@ -75,6 +75,42 @@ def _ensure_disjoint(groups: Mapping[str, Sequence[str]]) -> None:
             seen.add(article_id)
 
 
+def _build_review_category_updates(
+    group_orders: Mapping[str, Sequence[str]],
+    ordered_ids: set[str],
+) -> list[dict[str, Any]]:
+    updates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for group_key, group_ids in group_orders.items():
+        try:
+            region, sentiment = group_key.split("_", maxsplit=1)
+        except ValueError as exc:
+            raise ValueError(f"Invalid review group: {group_key}") from exc
+        if region not in {"internal", "external"} or sentiment not in {
+            "positive",
+            "negative",
+        }:
+            raise ValueError(f"Invalid review group: {group_key}")
+        for article_id in _normalize_ids(group_ids):
+            if article_id not in ordered_ids:
+                raise ValueError(
+                    f"Grouped article is missing from review order: {article_id}"
+                )
+            if article_id in seen:
+                raise ValueError(
+                    f"Article appears in multiple review groups: {article_id}"
+                )
+            seen.add(article_id)
+            updates.append(
+                {
+                    "article_id": article_id,
+                    "is_beijing_related": region == "internal",
+                    "sentiment_label": sentiment,
+                }
+            )
+    return updates
+
+
 def _require_shift_article(*, shift_id: str, article_id: str) -> str:
     normalized_article_id = str(article_id or "").strip()
     if not normalized_article_id:
@@ -458,26 +494,33 @@ def update_order(
     user: ConsoleUser,
     selected_order: Sequence[str],
     backup_order: Sequence[str],
+    group_orders: Optional[Mapping[str, Sequence[str]]] = None,
     request_id: Optional[str] = None,
 ) -> dict[str, int]:
     require_owned_shift(shift_id, user)
     actor_user_id = _require_actor_id(user)
-    selected = [article_id for article_id in selected_order if article_id]
-    backup = [article_id for article_id in backup_order if article_id]
+    selected = _normalize_ids(selected_order)
+    backup = _normalize_ids(backup_order)
     combined = selected + backup
     if len(combined) != len(set(combined)):
         raise ValueError("An article appears more than once in the order")
+    category_updates = _build_review_category_updates(
+        group_orders or {},
+        set(combined),
+    )
     updated = get_adapter().update_shift_review_order(
         shift_id=shift_id,
         actor_user_id=actor_user_id,
         selected_order=selected,
         backup_order=backup,
+        category_updates=category_updates,
         request_id=request_id,
     )
     return {
         "selected": len(selected),
         "backup": len(backup),
         "updated": updated,
+        "updated_categories": len(category_updates),
     }
 
 

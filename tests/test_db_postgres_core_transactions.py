@@ -382,3 +382,58 @@ def test_bulk_shift_review_update_rolls_back_after_late_failure(
         "save:article-2",
         "rollback",
     ]
+
+
+def test_shift_review_order_and_categories_share_one_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = object.__new__(db_postgres_core.PostgresAdapter)
+    cursor = object()
+    events: list[str] = []
+    category_updates = [
+        {
+            "article_id": "article-1",
+            "is_beijing_related": True,
+            "sentiment_label": "positive",
+        }
+    ]
+
+    @contextmanager
+    def fake_transaction() -> Iterator[object]:
+        events.append("begin")
+        yield cursor
+        events.append("commit")
+
+    adapter.transaction = fake_transaction
+    monkeypatch.setattr(
+        db_postgres_core.shift_reviews,
+        "update_shift_review_order",
+        lambda cur, **kwargs: events.append("order") or 1,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.news_summaries,
+        "update_summary_categories",
+        lambda cur, updates: events.append("categories") or len(updates),
+    )
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        lambda cur, **kwargs: events.append(kwargs["action"]),
+    )
+
+    updated = adapter.update_shift_review_order(
+        shift_id="shift-1",
+        actor_user_id="editor-1",
+        selected_order=["article-1"],
+        backup_order=[],
+        category_updates=category_updates,
+    )
+
+    assert updated == 1
+    assert events == [
+        "begin",
+        "order",
+        "categories",
+        "shift_review.reorder",
+        "commit",
+    ]

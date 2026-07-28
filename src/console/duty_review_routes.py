@@ -311,6 +311,7 @@ def update_order(
             user=user,
             selected_order=payload.selected_order,
             backup_order=payload.backup_order,
+            group_orders=payload.group_orders,
             request_id=request_id,
         )
     except (ValueError, PermissionError) as exc:

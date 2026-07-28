@@ -403,6 +403,50 @@ def test_order_rejects_duplicate_article_ids(monkeypatch) -> None:
         )
 
 
+def test_order_persists_review_groups_with_rank_updates(
+    fake_adapter: FakeDutyReviewAdapter,
+) -> None:
+    result = duty_review_service.update_order(
+        shift_id="shift-id",
+        user=_editor(),
+        selected_order=["article-1"],
+        backup_order=["article-2"],
+        group_orders={
+            "internal_positive": ["article-1"],
+            "external_negative": ["article-2"],
+        },
+    )
+
+    assert fake_adapter.ordered["category_updates"] == [
+        {
+            "article_id": "article-1",
+            "is_beijing_related": True,
+            "sentiment_label": "positive",
+        },
+        {
+            "article_id": "article-2",
+            "is_beijing_related": False,
+            "sentiment_label": "negative",
+        },
+    ]
+    assert result["updated_categories"] == 2
+
+
+def test_order_rejects_grouped_article_missing_from_review_order(
+    fake_adapter: FakeDutyReviewAdapter,
+) -> None:
+    with pytest.raises(ValueError, match="missing from review order"):
+        duty_review_service.update_order(
+            shift_id="shift-id",
+            user=_editor(),
+            selected_order=["article-1"],
+            backup_order=[],
+            group_orders={"internal_positive": ["article-2"]},
+        )
+
+    assert fake_adapter.ordered == {}
+
+
 def test_clusters_are_scoped_by_owned_shift_and_report_type(monkeypatch) -> None:
     adapter = FakeDutyReviewAdapter()
     ownership_checks: list[str] = []

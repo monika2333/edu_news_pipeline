@@ -605,6 +605,9 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert 'id="summary-process-filter"' in html
     assert 'data-admin-process-scope="unprocessed">未处理</button>' in html
     assert 'data-admin-process-scope="all">全部</button>' in html
+    assert 'summary-process-tab admin-view-link' in html
+    assert html.index('id="summary-import-bar"') < html.index('id="summary-process-filter"')
+    assert html.index('id="summary-process-filter"') < html.index('id="summary-import-target"')
     assert 'id="btn-import-results"' not in html
     assert "elements.importTarget.addEventListener('change', importSelectedItems)" in script
     assert "buildUndoToastAction" in script

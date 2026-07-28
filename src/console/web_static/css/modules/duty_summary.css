@@ -105,8 +105,10 @@
 
 .summary-process-filter {
     display: flex;
+    flex: 1;
     align-items: center;
-    gap: 6px;
+    justify-content: center;
+    min-width: 0;
 }
 
 .summary-process-filter[hidden] {
@@ -115,8 +117,16 @@
 
 .summary-process-tab {
     min-width: 66px;
-    justify-content: center;
-    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+@media (max-width: 768px) {
+    .summary-process-filter {
+        grid-column: 1 / -1;
+    }
 }
 
 .summary-import-bar[hidden] {

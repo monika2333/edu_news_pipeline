@@ -56,13 +56,6 @@
             </div>
             <p class="summary-workspace-context" id="summary-context">请选择班次</p>
             <div class="summary-result-tools">
-                <div class="summary-process-filter" id="summary-process-filter"
-                    role="group" aria-label="管理员处理状态">
-                    <button class="filter-tab-btn summary-process-tab active" type="button"
-                        aria-pressed="true" data-admin-process-scope="unprocessed">未处理</button>
-                    <button class="filter-tab-btn summary-process-tab" type="button"
-                        aria-pressed="false" data-admin-process-scope="all">全部</button>
-                </div>
                 <div class="summary-filters">
                     <select id="summary-comparison" aria-label="结果对比范围">
                         <option value="">当前栏目全部</option>
@@ -124,6 +117,15 @@
                                         <path d="m17 9-5 5"></path>
                                     </svg>
                                 </button>
+                            </div>
+                            <div class="summary-process-filter" id="summary-process-filter" role="group"
+                                aria-label="管理员处理状态">
+                                <div class="admin-view-switch">
+                                    <button class="summary-process-tab admin-view-link is-active" type="button"
+                                        aria-pressed="true" data-admin-process-scope="unprocessed">未处理</button>
+                                    <button class="summary-process-tab admin-view-link" type="button"
+                                        aria-pressed="false" data-admin-process-scope="all">全部</button>
+                                </div>
                             </div>
                             <div class="bulk-group">
                                 <label class="checkbox-label summary-select-all">

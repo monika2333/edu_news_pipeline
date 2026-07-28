@@ -535,7 +535,7 @@
         elements.processFilter.hidden = state.adminDiscarded;
         elements.processTabs.forEach(tab => {
             const active = tab.dataset.adminProcessScope === state.adminProcessScope;
-            tab.classList.toggle('active', active);
+            tab.classList.toggle('is-active', active);
             tab.setAttribute('aria-pressed', String(active));
         });
     }

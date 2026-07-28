@@ -31,13 +31,22 @@ def _build_editor_client() -> TestClient:
     return TestClient(app)
 
 
-def test_console_root_redirects_to_manual_filter() -> None:
+def test_console_root_redirects_admin_to_duty_summary() -> None:
     client = _build_client()
 
     response = client.get("/", follow_redirects=False)
 
     assert response.status_code == 307
-    assert response.headers["location"].endswith("/manual_filter")
+    assert response.headers["location"].endswith("/admin/duty-summary")
+
+
+def test_console_root_redirects_duty_editor_to_duty_workspace() -> None:
+    client = _build_editor_client()
+
+    response = client.get("/", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"].endswith("/duty")
 
 
 def test_removed_console_pages_are_not_registered() -> None:
@@ -375,7 +384,7 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
 
     assert response.status_code == 200
     html = response.text
-    assert "<title>新闻筛选控制台</title>" in html
+    assert "<title>新闻筛选控制台 · 全量新闻筛选</title>" in html
     assert "<h1>新闻筛选控制台</h1>" in html
     assert 'data-workspace-mode="admin"' in html
     assert 'aria-label="管理员主视图"' in html

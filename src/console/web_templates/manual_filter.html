@@ -6,7 +6,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>新闻筛选控制台{% if is_admin_review %} · 汇总审阅{% endif %}</title>
+    <title>新闻筛选控制台{% if is_admin_review %} · 汇总审阅{% elif not is_duty_workspace %} · 全量新闻筛选{% endif %}</title>
     <!-- CSS Core -->
     <link rel="stylesheet" href="/static/css/variables.css">
     <link rel="stylesheet" href="/static/css/base.css">

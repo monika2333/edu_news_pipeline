@@ -62,10 +62,10 @@ async def root_page(
     request: Request,
     user: ConsoleUser = Depends(require_console_user),
 ) -> RedirectResponse:
-    """Redirect the console root to the active manual filter workflow."""
+    """Redirect the console root to the active workflow for the user's role."""
     if user.role == "duty_editor":
         return RedirectResponse(url=request.url_for("duty_page"), status_code=307)
-    return RedirectResponse(url=request.url_for("manual_filter_page"), status_code=307)
+    return RedirectResponse(url=request.url_for("duty_summary_page"), status_code=307)
 
 
 @router.get("/duty", response_class=HTMLResponse)

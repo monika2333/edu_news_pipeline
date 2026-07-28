@@ -153,7 +153,35 @@
 }
 
 .summary-item .card-header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
+    gap: 14px;
+}
+
+.summary-title-line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.summary-title-line .article-title {
+    min-width: 0;
+}
+
+.summary-title-tags {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.summary-article-category {
+    color: #475569;
+    font-size: 0.82rem;
+    font-weight: 600;
 }
 
 .summary-item > .summary-box {
@@ -162,12 +190,14 @@
 }
 
 .summary-finalization-tag {
-    padding: 3px 8px;
+    padding: 2px 6px;
     border: 1px solid #bfdbfe;
     border-radius: 999px;
     background: #eff6ff;
     color: #1d4ed8;
-    font-weight: 700;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.3;
 }
 
 .summary-finalization-tag.is-pending {
@@ -177,12 +207,14 @@
 }
 
 .summary-admin-process-tag {
-    padding: 3px 8px;
+    padding: 2px 6px;
     border: 1px solid #d1d5db;
     border-radius: 999px;
     background: #f8fafc;
     color: #475569;
-    font-weight: 700;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.3;
 }
 
 .summary-admin-process-tag.is-processed {
@@ -226,6 +258,12 @@
 .summary-quick-discard.is-active {
     border-color: #fca5a5;
     background: #fef2f2;
+}
+
+.summary-quick-undo:not(:disabled):hover {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    color: #1d4ed8;
 }
 
 .summary-quick-action:focus-visible {
@@ -364,6 +402,22 @@
 }
 
 @media (max-width: 768px) {
+    .summary-item .card-header {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .summary-item .review-card-actions {
+        grid-column: 2;
+    }
+
+    .summary-title-line {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .summary-title-tags {
+        margin-top: 8px;
+    }
+
     .summary-import-bar {
         display: flex;
         align-items: stretch;

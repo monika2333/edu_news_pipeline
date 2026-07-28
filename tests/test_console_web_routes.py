@@ -519,6 +519,7 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert ".summary-workspace-context {" in stylesheet
     assert "font-size: 1rem;" in stylesheet
     assert "font-size: 1.25rem;" in stylesheet
+    assert "font-size: 0.78rem;" in stylesheet
 
 
 def test_duty_summary_exposes_column_tabs_search_and_select_all(
@@ -608,6 +609,11 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "function getVisibleItems()" in script
     assert "adminProcessScope: 'unprocessed'" in script
     assert "function adminProcessLabel(item)" in script
+    assert "function articleCategoryLabel(item)" in script
+    assert "item.is_beijing_related ? '京内' : '京外'" in script
+    assert "? '负面'" in script
+    assert ": '正面'" in script
+    assert 'class="summary-article-category"' in script
     assert 'class="summary-admin-process-tag' in script
     assert "elements.processTabs.forEach" in script
     assert "params.set('admin_unprocessed_only', 'true')" in script
@@ -649,10 +655,24 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "summary-shift-coverage" not in script
     assert '<article class="article-card summary-item">' in script
     assert '<div class="card-header">' in script
+    assert '<div class="summary-title-line">' in script
+    assert '<div class="summary-title-tags">' in script
     assert '<div class="meta-row">' in script
+    assert "<span>值班：${escapeHtml(item.decision || '未覆盖')}</span>" not in script
+    assert "<span>${escapeHtml(item.report_type || '')}</span>" not in script
     assert '<p class="summary-box">' in script
     assert 'data-quick-status="selected"' in script
     assert 'data-quick-status="discarded"' in script
+    assert 'data-cancel-selected="${String(selectedActive)}"' in script
+    assert 'data-cancel-discarded="${String(discardedActive)}"' in script
+    assert "const selectedActive = !discardedActive" in script
+    assert "data-admin-undo-action" in script
+    assert "function canUndoAdminProcess(item)" in script
+    assert "async function resetAdminDecision(button, item)" in script
+    assert "async function undoAdminProcessing(button)" in script
+    assert "await setManualReviewStatus(item, 'pending')" in script
+    assert "已撤回到未处理" in script
+    assert "buildUndoToastAction" in script
     assert "async function quickDecideItem(button)" in script
     assert "async function setAdminDiscarded(button, discarded)" in script
     assert "/api/admin/duty-summary/discard" in script

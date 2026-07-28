@@ -140,6 +140,56 @@
         return '未处理';
     }
 
+    function articleCategoryLabel(item) {
+        const region = item.is_beijing_related ? '京内' : '京外';
+        const sentiment = String(item.sentiment_label || '').toLowerCase() === 'negative'
+            ? '负面'
+            : '正面';
+        return `${region}${sentiment}`;
+    }
+
+    function findAdminItem(articleId) {
+        return state.items.find(item => item.article_id === articleId) || null;
+    }
+
+    function canUndoAdminProcess(item) {
+        if (item?.admin_status === 'exported') return false;
+        return Boolean(item.admin_discarded_at)
+            || ['selected', 'backup', 'discarded'].includes(item?.admin_status);
+    }
+
+    async function setManualReviewStatus(item, status, version = item.admin_version) {
+        if (!version) {
+            throw new Error('缺少撤回所需的记录版本，请刷新后重试');
+        }
+        const payload = {
+            selected_ids: [],
+            backup_ids: [],
+            discarded_ids: [],
+            pending_ids: [],
+            versions: { [item.article_id]: version },
+            report_type: item.admin_report_type === 'wanbao' ? 'wanbao' : 'zongbao'
+        };
+        payload[`${status}_ids`] = [item.article_id];
+        return request('/api/manual_filter/decide', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+    }
+
+    async function patchAdminDiscard(articleId, discarded) {
+        return request('/api/admin/duty-summary/discard', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                shift_id: state.shiftId,
+                article_id: articleId,
+                discarded
+            })
+        });
+    }
+
     function captureImportUndoTargets(articleIds) {
         const itemsById = new Map(state.items.map(item => [item.article_id, item]));
         const groups = new Map();
@@ -379,9 +429,10 @@
             return;
         }
         elements.items.innerHTML = visibleItems.map(item => {
-            const adminReportType = item.admin_report_type || 'zongbao';
-            const selectedActive = item.admin_status === 'selected'
-                && adminReportType === state.targetReportType;
+            const discardedActive = Boolean(item.admin_discarded_at)
+                || item.admin_status === 'discarded';
+            const selectedActive = !discardedActive && item.admin_status === 'selected';
+            const showUndoAction = canUndoAdminProcess(item);
             const adminProcessTag = `<span class="summary-admin-process-tag${
                 isAdminProcessed(item) ? ' is-processed' : ' is-pending'
             }">${escapeHtml(adminProcessLabel(item))}</span>`;
@@ -396,7 +447,13 @@
             <article class="article-card summary-item">
                 <div class="card-header">
                     ${state.adminDiscarded ? '' : `<input type="checkbox" data-article-id="${escapeHtml(item.article_id)}" ${state.selected.has(item.article_id) ? 'checked' : ''}>`}
-                    <h3 class="article-title">${escapeHtml(item.title || '无标题')}</h3>
+                    <div class="summary-title-line">
+                        <h3 class="article-title">${escapeHtml(item.title || '无标题')}</h3>
+                        <div class="summary-title-tags">
+                            ${adminProcessTag}
+                            ${finalizationTag}
+                        </div>
+                    </div>
                     ${state.adminDiscarded ? `
                         <div class="review-card-actions">
                             <button class="btn btn-secondary summary-restore-action" type="button"
@@ -410,34 +467,43 @@
                             <button class="summary-quick-action summary-quick-accept${selectedActive ? ' is-active' : ''}"
                                 type="button" data-quick-status="selected"
                                 data-article-id="${escapeHtml(item.article_id)}"
-                                aria-label="采纳这条新闻" title="采纳"
-                                aria-pressed="${String(selectedActive)}" ${selectedActive ? 'disabled' : ''}>
+                                data-cancel-selected="${String(selectedActive)}"
+                                aria-label="${selectedActive ? '取消采纳这条新闻' : '采纳这条新闻'}"
+                                title="${selectedActive ? '取消采纳' : '采纳'}"
+                                aria-pressed="${String(selectedActive)}">
                                 ✅
                             </button>
-                            <button class="summary-quick-action summary-quick-discard"
+                            <button class="summary-quick-action summary-quick-discard${discardedActive ? ' is-active' : ''}"
                                 type="button" data-quick-status="discarded"
                                 data-article-id="${escapeHtml(item.article_id)}"
-                                aria-label="放弃这条新闻" title="放弃">
+                                data-cancel-discarded="${String(discardedActive)}"
+                                aria-label="${discardedActive ? '取消放弃这条新闻' : '放弃这条新闻'}"
+                                title="${discardedActive ? '取消放弃' : '放弃'}"
+                                aria-pressed="${String(discardedActive)}">
                                 ❌
                             </button>
+                            ${showUndoAction ? `
+                                <button class="summary-quick-action summary-quick-undo"
+                                    type="button" data-admin-undo-action
+                                    data-article-id="${escapeHtml(item.article_id)}"
+                                    aria-label="撤回管理员处理" title="撤回处理">
+                                    ↩
+                                </button>
+                            ` : ''}
                         </div>
                     `}
                 </div>
                 <div class="meta-row">
-                        <span>值班：${escapeHtml(item.decision || '未覆盖')}</span>
-                        <span>${escapeHtml(item.report_type || '')}</span>
-                        ${adminProcessTag}
-                        ${finalizationTag}
                         ${state.adminDiscarded ? `<span>放弃人：${escapeHtml(item.admin_discarded_by_display_name || '管理员')}</span>` : ''}
                         <span>${escapeHtml(item.source || item.llm_source || '未知来源')}</span>
                         <span>${escapeHtml(formatDateTime(item.publish_time_iso || item.created_at))}</span>
+                        <span class="summary-article-category">${articleCategoryLabel(item)}</span>
                 </div>
                 <p class="summary-box">${escapeHtml(item.edited_summary || item.summary || item.llm_summary || '')}</p>
             </article>
         `;
         }).join('');
-        elements.items.querySelectorAll('[data-article-id]').forEach(checkbox => {
-            if (checkbox.matches('[data-quick-status]')) return;
+        elements.items.querySelectorAll('input[type="checkbox"][data-article-id]').forEach(checkbox => {
             checkbox.addEventListener('change', () => {
                 if (checkbox.checked) state.selected.add(checkbox.dataset.articleId);
                 else state.selected.delete(checkbox.dataset.articleId);
@@ -452,6 +518,11 @@
         elements.items.querySelectorAll('[data-admin-discard-action]').forEach(button => {
             button.addEventListener('click', () => {
                 setAdminDiscarded(button, false);
+            });
+        });
+        elements.items.querySelectorAll('[data-admin-undo-action]').forEach(button => {
+            button.addEventListener('click', () => {
+                undoAdminProcessing(button);
             });
         });
     }
@@ -471,7 +542,21 @@
 
     async function quickDecideItem(button) {
         if (button.disabled || !state.shiftId) return;
+        const item = findAdminItem(button.dataset.articleId);
+        if (!item) return;
+        if (button.dataset.cancelSelected === 'true') {
+            await resetAdminDecision(button, item);
+            return;
+        }
         if (button.dataset.quickStatus === 'discarded') {
+            if (
+                button.dataset.cancelDiscarded === 'true'
+                && !item.admin_discarded_at
+                && item.admin_status === 'discarded'
+            ) {
+                await resetAdminDecision(button, item);
+                return;
+            }
             await setAdminDiscarded(button, true);
             return;
         }
@@ -501,23 +586,97 @@
         }
     }
 
-    async function setAdminDiscarded(button, discarded) {
-        if (button.disabled || !state.shiftId) return;
+    async function resetAdminDecision(button, item) {
+        if (button.disabled) return;
         button.disabled = true;
         try {
-            await request('/api/admin/duty-summary/discard', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    shift_id: state.shiftId,
-                    article_id: button.dataset.articleId,
-                    discarded
-                })
+            const previousStatus = item.admin_status;
+            const result = await setManualReviewStatus(item, 'pending');
+            const nextVersion = result.versions?.[item.article_id];
+            const undoAction = buildUndoToastAction(async () => {
+                try {
+                    await setManualReviewStatus(item, previousStatus, nextVersion);
+                    showToast('已撤销操作');
+                    await Promise.all([loadSummary(), loadResults()]);
+                } catch (error) {
+                    showToast(error.message || '撤销失败', 'error');
+                }
             });
-            state.selected.delete(button.dataset.articleId);
-            showToast(discarded ? '已移入放弃栏目' : '已恢复到原栏目');
-            await loadSummary();
-            await loadResults();
+            state.selected.delete(item.article_id);
+            showToast('已撤回到未处理', 'success', undoAction);
+            await Promise.all([loadSummary(), loadResults()]);
+        } catch (error) {
+            button.disabled = false;
+            window.alert(error.message);
+        }
+    }
+
+    async function setAdminDiscarded(button, discarded) {
+        if (button.disabled || !state.shiftId) return;
+        const item = findAdminItem(button.dataset.articleId);
+        if (!item) return;
+        const nextDiscarded = button.dataset.cancelDiscarded === 'true'
+            ? false
+            : discarded;
+        button.disabled = true;
+        try {
+            await patchAdminDiscard(item.article_id, nextDiscarded);
+            const undoAction = buildUndoToastAction(async () => {
+                try {
+                    await patchAdminDiscard(item.article_id, !nextDiscarded);
+                    showToast('已撤销操作');
+                    await Promise.all([loadSummary(), loadResults()]);
+                } catch (error) {
+                    showToast(error.message || '撤销失败', 'error');
+                }
+            });
+            state.selected.delete(item.article_id);
+            showToast(
+                nextDiscarded ? '已移入放弃栏目' : '已恢复到原栏目',
+                'success',
+                undoAction
+            );
+            await Promise.all([loadSummary(), loadResults()]);
+        } catch (error) {
+            button.disabled = false;
+            window.alert(error.message);
+        }
+    }
+
+    async function undoAdminProcessing(button) {
+        if (button.disabled || !state.shiftId) return;
+        const item = findAdminItem(button.dataset.articleId);
+        if (!item) return;
+        button.disabled = true;
+        try {
+            const previousStatus = ['selected', 'backup', 'discarded'].includes(item.admin_status)
+                ? item.admin_status
+                : null;
+            let nextVersion = item.admin_version;
+            if (previousStatus) {
+                const result = await setManualReviewStatus(item, 'pending');
+                nextVersion = result.versions?.[item.article_id];
+            }
+            if (item.admin_discarded_at) {
+                await patchAdminDiscard(item.article_id, false);
+            }
+            const undoAction = buildUndoToastAction(async () => {
+                try {
+                    if (previousStatus) {
+                        await setManualReviewStatus(item, previousStatus, nextVersion);
+                    }
+                    if (item.admin_discarded_at) {
+                        await patchAdminDiscard(item.article_id, true);
+                    }
+                    showToast('已撤销操作');
+                    await Promise.all([loadSummary(), loadResults()]);
+                } catch (error) {
+                    showToast(error.message || '撤销失败', 'error');
+                }
+            });
+            state.selected.delete(item.article_id);
+            showToast('已撤回到未处理', 'success', undoAction);
+            await Promise.all([loadSummary(), loadResults()]);
         } catch (error) {
             button.disabled = false;
             window.alert(error.message);

@@ -59,6 +59,8 @@ def upsert_score_feedback(
     *,
     feedback_type: str,
     notes: Optional[str],
+    submitted_by: str,
+    submitted_by_user_id: Optional[str],
 ) -> dict[str, Any]:
     if not article_id:
         raise ValueError("upsert_score_feedback requires article_id")
@@ -74,14 +76,18 @@ def upsert_score_feedback(
             prompt_key,
             prompt_version,
             notes,
-            score_context
+            score_context,
+            submitted_by,
+            submitted_by_user_id
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (article_id, prompt_key, prompt_version) DO UPDATE SET
             feedback_type = EXCLUDED.feedback_type,
             score_value = EXCLUDED.score_value,
             notes = EXCLUDED.notes,
             score_context = EXCLUDED.score_context,
+            submitted_by = EXCLUDED.submitted_by,
+            submitted_by_user_id = EXCLUDED.submitted_by_user_id,
             updated_at = now()
         RETURNING
             feedback_type,
@@ -89,6 +95,8 @@ def upsert_score_feedback(
             prompt_key,
             prompt_version,
             notes,
+            submitted_by,
+            submitted_by_user_id,
             created_at,
             updated_at
         """,
@@ -100,6 +108,8 @@ def upsert_score_feedback(
             context["prompt_version"],
             notes,
             Json(context["score_context"]),
+            submitted_by,
+            submitted_by_user_id,
         ),
     )
     row = cur.fetchone()

@@ -6,6 +6,7 @@ import pytest
 
 from src.adapters import db_postgres_score_feedback
 from src.console import score_feedback_service
+from src.console.auth_service import ConsoleUser
 
 
 class FakeAdapter:
@@ -19,17 +20,31 @@ class FakeAdapter:
         *,
         feedback_type: str,
         notes: Optional[str],
+        submitted_by: str,
+        submitted_by_user_id: Optional[str],
     ) -> dict[str, Any]:
         self.saved = {
             "article_id": article_id,
             "feedback_type": feedback_type,
             "notes": notes,
+            "submitted_by": submitted_by,
+            "submitted_by_user_id": submitted_by_user_id,
         }
         return dict(self.saved)
 
     def clear_score_feedback(self, article_id: str) -> bool:
         self.cleared = article_id
         return True
+
+
+def _actor() -> ConsoleUser:
+    return ConsoleUser(
+        method="session",
+        user_id="admin-id",
+        username="admin",
+        display_name="管理员",
+        role="admin",
+    )
 
 
 def test_save_score_feedback_normalizes_request(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -40,12 +55,15 @@ def test_save_score_feedback_normalizes_request(monkeypatch: pytest.MonkeyPatch)
         article_id=" article/1 ",
         feedback_type="TOO_HIGH",
         notes="  理由  ",
+        actor=_actor(),
     )
 
     assert result == {
         "article_id": "article/1",
         "feedback_type": "too_high",
         "notes": "理由",
+        "submitted_by": "admin",
+        "submitted_by_user_id": "admin-id",
     }
 
 
@@ -57,6 +75,7 @@ def test_save_score_feedback_rejects_overlong_notes(monkeypatch: pytest.MonkeyPa
             article_id="article-1",
             feedback_type="too_low",
             notes="a" * 501,
+            actor=_actor(),
         )
 
 
@@ -68,8 +87,13 @@ def test_save_score_feedback_translates_missing_context(monkeypatch: pytest.Monk
             *,
             feedback_type: str,
             notes: Optional[str],
+            submitted_by: str,
+            submitted_by_user_id: Optional[str],
         ) -> dict[str, Any]:
-            raise db_postgres_score_feedback.ScoreFeedbackContextMissingError("missing context")
+            del article_id, feedback_type, notes, submitted_by, submitted_by_user_id
+            raise db_postgres_score_feedback.ScoreFeedbackContextMissingError(
+                "missing context"
+            )
 
     monkeypatch.setattr(score_feedback_service, "get_adapter", MissingContextAdapter)
 
@@ -77,6 +101,7 @@ def test_save_score_feedback_translates_missing_context(monkeypatch: pytest.Monk
         score_feedback_service.save_score_feedback(
             article_id="article-1",
             feedback_type="too_low",
+            actor=_actor(),
         )
 
 

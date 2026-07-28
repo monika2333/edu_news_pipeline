@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from typing import Any, Dict, List, Literal, NoReturn, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -17,6 +17,11 @@ from src.console.manual_filter_duplicate_service import (
     DuplicateReviewTimeoutError,
     DuplicateReviewUnavailableError,
 )
+from src.console.score_feedback_schemas import (
+    ClearScoreFeedbackRequest,
+    ScoreFeedbackRequest,
+    ScoreFeedbackResponse,
+)
 from src.console.security import ConsoleUser, require_console_user
 
 router = APIRouter(prefix="/api/manual_filter", tags=["manual_filter"])
@@ -29,27 +34,6 @@ class BulkDecideRequest(BaseModel):
     pending_ids: List[str] = Field(default_factory=list)
     versions: Dict[str, int] = Field(default_factory=dict)
     report_type: str = "zongbao"
-
-
-class ScoreFeedbackRequest(BaseModel):
-    article_id: str = Field(min_length=1)
-    feedback_type: Literal["too_high", "too_low"]
-    notes: Optional[str] = Field(default=None, max_length=score_feedback_service.MAX_NOTES_LENGTH)
-
-
-class ClearScoreFeedbackRequest(BaseModel):
-    article_id: str = Field(min_length=1)
-
-
-class ScoreFeedbackData(BaseModel):
-    feedback_type: Literal["too_high", "too_low"]
-    score_value: float
-    notes: Optional[str] = None
-    updated_at: datetime
-
-
-class ScoreFeedbackResponse(BaseModel):
-    score_feedback: Optional[ScoreFeedbackData] = None
 
 
 class SaveEditsRequest(BaseModel):
@@ -141,13 +125,17 @@ def trigger_clustering_api() -> Dict[str, Any]:
 
 
 @router.put("/score-feedback", response_model=ScoreFeedbackResponse)
-def save_score_feedback_api(req: ScoreFeedbackRequest) -> ScoreFeedbackResponse:
+def save_score_feedback_api(
+    req: ScoreFeedbackRequest,
+    user: ConsoleUser = Depends(require_console_user),
+) -> ScoreFeedbackResponse:
     """Create or update feedback for the article's current external score."""
     try:
         feedback = score_feedback_service.save_score_feedback(
             article_id=req.article_id,
             feedback_type=req.feedback_type,
             notes=req.notes,
+            actor=user,
         )
     except ValueError as exc:
         _raise_score_feedback_http_error(exc)

@@ -5,7 +5,7 @@ from typing import Any, NoReturn, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
-from src.console import duty_review_service, shifts_service
+from src.console import duty_review_service, score_feedback_service, shifts_service
 from src.console.auth_service import ConsoleUser
 from src.console.duty_review_schemas import (
     DutyReviewBatchDecisionRequest,
@@ -23,6 +23,11 @@ from src.console.manual_filter_duplicate_service import (
     DuplicateReviewTimeoutError,
     DuplicateReviewUnavailableError,
 )
+from src.console.score_feedback_schemas import (
+    ClearScoreFeedbackRequest,
+    ScoreFeedbackRequest,
+    ScoreFeedbackResponse,
+)
 from src.console.security import require_role
 
 router = APIRouter(prefix="/api/duty/shifts/{shift_id}", tags=["duty_reviews"])
@@ -33,6 +38,8 @@ def _raise_review_error(exc: Exception) -> NoReturn:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if isinstance(exc, shifts_service.ShiftPermissionError):
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    if isinstance(exc, duty_review_service.ShiftReviewArticleNotFoundError):
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     if isinstance(exc, duty_review_service.ShiftReviewConflictError):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -47,6 +54,14 @@ def _raise_duplicate_review_error(exc: Exception) -> NoReturn:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     if isinstance(exc, DuplicateReviewUnavailableError):
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    _raise_review_error(exc)
+
+
+def _raise_score_feedback_error(exc: ValueError) -> NoReturn:
+    if isinstance(exc, score_feedback_service.ScoreFeedbackNotFoundError):
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if isinstance(exc, score_feedback_service.ScoreFeedbackContextError):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     _raise_review_error(exc)
 
 
@@ -143,6 +158,44 @@ def list_reviews(
         )
     except (ValueError, PermissionError) as exc:
         _raise_review_error(exc)
+
+
+@router.put("/score-feedback", response_model=ScoreFeedbackResponse)
+def save_score_feedback(
+    shift_id: str,
+    payload: ScoreFeedbackRequest,
+    user: ConsoleUser = Depends(require_role("duty_editor")),
+) -> ScoreFeedbackResponse:
+    """Create or update score feedback for an article in the owned shift."""
+    try:
+        feedback = duty_review_service.save_score_feedback(
+            shift_id=shift_id,
+            article_id=payload.article_id,
+            feedback_type=payload.feedback_type,
+            notes=payload.notes,
+            user=user,
+        )
+    except (ValueError, PermissionError) as exc:
+        _raise_score_feedback_error(exc)
+    return ScoreFeedbackResponse(score_feedback=feedback)
+
+
+@router.post("/score-feedback/clear", response_model=ScoreFeedbackResponse)
+def clear_score_feedback(
+    shift_id: str,
+    payload: ClearScoreFeedbackRequest,
+    user: ConsoleUser = Depends(require_role("duty_editor")),
+) -> ScoreFeedbackResponse:
+    """Clear score feedback for an article in the owned shift."""
+    try:
+        duty_review_service.clear_score_feedback(
+            shift_id=shift_id,
+            article_id=payload.article_id,
+            user=user,
+        )
+    except (ValueError, PermissionError) as exc:
+        _raise_score_feedback_error(exc)
+    return ScoreFeedbackResponse(score_feedback=None)
 
 
 @router.post("/duplicate-check")

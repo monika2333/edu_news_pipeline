@@ -4,6 +4,7 @@ from typing import Any, Optional
 
 from src.adapters import db_postgres_score_feedback
 from src.adapters.db_postgres_core import get_adapter
+from src.console.auth_service import ConsoleUser
 
 MAX_NOTES_LENGTH = 500
 VALID_FEEDBACK_TYPES = frozenset({"too_high", "too_low"})
@@ -53,6 +54,7 @@ def save_score_feedback(
     article_id: str,
     feedback_type: str,
     notes: Optional[str] = None,
+    actor: ConsoleUser,
 ) -> dict[str, Any]:
     normalized_article_id = _normalize_article_id(article_id)
     normalized_feedback_type = _normalize_feedback_type(feedback_type)
@@ -63,6 +65,8 @@ def save_score_feedback(
             normalized_article_id,
             feedback_type=normalized_feedback_type,
             notes=normalized_notes,
+            submitted_by=actor.username,
+            submitted_by_user_id=actor.user_id,
         )
     except ValueError as exc:
         _translate_adapter_error(exc)

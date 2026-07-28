@@ -48,6 +48,8 @@ def _feedback_row(feedback_type: str = "too_high") -> dict[str, Any]:
         "prompt_key": "internal_positive",
         "prompt_version": "v1",
         "notes": "分数偏高",
+        "submitted_by": "admin",
+        "submitted_by_user_id": "admin-id",
         "created_at": timestamp,
         "updated_at": timestamp,
     }
@@ -61,6 +63,8 @@ def test_upsert_score_feedback_uses_current_score_context() -> None:
         "article-1",
         feedback_type="too_high",
         notes="分数偏高",
+        submitted_by="admin",
+        submitted_by_user_id="admin-id",
     )
 
     assert result["feedback_type"] == "too_high"
@@ -74,6 +78,7 @@ def test_upsert_score_feedback_uses_current_score_context() -> None:
         "v1",
         "分数偏高",
     )
+    assert cur.params[1][7:] == ("admin", "admin-id")
 
 
 def test_upsert_score_feedback_keeps_prompt_keys_independent() -> None:
@@ -92,6 +97,8 @@ def test_upsert_score_feedback_keeps_prompt_keys_independent() -> None:
         "article-1",
         feedback_type="too_low",
         notes=None,
+        submitted_by="editor",
+        submitted_by_user_id="editor-id",
     )
 
     assert cur.params[1][3:5] == ("external_negative", "v1")
@@ -117,6 +124,8 @@ def test_upsert_score_feedback_rejects_missing_article() -> None:
             "missing",
             feedback_type="too_high",
             notes=None,
+            submitted_by="admin",
+            submitted_by_user_id="admin-id",
         )
 
 
@@ -137,6 +146,8 @@ def test_upsert_score_feedback_rejects_incomplete_context(row: dict[str, Any]) -
         score_feedback.upsert_score_feedback(
             cur,
             "article-1",
-            feedback_type="too_high",
-            notes=None,
-        )
+                feedback_type="too_high",
+                notes=None,
+                submitted_by="admin",
+                submitted_by_user_id="admin-id",
+            )

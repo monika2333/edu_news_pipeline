@@ -784,6 +784,7 @@ def test_score_feedback_control_is_shared_across_manual_filter_tabs() -> None:
     scripts_dir = root / "src/console/web_static/js/manual_filter"
     response = _build_client().get("/manual_filter")
     feedback_script = (scripts_dir / "score_feedback.js").read_text(encoding="utf-8")
+    workspace_script = (scripts_dir / "workspace.js").read_text(encoding="utf-8")
     feedback_css = (
         root / "src/console/web_static/css/modules/score_feedback.css"
     ).read_text(encoding="utf-8")
@@ -800,4 +801,7 @@ def test_score_feedback_control_is_shared_across_manual_filter_tabs() -> None:
     assert "document.addEventListener('change'" in feedback_script
     assert "document.addEventListener('input'" in feedback_script
     assert "if (event.key !== 'Escape'" in feedback_script
+    assert "if (IS_DUTY_WORKSPACE)" not in feedback_script
+    assert "action === '/score-feedback'" in workspace_script
+    assert "action === '/score-feedback/clear'" in workspace_script
     assert ".score-feedback-popover" in feedback_css

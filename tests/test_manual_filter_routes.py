@@ -528,6 +528,7 @@ def test_score_feedback_api_saves_and_clears(monkeypatch) -> None:
     assert saved.status_code == 200
     assert saved.json()["score_feedback"]["feedback_type"] == "too_high"
     assert captured["article_id"] == "source/item/1"
+    assert captured["actor"].username == "tester"
     assert cleared.status_code == 200
     assert cleared.json() == {"score_feedback": None}
 

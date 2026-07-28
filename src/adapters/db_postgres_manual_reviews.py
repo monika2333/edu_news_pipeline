@@ -42,6 +42,9 @@ MANUAL_REVIEW_SELECT_COLUMNS = """
     sf.feedback_type AS score_feedback_type,
     sf.score_value AS score_feedback_score_value,
     sf.notes AS score_feedback_notes,
+    sf.submitted_by AS score_feedback_submitted_by,
+    sf.submitted_by_user_id AS score_feedback_submitted_by_user_id,
+    feedback_submitter.display_name AS score_feedback_submitted_by_display_name,
     sf.updated_at AS score_feedback_updated_at
 """
 
@@ -50,6 +53,8 @@ SCORE_FEEDBACK_JOIN = """
       ON sf.article_id = ns.article_id
      AND sf.prompt_key = ns.external_importance_raw ->> 'prompt_key'
      AND sf.prompt_version = ns.external_importance_raw ->> 'prompt_version'
+    LEFT JOIN console_users feedback_submitter
+      ON feedback_submitter.id = sf.submitted_by_user_id
 """
 
 
@@ -534,6 +539,9 @@ def fetch_manual_clusters(
             sf.feedback_type AS score_feedback_type,
             sf.score_value AS score_feedback_score_value,
             sf.notes AS score_feedback_notes,
+            sf.submitted_by AS score_feedback_submitted_by,
+            sf.submitted_by_user_id AS score_feedback_submitted_by_user_id,
+            feedback_submitter.display_name AS score_feedback_submitted_by_display_name,
             sf.updated_at AS score_feedback_updated_at
         FROM cluster_items ci
         JOIN manual_reviews mr ON mr.article_id = ci.article_id
@@ -542,6 +550,8 @@ def fetch_manual_clusters(
           ON sf.article_id = ns.article_id
          AND sf.prompt_key = ns.external_importance_raw ->> 'prompt_key'
          AND sf.prompt_version = ns.external_importance_raw ->> 'prompt_version'
+        LEFT JOIN console_users feedback_submitter
+          ON feedback_submitter.id = sf.submitted_by_user_id
         WHERE mr.status = 'pending'
           AND ns.status = 'ready_for_export'
         ORDER BY

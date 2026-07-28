@@ -212,6 +212,59 @@ def test_save_review_uses_authenticated_editor_id(
     assert result["decision"] == "selected"
 
 
+def test_score_feedback_is_scoped_to_owned_shift(
+    fake_adapter: FakeDutyReviewAdapter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def save_score_feedback(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"feedback_type": kwargs["feedback_type"]}
+
+    monkeypatch.setattr(
+        duty_review_service.score_feedback_service,
+        "save_score_feedback",
+        save_score_feedback,
+    )
+
+    result = duty_review_service.save_score_feedback(
+        shift_id="shift-id",
+        article_id=" article-1 ",
+        feedback_type="too_high",
+        notes="偏高",
+        user=_editor(),
+    )
+
+    assert result["feedback_type"] == "too_high"
+    assert fake_adapter.fetch_article_ids[-1] == ["article-1"]
+    assert captured["article_id"] == "article-1"
+    assert captured["actor"].user_id == "editor-id"
+
+
+def test_score_feedback_rejects_article_outside_shift(
+    fake_adapter: FakeDutyReviewAdapter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        fake_adapter,
+        "fetch_shift_review_items",
+        lambda **kwargs: ([], 0),
+    )
+
+    with pytest.raises(
+        duty_review_service.ShiftReviewArticleNotFoundError,
+        match="not available",
+    ):
+        duty_review_service.save_score_feedback(
+            shift_id="shift-id",
+            article_id="outside-article",
+            feedback_type="too_low",
+            notes=None,
+            user=_editor(),
+        )
+
+
 def test_save_edits_batches_article_ids_with_slashes(
     fake_adapter: FakeDutyReviewAdapter,
 ) -> None:

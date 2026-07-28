@@ -488,6 +488,8 @@ CREATE TABLE public.score_feedbacks (
     prompt_version text NOT NULL,
     notes text,
     score_context jsonb,
+    submitted_by text,
+    submitted_by_user_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT score_feedbacks_feedback_type_check CHECK ((feedback_type = ANY (ARRAY['too_high'::text, 'too_low'::text]))),
@@ -1088,6 +1090,13 @@ CREATE INDEX score_feedbacks_prompt_version_idx ON public.score_feedbacks USING 
 
 
 --
+-- Name: score_feedbacks_submitted_by_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX score_feedbacks_submitted_by_user_idx ON public.score_feedbacks USING btree (submitted_by_user_id);
+
+
+--
 -- Name: shift_review_finalization_batches_shift_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1316,6 +1325,14 @@ ALTER TABLE ONLY public.primary_articles
 
 ALTER TABLE ONLY public.score_feedbacks
     ADD CONSTRAINT score_feedbacks_article_id_fkey FOREIGN KEY (article_id) REFERENCES public.news_summaries(article_id) ON DELETE CASCADE;
+
+
+--
+-- Name: score_feedbacks score_feedbacks_submitted_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_feedbacks
+    ADD CONSTRAINT score_feedbacks_submitted_by_user_id_fkey FOREIGN KEY (submitted_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
 
 
 --

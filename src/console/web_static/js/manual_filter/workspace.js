@@ -305,6 +305,9 @@ async function workspaceFetch(input, options = {}) {
     }
     if (action === '/discarded') return dutyListResponse('discarded', url.searchParams);
     if (action === '/stats') return window.fetch(`${API_BASE}/stats${url.search}`, options);
+    if (action === '/score-feedback' || action === '/score-feedback/clear') {
+        return window.fetch(`${API_BASE}${action}`, options);
+    }
     if (action === '/edit') return dutyEditResponse(options);
     if (action === '/decide') return dutyDecideResponse(options);
     if (action === '/duplicate-check') return window.fetch(`${API_BASE}/duplicate-check`, options);

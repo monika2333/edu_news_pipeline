@@ -24,10 +24,6 @@ function getScoreFeedbackPresentation(feedbackType) {
 
 function renderScoreFeedbackControl(item) {
     const safe = item || {};
-    if (IS_DUTY_WORKSPACE) {
-        const score = escapeScoreFeedbackHtml(formatScore(safe.external_importance_score));
-        return `<div class="meta-item">分数: ${score}</div>`;
-    }
     const feedback = safe.score_feedback || null;
     const feedbackType = feedback && ['too_high', 'too_low'].includes(feedback.feedback_type)
         ? feedback.feedback_type

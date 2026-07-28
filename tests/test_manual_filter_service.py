@@ -422,6 +422,9 @@ def test_list_candidates_serializes_current_score_feedback(fake_adapter):
             "score_feedback_type": "too_high",
             "score_feedback_score_value": 80,
             "score_feedback_notes": "分数偏高",
+            "score_feedback_submitted_by": "editor",
+            "score_feedback_submitted_by_user_id": "editor-id",
+            "score_feedback_submitted_by_display_name": "值班编辑",
             "score_feedback_updated_at": "2026-07-22T10:00:00Z",
         }
     )
@@ -432,6 +435,9 @@ def test_list_candidates_serializes_current_score_feedback(fake_adapter):
         "feedback_type": "too_high",
         "score_value": 80,
         "notes": "分数偏高",
+        "submitted_by": "editor",
+        "submitted_by_user_id": "editor-id",
+        "submitted_by_display_name": "值班编辑",
         "updated_at": "2026-07-22T10:00:00Z",
     }
     assert result["items"][1]["score_feedback"] is None

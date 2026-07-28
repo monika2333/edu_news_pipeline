@@ -305,6 +305,58 @@ def test_editor_can_list_only_service_scoped_shifts(monkeypatch) -> None:
     assert response.json()["items"][0]["user_id"] == "editor-id"
 
 
+def test_editor_can_save_and_clear_score_feedback_in_owned_shift(monkeypatch) -> None:
+    editor = _user("duty_editor")
+    captured: list[tuple[str, dict[str, Any]]] = []
+
+    def save_score_feedback(**kwargs: Any) -> dict[str, Any]:
+        captured.append(("save", kwargs))
+        return {
+            "feedback_type": kwargs["feedback_type"],
+            "score_value": 82,
+            "notes": kwargs["notes"],
+            "submitted_by": kwargs["user"].username,
+            "submitted_by_user_id": kwargs["user"].user_id,
+            "updated_at": "2026-07-28T10:00:00Z",
+        }
+
+    def clear_score_feedback(**kwargs: Any) -> bool:
+        captured.append(("clear", kwargs))
+        return True
+
+    monkeypatch.setattr(
+        duty_review_service,
+        "save_score_feedback",
+        save_score_feedback,
+    )
+    monkeypatch.setattr(
+        duty_review_service,
+        "clear_score_feedback",
+        clear_score_feedback,
+    )
+    client = _client_for(editor)
+
+    saved = client.put(
+        "/api/duty/shifts/shift-id/score-feedback",
+        json={
+            "article_id": "source/item/1",
+            "feedback_type": "too_low",
+            "notes": "应提高分数",
+        },
+    )
+    cleared = client.post(
+        "/api/duty/shifts/shift-id/score-feedback/clear",
+        json={"article_id": "source/item/1"},
+    )
+
+    assert saved.status_code == 200
+    assert saved.json()["score_feedback"]["submitted_by_user_id"] == "editor-id"
+    assert cleared.status_code == 200
+    assert captured[0][1]["shift_id"] == "shift-id"
+    assert captured[0][1]["user"].user_id == "editor-id"
+    assert captured[1][1]["article_id"] == "source/item/1"
+
+
 def test_stale_review_update_returns_409(monkeypatch) -> None:
     editor = _user("duty_editor")
 

@@ -9,10 +9,18 @@ from src.adapters.db_postgres_shift_reviews import (
     VALID_DECISIONS,
     VALID_REPORT_TYPES,
 )
-from src.console import manual_filter_cluster, manual_filter_duplicate_service
+from src.console import (
+    manual_filter_cluster,
+    manual_filter_duplicate_service,
+    score_feedback_service,
+)
 from src.console.auth_service import ConsoleUser
 from src.console.manual_filter_serializers import serialize_manual_filter_item
 from src.console.shifts_service import require_owned_shift
+
+
+class ShiftReviewArticleNotFoundError(ValueError):
+    """Raised when an article is not available in the requested shift."""
 
 
 def _version_map(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
@@ -64,6 +72,62 @@ def _ensure_disjoint(groups: Mapping[str, Sequence[str]]) -> None:
                     f"{article_id} ({name})"
                 )
             seen.add(article_id)
+
+
+def _require_shift_article(*, shift_id: str, article_id: str) -> str:
+    normalized_article_id = str(article_id or "").strip()
+    if not normalized_article_id:
+        raise ValueError("article_id is required")
+    rows, _ = get_adapter().fetch_shift_review_items(
+        shift_id=shift_id,
+        decision=None,
+        report_type=None,
+        limit=1,
+        offset=0,
+        article_ids=[normalized_article_id],
+    )
+    if not rows:
+        raise ShiftReviewArticleNotFoundError(
+            f"Article is not available in shift: {normalized_article_id}"
+        )
+    return normalized_article_id
+
+
+def save_score_feedback(
+    *,
+    shift_id: str,
+    article_id: str,
+    feedback_type: str,
+    notes: Optional[str],
+    user: ConsoleUser,
+) -> dict[str, Any]:
+    require_owned_shift(shift_id, user)
+    target_article_id = _require_shift_article(
+        shift_id=shift_id,
+        article_id=article_id,
+    )
+    return score_feedback_service.save_score_feedback(
+        article_id=target_article_id,
+        feedback_type=feedback_type,
+        notes=notes,
+        actor=user,
+    )
+
+
+def clear_score_feedback(
+    *,
+    shift_id: str,
+    article_id: str,
+    user: ConsoleUser,
+) -> bool:
+    require_owned_shift(shift_id, user)
+    target_article_id = _require_shift_article(
+        shift_id=shift_id,
+        article_id=article_id,
+    )
+    return score_feedback_service.clear_score_feedback(
+        article_id=target_article_id,
+    )
 
 
 def serialize_review_item(
@@ -553,16 +617,19 @@ def build_preview(
 
 
 __all__ = [
+    "ShiftReviewArticleNotFoundError",
     "ShiftReviewConflictError",
     "bulk_decide",
     "build_preview",
     "check_duplicates",
+    "clear_score_feedback",
     "finalize_selected_batch",
     "get_finalization_status",
     "get_stats",
     "list_clusters",
     "list_items",
     "save_edits",
+    "save_score_feedback",
     "save_review",
     "serialize_review_item",
     "restore_finalized_batch",

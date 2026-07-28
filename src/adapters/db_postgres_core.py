@@ -1368,6 +1368,8 @@ class PostgresAdapter:
         *,
         feedback_type: str,
         notes: Optional[str],
+        submitted_by: str,
+        submitted_by_user_id: Optional[str],
     ) -> Dict[str, Any]:
         with self.transaction() as cur:
             return score_feedback.upsert_score_feedback(
@@ -1375,6 +1377,8 @@ class PostgresAdapter:
                 article_id,
                 feedback_type=feedback_type,
                 notes=notes,
+                submitted_by=submitted_by,
+                submitted_by_user_id=submitted_by_user_id,
             )
 
     def clear_score_feedback(self, article_id: str) -> bool:

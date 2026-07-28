@@ -61,6 +61,9 @@ SHIFT_REVIEW_SELECT = """
     sf.feedback_type AS score_feedback_type,
     sf.score_value AS score_feedback_score_value,
     sf.notes AS score_feedback_notes,
+    sf.submitted_by AS score_feedback_submitted_by,
+    sf.submitted_by_user_id AS score_feedback_submitted_by_user_id,
+    feedback_submitter.display_name AS score_feedback_submitted_by_display_name,
     sf.updated_at AS score_feedback_updated_at
 """
 

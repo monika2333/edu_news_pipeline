@@ -33,12 +33,24 @@ def serialize_manual_filter_item(
     feedback_type = item.pop("score_feedback_type", None)
     feedback_score = item.pop("score_feedback_score_value", None)
     feedback_notes = item.pop("score_feedback_notes", None)
+    feedback_submitted_by = item.pop("score_feedback_submitted_by", None)
+    feedback_submitted_by_user_id = item.pop(
+        "score_feedback_submitted_by_user_id",
+        None,
+    )
+    feedback_submitted_by_display_name = item.pop(
+        "score_feedback_submitted_by_display_name",
+        None,
+    )
     feedback_updated_at = item.pop("score_feedback_updated_at", None)
     item["score_feedback"] = (
         {
             "feedback_type": feedback_type,
             "score_value": feedback_score,
             "notes": feedback_notes,
+            "submitted_by": feedback_submitted_by,
+            "submitted_by_user_id": feedback_submitted_by_user_id,
+            "submitted_by_display_name": feedback_submitted_by_display_name,
             "updated_at": feedback_updated_at,
         }
         if feedback_type

@@ -613,8 +613,11 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "当前没有待处理新闻" in script
     assert 'class="summary-empty empty-state"' in script
     assert 'class="summary-finalization-tag' in script
-    assert "尚未定稿" in script
+    assert "已定稿" in script
+    assert "未定稿" in script
+    assert "尚未定稿" not in script
     assert "item.finalized_at" in script
+    assert "formatDateTime(item.finalized_at)" not in script
     assert "当前筛选没有记录。" not in script
     assert "tab.dataset.summaryView === 'discarded'" in script
     assert "elements.filterLayout.classList.toggle('is-discarded'" in script

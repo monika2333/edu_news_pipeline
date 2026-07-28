@@ -366,8 +366,8 @@
             const finalizationTag = item.decision === 'selected'
                 ? `<span class="summary-finalization-tag${item.finalized_at ? '' : ' is-pending'}">${
                     item.finalized_at
-                        ? `${escapeHtml(formatDateTime(item.finalized_at))} 定稿`
-                        : '尚未定稿'
+                        ? '已定稿'
+                        : '未定稿'
                 }</span>`
                 : '';
             return `

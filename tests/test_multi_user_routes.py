@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 
@@ -331,6 +332,7 @@ def test_editor_can_list_only_service_scoped_shifts(monkeypatch) -> None:
 
 def test_editor_can_save_and_clear_score_feedback_in_owned_shift(monkeypatch) -> None:
     editor = _user("duty_editor")
+    persisted_user_id = UUID("27b90bdd-e591-4d65-9ed9-e1614375947c")
     captured: list[tuple[str, dict[str, Any]]] = []
 
     def save_score_feedback(**kwargs: Any) -> dict[str, Any]:
@@ -340,7 +342,7 @@ def test_editor_can_save_and_clear_score_feedback_in_owned_shift(monkeypatch) ->
             "score_value": 82,
             "notes": kwargs["notes"],
             "submitted_by": kwargs["user"].username,
-            "submitted_by_user_id": kwargs["user"].user_id,
+            "submitted_by_user_id": persisted_user_id,
             "updated_at": "2026-07-28T10:00:00Z",
         }
 
@@ -374,7 +376,10 @@ def test_editor_can_save_and_clear_score_feedback_in_owned_shift(monkeypatch) ->
     )
 
     assert saved.status_code == 200
-    assert saved.json()["score_feedback"]["submitted_by_user_id"] == "editor-id"
+    assert (
+        saved.json()["score_feedback"]["submitted_by_user_id"]
+        == str(persisted_user_id)
+    )
     assert cleared.status_code == 200
     assert captured[0][1]["shift_id"] == "shift-id"
     assert captured[0][1]["user"].user_id == "editor-id"

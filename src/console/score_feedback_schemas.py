@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Literal, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -26,7 +27,7 @@ class ScoreFeedbackData(BaseModel):
     score_value: float
     notes: Optional[str] = None
     submitted_by: Optional[str] = None
-    submitted_by_user_id: Optional[str] = None
+    submitted_by_user_id: Optional[UUID] = None
     updated_at: datetime
 
 

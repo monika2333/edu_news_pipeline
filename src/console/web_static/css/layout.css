@@ -153,6 +153,7 @@ h1 {
     align-items: center;
     flex: 0 0 auto;
     margin-left: auto;
+    gap: 12px;
 }
 
 .workspace-tab-action[hidden] {

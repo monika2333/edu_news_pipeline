@@ -23,7 +23,7 @@ let state = {
     filterQuery: '',
     filterPublishedBefore: '',
     filterViewMode: 'browse',
-    hideSubmitted: false,
+    hideSubmitted: true,
     filterSearchTotal: 0,
     reviewView: 'selected',
     reviewReportType: 'zongbao',

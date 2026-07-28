@@ -597,6 +597,7 @@ class PostgresAdapter:
         include_admin_state: bool = False,
         admin_discarded_only: bool = False,
         exclude_admin_discarded: bool = False,
+        admin_unprocessed_only: bool = False,
         exclude_finalized: bool = False,
         hide_submitted: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
@@ -617,6 +618,7 @@ class PostgresAdapter:
                 include_admin_state=include_admin_state,
                 admin_discarded_only=admin_discarded_only,
                 exclude_admin_discarded=exclude_admin_discarded,
+                admin_unprocessed_only=admin_unprocessed_only,
                 exclude_finalized=exclude_finalized,
                 hide_submitted=hide_submitted,
             )

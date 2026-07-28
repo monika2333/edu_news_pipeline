@@ -89,6 +89,7 @@ def fetch_shift_review_items(
     include_admin_state: bool = False,
     admin_discarded_only: bool = False,
     exclude_admin_discarded: bool = False,
+    admin_unprocessed_only: bool = False,
     exclude_finalized: bool = False,
     hide_submitted: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
@@ -144,7 +145,12 @@ def fetch_shift_review_items(
             )
             """
         )
-    if admin_discarded_only:
+    if admin_unprocessed_only:
+        clauses.append("sr.admin_discarded_at IS NULL")
+        clauses.append(
+            "(mr.id IS NULL OR COALESCE(mr.status, 'pending') = 'pending')"
+        )
+    elif admin_discarded_only:
         clauses.append("sr.admin_discarded_at IS NOT NULL")
     elif exclude_admin_discarded:
         clauses.append("sr.admin_discarded_at IS NULL")
@@ -165,7 +171,7 @@ def fetch_shift_review_items(
     where_sql = " AND ".join(clauses)
     manual_join_sql = (
         "LEFT JOIN manual_reviews mr ON mr.article_id = ns.article_id"
-        if mismatch_only or include_admin_state
+        if mismatch_only or include_admin_state or admin_unprocessed_only
         else ""
     )
     admin_select_sql = (

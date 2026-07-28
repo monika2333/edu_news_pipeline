@@ -71,6 +71,8 @@ def shift_results(
     report_type: Optional[str] = None,
     mismatch_only: bool = False,
     admin_discarded_only: bool = False,
+    admin_unprocessed_only: bool = False,
+    include_admin_discarded: bool = False,
     limit: int = 200,
     offset: int = 0,
     user: ConsoleUser = Depends(require_role("admin")),
@@ -83,6 +85,8 @@ def shift_results(
             report_type=report_type,
             mismatch_only=mismatch_only,
             admin_discarded_only=admin_discarded_only,
+            admin_unprocessed_only=admin_unprocessed_only,
+            include_admin_discarded=include_admin_discarded,
             limit=limit,
             offset=offset,
         )

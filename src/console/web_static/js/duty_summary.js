@@ -8,6 +8,7 @@
         targetReportType: 'zongbao',
         targetStatus: 'selected',
         adminDiscarded: false,
+        adminProcessScope: 'unprocessed',
         selected: new Set(),
         pendingImport: null,
         pendingUndoTargets: [],
@@ -27,6 +28,8 @@
         searchClear: document.getElementById('summary-search-clear'),
         selectAll: document.getElementById('summary-select-all'),
         viewTabs: [...document.querySelectorAll('[data-summary-view]')],
+        processFilter: document.getElementById('summary-process-filter'),
+        processTabs: [...document.querySelectorAll('[data-admin-process-scope]')],
         columnTabs: [...document.querySelectorAll('.summary-column-tab')],
         filterLayout: document.getElementById('summary-filter-layout'),
         toast: document.getElementById('toast'),
@@ -122,6 +125,19 @@
     function selectedImportTarget() {
         const [reportType, targetStatus] = elements.importTarget.value.split(':');
         return { reportType, targetStatus };
+    }
+
+    function isAdminProcessed(item) {
+        return Boolean(item.admin_discarded_at)
+            || ['selected', 'backup', 'discarded', 'exported'].includes(item?.admin_status);
+    }
+
+    function adminProcessLabel(item) {
+        if (item.admin_discarded_at || item.admin_status === 'discarded') return '已放弃';
+        if (item.admin_status === 'selected') return '已采纳';
+        if (item.admin_status === 'backup') return '已备选';
+        if (item.admin_status === 'exported') return '已归档';
+        return '未处理';
     }
 
     function captureImportUndoTargets(articleIds) {
@@ -352,7 +368,10 @@
         const visibleItems = getVisibleItems();
         updateSelection(visibleItems);
         if (!state.items.length) {
-            elements.items.innerHTML = '<div class="summary-empty empty-state">当前没有待处理新闻</div>';
+            const emptyText = state.adminDiscarded || state.adminProcessScope === 'all'
+                ? '当前没有新闻'
+                : '当前没有待处理新闻';
+            elements.items.innerHTML = `<div class="summary-empty empty-state">${emptyText}</div>`;
             return;
         }
         if (!visibleItems.length) {
@@ -363,6 +382,9 @@
             const adminReportType = item.admin_report_type || 'zongbao';
             const selectedActive = item.admin_status === 'selected'
                 && adminReportType === state.targetReportType;
+            const adminProcessTag = `<span class="summary-admin-process-tag${
+                isAdminProcessed(item) ? ' is-processed' : ' is-pending'
+            }">${escapeHtml(adminProcessLabel(item))}</span>`;
             const finalizationTag = item.decision === 'selected'
                 ? `<span class="summary-finalization-tag${item.finalized_at ? '' : ' is-pending'}">${
                     item.finalized_at
@@ -404,8 +426,7 @@
                 <div class="meta-row">
                         <span>值班：${escapeHtml(item.decision || '未覆盖')}</span>
                         <span>${escapeHtml(item.report_type || '')}</span>
-                        <span>管理员：${escapeHtml(item.admin_status || 'pending')}</span>
-                        <span>${escapeHtml(item.admin_report_type || 'zongbao')}</span>
+                        ${adminProcessTag}
                         ${finalizationTag}
                         ${state.adminDiscarded ? `<span>放弃人：${escapeHtml(item.admin_discarded_by_display_name || '管理员')}</span>` : ''}
                         <span>${escapeHtml(item.source || item.llm_source || '未知来源')}</span>
@@ -437,6 +458,15 @@
 
     function syncSearchClearButton() {
         elements.searchClear.hidden = !elements.searchInput.value;
+    }
+
+    function syncAdminProcessTabs() {
+        elements.processFilter.hidden = state.adminDiscarded;
+        elements.processTabs.forEach(tab => {
+            const active = tab.dataset.adminProcessScope === state.adminProcessScope;
+            tab.classList.toggle('active', active);
+            tab.setAttribute('aria-pressed', String(active));
+        });
     }
 
     async function quickDecideItem(button) {
@@ -539,6 +569,11 @@
             params.set('admin_discarded_only', 'true');
         } else {
             params.set('decision', state.targetStatus);
+            if (state.adminProcessScope === 'unprocessed') {
+                params.set('admin_unprocessed_only', 'true');
+            } else {
+                params.set('include_admin_discarded', 'true');
+            }
             if (elements.comparison.value === 'mismatch') {
                 params.set('mismatch_only', 'true');
             }
@@ -566,6 +601,17 @@
     elements.comparison.addEventListener('change', () => {
         state.selected.clear();
         loadResults();
+    });
+
+    elements.processTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            state.adminProcessScope = tab.dataset.adminProcessScope === 'all'
+                ? 'all'
+                : 'unprocessed';
+            state.selected.clear();
+            syncAdminProcessTabs();
+            loadResults();
+        });
     });
 
     elements.searchInput.addEventListener('input', () => {
@@ -614,6 +660,7 @@
             elements.comparison.value = '';
             elements.comparison.disabled = state.adminDiscarded;
             elements.filterLayout.classList.toggle('is-discarded', state.adminDiscarded);
+            syncAdminProcessTabs();
             elements.viewTabs.forEach(item => {
                 const active = item === tab;
                 item.classList.toggle('active', active);
@@ -680,6 +727,7 @@
     });
 
     setShiftPanelOpen(false);
+    syncAdminProcessTabs();
     syncSearchClearButton();
     loadSummary()
         .then(() => {

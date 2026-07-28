@@ -81,6 +81,8 @@ def list_shift_results(
     limit: int,
     offset: int,
     admin_discarded_only: bool = False,
+    admin_unprocessed_only: bool = False,
+    include_admin_discarded: bool = False,
 ) -> dict[str, Any]:
     if not get_adapter().fetch_duty_shift(shift_id):
         raise ShiftNotFoundError("Duty shift not found")
@@ -88,6 +90,12 @@ def list_shift_results(
         raise ValueError(f"Invalid review decision: {decision}")
     if report_type and report_type not in VALID_REPORT_TYPES:
         raise ValueError(f"Invalid report type: {report_type}")
+    exclude_admin_discarded = (
+        not admin_discarded_only and not include_admin_discarded
+    )
+    only_admin_unprocessed = (
+        admin_unprocessed_only and not admin_discarded_only
+    )
     rows, total = get_adapter().fetch_shift_review_items(
         shift_id=shift_id,
         decision=None if admin_discarded_only else decision,
@@ -97,7 +105,8 @@ def list_shift_results(
         mismatch_only=mismatch_only and not admin_discarded_only,
         include_admin_state=True,
         admin_discarded_only=admin_discarded_only,
-        exclude_admin_discarded=not admin_discarded_only,
+        exclude_admin_discarded=exclude_admin_discarded,
+        admin_unprocessed_only=only_admin_unprocessed,
     )
     return {
         "items": [

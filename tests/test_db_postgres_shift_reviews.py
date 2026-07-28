@@ -148,6 +148,35 @@ def test_admin_result_queries_separate_active_and_discarded_items() -> None:
     )
 
 
+def test_admin_unprocessed_query_excludes_imported_and_discarded_items() -> None:
+    cursor = ShiftReviewListCursor()
+
+    db_postgres_shift_reviews.fetch_shift_review_items(
+        cursor,
+        shift_id="shift-1",
+        decision="selected",
+        report_type="zongbao",
+        limit=200,
+        offset=0,
+        include_admin_state=True,
+        admin_unprocessed_only=True,
+    )
+
+    assert all(
+        "LEFT JOIN manual_reviews mr ON mr.article_id = ns.article_id" in query
+        for query in cursor.queries
+    )
+    assert all(
+        "sr.admin_discarded_at IS NULL" in query
+        for query in cursor.queries
+    )
+    assert all(
+        "(mr.id IS NULL OR COALESCE(mr.status, 'pending') = 'pending')"
+        in query
+        for query in cursor.queries
+    )
+
+
 def test_shift_candidate_search_uses_body_without_selecting_it() -> None:
     cursor = ShiftReviewListCursor()
 

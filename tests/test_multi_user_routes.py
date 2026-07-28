@@ -188,6 +188,30 @@ def test_admin_can_bulk_discard_duty_results(monkeypatch) -> None:
     assert captured["article_ids"] == ["article-1", "article-2"]
 
 
+def test_admin_duty_summary_forwards_process_scope(monkeypatch) -> None:
+    admin = _user("admin")
+    captured: dict[str, object] = {}
+
+    def fake_list_results(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"items": [], "total": 0, "limit": 200, "offset": 0}
+
+    monkeypatch.setattr(
+        admin_summary_service,
+        "list_shift_results",
+        fake_list_results,
+    )
+
+    response = _client_for(admin).get(
+        "/api/admin/duty-summary/shift-1/reviews"
+        "?admin_unprocessed_only=true&include_admin_discarded=true"
+    )
+
+    assert response.status_code == 200
+    assert captured["admin_unprocessed_only"] is True
+    assert captured["include_admin_discarded"] is True
+
+
 def test_admin_can_delete_console_user(monkeypatch) -> None:
     admin = _user("admin")
     captured: dict[str, str] = {}

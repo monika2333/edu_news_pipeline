@@ -592,6 +592,9 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert 'id="summary-comparison"' in html
     assert html.index('id="summary-comparison"') < html.index('id="btn-toggle-shifts"')
     assert "当前栏目全部" in html
+    assert 'id="summary-process-filter"' in html
+    assert 'data-admin-process-scope="unprocessed">未处理</button>' in html
+    assert 'data-admin-process-scope="all">全部</button>' in html
     assert 'id="btn-import-results"' not in html
     assert "elements.importTarget.addEventListener('change', importSelectedItems)" in script
     assert "buildUndoToastAction" in script
@@ -603,6 +606,14 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert 'id="btn-keep-existing"' in html
     assert 'id="btn-keep-duty"' in html
     assert "function getVisibleItems()" in script
+    assert "adminProcessScope: 'unprocessed'" in script
+    assert "function adminProcessLabel(item)" in script
+    assert 'class="summary-admin-process-tag' in script
+    assert "elements.processTabs.forEach" in script
+    assert "params.set('admin_unprocessed_only', 'true')" in script
+    assert "params.set('include_admin_discarded', 'true')" in script
+    assert "已采纳" in script
+    assert "已放弃" in script
     assert "elements.selectAll.indeterminate" in script
     assert "tab.dataset.reportType" in script
     assert "tab.dataset.targetStatus" in script

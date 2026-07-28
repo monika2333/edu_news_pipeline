@@ -30,6 +30,7 @@ class FakeAdminSummaryAdapter:
         include_admin_state: bool,
         admin_discarded_only: bool,
         exclude_admin_discarded: bool,
+        admin_unprocessed_only: bool,
     ) -> tuple[list[dict[str, Any]], int]:
         self.review_query = {
             "shift_id": shift_id,
@@ -41,6 +42,7 @@ class FakeAdminSummaryAdapter:
             "include_admin_state": include_admin_state,
             "admin_discarded_only": admin_discarded_only,
             "exclude_admin_discarded": exclude_admin_discarded,
+            "admin_unprocessed_only": admin_unprocessed_only,
         }
         return [
             {
@@ -140,8 +142,51 @@ def test_shift_results_requests_and_returns_admin_mismatch_state(
     assert adapter.review_query["mismatch_only"] is True
     assert adapter.review_query["include_admin_state"] is True
     assert adapter.review_query["exclude_admin_discarded"] is True
+    assert adapter.review_query["admin_unprocessed_only"] is False
     assert result["items"][0]["admin_status"] == "selected"
     assert result["items"][0]["admin_report_type"] == "zongbao"
+
+
+def test_shift_results_can_request_only_admin_unprocessed_items(
+    monkeypatch,
+) -> None:
+    adapter = FakeAdminSummaryAdapter()
+    monkeypatch.setattr(admin_summary_service, "get_adapter", lambda: adapter)
+
+    admin_summary_service.list_shift_results(
+        shift_id="shift-1",
+        decision="selected",
+        report_type="zongbao",
+        mismatch_only=False,
+        admin_unprocessed_only=True,
+        include_admin_discarded=False,
+        limit=200,
+        offset=0,
+    )
+
+    assert adapter.review_query["admin_unprocessed_only"] is True
+    assert adapter.review_query["exclude_admin_discarded"] is True
+
+
+def test_shift_results_can_include_admin_discarded_in_all_scope(
+    monkeypatch,
+) -> None:
+    adapter = FakeAdminSummaryAdapter()
+    monkeypatch.setattr(admin_summary_service, "get_adapter", lambda: adapter)
+
+    admin_summary_service.list_shift_results(
+        shift_id="shift-1",
+        decision="selected",
+        report_type="zongbao",
+        mismatch_only=False,
+        admin_unprocessed_only=False,
+        include_admin_discarded=True,
+        limit=200,
+        offset=0,
+    )
+
+    assert adapter.review_query["admin_unprocessed_only"] is False
+    assert adapter.review_query["exclude_admin_discarded"] is False
 
 
 def test_shift_summaries_exclude_future_and_sort_latest_first(monkeypatch) -> None:
@@ -317,6 +362,7 @@ def test_admin_discarded_column_uses_shift_review_state(monkeypatch) -> None:
     assert adapter.review_query["mismatch_only"] is False
     assert adapter.review_query["admin_discarded_only"] is True
     assert adapter.review_query["exclude_admin_discarded"] is False
+    assert adapter.review_query["admin_unprocessed_only"] is False
     assert result["items"][0]["admin_discarded_by_display_name"] == "管理员"
 
 

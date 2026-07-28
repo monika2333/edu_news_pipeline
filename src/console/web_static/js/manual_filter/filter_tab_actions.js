@@ -338,6 +338,7 @@ async function reloadFilterPageAfterRemoval() {
         state.filterPage = currentPage - 1;
         await loadFilterData();
     }
+    window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
 async function discardRemainingItems() {

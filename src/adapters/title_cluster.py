@@ -7,6 +7,8 @@ import threading
 from typing import Sequence
 
 _DEFAULT_HF_HUB_ETAG_TIMEOUT = "20"
+_MODEL_DOWNLOAD_ENV = "TITLE_CLUSTER_ALLOW_MODEL_DOWNLOAD"
+_TRUE_VALUES = {"1", "true", "yes", "y", "on"}
 os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", _DEFAULT_HF_HUB_ETAG_TIMEOUT)
 
 from sentence_transformers import SentenceTransformer, util
@@ -21,10 +23,20 @@ _model: SentenceTransformer | None = None
 _model_lock = threading.Lock()
 
 
+def _model_download_allowed() -> bool:
+    value = os.getenv(_MODEL_DOWNLOAD_ENV, "")
+    return value.strip().lower() in _TRUE_VALUES
+
+
 def _load_model() -> SentenceTransformer:
     try:
         return SentenceTransformer(_DEFAULT_MODEL_NAME, local_files_only=True)
-    except OSError:
+    except OSError as exc:
+        if not _model_download_allowed():
+            raise RuntimeError(
+                f"Embedding model {_DEFAULT_MODEL_NAME!r} is unavailable locally. "
+                f"Set {_MODEL_DOWNLOAD_ENV}=1 to explicitly allow downloading it."
+            ) from exc
         return SentenceTransformer(_DEFAULT_MODEL_NAME)
 
 

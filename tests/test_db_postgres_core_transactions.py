@@ -2,11 +2,96 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any, Iterator
 
 import pytest
 
 from src.adapters import db_postgres_core
+
+
+def test_connection_uses_bounded_connect_and_keepalive_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executed: list[object] = []
+    connect_kwargs: dict[str, object] = {}
+
+    class FakeCursor:
+        def __enter__(self) -> "FakeCursor":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def execute(self, query: object) -> None:
+            executed.append(query)
+
+    class FakeConnection:
+        closed = False
+
+        def cursor(self) -> FakeCursor:
+            return FakeCursor()
+
+    def fake_connect(**kwargs: object) -> FakeConnection:
+        connect_kwargs.update(kwargs)
+        return FakeConnection()
+
+    monkeypatch.setattr(db_postgres_core, "_CONNECTION", None)
+    monkeypatch.setattr(db_postgres_core.psycopg, "connect", fake_connect)
+    monkeypatch.setattr(
+        db_postgres_core,
+        "get_settings",
+        lambda: SimpleNamespace(
+            db_host="db.example",
+            db_port=5432,
+            db_user="user",
+            db_password="password",
+            db_name="edu",
+            db_schema="public",
+        ),
+    )
+
+    connection = db_postgres_core._get_connection()
+
+    assert isinstance(connection, FakeConnection)
+    assert connect_kwargs == {
+        "host": "db.example",
+        "port": 5432,
+        "user": "user",
+        "password": "password",
+        "dbname": "edu",
+        "autocommit": True,
+        "connect_timeout": 10,
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 3,
+    }
+    assert len(executed) == 1
+
+
+def test_cluster_transaction_sets_local_statement_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = object.__new__(db_postgres_core.PostgresAdapter)
+    queries: list[str] = []
+
+    class FakeCursor:
+        def execute(self, query: str) -> None:
+            queries.append(query)
+
+    cursor = FakeCursor()
+
+    @contextmanager
+    def fake_transaction() -> Iterator[FakeCursor]:
+        yield cursor
+
+    monkeypatch.setattr(adapter, "transaction", fake_transaction)
+
+    with adapter._cluster_transaction() as cluster_cursor:
+        assert cluster_cursor is cursor
+
+    assert queries == ["SET LOCAL statement_timeout = '120s'"]
 
 
 def test_complete_external_filter_scores_and_enqueues_in_one_transaction(

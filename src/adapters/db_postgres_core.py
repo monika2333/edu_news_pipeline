@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from datetime import date, datetime, timezone
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Set, Tuple
 from zoneinfo import ZoneInfo
 
 import psycopg
@@ -30,6 +30,7 @@ from src.domain import BeijingGateCandidate, ExportCandidate, ExternalFilterCand
 _CONNECTION: Optional[psycopg.Connection] = None
 _ADAPTER: Optional["PostgresAdapter"] = None
 _BUSINESS_TIMEZONE = ZoneInfo("Asia/Shanghai")
+_CLUSTER_STATEMENT_TIMEOUT_SQL = "SET LOCAL statement_timeout = '120s'"
 
 
 def _future_shift_error_message(
@@ -65,6 +66,11 @@ def _get_connection() -> psycopg.Connection:
             password=settings.db_password,
             dbname=settings.db_name,
             autocommit=True,
+            connect_timeout=10,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=3,
         )
         schema = settings.db_schema or "public"
         with _CONNECTION.cursor() as cur:
@@ -102,6 +108,12 @@ class PostgresAdapter:
         finally:
             cur.close()
             self._conn.autocommit = prev_autocommit
+
+    @contextlib.contextmanager
+    def _cluster_transaction(self) -> Iterator[Any]:
+        with self.transaction() as cur:
+            cur.execute(_CLUSTER_STATEMENT_TIMEOUT_SQL)
+            yield cur
 
     @contextlib.contextmanager
     def _cursor(self):
@@ -630,7 +642,7 @@ class PostgresAdapter:
         report_type: str,
         hide_submitted: bool = False,
     ) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
+        with self._cluster_transaction() as cur:
             return shift_reviews.fetch_shift_clusters(
                 cur,
                 shift_id=shift_id,
@@ -1555,7 +1567,7 @@ class PostgresAdapter:
         report_type: Optional[str] = None,
         hide_submitted: bool = False,
     ) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
+        with self._cluster_transaction() as cur:
             return manual_reviews.fetch_manual_pending_for_cluster(
                 cur,
                 region=region,
@@ -1651,7 +1663,7 @@ class PostgresAdapter:
         *,
         report_type: Optional[str] = None,
     ) -> int:
-        with self.transaction() as cur:
+        with self._cluster_transaction() as cur:
             manual_reviews.delete_manual_clusters(cur, report_type=report_type)
             return manual_reviews.insert_manual_clusters(cur, clusters, report_type=report_type)
 
@@ -1662,7 +1674,7 @@ class PostgresAdapter:
         report_type: Optional[str] = None,
         hide_submitted: bool = False,
     ) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
+        with self._cluster_transaction() as cur:
             return manual_reviews.fetch_manual_clusters(
                 cur,
                 bucket_key=bucket_key,

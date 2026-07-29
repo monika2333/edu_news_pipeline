@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from src.adapters import title_cluster
 
 
@@ -32,9 +34,25 @@ def test_load_model_prefers_local_cache(monkeypatch) -> None:
     assert _FakeSentenceTransformer.calls == [("BAAI/bge-large-zh", True)]
 
 
-def test_load_model_falls_back_to_online_when_local_cache_missing(monkeypatch) -> None:
+def test_load_model_raises_when_local_cache_missing_by_default(monkeypatch) -> None:
     monkeypatch.setattr(title_cluster, "_model", None)
     monkeypatch.setattr(title_cluster, "SentenceTransformer", _FakeSentenceTransformer)
+    monkeypatch.delenv(title_cluster._MODEL_DOWNLOAD_ENV, raising=False)
+    _FakeSentenceTransformer.calls = []
+    _FakeSentenceTransformer.fail_local = True
+
+    with pytest.raises(RuntimeError, match="explicitly allow downloading"):
+        title_cluster._get_model()
+
+    assert _FakeSentenceTransformer.calls == [("BAAI/bge-large-zh", True)]
+
+
+def test_load_model_falls_back_online_only_when_explicitly_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(title_cluster, "_model", None)
+    monkeypatch.setattr(title_cluster, "SentenceTransformer", _FakeSentenceTransformer)
+    monkeypatch.setenv(title_cluster._MODEL_DOWNLOAD_ENV, "true")
     _FakeSentenceTransformer.calls = []
     _FakeSentenceTransformer.fail_local = True
 

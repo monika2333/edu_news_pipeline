@@ -3,22 +3,22 @@
 import argparse
 import getpass
 import os
+import sys
+import threading
+import time
 from pathlib import Path
 
 from src.workers.crawl_sources import run as crawl_sources
 from src.workers.enrich_summary import run as enrich_summaries
-from src.workers.export_brief import run as export_brief
 from src.workers.external_filter import run as run_external_filter
 from src.workers.geo_classify import run as classify_geography
 from src.workers.geo_tag import run as geo_tag
 from src.workers.hash_primary import run as hash_primary
 from src.workers.repair_missing_content import run as repair_missing
 from src.workers.score import run as score_summaries
-from src.workers.submission_dedup import (
-    backfill_archive_embeddings,
-    run as run_submission_dedup,
-)
 from src.workers.summarize import run as summarize_articles
+
+_MANUAL_CLUSTER_WATCHDOG_SECONDS = 600
 
 
 def _positive_int(value: str) -> int:
@@ -239,12 +239,29 @@ def _generate_shifts(days: int) -> None:
     )
 
 
-def _refresh_manual_clusters(report_type: str) -> None:
+def _watchdog(seconds: int) -> None:
+    def kill() -> None:
+        time.sleep(seconds)
+        print(
+            "TIMEOUT: refresh-manual-clusters exceeded limit",
+            file=sys.stderr,
+            flush=True,
+        )
+        os._exit(3)
+
+    threading.Thread(target=kill, daemon=True).start()
+
+
+def _refresh_manual_clusters(report_type: str) -> int:
+    _watchdog(_MANUAL_CLUSTER_WATCHDOG_SECONDS)
     from src.console.manual_filter_service import trigger_clustering
 
     result = trigger_clustering(report_type=report_type)
-    status = "refreshed" if result["refreshed"] else "skipped (already running)"
-    print(f"Manual clusters for {report_type}: {status}")
+    if result["refreshed"]:
+        print(f"Manual clusters for {report_type}: refreshed")
+        return 0
+    print(f"Manual clusters for {report_type}: skipped (already running)")
+    return 2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -269,7 +286,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -291,11 +308,17 @@ def main(argv: list[str] | None = None) -> None:
     elif command == "external-filter":
         run_external_filter(limit=args.limit, concurrency=args.concurrency)
     elif command == "submission-dedup":
+        from src.workers.submission_dedup import run as run_submission_dedup
+
         run_submission_dedup(limit=args.limit)
     elif command == "backfill-submission-embeddings":
+        from src.workers.submission_dedup import backfill_archive_embeddings
+
         count = backfill_archive_embeddings(batch_size=args.batch_size)
         print(f"Embedded {count} submission archive items")
     elif command == "export":
+        from src.workers.export_brief import run as export_brief
+
         export_brief(
             limit=args.limit,
             date=args.date,
@@ -314,13 +337,14 @@ def main(argv: list[str] | None = None) -> None:
     elif command == "generate-shifts":
         _generate_shifts(args.days)
     elif command == "refresh-manual-clusters":
-        _refresh_manual_clusters(args.report_type)
+        return _refresh_manual_clusters(args.report_type)
     else:
         parser.error(f"Unknown command: {command}")
+    return 0
 
 
 __all__ = ["build_parser", "main"]
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

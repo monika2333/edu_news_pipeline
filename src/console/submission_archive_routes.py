@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, NoReturn, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from src.console import submission_archive_service
 from src.console.security import ConsoleUser, require_console_user, require_role
@@ -12,6 +12,9 @@ from src.console.submission_archive_schemas import (
     CreateSubmissionReportRequest,
     LinkDecisionRequest,
     ParseSubmissionReportRequest,
+)
+from src.workers.submission_archive_processing import (
+    launch_submission_report_processing,
 )
 
 router = APIRouter(
@@ -42,20 +45,8 @@ def _raise_service_error(exc: Exception) -> NoReturn:
     raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-def _process_report_in_background(report_id: str) -> None:
-    from src.workers.submission_dedup import backfill_archive_embeddings
-
-    try:
-        submission_archive_service.process_report_links(report_id)
-    finally:
-        backfill_archive_embeddings()
-
-
-def _schedule_report_processing(
-    background_tasks: BackgroundTasks,
-    report_id: str,
-) -> None:
-    background_tasks.add_task(_process_report_in_background, report_id)
+def _schedule_report_processing(report_id: str) -> None:
+    launch_submission_report_processing(report_id)
 
 
 @router.post("/parse")
@@ -72,7 +63,6 @@ def parse_report_api(
 @router.post("/reports")
 def create_report_api(
     req: CreateSubmissionReportRequest,
-    background_tasks: BackgroundTasks,
     _user: ConsoleUser = Depends(require_role("admin")),
 ) -> dict[str, Any]:
     try:
@@ -88,10 +78,7 @@ def create_report_api(
         )
     except (ValueError, RuntimeError) as exc:
         _raise_service_error(exc)
-    _schedule_report_processing(
-        background_tasks,
-        str(result["report"]["id"]),
-    )
+    _schedule_report_processing(str(result["report"]["id"]))
     return result
 
 
@@ -138,14 +125,13 @@ def delete_report_api(
 @router.post("/reports/{report_id}/reparse")
 def reparse_report_api(
     report_id: str,
-    background_tasks: BackgroundTasks,
     _user: ConsoleUser = Depends(require_role("admin")),
 ) -> dict[str, Any]:
     try:
         result = submission_archive_service.reparse_report(report_id)
     except (ValueError, RuntimeError) as exc:
         _raise_service_error(exc)
-    _schedule_report_processing(background_tasks, report_id)
+    _schedule_report_processing(report_id)
     return result
 
 

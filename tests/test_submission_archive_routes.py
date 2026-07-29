@@ -4,7 +4,6 @@ from collections.abc import Callable
 from datetime import date
 
 import pytest
-from fastapi import BackgroundTasks
 from fastapi.testclient import TestClient
 
 from src.console import submission_archive_routes, submission_archive_service
@@ -71,7 +70,7 @@ def test_duty_editor_cannot_use_report_import_api() -> None:
 def test_create_report_api_returns_before_link_processing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    processing_calls: list[str] = []
+    launched_report_ids: list[str] = []
 
     def fake_create_report(**_kwargs: object) -> dict[str, object]:
         return {
@@ -85,11 +84,10 @@ def test_create_report_api_returns_before_link_processing(
         fake_create_report,
     )
     monkeypatch.setattr(
-        submission_archive_service,
-        "process_report_links",
-        processing_calls.append,
+        submission_archive_routes,
+        "launch_submission_report_processing",
+        launched_report_ids.append,
     )
-    background_tasks = BackgroundTasks()
     request = CreateSubmissionReportRequest(
         report_type="zongbao",
         report_date=date(2026, 7, 29),
@@ -100,11 +98,8 @@ def test_create_report_api_returns_before_link_processing(
 
     result = submission_archive_routes.create_report_api(
         request,
-        background_tasks,
         _admin(),
     )
 
     assert result["report"]["id"] == "report-id"
-    assert processing_calls == []
-    assert len(background_tasks.tasks) == 1
-    assert background_tasks.tasks[0].args == ("report-id",)
+    assert launched_report_ids == ["report-id"]

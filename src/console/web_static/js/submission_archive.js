@@ -95,8 +95,9 @@
     const listState = { offset: 0, total: 0, loading: false, type: '' };
     let activeReportId = initialReportId;
     let reportRefreshTimer = null;
+    let activeReportStatusSignature = '';
 
-    function reportCard(report) {
+    function reportCardStatsHtml(report) {
         const linked = Number(report.exact_count || 0) + Number(report.fuzzy_count || 0)
             + Number(report.manual_count || 0);
         const processing = Number(report.processing_count || 0);
@@ -112,6 +113,17 @@
                 ${unmatched ? `<span class="seg-unmatched" style="width:${pct(unmatched)}%"></span>` : ''}
             </div>` : '';
         return `
+            ${bar}
+            <div class="archive-report-card-counts">
+                <span><strong>${report.item_count || 0}</strong> 条</span>
+                ${processing ? `<span>正在判断 ${processing}</span>` : ''}
+                ${pending ? `<span class="has-pending">待确认 ${pending}</span>` : ''}
+            </div>
+        `;
+    }
+
+    function reportCard(report) {
+        return `
             <button class="archive-report-card${report.id === activeReportId ? ' is-active' : ''}"
                 data-report-id="${report.id}" type="button">
                 <div class="archive-report-card-top">
@@ -120,12 +132,7 @@
                 </div>
                 <div class="archive-report-card-issue">${escapeHtml(report.issue_no || '无期号')}</div>
                 <div class="archive-report-card-stats">
-                    ${bar}
-                    <div class="archive-report-card-counts">
-                        <span><strong>${report.item_count || 0}</strong> 条</span>
-                        ${processing ? `<span>正在判断 ${processing}</span>` : ''}
-                        ${pending ? `<span class="has-pending">待确认 ${pending}</span>` : ''}
-                    </div>
+                    ${reportCardStatsHtml(report)}
                 </div>
             </button>
         `;
@@ -198,7 +205,7 @@
         const auto = stats.exact + stats.fuzzy + stats.manual;
         const uncovered = stats.unmatched + stats.rejected;
         return `
-            <div class="archive-stat-chips">
+            <div class="archive-stat-chips" id="archive-detail-stats">
                 <span class="archive-stat-chip">共 <strong>${items.length}</strong> 条</span>
                 ${stats.processing ? `<span class="archive-stat-chip is-processing">正在判断 <strong>${stats.processing}</strong></span>` : ''}
                 <span class="archive-stat-chip is-linked">已回链 <strong>${auto}</strong></span>
@@ -208,7 +215,7 @@
         `;
     }
 
-    function detailItemCard(item) {
+    function detailItemMetaHtml(item) {
         const meta = [];
         meta.push(`来源：${escapeHtml(item.source || '-')}`);
         (item.urls || []).forEach(url => {
@@ -221,15 +228,20 @@
         if (item.link_status === 'pending') {
             meta.push('<a href="/submission-archive/link-queue">去确认</a>');
         }
+        return meta.map(part => `<span>${part}</span>`).join('');
+    }
+
+    function detailItemCard(item) {
         return `
-            <article class="archive-item${item.link_status === 'pending' ? ' is-pending' : ''}${item.link_status === 'processing' ? ' is-processing' : ''}">
+            <article class="archive-item${item.link_status === 'pending' ? ' is-pending' : ''}${item.link_status === 'processing' ? ' is-processing' : ''}"
+                data-item-id="${escapeHtml(item.id)}">
                 <div class="archive-item-head">
                     <span class="archive-item-order">${item.order_index + 1}</span>
                     <h4 class="archive-item-title">${escapeHtml(item.title)}</h4>
                     ${linkPill(item.link_status)}
                 </div>
                 ${item.body ? `<p class="archive-item-body">${escapeHtml(item.body)}</p>` : ''}
-                <div class="archive-item-meta">${meta.map(part => `<span>${part}</span>`).join('')}</div>
+                <div class="archive-item-meta">${detailItemMetaHtml(item)}</div>
             </article>
         `;
     }
@@ -248,6 +260,95 @@
         return parts.join('');
     }
 
+    function reportStatusSignature(items) {
+        return items.map(item => [
+            item.id,
+            item.link_status,
+            item.link_combined_score ?? '',
+            item.article_id ?? '',
+            item.best_candidate_article_id ?? ''
+        ].join(':')).join('|');
+    }
+
+    function reportCountsFromItems(items) {
+        const counts = {
+            item_count: items.length,
+            processing_count: 0,
+            exact_count: 0,
+            fuzzy_count: 0,
+            manual_count: 0,
+            pending_count: 0,
+            unmatched_count: 0
+        };
+        items.forEach(item => {
+            const key = `${item.link_status}_count`;
+            if (key in counts) {
+                counts[key] += 1;
+            } else if (item.link_status === 'rejected') {
+                counts.unmatched_count += 1;
+            }
+        });
+        return counts;
+    }
+
+    function updateReportStatusComponents(id, items) {
+        const statsTarget = document.getElementById('archive-detail-stats');
+        if (statsTarget) {
+            statsTarget.outerHTML = detailStats(items);
+        }
+        const itemsById = new Map(items.map(item => [String(item.id), item]));
+        document.querySelectorAll('#archive-detail .archive-item[data-item-id]').forEach(card => {
+            const item = itemsById.get(card.dataset.itemId);
+            if (!item) return;
+            card.classList.toggle('is-processing', item.link_status === 'processing');
+            card.classList.toggle('is-pending', item.link_status === 'pending');
+            const pill = card.querySelector('.archive-link-pill');
+            if (pill) pill.outerHTML = linkPill(item.link_status);
+            const meta = card.querySelector('.archive-item-meta');
+            if (meta) meta.innerHTML = detailItemMetaHtml(item);
+        });
+        const activeCard = Array.from(
+            document.querySelectorAll('.archive-report-card')
+        ).find(card => card.dataset.reportId === id);
+        const cardStats = activeCard?.querySelector('.archive-report-card-stats');
+        if (cardStats) {
+            cardStats.innerHTML = reportCardStatsHtml(
+                reportCountsFromItems(items)
+            );
+        }
+    }
+
+    function scheduleReportStatusPoll(id, delay = 1500) {
+        reportRefreshTimer = window.setTimeout(
+            () => pollReportStatus(id),
+            delay
+        );
+    }
+
+    async function pollReportStatus(id) {
+        reportRefreshTimer = null;
+        if (activeReportId !== id) return;
+        try {
+            const report = await api(`/reports/${encodeURIComponent(id)}`);
+            if (activeReportId !== id) return;
+            const items = report.items || [];
+            const signature = reportStatusSignature(items);
+            if (signature !== activeReportStatusSignature) {
+                updateReportStatusComponents(id, items);
+                activeReportStatusSignature = signature;
+            }
+            if (items.some(item => item.link_status === 'processing')) {
+                scheduleReportStatusPoll(id);
+            } else {
+                loadNavPending();
+            }
+        } catch (error) {
+            if (activeReportId === id) {
+                scheduleReportStatusPoll(id, 3000);
+            }
+        }
+    }
+
     async function selectReport(id, pushUrl = true) {
         if (!id) return;
         if (reportRefreshTimer) {
@@ -255,6 +356,7 @@
             reportRefreshTimer = null;
         }
         activeReportId = id;
+        activeReportStatusSignature = '';
         markActiveReport(id);
         if (pushUrl) {
             window.history.replaceState(null, '', `/submission-archive/${encodeURIComponent(id)}`);
@@ -287,6 +389,7 @@
                     ${items.length ? detailItemsHtml(items) : '<div class="archive-empty">这份报告没有条目。</div>'}
                 </div>
             `;
+            activeReportStatusSignature = reportStatusSignature(items);
             document.getElementById('archive-reparse')?.addEventListener('click', async () => {
                 if (!window.confirm('重新解析会删除旧条目，已人工确认的回链结果也会丢失。确定继续？')) return;
                 try {
@@ -312,12 +415,7 @@
                 }
             });
             if (items.some(item => item.link_status === 'processing')) {
-                reportRefreshTimer = window.setTimeout(async () => {
-                    if (activeReportId !== id) return;
-                    await selectReport(id, false);
-                    loadReportList(false);
-                    loadNavPending();
-                }, 1500);
+                scheduleReportStatusPoll(id);
             }
         } catch (error) {
             target.innerHTML = `<div class="archive-empty">${escapeHtml(error.message)}</div>`;

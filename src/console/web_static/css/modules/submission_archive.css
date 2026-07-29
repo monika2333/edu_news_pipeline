@@ -34,8 +34,13 @@
 }
 
 .archive-tabs-row .btn {
-    min-height: 40px;
-    padding: 8px 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    height: 48px;
+    min-height: 0;
+    padding: 0 20px;
     text-decoration: none;
 }
 

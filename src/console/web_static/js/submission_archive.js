@@ -5,6 +5,7 @@
     const isAdmin = body.dataset.userRole === 'admin';
     const typeLabels = { zongbao: '综报', wanbao: '晚报', feedback: '反馈' };
     const linkStatusMeta = {
+        processing: { label: '正在判断中', className: 'is-processing' },
         exact: { label: '精确匹配', className: 'is-exact' },
         fuzzy: { label: '模糊匹配', className: 'is-fuzzy' },
         manual: { label: '人工确认', className: 'is-manual' },
@@ -93,17 +94,20 @@
 
     const listState = { offset: 0, total: 0, loading: false, type: '' };
     let activeReportId = initialReportId;
+    let reportRefreshTimer = null;
 
     function reportCard(report) {
         const linked = Number(report.exact_count || 0) + Number(report.fuzzy_count || 0)
             + Number(report.manual_count || 0);
+        const processing = Number(report.processing_count || 0);
         const pending = Number(report.pending_count || 0);
         const unmatched = Number(report.unmatched_count || 0) + Number(report.rejected_count || 0);
-        const total = linked + pending + unmatched;
+        const total = linked + processing + pending + unmatched;
         const pct = value => total > 0 ? (value / total) * 100 : 0;
         const bar = total > 0 ? `
             <div class="archive-linkbar" aria-hidden="true">
                 ${linked ? `<span class="seg-linked" style="width:${pct(linked)}%"></span>` : ''}
+                ${processing ? `<span class="seg-processing" style="width:${pct(processing)}%"></span>` : ''}
                 ${pending ? `<span class="seg-pending" style="width:${pct(pending)}%"></span>` : ''}
                 ${unmatched ? `<span class="seg-unmatched" style="width:${pct(unmatched)}%"></span>` : ''}
             </div>` : '';
@@ -119,6 +123,7 @@
                     ${bar}
                     <div class="archive-report-card-counts">
                         <span><strong>${report.item_count || 0}</strong> 条</span>
+                        ${processing ? `<span>正在判断 ${processing}</span>` : ''}
                         ${pending ? `<span class="has-pending">待确认 ${pending}</span>` : ''}
                     </div>
                 </div>
@@ -178,7 +183,15 @@
     }
 
     function detailStats(items) {
-        const stats = { exact: 0, fuzzy: 0, manual: 0, pending: 0, unmatched: 0, rejected: 0 };
+        const stats = {
+            processing: 0,
+            exact: 0,
+            fuzzy: 0,
+            manual: 0,
+            pending: 0,
+            unmatched: 0,
+            rejected: 0
+        };
         items.forEach(item => {
             if (item.link_status in stats) stats[item.link_status] += 1;
         });
@@ -187,6 +200,7 @@
         return `
             <div class="archive-stat-chips">
                 <span class="archive-stat-chip">共 <strong>${items.length}</strong> 条</span>
+                ${stats.processing ? `<span class="archive-stat-chip is-processing">正在判断 <strong>${stats.processing}</strong></span>` : ''}
                 <span class="archive-stat-chip is-linked">已回链 <strong>${auto}</strong></span>
                 <span class="archive-stat-chip${stats.pending ? ' is-pending' : ''}">待确认 <strong>${stats.pending}</strong></span>
                 <span class="archive-stat-chip">未覆盖 <strong>${uncovered}</strong></span>
@@ -208,7 +222,7 @@
             meta.push('<a href="/submission-archive/link-queue">去确认</a>');
         }
         return `
-            <article class="archive-item${item.link_status === 'pending' ? ' is-pending' : ''}">
+            <article class="archive-item${item.link_status === 'pending' ? ' is-pending' : ''}${item.link_status === 'processing' ? ' is-processing' : ''}">
                 <div class="archive-item-head">
                     <span class="archive-item-order">${item.order_index + 1}</span>
                     <h4 class="archive-item-title">${escapeHtml(item.title)}</h4>
@@ -236,6 +250,10 @@
 
     async function selectReport(id, pushUrl = true) {
         if (!id) return;
+        if (reportRefreshTimer) {
+            window.clearTimeout(reportRefreshTimer);
+            reportRefreshTimer = null;
+        }
         activeReportId = id;
         markActiveReport(id);
         if (pushUrl) {
@@ -273,7 +291,7 @@
                 if (!window.confirm('重新解析会删除旧条目，已人工确认的回链结果也会丢失。确定继续？')) return;
                 try {
                     await api(`/reports/${encodeURIComponent(id)}/reparse`, { method: 'POST' });
-                    toast('已重新解析并回链');
+                    toast('已重新解析，正在判断回链');
                     await selectReport(id, false);
                     loadReportList(false);
                 } catch (error) {
@@ -293,6 +311,14 @@
                     toast(error.message, 'error');
                 }
             });
+            if (items.some(item => item.link_status === 'processing')) {
+                reportRefreshTimer = window.setTimeout(async () => {
+                    if (activeReportId !== id) return;
+                    await selectReport(id, false);
+                    loadReportList(false);
+                    loadNavPending();
+                }, 1500);
+            }
         } catch (error) {
             target.innerHTML = `<div class="archive-empty">${escapeHtml(error.message)}</div>`;
         }
@@ -549,10 +575,9 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            const summary = result.link_summary || {};
             sessionStorage.setItem(
                 'archiveNotice',
-                `保存成功：精确 ${summary.exact || 0}，模糊 ${summary.fuzzy || 0}，待确认 ${summary.pending || 0}，未覆盖 ${summary.unmatched || 0}`
+                '保存成功，系统正在后台判断回链'
             );
             window.location.assign(`/submission-archive/${result.report.id}`);
         } catch (error) {

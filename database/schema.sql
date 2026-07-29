@@ -588,7 +588,7 @@ CREATE TABLE public.submitted_report_items (
     embedding_model text,
     embedded_at timestamp with time zone,
     article_id text,
-    link_status text DEFAULT 'pending'::text NOT NULL,
+    link_status text DEFAULT 'processing'::text NOT NULL,
     link_title_score numeric(5,4),
     link_body_score numeric(5,4),
     link_combined_score numeric(5,4),
@@ -597,7 +597,7 @@ CREATE TABLE public.submitted_report_items (
     link_decided_by uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT submitted_report_items_link_status_check CHECK ((link_status = ANY (ARRAY['pending'::text, 'exact'::text, 'fuzzy'::text, 'manual'::text, 'unmatched'::text, 'rejected'::text])))
+    CONSTRAINT submitted_report_items_link_status_check CHECK ((link_status = ANY (ARRAY['processing'::text, 'pending'::text, 'exact'::text, 'fuzzy'::text, 'manual'::text, 'unmatched'::text, 'rejected'::text])))
 );
 
 
@@ -1631,4 +1631,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260727100000'),
     ('20260727203000'),
     ('20260728100000'),
-    ('20260728120000');
+    ('20260728120000'),
+    ('20260729120000');

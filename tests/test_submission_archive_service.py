@@ -12,6 +12,7 @@ class FakeSubmissionArchiveAdapter:
     def __init__(self, *, conflict: dict[str, Any] | None = None) -> None:
         self.conflict = conflict
         self.link_results: list[dict[str, Any]] = []
+        self.report: dict[str, Any] | None = None
         self.created = False
 
     def find_submitted_report_conflict(self, **kwargs: Any) -> dict[str, Any] | None:
@@ -25,15 +26,20 @@ class FakeSubmissionArchiveAdapter:
         replace_report_id: str | None,
     ) -> dict[str, Any]:
         self.created = True
-        return {
+        self.report = {
             "id": "report-id",
             **report,
             "items": [
-                {"id": f"item-{index}", **item}
+                {
+                    "id": f"item-{index}",
+                    "link_status": "processing",
+                    **item,
+                }
                 for index, item in enumerate(items)
             ],
             "item_count": len(items),
         }
+        return self.report
 
     def fetch_submission_link_candidates(self, **kwargs: Any) -> list[dict[str, Any]]:
         return [
@@ -51,10 +57,14 @@ class FakeSubmissionArchiveAdapter:
         self.link_results = results
 
     def fetch_submitted_report(self, report_id: str) -> dict[str, Any]:
-        return {"id": report_id, "items": []}
+        assert self.report is not None
+        assert report_id == self.report["id"]
+        return self.report
 
 
-def test_create_report_normalizes_and_links_items(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_report_saves_before_processing_links(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     adapter = FakeSubmissionArchiveAdapter()
     monkeypatch.setattr(submission_archive_service, "get_adapter", lambda: adapter)
 
@@ -77,7 +87,12 @@ def test_create_report_normalizes_and_links_items(monkeypatch: pytest.MonkeyPatc
     )
 
     assert adapter.created is True
-    assert result["link_summary"]["exact"] == 1
+    assert result["link_summary"] == {"processing": 1}
+    assert adapter.link_results == []
+
+    summary = submission_archive_service.process_report_links("report-id")
+
+    assert summary["exact"] == 1
     assert adapter.link_results[0]["article_id"] == "article-1"
     assert adapter.link_results[0]["status"] == "exact"
 
@@ -103,6 +118,35 @@ def test_create_report_requires_explicit_overwrite(
         )
 
     assert adapter.created is False
+
+
+def test_process_report_links_does_not_overwrite_finished_items(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = FakeSubmissionArchiveAdapter()
+    monkeypatch.setattr(submission_archive_service, "get_adapter", lambda: adapter)
+    submission_archive_service.create_report(
+        report_type="zongbao",
+        report_date=date(2026, 7, 28),
+        compiled_date=date(2026, 7, 28),
+        issue_no=None,
+        title_line=None,
+        pasted_text="原始全文",
+        items=[{"title": "已人工确认条目", "body": "正文"}],
+        overwrite=False,
+    )
+    assert adapter.report is not None
+    adapter.report["items"][0]["link_status"] = "manual"
+
+    summary = submission_archive_service.process_report_links("report-id")
+
+    assert summary == {
+        "exact": 0,
+        "fuzzy": 0,
+        "pending": 0,
+        "unmatched": 0,
+    }
+    assert adapter.link_results == []
 
 
 def test_attach_duplicate_badges_uses_one_batch_lookup() -> None:

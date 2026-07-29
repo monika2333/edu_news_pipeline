@@ -192,6 +192,10 @@ def fetch_reports(
             r.*,
             count(i.id) filter (where i.link_status = 'exact') as exact_count,
             count(i.id) filter (where i.link_status = 'fuzzy') as fuzzy_count,
+            count(i.id) filter (where i.link_status = 'manual') as manual_count,
+            count(i.id) filter (
+                where i.link_status = 'processing'
+            ) as processing_count,
             count(i.id) filter (where i.link_status = 'pending') as pending_count,
             count(i.id) filter (
                 where i.link_status in ('unmatched', 'rejected')

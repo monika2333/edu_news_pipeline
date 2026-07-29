@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import date
 
+import pytest
+from fastapi import BackgroundTasks
 from fastapi.testclient import TestClient
 
+from src.console import submission_archive_routes, submission_archive_service
 from src.console.app import create_app
 from src.console.auth_service import ConsoleUser
 from src.console.security import require_console_user
+from src.console.submission_archive_schemas import (
+    CreateSubmissionReportRequest,
+)
 
 
 def _admin() -> ConsoleUser:
@@ -59,3 +66,45 @@ def test_duty_editor_cannot_use_report_import_api() -> None:
     )
 
     assert response.status_code == 403
+
+
+def test_create_report_api_returns_before_link_processing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    processing_calls: list[str] = []
+
+    def fake_create_report(**_kwargs: object) -> dict[str, object]:
+        return {
+            "report": {"id": "report-id", "items": []},
+            "link_summary": {"processing": 1},
+        }
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "create_report",
+        fake_create_report,
+    )
+    monkeypatch.setattr(
+        submission_archive_service,
+        "process_report_links",
+        processing_calls.append,
+    )
+    background_tasks = BackgroundTasks()
+    request = CreateSubmissionReportRequest(
+        report_type="zongbao",
+        report_date=date(2026, 7, 29),
+        compiled_date=date(2026, 7, 29),
+        pasted_text="原始全文",
+        items=[{"title": "测试条目"}],
+    )
+
+    result = submission_archive_routes.create_report_api(
+        request,
+        background_tasks,
+        _admin(),
+    )
+
+    assert result["report"]["id"] == "report-id"
+    assert processing_calls == []
+    assert len(background_tasks.tasks) == 1
+    assert background_tasks.tasks[0].args == ("report-id",)

@@ -119,7 +119,12 @@ def _link_report(report: Mapping[str, Any]) -> dict[str, int]:
         "pending": 0,
         "unmatched": 0,
     }
-    for item in report.get("items") or []:
+    processing_items = [
+        item
+        for item in report.get("items") or []
+        if item.get("link_status") == "processing"
+    ]
+    for item in processing_items:
         linked = link_submission_item(
             str(item.get("title") or ""),
             str(item.get("body") or ""),
@@ -134,6 +139,19 @@ def _link_report(report: Mapping[str, Any]) -> dict[str, int]:
         )
     adapter.update_submission_link_results(results)
     return counts
+
+
+def process_report_links(report_id: str) -> dict[str, int]:
+    adapter = get_adapter()
+    report = adapter.fetch_submitted_report(report_id)
+    if not report:
+        return {
+            "exact": 0,
+            "fuzzy": 0,
+            "pending": 0,
+            "unmatched": 0,
+        }
+    return _link_report(report)
 
 
 def create_report(
@@ -169,11 +187,9 @@ def create_report(
         items=prepared_items,
         replace_report_id=str(conflict["id"]) if conflict else None,
     )
-    link_summary = _link_report(created)
-    refreshed = adapter.fetch_submitted_report(str(created["id"]))
     return {
-        "report": refreshed or created,
-        "link_summary": link_summary,
+        "report": created,
+        "link_summary": {"processing": len(created.get("items") or [])},
     }
 
 
@@ -227,10 +243,9 @@ def reparse_report(report_id: str) -> dict[str, Any]:
     )
     report["items"] = rebuilt
     report["item_count"] = len(rebuilt)
-    link_summary = _link_report(report)
     return {
         "report": adapter.fetch_submitted_report(report_id),
-        "link_summary": link_summary,
+        "link_summary": {"processing": len(rebuilt)},
         "warnings": parsed.warnings,
     }
 
@@ -326,6 +341,7 @@ __all__ = [
     "list_pending_links",
     "list_reports",
     "parse_report",
+    "process_report_links",
     "reparse_report",
     "search_archive",
 ]

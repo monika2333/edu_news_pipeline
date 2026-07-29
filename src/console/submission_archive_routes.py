@@ -42,10 +42,20 @@ def _raise_service_error(exc: Exception) -> NoReturn:
     raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-def _schedule_embedding_backfill(background_tasks: BackgroundTasks) -> None:
+def _process_report_in_background(report_id: str) -> None:
     from src.workers.submission_dedup import backfill_archive_embeddings
 
-    background_tasks.add_task(backfill_archive_embeddings)
+    try:
+        submission_archive_service.process_report_links(report_id)
+    finally:
+        backfill_archive_embeddings()
+
+
+def _schedule_report_processing(
+    background_tasks: BackgroundTasks,
+    report_id: str,
+) -> None:
+    background_tasks.add_task(_process_report_in_background, report_id)
 
 
 @router.post("/parse")
@@ -78,7 +88,10 @@ def create_report_api(
         )
     except (ValueError, RuntimeError) as exc:
         _raise_service_error(exc)
-    _schedule_embedding_backfill(background_tasks)
+    _schedule_report_processing(
+        background_tasks,
+        str(result["report"]["id"]),
+    )
     return result
 
 
@@ -132,7 +145,7 @@ def reparse_report_api(
         result = submission_archive_service.reparse_report(report_id)
     except (ValueError, RuntimeError) as exc:
         _raise_service_error(exc)
-    _schedule_embedding_backfill(background_tasks)
+    _schedule_report_processing(background_tasks, report_id)
     return result
 
 

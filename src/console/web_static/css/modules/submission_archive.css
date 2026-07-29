@@ -202,6 +202,10 @@
     background: #22c55e;
 }
 
+.archive-linkbar .seg-processing {
+    background: #60a5fa;
+}
+
 .archive-linkbar .seg-pending {
     background: #f59e0b;
 }
@@ -321,6 +325,15 @@
     color: #b45309;
 }
 
+.archive-stat-chip.is-processing {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.archive-stat-chip.is-processing strong {
+    color: #1d4ed8;
+}
+
 .archive-detail-items {
     margin-top: 4px;
 }
@@ -346,6 +359,10 @@
 
 .archive-item.is-pending {
     border-left: 3px solid var(--warning-color);
+}
+
+.archive-item.is-processing {
+    border-left: 3px solid #60a5fa;
 }
 
 .archive-item-head {
@@ -556,6 +573,11 @@
 
 .archive-link-pill.is-manual {
     background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.archive-link-pill.is-processing {
+    background: #dbeafe;
     color: #1d4ed8;
 }
 

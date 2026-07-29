@@ -99,6 +99,23 @@ def test_submission_archive_pages_follow_role_permissions() -> None:
     assert editor.get("/submission-archive/new").status_code == 403
 
 
+def test_submission_archive_separates_all_type_filter_from_report_types() -> None:
+    response = _build_client().get("/submission-archive")
+    stylesheet = (
+        Path(__file__).parents[1]
+        / "src/console/web_static/css/modules/submission_archive.css"
+    ).read_text(encoding="utf-8")
+
+    assert response.status_code == 200
+    html = response.text
+    all_filter = 'data-type="" type="button">全部</button>'
+    divider = '<span class="archive-type-divider" aria-hidden="true"></span>'
+    report_filter = 'data-type="zongbao" type="button">综报</button>'
+    assert html.index(all_filter) < html.index(divider) < html.index(report_filter)
+    assert ".archive-type-divider {" in stylesheet
+    assert "background: #cbd5e1;" in stylesheet
+
+
 def test_admin_page_separates_user_search_from_account_creation(
     monkeypatch: MonkeyPatch,
 ) -> None:

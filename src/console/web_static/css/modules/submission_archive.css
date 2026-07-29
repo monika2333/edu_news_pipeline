@@ -88,6 +88,14 @@
     transition: all 0.15s;
 }
 
+.archive-type-divider {
+    width: 1px;
+    flex: 0 0 1px;
+    align-self: stretch;
+    margin: 6px 2px;
+    background: #cbd5e1;
+}
+
 .archive-type-option.active {
     background: var(--card-bg);
     color: var(--primary-color);

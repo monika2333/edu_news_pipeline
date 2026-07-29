@@ -55,14 +55,16 @@ async function handleCardDecisionChange(input) {
         const mutation = await submitDecisions([articleId], status);
         if (IS_DUTY_WORKSPACE) {
             const removal = captureDutyFilterRemoval([card]);
-            detachDutyFilterRemoval(removal);
+            const pageEmptied = detachDutyFilterRemoval(removal);
             updateDutyFilterDecisionCounts(status, 1, 1);
+            if (pageEmptied) await reloadFilterPageAfterRemoval();
             attachDutyUndo(
                 removal,
                 [articleId],
                 status,
                 mutation,
-                '已更新'
+                '已更新',
+                { reloadOnUndo: pageEmptied }
             );
         } else {
             removeCardAndMaybeCluster(card);
@@ -130,9 +132,17 @@ async function handleClusterDecisionChange(input) {
         const mutation = await submitDecisions(ids, status);
         if (IS_DUTY_WORKSPACE) {
             const removal = captureDutyFilterRemoval(cards);
-            detachDutyFilterRemoval(removal);
+            const pageEmptied = detachDutyFilterRemoval(removal);
             updateDutyFilterDecisionCounts(status, ids.length, 1);
-            attachDutyUndo(removal, ids, status, mutation, '已更新');
+            if (pageEmptied) await reloadFilterPageAfterRemoval();
+            attachDutyUndo(
+                removal,
+                ids,
+                status,
+                mutation,
+                '已更新',
+                { reloadOnUndo: pageEmptied }
+            );
         } else {
             cluster.remove();
             loadStats();
@@ -202,12 +212,14 @@ function captureDutyFilterRemoval(cards) {
 
 function detachDutyFilterRemoval(removal) {
     removal.forEach(entry => entry.node.remove());
-    if (!elements.filterList.querySelector('.article-card')) {
+    const pageEmptied = !elements.filterList.querySelector('.article-card');
+    if (pageEmptied) {
         elements.filterList.insertAdjacentHTML(
             'beforeend',
             '<div class="empty empty-state duty-local-empty">当前页新闻已处理完</div>'
         );
     }
+    return pageEmptied;
 }
 
 function restoreDutyFilterRemoval(removal, versions) {

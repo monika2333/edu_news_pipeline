@@ -379,6 +379,24 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     )[1].split("} else {", maxsplit=1)[0]
     assert "loadFilterData" not in duty_card_branch
     assert "loadStats" not in duty_card_branch
+    assert "const pageEmptied = detachDutyFilterRemoval(removal);" in duty_card_branch
+    assert "if (pageEmptied) await reloadFilterPageAfterRemoval();" in duty_card_branch
+    assert "{ reloadOnUndo: pageEmptied }" in duty_card_branch
+    cluster_handler = filter_actions_script.split(
+        "async function handleClusterDecisionChange",
+        maxsplit=1,
+    )[1].split(
+        "function collectCardEdits",
+        maxsplit=1,
+    )[0]
+    duty_cluster_branch = cluster_handler.split(
+        "if (IS_DUTY_WORKSPACE)",
+        maxsplit=1,
+    )[1].split("} else {", maxsplit=1)[0]
+    assert "const pageEmptied = detachDutyFilterRemoval(removal);" in duty_cluster_branch
+    assert "if (pageEmptied) await reloadFilterPageAfterRemoval();" in duty_cluster_branch
+    assert "{ reloadOnUndo: pageEmptied }" in duty_cluster_branch
+    assert "return pageEmptied;" in filter_actions_script
     discard_handler = filter_actions_script.split(
         "async function discardRemainingItems",
         maxsplit=1,

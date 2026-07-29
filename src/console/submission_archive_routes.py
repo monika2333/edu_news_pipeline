@@ -4,6 +4,7 @@ from datetime import date
 from typing import Any, NoReturn, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.encoders import jsonable_encoder
 
 from src.console import submission_archive_service
 from src.console.security import ConsoleUser, require_console_user, require_role
@@ -32,7 +33,7 @@ def _raise_service_error(exc: Exception) -> NoReturn:
             status_code=409,
             detail={
                 "message": str(exc),
-                "existing_report": exc.report,
+                "existing_report": jsonable_encoder(exc.report),
             },
         ) from exc
     if isinstance(

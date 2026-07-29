@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -103,3 +104,43 @@ def test_create_report_api_returns_before_link_processing(
 
     assert result["report"]["id"] == "report-id"
     assert launched_report_ids == ["report-id"]
+
+
+def test_create_report_conflict_serializes_database_types(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report_id = UUID("f4054ecc-f97a-443c-bd41-90b0a9f8edbb")
+
+    def fake_create_report(**_kwargs: object) -> dict[str, object]:
+        raise submission_archive_service.SubmissionReportConflictError(
+            {
+                "id": report_id,
+                "report_type": "wanbao",
+                "report_date": date(2026, 7, 23),
+                "title_line": "首都教育舆情",
+                "item_count": 12,
+            }
+        )
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "create_report",
+        fake_create_report,
+    )
+
+    response = _client(_admin).post(
+        "/api/submission-archive/reports",
+        json={
+            "report_type": "wanbao",
+            "report_date": "2026-07-23",
+            "compiled_date": "2026-07-23",
+            "pasted_text": "原始全文",
+            "items": [{"title": "测试条目"}],
+        },
+    )
+
+    assert response.status_code == 409
+    existing = response.json()["detail"]["existing_report"]
+    assert existing["id"] == str(report_id)
+    assert existing["report_date"] == "2026-07-23"
+    assert existing["item_count"] == 12

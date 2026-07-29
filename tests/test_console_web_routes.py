@@ -382,6 +382,8 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "const pageEmptied = detachDutyFilterRemoval(removal);" in duty_card_branch
     assert "if (pageEmptied) await reloadFilterPageAfterRemoval();" in duty_card_branch
     assert "{ reloadOnUndo: pageEmptied }" in duty_card_branch
+    assert "if (card.isConnected) setInputsDisabled(radios, false);" not in card_handler
+    assert "finally {\n        setInputsDisabled(radios, false);\n    }" in card_handler
     cluster_handler = filter_actions_script.split(
         "async function handleClusterDecisionChange",
         maxsplit=1,
@@ -396,6 +398,8 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "const pageEmptied = detachDutyFilterRemoval(removal);" in duty_cluster_branch
     assert "if (pageEmptied) await reloadFilterPageAfterRemoval();" in duty_cluster_branch
     assert "{ reloadOnUndo: pageEmptied }" in duty_cluster_branch
+    assert "if (cluster.isConnected) setInputsDisabled(radios, false);" not in cluster_handler
+    assert "finally {\n        setInputsDisabled(radios, false);\n    }" in cluster_handler
     assert "return pageEmptied;" in filter_actions_script
     discard_handler = filter_actions_script.split(
         "async function discardRemainingItems",

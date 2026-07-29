@@ -95,7 +95,7 @@ async function handleCardDecisionChange(input) {
         card.dataset.status = previousStatus;
         showToast(error.message || '更新失败', 'error');
     } finally {
-        if (card.isConnected) setInputsDisabled(radios, false);
+        setInputsDisabled(radios, false);
     }
 }
 
@@ -168,7 +168,7 @@ async function handleClusterDecisionChange(input) {
         cluster.dataset.status = previousStatus;
         showToast(error.message || '更新失败', 'error');
     } finally {
-        if (cluster.isConnected) setInputsDisabled(radios, false);
+        setInputsDisabled(radios, false);
     }
 }
 

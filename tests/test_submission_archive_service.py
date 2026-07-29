@@ -13,6 +13,17 @@ class FakeSubmissionArchiveAdapter:
         self.conflict = conflict
         self.link_results: list[dict[str, Any]] = []
         self.report: dict[str, Any] | None = None
+        self.candidate_titles = [
+            {
+                "article_id": "article-1",
+                "title": "学校发布招生新规",
+            }
+        ]
+        self.candidate_bodies = {
+            "article-1": "学校发布招生新规正文",
+        }
+        self.title_fetch_count = 0
+        self.body_fetch_calls: list[list[str]] = []
         self.created = False
 
     def find_submitted_report_conflict(self, **kwargs: Any) -> dict[str, Any] | None:
@@ -41,13 +52,25 @@ class FakeSubmissionArchiveAdapter:
         }
         return self.report
 
-    def fetch_submission_link_candidates(self, **kwargs: Any) -> list[dict[str, Any]]:
+    def fetch_submission_link_candidate_titles(
+        self,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        self.title_fetch_count += 1
+        return self.candidate_titles
+
+    def fetch_submission_link_candidate_bodies(
+        self,
+        *,
+        article_ids: list[str],
+    ) -> list[dict[str, Any]]:
+        self.body_fetch_calls.append(article_ids)
         return [
             {
-                "article_id": "article-1",
-                "title": "学校发布招生新规",
-                "body": "学校发布招生新规正文",
+                "article_id": article_id,
+                "body": self.candidate_bodies.get(article_id, ""),
             }
+            for article_id in article_ids
         ]
 
     def update_submission_link_results(
@@ -93,6 +116,8 @@ def test_create_report_saves_before_processing_links(
     summary = submission_archive_service.process_report_links("report-id")
 
     assert summary["exact"] == 1
+    assert adapter.title_fetch_count == 1
+    assert adapter.body_fetch_calls == [["article-1"]]
     assert adapter.link_results[0]["article_id"] == "article-1"
     assert adapter.link_results[0]["status"] == "exact"
 
@@ -146,7 +171,46 @@ def test_process_report_links_does_not_overwrite_finished_items(
         "pending": 0,
         "unmatched": 0,
     }
+    assert adapter.title_fetch_count == 0
+    assert adapter.body_fetch_calls == []
     assert adapter.link_results == []
+
+
+def test_process_report_links_fetches_one_body_batch_for_all_items(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = FakeSubmissionArchiveAdapter()
+    adapter.candidate_titles = [
+        {
+            "article_id": f"article-{index}",
+            "title": f"候选新闻标题 {index}",
+        }
+        for index in range(30)
+    ]
+    adapter.candidate_bodies = {
+        f"article-{index}": f"候选新闻正文 {index}"
+        for index in range(30)
+    }
+    monkeypatch.setattr(submission_archive_service, "get_adapter", lambda: adapter)
+    submission_archive_service.create_report(
+        report_type="zongbao",
+        report_date=date(2026, 7, 28),
+        compiled_date=date(2026, 7, 28),
+        issue_no=None,
+        title_line=None,
+        pasted_text="原始全文",
+        items=[
+            {"title": "候选新闻标题 1", "body": "候选新闻正文 1"},
+            {"title": "另一条不同内容", "body": "另一条正文"},
+        ],
+        overwrite=False,
+    )
+
+    submission_archive_service.process_report_links("report-id")
+
+    assert adapter.title_fetch_count == 1
+    assert len(adapter.body_fetch_calls) == 1
+    assert len(adapter.body_fetch_calls[0]) <= 21
 
 
 def test_attach_duplicate_badges_uses_one_batch_lookup() -> None:

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import heapq
 from dataclasses import dataclass
 from difflib import SequenceMatcher
-from typing import Optional, Sequence
+from typing import Mapping, Optional, Sequence
 
 from src.console.submission_archive_config import (
     LINK_BODY_CHARS,
@@ -13,7 +15,6 @@ from src.console.submission_archive_config import (
 )
 from src.console.submission_archive_parser import (
     normalize_submission_text,
-    normalized_title_hash,
 )
 
 
@@ -34,13 +35,52 @@ class LinkResult:
     combined_score: float
 
 
-def _bigrams(value: str) -> set[str]:
+@dataclass(slots=True, frozen=True)
+class PreparedLinkCandidate:
+    candidate: LinkCandidate
+    normalized_title: str
+    title_hash: str
+    bigrams: frozenset[str]
+    order_index: int
+
+
+@dataclass(slots=True)
+class LinkCandidateIndex:
+    candidates: tuple[PreparedLinkCandidate, ...]
+    first_by_hash: dict[str, PreparedLinkCandidate]
+
+
+@dataclass(slots=True, frozen=True)
+class LinkCandidateSelection:
+    exact: Optional[PreparedLinkCandidate]
+    coarse: tuple[PreparedLinkCandidate, ...]
+
+    def required_article_ids(self) -> tuple[str, ...]:
+        if self.exact is not None:
+            return (self.exact.candidate.article_id,)
+        return tuple(
+            candidate.candidate.article_id
+            for candidate in self.coarse
+        )
+
+
+def _normalized_title_hash(normalized_title: str) -> str:
+    return hashlib.md5(normalized_title.encode("utf-8")).hexdigest()
+
+
+def _bigrams(value: str) -> frozenset[str]:
     if len(value) < 2:
-        return {value} if value else set()
-    return {value[index : index + 2] for index in range(len(value) - 1)}
+        return frozenset({value}) if value else frozenset()
+    return frozenset(
+        value[index : index + 2]
+        for index in range(len(value) - 1)
+    )
 
 
-def _jaccard(left: set[str], right: set[str]) -> float:
+def _jaccard(
+    left: frozenset[str],
+    right: frozenset[str],
+) -> float:
     union = left | right
     if not union:
         return 0.0
@@ -48,21 +88,17 @@ def _jaccard(left: set[str], right: set[str]) -> float:
 
 
 def _candidate_scores(
-    archive_title: str,
-    archive_body: str,
-    candidate: LinkCandidate,
+    normalized_archive_title: str,
+    normalized_archive_body: str,
+    candidate: PreparedLinkCandidate,
+    candidate_body: str,
 ) -> tuple[float, float, float]:
-    normalized_archive_title = normalize_submission_text(archive_title)
-    normalized_candidate_title = normalize_submission_text(candidate.title)
     title_score = SequenceMatcher(
         None,
         normalized_archive_title,
-        normalized_candidate_title,
+        candidate.normalized_title,
     ).ratio()
-    normalized_archive_body = normalize_submission_text(archive_body)[
-        :LINK_BODY_CHARS
-    ]
-    normalized_candidate_body = normalize_submission_text(candidate.body)[
+    normalized_candidate_body = normalize_submission_text(candidate_body)[
         :LINK_BODY_CHARS
     ]
     body_score = (
@@ -82,15 +118,83 @@ def _candidate_scores(
     return title_score, body_score, combined
 
 
-def link_submission_item(
+def build_link_candidate_index(
+    candidates: Sequence[LinkCandidate],
+) -> LinkCandidateIndex:
+    prepared: list[PreparedLinkCandidate] = []
+    first_by_hash: dict[str, PreparedLinkCandidate] = {}
+    for order_index, candidate in enumerate(candidates):
+        normalized_title = normalize_submission_text(candidate.title)
+        item = PreparedLinkCandidate(
+            candidate=candidate,
+            normalized_title=normalized_title,
+            title_hash=_normalized_title_hash(normalized_title),
+            bigrams=_bigrams(normalized_title),
+            order_index=order_index,
+        )
+        prepared.append(item)
+        first_by_hash.setdefault(item.title_hash, item)
+    return LinkCandidateIndex(
+        candidates=tuple(prepared),
+        first_by_hash=first_by_hash,
+    )
+
+
+def select_link_candidates(
+    archive_title: str,
+    candidate_index: LinkCandidateIndex,
+) -> LinkCandidateSelection:
+    normalized_archive_title = normalize_submission_text(archive_title)
+    archive_hash = _normalized_title_hash(normalized_archive_title)
+    exact = candidate_index.first_by_hash.get(archive_hash)
+    if exact is not None:
+        return LinkCandidateSelection(exact=exact, coarse=())
+
+    archive_bigrams = _bigrams(normalized_archive_title)
+    coarse_candidates = heapq.nlargest(
+        LINK_COARSE_TOP_K,
+        candidate_index.candidates,
+        key=lambda candidate: (
+            _jaccard(archive_bigrams, candidate.bigrams),
+            -candidate.order_index,
+        ),
+    )
+    return LinkCandidateSelection(
+        exact=None,
+        coarse=tuple(coarse_candidates),
+    )
+
+
+def score_link_candidate_selection(
     archive_title: str,
     archive_body: str,
-    candidates: Sequence[LinkCandidate],
+    selection: LinkCandidateSelection,
+    candidate_bodies: Mapping[str, str],
     *,
     auto_threshold: Optional[float] = None,
     review_threshold: Optional[float] = None,
 ) -> LinkResult:
-    if not candidates:
+    normalized_archive_title = normalize_submission_text(archive_title)
+    normalized_archive_body = normalize_submission_text(archive_body)[
+        :LINK_BODY_CHARS
+    ]
+    if selection.exact is not None:
+        candidate = selection.exact
+        title_score, body_score, combined = _candidate_scores(
+            normalized_archive_title,
+            normalized_archive_body,
+            candidate,
+            candidate_bodies.get(candidate.candidate.article_id, ""),
+        )
+        return LinkResult(
+            status="exact",
+            article_id=candidate.candidate.article_id,
+            best_candidate_article_id=candidate.candidate.article_id,
+            title_score=title_score,
+            body_score=body_score,
+            combined_score=combined,
+        )
+    if not selection.coarse:
         return LinkResult(
             status="unmatched",
             article_id=None,
@@ -100,35 +204,17 @@ def link_submission_item(
             combined_score=0.0,
         )
 
-    archive_hash = normalized_title_hash(archive_title)
-    for candidate in candidates:
-        if archive_hash == normalized_title_hash(candidate.title):
-            title_score, body_score, combined = _candidate_scores(
-                archive_title,
-                archive_body,
-                candidate,
-            )
-            return LinkResult(
-                status="exact",
-                article_id=candidate.article_id,
-                best_candidate_article_id=candidate.article_id,
-                title_score=title_score,
-                body_score=body_score,
-                combined_score=combined,
-            )
-
-    archive_bigrams = _bigrams(normalize_submission_text(archive_title))
-    coarse_candidates = sorted(
-        candidates,
-        key=lambda candidate: _jaccard(
-            archive_bigrams,
-            _bigrams(normalize_submission_text(candidate.title)),
-        ),
-        reverse=True,
-    )[:LINK_COARSE_TOP_K]
     scored = [
-        (*_candidate_scores(archive_title, archive_body, candidate), candidate)
-        for candidate in coarse_candidates
+        (
+            *_candidate_scores(
+                normalized_archive_title,
+                normalized_archive_body,
+                candidate,
+                candidate_bodies.get(candidate.candidate.article_id, ""),
+            ),
+            candidate,
+        )
+        for candidate in selection.coarse
     ]
     title_score, body_score, combined, best = max(
         scored,
@@ -142,7 +228,7 @@ def link_submission_item(
     )
     if combined >= auto and title_score >= LINK_TITLE_MIN:
         status = "fuzzy"
-        article_id: Optional[str] = best.article_id
+        article_id: Optional[str] = best.candidate.article_id
     elif combined >= review:
         status = "pending"
         article_id = None
@@ -152,11 +238,44 @@ def link_submission_item(
     return LinkResult(
         status=status,
         article_id=article_id,
-        best_candidate_article_id=best.article_id,
+        best_candidate_article_id=best.candidate.article_id,
         title_score=title_score,
         body_score=body_score,
         combined_score=combined,
     )
 
 
-__all__ = ["LinkCandidate", "LinkResult", "link_submission_item"]
+def link_submission_item(
+    archive_title: str,
+    archive_body: str,
+    candidates: Sequence[LinkCandidate],
+    *,
+    auto_threshold: Optional[float] = None,
+    review_threshold: Optional[float] = None,
+) -> LinkResult:
+    candidate_index = build_link_candidate_index(candidates)
+    selection = select_link_candidates(archive_title, candidate_index)
+    candidate_bodies = {
+        candidate.article_id: candidate.body
+        for candidate in candidates
+    }
+    return score_link_candidate_selection(
+        archive_title,
+        archive_body,
+        selection,
+        candidate_bodies,
+        auto_threshold=auto_threshold,
+        review_threshold=review_threshold,
+    )
+
+
+__all__ = [
+    "LinkCandidate",
+    "LinkCandidateIndex",
+    "LinkCandidateSelection",
+    "LinkResult",
+    "build_link_candidate_index",
+    "link_submission_item",
+    "score_link_candidate_selection",
+    "select_link_candidates",
+]

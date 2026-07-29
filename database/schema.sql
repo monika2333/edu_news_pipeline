@@ -909,6 +909,13 @@ ALTER TABLE ONLY public.submitted_reports
 
 
 --
+-- Name: brief_items_article_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX brief_items_article_created_at_idx ON public.brief_items USING btree (article_id, created_at DESC);
+
+
+--
 -- Name: brief_items_batch_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1021,6 +1028,13 @@ CREATE INDEX manual_clusters_bucket_key_idx ON public.manual_clusters USING btre
 
 
 --
+-- Name: manual_export_items_article_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX manual_export_items_article_created_at_idx ON public.manual_export_items USING btree (article_id, created_at DESC);
+
+
+--
 -- Name: manual_export_items_batch_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1060,6 +1074,13 @@ CREATE INDEX manual_reviews_status_report_type_rank_idx ON public.manual_reviews
 --
 
 CREATE INDEX news_summaries_beijing_gate_idx ON public.news_summaries USING btree (beijing_gate_attempted_at, summary_generated_at) WHERE ((status = 'pending_beijing_gate'::text) AND (summary_status = 'completed'::text));
+
+
+--
+-- Name: news_summaries_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX news_summaries_created_at_idx ON public.news_summaries USING btree (created_at);
 
 
 --
@@ -1632,4 +1653,7 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260727203000'),
     ('20260728100000'),
     ('20260728120000'),
-    ('20260729120000');
+    ('20260729120000'),
+    ('20260729130000'),
+    ('20260729130100'),
+    ('20260729130200');

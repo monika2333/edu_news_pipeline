@@ -32,19 +32,13 @@ def launch_submission_report_processing(report_id: str) -> int:
 
 def process_submission_report(report_id: str) -> dict[str, int]:
     from src.console import submission_archive_service
-    from src.workers.submission_dedup import backfill_archive_embeddings
 
     with worker_session(WORKER):
         link_summary = submission_archive_service.process_report_links(
             report_id
         )
         log_info(WORKER, f"Linked report {report_id}: {link_summary}")
-        embedded = backfill_archive_embeddings()
-        log_info(WORKER, f"Embedded {embedded} archive items")
-    return {
-        **link_summary,
-        "embedded": embedded,
-    }
+    return link_summary
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

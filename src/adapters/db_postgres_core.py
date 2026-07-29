@@ -2005,17 +2005,28 @@ class PostgresAdapter:
                 items=items,
             )
 
-    def fetch_submission_link_candidates(
+    def fetch_submission_link_candidate_titles(
         self,
         *,
         compiled_date: date,
         window_days: int,
     ) -> List[Dict[str, Any]]:
         with self._cursor() as cur:
-            return submission_archive.fetch_link_candidates(
+            return submission_archive.fetch_link_candidate_titles(
                 cur,
                 compiled_date=compiled_date,
                 window_days=window_days,
+            )
+
+    def fetch_submission_link_candidate_bodies(
+        self,
+        *,
+        article_ids: Sequence[str],
+    ) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            return submission_archive.fetch_link_candidate_bodies(
+                cur,
+                article_ids=article_ids,
             )
 
     def update_submission_link_results(

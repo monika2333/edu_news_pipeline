@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from src.console.submission_archive_linker import (
     LinkCandidate,
+    build_link_candidate_index,
     link_submission_item,
+    select_link_candidates,
 )
 
 
@@ -77,3 +79,17 @@ def test_link_title_guard_prevents_false_auto_binding() -> None:
     )
     assert result.title_score < 0.70
     assert result.status != "fuzzy"
+
+
+def test_candidate_index_preserves_first_exact_candidate() -> None:
+    candidate_index = build_link_candidate_index(
+        [
+            LinkCandidate("first", "学校发布新规"),
+            LinkCandidate("second", "学校发布新规！"),
+        ]
+    )
+
+    selection = select_link_candidates("学校发布新规", candidate_index)
+
+    assert selection.exact is not None
+    assert selection.exact.candidate.article_id == "first"

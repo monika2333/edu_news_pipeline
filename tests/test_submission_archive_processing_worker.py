@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from src.console import submission_archive_service
 from src.workers import submission_archive_processing
 
 
@@ -41,3 +42,26 @@ def test_launch_submission_report_processing_uses_child_process(
     assert captured["kwargs"]["cwd"] == (
         submission_archive_processing._REPO_ROOT
     )
+
+
+def test_process_submission_report_only_processes_links(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = {
+        "exact": 1,
+        "fuzzy": 2,
+        "pending": 3,
+        "unmatched": 4,
+    }
+    monkeypatch.setattr(
+        submission_archive_service,
+        "process_report_links",
+        lambda report_id: expected,
+    )
+
+    result = submission_archive_processing.process_submission_report(
+        "report-id"
+    )
+
+    assert result == expected
+    assert "embedded" not in result

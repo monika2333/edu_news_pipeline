@@ -237,7 +237,7 @@ def fetch_report(
     return report
 
 
-def fetch_link_candidates(
+def fetch_link_candidate_titles(
     cur: psycopg.Cursor,
     *,
     compiled_date: date,
@@ -247,37 +247,66 @@ def fetch_link_candidates(
         """
         select
             ns.article_id,
-            coalesce(ns.title, '') as title,
-            coalesce(
-                (
-                    select mei.final_summary
-                    from manual_export_items mei
-                    where mei.article_id = ns.article_id
-                      and nullif(btrim(mei.final_summary), '') is not null
-                    order by mei.created_at desc
-                    limit 1
-                ),
-                (
-                    select bi.final_summary
-                    from brief_items bi
-                    where bi.article_id = ns.article_id
-                      and nullif(btrim(bi.final_summary), '') is not null
-                    order by bi.created_at desc
-                    limit 1
-                ),
-                nullif(btrim(mr.summary), ''),
-                ns.llm_summary,
-                ''
-            ) as body,
-            ns.source,
-            ns.url
+            coalesce(ns.title, '') as title
         from news_summaries ns
-        left join manual_reviews mr on mr.article_id = ns.article_id
         where ns.created_at >= %s::date - (%s * interval '1 day')
           and ns.created_at < %s::date + interval '2 days'
         order by ns.created_at desc
         """,
         (compiled_date, window_days, compiled_date),
+    )
+    return [dict(row) for row in cur.fetchall()]
+
+
+def fetch_link_candidate_bodies(
+    cur: psycopg.Cursor,
+    *,
+    article_ids: Sequence[str],
+) -> list[dict[str, Any]]:
+    if not article_ids:
+        return []
+    cur.execute(
+        """
+        with requested as (
+            select article_id, order_index
+            from unnest(%s::text[]) with ordinality
+                as requested(article_id, order_index)
+        ),
+        latest_manual as (
+            select distinct on (mei.article_id)
+                mei.article_id,
+                mei.final_summary
+            from manual_export_items mei
+            join requested req on req.article_id = mei.article_id
+            where nullif(btrim(mei.final_summary), '') is not null
+            order by mei.article_id, mei.created_at desc
+        ),
+        latest_brief as (
+            select distinct on (bi.article_id)
+                bi.article_id,
+                bi.final_summary
+            from brief_items bi
+            join requested req on req.article_id = bi.article_id
+            where nullif(btrim(bi.final_summary), '') is not null
+            order by bi.article_id, bi.created_at desc
+        )
+        select
+            req.article_id,
+            coalesce(
+                lm.final_summary,
+                lb.final_summary,
+                nullif(btrim(mr.summary), ''),
+                nullif(btrim(ns.llm_summary), ''),
+                ''
+            ) as body
+        from requested req
+        left join latest_manual lm on lm.article_id = req.article_id
+        left join latest_brief lb on lb.article_id = req.article_id
+        left join manual_reviews mr on mr.article_id = req.article_id
+        left join news_summaries ns on ns.article_id = req.article_id
+        order by req.order_index
+        """,
+        (list(article_ids),),
     )
     return [dict(row) for row in cur.fetchall()]
 
@@ -683,7 +712,8 @@ __all__ = [
     "fetch_archive_embeddings",
     "fetch_duplicate_badges",
     "fetch_items_missing_embeddings",
-    "fetch_link_candidates",
+    "fetch_link_candidate_bodies",
+    "fetch_link_candidate_titles",
     "fetch_news_for_submission_dedup",
     "fetch_pending_links",
     "fetch_report",

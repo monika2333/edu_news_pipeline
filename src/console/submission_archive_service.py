@@ -10,7 +10,10 @@ from src.console.auth_service import ConsoleUser
 from src.console.submission_archive_config import LINK_WINDOW_DAYS
 from src.console.submission_archive_linker import (
     LinkCandidate,
-    link_submission_item,
+    LinkCandidateSelection,
+    build_link_candidate_index,
+    score_link_candidate_selection,
+    select_link_candidates,
 )
 from src.console.submission_archive_parser import (
     normalize_submission_text,
@@ -101,34 +104,58 @@ def _prepare_items(
 
 def _link_report(report: Mapping[str, Any]) -> dict[str, int]:
     adapter = get_adapter()
-    candidates = [
-        LinkCandidate(
-            article_id=str(row["article_id"]),
-            title=str(row.get("title") or ""),
-            body=str(row.get("body") or ""),
-        )
-        for row in adapter.fetch_submission_link_candidates(
-            compiled_date=report["compiled_date"],
-            window_days=LINK_WINDOW_DAYS,
-        )
+    processing_items = [
+        item
+        for item in report.get("items") or []
+        if item.get("link_status") == "processing"
     ]
-    results: list[dict[str, Any]] = []
     counts = {
         "exact": 0,
         "fuzzy": 0,
         "pending": 0,
         "unmatched": 0,
     }
-    processing_items = [
-        item
-        for item in report.get("items") or []
-        if item.get("link_status") == "processing"
+    if not processing_items:
+        return counts
+
+    title_candidates = [
+        LinkCandidate(
+            article_id=str(row["article_id"]),
+            title=str(row.get("title") or ""),
+        )
+        for row in adapter.fetch_submission_link_candidate_titles(
+            compiled_date=report["compiled_date"],
+            window_days=LINK_WINDOW_DAYS,
+        )
     ]
+    candidate_index = build_link_candidate_index(title_candidates)
+    selections: list[
+        tuple[Mapping[str, Any], LinkCandidateSelection]
+    ] = []
+    required_article_ids: dict[str, None] = {}
     for item in processing_items:
-        linked = link_submission_item(
+        selection = select_link_candidates(
+            str(item.get("title") or ""),
+            candidate_index,
+        )
+        selections.append((item, selection))
+        for article_id in selection.required_article_ids():
+            required_article_ids.setdefault(article_id, None)
+
+    body_rows = adapter.fetch_submission_link_candidate_bodies(
+        article_ids=list(required_article_ids),
+    )
+    candidate_bodies = {
+        str(row["article_id"]): str(row.get("body") or "")
+        for row in body_rows
+    }
+    results: list[dict[str, Any]] = []
+    for item, selection in selections:
+        linked = score_link_candidate_selection(
             str(item.get("title") or ""),
             str(item.get("body") or ""),
-            candidates,
+            selection,
+            candidate_bodies,
         )
         counts[linked.status] += 1
         results.append(

@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from src.console import submission_archive_service
+from src.workers import submission_archive_processing
 
 
 class FakeSubmissionArchiveAdapter:
@@ -90,6 +91,11 @@ def test_create_report_saves_before_processing_links(
 ) -> None:
     adapter = FakeSubmissionArchiveAdapter()
     monkeypatch.setattr(submission_archive_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(
+        submission_archive_processing,
+        "get_adapter",
+        lambda: adapter,
+    )
 
     result = submission_archive_service.create_report(
         report_type="zongbao",
@@ -113,7 +119,7 @@ def test_create_report_saves_before_processing_links(
     assert result["link_summary"] == {"processing": 1}
     assert adapter.link_results == []
 
-    summary = submission_archive_service.process_report_links("report-id")
+    summary = submission_archive_processing.process_report_links("report-id")
 
     assert summary["exact"] == 1
     assert adapter.title_fetch_count == 1
@@ -150,6 +156,11 @@ def test_process_report_links_does_not_overwrite_finished_items(
 ) -> None:
     adapter = FakeSubmissionArchiveAdapter()
     monkeypatch.setattr(submission_archive_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(
+        submission_archive_processing,
+        "get_adapter",
+        lambda: adapter,
+    )
     submission_archive_service.create_report(
         report_type="zongbao",
         report_date=date(2026, 7, 28),
@@ -163,7 +174,7 @@ def test_process_report_links_does_not_overwrite_finished_items(
     assert adapter.report is not None
     adapter.report["items"][0]["link_status"] = "manual"
 
-    summary = submission_archive_service.process_report_links("report-id")
+    summary = submission_archive_processing.process_report_links("report-id")
 
     assert summary == {
         "exact": 0,
@@ -192,6 +203,11 @@ def test_process_report_links_fetches_one_body_batch_for_all_items(
         for index in range(30)
     }
     monkeypatch.setattr(submission_archive_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(
+        submission_archive_processing,
+        "get_adapter",
+        lambda: adapter,
+    )
     submission_archive_service.create_report(
         report_type="zongbao",
         report_date=date(2026, 7, 28),
@@ -206,7 +222,7 @@ def test_process_report_links_fetches_one_body_batch_for_all_items(
         overwrite=False,
     )
 
-    submission_archive_service.process_report_links("report-id")
+    submission_archive_processing.process_report_links("report-id")
 
     assert adapter.title_fetch_count == 1
     assert len(adapter.body_fetch_calls) == 1

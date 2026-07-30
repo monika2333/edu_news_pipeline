@@ -8,12 +8,12 @@ from fastapi.encoders import jsonable_encoder
 
 from src.console import submission_archive_service
 from src.console.security import ConsoleUser, require_console_user, require_role
-from src.console.submission_archive_parser import SubmissionArchiveParseError
 from src.console.submission_archive_schemas import (
     CreateSubmissionReportRequest,
     LinkDecisionRequest,
     ParseSubmissionReportRequest,
 )
+from src.domain.submission_archive_parser import SubmissionArchiveParseError
 from src.workers.submission_archive_processing import (
     launch_submission_report_processing,
 )

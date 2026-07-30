@@ -275,11 +275,19 @@ db_config = {
   - `web_templates/`、`web_static/`
 - `src/workers/`：后台流水线 worker；TXT 简报导出格式由 `src/workers/export_brief.py` 负责。
 - `src/adapters/`：外部系统适配器。
-- `src/domain/`：业务规则和领域模型。不要在这里新增 TXT/综报/晚报格式抽象；当前综报/晚报预览与人工导出格式归 `src/console/` 维护。
+- `src/domain/`：业务规则和领域模型，包括报送存档的文本解析与回链规则。不要在这里新增 TXT/综报/晚报格式抽象；当前综报/晚报预览与人工导出格式归 `src/console/` 维护。
 - `tests/`：测试文件。
 - `scripts/`：工具脚本。
 - `docs/`：提示词和流程文档。
 - `config/`：配置文件。
+
+## 依赖方向
+
+- 允许的方向：`src/console/` → `src/workers/` → `src/adapters/` 与 `src/domain/`。
+- `src/workers/` 和 `src/adapters/` **不得** import `src/console/`。后台流水线是定时独立运行的，必须能在控制台不运行时完整执行。
+- `src/cli/` 可以 import `src/console/` 的 service —— CLI 是另一个入口，属于正常方向。
+- 如果某段逻辑同时被 console 和 workers 需要：纯业务规则放 `src/domain/`，数据访问放 `src/adapters/`，执行编排放 `src/workers/`。不要留在 `src/console/` 让 workers 反向依赖。
+- 如果你发现必须把 import 写在函数内部才能避免循环引用，那是依赖方向错了的信号，应该调整位置而不是延迟 import。
 
 ## 代码质量标准
 

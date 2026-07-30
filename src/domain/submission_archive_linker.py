@@ -6,14 +6,14 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Mapping, Optional, Sequence
 
-from src.console.submission_archive_config import (
+from src.domain.submission_archive_config import (
     LINK_BODY_CHARS,
     LINK_COARSE_TOP_K,
     LINK_TITLE_MIN,
     link_auto_threshold,
     link_review_threshold,
 )
-from src.console.submission_archive_parser import (
+from src.domain.submission_archive_parser import (
     normalize_submission_text,
 )
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.console import submission_archive_config
+from src.domain import submission_archive_config
 
 
 def test_submission_thresholds_allow_only_documented_env_overrides(

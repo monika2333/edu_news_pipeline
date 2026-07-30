@@ -4,7 +4,6 @@ from typing import Any
 
 import pytest
 
-from src.console import submission_archive_service
 from src.workers import submission_archive_processing
 
 
@@ -54,7 +53,7 @@ def test_process_submission_report_only_processes_links(
         "unmatched": 4,
     }
     monkeypatch.setattr(
-        submission_archive_service,
+        submission_archive_processing,
         "process_report_links",
         lambda report_id: expected,
     )

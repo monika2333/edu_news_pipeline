@@ -10,7 +10,7 @@ from src.adapters.title_cluster import (
     pack_embedding as _pack_embedding,
     unpack_embedding as _unpack_embedding,
 )
-from src.console.submission_archive_config import (
+from src.domain.submission_archive_config import (
     DEDUP_TOP_K,
     EMBED_BODY_CHARS,
     EMBED_MODEL,

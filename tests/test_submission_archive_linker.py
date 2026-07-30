@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.console.submission_archive_linker import (
+from src.domain.submission_archive_linker import (
     LinkCandidate,
     build_link_candidate_index,
     link_submission_item,

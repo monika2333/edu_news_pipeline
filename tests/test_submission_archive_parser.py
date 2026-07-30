@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from src.console.submission_archive_parser import (
+from src.domain.submission_archive_parser import (
     SubmissionArchiveParseError,
     normalize_submission_text,
     normalized_title_hash,

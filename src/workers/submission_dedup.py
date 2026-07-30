@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-import struct
 from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
 
 from src.adapters.db_postgres_core import get_adapter
-from src.adapters.title_cluster import encode_texts
+from src.adapters.title_cluster import (
+    encode_texts,
+    pack_embedding as _pack_embedding,
+    unpack_embedding as _unpack_embedding,
+)
 from src.console.submission_archive_config import (
     DEDUP_TOP_K,
     EMBED_BODY_CHARS,
@@ -21,15 +24,6 @@ WORKER = "submission_dedup"
 
 def _embedding_text(title: str, body: str) -> str:
     return f"{title}\n{body[:EMBED_BODY_CHARS]}"
-
-
-def _pack_embedding(vector: Sequence[float]) -> bytes:
-    values = [float(value) for value in vector]
-    return struct.pack(f"<{len(values)}f", *values)
-
-
-def _unpack_embedding(value: bytes) -> np.ndarray:
-    return np.frombuffer(value, dtype="<f4")
 
 
 def backfill_archive_embeddings(*, batch_size: int = 128) -> int:

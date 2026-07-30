@@ -6,7 +6,7 @@ param(
     [ValidateSet("zongbao", "wanbao")]
     [string]$ReportType = "zongbao",
     [ValidateRange(1, 1440)]
-    [int]$IntervalMinutes = 10,
+    [int]$IntervalMinutes = 5,
     [ValidateRange(1, 1440)]
     [int]$ExecutionTimeLimitMinutes = 15
 )

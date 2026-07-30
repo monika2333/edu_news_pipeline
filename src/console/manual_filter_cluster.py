@@ -5,12 +5,21 @@ Clustering logic and in-memory cache for grouping pending articles by title simi
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+import numpy as np
+
 from src.adapters.db_postgres_core import get_adapter
-from src.adapters.title_cluster import cluster_titles
+from src.adapters.title_cluster import (
+    EMBEDDING_MODEL_NAME,
+    cluster_embeddings,
+    encode_texts,
+    pack_embedding,
+    unpack_embedding,
+)
 
 from .manual_filter_helpers import (
     DEFAULT_REPORT_TYPE,
@@ -75,6 +84,80 @@ def _bucket_key_for_record(record: Dict[str, Any]) -> str:
     return f"{region}_{sentiment}"
 
 
+def _title_hash(title: str) -> str:
+    return hashlib.sha256(title.encode("utf-8")).hexdigest()
+
+
+def _load_title_embedding_map(
+    records: Sequence[Dict[str, Any]],
+    *,
+    adapter: Any,
+) -> Dict[str, np.ndarray]:
+    title_metadata = {
+        str(record["article_id"]): {
+            "title": str(record.get("title") or ""),
+            "title_hash": _title_hash(str(record.get("title") or "")),
+        }
+        for record in records
+        if record.get("article_id")
+    }
+    cached_rows = adapter.fetch_news_title_embeddings(
+        list(title_metadata),
+    )
+    embeddings: Dict[str, np.ndarray] = {}
+    for row in cached_rows:
+        article_id = str(row.get("article_id") or "")
+        metadata = title_metadata.get(article_id)
+        if metadata is None:
+            continue
+        if str(row.get("model") or "") != EMBEDDING_MODEL_NAME:
+            continue
+        if str(row.get("title_hash") or "") != metadata["title_hash"]:
+            continue
+        try:
+            vector = unpack_embedding(bytes(row["embedding"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if vector.size:
+            embeddings[article_id] = vector
+
+    missing_ids = [
+        article_id
+        for article_id in title_metadata
+        if article_id not in embeddings
+    ]
+    logger.info(
+        "Title embedding cache: %s hits, %s misses",
+        len(embeddings),
+        len(missing_ids),
+    )
+    if not missing_ids:
+        return embeddings
+
+    encoded = np.asarray(
+        encode_texts([
+            title_metadata[article_id]["title"]
+            for article_id in missing_ids
+        ]),
+        dtype=np.float32,
+    )
+    if encoded.ndim != 2 or len(encoded) != len(missing_ids):
+        raise RuntimeError("Title embedding encoder returned an invalid matrix")
+    payload = []
+    for article_id, vector in zip(missing_ids, encoded):
+        embeddings[article_id] = vector
+        payload.append(
+            {
+                "article_id": article_id,
+                "embedding": pack_embedding(vector),
+                "model": EMBEDDING_MODEL_NAME,
+                "title_hash": title_metadata[article_id]["title_hash"],
+            }
+        )
+    adapter.upsert_news_title_embeddings(payload)
+    return embeddings
+
+
 def refresh_clusters(
     *,
     cluster_threshold: Optional[float] = None,
@@ -93,6 +176,10 @@ def refresh_clusters(
 
     try:
         records = _collect_pending(None, None, fetch_limit=5000, adapter=adapter, report_type=target_report_type)
+        embedding_map = _load_title_embedding_map(
+            records,
+            adapter=adapter,
+        )
         buckets: Dict[str, List[Dict[str, Any]]] = {key: [] for key in CLUSTER_BUCKET_KEYS}
         for record in records:
             bucket_key = _bucket_key_for_record(record)
@@ -102,9 +189,25 @@ def refresh_clusters(
         for bucket_key, items in buckets.items():
             if not items:
                 continue
-            items_sorted = sorted(items, key=_candidate_rank_key_by_record, reverse=True)
-            titles = [item.get("title") or "" for item in items_sorted]
-            groups = cluster_titles(titles, threshold=threshold_val) or [list(range(len(items_sorted)))]
+            items_sorted = [
+                item
+                for item in sorted(
+                    items,
+                    key=_candidate_rank_key_by_record,
+                    reverse=True,
+                )
+                if str(item.get("article_id") or "") in embedding_map
+            ]
+            if not items_sorted:
+                continue
+            matrix = np.stack([
+                embedding_map[str(item["article_id"])]
+                for item in items_sorted
+            ])
+            groups = cluster_embeddings(
+                matrix,
+                threshold=threshold_val,
+            ) or [list(range(len(items_sorted)))]
 
             for idx, group in enumerate(groups):
                 group_items = [items_sorted[i] for i in group if 0 <= i < len(items_sorted)]

@@ -20,6 +20,7 @@ from src.adapters import (
     db_postgres_shift_reviews as shift_reviews,
     db_postgres_shifts as shifts,
     db_postgres_submission_archive as submission_archive,
+    db_postgres_title_embeddings as title_embeddings,
     db_postgres_users as users,
 )
 from src.adapters.db_postgres_shared import MISSING as _MISSING
@@ -1666,6 +1667,20 @@ class PostgresAdapter:
         with self._cluster_transaction() as cur:
             manual_reviews.delete_manual_clusters(cur, report_type=report_type)
             return manual_reviews.insert_manual_clusters(cur, clusters, report_type=report_type)
+
+    def fetch_news_title_embeddings(
+        self,
+        article_ids: Sequence[str],
+    ) -> List[Dict[str, Any]]:
+        with self._cluster_transaction() as cur:
+            return title_embeddings.fetch_title_embeddings(cur, article_ids)
+
+    def upsert_news_title_embeddings(
+        self,
+        embeddings: Sequence[Mapping[str, Any]],
+    ) -> int:
+        with self._cluster_transaction() as cur:
+            return title_embeddings.upsert_title_embeddings(cur, embeddings)
 
     def fetch_manual_clusters(
         self,

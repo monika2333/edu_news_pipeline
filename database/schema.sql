@@ -342,6 +342,19 @@ COMMENT ON COLUMN public.news_summaries.beijing_gate_checked_at IS 'Timestamp wh
 
 
 --
+-- Name: news_title_embeddings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.news_title_embeddings (
+    article_id text NOT NULL,
+    embedding bytea NOT NULL,
+    model text NOT NULL,
+    title_hash text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: pipeline_run_steps; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -778,6 +791,14 @@ ALTER TABLE ONLY public.manual_reviews
 
 ALTER TABLE ONLY public.news_summaries
     ADD CONSTRAINT news_summaries_pkey PRIMARY KEY (article_id);
+
+
+--
+-- Name: news_title_embeddings news_title_embeddings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.news_title_embeddings
+    ADD CONSTRAINT news_title_embeddings_pkey PRIMARY KEY (article_id);
 
 
 --
@@ -1479,6 +1500,14 @@ ALTER TABLE ONLY public.manual_reviews
 
 
 --
+-- Name: news_title_embeddings news_title_embeddings_article_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.news_title_embeddings
+    ADD CONSTRAINT news_title_embeddings_article_id_fkey FOREIGN KEY (article_id) REFERENCES public.news_summaries(article_id) ON DELETE CASCADE;
+
+
+--
 -- Name: pipeline_run_steps pipeline_run_steps_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1656,4 +1685,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260729120000'),
     ('20260729130000'),
     ('20260729130100'),
-    ('20260729130200');
+    ('20260729130200'),
+    ('20260729220000');

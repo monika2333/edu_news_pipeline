@@ -3,15 +3,16 @@ from __future__ import annotations
 """Reusable title clustering utility based on BGE embeddings."""
 
 import os
+import struct
 import threading
-from typing import Sequence
+from typing import Any, Sequence
+
+import numpy as np
 
 _DEFAULT_HF_HUB_ETAG_TIMEOUT = "20"
 _MODEL_DOWNLOAD_ENV = "TITLE_CLUSTER_ALLOW_MODEL_DOWNLOAD"
 _TRUE_VALUES = {"1", "true", "yes", "y", "on"}
 os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", _DEFAULT_HF_HUB_ETAG_TIMEOUT)
-
-from sentence_transformers import SentenceTransformer, util
 
 from src.config import BGE_EMBEDDING_MODEL
 
@@ -19,7 +20,7 @@ EMBEDDING_MODEL_NAME = BGE_EMBEDDING_MODEL
 _DEFAULT_MODEL_NAME = EMBEDDING_MODEL_NAME
 _DEFAULT_THRESHOLD = 0.9
 
-_model: SentenceTransformer | None = None
+_model: Any = None
 _model_lock = threading.Lock()
 
 
@@ -28,19 +29,29 @@ def _model_download_allowed() -> bool:
     return value.strip().lower() in _TRUE_VALUES
 
 
-def _load_model() -> SentenceTransformer:
+def _sentence_transformer_class() -> Any:
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer
+
+
+def _load_model() -> Any:
+    sentence_transformer = _sentence_transformer_class()
     try:
-        return SentenceTransformer(_DEFAULT_MODEL_NAME, local_files_only=True)
+        return sentence_transformer(
+            _DEFAULT_MODEL_NAME,
+            local_files_only=True,
+        )
     except OSError as exc:
         if not _model_download_allowed():
             raise RuntimeError(
                 f"Embedding model {_DEFAULT_MODEL_NAME!r} is unavailable locally. "
                 f"Set {_MODEL_DOWNLOAD_ENV}=1 to explicitly allow downloading it."
             ) from exc
-        return SentenceTransformer(_DEFAULT_MODEL_NAME)
+        return sentence_transformer(_DEFAULT_MODEL_NAME)
 
 
-def _get_model() -> SentenceTransformer:
+def _get_model() -> Any:
     global _model
     if _model is None:
         with _model_lock:
@@ -49,12 +60,12 @@ def _get_model() -> SentenceTransformer:
     return _model
 
 
-def get_embedding_model() -> SentenceTransformer:
+def get_embedding_model() -> Any:
     """Return the process-wide BGE model singleton."""
     return _get_model()
 
 
-def encode_texts(texts: Sequence[str]):
+def encode_texts(texts: Sequence[str]) -> Any:
     """Encode text as normalized NumPy vectors using the shared BGE model."""
     values = [text or "" for text in texts]
     if not values:
@@ -66,24 +77,60 @@ def encode_texts(texts: Sequence[str]):
     )
 
 
-def _greedy_grouping(sim_matrix, threshold: float) -> list[list[int]]:
-    visited = set()
+def pack_embedding(vector: Sequence[float]) -> bytes:
+    values = [float(value) for value in vector]
+    return struct.pack(f"<{len(values)}f", *values)
+
+
+def unpack_embedding(value: bytes) -> np.ndarray:
+    return np.frombuffer(value, dtype="<f4")
+
+
+def _greedy_grouping(
+    sim_matrix: np.ndarray,
+    threshold: float,
+) -> list[list[int]]:
+    unassigned = np.ones(len(sim_matrix), dtype=bool)
     groups: list[list[int]] = []
-    size = len(sim_matrix)
-    for i in range(size):
-        if i in visited:
+    for i in range(len(sim_matrix)):
+        if not unassigned[i]:
             continue
-        group = [i]
-        visited.add(i)
-        for j in range(i + 1, size):
-            if j not in visited and sim_matrix[i][j] >= threshold:
-                group.append(j)
-                visited.add(j)
+        matches = unassigned & (sim_matrix[i] >= threshold)
+        matches[:i + 1] = False
+        group = [i, *np.flatnonzero(matches).tolist()]
+        unassigned[group] = False
         groups.append(group)
     return groups
 
 
-def cluster_titles(titles: Sequence[str], *, threshold: float = _DEFAULT_THRESHOLD) -> list[list[int]]:
+def cluster_embeddings(
+    matrix: Sequence[Sequence[float]] | np.ndarray,
+    *,
+    threshold: float = _DEFAULT_THRESHOLD,
+) -> list[list[int]]:
+    values = np.asarray(matrix, dtype=np.float32)
+    if values.size == 0:
+        return []
+    if values.ndim != 2:
+        raise ValueError("embedding matrix must be two-dimensional")
+    if len(values) == 1:
+        return [[0]]
+    norms = np.linalg.norm(values, axis=1, keepdims=True)
+    normalized = np.divide(
+        values,
+        norms,
+        out=np.zeros_like(values),
+        where=norms > 0,
+    )
+    similarities = normalized @ normalized.T
+    return _greedy_grouping(similarities, threshold)
+
+
+def cluster_titles(
+    titles: Sequence[str],
+    *,
+    threshold: float = _DEFAULT_THRESHOLD,
+) -> list[list[int]]:
     """
     Cluster titles using cosine similarity on BGE embeddings.
 
@@ -100,17 +147,18 @@ def cluster_titles(titles: Sequence[str], *, threshold: float = _DEFAULT_THRESHO
         return []
     if len(titles_list) == 1:
         return [[0]]
-
-    model = _get_model()
-    embeddings = model.encode(titles_list, convert_to_tensor=True, normalize_embeddings=True)
-    sim_matrix = util.cos_sim(embeddings, embeddings).cpu().numpy()
-
-    return _greedy_grouping(sim_matrix, threshold)
+    return cluster_embeddings(
+        encode_texts(titles_list),
+        threshold=threshold,
+    )
 
 
 __all__ = [
     "EMBEDDING_MODEL_NAME",
+    "cluster_embeddings",
     "cluster_titles",
     "encode_texts",
     "get_embedding_model",
+    "pack_embedding",
+    "unpack_embedding",
 ]

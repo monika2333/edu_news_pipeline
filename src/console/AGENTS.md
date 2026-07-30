@@ -11,7 +11,7 @@
 - `manual_filter_service.py` 是为了稳定导入而保留的 public facade；更细的人工筛选逻辑放在相邻的 `manual_filter_*` 模块中。
 - `web_templates/` 管理 Jinja markup；`web_static/` 管理 CSS 和 JavaScript。
 - 当前 Web 页面入口按角色分发，`web_routes.py` 负责根路径跳转：管理员进入 `/admin/duty-summary`，值班编辑进入 `/duty`。
-- `/duty` 不渲染 `web_templates/duty.html`，而是复用 `manual_filter.html` 并传入 `workspace_mode="duty"`。值班编辑页面的可见控件应在这个共享模板及 `web_static/js/manual_filter/` 中维护；不要只修改旧的 `duty.html` 或 `web_static/js/duty.js` 并期待 `/duty` 生效。
+- `/duty` 复用 `web_templates/manual_filter.html`，通过 `workspace_mode="duty"` 区分。值班编辑页面的可见控件应在这个共享模板及 `web_static/js/manual_filter/` 中维护。
 - `web_static/js/manual_filter/workspace.js` 是共享页面与值班 API 之间的转译层，负责把人工筛选工作区请求映射到当前班次的 `/api/duty/shifts/{shift_id}` 接口。新增或修改值班编辑操作时，应同步检查模板、对应 manual-filter JS 模块和该转译层。
 
 ## 人工筛选规则

@@ -310,7 +310,6 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert '/static/js/manual_filter/workspace.js?v=' in html
     assert '/static/js/shift_date.js?v=' in html
     assert '/static/js/manual_filter/filter_tab_data.js?v=' in html
-    assert 'src="/static/js/duty.js' not in html
     assert 'href="/admin">用户与排班</a>' not in html
     assert 'href="/admin/duty-summary">值班汇总</a>' not in html
     assert 'id="btn-check-duplicates"' in html

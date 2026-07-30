@@ -1003,10 +1003,6 @@ class PostgresAdapter:
     # ------------------------------------------------------------------
     # Ingest
     # ------------------------------------------------------------------
-    def upsert_toutiao_articles(self, rows: Sequence[Mapping[str, Any]]) -> int:
-        with self._cursor() as cur:
-            return ingest.upsert_toutiao_articles(cur, rows)
-
     def upsert_raw_feed_rows(self, rows: Sequence[Mapping[str, Any]]) -> int:
         with self._cursor() as cur:
             return ingest.upsert_raw_feed_rows(cur, rows)
@@ -1241,32 +1237,6 @@ class PostgresAdapter:
     def update_summary_score(self, article_id: str, score: Optional[float]) -> None:
         with self._cursor() as cur:
             news_summaries.update_summary_score(cur, article_id, score)
-
-    # ------------------------------------------------------------------
-    # Backward-compat wrappers (to be removed after refactor)
-    # ------------------------------------------------------------------
-    def upsert_toutiao_feed_rows(self, rows: Sequence[Mapping[str, Any]]) -> int:
-        return self.upsert_raw_feed_rows(rows)
-
-    def update_toutiao_article_details(self, rows: Sequence[Mapping[str, Any]]) -> int:
-        return self.update_raw_article_details(rows)
-
-    def get_toutiao_articles_missing_content(self, article_ids: Sequence[str]) -> Set[str]:
-        return self.get_raw_articles_missing_content(article_ids)
-
-    def fetch_toutiao_articles_missing_content(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        return self.fetch_raw_articles_missing_content(limit)
-
-    def get_existing_toutiao_article_ids(self) -> Set[str]:
-        return self.get_existing_raw_article_ids()
-
-    def fetch_toutiao_articles_for_summary(
-        self,
-        *,
-        after_fetched_at: Optional[str],
-        limit: Optional[int],
-    ) -> List[Dict[str, Any]]:
-        return self.fetch_raw_articles_for_summary(after_fetched_at=after_fetched_at, limit=limit)
 
     def upsert_news_summaries_from_primary(self, rows: Sequence[Mapping[str, Any]]) -> int:
         with self._cursor() as cur:

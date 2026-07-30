@@ -48,7 +48,7 @@ def test_postgres_adapter_core_roundtrip() -> None:
 
     try:
         rows = format_article_rows([article_record])
-        adapter.upsert_toutiao_articles(rows)
+        adapter.upsert_raw_feed_rows(rows)
         adapter.update_raw_article_details(
             [
                 {
@@ -69,7 +69,7 @@ def test_postgres_adapter_core_roundtrip() -> None:
             ]
         )
 
-        fetched_articles = adapter.fetch_toutiao_articles_for_summary(
+        fetched_articles = adapter.fetch_raw_articles_for_summary(
             after_fetched_at=fetched_at.isoformat(),
             limit=20,
         )

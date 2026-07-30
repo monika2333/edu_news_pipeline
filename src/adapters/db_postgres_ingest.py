@@ -6,49 +6,6 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 import psycopg
 
 
-def upsert_toutiao_articles(cur: psycopg.Cursor, rows: Sequence[Mapping[str, Any]]) -> int:
-    if not rows:
-        return 0
-    columns = [
-        "token",
-        "profile_url",
-        "article_id",
-        "title",
-        "source",
-        "publish_time",
-        "publish_time_iso",
-        "url",
-        "summary",
-        "comment_count",
-        "digg_count",
-        "content_markdown",
-        "fetched_at",
-    ]
-    insert_sql = """
-        INSERT INTO raw_articles (token, profile_url, article_id, title, source,
-            publish_time, publish_time_iso, url, summary, comment_count, digg_count,
-            content_markdown, fetched_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (article_id) DO UPDATE
-        SET token = EXCLUDED.token,
-            profile_url = EXCLUDED.profile_url,
-            title = EXCLUDED.title,
-            source = EXCLUDED.source,
-            publish_time = EXCLUDED.publish_time,
-            publish_time_iso = EXCLUDED.publish_time_iso,
-            url = EXCLUDED.url,
-            summary = EXCLUDED.summary,
-            comment_count = EXCLUDED.comment_count,
-            digg_count = EXCLUDED.digg_count,
-            content_markdown = EXCLUDED.content_markdown,
-            fetched_at = EXCLUDED.fetched_at,
-            updated_at = now()
-    """
-    data = [tuple(row.get(col) for col in columns) for row in rows]
-    cur.executemany(insert_sql, data)
-    return len(rows)
-
-
 def upsert_raw_feed_rows(cur: psycopg.Cursor, rows: Sequence[Mapping[str, Any]]) -> int:
     if not rows:
         return 0
@@ -529,5 +486,4 @@ __all__ = [
     "upsert_filtered_articles",
     "upsert_primary_articles",
     "upsert_raw_feed_rows",
-    "upsert_toutiao_articles",
 ]

@@ -1,4 +1,4 @@
-\restrict tmtdrBQ4PHXkpg8AXkhetMfgz5Fw0jVIGINCLGXINHOIzYmD8nS3ovUlKhiB4OY
+\restrict SgweBTpkf2WvKg4TdfVzEiiY0689ytwJsFCLw8tabfHwbZTMlbiFXAclvbuFsNz
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
@@ -501,10 +501,10 @@ CREATE TABLE public.score_feedbacks (
     prompt_version text NOT NULL,
     notes text,
     score_context jsonb,
-    submitted_by text,
-    submitted_by_user_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    submitted_by text,
+    submitted_by_user_id uuid,
     CONSTRAINT score_feedbacks_feedback_type_check CHECK ((feedback_type = ANY (ARRAY['too_high'::text, 'too_low'::text]))),
     CONSTRAINT score_feedbacks_notes_length_check CHECK (((notes IS NULL) OR (char_length(notes) <= 500))),
     CONSTRAINT score_feedbacks_prompt_key_check CHECK ((prompt_key = ANY (ARRAY['external_positive'::text, 'external_negative'::text, 'internal_positive'::text, 'internal_negative'::text]))),
@@ -1639,7 +1639,7 @@ ALTER TABLE ONLY public.submitted_report_items
 -- PostgreSQL database dump complete
 --
 
-\unrestrict tmtdrBQ4PHXkpg8AXkhetMfgz5Fw0jVIGINCLGXINHOIzYmD8nS3ovUlKhiB4OY
+\unrestrict SgweBTpkf2WvKg4TdfVzEiiY0689ytwJsFCLw8tabfHwbZTMlbiFXAclvbuFsNz
 
 
 --

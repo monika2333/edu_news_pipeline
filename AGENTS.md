@@ -276,6 +276,7 @@ db_config = {
 - `src/workers/`：后台流水线 worker；TXT 简报导出格式由 `src/workers/export_brief.py` 负责。
 - `src/adapters/`：外部系统适配器。
 - `src/domain/`：业务规则和领域模型，包括报送存档的文本解析与回链规则。不要在这里新增 TXT/综报/晚报格式抽象；当前综报/晚报预览与人工导出格式归 `src/console/` 维护。
+  - 报别（综报/晚报）与报送稿类型的权威定义在 `src/domain/report_type.py`。不要在其他地方重新声明 `{"zongbao","wanbao"}` 这类字面量集合；新增校验或类型标注时从该模块导入。注意新闻报别（两个值）与报送稿类型（三个值，含 feedback）是两个不同的枚举，不要合并。
 - `tests/`：测试文件。
 - `scripts/`：工具脚本。
 - `docs/`：提示词和流程文档。

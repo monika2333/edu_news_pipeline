@@ -8,6 +8,7 @@ import threading
 import time
 from pathlib import Path
 
+from src.domain.report_type import NEWS_REPORT_TYPE_ORDER
 from src.workers.crawl_sources import run as crawl_sources
 from src.workers.enrich_summary import run as enrich_summaries
 from src.workers.external_filter import run as run_external_filter
@@ -190,7 +191,7 @@ def _add_refresh_manual_clusters(subparsers: argparse._SubParsersAction) -> None
     )
     parser.add_argument(
         "--report-type",
-        choices=("zongbao", "wanbao"),
+        choices=NEWS_REPORT_TYPE_ORDER,
         default="zongbao",
         help="Manual-review workspace to refresh (default: zongbao)",
     )

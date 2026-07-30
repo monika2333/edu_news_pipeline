@@ -4,8 +4,9 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.domain.report_type import NewsReportType as ReportType
+
 Decision = Literal["pending", "selected", "backup", "discarded"]
-ReportType = Literal["zongbao", "wanbao"]
 ReviewGroupKey = Literal[
     "internal_positive",
     "internal_negative",

@@ -7,13 +7,12 @@ from urllib.parse import urlparse
 
 from src.adapters.db_postgres_core import get_adapter
 from src.console.auth_service import ConsoleUser
+from src.domain.report_type import SUBMISSION_DOC_TYPES as VALID_REPORT_TYPES
 from src.domain.submission_archive_parser import (
     normalize_submission_text,
     normalized_title_hash,
     parse_submission_report,
 )
-
-VALID_REPORT_TYPES = frozenset({"zongbao", "wanbao", "feedback"})
 
 
 class SubmissionReportConflictError(RuntimeError):

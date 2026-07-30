@@ -23,6 +23,7 @@ from src.console.score_feedback_schemas import (
     ScoreFeedbackResponse,
 )
 from src.console.security import ConsoleUser, require_console_user
+from src.domain.report_type import NewsReportType
 
 router = APIRouter(prefix="/api/manual_filter", tags=["manual_filter"])
 
@@ -72,7 +73,7 @@ class DiscardBeforeDateRequest(BaseModel):
 
 
 class DuplicateCheckRequest(BaseModel):
-    report_type: Literal["zongbao", "wanbao"]
+    report_type: NewsReportType
     decision: Literal["selected", "backup"]
 
 

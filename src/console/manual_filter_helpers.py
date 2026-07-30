@@ -2,25 +2,17 @@
 manual_filter_helpers.py
 
 Shared constants and helper functions for manual filter service.
-These utilities are intentionally kept dependency-free to avoid circular imports.
+These utilities depend only on src.domain, not other src.console modules.
 """
 from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Optional
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Constants
-# ─────────────────────────────────────────────────────────────────────────────
-DEFAULT_REPORT_TYPE = "zongbao"
-VALID_REPORT_TYPES = {"zongbao", "wanbao"}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Report type normalization
-# ─────────────────────────────────────────────────────────────────────────────
-def _normalize_report_type(report_type: Optional[str]) -> str:
-    value = (report_type or DEFAULT_REPORT_TYPE).strip().lower()
-    return value if value in VALID_REPORT_TYPES else DEFAULT_REPORT_TYPE
+from src.domain.report_type import (
+    DEFAULT_REPORT_TYPE,
+    NEWS_REPORT_TYPES as VALID_REPORT_TYPES,
+    coerce_report_type as _normalize_report_type,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

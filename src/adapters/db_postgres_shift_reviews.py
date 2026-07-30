@@ -10,9 +10,9 @@ from src.adapters.db_postgres_manual_reviews import (
     SCORE_FEEDBACK_JOIN,
     SEARCH_TEXT_EXPRESSION,
 )
+from src.domain.report_type import NEWS_REPORT_TYPES as VALID_REPORT_TYPES
 
 VALID_DECISIONS = frozenset({"pending", "selected", "backup", "discarded"})
-VALID_REPORT_TYPES = frozenset({"zongbao", "wanbao"})
 _EDITABLE_FIELDS = (
     "decision",
     "report_type",

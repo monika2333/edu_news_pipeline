@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Literal, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
-SubmissionReportType = Literal["zongbao", "wanbao", "feedback"]
+from src.domain.report_type import SubmissionDocType as SubmissionReportType
 
 
 class ParseSubmissionReportRequest(BaseModel):

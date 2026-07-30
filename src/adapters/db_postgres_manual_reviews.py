@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import psycopg
 
+from src.domain.report_type import normalize_report_type as normalize_report_type_value
+
 SEARCH_TEXT_EXPRESSION = (
     "(coalesce(ns.title, '') || ' ' || coalesce(ns.llm_summary, '') || ' ' || coalesce(ns.content_markdown, ''))"
 )
@@ -63,15 +65,6 @@ class ManualReviewConflictError(RuntimeError):
 
 
 MANUAL_REVIEW_DECISION_LOCK_ID = 2_026_072_401
-
-
-def normalize_report_type_value(report_type: Optional[str]) -> Optional[str]:
-    value = (report_type or "").strip().lower()
-    if not value:
-        return None
-    if value in ("zongbao", "wanbao"):
-        return value
-    return "zongbao"
 
 
 def report_type_expr(alias: str = "") -> str:

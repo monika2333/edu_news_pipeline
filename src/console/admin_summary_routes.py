@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from src.console import admin_summary_service, shifts_service
 from src.console.auth_service import ConsoleUser
 from src.console.security import require_role
+from src.domain.report_type import NewsReportType
 
 router = APIRouter(prefix="/api/admin", tags=["duty_summary"])
 
@@ -16,7 +17,7 @@ class ImportDutyPreviewRequest(BaseModel):
     shift_id: str
     article_ids: list[str] = Field(min_length=1)
     target_status: Literal["selected", "backup"]
-    report_type: Literal["zongbao", "wanbao"]
+    report_type: NewsReportType
 
 
 class AdminDiscardRequest(BaseModel):

@@ -1414,13 +1414,6 @@ class PostgresAdapter:
     # ------------------------------------------------------------------
     # Manual reviews
     # ------------------------------------------------------------------
-    def _normalize_report_type_value(self, report_type: Optional[str]) -> Optional[str]:
-        return manual_reviews.normalize_report_type_value(report_type)
-
-    @staticmethod
-    def _report_type_expr(alias: str = "") -> str:
-        return manual_reviews.report_type_expr(alias)
-
     def enqueue_manual_review(
         self,
         article_id: str,

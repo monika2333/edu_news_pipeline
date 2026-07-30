@@ -31,4 +31,4 @@ def test_invalid_submission_env_values_fall_back_to_defaults(
     assert submission_archive_config.dedup_lookback_days() == 15
     assert submission_archive_config.link_auto_threshold() == 0.85
     assert submission_archive_config.link_review_threshold() == 0.55
-    assert submission_archive_config.dedup_recall_threshold() == 0.72
+    assert submission_archive_config.dedup_recall_threshold() == 0.90

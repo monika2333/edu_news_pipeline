@@ -13,7 +13,7 @@ from src.adapters.db_postgres_core import get_adapter
 
 from .manual_filter_cluster import cluster_pending, refresh_clusters
 from .manual_filter_helpers import DEFAULT_REPORT_TYPE, _normalize_report_type
-from .manual_filter_serializers import FILTER_TAB_REPORT_TYPE, serialize_manual_filter_item
+from .manual_filter_serializers import serialize_manual_filter_item
 from .submission_archive_service import attach_duplicate_badges
 
 logger = logging.getLogger(__name__)
@@ -27,14 +27,18 @@ def _paginate_by_status(
     only_ready: bool = False,
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
-    report_type: str = DEFAULT_REPORT_TYPE,
+    report_type: Optional[str] = DEFAULT_REPORT_TYPE,
     order_by_decided_at: bool = False,
     hide_submitted: bool = False,
 ) -> Dict[str, Any]:
     adapter = get_adapter()
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
-    target_report_type = _normalize_report_type(report_type)
+    target_report_type = (
+        _normalize_report_type(report_type)
+        if report_type is not None
+        else None
+    )
     fetch_kwargs = {
         "status": manual_status,
         "limit": limit,
@@ -56,7 +60,7 @@ def _paginate_by_status(
             serialize_manual_filter_item(
                 dict(record),
                 fallback_status=manual_status,
-                report_type=target_report_type,
+                report_type=target_report_type or DEFAULT_REPORT_TYPE,
             )
         )
     attach_duplicate_badges(items, adapter=adapter)
@@ -71,7 +75,7 @@ def _list_candidate_search(
     sentiment: Optional[str],
     query: Optional[str],
     published_before: Optional[date],
-    report_type: str,
+    report_type: Optional[str],
     hide_submitted: bool,
 ) -> Dict[str, Any]:
     adapter = get_adapter()
@@ -93,7 +97,7 @@ def _list_candidate_search(
         serialize_manual_filter_item(
             dict(record),
             fallback_status="pending",
-            report_type=report_type,
+            report_type=report_type or DEFAULT_REPORT_TYPE,
         )
         for record in rows
     ]
@@ -116,7 +120,7 @@ def _list_candidate_browse(
     cluster: bool,
     cluster_threshold: Optional[float],
     force_refresh: bool,
-    report_type: str,
+    report_type: Optional[str],
     hide_submitted: bool,
 ) -> Dict[str, Any]:
     if cluster:
@@ -168,16 +172,17 @@ def list_candidates(
 ) -> Dict[str, Any]:
     region = region if region in ("internal", "external") else None
     sentiment = sentiment if sentiment in ("positive", "negative") else None
-    target_report_type = FILTER_TAB_REPORT_TYPE
+    del report_type
+    target_report_type = None
     normalized_query = (q or "").strip() or None
     search_mode = (view_mode or "").strip().lower() == "search" or normalized_query is not None or published_before is not None
     logger.info(
-        "Listing candidates: limit=%s offset=%s region=%s sentiment=%s report_type=%s view_mode=%s",
+        "Listing candidates: limit=%s offset=%s region=%s sentiment=%s report_scope=%s view_mode=%s",
         limit,
         offset,
         region,
         sentiment,
-        target_report_type,
+        "all",
         "search" if search_mode else "browse",
     )
     if search_mode:
@@ -212,14 +217,14 @@ def list_review(decision: str, *, limit: int = 30, offset: int = 0, report_type:
 
 
 def list_discarded(*, limit: int = 30, offset: int = 0, report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, Any]:
-    target_report_type = _normalize_report_type(report_type)
-    logger.info("Listing discarded items: limit=%s offset=%s report_type=%s", limit, offset, target_report_type)
+    del report_type
+    logger.info("Listing discarded items: limit=%s offset=%s report_scope=all", limit, offset)
     return _paginate_by_status(
         "discarded",
         limit=limit,
         offset=offset,
         only_ready=False,
-        report_type=target_report_type,
+        report_type=None,
         order_by_decided_at=True,
     )
 

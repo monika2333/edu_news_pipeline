@@ -12,7 +12,6 @@ from src.adapters.db_postgres_core import get_adapter
 
 from . import manual_filter_decisions
 from .manual_filter_helpers import DEFAULT_REPORT_TYPE
-from .manual_filter_serializers import FILTER_TAB_REPORT_TYPE
 
 
 def bulk_decide(
@@ -87,7 +86,7 @@ def discard_candidates_before_date(
         sentiment=normalized_sentiment,
         query=(query or "").strip() or None,
         published_before=published_before,
-        report_type=FILTER_TAB_REPORT_TYPE,
+        report_type=None,
     )
     if dry_run or matched <= 0:
         return {"matched": matched, "updated": 0}
@@ -97,7 +96,7 @@ def discard_candidates_before_date(
         query=(query or "").strip() or None,
         published_before=published_before,
         actor=actor,
-        report_type=FILTER_TAB_REPORT_TYPE,
+        report_type=None,
     )
     return {"matched": matched, "updated": updated}
 

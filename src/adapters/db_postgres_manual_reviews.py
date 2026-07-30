@@ -266,13 +266,14 @@ def fetch_manual_pending_for_cluster(
     report_type: Optional[str] = None,
     hide_submitted: bool = False,
 ) -> List[Dict[str, Any]]:
+    del report_type
     type_expr = report_type_expr("mr")
     clauses, params = _build_manual_review_filters(
         status="pending",
         only_ready=True,
         region=region,
         sentiment=sentiment,
-        report_type=report_type,
+        report_type=None,
         hide_submitted=hide_submitted,
     )
     where_sql = " AND ".join(clauses)
@@ -607,28 +608,32 @@ def release_advisory_lock(cur: psycopg.Cursor, lock_id: int) -> None:
 
 
 def manual_review_status_counts(cur: psycopg.Cursor, *, report_type: Optional[str] = None) -> Dict[str, int]:
-    counts: Dict[str, int] = {"pending": 0, "selected": 0, "backup": 0, "discarded": 0, "exported": 0}
     type_expr = report_type_expr()
-    normalized_report_type = normalize_report_type_value(report_type)
-    params: List[Any] = []
-    where_clause = ""
-    if normalized_report_type:
-        where_clause = f"WHERE {type_expr} = %s"
-        params.append(normalized_report_type)
+    normalized_report_type = normalize_report_type_value(report_type) or "zongbao"
     query = f"""
-        SELECT status, COUNT(*) AS total
+        SELECT
+            COUNT(*) FILTER (WHERE status = 'pending') AS pending,
+            COUNT(*) FILTER (WHERE status = 'discarded') AS discarded,
+            COUNT(*) FILTER (
+                WHERE status = 'selected' AND {type_expr} = %s
+            ) AS selected,
+            COUNT(*) FILTER (
+                WHERE status = 'backup' AND {type_expr} = %s
+            ) AS backup,
+            COUNT(*) FILTER (
+                WHERE status = 'exported' AND {type_expr} = %s
+            ) AS exported
         FROM manual_reviews
-        {where_clause}
-        GROUP BY status
     """
-    cur.execute(query, tuple(params))
-    for row in cur.fetchall():
-        status = str(row.get("status") or "").strip() or "pending"
-        try:
-            counts[status] = int(row.get("total") or 0)
-        except Exception:
-            counts[status] = 0
-    return counts
+    cur.execute(query, (normalized_report_type,) * 3)
+    row = cur.fetchone() or {}
+    return {
+        "pending": int(row.get("pending") or 0),
+        "selected": int(row.get("selected") or 0),
+        "backup": int(row.get("backup") or 0),
+        "discarded": int(row.get("discarded") or 0),
+        "exported": int(row.get("exported") or 0),
+    }
 
 
 def manual_review_pending_count(cur: psycopg.Cursor, *, report_type: Optional[str] = None) -> int:
@@ -1205,7 +1210,6 @@ def update_manual_review_statuses_with_versions(
         target_report_type = (
             normalize_report_type_value(item.get("report_type"))
             or default_report_type
-            or current.get("report_type")
         )
         cur.execute(
             """
@@ -1293,7 +1297,6 @@ def update_manual_review_summaries_with_versions(
         target_report_type = (
             normalize_report_type_value(edit.get("report_type"))
             or default_report_type
-            or current.get("report_type")
         )
         summary = edit["summary"] if "summary" in edit else current.get("summary")
         manual_llm_source = (

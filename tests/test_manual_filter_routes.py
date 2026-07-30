@@ -52,11 +52,20 @@ class FakeManualFilterAdapter:
         report_type: Optional[str] = None,
         order_by_decided_at: bool = False,
     ) -> Tuple[list[Dict[str, Any]], int]:
-        target_type = self._normalized_report_type(report_type)
+        target_type = (
+            self._normalized_report_type(report_type)
+            if report_type is not None
+            else None
+        )
         filtered = [
             row
             for row in self.rows
-            if row.get("status") == status and self._normalized_report_type(row.get("report_type")) == target_type
+            if row.get("status") == status
+            and (
+                target_type is None
+                or self._normalized_report_type(row.get("report_type"))
+                == target_type
+            )
         ]
         if only_ready:
             filtered = [row for row in filtered if row.get("news_status") == "ready_for_export"]
@@ -354,6 +363,33 @@ def test_candidates_api_returns_search_mode_items(monkeypatch) -> None:
     assert payload["view_mode"] == "search"
     assert payload["total"] == 1
     assert [item["article_id"] for item in payload["items"]] == ["a1"]
+
+
+def test_candidates_api_ignores_report_type(monkeypatch) -> None:
+    from src.console import manual_filter_service
+
+    rows = _build_rows()
+    rows[0]["report_type"] = "wanbao"
+    adapter = FakeManualFilterAdapter(rows)
+    monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    zongbao = client.get(
+        "/api/manual_filter/candidates",
+        params={"report_type": "zongbao"},
+    )
+    wanbao = client.get(
+        "/api/manual_filter/candidates",
+        params={"report_type": "wanbao"},
+    )
+
+    assert zongbao.status_code == 200
+    assert wanbao.status_code == 200
+    assert wanbao.json() == zongbao.json()
+    assert {item["article_id"] for item in zongbao.json()["items"]} == {"a1", "a2"}
 
 
 def test_discard_before_date_api_supports_keyword_only_preview_and_apply(monkeypatch) -> None:

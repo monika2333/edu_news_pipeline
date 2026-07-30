@@ -11,7 +11,6 @@ from src.console.manual_filter_helpers import (
     _normalize_ids,
     _normalize_report_type,
 )
-from src.console.manual_filter_serializers import FILTER_TAB_REPORT_TYPE
 
 
 def _require_client_versions(user: ConsoleUser) -> bool:
@@ -88,7 +87,7 @@ def bulk_decide(
                 "article_id": article_id,
                 "status": status,
                 "rank": None,
-                "report_type": target_report_type,
+                "report_type": None,
                 "decided_at": timestamp,
             }
             for article_id in article_ids
@@ -100,7 +99,7 @@ def bulk_decide(
         expected_versions=versions,
         require_versions=_require_client_versions(actor),
         action="manual_review.decide",
-        report_type=target_report_type,
+        report_type=None,
         request_id=request_id,
     )
     return {
@@ -117,7 +116,7 @@ def save_edits(
     report_type: str = DEFAULT_REPORT_TYPE,
     request_id: Optional[str] = None,
 ) -> dict[str, Any]:
-    target_report_type = _normalize_report_type(report_type)
+    del report_type
     normalized: dict[str, dict[str, Any]] = {}
     for article_id, payload in edits.items():
         normalized[str(article_id)] = {
@@ -129,7 +128,6 @@ def save_edits(
             ),
             "notes": payload.get("notes"),
             "score": payload.get("score"),
-            "report_type": target_report_type,
         }
     after = get_adapter().update_manual_review_summaries_as_user(
         normalized,
@@ -137,7 +135,7 @@ def save_edits(
         actor_user_id=actor.user_id,
         expected_versions=versions,
         require_versions=_require_client_versions(actor),
-        report_type=target_report_type,
+        report_type=None,
         request_id=request_id,
     )
     return {
@@ -155,14 +153,14 @@ def archive_items(
     request_id: Optional[str] = None,
 ) -> dict[str, Any]:
     target_ids = _normalize_ids(article_ids)
-    target_report_type = _normalize_report_type(report_type)
+    del report_type
     timestamp = datetime.now(timezone.utc)
     updates = [
         {
             "article_id": article_id,
             "status": "exported",
             "rank": None,
-            "report_type": target_report_type,
+            "report_type": None,
             "decided_at": timestamp,
         }
         for article_id in target_ids
@@ -174,7 +172,7 @@ def archive_items(
         expected_versions=versions,
         require_versions=_require_client_versions(actor),
         action="manual_review.archive",
-        report_type=target_report_type,
+        report_type=None,
         request_id=request_id,
     )
     return {
@@ -288,7 +286,7 @@ def discard_candidates_before_date(
         sentiment=sentiment,
         query=normalized_query,
         published_before=published_before,
-        report_type=FILTER_TAB_REPORT_TYPE,
+        report_type=None,
     )
     if dry_run or matched <= 0:
         return {"matched": matched, "updated": 0}
@@ -297,7 +295,7 @@ def discard_candidates_before_date(
         sentiment=sentiment,
         query=normalized_query,
         published_before=published_before,
-        report_type=FILTER_TAB_REPORT_TYPE,
+        report_type=None,
         actor_username=actor.username,
         actor_user_id=actor.user_id,
         request_id=request_id,

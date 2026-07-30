@@ -39,11 +39,20 @@ class FakeAdapter:
         order_by_decided_at: bool = False,
         hide_submitted: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
-        target_type = self._normalized_report_type(report_type)
+        target_type = (
+            self._normalized_report_type(report_type)
+            if report_type is not None
+            else None
+        )
         filtered = [
             row
             for row in self.rows
-            if row.get("status") == status and self._normalized_report_type(row.get("report_type")) == target_type
+            if row.get("status") == status
+            and (
+                target_type is None
+                or self._normalized_report_type(row.get("report_type"))
+                == target_type
+            )
         ]
         if only_ready:
             filtered = [row for row in filtered if row.get("news_status") == "ready_for_export"]
@@ -81,7 +90,7 @@ class FakeAdapter:
             only_ready=True,
             region=region,
             sentiment=sentiment,
-            report_type=report_type,
+            report_type=None,
         )
         return rows
 
@@ -98,15 +107,13 @@ class FakeAdapter:
         report_type: Optional[str] = None,
         hide_submitted: bool = False,
     ) -> List[Dict[str, Any]]:
-        target_type = self._normalized_report_type(report_type)
+        del report_type
         rows: List[Dict[str, Any]] = []
         for row in self.rows:
             row_bucket = self._bucket_key_for_row(row)
             if bucket_key and row_bucket != bucket_key:
                 continue
             if row.get("status") != "pending" or row.get("news_status") != "ready_for_export":
-                continue
-            if self._normalized_report_type(row.get("report_type")) != target_type:
                 continue
             if hide_submitted and row.get("is_submitted"):
                 continue
@@ -236,19 +243,31 @@ class FakeAdapter:
         counts: Dict[str, int] = {"pending": 0, "selected": 0, "backup": 0, "discarded": 0, "exported": 0}
         target_type = self._normalized_report_type(report_type)
         for row in self.rows:
-            if self._normalized_report_type(row.get("report_type")) != target_type:
+            status = row.get("status") or "pending"
+            if (
+                status in {"selected", "backup", "exported"}
+                and self._normalized_report_type(row.get("report_type"))
+                != target_type
+            ):
                 continue
-            key = row.get("status") or "pending"
-            counts[key] = counts.get(key, 0) + 1
+            counts[status] = counts.get(status, 0) + 1
         return counts
 
     def manual_review_pending_count(self, *, report_type: Optional[str] = None) -> int:
-        target_type = self._normalized_report_type(report_type)
+        target_type = (
+            self._normalized_report_type(report_type)
+            if report_type is not None
+            else None
+        )
         return sum(
             1
             for row in self.rows
             if (row.get("status") or "pending") == "pending"
-            and self._normalized_report_type(row.get("report_type")) == target_type
+            and (
+                target_type is None
+                or self._normalized_report_type(row.get("report_type"))
+                == target_type
+            )
         )
 
     def manual_review_max_rank(self, status: str, *, report_type: Optional[str] = None) -> float:
@@ -268,14 +287,25 @@ class FakeAdapter:
             return 0.0
 
     def update_manual_review_statuses(self, updates: Sequence[Mapping[str, Any]], *, report_type: Optional[str] = None) -> int:
-        default_report_type = self._normalized_report_type(report_type)
+        default_report_type = (
+            self._normalized_report_type(report_type)
+            if report_type is not None
+            else None
+        )
         updated = 0
         for item in updates:
             aid = str(item.get("article_id") or "")
-            target_type = self._normalized_report_type(item.get("report_type") or default_report_type)
             for row in self.rows:
                 if str(row.get("article_id")) != aid:
                     continue
+                target_type = (
+                    self._normalized_report_type(
+                        item.get("report_type") or default_report_type
+                    )
+                    if item.get("report_type") is not None
+                    or default_report_type is not None
+                    else self._normalized_report_type(row.get("report_type"))
+                )
                 row["status"] = item.get("status", row.get("status"))
                 row["rank"] = item.get("rank", row.get("rank"))
                 row["decided_by"] = item.get("decided_by") or row.get("decided_by")
@@ -335,12 +365,23 @@ class FakeAdapter:
         report_type: Optional[str] = None,
     ) -> int:
         updated = 0
-        target_report_type = self._normalized_report_type(report_type)
+        target_report_type = (
+            self._normalized_report_type(report_type)
+            if report_type is not None
+            else None
+        )
         for aid, edit in edits.items():
-            item_report_type = self._normalized_report_type(edit.get("report_type") or target_report_type)
             for row in self.rows:
                 if str(row.get("article_id")) != str(aid):
                     continue
+                item_report_type = (
+                    self._normalized_report_type(
+                        edit.get("report_type") or target_report_type
+                    )
+                    if edit.get("report_type") is not None
+                    or target_report_type is not None
+                    else self._normalized_report_type(row.get("report_type"))
+                )
                 if "summary" in edit:
                     row["manual_summary"] = edit.get("summary")
                 if "notes" in edit:
@@ -422,6 +463,86 @@ def test_list_candidates_returns_pending_with_bonus(fake_adapter):
     assert len(result["items"]) == 2
     assert "教育政策" in result["items"][0]["bonus_keywords"]
     assert result["items"][0]["manual_status"] == "pending"
+
+
+def test_candidates_ignore_report_type_for_pending_pool(fake_adapter):
+    fake_adapter.rows[0]["report_type"] = "wanbao"
+
+    zongbao = manual_filter_service.list_candidates(
+        limit=10,
+        offset=0,
+        report_type="zongbao",
+    )
+    wanbao = manual_filter_service.list_candidates(
+        limit=10,
+        offset=0,
+        report_type="wanbao",
+    )
+
+    assert [item["article_id"] for item in zongbao["items"]] == ["a1", "a2"]
+    assert wanbao == zongbao
+
+
+def test_discarded_list_ignores_report_type(fake_adapter):
+    fake_adapter.rows[0].update(status="discarded", report_type="wanbao")
+    fake_adapter.rows[1].update(status="discarded", report_type="zongbao")
+
+    zongbao = manual_filter_service.list_discarded(
+        limit=10,
+        offset=0,
+        report_type="zongbao",
+    )
+    wanbao = manual_filter_service.list_discarded(
+        limit=10,
+        offset=0,
+        report_type="wanbao",
+    )
+
+    assert {item["article_id"] for item in zongbao["items"]} == {"a1", "a2"}
+    assert wanbao == zongbao
+
+
+def test_pending_wrong_report_type_still_enters_clustering(fake_adapter):
+    from src.console import manual_filter_cluster
+
+    fake_adapter.rows[0]["report_type"] = "wanbao"
+
+    records = manual_filter_cluster._collect_pending(
+        None,
+        None,
+        adapter=fake_adapter,
+        report_type="zongbao",
+    )
+
+    assert {item["article_id"] for item in records} == {"a1", "a2"}
+
+
+def test_status_counts_share_pending_and_discarded_across_reports(fake_adapter):
+    fake_adapter.rows[0].update(status="pending", report_type="wanbao")
+    fake_adapter.rows[1].update(status="discarded", report_type="zongbao")
+    fake_adapter.rows.extend(
+        [
+            {
+                **fake_adapter.rows[0],
+                "article_id": "zongbao-selected",
+                "status": "selected",
+                "report_type": "zongbao",
+            },
+            {
+                **fake_adapter.rows[0],
+                "article_id": "wanbao-selected",
+                "status": "selected",
+                "report_type": "wanbao",
+            },
+        ]
+    )
+
+    zongbao = manual_filter_service.status_counts("zongbao")
+    wanbao = manual_filter_service.status_counts("wanbao")
+
+    assert zongbao["pending"] == wanbao["pending"] == 1
+    assert zongbao["discarded"] == wanbao["discarded"] == 1
+    assert zongbao["selected"] == wanbao["selected"] == 1
 
 
 def test_list_candidates_serializes_current_score_feedback(fake_adapter):

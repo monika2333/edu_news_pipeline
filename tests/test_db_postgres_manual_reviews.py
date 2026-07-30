@@ -35,6 +35,58 @@ class FakeFetchCursor:
         return []
 
 
+class FakeStatusCountsCursor:
+    def __init__(self) -> None:
+        self.query: Optional[str] = None
+        self.params: Optional[tuple[Any, ...]] = None
+
+    def execute(self, query: str, params: tuple[Any, ...]) -> None:
+        self.query = query
+        self.params = params
+
+    def fetchone(self) -> dict[str, int]:
+        return {
+            "pending": 7,
+            "selected": 3,
+            "backup": 2,
+            "discarded": 5,
+            "exported": 1,
+        }
+
+
+class FakeVersionedReviewCursor:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self.rows = rows
+        self.update_params: list[tuple[Any, ...]] = []
+        self._current_article_id: Optional[str] = None
+
+    def execute(self, query: str, params: tuple[Any, ...]) -> None:
+        if "FROM manual_reviews" in query and "FOR UPDATE" in query:
+            return
+        self.update_params.append(params)
+        self._current_article_id = str(params[-2])
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return [dict(row) for row in self.rows]
+
+    def fetchone(self) -> Optional[dict[str, Any]]:
+        if self._current_article_id is None:
+            return None
+        current = next(
+            row
+            for row in self.rows
+            if row["article_id"] == self._current_article_id
+        )
+        params = self.update_params[-1]
+        return {
+            **current,
+            "status": params[0],
+            "rank": params[1],
+            "report_type": params[5] or current["report_type"],
+            "version": current["version"] + 1,
+        }
+
+
 class FakeUpdateCursor:
     def __init__(self) -> None:
         self.rowcount = 0
@@ -194,6 +246,89 @@ def test_fetch_manual_clusters_can_hide_submitted_members() -> None:
         "internal_positive",
         True,
     )
+
+
+def test_fetch_manual_pending_for_cluster_ignores_report_type() -> None:
+    cur = FakeFetchCursor()
+
+    db_postgres_manual_reviews.fetch_manual_pending_for_cluster(
+        cur,
+        region="internal",
+        sentiment="positive",
+        report_type="wanbao",
+    )
+
+    assert cur.params[-1] == ("pending", True, "positive", 5000)
+    assert "COALESCE(mr.report_type, 'zongbao') = %s" not in cur.queries[-1]
+
+
+def test_manual_review_status_counts_only_scopes_report_states() -> None:
+    cur = FakeStatusCountsCursor()
+
+    counts = db_postgres_manual_reviews.manual_review_status_counts(
+        cur,
+        report_type="wanbao",
+    )
+
+    assert counts == {
+        "pending": 7,
+        "selected": 3,
+        "backup": 2,
+        "discarded": 5,
+        "exported": 1,
+    }
+    assert cur.query is not None
+    assert "COUNT(*) FILTER (WHERE status = 'pending')" in cur.query
+    assert "COUNT(*) FILTER (WHERE status = 'discarded')" in cur.query
+    assert "WHERE COALESCE(report_type, 'zongbao') = %s" not in cur.query
+    assert cur.params == ("wanbao", "wanbao", "wanbao")
+
+
+def test_versioned_decide_preserves_report_type_for_shared_states() -> None:
+    cur = FakeVersionedReviewCursor(
+        [
+            {
+                "article_id": "selected-1",
+                "status": "pending",
+                "report_type": "zongbao",
+                "version": 2,
+            },
+            {
+                "article_id": "pending-1",
+                "status": "selected",
+                "report_type": "zongbao",
+                "version": 4,
+            },
+        ]
+    )
+
+    _, after = db_postgres_manual_reviews.update_manual_review_statuses_with_versions(
+        cur,
+        [
+            {
+                "article_id": "selected-1",
+                "status": "selected",
+                "rank": 1.0,
+                "report_type": "wanbao",
+            },
+            {
+                "article_id": "pending-1",
+                "status": "pending",
+                "rank": None,
+                "report_type": None,
+            },
+        ],
+        actor_username="admin",
+        actor_user_id="admin-id",
+        expected_versions={"selected-1": 2, "pending-1": 4},
+        require_versions=True,
+        report_type=None,
+    )
+
+    assert cur.update_params[0][5] == "wanbao"
+    assert cur.update_params[1][5] is None
+    assert after[0]["report_type"] == "wanbao"
+    assert after[1]["report_type"] == "zongbao"
 
 
 def test_duty_import_can_keep_edited_existing_version_without_moving_it() -> None:

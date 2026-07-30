@@ -298,3 +298,41 @@
     font-size: 0.75rem;
     text-decoration: underline;
 }
+
+/* Report Type Switch */
+.report-type-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px 4px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: #fff;
+    white-space: nowrap;
+}
+
+.report-type-switch-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.report-type-btn {
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+    padding: 6px 16px;
+    font: inherit;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.report-type-btn:hover {
+    color: var(--primary-color);
+}
+
+.report-type-btn.active {
+    background: var(--primary-color);
+    color: #fff;
+}

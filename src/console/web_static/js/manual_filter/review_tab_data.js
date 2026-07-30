@@ -3,6 +3,7 @@
 // --- Review Tab Data ---
 
 async function loadReviewData() {
+    if (!elements.reviewList) return;
     const listEmpty = !elements.reviewList.querySelector('.article-card');
     const hasData = state.reviewData && (state.reviewData.selected.length || state.reviewData.backup.length);
     if (!hasData || listEmpty) {
@@ -308,8 +309,7 @@ async function applyReviewCardDecision(card, rawValue, successMessage = '已更�
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 edits: { [id]: { summary, llm_source } },
-                versions: collectManualReviewVersions([id]),
-                report_type: state.reviewReportType
+                versions: collectManualReviewVersions([id])
             })
         });
         const editMutation = await requireManualMutationSuccess(editResponse, '保存编辑失败');
@@ -382,8 +382,7 @@ async function handleSummaryUpdate(e) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 edits: { [id]: { summary, llm_source } },
-                versions: collectManualReviewVersions([id]),
-                report_type: state.reviewReportType
+                versions: collectManualReviewVersions([id])
             })
         });
         await requireManualMutationSuccess(response, '摘要保存失败');
@@ -408,8 +407,7 @@ async function handleSourceUpdate(e) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 edits: { [id]: { summary, llm_source } },
-                versions: collectManualReviewVersions([id]),
-                report_type: state.reviewReportType
+                versions: collectManualReviewVersions([id])
             })
         });
         await requireManualMutationSuccess(response, '来源保存失败');
@@ -445,7 +443,6 @@ async function handleArchive() {
         return;
     }
 
-    const reportType = state.reviewReportType;
     const view = state.reviewView === 'backup' ? 'backup' : 'selected';
     const items = state.reviewData[view] || [];
     const articleIds = items.map(item => item.article_id).filter(Boolean);
@@ -455,8 +452,7 @@ async function handleArchive() {
     }
     const payload = {
         article_ids: articleIds,
-        versions: collectManualReviewVersions(articleIds),
-        report_type: reportType
+        versions: collectManualReviewVersions(articleIds)
     };
 
     try {

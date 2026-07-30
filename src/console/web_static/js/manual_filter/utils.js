@@ -161,13 +161,7 @@ function setupTabs() {
                     });
                 }
             } else if (state.currentTab === 'review') {
-                state.reviewReportType = 'zongbao';
                 state.reviewView = 'selected';
-                if (elements.reportTypeButtons) {
-                    elements.reportTypeButtons.forEach(btn => {
-                        btn.classList.toggle('active', btn.dataset.type === 'zongbao');
-                    });
-                }
             }
 
             reloadCurrentTab();
@@ -217,7 +211,9 @@ function setReviewReportType(value) {
     state.reviewReportType = normalized;
     if (elements.reportTypeButtons && elements.reportTypeButtons.length) {
         elements.reportTypeButtons.forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.type === normalized);
+            const isActive = btn.dataset.type === normalized;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
     }
     // Update rail buttons active state based on new report type
@@ -230,6 +226,7 @@ function setReviewReportType(value) {
         });
     }
     updateReviewRailCounts();
+    loadStats();
     loadReviewData();
     if (IS_DUTY_WORKSPACE) loadDutyFinalizationStatus();
 }
@@ -256,21 +253,29 @@ function setReviewView(view) {
 
 async function loadStats() {
     try {
-        const [allRes, zbRes, wbRes] = await Promise.all([
-            workspaceFetch(`${API_BASE}/stats`),
+        const [zbRes, wbRes] = await Promise.all([
             workspaceFetch(`${API_BASE}/stats?report_type=zongbao`),
             workspaceFetch(`${API_BASE}/stats?report_type=wanbao`)
         ]);
-        const allData = await allRes.json();
         const zbData = await zbRes.json();
         const wbData = await wbRes.json();
-        Object.keys(allData).forEach(key => {
-            if (elements.stats[key]) elements.stats[key].textContent = allData[key];
-        });
         state.reviewCounts = {
             zongbao: { selected: zbData.selected || 0, backup: zbData.backup || 0 },
             wanbao: { selected: wbData.selected || 0, backup: wbData.backup || 0 }
         };
+        // pending / discarded 不分报别，两个响应里的数值一致；采纳 / 备选徽标按当前报别取值
+        const currentData = state.reviewReportType === 'wanbao' ? wbData : zbData;
+        const badgeValues = {
+            pending: zbData.pending,
+            discarded: zbData.discarded,
+            selected: currentData.selected,
+            backup: currentData.backup
+        };
+        Object.entries(badgeValues).forEach(([key, value]) => {
+            if (elements.stats[key] && value !== undefined && value !== null) {
+                elements.stats[key].textContent = value;
+            }
+        });
         updateReviewRailCounts();
     } catch (e) {
         showToast('加载统计信息失败', 'error');

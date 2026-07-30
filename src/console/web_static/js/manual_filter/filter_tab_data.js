@@ -92,7 +92,8 @@ async function submitDecisions(ids, status, versions = null) {
         backup_ids: status === 'backup' ? ids : [],
         discarded_ids: status === 'discarded' ? ids : [],
         pending_ids: status === 'pending' ? ids : [],
-        versions: versions || collectManualReviewVersions(ids)
+        versions: versions || collectManualReviewVersions(ids),
+        report_type: state.reviewReportType
     };
 
     const res = await workspaceFetch(`${API_BASE}/decide`, {

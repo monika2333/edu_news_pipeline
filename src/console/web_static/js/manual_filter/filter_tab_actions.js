@@ -1,5 +1,16 @@
 // Manual Filter JS - Filter Tab Actions
 
+function describeFilterDecision(status, count) {
+    const items = count > 1 ? ` ${count} 条新闻` : '';
+    if (status === 'selected' || status === 'backup') {
+        const actionLabel = status === 'selected' ? '采纳' : '备选';
+        const reportLabel = state.reviewReportType === 'wanbao' ? '晚报' : '综报';
+        return `已${actionLabel}到${reportLabel}${items}`;
+    }
+    if (status === 'discarded') return `已放弃${items || '该条新闻'}`;
+    return '已更新';
+}
+
 function setupFilterRealtimeDecisionHandlers() {
     if (!elements.filterList) return;
     elements.filterList.addEventListener('change', (event) => {
@@ -53,6 +64,7 @@ async function handleCardDecisionChange(input) {
     try {
         await persistEdits(edits);
         const mutation = await submitDecisions([articleId], status);
+        const decisionMessage = describeFilterDecision(status, 1);
         if (IS_DUTY_WORKSPACE) {
             const removal = captureDutyFilterRemoval([card]);
             const pageEmptied = detachDutyFilterRemoval(removal);
@@ -63,7 +75,7 @@ async function handleCardDecisionChange(input) {
                 [articleId],
                 status,
                 mutation,
-                '已更新',
+                decisionMessage,
                 { reloadOnUndo: pageEmptied }
             );
         } else {
@@ -88,7 +100,7 @@ async function handleCardDecisionChange(input) {
                     }
                 }
             );
-            showToast('已更新', 'success', undoAction);
+            showToast(decisionMessage, 'success', undoAction);
         }
     } catch (error) {
         revertRadioSelection(radios, previousStatus);
@@ -130,6 +142,7 @@ async function handleClusterDecisionChange(input) {
     try {
         await persistEdits(edits);
         const mutation = await submitDecisions(ids, status);
+        const decisionMessage = describeFilterDecision(status, ids.length);
         if (IS_DUTY_WORKSPACE) {
             const removal = captureDutyFilterRemoval(cards);
             const pageEmptied = detachDutyFilterRemoval(removal);
@@ -140,7 +153,7 @@ async function handleClusterDecisionChange(input) {
                 ids,
                 status,
                 mutation,
-                '已更新',
+                decisionMessage,
                 { reloadOnUndo: pageEmptied }
             );
         } else {
@@ -161,7 +174,7 @@ async function handleClusterDecisionChange(input) {
                     }
                 }
             );
-            showToast('已更新', 'success', undoAction);
+            showToast(decisionMessage, 'success', undoAction);
         }
     } catch (error) {
         revertRadioSelection(radios, previousStatus);
@@ -268,9 +281,10 @@ function updateDutyFilterDecisionCounts(status, itemCount, direction) {
     adjustVisibleStat('pending', -delta);
     if (status === 'selected' || status === 'backup') {
         adjustVisibleStat(status, delta);
-        state.reviewCounts.zongbao[status] = Math.max(
+        const reportType = state.reviewReportType === 'wanbao' ? 'wanbao' : 'zongbao';
+        state.reviewCounts[reportType][status] = Math.max(
             0,
-            (Number(state.reviewCounts.zongbao[status]) || 0) + delta
+            (Number(state.reviewCounts[reportType][status]) || 0) + delta
         );
     }
     updateFilterCountsUI();

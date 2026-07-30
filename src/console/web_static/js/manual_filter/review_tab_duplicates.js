@@ -23,7 +23,7 @@ function collectDuplicateReviewEdits(items = null, { onlyDirty = false } = {}) {
     return edits;
 }
 
-async function saveDuplicateReviewEdits(edits, reportType = state.reviewReportType) {
+async function saveDuplicateReviewEdits(edits) {
     if (!Object.keys(edits).length) return;
     const articleIds = Object.keys(edits);
     const response = await workspaceFetch(`${API_BASE}/edit`, {
@@ -31,8 +31,7 @@ async function saveDuplicateReviewEdits(edits, reportType = state.reviewReportTy
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             edits,
-            versions: collectManualReviewVersions(articleIds),
-            report_type: reportType
+            versions: collectManualReviewVersions(articleIds)
         })
     });
     await requireManualMutationSuccess(response, '保存编辑失败');
@@ -47,11 +46,7 @@ async function saveDuplicateReviewEdits(edits, reportType = state.reviewReportTy
 async function flushDuplicateModalEdits() {
     const modal = document.getElementById('duplicate-review-modal');
     if (!modal || !modal.classList.contains('active')) return;
-    const reportType = duplicateReviewDisplayedScope?.reportType || state.reviewReportType;
-    await saveDuplicateReviewEdits(
-        collectDuplicateReviewEdits(null, { onlyDirty: true }),
-        reportType
-    );
+    await saveDuplicateReviewEdits(collectDuplicateReviewEdits(null, { onlyDirty: true }));
 }
 
 async function flushReviewEditsBeforeDuplicateCheck(scope = getDuplicateReviewScope()) {
@@ -82,8 +77,7 @@ async function flushReviewEditsBeforeDuplicateCheck(scope = getDuplicateReviewSc
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             edits,
-            versions: collectManualReviewVersions(Object.keys(edits)),
-            report_type: scope.reportType
+            versions: collectManualReviewVersions(Object.keys(edits))
         })
     });
     await requireManualMutationSuccess(response, '保存当前编辑失败');

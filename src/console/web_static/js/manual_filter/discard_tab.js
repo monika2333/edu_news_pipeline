@@ -7,8 +7,7 @@ async function loadDiscardData() {
     try {
         const params = new URLSearchParams({
             limit: '30',
-            offset: `${(state.discardPage - 1) * 30}`,
-            report_type: state.reviewReportType
+            offset: `${(state.discardPage - 1) * 30}`
         });
         const res = await workspaceFetch(`${API_BASE}/discarded?${params.toString()}`);
         const data = await res.json();

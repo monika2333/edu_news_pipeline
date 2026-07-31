@@ -9,6 +9,31 @@ from src.adapters.title_cluster import EMBEDDING_MODEL_NAME
 from src.console import manual_filter_cluster
 
 
+class FakeTitleEmbeddingsNamespace:
+    def __init__(self, adapter: FakeClusterAdapter) -> None:
+        self._adapter = adapter
+
+    def fetch(
+        self,
+        article_ids: Sequence[str],
+    ) -> list[dict[str, Any]]:
+        return [
+            dict(self._adapter.cached[article_id])
+            for article_id in article_ids
+            if article_id in self._adapter.cached
+        ]
+
+    def upsert(
+        self,
+        embeddings: Sequence[Mapping[str, Any]],
+    ) -> int:
+        payload = [dict(item) for item in embeddings]
+        self._adapter.upsert_calls.append(payload)
+        for item in payload:
+            self._adapter.cached[str(item["article_id"])] = dict(item)
+        return len(payload)
+
+
 class FakeClusterAdapter:
     def __init__(self, records: list[dict[str, Any]]) -> None:
         self.records = records
@@ -16,6 +41,7 @@ class FakeClusterAdapter:
         self.upsert_calls: list[list[dict[str, Any]]] = []
         self.replace_calls: list[list[dict[str, Any]]] = []
         self.release_calls: list[int] = []
+        self.title_embeddings = FakeTitleEmbeddingsNamespace(self)
 
     def try_advisory_lock(self, lock_id: int) -> bool:
         return True
@@ -28,26 +54,6 @@ class FakeClusterAdapter:
         **kwargs: Any,
     ) -> list[dict[str, Any]]:
         return [dict(record) for record in self.records]
-
-    def fetch_news_title_embeddings(
-        self,
-        article_ids: Sequence[str],
-    ) -> list[dict[str, Any]]:
-        return [
-            dict(self.cached[article_id])
-            for article_id in article_ids
-            if article_id in self.cached
-        ]
-
-    def upsert_news_title_embeddings(
-        self,
-        embeddings: Sequence[Mapping[str, Any]],
-    ) -> int:
-        payload = [dict(item) for item in embeddings]
-        self.upsert_calls.append(payload)
-        for item in payload:
-            self.cached[str(item["article_id"])] = dict(item)
-        return len(payload)
 
     def replace_manual_clusters(
         self,

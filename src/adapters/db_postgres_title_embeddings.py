@@ -1,8 +1,26 @@
 from __future__ import annotations
 
-from typing import Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 import psycopg
+
+if TYPE_CHECKING:
+    from src.adapters.db_postgres_core import PostgresAdapter
+
+
+class TitleEmbeddingsNamespace:
+    """Single-table access to cached news title embeddings."""
+
+    def __init__(self, adapter: PostgresAdapter) -> None:
+        self._adapter = adapter
+
+    def fetch(self, article_ids: Sequence[str]) -> list[dict[str, Any]]:
+        with self._adapter._cluster_transaction() as cur:
+            return fetch_title_embeddings(cur, article_ids)
+
+    def upsert(self, embeddings: Sequence[Mapping[str, Any]]) -> int:
+        with self._adapter._cluster_transaction() as cur:
+            return upsert_title_embeddings(cur, embeddings)
 
 
 def fetch_title_embeddings(
@@ -65,6 +83,7 @@ def upsert_title_embeddings(
 
 
 __all__ = [
+    "TitleEmbeddingsNamespace",
     "fetch_title_embeddings",
     "upsert_title_embeddings",
 ]

@@ -84,6 +84,7 @@ class PostgresAdapter:
         self._settings = get_settings()
         self._schema = self._settings.db_schema or "public"
         self._conn = connection or _get_connection()
+        self.title_embeddings = title_embeddings.TitleEmbeddingsNamespace(self)
 
     def _conn_cursor(self):
         if self._conn.closed:
@@ -1466,20 +1467,6 @@ class PostgresAdapter:
         with self._cluster_transaction() as cur:
             manual_reviews.delete_manual_clusters(cur)
             return manual_reviews.insert_manual_clusters(cur, clusters)
-
-    def fetch_news_title_embeddings(
-        self,
-        article_ids: Sequence[str],
-    ) -> List[Dict[str, Any]]:
-        with self._cluster_transaction() as cur:
-            return title_embeddings.fetch_title_embeddings(cur, article_ids)
-
-    def upsert_news_title_embeddings(
-        self,
-        embeddings: Sequence[Mapping[str, Any]],
-    ) -> int:
-        with self._cluster_transaction() as cur:
-            return title_embeddings.upsert_title_embeddings(cur, embeddings)
 
     def fetch_manual_clusters(
         self,

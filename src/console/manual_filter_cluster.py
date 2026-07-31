@@ -101,7 +101,7 @@ def _load_title_embedding_map(
         for record in records
         if record.get("article_id")
     }
-    cached_rows = adapter.fetch_news_title_embeddings(
+    cached_rows = adapter.title_embeddings.fetch(
         list(title_metadata),
     )
     embeddings: Dict[str, np.ndarray] = {}
@@ -154,7 +154,7 @@ def _load_title_embedding_map(
                 "title_hash": title_metadata[article_id]["title_hash"],
             }
         )
-    adapter.upsert_news_title_embeddings(payload)
+    adapter.title_embeddings.upsert(payload)
     return embeddings
 
 

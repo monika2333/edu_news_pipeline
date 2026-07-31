@@ -69,12 +69,6 @@ def test_postgres_adapter_core_roundtrip() -> None:
             ]
         )
 
-        fetched_articles = adapter.fetch_raw_articles_for_summary(
-            after_fetched_at=fetched_at.isoformat(),
-            limit=20,
-        )
-        assert any(row.get("article_id") == article_id for row in fetched_articles)
-
         article_payload = {
             "article_id": article_id,
             "title": article_record.title,
@@ -86,7 +80,20 @@ def test_postgres_adapter_core_roundtrip() -> None:
             "fetched_at": article_record.fetched_at,
         }
 
-        adapter.upsert_news_summary(article_payload, summary_text, keywords=["unit", "test"])
+        promoted = adapter.upsert_news_summaries_from_primary(
+            [
+                {
+                    **article_payload,
+                    "score": 0.92,
+                    "raw_relevance_score": 0.92,
+                    "keyword_bonus_score": 0,
+                    "score_details": {},
+                    "status": "pending",
+                    "keywords": ["unit", "test"],
+                }
+            ]
+        )
+        assert promoted == 1
         assert adapter.mark_summary_attempt(article_id) is True
         adapter.complete_summary_generation(article_id, summary_text)
 
@@ -106,11 +113,10 @@ def test_postgres_adapter_core_roundtrip() -> None:
             beijing_related=True,
             status="ready_for_export",
         )
-        existing_ids = adapter.get_existing_news_summary_ids([article_id])
-        assert article_id in existing_ids
+        summary_content = adapter.fetch_news_summary_content(article_id)
+        assert summary_content is not None
+        assert summary_content["article_id"] == article_id
 
-        # Set a score on the summary to enable export candidates
-        adapter.update_summary_score(article_id, 0.92)
         export_candidates = adapter.fetch_export_candidates(min_score=0.5)
         matched_candidates = [candidate for candidate in export_candidates if candidate.filtered_article_id == article_id]
         assert matched_candidates

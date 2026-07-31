@@ -23,8 +23,6 @@ from src.adapters import (
     db_postgres_title_embeddings as title_embeddings,
     db_postgres_users as users,
 )
-from src.adapters.db_postgres_shared import MISSING as _MISSING
-from src.adapters.db_postgres_shared import article_hash, iso_datetime, json_safe, to_iso
 from src.config import get_settings
 from src.domain import BeijingGateCandidate, ExportCandidate, ExternalFilterCandidate, PrimaryArticleForScoring
 
@@ -129,25 +127,6 @@ class PostgresAdapter:
             raise
         finally:
             cur.close()
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-    @staticmethod
-    def _article_hash(article_id: Optional[str], original_url: Optional[str], title: Optional[str]) -> str:
-        return article_hash(article_id, original_url, title)
-
-    @staticmethod
-    def _to_iso(publish_time: Optional[int]) -> Optional[str]:
-        return to_iso(publish_time)
-
-    @staticmethod
-    def _iso_datetime(value: Any) -> Optional[str]:
-        return iso_datetime(value)
-
-    @staticmethod
-    def _json_safe(value: Any) -> Any:
-        return json_safe(value)
 
     # ------------------------------------------------------------------
     # Console users + sessions
@@ -811,19 +790,6 @@ class PostgresAdapter:
             )
             return batch
 
-    def fetch_shift_finalized_items(
-        self,
-        *,
-        shift_id: str,
-        report_type: str,
-    ) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return shift_reviews.fetch_shift_finalized_items(
-                cur,
-                shift_id=shift_id,
-                report_type=report_type,
-            )
-
     def fetch_shift_finalization_status(
         self,
         *,
@@ -1054,16 +1020,6 @@ class PostgresAdapter:
     # ------------------------------------------------------------------
     # Summaries
     # ------------------------------------------------------------------
-    def insert_pending_summary(
-        self,
-        article: Mapping[str, Any],
-        *,
-        keywords: Optional[Sequence[str]] = None,
-        fetched_at: Optional[str] = None,
-    ) -> None:
-        with self._cursor() as cur:
-            news_summaries.insert_pending_summary(cur, article, keywords=keywords, fetched_at=fetched_at)
-
     def fetch_pending_summaries(
         self,
         limit: Optional[int] = None,
@@ -1127,53 +1083,6 @@ class PostgresAdapter:
                 status=status,
             )
 
-    def complete_summary(
-        self,
-        article_id: str,
-        summary_text: str,
-        *,
-        llm_source: Optional[str] = None,
-        keywords: Optional[Sequence[str]] = None,
-        beijing_related: Optional[bool] = None,
-        sentiment_label: Optional[str] = None,
-        sentiment_confidence: Optional[float] = None,
-        status: str = "ready_for_export",
-        external_importance_status: Any = _MISSING,
-        external_importance_score: Any = _MISSING,
-        external_importance_checked_at: Any = _MISSING,
-        external_importance_raw: Any = _MISSING,
-        external_filter_attempted_at: Any = _MISSING,
-        external_filter_fail_count: Any = _MISSING,
-        is_beijing_related_llm: Any = _MISSING,
-        beijing_gate_checked_at: Any = _MISSING,
-        beijing_gate_raw: Any = _MISSING,
-        beijing_gate_attempted_at: Any = _MISSING,
-        beijing_gate_fail_count: Any = _MISSING,
-    ) -> None:
-        with self._cursor() as cur:
-            news_summaries.complete_summary(
-                cur,
-                article_id,
-                summary_text,
-                llm_source=llm_source,
-                keywords=keywords,
-                beijing_related=beijing_related,
-                sentiment_label=sentiment_label,
-                sentiment_confidence=sentiment_confidence,
-                status=status,
-                external_importance_status=external_importance_status,
-                external_importance_score=external_importance_score,
-                external_importance_checked_at=external_importance_checked_at,
-                external_importance_raw=external_importance_raw,
-                external_filter_attempted_at=external_filter_attempted_at,
-                external_filter_fail_count=external_filter_fail_count,
-                is_beijing_related_llm=is_beijing_related_llm,
-                beijing_gate_checked_at=beijing_gate_checked_at,
-                beijing_gate_raw=beijing_gate_raw,
-                beijing_gate_attempted_at=beijing_gate_attempted_at,
-                beijing_gate_fail_count=beijing_gate_fail_count,
-            )
-
     def mark_summary_failed(self, article_id: str, *, message: Optional[str] = None) -> None:
         with self._cursor() as cur:
             news_summaries.mark_summary_failed(cur, article_id, message=message)
@@ -1206,37 +1115,6 @@ class PostgresAdapter:
     def fetch_news_summary_content(self, article_id: str) -> Optional[Dict[str, Any]]:
         with self._cursor() as cur:
             return news_summaries.fetch_news_summary_content(cur, article_id)
-
-    def fetch_raw_articles_for_summary(
-        self,
-        *,
-        after_fetched_at: Optional[str],
-        limit: Optional[int],
-    ) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return news_summaries.fetch_raw_articles_for_summary(
-                cur,
-                after_fetched_at=after_fetched_at,
-                limit=limit,
-            )
-
-    def get_existing_news_summary_ids(self, article_ids: Sequence[str]) -> Set[str]:
-        with self._cursor() as cur:
-            return news_summaries.get_existing_news_summary_ids(cur, article_ids)
-
-    def upsert_news_summary(
-        self,
-        article: Dict[str, Any],
-        summary: str,
-        *,
-        keywords: Optional[Sequence[str]] = None,
-    ) -> None:
-        with self._cursor() as cur:
-            news_summaries.upsert_news_summary(cur, article, summary, keywords=keywords)
-
-    def update_summary_score(self, article_id: str, score: Optional[float]) -> None:
-        with self._cursor() as cur:
-            news_summaries.update_summary_score(cur, article_id, score)
 
     def upsert_news_summaries_from_primary(self, rows: Sequence[Mapping[str, Any]]) -> int:
         with self._cursor() as cur:
@@ -1414,33 +1292,6 @@ class PostgresAdapter:
     # ------------------------------------------------------------------
     # Manual reviews
     # ------------------------------------------------------------------
-    def enqueue_manual_review(
-        self,
-        article_id: str,
-        *,
-        status: str = "pending",
-        report_type: Optional[str] = None,
-        rank: Optional[float] = None,
-        summary: Optional[str] = None,
-        notes: Optional[str] = None,
-        score: Optional[float] = None,
-        decided_by: Optional[str] = None,
-        decided_at: Optional[datetime] = None,
-    ) -> None:
-        with self._cursor() as cur:
-            manual_reviews.enqueue_manual_review(
-                cur,
-                article_id,
-                status=status,
-                report_type=report_type,
-                rank=rank,
-                summary=summary,
-                notes=notes,
-                score=score,
-                decided_by=decided_by,
-                decided_at=decided_at,
-            )
-
     def fetch_manual_reviews(
         self,
         *,
@@ -1608,19 +1459,6 @@ class PostgresAdapter:
                 report_type=report_type,
             )
 
-    def delete_manual_clusters(self, *, report_type: Optional[str] = None) -> int:
-        with self._cursor() as cur:
-            return manual_reviews.delete_manual_clusters(cur, report_type=report_type)
-
-    def insert_manual_clusters(
-        self,
-        clusters: Sequence[Mapping[str, Any]],
-        *,
-        report_type: Optional[str] = None,
-    ) -> int:
-        with self._cursor() as cur:
-            return manual_reviews.insert_manual_clusters(cur, clusters, report_type=report_type)
-
     def replace_manual_clusters(
         self,
         clusters: Sequence[Mapping[str, Any]],
@@ -1671,10 +1509,6 @@ class PostgresAdapter:
     def manual_review_status_counts(self, *, report_type: Optional[str] = None) -> Dict[str, int]:
         with self._cursor() as cur:
             return manual_reviews.manual_review_status_counts(cur, report_type=report_type)
-
-    def manual_review_pending_count(self, *, report_type: Optional[str] = None) -> int:
-        with self._cursor() as cur:
-            return manual_reviews.manual_review_pending_count(cur, report_type=report_type)
 
     def manual_review_max_rank(self, status: str, *, report_type: Optional[str] = None) -> float:
         with self._cursor() as cur:
@@ -1865,27 +1699,12 @@ class PostgresAdapter:
                 )
             return after
 
-    def fetch_manual_selected_for_export(self, *, report_type: Optional[str] = None) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return manual_reviews.fetch_manual_selected_for_export(cur, report_type=report_type)
-
     # ------------------------------------------------------------------
     # Export + batches
     # ------------------------------------------------------------------
     def fetch_export_candidates(self, min_score: float) -> List[ExportCandidate]:
         with self._cursor() as cur:
             return export.fetch_export_candidates(cur, min_score)
-
-    def _get_batch_by_tag(self, report_tag: str) -> Optional[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return export.get_batch_by_tag(cur, report_tag)
-
-    def _parse_report_tag(self, report_tag: str) -> Tuple[date, str]:
-        return export.parse_report_tag(report_tag)
-
-    def _create_batch(self, report_tag: str) -> Dict[str, Any]:
-        with self._cursor() as cur:
-            return export.create_batch(cur, report_tag)
 
     def get_export_history(self, report_tag: str) -> Tuple[Set[str], Optional[str]]:
         with self._cursor() as cur:

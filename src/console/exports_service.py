@@ -37,7 +37,7 @@ def get_latest_export(include_items: bool = False) -> Optional[Dict[str, Any]]:
     if adapter is None:
         return None
     try:
-        batch = adapter.fetch_latest_brief_batch()
+        batch = adapter.export.fetch_latest_brief_batch()
     except Exception as exc:  # pragma: no cover - degrade gracefully
         print(f"[console] warning: failed to fetch latest brief batch: {exc}", file=sys.stderr)
         return None
@@ -49,7 +49,7 @@ def get_latest_export(include_items: bool = False) -> Optional[Dict[str, Any]]:
     item_count = 0
     if include_items:
         try:
-            items = adapter.fetch_brief_items_by_batch(batch_id)
+            items = adapter.export.fetch_brief_items_by_batch(batch_id)
             serialized_items = [_serialize_item(item) for item in items]
             item_count = len(serialized_items)
         except Exception as exc:  # pragma: no cover
@@ -58,7 +58,7 @@ def get_latest_export(include_items: bool = False) -> Optional[Dict[str, Any]]:
             item_count = 0
     else:
         try:
-            item_count = adapter.fetch_brief_item_count(batch_id)
+            item_count = adapter.export.fetch_brief_item_count(batch_id)
         except Exception as exc:  # pragma: no cover
             print(f"[console] warning: failed to count export items: {exc}", file=sys.stderr)
             item_count = 0

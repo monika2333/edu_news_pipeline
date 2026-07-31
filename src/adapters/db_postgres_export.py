@@ -1,13 +1,57 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Set, Tuple
 
 import psycopg
 from psycopg.types.json import Json
 
 from src.adapters.db_postgres_shared import article_hash, iso_datetime, json_safe
 from src.domain import ExportCandidate
+
+if TYPE_CHECKING:
+    from src.adapters.db_postgres_core import PostgresAdapter
+
+
+class ExportNamespace:
+    """Single-table access for brief export candidates and batches."""
+
+    def __init__(self, adapter: PostgresAdapter) -> None:
+        self._adapter = adapter
+
+    def fetch_candidates(self, min_score: float) -> List[ExportCandidate]:
+        with self._adapter._cursor() as cur:
+            return fetch_export_candidates(cur, min_score)
+
+    def get_history(self, report_tag: str) -> Tuple[Set[str], Optional[str]]:
+        with self._adapter._cursor() as cur:
+            return get_export_history(cur, report_tag)
+
+    def get_all_exported_ids(self) -> Set[str]:
+        with self._adapter._cursor() as cur:
+            return get_all_exported_article_ids(cur)
+
+    def record(
+        self,
+        report_tag: str,
+        exported: Sequence[Tuple[ExportCandidate, str]],
+        *,
+        output_path: str,
+    ) -> None:
+        with self._adapter._cursor() as cur:
+            record_export(cur, report_tag, exported, output_path=output_path)
+
+    def fetch_latest_brief_batch(self) -> Optional[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_latest_brief_batch(cur)
+
+    def fetch_brief_items_by_batch(self, batch_id: str) -> List[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_brief_items_by_batch(cur, batch_id)
+
+    def fetch_brief_item_count(self, batch_id: str) -> int:
+        with self._adapter._cursor() as cur:
+            return fetch_brief_item_count(cur, batch_id)
 
 
 def fetch_export_candidates(cur: psycopg.Cursor, min_score: float) -> List[ExportCandidate]:
@@ -299,6 +343,7 @@ def fetch_brief_item_count(cur: psycopg.Cursor, batch_id: str) -> int:
 
 
 __all__ = [
+    "ExportNamespace",
     "create_batch",
     "fetch_brief_item_count",
     "fetch_brief_items_by_batch",

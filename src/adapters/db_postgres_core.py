@@ -24,7 +24,7 @@ from src.adapters import (
     db_postgres_users as users,
 )
 from src.config import get_settings
-from src.domain import BeijingGateCandidate, ExportCandidate, ExternalFilterCandidate, PrimaryArticleForScoring
+from src.domain import BeijingGateCandidate, ExternalFilterCandidate, PrimaryArticleForScoring
 
 _CONNECTION: Optional[psycopg.Connection] = None
 _ADAPTER: Optional["PostgresAdapter"] = None
@@ -84,6 +84,7 @@ class PostgresAdapter:
         self._settings = get_settings()
         self._schema = self._settings.db_schema or "public"
         self._conn = connection or _get_connection()
+        self.export = export.ExportNamespace(self)
         self.score_feedback = score_feedback.ScoreFeedbackNamespace(self)
         self.title_embeddings = title_embeddings.TitleEmbeddingsNamespace(self)
         self.users = users.UsersNamespace(self)
@@ -1633,43 +1634,6 @@ class PostgresAdapter:
                     request_id=request_id,
                 )
             return after
-
-    # ------------------------------------------------------------------
-    # Export + batches
-    # ------------------------------------------------------------------
-    def fetch_export_candidates(self, min_score: float) -> List[ExportCandidate]:
-        with self._cursor() as cur:
-            return export.fetch_export_candidates(cur, min_score)
-
-    def get_export_history(self, report_tag: str) -> Tuple[Set[str], Optional[str]]:
-        with self._cursor() as cur:
-            return export.get_export_history(cur, report_tag)
-
-    def get_all_exported_article_ids(self) -> Set[str]:
-        with self._cursor() as cur:
-            return export.get_all_exported_article_ids(cur)
-
-    def record_export(
-        self,
-        report_tag: str,
-        exported: Sequence[Tuple[ExportCandidate, str]],
-        *,
-        output_path: str,
-    ) -> None:
-        with self._cursor() as cur:
-            export.record_export(cur, report_tag, exported, output_path=output_path)
-
-    def fetch_latest_brief_batch(self) -> Optional[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return export.fetch_latest_brief_batch(cur)
-
-    def fetch_brief_items_by_batch(self, batch_id: str) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return export.fetch_brief_items_by_batch(cur, batch_id)
-
-    def fetch_brief_item_count(self, batch_id: str) -> int:
-        with self._cursor() as cur:
-            return export.fetch_brief_item_count(cur, batch_id)
 
     # ------------------------------------------------------------------
     # Submission archive + duplicate detection

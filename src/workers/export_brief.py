@@ -273,8 +273,8 @@ def _filter_candidates(
     existing_ids: Set[str] = set()
     global_exported: Set[str] = set()
     if skip_exported:
-        existing_ids, _ = adapter.get_export_history(tag)
-        global_exported = adapter.get_all_exported_article_ids()
+        existing_ids, _ = adapter.export.get_history(tag)
+        global_exported = adapter.export.get_all_exported_ids()
 
     skipped_current_tag = 0
     skipped_previous_reports = 0
@@ -314,7 +314,7 @@ def run(
             base_output = (Path.cwd() / base_output).resolve()
 
         # Fetch candidates already sorted by score DESC
-        candidates = adapter.fetch_export_candidates(min_score)
+        candidates = adapter.export.fetch_candidates(min_score)
         if not candidates:
             log_info(WORKER, "No filtered articles meet the score threshold.")
             return
@@ -342,7 +342,7 @@ def run(
         final_output.write_text("\n\n".join(text_entries), encoding="utf-8")
 
         if record_history and export_payload:
-            adapter.record_export(tag, export_payload, output_path=str(final_output))
+            adapter.export.record(tag, export_payload, output_path=str(final_output))
 
         total_skipped = skipped_current_tag + skipped_previous_reports
         if total_skipped:

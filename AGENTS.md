@@ -195,6 +195,7 @@ __all__ = [
 - 需要多个写入保持一致时，明确使用事务。
 - SQL 查询使用参数化参数。
 - 数据库调试信息应有适当日志。
+- `manual_clusters` 是聚类缓存表，由计划任务定期整表重建，不分报别。聚类只按四个桶（internal/external × positive/negative）进行；报别只在采纳动作上有意义。不要给这张表加回报别维度。
 
 ```python
 from src.adapters.db_postgres_core import get_adapter

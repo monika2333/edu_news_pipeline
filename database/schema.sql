@@ -1,4 +1,4 @@
-\restrict SgweBTpkf2WvKg4TdfVzEiiY0689ytwJsFCLw8tabfHwbZTMlbiFXAclvbuFsNz
+\restrict sJ4mAEKzA6x40jazKfOJKcnglfGNGPT5h6z5sceFVtdh2zkLJfI8JnvbjQCylmQ
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
@@ -199,7 +199,6 @@ CREATE TABLE public.filtered_articles (
 --
 
 CREATE TABLE public.manual_clusters (
-    report_type text DEFAULT 'zongbao'::text NOT NULL,
     bucket_key text NOT NULL,
     cluster_id text NOT NULL,
     item_ids text[] NOT NULL,
@@ -1639,7 +1638,7 @@ ALTER TABLE ONLY public.submitted_report_items
 -- PostgreSQL database dump complete
 --
 
-\unrestrict SgweBTpkf2WvKg4TdfVzEiiY0689ytwJsFCLw8tabfHwbZTMlbiFXAclvbuFsNz
+\unrestrict sJ4mAEKzA6x40jazKfOJKcnglfGNGPT5h6z5sceFVtdh2zkLJfI8JnvbjQCylmQ
 
 
 --
@@ -1686,4 +1685,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260729130000'),
     ('20260729130100'),
     ('20260729130200'),
-    ('20260729220000');
+    ('20260729220000'),
+    ('20260731232631');

@@ -1,9 +1,46 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import psycopg
+
+if TYPE_CHECKING:
+    from src.adapters.db_postgres_core import PostgresAdapter
+
+
+class UsersNamespace:
+    """Single-table reads and session maintenance for console users."""
+
+    def __init__(self, adapter: PostgresAdapter) -> None:
+        self._adapter = adapter
+
+    def fetch_by_username(self, username: str) -> Optional[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_console_user_by_username(cur, username)
+
+    def fetch_by_id(self, user_id: str) -> Optional[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_console_user_by_id(cur, user_id)
+
+    def fetch_all(self) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_console_users(cur)
+
+    def fetch_session_by_token_hash(
+        self,
+        token_hash: str,
+    ) -> Optional[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_console_session_by_token_hash(cur, token_hash)
+
+    def touch_session(self, session_id: str) -> None:
+        with self._adapter._cursor() as cur:
+            touch_console_session(cur, session_id)
+
+    def delete_expired_sessions(self) -> int:
+        with self._adapter._cursor() as cur:
+            return delete_expired_console_sessions(cur)
 
 
 def create_console_user(
@@ -447,6 +484,7 @@ def delete_expired_console_sessions(cur: psycopg.Cursor) -> int:
 
 
 __all__ = [
+    "UsersNamespace",
     "create_console_session",
     "create_console_user",
     "delete_duty_schedules_for_user",

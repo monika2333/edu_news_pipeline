@@ -11,11 +11,19 @@ from src.console import shifts_service
 from src.console.auth_service import ConsoleUser
 
 
+class FakeUsersNamespace:
+    def __init__(self, adapter: FakeShiftAdapter) -> None:
+        self._adapter = adapter
+
+    def fetch_by_id(self, user_id: str) -> Optional[dict[str, Any]]:
+        return self._adapter.users_by_id.get(user_id)
+
+
 class FakeShiftAdapter:
     def __init__(self, schedule: Optional[list[dict[str, Any]]] = None) -> None:
         self.schedule = schedule or []
         self.inserted_rows: list[dict[str, Any]] = []
-        self.users: dict[str, dict[str, Any]] = {
+        self.users_by_id: dict[str, dict[str, Any]] = {
             str(item["user_id"]): {
                 "id": str(item["user_id"]),
                 "role": "duty_editor",
@@ -23,6 +31,7 @@ class FakeShiftAdapter:
             }
             for item in self.schedule
         }
+        self.users = FakeUsersNamespace(self)
 
     def fetch_duty_schedule(self) -> list[dict[str, Any]]:
         return list(self.schedule)
@@ -33,9 +42,6 @@ class FakeShiftAdapter:
     ) -> int:
         self.inserted_rows = [dict(row) for row in rows]
         return len(self.inserted_rows)
-
-    def fetch_console_user_by_id(self, user_id: str) -> Optional[dict[str, Any]]:
-        return self.users.get(user_id)
 
     def upsert_duty_schedule(
         self,
@@ -109,7 +115,7 @@ def test_generate_shifts_rejects_incomplete_template(monkeypatch) -> None:
 
 def test_generate_shifts_rejects_inactive_template_editor(monkeypatch) -> None:
     adapter = FakeShiftAdapter(_complete_schedule())
-    adapter.users["editor-3"]["is_active"] = False
+    adapter.users_by_id["editor-3"]["is_active"] = False
     monkeypatch.setattr(shifts_service, "get_adapter", lambda: adapter)
 
     with pytest.raises(
@@ -123,7 +129,7 @@ def test_generate_shifts_rejects_inactive_template_editor(monkeypatch) -> None:
 
 def test_set_schedule_accepts_only_active_duty_editors(monkeypatch) -> None:
     adapter = FakeShiftAdapter()
-    adapter.users = {
+    adapter.users_by_id = {
         f"editor-{weekday}": {
             "id": f"editor-{weekday}",
             "role": "duty_editor",

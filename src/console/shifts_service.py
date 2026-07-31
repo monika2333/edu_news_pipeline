@@ -25,7 +25,7 @@ class ShiftScheduleIncompleteError(ValueError):
 
 
 def _require_active_duty_editor(user_id: str) -> dict[str, Any]:
-    row = get_adapter().fetch_console_user_by_id(user_id)
+    row = get_adapter().users.fetch_by_id(user_id)
     if not row or not bool(row.get("is_active")) or row.get("role") != "duty_editor":
         raise ValueError("Shift assignee must be an active duty editor")
     return row

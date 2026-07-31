@@ -12,7 +12,7 @@ class ConsoleUserNotFoundError(ValueError):
 
 
 def list_users() -> list[dict[str, Any]]:
-    return get_adapter().fetch_console_users()
+    return get_adapter().users.fetch_all()
 
 
 def create_user(

@@ -14,21 +14,11 @@ from src.console.auth_service import ConsoleUser, LoginSession
 from src.console.security import require_console_user, require_csrf
 
 
-class FakeAuthAdapter:
-    def __init__(self) -> None:
-        self.created_session: dict[str, Any] = {}
-        self.touched_session_id: Optional[str] = None
+class FakeUsersNamespace:
+    def __init__(self, adapter: FakeAuthAdapter) -> None:
+        self._adapter = adapter
 
-    def create_console_session(self, **kwargs: Any) -> dict[str, Any]:
-        self.created_session = dict(kwargs)
-        return {
-            "id": "session-id",
-            "user_id": kwargs["user_id"],
-            "expires_at": kwargs["expires_at"],
-            "created_at": datetime.now(timezone.utc),
-        }
-
-    def fetch_console_session_by_token_hash(
+    def fetch_session_by_token_hash(
         self,
         token_hash: str,
     ) -> dict[str, Any]:
@@ -44,8 +34,24 @@ class FakeAuthAdapter:
             "token_hash": token_hash,
         }
 
-    def touch_console_session(self, session_id: str) -> None:
-        self.touched_session_id = session_id
+    def touch_session(self, session_id: str) -> None:
+        self._adapter.touched_session_id = session_id
+
+
+class FakeAuthAdapter:
+    def __init__(self) -> None:
+        self.created_session: dict[str, Any] = {}
+        self.touched_session_id: Optional[str] = None
+        self.users = FakeUsersNamespace(self)
+
+    def create_console_session(self, **kwargs: Any) -> dict[str, Any]:
+        self.created_session = dict(kwargs)
+        return {
+            "id": "session-id",
+            "user_id": kwargs["user_id"],
+            "expires_at": kwargs["expires_at"],
+            "created_at": datetime.now(timezone.utc),
+        }
 
 
 def test_password_hash_uses_argon2_and_verifies() -> None:

@@ -177,7 +177,7 @@ def register_console_user(
 
 def authenticate_user(username: str, password: str) -> dict[str, object]:
     normalized_username = _normalize_username(username)
-    row = get_adapter().fetch_console_user_by_username(normalized_username)
+    row = get_adapter().users.fetch_by_username(normalized_username)
     password_hash = str(row.get("password_hash") or "") if row else _DUMMY_PASSWORD_HASH
     password_matches = verify_password(password_hash, password)
     if not row or not password_matches or not bool(row.get("is_active")):
@@ -227,11 +227,11 @@ def authenticate_and_create_session(
 def resolve_session(raw_token: str) -> Optional[ConsoleUser]:
     if not raw_token:
         return None
-    row = get_adapter().fetch_console_session_by_token_hash(_hash_token(raw_token))
+    row = get_adapter().users.fetch_session_by_token_hash(_hash_token(raw_token))
     if not row:
         return None
     session_id = str(row["session_id"])
-    get_adapter().touch_console_session(session_id)
+    get_adapter().users.touch_session(session_id)
     return ConsoleUser(
         method="session",
         user_id=str(row["user_id"]),
@@ -288,7 +288,7 @@ def change_password(
 ) -> None:
     if user.method != "session" or not user.user_id:
         raise AuthenticationError("Password changes require a user session")
-    row = get_adapter().fetch_console_user_by_id(user.user_id)
+    row = get_adapter().users.fetch_by_id(user.user_id)
     if not row or not verify_password(
         str(row.get("password_hash") or ""),
         current_password,
@@ -305,7 +305,7 @@ def change_password(
 
 
 def cleanup_expired_sessions() -> int:
-    return get_adapter().delete_expired_console_sessions()
+    return get_adapter().users.delete_expired_sessions()
 
 
 __all__ = [

@@ -86,6 +86,7 @@ class PostgresAdapter:
         self._conn = connection or _get_connection()
         self.score_feedback = score_feedback.ScoreFeedbackNamespace(self)
         self.title_embeddings = title_embeddings.TitleEmbeddingsNamespace(self)
+        self.users = users.UsersNamespace(self)
 
     def _conn_cursor(self):
         if self._conn.closed:
@@ -162,18 +163,6 @@ class PostgresAdapter:
                 after_data=created,
             )
             return created
-
-    def fetch_console_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return users.fetch_console_user_by_username(cur, username)
-
-    def fetch_console_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return users.fetch_console_user_by_id(cur, user_id)
-
-    def fetch_console_users(self) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return users.fetch_console_users(cur)
 
     def update_console_user(
         self,
@@ -361,17 +350,6 @@ class PostgresAdapter:
                 request_id=request_id,
             )
 
-    def fetch_console_session_by_token_hash(
-        self,
-        token_hash: str,
-    ) -> Optional[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return users.fetch_console_session_by_token_hash(cur, token_hash)
-
-    def touch_console_session(self, session_id: str) -> None:
-        with self._cursor() as cur:
-            users.touch_console_session(cur, session_id)
-
     def revoke_console_session_by_token_hash(
         self,
         token_hash: str,
@@ -421,10 +399,6 @@ class PostgresAdapter:
                     after_data={"other_sessions_revoked": revoked},
                 )
             return updated
-
-    def delete_expired_console_sessions(self) -> int:
-        with self._cursor() as cur:
-            return users.delete_expired_console_sessions(cur)
 
     # ------------------------------------------------------------------
     # Duty schedules + shifts

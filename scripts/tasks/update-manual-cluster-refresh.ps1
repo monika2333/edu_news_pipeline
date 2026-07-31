@@ -3,8 +3,6 @@ param(
     [string]$TaskPath = "\",
     [string]$RepoRoot = "$PSScriptRoot\..\..",
     [string]$PythonPath = "",
-    [ValidateSet("zongbao", "wanbao")]
-    [string]$ReportType = "zongbao",
     [ValidateRange(1, 1440)]
     [int]$IntervalMinutes = 5,
     [ValidateRange(1, 1440)]
@@ -24,7 +22,7 @@ try {
 
     $action = New-ScheduledTaskAction `
         -Execute $resolvedPythonPath `
-        -Argument "-m src.cli.main refresh-manual-clusters --report-type $ReportType" `
+        -Argument "-m src.cli.main refresh-manual-clusters" `
         -WorkingDirectory $resolvedRepoRoot
 
     $task.Triggers[0].Repetition.Interval = "PT$($IntervalMinutes)M"

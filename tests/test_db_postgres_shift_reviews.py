@@ -287,8 +287,6 @@ def test_shift_clusters_follow_current_representative_score_order() -> None:
         "shift-1",
         "zongbao",
         True,
-        "zongbao",
-        "zongbao",
     )
 
 

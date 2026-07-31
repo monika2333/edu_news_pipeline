@@ -161,10 +161,8 @@ def _load_title_embedding_map(
 def refresh_clusters(
     *,
     cluster_threshold: Optional[float] = None,
-    report_type: str = DEFAULT_REPORT_TYPE,
 ) -> bool:
     adapter = get_adapter()
-    target_report_type = _normalize_report_type(report_type)
     try:
         threshold_val = float(cluster_threshold) if cluster_threshold is not None else DEFAULT_CLUSTER_THRESHOLD
     except Exception:
@@ -175,7 +173,7 @@ def refresh_clusters(
         return False
 
     try:
-        records = _collect_pending(None, None, fetch_limit=5000, adapter=adapter, report_type=target_report_type)
+        records = _collect_pending(None, None, fetch_limit=5000, adapter=adapter)
         embedding_map = _load_title_embedding_map(
             records,
             adapter=adapter,
@@ -219,11 +217,10 @@ def refresh_clusters(
                         "cluster_id": f"{bucket_key}-{idx}",
                         "bucket_key": bucket_key,
                         "item_ids": [item["article_id"] for item in group_items if item.get("article_id")],
-                        "report_type": target_report_type,
                     }
                 )
 
-        adapter.replace_manual_clusters(clusters, report_type=target_report_type)  # type: ignore[attr-defined]
+        adapter.replace_manual_clusters(clusters)  # type: ignore[attr-defined]
         return True
     finally:
         adapter.release_advisory_lock(MANUAL_CLUSTER_LOCK_ID)
@@ -237,22 +234,19 @@ def _collect_pending(
     fetch_limit: int = 5000,
     *,
     adapter: Any = None,
-    report_type: str = DEFAULT_REPORT_TYPE,
 ) -> List[Dict[str, Any]]:
     adapter = adapter or get_adapter()
-    target_report_type = _normalize_report_type(report_type)
     rows = adapter.fetch_manual_pending_for_cluster(  # type: ignore[attr-defined]
         region=region,
         sentiment=sentiment,
         fetch_limit=fetch_limit,
-        report_type=target_report_type,
     )
     records: List[Dict[str, Any]] = []
     for row in rows:
         record = serialize_manual_filter_item(
             dict(row),
             fallback_status="pending",
-            report_type=target_report_type,
+            report_type=DEFAULT_REPORT_TYPE,
         )
         records.append(record)
     return records
@@ -282,12 +276,11 @@ def cluster_pending(
     threshold_val = max(0.0, min(threshold_val, 1.0))
 
     if force_refresh:
-        refresh_clusters(cluster_threshold=threshold_val, report_type=target_report_type)
+        refresh_clusters(cluster_threshold=threshold_val)
 
     bucket_key = _bucket_key_from_filters(region, sentiment)
     rows = adapter.fetch_manual_clusters(  # type: ignore[attr-defined]
         bucket_key=bucket_key,
-        report_type=target_report_type,
         hide_submitted=hide_submitted,
     )
     if not rows:

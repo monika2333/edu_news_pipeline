@@ -43,19 +43,11 @@ def test_cli_help_available() -> None:
         assert keyword in help_text
 
 
-def test_refresh_manual_clusters_defaults_to_zongbao() -> None:
-    args = build_parser().parse_args(["refresh-manual-clusters"])
-
-    assert args.command == "refresh-manual-clusters"
-    assert args.report_type == "zongbao"
-
-
-def test_refresh_manual_clusters_accepts_wanbao() -> None:
-    args = build_parser().parse_args(
-        ["refresh-manual-clusters", "--report-type", "wanbao"]
-    )
-
-    assert args.report_type == "wanbao"
+def test_refresh_manual_clusters_rejects_report_type() -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(
+            ["refresh-manual-clusters", "--report-type", "zongbao"]
+        )
 
 
 @pytest.mark.parametrize(
@@ -79,7 +71,7 @@ def test_refresh_manual_clusters_returns_distinct_exit_codes(
         lambda **kwargs: {"refreshed": refreshed},
     )
 
-    result = cli_main._refresh_manual_clusters("zongbao")
+    result = cli_main._refresh_manual_clusters()
 
     assert result == expected_code
     assert watchdog_seconds == [600]
@@ -136,7 +128,7 @@ def test_main_propagates_refresh_exit_code(
     monkeypatch.setattr(
         cli_main,
         "_refresh_manual_clusters",
-        lambda report_type: 2,
+        lambda: 2,
     )
 
     assert cli_main.main(["refresh-manual-clusters"]) == 2

@@ -104,10 +104,8 @@ class FakeAdapter:
         self,
         *,
         bucket_key: Optional[str] = None,
-        report_type: Optional[str] = None,
         hide_submitted: bool = False,
     ) -> List[Dict[str, Any]]:
-        del report_type
         rows: List[Dict[str, Any]] = []
         for row in self.rows:
             row_bucket = self._bucket_key_for_row(row)
@@ -511,7 +509,6 @@ def test_pending_wrong_report_type_still_enters_clustering(fake_adapter):
         None,
         None,
         adapter=fake_adapter,
-        report_type="zongbao",
     )
 
     assert {item["article_id"] for item in records} == {"a1", "a2"}

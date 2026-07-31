@@ -235,9 +235,8 @@ def status_counts(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, int]:
     return adapter.manual_review_status_counts(report_type=target_report_type)  # type: ignore[attr-defined]
 
 
-def trigger_clustering(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, Any]:
-    target_report_type = _normalize_report_type(report_type)
-    refreshed = refresh_clusters(report_type=target_report_type)
+def trigger_clustering() -> Dict[str, Any]:
+    refreshed = refresh_clusters()
     return {"refreshed": refreshed}
 
 

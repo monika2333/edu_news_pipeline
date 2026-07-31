@@ -94,9 +94,9 @@ def status_counts(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, int]:
     return _status_counts(report_type=report_type)
 
 
-def trigger_clustering(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, Any]:
+def trigger_clustering() -> Dict[str, Any]:
     _sync_query_dependencies()
-    return _trigger_clustering(report_type=report_type)
+    return _trigger_clustering()
 
 
 def check_duplicates(*, report_type: str, decision: str) -> Dict[str, Any]:

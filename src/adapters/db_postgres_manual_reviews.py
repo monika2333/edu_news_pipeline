@@ -476,21 +476,17 @@ def discard_manual_candidates_before_date(
     return cur.rowcount
 
 
-def delete_manual_clusters(cur: psycopg.Cursor, *, report_type: Optional[str] = None) -> int:
-    normalized_report_type = normalize_report_type_value(report_type) or "zongbao"
-    cur.execute("DELETE FROM manual_clusters WHERE report_type = %s", (normalized_report_type,))
+def delete_manual_clusters(cur: psycopg.Cursor) -> int:
+    cur.execute("DELETE FROM manual_clusters")
     return cur.rowcount
 
 
 def insert_manual_clusters(
     cur: psycopg.Cursor,
     clusters: Sequence[Mapping[str, Any]],
-    *,
-    report_type: Optional[str] = None,
 ) -> int:
     if not clusters:
         return 0
-    default_report_type = normalize_report_type_value(report_type) or "zongbao"
     payload: List[Tuple[Any, ...]] = []
     for cluster in clusters:
         cluster_id = str(cluster.get("cluster_id") or "").strip()
@@ -498,13 +494,12 @@ def insert_manual_clusters(
         item_ids = cluster.get("item_ids") or []
         if not cluster_id or not bucket_key:
             continue
-        target_report_type = normalize_report_type_value(cluster.get("report_type")) or default_report_type
-        payload.append((target_report_type, bucket_key, cluster_id, list(item_ids)))
+        payload.append((bucket_key, cluster_id, list(item_ids)))
     if not payload:
         return 0
     query = """
-        INSERT INTO manual_clusters (report_type, bucket_key, cluster_id, item_ids)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO manual_clusters (bucket_key, cluster_id, item_ids)
+        VALUES (%s, %s, %s)
     """
     cur.executemany(query, payload)
     return len(payload)
@@ -514,16 +509,13 @@ def fetch_manual_clusters(
     cur: psycopg.Cursor,
     *,
     bucket_key: Optional[str] = None,
-    report_type: Optional[str] = None,
     hide_submitted: bool = False,
 ) -> List[Dict[str, Any]]:
-    normalized_report_type = normalize_report_type_value(report_type) or "zongbao"
     query = """
         WITH cluster_base AS (
             SELECT cluster_id, bucket_key, item_ids
             FROM manual_clusters
-            WHERE report_type = %s
-              AND (%s::text IS NULL OR bucket_key = %s)
+            WHERE (%s::text IS NULL OR bucket_key = %s)
         ),
         cluster_items AS (
             SELECT cb.cluster_id, cb.bucket_key, unnest(cb.item_ids) AS article_id
@@ -584,7 +576,7 @@ def fetch_manual_clusters(
     """
     cur.execute(
         query,
-        (normalized_report_type, bucket_key, bucket_key, hide_submitted),
+        (bucket_key, bucket_key, hide_submitted),
     )
     rows = cur.fetchall()
     return [dict(row) for row in rows]

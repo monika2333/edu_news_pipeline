@@ -233,7 +233,6 @@ def test_fetch_manual_clusters_can_hide_submitted_members() -> None:
     db_postgres_manual_reviews.fetch_manual_clusters(
         cur,
         bucket_key="internal_positive",
-        report_type="zongbao",
         hide_submitted=True,
     )
 
@@ -241,7 +240,6 @@ def test_fetch_manual_clusters_can_hide_submitted_members() -> None:
     assert "FROM submission_duplicate_matches sdm" in query
     assert "sdm.state IN ('confirmed', 'suspected')" in query
     assert cur.params[-1] == (
-        "zongbao",
         "internal_positive",
         "internal_positive",
         True,

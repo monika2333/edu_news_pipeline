@@ -328,7 +328,6 @@ def fetch_shift_clusters(
                 AS cluster_item(article_id)
             JOIN shift_pending pending
               ON pending.article_id = cluster_item.article_id
-            WHERE mc.report_type = %s
         ),
         unclustered_items AS (
             SELECT
@@ -345,8 +344,7 @@ def fetch_shift_clusters(
                 FROM manual_clusters mc
                 CROSS JOIN LATERAL unnest(mc.item_ids)
                     AS cluster_item(article_id)
-                WHERE mc.report_type = %s
-                  AND cluster_item.article_id = pending.article_id
+                WHERE cluster_item.article_id = pending.article_id
             )
         ),
         all_cluster_items AS (
@@ -403,8 +401,6 @@ def fetch_shift_clusters(
             shift_id,
             report_type,
             hide_submitted,
-            report_type,
-            report_type,
         ),
     )
     return [dict(row) for row in cur.fetchall()]

@@ -52,8 +52,6 @@ class FakeClusterAdapter:
     def replace_manual_clusters(
         self,
         clusters: Sequence[Mapping[str, Any]],
-        *,
-        report_type: str,
     ) -> int:
         payload = [dict(cluster) for cluster in clusters]
         self.replace_calls.append(payload)
@@ -141,6 +139,7 @@ def test_refresh_clusters_warms_cache_then_avoids_encoder(
         lambda titles: pytest.fail("hot cache must not invoke encoder"),
     )
 
+    # Regression: refreshing the same global cluster IDs twice must not collide.
     assert manual_filter_cluster.refresh_clusters() is True
     assert len(adapter.upsert_calls) == 1
     assert len(adapter.replace_calls) == 2

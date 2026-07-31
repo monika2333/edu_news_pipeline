@@ -471,7 +471,7 @@ def test_clusters_are_scoped_by_owned_shift_and_report_type(monkeypatch) -> None
     )
 
     assert ownership_checks == ["shift-id:editor-id"]
-    assert refreshes == [{"report_type": "wanbao"}]
+    assert refreshes == [{}]
     assert result["clusters"][0]["item_ids"] == ["article-1", "article-2"]
     assert result["item_total"] == 2
 

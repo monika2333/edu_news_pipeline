@@ -8,7 +8,6 @@ import threading
 import time
 from pathlib import Path
 
-from src.domain.report_type import NEWS_REPORT_TYPE_ORDER
 from src.workers.crawl_sources import run as crawl_sources
 from src.workers.enrich_summary import run as enrich_summaries
 from src.workers.external_filter import run as run_external_filter
@@ -185,15 +184,9 @@ def _add_generate_shifts(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _add_refresh_manual_clusters(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser(
+    subparsers.add_parser(
         "refresh-manual-clusters",
         help="Refresh the manual-review title clusters",
-    )
-    parser.add_argument(
-        "--report-type",
-        choices=NEWS_REPORT_TYPE_ORDER,
-        default="zongbao",
-        help="Manual-review workspace to refresh (default: zongbao)",
     )
 
 
@@ -253,15 +246,15 @@ def _watchdog(seconds: int) -> None:
     threading.Thread(target=kill, daemon=True).start()
 
 
-def _refresh_manual_clusters(report_type: str) -> int:
+def _refresh_manual_clusters() -> int:
     _watchdog(_MANUAL_CLUSTER_WATCHDOG_SECONDS)
     from src.console.manual_filter_service import trigger_clustering
 
-    result = trigger_clustering(report_type=report_type)
+    result = trigger_clustering()
     if result["refreshed"]:
-        print(f"Manual clusters for {report_type}: refreshed")
+        print("Manual clusters: refreshed")
         return 0
-    print(f"Manual clusters for {report_type}: skipped (already running)")
+    print("Manual clusters: skipped (already running)")
     return 2
 
 
@@ -338,7 +331,7 @@ def main(argv: list[str] | None = None) -> int:
     elif command == "generate-shifts":
         _generate_shifts(args.days)
     elif command == "refresh-manual-clusters":
-        return _refresh_manual_clusters(args.report_type)
+        return _refresh_manual_clusters()
     else:
         parser.error(f"Unknown command: {command}")
     return 0

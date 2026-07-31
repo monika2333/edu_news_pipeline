@@ -277,7 +277,7 @@ def list_clusters(
     if sentiment is not None and sentiment not in {"positive", "negative"}:
         raise ValueError(f"Invalid review sentiment: {sentiment}")
     if force_refresh:
-        manual_filter_cluster.refresh_clusters(report_type=report_type)
+        manual_filter_cluster.refresh_clusters()
     rows = get_adapter().fetch_shift_clusters(
         shift_id=shift_id,
         report_type=report_type,

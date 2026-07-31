@@ -1462,12 +1462,10 @@ class PostgresAdapter:
     def replace_manual_clusters(
         self,
         clusters: Sequence[Mapping[str, Any]],
-        *,
-        report_type: Optional[str] = None,
     ) -> int:
         with self._cluster_transaction() as cur:
-            manual_reviews.delete_manual_clusters(cur, report_type=report_type)
-            return manual_reviews.insert_manual_clusters(cur, clusters, report_type=report_type)
+            manual_reviews.delete_manual_clusters(cur)
+            return manual_reviews.insert_manual_clusters(cur, clusters)
 
     def fetch_news_title_embeddings(
         self,
@@ -1487,14 +1485,12 @@ class PostgresAdapter:
         self,
         *,
         bucket_key: Optional[str] = None,
-        report_type: Optional[str] = None,
         hide_submitted: bool = False,
     ) -> List[Dict[str, Any]]:
         with self._cluster_transaction() as cur:
             return manual_reviews.fetch_manual_clusters(
                 cur,
                 bucket_key=bucket_key,
-                report_type=report_type,
                 hide_submitted=hide_submitted,
             )
 

@@ -9,12 +9,11 @@ from src.console import score_feedback_service
 from src.console.auth_service import ConsoleUser
 
 
-class FakeAdapter:
-    def __init__(self) -> None:
-        self.saved: Optional[dict[str, Any]] = None
-        self.cleared: Optional[str] = None
+class FakeScoreFeedbackNamespace:
+    def __init__(self, adapter: FakeAdapter) -> None:
+        self._adapter = adapter
 
-    def upsert_score_feedback(
+    def upsert(
         self,
         article_id: str,
         *,
@@ -23,18 +22,25 @@ class FakeAdapter:
         submitted_by: str,
         submitted_by_user_id: Optional[str],
     ) -> dict[str, Any]:
-        self.saved = {
+        self._adapter.saved = {
             "article_id": article_id,
             "feedback_type": feedback_type,
             "notes": notes,
             "submitted_by": submitted_by,
             "submitted_by_user_id": submitted_by_user_id,
         }
-        return dict(self.saved)
+        return dict(self._adapter.saved)
 
-    def clear_score_feedback(self, article_id: str) -> bool:
-        self.cleared = article_id
+    def clear(self, article_id: str) -> bool:
+        self._adapter.cleared = article_id
         return True
+
+
+class FakeAdapter:
+    def __init__(self) -> None:
+        self.saved: Optional[dict[str, Any]] = None
+        self.cleared: Optional[str] = None
+        self.score_feedback = FakeScoreFeedbackNamespace(self)
 
 
 def _actor() -> ConsoleUser:
@@ -80,8 +86,8 @@ def test_save_score_feedback_rejects_overlong_notes(monkeypatch: pytest.MonkeyPa
 
 
 def test_save_score_feedback_translates_missing_context(monkeypatch: pytest.MonkeyPatch) -> None:
-    class MissingContextAdapter(FakeAdapter):
-        def upsert_score_feedback(
+    class MissingContextScoreFeedbackNamespace(FakeScoreFeedbackNamespace):
+        def upsert(
             self,
             article_id: str,
             *,
@@ -94,6 +100,11 @@ def test_save_score_feedback_translates_missing_context(monkeypatch: pytest.Monk
             raise db_postgres_score_feedback.ScoreFeedbackContextMissingError(
                 "missing context"
             )
+
+    class MissingContextAdapter(FakeAdapter):
+        def __init__(self) -> None:
+            super().__init__()
+            self.score_feedback = MissingContextScoreFeedbackNamespace(self)
 
     monkeypatch.setattr(score_feedback_service, "get_adapter", MissingContextAdapter)
 

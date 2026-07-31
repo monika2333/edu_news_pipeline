@@ -84,6 +84,7 @@ class PostgresAdapter:
         self._settings = get_settings()
         self._schema = self._settings.db_schema or "public"
         self._conn = connection or _get_connection()
+        self.score_feedback = score_feedback.ScoreFeedbackNamespace(self)
         self.title_embeddings = title_embeddings.TitleEmbeddingsNamespace(self)
 
     def _conn_cursor(self):
@@ -1233,29 +1234,6 @@ class PostgresAdapter:
                         }
                     ],
                 )
-
-    def upsert_score_feedback(
-        self,
-        article_id: str,
-        *,
-        feedback_type: str,
-        notes: Optional[str],
-        submitted_by: str,
-        submitted_by_user_id: Optional[str],
-    ) -> Dict[str, Any]:
-        with self.transaction() as cur:
-            return score_feedback.upsert_score_feedback(
-                cur,
-                article_id,
-                feedback_type=feedback_type,
-                notes=notes,
-                submitted_by=submitted_by,
-                submitted_by_user_id=submitted_by_user_id,
-            )
-
-    def clear_score_feedback(self, article_id: str) -> bool:
-        with self.transaction() as cur:
-            return score_feedback.clear_score_feedback(cur, article_id)
 
     def mark_external_filter_failure(
         self,

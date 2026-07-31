@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Mapping, Optional
 
 import psycopg
 from psycopg.types.json import Json
+
+if TYPE_CHECKING:
+    from src.adapters.db_postgres_core import PostgresAdapter
 
 VALID_FEEDBACK_TYPES = frozenset({"too_high", "too_low"})
 VALID_PROMPT_KEYS = frozenset(
@@ -22,6 +25,36 @@ class ScoreFeedbackArticleNotFoundError(ValueError):
 
 class ScoreFeedbackContextMissingError(ValueError):
     """Raised when the current external score lacks prompt metadata."""
+
+
+class ScoreFeedbackNamespace:
+    """Single-table access to score feedback records."""
+
+    def __init__(self, adapter: PostgresAdapter) -> None:
+        self._adapter = adapter
+
+    def upsert(
+        self,
+        article_id: str,
+        *,
+        feedback_type: str,
+        notes: Optional[str],
+        submitted_by: str,
+        submitted_by_user_id: Optional[str],
+    ) -> dict[str, Any]:
+        with self._adapter.transaction() as cur:
+            return upsert_score_feedback(
+                cur,
+                article_id,
+                feedback_type=feedback_type,
+                notes=notes,
+                submitted_by=submitted_by,
+                submitted_by_user_id=submitted_by_user_id,
+            )
+
+    def clear(self, article_id: str) -> bool:
+        with self._adapter.transaction() as cur:
+            return clear_score_feedback(cur, article_id)
 
 
 def _current_score_context(cur: psycopg.Cursor, article_id: str) -> dict[str, Any]:
@@ -141,6 +174,7 @@ def clear_score_feedback(cur: psycopg.Cursor, article_id: str) -> bool:
 __all__ = [
     "ScoreFeedbackArticleNotFoundError",
     "ScoreFeedbackContextMissingError",
+    "ScoreFeedbackNamespace",
     "clear_score_feedback",
     "upsert_score_feedback",
 ]

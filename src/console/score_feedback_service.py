@@ -61,7 +61,7 @@ def save_score_feedback(
     normalized_notes = _normalize_notes(notes)
     adapter = get_adapter()
     try:
-        return adapter.upsert_score_feedback(
+        return adapter.score_feedback.upsert(
             normalized_article_id,
             feedback_type=normalized_feedback_type,
             notes=normalized_notes,
@@ -77,7 +77,7 @@ def clear_score_feedback(*, article_id: str) -> bool:
     normalized_article_id = _normalize_article_id(article_id)
     adapter = get_adapter()
     try:
-        return adapter.clear_score_feedback(normalized_article_id)
+        return adapter.score_feedback.clear(normalized_article_id)
     except ValueError as exc:
         _translate_adapter_error(exc)
         raise

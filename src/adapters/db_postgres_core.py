@@ -85,6 +85,7 @@ class PostgresAdapter:
         self._conn = connection or _get_connection()
         self.export = export.ExportNamespace(self)
         self.ingest = ingest.IngestNamespace(self)
+        self.manual_reviews = manual_reviews.ManualReviewsNamespace(self)
         self.news_summaries = news_summaries.NewsSummariesNamespace(self)
         self.process = process.ProcessNamespace(self)
         self.score_feedback = score_feedback.ScoreFeedbackNamespace(self)
@@ -719,19 +720,6 @@ class PostgresAdapter:
             )
             return updated
 
-    def preview_shift_reviews_for_manual(
-        self,
-        *,
-        shift_id: str,
-        article_ids: Sequence[str],
-    ) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return manual_reviews.preview_shift_reviews_for_manual(
-                cur,
-                shift_id=shift_id,
-                article_ids=article_ids,
-            )
-
     def import_shift_reviews_into_manual(
         self,
         *,
@@ -838,33 +826,6 @@ class PostgresAdapter:
     # ------------------------------------------------------------------
     # Manual reviews
     # ------------------------------------------------------------------
-    def fetch_manual_reviews(
-        self,
-        *,
-        status: str,
-        limit: int,
-        offset: int,
-        only_ready: bool = False,
-        region: Optional[str] = None,
-        sentiment: Optional[str] = None,
-        report_type: Optional[str] = None,
-        order_by_decided_at: bool = False,
-        hide_submitted: bool = False,
-    ) -> Tuple[List[Dict[str, Any]], int]:
-        with self._cursor() as cur:
-            return manual_reviews.fetch_manual_reviews(
-                cur,
-                status=status,
-                limit=limit,
-                offset=offset,
-                only_ready=only_ready,
-                region=region,
-                sentiment=sentiment,
-                report_type=report_type,
-                order_by_decided_at=order_by_decided_at,
-                hide_submitted=hide_submitted,
-            )
-
     def update_manual_review_order_and_categories(
         self,
         review_updates: Sequence[Mapping[str, Any]],
@@ -919,113 +880,6 @@ class PostgresAdapter:
                 )
             return len(after), updated_categories
 
-    def fetch_manual_pending_for_cluster(
-        self,
-        *,
-        region: Optional[str] = None,
-        sentiment: Optional[str] = None,
-        fetch_limit: int = 5000,
-        report_type: Optional[str] = None,
-        hide_submitted: bool = False,
-    ) -> List[Dict[str, Any]]:
-        with self._cluster_transaction() as cur:
-            return manual_reviews.fetch_manual_pending_for_cluster(
-                cur,
-                region=region,
-                sentiment=sentiment,
-                fetch_limit=fetch_limit,
-                report_type=report_type,
-                hide_submitted=hide_submitted,
-            )
-
-    def search_manual_candidates(
-        self,
-        *,
-        query: Optional[str] = None,
-        published_before: Optional[date] = None,
-        limit: int = 30,
-        offset: int = 0,
-        region: Optional[str] = None,
-        sentiment: Optional[str] = None,
-        report_type: Optional[str] = None,
-        hide_submitted: bool = False,
-    ) -> Tuple[List[Dict[str, Any]], int]:
-        with self._cursor() as cur:
-            return manual_reviews.search_manual_candidates(
-                cur,
-                query=query,
-                published_before=published_before,
-                limit=limit,
-                offset=offset,
-                region=region,
-                sentiment=sentiment,
-                report_type=report_type,
-                hide_submitted=hide_submitted,
-            )
-
-    def count_manual_candidates_before_date(
-        self,
-        *,
-        region: str,
-        sentiment: str,
-        query: Optional[str] = None,
-        published_before: Optional[date] = None,
-        report_type: Optional[str] = None,
-    ) -> int:
-        with self._cursor() as cur:
-            return manual_reviews.count_manual_candidates_before_date(
-                cur,
-                region=region,
-                sentiment=sentiment,
-                query=query,
-                published_before=published_before,
-                report_type=report_type,
-            )
-
-    def discard_manual_candidates_before_date(
-        self,
-        *,
-        region: str,
-        sentiment: str,
-        query: Optional[str] = None,
-        published_before: Optional[date] = None,
-        actor: Optional[str] = None,
-        decided_at: Optional[datetime] = None,
-        report_type: Optional[str] = None,
-    ) -> int:
-        with self._cursor() as cur:
-            return manual_reviews.discard_manual_candidates_before_date(
-                cur,
-                region=region,
-                sentiment=sentiment,
-                query=query,
-                published_before=published_before,
-                actor=actor,
-                decided_at=decided_at,
-                report_type=report_type,
-            )
-
-    def replace_manual_clusters(
-        self,
-        clusters: Sequence[Mapping[str, Any]],
-    ) -> int:
-        with self._cluster_transaction() as cur:
-            manual_reviews.delete_manual_clusters(cur)
-            return manual_reviews.insert_manual_clusters(cur, clusters)
-
-    def fetch_manual_clusters(
-        self,
-        *,
-        bucket_key: Optional[str] = None,
-        hide_submitted: bool = False,
-    ) -> List[Dict[str, Any]]:
-        with self._cluster_transaction() as cur:
-            return manual_reviews.fetch_manual_clusters(
-                cur,
-                bucket_key=bucket_key,
-                hide_submitted=hide_submitted,
-            )
-
     def try_advisory_lock(self, lock_id: int) -> bool:
         with self._cursor() as cur:
             return manual_reviews.try_advisory_lock(cur, lock_id)
@@ -1033,23 +887,6 @@ class PostgresAdapter:
     def release_advisory_lock(self, lock_id: int) -> None:
         with self._cursor() as cur:
             manual_reviews.release_advisory_lock(cur, lock_id)
-
-    def manual_review_status_counts(self, *, report_type: Optional[str] = None) -> Dict[str, int]:
-        with self._cursor() as cur:
-            return manual_reviews.manual_review_status_counts(cur, report_type=report_type)
-
-    def manual_review_max_rank(self, status: str, *, report_type: Optional[str] = None) -> float:
-        with self._cursor() as cur:
-            return manual_reviews.manual_review_max_rank(cur, status, report_type=report_type)
-
-    def update_manual_review_statuses(
-        self,
-        updates: Sequence[Mapping[str, Any]],
-        *,
-        report_type: Optional[str] = None,
-    ) -> int:
-        with self._cursor() as cur:
-            return manual_reviews.update_manual_review_statuses(cur, updates, report_type=report_type)
 
     def update_manual_review_statuses_as_user(
         self,
@@ -1096,40 +933,6 @@ class PostgresAdapter:
                     request_id=request_id,
                 )
             return after
-
-    def reset_manual_reviews_to_pending(
-        self,
-        article_ids: Sequence[str],
-        *,
-        actor: Optional[str] = None,
-        decided_at: Optional[datetime] = None,
-        report_type: Optional[str] = None,
-    ) -> int:
-        with self._cursor() as cur:
-            return manual_reviews.reset_manual_reviews_to_pending(
-                cur,
-                article_ids,
-                actor=actor,
-                decided_at=decided_at,
-                report_type=report_type,
-            )
-
-    def update_manual_review_summaries(
-        self,
-        edits: Mapping[str, Mapping[str, Any]],
-        *,
-        actor: Optional[str] = None,
-        decided_at: Optional[datetime] = None,
-        report_type: Optional[str] = None,
-    ) -> int:
-        with self._cursor() as cur:
-            return manual_reviews.update_manual_review_summaries(
-                cur,
-                edits,
-                actor=actor,
-                decided_at=decided_at,
-                report_type=report_type,
-            )
 
     def discard_manual_candidates_before_date_as_user(
         self,

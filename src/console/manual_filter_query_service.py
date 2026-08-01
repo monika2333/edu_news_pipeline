@@ -51,7 +51,7 @@ def _paginate_by_status(
     }
     if hide_submitted:
         fetch_kwargs["hide_submitted"] = True
-    rows, total = adapter.fetch_manual_reviews(  # type: ignore[attr-defined]
+    rows, total = adapter.manual_reviews.fetch(  # type: ignore[attr-defined]
         **fetch_kwargs,
     )
     items: List[Dict[str, Any]] = []
@@ -90,7 +90,7 @@ def _list_candidate_search(
     }
     if hide_submitted:
         fetch_kwargs["hide_submitted"] = True
-    rows, total = adapter.search_manual_candidates(  # type: ignore[attr-defined]
+    rows, total = adapter.manual_reviews.search_candidates(  # type: ignore[attr-defined]
         **fetch_kwargs,
     )
     items = [
@@ -232,7 +232,7 @@ def list_discarded(*, limit: int = 30, offset: int = 0, report_type: str = DEFAU
 def status_counts(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, int]:
     adapter = get_adapter()
     target_report_type = _normalize_report_type(report_type)
-    return adapter.manual_review_status_counts(report_type=target_report_type)  # type: ignore[attr-defined]
+    return adapter.manual_reviews.status_counts(report_type=target_report_type)  # type: ignore[attr-defined]
 
 
 def trigger_clustering() -> Dict[str, Any]:

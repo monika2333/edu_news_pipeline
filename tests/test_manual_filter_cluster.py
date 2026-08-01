@@ -34,6 +34,23 @@ class FakeTitleEmbeddingsNamespace:
         return len(payload)
 
 
+class FakeManualReviewsNamespace:
+    def __init__(self, adapter: FakeClusterAdapter) -> None:
+        self._adapter = adapter
+
+    def fetch_pending_for_cluster(self, **kwargs: Any) -> list[dict[str, Any]]:
+        del kwargs
+        return [dict(record) for record in self._adapter.records]
+
+    def replace_clusters(
+        self,
+        clusters: Sequence[Mapping[str, Any]],
+    ) -> int:
+        payload = [dict(cluster) for cluster in clusters]
+        self._adapter.replace_calls.append(payload)
+        return len(payload)
+
+
 class FakeClusterAdapter:
     def __init__(self, records: list[dict[str, Any]]) -> None:
         self.records = records
@@ -41,6 +58,7 @@ class FakeClusterAdapter:
         self.upsert_calls: list[list[dict[str, Any]]] = []
         self.replace_calls: list[list[dict[str, Any]]] = []
         self.release_calls: list[int] = []
+        self.manual_reviews = FakeManualReviewsNamespace(self)
         self.title_embeddings = FakeTitleEmbeddingsNamespace(self)
 
     def try_advisory_lock(self, lock_id: int) -> bool:
@@ -48,20 +66,6 @@ class FakeClusterAdapter:
 
     def release_advisory_lock(self, lock_id: int) -> None:
         self.release_calls.append(lock_id)
-
-    def fetch_manual_pending_for_cluster(
-        self,
-        **kwargs: Any,
-    ) -> list[dict[str, Any]]:
-        return [dict(record) for record in self.records]
-
-    def replace_manual_clusters(
-        self,
-        clusters: Sequence[Mapping[str, Any]],
-    ) -> int:
-        payload = [dict(cluster) for cluster in clusters]
-        self.replace_calls.append(payload)
-        return len(payload)
 
 
 @pytest.fixture

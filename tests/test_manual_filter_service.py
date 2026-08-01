@@ -18,11 +18,59 @@ class FakeSubmissionArchiveNamespace:
         return {}
 
 
+class FakeManualReviewsNamespace:
+    def __init__(self, adapter: FakeAdapter) -> None:
+        self._adapter = adapter
+
+    def fetch(self, **kwargs: Any) -> Tuple[List[Dict[str, Any]], int]:
+        return self._adapter._fetch(**kwargs)
+
+    def fetch_pending_for_cluster(self, **kwargs: Any) -> List[Dict[str, Any]]:
+        return self._adapter._fetch_pending_for_cluster(**kwargs)
+
+    def fetch_clusters(self, **kwargs: Any) -> List[Dict[str, Any]]:
+        return self._adapter._fetch_clusters(**kwargs)
+
+    def search_candidates(self, **kwargs: Any) -> Tuple[List[Dict[str, Any]], int]:
+        return self._adapter._search_candidates(**kwargs)
+
+    def count_candidates_before_date(self, **kwargs: Any) -> int:
+        return self._adapter._count_candidates_before_date(**kwargs)
+
+    def discard_candidates_before_date(self, **kwargs: Any) -> int:
+        return self._adapter._discard_candidates_before_date(**kwargs)
+
+    def status_counts(self, *, report_type: Optional[str] = None) -> Dict[str, int]:
+        return self._adapter._status_counts(report_type=report_type)
+
+    def max_rank(self, status: str, *, report_type: Optional[str] = None) -> float:
+        return self._adapter._max_rank(status, report_type=report_type)
+
+    def update_statuses(
+        self,
+        updates: Sequence[Mapping[str, Any]],
+        *,
+        report_type: Optional[str] = None,
+    ) -> int:
+        return self._adapter._update_statuses(updates, report_type=report_type)
+
+    def reset_to_pending(self, article_ids: Sequence[str], **kwargs: Any) -> int:
+        return self._adapter._reset_to_pending(article_ids, **kwargs)
+
+    def update_summaries(
+        self,
+        edits: Mapping[str, Mapping[str, Any]],
+        **kwargs: Any,
+    ) -> int:
+        return self._adapter._update_summaries(edits, **kwargs)
+
+
 class FakeAdapter:
     def __init__(self, rows: List[Dict[str, Any]]) -> None:
         # Each row represents a join of manual_reviews with news_summaries fields
         self.rows = rows
         self.export_calls: List[Dict[str, Any]] = []
+        self.manual_reviews = FakeManualReviewsNamespace(self)
         self.submission_archive = FakeSubmissionArchiveNamespace()
         for row in self.rows:
             if not row.get("report_type"):
@@ -36,7 +84,7 @@ class FakeAdapter:
     # ------------------------------------------------------------------
     # Manual review helpers
     # ------------------------------------------------------------------
-    def fetch_manual_reviews(
+    def _fetch(
         self,
         *,
         status: str,
@@ -85,7 +133,7 @@ class FakeAdapter:
         total = len(filtered)
         return filtered[offset : offset + limit], total
 
-    def fetch_manual_pending_for_cluster(
+    def _fetch_pending_for_cluster(
         self,
         *,
         region: Optional[str] = None,
@@ -93,7 +141,7 @@ class FakeAdapter:
         fetch_limit: int = 5000,
         report_type: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        rows, _ = self.fetch_manual_reviews(
+        rows, _ = self._fetch(
             status="pending",
             limit=fetch_limit,
             offset=0,
@@ -110,7 +158,7 @@ class FakeAdapter:
         sentiment = "negative" if (row.get("sentiment_label") or "").lower() == "negative" else "positive"
         return f"{region}_{sentiment}"
 
-    def fetch_manual_clusters(
+    def _fetch_clusters(
         self,
         *,
         bucket_key: Optional[str] = None,
@@ -149,7 +197,7 @@ class FakeAdapter:
         except (TypeError, ValueError, OSError):
             return None
 
-    def search_manual_candidates(
+    def _search_candidates(
         self,
         *,
         query: Optional[str] = None,
@@ -161,7 +209,7 @@ class FakeAdapter:
         report_type: Optional[str] = None,
         hide_submitted: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
-        rows, _ = self.fetch_manual_reviews(
+        rows, _ = self._fetch(
             status="pending",
             limit=10_000,
             offset=0,
@@ -194,7 +242,7 @@ class FakeAdapter:
         total = len(filtered)
         return filtered[offset : offset + limit], total
 
-    def count_manual_candidates_before_date(
+    def _count_candidates_before_date(
         self,
         *,
         region: str,
@@ -203,7 +251,7 @@ class FakeAdapter:
         published_before: Optional[date] = None,
         report_type: Optional[str] = None,
     ) -> int:
-        _, total = self.search_manual_candidates(
+        _, total = self._search_candidates(
             query=query,
             published_before=published_before,
             limit=10_000,
@@ -214,7 +262,7 @@ class FakeAdapter:
         )
         return total
 
-    def discard_manual_candidates_before_date(
+    def _discard_candidates_before_date(
         self,
         *,
         region: str,
@@ -225,7 +273,7 @@ class FakeAdapter:
         decided_at: Optional[Any] = None,
         report_type: Optional[str] = None,
     ) -> int:
-        rows, _ = self.search_manual_candidates(
+        rows, _ = self._search_candidates(
             query=query,
             published_before=published_before,
             limit=10_000,
@@ -245,9 +293,9 @@ class FakeAdapter:
             }
             for row in rows
         ]
-        return self.update_manual_review_statuses(updates, report_type=report_type)
+        return self._update_statuses(updates, report_type=report_type)
 
-    def manual_review_status_counts(self, *, report_type: Optional[str] = None) -> Dict[str, int]:
+    def _status_counts(self, *, report_type: Optional[str] = None) -> Dict[str, int]:
         counts: Dict[str, int] = {"pending": 0, "selected": 0, "backup": 0, "discarded": 0, "exported": 0}
         target_type = self._normalized_report_type(report_type)
         for row in self.rows:
@@ -278,7 +326,7 @@ class FakeAdapter:
             )
         )
 
-    def manual_review_max_rank(self, status: str, *, report_type: Optional[str] = None) -> float:
+    def _max_rank(self, status: str, *, report_type: Optional[str] = None) -> float:
         target_type = self._normalized_report_type(report_type)
         ranks = [
             r.get("rank")
@@ -294,7 +342,7 @@ class FakeAdapter:
         except Exception:
             return 0.0
 
-    def update_manual_review_statuses(self, updates: Sequence[Mapping[str, Any]], *, report_type: Optional[str] = None) -> int:
+    def _update_statuses(self, updates: Sequence[Mapping[str, Any]], *, report_type: Optional[str] = None) -> int:
         default_report_type = (
             self._normalized_report_type(report_type)
             if report_type is not None
@@ -330,7 +378,7 @@ class FakeAdapter:
         *,
         report_type: Optional[str] = None,
     ) -> Tuple[int, int]:
-        updated_reviews = self.update_manual_review_statuses(review_updates, report_type=report_type)
+        updated_reviews = self._update_statuses(review_updates, report_type=report_type)
         updated_categories = 0
         for item in category_updates:
             for row in self.rows:
@@ -342,7 +390,7 @@ class FakeAdapter:
                 break
         return updated_reviews, updated_categories
 
-    def reset_manual_reviews_to_pending(
+    def _reset_to_pending(
         self,
         article_ids: Sequence[str],
         *,
@@ -362,9 +410,9 @@ class FakeAdapter:
                     "decided_at": decided_at,
                 }
             )
-        return self.update_manual_review_statuses(updates, report_type=report_type)
+        return self._update_statuses(updates, report_type=report_type)
 
-    def update_manual_review_summaries(
+    def _update_summaries(
         self,
         edits: Mapping[str, Mapping[str, Any]],
         *,
@@ -404,7 +452,7 @@ class FakeAdapter:
         return updated
 
     def fetch_manual_selected_for_export(self, *, report_type: Optional[str] = None) -> List[Dict[str, Any]]:
-        rows, _ = self.fetch_manual_reviews(status="selected", limit=10_000, offset=0, report_type=report_type)
+        rows, _ = self._fetch(status="selected", limit=10_000, offset=0, report_type=report_type)
         return rows
 
 

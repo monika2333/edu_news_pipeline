@@ -49,7 +49,7 @@ def _apply_decision(
         )
     if not payload:
         return 0
-    return adapter.update_manual_review_statuses(payload, report_type=target_report_type)  # type: ignore[attr-defined]
+    return adapter.manual_reviews.update_statuses(payload, report_type=target_report_type)  # type: ignore[attr-defined]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ def _apply_decision(
 def _next_rank(status: str, *, report_type: str) -> float:
     adapter = get_adapter()
     target_report_type = _normalize_report_type(report_type)
-    return adapter.manual_review_max_rank(status, report_type=target_report_type)  # type: ignore[attr-defined]
+    return adapter.manual_reviews.max_rank(status, report_type=target_report_type)  # type: ignore[attr-defined]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ def _apply_ranked_decision(
         rank += 1
     if not payload:
         return 0
-    return adapter.update_manual_review_statuses(payload, report_type=target_report_type)  # type: ignore[attr-defined]
+    return adapter.manual_reviews.update_statuses(payload, report_type=target_report_type)  # type: ignore[attr-defined]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -233,7 +233,7 @@ def update_ranks(
             report_type=target_report_type,
         )
     else:
-        updated_rows = adapter.update_manual_review_statuses(payload, report_type=target_report_type)  # type: ignore[attr-defined]
+        updated_rows = adapter.manual_reviews.update_statuses(payload, report_type=target_report_type)  # type: ignore[attr-defined]
         updated_categories = 0
     logger.info(
         "Updated manual ranks: selected=%s backup=%s rows=%s report_type=%s",
@@ -260,7 +260,7 @@ def reset_to_pending(ids: Sequence[str], *, actor: Optional[str] = None, report_
     target_report_type = _normalize_report_type(report_type)
     logger.info("Resetting to pending: count=%s actor=%s report_type=%s", len(target_ids), actor, target_report_type)
     adapter = get_adapter()
-    return adapter.reset_manual_reviews_to_pending(target_ids, actor=actor, report_type=target_report_type)  # type: ignore[attr-defined]
+    return adapter.manual_reviews.reset_to_pending(target_ids, actor=actor, report_type=target_report_type)  # type: ignore[attr-defined]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -297,5 +297,5 @@ def save_edits(edits: Dict[str, Dict[str, Any]], *, actor: Optional[str] = None,
             "report_type": target_report_type,
         }
     logger.info("Saving manual edits: count=%s actor=%s report_type=%s", len(edits), actor, target_report_type)
-    updated = adapter.update_manual_review_summaries(normalized, actor=actor, report_type=target_report_type)  # type: ignore[attr-defined]
+    updated = adapter.manual_reviews.update_summaries(normalized, actor=actor, report_type=target_report_type)  # type: ignore[attr-defined]
     return updated

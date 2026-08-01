@@ -20,9 +20,27 @@ class FakeSubmissionArchiveNamespace:
         return {}
 
 
+class FakeManualReviewsNamespace:
+    def __init__(self, adapter: FakeManualFilterAdapter) -> None:
+        self._adapter = adapter
+
+    def fetch(self, **kwargs: Any) -> Tuple[list[Dict[str, Any]], int]:
+        return self._adapter._fetch(**kwargs)
+
+    def search_candidates(self, **kwargs: Any) -> Tuple[list[Dict[str, Any]], int]:
+        return self._adapter._search_candidates(**kwargs)
+
+    def count_candidates_before_date(self, **kwargs: Any) -> int:
+        return self._adapter._count_candidates_before_date(**kwargs)
+
+    def discard_candidates_before_date(self, **kwargs: Any) -> int:
+        return self._adapter._discard_candidates_before_date(**kwargs)
+
+
 class FakeManualFilterAdapter:
     def __init__(self, rows: list[Dict[str, Any]]) -> None:
         self.rows = rows
+        self.manual_reviews = FakeManualReviewsNamespace(self)
         self.submission_archive = FakeSubmissionArchiveNamespace()
         for row in self.rows:
             if not row.get("report_type"):
@@ -50,7 +68,7 @@ class FakeManualFilterAdapter:
         except (TypeError, ValueError, OSError):
             return None
 
-    def fetch_manual_reviews(
+    def _fetch(
         self,
         *,
         status: str,
@@ -96,7 +114,7 @@ class FakeManualFilterAdapter:
         total = len(filtered)
         return filtered[offset : offset + limit], total
 
-    def search_manual_candidates(
+    def _search_candidates(
         self,
         *,
         query: Optional[str] = None,
@@ -107,7 +125,7 @@ class FakeManualFilterAdapter:
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
     ) -> Tuple[list[Dict[str, Any]], int]:
-        rows, _ = self.fetch_manual_reviews(
+        rows, _ = self._fetch(
             status="pending",
             limit=10_000,
             offset=0,
@@ -139,7 +157,7 @@ class FakeManualFilterAdapter:
         total = len(filtered)
         return filtered[offset : offset + limit], total
 
-    def count_manual_candidates_before_date(
+    def _count_candidates_before_date(
         self,
         *,
         region: str,
@@ -148,7 +166,7 @@ class FakeManualFilterAdapter:
         published_before: Optional[date] = None,
         report_type: Optional[str] = None,
     ) -> int:
-        _, total = self.search_manual_candidates(
+        _, total = self._search_candidates(
             query=query,
             published_before=published_before,
             limit=10_000,
@@ -159,7 +177,7 @@ class FakeManualFilterAdapter:
         )
         return total
 
-    def discard_manual_candidates_before_date(
+    def _discard_candidates_before_date(
         self,
         *,
         region: str,
@@ -170,7 +188,7 @@ class FakeManualFilterAdapter:
         decided_at: Optional[Any] = None,
         report_type: Optional[str] = None,
     ) -> int:
-        rows, _ = self.search_manual_candidates(
+        rows, _ = self._search_candidates(
             query=query,
             published_before=published_before,
             limit=10_000,
@@ -204,7 +222,7 @@ class FakeManualFilterAdapter:
         request_id: Optional[str],
     ) -> list[Dict[str, Any]]:
         del actor_user_id, request_id
-        rows, _ = self.search_manual_candidates(
+        rows, _ = self._search_candidates(
             query=query,
             published_before=published_before,
             limit=10_000,

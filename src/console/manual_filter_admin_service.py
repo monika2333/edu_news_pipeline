@@ -281,7 +281,7 @@ def discard_candidates_before_date(
         raise ValueError("discard_before_date requires an explicit sentiment")
     normalized_query = (query or "").strip() or None
     adapter = get_adapter()
-    matched = adapter.count_manual_candidates_before_date(
+    matched = adapter.manual_reviews.count_candidates_before_date(
         region=region,
         sentiment=sentiment,
         query=normalized_query,

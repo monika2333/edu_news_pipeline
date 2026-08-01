@@ -21,12 +21,30 @@ class FakeShiftReviewsNamespace:
         return self._adapter._fetch_items(**kwargs)
 
 
+class FakeManualReviewsNamespace:
+    def __init__(self, adapter: FakeAdminSummaryAdapter) -> None:
+        self._adapter = adapter
+
+    def preview_shift_reviews(
+        self,
+        *,
+        shift_id: str,
+        article_ids: list[str],
+    ) -> list[dict[str, Any]]:
+        self._adapter.import_query = {
+            "shift_id": shift_id,
+            "article_ids": article_ids,
+        }
+        return self._adapter.preview_rows
+
+
 class FakeAdminSummaryAdapter:
     def __init__(self) -> None:
         self.review_query: dict[str, Any] = {}
         self.import_query: dict[str, Any] = {}
         self.bulk_discard_query: dict[str, Any] = {}
         self.preview_rows: list[dict[str, Any]] = []
+        self.manual_reviews = FakeManualReviewsNamespace(self)
         self.shifts = FakeShiftsNamespace()
         self.shift_reviews = FakeShiftReviewsNamespace(self)
 
@@ -85,18 +103,6 @@ class FakeAdminSummaryAdapter:
                 ),
             }
         ], 1
-
-    def preview_shift_reviews_for_manual(
-        self,
-        *,
-        shift_id: str,
-        article_ids: list[str],
-    ) -> list[dict[str, Any]]:
-        self.import_query = {
-            "shift_id": shift_id,
-            "article_ids": article_ids,
-        }
-        return self.preview_rows
 
     def import_shift_reviews_into_manual(self, **kwargs: Any) -> list[dict[str, Any]]:
         self.import_query = kwargs

@@ -195,7 +195,7 @@ def preview_import_results(
         for article_id in article_ids
         if str(article_id).strip()
     }
-    rows = adapter.preview_shift_reviews_for_manual(
+    rows = adapter.manual_reviews.preview_shift_reviews(
         shift_id=shift_id,
         article_ids=article_ids,
     )

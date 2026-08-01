@@ -81,7 +81,7 @@ def discard_candidates_before_date(
     if normalized_region is None or normalized_sentiment is None:
         raise ValueError("discard_before_date requires explicit filter bucket")
     adapter = get_adapter()
-    matched = adapter.count_manual_candidates_before_date(  # type: ignore[attr-defined]
+    matched = adapter.manual_reviews.count_candidates_before_date(  # type: ignore[attr-defined]
         region=normalized_region,
         sentiment=normalized_sentiment,
         query=(query or "").strip() or None,
@@ -90,7 +90,7 @@ def discard_candidates_before_date(
     )
     if dry_run or matched <= 0:
         return {"matched": matched, "updated": 0}
-    updated = adapter.discard_manual_candidates_before_date(  # type: ignore[attr-defined]
+    updated = adapter.manual_reviews.discard_candidates_before_date(  # type: ignore[attr-defined]
         region=normalized_region,
         sentiment=normalized_sentiment,
         query=(query or "").strip() or None,

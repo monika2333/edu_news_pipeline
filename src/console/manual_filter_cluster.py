@@ -220,7 +220,7 @@ def refresh_clusters(
                     }
                 )
 
-        adapter.replace_manual_clusters(clusters)  # type: ignore[attr-defined]
+        adapter.manual_reviews.replace_clusters(clusters)  # type: ignore[attr-defined]
         return True
     finally:
         adapter.release_advisory_lock(MANUAL_CLUSTER_LOCK_ID)
@@ -236,7 +236,7 @@ def _collect_pending(
     adapter: Any = None,
 ) -> List[Dict[str, Any]]:
     adapter = adapter or get_adapter()
-    rows = adapter.fetch_manual_pending_for_cluster(  # type: ignore[attr-defined]
+    rows = adapter.manual_reviews.fetch_pending_for_cluster(  # type: ignore[attr-defined]
         region=region,
         sentiment=sentiment,
         fetch_limit=fetch_limit,
@@ -279,7 +279,7 @@ def cluster_pending(
         refresh_clusters(cluster_threshold=threshold_val)
 
     bucket_key = _bucket_key_from_filters(region, sentiment)
-    rows = adapter.fetch_manual_clusters(  # type: ignore[attr-defined]
+    rows = adapter.manual_reviews.fetch_clusters(  # type: ignore[attr-defined]
         bucket_key=bucket_key,
         hide_submitted=hide_submitted,
     )

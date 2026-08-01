@@ -183,16 +183,6 @@ def insert_pending_summary(
         WHERE news_summaries.summary_status <> 'completed'
     """
     cur.execute(query, values)
-    if final_failure:
-        self.update_manual_review_statuses(
-            [
-                {
-                    "article_id": article_id,
-                    "status": "discarded",
-                    "decided_at": timestamp,
-                }
-            ]
-        )
 
 
 def fetch_pending_summaries(

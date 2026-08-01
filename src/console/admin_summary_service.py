@@ -48,7 +48,7 @@ def list_shift_summaries(
     current = now or datetime.now(timezone.utc)
     rows = [
         row
-        for row in get_adapter().fetch_admin_shift_summaries(limit=limit)
+        for row in get_adapter().shift_reviews.fetch_admin_summaries(limit=limit)
         if row.get("starts_at") and row["starts_at"] <= current
     ]
     rows.sort(
@@ -96,7 +96,7 @@ def list_shift_results(
     only_admin_unprocessed = (
         admin_unprocessed_only and not admin_discarded_only
     )
-    rows, total = get_adapter().fetch_shift_review_items(
+    rows, total = get_adapter().shift_reviews.fetch_items(
         shift_id=shift_id,
         decision=None if admin_discarded_only else decision,
         report_type=None if admin_discarded_only else report_type,

@@ -8,6 +8,38 @@ from src.console import duty_review_service
 from src.console.auth_service import ConsoleUser
 
 
+class FakeShiftReviewsNamespace:
+    def __init__(self, adapter: FakeDutyReviewAdapter) -> None:
+        self._adapter = adapter
+
+    def fetch_items(self, **kwargs: Any) -> tuple[list[dict[str, Any]], int]:
+        return self._adapter._fetch_items(**kwargs)
+
+    def fetch_stats(
+        self,
+        shift_id: str,
+        *,
+        report_type: Optional[str] = None,
+    ) -> dict[str, Any]:
+        return self._adapter._fetch_stats(shift_id, report_type=report_type)
+
+    def fetch_finalization_status(self, **kwargs: Any) -> dict[str, Any]:
+        return self._adapter._fetch_finalization_status(**kwargs)
+
+    def fetch_clusters(
+        self,
+        *,
+        shift_id: str,
+        report_type: str,
+        hide_submitted: bool = False,
+    ) -> list[dict[str, Any]]:
+        return self._adapter._fetch_clusters(
+            shift_id=shift_id,
+            report_type=report_type,
+            hide_submitted=hide_submitted,
+        )
+
+
 class FakeDutyReviewAdapter:
     def __init__(self) -> None:
         self.saved: dict[str, Any] = {}
@@ -18,6 +50,7 @@ class FakeDutyReviewAdapter:
         self.fetch_article_ids: list[Optional[list[str]]] = []
         self.finalized: dict[str, Any] = {}
         self.restored: dict[str, Any] = {}
+        self.shift_reviews = FakeShiftReviewsNamespace(self)
 
     def save_shift_review(self, **kwargs: Any) -> dict[str, Any]:
         self.saved = dict(kwargs)
@@ -51,7 +84,7 @@ class FakeDutyReviewAdapter:
         self.ordered = dict(kwargs)
         return len(kwargs["selected_order"]) + len(kwargs["backup_order"])
 
-    def fetch_shift_review_items(
+    def _fetch_items(
         self,
         *,
         shift_id: str,
@@ -99,7 +132,7 @@ class FakeDutyReviewAdapter:
         ]
         return rows, len(rows)
 
-    def fetch_shift_stats(
+    def _fetch_stats(
         self,
         shift_id: str,
         *,
@@ -140,7 +173,7 @@ class FakeDutyReviewAdapter:
             for rank in (1, 2)
         ]
 
-    def fetch_shift_finalization_status(
+    def _fetch_finalization_status(
         self,
         **kwargs: Any,
     ) -> dict[str, Any]:
@@ -161,7 +194,7 @@ class FakeDutyReviewAdapter:
             "article_ids": ["article-1", "article-2"],
         }
 
-    def fetch_shift_clusters(
+    def _fetch_clusters(
         self,
         *,
         shift_id: str,
@@ -251,8 +284,8 @@ def test_score_feedback_rejects_article_outside_shift(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        fake_adapter,
-        "fetch_shift_review_items",
+        fake_adapter.shift_reviews,
+        "fetch_items",
         lambda **kwargs: ([], 0),
     )
 

@@ -13,6 +13,14 @@ class FakeShiftsNamespace:
         return {"id": shift_id}
 
 
+class FakeShiftReviewsNamespace:
+    def __init__(self, adapter: FakeAdminSummaryAdapter) -> None:
+        self._adapter = adapter
+
+    def fetch_items(self, **kwargs: Any) -> tuple[list[dict[str, Any]], int]:
+        return self._adapter._fetch_items(**kwargs)
+
+
 class FakeAdminSummaryAdapter:
     def __init__(self) -> None:
         self.review_query: dict[str, Any] = {}
@@ -20,8 +28,9 @@ class FakeAdminSummaryAdapter:
         self.bulk_discard_query: dict[str, Any] = {}
         self.preview_rows: list[dict[str, Any]] = []
         self.shifts = FakeShiftsNamespace()
+        self.shift_reviews = FakeShiftReviewsNamespace(self)
 
-    def fetch_shift_review_items(
+    def _fetch_items(
         self,
         *,
         shift_id: str,
@@ -195,8 +204,8 @@ def test_shift_results_can_include_admin_discarded_in_all_scope(
 def test_shift_summaries_exclude_future_and_sort_latest_first(monkeypatch) -> None:
     now = datetime(2026, 7, 25, 8, tzinfo=timezone.utc)
 
-    class SummaryAdapter:
-        def fetch_admin_shift_summaries(self, *, limit: int) -> list[dict[str, Any]]:
+    class SummaryShiftReviewsNamespace:
+        def fetch_admin_summaries(self, *, limit: int) -> list[dict[str, Any]]:
             del limit
             return [
                 {
@@ -219,6 +228,10 @@ def test_shift_summaries_exclude_future_and_sort_latest_first(monkeypatch) -> No
                     "wanbao_backup": 4,
                 },
             ]
+
+    class SummaryAdapter:
+        def __init__(self) -> None:
+            self.shift_reviews = SummaryShiftReviewsNamespace()
 
     monkeypatch.setattr(
         admin_summary_service,

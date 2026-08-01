@@ -115,7 +115,7 @@ def _require_shift_article(*, shift_id: str, article_id: str) -> str:
     normalized_article_id = str(article_id or "").strip()
     if not normalized_article_id:
         raise ValueError("article_id is required")
-    rows, _ = get_adapter().fetch_shift_review_items(
+    rows, _ = get_adapter().shift_reviews.fetch_items(
         shift_id=shift_id,
         decision=None,
         report_type=None,
@@ -240,7 +240,7 @@ def list_items(
     }
     if hide_submitted:
         fetch_kwargs["hide_submitted"] = True
-    rows, total = adapter.fetch_shift_review_items(**fetch_kwargs)
+    rows, total = adapter.shift_reviews.fetch_items(**fetch_kwargs)
     items = [
         serialize_review_item(
             row,
@@ -278,7 +278,7 @@ def list_clusters(
         raise ValueError(f"Invalid review sentiment: {sentiment}")
     if force_refresh:
         manual_filter_cluster.refresh_clusters()
-    rows = get_adapter().fetch_shift_clusters(
+    rows = get_adapter().shift_reviews.fetch_clusters(
         shift_id=shift_id,
         report_type=report_type,
         hide_submitted=hide_submitted,
@@ -313,7 +313,7 @@ def list_clusters(
             for cluster in paged_clusters
             for article_id in cluster["item_ids"]
         ]
-        item_rows, _ = get_adapter().fetch_shift_review_items(
+        item_rows, _ = get_adapter().shift_reviews.fetch_items(
             shift_id=shift_id,
             decision="pending",
             report_type=report_type,
@@ -532,7 +532,7 @@ def get_stats(
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user, allow_cancelled=True)
     _validate_report_type(report_type)
-    return get_adapter().fetch_shift_stats(
+    return get_adapter().shift_reviews.fetch_stats(
         shift_id,
         report_type=report_type,
     )
@@ -570,7 +570,7 @@ def get_finalization_status(
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user, allow_cancelled=True)
     _validate_report_type(report_type)
-    row = get_adapter().fetch_shift_finalization_status(
+    row = get_adapter().shift_reviews.fetch_finalization_status(
         shift_id=shift_id,
         report_type=report_type,
     )
@@ -637,7 +637,7 @@ def build_preview(
 ) -> dict[str, Any]:
     _validate_report_type(report_type)
     require_owned_shift(shift_id, user, allow_cancelled=True)
-    selected_rows, _ = get_adapter().fetch_shift_review_items(
+    selected_rows, _ = get_adapter().shift_reviews.fetch_items(
         shift_id=shift_id,
         decision="selected",
         report_type=report_type,
@@ -645,7 +645,7 @@ def build_preview(
         offset=0,
         exclude_finalized=True,
     )
-    backup_rows, _ = get_adapter().fetch_shift_review_items(
+    backup_rows, _ = get_adapter().shift_reviews.fetch_items(
         shift_id=shift_id,
         decision="backup",
         report_type=report_type,

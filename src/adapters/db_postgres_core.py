@@ -86,6 +86,7 @@ class PostgresAdapter:
         self._conn = connection or _get_connection()
         self.export = export.ExportNamespace(self)
         self.score_feedback = score_feedback.ScoreFeedbackNamespace(self)
+        self.shift_reviews = shift_reviews.ShiftReviewsNamespace(self)
         self.shifts = shifts.ShiftsNamespace(self)
         self.title_embeddings = title_embeddings.TitleEmbeddingsNamespace(self)
         self.users = users.UsersNamespace(self)
@@ -493,64 +494,6 @@ class PostgresAdapter:
     # ------------------------------------------------------------------
     # Duty reviews
     # ------------------------------------------------------------------
-    def fetch_shift_review_items(
-        self,
-        *,
-        shift_id: str,
-        decision: Optional[str],
-        report_type: Optional[str],
-        limit: int,
-        offset: int,
-        region: Optional[str] = None,
-        sentiment: Optional[str] = None,
-        query: Optional[str] = None,
-        published_before: Optional[date] = None,
-        article_ids: Optional[Sequence[str]] = None,
-        mismatch_only: bool = False,
-        include_admin_state: bool = False,
-        admin_discarded_only: bool = False,
-        exclude_admin_discarded: bool = False,
-        admin_unprocessed_only: bool = False,
-        exclude_finalized: bool = False,
-        hide_submitted: bool = False,
-    ) -> Tuple[List[Dict[str, Any]], int]:
-        with self._cursor() as cur:
-            return shift_reviews.fetch_shift_review_items(
-                cur,
-                shift_id=shift_id,
-                decision=decision,
-                report_type=report_type,
-                limit=limit,
-                offset=offset,
-                region=region,
-                sentiment=sentiment,
-                query=query,
-                published_before=published_before,
-                article_ids=article_ids,
-                mismatch_only=mismatch_only,
-                include_admin_state=include_admin_state,
-                admin_discarded_only=admin_discarded_only,
-                exclude_admin_discarded=exclude_admin_discarded,
-                admin_unprocessed_only=admin_unprocessed_only,
-                exclude_finalized=exclude_finalized,
-                hide_submitted=hide_submitted,
-            )
-
-    def fetch_shift_clusters(
-        self,
-        *,
-        shift_id: str,
-        report_type: str,
-        hide_submitted: bool = False,
-    ) -> List[Dict[str, Any]]:
-        with self._cluster_transaction() as cur:
-            return shift_reviews.fetch_shift_clusters(
-                cur,
-                shift_id=shift_id,
-                report_type=report_type,
-                hide_submitted=hide_submitted,
-            )
-
     def save_shift_review(
         self,
         *,
@@ -711,19 +654,6 @@ class PostgresAdapter:
             )
             return batch
 
-    def fetch_shift_finalization_status(
-        self,
-        *,
-        shift_id: str,
-        report_type: str,
-    ) -> Optional[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return shift_reviews.fetch_shift_finalization_status(
-                cur,
-                shift_id=shift_id,
-                report_type=report_type,
-            )
-
     def restore_shift_review_finalization(
         self,
         *,
@@ -785,27 +715,6 @@ class PostgresAdapter:
                 request_id=request_id,
             )
             return updated
-
-    def fetch_shift_stats(
-        self,
-        shift_id: str,
-        *,
-        report_type: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        with self._cursor() as cur:
-            return shift_reviews.fetch_shift_stats(
-                cur,
-                shift_id,
-                report_type=report_type,
-            )
-
-    def fetch_admin_shift_summaries(
-        self,
-        *,
-        limit: int = 60,
-    ) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return shift_reviews.fetch_admin_shift_summaries(cur, limit=limit)
 
     def preview_shift_reviews_for_manual(
         self,

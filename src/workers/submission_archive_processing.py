@@ -61,7 +61,7 @@ def _link_report(report: Mapping[str, Any]) -> dict[str, int]:
             article_id=str(row["article_id"]),
             title=str(row.get("title") or ""),
         )
-        for row in adapter.fetch_submission_link_candidate_titles(
+        for row in adapter.submission_archive.fetch_link_candidate_titles(
             compiled_date=report["compiled_date"],
             window_days=LINK_WINDOW_DAYS,
         )
@@ -80,7 +80,7 @@ def _link_report(report: Mapping[str, Any]) -> dict[str, int]:
         for article_id in selection.required_article_ids():
             required_article_ids.setdefault(article_id, None)
 
-    body_rows = adapter.fetch_submission_link_candidate_bodies(
+    body_rows = adapter.submission_archive.fetch_link_candidate_bodies(
         article_ids=list(required_article_ids),
     )
     candidate_bodies = {
@@ -102,13 +102,13 @@ def _link_report(report: Mapping[str, Any]) -> dict[str, int]:
                 **asdict(linked),
             }
         )
-    adapter.update_submission_link_results(results)
+    adapter.submission_archive.update_link_results(results)
     return counts
 
 
 def process_report_links(report_id: str) -> dict[str, int]:
     adapter = get_adapter()
-    report = adapter.fetch_submitted_report(report_id)
+    report = adapter.submission_archive.fetch_report(report_id)
     if not report:
         return {
             "exact": 0,

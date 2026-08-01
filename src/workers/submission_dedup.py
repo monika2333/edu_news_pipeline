@@ -30,7 +30,7 @@ def backfill_archive_embeddings(*, batch_size: int = 128) -> int:
     adapter = get_adapter()
     total = 0
     while True:
-        items = adapter.fetch_submission_items_missing_embeddings(
+        items = adapter.submission_archive.fetch_items_missing_embeddings(
             limit=batch_size,
         )
         if not items:
@@ -51,7 +51,7 @@ def backfill_archive_embeddings(*, batch_size: int = 128) -> int:
             }
             for item, vector in zip(items, vectors)
         ]
-        updated = adapter.update_submission_item_embeddings(payload)
+        updated = adapter.submission_archive.update_item_embeddings(payload)
         total += updated
         if updated == 0 or len(items) < batch_size:
             break
@@ -126,7 +126,7 @@ def run(limit: Optional[int] = None) -> dict[str, int]:
     adapter = get_adapter()
     with worker_session(WORKER, limit=limit):
         embedded = backfill_archive_embeddings()
-        archive_rows = adapter.fetch_submission_archive_embeddings(
+        archive_rows = adapter.submission_archive.fetch_embeddings(
             lookback_days=dedup_lookback_days(),
         )
         if not archive_rows:
@@ -135,7 +135,7 @@ def run(limit: Optional[int] = None) -> dict[str, int]:
             return {"embedded": embedded, "news": 0, "matches": 0}
 
         archive_matrix = _validate_archive_vectors(archive_rows)
-        news_rows = adapter.fetch_news_for_submission_dedup(limit=limit)
+        news_rows = adapter.submission_archive.fetch_news_for_dedup(limit=limit)
         if not news_rows:
             log_info(WORKER, "No current news ready for submission dedup.")
             log_summary(WORKER, ok=0, failed=0)
@@ -160,7 +160,7 @@ def run(limit: Optional[int] = None) -> dict[str, int]:
             archive_matrix,
             threshold=dedup_recall_threshold(),
         )
-        persisted = adapter.upsert_submission_duplicate_matches(matches)
+        persisted = adapter.submission_archive.upsert_duplicate_matches(matches)
         log_info(
             WORKER,
             f"Compared {len(news_rows)} news rows with "

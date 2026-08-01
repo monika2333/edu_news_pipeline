@@ -9,6 +9,70 @@ from src.console import submission_archive_service
 from src.workers import submission_archive_processing
 
 
+class FakeSubmissionArchiveNamespace:
+    def __init__(self, adapter: FakeSubmissionArchiveAdapter) -> None:
+        self._adapter = adapter
+
+    def find_report_conflict(self, **kwargs: Any) -> dict[str, Any] | None:
+        del kwargs
+        return self._adapter.conflict
+
+    def create_report(
+        self,
+        *,
+        report: dict[str, Any],
+        items: list[dict[str, Any]],
+        replace_report_id: str | None,
+    ) -> dict[str, Any]:
+        self._adapter.created = True
+        self._adapter.report = {
+            "id": "report-id",
+            **report,
+            "items": [
+                {
+                    "id": f"item-{index}",
+                    "link_status": "processing",
+                    **item,
+                }
+                for index, item in enumerate(items)
+            ],
+            "item_count": len(items),
+        }
+        return self._adapter.report
+
+    def fetch_link_candidate_titles(
+        self,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        self._adapter.title_fetch_count += 1
+        return self._adapter.candidate_titles
+
+    def fetch_link_candidate_bodies(
+        self,
+        *,
+        article_ids: list[str],
+    ) -> list[dict[str, Any]]:
+        self._adapter.body_fetch_calls.append(article_ids)
+        return [
+            {
+                "article_id": article_id,
+                "body": self._adapter.candidate_bodies.get(article_id, ""),
+            }
+            for article_id in article_ids
+        ]
+
+    def update_link_results(
+        self,
+        results: list[dict[str, Any]],
+    ) -> None:
+        self._adapter.link_results = results
+
+    def fetch_report(self, report_id: str) -> dict[str, Any]:
+        assert self._adapter.report is not None
+        assert report_id == self._adapter.report["id"]
+        return self._adapter.report
+
+
 class FakeSubmissionArchiveAdapter:
     def __init__(self, *, conflict: dict[str, Any] | None = None) -> None:
         self.conflict = conflict
@@ -26,64 +90,7 @@ class FakeSubmissionArchiveAdapter:
         self.title_fetch_count = 0
         self.body_fetch_calls: list[list[str]] = []
         self.created = False
-
-    def find_submitted_report_conflict(self, **kwargs: Any) -> dict[str, Any] | None:
-        return self.conflict
-
-    def create_submitted_report(
-        self,
-        *,
-        report: dict[str, Any],
-        items: list[dict[str, Any]],
-        replace_report_id: str | None,
-    ) -> dict[str, Any]:
-        self.created = True
-        self.report = {
-            "id": "report-id",
-            **report,
-            "items": [
-                {
-                    "id": f"item-{index}",
-                    "link_status": "processing",
-                    **item,
-                }
-                for index, item in enumerate(items)
-            ],
-            "item_count": len(items),
-        }
-        return self.report
-
-    def fetch_submission_link_candidate_titles(
-        self,
-        **kwargs: Any,
-    ) -> list[dict[str, Any]]:
-        self.title_fetch_count += 1
-        return self.candidate_titles
-
-    def fetch_submission_link_candidate_bodies(
-        self,
-        *,
-        article_ids: list[str],
-    ) -> list[dict[str, Any]]:
-        self.body_fetch_calls.append(article_ids)
-        return [
-            {
-                "article_id": article_id,
-                "body": self.candidate_bodies.get(article_id, ""),
-            }
-            for article_id in article_ids
-        ]
-
-    def update_submission_link_results(
-        self,
-        results: list[dict[str, Any]],
-    ) -> None:
-        self.link_results = results
-
-    def fetch_submitted_report(self, report_id: str) -> dict[str, Any]:
-        assert self.report is not None
-        assert report_id == self.report["id"]
-        return self.report
+        self.submission_archive = FakeSubmissionArchiveNamespace(self)
 
 
 def test_create_report_saves_before_processing_links(
@@ -230,13 +237,17 @@ def test_process_report_links_fetches_one_body_batch_for_all_items(
 
 
 def test_attach_duplicate_badges_uses_one_batch_lookup() -> None:
-    class BadgeAdapter:
-        def fetch_submission_duplicate_badges(
+    class BadgeSubmissionArchiveNamespace:
+        def fetch_duplicate_badges(
             self,
             article_ids: list[str],
         ) -> dict[str, dict[str, Any]]:
             assert article_ids == ["a", "b"]
             return {"a": {"has_confirmed": True, "matches": []}}
+
+    class BadgeAdapter:
+        def __init__(self) -> None:
+            self.submission_archive = BadgeSubmissionArchiveNamespace()
 
     items = [{"article_id": "a"}, {"article_id": "b"}]
     submission_archive_service.attach_duplicate_badges(

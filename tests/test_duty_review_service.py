@@ -40,6 +40,15 @@ class FakeShiftReviewsNamespace:
         )
 
 
+class FakeSubmissionArchiveNamespace:
+    def fetch_duplicate_badges(
+        self,
+        article_ids: Sequence[str],
+    ) -> dict[str, dict[str, Any]]:
+        del article_ids
+        return {}
+
+
 class FakeDutyReviewAdapter:
     def __init__(self) -> None:
         self.saved: dict[str, Any] = {}
@@ -51,6 +60,7 @@ class FakeDutyReviewAdapter:
         self.finalized: dict[str, Any] = {}
         self.restored: dict[str, Any] = {}
         self.shift_reviews = FakeShiftReviewsNamespace(self)
+        self.submission_archive = FakeSubmissionArchiveNamespace()
 
     def save_shift_review(self, **kwargs: Any) -> dict[str, Any]:
         self.saved = dict(kwargs)

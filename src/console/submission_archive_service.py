@@ -107,14 +107,14 @@ def create_report(
     if report_type not in VALID_REPORT_TYPES:
         raise ValueError(f"不支持的报告类型: {report_type}")
     adapter = get_adapter()
-    conflict = adapter.find_submitted_report_conflict(
+    conflict = adapter.submission_archive.find_report_conflict(
         report_type=report_type,
         report_date=report_date,
     )
     if conflict and not overwrite:
         raise SubmissionReportConflictError(conflict)
     prepared_items = _prepare_items(items)
-    created = adapter.create_submitted_report(
+    created = adapter.submission_archive.create_report(
         report={
             "report_type": report_type,
             "report_date": report_date,
@@ -142,7 +142,7 @@ def list_reports(
 ) -> dict[str, Any]:
     if report_type and report_type not in VALID_REPORT_TYPES:
         raise ValueError(f"不支持的报告类型: {report_type}")
-    rows, total = get_adapter().fetch_submitted_reports(
+    rows, total = get_adapter().submission_archive.fetch_reports(
         report_type=report_type,
         date_from=date_from,
         date_to=date_to,
@@ -158,39 +158,39 @@ def list_reports(
 
 
 def get_report(report_id: str) -> dict[str, Any]:
-    report = get_adapter().fetch_submitted_report(report_id)
+    report = get_adapter().submission_archive.fetch_report(report_id)
     if not report:
         raise SubmissionReportNotFoundError("未找到这份存档报告")
     return report
 
 
 def delete_report(report_id: str) -> None:
-    if not get_adapter().delete_submitted_report(report_id):
+    if not get_adapter().submission_archive.delete_report(report_id):
         raise SubmissionReportNotFoundError("未找到这份存档报告")
 
 
 def reparse_report(report_id: str) -> dict[str, Any]:
     adapter = get_adapter()
-    report = adapter.fetch_submitted_report(report_id)
+    report = adapter.submission_archive.fetch_report(report_id)
     if not report:
         raise SubmissionReportNotFoundError("未找到这份存档报告")
     parsed = parse_submission_report(str(report["pasted_text"]))
     items = _prepare_items([asdict(item) for item in parsed.items])
-    rebuilt = adapter.replace_submitted_report_items(
+    rebuilt = adapter.submission_archive.replace_report_items(
         report_id=report_id,
         items=items,
     )
     report["items"] = rebuilt
     report["item_count"] = len(rebuilt)
     return {
-        "report": adapter.fetch_submitted_report(report_id),
+        "report": adapter.submission_archive.fetch_report(report_id),
         "link_summary": {"processing": len(rebuilt)},
         "warnings": parsed.warnings,
     }
 
 
 def list_pending_links(*, limit: int, offset: int) -> dict[str, Any]:
-    rows, total = get_adapter().fetch_pending_submission_links(
+    rows, total = get_adapter().submission_archive.fetch_pending_links(
         limit=limit,
         offset=offset,
     )
@@ -208,7 +208,7 @@ def decide_link(
     accepted: bool,
     user: ConsoleUser,
 ) -> dict[str, Any]:
-    updated = get_adapter().decide_submission_link(
+    updated = get_adapter().submission_archive.decide_link(
         item_id=item_id,
         accepted=accepted,
         actor_user_id=_require_business_user_id(user),
@@ -224,7 +224,7 @@ def search_archive(*, query: str, limit: int) -> dict[str, Any]:
     normalized_query = (query or "").strip()
     if not normalized_query:
         return {"items": [], "query": "", "total": 0}
-    rows = get_adapter().search_submitted_report_items(
+    rows = get_adapter().submission_archive.search_report_items(
         query=normalized_query,
         limit=limit,
     )
@@ -242,12 +242,7 @@ def attach_duplicate_badges(
 ) -> None:
     article_ids = [str(item.get("article_id") or "") for item in items]
     target_adapter = adapter or get_adapter()
-    fetch_badges = getattr(
-        target_adapter,
-        "fetch_submission_duplicate_badges",
-        None,
-    )
-    badges = fetch_badges(article_ids) if fetch_badges else {}
+    badges = target_adapter.submission_archive.fetch_duplicate_badges(article_ids)
     for item in items:
         item["submission_duplicate"] = badges.get(
             str(item.get("article_id") or "")
@@ -262,7 +257,7 @@ def dismiss_duplicates(
     normalized_article_id = (article_id or "").strip()
     if not normalized_article_id:
         raise ValueError("article_id 不能为空")
-    return get_adapter().dismiss_submission_duplicate_matches(
+    return get_adapter().submission_archive.dismiss_duplicate_matches(
         article_id=normalized_article_id,
         actor_user_id=_require_business_user_id(user),
     )

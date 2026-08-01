@@ -1,9 +1,190 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
 
 import psycopg
+
+if TYPE_CHECKING:
+    from src.adapters.db_postgres_core import PostgresAdapter
+
+
+class SubmissionArchiveNamespace:
+    """Access to submitted reports, link decisions, and duplicate metadata."""
+
+    def __init__(self, adapter: PostgresAdapter) -> None:
+        self._adapter = adapter
+
+    def find_report_conflict(
+        self,
+        *,
+        report_type: str,
+        report_date: date,
+    ) -> Optional[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return find_report_conflict(
+                cur,
+                report_type=report_type,
+                report_date=report_date,
+            )
+
+    def create_report(
+        self,
+        *,
+        report: Mapping[str, Any],
+        items: Sequence[Mapping[str, Any]],
+        replace_report_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        with self._adapter.transaction() as cur:
+            if replace_report_id:
+                delete_report(cur, replace_report_id)
+            created = insert_report(cur, **report)
+            created["items"] = insert_report_items(
+                cur,
+                report_id=str(created["id"]),
+                items=items,
+            )
+            created["item_count"] = len(created["items"])
+            return created
+
+    def fetch_reports(
+        self,
+        *,
+        report_type: Optional[str],
+        date_from: Optional[date],
+        date_to: Optional[date],
+        limit: int,
+        offset: int,
+    ) -> tuple[list[dict[str, Any]], int]:
+        with self._adapter._cursor() as cur:
+            return fetch_reports(
+                cur,
+                report_type=report_type,
+                date_from=date_from,
+                date_to=date_to,
+                limit=limit,
+                offset=offset,
+            )
+
+    def fetch_report(self, report_id: str) -> Optional[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_report(cur, report_id)
+
+    def delete_report(self, report_id: str) -> bool:
+        with self._adapter.transaction() as cur:
+            return delete_report(cur, report_id)
+
+    def replace_report_items(
+        self,
+        *,
+        report_id: str,
+        items: Sequence[Mapping[str, Any]],
+    ) -> list[dict[str, Any]]:
+        with self._adapter.transaction() as cur:
+            return replace_report_items(cur, report_id=report_id, items=items)
+
+    def search_report_items(self, *, query: str, limit: int) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return search_items(cur, query=query, limit=limit)
+
+    def fetch_link_candidate_titles(
+        self,
+        *,
+        compiled_date: date,
+        window_days: int,
+    ) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_link_candidate_titles(
+                cur,
+                compiled_date=compiled_date,
+                window_days=window_days,
+            )
+
+    def fetch_link_candidate_bodies(
+        self,
+        *,
+        article_ids: Sequence[str],
+    ) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_link_candidate_bodies(cur, article_ids=article_ids)
+
+    def update_link_results(self, results: Sequence[Mapping[str, Any]]) -> None:
+        with self._adapter.transaction() as cur:
+            update_link_results(cur, results)
+
+    def fetch_pending_links(
+        self,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[dict[str, Any]], int]:
+        with self._adapter._cursor() as cur:
+            return fetch_pending_links(cur, limit=limit, offset=offset)
+
+    def decide_link(
+        self,
+        *,
+        item_id: str,
+        accepted: bool,
+        actor_user_id: str,
+    ) -> Optional[dict[str, Any]]:
+        with self._adapter.transaction() as cur:
+            return decide_link(
+                cur,
+                item_id=item_id,
+                accepted=accepted,
+                actor_user_id=actor_user_id,
+            )
+
+    def fetch_items_missing_embeddings(self, *, limit: int) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_items_missing_embeddings(cur, limit=limit)
+
+    def update_item_embeddings(
+        self,
+        embeddings: Sequence[Mapping[str, Any]],
+    ) -> int:
+        with self._adapter.transaction() as cur:
+            return update_item_embeddings(cur, embeddings)
+
+    def fetch_embeddings(self, *, lookback_days: int) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_archive_embeddings(cur, lookback_days=lookback_days)
+
+    def fetch_news_for_dedup(
+        self,
+        *,
+        limit: Optional[int],
+    ) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_news_for_submission_dedup(cur, limit=limit)
+
+    def upsert_duplicate_matches(
+        self,
+        matches: Sequence[Mapping[str, Any]],
+    ) -> int:
+        with self._adapter.transaction() as cur:
+            return upsert_duplicate_matches(cur, matches)
+
+    def fetch_duplicate_badges(
+        self,
+        article_ids: Sequence[str],
+    ) -> dict[str, dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_duplicate_badges(cur, article_ids)
+
+    def dismiss_duplicate_matches(
+        self,
+        *,
+        article_id: str,
+        actor_user_id: str,
+    ) -> int:
+        with self._adapter.transaction() as cur:
+            return dismiss_duplicate_matches(
+                cur,
+                article_id=article_id,
+                actor_user_id=actor_user_id,
+            )
 
 
 # 条目对外返回字段：排除 embedding（bytea 无法 JSON 序列化）与归一化内部字段。
@@ -706,6 +887,7 @@ def dismiss_duplicate_matches(
 
 
 __all__ = [
+    "SubmissionArchiveNamespace",
     "decide_link",
     "delete_report",
     "dismiss_duplicate_matches",

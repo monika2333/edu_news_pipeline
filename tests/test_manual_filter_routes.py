@@ -11,9 +11,19 @@ from src.console.app import create_app
 from src.console.security import ConsoleUser, require_console_user
 
 
+class FakeSubmissionArchiveNamespace:
+    def fetch_duplicate_badges(
+        self,
+        article_ids: Sequence[str],
+    ) -> dict[str, dict[str, Any]]:
+        del article_ids
+        return {}
+
+
 class FakeManualFilterAdapter:
     def __init__(self, rows: list[Dict[str, Any]]) -> None:
         self.rows = rows
+        self.submission_archive = FakeSubmissionArchiveNamespace()
         for row in self.rows:
             if not row.get("report_type"):
                 row["report_type"] = "zongbao"

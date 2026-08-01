@@ -9,11 +9,21 @@ import pytest
 from src.console import manual_filter_service
 
 
+class FakeSubmissionArchiveNamespace:
+    def fetch_duplicate_badges(
+        self,
+        article_ids: Sequence[str],
+    ) -> dict[str, dict[str, Any]]:
+        del article_ids
+        return {}
+
+
 class FakeAdapter:
     def __init__(self, rows: List[Dict[str, Any]]) -> None:
         # Each row represents a join of manual_reviews with news_summaries fields
         self.rows = rows
         self.export_calls: List[Dict[str, Any]] = []
+        self.submission_archive = FakeSubmissionArchiveNamespace()
         for row in self.rows:
             if not row.get("report_type"):
                 row["report_type"] = "zongbao"

@@ -85,6 +85,7 @@ class PostgresAdapter:
         self._schema = self._settings.db_schema or "public"
         self._conn = connection or _get_connection()
         self.export = export.ExportNamespace(self)
+        self.ingest = ingest.IngestNamespace(self)
         self.score_feedback = score_feedback.ScoreFeedbackNamespace(self)
         self.shift_reviews = shift_reviews.ShiftReviewsNamespace(self)
         self.shifts = shifts.ShiftsNamespace(self)
@@ -799,54 +800,6 @@ class PostgresAdapter:
     # ------------------------------------------------------------------
     # Ingest
     # ------------------------------------------------------------------
-    def upsert_raw_feed_rows(self, rows: Sequence[Mapping[str, Any]]) -> int:
-        with self._cursor() as cur:
-            return ingest.upsert_raw_feed_rows(cur, rows)
-
-    def update_raw_article_details(self, rows: Sequence[Mapping[str, Any]]) -> int:
-        with self._cursor() as cur:
-            return ingest.update_raw_article_details(cur, rows)
-
-    def get_raw_articles_missing_content(self, article_ids: Sequence[str]) -> Set[str]:
-        with self._cursor() as cur:
-            return ingest.get_raw_articles_missing_content(cur, article_ids)
-
-    def fetch_raw_articles_missing_content(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return ingest.fetch_raw_articles_missing_content(cur, limit)
-
-    def upsert_filtered_articles(self, rows: Sequence[Mapping[str, Any]]) -> int:
-        with self._cursor() as cur:
-            return ingest.upsert_filtered_articles(cur, rows)
-
-    def fetch_filtered_articles_for_hashing(self, limit: int) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return ingest.fetch_filtered_articles_for_hashing(cur, limit)
-
-    def fetch_filtered_articles_by_hashes(self, hashes: Sequence[str]) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return ingest.fetch_filtered_articles_by_hashes(cur, hashes)
-
-    def update_filtered_article_features(self, updates: Sequence[Mapping[str, Any]]) -> int:
-        with self._cursor() as cur:
-            return ingest.update_filtered_article_features(cur, updates)
-
-    def fetch_filtered_articles_by_band(self, band_index: int, band_value: int, limit: int) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return ingest.fetch_filtered_articles_by_band(cur, band_index, band_value, limit)
-
-    def update_filtered_primary_ids(self, updates: Sequence[Mapping[str, Any]]) -> int:
-        with self._cursor() as cur:
-            return ingest.update_filtered_primary_ids(cur, updates)
-
-    def upsert_primary_articles(self, rows: Sequence[Mapping[str, Any]]) -> int:
-        with self._cursor() as cur:
-            return ingest.upsert_primary_articles(cur, rows)
-
-    def get_existing_raw_article_ids(self) -> Set[str]:
-        with self._cursor() as cur:
-            return ingest.get_existing_raw_article_ids(cur)
-
     # ------------------------------------------------------------------
     # Summaries
     # ------------------------------------------------------------------

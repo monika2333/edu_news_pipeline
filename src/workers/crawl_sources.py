@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import os
@@ -218,7 +218,7 @@ def _persist_filtered_candidates(
     if not candidates:
         return 0
     try:
-        adapter.upsert_filtered_articles(candidates)
+        adapter.ingest.upsert_filtered(candidates)
     except Exception as exc:  # pylint: disable=broad-except
         log_error(WORKER, f"{source}_filtered_articles", exc)
         return 0
@@ -311,7 +311,7 @@ def _run_toutiao_flow(
         log_info(WORKER, "Author token list is empty.")
         return stats
     try:
-        existing_ids = adapter.get_existing_raw_article_ids()
+        existing_ids = adapter.ingest.get_existing_raw_ids()
     except Exception as exc:
         log_error(WORKER, "local_existing", exc)
         existing_ids = set()
@@ -332,7 +332,7 @@ def _run_toutiao_flow(
         stats["skipped"] += duplicate_count
         return stats
     try:
-        feed_upserted = adapter.upsert_raw_feed_rows(feed_rows)
+        feed_upserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
     except Exception as exc:
         log_error(WORKER, "postgres_feed", exc)
         stats["failed"] += len(feed_rows)
@@ -342,7 +342,7 @@ def _run_toutiao_flow(
         log_info(WORKER, f"duplicate feed items skipped: {duplicate_count}")
     if unresolved_count:
         log_info(WORKER, f"feed items missing article_id: {unresolved_count}")
-    missing_content_ids = adapter.get_raw_articles_missing_content(list(feed_index.keys()))
+    missing_content_ids = adapter.ingest.get_raw_ids_missing_content(list(feed_index.keys()))
     detail_targets = [(article_id, feed_index[article_id]) for article_id in feed_index if article_id in missing_content_ids]
     already_complete = len(feed_index) - len(detail_targets)
     if already_complete:
@@ -369,7 +369,7 @@ def _run_toutiao_flow(
     detail_db_failures = 0
     if detail_rows:
         try:
-            adapter.update_raw_article_details(detail_rows)
+            adapter.ingest.update_raw_details(detail_rows)
         except Exception as exc:
             detail_db_failures = len(detail_rows)
             detail_rows = []
@@ -427,7 +427,7 @@ def _run_tencent_flow(
         return stats
     max_pages = pages if pages is not None else TENCENT_DEFAULT_MAX_PAGES
     try:
-        existing_ids_raw = adapter.get_existing_raw_article_ids()
+        existing_ids_raw = adapter.ingest.get_existing_raw_ids()
         existing_ids: Set[str] = set(existing_ids_raw or [])
     except Exception as exc:
         log_error(WORKER, "tencent_existing_ids", exc)
@@ -466,7 +466,7 @@ def _run_tencent_flow(
             log_info(WORKER, f"Tencent duplicate feed items skipped: {duplicates}")
         return stats
     try:
-        upserted = adapter.upsert_raw_feed_rows(feed_rows)
+        upserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
     except Exception as exc:
         log_error(WORKER, "tencent_postgres_feed", exc)
         stats["failed"] += len(feed_rows)
@@ -475,7 +475,7 @@ def _run_tencent_flow(
     if duplicates:
         log_info(WORKER, f"Tencent duplicate feed items skipped: {duplicates}")
     try:
-        missing_content_ids = adapter.get_raw_articles_missing_content(list(index.keys()))
+        missing_content_ids = adapter.ingest.get_raw_ids_missing_content(list(index.keys()))
     except Exception as exc:
         log_error(WORKER, "tencent_missing_content", exc)
         missing_content_ids = []
@@ -511,7 +511,7 @@ def _run_tencent_flow(
     db_failures = 0
     if detail_rows:
         try:
-            adapter.update_raw_article_details(detail_rows)
+            adapter.ingest.update_raw_details(detail_rows)
         except Exception as exc:
             db_failures = len(detail_rows)
             log_error(WORKER, "tencent_detail_update", exc)
@@ -551,7 +551,7 @@ def _run_chinanews_flow(
     """
     stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
     try:
-        existing_ids = adapter.get_existing_raw_article_ids()
+        existing_ids = adapter.ingest.get_existing_raw_ids()
     except Exception as exc:
         log_error(WORKER, "local_existing", exc)
         existing_ids = set()
@@ -587,7 +587,7 @@ def _run_chinanews_flow(
         return stats
 
     try:
-        upserted = adapter.upsert_raw_feed_rows(feed_rows)
+        upserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
     except Exception as exc:
         log_error(WORKER, "postgres_feed_cn", exc)
         return stats
@@ -595,7 +595,7 @@ def _run_chinanews_flow(
     if duplicates:
         log_info(WORKER, f"chinanews duplicate feed items skipped: {duplicates}")
 
-    missing_ids = adapter.get_raw_articles_missing_content(list(index.keys()))
+    missing_ids = adapter.ingest.get_raw_ids_missing_content(list(index.keys()))
     targets = [(aid, index[aid]) for aid in index if aid in missing_ids]
     already = len(index) - len(targets)
     if already:
@@ -626,7 +626,7 @@ def _run_chinanews_flow(
 
     if detail_rows:
         try:
-            adapter.update_raw_article_details(detail_rows)
+            adapter.ingest.update_raw_details(detail_rows)
         except Exception as exc:
             stats["failed"] += len(detail_rows)
             log_error(WORKER, "postgres_detail_cn", exc)
@@ -666,7 +666,7 @@ def _run_gmw_flow(
     stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
     # Load existing IDs to allow early-stop on consecutive existing items
     try:
-        existing_ids = adapter.get_existing_raw_article_ids()
+        existing_ids = adapter.ingest.get_existing_raw_ids()
     except Exception as exc:
         log_error(WORKER, "gmw_local_existing", exc)
         existing_ids = set()
@@ -721,7 +721,7 @@ def _run_gmw_flow(
         return stats
 
     try:
-        inserted = adapter.upsert_raw_feed_rows(feed_rows)
+        inserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
     except Exception as exc:
         log_error(WORKER, "gmw_postgres_feed", exc)
         stats["failed"] += len(feed_rows)
@@ -729,7 +729,7 @@ def _run_gmw_flow(
     log_info(WORKER, f"gmw feed rows upserted: {inserted}")
 
     try:
-        adapter.update_raw_article_details(detail_rows)
+        adapter.ingest.update_raw_details(detail_rows)
     except Exception as exc:
         log_error(WORKER, "gmw_postgres_detail", exc)
         stats["failed"] += len(detail_rows)
@@ -764,7 +764,7 @@ def _run_ldwb_flow(
 ) -> Dict[str, Any]:
     stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
     try:
-        existing_ids = adapter.get_existing_raw_article_ids()
+        existing_ids = adapter.ingest.get_existing_raw_ids()
     except Exception as exc:
         log_error(WORKER, "ldwb_local_existing", exc)
         existing_ids = set()
@@ -805,7 +805,7 @@ def _run_ldwb_flow(
         return stats
 
     try:
-        adapter.upsert_raw_feed_rows(feed_rows)
+        adapter.ingest.upsert_raw_feed_rows(feed_rows)
     except Exception as exc:
         stats["failed"] += len(feed_rows)
         log_error(WORKER, "ldwb_postgres_feed", exc)
@@ -815,7 +815,7 @@ def _run_ldwb_flow(
 
     if detail_rows:
         try:
-            adapter.update_raw_article_details(detail_rows)
+            adapter.ingest.update_raw_details(detail_rows)
         except Exception as exc:
             stats["failed"] += len(detail_rows)
             log_error(WORKER, "ldwb_postgres_detail", exc)
@@ -885,7 +885,7 @@ def _run_bjrb_flow(
         return stats
 
     try:
-        upserted = adapter.upsert_raw_feed_rows(feed_rows)
+        upserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
     except Exception as exc:
         stats["failed"] += len(feed_rows)
         log_error(WORKER, "bjrb_postgres_feed", exc)
@@ -893,7 +893,7 @@ def _run_bjrb_flow(
     log_info(WORKER, f"bjrb feed rows upserted: {upserted}")
 
     try:
-        missing_ids = adapter.get_raw_articles_missing_content(list(index.keys()))
+        missing_ids = adapter.ingest.get_raw_ids_missing_content(list(index.keys()))
     except Exception as exc:
         log_error(WORKER, "bjrb_missing_content", exc)
         missing_ids = set(index.keys())
@@ -925,7 +925,7 @@ def _run_bjrb_flow(
 
     if detail_rows:
         try:
-            adapter.update_raw_article_details(detail_rows)
+            adapter.ingest.update_raw_details(detail_rows)
         except Exception as exc:
             stats["failed"] += len(detail_rows)
             log_error(WORKER, "bjrb_postgres_detail", exc)
@@ -965,7 +965,7 @@ def _run_qianlong_flow(
 ) -> Dict[str, Any]:
     stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
     try:
-        existing_ids = adapter.get_existing_raw_article_ids()
+        existing_ids = adapter.ingest.get_existing_raw_ids()
     except Exception as exc:
         log_error(WORKER, "qianlong_local_existing", exc)
         existing_ids = set()
@@ -1020,7 +1020,7 @@ def _run_qianlong_flow(
         return stats
 
     try:
-        inserted = adapter.upsert_raw_feed_rows(feed_rows)
+        inserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
     except Exception as exc:
         log_error(WORKER, "qianlong_postgres_feed", exc)
         stats["failed"] += len(feed_rows)
@@ -1028,7 +1028,7 @@ def _run_qianlong_flow(
     log_info(WORKER, f"qianlong feed rows upserted: {inserted}")
 
     try:
-        adapter.update_raw_article_details(detail_rows)
+        adapter.ingest.update_raw_details(detail_rows)
     except Exception as exc:
         log_error(WORKER, "qianlong_postgres_detail", exc)
         stats["failed"] += len(detail_rows)
@@ -1064,7 +1064,7 @@ def _run_jyb_flow(
 ) -> Dict[str, Any]:
     stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
     try:
-        existing_ids = adapter.get_existing_raw_article_ids()
+        existing_ids = adapter.ingest.get_existing_raw_ids()
     except Exception as exc:
         log_error(WORKER, "jyb_local_existing", exc)
         existing_ids = set()
@@ -1100,7 +1100,7 @@ def _run_jyb_flow(
         return stats
 
     try:
-        upserted = adapter.upsert_raw_feed_rows(feed_rows)
+        upserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
     except Exception as exc:
         log_error(WORKER, "postgres_feed_jyb", exc)
         return stats
@@ -1108,7 +1108,7 @@ def _run_jyb_flow(
     if duplicates:
         log_info(WORKER, f"jyb duplicate feed items skipped: {duplicates}")
 
-    missing_ids = adapter.get_raw_articles_missing_content(list(index.keys()))
+    missing_ids = adapter.ingest.get_raw_ids_missing_content(list(index.keys()))
     targets = [(aid, index[aid]) for aid in index if aid in missing_ids]
     already = len(index) - len(targets)
     if already:
@@ -1139,7 +1139,7 @@ def _run_jyb_flow(
 
     if detail_rows:
         try:
-            adapter.update_raw_article_details(detail_rows)
+            adapter.ingest.update_raw_details(detail_rows)
         except Exception as exc:
             stats["failed"] += len(detail_rows)
             log_error(WORKER, "postgres_detail_jyb", exc)
@@ -1181,7 +1181,7 @@ def _run_chinadaily_flow(
     """
     stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
     try:
-        existing_ids = adapter.get_existing_raw_article_ids()
+        existing_ids = adapter.ingest.get_existing_raw_ids()
     except Exception as exc:
         log_error(WORKER, "chinadaily_local_existing", exc)
         existing_ids = set()
@@ -1217,7 +1217,7 @@ def _run_chinadaily_flow(
         return stats
 
     try:
-        upserted = adapter.upsert_raw_feed_rows(feed_rows)
+        upserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
     except Exception as exc:
         log_error(WORKER, "postgres_feed_chinadaily", exc)
         return stats
@@ -1225,7 +1225,7 @@ def _run_chinadaily_flow(
     if duplicates:
         log_info(WORKER, f"chinadaily duplicate feed items skipped: {duplicates}")
 
-    missing_ids = adapter.get_raw_articles_missing_content(list(index.keys()))
+    missing_ids = adapter.ingest.get_raw_ids_missing_content(list(index.keys()))
     targets = [(aid, index[aid]) for aid in index if aid in missing_ids]
     already = len(index) - len(targets)
     if already:
@@ -1256,7 +1256,7 @@ def _run_chinadaily_flow(
 
     if detail_rows:
         try:
-            adapter.update_raw_article_details(detail_rows)
+            adapter.ingest.update_raw_details(detail_rows)
         except Exception as exc:
             stats["failed"] += len(detail_rows)
             log_error(WORKER, "postgres_detail_chinadaily", exc)

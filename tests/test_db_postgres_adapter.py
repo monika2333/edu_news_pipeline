@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 import uuid
@@ -48,8 +48,8 @@ def test_postgres_adapter_core_roundtrip() -> None:
 
     try:
         rows = format_article_rows([article_record])
-        adapter.upsert_raw_feed_rows(rows)
-        adapter.update_raw_article_details(
+        adapter.ingest.upsert_raw_feed_rows(rows)
+        adapter.ingest.update_raw_details(
             [
                 {
                     "article_id": article_id,

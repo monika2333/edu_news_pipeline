@@ -198,7 +198,7 @@ def _find_related_candidates(
         for index, band_value in enumerate(bands, start=1):
             if band_value is None:
                 continue
-            rows = adapter.fetch_filtered_articles_by_band(index, band_value, BAND_CANDIDATE_LIMIT)
+            rows = adapter.ingest.fetch_filtered_by_band(index, band_value, BAND_CANDIDATE_LIMIT)
             for candidate_row in rows:
                 candidate_id = str(candidate_row.get("article_id") or "").strip()
                 if not candidate_id or candidate_id == article_id:
@@ -207,7 +207,7 @@ def _find_related_candidates(
         return list(candidates_map.values())
     
     if content_hash:
-        return adapter.fetch_filtered_articles_by_hashes([content_hash])
+        return adapter.ingest.fetch_filtered_by_hashes([content_hash])
         
     return []
 
@@ -306,7 +306,7 @@ def _process_grouping(
 def run(limit: int = 200) -> None:
     adapter = get_adapter()
     with worker_session(WORKER, limit=limit):
-        candidates = adapter.fetch_filtered_articles_for_hashing(limit)
+        candidates = adapter.ingest.fetch_filtered_for_hashing(limit)
         if not candidates:
             log_summary(WORKER, ok=0, failed=0, skipped=0)
             return
@@ -318,14 +318,14 @@ def run(limit: int = 200) -> None:
             log_summary(WORKER, ok=0, failed=0, skipped=skipped)
             return
 
-        adapter.update_filtered_article_features(feature_updates)
+        adapter.ingest.update_filtered_features(feature_updates)
 
         primary_updates, primary_rows, duplicate_count = _process_grouping(candidates, article_info, adapter)
 
         if primary_updates:
-            adapter.update_filtered_primary_ids(primary_updates)
+            adapter.ingest.update_filtered_primary_ids(primary_updates)
         if primary_rows:
-            adapter.upsert_primary_articles(primary_rows)
+            adapter.ingest.upsert_primary(primary_rows)
 
         hashed_count = len(feature_updates)
         log_summary(WORKER, ok=hashed_count, failed=0, skipped=skipped)

@@ -1,9 +1,78 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import psycopg
+
+if TYPE_CHECKING:
+    from src.adapters.db_postgres_core import PostgresAdapter
+
+
+class IngestNamespace:
+    """Single-table access for raw, filtered, and primary article ingestion."""
+
+    def __init__(self, adapter: PostgresAdapter) -> None:
+        self._adapter = adapter
+
+    def upsert_raw_feed_rows(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        with self._adapter._cursor() as cur:
+            return upsert_raw_feed_rows(cur, rows)
+
+    def update_raw_details(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        with self._adapter._cursor() as cur:
+            return update_raw_article_details(cur, rows)
+
+    def get_raw_ids_missing_content(self, article_ids: Sequence[str]) -> Set[str]:
+        with self._adapter._cursor() as cur:
+            return get_raw_articles_missing_content(cur, article_ids)
+
+    def fetch_raw_missing_content(
+        self,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_raw_articles_missing_content(cur, limit)
+
+    def get_existing_raw_ids(self) -> Set[str]:
+        with self._adapter._cursor() as cur:
+            return get_existing_raw_article_ids(cur)
+
+    def upsert_filtered(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        with self._adapter._cursor() as cur:
+            return upsert_filtered_articles(cur, rows)
+
+    def fetch_filtered_for_hashing(self, limit: int) -> List[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_filtered_articles_for_hashing(cur, limit)
+
+    def fetch_filtered_by_hashes(self, hashes: Sequence[str]) -> List[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_filtered_articles_by_hashes(cur, hashes)
+
+    def update_filtered_features(self, updates: Sequence[Mapping[str, Any]]) -> int:
+        with self._adapter._cursor() as cur:
+            return update_filtered_article_features(cur, updates)
+
+    def fetch_filtered_by_band(
+        self,
+        band_index: int,
+        band_value: int,
+        limit: int,
+    ) -> List[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_filtered_articles_by_band(cur, band_index, band_value, limit)
+
+    def update_filtered_primary_ids(
+        self,
+        updates: Sequence[Mapping[str, Any]],
+    ) -> int:
+        with self._adapter._cursor() as cur:
+            return update_filtered_primary_ids(cur, updates)
+
+    def upsert_primary(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        with self._adapter._cursor() as cur:
+            return upsert_primary_articles(cur, rows)
 
 
 def upsert_raw_feed_rows(cur: psycopg.Cursor, rows: Sequence[Mapping[str, Any]]) -> int:
@@ -474,6 +543,7 @@ def get_existing_raw_article_ids(cur: psycopg.Cursor) -> Set[str]:
 
 
 __all__ = [
+    "IngestNamespace",
     "fetch_filtered_articles_by_band",
     "fetch_filtered_articles_by_hashes",
     "fetch_filtered_articles_for_hashing",

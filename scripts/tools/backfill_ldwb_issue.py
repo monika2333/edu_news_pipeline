@@ -87,7 +87,7 @@ def persist_records(records: Sequence, *, dry_run: bool) -> int:
 
     adapter = PostgresAdapter()
     try:
-        existing = adapter.get_existing_raw_article_ids()
+        existing = adapter.ingest.get_existing_raw_ids()
     except Exception as exc:
         print(f"ERROR: unable to get existing article ids: {exc}")
         return -1
@@ -109,8 +109,8 @@ def persist_records(records: Sequence, *, dry_run: bool) -> int:
         return 0
 
     try:
-        adapter.upsert_raw_feed_rows(feed_rows)
-        adapter.update_raw_article_details(detail_rows)
+        adapter.ingest.upsert_raw_feed_rows(feed_rows)
+        adapter.ingest.update_raw_details(detail_rows)
     except Exception as exc:
         print(f"ERROR: DB write failed: {exc}")
         return -2

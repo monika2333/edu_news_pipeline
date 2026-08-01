@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -7,27 +9,33 @@ from src.adapters.http_gmw import GMWArticle
 from src.workers import crawl_sources
 
 
+class _DummyIngestNamespace:
+    def __init__(self, adapter: _DummyAdapter) -> None:
+        self._adapter = adapter
+
+    @staticmethod
+    def get_existing_raw_ids() -> set[str]:
+        return set()
+
+    def upsert_raw_feed_rows(self, rows: Sequence[Dict[str, Any]]) -> int:
+        self._adapter.feed_rows = list(rows)
+        return len(rows)
+
+    def update_raw_details(self, rows: Sequence[Dict[str, Any]]) -> int:
+        self._adapter.detail_rows = list(rows)
+        return len(rows)
+
+    def upsert_filtered(self, rows: Sequence[Dict[str, Any]]) -> int:
+        self._adapter.filtered_rows = list(rows)
+        return len(rows)
+
+
 class _DummyAdapter:
     def __init__(self) -> None:
         self.feed_rows: Optional[List[Dict[str, Any]]] = None
         self.detail_rows: Optional[List[Dict[str, Any]]] = None
         self.filtered_rows: Optional[List[Dict[str, Any]]] = None
-
-    @staticmethod
-    def get_existing_raw_article_ids() -> set[str]:
-        return set()
-
-    def upsert_raw_feed_rows(self, rows: Sequence[Dict[str, Any]]) -> int:
-        self.feed_rows = list(rows)
-        return len(rows)
-
-    def update_raw_article_details(self, rows: Sequence[Dict[str, Any]]) -> int:
-        self.detail_rows = list(rows)
-        return len(rows)
-
-    def upsert_filtered_articles(self, rows: Sequence[Dict[str, Any]]) -> int:
-        self.filtered_rows = list(rows)
-        return len(rows)
+        self.ingest = _DummyIngestNamespace(self)
 
 
 @pytest.fixture

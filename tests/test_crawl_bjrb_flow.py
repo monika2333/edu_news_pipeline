@@ -6,27 +6,37 @@ from src.adapters.http_bjrb import BjrbArticle, BjrbIssueItem
 from src.workers import crawl_sources
 
 
+class _DummyIngestNamespace:
+    def __init__(self, adapter: _DummyAdapter) -> None:
+        self._adapter = adapter
+
+    def upsert_raw_feed_rows(self, rows: Sequence[dict[str, Any]]) -> int:
+        self._adapter.feed_rows = list(rows)
+        return len(rows)
+
+    def get_raw_ids_missing_content(self, article_ids: Sequence[str]) -> set[str]:
+        return {
+            article_id
+            for article_id in article_ids
+            if article_id in self._adapter.missing_ids
+        }
+
+    def update_raw_details(self, rows: Sequence[dict[str, Any]]) -> int:
+        self._adapter.detail_rows = list(rows)
+        return len(rows)
+
+    def upsert_filtered(self, rows: Sequence[dict[str, Any]]) -> int:
+        self._adapter.filtered_rows = list(rows)
+        return len(rows)
+
+
 class _DummyAdapter:
     def __init__(self, missing_ids: Optional[set[str]] = None) -> None:
         self.missing_ids = missing_ids or set()
         self.feed_rows: Optional[list[dict[str, Any]]] = None
         self.detail_rows: Optional[list[dict[str, Any]]] = None
         self.filtered_rows: Optional[list[dict[str, Any]]] = None
-
-    def upsert_raw_feed_rows(self, rows: Sequence[dict[str, Any]]) -> int:
-        self.feed_rows = list(rows)
-        return len(rows)
-
-    def get_raw_articles_missing_content(self, article_ids: Sequence[str]) -> set[str]:
-        return {article_id for article_id in article_ids if article_id in self.missing_ids}
-
-    def update_raw_article_details(self, rows: Sequence[dict[str, Any]]) -> int:
-        self.detail_rows = list(rows)
-        return len(rows)
-
-    def upsert_filtered_articles(self, rows: Sequence[dict[str, Any]]) -> int:
-        self.filtered_rows = list(rows)
-        return len(rows)
+        self.ingest = _DummyIngestNamespace(self)
 
 
 def _item(article_id: str, title: str) -> BjrbIssueItem:

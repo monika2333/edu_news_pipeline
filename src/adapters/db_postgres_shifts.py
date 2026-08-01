@@ -1,9 +1,73 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
 
 import psycopg
+
+if TYPE_CHECKING:
+    from src.adapters.db_postgres_core import PostgresAdapter
+
+
+class ShiftsNamespace:
+    """Single-table access to duty schedules and shifts."""
+
+    def __init__(self, adapter: PostgresAdapter) -> None:
+        self._adapter = adapter
+
+    def fetch_active_editors(self) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_active_duty_editors(cur)
+
+    def fetch_schedule(self) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_duty_schedule(cur)
+
+    def insert_many(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        with self._adapter._cursor() as cur:
+            return insert_duty_shifts(cur, rows)
+
+    def fetch(self, shift_id: str) -> Optional[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_duty_shift(cur, shift_id)
+
+    def fetch_all(
+        self,
+        *,
+        user_id: Optional[str] = None,
+        starts_before: Optional[datetime] = None,
+        ends_after: Optional[datetime] = None,
+        include_cancelled: bool = True,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_duty_shifts(
+                cur,
+                user_id=user_id,
+                starts_before=starts_before,
+                ends_after=ends_after,
+                include_cancelled=include_cancelled,
+                limit=limit,
+            )
+
+    def fetch_overlapping(
+        self,
+        *,
+        starts_at: datetime,
+        ends_at: datetime,
+        exclude_shift_id: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_overlapping_duty_shift(
+                cur,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                exclude_shift_id=exclude_shift_id,
+            )
+
+    def fetch_coverage_end(self) -> Optional[datetime]:
+        with self._adapter._cursor() as cur:
+            return fetch_shift_coverage_end(cur)
 
 
 SHIFT_SELECT = """
@@ -265,6 +329,7 @@ def fetch_shift_coverage_end(cur: psycopg.Cursor) -> Optional[datetime]:
 
 
 __all__ = [
+    "ShiftsNamespace",
     "create_duty_shift",
     "fetch_active_duty_editors",
     "fetch_duty_schedule",

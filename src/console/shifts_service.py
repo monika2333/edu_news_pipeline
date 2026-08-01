@@ -50,11 +50,11 @@ def _serialize_shift(row: Mapping[str, Any], *, now: Optional[datetime] = None) 
 
 
 def get_active_duty_editors() -> list[dict[str, Any]]:
-    return get_adapter().fetch_active_duty_editors()
+    return get_adapter().shifts.fetch_active_editors()
 
 
 def get_schedule() -> list[dict[str, Any]]:
-    return get_adapter().fetch_duty_schedule()
+    return get_adapter().shifts.fetch_schedule()
 
 
 def set_schedule(
@@ -128,7 +128,7 @@ def generate_shifts(
                 "created_by_user_id": actor_user_id,
             }
         )
-    inserted = get_adapter().insert_duty_shifts(rows)
+    inserted = get_adapter().shifts.insert_many(rows)
     return {
         "requested": len(rows),
         "inserted": inserted,
@@ -150,7 +150,7 @@ def create_shift(
         raise ValueError("Shift timestamps must include a timezone")
     if ends_at <= starts_at:
         raise ValueError("Shift end must be after its start")
-    overlap = get_adapter().fetch_overlapping_duty_shift(
+    overlap = get_adapter().shifts.fetch_overlapping(
         starts_at=starts_at,
         ends_at=ends_at,
     )
@@ -201,7 +201,7 @@ def list_admin_shifts(
 ) -> list[dict[str, Any]]:
     return [
         _serialize_shift(row)
-        for row in get_adapter().fetch_duty_shifts(
+        for row in get_adapter().shifts.fetch_all(
             include_cancelled=include_cancelled,
             limit=limit,
         )
@@ -217,7 +217,7 @@ def list_user_shifts(
         raise ShiftPermissionError("A business user account is required")
     return [
         _serialize_shift(row)
-        for row in get_adapter().fetch_duty_shifts(
+        for row in get_adapter().shifts.fetch_all(
             user_id=user.user_id,
             include_cancelled=True,
             limit=limit,
@@ -231,7 +231,7 @@ def require_owned_shift(
     *,
     allow_cancelled: bool = False,
 ) -> dict[str, Any]:
-    row = get_adapter().fetch_duty_shift(shift_id)
+    row = get_adapter().shifts.fetch(shift_id)
     if not row:
         raise ShiftNotFoundError("Duty shift not found")
     if not user.user_id or str(row["user_id"]) != user.user_id:
@@ -243,7 +243,7 @@ def require_owned_shift(
 
 def get_coverage_status(*, now: Optional[datetime] = None) -> dict[str, Any]:
     current = now or datetime.now(timezone.utc)
-    coverage_end = get_adapter().fetch_shift_coverage_end()
+    coverage_end = get_adapter().shifts.fetch_coverage_end()
     if coverage_end is None:
         return {
             "coverage_end": None,

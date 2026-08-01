@@ -8,15 +8,18 @@ from src.console import admin_summary_service
 from src.console.auth_service import ConsoleUser
 
 
+class FakeShiftsNamespace:
+    def fetch(self, shift_id: str) -> dict[str, str]:
+        return {"id": shift_id}
+
+
 class FakeAdminSummaryAdapter:
     def __init__(self) -> None:
         self.review_query: dict[str, Any] = {}
         self.import_query: dict[str, Any] = {}
         self.bulk_discard_query: dict[str, Any] = {}
         self.preview_rows: list[dict[str, Any]] = []
-
-    def fetch_duty_shift(self, shift_id: str) -> dict[str, str]:
-        return {"id": shift_id}
+        self.shifts = FakeShiftsNamespace()
 
     def fetch_shift_review_items(
         self,

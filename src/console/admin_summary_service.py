@@ -84,7 +84,7 @@ def list_shift_results(
     admin_unprocessed_only: bool = False,
     include_admin_discarded: bool = False,
 ) -> dict[str, Any]:
-    if not get_adapter().fetch_duty_shift(shift_id):
+    if not get_adapter().shifts.fetch(shift_id):
         raise ShiftNotFoundError("Duty shift not found")
     if decision and decision not in VALID_DECISIONS:
         raise ValueError(f"Invalid review decision: {decision}")
@@ -133,7 +133,7 @@ def set_admin_discarded(
     if not actor.user_id:
         raise PermissionError("需要管理员账号才能执行该操作")
     adapter = get_adapter()
-    if not adapter.fetch_duty_shift(shift_id):
+    if not adapter.shifts.fetch(shift_id):
         raise ShiftNotFoundError("Duty shift not found")
     saved = adapter.set_shift_review_admin_discarded(
         shift_id=shift_id,
@@ -166,7 +166,7 @@ def set_admin_discarded_many(
     if not normalized_ids:
         raise ValueError("请至少选择一条新闻")
     adapter = get_adapter()
-    if not adapter.fetch_duty_shift(shift_id):
+    if not adapter.shifts.fetch(shift_id):
         raise ShiftNotFoundError("Duty shift not found")
     saved = adapter.set_shift_reviews_admin_discarded(
         shift_id=shift_id,
@@ -188,7 +188,7 @@ def preview_import_results(
     article_ids: Sequence[str],
 ) -> dict[str, Any]:
     adapter = get_adapter()
-    if not adapter.fetch_duty_shift(shift_id):
+    if not adapter.shifts.fetch(shift_id):
         raise ShiftNotFoundError("Duty shift not found")
     normalized_ids = {
         str(article_id).strip()
@@ -244,7 +244,7 @@ def import_results(
 ) -> dict[str, Any]:
     if not actor.user_id:
         raise PermissionError("A business administrator account is required")
-    if not get_adapter().fetch_duty_shift(shift_id):
+    if not get_adapter().shifts.fetch(shift_id):
         raise ShiftNotFoundError("Duty shift not found")
     imported = get_adapter().import_shift_reviews_into_manual(
         shift_id=shift_id,

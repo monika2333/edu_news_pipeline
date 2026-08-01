@@ -19,6 +19,18 @@ class FakeUsersNamespace:
         return self._adapter.users_by_id.get(user_id)
 
 
+class FakeShiftsNamespace:
+    def __init__(self, adapter: FakeShiftAdapter) -> None:
+        self._adapter = adapter
+
+    def fetch_schedule(self) -> list[dict[str, Any]]:
+        return list(self._adapter.schedule)
+
+    def insert_many(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        self._adapter.inserted_rows = [dict(row) for row in rows]
+        return len(self._adapter.inserted_rows)
+
+
 class FakeShiftAdapter:
     def __init__(self, schedule: Optional[list[dict[str, Any]]] = None) -> None:
         self.schedule = schedule or []
@@ -31,17 +43,8 @@ class FakeShiftAdapter:
             }
             for item in self.schedule
         }
+        self.shifts = FakeShiftsNamespace(self)
         self.users = FakeUsersNamespace(self)
-
-    def fetch_duty_schedule(self) -> list[dict[str, Any]]:
-        return list(self.schedule)
-
-    def insert_duty_shifts(
-        self,
-        rows: Sequence[Mapping[str, Any]],
-    ) -> int:
-        self.inserted_rows = [dict(row) for row in rows]
-        return len(self.inserted_rows)
 
     def upsert_duty_schedule(
         self,

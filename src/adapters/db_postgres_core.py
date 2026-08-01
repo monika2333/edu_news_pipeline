@@ -86,6 +86,7 @@ class PostgresAdapter:
         self._conn = connection or _get_connection()
         self.export = export.ExportNamespace(self)
         self.score_feedback = score_feedback.ScoreFeedbackNamespace(self)
+        self.shifts = shifts.ShiftsNamespace(self)
         self.title_embeddings = title_embeddings.TitleEmbeddingsNamespace(self)
         self.users = users.UsersNamespace(self)
 
@@ -404,14 +405,6 @@ class PostgresAdapter:
     # ------------------------------------------------------------------
     # Duty schedules + shifts
     # ------------------------------------------------------------------
-    def fetch_active_duty_editors(self) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return shifts.fetch_active_duty_editors(cur)
-
-    def fetch_duty_schedule(self) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return shifts.fetch_duty_schedule(cur)
-
     def upsert_duty_schedule(
         self,
         assignments: Mapping[int, str],
@@ -431,13 +424,6 @@ class PostgresAdapter:
                 after_data={"assignments": after},
             )
             return after
-
-    def insert_duty_shifts(
-        self,
-        rows: Sequence[Mapping[str, Any]],
-    ) -> int:
-        with self._cursor() as cur:
-            return shifts.insert_duty_shifts(cur, rows)
 
     def create_duty_shift(
         self,
@@ -467,44 +453,6 @@ class PostgresAdapter:
                 after_data=created,
             )
             return created
-
-    def fetch_duty_shift(self, shift_id: str) -> Optional[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return shifts.fetch_duty_shift(cur, shift_id)
-
-    def fetch_duty_shifts(
-        self,
-        *,
-        user_id: Optional[str] = None,
-        starts_before: Optional[datetime] = None,
-        ends_after: Optional[datetime] = None,
-        include_cancelled: bool = True,
-        limit: int = 100,
-    ) -> List[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return shifts.fetch_duty_shifts(
-                cur,
-                user_id=user_id,
-                starts_before=starts_before,
-                ends_after=ends_after,
-                include_cancelled=include_cancelled,
-                limit=limit,
-            )
-
-    def fetch_overlapping_duty_shift(
-        self,
-        *,
-        starts_at: datetime,
-        ends_at: datetime,
-        exclude_shift_id: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
-        with self._cursor() as cur:
-            return shifts.fetch_overlapping_duty_shift(
-                cur,
-                starts_at=starts_at,
-                ends_at=ends_at,
-                exclude_shift_id=exclude_shift_id,
-            )
 
     def update_duty_shift(
         self,
@@ -541,10 +489,6 @@ class PostgresAdapter:
                     after_data=after,
                 )
             return after
-
-    def fetch_shift_coverage_end(self) -> Optional[datetime]:
-        with self._cursor() as cur:
-            return shifts.fetch_shift_coverage_end(cur)
 
     # ------------------------------------------------------------------
     # Duty reviews

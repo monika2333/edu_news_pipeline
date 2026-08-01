@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from datetime import date, datetime, timezone
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
 import psycopg

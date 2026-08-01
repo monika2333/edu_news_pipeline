@@ -6,15 +6,14 @@ from typing import Any, Optional
 from src.workers import enrich_summary
 
 
-class _EnrichmentAdapter:
-    def __init__(self, rows: list[dict[str, Any]]) -> None:
-        self.rows = rows
-        self.completed: list[tuple[str, str, Optional[float], Optional[str]]] = []
+class _NewsSummariesNamespace:
+    def __init__(self, adapter: _EnrichmentAdapter) -> None:
+        self._adapter = adapter
 
-    def fetch_pending_summary_enrichments(self, limit: int) -> list[dict[str, Any]]:
-        return self.rows[:limit]
+    def fetch_pending_enrichments(self, limit: int) -> list[dict[str, Any]]:
+        return self._adapter.rows[:limit]
 
-    def complete_summary_enrichment(
+    def complete_enrichment(
         self,
         article_id: str,
         *,
@@ -22,7 +21,14 @@ class _EnrichmentAdapter:
         confidence: Optional[float],
         llm_source: Optional[str],
     ) -> None:
-        self.completed.append((article_id, label, confidence, llm_source))
+        self._adapter.completed.append((article_id, label, confidence, llm_source))
+
+
+class _EnrichmentAdapter:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self.rows = rows
+        self.completed: list[tuple[str, str, Optional[float], Optional[str]]] = []
+        self.news_summaries = _NewsSummariesNamespace(self)
 
 
 def _row() -> dict[str, Any]:

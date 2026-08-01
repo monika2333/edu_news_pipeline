@@ -2,12 +2,122 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import psycopg
 from psycopg.types.json import Json
 
 from src.adapters.db_postgres_shared import MISSING
+
+if TYPE_CHECKING:
+    from src.adapters.db_postgres_core import PostgresAdapter
+
+
+class NewsSummariesNamespace:
+    """Single-table access to generated and enriched news summaries."""
+
+    def __init__(self, adapter: PostgresAdapter) -> None:
+        self._adapter = adapter
+
+    def fetch_pending(
+        self,
+        limit: Optional[int] = None,
+        *,
+        max_attempts: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_pending_summaries(cur, limit, max_attempts=max_attempts)
+
+    def mark_attempt(self, article_id: str) -> bool:
+        with self._adapter._cursor() as cur:
+            return mark_summary_attempt(cur, article_id)
+
+    def complete_generation(self, article_id: str, summary_text: str) -> None:
+        with self._adapter._cursor() as cur:
+            complete_summary_generation(cur, article_id, summary_text)
+
+    def fetch_pending_enrichments(
+        self,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_pending_summary_enrichments(cur, limit)
+
+    def complete_enrichment(
+        self,
+        article_id: str,
+        *,
+        label: str,
+        confidence: Optional[float],
+        llm_source: Optional[str],
+    ) -> None:
+        with self._adapter._cursor() as cur:
+            complete_summary_enrichment(
+                cur,
+                article_id,
+                label=label,
+                confidence=confidence,
+                llm_source=llm_source,
+            )
+
+    def fetch_pending_routes(
+        self,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_pending_summary_routes(cur, limit)
+
+    def complete_routing(
+        self,
+        article_id: str,
+        *,
+        beijing_related: Optional[bool],
+        status: str,
+    ) -> None:
+        with self._adapter._cursor() as cur:
+            complete_summary_routing(
+                cur,
+                article_id,
+                beijing_related=beijing_related,
+                status=status,
+            )
+
+    def mark_failed(self, article_id: str, *, message: Optional[str] = None) -> None:
+        with self._adapter._cursor() as cur:
+            mark_summary_failed(cur, article_id, message=message)
+
+    def search(
+        self,
+        *,
+        query: Optional[str] = None,
+        sources: Optional[Sequence[str]] = None,
+        sentiments: Optional[Sequence[str]] = None,
+        statuses: Optional[Sequence[str]] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        with self._adapter._cursor() as cur:
+            return search_news_summaries(
+                cur,
+                query=query,
+                sources=sources,
+                sentiments=sentiments,
+                statuses=statuses,
+                start_date=start_date,
+                end_date=end_date,
+                limit=limit,
+                offset=offset,
+            )
+
+    def fetch_content(self, article_id: str) -> Optional[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_news_summary_content(cur, article_id)
+
+    def upsert_from_primary(self, rows: Sequence[Mapping[str, Any]]) -> int:
+        with self._adapter._cursor() as cur:
+            return upsert_news_summaries_from_primary(cur, rows)
 
 SEARCH_TEXT_EXPRESSION = (
     "(coalesce(title, '') || ' ' || coalesce(llm_summary, '') || ' ' || coalesce(content_markdown, ''))"
@@ -685,6 +795,7 @@ def upsert_news_summaries_from_primary(cur: psycopg.Cursor, rows: Sequence[Mappi
 
 
 __all__ = [
+    "NewsSummariesNamespace",
     "complete_summary",
     "complete_summary_enrichment",
     "complete_summary_generation",

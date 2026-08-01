@@ -66,10 +66,10 @@ def _submit_article(
         return None
     if not _content_from_row(article):
         stats.skipped += 1
-        adapter.mark_summary_failed(article_id, message="empty content")
+        adapter.news_summaries.mark_failed(article_id, message="empty content")
         return None
     attempt_count = int(article.get("summary_fail_count") or 0) + 1
-    if not adapter.mark_summary_attempt(article_id):
+    if not adapter.news_summaries.mark_attempt(article_id):
         stats.skipped += 1
         return None
     return executor.submit(_generate_summary, article), article_id, attempt_count
@@ -79,7 +79,7 @@ def _process_result(entry: PendingTask, adapter: Any, stats: SummaryStats) -> No
     future, article_id, attempt_count = entry
     try:
         result = future.result()
-        adapter.complete_summary_generation(article_id, result.summary_text)
+        adapter.news_summaries.complete_generation(article_id, result.summary_text)
         stats.success += 1
         stats.summary_seconds += result.elapsed_seconds
         log_info(WORKER, f"OK {article_id} timing=summary:{result.elapsed_seconds:.2f}s")
@@ -88,7 +88,7 @@ def _process_result(entry: PendingTask, adapter: Any, stats: SummaryStats) -> No
         stats.failure_ids.append(article_id)
         log_error(WORKER, article_id, exc)
         if attempt_count >= MAX_RETRIES:
-            adapter.mark_summary_failed(article_id, message=str(exc))
+            adapter.news_summaries.mark_failed(article_id, message=str(exc))
 
 
 def _resolve_limit(limit: int, process_limit: Optional[int]) -> Optional[int]:
@@ -117,7 +117,7 @@ def run(
     _ = keywords_path
 
     with worker_session(WORKER, limit=session_limit):
-        rows = adapter.fetch_pending_summaries(fetch_limit, max_attempts=MAX_RETRIES)
+        rows = adapter.news_summaries.fetch_pending(fetch_limit, max_attempts=MAX_RETRIES)
         if not rows:
             log_info(WORKER, "No pending summaries found.")
             log_summary(WORKER, ok=0, failed=0)

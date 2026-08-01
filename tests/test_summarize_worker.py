@@ -6,25 +6,33 @@ from typing import Any
 from src.workers import summarize
 
 
+class _NewsSummariesNamespace:
+    def __init__(self, adapter: _RunAdapter) -> None:
+        self._adapter = adapter
+
+    def fetch_pending(self, limit: int, *, max_attempts: int) -> list[dict[str, Any]]:
+        del max_attempts
+        return self._adapter.rows[:limit]
+
+    def mark_attempt(self, article_id: str) -> bool:
+        self._adapter.attempted.append(article_id)
+        return True
+
+    def complete_generation(self, article_id: str, summary_text: str) -> None:
+        self._adapter.completed.append((article_id, summary_text))
+
+    def mark_failed(self, article_id: str, *, message: str | None = None) -> None:
+        del message
+        self._adapter.failed.append(article_id)
+
+
 class _RunAdapter:
     def __init__(self, rows: list[dict[str, Any]]) -> None:
         self.rows = rows
         self.attempted: list[str] = []
         self.completed: list[tuple[str, str]] = []
         self.failed: list[str] = []
-
-    def fetch_pending_summaries(self, limit: int, *, max_attempts: int) -> list[dict[str, Any]]:
-        return self.rows[:limit]
-
-    def mark_summary_attempt(self, article_id: str) -> bool:
-        self.attempted.append(article_id)
-        return True
-
-    def complete_summary_generation(self, article_id: str, summary_text: str) -> None:
-        self.completed.append((article_id, summary_text))
-
-    def mark_summary_failed(self, article_id: str, *, message: str | None = None) -> None:
-        self.failed.append(article_id)
+        self.news_summaries = _NewsSummariesNamespace(self)
 
 
 def test_run_generates_only_summaries_concurrently(monkeypatch) -> None:

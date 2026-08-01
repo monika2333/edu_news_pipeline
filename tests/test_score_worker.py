@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import pytest
@@ -14,6 +14,10 @@ class FakeAdapter:
     fetched: List[PrimaryArticleForScoring]
     updates: List[Dict[str, Any]]
     promotions: List[Dict[str, Any]]
+    news_summaries: FakeNewsSummariesNamespace = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.news_summaries = FakeNewsSummariesNamespace(self)
 
     def fetch_primary_articles_for_scoring(self, limit: int):
         return self.fetched[:limit]
@@ -21,8 +25,14 @@ class FakeAdapter:
     def update_primary_article_scores(self, updates):
         self.updates.extend(updates)
 
-    def upsert_news_summaries_from_primary(self, payloads):
-        self.promotions.extend(payloads)
+
+
+class FakeNewsSummariesNamespace:
+    def __init__(self, adapter: FakeAdapter) -> None:
+        self._adapter = adapter
+
+    def upsert_from_primary(self, payloads):
+        self._adapter.promotions.extend(payloads)
 
 
 def test_keyword_bonus_applied(monkeypatch):

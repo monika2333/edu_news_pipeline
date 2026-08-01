@@ -135,7 +135,7 @@ def _persist_completed(adapter: Any, results: dict[str, ArticleEnrichment]) -> t
             failed += 1
             continue
         try:
-            adapter.complete_summary_enrichment(
+            adapter.news_summaries.complete_enrichment(
                 article_id,
                 label=sentiment.label or "",
                 confidence=sentiment.confidence,
@@ -162,7 +162,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
     max_workers = max(1, max_workers)
 
     with worker_session(WORKER, limit=limit_value):
-        rows = adapter.fetch_pending_summary_enrichments(limit_value)
+        rows = adapter.news_summaries.fetch_pending_enrichments(limit_value)
         if not rows:
             log_info(WORKER, "No pending summary enrichments found.")
             log_summary(WORKER, ok=0, failed=0)

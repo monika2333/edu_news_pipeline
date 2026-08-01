@@ -179,31 +179,37 @@ def test_gate_backlog_does_not_retry_failed_candidate_in_same_run() -> None:
     adapter.mark_beijing_gate_failure.assert_called_once()
 
 
-class _RunAdapter:
-    def __init__(self, candidate: BeijingGateCandidate) -> None:
-        self.candidate = candidate
-        self.local_updates: list[tuple[str, bool | None, str]] = []
-        self.gate_updates: list[str] = []
+class _NewsSummariesNamespace:
+    def __init__(self, adapter: _RunAdapter) -> None:
+        self._adapter = adapter
 
-    def fetch_pending_summary_routes(self, limit: int) -> list[dict[str, object]]:
+    def fetch_pending_routes(self, limit: int) -> list[dict[str, object]]:
         return [
             {
-                "article_id": self.candidate.article_id,
-                "title": self.candidate.title,
-                "content_markdown": self.candidate.content,
-                "llm_summary": self.candidate.summary,
-                "sentiment_label": self.candidate.sentiment_label,
+                "article_id": self._adapter.candidate.article_id,
+                "title": self._adapter.candidate.title,
+                "content_markdown": self._adapter.candidate.content,
+                "llm_summary": self._adapter.candidate.summary,
+                "sentiment_label": self._adapter.candidate.sentiment_label,
             }
-        ]
+        ][:limit]
 
-    def complete_summary_routing(
+    def complete_routing(
         self,
         article_id: str,
         *,
         beijing_related: bool | None,
         status: str,
     ) -> None:
-        self.local_updates.append((article_id, beijing_related, status))
+        self._adapter.local_updates.append((article_id, beijing_related, status))
+
+
+class _RunAdapter:
+    def __init__(self, candidate: BeijingGateCandidate) -> None:
+        self.candidate = candidate
+        self.local_updates: list[tuple[str, bool | None, str]] = []
+        self.gate_updates: list[str] = []
+        self.news_summaries = _NewsSummariesNamespace(self)
 
     def fetch_beijing_gate_candidates(
         self,

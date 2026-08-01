@@ -86,7 +86,7 @@ def search_articles(
             "page": page,
             "pages": 1,
         }
-    raw = adapter.search_news_summaries(
+    raw = adapter.news_summaries.search(
         query=query,
         limit=limit,
         offset=offset,
@@ -108,7 +108,7 @@ def get_article_content(*, article_id: str) -> Dict[str, Any]:
     safe_article_id = str(article_id or "")
     if adapter is None:
         return {"article_id": safe_article_id, "content_markdown": None}
-    row = adapter.fetch_news_summary_content(safe_article_id)
+    row = adapter.news_summaries.fetch_content(safe_article_id)
     if not row:
         return {"article_id": safe_article_id, "content_markdown": None}
     return {

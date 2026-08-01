@@ -221,7 +221,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
             adapter.update_primary_article_scores(updates)
 
         if promotion_payloads:
-            adapter.upsert_news_summaries_from_primary(promotion_payloads)
+            adapter.news_summaries.upsert_from_primary(promotion_payloads)
             log_info(WORKER, f"Promoted {len(promotion_payloads)} primary articles to news_summaries")
 
         success_count = len(successes)

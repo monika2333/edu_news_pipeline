@@ -80,7 +80,7 @@ def test_postgres_adapter_core_roundtrip() -> None:
             "fetched_at": article_record.fetched_at,
         }
 
-        promoted = adapter.upsert_news_summaries_from_primary(
+        promoted = adapter.news_summaries.upsert_from_primary(
             [
                 {
                     **article_payload,
@@ -94,26 +94,26 @@ def test_postgres_adapter_core_roundtrip() -> None:
             ]
         )
         assert promoted == 1
-        assert adapter.mark_summary_attempt(article_id) is True
-        adapter.complete_summary_generation(article_id, summary_text)
+        assert adapter.news_summaries.mark_attempt(article_id) is True
+        adapter.news_summaries.complete_generation(article_id, summary_text)
 
-        enrichment_rows = adapter.fetch_pending_summary_enrichments(20)
+        enrichment_rows = adapter.news_summaries.fetch_pending_enrichments(20)
         assert any(row.get("article_id") == article_id for row in enrichment_rows)
-        adapter.complete_summary_enrichment(
+        adapter.news_summaries.complete_enrichment(
             article_id,
             label="positive",
             confidence=0.9,
             llm_source="unit-test",
         )
 
-        route_rows = adapter.fetch_pending_summary_routes(20)
+        route_rows = adapter.news_summaries.fetch_pending_routes(20)
         assert any(row.get("article_id") == article_id for row in route_rows)
-        adapter.complete_summary_routing(
+        adapter.news_summaries.complete_routing(
             article_id,
             beijing_related=True,
             status="ready_for_export",
         )
-        summary_content = adapter.fetch_news_summary_content(article_id)
+        summary_content = adapter.news_summaries.fetch_content(article_id)
         assert summary_content is not None
         assert summary_content["article_id"] == article_id
 

@@ -63,7 +63,7 @@ def _route_locally(
             continue
         try:
             beijing_related, status = _determine_route(article, beijing_keywords)
-            adapter.complete_summary_routing(
+            adapter.news_summaries.complete_routing(
                 article_id,
                 beijing_related=beijing_related,
                 status=status,
@@ -281,7 +281,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
     beijing_keywords = load_beijing_keywords(settings.beijing_keywords_path)
 
     with worker_session(WORKER, limit=limit_value):
-        rows = adapter.fetch_pending_summary_routes(limit_value)
+        rows = adapter.news_summaries.fetch_pending_routes(limit_value)
         local_stats = _route_locally(adapter, rows, beijing_keywords)
         with ThreadPoolExecutor(max_workers=workers) as executor:
             confirmed, rerouted, gate_failures, fallbacks = _process_gate_backlog(

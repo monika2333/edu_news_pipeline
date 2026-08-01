@@ -8,7 +8,7 @@
 
 - 每个外部新闻源尽量保留一个 canonical adapter。
 - `http_*.py` source adapter 负责 HTTP 抓取、来源专属解析、文章 ID 构造和入库行数据整理。
-- 数据库访问统一通过 `db_postgres_core.PostgresAdapter` 对外暴露；SQL 较重的实现放在对应的 `db_postgres_*.py` 模块中，再由 `PostgresAdapter` 包装。
+- 数据库访问统一通过 `db_postgres_core.PostgresAdapter` 对外暴露；单表读写由对应 `db_postgres_*.py` 中的显式命名空间类提供，跨表审计事务和连接层原语保留在 `PostgresAdapter` 顶层。
 - LLM 请求、响应解析和接口兼容逻辑放在 `llm_*.py` 或现有模型 adapter 模块中。
 - 业务决策应放在 `src/domain`、`src/workers` 或 `src/console` service 中，不要塞进 adapter。
 - 新增 adapter 代码时，优先使用 dataclass、TypedDict 或其他结构化返回值，避免继续扩散临时 tuple。
@@ -26,6 +26,9 @@
 ## 数据库 Adapter 规则
 
 - 应用代码默认通过 `src.adapters.db_postgres_core.get_adapter()` 获取数据库 adapter。
+- 单表读写使用命名空间形式，例如 `adapter.manual_reviews.fetch(...)`；跨表且写审计日志的事务操作使用 adapter 顶层形式，例如 `adapter.update_manual_review_statuses_as_user(...)`。
+- 新增单表读写方法时，将它加入对应 `db_postgres_*.py` 的命名空间类，不要加回 `db_postgres_core.py`。
+- 命名空间类显式持有 adapter 引用；不要使用 mixin、多重继承、`__getattr__` 或其他动态转发。
 - 多个相关写入必须一起成功或失败时，应明确使用事务边界。
 - SQL 必须使用 psycopg 参数化查询；不要把用户输入拼接进 SQL 字符串。
 - 行数据标准化 helper 应靠近拥有该写入路径的 adapter 模块。

@@ -192,6 +192,9 @@ __all__ = [
 ## 数据库操作
 
 - 使用 adapter 模式，入口为 `src/adapters/db_postgres_core.py`。
+- 数据库访问分两种写法：单表读写走命名空间（例如 `adapter.manual_reviews.fetch(...)`）；跨表且需要写审计日志的事务性操作走 adapter 顶层（例如 `adapter.update_manual_review_statuses_as_user(...)`）。
+- 新增单表读写方法时，将它加入对应 `db_postgres_*.py` 的命名空间类，不要加回 `db_postgres_core.py`。
+- 不要用 mixin 或 `__getattr__` 做动态转发；所有命名空间方法必须显式定义，以保留编辑器补全和类型检查能力。
 - 需要多个写入保持一致时，明确使用事务。
 - SQL 查询使用参数化参数。
 - 数据库调试信息应有适当日志。

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from src.adapters.llm_beijing_gate import (
     BeijingGateIndeterminateError,
@@ -48,6 +48,35 @@ class _DummyExecutor:
         return _DummyFuture(self._result_map[candidate.article_id])
 
 
+class _RecordingProcessNamespace:
+    def __init__(self) -> None:
+        self.candidates: list[BeijingGateCandidate] = []
+        self.fetch_calls = 0
+        self.completed: list[tuple[str, dict[str, object]]] = []
+        self.failures: list[tuple[str, dict[str, object]]] = []
+
+    def fetch_beijing_gate_candidates(
+        self,
+        limit: int,
+        *,
+        max_failures: int,
+    ) -> list[BeijingGateCandidate]:
+        del max_failures
+        self.fetch_calls += 1
+        return self.candidates[:limit]
+
+    def complete_beijing_gate(self, article_id: str, **kwargs: object) -> None:
+        self.completed.append((article_id, dict(kwargs)))
+
+    def mark_beijing_gate_failure(self, article_id: str, **kwargs: object) -> None:
+        self.failures.append((article_id, dict(kwargs)))
+
+
+class _RecordingProcessAdapter:
+    def __init__(self) -> None:
+        self.process = _RecordingProcessNamespace()
+
+
 def test_local_classification_stages_beijing_candidate() -> None:
     article = {
         "article_id": "article-1",
@@ -70,7 +99,7 @@ def test_process_beijing_gate_passes_internal_category() -> None:
         reason="明确属于北京市范围",
         raw_text="raw text",
     )
-    adapter = MagicMock()
+    adapter = _RecordingProcessAdapter()
     executor = _DummyExecutor({candidate.article_id: decision})
 
     with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
@@ -83,7 +112,7 @@ def test_process_beijing_gate_passes_internal_category() -> None:
         )
 
     assert (confirmed, rerouted, failures, fallbacks) == (1, 0, 0, 0)
-    kwargs = adapter.complete_beijing_gate.call_args.kwargs
+    kwargs = adapter.process.completed[0][1]
     assert kwargs["candidate_category"] == "internal_positive"
     assert kwargs["sentiment_label"] == "positive"
     assert kwargs["status"] == "ready_for_export"
@@ -96,7 +125,7 @@ def test_process_beijing_gate_reroutes_external_category() -> None:
         reason="判定为外省内容",
         raw_text="raw text",
     )
-    adapter = MagicMock()
+    adapter = _RecordingProcessAdapter()
     executor = _DummyExecutor({candidate.article_id: decision})
 
     with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
@@ -109,7 +138,7 @@ def test_process_beijing_gate_reroutes_external_category() -> None:
         )
 
     assert (confirmed, rerouted, failures, fallbacks) == (0, 1, 0, 0)
-    kwargs = adapter.complete_beijing_gate.call_args.kwargs
+    kwargs = adapter.process.completed[0][1]
     assert kwargs["candidate_category"] == "external_positive"
     assert kwargs["status"] == "pending_external_filter"
     assert kwargs["reset_external_filter"] is True
@@ -125,7 +154,7 @@ def test_process_beijing_gate_persists_indeterminate_response() -> None:
         ),
         attempts=3,
     )
-    adapter = MagicMock()
+    adapter = _RecordingProcessAdapter()
     executor = _DummyExecutor({candidate.article_id: error})
 
     with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
@@ -138,7 +167,7 @@ def test_process_beijing_gate_persists_indeterminate_response() -> None:
         )
 
     assert (confirmed, rerouted, failures, fallbacks) == (0, 0, 1, 0)
-    kwargs = adapter.mark_beijing_gate_failure.call_args.kwargs
+    kwargs = adapter.process.failures[0][1]
     assert kwargs["fail_count"] == 1
     assert kwargs["raw_output"] == {
         "error": "Beijing gate returned indeterminate result",
@@ -160,8 +189,8 @@ def test_gate_backlog_does_not_retry_failed_candidate_in_same_run() -> None:
         ),
         attempts=3,
     )
-    adapter = MagicMock()
-    adapter.fetch_beijing_gate_candidates.return_value = [candidate]
+    adapter = _RecordingProcessAdapter()
+    adapter.process.candidates = [candidate]
     executor = _DummyExecutor({candidate.article_id: error})
 
     with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
@@ -175,8 +204,8 @@ def test_gate_backlog_does_not_retry_failed_candidate_in_same_run() -> None:
         )
 
     assert result == (0, 0, 1, 0)
-    assert adapter.fetch_beijing_gate_candidates.call_count == 2
-    adapter.mark_beijing_gate_failure.assert_called_once()
+    assert adapter.process.fetch_calls == 2
+    assert len(adapter.process.failures) == 1
 
 
 class _NewsSummariesNamespace:
@@ -204,12 +233,9 @@ class _NewsSummariesNamespace:
         self._adapter.local_updates.append((article_id, beijing_related, status))
 
 
-class _RunAdapter:
-    def __init__(self, candidate: BeijingGateCandidate) -> None:
-        self.candidate = candidate
-        self.local_updates: list[tuple[str, bool | None, str]] = []
-        self.gate_updates: list[str] = []
-        self.news_summaries = _NewsSummariesNamespace(self)
+class _RunProcessNamespace:
+    def __init__(self, adapter: _RunAdapter) -> None:
+        self._adapter = adapter
 
     def fetch_beijing_gate_candidates(
         self,
@@ -217,13 +243,25 @@ class _RunAdapter:
         *,
         max_failures: int,
     ) -> list[BeijingGateCandidate]:
-        return [self.candidate]
+        del max_failures
+        return [self._adapter.candidate][:limit]
 
     def complete_beijing_gate(self, article_id: str, **kwargs: object) -> None:
-        self.gate_updates.append(article_id)
+        del kwargs
+        self._adapter.gate_updates.append(article_id)
 
     def mark_beijing_gate_failure(self, article_id: str, **kwargs: object) -> None:
+        del kwargs
         raise AssertionError(f"unexpected Beijing gate failure: {article_id}")
+
+
+class _RunAdapter:
+    def __init__(self, candidate: BeijingGateCandidate) -> None:
+        self.candidate = candidate
+        self.local_updates: list[tuple[str, bool | None, str]] = []
+        self.gate_updates: list[str] = []
+        self.news_summaries = _NewsSummariesNamespace(self)
+        self.process = _RunProcessNamespace(self)
 
 
 def test_run_combines_local_routing_and_beijing_gate(monkeypatch) -> None:

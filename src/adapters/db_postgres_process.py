@@ -1,13 +1,209 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import psycopg
 from psycopg.types.json import Json
 
 from src.adapters.db_postgres_shared import iso_datetime
 from src.domain import BeijingGateCandidate, ExternalFilterCandidate, PrimaryArticleForScoring
+
+if TYPE_CHECKING:
+    from src.adapters.db_postgres_core import PostgresAdapter
+
+
+class ProcessNamespace:
+    """Single-table access for pipeline processing state and run metadata."""
+
+    def __init__(self, adapter: PostgresAdapter) -> None:
+        self._adapter = adapter
+
+    def fetch_primary_for_scoring(self, limit: int) -> List[PrimaryArticleForScoring]:
+        with self._adapter._cursor() as cur:
+            return fetch_primary_articles_for_scoring(cur, limit)
+
+    def update_primary_scores(self, updates: Sequence[Mapping[str, Any]]) -> int:
+        with self._adapter._cursor() as cur:
+            return update_primary_article_scores(cur, updates)
+
+    def fetch_beijing_gate_candidates(
+        self,
+        limit: int,
+        *,
+        max_failures: Optional[int] = None,
+    ) -> List[BeijingGateCandidate]:
+        with self._adapter._cursor() as cur:
+            return fetch_beijing_gate_candidates(cur, limit, max_failures=max_failures)
+
+    def fetch_external_filter_candidates(
+        self,
+        limit: int,
+        *,
+        max_failures: Optional[int] = None,
+    ) -> List[ExternalFilterCandidate]:
+        with self._adapter._cursor() as cur:
+            return fetch_external_filter_candidates(cur, limit, max_failures=max_failures)
+
+    def complete_beijing_gate(
+        self,
+        article_id: str,
+        *,
+        status: str,
+        is_beijing_related: Optional[bool],
+        is_beijing_related_llm: Optional[bool],
+        raw_output: Optional[Mapping[str, Any]],
+        external_importance_status: Optional[str] = None,
+        reset_external_filter: bool = False,
+        sentiment_label: Optional[str] = None,
+        candidate_category: Optional[str] = None,
+    ) -> None:
+        with self._adapter._cursor() as cur:
+            complete_beijing_gate(
+                cur,
+                article_id,
+                status=status,
+                is_beijing_related=is_beijing_related,
+                is_beijing_related_llm=is_beijing_related_llm,
+                raw_output=raw_output,
+                external_importance_status=external_importance_status,
+                reset_external_filter=reset_external_filter,
+                sentiment_label=sentiment_label,
+                candidate_category=candidate_category,
+            )
+
+    def mark_beijing_gate_failure(
+        self,
+        article_id: str,
+        *,
+        fail_count: int,
+        error: str,
+        raw_output: Optional[Mapping[str, Any]] = None,
+        final_status: Optional[str] = None,
+        external_importance_status: Optional[str] = None,
+    ) -> None:
+        with self._adapter._cursor() as cur:
+            mark_beijing_gate_failure(
+                cur,
+                article_id,
+                fail_count=fail_count,
+                error=error,
+                raw_output=raw_output,
+                final_status=final_status,
+                external_importance_status=external_importance_status,
+            )
+
+    def mark_external_filter_failure(
+        self,
+        article_id: str,
+        *,
+        fail_count: int,
+        final_failure: bool,
+        error: str,
+    ) -> None:
+        with self._adapter._cursor() as cur:
+            mark_external_filter_failure(
+                cur,
+                article_id,
+                fail_count=fail_count,
+                final_failure=final_failure,
+                error=error,
+            )
+
+    def fetch_external_backfill_candidates(
+        self,
+        limit: int,
+        since_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_external_backfill_candidates(cur, limit, since_date=since_date)
+
+    def reset_external_filter_pending(self, article_ids: Sequence[str]) -> int:
+        with self._adapter._cursor() as cur:
+            return reset_external_filter_pending(cur, article_ids)
+
+    def fetch_beijing_tag_candidates(self, limit: int) -> List[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_beijing_tag_candidates(cur, limit)
+
+    def update_beijing_related_bulk(self, updates: Sequence[Tuple[str, bool]]) -> int:
+        with self._adapter._cursor() as cur:
+            return update_beijing_related_bulk(cur, updates)
+
+    def record_pipeline_run_start(
+        self,
+        *,
+        run_id: str,
+        started_at: datetime,
+        plan: Sequence[str],
+        trigger_source: Optional[str] = None,
+    ) -> None:
+        with self._adapter._cursor() as cur:
+            record_pipeline_run_start(
+                cur,
+                run_id=run_id,
+                started_at=started_at,
+                plan=plan,
+                trigger_source=trigger_source,
+            )
+
+    def record_pipeline_run_step(
+        self,
+        *,
+        run_id: str,
+        order_index: int,
+        step_name: str,
+        status: str,
+        started_at: datetime,
+        finished_at: datetime,
+        duration_seconds: Optional[float],
+        error: Optional[str],
+    ) -> None:
+        with self._adapter._cursor() as cur:
+            record_pipeline_run_step(
+                cur,
+                run_id=run_id,
+                order_index=order_index,
+                step_name=step_name,
+                status=status,
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_seconds=duration_seconds,
+                error=error,
+            )
+
+    def finalize_pipeline_run(
+        self,
+        *,
+        run_id: str,
+        status: str,
+        finished_at: datetime,
+        steps_completed: int,
+        artifacts: Optional[Mapping[str, str]] = None,
+        error_summary: Optional[str] = None,
+    ) -> None:
+        with self._adapter._cursor() as cur:
+            finalize_pipeline_run(
+                cur,
+                run_id=run_id,
+                status=status,
+                finished_at=finished_at,
+                steps_completed=steps_completed,
+                artifacts=artifacts,
+                error_summary=error_summary,
+            )
+
+    def fetch_pipeline_runs(self, limit: int = 20) -> List[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_pipeline_runs(cur, limit=limit)
+
+    def fetch_pipeline_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_pipeline_run(cur, run_id)
+
+    def fetch_pipeline_run_steps(self, run_id: str) -> List[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_pipeline_run_steps(cur, run_id)
 
 
 def fetch_beijing_gate_candidates(
@@ -696,6 +892,7 @@ def fetch_pipeline_run_steps(cur: psycopg.Cursor, run_id: str) -> List[Dict[str,
 
 
 __all__ = [
+    "ProcessNamespace",
     "complete_beijing_gate",
     "complete_external_filter",
     "fetch_beijing_gate_candidates",

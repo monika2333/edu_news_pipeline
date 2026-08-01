@@ -201,7 +201,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
     threshold = getattr(settings, "score_promotion_threshold", 60)
 
     with worker_session(WORKER, limit=limit):
-        rows = adapter.fetch_primary_articles_for_scoring(limit)
+        rows = adapter.process.fetch_primary_for_scoring(limit)
         if not rows:
             log_info(WORKER, "No primary articles pending relevance scoring.")
             return
@@ -218,7 +218,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
         updates, promotion_payloads = _prepare_updates(successes, failures, threshold)
 
         if updates:
-            adapter.update_primary_article_scores(updates)
+            adapter.process.update_primary_scores(updates)
 
         if promotion_payloads:
             adapter.news_summaries.upsert_from_primary(promotion_payloads)

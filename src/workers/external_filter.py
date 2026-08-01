@@ -96,7 +96,7 @@ def _process_external_filter_batch(
         except Exception as exc:
             failed += 1
             new_fail_count = candidate.external_filter_fail_count + 1
-            adapter.mark_external_filter_failure(
+            adapter.process.mark_external_filter_failure(
                 candidate.article_id,
                 fail_count=new_fail_count,
                 final_failure=new_fail_count >= max_retries,
@@ -133,7 +133,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                     if remaining <= 0:
                         break
                     fetch_size = min(fetch_size, remaining)
-                candidates = adapter.fetch_external_filter_candidates(
+                candidates = adapter.process.fetch_external_filter_candidates(
                     fetch_size,
                     max_failures=max_retries,
                 )

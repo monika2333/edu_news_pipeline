@@ -15,16 +15,21 @@ class FakeAdapter:
     updates: List[Dict[str, Any]]
     promotions: List[Dict[str, Any]]
     news_summaries: FakeNewsSummariesNamespace = field(init=False)
+    process: FakeProcessNamespace = field(init=False)
 
     def __post_init__(self) -> None:
         self.news_summaries = FakeNewsSummariesNamespace(self)
+        self.process = FakeProcessNamespace(self)
 
-    def fetch_primary_articles_for_scoring(self, limit: int):
-        return self.fetched[:limit]
+class FakeProcessNamespace:
+    def __init__(self, adapter: FakeAdapter) -> None:
+        self._adapter = adapter
 
-    def update_primary_article_scores(self, updates):
-        self.updates.extend(updates)
+    def fetch_primary_for_scoring(self, limit: int):
+        return self._adapter.fetched[:limit]
 
+    def update_primary_scores(self, updates):
+        self._adapter.updates.extend(updates)
 
 
 class FakeNewsSummariesNamespace:

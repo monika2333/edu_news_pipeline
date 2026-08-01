@@ -8,14 +8,13 @@ import pytest
 from src.workers import geo_tag
 
 
-class FakeAdapter:
-    def __init__(self) -> None:
-        self._fetch_calls = 0
-        self.updates: List[List[Tuple[str, bool]]] = []
+class FakeProcessNamespace:
+    def __init__(self, adapter: FakeAdapter) -> None:
+        self._adapter = adapter
 
     def fetch_beijing_tag_candidates(self, limit: int):
-        self._fetch_calls += 1
-        if self._fetch_calls > 1:
+        self._adapter._fetch_calls += 1
+        if self._adapter._fetch_calls > 1:
             return []
         return [
             {
@@ -33,8 +32,15 @@ class FakeAdapter:
         ]
 
     def update_beijing_related_bulk(self, updates):
-        self.updates.append(list(updates))
+        self._adapter.updates.append(list(updates))
         return len(updates)
+
+
+class FakeAdapter:
+    def __init__(self) -> None:
+        self._fetch_calls = 0
+        self.updates: List[List[Tuple[str, bool]]] = []
+        self.process = FakeProcessNamespace(self)
 
 
 @pytest.fixture()

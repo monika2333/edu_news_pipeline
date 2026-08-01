@@ -25,7 +25,7 @@ def backfill_external_filter(*, batch_size: int, limit: Optional[int], dry_run: 
         if limit is not None:
             fetch_size = min(batch_size, max(limit, 0))
 
-        candidates = adapter.fetch_external_backfill_candidates(fetch_size, since_date=since_date)
+        candidates = adapter.process.fetch_external_backfill_candidates(fetch_size, since_date=since_date)
         seen = set()
         ids_unique = []
         for row in candidates:
@@ -52,7 +52,7 @@ def backfill_external_filter(*, batch_size: int, limit: Optional[int], dry_run: 
                 break
             fetch_size = min(fetch_size, remaining)
 
-        candidates = adapter.fetch_external_backfill_candidates(fetch_size, since_date=since_date)
+        candidates = adapter.process.fetch_external_backfill_candidates(fetch_size, since_date=since_date)
         if not candidates:
             break
 
@@ -60,7 +60,7 @@ def backfill_external_filter(*, batch_size: int, limit: Optional[int], dry_run: 
         if not article_ids:
             break
 
-        updated = adapter.reset_external_filter_pending(article_ids)
+        updated = adapter.process.reset_external_filter_pending(article_ids)
         print(f"[backfill] reset {updated} items -> pending_external_filter")
 
         total += len(article_ids)

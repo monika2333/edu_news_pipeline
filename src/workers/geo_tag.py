@@ -45,7 +45,7 @@ def run(*, limit: Optional[int] = None, batch_size: int = DEFAULT_BATCH_SIZE) ->
             if remaining == 0:
                 break
             fetch_size = batch_size if limit is None else max(1, min(batch_size, remaining))
-            rows = adapter.fetch_beijing_tag_candidates(fetch_size)
+            rows = adapter.process.fetch_beijing_tag_candidates(fetch_size)
             if not rows:
                 break
 
@@ -63,7 +63,7 @@ def run(*, limit: Optional[int] = None, batch_size: int = DEFAULT_BATCH_SIZE) ->
                     tagged_false += 1
             if not updates:
                 break
-            adapter.update_beijing_related_bulk(updates)
+            adapter.process.update_beijing_related_bulk(updates)
             processed += len(updates)
 
     log_summary(WORKER, ok=processed, failed=0, skipped=None)

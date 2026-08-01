@@ -145,7 +145,7 @@ def _process_beijing_gate(
             )
             if decision.is_beijing_related is True:
                 category = determine_candidate_category(True, candidate.sentiment_label)
-                adapter.complete_beijing_gate(
+                adapter.process.complete_beijing_gate(
                     candidate.article_id,
                     status="ready_for_export",
                     is_beijing_related=True,
@@ -160,7 +160,7 @@ def _process_beijing_gate(
                 log_info(WORKER, f"GATE {candidate.article_id}: confirmed Beijing")
             elif decision.is_beijing_related is False:
                 category = determine_candidate_category(False, candidate.sentiment_label)
-                adapter.complete_beijing_gate(
+                adapter.process.complete_beijing_gate(
                     candidate.article_id,
                     status="pending_external_filter",
                     is_beijing_related=False,
@@ -188,7 +188,7 @@ def _process_beijing_gate(
                     fallback_is_beijing,
                     candidate.sentiment_label,
                 )
-                adapter.complete_beijing_gate(
+                adapter.process.complete_beijing_gate(
                     candidate.article_id,
                     status="ready_for_export",
                     is_beijing_related=fallback_is_beijing,
@@ -210,7 +210,7 @@ def _process_beijing_gate(
                     f"GATE FALLBACK {candidate.article_id}: fail_count={new_fail_count}",
                 )
             else:
-                adapter.mark_beijing_gate_failure(
+                adapter.process.mark_beijing_gate_failure(
                     candidate.article_id,
                     fail_count=new_fail_count,
                     error=str(exc),
@@ -237,7 +237,7 @@ def _process_gate_backlog(
     attempted_article_ids: set[str] = set()
     while remaining is None or remaining > 0:
         fetch_size = batch_size if remaining is None else min(batch_size, remaining)
-        fetched_candidates = adapter.fetch_beijing_gate_candidates(
+        fetched_candidates = adapter.process.fetch_beijing_gate_candidates(
             fetch_size,
             max_failures=max_failures,
         )

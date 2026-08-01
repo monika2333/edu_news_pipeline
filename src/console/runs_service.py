@@ -1,4 +1,4 @@
-﻿
+
 from __future__ import annotations
 
 import sys
@@ -84,7 +84,7 @@ def list_pipeline_runs(limit: int = _DEFAULT_LIST_LIMIT) -> List[Dict[str, Any]]
     if adapter is None:
         return []
     try:
-        rows = adapter.fetch_pipeline_runs(limit=effective_limit)
+        rows = adapter.process.fetch_pipeline_runs(limit=effective_limit)
     except Exception as exc:  # pragma: no cover - log and degrade gracefully
         print(f"[console] warning: failed to fetch pipeline runs: {exc}", file=sys.stderr)
         return []
@@ -96,14 +96,14 @@ def get_pipeline_run(run_id: str) -> Optional[Dict[str, Any]]:
     if adapter is None:
         return None
     try:
-        row = adapter.fetch_pipeline_run(run_id)
+        row = adapter.process.fetch_pipeline_run(run_id)
     except Exception as exc:  # pragma: no cover
         print(f"[console] warning: failed to fetch pipeline run {run_id}: {exc}", file=sys.stderr)
         return None
     if not row:
         return None
     try:
-        steps = adapter.fetch_pipeline_run_steps(run_id)
+        steps = adapter.process.fetch_pipeline_run_steps(run_id)
     except Exception as exc:  # pragma: no cover
         print(f"[console] warning: failed to fetch run steps {run_id}: {exc}", file=sys.stderr)
         steps = []

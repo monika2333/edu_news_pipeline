@@ -132,13 +132,13 @@ def test_postgres_adapter_core_roundtrip() -> None:
         metadata = items[0].get("metadata") or {}
         assert metadata.get("is_beijing_related") is True
 
-        adapter.record_pipeline_run_start(
+        adapter.process.record_pipeline_run_start(
             run_id=run_id,
             started_at=fetched_at,
             plan=["crawl", "summarize", "score"],
             trigger_source="unit-test",
         )
-        adapter.record_pipeline_run_step(
+        adapter.process.record_pipeline_run_step(
             run_id=run_id,
             order_index=1,
             step_name="summarize",
@@ -148,7 +148,7 @@ def test_postgres_adapter_core_roundtrip() -> None:
             duration_seconds=0.0,
             error=None,
         )
-        adapter.finalize_pipeline_run(
+        adapter.process.finalize_pipeline_run(
             run_id=run_id,
             status="succeeded",
             finished_at=fetched_at,
@@ -157,9 +157,9 @@ def test_postgres_adapter_core_roundtrip() -> None:
             error_summary=None,
         )
 
-        runs = adapter.fetch_pipeline_runs(limit=5)
+        runs = adapter.process.fetch_pipeline_runs(limit=5)
         assert any(run.get("run_id") == run_id for run in runs)
-        steps = adapter.fetch_pipeline_run_steps(run_id)
+        steps = adapter.process.fetch_pipeline_run_steps(run_id)
         assert any(step.get("step_name") == "summarize" for step in steps)
 
     finally:

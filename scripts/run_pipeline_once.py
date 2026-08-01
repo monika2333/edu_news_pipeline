@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -114,7 +114,7 @@ def _record_run_start(
     if adapter is None:
         return
     try:
-        adapter.record_pipeline_run_start(
+        adapter.process.record_pipeline_run_start(
             run_id=run_id,
             started_at=started_at,
             plan=plan,
@@ -134,7 +134,7 @@ def _record_run_step(
     if adapter is None:
         return
     try:
-        adapter.record_pipeline_run_step(
+        adapter.process.record_pipeline_run_step(
             run_id=run_id,
             order_index=order_index,
             step_name=step.name,
@@ -161,7 +161,7 @@ def _record_run_finish(
     if adapter is None:
         return
     try:
-        adapter.finalize_pipeline_run(
+        adapter.process.finalize_pipeline_run(
             run_id=run_id,
             status=status,
             finished_at=finished_at,

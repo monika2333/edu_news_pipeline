@@ -1,4 +1,4 @@
-\restrict sJ4mAEKzA6x40jazKfOJKcnglfGNGPT5h6z5sceFVtdh2zkLJfI8JnvbjQCylmQ
+\restrict hZSze4RsNv3oxEm0veBc3IGpEkPG4WTZk76cDifZBYaFEEq3bw5meVtF4glvbCd
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
@@ -204,41 +204,6 @@ CREATE TABLE public.manual_clusters (
     item_ids text[] NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT manual_clusters_bucket_key_check CHECK ((bucket_key = ANY (ARRAY['internal_positive'::text, 'internal_negative'::text, 'external_positive'::text, 'external_negative'::text])))
-);
-
-
---
--- Name: manual_export_batches; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.manual_export_batches (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    report_date date NOT NULL,
-    sequence_no integer DEFAULT 1 NOT NULL,
-    generated_at timestamp with time zone DEFAULT now() NOT NULL,
-    generated_by text,
-    export_payload jsonb,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: manual_export_items; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.manual_export_items (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    manual_export_batch_id uuid NOT NULL,
-    article_id text,
-    section text,
-    order_index integer DEFAULT 0 NOT NULL,
-    final_summary text,
-    approved_by text,
-    approved_at timestamp with time zone,
-    metadata jsonb,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -737,38 +702,6 @@ ALTER TABLE ONLY public.manual_clusters
 
 
 --
--- Name: manual_export_batches manual_export_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.manual_export_batches
-    ADD CONSTRAINT manual_export_batches_pkey PRIMARY KEY (id);
-
-
---
--- Name: manual_export_batches manual_export_batches_report_date_sequence_no_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.manual_export_batches
-    ADD CONSTRAINT manual_export_batches_report_date_sequence_no_key UNIQUE (report_date, sequence_no);
-
-
---
--- Name: manual_export_items manual_export_items_manual_export_batch_id_article_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.manual_export_items
-    ADD CONSTRAINT manual_export_items_manual_export_batch_id_article_id_key UNIQUE (manual_export_batch_id, article_id);
-
-
---
--- Name: manual_export_items manual_export_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.manual_export_items
-    ADD CONSTRAINT manual_export_items_pkey PRIMARY KEY (id);
-
-
---
 -- Name: manual_reviews manual_reviews_article_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1045,27 +978,6 @@ CREATE INDEX filtered_articles_status_idx ON public.filtered_articles USING btre
 --
 
 CREATE INDEX manual_clusters_bucket_key_idx ON public.manual_clusters USING btree (bucket_key);
-
-
---
--- Name: manual_export_items_article_created_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX manual_export_items_article_created_at_idx ON public.manual_export_items USING btree (article_id, created_at DESC);
-
-
---
--- Name: manual_export_items_batch_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX manual_export_items_batch_idx ON public.manual_export_items USING btree (manual_export_batch_id);
-
-
---
--- Name: manual_export_items_section_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX manual_export_items_section_idx ON public.manual_export_items USING btree (section);
 
 
 --
@@ -1377,20 +1289,6 @@ CREATE TRIGGER filtered_articles_set_updated_at BEFORE UPDATE ON public.filtered
 
 
 --
--- Name: manual_export_batches manual_export_batches_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER manual_export_batches_set_updated_at BEFORE UPDATE ON public.manual_export_batches FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: manual_export_items manual_export_items_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER manual_export_items_set_updated_at BEFORE UPDATE ON public.manual_export_items FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
 -- Name: news_summaries news_summaries_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -1472,14 +1370,6 @@ ALTER TABLE ONLY public.filtered_articles
 
 ALTER TABLE ONLY public.filtered_articles
     ADD CONSTRAINT filtered_articles_raw_fk FOREIGN KEY (article_id) REFERENCES public.raw_articles(article_id) ON DELETE CASCADE;
-
-
---
--- Name: manual_export_items manual_export_items_manual_export_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.manual_export_items
-    ADD CONSTRAINT manual_export_items_manual_export_batch_id_fkey FOREIGN KEY (manual_export_batch_id) REFERENCES public.manual_export_batches(id) ON DELETE CASCADE;
 
 
 --
@@ -1638,7 +1528,7 @@ ALTER TABLE ONLY public.submitted_report_items
 -- PostgreSQL database dump complete
 --
 
-\unrestrict sJ4mAEKzA6x40jazKfOJKcnglfGNGPT5h6z5sceFVtdh2zkLJfI8JnvbjQCylmQ
+\unrestrict hZSze4RsNv3oxEm0veBc3IGpEkPG4WTZk76cDifZBYaFEEq3bw5meVtF4glvbCd
 
 
 --
@@ -1686,4 +1576,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260729130100'),
     ('20260729130200'),
     ('20260729220000'),
-    ('20260731232631');
+    ('20260731232631'),
+    ('20260804180449');

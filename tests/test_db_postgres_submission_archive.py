@@ -58,9 +58,8 @@ def test_fetch_link_candidate_bodies_uses_one_batch_query() -> None:
     assert len(rows) == 2
     assert len(cursor.calls) == 1
     query, params = cursor.calls[0]
-    assert "select distinct on (mei.article_id)" in query
+    assert "manual_export_items" not in query
     assert "select distinct on (bi.article_id)" in query
-    assert query.index("lm.final_summary") < query.index("lb.final_summary")
     assert query.index("lb.final_summary") < query.index("mr.summary")
     assert query.index("mr.summary") < query.index("ns.llm_summary")
     assert params == (["article-1", "article-2"],)

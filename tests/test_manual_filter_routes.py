@@ -33,8 +33,8 @@ class FakeManualReviewsNamespace:
     def count_candidates_before_date(self, **kwargs: Any) -> int:
         return self._adapter._count_candidates_before_date(**kwargs)
 
-    def discard_candidates_before_date(self, **kwargs: Any) -> int:
-        return self._adapter._discard_candidates_before_date(**kwargs)
+    def bulk_discard_candidates(self, **kwargs: Any) -> int:
+        return self._adapter._bulk_discard_candidates(**kwargs)
 
 
 class FakeManualFilterAdapter:
@@ -177,7 +177,7 @@ class FakeManualFilterAdapter:
         )
         return total
 
-    def _discard_candidates_before_date(
+    def _bulk_discard_candidates(
         self,
         *,
         region: str,
@@ -420,7 +420,7 @@ def test_candidates_api_ignores_report_type(monkeypatch) -> None:
     assert {item["article_id"] for item in zongbao.json()["items"]} == {"a1", "a2"}
 
 
-def test_discard_before_date_api_supports_keyword_only_preview_and_apply(monkeypatch) -> None:
+def test_bulk_discard_api_supports_keyword_only_preview_and_apply(monkeypatch) -> None:
     from src.console import manual_filter_admin_service, manual_filter_service
 
     adapter = FakeManualFilterAdapter(_build_rows())
@@ -432,7 +432,7 @@ def test_discard_before_date_api_supports_keyword_only_preview_and_apply(monkeyp
     client = TestClient(app)
 
     preview = client.post(
-        "/api/manual_filter/discard_before_date",
+        "/api/manual_filter/bulk-discard",
         json={
             "region": "internal",
             "sentiment": "positive",
@@ -446,7 +446,7 @@ def test_discard_before_date_api_supports_keyword_only_preview_and_apply(monkeyp
     assert preview.json() == {"matched": 1, "updated": 0}
 
     apply = client.post(
-        "/api/manual_filter/discard_before_date",
+        "/api/manual_filter/bulk-discard",
         json={
             "region": "internal",
             "sentiment": "positive",
@@ -461,7 +461,7 @@ def test_discard_before_date_api_supports_keyword_only_preview_and_apply(monkeyp
     assert next(row for row in adapter.rows if row["article_id"] == "a1")["status"] == "discarded"
 
 
-def test_discard_before_date_api_supports_empty_optional_filters(monkeypatch) -> None:
+def test_bulk_discard_api_supports_empty_optional_filters(monkeypatch) -> None:
     from src.console import manual_filter_admin_service, manual_filter_service
 
     adapter = FakeManualFilterAdapter(_build_rows())
@@ -473,7 +473,7 @@ def test_discard_before_date_api_supports_empty_optional_filters(monkeypatch) ->
     client = TestClient(app)
 
     response = client.post(
-        "/api/manual_filter/discard_before_date",
+        "/api/manual_filter/bulk-discard",
         json={
             "region": "internal",
             "sentiment": "positive",

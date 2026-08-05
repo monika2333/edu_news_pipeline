@@ -415,7 +415,7 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
         "async function discardRemainingItems",
         maxsplit=1,
     )[1].split(
-        "async function discardBeforeDate",
+        "async function bulkDiscard",
         maxsplit=1,
     )[0]
     duty_discard_branch = discard_handler.split(

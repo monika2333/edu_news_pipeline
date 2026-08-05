@@ -64,7 +64,7 @@ class UpdateOrderRequest(BaseModel):
     report_type: str = "zongbao"
 
 
-class DiscardBeforeDateRequest(BaseModel):
+class BulkDiscardRequest(BaseModel):
     region: Literal["internal", "external"]
     sentiment: Literal["positive", "negative"]
     q: Optional[str] = None
@@ -264,14 +264,14 @@ def update_order_api(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.post("/discard_before_date")
-def discard_before_date_api(
-    req: DiscardBeforeDateRequest,
+@router.post("/bulk-discard")
+def bulk_discard_api(
+    req: BulkDiscardRequest,
     user: ConsoleUser = Depends(require_console_user),
     request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ) -> Dict[str, int]:
     try:
-        return manual_filter_admin_service.discard_candidates_before_date(
+        return manual_filter_admin_service.bulk_discard_candidates(
             region=req.region,
             sentiment=req.sentiment,
             query=req.q,

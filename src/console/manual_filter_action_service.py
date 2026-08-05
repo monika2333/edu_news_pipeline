@@ -67,7 +67,7 @@ def archive_items(ids: Sequence[str], *, actor: Optional[str] = None, report_typ
     return manual_filter_decisions.archive_items(ids, actor=actor, report_type=report_type)
 
 
-def discard_candidates_before_date(
+def bulk_discard_candidates(
     *,
     region: str,
     sentiment: str,
@@ -79,7 +79,7 @@ def discard_candidates_before_date(
     normalized_region = region if region in ("internal", "external") else None
     normalized_sentiment = sentiment if sentiment in ("positive", "negative") else None
     if normalized_region is None or normalized_sentiment is None:
-        raise ValueError("discard_before_date requires explicit filter bucket")
+        raise ValueError("bulk-discard requires explicit filter bucket")
     adapter = get_adapter()
     matched = adapter.manual_reviews.count_candidates_before_date(  # type: ignore[attr-defined]
         region=normalized_region,
@@ -90,7 +90,7 @@ def discard_candidates_before_date(
     )
     if dry_run or matched <= 0:
         return {"matched": matched, "updated": 0}
-    updated = adapter.manual_reviews.discard_candidates_before_date(  # type: ignore[attr-defined]
+    updated = adapter.manual_reviews.bulk_discard_candidates(  # type: ignore[attr-defined]
         region=normalized_region,
         sentiment=normalized_sentiment,
         query=(query or "").strip() or None,
@@ -107,5 +107,5 @@ __all__ = [
     "save_edits",
     "reset_to_pending",
     "archive_items",
-    "discard_candidates_before_date",
+    "bulk_discard_candidates",
 ]

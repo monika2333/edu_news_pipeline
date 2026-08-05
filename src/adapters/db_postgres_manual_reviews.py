@@ -107,7 +107,7 @@ class ManualReviewsNamespace:
                 report_type=report_type,
             )
 
-    def discard_candidates_before_date(
+    def bulk_discard_candidates(
         self,
         *,
         region: str,

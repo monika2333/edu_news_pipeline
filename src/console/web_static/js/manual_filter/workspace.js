@@ -228,7 +228,7 @@ async function dutyDecideResponse(options) {
     return response;
 }
 
-async function dutyDiscardBeforeDateResponse(options) {
+async function dutyBulkDiscardResponse(options) {
     const payload = JSON.parse(options.body || '{}');
     const params = new URLSearchParams();
     ['region', 'sentiment', 'q', 'published_before'].forEach(key => {
@@ -315,7 +315,7 @@ async function workspaceFetch(input, options = {}) {
     if (action === '/finalizations' || action.startsWith('/finalizations/')) {
         return window.fetch(`${API_BASE}${action}${url.search}`, options);
     }
-    if (action === '/discard_before_date') return dutyDiscardBeforeDateResponse(options);
+    if (action === '/bulk-discard') return dutyBulkDiscardResponse(options);
     if (action === '/order') return dutyOrderResponse(options);
     return workspaceJsonResponse({ detail: '值班账号不能执行此操作' }, 403);
 }

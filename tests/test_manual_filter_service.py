@@ -37,8 +37,8 @@ class FakeManualReviewsNamespace:
     def count_candidates_before_date(self, **kwargs: Any) -> int:
         return self._adapter._count_candidates_before_date(**kwargs)
 
-    def discard_candidates_before_date(self, **kwargs: Any) -> int:
-        return self._adapter._discard_candidates_before_date(**kwargs)
+    def bulk_discard_candidates(self, **kwargs: Any) -> int:
+        return self._adapter._bulk_discard_candidates(**kwargs)
 
     def status_counts(self, *, report_type: Optional[str] = None) -> Dict[str, int]:
         return self._adapter._status_counts(report_type=report_type)
@@ -262,7 +262,7 @@ class FakeAdapter:
         )
         return total
 
-    def _discard_candidates_before_date(
+    def _bulk_discard_candidates(
         self,
         *,
         region: str,
@@ -907,8 +907,8 @@ def test_list_candidates_search_mode_uses_shanghai_calendar_day(fake_adapter):
     assert [item["article_id"] for item in result["items"]] == []
 
 
-def test_discard_candidates_before_date_supports_preview_and_apply(fake_adapter):
-    preview = manual_filter_service.discard_candidates_before_date(
+def test_bulk_discard_candidates_supports_preview_and_apply(fake_adapter):
+    preview = manual_filter_service.bulk_discard_candidates(
         region="internal",
         sentiment="positive",
         published_before=date(2025, 1, 2),
@@ -918,7 +918,7 @@ def test_discard_candidates_before_date_supports_preview_and_apply(fake_adapter)
     assert preview == {"matched": 1, "updated": 0}
     assert next(row for row in fake_adapter.rows if row["article_id"] == "a1")["status"] == "pending"
 
-    applied = manual_filter_service.discard_candidates_before_date(
+    applied = manual_filter_service.bulk_discard_candidates(
         region="internal",
         sentiment="positive",
         published_before=date(2025, 1, 2),
@@ -929,8 +929,8 @@ def test_discard_candidates_before_date_supports_preview_and_apply(fake_adapter)
     assert next(row for row in fake_adapter.rows if row["article_id"] == "a1")["status"] == "discarded"
 
 
-def test_discard_candidates_before_date_supports_keyword_only(fake_adapter):
-    preview = manual_filter_service.discard_candidates_before_date(
+def test_bulk_discard_candidates_supports_keyword_only(fake_adapter):
+    preview = manual_filter_service.bulk_discard_candidates(
         region="internal",
         sentiment="positive",
         query="Internal",
@@ -940,7 +940,7 @@ def test_discard_candidates_before_date_supports_keyword_only(fake_adapter):
     )
     assert preview == {"matched": 1, "updated": 0}
 
-    applied = manual_filter_service.discard_candidates_before_date(
+    applied = manual_filter_service.bulk_discard_candidates(
         region="internal",
         sentiment="positive",
         query="Internal",
@@ -952,8 +952,8 @@ def test_discard_candidates_before_date_supports_keyword_only(fake_adapter):
     assert next(row for row in fake_adapter.rows if row["article_id"] == "a1")["status"] == "discarded"
 
 
-def test_discard_candidates_before_date_supports_empty_filters(fake_adapter):
-    preview = manual_filter_service.discard_candidates_before_date(
+def test_bulk_discard_candidates_supports_empty_filters(fake_adapter):
+    preview = manual_filter_service.bulk_discard_candidates(
         region="internal",
         sentiment="positive",
         query=None,

@@ -265,7 +265,7 @@ def update_ranks(
     }
 
 
-def discard_candidates_before_date(
+def bulk_discard_candidates(
     *,
     region: str,
     sentiment: str,
@@ -276,9 +276,9 @@ def discard_candidates_before_date(
     request_id: Optional[str] = None,
 ) -> dict[str, int]:
     if region not in {"internal", "external"}:
-        raise ValueError("discard_before_date requires an explicit region")
+        raise ValueError("bulk-discard requires an explicit region")
     if sentiment not in {"positive", "negative"}:
-        raise ValueError("discard_before_date requires an explicit sentiment")
+        raise ValueError("bulk-discard requires an explicit sentiment")
     normalized_query = (query or "").strip() or None
     adapter = get_adapter()
     matched = adapter.manual_reviews.count_candidates_before_date(
@@ -307,7 +307,7 @@ __all__ = [
     "ManualReviewConflictError",
     "archive_items",
     "bulk_decide",
-    "discard_candidates_before_date",
+    "bulk_discard_candidates",
     "save_edits",
     "update_ranks",
 ]

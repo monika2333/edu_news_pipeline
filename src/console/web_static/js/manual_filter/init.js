@@ -87,9 +87,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             elements.filterSearchInput?.focus();
         });
     }
-    const btnFilterDiscardBeforeDate = document.getElementById('btn-filter-discard-before-date');
-    if (btnFilterDiscardBeforeDate) {
-        btnFilterDiscardBeforeDate.addEventListener('click', discardBeforeDate);
+    const btnBulkDiscard = document.getElementById('btn-filter-discard-before-date');
+    if (btnBulkDiscard) {
+        btnBulkDiscard.addEventListener('click', bulkDiscard);
     }
     if (elements.filterSearchInput) {
         elements.filterSearchInput.addEventListener('input', syncFilterSearchClearButton);

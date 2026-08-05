@@ -429,12 +429,12 @@ async function discardRemainingItems() {
     }
 }
 
-async function discardBeforeDate() {
+async function bulkDiscard() {
     const publishedBefore = elements.filterDateBefore ? elements.filterDateBefore.value : '';
     const { region, sentiment } = getCurrentFilterBucket();
     const query = state.filterQuery || (elements.filterSearchInput ? elements.filterSearchInput.value.trim() : '');
     try {
-        const previewRes = await workspaceFetch(`${API_BASE}/discard_before_date`, {
+        const previewRes = await workspaceFetch(`${API_BASE}/bulk-discard`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -457,7 +457,7 @@ async function discardBeforeDate() {
         const confirmed = window.confirm(`确定放弃符合${summaryText}的 ${preview.matched} 条待处理新闻吗？`);
         if (!confirmed) return;
 
-        const applyRes = await workspaceFetch(`${API_BASE}/discard_before_date`, {
+        const applyRes = await workspaceFetch(`${API_BASE}/bulk-discard`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

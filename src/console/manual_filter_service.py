@@ -15,7 +15,7 @@ from . import manual_filter_action_service
 from .manual_filter_action_service import (
     archive_items as _archive_items,
     bulk_decide as _bulk_decide,
-    discard_candidates_before_date as _discard_candidates_before_date,
+    bulk_discard_candidates as _bulk_discard_candidates,
     reset_to_pending as _reset_to_pending,
     save_edits as _save_edits,
     update_ranks as _update_ranks,
@@ -157,7 +157,7 @@ def archive_items(ids: Sequence[str], *, actor: Optional[str] = None, report_typ
     return _archive_items(ids, actor=actor, report_type=report_type)
 
 
-def discard_candidates_before_date(
+def bulk_discard_candidates(
     *,
     region: str,
     sentiment: str,
@@ -167,7 +167,7 @@ def discard_candidates_before_date(
     dry_run: bool = True,
 ) -> Dict[str, int]:
     _sync_action_dependencies()
-    return _discard_candidates_before_date(
+    return _bulk_discard_candidates(
         region=region,
         sentiment=sentiment,
         query=query,
@@ -181,7 +181,7 @@ __all__ = [
     "list_candidates",
     "list_review",
     "list_discarded",
-    "discard_candidates_before_date",
+    "bulk_discard_candidates",
     "status_counts",
     "trigger_clustering",
     "check_duplicates",

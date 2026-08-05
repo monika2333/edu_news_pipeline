@@ -81,10 +81,17 @@ function renderClusteredList(clusters) {
 
             const [first, ...rest] = items;
             const hiddenCount = rest.length;
+            const clusterDuplicateState = items.some((item) => item.submission_duplicate?.has_confirmed) ? 'confirmed'
+                : items.some((item) => item.submission_duplicate?.has_suspected) ? 'suspected'
+                    : '';
+            const clusterDuplicateBadge = clusterDuplicateState
+                ? `<span class="submission-duplicate-badge ${clusterDuplicateState}">${clusterDuplicateState === 'confirmed' ? '已报送' : '疑似已报送'}</span>`
+                : '';
 
             return `
     <div class="filter-cluster" data-cluster-id="${cluster.cluster_id}" data-size="${size}" data-status="${clusterStatus}">
         <div class="cluster-header">
+            ${clusterDuplicateBadge}
             <div class="radio-group cluster-radio" data-cluster="${cluster.cluster_id}">
                 <div class="radio-option">
                     <input type="radio" name="cluster-${cluster.cluster_id}" value="selected" id="cluster-sel-${cluster.cluster_id}" ${clusterStatus === 'selected' ? 'checked' : ''}>

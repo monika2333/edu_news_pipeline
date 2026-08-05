@@ -336,6 +336,14 @@ def list_clusters(
                 if article_id in item_by_id
             ]
             cluster["size"] = len(cluster["items"])
+        attach_duplicate_badges(
+            [
+                item
+                for cluster in paged_clusters
+                for item in cluster["items"]
+            ],
+            adapter=get_adapter(),
+        )
     return {
         "clusters": paged_clusters,
         "total": len(clusters),

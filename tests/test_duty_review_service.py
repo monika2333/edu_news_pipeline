@@ -41,12 +41,15 @@ class FakeShiftReviewsNamespace:
 
 
 class FakeSubmissionArchiveNamespace:
+    def __init__(self) -> None:
+        self.badges: dict[str, dict[str, Any]] = {}
+
     def fetch_duplicate_badges(
         self,
         article_ids: Sequence[str],
     ) -> dict[str, dict[str, Any]]:
         del article_ids
-        return {}
+        return self.badges
 
 
 class FakeDutyReviewAdapter:
@@ -541,6 +544,29 @@ def test_cluster_page_loads_only_current_bucket_items(
         item["article_id"]
         for item in result["clusters"][0]["items"]
     ] == ["article-1", "article-2"]
+
+
+def test_cluster_page_attaches_duplicate_badges_to_items(
+    fake_adapter: FakeDutyReviewAdapter,
+) -> None:
+    fake_adapter.submission_archive.badges = {
+        "article-1": {"has_confirmed": False, "has_suspected": True, "matches": []},
+    }
+
+    result = duty_review_service.list_clusters(
+        shift_id="shift-id",
+        user=_editor(),
+        report_type="zongbao",
+        region="internal",
+        sentiment="positive",
+        limit=1,
+        offset=0,
+        include_items=True,
+    )
+
+    items = result["clusters"][0]["items"]
+    assert items[0]["submission_duplicate"]["has_suspected"] is True
+    assert items[1]["submission_duplicate"] is None
 
 
 def test_cluster_page_hides_submitted_items_without_flattening_groups(

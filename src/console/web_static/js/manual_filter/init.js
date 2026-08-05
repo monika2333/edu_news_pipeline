@@ -41,7 +41,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     { method: 'POST' }
                 );
                 if (!response.ok) throw new Error('dismiss failed');
-                await Promise.all([loadFilterData(), loadFilterCounts()]);
+                document.querySelectorAll('.article-card[data-id]').forEach(card => {
+                    if (card.dataset.id !== articleId) return;
+                    card.querySelectorAll('.submission-duplicate-wrap').forEach(wrap => wrap.remove());
+                });
                 showToast('已移除重复标记');
             } catch (error) {
                 button.disabled = false;

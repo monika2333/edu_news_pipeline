@@ -182,7 +182,7 @@ async function dutyCandidatesResponse(params) {
     const limit = Math.max(1, Math.min(Number(params.get('limit')) || 10, 200));
     const offset = Math.max(0, Number(params.get('offset')) || 0);
     const searchMode = params.get('view_mode') === 'search'
-        || Boolean(params.get('q') || params.get('published_before'));
+        || Boolean(params.get('q'));
     if (searchMode || params.get('cluster') !== 'true') {
         const backendParams = dutyCandidateBackendParams(params, limit, offset);
         return window.fetch(`${API_BASE}/candidates?${backendParams.toString()}`);

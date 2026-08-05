@@ -368,7 +368,7 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "action.hidden = action.dataset.workspaceActionTab !== currentTab;" in utils_script
     assert "async function loadDutyClusters" not in workspace_script
     assert "include_items: 'true'" in workspace_script
-    assert "['region', 'sentiment', 'force_refresh', 'hide_submitted']" in workspace_script
+    assert "['region', 'sentiment', 'force_refresh']" in workspace_script
     assert "`${API_BASE}/clusters?${clusterParams.toString()}`" in workspace_script
     assert "cluster: searchMode ? 'false' : 'true'" in filter_data_script
     assert "searchMode || state.hideSubmitted" not in filter_data_script

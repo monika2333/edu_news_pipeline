@@ -101,7 +101,6 @@ class ShiftReviewsNamespace:
         exclude_admin_discarded: bool = False,
         admin_unprocessed_only: bool = False,
         exclude_finalized: bool = False,
-        hide_submitted: bool = False,
     ) -> tuple[list[dict[str, Any]], int]:
         with self._adapter._cursor() as cur:
             return fetch_shift_review_items(
@@ -122,7 +121,6 @@ class ShiftReviewsNamespace:
                 exclude_admin_discarded=exclude_admin_discarded,
                 admin_unprocessed_only=admin_unprocessed_only,
                 exclude_finalized=exclude_finalized,
-                hide_submitted=hide_submitted,
             )
 
     def fetch_clusters(
@@ -130,14 +128,12 @@ class ShiftReviewsNamespace:
         *,
         shift_id: str,
         report_type: str,
-        hide_submitted: bool = False,
     ) -> list[dict[str, Any]]:
         with self._adapter._cluster_transaction() as cur:
             return fetch_shift_clusters(
                 cur,
                 shift_id=shift_id,
                 report_type=report_type,
-                hide_submitted=hide_submitted,
             )
 
     def fetch_finalization_status(
@@ -186,7 +182,6 @@ def fetch_shift_review_items(
     exclude_admin_discarded: bool = False,
     admin_unprocessed_only: bool = False,
     exclude_finalized: bool = False,
-    hide_submitted: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
     bounded_limit = max(1, min(limit, 200))
     bounded_offset = max(0, offset)
@@ -229,17 +224,6 @@ def fetch_shift_review_items(
         params.append(normalized_article_ids)
     if exclude_finalized:
         clauses.append("sr.finalized_batch_id IS NULL")
-    if hide_submitted:
-        clauses.append(
-            """
-            not exists (
-                select 1
-                from submission_duplicate_matches sdm
-                where sdm.article_id = ns.article_id
-                  and sdm.state in ('confirmed', 'suspected')
-            )
-            """
-        )
     if admin_unprocessed_only:
         clauses.append("sr.admin_discarded_at IS NULL")
         clauses.append(
@@ -485,7 +469,6 @@ def fetch_shift_clusters(
     *,
     shift_id: str,
     report_type: str,
-    hide_submitted: bool = False,
 ) -> list[dict[str, Any]]:
     cur.execute(
         """
@@ -516,15 +499,6 @@ def fetch_shift_clusters(
               AND ns.status = 'ready_for_export'
               AND COALESCE(sr.decision, 'pending') = 'pending'
               AND COALESCE(sr.report_type, 'zongbao') = %s
-              AND (
-                  %s = FALSE
-                  OR NOT EXISTS (
-                      SELECT 1
-                      FROM submission_duplicate_matches sdm
-                      WHERE sdm.article_id = ns.article_id
-                        AND sdm.state IN ('confirmed', 'suspected')
-                  )
-              )
         ),
         cluster_memberships AS (
             SELECT
@@ -612,7 +586,6 @@ def fetch_shift_clusters(
         (
             shift_id,
             report_type,
-            hide_submitted,
         ),
     )
     return [dict(row) for row in cur.fetchall()]

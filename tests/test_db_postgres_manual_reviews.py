@@ -227,25 +227,6 @@ def test_fetch_manual_reviews_orders_selected_items_by_manual_rank_first() -> No
     assert rank_index < score_index
 
 
-def test_fetch_manual_clusters_can_hide_submitted_members() -> None:
-    cur = FakeFetchCursor()
-
-    db_postgres_manual_reviews.fetch_manual_clusters(
-        cur,
-        bucket_key="internal_positive",
-        hide_submitted=True,
-    )
-
-    query = cur.queries[-1]
-    assert "FROM submission_duplicate_matches sdm" in query
-    assert "sdm.state IN ('confirmed', 'suspected')" in query
-    assert cur.params[-1] == (
-        "internal_positive",
-        "internal_positive",
-        True,
-    )
-
-
 def test_fetch_manual_pending_for_cluster_ignores_report_type() -> None:
     cur = FakeFetchCursor()
 

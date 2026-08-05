@@ -28,7 +28,6 @@ class ManualReviewsNamespace:
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
         order_by_decided_at: bool = False,
-        hide_submitted: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         with self._adapter._cursor() as cur:
             return fetch_manual_reviews(
@@ -41,7 +40,6 @@ class ManualReviewsNamespace:
                 sentiment=sentiment,
                 report_type=report_type,
                 order_by_decided_at=order_by_decided_at,
-                hide_submitted=hide_submitted,
             )
 
     def fetch_pending_for_cluster(
@@ -51,7 +49,6 @@ class ManualReviewsNamespace:
         sentiment: Optional[str] = None,
         fetch_limit: int = 5000,
         report_type: Optional[str] = None,
-        hide_submitted: bool = False,
     ) -> List[Dict[str, Any]]:
         with self._adapter._cluster_transaction() as cur:
             return fetch_manual_pending_for_cluster(
@@ -60,7 +57,6 @@ class ManualReviewsNamespace:
                 sentiment=sentiment,
                 fetch_limit=fetch_limit,
                 report_type=report_type,
-                hide_submitted=hide_submitted,
             )
 
     def search_candidates(
@@ -73,7 +69,6 @@ class ManualReviewsNamespace:
         region: Optional[str] = None,
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
-        hide_submitted: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         with self._adapter._cursor() as cur:
             return search_manual_candidates(
@@ -85,7 +80,6 @@ class ManualReviewsNamespace:
                 region=region,
                 sentiment=sentiment,
                 report_type=report_type,
-                hide_submitted=hide_submitted,
             )
 
     def count_candidates_before_date(
@@ -139,13 +133,11 @@ class ManualReviewsNamespace:
         self,
         *,
         bucket_key: Optional[str] = None,
-        hide_submitted: bool = False,
     ) -> List[Dict[str, Any]]:
         with self._adapter._cluster_transaction() as cur:
             return fetch_manual_clusters(
                 cur,
                 bucket_key=bucket_key,
-                hide_submitted=hide_submitted,
             )
 
     def status_counts(self, *, report_type: Optional[str] = None) -> Dict[str, int]:
@@ -284,7 +276,6 @@ def _build_manual_review_filters(
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
     report_type: Optional[str] = None,
-    hide_submitted: bool = False,
 ) -> Tuple[List[str], List[Any]]:
     clauses: List[str] = []
     params: List[Any] = []
@@ -304,17 +295,6 @@ def _build_manual_review_filters(
     if sentiment in ("positive", "negative"):
         clauses.append("ns.sentiment_label = %s")
         params.append(sentiment)
-    if hide_submitted:
-        clauses.append(
-            """
-            not exists (
-                select 1
-                from submission_duplicate_matches sdm
-                where sdm.article_id = ns.article_id
-                  and sdm.state in ('confirmed', 'suspected')
-            )
-            """
-        )
     return clauses, params
 
 
@@ -413,7 +393,6 @@ def fetch_manual_reviews(
     sentiment: Optional[str] = None,
     report_type: Optional[str] = None,
     order_by_decided_at: bool = False,
-    hide_submitted: bool = False,
 ) -> Tuple[List[Dict[str, Any]], int]:
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
@@ -424,7 +403,6 @@ def fetch_manual_reviews(
         region=region,
         sentiment=sentiment,
         report_type=report_type,
-        hide_submitted=hide_submitted,
     )
     where_sql = " AND ".join(clauses)
     order_by_sql = _manual_review_order_by(status=status, order_by_decided_at=order_by_decided_at)
@@ -462,7 +440,6 @@ def fetch_manual_pending_for_cluster(
     sentiment: Optional[str] = None,
     fetch_limit: int = 5000,
     report_type: Optional[str] = None,
-    hide_submitted: bool = False,
 ) -> List[Dict[str, Any]]:
     del report_type
     type_expr = report_type_expr("mr")
@@ -472,7 +449,6 @@ def fetch_manual_pending_for_cluster(
         region=region,
         sentiment=sentiment,
         report_type=None,
-        hide_submitted=hide_submitted,
     )
     where_sql = " AND ".join(clauses)
     query = f"""
@@ -504,7 +480,6 @@ def search_manual_candidates(
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
     report_type: Optional[str] = None,
-    hide_submitted: bool = False,
 ) -> Tuple[List[Dict[str, Any]], int]:
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
@@ -515,7 +490,6 @@ def search_manual_candidates(
         region=region,
         sentiment=sentiment,
         report_type=report_type,
-        hide_submitted=hide_submitted,
     )
     normalized_query = (query or "").strip()
     if normalized_query:
@@ -714,7 +688,6 @@ def fetch_manual_clusters(
     cur: psycopg.Cursor,
     *,
     bucket_key: Optional[str] = None,
-    hide_submitted: bool = False,
 ) -> List[Dict[str, Any]]:
     query = """
         WITH cluster_base AS (
@@ -764,15 +737,6 @@ def fetch_manual_clusters(
           ON feedback_submitter.id = sf.submitted_by_user_id
         WHERE mr.status = 'pending'
           AND ns.status = 'ready_for_export'
-          AND (
-              %s = FALSE
-              OR NOT EXISTS (
-                  SELECT 1
-                  FROM submission_duplicate_matches sdm
-                  WHERE sdm.article_id = ns.article_id
-                    AND sdm.state IN ('confirmed', 'suspected')
-              )
-          )
         ORDER BY
             ci.cluster_id,
             ns.external_importance_score DESC NULLS LAST,
@@ -781,7 +745,7 @@ def fetch_manual_clusters(
     """
     cur.execute(
         query,
-        (bucket_key, bucket_key, hide_submitted),
+        (bucket_key, bucket_key),
     )
     rows = cur.fetchall()
     return [dict(row) for row in rows]

@@ -153,7 +153,7 @@ function dutyCandidateBackendParams(params, limit, offset) {
         offset: String(offset),
         report_type: 'zongbao'
     });
-    ['region', 'sentiment', 'q', 'published_before', 'hide_submitted'].forEach(key => {
+    ['region', 'sentiment', 'q', 'published_before'].forEach(key => {
         const value = params.get(key);
         if (value) backendParams.set(key, value);
     });
@@ -176,7 +176,7 @@ async function dutyCandidatesResponse(params) {
         offset: String(offset),
         include_items: 'true'
     });
-    ['region', 'sentiment', 'force_refresh', 'hide_submitted'].forEach(key => {
+    ['region', 'sentiment', 'force_refresh'].forEach(key => {
         const value = params.get(key);
         if (value) clusterParams.set(key, value);
     });

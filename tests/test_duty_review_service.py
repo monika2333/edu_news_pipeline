@@ -31,12 +31,10 @@ class FakeShiftReviewsNamespace:
         *,
         shift_id: str,
         report_type: str,
-        hide_submitted: bool = False,
     ) -> list[dict[str, Any]]:
         return self._adapter._fetch_clusters(
             shift_id=shift_id,
             report_type=report_type,
-            hide_submitted=hide_submitted,
         )
 
 
@@ -116,7 +114,6 @@ class FakeDutyReviewAdapter:
         published_before: object = None,
         article_ids: Optional[Sequence[str]] = None,
         exclude_finalized: bool = False,
-        hide_submitted: bool = False,
     ) -> tuple[list[dict[str, Any]], int]:
         del shift_id, limit, offset
         self.fetch_scopes.append((decision, exclude_finalized))
@@ -132,7 +129,6 @@ class FakeDutyReviewAdapter:
                 "sentiment": sentiment,
                 "query": query,
                 "published_before": published_before,
-                "hide_submitted": hide_submitted,
             }
         )
         row_ids = normalized_article_ids or [f"{decision}-1"]
@@ -217,9 +213,8 @@ class FakeDutyReviewAdapter:
         *,
         shift_id: str,
         report_type: str,
-        hide_submitted: bool = False,
     ) -> list[dict[str, Any]]:
-        item_ids = ["article-1"] if hide_submitted else ["article-1", "article-2"]
+        item_ids = ["article-1", "article-2"]
         return [
             {
                 "cluster_id": f"{shift_id}-{report_type}",
@@ -489,7 +484,6 @@ def test_candidate_search_filters_are_forwarded_to_database(
             "sentiment": "positive",
             "query": "教育政策",
             "published_before": None,
-            "hide_submitted": False,
         }
     ]
 
@@ -628,29 +622,6 @@ def test_cluster_page_attaches_duplicate_badges_to_items(
     items = result["clusters"][0]["items"]
     assert items[0]["submission_duplicate"]["has_suspected"] is True
     assert items[1]["submission_duplicate"] is None
-
-
-def test_cluster_page_hides_submitted_items_without_flattening_groups(
-    fake_adapter: FakeDutyReviewAdapter,
-) -> None:
-    result = duty_review_service.list_clusters(
-        shift_id="shift-id",
-        user=_editor(),
-        report_type="zongbao",
-        region="internal",
-        sentiment="positive",
-        limit=10,
-        offset=0,
-        include_items=True,
-        hide_submitted=True,
-    )
-
-    assert result["total"] == 1
-    assert result["item_total"] == 1
-    assert result["clusters"][0]["cluster_id"] == "shift-id-zongbao"
-    assert result["clusters"][0]["size"] == 1
-    assert fake_adapter.fetch_article_ids == [["article-1"]]
-    assert fake_adapter.fetch_kwargs[-1]["hide_submitted"] is True
 
 
 def test_stats_are_aggregated_for_requested_report_type(

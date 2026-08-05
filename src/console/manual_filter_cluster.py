@@ -265,7 +265,6 @@ def cluster_pending(
     cluster_threshold: Optional[float] = None,
     force_refresh: bool = False,
     report_type: str = DEFAULT_REPORT_TYPE,
-    hide_submitted: bool = False,
 ) -> Dict[str, Any]:
     adapter = get_adapter()
     target_report_type = _normalize_report_type(report_type)
@@ -281,7 +280,6 @@ def cluster_pending(
     bucket_key = _bucket_key_from_filters(region, sentiment)
     rows = adapter.manual_reviews.fetch_clusters(  # type: ignore[attr-defined]
         bucket_key=bucket_key,
-        hide_submitted=hide_submitted,
     )
     if not rows:
         return {"clusters": [], "total": 0, "item_total": 0}

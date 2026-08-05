@@ -216,7 +216,6 @@ def list_items(
     sentiment: Optional[str] = None,
     query: Optional[str] = None,
     published_before: Optional[date] = None,
-    hide_submitted: bool = False,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
     if decision and decision not in VALID_DECISIONS:
@@ -239,8 +238,6 @@ def list_items(
         "published_before": published_before,
         "exclude_finalized": decision == "selected",
     }
-    if hide_submitted:
-        fetch_kwargs["hide_submitted"] = True
     rows, total = adapter.shift_reviews.fetch_items(**fetch_kwargs)
     items = [
         serialize_review_item(
@@ -269,7 +266,6 @@ def list_clusters(
     limit: Optional[int] = None,
     offset: int = 0,
     include_items: bool = False,
-    hide_submitted: bool = False,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
     _validate_report_type(report_type)
@@ -282,7 +278,6 @@ def list_clusters(
     rows = get_adapter().shift_reviews.fetch_clusters(
         shift_id=shift_id,
         report_type=report_type,
-        hide_submitted=hide_submitted,
     )
     bucket_key = (
         f"{region}_{sentiment}"
@@ -321,7 +316,6 @@ def list_clusters(
             limit=max(1, len(article_ids)),
             offset=0,
             article_ids=article_ids,
-            hide_submitted=hide_submitted,
         )
         item_by_id = {
             str(row["article_id"]): serialize_review_item(

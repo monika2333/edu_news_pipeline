@@ -29,7 +29,6 @@ def _paginate_by_status(
     sentiment: Optional[str] = None,
     report_type: Optional[str] = DEFAULT_REPORT_TYPE,
     order_by_decided_at: bool = False,
-    hide_submitted: bool = False,
 ) -> Dict[str, Any]:
     adapter = get_adapter()
     limit = max(1, min(int(limit or 30), 200))
@@ -49,8 +48,6 @@ def _paginate_by_status(
         "report_type": target_report_type,
         "order_by_decided_at": order_by_decided_at,
     }
-    if hide_submitted:
-        fetch_kwargs["hide_submitted"] = True
     rows, total = adapter.manual_reviews.fetch(  # type: ignore[attr-defined]
         **fetch_kwargs,
     )
@@ -76,7 +73,6 @@ def _list_candidate_search(
     query: Optional[str],
     published_before: Optional[date],
     report_type: Optional[str],
-    hide_submitted: bool,
 ) -> Dict[str, Any]:
     adapter = get_adapter()
     fetch_kwargs = {
@@ -88,8 +84,6 @@ def _list_candidate_search(
         "sentiment": sentiment,
         "report_type": report_type,
     }
-    if hide_submitted:
-        fetch_kwargs["hide_submitted"] = True
     rows, total = adapter.manual_reviews.search_candidates(  # type: ignore[attr-defined]
         **fetch_kwargs,
     )
@@ -121,7 +115,6 @@ def _list_candidate_browse(
     cluster_threshold: Optional[float],
     force_refresh: bool,
     report_type: Optional[str],
-    hide_submitted: bool,
 ) -> Dict[str, Any]:
     if cluster:
         result = cluster_pending(
@@ -132,7 +125,6 @@ def _list_candidate_browse(
             cluster_threshold=cluster_threshold,
             force_refresh=force_refresh,
             report_type=report_type,
-            hide_submitted=hide_submitted,
         )
         cluster_items = [
             item
@@ -149,7 +141,6 @@ def _list_candidate_browse(
         region=region,
         sentiment=sentiment,
         report_type=report_type,
-        hide_submitted=hide_submitted,
     )
     result["view_mode"] = "browse"
     return result
@@ -168,7 +159,6 @@ def list_candidates(
     published_before: Optional[date] = None,
     view_mode: Optional[str] = None,
     report_type: str = DEFAULT_REPORT_TYPE,
-    hide_submitted: bool = False,
 ) -> Dict[str, Any]:
     region = region if region in ("internal", "external") else None
     sentiment = sentiment if sentiment in ("positive", "negative") else None
@@ -194,7 +184,6 @@ def list_candidates(
             query=normalized_query,
             published_before=published_before,
             report_type=target_report_type,
-            hide_submitted=hide_submitted,
         )
     return _list_candidate_browse(
         limit=limit,
@@ -205,7 +194,6 @@ def list_candidates(
         cluster_threshold=cluster_threshold,
         force_refresh=force_refresh,
         report_type=target_report_type,
-        hide_submitted=hide_submitted,
     )
 
 

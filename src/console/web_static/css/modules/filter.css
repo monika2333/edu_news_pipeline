@@ -298,6 +298,7 @@
     }
 }
 
+.submission-duplicate-wrap {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
@@ -326,6 +327,15 @@
     cursor: pointer;
     font-size: 0.75rem;
     text-decoration: underline;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+.article-card:hover .submission-duplicate-dismiss,
+.submission-duplicate-dismiss:focus-visible {
+    opacity: 1;
+    visibility: visible;
 }
 
 /* Report Type Switch */

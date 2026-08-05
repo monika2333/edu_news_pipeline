@@ -82,8 +82,10 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
         <span class="submission-duplicate-wrap">
             <span class="submission-duplicate-badge ${duplicateState}"
                 title="${safeHtml(duplicateTitle)}">${duplicateLabel}</span>
+            ${duplicateState === 'suspected' ? `
             <button type="button" class="submission-duplicate-dismiss"
                 data-article-id="${safeHtml(safe.article_id || '')}">不是重复</button>
+            ` : ''}
         </span>
     ` : '';
     const statusGroup = showStatus ? `

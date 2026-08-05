@@ -618,10 +618,22 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
         lambda **kwargs: {"inserted": 0},
     )
     response = _build_client().get("/admin/duty-summary")
-    script = (
-        Path(__file__).parents[1]
-        / "src/console/web_static/js/duty_summary.js"
-    ).read_text(encoding="utf-8")
+    script = "".join(
+        (
+            Path(__file__).parents[1]
+            / f"src/console/web_static/js/duty_summary/{name}.js"
+        ).read_text(encoding="utf-8")
+        for name in (
+            "core",
+            "utils",
+            "mutations",
+            "import_conflict",
+            "render",
+            "admin_actions",
+            "data",
+            "init",
+        )
+    )
 
     assert response.status_code == 200
     html = response.text

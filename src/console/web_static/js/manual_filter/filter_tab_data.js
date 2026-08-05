@@ -20,7 +20,6 @@ async function loadFilterData(options = {}) {
         if (searchMode) {
             params.set('view_mode', 'search');
             if (state.filterQuery) params.set('q', state.filterQuery);
-            if (state.filterPublishedBefore) params.set('published_before', state.filterPublishedBefore);
         }
         if (forceClusterRefresh) params.set('force_refresh', 'true');
 
@@ -106,8 +105,7 @@ async function submitDecisions(ids, status, versions = null) {
 
 async function applyFilterSearch() {
     state.filterQuery = elements.filterSearchInput ? elements.filterSearchInput.value.trim() : '';
-    state.filterPublishedBefore = elements.filterDateBefore ? elements.filterDateBefore.value : '';
-    state.filterViewMode = (state.filterQuery || state.filterPublishedBefore) ? 'search' : 'browse';
+    state.filterViewMode = state.filterQuery ? 'search' : 'browse';
     state.filterSearchTotal = 0;
     state.filterPage = 1;
     syncFilterToolbarState();
@@ -116,7 +114,6 @@ async function applyFilterSearch() {
 
 async function clearFilterSearch() {
     state.filterQuery = '';
-    state.filterPublishedBefore = '';
     state.filterViewMode = 'browse';
     state.filterSearchTotal = 0;
     state.filterPage = 1;

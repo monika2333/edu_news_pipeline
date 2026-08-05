@@ -57,7 +57,6 @@ function resetWorkspaceViewState() {
     state.reviewPage = 1;
     state.discardPage = 1;
     state.filterQuery = '';
-    state.filterPublishedBefore = '';
     state.filterViewMode = 'browse';
     state.reviewData = { selected: [], backup: [] };
     state.filterCounts = {

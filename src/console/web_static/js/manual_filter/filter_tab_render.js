@@ -8,41 +8,37 @@ function getCurrentFilterBucket() {
 }
 
 function isFilterSearchMode() {
-    return Boolean(state.filterQuery || state.filterPublishedBefore || state.filterViewMode === 'search');
-}
-
-function buildFilterConditionParts(query, publishedBefore) {
-    const parts = [];
-    if (query) parts.push(`关键词“${query}”`);
-    if (publishedBefore) parts.push(`发布日期早于 ${publishedBefore}，不含当天`);
-    return parts;
+    return Boolean(state.filterQuery || state.filterViewMode === 'search');
 }
 
 function syncFilterSearchClearButton() {
     if (!elements.filterSearchClear) return;
     const hasCondition = Boolean(
         elements.filterSearchInput?.value.trim()
-        || elements.filterDateBefore?.value
         || state.filterQuery
-        || state.filterPublishedBefore
     );
     elements.filterSearchClear.hidden = !hasCondition;
 }
 
 function syncFilterToolbarState() {
     if (elements.filterSearchInput) elements.filterSearchInput.value = state.filterQuery || '';
-    if (elements.filterDateBefore) elements.filterDateBefore.value = state.filterPublishedBefore || '';
     syncFilterSearchClearButton();
     if (!elements.filterSearchMeta) return;
 
     const bucketTotal = state.filterCounts[state.filterCategory || 'internal_positive'] || 0;
-    const conditionParts = buildFilterConditionParts(state.filterQuery, state.filterPublishedBefore);
-    const conditionText = conditionParts.length ? `条件：${conditionParts.join('，且')}。` : '';
     if (isFilterSearchMode()) {
-        elements.filterSearchMeta.textContent = `当前桶命中 ${state.filterSearchTotal} 条，总数 ${bucketTotal} 条。${conditionText}`;
-        return;
+        elements.filterSearchMeta.textContent = `检索到 ${state.filterSearchTotal} 条，共 ${bucketTotal} 条。`;
+    } else {
+        elements.filterSearchMeta.textContent = `当前共 ${bucketTotal} 条。`;
     }
-    elements.filterSearchMeta.textContent = `当前桶共 ${bucketTotal} 条。`;
+
+    if (elements.filterBulkDiscardBtn) {
+        const scopeCount = isFilterSearchMode() ? (Number(state.filterSearchTotal) || 0) : bucketTotal;
+        elements.filterBulkDiscardBtn.textContent = isFilterSearchMode()
+            ? `放弃这 ${scopeCount} 条`
+            : `放弃全部 ${scopeCount} 条`;
+        elements.filterBulkDiscardBtn.disabled = scopeCount <= 0;
+    }
 }
 
 function renderFilterList(data) {
@@ -52,7 +48,7 @@ function renderFilterList(data) {
         return;
     }
     if (!items.length) {
-        const message = isFilterSearchMode() ? '当前桶内没有匹配到新闻' : '当前没有待处理新闻';
+        const message = isFilterSearchMode() ? '没有匹配到新闻' : '当前没有待处理新闻';
         elements.filterList.innerHTML = `<div class="empty empty-state">${message}</div>`;
         return;
     }

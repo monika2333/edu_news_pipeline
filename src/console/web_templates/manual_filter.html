@@ -187,7 +187,7 @@
                         <div class="filter-toolbar-main">
                             <div class="search-group">
                                 <input type="text" id="filter-search-input" class="search-input"
-                                    placeholder="检索当前桶" aria-label="检索当前桶">
+                                    placeholder="输入关键词检索" aria-label="输入关键词检索">
                                 <button type="button" id="filter-search-clear" class="review-search-clear"
                                     aria-label="清除检索条件" title="清除检索条件" hidden>
                                     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -197,9 +197,8 @@
                                     </svg>
                                 </button>
                             </div>
-                            <input type="date" id="filter-date-before" class="search-input" autocomplete="off"
-                                aria-label="发布日期早于，不含当天" title="发布日期早于，不含当天">
                             <button class="btn btn-secondary" id="btn-filter-search">检索</button>
+                            <button class="btn btn-secondary" id="btn-open-cleanup">清理旧新闻</button>
                             <button class="btn btn-primary filter-discard-action"
                                 id="btn-filter-discard-before-date">全部放弃</button>
                         </div>
@@ -360,6 +359,30 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-primary" id="btn-finish-duplicate-review">关闭并刷新列表</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Cleanup Old News Modal -->
+    {% if is_duty_workspace or not is_admin_review %}
+    <div class="modal" id="cleanup-modal" role="dialog" aria-modal="true"
+        aria-labelledby="cleanup-modal-title" aria-hidden="true">
+        <div class="modal-content cleanup-modal-content">
+            <div class="modal-header">
+                <h3 id="cleanup-modal-title">清理旧新闻</h3>
+            </div>
+            <div class="modal-body">
+                <p class="cleanup-modal-desc">
+                    放弃当前分类下、发布日期早于所选日期（不含当天）的全部待处理新闻。此操作不受上方关键词检索影响。
+                </p>
+                <input type="date" id="cleanup-date-input" class="cleanup-date-input" autocomplete="off"
+                    aria-label="发布日期早于，不含当天" title="发布日期早于，不含当天">
+                <p class="cleanup-modal-stats" id="cleanup-modal-stats" aria-live="polite"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="btn-cleanup-cancel">取消</button>
+                <button type="button" class="btn btn-primary" id="btn-cleanup-confirm" disabled>确认放弃</button>
             </div>
         </div>
     </div>

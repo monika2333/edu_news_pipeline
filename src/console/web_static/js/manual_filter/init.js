@@ -91,16 +91,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (btnBulkDiscard) {
         btnBulkDiscard.addEventListener('click', bulkDiscard);
     }
+    if (elements.cleanupModal) {
+        document.getElementById('btn-open-cleanup')?.addEventListener('click', openCleanupModal);
+        document.getElementById('btn-cleanup-cancel')?.addEventListener('click', closeCleanupModal);
+        elements.cleanupDateInput?.addEventListener('change', handleCleanupDateChange);
+        elements.cleanupConfirmBtn?.addEventListener('click', confirmCleanupDiscard);
+    }
     if (elements.filterSearchInput) {
         elements.filterSearchInput.addEventListener('input', syncFilterSearchClearButton);
         elements.filterSearchInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') applyFilterSearch();
-        });
-    }
-    if (elements.filterDateBefore) {
-        elements.filterDateBefore.addEventListener('change', () => {
-            state.filterPublishedBefore = elements.filterDateBefore.value || '';
-            syncFilterToolbarState();
         });
     }
 

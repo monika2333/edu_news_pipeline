@@ -49,7 +49,7 @@
 
 .filter-toolbar-main {
     display: grid;
-    grid-template-columns: minmax(220px, 1fr) minmax(150px, 190px) repeat(2, auto);
+    grid-template-columns: minmax(220px, 1fr) repeat(3, auto);
     gap: 8px;
     align-items: center;
 }
@@ -95,9 +95,56 @@
     background: #b91c1c;
 }
 
+.filter-discard-action:disabled,
+#btn-cleanup-confirm:disabled {
+    background: #d1d5db;
+    cursor: not-allowed;
+}
+
 .filter-toolbar-meta {
     font-size: 0.92rem;
     color: var(--text-secondary);
+}
+
+/* Cleanup Old News Modal */
+.cleanup-modal-content {
+    width: min(480px, 96vw);
+}
+
+.cleanup-modal-desc {
+    margin: 0;
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.cleanup-date-input {
+    width: 100%;
+    min-height: 40px;
+    padding: 8px 10px;
+    box-sizing: border-box;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text-primary);
+    font: inherit;
+}
+
+.cleanup-date-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.cleanup-modal-stats {
+    margin: 0;
+    min-height: 1.4em;
+    font-size: 0.92rem;
+    color: var(--text-primary);
+}
+
+.cleanup-modal-stats.is-error {
+    color: #dc2626;
 }
 
 /* Filter Cluster */
@@ -191,7 +238,7 @@
         grid-column: 1 / -1;
     }
 
-    .filter-toolbar-main #filter-date-before {
+    .filter-toolbar-main #btn-open-cleanup {
         grid-column: 1;
     }
 

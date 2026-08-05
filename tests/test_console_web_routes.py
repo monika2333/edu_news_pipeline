@@ -101,10 +101,21 @@ def test_submission_archive_pages_follow_role_permissions() -> None:
 
 def test_submission_archive_separates_all_type_filter_from_report_types() -> None:
     response = _build_client().get("/submission-archive")
-    stylesheet = (
-        Path(__file__).parents[1]
-        / "src/console/web_static/css/modules/submission_archive.css"
-    ).read_text(encoding="utf-8")
+    stylesheet = "".join(
+        (
+            Path(__file__).parents[1]
+            / f"src/console/web_static/css/modules/submission_archive/{name}.css"
+        ).read_text(encoding="utf-8")
+        for name in (
+            "browser",
+            "item_card",
+            "widgets",
+            "create",
+            "link_queue",
+            "search",
+            "responsive",
+        )
+    )
 
     assert response.status_code == 200
     html = response.text

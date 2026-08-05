@@ -1,0 +1,62 @@
+/* 报送存档 · 响应式（层叠覆盖，必须最后加载） */
+/* ===== 响应式 ===== */
+
+@media (max-width: 1080px) {
+    .archive-tabs-row .archive-tabs {
+        flex: 1 1 auto;
+        width: auto;
+    }
+
+    .archive-browser {
+        grid-template-columns: 1fr;
+    }
+
+    .archive-browser-list {
+        position: static;
+        max-height: none;
+    }
+
+    .archive-report-list {
+        max-height: 420px;
+    }
+}
+
+@media (max-width: 800px) {
+    .archive-head-fields,
+    .archive-item-editor-grid,
+    .archive-link-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .archive-detail-head {
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .archive-detail-actions {
+        align-self: stretch;
+        justify-content: flex-end;
+        padding-left: 0;
+        border-left: none;
+        padding-top: 12px;
+        border-top: 1px solid #e8eef5;
+    }
+
+    .archive-save-bar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .archive-save-actions {
+        justify-content: flex-end;
+    }
+
+    .archive-link-score {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .archive-item-tools {
+        opacity: 1;
+    }
+}

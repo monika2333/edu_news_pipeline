@@ -1,0 +1,147 @@
+/* 报送存档 · 条目卡片与录入编辑态（详情 / 录入预览共用） */
+/* ===== 条目卡片（详情 / 录入预览共用） ===== */
+
+.archive-item {
+    margin-top: 10px;
+    padding: 14px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--card-bg);
+}
+
+.archive-item.is-pending {
+    border-left: 3px solid var(--warning-color);
+}
+
+.archive-item.is-processing {
+    border-left: 3px solid #60a5fa;
+}
+
+.archive-item-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.archive-item-order {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    margin-top: 1px;
+    border-radius: 6px;
+    background: #eef2f7;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.archive-item-title {
+    flex: 1;
+    margin: 0;
+    font-size: 0.98rem;
+    font-weight: 700;
+    line-height: 1.5;
+}
+
+.archive-item-tools {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 6px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.archive-item:hover .archive-item-tools,
+.archive-item-tools:focus-within {
+    opacity: 1;
+}
+
+.archive-item-body {
+    margin: 8px 0 0;
+    color: #475569;
+    font-size: 0.88rem;
+    line-height: 1.75;
+    white-space: pre-wrap;
+}
+
+.archive-item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed #e2e8f0;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.archive-item-meta a {
+    color: var(--primary-color);
+    word-break: break-all;
+}
+
+/* ===== 录入编辑态 ===== */
+
+.archive-item-editor {
+    margin-top: 10px;
+    padding: 14px 16px;
+    border: 1px solid var(--primary-color);
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgb(37 99 235 / 8%);
+}
+
+.archive-item-editor-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.archive-item-editor-grid .is-wide {
+    grid-column: 1 / -1;
+}
+
+.archive-item-editor input {
+    width: 100%;
+    min-height: 38px;
+    box-sizing: border-box;
+    padding: 7px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 7px;
+    font: inherit;
+    font-size: 0.88rem;
+}
+
+.archive-item-editor textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 7px;
+    font: inherit;
+    font-size: 0.88rem;
+    line-height: 1.6;
+    resize: vertical;
+}
+
+.archive-item-editor textarea[data-field="body"] {
+    min-height: 110px;
+}
+
+.archive-item-editor input:focus,
+.archive-item-editor textarea:focus {
+    border-color: var(--primary-color);
+    outline: 3px solid rgb(37 99 235 / 12%);
+}
+
+.archive-item-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 10px;
+}
+

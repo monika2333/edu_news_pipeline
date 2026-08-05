@@ -57,6 +57,17 @@ def test_removed_console_pages_are_not_registered() -> None:
     assert client.get("/api/admin/duty-summary/uncovered").status_code == 404
 
 
+def test_favicon_is_served_from_the_static_assets() -> None:
+    app = create_app()
+
+    response = TestClient(app).get("/favicon.ico")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/svg+xml"
+    assert response.content.startswith(b"<svg")
+    assert "/favicon.ico" not in app.openapi()["paths"]
+
+
 def test_account_page_exposes_personal_password_change_form() -> None:
     response = _build_client().get("/account")
     login_stylesheet = (

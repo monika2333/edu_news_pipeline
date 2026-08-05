@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.exception_handlers import http_exception_handler
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from src.console import (
@@ -22,6 +23,9 @@ from src.console import (
     web_routes,
 )
 from src.console.security import require_console_user, require_csrf, require_role
+
+
+FAVICON_PATH = Path(__file__).parent / "web_static" / "favicon.svg"
 
 
 def create_app() -> FastAPI:
@@ -51,6 +55,11 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_303_SEE_OTHER,
             )
         return await http_exception_handler(request, exc)
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> FileResponse:
+        """Return the browser tab icon without requiring authentication."""
+        return FileResponse(FAVICON_PATH, media_type="image/svg+xml")
 
     # Mount static files
     app.mount("/static", StaticFiles(directory="src/console/web_static"), name="static")

@@ -15,7 +15,6 @@ async function loadFilterData(options = {}) {
             cluster: searchMode ? 'false' : 'true',
             region,
             sentiment,
-            hide_submitted: state.hideSubmitted ? 'true' : 'false',
         });
         if (searchMode) {
             params.set('view_mode', 'search');
@@ -51,7 +50,6 @@ async function loadFilterCounts() {
                     limit: '1',
                     offset: '0',
                     cluster: 'false',
-                    hide_submitted: state.hideSubmitted ? 'true' : 'false',
                 });
                 if (cat.startsWith('internal')) params.set('region', 'internal');
                 if (cat.startsWith('external')) params.set('region', 'external');

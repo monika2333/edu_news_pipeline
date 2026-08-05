@@ -323,9 +323,6 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'data-workspace-action-tab="filter"' in html
     assert 'data-workspace-action-tab="review"' in html
     assert 'id="duty-finalization-status"' in html
-    assert 'class="filter-toggle workspace-tab-action"' in html
-    assert 'id="filter-hide-submitted">' in html
-    assert html.index('id="filter-hide-submitted"') < html.index('id="btn-refresh"')
     assert html.index('data-tab="discard"') < html.index('id="btn-refresh"')
     assert html.index('id="btn-refresh"') < html.index('id="filter-tab"')
     assert html.index('id="duty-finalization-status"') < html.index('id="review-tab"')
@@ -512,12 +509,8 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert "刷新会重新聚类，可能需要等待约 1 分钟" in html
     assert 'class="workspace-tabs-row"' in html
     assert 'class="workspace-tab-actions"' in html
-    assert 'class="filter-toggle workspace-tab-action"' in html
-    assert 'id="filter-hide-submitted">' in html
-    assert html.index('id="filter-hide-submitted"') < html.index('id="btn-refresh"')
     assert html.index('data-tab="discard"') < html.index('id="btn-refresh"')
     assert html.index('id="btn-refresh"') < html.index('id="filter-tab"')
-    assert "hideSubmitted: false," in filter_core_script
     assert '<details class="account-menu">' in html
     assert '<summary class="account-menu-trigger current-user" id="current-user">' in html
     assert 'class="btn btn-secondary" href="/admin">用户与排班</a>' not in html

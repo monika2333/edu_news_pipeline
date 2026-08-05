@@ -19,14 +19,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     setupTabs();
-    if (elements.hideSubmitted) {
-        elements.hideSubmitted.checked = state.hideSubmitted;
-        elements.hideSubmitted.addEventListener('change', async () => {
-            state.hideSubmitted = elements.hideSubmitted.checked;
-            state.filterPage = 1;
-            await Promise.all([loadFilterData(), loadFilterCounts()]);
-        });
-    }
     loadStats();
     if (state.currentTab === 'review') {
         loadReviewData();

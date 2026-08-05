@@ -156,10 +156,10 @@ def test_bulk_discard_reuses_manual_candidate_filters_for_preview() -> None:
     assert "ns.sentiment_label = %s" in query
     assert "ILIKE %s" in query
     assert "AT TIME ZONE 'Asia/Shanghai'" in query
+    assert "COALESCE(mr.report_type, 'zongbao') = %s" not in query
     assert cursor.params[0] == (
         "shift-1",
         "pending",
-        "zongbao",
         True,
         "negative",
         "%教育政策%",
@@ -191,6 +191,29 @@ def test_bulk_discard_only_upserts_unfinalized_pending_shift_reviews() -> None:
     assert "decision = 'discarded'" in query
     assert "decided_at = now()" in query
     assert "manual_reviews" not in query
+    assert cursor.params[0][-3:] == ("editor-1", "editor-1", "zongbao")
+
+
+def test_bulk_discard_matches_pending_wanbao_review_without_type_filter() -> None:
+    cursor = BulkDiscardCursor(
+        {"matched": 1, "updated": 1, "skipped_finalized": 0}
+    )
+
+    result = db_postgres_shift_reviews.bulk_discard_shift_candidates(
+        cursor,
+        shift_id="shift-with-pending-wanbao",
+        actor_user_id="editor-1",
+        region="internal",
+        sentiment="positive",
+        report_type="zongbao",
+        dry_run=False,
+    )
+
+    query = cursor.queries[0]
+    assert result == {"matched": 1, "updated": 1, "skipped_finalized": 0}
+    assert "mr.status = %s" in query
+    assert "COALESCE(mr.report_type, 'zongbao') = %s" not in query
+    assert "WHERE shift_reviews.decision = 'pending'" in query
     assert cursor.params[0][-3:] == ("editor-1", "editor-1", "zongbao")
 
 

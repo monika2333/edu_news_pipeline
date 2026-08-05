@@ -381,7 +381,7 @@ def bulk_discard_shift_candidates(
         sentiment=sentiment,
         query=query,
         published_before=published_before,
-        report_type=report_type,
+        report_type=None,
     )
     where_sql = " AND ".join(clauses)
     matched_sql = f"""

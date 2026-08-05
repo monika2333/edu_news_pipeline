@@ -5,7 +5,7 @@ from pathlib import Path
 
 def test_status_poll_updates_components_without_rerendering_report() -> None:
     source = Path(
-        "src/console/web_static/js/submission_archive.js"
+        "src/console/web_static/js/submission_archive/browser.js"
     ).read_text(encoding="utf-8")
     poll_body = source.split(
         "async function pollReportStatus(id) {",

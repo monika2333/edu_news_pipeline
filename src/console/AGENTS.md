@@ -34,6 +34,11 @@
 ## 前端规则
 
 - CSS 保持现有 core/module 拆分：共享样式放在 `base.css`、`layout.css`、`components.css`、`utilities.css`，页面专属样式放在 `css/modules/`。
+- 前端 JS 与 CSS 按功能拆分为目录下的多个平铺脚本，不使用 ES module 或打包工具。
+  共享状态与 DOM 引用集中在该目录的 `core.js`，启动逻辑集中在 `init.js`，
+  加载顺序由模板中的 `<script>` / `<link>` 标签顺序决定：core 最前，init 最后。
+  新增前端功能时沿用这个模式，参考 `web_static/js/manual_filter/`。
+- 前端文件一律 UTF-8 无 BOM。
 - 除非样式确实很小且只服务于局部元素，否则避免在模板中写 inline style。
 - 人工筛选页的搜索抽屉依赖 `/api/articles/search`，相关 API、JS 和 CSS 变更需要一起检查。
 - JavaScript 状态变更尽量集中在现有 manual-filter 模块中，避免多个模块重复发起同类 API 请求。

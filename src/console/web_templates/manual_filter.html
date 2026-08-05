@@ -117,6 +117,8 @@
                     <span class="filter-toggle-switch" aria-hidden="true"></span>
                     <span class="filter-toggle-label">隐藏已报送</span>
                 </label>
+                <button class="btn btn-secondary workspace-tab-action" id="btn-open-cleanup" type="button"
+                    data-workspace-action-tab="filter">清理旧新闻</button>
                 <span class="refresh-action workspace-tabs-refresh workspace-tab-action"
                     data-workspace-action-tab="filter">
                     <button class="btn btn-secondary" id="btn-refresh" aria-describedby="refresh-cluster-hint">
@@ -160,6 +162,8 @@
                     <span class="filter-toggle-switch" aria-hidden="true"></span>
                     <span class="filter-toggle-label">隐藏已报送</span>
                 </label>
+                <button class="btn btn-secondary workspace-tab-action" id="btn-open-cleanup" type="button"
+                    data-workspace-action-tab="filter">清理旧新闻</button>
                 <span class="refresh-action workspace-tabs-refresh">
                     <button class="btn btn-secondary" id="btn-refresh" aria-describedby="refresh-cluster-hint">
                         刷新
@@ -198,9 +202,8 @@
                                 </button>
                             </div>
                             <button class="btn btn-secondary" id="btn-filter-search">检索</button>
-                            <button class="btn btn-secondary" id="btn-open-cleanup">清理旧新闻</button>
                             <button class="btn btn-primary filter-discard-action"
-                                id="btn-filter-discard-before-date">全部放弃</button>
+                                id="btn-filter-bulk-discard">全部放弃</button>
                         </div>
                         <div class="filter-toolbar-meta" id="filter-search-meta"></div>
                     </div>
@@ -374,11 +377,42 @@
             </div>
             <div class="modal-body">
                 <p class="cleanup-modal-desc">
-                    放弃当前分类下、发布日期早于所选日期（不含当天）的全部待处理新闻。此操作不受上方关键词检索影响。
+                    按发布日期清理四个分类的待处理新闻：放弃发布日期早于所选日期（不含当天）的新闻。统计与执行不受关键词检索和「隐藏已报送」开关影响。
                 </p>
                 <input type="date" id="cleanup-date-input" class="cleanup-date-input" autocomplete="off"
                     aria-label="发布日期早于，不含当天" title="发布日期早于，不含当天">
+                <ul class="cleanup-category-list" id="cleanup-category-list">
+                    <li class="cleanup-category-row" data-category="internal_positive">
+                        <label class="cleanup-category-label">
+                            <input type="checkbox" class="cleanup-category-check" checked disabled>
+                            <span class="cleanup-category-name">京内正面</span>
+                        </label>
+                        <span class="cleanup-category-count"></span>
+                    </li>
+                    <li class="cleanup-category-row" data-category="internal_negative">
+                        <label class="cleanup-category-label">
+                            <input type="checkbox" class="cleanup-category-check" checked disabled>
+                            <span class="cleanup-category-name">京内负面</span>
+                        </label>
+                        <span class="cleanup-category-count"></span>
+                    </li>
+                    <li class="cleanup-category-row" data-category="external_positive">
+                        <label class="cleanup-category-label">
+                            <input type="checkbox" class="cleanup-category-check" checked disabled>
+                            <span class="cleanup-category-name">京外正面</span>
+                        </label>
+                        <span class="cleanup-category-count"></span>
+                    </li>
+                    <li class="cleanup-category-row" data-category="external_negative">
+                        <label class="cleanup-category-label">
+                            <input type="checkbox" class="cleanup-category-check" checked disabled>
+                            <span class="cleanup-category-name">京外负面</span>
+                        </label>
+                        <span class="cleanup-category-count"></span>
+                    </li>
+                </ul>
                 <p class="cleanup-modal-stats" id="cleanup-modal-stats" aria-live="polite"></p>
+                <p class="cleanup-finalized-note" id="cleanup-finalized-note" hidden></p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" id="btn-cleanup-cancel">取消</button>

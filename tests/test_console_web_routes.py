@@ -327,7 +327,7 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'id="duplicate-review-modal"' in html
     assert html.index('id="btn-check-duplicates"') < html.index('id="btn-toggle-sort"')
     assert 'id="btn-archive"' not in html
-    assert 'id="btn-filter-discard-before-date"' in html
+    assert 'id="btn-filter-bulk-discard"' in html
     assert 'id="search-drawer-toggle"' in html
     assert 'id="stat-exported"' not in html
     assert "已放弃" not in html
@@ -487,7 +487,7 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert 'id="btn-finalize-review"' not in html
     assert 'id="duty-finalization-status"' not in html
     assert 'id="btn-restore-finalization"' not in html
-    assert 'id="btn-filter-discard-before-date"' in html
+    assert 'id="btn-filter-bulk-discard"' in html
     assert 'id="filter-search-clear"' in html
     assert 'class="review-search-clear"' in html
     assert 'aria-label="清除检索条件"' in html

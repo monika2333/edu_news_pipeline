@@ -478,6 +478,25 @@ async function bulkDiscard() {
 
 let cleanupPreviewSeq = 0;
 
+const CLEANUP_CATEGORY_LABELS = {
+    internal_positive: '京内正面',
+    internal_negative: '京内负面',
+    external_positive: '京外正面',
+    external_negative: '京外负面'
+};
+
+function cleanupCategoryParams(cat) {
+    return {
+        region: cat.startsWith('external') ? 'external' : 'internal',
+        sentiment: cat.endsWith('negative') ? 'negative' : 'positive'
+    };
+}
+
+function getCleanupRows() {
+    if (!elements.cleanupCategoryList) return [];
+    return Array.from(elements.cleanupCategoryList.querySelectorAll('.cleanup-category-row'));
+}
+
 function setCleanupConfirmState(enabled, label) {
     if (!elements.cleanupConfirmBtn) return;
     elements.cleanupConfirmBtn.disabled = !enabled;
@@ -490,12 +509,56 @@ function setCleanupStats(message, isError = false) {
     elements.cleanupStats.classList.toggle('is-error', Boolean(isError));
 }
 
+function setCleanupFinalizedNote(count) {
+    if (!elements.cleanupFinalizedNote) return;
+    if (count > 0) {
+        elements.cleanupFinalizedNote.textContent = `其中有 ${count} 条已定稿，不会被清理`;
+        elements.cleanupFinalizedNote.hidden = false;
+    } else {
+        elements.cleanupFinalizedNote.textContent = '';
+        elements.cleanupFinalizedNote.hidden = true;
+    }
+}
+
+function resetCleanupCategories() {
+    getCleanupRows().forEach((row) => {
+        const checkbox = row.querySelector('.cleanup-category-check');
+        const countEl = row.querySelector('.cleanup-category-count');
+        row.classList.remove('is-empty');
+        delete row.dataset.count;
+        if (checkbox) {
+            checkbox.checked = true;
+            checkbox.disabled = true;
+        }
+        if (countEl) countEl.textContent = '';
+    });
+}
+
+function updateCleanupTotal() {
+    let total = 0;
+    getCleanupRows().forEach((row) => {
+        const checkbox = row.querySelector('.cleanup-category-check');
+        if (checkbox && checkbox.checked && !checkbox.disabled) {
+            total += Number(row.dataset.count) || 0;
+        }
+    });
+    setCleanupStats(`将放弃 ${total} 条`);
+    if (total > 0) {
+        setCleanupConfirmState(true, `放弃这 ${total} 条`);
+    } else {
+        setCleanupConfirmState(false, '确认放弃');
+    }
+}
+
 function openCleanupModal() {
     if (!elements.cleanupModal) return;
     cleanupPreviewSeq += 1;
     if (elements.cleanupDateInput) elements.cleanupDateInput.value = '';
+    resetCleanupCategories();
     setCleanupStats('');
+    setCleanupFinalizedNote(0);
     setCleanupConfirmState(false, '确认放弃');
+    if (elements.cleanupCancelBtn) elements.cleanupCancelBtn.disabled = false;
     elements.cleanupModal.classList.add('active');
     elements.cleanupModal.setAttribute('aria-hidden', 'false');
 }
@@ -511,37 +574,55 @@ async function handleCleanupDateChange() {
     const publishedBefore = elements.cleanupDateInput ? elements.cleanupDateInput.value : '';
     if (!publishedBefore) {
         cleanupPreviewSeq += 1;
+        resetCleanupCategories();
         setCleanupStats('');
+        setCleanupFinalizedNote(0);
         setCleanupConfirmState(false, '确认放弃');
         return;
     }
     const seq = ++cleanupPreviewSeq;
-    const { region, sentiment } = getCurrentFilterBucket();
     setCleanupStats('正在统计…');
     setCleanupConfirmState(false, '确认放弃');
     try {
-        const res = await workspaceFetch(`${API_BASE}/bulk-discard`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                region,
-                sentiment,
-                q: null,
-                published_before: publishedBefore,
-                dry_run: true
-            })
-        });
-        if (!res.ok) throw new Error('failed preview');
-        const result = await res.json();
+        const results = await Promise.all(FILTER_CATEGORIES.map(async (cat) => {
+            const { region, sentiment } = cleanupCategoryParams(cat);
+            const res = await workspaceFetch(`${API_BASE}/bulk-discard`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    region,
+                    sentiment,
+                    q: null,
+                    published_before: publishedBefore,
+                    dry_run: true
+                })
+            });
+            if (!res.ok) throw new Error('failed preview');
+            return { cat, result: await res.json() };
+        }));
         if (seq !== cleanupPreviewSeq) return;
-        const matched = Number(result.matched) || 0;
-        if (matched > 0) {
-            setCleanupStats(`将放弃 ${matched} 条`);
-            setCleanupConfirmState(true, `放弃这 ${matched} 条`);
-        } else {
-            setCleanupStats('该日期之前没有待处理新闻');
-            setCleanupConfirmState(false, '确认放弃');
-        }
+        let skippedTotal = 0;
+        const counts = {};
+        results.forEach(({ cat, result }) => {
+            const matched = Number(result.matched) || 0;
+            const skipped = Number(result.skipped_finalized) || 0;
+            counts[cat] = Math.max(0, matched - skipped);
+            skippedTotal += skipped;
+        });
+        getCleanupRows().forEach((row) => {
+            const count = counts[row.dataset.category] || 0;
+            const checkbox = row.querySelector('.cleanup-category-check');
+            const countEl = row.querySelector('.cleanup-category-count');
+            row.dataset.count = String(count);
+            row.classList.toggle('is-empty', count === 0);
+            if (countEl) countEl.textContent = `${count} 条`;
+            if (checkbox) {
+                checkbox.disabled = count === 0;
+                checkbox.checked = count > 0;
+            }
+        });
+        setCleanupFinalizedNote(skippedTotal);
+        updateCleanupTotal();
     } catch (error) {
         if (seq !== cleanupPreviewSeq) return;
         setCleanupStats('统计失败，请重试', true);
@@ -552,27 +633,65 @@ async function handleCleanupDateChange() {
 async function confirmCleanupDiscard() {
     const publishedBefore = elements.cleanupDateInput ? elements.cleanupDateInput.value : '';
     if (!publishedBefore || !elements.cleanupConfirmBtn || elements.cleanupConfirmBtn.disabled) return;
-    const { region, sentiment } = getCurrentFilterBucket();
-    setCleanupConfirmState(false, '确认放弃');
+    const targets = getCleanupRows()
+        .filter((row) => {
+            const checkbox = row.querySelector('.cleanup-category-check');
+            return checkbox && checkbox.checked && !checkbox.disabled;
+        })
+        .map((row) => row.dataset.category);
+    if (!targets.length) return;
+    setCleanupConfirmState(false, '正在放弃…');
+    if (elements.cleanupCancelBtn) elements.cleanupCancelBtn.disabled = true;
     try {
-        const res = await workspaceFetch(`${API_BASE}/bulk-discard`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                region,
-                sentiment,
-                q: null,
-                published_before: publishedBefore,
-                dry_run: false
-            })
+        const settled = await Promise.allSettled(targets.map(async (cat) => {
+            const { region, sentiment } = cleanupCategoryParams(cat);
+            const res = await workspaceFetch(`${API_BASE}/bulk-discard`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    region,
+                    sentiment,
+                    q: null,
+                    published_before: publishedBefore,
+                    dry_run: false
+                })
+            });
+            if (!res.ok) throw new Error('failed apply');
+            return { cat, result: await res.json() };
+        }));
+        const succeeded = [];
+        const failedCats = [];
+        settled.forEach((entry, index) => {
+            if (entry.status === 'fulfilled') {
+                succeeded.push(entry.value);
+            } else {
+                failedCats.push(targets[index]);
+            }
         });
-        if (!res.ok) throw new Error('failed apply');
-        const result = await res.json();
+        const updatedTotal = succeeded.reduce(
+            (sum, item) => sum + (Number(item.result.updated) || 0), 0
+        );
+        const skippedTotal = succeeded.reduce(
+            (sum, item) => sum + (Number(item.result.skipped_finalized) || 0), 0
+        );
         closeCleanupModal();
-        showToast(`已放弃 ${result.updated} 条新闻`);
         state.filterPage = 1;
         await Promise.all([loadFilterData(), loadStats(), loadFilterCounts()]);
+        if (!failedCats.length) {
+            let message = `已放弃 ${updatedTotal} 条新闻`;
+            if (skippedTotal > 0) message += `，另有 ${skippedTotal} 条已定稿未清理`;
+            showToast(message);
+        } else {
+            const failedNames = failedCats
+                .map((cat) => CLEANUP_CATEGORY_LABELS[cat] || cat)
+                .join('、');
+            let message = `${failedNames} 放弃失败，请重跑清理`;
+            if (succeeded.length) message += `；其余分类已放弃 ${updatedTotal} 条`;
+            showToast(message, 'error');
+        }
     } catch (error) {
         setCleanupStats('放弃失败，请重试', true);
+    } finally {
+        if (elements.cleanupCancelBtn) elements.cleanupCancelBtn.disabled = false;
     }
 }

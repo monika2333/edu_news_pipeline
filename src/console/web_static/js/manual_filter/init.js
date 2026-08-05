@@ -87,7 +87,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             elements.filterSearchInput?.focus();
         });
     }
-    const btnBulkDiscard = document.getElementById('btn-filter-discard-before-date');
+    const btnBulkDiscard = document.getElementById('btn-filter-bulk-discard');
     if (btnBulkDiscard) {
         btnBulkDiscard.addEventListener('click', bulkDiscard);
     }
@@ -96,6 +96,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('btn-cleanup-cancel')?.addEventListener('click', closeCleanupModal);
         elements.cleanupDateInput?.addEventListener('change', handleCleanupDateChange);
         elements.cleanupConfirmBtn?.addEventListener('click', confirmCleanupDiscard);
+        elements.cleanupCategoryList?.addEventListener('change', (event) => {
+            if (event.target instanceof HTMLInputElement
+                && event.target.classList.contains('cleanup-category-check')) {
+                updateCleanupTotal();
+            }
+        });
     }
     if (elements.filterSearchInput) {
         elements.filterSearchInput.addEventListener('input', syncFilterSearchClearButton);

@@ -8,6 +8,7 @@ IMPORTANT: Read and write this file as UTF-8. In Windows PowerShell, use `Get-Co
 
 - 修改 `src/console/` 前，先阅读 `src/console/AGENTS.md`。
 - 修改 `src/adapters/` 前，先阅读 `src/adapters/AGENTS.md`。
+- 涉及数据库表结构、字段含义或跨表数据流转时，先阅读 `docs/data_flow.md`。它记录了每张表的职责、生命周期和契约级约束（哪些字段不能改、为什么）——这些信息在 `schema.sql` 里看不出来。
 - 局部 `AGENTS.md` 用来补充该目录的边界、历史包袱和重构护栏；不要把局部规则复制回根目录。
 
 ## 构建与开发命令
@@ -97,75 +98,31 @@ from src.config import get_settings
 from src.domain.models import ArticleInput
 ```
 
-### 类型标注
+### 类型与数据类
 
-- 所有函数参数和返回值都必须有类型标注。
-- 优先使用现代类型语法：`list`、`dict`，而不是 `List`、`Dict`。
-- 可空类型使用 `Optional[T]`。
-- 谨慎使用 `Union`，能具体表达时不要写过宽类型。
-- 结构化字典优先使用 `TypedDict`。
-
-```python
-def process_articles(articles: list[ArticleInput]) -> list[ProcessedArticle]:
-    pass
-
-
-def fetch_content(url: str, timeout: Optional[float] = None) -> Optional[str]:
-    pass
-```
-
-### 数据类
-
-- 领域模型使用 `@dataclass(slots=True)`。
-- adapter 模型可使用普通 `@dataclass`。
-- 所有字段都必须有类型标注。
-- 可变默认值使用 `field(default_factory=...)`。
-
-```python
-@dataclass(slots=True)
-class ArticleInput:
-    article_id: Optional[str]
-    title: Optional[str]
-    source: Optional[str]
-    publish_time: Optional[int]
-    content: Optional[str]
-    raw_payload: dict[str, Any] = field(default_factory=dict)
-    metadata: dict[str, Any] = field(default_factory=dict)
-```
+- 函数参数和返回值应有类型标注；优先 `list`、`dict` 而非 `List`、`Dict`。
+- 可空类型用 `Optional[T]`；结构化字典优先 `TypedDict`。
+- 领域模型用 `@dataclass(slots=True)`，adapter 模型用普通 `@dataclass`；可变默认值用 `field(default_factory=...)`。
 
 ### 命名约定
 
-- 函数：`snake_case`，例如 `process_articles`。
-- 类：`PascalCase`，例如 `ArticleInput`。
-- 变量：`snake_case`，例如 `article_id`。
-- 常量：`ALL_CAPS`，例如 `DEFAULT_LIMIT`。
-- 模块：`snake_case`，例如 `score_worker.py`。
+- 函数、变量、模块：`snake_case`。
+- 类：`PascalCase`。
+- 常量：`ALL_CAPS`。
 
 ### 错误处理
 
-- 使用具体异常类型，不要默认捕获 `Exception`。
-- worker 中使用日志工具记录错误。
-- 避免 bare `except`。
+- 使用具体异常类型，避免 bare `except`。
 - 资源管理使用 context manager。
-
-```python
-from src.workers import log_error
-
-try:
-    result = process_article(article)
-except ValueError as exc:
-    log_error(f"Invalid article data: {exc}")
-    return None
-except requests.RequestException as exc:
-    log_error(f"Network error fetching article: {exc}")
-    raise
-```
+- worker 中用日志工具记录错误，不要静默吞掉。
 
 ### 日志
 
-- worker 中使用 `log_info`、`log_error`、`log_summary`。
-- 日志应包含足够上下文。
-- 进度用 info，失败用 error，收尾统计用 summary。
+worker 中使用 `src.workers` 提供的三个日志函数，各有明确用途：
+
+- `log_info`：进度信息
+- `log_error`：失败
+- `log_summary`：收尾统计
 
 ```python
 from src.workers import log_error, log_info, log_summary
@@ -178,8 +135,7 @@ log_summary(f"Completed scoring: {success_count}/{total_count} articles")
 ### 模块结构
 
 - 使用 `__all__` 明确公共 API。
-- 相关功能放在同一模块或相邻模块中。
-- 模块职责保持聚焦。
+- 相关功能放在同一模块或相邻模块中，模块职责保持聚焦。
 
 ```python
 __all__ = [
@@ -199,12 +155,14 @@ __all__ = [
 - SQL 查询使用参数化参数。
 - 数据库调试信息应有适当日志。
 - `manual_clusters` 是聚类缓存表，由计划任务定期整表重建，不分报别。聚类只按四个桶（internal/external × positive/negative）进行；报别只在采纳动作上有意义。不要给这张表加回报别维度。
+- **新增表或字段前先读 `docs/data_flow.md` 确认落位。** 所有数据库变更都应是新增表或新增列，不修改、不删除现有结构，以保证线上系统在开发期间始终可用、代码可随时回滚。
+- 如果本次改动新增了表或字段，或改变了某个字段的写入时机，**必须同步更新 `docs/data_flow.md`**。一份过期的数据流文档比没有更危险。
 
 ```python
 from src.adapters.db_postgres_core import get_adapter
 
 adapter = get_adapter()
-articles = adapter.fetch_primary_articles_for_scoring(limit=100)
+articles = adapter.process.fetch_primary_for_scoring(limit=100)
 ```
 
 ## API 设计（FastAPI）
@@ -220,7 +178,6 @@ from fastapi import APIRouter, Depends
 from src.console.security import require_console_user
 
 router = APIRouter()
-
 
 @router.get("/articles", dependencies=[Depends(require_console_user)])
 async def get_articles() -> list[ArticleResponse]:
@@ -241,7 +198,6 @@ from unittest.mock import Mock
 
 import pytest
 
-
 def test_scoring_with_valid_content():
     scorer = ArticleScorer()
 
@@ -254,7 +210,9 @@ def test_scoring_with_valid_content():
 ## 配置
 
 - 敏感和可配置内容使用环境变量。
-- 通过 `src.config.get_settings()` 读取配置。
+- **全局配置**通过 `src.config.get_settings()` 读取：数据库连接、LLM API、飞书通知、班次边界等跨模块使用的设置。
+- **来源专属的抓取参数**（超时、请求间隔、翻页数等）可以在对应的 `src/adapters/http_*.py` 中直接读环境变量，不必进入全局 `Settings`。这是有意的：这类参数只有该来源关心，集中管理反而增加耦合。
+- 无论哪种方式，**所有环境变量都必须登记进 `docs/env_reference.md`**，否则部署时无从知晓。
 - 可选配置应提供合理默认值。
 
 ```python
@@ -283,7 +241,7 @@ db_config = {
   - 报别（综报/晚报）与报送稿类型的权威定义在 `src/domain/report_type.py`。不要在其他地方重新声明 `{"zongbao","wanbao"}` 这类字面量集合；新增校验或类型标注时从该模块导入。注意新闻报别（两个值）与报送稿类型（三个值，含 feedback）是两个不同的枚举，不要合并。
 - `tests/`：测试文件。
 - `scripts/`：工具脚本。
-- `docs/`：提示词和流程文档。
+- `docs/`：流程与参考文档，其中 `data_flow.md` 记录数据表职责与契约级约束，`env_reference.md` 记录全部环境变量。
 - `config/`：配置文件。
 
 ## 依赖方向
@@ -296,21 +254,12 @@ db_config = {
 
 ## 代码质量标准
 
-- 避免新增 `type: ignore`。如果确实需要，必须限定具体错误码并说明原因，例如 `# type: ignore[attr-defined]`。
-- 不要使用 bare `except`。
-- 不要保留未使用导入。
-- 不要使用可变默认参数。
+以下是期望而非强制——项目当前没有配置 lint 工具，这些条款靠人和 AI 自觉遵守。现有代码中存在个别有意为之的例外（例如降级处理中的宽泛异常捕获），遇到时请先理解原因再决定是否修改。
+
+- 避免新增 `type: ignore`。确需使用时限定具体错误码并说明原因，例如 `# type: ignore[attr-defined]`。
+- 不要使用 bare `except`，不要保留未使用导入，不要使用可变默认参数。
 - 不要硬编码 secret，使用环境变量。
-- 函数保持聚焦，目标是不超过 50 行。
-- 类保持单一职责。
-
-## 性能
-
-- FastAPI route 中涉及 I/O 时优先使用 async/await。
-- 数据库操作尽量批量处理。
-- 大数据传输考虑 streaming。
-- 对昂贵计算可使用缓存，但先确认瓶颈。
-- 优化前先定位性能问题。
+- 函数保持聚焦，类保持单一职责。
 
 ## 安全
 
@@ -325,7 +274,8 @@ db_config = {
 - 文档优先记录代码无法表达的信息：业务约束、历史原因、反直觉行为、重构护栏。
 - 不要为函数、类、文件做机械摘要。
 - 如果只是代码能直接看出的事实，优先改代码命名、结构或测试，而不是写解释性文档。
-- Markdown、配置和中文文本文件统一使用 UTF-8 编码。
+- Markdown、配置和中文文本文件统一使用 UTF-8 编码（无 BOM）。
+- 完成任务后，如果改动使某份文档失真（尤其是 `docs/data_flow.md` 和 `docs/env_reference.md`），同步更新它。
 
 ## Agent 工作规则
 

@@ -3,8 +3,9 @@
 面向教育新闻的自动化采集、评分、摘要与导出流水线，并提供 Web 控制台进行人工筛选与复核。
 
 ## 功能总览
-- **流水线**：抓取 → 去重 → 评分 → 摘要 → 情感/来源补充 → 北京/外地分流与重要性评分 → 导出简报。
+- **流水线**：抓取 → 去重 → 评分 → 摘要 → 情感/来源补充 → 北京/外地分流与重要性评分 → 与历史报送查重 → 导出简报。
 - **Web 控制台**：管理员使用 `/manual_filter` 全量复核，值班编辑使用 `/duty` 处理本人班次，用户与排班在 `/admin` 管理。
+- **报送存档与查重**：`/submission-archive` 录入已报送稿件并回链到系统内新闻；新入库的新闻会与存档比对，在复核界面提示"已报过"。
 - **导出/预览**：支持在审阅页按综报/晚报预览文本并归档为已导出；流水线 `export` 命令仍可生成 TXT 简报并推送飞书。
 
 ## 快速开始
@@ -33,9 +34,45 @@ python -m src.cli.main summarize
 python -m src.cli.main enrich-summary
 python -m src.cli.main geo-classify
 python -m src.cli.main external-filter
+python -m src.cli.main submission-dedup
 python -m src.cli.main export
 ```
 可用 `-h` 查看每个步骤的参数。
+
+## 命令行一览
+
+`python -m src.cli.main <command>`，全部命令可用 `-h` 查看参数。
+
+### 主流水线（按顺序执行，由计划任务串联）
+
+| 命令 | 作用 |
+| --- | --- |
+| `crawl` | 从配置的来源抓取新文章 |
+| `hash-primary` | 计算指纹、去重选主 |
+| `score` | 为主文打相关性分 |
+| `summarize` | 生成摘要 |
+| `enrich-summary` | 补充情感与来源信息 |
+| `geo-classify` | 判定北京/外地 |
+| `external-filter` | 外地新闻的重要性评分 |
+| `submission-dedup` | 与近期报送存档比对查重 |
+| `export` | 生成 TXT 简报并推送飞书 |
+
+### 计划任务后台调用
+
+| 命令 | 作用 |
+| --- | --- |
+| `refresh-manual-clusters` | 刷新人工筛选页的标题聚类缓存 |
+| `generate-shifts` | 按周排班模板生成后续班次 |
+| `cleanup-console-sessions` | 清理过期与长期失效的登录会话 |
+
+### 管理员按需手工执行
+
+| 命令 | 作用 |
+| --- | --- |
+| `create-console-user` | 创建控制台账号 |
+| `repair` | 为缺正文的记录补抓正文 |
+| `geo-tag` | 为存量摘要回填北京相关标记 |
+| `backfill-submission-embeddings` | 补齐报送存档条目缺失的向量 |
 
 ## Web 控制台
 - 默认地址：`http://127.0.0.1:8000`，未登录时进入登录页，登录后按角色进入对应工作台。
@@ -45,6 +82,10 @@ python -m src.cli.main export
   - 审阅页支持排序模式（紧凑卡片 + 拖拽），导出弹窗支持预览/正式导出。
 - **/duty**
   - 值班编辑只能读取和修改本人班次，可筛选、排序、编辑综报/晚报归属并预览草稿，不能归档。
+- **/submission-archive**
+  - 粘贴已经报送出去的稿件，系统自动拆分条目并回链到系统内对应的新闻。
+  - 相似度落在中间地带的条目进入人工确认队列，由管理员判定是否为同一条。
+  - 存档内容用于查重：新入库的新闻与历史报送比对后，会在复核界面显示重复标记。
 - **/admin** 与 **/admin/duty-summary**
   - 管理账号、七天轮值模板与具体班次，查看值班结果、未覆盖新闻并选择性送入管理员工作区。
 
@@ -77,22 +118,20 @@ dbmate down
 ### 注意事项
 - 迁移文件保存在 `database/migrations/`。
 - 如果 `DATABASE_URL` 格式不正确，dbmate 会提示 "invalid url"。
+- 数据库变更遵循只增不改的原则：新增表或新增列，不修改、不删除现有结构。表的职责与不可变字段见 [docs/data_flow.md](docs/data_flow.md)。
 
-## 目录速览
-- `run_console.py`：控制台入口。
-- `src/console/app.py`：FastAPI 应用与路由挂载。
-- `src/cli/main.py`：流水线命令行入口。
-- `src/workers/`：抓取、去重、评分、摘要、外部过滤、TXT 简报导出等流水线步骤。
-- `src/adapters/`：数据库、HTTP 源、LLM、通知等外部系统适配器。
-- `src/domain/`：领域模型、评分、地域判断等业务规则。
-- `src/console/*_routes.py`：API 与页面路由（人工筛选页面及其所需 API）。
-- `src/console/*_service.py`：控制台业务逻辑。
-- `src/console/*_schemas.py`：控制台请求/响应结构。
-- `src/console/web_templates/`：Jinja2 模板。
-- `src/console/web_static/`：前端 JS / CSS 资源；人工审阅的综报/晚报预览格式在这里维护。
-- `database/migrations/`：Dbmate 数据库迁移。
-- `docs/`：提示词、控制台认证和流程文档。
-- `AGENTS.md`：面向 AI agent 的全局开发约束与命令说明。
+## 目录结构
+
+见 [AGENTS.md](AGENTS.md) 的「文件结构」章节。各数据表的职责与流转路径见 [docs/data_flow.md](docs/data_flow.md)。
+
+## 文档索引
+
+| 文档 | 内容 |
+| --- | --- |
+| [AGENTS.md](AGENTS.md) | 开发约束、目录结构、依赖方向、数据库访问约定 |
+| [docs/data_flow.md](docs/data_flow.md) | 数据表职责、流转路径、契约级约束 |
+| [docs/env_reference.md](docs/env_reference.md) | 全部环境变量说明与示例模板 |
+| [docs/console_auth.md](docs/console_auth.md) | 控制台认证机制 |
 
 ## 说明
 - 控制台访问默认仅监听本机，部署到外网时务必开启认证。

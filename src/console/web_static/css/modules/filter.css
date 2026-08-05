@@ -328,14 +328,14 @@
     font-size: 0.75rem;
     text-decoration: underline;
     opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.15s ease, visibility 0.15s ease;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
 }
 
 .article-card:hover .submission-duplicate-dismiss,
 .submission-duplicate-dismiss:focus-visible {
     opacity: 1;
-    visibility: visible;
+    pointer-events: auto;
 }
 
 /* Report Type Switch */

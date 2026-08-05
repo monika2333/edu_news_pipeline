@@ -485,13 +485,6 @@ const CLEANUP_CATEGORY_LABELS = {
     external_negative: '京外负面'
 };
 
-function cleanupCategoryParams(cat) {
-    return {
-        region: cat.startsWith('external') ? 'external' : 'internal',
-        sentiment: cat.endsWith('negative') ? 'negative' : 'positive'
-    };
-}
-
 function getCleanupRows() {
     if (!elements.cleanupCategoryList) return [];
     return Array.from(elements.cleanupCategoryList.querySelectorAll('.cleanup-category-row'));
@@ -585,7 +578,7 @@ async function handleCleanupDateChange() {
     setCleanupConfirmState(false, '确认放弃');
     try {
         const results = await Promise.all(FILTER_CATEGORIES.map(async (cat) => {
-            const { region, sentiment } = cleanupCategoryParams(cat);
+            const { region, sentiment } = filterCategoryToBucket(cat);
             const res = await workspaceFetch(`${API_BASE}/bulk-discard`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -644,7 +637,7 @@ async function confirmCleanupDiscard() {
     if (elements.cleanupCancelBtn) elements.cleanupCancelBtn.disabled = true;
     try {
         const settled = await Promise.allSettled(targets.map(async (cat) => {
-            const { region, sentiment } = cleanupCategoryParams(cat);
+            const { region, sentiment } = filterCategoryToBucket(cat);
             const res = await workspaceFetch(`${API_BASE}/bulk-discard`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

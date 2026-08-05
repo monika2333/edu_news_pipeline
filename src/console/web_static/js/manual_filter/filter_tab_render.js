@@ -1,9 +1,14 @@
 // Manual Filter JS - Filter Tab Render
 
-function getCurrentFilterBucket() {
-    const cat = state.filterCategory || 'internal_positive';
+function filterCategoryToBucket(cat) {
     const region = cat.startsWith('external') ? 'external' : 'internal';
     const sentiment = cat.endsWith('negative') ? 'negative' : 'positive';
+    return { region, sentiment };
+}
+
+function getCurrentFilterBucket() {
+    const cat = state.filterCategory || 'internal_positive';
+    const { region, sentiment } = filterCategoryToBucket(cat);
     return { cat, region, sentiment };
 }
 

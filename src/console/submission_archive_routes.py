@@ -171,7 +171,7 @@ def search_archive_api(
     return submission_archive_service.search_archive(query=q, limit=limit)
 
 
-@router.post("/duplicates/{article_id}/dismiss")
+@router.post("/duplicates/{article_id:path}/dismiss")
 def dismiss_duplicates_api(
     article_id: str,
     user: ConsoleUser = Depends(require_console_user),

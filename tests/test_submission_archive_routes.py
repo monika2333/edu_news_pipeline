@@ -144,3 +144,30 @@ def test_create_report_conflict_serializes_database_types(
     assert existing["id"] == str(report_id)
     assert existing["report_date"] == "2026-07-23"
     assert existing["item_count"] == 12
+
+
+def test_dismiss_duplicates_accepts_article_id_with_slashes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    article_id = "chinanews:/ty/2026/08-05/10672568"
+
+    def fake_dismiss_duplicates(**kwargs: object) -> int:
+        captured.update(kwargs)
+        return 1
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "dismiss_duplicates",
+        fake_dismiss_duplicates,
+    )
+
+    response = _client(_editor).post(
+        "/api/submission-archive/duplicates/"
+        "chinanews%3A%2Fty%2F2026%2F08-05%2F10672568/dismiss"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"dismissed": 1}
+    assert captured["article_id"] == article_id
+    assert captured["user"] == _editor()

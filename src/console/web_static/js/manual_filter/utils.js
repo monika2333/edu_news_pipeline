@@ -362,10 +362,6 @@ function showToastAt(toastElement, msg, type = 'success', action = null) {
     }, duration);
 }
 
-function showToast(msg, type = 'success', action = null) {
-    showToastAt(elements.toast, msg, type, action);
-}
-
 function updatePagination(tab, total, currentPage) {
     // Simple pagination implementation
     const totalPages = Math.ceil(total / 10);

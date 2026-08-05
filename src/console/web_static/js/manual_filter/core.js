@@ -84,3 +84,7 @@ const elements = {
 
 let isBulkUpdatingReview = false;
 let pendingReviewEditPromise = Promise.resolve();
+
+function showToast(msg, type = 'success', action = null) {
+    showToastAt(elements.toast, msg, type, action);
+}

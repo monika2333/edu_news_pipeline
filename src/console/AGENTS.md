@@ -42,6 +42,7 @@
 - 除非样式确实很小且只服务于局部元素，否则避免在模板中写 inline style。
 - 人工筛选页的搜索抽屉依赖 `/api/articles/search`，相关 API、JS 和 CSS 变更需要一起检查。
 - JavaScript 状态变更尽量集中在现有 manual-filter 模块中，避免多个模块重复发起同类 API 请求。
+- `web_static/js/manual_filter/utils.js` 会被 `duty_summary.html` 一并加载（因为共享搜索抽屉组件），其中被跨页面复用的是 `createEl`、`clearEl`、`renderSkeleton`、`formatScore`、`getSentimentClass`、`showToastAt` 这类纯函数。新增跨页面复用的工具函数时，不要依赖 `elements` 或 `state` 全局；需要读写页面状态的函数放 `manual_filter/core.js` 或对应功能文件。文件里现存的其他带状态函数是历史遗留，暂不调整。
 - 模板和 JS 通过 DOM id 与 `data-*` 属性紧密耦合；修改时必须一起处理。
 
 ## 建议测试

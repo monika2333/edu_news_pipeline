@@ -162,7 +162,11 @@
     }
 
     .filter-toolbar-main {
-        grid-template-columns: minmax(0, 1fr) minmax(136px, 180px) auto;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+    }
+
+    .filter-toolbar-main .search-group {
+        grid-column: 1 / -1;
     }
 }
 
@@ -197,7 +201,7 @@
     }
 
     .filter-toolbar-main .filter-discard-action {
-        grid-column: auto;
+        grid-column: 1 / -1;
         width: 100%;
     }
 

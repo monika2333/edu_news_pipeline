@@ -270,13 +270,29 @@ h1 {
         border-radius: 8px;
     }
 
+    .workspace-tabs-row {
+        flex-wrap: wrap;
+    }
+
     .workspace-tabs-row .tabs {
-        width: auto;
-        flex: 0 1 auto;
+        width: 100%;
+        flex: 1 1 100%;
     }
 
     .workspace-tab-actions {
-        flex: 0 0 auto;
+        flex: 1 1 100%;
+        flex-wrap: wrap;
+        margin-left: 0;
+        gap: 10px;
+    }
+
+    .workspace-tab-actions .report-type-switch {
+        flex: 1 1 auto;
+        justify-content: space-between;
+    }
+
+    .workspace-tab-actions .duty-finalization-status {
+        width: 100%;
     }
 
     .tab-btn {

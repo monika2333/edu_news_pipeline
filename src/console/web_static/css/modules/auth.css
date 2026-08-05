@@ -178,10 +178,22 @@
 
     .admin-view-link {
         flex: 1;
+        padding-inline: 8px;
         white-space: normal;
     }
 
     .summary-header-actions .account-menu {
         margin-left: auto;
+    }
+}
+
+@media (max-width: 480px) {
+    .admin-view-stage-divider {
+        display: none;
+    }
+
+    .admin-view-link {
+        padding: 6px 4px;
+        font-size: 0.82rem;
     }
 }

@@ -117,10 +117,6 @@
     margin-bottom: 8px;
 }
 
-.cluster-header .submission-duplicate-badge {
-    margin-right: auto;
-}
-
 /* Responsive Filter */
 @media (max-width: 1024px) {
     .filter-layout {
@@ -163,15 +159,6 @@
     .filter-toolbar {
         padding: 10px;
         border-radius: 10px;
-    }
-
-    /* Keep cluster header badge and radios on one row without overflow */
-    .cluster-header {
-        flex-wrap: wrap;
-    }
-
-    .cluster-header .cluster-radio {
-        width: auto;
     }
 
     .filter-toolbar-main {

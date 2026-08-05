@@ -395,6 +395,104 @@ def test_bulk_shift_review_update_uses_one_transaction(
     ]
 
 
+def test_shift_bulk_discard_and_audit_share_one_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = object.__new__(db_postgres_core.PostgresAdapter)
+    cursor = object()
+    events: list[str] = []
+    captured: dict[str, Any] = {}
+
+    @contextmanager
+    def fake_transaction() -> Iterator[object]:
+        events.append("begin")
+        yield cursor
+        events.append("commit")
+
+    def fake_bulk_discard(cur: object, **kwargs: Any) -> dict[str, int]:
+        assert cur is cursor
+        captured.update(kwargs)
+        events.append("discard")
+        return {"matched": 3, "updated": 2, "skipped_finalized": 1}
+
+    adapter.transaction = fake_transaction
+    monkeypatch.setattr(
+        db_postgres_core.shift_reviews,
+        "bulk_discard_shift_candidates",
+        fake_bulk_discard,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        lambda cur, **kwargs: events.append(kwargs["action"]),
+    )
+
+    result = adapter.discard_shift_candidates_as_user(
+        shift_id="shift-1",
+        actor_user_id="editor-1",
+        region="internal",
+        sentiment="positive",
+        query=None,
+        published_before=None,
+        report_type="zongbao",
+        dry_run=False,
+        request_id="request-1",
+    )
+
+    assert result == {"matched": 3, "updated": 2, "skipped_finalized": 1}
+    assert captured["dry_run"] is False
+    assert events == [
+        "begin",
+        "discard",
+        "shift_review.bulk_discard",
+        "commit",
+    ]
+
+
+def test_shift_bulk_discard_dry_run_does_not_audit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = object.__new__(db_postgres_core.PostgresAdapter)
+    cursor = object()
+    events: list[str] = []
+
+    @contextmanager
+    def fake_transaction() -> Iterator[object]:
+        events.append("begin")
+        yield cursor
+        events.append("commit")
+
+    adapter.transaction = fake_transaction
+    monkeypatch.setattr(
+        db_postgres_core.shift_reviews,
+        "bulk_discard_shift_candidates",
+        lambda cur, **kwargs: {
+            "matched": 0,
+            "updated": 0,
+            "skipped_finalized": 0,
+        },
+    )
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        lambda cur, **kwargs: events.append("audit"),
+    )
+
+    result = adapter.discard_shift_candidates_as_user(
+        shift_id="shift-1",
+        actor_user_id="editor-1",
+        region="internal",
+        sentiment="positive",
+        query=None,
+        published_before=None,
+        report_type="zongbao",
+        dry_run=True,
+    )
+
+    assert result == {"matched": 0, "updated": 0, "skipped_finalized": 0}
+    assert events == ["begin", "commit"]
+
+
 def test_bulk_shift_review_update_rolls_back_after_late_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

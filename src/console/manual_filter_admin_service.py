@@ -36,6 +36,14 @@ def _ensure_disjoint(groups: Mapping[str, Sequence[str]]) -> None:
             seen.add(article_id)
 
 
+def validate_bulk_discard_bucket(*, region: str, sentiment: str) -> None:
+    """Require an explicit candidate bucket before any bulk discard."""
+    if region not in {"internal", "external"}:
+        raise ValueError("bulk-discard requires an explicit region")
+    if sentiment not in {"positive", "negative"}:
+        raise ValueError("bulk-discard requires an explicit sentiment")
+
+
 def bulk_decide(
     *,
     selected_ids: Sequence[str],
@@ -275,10 +283,7 @@ def bulk_discard_candidates(
     actor: ConsoleUser,
     request_id: Optional[str] = None,
 ) -> dict[str, int]:
-    if region not in {"internal", "external"}:
-        raise ValueError("bulk-discard requires an explicit region")
-    if sentiment not in {"positive", "negative"}:
-        raise ValueError("bulk-discard requires an explicit sentiment")
+    validate_bulk_discard_bucket(region=region, sentiment=sentiment)
     normalized_query = (query or "").strip() or None
     adapter = get_adapter()
     matched = adapter.manual_reviews.count_candidates_before_date(
@@ -289,7 +294,7 @@ def bulk_discard_candidates(
         report_type=None,
     )
     if dry_run or matched <= 0:
-        return {"matched": matched, "updated": 0}
+        return {"matched": matched, "updated": 0, "skipped_finalized": 0}
     after = adapter.discard_manual_candidates_before_date_as_user(
         region=region,
         sentiment=sentiment,
@@ -300,7 +305,11 @@ def bulk_discard_candidates(
         actor_user_id=actor.user_id,
         request_id=request_id,
     )
-    return {"matched": matched, "updated": len(after)}
+    return {
+        "matched": matched,
+        "updated": len(after),
+        "skipped_finalized": 0,
+    }
 
 
 __all__ = [
@@ -310,4 +319,5 @@ __all__ = [
     "bulk_discard_candidates",
     "save_edits",
     "update_ranks",
+    "validate_bulk_discard_bucket",
 ]

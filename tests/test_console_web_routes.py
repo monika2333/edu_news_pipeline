@@ -366,6 +366,14 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "searchMode || state.hideSubmitted" not in filter_data_script
     assert "loadAllDutyItems('pending')" not in workspace_script
     assert "function dutyCandidateBackendParams" in workspace_script
+    assert "async function dutyCandidatesResponse" in workspace_script
+    assert "dutyBulkDiscardResponse" not in workspace_script
+    assert "loadAllDutyCandidateMatches" not in workspace_script
+    assert (
+        "if (action === '/bulk-discard') "
+        "return window.fetch(`${API_BASE}/bulk-discard`, options);"
+    ) in workspace_script
+    assert "值班账号不能执行此操作" in workspace_script
     assert "async function dutyStatsResponse" not in workspace_script
     assert "`${API_BASE}/stats${url.search}`" in workspace_script
     assert "if (response.ok) invalidateDutyListCache();" in workspace_script

@@ -10,6 +10,7 @@ from src.adapters.db_postgres_shift_reviews import (
     VALID_REPORT_TYPES,
 )
 from src.console import (
+    manual_filter_admin_service,
     manual_filter_cluster,
     manual_filter_duplicate_service,
     score_feedback_service,
@@ -494,6 +495,39 @@ def bulk_decide(
         },
         "versions": _version_map(saved),
     }
+
+
+def bulk_discard_candidates(
+    *,
+    shift_id: str,
+    user: ConsoleUser,
+    region: str,
+    sentiment: str,
+    query: Optional[str],
+    published_before: Optional[date],
+    dry_run: bool,
+    report_type: str = "zongbao",
+    request_id: Optional[str] = None,
+) -> dict[str, int]:
+    """Discard all pending candidates matching one explicit shift bucket."""
+    require_owned_shift(shift_id, user)
+    actor_user_id = _require_actor_id(user)
+    _validate_report_type(report_type)
+    manual_filter_admin_service.validate_bulk_discard_bucket(
+        region=region,
+        sentiment=sentiment,
+    )
+    return get_adapter().discard_shift_candidates_as_user(
+        shift_id=shift_id,
+        actor_user_id=actor_user_id,
+        region=region,
+        sentiment=sentiment,
+        query=(query or "").strip() or None,
+        published_before=published_before,
+        report_type=report_type,
+        dry_run=dry_run,
+        request_id=request_id,
+    )
 
 
 def update_order(

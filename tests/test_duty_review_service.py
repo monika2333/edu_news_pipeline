@@ -56,6 +56,7 @@ class FakeDutyReviewAdapter:
     def __init__(self) -> None:
         self.saved: dict[str, Any] = {}
         self.saved_batch: dict[str, Any] = {}
+        self.bulk_discarded: dict[str, Any] = {}
         self.ordered: dict[str, Any] = {}
         self.fetch_scopes: list[tuple[Optional[str], bool]] = []
         self.fetch_kwargs: list[dict[str, Any]] = []
@@ -92,6 +93,10 @@ class FakeDutyReviewAdapter:
             }
             for update in kwargs["updates"]
         ]
+
+    def discard_shift_candidates_as_user(self, **kwargs: Any) -> dict[str, int]:
+        self.bulk_discarded = dict(kwargs)
+        return {"matched": 3, "updated": 2, "skipped_finalized": 1}
 
     def update_shift_review_order(self, **kwargs: Any) -> int:
         self.ordered = dict(kwargs)
@@ -260,6 +265,62 @@ def test_save_review_uses_authenticated_editor_id(
 
     assert fake_adapter.saved["actor_user_id"] == "editor-id"
     assert result["decision"] == "selected"
+
+
+def test_bulk_discard_uses_owned_shift_and_server_side_filter(
+    fake_adapter: FakeDutyReviewAdapter,
+) -> None:
+    result = duty_review_service.bulk_discard_candidates(
+        shift_id="shift-id",
+        user=_editor(),
+        region="internal",
+        sentiment="negative",
+        query="  教育政策  ",
+        published_before=None,
+        dry_run=False,
+        request_id="request-1",
+    )
+
+    assert result == {"matched": 3, "updated": 2, "skipped_finalized": 1}
+    assert fake_adapter.bulk_discarded == {
+        "shift_id": "shift-id",
+        "actor_user_id": "editor-id",
+        "region": "internal",
+        "sentiment": "negative",
+        "query": "教育政策",
+        "published_before": None,
+        "report_type": "zongbao",
+        "dry_run": False,
+        "request_id": "request-1",
+    }
+    assert fake_adapter.saved_batch == {}
+
+
+@pytest.mark.parametrize(
+    ("region", "sentiment", "message"),
+    [
+        ("", "positive", "explicit region"),
+        ("internal", "", "explicit sentiment"),
+    ],
+)
+def test_bulk_discard_keeps_explicit_bucket_guard(
+    fake_adapter: FakeDutyReviewAdapter,
+    region: str,
+    sentiment: str,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        duty_review_service.bulk_discard_candidates(
+            shift_id="shift-id",
+            user=_editor(),
+            region=region,
+            sentiment=sentiment,
+            query=None,
+            published_before=None,
+            dry_run=True,
+        )
+
+    assert fake_adapter.bulk_discarded == {}
 
 
 def test_score_feedback_is_scoped_to_owned_shift(

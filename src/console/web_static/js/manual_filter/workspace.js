@@ -160,24 +160,6 @@ function dutyCandidateBackendParams(params, limit, offset) {
     return backendParams;
 }
 
-async function loadAllDutyCandidateMatches(params) {
-    const items = [];
-    let offset = 0;
-    let total = 0;
-    do {
-        const backendParams = dutyCandidateBackendParams(params, 200, offset);
-        const response = await window.fetch(
-            `${API_BASE}/candidates?${backendParams.toString()}`
-        );
-        if (!response.ok) throw new Error('值班筛选数据加载失败');
-        const page = await response.json();
-        items.push(...(page.items || []));
-        total = Number(page.total) || 0;
-        offset = items.length;
-    } while (offset < total);
-    return items;
-}
-
 async function dutyCandidatesResponse(params) {
     const limit = Math.max(1, Math.min(Number(params.get('limit')) || 10, 200));
     const offset = Math.max(0, Number(params.get('offset')) || 0);
@@ -227,55 +209,6 @@ async function dutyDecideResponse(options) {
     return response;
 }
 
-async function dutyBulkDiscardResponse(options) {
-    const payload = JSON.parse(options.body || '{}');
-    const params = new URLSearchParams();
-    ['region', 'sentiment', 'q', 'published_before'].forEach(key => {
-        if (payload[key]) params.set(key, payload[key]);
-    });
-    if (payload.dry_run) {
-        const countParams = dutyCandidateBackendParams(params, 1, 0);
-        const countResponse = await window.fetch(
-            `${API_BASE}/candidates?${countParams.toString()}`
-        );
-        if (!countResponse.ok) return countResponse;
-        const countPayload = await countResponse.json();
-        return workspaceJsonResponse({
-            matched: Number(countPayload.total) || 0,
-            updated: 0
-        });
-    }
-
-    const items = await loadAllDutyCandidateMatches(params);
-    const versions = Object.fromEntries(
-        items
-            .filter(item => Number(item.version) > 0)
-            .map(item => [item.article_id, Number(item.version)])
-    );
-    const response = await window.fetch(`${API_BASE}/decide`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            selected_ids: [],
-            backup_ids: [],
-            discarded_ids: items.map(item => item.article_id),
-            pending_ids: [],
-            versions,
-            report_type: 'zongbao'
-        })
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        return workspaceJsonResponse(result, response.status);
-    }
-    invalidateDutyListCache();
-    return workspaceJsonResponse({
-        ...result,
-        matched: items.length,
-        updated: result.discarded || 0
-    });
-}
-
 async function dutyOrderResponse(options) {
     const payload = JSON.parse(options.body || '{}');
     const response = await window.fetch(`${API_BASE}/order`, {
@@ -311,10 +244,10 @@ async function workspaceFetch(input, options = {}) {
     if (action === '/edit') return dutyEditResponse(options);
     if (action === '/decide') return dutyDecideResponse(options);
     if (action === '/duplicate-check') return window.fetch(`${API_BASE}/duplicate-check`, options);
+    if (action === '/bulk-discard') return window.fetch(`${API_BASE}/bulk-discard`, options);
     if (action === '/finalizations' || action.startsWith('/finalizations/')) {
         return window.fetch(`${API_BASE}${action}${url.search}`, options);
     }
-    if (action === '/bulk-discard') return dutyBulkDiscardResponse(options);
     if (action === '/order') return dutyOrderResponse(options);
     return workspaceJsonResponse({ detail: '值班账号不能执行此操作' }, 403);
 }

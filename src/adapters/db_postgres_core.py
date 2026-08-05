@@ -578,6 +578,55 @@ class PostgresAdapter:
                 )
             return after_items
 
+    def discard_shift_candidates_as_user(
+        self,
+        *,
+        shift_id: str,
+        actor_user_id: str,
+        region: str,
+        sentiment: str,
+        query: Optional[str],
+        published_before: Optional[date],
+        report_type: str,
+        dry_run: bool,
+        request_id: Optional[str] = None,
+    ) -> Dict[str, int]:
+        with self.transaction() as cur:
+            result = shift_reviews.bulk_discard_shift_candidates(
+                cur,
+                shift_id=shift_id,
+                actor_user_id=actor_user_id,
+                region=region,
+                sentiment=sentiment,
+                query=query,
+                published_before=published_before,
+                report_type=report_type,
+                dry_run=dry_run,
+            )
+            if not dry_run and result["updated"]:
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action="shift_review.bulk_discard",
+                    target_type="shift_review_batch",
+                    target_id=shift_id,
+                    before_data=None,
+                    after_data={
+                        **result,
+                        "region": region,
+                        "sentiment": sentiment,
+                        "query": query,
+                        "published_before": (
+                            published_before.isoformat()
+                            if published_before is not None
+                            else None
+                        ),
+                        "report_type": report_type,
+                    },
+                    request_id=request_id,
+                )
+            return result
+
     def set_shift_review_admin_discarded(
         self,
         *,

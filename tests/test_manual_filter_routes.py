@@ -443,7 +443,11 @@ def test_bulk_discard_api_supports_keyword_only_preview_and_apply(monkeypatch) -
         },
     )
     assert preview.status_code == 200
-    assert preview.json() == {"matched": 1, "updated": 0}
+    assert preview.json() == {
+        "matched": 1,
+        "updated": 0,
+        "skipped_finalized": 0,
+    }
 
     apply = client.post(
         "/api/manual_filter/bulk-discard",
@@ -457,7 +461,11 @@ def test_bulk_discard_api_supports_keyword_only_preview_and_apply(monkeypatch) -
         },
     )
     assert apply.status_code == 200
-    assert apply.json() == {"matched": 1, "updated": 1}
+    assert apply.json() == {
+        "matched": 1,
+        "updated": 1,
+        "skipped_finalized": 0,
+    }
     assert next(row for row in adapter.rows if row["article_id"] == "a1")["status"] == "discarded"
 
 
@@ -485,7 +493,11 @@ def test_bulk_discard_api_supports_empty_optional_filters(monkeypatch) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json() == {"matched": 2, "updated": 0}
+    assert response.json() == {
+        "matched": 2,
+        "updated": 0,
+        "skipped_finalized": 0,
+    }
 
 
 def test_update_order_api_passes_review_groups(monkeypatch) -> None:

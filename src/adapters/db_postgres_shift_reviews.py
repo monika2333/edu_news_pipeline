@@ -12,6 +12,7 @@ from src.adapters.db_postgres_manual_reviews import (
     PUBLISHED_LOCAL_DATE_EXPRESSION,
     SCORE_FEEDBACK_JOIN,
     SEARCH_TEXT_EXPRESSION,
+    _build_manual_candidate_filters,
 )
 from src.domain.report_type import NEWS_REPORT_TYPES as VALID_REPORT_TYPES
 
@@ -360,6 +361,123 @@ def fetch_shift_review_items(
         tuple(params + [bounded_limit, bounded_offset]),
     )
     return [dict(row) for row in cur.fetchall()], total
+
+
+def bulk_discard_shift_candidates(
+    cur: psycopg.Cursor,
+    *,
+    shift_id: str,
+    actor_user_id: str,
+    region: str,
+    sentiment: str,
+    query: Optional[str] = None,
+    published_before: Optional[date] = None,
+    report_type: str = "zongbao",
+    dry_run: bool = True,
+) -> dict[str, int]:
+    """Discard pending candidates in one shift without per-row versions."""
+    clauses, filter_params = _build_manual_candidate_filters(
+        region=region,
+        sentiment=sentiment,
+        query=query,
+        published_before=published_before,
+        report_type=report_type,
+    )
+    where_sql = " AND ".join(clauses)
+    matched_sql = f"""
+        SELECT
+            s.id AS shift_id,
+            ns.article_id,
+            sr.finalized_batch_id
+        FROM duty_shifts s
+        JOIN news_summaries ns
+          ON ns.created_at >= s.starts_at
+         AND ns.created_at < s.ends_at
+        LEFT JOIN shift_reviews sr
+          ON sr.shift_id = s.id
+         AND sr.article_id = ns.article_id
+        CROSS JOIN LATERAL (
+            SELECT
+                ns.article_id,
+                COALESCE(sr.decision, 'pending') AS status,
+                COALESCE(sr.report_type, 'zongbao') AS report_type
+        ) AS mr
+        WHERE s.id = %s
+          AND s.cancelled_at IS NULL
+          AND {where_sql}
+    """
+    params: list[Any] = [shift_id, *filter_params]
+    if dry_run:
+        cur.execute(
+            f"""
+            WITH matched_candidates AS MATERIALIZED (
+                {matched_sql}
+            )
+            SELECT
+                count(*) AS matched,
+                0 AS updated,
+                count(*) FILTER (
+                    WHERE finalized_batch_id IS NOT NULL
+                ) AS skipped_finalized
+            FROM matched_candidates
+            """,
+            tuple(params),
+        )
+    else:
+        cur.execute(
+            f"""
+            WITH matched_candidates AS MATERIALIZED (
+                {matched_sql}
+            ),
+            upserted AS (
+                INSERT INTO shift_reviews (
+                    shift_id,
+                    article_id,
+                    created_by_user_id,
+                    updated_by_user_id,
+                    report_type,
+                    decision,
+                    decided_at
+                )
+                SELECT
+                    shift_id,
+                    article_id,
+                    %s,
+                    %s,
+                    %s,
+                    'discarded',
+                    now()
+                FROM matched_candidates
+                WHERE finalized_batch_id IS NULL
+                ON CONFLICT (shift_id, article_id) DO UPDATE
+                SET report_type = EXCLUDED.report_type,
+                    decision = 'discarded',
+                    rank = NULL,
+                    updated_by_user_id = EXCLUDED.updated_by_user_id,
+                    version = shift_reviews.version + 1,
+                    decided_at = now(),
+                    updated_at = now()
+                WHERE shift_reviews.decision = 'pending'
+                  AND shift_reviews.finalized_batch_id IS NULL
+                RETURNING shift_reviews.article_id
+            )
+            SELECT
+                (SELECT count(*) FROM matched_candidates) AS matched,
+                (SELECT count(*) FROM upserted) AS updated,
+                (
+                    SELECT count(*)
+                    FROM matched_candidates
+                    WHERE finalized_batch_id IS NOT NULL
+                ) AS skipped_finalized
+            """,
+            tuple(params + [actor_user_id, actor_user_id, report_type]),
+        )
+    row = cur.fetchone() or {}
+    return {
+        "matched": int(row.get("matched") or 0),
+        "updated": int(row.get("updated") or 0),
+        "skipped_finalized": int(row.get("skipped_finalized") or 0),
+    }
 
 
 def fetch_shift_clusters(
@@ -1182,6 +1300,7 @@ __all__ = [
     "ShiftReviewConflictError",
     "VALID_DECISIONS",
     "VALID_REPORT_TYPES",
+    "bulk_discard_shift_candidates",
     "fetch_shift_finalized_items",
     "fetch_admin_shift_summaries",
     "fetch_shift_clusters",

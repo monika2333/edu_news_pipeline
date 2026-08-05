@@ -162,6 +162,97 @@ def test_editor_candidate_search_is_forwarded_to_backend(monkeypatch) -> None:
     assert str(captured["published_before"]) == "2026-07-27"
 
 
+def test_editor_bulk_discard_is_forwarded_once_to_owned_shift_service(
+    monkeypatch,
+) -> None:
+    editor = _user("duty_editor")
+    captured: dict[str, Any] = {}
+
+    def bulk_discard_candidates(**kwargs: Any) -> dict[str, int]:
+        captured.update(kwargs)
+        return {"matched": 4, "updated": 3, "skipped_finalized": 1}
+
+    monkeypatch.setattr(
+        duty_review_service,
+        "bulk_discard_candidates",
+        bulk_discard_candidates,
+    )
+
+    response = _client_for(editor).post(
+        "/api/duty/shifts/shift-id/bulk-discard",
+        json={
+            "region": "external",
+            "sentiment": "negative",
+            "q": "教育政策",
+            "published_before": "2026-07-27",
+            "dry_run": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "matched": 4,
+        "updated": 3,
+        "skipped_finalized": 1,
+    }
+    assert captured["shift_id"] == "shift-id"
+    assert captured["user"].user_id == "editor-id"
+    assert captured["region"] == "external"
+    assert captured["sentiment"] == "negative"
+    assert captured["query"] == "教育政策"
+    assert str(captured["published_before"]) == "2026-07-27"
+    assert captured["dry_run"] is False
+    assert captured["report_type"] == "zongbao"
+
+
+def test_editor_bulk_discard_rejects_another_editors_shift(monkeypatch) -> None:
+    editor = _user("duty_editor")
+
+    def reject_shift(*args: Any, **kwargs: Any) -> None:
+        raise shifts_service.ShiftPermissionError(
+            "Duty editors can only access their own shifts"
+        )
+
+    monkeypatch.setattr(duty_review_service, "require_owned_shift", reject_shift)
+    monkeypatch.setattr(
+        duty_review_service,
+        "get_adapter",
+        lambda: (_ for _ in ()).throw(AssertionError("write must not run")),
+    )
+
+    response = _client_for(editor).post(
+        "/api/duty/shifts/another-shift/bulk-discard",
+        json={
+            "region": "internal",
+            "sentiment": "positive",
+            "dry_run": False,
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_bulk_discard_routes_require_region_and_sentiment() -> None:
+    admin_client = _client_for(_user("admin"))
+    editor_client = _client_for(_user("duty_editor"))
+
+    for client, path in (
+        (admin_client, "/api/manual_filter/bulk-discard"),
+        (editor_client, "/api/duty/shifts/shift-id/bulk-discard"),
+    ):
+        missing_region = client.post(
+            path,
+            json={"sentiment": "positive", "dry_run": True},
+        )
+        missing_sentiment = client.post(
+            path,
+            json={"region": "internal", "dry_run": True},
+        )
+
+        assert missing_region.status_code == 422
+        assert missing_sentiment.status_code == 422
+
+
 def test_admin_can_bulk_discard_duty_results(monkeypatch) -> None:
     admin = _user("admin")
     captured: dict[str, object] = {}

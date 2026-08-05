@@ -23,6 +23,7 @@ from src.console.manual_filter_duplicate_service import (
     DuplicateReviewTimeoutError,
     DuplicateReviewUnavailableError,
 )
+from src.console.manual_filter_routes import BulkDiscardRequest
 from src.console.score_feedback_schemas import (
     ClearScoreFeedbackRequest,
     ScoreFeedbackRequest,
@@ -266,6 +267,30 @@ def bulk_decide(
             pending_ids=payload.pending_ids,
             versions=payload.versions,
             report_type=payload.report_type,
+            request_id=request_id,
+        )
+    except (ValueError, PermissionError, RuntimeError) as exc:
+        _raise_review_error(exc)
+
+
+@router.post("/bulk-discard")
+def bulk_discard(
+    shift_id: str,
+    payload: BulkDiscardRequest,
+    user: ConsoleUser = Depends(require_role("duty_editor")),
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
+) -> dict[str, int]:
+    """Discard pending candidates matching a filter in the owned shift."""
+    try:
+        return duty_review_service.bulk_discard_candidates(
+            shift_id=shift_id,
+            user=user,
+            region=payload.region,
+            sentiment=payload.sentiment,
+            query=payload.q,
+            published_before=payload.published_before,
+            dry_run=payload.dry_run,
+            report_type="zongbao",
             request_id=request_id,
         )
     except (ValueError, PermissionError, RuntimeError) as exc:

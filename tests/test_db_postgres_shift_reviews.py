@@ -24,6 +24,20 @@ class ShiftReviewListCursor:
         return []
 
 
+class BulkDiscardCursor:
+    def __init__(self, result: dict[str, int]) -> None:
+        self.result = result
+        self.queries: list[str] = []
+        self.params: list[tuple[Any, ...]] = []
+
+    def execute(self, query: str, params: tuple[Any, ...]) -> None:
+        self.queries.append(query)
+        self.params.append(params)
+
+    def fetchone(self) -> dict[str, int]:
+        return self.result
+
+
 class AdminDiscardCursor:
     def __init__(self) -> None:
         self.queries: list[str] = []
@@ -113,6 +127,71 @@ class FinalizationCursor:
             )
             return [{"article_id": article_id} for article_id in article_ids]
         raise AssertionError(f"Unexpected fetchall query: {self.last_query}")
+
+
+def test_bulk_discard_reuses_manual_candidate_filters_for_preview() -> None:
+    cursor = BulkDiscardCursor(
+        {"matched": 2, "updated": 0, "skipped_finalized": 1}
+    )
+
+    result = db_postgres_shift_reviews.bulk_discard_shift_candidates(
+        cursor,
+        shift_id="shift-1",
+        actor_user_id="editor-1",
+        region="internal",
+        sentiment="negative",
+        query="教育政策",
+        published_before=date(2026, 7, 27),
+        report_type="zongbao",
+        dry_run=True,
+    )
+
+    query = cursor.queries[0]
+    assert result == {"matched": 2, "updated": 0, "skipped_finalized": 1}
+    assert "INSERT INTO shift_reviews" not in query
+    assert "manual_reviews" not in query
+    assert "mr.status = %s" in query
+    assert "ns.status = 'ready_for_export'" in query
+    assert "ns.is_beijing_related = %s" in query
+    assert "ns.sentiment_label = %s" in query
+    assert "ILIKE %s" in query
+    assert "AT TIME ZONE 'Asia/Shanghai'" in query
+    assert cursor.params[0] == (
+        "shift-1",
+        "pending",
+        "zongbao",
+        True,
+        "negative",
+        "%教育政策%",
+        date(2026, 7, 27),
+    )
+
+
+def test_bulk_discard_only_upserts_unfinalized_pending_shift_reviews() -> None:
+    cursor = BulkDiscardCursor(
+        {"matched": 3, "updated": 1, "skipped_finalized": 1}
+    )
+
+    result = db_postgres_shift_reviews.bulk_discard_shift_candidates(
+        cursor,
+        shift_id="shift-1",
+        actor_user_id="editor-1",
+        region="external",
+        sentiment="positive",
+        dry_run=False,
+    )
+
+    query = cursor.queries[0]
+    assert result == {"matched": 3, "updated": 1, "skipped_finalized": 1}
+    assert "INSERT INTO shift_reviews" in query
+    assert "ON CONFLICT (shift_id, article_id) DO UPDATE" in query
+    assert "WHERE shift_reviews.decision = 'pending'" in query
+    assert "shift_reviews.finalized_batch_id IS NULL" in query
+    assert "WHERE finalized_batch_id IS NULL" in query
+    assert "decision = 'discarded'" in query
+    assert "decided_at = now()" in query
+    assert "manual_reviews" not in query
+    assert cursor.params[0][-3:] == ("editor-1", "editor-1", "zongbao")
 
 
 def test_admin_result_queries_separate_active_and_discarded_items() -> None:

@@ -33,6 +33,18 @@
             font-size: 14px;
         }
     </style>
+    <!-- 首帧前同步应用侧栏折叠状态，避免展开->折叠的闪屏；键名与 sidebar_collapse.js 保持一致 -->
+    <script>
+        (function () {
+            try {
+                if (localStorage.getItem('sidebar_collapsed') === 'true') {
+                    document.documentElement.classList.add('sidebar-collapsed');
+                }
+            } catch (e) {
+                // localStorage 不可用（隐私模式等）时按展开处理
+            }
+        })();
+    </script>
 </head>
 
 <body data-workspace-mode="{{ workspace_mode|default('admin') }}"

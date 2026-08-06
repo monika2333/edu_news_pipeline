@@ -23,14 +23,12 @@ function persistSidebarCollapsed(collapsed) {
 }
 
 function isSidebarCollapsed() {
-    const layout = document.querySelector('.filter-layout');
-    return Boolean(layout && layout.classList.contains('sidebar-collapsed'));
+    return document.documentElement.classList.contains('sidebar-collapsed');
 }
 
 function applySidebarCollapsedUI(collapsed) {
-    document.querySelectorAll('.filter-layout').forEach(layout => {
-        layout.classList.toggle('sidebar-collapsed', collapsed);
-    });
+    // 折叠类只有一个来源：<html> 元素（首帧由内联脚本设置，此后由这里维护）
+    document.documentElement.classList.toggle('sidebar-collapsed', collapsed);
     document.querySelectorAll('.sidebar-collapse-toggle').forEach(btn => {
         btn.setAttribute('aria-expanded', String(!collapsed));
         btn.textContent = collapsed ? '»' : '«';

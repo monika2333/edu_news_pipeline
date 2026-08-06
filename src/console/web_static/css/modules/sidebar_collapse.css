@@ -29,26 +29,28 @@
     outline-offset: 2px;
 }
 
-/* 折叠形态只在宽屏生效；≤1024px 时侧栏是横向滚动条，折叠无意义 */
+/* 折叠形态只在宽屏生效；≤1024px 时侧栏是横向滚动条，折叠无意义。
+   折叠类挂在 <html> 上（首帧前由内联脚本同步设置，避免闪屏），
+   模板与 sidebar_collapse.js 不再直接操作 .filter-layout 的类。 */
 @media (min-width: 1025px) {
-    .filter-layout.sidebar-collapsed {
+    html.sidebar-collapsed .filter-layout {
         grid-template-columns: 44px 1fr;
     }
 
-    .filter-layout.sidebar-collapsed .filter-sidebar {
+    html.sidebar-collapsed .filter-sidebar {
         align-items: center;
     }
 
-    .filter-layout.sidebar-collapsed .sidebar-collapse-toggle {
+    html.sidebar-collapsed .sidebar-collapse-toggle {
         align-self: center;
     }
 
     /* 非当前桶按钮隐藏；当前桶按钮竖排保留，折叠后仍能看到所在桶 */
-    .filter-layout.sidebar-collapsed .filter-tab-btn:not(.active) {
+    html.sidebar-collapsed .filter-tab-btn:not(.active) {
         display: none;
     }
 
-    .filter-layout.sidebar-collapsed .filter-tab-btn.active {
+    html.sidebar-collapsed .filter-tab-btn.active {
         writing-mode: vertical-rl;
         padding: 12px 8px;
         text-align: center;

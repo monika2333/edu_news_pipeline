@@ -433,7 +433,7 @@ def test_shift_bulk_discard_and_audit_share_one_transaction(
         region="internal",
         sentiment="positive",
         query=None,
-        published_before=None,
+        created_before=None,
         report_type="zongbao",
         dry_run=False,
         request_id="request-1",
@@ -484,7 +484,7 @@ def test_shift_bulk_discard_dry_run_does_not_audit(
         region="internal",
         sentiment="positive",
         query=None,
-        published_before=None,
+        created_before=None,
         report_type="zongbao",
         dry_run=True,
     )

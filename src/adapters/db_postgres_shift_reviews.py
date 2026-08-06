@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from src.adapters.db_postgres_core import PostgresAdapter
 
 from src.adapters.db_postgres_manual_reviews import (
-    PUBLISHED_LOCAL_DATE_EXPRESSION,
+    CREATED_LOCAL_DATE_EXPRESSION,
     SCORE_FEEDBACK_JOIN,
     SEARCH_TEXT_EXPRESSION,
     _build_manual_candidate_filters,
@@ -93,7 +93,7 @@ class ShiftReviewsNamespace:
         region: Optional[str] = None,
         sentiment: Optional[str] = None,
         query: Optional[str] = None,
-        published_before: Optional[date] = None,
+        created_before: Optional[date] = None,
         article_ids: Optional[Sequence[str]] = None,
         mismatch_only: bool = False,
         include_admin_state: bool = False,
@@ -113,7 +113,7 @@ class ShiftReviewsNamespace:
                 region=region,
                 sentiment=sentiment,
                 query=query,
-                published_before=published_before,
+                created_before=created_before,
                 article_ids=article_ids,
                 mismatch_only=mismatch_only,
                 include_admin_state=include_admin_state,
@@ -174,7 +174,7 @@ def fetch_shift_review_items(
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
     query: Optional[str] = None,
-    published_before: Optional[date] = None,
+    created_before: Optional[date] = None,
     article_ids: Optional[Sequence[str]] = None,
     mismatch_only: bool = False,
     include_admin_state: bool = False,
@@ -209,9 +209,9 @@ def fetch_shift_review_items(
     if normalized_query:
         clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
         params.append(f"%{normalized_query}%")
-    if published_before is not None:
-        clauses.append(f"{PUBLISHED_LOCAL_DATE_EXPRESSION} < %s")
-        params.append(published_before)
+    if created_before is not None:
+        clauses.append(f"{CREATED_LOCAL_DATE_EXPRESSION} < %s")
+        params.append(created_before)
     if article_ids is not None:
         normalized_article_ids = [
             str(article_id).strip()
@@ -355,7 +355,7 @@ def bulk_discard_shift_candidates(
     region: str,
     sentiment: str,
     query: Optional[str] = None,
-    published_before: Optional[date] = None,
+    created_before: Optional[date] = None,
     report_type: str = "zongbao",
     dry_run: bool = True,
 ) -> dict[str, int]:
@@ -364,7 +364,7 @@ def bulk_discard_shift_candidates(
         region=region,
         sentiment=sentiment,
         query=query,
-        published_before=published_before,
+        created_before=created_before,
         report_type=None,
     )
     where_sql = " AND ".join(clauses)

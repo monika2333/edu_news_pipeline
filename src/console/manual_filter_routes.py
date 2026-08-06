@@ -4,7 +4,7 @@ from datetime import date
 from typing import Any, Dict, List, Literal, NoReturn, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.console import (
     manual_filter_admin_service,
@@ -65,10 +65,12 @@ class UpdateOrderRequest(BaseModel):
 
 
 class BulkDiscardRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     region: Literal["internal", "external"]
     sentiment: Literal["positive", "negative"]
     q: Optional[str] = None
-    published_before: Optional[date] = None
+    created_before: Optional[date] = None
     dry_run: bool = True
 
 
@@ -101,7 +103,7 @@ def list_candidates_api(
     cluster_threshold: Optional[float] = None,
     force_refresh: bool = False,
     q: Optional[str] = None,
-    published_before: Optional[date] = None,
+    created_before: Optional[date] = None,
     view_mode: Optional[str] = None,
     report_type: str = "zongbao",
 ) -> Dict[str, Any]:
@@ -114,7 +116,7 @@ def list_candidates_api(
         cluster_threshold=cluster_threshold,
         force_refresh=force_refresh,
         q=q,
-        published_before=published_before,
+        created_before=created_before,
         view_mode=view_mode,
         report_type=report_type,
     )
@@ -273,7 +275,7 @@ def bulk_discard_api(
             region=req.region,
             sentiment=req.sentiment,
             query=req.q,
-            published_before=req.published_before,
+            created_before=req.created_before,
             dry_run=req.dry_run,
             actor=user,
             request_id=request_id,

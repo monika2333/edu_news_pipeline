@@ -150,7 +150,7 @@ def test_editor_candidate_search_is_forwarded_to_backend(monkeypatch) -> None:
         "/api/duty/shifts/shift-id/candidates"
         "?limit=10&offset=20&report_type=zongbao"
         "&region=internal&sentiment=positive&q=教育政策"
-        "&published_before=2026-07-27"
+        "&created_before=2026-07-27"
     )
 
     assert response.status_code == 200
@@ -158,7 +158,7 @@ def test_editor_candidate_search_is_forwarded_to_backend(monkeypatch) -> None:
     assert captured["region"] == "internal"
     assert captured["sentiment"] == "positive"
     assert captured["query"] == "教育政策"
-    assert str(captured["published_before"]) == "2026-07-27"
+    assert str(captured["created_before"]) == "2026-07-27"
 
 
 def test_editor_bulk_discard_is_forwarded_once_to_owned_shift_service(
@@ -183,7 +183,7 @@ def test_editor_bulk_discard_is_forwarded_once_to_owned_shift_service(
             "region": "external",
             "sentiment": "negative",
             "q": "教育政策",
-            "published_before": "2026-07-27",
+            "created_before": "2026-07-27",
             "dry_run": False,
         },
     )
@@ -199,7 +199,7 @@ def test_editor_bulk_discard_is_forwarded_once_to_owned_shift_service(
     assert captured["region"] == "external"
     assert captured["sentiment"] == "negative"
     assert captured["query"] == "教育政策"
-    assert str(captured["published_before"]) == "2026-07-27"
+    assert str(captured["created_before"]) == "2026-07-27"
     assert captured["dry_run"] is False
     assert captured["report_type"] == "zongbao"
 

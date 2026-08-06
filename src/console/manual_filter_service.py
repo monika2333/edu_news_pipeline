@@ -52,7 +52,7 @@ def list_candidates(
     cluster_threshold: Optional[float] = None,
     force_refresh: bool = False,
     q: Optional[str] = None,
-    published_before: Optional[date] = None,
+    created_before: Optional[date] = None,
     view_mode: Optional[str] = None,
     report_type: str = DEFAULT_REPORT_TYPE,
 ) -> Dict[str, Any]:
@@ -66,7 +66,7 @@ def list_candidates(
         cluster_threshold=cluster_threshold,
         force_refresh=force_refresh,
         q=q,
-        published_before=published_before,
+        created_before=created_before,
         view_mode=view_mode,
         report_type=report_type,
     )
@@ -160,7 +160,7 @@ def bulk_discard_candidates(
     region: str,
     sentiment: str,
     query: Optional[str] = None,
-    published_before: Optional[date] = None,
+    created_before: Optional[date] = None,
     actor: Optional[str] = None,
     dry_run: bool = True,
 ) -> Dict[str, int]:
@@ -169,7 +169,7 @@ def bulk_discard_candidates(
         region=region,
         sentiment=sentiment,
         query=query,
-        published_before=published_before,
+        created_before=created_before,
         actor=actor,
         dry_run=dry_run,
     )

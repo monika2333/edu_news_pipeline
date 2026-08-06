@@ -586,7 +586,7 @@ class PostgresAdapter:
         region: str,
         sentiment: str,
         query: Optional[str],
-        published_before: Optional[date],
+        created_before: Optional[date],
         report_type: str,
         dry_run: bool,
         request_id: Optional[str] = None,
@@ -599,7 +599,7 @@ class PostgresAdapter:
                 region=region,
                 sentiment=sentiment,
                 query=query,
-                published_before=published_before,
+                created_before=created_before,
                 report_type=report_type,
                 dry_run=dry_run,
             )
@@ -616,9 +616,9 @@ class PostgresAdapter:
                         "region": region,
                         "sentiment": sentiment,
                         "query": query,
-                        "published_before": (
-                            published_before.isoformat()
-                            if published_before is not None
+                        "created_before": (
+                            created_before.isoformat()
+                            if created_before is not None
                             else None
                         ),
                         "report_type": report_type,
@@ -989,7 +989,7 @@ class PostgresAdapter:
         region: str,
         sentiment: str,
         query: Optional[str],
-        published_before: Optional[date],
+        created_before: Optional[date],
         report_type: str,
         actor_username: str,
         actor_user_id: Optional[str],
@@ -1002,7 +1002,7 @@ class PostgresAdapter:
                     region=region,
                     sentiment=sentiment,
                     query=query,
-                    published_before=published_before,
+                    created_before=created_before,
                     report_type=report_type,
                 )
             )

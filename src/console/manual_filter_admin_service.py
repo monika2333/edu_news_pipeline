@@ -278,7 +278,7 @@ def bulk_discard_candidates(
     region: str,
     sentiment: str,
     query: Optional[str],
-    published_before: Optional[date],
+    created_before: Optional[date],
     dry_run: bool,
     actor: ConsoleUser,
     request_id: Optional[str] = None,
@@ -290,7 +290,7 @@ def bulk_discard_candidates(
         region=region,
         sentiment=sentiment,
         query=normalized_query,
-        published_before=published_before,
+        created_before=created_before,
         report_type=None,
     )
     if dry_run or matched <= 0:
@@ -299,7 +299,7 @@ def bulk_discard_candidates(
         region=region,
         sentiment=sentiment,
         query=normalized_query,
-        published_before=published_before,
+        created_before=created_before,
         report_type=None,
         actor_username=actor.username,
         actor_user_id=actor.user_id,

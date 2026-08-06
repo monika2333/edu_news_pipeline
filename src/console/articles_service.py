@@ -111,7 +111,6 @@ def get_article_content(*, article_id: str) -> Dict[str, Any]:
         "title": None,
         "source": None,
         "url": None,
-        "publish_time_iso": None,
         "created_at": None,
         "content_markdown": None,
     }
@@ -128,7 +127,6 @@ def get_article_content(*, article_id: str) -> Dict[str, Any]:
         "title": row.get("title"),
         "source": row.get("source"),
         "url": row.get("url"),
-        "publish_time_iso": row.get("publish_time_iso"),
         "created_at": row.get("created_at"),
         "content_markdown": row.get("content_markdown"),
     }

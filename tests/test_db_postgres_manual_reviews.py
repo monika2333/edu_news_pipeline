@@ -188,7 +188,7 @@ def test_discard_manual_candidates_before_date_places_filter_params_first() -> N
         region="internal",
         sentiment="positive",
         query="keyword",
-        published_before=date(2025, 1, 2),
+        created_before=date(2025, 1, 2),
         actor="tester",
         decided_at=decided_at,
         report_type="zongbao",
@@ -198,6 +198,9 @@ def test_discard_manual_candidates_before_date_places_filter_params_first() -> N
     assert cur.query is not None
     assert "decided_by = %s" in cur.query
     assert "WHERE mr.status = %s" in cur.query
+    assert "(ns.created_at AT TIME ZONE 'Asia/Shanghai')::date < %s" in cur.query
+    assert "publish_time_iso" not in cur.query
+    assert "to_timestamp(ns.publish_time)" not in cur.query
     assert cur.params is not None
     assert cur.params[:6] == ("pending", "zongbao", True, "positive", "%keyword%", date(2025, 1, 2))
     assert cur.params[6] == "tester"

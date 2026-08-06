@@ -175,27 +175,21 @@ class FakeAdapter:
         return rows
 
     @staticmethod
-    def _published_local_date(row: Mapping[str, Any]) -> Optional[date]:
-        publish_time_iso = row.get("publish_time_iso")
-        if publish_time_iso:
-            try:
-                value = str(publish_time_iso).replace("Z", "+00:00")
-                return datetime.fromisoformat(value).astimezone(ZoneInfo("Asia/Shanghai")).date()
-            except ValueError:
-                return None
-        publish_time = row.get("publish_time")
-        if publish_time is None:
+    def _created_local_date(row: Mapping[str, Any]) -> Optional[date]:
+        created_at = row.get("created_at")
+        if created_at is None:
             return None
         try:
-            return datetime.fromtimestamp(float(publish_time), tz=ZoneInfo("Asia/Shanghai")).date()
-        except (TypeError, ValueError, OSError):
+            value = str(created_at).replace("Z", "+00:00")
+            return datetime.fromisoformat(value).astimezone(ZoneInfo("Asia/Shanghai")).date()
+        except ValueError:
             return None
 
     def _search_candidates(
         self,
         *,
         query: Optional[str] = None,
-        published_before: Optional[date] = None,
+        created_before: Optional[date] = None,
         limit: int,
         offset: int,
         region: Optional[str] = None,
@@ -225,11 +219,11 @@ class FakeAdapter:
                     ]
                 )
             ]
-        if published_before:
+        if created_before:
             filtered = [
                 row
                 for row in filtered
-                if self._published_local_date(row) is not None and self._published_local_date(row) < published_before
+                if self._created_local_date(row) is not None and self._created_local_date(row) < created_before
             ]
         total = len(filtered)
         return filtered[offset : offset + limit], total
@@ -240,12 +234,12 @@ class FakeAdapter:
         region: str,
         sentiment: str,
         query: Optional[str] = None,
-        published_before: Optional[date] = None,
+        created_before: Optional[date] = None,
         report_type: Optional[str] = None,
     ) -> int:
         _, total = self._search_candidates(
             query=query,
-            published_before=published_before,
+            created_before=created_before,
             limit=10_000,
             offset=0,
             region=region,
@@ -260,14 +254,14 @@ class FakeAdapter:
         region: str,
         sentiment: str,
         query: Optional[str] = None,
-        published_before: Optional[date] = None,
+        created_before: Optional[date] = None,
         actor: Optional[str] = None,
         decided_at: Optional[Any] = None,
         report_type: Optional[str] = None,
     ) -> int:
         rows, _ = self._search_candidates(
             query=query,
-            published_before=published_before,
+            created_before=created_before,
             limit=10_000,
             offset=0,
             region=region,
@@ -461,8 +455,9 @@ def fake_adapter(monkeypatch):
             "news_status": "ready_for_export",
             "status": "pending",
             "source": "src",
-            "publish_time_iso": "2025-01-01T00:00:00Z",
+            "publish_time_iso": None,
             "publish_time": None,
+            "created_at": "2025-01-01T00:00:00Z",
             "sentiment_label": "positive",
             "sentiment_confidence": 0.9,
             "is_beijing_related": True,
@@ -485,6 +480,7 @@ def fake_adapter(monkeypatch):
             "source": "src2",
             "publish_time_iso": "2025-01-02T00:00:00Z",
             "publish_time": None,
+            "created_at": "2025-01-02T00:00:00Z",
             "sentiment_label": "negative",
             "sentiment_confidence": 0.8,
             "is_beijing_related": False,
@@ -841,6 +837,7 @@ def test_list_candidates_search_mode_uses_shanghai_calendar_day(fake_adapter):
             "source": "src3",
             "publish_time_iso": "2024-12-31T16:30:00Z",
             "publish_time": None,
+            "created_at": "2024-12-31T16:30:00Z",
             "sentiment_label": "positive",
             "sentiment_confidence": 0.6,
             "is_beijing_related": True,
@@ -857,31 +854,36 @@ def test_list_candidates_search_mode_uses_shanghai_calendar_day(fake_adapter):
         offset=0,
         region="internal",
         sentiment="positive",
-        published_before=date(2025, 1, 1),
+        created_before=date(2025, 1, 1),
     )
     assert result["view_mode"] == "search"
     assert [item["article_id"] for item in result["items"]] == []
 
 
-def test_bulk_discard_candidates_supports_preview_and_apply(fake_adapter):
+def test_bulk_discard_matches_created_at_when_publish_times_are_null(fake_adapter):
     preview = manual_filter_service.bulk_discard_candidates(
         region="internal",
         sentiment="positive",
-        published_before=date(2025, 1, 2),
+        created_before=date(2025, 1, 2),
         actor="tester",
         dry_run=True,
     )
     assert preview == {"matched": 1, "updated": 0}
+    matched = next(row for row in fake_adapter.rows if row["article_id"] == "a1")
+    assert matched["created_at"] == "2025-01-01T00:00:00Z"
+    assert matched["publish_time_iso"] is None
+    assert matched["publish_time"] is None
     assert next(row for row in fake_adapter.rows if row["article_id"] == "a1")["status"] == "pending"
 
     applied = manual_filter_service.bulk_discard_candidates(
         region="internal",
         sentiment="positive",
-        published_before=date(2025, 1, 2),
+        created_before=date(2025, 1, 2),
         actor="tester",
         dry_run=False,
     )
     assert applied == {"matched": 1, "updated": 1}
+    assert preview["matched"] == applied["updated"]
     assert next(row for row in fake_adapter.rows if row["article_id"] == "a1")["status"] == "discarded"
 
 
@@ -890,7 +892,7 @@ def test_bulk_discard_candidates_supports_keyword_only(fake_adapter):
         region="internal",
         sentiment="positive",
         query="Internal",
-        published_before=None,
+        created_before=None,
         actor="tester",
         dry_run=True,
     )
@@ -900,7 +902,7 @@ def test_bulk_discard_candidates_supports_keyword_only(fake_adapter):
         region="internal",
         sentiment="positive",
         query="Internal",
-        published_before=None,
+        created_before=None,
         actor="tester",
         dry_run=False,
     )
@@ -913,7 +915,7 @@ def test_bulk_discard_candidates_supports_empty_filters(fake_adapter):
         region="internal",
         sentiment="positive",
         query=None,
-        published_before=None,
+        created_before=None,
         actor="tester",
         dry_run=True,
     )

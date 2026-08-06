@@ -72,7 +72,7 @@ def bulk_discard_candidates(
     region: str,
     sentiment: str,
     query: Optional[str] = None,
-    published_before: Optional[date] = None,
+    created_before: Optional[date] = None,
     actor: Optional[str] = None,
     dry_run: bool = True,
 ) -> Dict[str, int]:
@@ -85,7 +85,7 @@ def bulk_discard_candidates(
         region=normalized_region,
         sentiment=normalized_sentiment,
         query=(query or "").strip() or None,
-        published_before=published_before,
+        created_before=created_before,
         report_type=None,
     )
     if dry_run or matched <= 0:
@@ -94,7 +94,7 @@ def bulk_discard_candidates(
         region=normalized_region,
         sentiment=normalized_sentiment,
         query=(query or "").strip() or None,
-        published_before=published_before,
+        created_before=created_before,
         actor=actor,
         report_type=None,
     )

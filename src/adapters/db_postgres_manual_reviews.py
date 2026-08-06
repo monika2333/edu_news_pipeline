@@ -63,7 +63,7 @@ class ManualReviewsNamespace:
         self,
         *,
         query: Optional[str] = None,
-        published_before: Optional[date] = None,
+        created_before: Optional[date] = None,
         limit: int = 30,
         offset: int = 0,
         region: Optional[str] = None,
@@ -74,7 +74,7 @@ class ManualReviewsNamespace:
             return search_manual_candidates(
                 cur,
                 query=query,
-                published_before=published_before,
+                created_before=created_before,
                 limit=limit,
                 offset=offset,
                 region=region,
@@ -88,7 +88,7 @@ class ManualReviewsNamespace:
         region: str,
         sentiment: str,
         query: Optional[str] = None,
-        published_before: Optional[date] = None,
+        created_before: Optional[date] = None,
         report_type: Optional[str] = None,
     ) -> int:
         with self._adapter._cursor() as cur:
@@ -97,7 +97,7 @@ class ManualReviewsNamespace:
                 region=region,
                 sentiment=sentiment,
                 query=query,
-                published_before=published_before,
+                created_before=created_before,
                 report_type=report_type,
             )
 
@@ -107,7 +107,7 @@ class ManualReviewsNamespace:
         region: str,
         sentiment: str,
         query: Optional[str] = None,
-        published_before: Optional[date] = None,
+        created_before: Optional[date] = None,
         actor: Optional[str] = None,
         decided_at: Optional[datetime] = None,
         report_type: Optional[str] = None,
@@ -118,7 +118,7 @@ class ManualReviewsNamespace:
                 region=region,
                 sentiment=sentiment,
                 query=query,
-                published_before=published_before,
+                created_before=created_before,
                 actor=actor,
                 decided_at=decided_at,
                 report_type=report_type,
@@ -207,9 +207,8 @@ class ManualReviewsNamespace:
 SEARCH_TEXT_EXPRESSION = (
     "(coalesce(ns.title, '') || ' ' || coalesce(ns.llm_summary, '') || ' ' || coalesce(ns.content_markdown, ''))"
 )
-PUBLISHED_LOCAL_DATE_EXPRESSION = (
-    "COALESCE((ns.publish_time_iso AT TIME ZONE 'Asia/Shanghai')::date, "
-    "timezone('Asia/Shanghai', to_timestamp(ns.publish_time))::date)"
+CREATED_LOCAL_DATE_EXPRESSION = (
+    "(ns.created_at AT TIME ZONE 'Asia/Shanghai')::date"
 )
 MANUAL_REVIEW_SELECT_COLUMNS = """
     mr.article_id,
@@ -474,7 +473,7 @@ def search_manual_candidates(
     cur: psycopg.Cursor,
     *,
     query: Optional[str] = None,
-    published_before: Optional[date] = None,
+    created_before: Optional[date] = None,
     limit: int,
     offset: int,
     region: Optional[str] = None,
@@ -495,9 +494,9 @@ def search_manual_candidates(
     if normalized_query:
         clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
         params.append(f"%{normalized_query}%")
-    if published_before:
-        clauses.append(f"{PUBLISHED_LOCAL_DATE_EXPRESSION} < %s")
-        params.append(published_before)
+    if created_before:
+        clauses.append(f"{CREATED_LOCAL_DATE_EXPRESSION} < %s")
+        params.append(created_before)
     where_sql = " AND ".join(clauses)
     count_query = f"""
         SELECT COUNT(*) AS total
@@ -533,7 +532,7 @@ def _build_manual_candidate_filters(
     region: str,
     sentiment: str,
     query: Optional[str] = None,
-    published_before: Optional[date] = None,
+    created_before: Optional[date] = None,
     report_type: Optional[str] = None,
 ) -> Tuple[List[str], List[Any]]:
     clauses, params = _build_manual_review_filters(
@@ -547,9 +546,9 @@ def _build_manual_candidate_filters(
     if normalized_query:
         clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
         params.append(f"%{normalized_query}%")
-    if published_before:
-        clauses.append(f"{PUBLISHED_LOCAL_DATE_EXPRESSION} < %s")
-        params.append(published_before)
+    if created_before:
+        clauses.append(f"{CREATED_LOCAL_DATE_EXPRESSION} < %s")
+        params.append(created_before)
     return clauses, params
 
 
@@ -559,14 +558,14 @@ def count_manual_candidates_before_date(
     region: str,
     sentiment: str,
     query: Optional[str] = None,
-    published_before: Optional[date] = None,
+    created_before: Optional[date] = None,
     report_type: Optional[str] = None,
 ) -> int:
     clauses, params = _build_manual_candidate_filters(
         region=region,
         sentiment=sentiment,
         query=query,
-        published_before=published_before,
+        created_before=created_before,
         report_type=report_type,
     )
     where_sql = " AND ".join(clauses)
@@ -590,14 +589,14 @@ def fetch_manual_candidates_before_date_for_update(
     region: str,
     sentiment: str,
     query: Optional[str] = None,
-    published_before: Optional[date] = None,
+    created_before: Optional[date] = None,
     report_type: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     clauses, params = _build_manual_candidate_filters(
         region=region,
         sentiment=sentiment,
         query=query,
-        published_before=published_before,
+        created_before=created_before,
         report_type=report_type,
     )
     where_sql = " AND ".join(clauses)
@@ -621,7 +620,7 @@ def discard_manual_candidates_before_date(
     region: str,
     sentiment: str,
     query: Optional[str] = None,
-    published_before: Optional[date] = None,
+    created_before: Optional[date] = None,
     actor: Optional[str] = None,
     decided_at: Optional[datetime] = None,
     report_type: Optional[str] = None,
@@ -630,7 +629,7 @@ def discard_manual_candidates_before_date(
         region=region,
         sentiment=sentiment,
         query=query,
-        published_before=published_before,
+        created_before=created_before,
         report_type=report_type,
     )
     where_sql = " AND ".join(clauses)

@@ -46,7 +46,6 @@ def test_fetch_news_summary_content_selects_drawer_metadata() -> None:
         "title": "Test title",
         "source": "Test source",
         "url": "https://example.com/article-1",
-        "publish_time_iso": "2026-08-06T08:00:00+00:00",
         "created_at": "2026-08-06T10:00:00+00:00",
         "content_markdown": "First paragraph.\n\nSecond paragraph.",
     }
@@ -61,10 +60,10 @@ def test_fetch_news_summary_content_selects_drawer_metadata() -> None:
         "title",
         "source",
         "url",
-        "publish_time_iso",
         "created_at",
         "content_markdown",
     ):
         assert column in query
+    assert "publish_time_iso" not in query
     assert "fetched_at" not in query
     assert params == ("article-1",)

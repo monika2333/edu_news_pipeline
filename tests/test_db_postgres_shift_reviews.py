@@ -141,7 +141,7 @@ def test_bulk_discard_reuses_manual_candidate_filters_for_preview() -> None:
         region="internal",
         sentiment="negative",
         query="教育政策",
-        published_before=date(2026, 7, 27),
+        created_before=date(2026, 7, 27),
         report_type="zongbao",
         dry_run=True,
     )
@@ -156,6 +156,9 @@ def test_bulk_discard_reuses_manual_candidate_filters_for_preview() -> None:
     assert "ns.sentiment_label = %s" in query
     assert "ILIKE %s" in query
     assert "AT TIME ZONE 'Asia/Shanghai'" in query
+    assert "ns.created_at" in query
+    assert "publish_time_iso" not in query
+    assert "to_timestamp(ns.publish_time)" not in query
     assert "COALESCE(mr.report_type, 'zongbao') = %s" not in query
     assert cursor.params[0] == (
         "shift-1",
@@ -292,7 +295,7 @@ def test_shift_candidate_search_uses_body_without_selecting_it() -> None:
         region="internal",
         sentiment="positive",
         query="教育政策",
-        published_before=date(2026, 7, 27),
+        created_before=date(2026, 7, 27),
     )
 
     list_query = cursor.queries[-1]

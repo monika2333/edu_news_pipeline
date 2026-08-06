@@ -52,20 +52,14 @@ class FakeManualFilterAdapter:
         return normalized if normalized in ("zongbao", "wanbao") else "zongbao"
 
     @staticmethod
-    def _published_local_date(row: Mapping[str, Any]) -> Optional[date]:
-        publish_time_iso = row.get("publish_time_iso")
-        if publish_time_iso:
-            try:
-                value = str(publish_time_iso).replace("Z", "+00:00")
-                return datetime.fromisoformat(value).astimezone(ZoneInfo("Asia/Shanghai")).date()
-            except ValueError:
-                return None
-        publish_time = row.get("publish_time")
-        if publish_time is None:
+    def _created_local_date(row: Mapping[str, Any]) -> Optional[date]:
+        created_at = row.get("created_at")
+        if created_at is None:
             return None
         try:
-            return datetime.fromtimestamp(float(publish_time), tz=ZoneInfo("Asia/Shanghai")).date()
-        except (TypeError, ValueError, OSError):
+            value = str(created_at).replace("Z", "+00:00")
+            return datetime.fromisoformat(value).astimezone(ZoneInfo("Asia/Shanghai")).date()
+        except ValueError:
             return None
 
     def _fetch(
@@ -118,7 +112,7 @@ class FakeManualFilterAdapter:
         self,
         *,
         query: Optional[str] = None,
-        published_before: Optional[date] = None,
+        created_before: Optional[date] = None,
         limit: int,
         offset: int,
         region: Optional[str] = None,
@@ -148,11 +142,11 @@ class FakeManualFilterAdapter:
                     ]
                 )
             ]
-        if published_before:
+        if created_before:
             filtered = [
                 row
                 for row in filtered
-                if self._published_local_date(row) is not None and self._published_local_date(row) < published_before
+                if self._created_local_date(row) is not None and self._created_local_date(row) < created_before
             ]
         total = len(filtered)
         return filtered[offset : offset + limit], total
@@ -163,12 +157,12 @@ class FakeManualFilterAdapter:
         region: str,
         sentiment: str,
         query: Optional[str] = None,
-        published_before: Optional[date] = None,
+        created_before: Optional[date] = None,
         report_type: Optional[str] = None,
     ) -> int:
         _, total = self._search_candidates(
             query=query,
-            published_before=published_before,
+            created_before=created_before,
             limit=10_000,
             offset=0,
             region=region,
@@ -183,14 +177,14 @@ class FakeManualFilterAdapter:
         region: str,
         sentiment: str,
         query: Optional[str] = None,
-        published_before: Optional[date] = None,
+        created_before: Optional[date] = None,
         actor: Optional[str] = None,
         decided_at: Optional[Any] = None,
         report_type: Optional[str] = None,
     ) -> int:
         rows, _ = self._search_candidates(
             query=query,
-            published_before=published_before,
+            created_before=created_before,
             limit=10_000,
             offset=0,
             region=region,
@@ -215,7 +209,7 @@ class FakeManualFilterAdapter:
         region: str,
         sentiment: str,
         query: Optional[str],
-        published_before: Optional[date],
+        created_before: Optional[date],
         report_type: str,
         actor_username: str,
         actor_user_id: Optional[str],
@@ -224,7 +218,7 @@ class FakeManualFilterAdapter:
         del actor_user_id, request_id
         rows, _ = self._search_candidates(
             query=query,
-            published_before=published_before,
+            created_before=created_before,
             limit=10_000,
             offset=0,
             region=region,
@@ -253,6 +247,7 @@ def _build_rows() -> list[Dict[str, Any]]:
             "source": "src",
             "publish_time_iso": "2025-01-01T00:00:00Z",
             "publish_time": None,
+            "created_at": "2025-01-01T00:00:00Z",
             "sentiment_label": "positive",
             "sentiment_confidence": 0.9,
             "is_beijing_related": True,
@@ -277,6 +272,7 @@ def _build_rows() -> list[Dict[str, Any]]:
             "source": "src2",
             "publish_time_iso": "2025-01-05T00:00:00Z",
             "publish_time": None,
+            "created_at": "2025-01-05T00:00:00Z",
             "sentiment_label": "positive",
             "sentiment_confidence": 0.8,
             "is_beijing_related": True,
@@ -393,6 +389,31 @@ def test_candidates_api_returns_search_mode_items(monkeypatch) -> None:
     assert [item["article_id"] for item in payload["items"]] == ["a1"]
 
 
+def test_candidates_api_uses_created_before_and_ignores_old_query_name(monkeypatch) -> None:
+    from src.console import manual_filter_service
+
+    adapter = FakeManualFilterAdapter(_build_rows())
+    monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    current = client.get(
+        "/api/manual_filter/candidates",
+        params={"created_before": "2025-01-02"},
+    )
+    obsolete = client.get(
+        "/api/manual_filter/candidates",
+        params={"published_before": "2025-01-02", "view_mode": "search"},
+    )
+
+    assert current.status_code == 200
+    assert [item["article_id"] for item in current.json()["items"]] == ["a1"]
+    assert obsolete.status_code == 200
+    assert {item["article_id"] for item in obsolete.json()["items"]} == {"a1", "a2"}
+
+
 def test_candidates_api_ignores_report_type(monkeypatch) -> None:
     from src.console import manual_filter_service
 
@@ -437,8 +458,7 @@ def test_bulk_discard_api_supports_keyword_only_preview_and_apply(monkeypatch) -
             "region": "internal",
             "sentiment": "positive",
             "q": "学科建设大会",
-            "published_before": None,
-            "actor": "tester",
+            "created_before": None,
             "dry_run": True,
         },
     )
@@ -455,8 +475,7 @@ def test_bulk_discard_api_supports_keyword_only_preview_and_apply(monkeypatch) -
             "region": "internal",
             "sentiment": "positive",
             "q": "学科建设大会",
-            "published_before": None,
-            "actor": "tester",
+            "created_before": None,
             "dry_run": False,
         },
     )
@@ -486,8 +505,7 @@ def test_bulk_discard_api_supports_empty_optional_filters(monkeypatch) -> None:
             "region": "internal",
             "sentiment": "positive",
             "q": None,
-            "published_before": None,
-            "actor": "tester",
+            "created_before": None,
             "dry_run": True,
         },
     )
@@ -498,6 +516,38 @@ def test_bulk_discard_api_supports_empty_optional_filters(monkeypatch) -> None:
         "updated": 0,
         "skipped_finalized": 0,
     }
+
+
+def test_bulk_discard_api_uses_created_before_and_ignores_old_field(monkeypatch) -> None:
+    from src.console import manual_filter_admin_service, manual_filter_service
+
+    adapter = FakeManualFilterAdapter(_build_rows())
+    monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+    base_payload = {
+        "region": "internal",
+        "sentiment": "positive",
+        "q": None,
+        "dry_run": True,
+    }
+
+    current = client.post(
+        "/api/manual_filter/bulk-discard",
+        json={**base_payload, "created_before": "2025-01-02"},
+    )
+    obsolete = client.post(
+        "/api/manual_filter/bulk-discard",
+        json={**base_payload, "published_before": "2025-01-02"},
+    )
+
+    assert current.status_code == 200
+    assert current.json()["matched"] == 1
+    assert obsolete.status_code == 422
+    assert obsolete.json()["detail"][0]["type"] == "extra_forbidden"
 
 
 def test_update_order_api_passes_review_groups(monkeypatch) -> None:

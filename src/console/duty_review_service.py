@@ -215,7 +215,7 @@ def list_items(
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
     query: Optional[str] = None,
-    published_before: Optional[date] = None,
+    created_before: Optional[date] = None,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
     if decision and decision not in VALID_DECISIONS:
@@ -235,7 +235,7 @@ def list_items(
         "region": region,
         "sentiment": sentiment,
         "query": (query or "").strip() or None,
-        "published_before": published_before,
+        "created_before": created_before,
         "exclude_finalized": decision == "selected",
     }
     rows, total = adapter.shift_reviews.fetch_items(**fetch_kwargs)
@@ -498,7 +498,7 @@ def bulk_discard_candidates(
     region: str,
     sentiment: str,
     query: Optional[str],
-    published_before: Optional[date],
+    created_before: Optional[date],
     dry_run: bool,
     report_type: str = "zongbao",
     request_id: Optional[str] = None,
@@ -517,7 +517,7 @@ def bulk_discard_candidates(
         region=region,
         sentiment=sentiment,
         query=(query or "").strip() or None,
-        published_before=published_before,
+        created_before=created_before,
         report_type=report_type,
         dry_run=dry_run,
         request_id=request_id,

@@ -128,7 +128,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 值班编辑先做初筛，管理员通过"送入管理员工作区"把结果导入 `manual_reviews`（`import_shift_reviews_into_manual`）。**导入时会复制内容字段**（编辑过的摘要等），此后两张表各自独立演进。
 
-### ⚠️ 契约级约束：班次划分依据 `news_summaries.created_at`
+### ⚠️ 契约级约束：收录时间与班次划分统一依据 `news_summaries.created_at`
 
 一条新闻属于哪个班次，由这个条件决定：
 
@@ -137,6 +137,8 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 ```
 
 **因此 `news_summaries.created_at` 必须是不可变的。** 任何会更新这个字段的操作（比如 upsert 时误写 `created_at = now()`）都会导致新闻在班次之间跳动，已经做过的复核记录会对不上。
+
+面向用户的时间展示统一称为「收录时间」，原文内容接口读取该字段。待处理新闻的日期筛选与批量放弃也以该字段转换后的 `Asia/Shanghai` 本地日期判定，条件为严格早于所选日期（不含当天）。`publish_time_iso` / `publish_time` 与 `fetched_at` 仍按原链路入库，但不再是这两类读取用途的时间口径。
 
 班次边界默认在 22:00（由 `duty_shift_boundary_hour` 配置）。
 

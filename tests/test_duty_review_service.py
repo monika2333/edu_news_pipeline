@@ -111,7 +111,7 @@ class FakeDutyReviewAdapter:
         region: Optional[str] = None,
         sentiment: Optional[str] = None,
         query: Optional[str] = None,
-        published_before: object = None,
+        created_before: object = None,
         article_ids: Optional[Sequence[str]] = None,
         exclude_finalized: bool = False,
     ) -> tuple[list[dict[str, Any]], int]:
@@ -128,7 +128,7 @@ class FakeDutyReviewAdapter:
                 "region": region,
                 "sentiment": sentiment,
                 "query": query,
-                "published_before": published_before,
+                "created_before": created_before,
             }
         )
         row_ids = normalized_article_ids or [f"{decision}-1"]
@@ -271,7 +271,7 @@ def test_bulk_discard_uses_owned_shift_and_server_side_filter(
         region="internal",
         sentiment="negative",
         query="  教育政策  ",
-        published_before=None,
+        created_before=None,
         dry_run=False,
         request_id="request-1",
     )
@@ -283,7 +283,7 @@ def test_bulk_discard_uses_owned_shift_and_server_side_filter(
         "region": "internal",
         "sentiment": "negative",
         "query": "教育政策",
-        "published_before": None,
+        "created_before": None,
         "report_type": "zongbao",
         "dry_run": False,
         "request_id": "request-1",
@@ -311,7 +311,7 @@ def test_bulk_discard_keeps_explicit_bucket_guard(
             region=region,
             sentiment=sentiment,
             query=None,
-            published_before=None,
+            created_before=None,
             dry_run=True,
         )
 
@@ -483,7 +483,7 @@ def test_candidate_search_filters_are_forwarded_to_database(
             "region": "internal",
             "sentiment": "positive",
             "query": "教育政策",
-            "published_before": None,
+            "created_before": None,
         }
     ]
 

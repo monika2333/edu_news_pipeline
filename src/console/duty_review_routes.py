@@ -91,7 +91,7 @@ def list_candidates(
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
     q: Optional[str] = None,
-    published_before: Optional[date] = None,
+    created_before: Optional[date] = None,
     user: ConsoleUser = Depends(require_role("duty_editor")),
 ) -> dict[str, Any]:
     try:
@@ -105,7 +105,7 @@ def list_candidates(
             region=region,
             sentiment=sentiment,
             query=q,
-            published_before=published_before,
+            created_before=created_before,
         )
     except (ValueError, PermissionError) as exc:
         _raise_review_error(exc)
@@ -284,7 +284,7 @@ def bulk_discard(
             region=payload.region,
             sentiment=payload.sentiment,
             query=payload.q,
-            published_before=payload.published_before,
+            created_before=payload.created_before,
             dry_run=payload.dry_run,
             report_type="zongbao",
             request_id=request_id,

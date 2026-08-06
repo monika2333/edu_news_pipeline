@@ -71,13 +71,13 @@ def _list_candidate_search(
     region: Optional[str],
     sentiment: Optional[str],
     query: Optional[str],
-    published_before: Optional[date],
+    created_before: Optional[date],
     report_type: Optional[str],
 ) -> Dict[str, Any]:
     adapter = get_adapter()
     fetch_kwargs = {
         "query": query,
-        "published_before": published_before,
+        "created_before": created_before,
         "limit": limit,
         "offset": offset,
         "region": region,
@@ -156,7 +156,7 @@ def list_candidates(
     cluster_threshold: Optional[float] = None,
     force_refresh: bool = False,
     q: Optional[str] = None,
-    published_before: Optional[date] = None,
+    created_before: Optional[date] = None,
     view_mode: Optional[str] = None,
     report_type: str = DEFAULT_REPORT_TYPE,
 ) -> Dict[str, Any]:
@@ -165,7 +165,11 @@ def list_candidates(
     del report_type
     target_report_type = None
     normalized_query = (q or "").strip() or None
-    search_mode = (view_mode or "").strip().lower() == "search" or normalized_query is not None or published_before is not None
+    search_mode = (
+        (view_mode or "").strip().lower() == "search"
+        or normalized_query is not None
+        or created_before is not None
+    )
     logger.info(
         "Listing candidates: limit=%s offset=%s region=%s sentiment=%s report_scope=%s view_mode=%s",
         limit,
@@ -182,7 +186,7 @@ def list_candidates(
             limit=limit,
             offset=offset,
             query=normalized_query,
-            published_before=published_before,
+            created_before=created_before,
             report_type=target_report_type,
         )
     return _list_candidate_browse(

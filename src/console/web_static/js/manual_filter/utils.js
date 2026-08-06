@@ -367,9 +367,10 @@ function showToastAt(toastElement, msg, type = 'success', action = null) {
     }, duration);
 }
 
-function updatePagination(tab, total, currentPage) {
-    // Simple pagination implementation
-    const totalPages = Math.ceil(total / 10);
+function updatePagination(tab, total, currentPage, pageSize) {
+    // pageSize comes from the list response's limit field; fall back to 10.
+    const size = Math.max(1, Math.floor(Number(pageSize)) || 10);
+    const totalPages = Math.ceil(total / size);
     const container = document.getElementById(`${tab}-pagination`);
     if (!container) return;
 

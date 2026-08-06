@@ -16,7 +16,7 @@ async function loadDiscardData() {
         const res = await workspaceFetch(`${API_BASE}/discarded?${params.toString()}`);
         const data = await res.json();
         renderDiscardList(data.items);
-        updateDiscardPagination(data.total || 0);
+        updatePagination('discard', data.total || 0, state.discardPage, data.limit);
         updateDiscardSearchMeta(data.total || 0);
     } catch (e) {
         elements.discardList.innerHTML = '<div class="error">加载数据失败</div>';
@@ -63,18 +63,6 @@ function updateDiscardSearchMeta(total) {
     } else {
         elements.discardSearchMeta.textContent = `共 ${total} 条已放弃新闻`;
     }
-}
-
-function updateDiscardPagination(total) {
-    const totalPages = Math.ceil(total / DISCARD_PAGE_SIZE);
-    const container = document.getElementById('discard-pagination');
-    if (!container) return;
-    const currentPage = state.discardPage;
-    container.innerHTML = `
-        <button class="btn btn-secondary" ${currentPage <= 1 ? 'disabled' : ''} onclick="changePage('discard', ${currentPage - 1})">上一页</button>
-        <span>第 ${currentPage} 页 / 共 ${totalPages} 页</span>
-        <button class="btn btn-secondary" ${currentPage >= totalPages ? 'disabled' : ''} onclick="changePage('discard', ${currentPage + 1})">下一页</button>
-    `;
 }
 
 function formatDiscardTime(value) {

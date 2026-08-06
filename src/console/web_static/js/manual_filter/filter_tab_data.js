@@ -30,7 +30,7 @@ async function loadFilterData(options = {}) {
         state.filterSearchTotal = searchMode ? (data.total || 0) : 0;
 
         renderFilterList(data);
-        updatePagination('filter', data.total || 0, state.filterPage);
+        updatePagination('filter', data.total || 0, state.filterPage, data.limit);
         if (!searchMode) {
             const bucketTotal = typeof data.item_total === 'number' ? data.item_total : data.total;
             state.filterCounts[cat] = bucketTotal || 0;

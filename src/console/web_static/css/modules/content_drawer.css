@@ -30,8 +30,15 @@ body.content-drawer-open .search-drawer-toggle {
     display: none;
 }
 
+/* 顶栏只保留关闭按钮：无标题、无分割线 */
+.content-drawer .content-drawer-topbar {
+    justify-content: flex-end;
+    border-bottom: none;
+    padding: 10px 12px 0;
+}
+
 .content-drawer-info {
-    padding: 12px 20px;
+    padding: 8px 20px 12px;
     border-bottom: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
@@ -45,20 +52,27 @@ body.content-drawer-open .search-drawer-toggle {
     font-weight: 600;
 }
 
-.content-drawer-meta {
+.content-drawer-meta-row {
     display: flex;
     flex-wrap: wrap;
+    align-items: baseline;
     gap: 6px 14px;
+}
+
+.content-drawer-meta {
+    display: contents;
+}
+
+.content-drawer-meta > span {
     font-size: 0.8rem;
     color: var(--text-secondary);
 }
 
 .content-drawer-source-link {
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     color: var(--text-secondary);
     text-decoration: underline;
     text-underline-offset: 2px;
-    align-self: flex-start;
 }
 
 .content-drawer-source-link:hover {

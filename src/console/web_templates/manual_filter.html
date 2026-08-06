@@ -20,6 +20,7 @@
     <link rel="stylesheet" href="/static/css/modules/content_drawer.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/sidebar_collapse.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/score_feedback.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/modules/discard.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/auth.css?v={{ version }}">
     <style>
         .source-box {
@@ -288,6 +289,24 @@
         <!-- Discard Tab -->
         {% if is_duty_workspace or not is_admin_review %}
         <div class="tab-content" id="discard-tab">
+            <div class="discard-toolbar">
+                <div class="discard-toolbar-main">
+                    <div class="search-group">
+                        <input type="text" id="discard-search-input" class="search-input"
+                            placeholder="输入关键词检索" aria-label="输入关键词检索">
+                        <button type="button" id="discard-search-clear" class="review-search-clear"
+                            aria-label="清除检索条件" title="清除检索条件" hidden>
+                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                <path d="M20 5H9.83a2 2 0 0 0-1.42.59L3 12l5.41 6.41A2 2 0 0 0 9.83 19H20a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"></path>
+                                <path d="m12 9 5 5"></path>
+                                <path d="m17 9-5 5"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <button class="btn btn-secondary" id="btn-discard-search">检索</button>
+                </div>
+                <div class="discard-toolbar-meta" id="discard-search-meta"></div>
+            </div>
             <div id="discard-list">
                 <!-- Items will be injected here -->
             </div>

@@ -57,6 +57,7 @@ function resetWorkspaceViewState() {
     state.reviewPage = 1;
     state.discardPage = 1;
     state.filterQuery = '';
+    state.discardQuery = '';
     state.filterViewMode = 'browse';
     state.reviewData = { selected: [], backup: [] };
     state.filterCounts = {
@@ -236,7 +237,21 @@ async function workspaceFetch(input, options = {}) {
     if (action === '/review') {
         return dutyListResponse(url.searchParams.get('decision') || 'selected', url.searchParams);
     }
-    if (action === '/discarded') return dutyListResponse('discarded', url.searchParams);
+    if (action === '/discarded') {
+        const query = (url.searchParams.get('q') || '').trim();
+        if (query) {
+            const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit')) || 30, 200));
+            const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
+            const backendParams = new URLSearchParams({
+                decision: 'discarded',
+                limit: String(limit),
+                offset: String(offset),
+                q: query
+            });
+            return window.fetch(`${API_BASE}/reviews?${backendParams.toString()}`);
+        }
+        return dutyListResponse('discarded', url.searchParams);
+    }
     if (action === '/stats') return window.fetch(`${API_BASE}/stats${url.search}`, options);
     if (action === '/score-feedback' || action === '/score-feedback/clear') {
         return window.fetch(`${API_BASE}${action}`, options);

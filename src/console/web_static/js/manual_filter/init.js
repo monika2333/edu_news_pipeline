@@ -209,6 +209,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             elements.reviewSearchInput.focus();
         });
     }
+    const btnDiscardSearch = document.getElementById('btn-discard-search');
+    if (btnDiscardSearch) {
+        btnDiscardSearch.addEventListener('click', applyDiscardSearch);
+    }
+    if (elements.discardSearchInput) {
+        elements.discardSearchInput.addEventListener('input', syncDiscardSearchClearButton);
+        elements.discardSearchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') applyDiscardSearch();
+        });
+        syncDiscardSearchClearButton();
+    }
+    if (elements.discardSearchClear) {
+        elements.discardSearchClear.addEventListener('click', async () => {
+            await clearDiscardSearch();
+            elements.discardSearchInput?.focus();
+        });
+    }
 
     // Pagination listeners (delegated or specific)
     setupPagination();

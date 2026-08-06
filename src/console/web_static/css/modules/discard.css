@@ -1,0 +1,168 @@
+/* Discard Tab: toolbar + compact list */
+
+.discard-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: #fff;
+}
+
+.discard-toolbar-main {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.discard-toolbar-main .search-group {
+    position: relative;
+    min-width: 0;
+}
+
+.discard-toolbar-main .search-input {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding: 8px 44px 8px 10px;
+    box-sizing: border-box;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text-primary);
+    font: inherit;
+}
+
+.discard-toolbar-main .search-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.discard-toolbar-main .btn {
+    white-space: nowrap;
+    padding-inline: 16px;
+}
+
+.discard-toolbar-meta {
+    min-height: 1.2em;
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+}
+
+/* Compact list rows. The .article-card / .discard-restore-select hooks are kept
+   for version collection and restore bindings; only visual density changes. */
+.discard-item.article-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+}
+
+.discard-item.article-card:hover {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.discard-item-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.discard-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.discard-item-source {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.discard-item-time {
+    font-variant-numeric: tabular-nums;
+}
+
+.discard-item .score-feedback-control {
+    font-size: inherit;
+}
+
+/* Popover opens leftwards so it stays inside the viewport on right-aligned rows. */
+.discard-item .score-feedback-popover {
+    left: auto;
+    right: 0;
+}
+
+.discard-item .discard-card-actions {
+    flex-shrink: 0;
+}
+
+.discard-item .discard-restore-select {
+    min-width: 118px;
+    padding: 5px 8px;
+    font-size: 0.88rem;
+}
+
+.discard-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 40px 20px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 10px;
+    color: #64748b;
+    font-size: 0.95rem;
+}
+
+@media (max-width: 768px) {
+    .discard-toolbar {
+        padding: 10px;
+        border-radius: 10px;
+    }
+
+    .discard-toolbar-main {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .discard-item.article-card {
+        flex-wrap: wrap;
+        row-gap: 6px;
+        padding: 10px 12px;
+    }
+
+    .discard-item-title {
+        flex: 1 1 100%;
+        white-space: normal;
+    }
+
+    .discard-item-meta {
+        flex: 1 1 auto;
+        flex-wrap: wrap;
+        row-gap: 4px;
+        column-gap: 10px;
+        min-width: 0;
+        white-space: normal;
+    }
+
+    .discard-item .discard-card-actions {
+        margin-left: auto;
+    }
+}

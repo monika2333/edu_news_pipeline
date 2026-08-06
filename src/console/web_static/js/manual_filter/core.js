@@ -25,6 +25,7 @@ let state = {
     filterSearchTotal: 0,
     reviewView: 'selected',
     reviewReportType: 'zongbao',
+    discardQuery: '',
     showGroups: true,
     reviewCollapsedGroups: {},
     reviewData: {
@@ -72,6 +73,9 @@ const elements = {
     reviewSelectAll: document.getElementById('review-select-all'),
     reviewBulkStatus: document.getElementById('review-bulk-status'),
     discardList: document.getElementById('discard-list'),
+    discardSearchInput: document.getElementById('discard-search-input'),
+    discardSearchClear: document.getElementById('discard-search-clear'),
+    discardSearchMeta: document.getElementById('discard-search-meta'),
     sortToggleBtn: document.getElementById('btn-toggle-sort'),
     reportTypeButtons: document.querySelectorAll('.report-type-btn'),
     stats: {

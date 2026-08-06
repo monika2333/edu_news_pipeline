@@ -38,21 +38,14 @@ function resolveContentDrawerBonusKeywords(triggerBtn) {
     return bonusRaw.split('\n').map(kw => kw.trim()).filter(Boolean);
 }
 
-function resizeFilterSummaryBoxes() {
-    if (!elements.filterList) return;
-    elements.filterList.querySelectorAll('.summary-box').forEach(box => {
-        // 聚类折叠卡片 display:none，scrollHeight 为 0，跳过避免把高度算没
-        if (box.getClientRects().length) resizeReviewSummaryBox(box);
-    });
-}
-
-// 抽屉开合改变列表宽度后：重算摘要框高度，并把触发卡片锚回原来的视口位置
+// 抽屉开合改变列表宽度后：重算已选结果页摘要框高度，并把触发卡片锚回原来的视口位置。
+// 筛选页摘要框是固定高度（components.css min-height + 内部滚动/手动拖拽），
+// 列表变窄不会改变卡片高度，因此不参与重算，只做锚定补偿。
 function relayoutListsAroundContentDrawer(anchorCard, previousTop) {
     // 非当前标签页的列表处于 display:none，scrollHeight 为 0，跳过重算避免高度被算没
     if (elements.reviewList && elements.reviewList.getClientRects().length) {
         resizeReviewSummaryBoxes();
     }
-    resizeFilterSummaryBoxes();
     if (!anchorCard || !anchorCard.isConnected || previousTop === null) return;
     const delta = anchorCard.getBoundingClientRect().top - previousTop;
     if (delta) window.scrollBy(0, delta);

@@ -135,7 +135,7 @@ function renderContentDrawerHeader(data, charCount) {
     const items = [
         `来源: ${data.source || '-'}`,
         `发布时间: ${formatContentDrawerTime(data.publish_time_iso)}`,
-        `抓取时间: ${formatContentDrawerTime(data.fetched_at)}`
+        `收录时间: ${formatContentDrawerTime(data.created_at)}`
     ];
     if (charCount !== null) items.push(`正文 ${charCount.toLocaleString('zh-CN')} 字`);
     items.forEach(text => meta.appendChild(createEl('span', '', text)));

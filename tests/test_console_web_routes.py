@@ -68,6 +68,16 @@ def test_favicon_is_served_from_the_static_assets() -> None:
     assert "/favicon.ico" not in app.openapi()["paths"]
 
 
+def test_content_drawer_labels_created_at_as_collection_time() -> None:
+    script = (
+        Path(__file__).parents[1]
+        / "src/console/web_static/js/manual_filter/content_drawer.js"
+    ).read_text(encoding="utf-8")
+
+    assert "`收录时间: ${formatContentDrawerTime(data.created_at)}`" in script
+    assert "抓取时间:" not in script
+
+
 def test_account_page_exposes_personal_password_change_form() -> None:
     response = _build_client().get("/account")
     login_stylesheet = (

@@ -557,6 +557,7 @@ def fetch_news_summary_content(cur: psycopg.Cursor, article_id: str) -> Optional
             source,
             url,
             publish_time_iso,
+            created_at,
             fetched_at,
             content_markdown
         FROM news_summaries

@@ -39,6 +39,7 @@ class NewsArticleContentResponse(BaseModel):
     source: Optional[str] = None
     url: Optional[str] = None
     publish_time_iso: Optional[datetime] = None
+    created_at: Optional[datetime] = None
     fetched_at: Optional[datetime] = None
     content_markdown: Optional[str] = None
 

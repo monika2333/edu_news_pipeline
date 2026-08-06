@@ -59,6 +59,7 @@ def test_article_content_endpoints_return_identical_complete_contract(monkeypatc
         "source": "测试来源",
         "url": "https://example.com/article-1",
         "publish_time_iso": datetime(2026, 8, 6, 8, 0, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 8, 6, 10, 0, tzinfo=timezone.utc),
         "fetched_at": datetime(2026, 8, 6, 9, 30, tzinfo=timezone.utc),
         "content_markdown": long_content,
     }
@@ -78,6 +79,7 @@ def test_article_content_endpoints_return_identical_complete_contract(monkeypatc
         "source": "测试来源",
         "url": "https://example.com/article-1",
         "publish_time_iso": "2026-08-06T08:00:00Z",
+        "created_at": "2026-08-06T10:00:00Z",
         "fetched_at": "2026-08-06T09:30:00Z",
         "content_markdown": long_content,
     }
@@ -99,6 +101,7 @@ def test_article_content_missing_record_returns_null_fields(monkeypatch) -> None
         "source": None,
         "url": None,
         "publish_time_iso": None,
+        "created_at": None,
         "fetched_at": None,
         "content_markdown": None,
     }
@@ -119,6 +122,7 @@ def test_article_content_database_error_uses_null_fallback(monkeypatch) -> None:
         "source": None,
         "url": None,
         "publish_time_iso": None,
+        "created_at": None,
         "fetched_at": None,
         "content_markdown": None,
     }

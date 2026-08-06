@@ -47,6 +47,7 @@ def test_fetch_news_summary_content_selects_drawer_metadata() -> None:
         "source": "Test source",
         "url": "https://example.com/article-1",
         "publish_time_iso": "2026-08-06T08:00:00+00:00",
+        "created_at": "2026-08-06T10:00:00+00:00",
         "fetched_at": "2026-08-06T09:00:00+00:00",
         "content_markdown": "First paragraph.\n\nSecond paragraph.",
     }
@@ -62,6 +63,7 @@ def test_fetch_news_summary_content_selects_drawer_metadata() -> None:
         "source",
         "url",
         "publish_time_iso",
+        "created_at",
         "fetched_at",
         "content_markdown",
     ):

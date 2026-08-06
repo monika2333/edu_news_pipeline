@@ -38,18 +38,19 @@ function resolveContentDrawerBonusKeywords(triggerBtn) {
     return bonusRaw.split('\n').map(kw => kw.trim()).filter(Boolean);
 }
 
-function setContentDrawerOpen(open) {
+function setContentDrawerOpen(open, { anchor = true } = {}) {
     const { drawer } = getContentDrawerEls();
     if (!drawer || contentDrawerState.open === open) return;
     const anchorCard = contentDrawerState.anchorCard;
-    const previousTop = anchorCard && anchorCard.isConnected
+    const previousTop = anchor && anchorCard && anchorCard.isConnected
         ? anchorCard.getBoundingClientRect().top
         : null;
     contentDrawerState.open = open;
     drawer.classList.toggle('active', open);
     drawer.setAttribute('aria-hidden', open ? 'false' : 'true');
     document.body.classList.toggle('content-drawer-open', open);
-    relayoutListsAfterWidthChange(anchorCard, previousTop);
+    // anchor:false 时由调用方在完成所有布局变化后统一补偿，避免连续宽度变化重复锚定
+    if (anchor) relayoutListsAfterWidthChange(anchorCard, previousTop);
 }
 
 function closeContentDrawer() {
@@ -218,7 +219,22 @@ function handleContentDrawerTrigger(triggerBtn) {
     contentDrawerState.anchorCard = card || null;
     contentDrawerState.articleId = articleId;
     const bonusKeywords = resolveContentDrawerBonusKeywords(triggerBtn);
-    setContentDrawerOpen(true);
+
+    // 打开抽屉时自动折叠侧栏（不写 localStorage，仅本次浏览生效）。
+    // 折叠与抽屉挤压是两次连续宽度变化：基准位置取两者都未发生之前，
+    // 布局全部切换完后统一做一次锚定补偿，避免列表跳动。
+    const willCollapseSidebar = !isSidebarCollapsed();
+    const willOpenDrawer = !contentDrawerState.open;
+    if (willCollapseSidebar || willOpenDrawer) {
+        const previousTop = card && card.isConnected
+            ? card.getBoundingClientRect().top
+            : null;
+        if (willCollapseSidebar) {
+            setSidebarCollapsed(true, { persist: false, anchor: false });
+        }
+        setContentDrawerOpen(true, { anchor: false });
+        relayoutListsAfterWidthChange(card, previousTop);
+    }
     loadContentDrawerArticle(articleId, bonusKeywords);
 }
 

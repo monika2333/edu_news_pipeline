@@ -22,6 +22,11 @@ function persistSidebarCollapsed(collapsed) {
     }
 }
 
+function isSidebarCollapsed() {
+    const layout = document.querySelector('.filter-layout');
+    return Boolean(layout && layout.classList.contains('sidebar-collapsed'));
+}
+
 function applySidebarCollapsedUI(collapsed) {
     document.querySelectorAll('.filter-layout').forEach(layout => {
         layout.classList.toggle('sidebar-collapsed', collapsed);

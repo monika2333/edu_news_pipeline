@@ -18,6 +18,7 @@
     <link rel="stylesheet" href="/static/css/modules/review.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/search.css">
     <link rel="stylesheet" href="/static/css/modules/content_drawer.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/modules/sidebar_collapse.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/score_feedback.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/auth.css?v={{ version }}">
     <style>
@@ -170,6 +171,8 @@
         <div class="tab-content active" id="filter-tab">
             <div class="filter-layout">
                 <div class="filter-sidebar">
+                    <button type="button" class="sidebar-collapse-toggle" aria-expanded="true"
+                        aria-label="折叠分类侧栏" title="折叠分类侧栏">«</button>
                     <button class="filter-tab-btn active" data-category="internal_positive">京内正面</button>
                     <button class="filter-tab-btn" data-category="internal_negative">京内负面</button>
                     <button class="filter-tab-btn" data-category="external_positive">京外正面</button>
@@ -215,6 +218,8 @@
         <div class="tab-content{% if is_admin_review %} active{% endif %}" id="review-tab">
             <div class="filter-layout review-layout">
                 <div class="filter-sidebar review-sidebar">
+                    <button type="button" class="sidebar-collapse-toggle" aria-expanded="true"
+                        aria-label="折叠分类侧栏" title="折叠分类侧栏">«</button>
                     <button class="filter-tab-btn review-category-btn active" data-report-type="zongbao"
                         data-view="selected">综报采纳</button>
                     <button class="filter-tab-btn review-category-btn" data-report-type="zongbao"
@@ -449,7 +454,9 @@
     <script src="/static/js/manual_filter/review_tab_duplicates.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/discard_tab.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/search_drawer.js?v={{ version }}"></script>
+    <script src="/static/js/manual_filter/layout_anchor.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/content_drawer.js?v={{ version }}"></script>
+    <script src="/static/js/manual_filter/sidebar_collapse.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/init.js?v={{ version }}"></script>
 </body>
 

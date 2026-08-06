@@ -38,19 +38,6 @@ function resolveContentDrawerBonusKeywords(triggerBtn) {
     return bonusRaw.split('\n').map(kw => kw.trim()).filter(Boolean);
 }
 
-// 抽屉开合改变列表宽度后：重算已选结果页摘要框高度，并把触发卡片锚回原来的视口位置。
-// 筛选页摘要框是固定高度（components.css min-height + 内部滚动/手动拖拽），
-// 列表变窄不会改变卡片高度，因此不参与重算，只做锚定补偿。
-function relayoutListsAroundContentDrawer(anchorCard, previousTop) {
-    // 非当前标签页的列表处于 display:none，scrollHeight 为 0，跳过重算避免高度被算没
-    if (elements.reviewList && elements.reviewList.getClientRects().length) {
-        resizeReviewSummaryBoxes();
-    }
-    if (!anchorCard || !anchorCard.isConnected || previousTop === null) return;
-    const delta = anchorCard.getBoundingClientRect().top - previousTop;
-    if (delta) window.scrollBy(0, delta);
-}
-
 function setContentDrawerOpen(open) {
     const { drawer } = getContentDrawerEls();
     if (!drawer || contentDrawerState.open === open) return;
@@ -62,7 +49,7 @@ function setContentDrawerOpen(open) {
     drawer.classList.toggle('active', open);
     drawer.setAttribute('aria-hidden', open ? 'false' : 'true');
     document.body.classList.toggle('content-drawer-open', open);
-    relayoutListsAroundContentDrawer(anchorCard, previousTop);
+    relayoutListsAfterWidthChange(anchorCard, previousTop);
 }
 
 function closeContentDrawer() {

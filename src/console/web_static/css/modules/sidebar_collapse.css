@@ -1,0 +1,63 @@
+/* Sidebar Collapse (分类侧栏折叠) */
+
+.sidebar-collapse-toggle {
+    align-self: flex-end;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+}
+
+.sidebar-collapse-toggle:hover {
+    color: var(--primary-color);
+    border-color: var(--primary-color);
+    background: rgba(37, 99, 235, 0.06);
+}
+
+.sidebar-collapse-toggle:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+/* 折叠形态只在宽屏生效；≤1024px 时侧栏是横向滚动条，折叠无意义 */
+@media (min-width: 1025px) {
+    .filter-layout.sidebar-collapsed {
+        grid-template-columns: 44px 1fr;
+    }
+
+    .filter-layout.sidebar-collapsed .filter-sidebar {
+        align-items: center;
+    }
+
+    .filter-layout.sidebar-collapsed .sidebar-collapse-toggle {
+        align-self: center;
+    }
+
+    /* 非当前桶按钮隐藏；当前桶按钮竖排保留，折叠后仍能看到所在桶 */
+    .filter-layout.sidebar-collapsed .filter-tab-btn:not(.active) {
+        display: none;
+    }
+
+    .filter-layout.sidebar-collapsed .filter-tab-btn.active {
+        writing-mode: vertical-rl;
+        padding: 12px 8px;
+        text-align: center;
+        letter-spacing: 0.05em;
+    }
+}
+
+@media (max-width: 1024px) {
+    .sidebar-collapse-toggle {
+        display: none;
+    }
+}

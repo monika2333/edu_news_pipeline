@@ -113,8 +113,6 @@
                     <button type="button" class="report-type-btn" data-type="wanbao"
                         aria-pressed="false">晚报</button>
                 </div>
-                <button class="btn btn-secondary workspace-tab-action" id="btn-open-cleanup" type="button"
-                    data-workspace-action-tab="filter">清理旧新闻</button>
                 <span class="refresh-action workspace-tabs-refresh workspace-tab-action"
                     data-workspace-action-tab="filter">
                     <button class="btn btn-secondary" id="btn-refresh" aria-describedby="refresh-cluster-hint">
@@ -377,7 +375,7 @@
     {% endif %}
 
     <!-- Cleanup Old News Modal -->
-    {% if is_duty_workspace or not is_admin_review %}
+    {% if not is_admin_review %}
     <div class="modal" id="cleanup-modal" role="dialog" aria-modal="true"
         aria-labelledby="cleanup-modal-title" aria-hidden="true">
         <div class="modal-content cleanup-modal-content">

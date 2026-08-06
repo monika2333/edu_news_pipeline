@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="/static/css/modules/filter.css">
     <link rel="stylesheet" href="/static/css/modules/review.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/search.css">
+    <link rel="stylesheet" href="/static/css/modules/content_drawer.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/score_feedback.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/auth.css?v={{ version }}">
     <style>
@@ -295,6 +296,21 @@
 
     {% include "_search_drawer.html" %}
 
+    <!-- Article Content Drawer -->
+    <aside id="content-drawer" class="content-drawer" aria-hidden="true" aria-label="原文">
+        <div class="drawer-header">
+            <h3>原文</h3>
+            <button id="content-drawer-close" class="btn-icon" type="button" aria-label="关闭原文">✕</button>
+        </div>
+        <div class="content-drawer-info">
+            <h4 class="content-drawer-title" id="content-drawer-title"></h4>
+            <div class="content-drawer-meta" id="content-drawer-meta"></div>
+            <a class="content-drawer-source-link" id="content-drawer-source-link" href="#" target="_blank"
+                rel="noopener noreferrer" hidden>查看源站</a>
+        </div>
+        <div class="content-drawer-body" id="content-drawer-body"></div>
+    </aside>
+
     <!-- Preview Modal -->
     {% if is_duty_workspace or is_admin_review %}
     <div class="modal" id="preview-modal">
@@ -433,6 +449,7 @@
     <script src="/static/js/manual_filter/review_tab_duplicates.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/discard_tab.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/search_drawer.js?v={{ version }}"></script>
+    <script src="/static/js/manual_filter/content_drawer.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/init.js?v={{ version }}"></script>
 </body>
 

@@ -259,7 +259,10 @@ function renderReviewCard(item) {
                 <span class="drag-handle" title="拖动排序">&#8942;</span>
                 <h4 class="article-title">
                     ${item.title || '(No Title)'}
-                    ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
+                    <button type="button" class="content-drawer-trigger"
+                        data-article-id="${escapeReviewAttr(item.article_id || '')}"
+                        data-bonus-keywords="${escapeReviewAttr((item.bonus_keywords || []).join('\n'))}"
+                        title="查看原文">原文</button>
                 </h4>
                 <div class="review-card-actions">
                     <button type="button" class="review-discard-btn" data-id="${item.article_id || ''}" title="放弃新闻" aria-label="放弃新闻">🗑️</button>

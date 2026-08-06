@@ -21,7 +21,7 @@
 - 谨慎处理 review decision 和 report type。状态、排序、归档和编辑操作会影响后续导出行为。
 - 聚类和序列化逻辑应与 route handler 分离。route handler 不应直接构造复杂的聚类响应。
 - 不要单独重命名 `web_static/js/manual_filter/*` 依赖的 DOM id、`data-*` 属性、CSS class 或 API path；如需修改，必须同步更新模板、JavaScript 和测试。
-- 尽量沿用现有 JS 模块边界，分别处理 filter、review、discard、search drawer、export/archive 等行为。
+- 尽量沿用现有 JS 模块边界，分别处理 filter、review、discard、search drawer、export/archive 等行为。原文抽屉（`content_drawer.js` + `css/modules/content_drawer.css`）是无遮罩的右侧抽屉，正文经 `/api/articles/content` 按需单篇获取并做页面会话内内存缓存；筛选页与已选结果页共用，入口按钮在 `renderArticleCard` 与 `renderReviewCard` 中渲染。
 - 修改用户可见的工作流时，同时检查 API service 路径和浏览器端路径。
 
 ## API 和安全规则

@@ -110,7 +110,10 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
             <div class="card-header">
                 <h3 class="article-title">
                     ${safeHtml(safe.title || '(No Title)')}
-                    ${safe.url ? `<a href="${safe.url}" target="_blank" rel="noopener noreferrer">🔗</a>` : ''}
+                    <button type="button" class="content-drawer-trigger"
+                        data-article-id="${escapeAttr(safe.article_id || '')}"
+                        data-bonus-keywords="${escapeAttr((safe.bonus_keywords || []).join('\n'))}"
+                        title="查看原文">原文</button>
                     ${duplicateBadge}
                 </h3>
                 ${statusGroup}
@@ -394,6 +397,12 @@ const safeHtml = (str) => {
     div.textContent = str;
     return div.innerHTML;
 };
+
+const escapeAttr = (str) => String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 
 // --- DOM Helpers ---
 function createEl(tag, className, textOrChildren = '', attributes = {}) {

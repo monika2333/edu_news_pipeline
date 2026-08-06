@@ -315,6 +315,50 @@ def test_shift_candidate_search_uses_body_without_selecting_it() -> None:
     )
 
 
+def test_discarded_reviews_sort_by_latest_decision_with_updated_fallback() -> None:
+    cursor = ShiftReviewListCursor()
+
+    db_postgres_shift_reviews.fetch_shift_review_items(
+        cursor,
+        shift_id="shift-1",
+        decision="discarded",
+        report_type=None,
+        limit=10,
+        offset=0,
+    )
+
+    list_query = cursor.queries[-1]
+    decided_index = list_query.index("sr.decided_at DESC NULLS LAST")
+    updated_index = list_query.index("sr.updated_at DESC NULLS LAST")
+    importance_index = list_query.index(
+        "ns.external_importance_score DESC NULLS LAST"
+    )
+    stable_index = list_query.index("sr.id ASC NULLS LAST")
+    assert decided_index < updated_index < importance_index < stable_index
+
+
+def test_pending_reviews_keep_importance_score_order() -> None:
+    cursor = ShiftReviewListCursor()
+
+    db_postgres_shift_reviews.fetch_shift_review_items(
+        cursor,
+        shift_id="shift-1",
+        decision="pending",
+        report_type=None,
+        limit=10,
+        offset=0,
+    )
+
+    list_query = cursor.queries[-1]
+    importance_index = list_query.index(
+        "ns.external_importance_score DESC NULLS LAST"
+    )
+    rank_index = list_query.index("sr.rank ASC NULLS LAST")
+    assert importance_index < rank_index
+    assert "sr.decided_at DESC NULLS LAST" not in list_query
+    assert "sr.updated_at DESC NULLS LAST" not in list_query
+
+
 def test_set_admin_discarded_preserves_editor_decision() -> None:
     cursor = AdminDiscardCursor()
 

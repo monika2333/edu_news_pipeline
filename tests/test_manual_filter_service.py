@@ -95,6 +95,7 @@ class FakeAdapter:
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
         order_by_decided_at: bool = False,
+        query: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
         target_type = (
             self._normalized_report_type(report_type)
@@ -118,6 +119,20 @@ class FakeAdapter:
             filtered = [row for row in filtered if row.get("is_beijing_related") is target]
         if sentiment in ("positive", "negative"):
             filtered = [row for row in filtered if (row.get("sentiment_label") or "").lower() == sentiment]
+        normalized_query = (query or "").strip().lower()
+        if normalized_query:
+            filtered = [
+                row
+                for row in filtered
+                if normalized_query
+                in " ".join(
+                    [
+                        str(row.get("title") or "").lower(),
+                        str(row.get("llm_summary") or "").lower(),
+                        str(row.get("content_markdown") or "").lower(),
+                    ]
+                )
+            ]
         filtered.sort(
             key=lambda r: (
                 r.get("rank") is None,
@@ -544,6 +559,27 @@ def test_discarded_list_ignores_report_type(fake_adapter):
 
     assert {item["article_id"] for item in zongbao["items"]} == {"a1", "a2"}
     assert wanbao == zongbao
+
+
+def test_discarded_list_searches_shared_pool_and_paginates_matches(fake_adapter):
+    fake_adapter.rows[0].update(status="discarded", report_type="wanbao")
+    fake_adapter.rows[1].update(
+        status="discarded",
+        report_type="zongbao",
+        content_markdown="Internal follow-up body",
+    )
+
+    result = manual_filter_service.list_discarded(
+        limit=1,
+        offset=1,
+        report_type="zongbao",
+        q="  Internal  ",
+    )
+
+    assert result["total"] == 2
+    assert len(result["items"]) == 1
+    assert result["limit"] == 1
+    assert result["offset"] == 1
 
 
 def test_pending_wrong_report_type_still_enters_clustering(fake_adapter):

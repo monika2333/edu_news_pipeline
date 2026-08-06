@@ -200,8 +200,18 @@ def duplicate_check_api(req: DuplicateCheckRequest) -> Dict[str, Any]:
 
 
 @router.get("/discarded")
-def list_discarded_api(limit: int = 30, offset: int = 0, report_type: str = "zongbao") -> Dict[str, Any]:
-    return manual_filter_service.list_discarded(limit=limit, offset=offset, report_type=report_type)
+def list_discarded_api(
+    limit: int = 30,
+    offset: int = 0,
+    report_type: str = "zongbao",
+    q: Optional[str] = None,
+) -> Dict[str, Any]:
+    return manual_filter_service.list_discarded(
+        limit=limit,
+        offset=offset,
+        report_type=report_type,
+        q=(q or "").strip() or None,
+    )
 
 
 @router.post("/edit")

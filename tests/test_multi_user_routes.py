@@ -161,6 +161,33 @@ def test_editor_candidate_search_is_forwarded_to_backend(monkeypatch) -> None:
     assert str(captured["created_before"]) == "2026-07-27"
 
 
+def test_editor_discarded_search_is_normalized_and_forwarded(monkeypatch) -> None:
+    editor = _user("duty_editor")
+    calls: list[dict[str, Any]] = []
+
+    def list_items(**kwargs: Any) -> dict[str, Any]:
+        calls.append(kwargs)
+        return {"items": [], "total": 0, "limit": 10, "offset": 0}
+
+    monkeypatch.setattr(duty_review_service, "list_items", list_items)
+    client = _client_for(editor)
+
+    matched = client.get(
+        "/api/duty/shifts/shift-id/reviews",
+        params={"decision": "discarded", "q": "  教育政策  "},
+    )
+    blank = client.get(
+        "/api/duty/shifts/shift-id/reviews",
+        params={"decision": "discarded", "q": "   "},
+    )
+
+    assert matched.status_code == 200
+    assert blank.status_code == 200
+    assert calls[0]["decision"] == "discarded"
+    assert calls[0]["query"] == "教育政策"
+    assert calls[1]["query"] is None
+
+
 def test_editor_bulk_discard_is_forwarded_once_to_owned_shift_service(
     monkeypatch,
 ) -> None:

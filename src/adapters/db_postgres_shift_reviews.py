@@ -308,6 +308,12 @@ def fetch_shift_review_items(
             "sr.rank ASC NULLS LAST, sr.created_at ASC NULLS LAST, "
             "sr.id ASC NULLS LAST"
         )
+    elif decision == "discarded":
+        order_sql = (
+            "sr.decided_at DESC NULLS LAST, sr.updated_at DESC NULLS LAST, "
+            "ns.external_importance_score DESC NULLS LAST, "
+            "sr.id ASC NULLS LAST"
+        )
     else:
         order_sql = (
             "ns.external_importance_score DESC NULLS LAST, "

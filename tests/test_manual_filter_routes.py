@@ -73,6 +73,7 @@ class FakeManualFilterAdapter:
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
         order_by_decided_at: bool = False,
+        query: Optional[str] = None,
     ) -> Tuple[list[Dict[str, Any]], int]:
         target_type = (
             self._normalized_report_type(report_type)
@@ -96,6 +97,20 @@ class FakeManualFilterAdapter:
             filtered = [row for row in filtered if row.get("is_beijing_related") is target]
         if sentiment in ("positive", "negative"):
             filtered = [row for row in filtered if (row.get("sentiment_label") or "").lower() == sentiment]
+        normalized_query = (query or "").strip().lower()
+        if normalized_query:
+            filtered = [
+                row
+                for row in filtered
+                if normalized_query
+                in " ".join(
+                    [
+                        str(row.get("title") or "").lower(),
+                        str(row.get("llm_summary") or "").lower(),
+                        str(row.get("content_markdown") or "").lower(),
+                    ]
+                )
+            ]
         filtered.sort(
             key=lambda row: (
                 row.get("rank") is None,
@@ -387,6 +402,35 @@ def test_candidates_api_returns_search_mode_items(monkeypatch) -> None:
     assert payload["view_mode"] == "search"
     assert payload["total"] == 1
     assert [item["article_id"] for item in payload["items"]] == ["a1"]
+
+
+def test_discarded_api_searches_and_treats_blank_query_as_absent(monkeypatch) -> None:
+    from src.console import manual_filter_service
+
+    rows = _build_rows()
+    for row in rows:
+        row["status"] = "discarded"
+    adapter = FakeManualFilterAdapter(rows)
+    monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    matched = client.get(
+        "/api/manual_filter/discarded",
+        params={"q": "  学科建设  ", "limit": 1, "offset": 0},
+    )
+    blank = client.get("/api/manual_filter/discarded", params={"q": "   "})
+    absent = client.get("/api/manual_filter/discarded")
+
+    assert matched.status_code == 200
+    assert matched.json()["total"] == 1
+    assert [item["article_id"] for item in matched.json()["items"]] == ["a1"]
+    assert matched.json()["limit"] == 1
+    assert matched.json()["offset"] == 0
+    assert blank.status_code == 200
+    assert blank.json() == absent.json()
 
 
 def test_candidates_api_uses_created_before_and_ignores_old_query_name(monkeypatch) -> None:

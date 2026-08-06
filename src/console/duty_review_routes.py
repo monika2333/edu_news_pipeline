@@ -146,6 +146,7 @@ def list_reviews(
     limit: int = 30,
     offset: int = 0,
     report_type: Optional[ReportType] = None,
+    q: Optional[str] = None,
     user: ConsoleUser = Depends(require_role("duty_editor")),
 ) -> dict[str, Any]:
     try:
@@ -156,6 +157,7 @@ def list_reviews(
             report_type=report_type,
             limit=limit,
             offset=offset,
+            query=(q or "").strip() or None,
         )
     except (ValueError, PermissionError) as exc:
         _raise_review_error(exc)

@@ -230,6 +230,27 @@ def test_fetch_manual_reviews_orders_selected_items_by_manual_rank_first() -> No
     assert rank_index < score_index
 
 
+def test_fetch_manual_reviews_applies_search_to_count_and_page_queries() -> None:
+    cur = FakeFetchCursor()
+
+    db_postgres_manual_reviews.fetch_manual_reviews(
+        cur,
+        status="discarded",
+        limit=10,
+        offset=5,
+        query="  教育政策  ",
+        order_by_decided_at=True,
+    )
+
+    assert len(cur.queries) == 2
+    assert all("coalesce(ns.title, '')" in query for query in cur.queries)
+    assert all("coalesce(ns.llm_summary, '')" in query for query in cur.queries)
+    assert all("coalesce(ns.content_markdown, '')" in query for query in cur.queries)
+    assert all("ILIKE %s" in query for query in cur.queries)
+    assert cur.params[0] == ("discarded", "%教育政策%")
+    assert cur.params[1] == ("discarded", "%教育政策%", 10, 5)
+
+
 def test_fetch_manual_pending_for_cluster_ignores_report_type() -> None:
     cur = FakeFetchCursor()
 

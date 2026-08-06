@@ -28,6 +28,7 @@ class ManualReviewsNamespace:
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
         order_by_decided_at: bool = False,
+        query: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
         with self._adapter._cursor() as cur:
             return fetch_manual_reviews(
@@ -40,6 +41,7 @@ class ManualReviewsNamespace:
                 sentiment=sentiment,
                 report_type=report_type,
                 order_by_decided_at=order_by_decided_at,
+                query=query,
             )
 
     def fetch_pending_for_cluster(
@@ -275,6 +277,7 @@ def _build_manual_review_filters(
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
     report_type: Optional[str] = None,
+    query: Optional[str] = None,
 ) -> Tuple[List[str], List[Any]]:
     clauses: List[str] = []
     params: List[Any] = []
@@ -294,6 +297,10 @@ def _build_manual_review_filters(
     if sentiment in ("positive", "negative"):
         clauses.append("ns.sentiment_label = %s")
         params.append(sentiment)
+    normalized_query = (query or "").strip()
+    if normalized_query:
+        clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
+        params.append(f"%{normalized_query}%")
     return clauses, params
 
 
@@ -392,6 +399,7 @@ def fetch_manual_reviews(
     sentiment: Optional[str] = None,
     report_type: Optional[str] = None,
     order_by_decided_at: bool = False,
+    query: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], int]:
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
@@ -402,6 +410,7 @@ def fetch_manual_reviews(
         region=region,
         sentiment=sentiment,
         report_type=report_type,
+        query=query,
     )
     where_sql = " AND ".join(clauses)
     order_by_sql = _manual_review_order_by(status=status, order_by_decided_at=order_by_decided_at)

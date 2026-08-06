@@ -82,9 +82,20 @@ def list_review(
     return _list_review(decision, limit=limit, offset=offset, report_type=report_type)
 
 
-def list_discarded(*, limit: int = 30, offset: int = 0, report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, Any]:
+def list_discarded(
+    *,
+    limit: int = 30,
+    offset: int = 0,
+    report_type: str = DEFAULT_REPORT_TYPE,
+    q: Optional[str] = None,
+) -> Dict[str, Any]:
     _sync_query_dependencies()
-    return _list_discarded(limit=limit, offset=offset, report_type=report_type)
+    return _list_discarded(
+        limit=limit,
+        offset=offset,
+        report_type=report_type,
+        q=q,
+    )
 
 
 def status_counts(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, int]:

@@ -113,7 +113,6 @@ def get_article_content(*, article_id: str) -> Dict[str, Any]:
         "url": None,
         "publish_time_iso": None,
         "created_at": None,
-        "fetched_at": None,
         "content_markdown": None,
     }
     if adapter is None:
@@ -131,7 +130,6 @@ def get_article_content(*, article_id: str) -> Dict[str, Any]:
         "url": row.get("url"),
         "publish_time_iso": row.get("publish_time_iso"),
         "created_at": row.get("created_at"),
-        "fetched_at": row.get("fetched_at"),
         "content_markdown": row.get("content_markdown"),
     }
 

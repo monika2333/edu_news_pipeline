@@ -440,7 +440,7 @@ async function bulkDiscard() {
                 region,
                 sentiment,
                 q: query || null,
-                published_before: null,
+                created_before: null,
                 dry_run: true
             })
         });
@@ -462,7 +462,7 @@ async function bulkDiscard() {
                 region,
                 sentiment,
                 q: query || null,
-                published_before: null,
+                created_before: null,
                 dry_run: false
             })
         });
@@ -564,8 +564,8 @@ function closeCleanupModal() {
 }
 
 async function handleCleanupDateChange() {
-    const publishedBefore = elements.cleanupDateInput ? elements.cleanupDateInput.value : '';
-    if (!publishedBefore) {
+    const createdBefore = elements.cleanupDateInput ? elements.cleanupDateInput.value : '';
+    if (!createdBefore) {
         cleanupPreviewSeq += 1;
         resetCleanupCategories();
         setCleanupStats('');
@@ -586,7 +586,7 @@ async function handleCleanupDateChange() {
                     region,
                     sentiment,
                     q: null,
-                    published_before: publishedBefore,
+                    created_before: createdBefore,
                     dry_run: true
                 })
             });
@@ -624,8 +624,8 @@ async function handleCleanupDateChange() {
 }
 
 async function confirmCleanupDiscard() {
-    const publishedBefore = elements.cleanupDateInput ? elements.cleanupDateInput.value : '';
-    if (!publishedBefore || !elements.cleanupConfirmBtn || elements.cleanupConfirmBtn.disabled) return;
+    const createdBefore = elements.cleanupDateInput ? elements.cleanupDateInput.value : '';
+    if (!createdBefore || !elements.cleanupConfirmBtn || elements.cleanupConfirmBtn.disabled) return;
     const targets = getCleanupRows()
         .filter((row) => {
             const checkbox = row.querySelector('.cleanup-category-check');
@@ -645,7 +645,7 @@ async function confirmCleanupDiscard() {
                     region,
                     sentiment,
                     q: null,
-                    published_before: publishedBefore,
+                    created_before: createdBefore,
                     dry_run: false
                 })
             });

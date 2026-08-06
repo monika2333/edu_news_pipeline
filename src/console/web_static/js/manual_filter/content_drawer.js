@@ -121,7 +121,6 @@ function renderContentDrawerHeader(data, charCount) {
     clearEl(meta);
     const items = [
         `来源: ${data.source || '-'}`,
-        `发布时间: ${formatContentDrawerTime(data.publish_time_iso)}`,
         `收录时间: ${formatContentDrawerTime(data.created_at)}`
     ];
     if (charCount !== null) items.push(`正文 ${charCount.toLocaleString('zh-CN')} 字`);

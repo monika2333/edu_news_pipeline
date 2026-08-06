@@ -2,15 +2,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.adapters.db_postgres_news_summaries import insert_pending_summary
+from src.adapters.db_postgres_news_summaries import (
+    fetch_news_summary_content,
+    insert_pending_summary,
+)
 
 
 class FakeCursor:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, list[Any]]] = []
+    def __init__(self, row: dict[str, Any] | None = None) -> None:
+        self.calls: list[tuple[str, Any]] = []
+        self.row = row
 
-    def execute(self, query: str, params: list[Any]) -> None:
+    def execute(self, query: str, params: Any) -> None:
         self.calls.append((query, params))
+
+    def fetchone(self) -> dict[str, Any] | None:
+        return self.row
 
 
 def test_insert_pending_summary_only_executes_summary_upsert() -> None:
@@ -31,3 +38,32 @@ def test_insert_pending_summary_only_executes_summary_upsert() -> None:
     assert "INSERT INTO news_summaries" in query
     assert params[0] == "article-1"
     assert params[-1] == ["education"]
+
+
+def test_fetch_news_summary_content_selects_drawer_metadata() -> None:
+    expected = {
+        "article_id": "article-1",
+        "title": "Test title",
+        "source": "Test source",
+        "url": "https://example.com/article-1",
+        "publish_time_iso": "2026-08-06T08:00:00+00:00",
+        "fetched_at": "2026-08-06T09:00:00+00:00",
+        "content_markdown": "First paragraph.\n\nSecond paragraph.",
+    }
+    cursor = FakeCursor(expected)
+
+    result = fetch_news_summary_content(cursor, "article-1")
+
+    assert result == expected
+    query, params = cursor.calls[0]
+    for column in (
+        "article_id",
+        "title",
+        "source",
+        "url",
+        "publish_time_iso",
+        "fetched_at",
+        "content_markdown",
+    ):
+        assert column in query
+    assert params == ("article-1",)

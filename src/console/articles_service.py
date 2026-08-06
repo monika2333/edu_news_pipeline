@@ -106,13 +106,30 @@ def search_articles(
 def get_article_content(*, article_id: str) -> Dict[str, Any]:
     adapter = _get_adapter_safe()
     safe_article_id = str(article_id or "")
+    unavailable = {
+        "article_id": safe_article_id,
+        "title": None,
+        "source": None,
+        "url": None,
+        "publish_time_iso": None,
+        "fetched_at": None,
+        "content_markdown": None,
+    }
     if adapter is None:
-        return {"article_id": safe_article_id, "content_markdown": None}
-    row = adapter.news_summaries.fetch_content(safe_article_id)
+        return unavailable
+    try:
+        row = adapter.news_summaries.fetch_content(safe_article_id)
+    except Exception:  # pragma: no cover - degrade gracefully when DB is unavailable
+        return unavailable
     if not row:
-        return {"article_id": safe_article_id, "content_markdown": None}
+        return unavailable
     return {
         "article_id": str(row.get("article_id") or safe_article_id),
+        "title": row.get("title"),
+        "source": row.get("source"),
+        "url": row.get("url"),
+        "publish_time_iso": row.get("publish_time_iso"),
+        "fetched_at": row.get("fetched_at"),
         "content_markdown": row.get("content_markdown"),
     }
 

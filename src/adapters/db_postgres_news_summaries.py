@@ -551,7 +551,14 @@ def fetch_news_summary_content(cur: psycopg.Cursor, article_id: str) -> Optional
     if not article_id:
         return None
     query = """
-        SELECT article_id, content_markdown
+        SELECT
+            article_id,
+            title,
+            source,
+            url,
+            publish_time_iso,
+            fetched_at,
+            content_markdown
         FROM news_summaries
         WHERE article_id = %s
     """

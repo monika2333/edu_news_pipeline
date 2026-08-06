@@ -35,6 +35,11 @@ class NewsArticleSearchItem(BaseModel):
 
 class NewsArticleContentResponse(BaseModel):
     article_id: str
+    title: Optional[str] = None
+    source: Optional[str] = None
+    url: Optional[str] = None
+    publish_time_iso: Optional[datetime] = None
+    fetched_at: Optional[datetime] = None
     content_markdown: Optional[str] = None
 
 

@@ -127,21 +127,31 @@ body.content-drawer-open .search-drawer-toggle {
 }
 
 .content-drawer-trigger {
-    background: none;
-    border: none;
-    padding: 0 2px;
-    margin-left: 6px;
-    color: var(--primary-color);
-    font: inherit;
-    font-size: 0.82rem;
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 8px;
+    padding: 1px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.5;
     white-space: nowrap;
     cursor: pointer;
-    text-decoration: underline;
-    text-underline-offset: 2px;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
 }
 
 .content-drawer-trigger:hover {
-    color: var(--primary-hover);
+    color: var(--primary-color);
+    border-color: var(--primary-color);
+    background: rgba(37, 99, 235, 0.06);
+}
+
+.content-drawer-trigger:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
 }
 
 @media (max-width: 768px) {

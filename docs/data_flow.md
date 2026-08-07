@@ -84,12 +84,14 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 | 步骤 | 状态字段 | 主要产出字段 |
 |---|---|---|
-| `summarize` | `summary_status` | `llm_summary`、`llm_keywords`、`llm_source` |
-| `enrich-summary` | `status` | `sentiment_label`、`sentiment_confidence` |
+| `summarize` | `summary_status` | `llm_summary`、`llm_keywords` |
+| `enrich-summary` | `status` | `sentiment_label`、`sentiment_confidence`、`llm_source` |
 | `geo-classify` | `external_importance_status`（见下方注意） | `is_beijing_related_llm`、`beijing_gate_raw` |
 | `external-filter` | `external_importance_status` | `external_importance_score`、`external_importance_raw` |
 
 每个步骤都有独立的 `*_attempted_at` 和 `*_fail_count`，用于重试控制和失败隔离——**某一步失败不会阻塞其他步骤**。
+
+`llm_source` 表示模型识别出的发布/署名媒体名称。来源响应完成既有清洗后，只有长度不超过 64 个字符的结果才可写入；更长的内容视为模型未按格式返回，必须整体丢弃并写入 `NULL`，不得截断保存。来源为空时，导出与人工复核界面回退使用抓取来源。
 
 > ⚠️ 新增富化步骤时，应当沿用这个模式：**独立的状态字段 + 独立的失败计数**，不要复用已有步骤的状态字段。
 

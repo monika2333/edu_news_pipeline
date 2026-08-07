@@ -78,3 +78,32 @@ def test_failed_request_keeps_entire_enrichment_pending(monkeypatch) -> None:
     enrich_summary.run(limit=1, concurrency=2)
 
     assert adapter.completed == []
+
+
+def test_source_length_guard_logs_article_id_and_metadata(monkeypatch) -> None:
+    messages: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        enrich_summary,
+        "detect_source",
+        lambda article: {
+            "llm_source": None,
+            "source_guard_discarded_length": 945,
+            "source_guard_triggered_attempt": 1,
+        },
+    )
+    monkeypatch.setattr(
+        enrich_summary,
+        "log_info",
+        lambda worker, message: messages.append((worker, message)),
+    )
+
+    result = enrich_summary._detect_article_source(_row())
+
+    assert result.llm_source is None
+    assert messages == [
+        (
+            "enrich_summary",
+            "WARNING source length guard article_id=article-1 "
+            "discarded_length=945 attempt=1",
+        )
+    ]

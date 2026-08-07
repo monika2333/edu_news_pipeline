@@ -65,6 +65,16 @@ def _detect_article_source(article: dict[str, Any]) -> EnrichmentResult:
             "content": content,
         }
     )
+    discarded_length = payload.get("source_guard_discarded_length")
+    if isinstance(discarded_length, int) and discarded_length > 0:
+        article_id = str(article.get("article_id") or "<unknown>")
+        guard_attempt = int(payload.get("source_guard_triggered_attempt") or 0)
+        log_info(
+            WORKER,
+            "WARNING source length guard "
+            f"article_id={article_id} discarded_length={discarded_length} "
+            f"attempt={guard_attempt}",
+        )
     raw_source = payload.get("llm_source")
     llm_source = str(raw_source).strip() if raw_source else None
     return EnrichmentResult(

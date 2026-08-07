@@ -14,6 +14,7 @@ from src.adapters.llm_chat import (
 from src.config import get_settings
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+MAX_LLM_SOURCE_LENGTH = 64
 
 
 def build_source_payload(article: Dict[str, Any]) -> Dict[str, Any]:
@@ -89,19 +90,27 @@ def detect_source(
     backoff = 1.0
     last_error: Optional[Exception] = None
     resolved_timeout = timeout or settings.llm_summary_timeout
-    for _ in range(max(1, retries)):
+    for attempt in range(1, max(1, retries) + 1):
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=resolved_timeout)
             if response.status_code == 200:
                 data = response.json()
                 raw_text = (data.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
                 llm_source = _normalise_response(raw_text)
+                discarded_length: Optional[int] = None
+                guard_triggered_attempt = 0
+                if len(llm_source) > MAX_LLM_SOURCE_LENGTH:
+                    discarded_length = len(llm_source)
+                    guard_triggered_attempt = attempt
+                    llm_source = None
                 if llm_source == "未知":
                     llm_source = None
                 return {
                     "llm_source": llm_source,
                     "model": settings.llm_source_model,
                     "raw": data,
+                    "source_guard_discarded_length": discarded_length,
+                    "source_guard_triggered_attempt": guard_triggered_attempt,
                 }
             raise_for_llm_quota_error(
                 status_code=response.status_code,
@@ -123,4 +132,4 @@ def detect_source(
     raise last_error or RuntimeError("Source detection call failed")
 
 
-__all__ = ["build_source_payload", "detect_source"]
+__all__ = ["MAX_LLM_SOURCE_LENGTH", "build_source_payload", "detect_source"]

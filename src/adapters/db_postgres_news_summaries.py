@@ -60,6 +60,22 @@ class NewsSummariesNamespace:
                 llm_source=llm_source,
             )
 
+    def inspect_oversized_source_values(
+        self,
+        llm_source_max_length: int,
+        manual_source_max_length: int,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        with self._adapter._cursor() as cur:
+            return inspect_oversized_source_values(
+                cur,
+                llm_source_max_length,
+                manual_source_max_length,
+            )
+
+    def clear_oversized_llm_sources(self, max_length: int) -> int:
+        with self._adapter._cursor() as cur:
+            return clear_oversized_llm_sources(cur, max_length)
+
     def fetch_pending_routes(
         self,
         limit: Optional[int] = None,
@@ -373,7 +389,7 @@ def complete_summary_enrichment(
         UPDATE news_summaries
         SET sentiment_label = %s,
             sentiment_confidence = %s,
-            llm_source = COALESCE(%s, llm_source),
+            llm_source = %s,
             status = 'pending_routing',
             updated_at = NOW()
         WHERE article_id = %s
@@ -383,6 +399,70 @@ def complete_summary_enrichment(
     cur.execute(query, (normalized_label, confidence, llm_source, article_id))
     if cur.rowcount != 1:
         raise ValueError(f"Unable to complete summary enrichment for {article_id}")
+
+
+def inspect_oversized_source_values(
+    cur: psycopg.Cursor,
+    llm_source_max_length: int,
+    manual_source_max_length: int,
+) -> Dict[str, List[Dict[str, Any]]]:
+    if llm_source_max_length <= 0 or manual_source_max_length <= 0:
+        raise ValueError("source length limits must be positive")
+
+    queries = {
+        "news_summaries.llm_source": (
+            """
+            SELECT article_id, CHAR_LENGTH(llm_source) AS character_length
+            FROM news_summaries
+            WHERE llm_source IS NOT NULL
+              AND CHAR_LENGTH(llm_source) > %s
+            ORDER BY article_id
+            """,
+            llm_source_max_length,
+        ),
+        "manual_reviews.manual_llm_source": (
+            """
+            SELECT article_id, CHAR_LENGTH(manual_llm_source) AS character_length
+            FROM manual_reviews
+            WHERE manual_llm_source IS NOT NULL
+              AND CHAR_LENGTH(manual_llm_source) > %s
+            ORDER BY article_id
+            """,
+            manual_source_max_length,
+        ),
+        "shift_reviews.manual_llm_source": (
+            """
+            SELECT article_id, shift_id,
+                   CHAR_LENGTH(manual_llm_source) AS character_length
+            FROM shift_reviews
+            WHERE manual_llm_source IS NOT NULL
+              AND CHAR_LENGTH(manual_llm_source) > %s
+            ORDER BY article_id, shift_id
+            """,
+            manual_source_max_length,
+        ),
+    }
+    results: Dict[str, List[Dict[str, Any]]] = {}
+    for field_name, (query, max_length) in queries.items():
+        cur.execute(query, (max_length,))
+        results[field_name] = [dict(row) for row in cur.fetchall()]
+    return results
+
+
+def clear_oversized_llm_sources(cur: psycopg.Cursor, max_length: int) -> int:
+    if max_length <= 0:
+        raise ValueError("max_length must be positive")
+
+    cur.execute(
+        """
+        UPDATE news_summaries
+        SET llm_source = NULL
+        WHERE llm_source IS NOT NULL
+          AND CHAR_LENGTH(llm_source) > %s
+        """,
+        (max_length,),
+    )
+    return cur.rowcount
 
 
 def fetch_pending_summary_routes(
@@ -792,12 +872,14 @@ def upsert_news_summaries_from_primary(cur: psycopg.Cursor, rows: Sequence[Mappi
 
 __all__ = [
     "NewsSummariesNamespace",
+    "clear_oversized_llm_sources",
     "complete_summary",
     "complete_summary_enrichment",
     "complete_summary_generation",
     "complete_summary_routing",
     "fetch_pending_summaries",
     "fetch_pending_summary_enrichments",
+    "inspect_oversized_source_values",
     "fetch_pending_summary_routes",
     "fetch_news_summary_content",
     "fetch_raw_articles_for_summary",

@@ -61,11 +61,7 @@ async function api(path, options = {}) {
     const response = await window.fetch(`/api/submission-archive${path}`, options);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-        const error = new Error(
-            typeof payload.detail === 'string'
-                ? payload.detail
-                : payload.detail?.message || '操作失败'
-        );
+        const error = new Error(formatApiError(payload, '操作失败'));
         error.status = response.status;
         error.payload = payload;
         throw error;

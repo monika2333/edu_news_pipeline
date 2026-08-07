@@ -3,17 +3,6 @@
     const errorBox = document.getElementById('admin-create-user-error');
     const submitButton = document.getElementById('admin-create-user-submit');
 
-    function errorMessage(payload) {
-        if (typeof payload?.detail === 'string') return payload.detail;
-        if (Array.isArray(payload?.detail)) {
-            return payload.detail
-                .map(item => item.msg)
-                .filter(Boolean)
-                .join('；');
-        }
-        return '账号创建失败，请稍后重试';
-    }
-
     form.addEventListener('submit', async event => {
         event.preventDefault();
         errorBox.hidden = true;
@@ -35,7 +24,7 @@
                 })
             });
             const payload = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(errorMessage(payload));
+            if (!response.ok) throw new Error(formatApiError(payload, '账号创建失败，请稍后重试'));
             window.location.assign('/admin?created=1');
         } catch (error) {
             errorBox.textContent = error.message || '账号创建失败，请稍后重试';

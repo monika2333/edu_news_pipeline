@@ -112,7 +112,7 @@ async function requestScoreFeedback(path, method, payload) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-        throw new Error(data.detail || '评分反馈保存失败');
+        throw new Error(formatApiError(data, '评分反馈保存失败'));
     }
     return data;
 }

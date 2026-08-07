@@ -17,7 +17,7 @@ function getVisibleItems() {
 async function request(path, options) {
     const response = await fetch(path, options);
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.detail || '请求失败');
+    if (!response.ok) throw new Error(formatApiError(payload, '请求失败'));
     return payload;
 }
 

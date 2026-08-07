@@ -36,7 +36,7 @@
             });
             if (!response.ok) {
                 const payload = await response.json().catch(() => ({}));
-                throw new Error(payload.detail || '登录失败');
+                throw new Error(formatApiError(payload, '登录失败'));
             }
             window.location.replace(safeNextPath());
         } catch (error) {

@@ -4,14 +4,6 @@
     const errorBox = document.getElementById('password-error');
     const submitButton = document.getElementById('password-submit');
 
-    function errorMessage(payload) {
-        if (typeof payload?.detail === 'string') return payload.detail;
-        if (Array.isArray(payload?.detail)) {
-            return payload.detail.map(item => item.msg).filter(Boolean).join('；');
-        }
-        return '密码修改失败，请稍后重试';
-    }
-
     form.addEventListener('submit', async event => {
         event.preventDefault();
         successBox.hidden = true;
@@ -36,7 +28,7 @@
                 })
             });
             const payload = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(errorMessage(payload));
+            if (!response.ok) throw new Error(formatApiError(payload, '密码修改失败，请稍后重试'));
             form.reset();
             successBox.textContent = '密码已更新，当前设备保持登录。';
             successBox.hidden = false;

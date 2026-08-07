@@ -50,7 +50,7 @@ async function requireManualMutationSuccess(response, fallbackMessage) {
         throw new Error('该记录已被其他操作更新，请刷新后重试');
     }
     if (!response.ok) {
-        throw new Error(payload.detail || fallbackMessage);
+        throw new Error(formatApiError(payload, fallbackMessage));
     }
     applyManualReviewVersions(payload.versions);
     return payload;

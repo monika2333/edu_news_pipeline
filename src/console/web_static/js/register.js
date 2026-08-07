@@ -3,14 +3,6 @@
     const errorBox = document.getElementById('register-error');
     const submitButton = document.getElementById('register-submit');
 
-    function errorMessage(payload) {
-        if (typeof payload?.detail === 'string') return payload.detail;
-        if (Array.isArray(payload?.detail)) {
-            return payload.detail.map(item => item.msg).filter(Boolean).join('；');
-        }
-        return '注册失败，请稍后重试';
-    }
-
     form.addEventListener('submit', async event => {
         event.preventDefault();
         errorBox.hidden = true;
@@ -37,7 +29,7 @@
                 })
             });
             const payload = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(errorMessage(payload));
+            if (!response.ok) throw new Error(formatApiError(payload, '注册失败，请稍后重试'));
             window.location.replace(
                 `/login?registered=1&username=${encodeURIComponent(username)}`
             );

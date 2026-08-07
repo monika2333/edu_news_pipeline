@@ -89,7 +89,7 @@ async function flushReviewEditsBeforeDuplicateCheck(scope = getDuplicateReviewSc
 async function readDuplicateError(response) {
     try {
         const payload = await response.json();
-        return payload.detail || 'AI 查重失败，请稍后重试';
+        return formatApiError(payload, 'AI 查重失败，请稍后重试');
     } catch (error) {
         return 'AI 查重失败，请稍后重试';
     }

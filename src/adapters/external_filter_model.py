@@ -108,14 +108,19 @@ def _truncate(text: str, limit: int = 1500) -> str:
     return text[:limit] + "……（内容截断）"
 
 
-def build_prompt(candidate: ExternalFilterCandidate, *, category: str = "external") -> str:
+def build_prompt(
+    candidate: ExternalFilterCandidate,
+    *,
+    category: str = "external",
+    content_limit: int = 1500,
+) -> str:
     template = _load_prompt_template(category)
     prompt_key = prompt_key_for_category(category)
     is_internal_category = prompt_key.startswith("internal")
     title = candidate.title or "（无标题）"
     source = candidate.source or "（未知来源）"
     summary = (candidate.summary or "").strip() or "（无摘要）"
-    content = _truncate(candidate.content or "")
+    content = _truncate(candidate.content or "", limit=content_limit)
     keyword_section = ""
     if is_internal_category and candidate.keyword_matches:
         keyword_text = "、".join(candidate.keyword_matches)
@@ -137,6 +142,7 @@ def call_external_filter_model(
     category: str = "external",
     retries: int = 3,
     timeout: Optional[int] = None,
+    content_limit: int = 1500,
 ) -> str:
     settings = get_settings()
     api_key = settings.llm_api_key
@@ -145,7 +151,16 @@ def call_external_filter_model(
     url = f"{settings.llm_api_base_url.rstrip('/')}/chat/completions"
     payload = {
         "model": settings.llm_external_filter_model,
-        "messages": [{"role": "user", "content": build_prompt(candidate, category=category)}],
+        "messages": [
+            {
+                "role": "user",
+                "content": build_prompt(
+                    candidate,
+                    category=category,
+                    content_limit=content_limit,
+                ),
+            }
+        ],
         "temperature": 0.0,
     }
     apply_reasoning_config(

@@ -98,6 +98,25 @@ def test_build_prompt_external_negative_skips_keyword_section():
     assert "PROMPT" in prompt
 
 
+def test_build_prompt_content_limit_is_opt_in():
+    candidate = _candidate(content="甲" * 2000 + "结尾标记")
+    with patch(
+        "src.adapters.external_filter_model._load_prompt_template",
+        return_value="PROMPT",
+    ):
+        default_prompt = model.build_prompt(candidate, category="external_positive")
+        expanded_prompt = model.build_prompt(
+            candidate,
+            category="external_positive",
+            content_limit=4000,
+        )
+
+    assert "结尾标记" not in default_prompt
+    assert "内容截断" in default_prompt
+    assert "结尾标记" in expanded_prompt
+    assert "内容截断" not in expanded_prompt
+
+
 def test_call_external_filter_model_sends_reasoning_payload():
     candidate = _candidate()
     settings = replace(

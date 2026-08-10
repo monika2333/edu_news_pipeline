@@ -74,7 +74,9 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 **读写**：`primary_articles`
 
-对主文打相关性分。`score_details` 存放打分过程的原始返回，便于事后追查。
+对主文打相关性分。关键词加减分先基于标题、正文和已有关键词计算；如果模型原始分即使达到上限 100，加上净关键词分后仍低于 promotion 阈值，则不调用模型，直接写为 `filtered_out`。这只省略不可能改变结果的模型调用，不改变最终筛选集合。
+
+未经模型评分的行约定为：`raw_relevance_score = NULL`，`keyword_bonus_score` 和 `score` 都写实际净关键词分；`score_details.matched_rules` 保留完整命中规则，并以 `llm_skipped = true`、`skip_reason = "keyword_bonus_below_threshold"` 明确区别于模型实际判出的低分。其余文章仍由模型原始分加关键词分得到 `score`，`score_details` 继续保存各组成部分，便于事后追查。
 
 ### 阶段 4：摘要与富化（`summarize`、`enrich-summary`、`geo-classify`、`external-filter`）
 

@@ -17,6 +17,8 @@ DEFAULT_KEYWORD_BONUS_RULES: Dict[str, int] = {
 }
 
 ScoreSuccess = Tuple[PrimaryArticleForScoring, Optional[int], int, Optional[int], Dict[str, Any]]
+ScoreCandidate = Tuple[PrimaryArticleForScoring, int, List[Dict[str, Any]]]
+KEYWORD_SKIP_REASON = "keyword_bonus_below_threshold"
 
 
 def _score_item(item: PrimaryArticleForScoring) -> Optional[int]:
@@ -75,21 +77,65 @@ def _compose_score_details(
     }
 
 
+def _partition_scoring_rows(
+    rows: List[PrimaryArticleForScoring],
+    bonus_rules: Dict[str, int],
+    threshold: int,
+) -> Tuple[List[ScoreSuccess], List[ScoreCandidate], List[str]]:
+    skipped: List[ScoreSuccess] = []
+    candidates: List[ScoreCandidate] = []
+    failures: List[str] = []
+    for item in rows:
+        try:
+            bonus_score, matched_rules = _calculate_keyword_bonus(item, bonus_rules)
+        except Exception as exc:
+            failures.append(item.article_id)
+            log_error(WORKER, item.article_id, exc)
+            continue
+        if bonus_rules and 100 + bonus_score < threshold:
+            score_details = _compose_score_details(
+                None,
+                bonus_score,
+                bonus_score,
+                matched_rules,
+            )
+            score_details.update(
+                {
+                    "llm_skipped": True,
+                    "skip_reason": KEYWORD_SKIP_REASON,
+                }
+            )
+            skipped.append(
+                (
+                    item,
+                    None,
+                    bonus_score,
+                    bonus_score,
+                    score_details,
+                )
+            )
+            continue
+        candidates.append((item, bonus_score, matched_rules))
+    return skipped, candidates, failures
+
+
 def _process_scores_single_worker(
     rows: List[PrimaryArticleForScoring],
-    bonus_rules: Dict[str, int]
-) -> Tuple[List[ScoreSuccess], List[str]]:
-    successes: List[ScoreSuccess] = []
-    failures: List[str] = []
-    
-    for row in rows:
+    bonus_rules: Dict[str, int],
+    threshold: int,
+) -> Tuple[List[ScoreSuccess], List[str], int]:
+    successes, candidates, failures = _partition_scoring_rows(
+        rows,
+        bonus_rules,
+        threshold,
+    )
+    skipped_count = len(successes)
+
+    for row, bonus_score, matched_rules in candidates:
         try:
             raw_score = _score_item(row)
-            bonus_score = 0
-            matched_rules: List[Dict[str, Any]] = []
             final_score: Optional[int] = None
             if raw_score is not None:
-                bonus_score, matched_rules = _calculate_keyword_bonus(row, bonus_rules)
                 final_score = raw_score + bonus_score
             score_details = _compose_score_details(raw_score, bonus_score, final_score, matched_rules)
             successes.append((row, raw_score, bonus_score, final_score, score_details))
@@ -101,30 +147,38 @@ def _process_scores_single_worker(
         except Exception as exc:
             failures.append(row.article_id)
             log_error(WORKER, row.article_id, exc)
-            
-    return successes, failures
+
+    return successes, failures, skipped_count
 
 
 def _process_scores_multi_worker(
     rows: List[PrimaryArticleForScoring],
     workers: int,
-    bonus_rules: Dict[str, int]
-) -> Tuple[List[ScoreSuccess], List[str]]:
-    successes: List[ScoreSuccess] = []
-    failures: List[str] = []
-    
+    bonus_rules: Dict[str, int],
+    threshold: int,
+) -> Tuple[List[ScoreSuccess], List[str], int]:
+    successes, candidates, failures = _partition_scoring_rows(
+        rows,
+        bonus_rules,
+        threshold,
+    )
+    skipped_count = len(successes)
+
+    if not candidates:
+        return successes, failures, skipped_count
+
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        future_map = {pool.submit(_score_item, row): row for row in rows}
+        future_map = {
+            pool.submit(_score_item, item): (item, bonus_score, matched_rules)
+            for item, bonus_score, matched_rules in candidates
+        }
         for future in as_completed(future_map):
-            item = future_map[future]
+            item, bonus_score, matched_rules = future_map[future]
             article_id = item.article_id
             try:
                 raw_score = future.result()
-                bonus_score = 0
-                matched_rules: List[Dict[str, Any]] = []
                 final_score: Optional[int] = None
                 if raw_score is not None:
-                    bonus_score, matched_rules = _calculate_keyword_bonus(item, bonus_rules)
                     final_score = raw_score + bonus_score
                 score_details = _compose_score_details(raw_score, bonus_score, final_score, matched_rules)
                 successes.append((item, raw_score, bonus_score, final_score, score_details))
@@ -136,8 +190,8 @@ def _process_scores_multi_worker(
             except Exception as exc:
                 failures.append(article_id)
                 log_error(WORKER, article_id, exc)
-                
-    return successes, failures
+
+    return successes, failures, skipped_count
 
 
 def _prepare_updates(
@@ -211,9 +265,24 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
         bonus_rules = settings.score_keyword_bonus_rules or DEFAULT_KEYWORD_BONUS_RULES
 
         if workers == 1:
-            successes, failures = _process_scores_single_worker(rows, bonus_rules)
+            successes, failures, llm_skipped_count = _process_scores_single_worker(
+                rows,
+                bonus_rules,
+                threshold,
+            )
         else:
-            successes, failures = _process_scores_multi_worker(rows, workers, bonus_rules)
+            successes, failures, llm_skipped_count = _process_scores_multi_worker(
+                rows,
+                workers,
+                bonus_rules,
+                threshold,
+            )
+
+        log_info(
+            WORKER,
+            f"Skipped {llm_skipped_count} LLM calls because keyword bonuses "
+            "could not reach the promotion threshold.",
+        )
 
         updates, promotion_payloads = _prepare_updates(successes, failures, threshold)
 

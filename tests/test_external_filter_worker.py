@@ -43,7 +43,7 @@ def test_score_candidate_uses_internal_threshold_and_category():
     assert passed is True
     assert category == "internal_positive"
     assert prompt_key == "internal_positive"
-    assert prompt_version == "v1"
+    assert prompt_version == "v2"
 
 
 def test_score_candidate_respects_internal_threshold():
@@ -61,7 +61,7 @@ def test_score_candidate_respects_internal_threshold():
     assert passed is False
     assert category == "internal_positive"
     assert prompt_key == "internal_positive"
-    assert prompt_version == "v1"
+    assert prompt_version == "v2"
 
 
 def test_score_candidate_uses_external_negative_threshold():

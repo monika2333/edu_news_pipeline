@@ -147,12 +147,14 @@ function renderDuplicateReviewResult(rawResult, scope = getDuplicateReviewScope(
             </section>
         `).join('');
     }
-    duplicateReviewActiveGroupIndex = 0;
-    bindDuplicateReviewStatusControls();
-    showDuplicateReviewGroup(0);
+    // 先显示弹窗再切组：showDuplicateReviewGroup 会按 scrollHeight 重算摘要框高度，
+    // display: none 下 scrollHeight 为 0，会导致首组摘要框高度不足。
     modal.classList.add('active');
     modal.setAttribute('aria-hidden', 'false');
     document.body.classList.add('duplicate-review-open');
+    duplicateReviewActiveGroupIndex = 0;
+    bindDuplicateReviewStatusControls();
+    showDuplicateReviewGroup(0);
     const finishButton = document.getElementById('btn-finish-duplicate-review');
     if (finishButton) finishButton.focus();
 }

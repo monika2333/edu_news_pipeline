@@ -135,6 +135,13 @@ class NewsSummariesNamespace:
         with self._adapter._cursor() as cur:
             return upsert_news_summaries_from_primary(cur, rows)
 
+    def update_dedup_embeddings(
+        self,
+        embeddings: Sequence[Mapping[str, Any]],
+    ) -> int:
+        with self._adapter.transaction() as cur:
+            return update_dedup_embeddings(cur, embeddings)
+
 SEARCH_TEXT_EXPRESSION = (
     "(coalesce(title, '') || ' ' || coalesce(llm_summary, '') || ' ' || coalesce(content_markdown, ''))"
 )
@@ -790,6 +797,36 @@ def update_summary_categories(cur: psycopg.Cursor, updates: Sequence[Mapping[str
     return cur.rowcount
 
 
+def update_dedup_embeddings(
+    cur: psycopg.Cursor,
+    embeddings: Sequence[Mapping[str, Any]],
+) -> int:
+    payload = [
+        (
+            item.get("embedding"),
+            item.get("embedding_model"),
+            item.get("source_hash"),
+            item.get("article_id"),
+        )
+        for item in embeddings
+    ]
+    if not payload:
+        return 0
+    cur.executemany(
+        """
+        UPDATE news_summaries
+        SET dedup_embedding = %s,
+            dedup_embedding_model = %s,
+            dedup_source_hash = %s,
+            dedup_embedded_at = NOW(),
+            updated_at = NOW()
+        WHERE article_id = %s
+        """,
+        payload,
+    )
+    return cur.rowcount
+
+
 def upsert_news_summaries_from_primary(cur: psycopg.Cursor, rows: Sequence[Mapping[str, Any]]) -> int:
     if not rows:
         return 0
@@ -888,6 +925,7 @@ __all__ = [
     "mark_summary_attempt",
     "mark_summary_failed",
     "search_news_summaries",
+    "update_dedup_embeddings",
     "update_summary_categories",
     "update_summary_score",
     "upsert_news_summary",

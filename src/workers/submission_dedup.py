@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
@@ -24,6 +25,10 @@ WORKER = "submission_dedup"
 
 def _embedding_text(title: str, body: str) -> str:
     return f"{title}\n{body[:EMBED_BODY_CHARS]}"
+
+
+def _embedding_source_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def backfill_archive_embeddings(*, batch_size: int = 128) -> int:
@@ -74,6 +79,64 @@ def _validate_archive_vectors(
     if len(dimensions) != 1:
         raise RuntimeError("存档向量维度不一致，无法安全查重")
     return np.stack(vectors)
+
+
+def _prepare_news_vectors(
+    rows: Sequence[Mapping[str, Any]],
+) -> tuple[np.ndarray, list[dict[str, Any]], int]:
+    cached_models = {
+        str(row.get("dedup_embedding_model") or "")
+        for row in rows
+        if row.get("dedup_embedding") is not None
+    }
+    if cached_models and cached_models != {EMBED_MODEL}:
+        raise RuntimeError(
+            "新闻查重向量模型与当前模型不一致，必须清空向量并重新生成后再查重"
+        )
+
+    vectors: list[Optional[np.ndarray]] = [None] * len(rows)
+    stale_indices: list[int] = []
+    stale_texts: list[str] = []
+    source_hashes: list[str] = []
+    reused = 0
+    for index, row in enumerate(rows):
+        text = _embedding_text(
+            str(row.get("title") or ""),
+            str(row.get("body") or ""),
+        )
+        source_hash = _embedding_source_hash(text)
+        source_hashes.append(source_hash)
+        embedding = row.get("dedup_embedding")
+        if embedding is not None and row.get("dedup_source_hash") == source_hash:
+            vectors[index] = _unpack_embedding(bytes(embedding))
+            reused += 1
+            continue
+        stale_indices.append(index)
+        stale_texts.append(text)
+
+    updates: list[dict[str, Any]] = []
+    if stale_indices:
+        encoded = np.asarray(encode_texts(stale_texts), dtype=np.float32)
+        if encoded.ndim != 2 or len(encoded) != len(stale_indices):
+            raise RuntimeError("新闻查重向量编码结果数量或维度无效")
+        for index, vector in zip(stale_indices, encoded):
+            vectors[index] = vector
+            updates.append(
+                {
+                    "article_id": str(rows[index]["article_id"]),
+                    "embedding": _pack_embedding(vector),
+                    "embedding_model": EMBED_MODEL,
+                    "source_hash": source_hashes[index],
+                }
+            )
+
+    resolved = [vector for vector in vectors if vector is not None]
+    if len(resolved) != len(rows):
+        raise RuntimeError("新闻查重向量未完整生成")
+    dimensions = {len(vector) for vector in resolved}
+    if len(dimensions) != 1:
+        raise RuntimeError("新闻查重向量维度不一致，无法安全查重")
+    return np.stack(resolved), updates, reused
 
 
 def _build_matches(
@@ -141,18 +204,17 @@ def run(limit: Optional[int] = None) -> dict[str, int]:
             log_summary(WORKER, ok=0, failed=0)
             return {"embedded": embedded, "news": 0, "matches": 0}
 
-        news_vectors = np.asarray(
-            encode_texts(
-                [
-                    _embedding_text(
-                        str(row.get("title") or ""),
-                        str(row.get("body") or ""),
-                    )
-                    for row in news_rows
-                ]
-            ),
-            dtype=np.float32,
+        news_vectors, news_embedding_updates, reused = _prepare_news_vectors(
+            news_rows,
         )
+        if news_embedding_updates:
+            updated = adapter.news_summaries.update_dedup_embeddings(
+                news_embedding_updates,
+            )
+            if updated != len(news_embedding_updates):
+                raise RuntimeError(
+                    "新闻查重向量未全部持久化，已终止本轮查重"
+                )
         matches = _build_matches(
             news_rows,
             archive_rows,
@@ -166,17 +228,26 @@ def run(limit: Optional[int] = None) -> dict[str, int]:
             f"Compared {len(news_rows)} news rows with "
             f"{len(archive_rows)} archive items.",
         )
+        log_info(
+            WORKER,
+            f"News embedding cache: encoded={len(news_embedding_updates)}, "
+            f"reused={reused}.",
+        )
         log_summary(WORKER, ok=len(news_rows), failed=0)
         return {
             "embedded": embedded,
             "news": len(news_rows),
+            "news_embedded": len(news_embedding_updates),
+            "news_reused": reused,
             "matches": persisted,
         }
 
 
 __all__ = [
     "_build_matches",
+    "_embedding_source_hash",
     "_pack_embedding",
+    "_prepare_news_vectors",
     "_unpack_embedding",
     "backfill_archive_embeddings",
     "run",

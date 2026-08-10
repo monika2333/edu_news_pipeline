@@ -712,7 +712,11 @@ def fetch_news_for_submission_dedup(
     cur.execute(
         f"""
         select article_id, coalesce(title, '') as title,
-               coalesce(llm_summary, '') as body
+               coalesce(llm_summary, '') as body,
+               dedup_embedding,
+               dedup_embedding_model,
+               dedup_source_hash,
+               dedup_embedded_at
         from news_summaries
         where status = 'ready_for_export'
           and created_at >= (

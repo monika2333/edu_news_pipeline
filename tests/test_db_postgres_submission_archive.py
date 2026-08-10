@@ -75,3 +75,23 @@ def test_fetch_link_candidate_bodies_skips_empty_batch() -> None:
 
     assert rows == []
     assert cursor.calls == []
+
+
+def test_fetch_news_for_submission_dedup_keeps_scope_and_reads_cache() -> None:
+    cursor = FakeCursor()
+
+    db_postgres_submission_archive.fetch_news_for_submission_dedup(
+        cursor,
+        limit=None,
+    )
+
+    query, params = cursor.calls[0]
+    normalized = " ".join(query.split())
+    assert "status = 'ready_for_export'" in normalized
+    assert "created_at >=" in normalized
+    assert "Asia/Shanghai" in normalized
+    assert "dedup_embedding" in normalized
+    assert "dedup_embedding_model" in normalized
+    assert "dedup_source_hash" in normalized
+    assert "dedup_embedded_at" in normalized
+    assert params == ()

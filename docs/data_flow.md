@@ -82,7 +82,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 **写入**：`news_summaries`
 
-这是全系统信息最密集的一张表。它由四个独立步骤分别填充不同的字段组：
+这是全系统信息最密集的一张表。四个生成/富化步骤和后续报送查重分别填充不同的字段组：
 
 | 步骤 | 状态字段 | 主要产出字段 |
 |---|---|---|
@@ -90,8 +90,9 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 | `enrich-summary` | `status` | `sentiment_label`、`sentiment_confidence`、`llm_source` |
 | `geo-classify` | `external_importance_status`（见下方注意） | `is_beijing_related_llm`、`beijing_gate_raw` |
 | `external-filter` | `external_importance_status` | `external_importance_score`、`external_importance_raw` |
+| `submission-dedup` | 无独立状态字段 | `dedup_embedding`、`dedup_embedding_model`、`dedup_source_hash`、`dedup_embedded_at` |
 
-每个步骤都有独立的 `*_attempted_at` 和 `*_fail_count`，用于重试控制和失败隔离——**某一步失败不会阻塞其他步骤**。
+前四个生成/富化步骤各有独立的 `*_attempted_at` 和 `*_fail_count`，用于重试控制和失败隔离——**某一步失败不会阻塞其他生成/富化步骤**。`submission-dedup` 的四个字段是可重建缓存，不承担流水线重试状态。
 
 `llm_source` 表示模型识别出的发布/署名媒体名称。来源响应完成既有清洗后，只有长度不超过 64 个字符的结果才可写入；更长的内容视为模型未按格式返回，必须整体丢弃并写入 `NULL`，不得截断保存。来源为空时，导出与人工复核界面回退使用抓取来源。
 
@@ -172,11 +173,13 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 ### 查重（`submission-dedup`）
 
-用向量相似度，把**新入库的新闻**与**历史报送存档**比对，找出"这条已经报过了"的情况，结果写入 `submission_duplicate_matches`。
+用向量相似度，把**当天全部 `ready_for_export` 新闻**与回看窗口内的**全部历史报送存档条目**比对，找出"这条已经报过了"的情况，结果写入 `submission_duplicate_matches`。这一步每轮都保持完整比对范围，不按向量缓存的新旧程度缩小候选集。
 
 复核界面据此显示重复标记，编辑可以确认或忽略（`state`：`suspected` / `confirmed` / `dismissed`）。
 
-`news_title_embeddings` 和 `submitted_report_items.embedding` 分别存两侧的向量，由 `backfill-submission-embeddings` 补齐。
+存档侧向量保存在 `submitted_report_items.embedding`，由 `backfill-submission-embeddings` 补齐。新闻侧向量保存在 `news_summaries.dedup_embedding`，由 `submission-dedup` 在首次参与查重时写入；其编码文本固定为标题加 `llm_summary` 的前 `EMBED_BODY_CHARS` 个字符，不能复用只编码标题的 `news_title_embeddings`。
+
+`dedup_embedding_model` 记录编码模型，读取已有向量时必须与代码中的当前模型常量完全一致，否则整轮报错终止。`dedup_source_hash` 是上述完整编码输入文本的 SHA-256；标题或 `llm_summary` 变化会导致哈希不一致，下一轮仅重新编码这些失效行并刷新 `dedup_embedded_at`，其余新闻直接复用缓存。常规摘要或主文 upsert 不写这四个字段，因此不会无意覆盖已生成缓存；摘要实际变化依靠源哈希在下轮失效。
 
 ---
 
@@ -218,7 +221,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | `review_events` | 审计日志，记录谁在什么时候改了什么 |
 | `pipeline_runs` / `pipeline_run_steps` | 流水线执行记录，用于控制台的运行状态页 |
 | `score_feedbacks` | 编辑对 AI 打分的反馈（偏高/偏低） |
-| `news_title_embeddings` | 新闻标题向量，用于聚类和查重 |
+| `news_title_embeddings` | 仅编码新闻标题的向量，用于人工筛选聚类；不参与报送查重 |
 | `schema_migrations` | dbmate 迁移记录，**不要手工修改** |
 
 ---

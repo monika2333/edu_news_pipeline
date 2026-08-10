@@ -1,4 +1,4 @@
-\restrict hZSze4RsNv3oxEm0veBc3IGpEkPG4WTZk76cDifZBYaFEEq3bw5meVtF4glvbCd
+\restrict X7rgTp0FCMQhEMmikZA1KKtk1iPM8AzJwoqXiHxRouckR6b9KmjXTFgBy1CiDi0
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
@@ -273,7 +273,11 @@ CREATE TABLE public.news_summaries (
     beijing_gate_checked_at timestamp with time zone,
     beijing_gate_raw jsonb,
     beijing_gate_attempted_at timestamp with time zone,
-    beijing_gate_fail_count integer DEFAULT 0 NOT NULL
+    beijing_gate_fail_count integer DEFAULT 0 NOT NULL,
+    dedup_embedding bytea,
+    dedup_embedding_model text,
+    dedup_source_hash text,
+    dedup_embedded_at timestamp with time zone
 );
 
 
@@ -303,6 +307,34 @@ COMMENT ON COLUMN public.news_summaries.is_beijing_related_llm IS 'LLM-based Bei
 --
 
 COMMENT ON COLUMN public.news_summaries.beijing_gate_checked_at IS 'Timestamp when the LLM Beijing gate returned a definitive result';
+
+
+--
+-- Name: COLUMN news_summaries.dedup_embedding; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.news_summaries.dedup_embedding IS 'Normalized title-plus-summary embedding used by submission-dedup.';
+
+
+--
+-- Name: COLUMN news_summaries.dedup_embedding_model; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.news_summaries.dedup_embedding_model IS 'Embedding model used for dedup_embedding; must match the submission-dedup model constant.';
+
+
+--
+-- Name: COLUMN news_summaries.dedup_source_hash; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.news_summaries.dedup_source_hash IS 'SHA-256 of the exact title-plus-truncated-summary text encoded for submission-dedup.';
+
+
+--
+-- Name: COLUMN news_summaries.dedup_embedded_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.news_summaries.dedup_embedded_at IS 'Timestamp when submission-dedup last refreshed the cached news embedding.';
 
 
 --
@@ -1528,7 +1560,7 @@ ALTER TABLE ONLY public.submitted_report_items
 -- PostgreSQL database dump complete
 --
 
-\unrestrict hZSze4RsNv3oxEm0veBc3IGpEkPG4WTZk76cDifZBYaFEEq3bw5meVtF4glvbCd
+\unrestrict X7rgTp0FCMQhEMmikZA1KKtk1iPM8AzJwoqXiHxRouckR6b9KmjXTFgBy1CiDi0
 
 
 --
@@ -1577,4 +1609,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260729130200'),
     ('20260729220000'),
     ('20260731232631'),
-    ('20260804180449');
+    ('20260804180449'),
+    ('20260810120000');

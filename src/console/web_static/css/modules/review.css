@@ -907,6 +907,10 @@ body.duplicate-review-open .search-drawer-toggle {
         flex: 0 0 auto;
     }
 
+    .duplicate-review-toolbar .review-discard-btn {
+        margin-top: 0;
+    }
+
     .review-card-actions .status-select {
         flex: 1 1 auto;
         min-width: 0;

@@ -403,6 +403,13 @@ async function applyDuplicateBulkStatus() {
     }
 }
 
+async function handleDuplicateBulkDiscardClick() {
+    const bulkSelect = document.getElementById('duplicate-review-bulk-status');
+    if (!bulkSelect || bulkSelect.disabled) return;
+    bulkSelect.value = 'discarded';
+    await applyDuplicateBulkStatus();
+}
+
 function bindDuplicateReviewStatusControls() {
     document.querySelectorAll('.duplicate-review-status').forEach(select => {
         select.addEventListener('change', handleDuplicateStatusChange);
@@ -452,6 +459,7 @@ function setupDuplicateReview() {
     const finishButton = document.getElementById('btn-finish-duplicate-review');
     const selectAll = document.getElementById('duplicate-review-select-all');
     const bulkStatus = document.getElementById('duplicate-review-bulk-status');
+    const bulkDiscard = document.getElementById('btn-duplicate-bulk-discard');
     const previousGroup = document.getElementById('btn-duplicate-prev-group');
     const nextGroup = document.getElementById('btn-duplicate-next-group');
     if (checkButton) checkButton.addEventListener('click', handleDuplicateCheck);
@@ -462,6 +470,7 @@ function setupDuplicateReview() {
         });
     }
     if (bulkStatus) bulkStatus.addEventListener('change', applyDuplicateBulkStatus);
+    if (bulkDiscard) bulkDiscard.addEventListener('click', handleDuplicateBulkDiscardClick);
     if (previousGroup) previousGroup.addEventListener('click', () => moveDuplicateReviewGroup(-1));
     if (nextGroup) nextGroup.addEventListener('click', () => moveDuplicateReviewGroup(1));
     document.addEventListener('keydown', event => {

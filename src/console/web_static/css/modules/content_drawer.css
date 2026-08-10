@@ -30,11 +30,39 @@ body.content-drawer-open .search-drawer-toggle {
     display: none;
 }
 
-/* 顶栏只保留关闭按钮：无标题、无分割线 */
+/* 顶栏：左侧正文检索框，右侧关闭按钮，无标题、无分割线 */
 .content-drawer .content-drawer-topbar {
     justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
     border-bottom: none;
     padding: 10px 12px 0;
+}
+
+.content-drawer-search {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font-size: 0.8rem;
+}
+
+.content-drawer-search:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.content-drawer-search::placeholder {
+    color: var(--text-secondary);
+}
+
+.content-drawer-search-count {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
 }
 
 .content-drawer-info {
@@ -98,6 +126,16 @@ body.content-drawer-open .search-drawer-toggle {
     border-radius: 2px;
     color: inherit;
     background: #fde68a;
+}
+
+/* 抽屉内检索命中：与加分词高亮区分，当前命中最深 */
+.content-drawer-body mark.content-hl-search {
+    background: #fdba74;
+}
+
+.content-drawer-body mark.content-hl-search-active {
+    background: #fb923c;
+    outline: 1px solid #ea580c;
 }
 
 .content-drawer-placeholder {

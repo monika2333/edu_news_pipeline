@@ -6,7 +6,12 @@
 const contentDrawerState = {
     open: false,
     articleId: null,
-    anchorCard: null
+    anchorCard: null,
+    // 当前已渲染的文章数据与加分词，供抽屉内检索时重绘正文
+    currentData: null,
+    currentBonusKeywords: [],
+    searchMatches: [],
+    searchIndex: -1
 };
 
 // article_id -> 接口响应数据；仅内存缓存，不写 localStorage
@@ -20,7 +25,9 @@ function getContentDrawerEls() {
         title: document.getElementById('content-drawer-title'),
         meta: document.getElementById('content-drawer-meta'),
         sourceLink: document.getElementById('content-drawer-source-link'),
-        body: document.getElementById('content-drawer-body')
+        body: document.getElementById('content-drawer-body'),
+        search: document.getElementById('content-drawer-search'),
+        searchCount: document.getElementById('content-drawer-search-count')
     };
 }
 
@@ -84,7 +91,7 @@ function appendHighlightedText(parent, text, terms) {
     }
 }
 
-function buildHighlightTerms(bonusKeywords) {
+function buildHighlightTerms(bonusKeywords, searchTerm) {
     const terms = [];
     const seen = new Set();
     (bonusKeywords || []).forEach(rawTerm => {
@@ -95,14 +102,18 @@ function buildHighlightTerms(bonusKeywords) {
         seen.add(key);
         terms.push({ term, className: 'content-hl-bonus' });
     });
+    const keyword = String(searchTerm || '').trim();
+    if (keyword && !seen.has(keyword.toLowerCase())) {
+        terms.push({ term: keyword, className: 'content-hl-search' });
+    }
     return terms;
 }
 
-// 正文一次性完整渲染进 DOM，用户可依赖浏览器页面查找（Ctrl+F）定位任意词
-function renderContentDrawerBody(content, bonusKeywords) {
+// 正文一次性完整渲染进 DOM；抽屉顶栏的检索框可对当前正文做高亮定位
+function renderContentDrawerBody(content, bonusKeywords, searchTerm) {
     const { body } = getContentDrawerEls();
     clearEl(body);
-    const terms = buildHighlightTerms(bonusKeywords);
+    const terms = buildHighlightTerms(bonusKeywords, searchTerm);
     const paragraphs = String(content)
         .replace(/\r\n/g, '\n')
         .split(/\n\s*\n/)
@@ -169,21 +180,30 @@ function renderContentDrawerError(articleId, bonusKeywords) {
 function renderContentDrawerArticle(data, bonusKeywords) {
     const content = String(data.content_markdown || '').trim();
     const charCount = content ? Array.from(content.replace(/\s+/g, '')).length : null;
+    contentDrawerState.currentData = data;
+    contentDrawerState.currentBonusKeywords = bonusKeywords || [];
     renderContentDrawerHeader(data, charCount);
     if (!content) {
         renderContentDrawerFallback(data);
         return;
     }
-    renderContentDrawerBody(content, bonusKeywords);
+    const { search } = getContentDrawerEls();
+    renderContentDrawerBody(content, bonusKeywords, search ? search.value : '');
 }
 
 async function loadContentDrawerArticle(articleId, bonusKeywords) {
-    const { body, title, meta, sourceLink } = getContentDrawerEls();
+    const { body, title, meta, sourceLink, search, searchCount } = getContentDrawerEls();
     const seq = ++contentDrawerRequestSeq;
-    // 清空上一条的头部信息，避免加载期间展示串台内容
+    // 清空上一条的头部信息与检索状态，避免加载期间展示串台内容
     title.textContent = '';
     clearEl(meta);
     sourceLink.hidden = true;
+    if (search) search.value = '';
+    if (searchCount) searchCount.textContent = '';
+    contentDrawerState.currentData = null;
+    contentDrawerState.currentBonusKeywords = [];
+    contentDrawerState.searchMatches = [];
+    contentDrawerState.searchIndex = -1;
     body.innerHTML = renderSkeleton(2);
     body.scrollTop = 0;
 
@@ -205,6 +225,62 @@ async function loadContentDrawerArticle(articleId, bonusKeywords) {
         if (seq !== contentDrawerRequestSeq) return;
         renderContentDrawerError(articleId, bonusKeywords);
     }
+}
+
+function updateContentDrawerSearchCount(term) {
+    const { searchCount } = getContentDrawerEls();
+    if (!searchCount) return;
+    if (!term) {
+        searchCount.textContent = '';
+        return;
+    }
+    const total = contentDrawerState.searchMatches.length;
+    searchCount.textContent = total
+        ? `${contentDrawerState.searchIndex + 1}/${total}`
+        : '0/0';
+}
+
+function focusContentDrawerSearchMatch(index) {
+    const matches = contentDrawerState.searchMatches;
+    if (!matches.length) return;
+    const next = ((index % matches.length) + matches.length) % matches.length;
+    matches.forEach(mark => mark.classList.remove('content-hl-search-active'));
+    const mark = matches[next];
+    mark.classList.add('content-hl-search-active');
+    mark.scrollIntoView({ block: 'center' });
+    contentDrawerState.searchIndex = next;
+    const { search } = getContentDrawerEls();
+    updateContentDrawerSearchCount(search ? search.value.trim() : '');
+}
+
+// 按检索词重绘当前正文并高亮命中，自动定位到第一个命中处
+function applyContentDrawerSearch() {
+    const { body, search } = getContentDrawerEls();
+    const term = search ? search.value.trim() : '';
+    contentDrawerState.searchMatches = [];
+    contentDrawerState.searchIndex = -1;
+    const data = contentDrawerState.currentData;
+    if (data) {
+        const content = String(data.content_markdown || '').trim();
+        if (content) {
+            renderContentDrawerBody(content, contentDrawerState.currentBonusKeywords, term);
+            if (term) {
+                contentDrawerState.searchMatches = Array.from(
+                    body.querySelectorAll('mark.content-hl-search')
+                );
+            }
+        }
+    }
+    if (contentDrawerState.searchMatches.length) {
+        focusContentDrawerSearchMatch(0);
+    } else {
+        updateContentDrawerSearchCount(term);
+    }
+}
+
+function stepContentDrawerSearch(direction) {
+    if (!contentDrawerState.searchMatches.length) return;
+    focusContentDrawerSearchMatch(contentDrawerState.searchIndex + direction);
 }
 
 function handleContentDrawerTrigger(triggerBtn) {
@@ -239,16 +315,34 @@ function handleContentDrawerTrigger(triggerBtn) {
 }
 
 function setupContentDrawer() {
-    const { drawer, closeBtn } = getContentDrawerEls();
+    const { drawer, closeBtn, search } = getContentDrawerEls();
     if (!drawer) return;
     if (drawer.dataset.contentDrawerReady === 'true') return;
     drawer.dataset.contentDrawerReady = 'true';
 
     if (closeBtn) closeBtn.addEventListener('click', closeContentDrawer);
+    if (search) {
+        let searchDebounce = null;
+        search.addEventListener('input', () => {
+            window.clearTimeout(searchDebounce);
+            searchDebounce = window.setTimeout(applyContentDrawerSearch, 150);
+        });
+        search.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                stepContentDrawerSearch(event.shiftKey ? -1 : 1);
+            }
+        });
+    }
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && contentDrawerState.open) {
-            closeContentDrawer();
+        if (event.key !== 'Escape' || !contentDrawerState.open) return;
+        // 焦点在检索框且已有输入时，Escape 先清空检索而不是关闭抽屉
+        if (search && event.target === search && search.value) {
+            search.value = '';
+            applyContentDrawerSearch();
+            return;
         }
+        closeContentDrawer();
     });
     document.addEventListener('click', (event) => {
         const triggerBtn = event.target.closest('.content-drawer-trigger');

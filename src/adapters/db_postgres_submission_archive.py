@@ -885,7 +885,7 @@ def fetch_duplicate_match_details(
         join submitted_reports r on r.id = i.report_id
         where m.article_id = %s
           and m.state <> 'dismissed'
-        order by r.report_date asc, m.similarity desc
+        order by r.report_date desc, m.similarity desc
         """,
         (article_id,),
     )

@@ -114,6 +114,7 @@ def test_fetch_duplicate_match_details_returns_item_bodies() -> None:
     assert "join submitted_report_items i on i.id = m.item_id" in normalized
     assert "join submitted_reports r on r.id = i.report_id" in normalized
     assert "m.state <> 'dismissed'" in normalized
+    assert "order by r.report_date desc" in normalized
     assert "i.body" in query
     assert params == ("article-1",)
 

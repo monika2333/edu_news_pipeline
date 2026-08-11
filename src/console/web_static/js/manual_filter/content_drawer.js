@@ -27,7 +27,9 @@ function getContentDrawerEls() {
         sourceLink: document.getElementById('content-drawer-source-link'),
         body: document.getElementById('content-drawer-body'),
         search: document.getElementById('content-drawer-search'),
-        searchCount: document.getElementById('content-drawer-search-count')
+        searchCount: document.getElementById('content-drawer-search-count'),
+        searchPrev: document.getElementById('content-drawer-search-prev'),
+        searchNext: document.getElementById('content-drawer-search-next')
     };
 }
 
@@ -315,12 +317,14 @@ function handleContentDrawerTrigger(triggerBtn) {
 }
 
 function setupContentDrawer() {
-    const { drawer, closeBtn, search } = getContentDrawerEls();
+    const { drawer, closeBtn, search, searchPrev, searchNext } = getContentDrawerEls();
     if (!drawer) return;
     if (drawer.dataset.contentDrawerReady === 'true') return;
     drawer.dataset.contentDrawerReady = 'true';
 
     if (closeBtn) closeBtn.addEventListener('click', closeContentDrawer);
+    if (searchPrev) searchPrev.addEventListener('click', () => stepContentDrawerSearch(-1));
+    if (searchNext) searchNext.addEventListener('click', () => stepContentDrawerSearch(1));
     if (search) {
         let searchDebounce = null;
         search.addEventListener('input', () => {

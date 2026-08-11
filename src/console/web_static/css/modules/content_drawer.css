@@ -65,6 +65,22 @@ body.content-drawer-open .search-drawer-toggle {
     white-space: nowrap;
 }
 
+.content-drawer-search-nav {
+    padding: 2px 7px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    cursor: pointer;
+}
+
+.content-drawer-search-nav:hover {
+    color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
 .content-drawer-info {
     padding: 8px 20px 12px;
     border-bottom: 1px solid var(--border-color);
@@ -122,20 +138,19 @@ body.content-drawer-open .search-drawer-toggle {
 }
 
 .content-drawer-body mark {
-    padding: 0 1px;
+    padding: 0;
     border-radius: 2px;
     color: inherit;
     background: #fde68a;
 }
 
-/* 抽屉内检索命中：与加分词高亮区分，当前命中最深 */
+/* 抽屉内检索命中：与加分词高亮区分，当前命中底色更深 */
 .content-drawer-body mark.content-hl-search {
     background: #fdba74;
 }
 
 .content-drawer-body mark.content-hl-search-active {
     background: #fb923c;
-    outline: 1px solid #ea580c;
 }
 
 .content-drawer-placeholder {

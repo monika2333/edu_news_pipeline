@@ -476,15 +476,15 @@
         <div class="modal-content submission-duplicates-modal-content">
             <div class="modal-header">
                 <h3 id="submission-duplicates-title">相似的已报送记录</h3>
+                <button type="button" class="btn-icon" id="btn-submission-duplicates-close"
+                    aria-label="关闭">✕</button>
             </div>
             <div class="modal-body submission-duplicates-body" id="submission-duplicates-body">
                 <!-- 重复记录明细由 submission_duplicates_modal.js 注入 -->
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer" id="submission-duplicates-footer">
                 <button type="button" class="btn btn-secondary"
                     id="btn-submission-duplicates-dismiss">不是重复</button>
-                <button type="button" class="btn btn-primary"
-                    id="btn-submission-duplicates-close">关闭</button>
             </div>
         </div>
     </div>

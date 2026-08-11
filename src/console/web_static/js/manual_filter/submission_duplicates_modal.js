@@ -50,13 +50,14 @@ function openSubmissionDuplicatesModal(articleId, duplicateState, trigger) {
     const modal = getSubmissionDuplicatesModal();
     const body = document.getElementById('submission-duplicates-body');
     const dismissButton = document.getElementById('btn-submission-duplicates-dismiss');
+    const footer = document.getElementById('submission-duplicates-footer');
     if (!modal || !body) return;
     submissionDuplicatesActiveArticleId = articleId;
     submissionDuplicatesTrigger = trigger || null;
-    if (dismissButton) {
-        // dismiss 只作用于 suspected 记录；confirmed 标签只读展示。
-        dismissButton.hidden = duplicateState !== 'suspected';
-        dismissButton.disabled = false;
+    if (dismissButton) dismissButton.disabled = false;
+    if (footer) {
+        // dismiss 只作用于 suspected 记录；confirmed 标签只读展示，整个页脚隐藏。
+        footer.hidden = duplicateState !== 'suspected';
     }
     body.innerHTML = '<div class="empty-state">加载中…</div>';
     modal.classList.add('active');

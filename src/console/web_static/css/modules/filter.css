@@ -345,6 +345,11 @@
     width: min(720px, 96vw);
 }
 
+/* .modal-footer 的 display:flex 会盖掉 hidden 属性的 UA 样式，需要显式压制。 */
+#submission-duplicates-footer[hidden] {
+    display: none;
+}
+
 .submission-duplicates-body {
     overflow-y: auto;
     gap: 16px;

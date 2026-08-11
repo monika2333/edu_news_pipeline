@@ -171,6 +171,15 @@ def search_archive_api(
     return submission_archive_service.search_archive(query=q, limit=limit)
 
 
+@router.get("/duplicates/{article_id:path}")
+def fetch_duplicate_details_api(article_id: str) -> dict[str, Any]:
+    """返回某条新闻命中的已报送重复记录明细，含报送稿正文。"""
+    try:
+        return submission_archive_service.fetch_duplicate_details(article_id)
+    except ValueError as exc:
+        _raise_service_error(exc)
+
+
 @router.post("/duplicates/{article_id:path}/dismiss")
 def dismiss_duplicates_api(
     article_id: str,

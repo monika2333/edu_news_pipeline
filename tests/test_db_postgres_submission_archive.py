@@ -77,6 +77,47 @@ def test_fetch_link_candidate_bodies_skips_empty_batch() -> None:
     assert cursor.calls == []
 
 
+def test_fetch_duplicate_match_details_returns_item_bodies() -> None:
+    cursor = FakeCursor(
+        [
+            {
+                "item_id": "11111111-1111-1111-1111-111111111111",
+                "state": "suspected",
+                "similarity": 0.96,
+                "title": "条目一",
+                "body": "报送稿正文一",
+                "report_date": date(2026, 8, 8),
+                "report_type": "zongbao",
+            }
+        ]
+    )
+
+    rows = db_postgres_submission_archive.fetch_duplicate_match_details(
+        cursor,
+        "article-1",
+    )
+
+    assert rows == [
+        {
+            "item_id": "11111111-1111-1111-1111-111111111111",
+            "state": "suspected",
+            "similarity": 0.96,
+            "title": "条目一",
+            "body": "报送稿正文一",
+            "report_date": date(2026, 8, 8),
+            "report_type": "zongbao",
+        }
+    ]
+    assert len(cursor.calls) == 1
+    query, params = cursor.calls[0]
+    normalized = " ".join(query.split())
+    assert "join submitted_report_items i on i.id = m.item_id" in normalized
+    assert "join submitted_reports r on r.id = i.report_id" in normalized
+    assert "m.state <> 'dismissed'" in normalized
+    assert "i.body" in query
+    assert params == ("article-1",)
+
+
 def test_fetch_news_for_submission_dedup_keeps_scope_and_reads_cache() -> None:
     cursor = FakeCursor()
 

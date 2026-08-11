@@ -55,6 +55,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (elements.reviewList) {
         setupDuplicateReview();
     }
+    setupSubmissionDuplicatesModal();
     setupScoreFeedback();
 
     // Global event listeners

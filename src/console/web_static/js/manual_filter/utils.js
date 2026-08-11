@@ -80,8 +80,10 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
     }).join('\n');
     const duplicateBadge = duplicateState ? `
         <span class="submission-duplicate-wrap">
-            <span class="submission-duplicate-badge ${duplicateState}"
-                title="${safeHtml(duplicateTitle)}">${duplicateLabel}</span>
+            <button type="button" class="submission-duplicate-badge ${duplicateState}"
+                data-article-id="${safeHtml(safe.article_id || '')}"
+                data-duplicate-state="${duplicateState}"
+                title="${safeHtml(duplicateTitle)}">${duplicateLabel}</button>
             ${duplicateState === 'suspected' ? `
             <button type="button" class="submission-duplicate-dismiss"
                 data-article-id="${safeHtml(safe.article_id || '')}">不是重复</button>

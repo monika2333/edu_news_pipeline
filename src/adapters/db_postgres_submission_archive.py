@@ -173,6 +173,13 @@ class SubmissionArchiveNamespace:
         with self._adapter._cursor() as cur:
             return fetch_duplicate_badges(cur, article_ids)
 
+    def fetch_duplicate_match_details(
+        self,
+        article_id: str,
+    ) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_duplicate_match_details(cur, article_id)
+
     def dismiss_duplicate_matches(
         self,
         *,
@@ -859,6 +866,43 @@ def fetch_duplicate_badges(
     return badges
 
 
+def fetch_duplicate_match_details(
+    cur: psycopg.Cursor,
+    article_id: str,
+) -> list[dict[str, Any]]:
+    cur.execute(
+        """
+        select
+            m.item_id,
+            m.state,
+            m.similarity,
+            i.title,
+            i.body,
+            r.report_date,
+            r.report_type
+        from submission_duplicate_matches m
+        join submitted_report_items i on i.id = m.item_id
+        join submitted_reports r on r.id = i.report_id
+        where m.article_id = %s
+          and m.state <> 'dismissed'
+        order by r.report_date asc, m.similarity desc
+        """,
+        (article_id,),
+    )
+    return [
+        {
+            "item_id": str(row["item_id"]),
+            "state": row["state"],
+            "similarity": float(row["similarity"]),
+            "title": row["title"],
+            "body": row["body"],
+            "report_date": row["report_date"],
+            "report_type": row["report_type"],
+        }
+        for row in cur.fetchall()
+    ]
+
+
 def dismiss_duplicate_matches(
     cur: psycopg.Cursor,
     *,
@@ -886,6 +930,7 @@ __all__ = [
     "dismiss_duplicate_matches",
     "fetch_archive_embeddings",
     "fetch_duplicate_badges",
+    "fetch_duplicate_match_details",
     "fetch_items_missing_embeddings",
     "fetch_link_candidate_bodies",
     "fetch_link_candidate_titles",

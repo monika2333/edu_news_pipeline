@@ -146,6 +146,32 @@ def test_create_report_conflict_serializes_database_types(
     assert existing["item_count"] == 12
 
 
+def test_fetch_duplicate_details_accepts_article_id_with_slashes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    article_id = "chinanews:/ty/2026/08-05/10672568"
+
+    def fake_fetch_duplicate_details(value: str) -> dict[str, object]:
+        captured["article_id"] = value
+        return {"matches": [{"title": "条目", "body": "报送稿正文"}]}
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "fetch_duplicate_details",
+        fake_fetch_duplicate_details,
+    )
+
+    response = _client(_editor).get(
+        "/api/submission-archive/duplicates/"
+        "chinanews%3A%2Fty%2F2026%2F08-05%2F10672568"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"matches": [{"title": "条目", "body": "报送稿正文"}]}
+    assert captured["article_id"] == article_id
+
+
 def test_dismiss_duplicates_accepts_article_id_with_slashes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

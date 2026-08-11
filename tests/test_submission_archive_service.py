@@ -259,6 +259,32 @@ def test_attach_duplicate_badges_uses_one_batch_lookup() -> None:
     assert items[1]["submission_duplicate"] is None
 
 
+def test_fetch_duplicate_details_requires_article_id() -> None:
+    with pytest.raises(ValueError, match="article_id"):
+        submission_archive_service.fetch_duplicate_details("  ")
+
+
+def test_fetch_duplicate_details_returns_matches() -> None:
+    class DetailsSubmissionArchiveNamespace:
+        def fetch_duplicate_match_details(
+            self,
+            article_id: str,
+        ) -> list[dict[str, Any]]:
+            assert article_id == "article-1"
+            return [{"title": "条目", "body": "报送稿正文"}]
+
+    class DetailsAdapter:
+        def __init__(self) -> None:
+            self.submission_archive = DetailsSubmissionArchiveNamespace()
+
+    result = submission_archive_service.fetch_duplicate_details(
+        " article-1 ",
+        adapter=DetailsAdapter(),
+    )
+
+    assert result == {"matches": [{"title": "条目", "body": "报送稿正文"}]}
+
+
 def test_create_report_rejects_non_http_urls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -470,6 +470,25 @@
     </div>
     {% endif %}
 
+    <!-- Submission Duplicates Modal -->
+    <div class="modal" id="submission-duplicates-modal" role="dialog" aria-modal="true"
+        aria-labelledby="submission-duplicates-title" aria-hidden="true">
+        <div class="modal-content submission-duplicates-modal-content">
+            <div class="modal-header">
+                <h3 id="submission-duplicates-title">相似的已报送记录</h3>
+            </div>
+            <div class="modal-body submission-duplicates-body" id="submission-duplicates-body">
+                <!-- 重复记录明细由 submission_duplicates_modal.js 注入 -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary"
+                    id="btn-submission-duplicates-dismiss">不是重复</button>
+                <button type="button" class="btn btn-primary"
+                    id="btn-submission-duplicates-close">关闭</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast -->
     <div class="toast" id="toast">操作成功</div>
 
@@ -492,6 +511,7 @@
     <script src="/static/js/manual_filter/review_duplicates_state.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/review_duplicates_modal.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/review_tab_duplicates.js?v={{ version }}"></script>
+    <script src="/static/js/manual_filter/submission_duplicates_modal.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/discard_tab.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/search_drawer.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/layout_anchor.js?v={{ version }}"></script>

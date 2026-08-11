@@ -249,6 +249,21 @@ def attach_duplicate_badges(
         )
 
 
+def fetch_duplicate_details(
+    article_id: str,
+    *,
+    adapter: Any = None,
+) -> dict[str, Any]:
+    normalized_article_id = (article_id or "").strip()
+    if not normalized_article_id:
+        raise ValueError("article_id 不能为空")
+    target_adapter = adapter or get_adapter()
+    matches = target_adapter.submission_archive.fetch_duplicate_match_details(
+        normalized_article_id
+    )
+    return {"matches": matches}
+
+
 def dismiss_duplicates(
     *,
     article_id: str,
@@ -271,6 +286,7 @@ __all__ = [
     "decide_link",
     "delete_report",
     "dismiss_duplicates",
+    "fetch_duplicate_details",
     "get_report",
     "list_pending_links",
     "list_reports",

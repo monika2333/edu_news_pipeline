@@ -119,7 +119,6 @@ def test_submission_archive_pages_follow_role_permissions() -> None:
     assert admin.get("/submission-archive/new").status_code == 200
     assert editor.get("/submission-archive").status_code == 200
     assert editor.get("/submission-archive/link-queue").status_code == 200
-    assert editor.get("/submission-archive/search").status_code == 200
     assert editor.get("/submission-archive/new").status_code == 403
 
 
@@ -136,7 +135,6 @@ def test_submission_archive_separates_all_type_filter_from_report_types() -> Non
             "widgets",
             "create",
             "link_queue",
-            "search",
             "responsive",
         )
     )

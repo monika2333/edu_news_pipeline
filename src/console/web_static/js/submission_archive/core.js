@@ -39,12 +39,6 @@ const linkPill = status => {
     const meta = linkStatusMeta[status] || { label: status || '未知', className: 'is-unmatched' };
     return `<span class="archive-link-pill ${meta.className}">${meta.label}</span>`;
 };
-const highlight = (text, query) => {
-    const escaped = escapeHtml(text);
-    if (!query) return escaped;
-    const needle = escapeHtml(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return escaped.replace(new RegExp(needle, 'gi'), match => `<mark>${match}</mark>`);
-};
 
 function toast(message, type = 'success') {
     const target = document.getElementById('archive-toast');

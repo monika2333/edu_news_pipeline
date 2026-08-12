@@ -204,12 +204,14 @@ async def submission_archive_link_queue_page(
     return _submission_archive_response(request, user, view="link-queue")
 
 
-@router.get("/submission-archive/search", response_class=HTMLResponse)
+@router.get("/submission-archive/search", response_class=RedirectResponse)
 async def submission_archive_search_page(
-    request: Request,
     user: ConsoleUser = Depends(require_console_user),
-) -> HTMLResponse:
-    return _submission_archive_response(request, user, view="search")
+) -> RedirectResponse:
+    # 全库搜索页已删除（功能由检索抽屉覆盖）。直接删路由会落到
+    # /submission-archive/{report_id}，以 report_id="search" 进入详情逻辑，
+    # 因此保留一条重定向回存档库列表。
+    return RedirectResponse(url="/submission-archive", status_code=302)
 
 
 @router.get("/submission-archive/{report_id}", response_class=HTMLResponse)

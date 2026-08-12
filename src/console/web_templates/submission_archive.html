@@ -15,7 +15,6 @@
     <link rel="stylesheet" href="/static/css/modules/submission_archive/widgets.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/create.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/link_queue.css?v={{ version }}">
-    <link rel="stylesheet" href="/static/css/modules/submission_archive/search.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/responsive.css?v={{ version }}">
 </head>
 <body data-archive-view="{{ archive_view }}"
@@ -65,9 +64,6 @@
                     {% if archive_view == 'link-queue' %}aria-current="page"{% endif %}>
                     回链确认<span class="archive-tab-badge" id="archive-nav-pending" hidden></span>
                 </a>
-                <a class="tab-btn archive-tab{% if archive_view == 'search' %} active{% endif %}"
-                    href="/submission-archive/search"
-                    {% if archive_view == 'search' %}aria-current="page"{% endif %}>全库搜索</a>
             </nav>
             {% if current_user.role == "admin" %}
             <div class="workspace-tab-actions">
@@ -169,16 +165,6 @@
                 </div>
                 <div id="archive-link-queue"></div>
             </section>
-            {% elif archive_view == "search" %}
-            <section class="archive-search-view">
-                <form class="archive-search" id="archive-search-form">
-                    <input type="search" id="archive-search-query"
-                        placeholder="输入标题或正文关键词，确认某事以前是否报过" autocomplete="off">
-                    <button class="btn btn-primary" type="submit">搜索</button>
-                </form>
-                <p class="archive-search-note">搜索永久保留的全部存档，不受 15 天自动比对窗口限制。</p>
-                <div id="archive-search-results"></div>
-            </section>
             {% endif %}
         </main>
     </div>
@@ -189,7 +175,6 @@
     <script src="/static/js/submission_archive/browser.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/create.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/link_queue.js?v={{ version }}"></script>
-    <script src="/static/js/submission_archive/search.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/init.js?v={{ version }}"></script>
 </body>
 </html>

@@ -20,9 +20,5 @@ document.addEventListener('DOMContentLoaded', () => {
         bindPreviewItems();
     } else if (view === 'link-queue') {
         loadLinkQueue();
-    } else if (view === 'search') {
-        document.getElementById('archive-search-form').addEventListener('submit', searchArchive);
-        document.getElementById('archive-search-results').innerHTML =
-            '<div class="archive-search-hint">输入关键词开始搜索全部存档条目。</div>';
     }
 });

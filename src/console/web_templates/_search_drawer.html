@@ -18,8 +18,7 @@
     <div class="drawer-content">
         {# 报送存档命中（原 B 块）：事件级检索，只呈现候选条目，不给硬结论。 #}
         <section id="archive-search-section" class="archive-search search-panel" data-search-panel="archive">
-            <p class="archive-search-hint">以下为历史报送稿中的候选条目，是否同一件事请自行判断。</p>
-            <div class="archive-search-form">
+            <div class="search-drawer-form">
                 <input type="text" id="archive-search-q" placeholder="输入检索词" />
                 <button id="btn-archive-search" class="btn btn-secondary btn-sm" type="button">检索存档</button>
                 <button id="btn-archive-clear" class="btn btn-secondary btn-sm" type="button">清空</button>
@@ -28,17 +27,10 @@
         </section>
         {# 全库文章检索（原 A 块）：链上归因。每页固定 10 条，不再提供每页条数选项。 #}
         <section id="article-search-section" class="search-panel" data-search-panel="articles" hidden>
-            <div class="search-form-container">
-                <div class="form-grid">
-                    <label>
-                        关键词
-                        <input type="text" id="search-q" placeholder="标题、摘要..." />
-                    </label>
-                </div>
-                <div class="search-form-actions">
-                    <button id="btn-drawer-search" class="btn btn-primary" type="button">搜索</button>
-                    <button id="btn-drawer-clear" class="btn btn-secondary" type="button">清空</button>
-                </div>
+            <div class="search-drawer-form">
+                <input type="text" id="search-q" placeholder="标题、摘要..." />
+                <button id="btn-drawer-search" class="btn btn-secondary btn-sm" type="button">搜索</button>
+                <button id="btn-drawer-clear" class="btn btn-secondary btn-sm" type="button">清空</button>
             </div>
             <div id="search-results-stats" class="search-stats"></div>
             <div id="search-results-list" class="search-results"></div>

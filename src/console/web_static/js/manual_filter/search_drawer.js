@@ -52,7 +52,7 @@ function setupSearchDrawer() {
     const drawer = document.getElementById('search-drawer');
     const searchBtn = document.getElementById('btn-drawer-search');
     const clearBtn = document.getElementById('btn-drawer-clear');
-    const inputs = document.querySelectorAll('.search-form-container input');
+    const queryInput = document.getElementById('search-q');
 
     if (!drawer) return;
     if (drawer.dataset.searchDrawerReady === 'true') return;
@@ -101,11 +101,11 @@ function setupSearchDrawer() {
         clearBtn.addEventListener('click', clearDrawerSearch);
     }
 
-    inputs.forEach(input => {
-        input.addEventListener('keydown', (e) => {
+    if (queryInput) {
+        queryInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') startNewSearch();
         });
-    });
+    }
 
     if (typeof setupArchiveSearch === 'function') {
         setupArchiveSearch();

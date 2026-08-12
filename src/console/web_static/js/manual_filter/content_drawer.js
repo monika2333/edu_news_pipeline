@@ -33,14 +33,7 @@ function getContentDrawerEls() {
     };
 }
 
-function formatContentDrawerTime(iso) {
-    if (!iso) return '-';
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return String(iso);
-    const pad = value => String(value).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} `
-        + `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
+// formatContentDrawerTime 已移至 utils.js（检索抽屉共用），此处不再重复定义。
 
 function resolveContentDrawerBonusKeywords(triggerBtn) {
     const bonusRaw = triggerBtn.dataset.bonusKeywords || '';

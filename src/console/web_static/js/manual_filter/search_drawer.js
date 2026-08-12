@@ -21,17 +21,6 @@ function searchDrawerFetch(url) {
     return fetchImpl(url);
 }
 
-function searchDrawerToast(msg, type = 'success') {
-    if (typeof showToast === 'function') {
-        showToast(msg, type);
-        return;
-    }
-    const toastEl = document.getElementById('toast');
-    if (typeof showToastAt === 'function' && toastEl) {
-        showToastAt(toastEl, msg, type);
-    }
-}
-
 function setupSearchDrawer() {
     const toggleBtn = document.getElementById('search-drawer-toggle');
     const closeBtn = document.getElementById('search-drawer-close');
@@ -205,13 +194,14 @@ function buildSearchResultItem(item, summaryToggles) {
 
     const meta = createEl('div', 'search-meta');
     meta.appendChild(createEl('span', '', item.source || '-'));
-    // 时间口径统一为「收录时间」，不显示发布时间。
+    // 时间口径统一为「收录时间」，不显示发布时间；
+    // 与内容抽屉一样走 formatContentDrawerTime（UTC → 本地时区）。
     const ingestedSource = attribution ? attribution.ingested_at_source : '';
     const ingestedSpan = createEl('span', 'search-ingested-time', '', {
         dataset: { ingestedSource: ingestedSource || '' }
     });
     ingestedSpan.appendChild(document.createTextNode(
-        `收录时间：${formatSearchDateTime(attribution && attribution.ingested_at)}`
+        `收录时间：${formatContentDrawerTime(attribution && attribution.ingested_at)}`
     ));
     if (ingestedSource === 'raw_articles.fetched_at') {
         ingestedSpan.appendChild(createEl('span', 'ingested-source-badge', '仅抓取未入库', {
@@ -219,9 +209,7 @@ function buildSearchResultItem(item, summaryToggles) {
         }));
     }
     meta.appendChild(ingestedSpan);
-    meta.appendChild(createEl('span', '', `分数：${formatScore(item.external_importance_score)}`));
     meta.appendChild(createEl('span', `badge ${getSentimentClass(item.sentiment_label)}`, item.sentiment_label || '-'));
-    meta.appendChild(createEl('span', '', `状态：${item.status || '-'}`));
     itemEl.appendChild(meta);
 
     const actions = createEl('div', 'search-item-actions');

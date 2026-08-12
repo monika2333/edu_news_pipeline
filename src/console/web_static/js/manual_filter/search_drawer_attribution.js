@@ -1,6 +1,6 @@
 // Manual Filter JS - Search Drawer · 归因（A 块）
 // 只做后端 attribution 枚举到中文文案的映射与呈现，判据全部在后端，前端不重算。
-// 由 _search_drawer.html 引入，运行期依赖 utils.js 的 createEl/clearEl。
+// 由 _search_drawer.html 引入，运行期依赖 utils.js 的 createEl/clearEl/formatContentDrawerTime。
 
 const ATTRIBUTION_CHAIN_STEPS = [
     { key: 'keyword', label: '初筛' },
@@ -26,24 +26,29 @@ const MANUAL_WORKSPACE_LABELS = {
     duty: '值班工作区'
 };
 
-// 后端时间字段为 ISO 字符串，直接截取展示，避免时区换算引入偏差。
-function formatSearchDateTime(value) {
-    if (!value) return '-';
-    const text = String(value);
-    return text.length >= 16 ? text.substring(0, 16).replace('T', ' ') : text.substring(0, 10);
-}
-
+// datetime（ingested_at / decided_at / window_start）一律走 utils.js 的
+// formatContentDrawerTime（new Date + 本地取值）：后端返回带 Z 的 UTC 时间，
+// 截字符串等于把 UTC 当本地时间，凌晨入库的文章日期会差一天，与内容抽屉也对不上。
+// formatSearchDate 只用于不带时区的 date 字段（export_batch_dates、存档 report_date），保持截取。
 function formatSearchDate(value) {
     if (!value) return '';
     return String(value).substring(0, 10);
 }
 
+// datetime 的本地日期部分（YYYY-MM-DD），用于 data-* 钩子。
+function formatSearchLocalDate(value) {
+    const formatted = formatContentDrawerTime(value);
+    return formatted.includes(' ') ? formatted.split(' ')[0] : formatted;
+}
+
+// window_start 是 UTC datetime，起始日期必须按本地时区取，否则早班时段会算早一天。
 function formatSearchWindowStart(value) {
-    const dateText = formatSearchDate(value);
-    if (!dateText) return '';
-    const parts = dateText.split('-').map(Number);
-    const [year, month, day] = parts;
-    if (!year || !month || !day) return dateText;
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value).substring(0, 10);
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
     if (year === new Date().getFullYear()) return `${month} 月 ${day} 日`;
     return `${year} 年 ${month} 月 ${day} 日`;
 }
@@ -53,12 +58,12 @@ function renderSearchWindowInfo(data) {
     const days = data.lookback_days || '';
     const startText = formatSearchWindowStart(data.window_start);
     const text = startText
-        ? `检索范围：最近 ${days} 天（自 ${startText} 起）`
+        ? `检索范围：最近 ${days} 天（自 ${startText}起）`
         : `检索范围：最近 ${days} 天`;
     return createEl('span', 'search-window-info', text, {
         dataset: {
             lookbackDays: String(days),
-            windowStart: formatSearchDate(data.window_start)
+            windowStart: formatSearchLocalDate(data.window_start)
         }
     });
 }
@@ -67,11 +72,11 @@ function renderSearchWindowInfo(data) {
 function renderSearchEmptyState(data) {
     const days = data.lookback_days || SEARCH_DEFAULT_LOOKBACK_DAYS;
     const startText = formatSearchWindowStart(data.window_start);
-    const rangeText = startText ? `最近 ${days} 天（自 ${startText} 起）` : `最近 ${days} 天`;
+    const rangeText = startText ? `最近 ${days} 天（自 ${startText}起）` : `最近 ${days} 天`;
     const box = createEl('div', 'search-empty', '', {
         dataset: {
             lookbackDays: String(days),
-            windowStart: formatSearchDate(data.window_start)
+            windowStart: formatSearchLocalDate(data.window_start)
         }
     });
     box.appendChild(createEl(
@@ -170,7 +175,7 @@ function renderAttributionDetails(attribution) {
         decisions.forEach(decision => {
             const workspace = MANUAL_WORKSPACE_LABELS[decision.workspace] || decision.workspace || '未知工作区';
             const actor = decision.actor || '未知操作人';
-            const time = formatSearchDateTime(decision.decided_at);
+            const time = formatContentDrawerTime(decision.decided_at);
             list.appendChild(createEl(
                 'li',
                 'search-attribution-decision',

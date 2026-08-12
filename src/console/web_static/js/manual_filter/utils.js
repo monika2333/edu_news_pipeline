@@ -6,6 +6,18 @@ function formatScore(value) {
     return Number.isFinite(score) ? String(Math.round(score)) : '-';
 }
 
+// 控制台共用的本地时间格式化（内容抽屉、检索抽屉归因共用）。
+// 后端返回带 Z 的 UTC 时间，必须经 new Date 按本地时区取值；
+// 直接截字符串等于把 UTC 当本地时间显示，凌晨入库的文章日期会差一天。
+function formatContentDrawerTime(iso) {
+    if (!iso) return '-';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return String(iso);
+    const pad = value => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} `
+        + `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function getManualReviewVersion(articleId) {
     const card = Array.from(document.querySelectorAll('.article-card[data-id]'))
         .find(candidate => candidate.dataset.id === articleId);

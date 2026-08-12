@@ -40,6 +40,31 @@ function clearArchiveSearch() {
     if (results) clearEl(results);
 }
 
+// 关键词高亮：行为与报送存档库全库搜索的 highlight 一致（大小写不敏感的 <mark>），
+// 但用 DOM 节点拼装，保持 createEl 路径的转义安全。
+// 注意：content_drawer.js 有一个同名不同签名的 appendHighlightedText（terms 数组），
+// 这里必须保持不同名，否则后加载的一方会覆盖另一方。
+function appendArchiveHighlight(container, text, query) {
+    const value = String(text || '');
+    const needle = (query || '').trim().toLowerCase();
+    if (!needle) {
+        container.appendChild(document.createTextNode(value));
+        return;
+    }
+    const haystack = value.toLowerCase();
+    let index = 0;
+    let found = haystack.indexOf(needle);
+    while (found !== -1) {
+        if (found > index) {
+            container.appendChild(document.createTextNode(value.slice(index, found)));
+        }
+        container.appendChild(createEl('mark', '', value.slice(found, found + needle.length)));
+        index = found + needle.length;
+        found = haystack.indexOf(needle, index);
+    }
+    container.appendChild(document.createTextNode(value.slice(index)));
+}
+
 async function performArchiveSearch() {
     const queryInput = document.getElementById('archive-search-q');
     const results = document.getElementById('archive-search-results');
@@ -58,13 +83,13 @@ async function performArchiveSearch() {
         const res = await searchDrawerFetch(`/api/submission-archive/search?${params.toString()}`);
         if (!res.ok) throw new Error('存档检索失败');
         const data = await res.json();
-        renderArchiveResults(data);
+        renderArchiveResults(data, query);
     } catch (e) {
         results.innerHTML = `<div class="error">存档检索失败：${e.message}</div>`;
     }
 }
 
-function renderArchiveResults(data) {
+function renderArchiveResults(data, query) {
     const results = document.getElementById('archive-search-results');
     if (!results) return;
     clearEl(results);
@@ -105,13 +130,17 @@ function renderArchiveResults(data) {
             { dataset: { reportType } }
         ));
         head.appendChild(createEl('span', 'archive-item-date', formatSearchDate(item.report_date) || '-'));
-        head.appendChild(createEl('span', 'archive-item-title', item.title || '（无标题）'));
+        const titleSpan = createEl('span', 'archive-item-title');
+        appendArchiveHighlight(titleSpan, item.title || '（无标题）', query);
+        head.appendChild(titleSpan);
         itemEl.appendChild(head);
 
         // 存档正文是最终报送版，长度可控，直接显示全文，不做截断。
         const bodyText = String(item.body || '').trim();
         if (bodyText) {
-            itemEl.appendChild(createEl('div', 'archive-item-body', bodyText));
+            const bodyEl = createEl('div', 'archive-item-body');
+            appendArchiveHighlight(bodyEl, bodyText, query);
+            itemEl.appendChild(bodyEl);
         }
         fragment.appendChild(itemEl);
     });

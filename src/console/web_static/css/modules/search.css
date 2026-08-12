@@ -637,3 +637,11 @@
     display: none;
 }
 
+
+/* 关键词高亮：与报送存档库全库搜索的 mark 样式一致（黄底、无边框）。 */
+.archive-item mark {
+    padding: 0 2px;
+    border-radius: 3px;
+    background: #fef08a;
+    color: inherit;
+}

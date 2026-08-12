@@ -125,7 +125,8 @@ def search_article_attributions(
             SELECT
                 article_id,
                 BOOL_OR(decision = 'discarded') AS has_discarded,
-                BOOL_OR(decision <> 'pending') AS has_manual_decision,
+                BOOL_OR(workspace = 'admin' AND decision = 'exported')
+                    AS has_review_marked_exported,
                 JSONB_AGG(
                     JSONB_BUILD_OBJECT(
                         'workspace', workspace,
@@ -182,7 +183,7 @@ def search_article_attributions(
                 CASE
                     WHEN ex.article_id IS NOT NULL THEN 'exported'
                     WHEN COALESCE(d.has_discarded, FALSE) THEN 'discarded'
-                    WHEN NOT COALESCE(d.has_manual_decision, FALSE)
+                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
                          AND (
                              (
                                  ns.article_id IS NOT NULL
@@ -195,15 +196,21 @@ def search_article_attributions(
                              )
                          )
                     THEN 'not_reviewed'
-                    WHEN ns.status = 'external_filtered' THEN 'importance_below'
-                    WHEN pa.status = 'filtered_out' THEN 'relevance_below'
-                    WHEN fa.article_id IS NULL THEN 'keyword_missed'
+                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
+                         AND ns.status = 'external_filtered'
+                    THEN 'importance_below'
+                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
+                         AND pa.status = 'filtered_out'
+                    THEN 'relevance_below'
+                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
+                         AND fa.article_id IS NULL
+                    THEN 'keyword_missed'
                     ELSE 'not_reviewed'
                 END AS attribution_level,
                 CASE
                     WHEN ex.article_id IS NOT NULL THEN FALSE
                     WHEN COALESCE(d.has_discarded, FALSE) THEN FALSE
-                    WHEN NOT COALESCE(d.has_manual_decision, FALSE)
+                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
                          AND (
                              (
                                  ns.article_id IS NOT NULL
@@ -216,9 +223,15 @@ def search_article_attributions(
                              )
                          )
                     THEN FALSE
-                    WHEN ns.status = 'external_filtered' THEN FALSE
-                    WHEN pa.status = 'filtered_out' THEN FALSE
-                    WHEN fa.article_id IS NULL THEN FALSE
+                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
+                         AND ns.status = 'external_filtered'
+                    THEN FALSE
+                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
+                         AND pa.status = 'filtered_out'
+                    THEN FALSE
+                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
+                         AND fa.article_id IS NULL
+                    THEN FALSE
                     ELSE TRUE
                 END AS attribution_is_fallback,
                 COALESCE(ns.created_at, ra.fetched_at) AS attribution_ingested_at,

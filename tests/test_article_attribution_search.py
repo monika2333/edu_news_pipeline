@@ -70,8 +70,14 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
         ("attr-importance", "Importance Below", "importanceonly body", now),
         ("attr-not-reviewed", "Not Reviewed", "notreviewedonly body", now),
         ("attr-exported", "Exported", "exportedonly body", now),
+        ("attr-selected", "Selected Pending Export", "selectedonly body", now),
         ("attr-fallback", "Fallback State", "fallbackonly body", now),
-        ("attr-dup-primary", "Primary Title", "sharedterm primary body", now - timedelta(minutes=1)),
+        (
+            "attr-dup-primary",
+            "Primary Title",
+            "sharedterm primary body",
+            now - timedelta(minutes=1),
+        ),
         ("attr-duplicate", "Matched Duplicate Title", "sharedterm duplicateonly body", now),
     ]
     cur.executemany(
@@ -91,6 +97,7 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
             ("attr-importance", "pending", None),
             ("attr-not-reviewed", "pending", None),
             ("attr-exported", "pending", None),
+            ("attr-selected", "pending", None),
             ("attr-fallback", "pending", None),
             ("attr-dup-primary", "pending", None),
             ("attr-duplicate", "duplicate", "attr-dup-primary"),
@@ -111,6 +118,7 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
             ("attr-importance", "attr-importance", "promoted", 81),
             ("attr-not-reviewed", "attr-not-reviewed", "promoted", 82),
             ("attr-exported", "attr-exported", "promoted", 83),
+            ("attr-selected", "attr-selected", "promoted", 83),
             ("attr-fallback", "attr-fallback", "promoted", 83),
             ("attr-dup-primary", "attr-dup-primary", "promoted", 84),
         ],
@@ -150,6 +158,15 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
             (
                 "attr-exported",
                 "Exported",
+                "ready_for_export",
+                83,
+                "ready_for_export",
+                71,
+                now,
+            ),
+            (
+                "attr-selected",
+                "Selected Pending Export",
                 "ready_for_export",
                 83,
                 "ready_for_export",
@@ -212,9 +229,21 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
             decided_by_user_id,
             decided_at
         )
-        VALUES ('attr-fallback', 'selected', %s, %s)
+        VALUES ('attr-selected', 'selected', %s, %s)
         """,
         (user_id, now - timedelta(minutes=1)),
+    )
+    cur.execute(
+        """
+        INSERT INTO manual_reviews (
+            article_id,
+            status,
+            decided_by_user_id,
+            decided_at
+        )
+        VALUES ('attr-fallback', 'exported', %s, %s)
+        """,
+        (user_id, now - timedelta(seconds=30)),
     )
     cur.execute(
         """
@@ -263,6 +292,7 @@ def test_full_pipeline_attribution_and_primary_deduplication() -> None:
             importance, importance_queries = _search(cur, "importanceonly")
             not_reviewed, not_reviewed_queries = _search(cur, "notreviewedonly")
             exported, exported_queries = _search(cur, "exportedonly")
+            selected, selected_queries = _search(cur, "selectedonly")
             fallback, fallback_queries = _search(cur, "fallbackonly")
             duplicate, duplicate_queries = _search(cur, "duplicateonly")
             same_group, same_group_queries = _search(cur, "sharedterm")
@@ -290,9 +320,16 @@ def test_full_pipeline_attribution_and_primary_deduplication() -> None:
         for item in exported_item["attribution_manual_decisions"]
     )
 
+    selected_item = selected["items"][0]
+    assert selected_item["attribution_level"] == "not_reviewed"
+    assert selected_item["attribution_is_fallback"] is False
+    assert selected_item["attribution_manual_decisions"][0]["decision"] == "selected"
+
     fallback_item = fallback["items"][0]
     assert fallback_item["attribution_level"] == "not_reviewed"
     assert fallback_item["attribution_is_fallback"] is True
+    assert fallback_item["attribution_manual_decisions"][0]["decision"] == "exported"
+    assert fallback_item["attribution_export_batch_dates"] == []
 
     duplicate_item = duplicate["items"][0]
     assert duplicate["total"] == 1
@@ -308,6 +345,7 @@ def test_full_pipeline_attribution_and_primary_deduplication() -> None:
         importance_queries,
         not_reviewed_queries,
         exported_queries,
+        selected_queries,
         fallback_queries,
         duplicate_queries,
         same_group_queries,

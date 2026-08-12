@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, 
 import psycopg
 from psycopg.types.json import Json
 
+from src.adapters.db_postgres_article_attribution import search_article_attributions
 from src.adapters.db_postgres_shared import MISSING
 
 if TYPE_CHECKING:
@@ -123,6 +124,23 @@ class NewsSummariesNamespace:
                 statuses=statuses,
                 start_date=start_date,
                 end_date=end_date,
+                limit=limit,
+                offset=offset,
+            )
+
+    def search_with_attribution(
+        self,
+        *,
+        query: Optional[str],
+        fetched_after: datetime,
+        limit: int,
+        offset: int,
+    ) -> Dict[str, Any]:
+        with self._adapter._cursor() as cur:
+            return search_article_attributions(
+                cur,
+                query=query,
+                fetched_after=fetched_after,
                 limit=limit,
                 offset=offset,
             )

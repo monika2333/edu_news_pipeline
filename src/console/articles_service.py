@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from math import ceil
 from typing import Any, Dict, List, Optional
 
 from src.adapters.db_postgres_core import get_adapter
+
+
+DEFAULT_ARTICLE_SEARCH_LOOKBACK_DAYS = 30
+MAX_ARTICLE_SEARCH_LOOKBACK_DAYS = 3650
 
 
 def _get_adapter_safe():
@@ -65,6 +70,16 @@ def _serialize_article(row: Dict[str, Any]) -> Dict[str, Any]:
         "summary_generated_at": row.get("summary_generated_at"),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
+        "attribution": {
+            "level": row.get("attribution_level"),
+            "ingested_at": row.get("attribution_ingested_at"),
+            "ingested_at_source": row.get("attribution_ingested_at_source"),
+            "relevance_score": _to_float(row.get("attribution_relevance_score")),
+            "importance_score": _to_float(row.get("attribution_importance_score")),
+            "manual_decisions": list(row.get("attribution_manual_decisions") or []),
+            "export_batch_dates": list(row.get("attribution_export_batch_dates") or []),
+            "matched_article_title": row.get("attribution_matched_article_title"),
+        },
     }
 
 
@@ -73,10 +88,18 @@ def search_articles(
     query: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
+    lookback_days: int = DEFAULT_ARTICLE_SEARCH_LOOKBACK_DAYS,
 ) -> Dict[str, Any]:
     adapter = _get_adapter_safe()
     limit = max(1, min(int(limit or 20), 100))
     page = max(1, int(page or 1))
+    lookback_days = max(
+        1,
+        min(
+            int(lookback_days or DEFAULT_ARTICLE_SEARCH_LOOKBACK_DAYS),
+            MAX_ARTICLE_SEARCH_LOOKBACK_DAYS,
+        ),
+    )
     offset = (page - 1) * limit
     if adapter is None:
         return {
@@ -86,8 +109,9 @@ def search_articles(
             "page": page,
             "pages": 1,
         }
-    raw = adapter.news_summaries.search(
+    raw = adapter.news_summaries.search_with_attribution(
         query=query,
+        fetched_after=datetime.now(timezone.utc) - timedelta(days=lookback_days),
         limit=limit,
         offset=offset,
     )
@@ -132,4 +156,9 @@ def get_article_content(*, article_id: str) -> Dict[str, Any]:
     }
 
 
-__all__ = ["search_articles", "get_article_content"]
+__all__ = [
+    "DEFAULT_ARTICLE_SEARCH_LOOKBACK_DAYS",
+    "MAX_ARTICLE_SEARCH_LOOKBACK_DAYS",
+    "get_article_content",
+    "search_articles",
+]

@@ -4,8 +4,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Query
 
-from src.console.articles_schemas import NewsArticleContentResponse, NewsArticleSearchResponse
 from src.console import articles_service
+from src.console.articles_schemas import NewsArticleContentResponse, NewsArticleSearchResponse
 
 router = APIRouter(prefix="/api/articles", tags=["articles"])
 
@@ -13,17 +13,23 @@ router = APIRouter(prefix="/api/articles", tags=["articles"])
 @router.get(
     "/search",
     response_model=NewsArticleSearchResponse,
-    summary="Search summarized news articles",
+    summary="Search articles and explain their pipeline outcome",
 )
 def search_articles_api(
     q: Optional[str] = Query(None, min_length=1, max_length=200),
     page: int = Query(1, ge=1, le=200),
     limit: int = Query(20, ge=1, le=100),
+    lookback_days: int = Query(
+        articles_service.DEFAULT_ARTICLE_SEARCH_LOOKBACK_DAYS,
+        ge=1,
+        le=articles_service.MAX_ARTICLE_SEARCH_LOOKBACK_DAYS,
+    ),
 ) -> NewsArticleSearchResponse:
     result = articles_service.search_articles(
         query=q,
         page=page,
         limit=limit,
+        lookback_days=lookback_days,
     )
     return NewsArticleSearchResponse.model_validate(result)
 

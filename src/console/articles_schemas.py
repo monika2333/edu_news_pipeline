@@ -1,9 +1,37 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Optional
+from datetime import date, datetime
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
+
+
+class NewsArticleManualDecision(BaseModel):
+    workspace: Literal["admin", "duty"]
+    actor: Optional[str] = None
+    decided_at: Optional[datetime] = None
+    decision: str
+
+
+class NewsArticleAttribution(BaseModel):
+    level: Literal[
+        "keyword_missed",
+        "relevance_below",
+        "importance_below",
+        "not_reviewed",
+        "discarded",
+        "exported",
+    ]
+    ingested_at: datetime
+    ingested_at_source: Literal[
+        "news_summaries.created_at",
+        "raw_articles.fetched_at",
+    ]
+    relevance_score: Optional[float] = None
+    importance_score: Optional[float] = None
+    manual_decisions: list[NewsArticleManualDecision] = Field(default_factory=list)
+    export_batch_dates: list[date] = Field(default_factory=list)
+    matched_article_title: Optional[str] = None
 
 
 class NewsArticleSearchItem(BaseModel):
@@ -31,6 +59,7 @@ class NewsArticleSearchItem(BaseModel):
     summary_generated_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    attribution: NewsArticleAttribution
 
 
 class NewsArticleContentResponse(BaseModel):
@@ -50,4 +79,10 @@ class NewsArticleSearchResponse(BaseModel):
     pages: int
 
 
-__all__ = ["NewsArticleSearchItem", "NewsArticleContentResponse", "NewsArticleSearchResponse"]
+__all__ = [
+    "NewsArticleAttribution",
+    "NewsArticleContentResponse",
+    "NewsArticleManualDecision",
+    "NewsArticleSearchItem",
+    "NewsArticleSearchResponse",
+]

@@ -1,10 +1,36 @@
 // Manual Filter JS - Search Drawer
+// 抽屉本体、检索请求与结果卡片骨架。
+// A 块（链上归因）渲染在 search_drawer_attribution.js，
+// B 块（报送存档命中）在 search_drawer_archive.js，两者均由 _search_drawer.html 引入。
+
+// 与后端 articles_service 的默认/最大检索窗口保持一致，仅用于呈现与扩大范围。
+const SEARCH_DEFAULT_LOOKBACK_DAYS = 30;
+const SEARCH_MAX_LOOKBACK_DAYS = 3650;
 
 let searchState = {
     page: 1,
     limit: 20,
-    loading: false
+    // null = 使用后端默认窗口；从空态「扩大时间范围重搜」后显式带上
+    lookbackDays: null
 };
+
+function searchDrawerFetch(url) {
+    const fetchImpl = typeof workspaceFetch === 'function'
+        ? workspaceFetch
+        : window.fetch.bind(window);
+    return fetchImpl(url);
+}
+
+function searchDrawerToast(msg, type = 'success') {
+    if (typeof showToast === 'function') {
+        showToast(msg, type);
+        return;
+    }
+    const toastEl = document.getElementById('toast');
+    if (typeof showToastAt === 'function' && toastEl) {
+        showToastAt(toastEl, msg, type);
+    }
+}
 
 function setupSearchDrawer() {
     const toggleBtn = document.getElementById('search-drawer-toggle');
@@ -41,28 +67,31 @@ function setupSearchDrawer() {
         toggleDrawer(true);
     }
 
+    // 新关键词/新页大小 = 新一轮检索，窗口回到后端默认值；
+    // 扩大窗口只对当前这轮检索（含翻页）生效。
+    function startNewSearch() {
+        searchState.page = 1;
+        searchState.lookbackDays = null;
+        performDrawerSearch();
+    }
+
     if (searchBtn) {
-        searchBtn.addEventListener('click', () => {
-            searchState.page = 1;
-            performDrawerSearch();
-        });
+        searchBtn.addEventListener('click', startNewSearch);
     }
 
     if (limitSelect) {
-        limitSelect.addEventListener('change', () => {
-            searchState.page = 1;
-            performDrawerSearch();
-        });
+        limitSelect.addEventListener('change', startNewSearch);
     }
 
     inputs.forEach(input => {
         input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                searchState.page = 1;
-                performDrawerSearch();
-            }
+            if (e.key === 'Enter') startNewSearch();
         });
     });
+
+    if (typeof setupArchiveSearch === 'function') {
+        setupArchiveSearch();
+    }
 
     loadSearchFilters();
 }
@@ -105,7 +134,7 @@ async function performDrawerSearch() {
     if (!container || !statsInfo || !pagination) return;
 
     container.innerHTML = renderSkeleton(3);
-    statsInfo.textContent = '';
+    clearEl(statsInfo);
     pagination.innerHTML = '';
 
     const filters = saveSearchFilters();
@@ -117,18 +146,143 @@ async function performDrawerSearch() {
     });
 
     if (filters.q) params.set('q', filters.q);
+    if (searchState.lookbackDays) params.set('lookback_days', String(searchState.lookbackDays));
 
     try {
-        const searchFetch = typeof workspaceFetch === 'function'
-            ? workspaceFetch
-            : window.fetch.bind(window);
-        const res = await searchFetch(`/api/articles/search?${params.toString()}`);
+        const res = await searchDrawerFetch(`/api/articles/search?${params.toString()}`);
         if (!res.ok) throw new Error('检索失败');
         const data = await res.json();
         renderDrawerSearchResults(data);
     } catch (e) {
         container.innerHTML = `<div class="error">检索失败：${e.message}</div>`;
     }
+}
+
+// 空态「扩大时间范围重搜」：窗口翻倍（不超过后端上限），重搜后窗口信息随响应更新。
+function expandSearchWindow() {
+    const current = searchState.lookbackDays || SEARCH_DEFAULT_LOOKBACK_DAYS;
+    const next = Math.min(current * 2, SEARCH_MAX_LOOKBACK_DAYS);
+    if (next <= current) return;
+    searchState.lookbackDays = next;
+    searchState.page = 1;
+    performDrawerSearch();
+}
+
+function buildSearchResultItem(item, summaryToggles) {
+    const itemEl = createEl('div', 'search-item', '', {
+        dataset: { articleId: item.article_id || '' }
+    });
+    const attribution = item.attribution || null;
+
+    const header = createEl('h4');
+    const title = item.title || '未命名标题';
+    header.appendChild(document.createTextNode(title));
+    if (item.url) {
+        const link = createEl('a', 'search-source-link', '🔗', {
+            href: item.url,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            'aria-label': `打开《${title}》的原始链接`,
+            title: '打开原始链接'
+        });
+        header.appendChild(link);
+    }
+    itemEl.appendChild(header);
+
+    // 命中的是被合并的重复报道时标明是哪一篇，避免使用者以为搜错了。
+    if (attribution && attribution.matched_article_title) {
+        itemEl.appendChild(createEl(
+            'div',
+            'search-matched-note',
+            `命中稿：《${attribution.matched_article_title}》（与本篇为同一事件的合并报道）`,
+            { dataset: { matchedArticleTitle: attribution.matched_article_title } }
+        ));
+    }
+
+    if (typeof renderAttributionChain === 'function') {
+        itemEl.appendChild(renderAttributionChain(attribution));
+    }
+
+    const meta = createEl('div', 'search-meta');
+    meta.appendChild(createEl('span', '', item.source || '-'));
+    // 时间口径统一为「收录时间」，不显示发布时间。
+    const ingestedSource = attribution ? attribution.ingested_at_source : '';
+    const ingestedSpan = createEl('span', 'search-ingested-time', '', {
+        dataset: { ingestedSource: ingestedSource || '' }
+    });
+    ingestedSpan.appendChild(document.createTextNode(
+        `收录时间：${formatSearchDateTime(attribution && attribution.ingested_at)}`
+    ));
+    if (ingestedSource === 'raw_articles.fetched_at') {
+        ingestedSpan.appendChild(createEl('span', 'ingested-source-badge', '仅抓取未入库', {
+            title: '该时间为抓取时间（raw_articles.fetched_at），文章尚未进入摘要环节'
+        }));
+    }
+    meta.appendChild(ingestedSpan);
+    meta.appendChild(createEl('span', '', `分数：${formatScore(item.external_importance_score)}`));
+    meta.appendChild(createEl('span', `badge ${getSentimentClass(item.sentiment_label)}`, item.sentiment_label || '-'));
+    meta.appendChild(createEl('span', '', `状态：${item.status || '-'}`));
+    itemEl.appendChild(meta);
+
+    const actions = createEl('div', 'search-item-actions');
+    let attributionDetails = null;
+    if (typeof renderAttributionDetails === 'function') {
+        attributionDetails = renderAttributionDetails(attribution);
+        const detailToggle = createEl('button', 'search-attribution-toggle', '归因详情 ▾', {
+            type: 'button',
+            'aria-expanded': 'false'
+        });
+        detailToggle.addEventListener('click', () => {
+            const expanded = attributionDetails.hidden;
+            attributionDetails.hidden = !expanded;
+            detailToggle.textContent = expanded ? '归因详情 ▴' : '归因详情 ▾';
+            detailToggle.setAttribute('aria-expanded', String(expanded));
+        });
+        actions.appendChild(detailToggle);
+    }
+    const archiveBtn = createEl('button', 'search-archive-jump', '查报送存档', {
+        type: 'button',
+        title: '以本篇标题检索报送存档，检索词可再修改'
+    });
+    archiveBtn.addEventListener('click', () => {
+        if (typeof searchArchiveByTitle === 'function') {
+            searchArchiveByTitle(item.title || '');
+        }
+    });
+    actions.appendChild(archiveBtn);
+    itemEl.appendChild(actions);
+    if (attributionDetails) itemEl.appendChild(attributionDetails);
+
+    const details = createEl('div', 'search-details');
+    const summaryText = String(item.llm_summary || '').trim();
+    const summary = createEl(
+        'div',
+        'search-summary',
+        summaryText || '暂无摘要。'
+    );
+    details.appendChild(summary);
+    if (summaryText) {
+        const toggle = createEl('button', 'search-summary-toggle', '▾', {
+            type: 'button',
+            'aria-expanded': 'false',
+            'aria-label': '展开摘要',
+            title: '展开摘要'
+        });
+        toggle.hidden = true;
+        toggle.addEventListener('click', () => {
+            const expanded = summary.classList.toggle('expanded');
+            const actionLabel = expanded ? '收起摘要' : '展开摘要';
+            toggle.textContent = expanded ? '▴' : '▾';
+            toggle.setAttribute('aria-expanded', String(expanded));
+            toggle.setAttribute('aria-label', actionLabel);
+            toggle.setAttribute('title', actionLabel);
+        });
+        details.appendChild(toggle);
+        summaryToggles.push({ summary, toggle });
+    }
+    itemEl.appendChild(details);
+
+    return itemEl;
 }
 
 function renderDrawerSearchResults(data) {
@@ -142,83 +296,32 @@ function renderDrawerSearchResults(data) {
     const total = data.total || 0;
     const page = data.page || 1;
     const pages = data.pages || 1;
+    searchState.lookbackDays = data.lookback_days || searchState.lookbackDays;
 
-    statsInfo.textContent = `共找到 ${total} 条结果`;
+    clearEl(statsInfo);
     clearEl(container);
 
+    // 空结果就是结论：写明检索窗口，并给出扩大范围重搜的入口。
     if (!items.length) {
-        container.appendChild(createEl('div', 'empty', '未找到结果'));
+        clearEl(pagination);
+        if (typeof renderSearchEmptyState === 'function') {
+            container.appendChild(renderSearchEmptyState(data));
+        } else {
+            container.appendChild(createEl('div', 'empty', '未找到结果'));
+        }
         return;
+    }
+
+    statsInfo.appendChild(createEl('span', 'search-total', `共找到 ${total} 条结果`));
+    if (typeof renderSearchWindowInfo === 'function') {
+        statsInfo.appendChild(renderSearchWindowInfo(data));
     }
 
     const fragment = document.createDocumentFragment();
     const summaryToggles = [];
 
     items.forEach(item => {
-        const itemEl = createEl('div', 'search-item');
-
-        const header = createEl('h4');
-        const title = item.title || '未命名标题';
-        header.appendChild(document.createTextNode(title));
-        if (item.url) {
-            const link = createEl('a', 'search-source-link', '🔗', {
-                href: item.url,
-                target: '_blank',
-                rel: 'noopener noreferrer',
-                'aria-label': `打开《${title}》的原始链接`,
-                title: '打开原始链接'
-            });
-            header.appendChild(link);
-        }
-        itemEl.appendChild(header);
-
-        const meta = createEl('div', 'search-meta');
-        const sourceSpan = createEl('span', '', item.source || '-');
-        const publishTime = item.publish_time_iso ? item.publish_time_iso.substring(0, 10) : (
-            item.publish_time ? new Date(item.publish_time * 1000).toISOString().split('T')[0] : '-'
-        );
-        const timeSpan = createEl('span', '', publishTime);
-        const scoreSpan = createEl('span', '', `分数：${formatScore(item.external_importance_score)}`);
-        const sentimentSpan = createEl('span', `badge ${getSentimentClass(item.sentiment_label)}`, item.sentiment_label || '-');
-        const statusSpan = createEl('span', '', `状态：${item.status || '-'}`);
-
-        meta.appendChild(sourceSpan);
-        meta.appendChild(timeSpan);
-        meta.appendChild(scoreSpan);
-        meta.appendChild(sentimentSpan);
-        meta.appendChild(statusSpan);
-        itemEl.appendChild(meta);
-
-        const details = createEl('div', 'search-details');
-        const summaryText = String(item.llm_summary || '').trim();
-        const summary = createEl(
-            'div',
-            'search-summary',
-            summaryText || '暂无摘要。'
-        );
-        details.appendChild(summary);
-        if (summaryText) {
-            const toggle = createEl('button', 'search-summary-toggle', '▾', {
-                type: 'button',
-                'aria-expanded': 'false',
-                'aria-label': '展开摘要',
-                title: '展开摘要'
-            });
-            toggle.hidden = true;
-            toggle.addEventListener('click', () => {
-                const expanded = summary.classList.toggle('expanded');
-                const actionLabel = expanded ? '收起摘要' : '展开摘要';
-                toggle.textContent = expanded ? '▴' : '▾';
-                toggle.setAttribute('aria-expanded', String(expanded));
-                toggle.setAttribute('aria-label', actionLabel);
-                toggle.setAttribute('title', actionLabel);
-            });
-            details.appendChild(toggle);
-            summaryToggles.push({ summary, toggle });
-        }
-        itemEl.appendChild(details);
-
-        fragment.appendChild(itemEl);
+        fragment.appendChild(buildSearchResultItem(item, summaryToggles));
     });
 
     container.appendChild(fragment);

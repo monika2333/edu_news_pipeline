@@ -29,5 +29,21 @@
         <div id="search-results-stats" class="search-stats"></div>
         <div id="search-results-list" class="search-results"></div>
         <div id="search-pagination" class="pagination"></div>
+        {# B 块：报送存档命中。与上面的链上归因（A 块）互相独立，只呈现候选，不给硬结论。 #}
+        <section id="archive-search-section" class="archive-search">
+            <div class="archive-search-header">
+                <h4>报送存档命中</h4>
+                <p class="archive-search-hint">以下为历史报送稿中的候选条目，是否同一件事请自行判断。</p>
+            </div>
+            <div class="archive-search-form">
+                <input type="text" id="archive-search-q" placeholder="输入检索词；可用结果操作行的「查报送存档」带入标题" />
+                <button id="btn-archive-search" class="btn btn-secondary btn-sm" type="button">检索存档</button>
+            </div>
+            <div id="archive-search-results" class="archive-search-results"></div>
+        </section>
     </div>
 </div>
+{# 这两个模块只定义函数、不在加载时执行，因此可以早于 utils.js / search_drawer.js 加载；
+   放在本 partial 中是为了让引用本抽屉的两个页面（manual_filter / duty_summary）都能拿到。 #}
+<script src="/static/js/manual_filter/search_drawer_attribution.js?v={{ version }}"></script>
+<script src="/static/js/manual_filter/search_drawer_archive.js?v={{ version }}"></script>

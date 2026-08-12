@@ -594,19 +594,21 @@
     font-weight: 600;
 }
 
+/* 报别配色与报送存档库的 .archive-type-pill（submission_archive/widgets.css）保持一致，
+   全局统一：综报蓝、晚报绿、反馈橘。改动时两边同步。 */
 .archive-item-badge[data-report-type="zongbao"] {
-    background: #e0f2fe;
-    color: #0369a1;
+    background: #eff6ff;
+    color: #1d4ed8;
 }
 
 .archive-item-badge[data-report-type="wanbao"] {
-    background: #fef9c3;
-    color: #854d0e;
+    background: #ecfdf5;
+    color: #047857;
 }
 
 .archive-item-badge[data-report-type="feedback"] {
-    background: #f3e8ff;
-    color: #7e22ce;
+    background: #fff7ed;
+    color: #c2410c;
 }
 
 .archive-item-date {

@@ -83,7 +83,7 @@ function renderArchiveResults(data) {
     results.appendChild(createEl(
         'div',
         'archive-search-stats',
-        `${items.length} 条存档候选（是否同一件事请自行判断）`,
+        `${items.length} 条存档候选`,
         { dataset: { archiveCount: String(items.length) } }
     ));
 

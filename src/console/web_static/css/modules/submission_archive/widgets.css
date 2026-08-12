@@ -46,6 +46,8 @@
     white-space: nowrap;
 }
 
+/* 报别配色与搜索抽屉/查重弹窗的 .archive-item-badge（modules/search.css）保持一致，
+   全局统一：综报蓝、晚报绿、反馈橘。改动时两边同步。 */
 .archive-type-pill.is-zongbao {
     background: #eff6ff;
     color: #1d4ed8;

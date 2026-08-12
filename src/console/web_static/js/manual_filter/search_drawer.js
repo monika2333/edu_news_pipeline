@@ -1,5 +1,6 @@
 // Manual Filter JS - Search Drawer
-// 抽屉本体、检索请求与结果卡片骨架。
+// 抽屉本体、tab 切换、检索请求与结果卡片骨架。
+// 抽屉分两个互斥 tab：「报送存档检索」（默认，更常用）与「全库文章检索」。
 // A 块（链上归因）渲染在 search_drawer_attribution.js，
 // B 块（报送存档命中）在 search_drawer_archive.js，两者均由 _search_drawer.html 引入。
 
@@ -7,9 +8,15 @@
 const SEARCH_DEFAULT_LOOKBACK_DAYS = 30;
 const SEARCH_MAX_LOOKBACK_DAYS = 3650;
 
+// 全库检索每页条数固定，不再提供「每页条数」选项。
+const SEARCH_PAGE_LIMIT = 10;
+
+// 当前检索 tab 记入 localStorage，重开抽屉时恢复；首次默认报送存档检索。
+const SEARCH_TAB_STORAGE_KEY = 'search_drawer_tab';
+const SEARCH_TAB_DEFAULT = 'archive';
+
 let searchState = {
     page: 1,
-    limit: 20,
     // null = 使用后端默认窗口；从空态「扩大时间范围重搜」后显式带上
     lookbackDays: null
 };
@@ -21,14 +28,31 @@ function searchDrawerFetch(url) {
     return fetchImpl(url);
 }
 
+// tab 切换：报送存档检索（archive）/ 全库文章检索（articles）。
+// search_drawer_archive.js 的「查报送存档」也会调用它切到存档 tab。
+function switchSearchTab(tab) {
+    const drawer = document.getElementById('search-drawer');
+    if (!drawer) return;
+    const target = tab === 'articles' ? 'articles' : 'archive';
+    drawer.querySelectorAll('.search-tab').forEach(btn => {
+        const active = btn.dataset.searchTab === target;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', String(active));
+    });
+    drawer.querySelectorAll('.search-panel').forEach(panel => {
+        panel.hidden = panel.dataset.searchPanel !== target;
+    });
+    localStorage.setItem(SEARCH_TAB_STORAGE_KEY, target);
+}
+
 function setupSearchDrawer() {
     const toggleBtn = document.getElementById('search-drawer-toggle');
     const closeBtn = document.getElementById('search-drawer-close');
     const overlay = document.getElementById('search-overlay');
     const drawer = document.getElementById('search-drawer');
     const searchBtn = document.getElementById('btn-drawer-search');
-    const limitSelect = document.getElementById('search-limit');
-    const inputs = document.querySelectorAll('.search-form-container input, .search-form-container select');
+    const clearBtn = document.getElementById('btn-drawer-clear');
+    const inputs = document.querySelectorAll('.search-form-container input');
 
     if (!drawer) return;
     if (drawer.dataset.searchDrawerReady === 'true') return;
@@ -56,7 +80,12 @@ function setupSearchDrawer() {
         toggleDrawer(true);
     }
 
-    // 新关键词/新页大小 = 新一轮检索，窗口回到后端默认值；
+    drawer.querySelectorAll('.search-tab').forEach(btn => {
+        btn.addEventListener('click', () => switchSearchTab(btn.dataset.searchTab));
+    });
+    switchSearchTab(localStorage.getItem(SEARCH_TAB_STORAGE_KEY) || SEARCH_TAB_DEFAULT);
+
+    // 新关键词 = 新一轮检索，窗口回到后端默认值；
     // 扩大窗口只对当前这轮检索（含翻页）生效。
     function startNewSearch() {
         searchState.page = 1;
@@ -68,8 +97,8 @@ function setupSearchDrawer() {
         searchBtn.addEventListener('click', startNewSearch);
     }
 
-    if (limitSelect) {
-        limitSelect.addEventListener('change', startNewSearch);
+    if (clearBtn) {
+        clearBtn.addEventListener('click', clearDrawerSearch);
     }
 
     inputs.forEach(input => {
@@ -92,13 +121,6 @@ function loadSearchFilters() {
             const qInput = document.getElementById('search-q');
             if (qInput) qInput.value = saved.q;
         }
-        if (saved && saved.limit) {
-            const limitSelect = document.getElementById('search-limit');
-            if (limitSelect) {
-                limitSelect.value = String(saved.limit);
-                searchState.limit = parseInt(limitSelect.value, 10) || 20;
-            }
-        }
     } catch (e) {
         console.error('加载搜索筛选条件失败', e);
     }
@@ -106,13 +128,28 @@ function loadSearchFilters() {
 
 function saveSearchFilters() {
     const qInput = document.getElementById('search-q');
-    const limitSelect = document.getElementById('search-limit');
     const filters = {
-        q: qInput ? qInput.value : '',
-        limit: limitSelect ? limitSelect.value : '20'
+        q: qInput ? qInput.value : ''
     };
     localStorage.setItem('search_filters', JSON.stringify(filters));
     return filters;
+}
+
+// 清空全库检索：输入框、结果、统计、分页与状态一并重置，
+// 并清掉 localStorage 中保存的关键词，否则刷新后会被回填。
+function clearDrawerSearch() {
+    const qInput = document.getElementById('search-q');
+    if (qInput) qInput.value = '';
+    searchState.page = 1;
+    searchState.lookbackDays = null;
+    localStorage.removeItem('search_filters');
+
+    const container = document.getElementById('search-results-list');
+    const statsInfo = document.getElementById('search-results-stats');
+    const pagination = document.getElementById('search-pagination');
+    if (container) clearEl(container);
+    if (statsInfo) clearEl(statsInfo);
+    if (pagination) clearEl(pagination);
 }
 
 async function performDrawerSearch() {
@@ -127,11 +164,10 @@ async function performDrawerSearch() {
     pagination.innerHTML = '';
 
     const filters = saveSearchFilters();
-    searchState.limit = parseInt(filters.limit, 10) || 20;
 
     const params = new URLSearchParams({
         page: searchState.page.toString(),
-        limit: searchState.limit.toString()
+        limit: SEARCH_PAGE_LIMIT.toString()
     });
 
     if (filters.q) params.set('q', filters.q);

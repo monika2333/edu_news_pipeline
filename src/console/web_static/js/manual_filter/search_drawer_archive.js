@@ -1,7 +1,8 @@
 // Manual Filter JS - Search Drawer · 报送存档命中（B 块）
 // 事件级检索：调用已有的 /api/submission-archive/search，只呈现候选条目，
 // 是否同一件事由使用者判断，这里不给「已报送」的硬结论。
-// 由 _search_drawer.html 引入，运行期依赖 utils.js 与 search_drawer.js 的 searchDrawerFetch。
+// 由 _search_drawer.html 引入，运行期依赖 utils.js 与 search_drawer.js 的
+// searchDrawerFetch / switchSearchTab。
 
 const ARCHIVE_REPORT_TYPE_LABELS = {
     zongbao: '综报',
@@ -18,15 +19,27 @@ function setupArchiveSearch() {
     section.dataset.archiveSearchReady = 'true';
 
     const searchBtn = document.getElementById('btn-archive-search');
+    const clearBtn = document.getElementById('btn-archive-clear');
     const queryInput = document.getElementById('archive-search-q');
     if (searchBtn) {
         searchBtn.addEventListener('click', () => performArchiveSearch());
+    }
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => clearArchiveSearch());
     }
     if (queryInput) {
         queryInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') performArchiveSearch();
         });
     }
+}
+
+// 清空存档检索：检索词与候选结果一并清掉。
+function clearArchiveSearch() {
+    const queryInput = document.getElementById('archive-search-q');
+    const results = document.getElementById('archive-search-results');
+    if (queryInput) queryInput.value = '';
+    if (results) clearEl(results);
 }
 
 async function performArchiveSearch() {
@@ -109,15 +122,14 @@ function renderArchiveResults(data) {
     results.appendChild(fragment);
 }
 
-// A 块每条结果的「查报送存档」入口：带入该结果标题并立即检索。
+// A 块每条结果的「查报送存档」入口：切到存档 tab，带入该结果标题并立即检索。
 // 检索词始终可编辑——匹配是事件级的，逐字搜标题很容易搜空。
 function searchArchiveByTitle(title) {
     const queryInput = document.getElementById('archive-search-q');
-    const section = document.getElementById('archive-search-section');
     if (!queryInput) return;
+    if (typeof switchSearchTab === 'function') {
+        switchSearchTab('archive');
+    }
     queryInput.value = title || '';
     performArchiveSearch();
-    if (section && typeof section.scrollIntoView === 'function') {
-        section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
 }

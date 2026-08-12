@@ -7,39 +7,42 @@
         <h3>搜索文章</h3>
         <button id="search-drawer-close" class="btn-icon" type="button" aria-label="关闭搜索">✕</button>
     </div>
+    {# 两种检索形态互斥切换：报送存档检索（默认，更常用）与全库文章检索。
+       当前 tab 记入 localStorage.search_drawer_tab，重开抽屉时恢复上次选择。 #}
+    <div class="search-tabs" role="tablist">
+        <button id="search-tab-archive" class="search-tab" type="button" role="tab"
+                data-search-tab="archive" aria-controls="archive-search-section">报送存档检索</button>
+        <button id="search-tab-articles" class="search-tab" type="button" role="tab"
+                data-search-tab="articles" aria-controls="article-search-section">全库文章检索</button>
+    </div>
     <div class="drawer-content">
-        <div class="search-form-container">
-            <div class="form-grid">
-                <label>
-                    关键词
-                    <input type="text" id="search-q" placeholder="标题、摘要..." />
-                </label>
-                <label>
-                    每页条数
-                    <select id="search-limit">
-                        <option value="10">10</option>
-                        <option value="20" selected>20</option>
-                        <option value="50">50</option>
-                        <option value="100">100</option>
-                    </select>
-                </label>
-            </div>
-            <button id="btn-drawer-search" class="btn btn-primary full-width" type="button">搜索</button>
-        </div>
-        <div id="search-results-stats" class="search-stats"></div>
-        <div id="search-results-list" class="search-results"></div>
-        <div id="search-pagination" class="pagination"></div>
-        {# B 块：报送存档命中。与上面的链上归因（A 块）互相独立，只呈现候选，不给硬结论。 #}
-        <section id="archive-search-section" class="archive-search">
-            <div class="archive-search-header">
-                <h4>报送存档命中</h4>
-                <p class="archive-search-hint">以下为历史报送稿中的候选条目，是否同一件事请自行判断。</p>
-            </div>
+        {# 报送存档命中（原 B 块）：事件级检索，只呈现候选条目，不给硬结论。 #}
+        <section id="archive-search-section" class="archive-search search-panel" data-search-panel="archive">
+            <p class="archive-search-hint">以下为历史报送稿中的候选条目，是否同一件事请自行判断。</p>
             <div class="archive-search-form">
-                <input type="text" id="archive-search-q" placeholder="输入检索词；可用结果操作行的「查报送存档」带入标题" />
+                <input type="text" id="archive-search-q" placeholder="输入检索词" />
                 <button id="btn-archive-search" class="btn btn-secondary btn-sm" type="button">检索存档</button>
+                <button id="btn-archive-clear" class="btn btn-secondary btn-sm" type="button">清空</button>
             </div>
             <div id="archive-search-results" class="archive-search-results"></div>
+        </section>
+        {# 全库文章检索（原 A 块）：链上归因。每页固定 10 条，不再提供每页条数选项。 #}
+        <section id="article-search-section" class="search-panel" data-search-panel="articles" hidden>
+            <div class="search-form-container">
+                <div class="form-grid">
+                    <label>
+                        关键词
+                        <input type="text" id="search-q" placeholder="标题、摘要..." />
+                    </label>
+                </div>
+                <div class="search-form-actions">
+                    <button id="btn-drawer-search" class="btn btn-primary" type="button">搜索</button>
+                    <button id="btn-drawer-clear" class="btn btn-secondary" type="button">清空</button>
+                </div>
+            </div>
+            <div id="search-results-stats" class="search-stats"></div>
+            <div id="search-results-list" class="search-results"></div>
+            <div id="search-pagination" class="pagination"></div>
         </section>
     </div>
 </div>

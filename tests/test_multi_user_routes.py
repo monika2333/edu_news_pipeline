@@ -417,6 +417,8 @@ def test_duty_editor_can_use_read_only_article_search(monkeypatch) -> None:
             "limit": kwargs["limit"],
             "page": kwargs["page"],
             "pages": 1,
+            "lookback_days": kwargs["lookback_days"],
+            "window_start": "2026-08-12T00:00:00Z",
         },
     )
 
@@ -424,6 +426,7 @@ def test_duty_editor_can_use_read_only_article_search(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["total"] == 0
+    assert response.json()["lookback_days"] == 30
 
 
 def test_admin_cannot_use_editor_shift_workspace() -> None:

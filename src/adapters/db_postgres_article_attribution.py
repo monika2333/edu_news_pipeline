@@ -9,10 +9,6 @@ import psycopg
 RAW_SEARCH_TEXT_EXPRESSION = (
     "(coalesce(ra.title, '') || ' ' || coalesce(ra.content_markdown, ''))"
 )
-SUMMARY_SEARCH_TEXT_EXPRESSION = (
-    "(coalesce(ns.title, '') || ' ' || coalesce(ns.llm_summary, '') || ' ' || "
-    "coalesce(ns.content_markdown, ''))"
-)
 
 
 def search_article_attributions(
@@ -39,6 +35,7 @@ def search_article_attributions(
             WHERE ra.fetched_at >= %s
               AND (%s = '' OR {RAW_SEARCH_TEXT_EXPRESSION} ILIKE %s)
         ),
+        -- Assumption: raw_articles is never pruned, so every news_summaries ID remains joinable.
         summary_hits AS (
             SELECT
                 ns.article_id,
@@ -48,13 +45,7 @@ def search_article_attributions(
             FROM news_summaries ns
             JOIN raw_articles ra ON ra.article_id = ns.article_id
             WHERE ra.fetched_at >= %s
-              AND (
-                  %s = ''
-                  OR (
-                      {SUMMARY_SEARCH_TEXT_EXPRESSION} ILIKE %s
-                      AND COALESCE(ns.llm_summary, '') ILIKE %s
-                  )
-              )
+              AND (%s = '' OR COALESCE(ns.llm_summary, '') ILIKE %s)
         ),
         matched_hits AS (
             SELECT * FROM raw_hits
@@ -134,6 +125,7 @@ def search_article_attributions(
             SELECT
                 article_id,
                 BOOL_OR(decision = 'discarded') AS has_discarded,
+                BOOL_OR(decision <> 'pending') AS has_manual_decision,
                 JSONB_AGG(
                     JSONB_BUILD_OBJECT(
                         'workspace', workspace,
@@ -190,11 +182,45 @@ def search_article_attributions(
                 CASE
                     WHEN ex.article_id IS NOT NULL THEN 'exported'
                     WHEN COALESCE(d.has_discarded, FALSE) THEN 'discarded'
+                    WHEN NOT COALESCE(d.has_manual_decision, FALSE)
+                         AND (
+                             (
+                                 ns.article_id IS NOT NULL
+                                 AND ns.status IS DISTINCT FROM 'external_filtered'
+                             )
+                             OR (
+                                 ns.article_id IS NULL
+                                 AND fa.article_id IS NOT NULL
+                                 AND pa.status IS DISTINCT FROM 'filtered_out'
+                             )
+                         )
+                    THEN 'not_reviewed'
                     WHEN ns.status = 'external_filtered' THEN 'importance_below'
                     WHEN pa.status = 'filtered_out' THEN 'relevance_below'
                     WHEN fa.article_id IS NULL THEN 'keyword_missed'
                     ELSE 'not_reviewed'
                 END AS attribution_level,
+                CASE
+                    WHEN ex.article_id IS NOT NULL THEN FALSE
+                    WHEN COALESCE(d.has_discarded, FALSE) THEN FALSE
+                    WHEN NOT COALESCE(d.has_manual_decision, FALSE)
+                         AND (
+                             (
+                                 ns.article_id IS NOT NULL
+                                 AND ns.status IS DISTINCT FROM 'external_filtered'
+                             )
+                             OR (
+                                 ns.article_id IS NULL
+                                 AND fa.article_id IS NOT NULL
+                                 AND pa.status IS DISTINCT FROM 'filtered_out'
+                             )
+                         )
+                    THEN FALSE
+                    WHEN ns.status = 'external_filtered' THEN FALSE
+                    WHEN pa.status = 'filtered_out' THEN FALSE
+                    WHEN fa.article_id IS NULL THEN FALSE
+                    ELSE TRUE
+                END AS attribution_is_fallback,
                 COALESCE(ns.created_at, ra.fetched_at) AS attribution_ingested_at,
                 CASE
                     WHEN ns.created_at IS NOT NULL THEN 'news_summaries.created_at'
@@ -231,7 +257,6 @@ def search_article_attributions(
             fetched_after,
             normalized_query,
             like_pattern,
-            like_pattern,
             safe_limit,
             safe_offset,
         ),
@@ -260,6 +285,5 @@ def search_article_attributions(
 
 __all__ = [
     "RAW_SEARCH_TEXT_EXPRESSION",
-    "SUMMARY_SEARCH_TEXT_EXPRESSION",
     "search_article_attributions",
 ]

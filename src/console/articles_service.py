@@ -72,6 +72,7 @@ def _serialize_article(row: Dict[str, Any]) -> Dict[str, Any]:
         "updated_at": row.get("updated_at"),
         "attribution": {
             "level": row.get("attribution_level"),
+            "is_fallback": bool(row.get("attribution_is_fallback")),
             "ingested_at": row.get("attribution_ingested_at"),
             "ingested_at_source": row.get("attribution_ingested_at_source"),
             "relevance_score": _to_float(row.get("attribution_relevance_score")),
@@ -100,6 +101,7 @@ def search_articles(
             MAX_ARTICLE_SEARCH_LOOKBACK_DAYS,
         ),
     )
+    window_start = datetime.now(timezone.utc) - timedelta(days=lookback_days)
     offset = (page - 1) * limit
     if adapter is None:
         return {
@@ -108,10 +110,12 @@ def search_articles(
             "limit": limit,
             "page": page,
             "pages": 1,
+            "lookback_days": lookback_days,
+            "window_start": window_start,
         }
     raw = adapter.news_summaries.search_with_attribution(
         query=query,
-        fetched_after=datetime.now(timezone.utc) - timedelta(days=lookback_days),
+        fetched_after=window_start,
         limit=limit,
         offset=offset,
     )
@@ -124,6 +128,8 @@ def search_articles(
         "limit": limit,
         "page": page,
         "pages": pages,
+        "lookback_days": lookback_days,
+        "window_start": window_start,
     }
 
 

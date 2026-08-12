@@ -22,6 +22,7 @@ class NewsArticleAttribution(BaseModel):
         "discarded",
         "exported",
     ]
+    is_fallback: bool
     ingested_at: datetime
     ingested_at_source: Literal[
         "news_summaries.created_at",
@@ -77,6 +78,8 @@ class NewsArticleSearchResponse(BaseModel):
     limit: int
     page: int
     pages: int
+    lookback_days: int
+    window_start: datetime
 
 
 __all__ = [

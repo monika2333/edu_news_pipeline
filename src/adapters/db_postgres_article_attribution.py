@@ -207,33 +207,11 @@ def search_article_attributions(
                     THEN 'keyword_missed'
                     ELSE 'not_reviewed'
                 END AS attribution_level,
-                CASE
-                    WHEN ex.article_id IS NOT NULL THEN FALSE
-                    WHEN COALESCE(d.has_discarded, FALSE) THEN FALSE
-                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
-                         AND (
-                             (
-                                 ns.article_id IS NOT NULL
-                                 AND ns.status IS DISTINCT FROM 'external_filtered'
-                             )
-                             OR (
-                                 ns.article_id IS NULL
-                                 AND fa.article_id IS NOT NULL
-                                 AND pa.status IS DISTINCT FROM 'filtered_out'
-                             )
-                         )
-                    THEN FALSE
-                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
-                         AND ns.status = 'external_filtered'
-                    THEN FALSE
-                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
-                         AND pa.status = 'filtered_out'
-                    THEN FALSE
-                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
-                         AND fa.article_id IS NULL
-                    THEN FALSE
-                    ELSE TRUE
-                END AS attribution_is_fallback,
+                (
+                    COALESCE(d.has_review_marked_exported, FALSE)
+                    AND ex.article_id IS NULL
+                    AND NOT COALESCE(d.has_discarded, FALSE)
+                ) AS attribution_is_fallback,
                 COALESCE(ns.created_at, ra.fetched_at) AS attribution_ingested_at,
                 CASE
                     WHEN ns.created_at IS NOT NULL THEN 'news_summaries.created_at'

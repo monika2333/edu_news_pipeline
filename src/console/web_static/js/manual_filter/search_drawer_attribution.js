@@ -1,6 +1,6 @@
 // Manual Filter JS - Search Drawer · 归因（A 块）
 // 只做后端 attribution 枚举到中文文案的映射与呈现，判据全部在后端，前端不重算。
-// 由 _search_drawer.html 引入，运行期依赖 utils.js 的 createEl/clearEl/formatContentDrawerTime。
+// 由 _search_drawer.html 引入，运行期依赖 utils.js 的 createEl/clearEl/formatLocalDateTime。
 
 const ATTRIBUTION_CHAIN_STEPS = [
     { key: 'keyword', label: '初筛' },
@@ -27,7 +27,7 @@ const MANUAL_WORKSPACE_LABELS = {
 };
 
 // datetime（ingested_at / decided_at / window_start）一律走 utils.js 的
-// formatContentDrawerTime（new Date + 本地取值）：后端返回带 Z 的 UTC 时间，
+// formatLocalDateTime（new Date + 本地取值）：后端返回带 Z 的 UTC 时间，
 // 截字符串等于把 UTC 当本地时间，凌晨入库的文章日期会差一天，与内容抽屉也对不上。
 // formatSearchDate 只用于不带时区的 date 字段（export_batch_dates、存档 report_date），保持截取。
 function formatSearchDate(value) {
@@ -37,7 +37,7 @@ function formatSearchDate(value) {
 
 // datetime 的本地日期部分（YYYY-MM-DD），用于 data-* 钩子。
 function formatSearchLocalDate(value) {
-    const formatted = formatContentDrawerTime(value);
+    const formatted = formatLocalDateTime(value);
     return formatted.includes(' ') ? formatted.split(' ')[0] : formatted;
 }
 
@@ -175,7 +175,7 @@ function renderAttributionDetails(attribution) {
         decisions.forEach(decision => {
             const workspace = MANUAL_WORKSPACE_LABELS[decision.workspace] || decision.workspace || '未知工作区';
             const actor = decision.actor || '未知操作人';
-            const time = formatContentDrawerTime(decision.decided_at);
+            const time = formatLocalDateTime(decision.decided_at);
             list.appendChild(createEl(
                 'li',
                 'search-attribution-decision',

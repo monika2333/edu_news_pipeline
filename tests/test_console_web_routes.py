@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -74,8 +75,10 @@ def test_content_drawer_labels_created_at_as_collection_time() -> None:
         / "src/console/web_static/js/manual_filter/content_drawer.js"
     ).read_text(encoding="utf-8")
 
-    assert "`收录时间: ${formatContentDrawerTime(data.created_at)}`" in script
-    assert "抓取时间:" not in script
+    # 只锁语义，不锁实现细节（如格式化函数名）：
+    # 「收录时间」这个称谓必须与 data.created_at 绑定在同一处展示，且不得出现「抓取时间」。
+    assert re.search(r"收录时间[^\n]*data\.created_at", script)
+    assert "抓取时间" not in script
 
 
 def test_account_page_exposes_personal_password_change_form() -> None:

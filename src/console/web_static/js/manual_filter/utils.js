@@ -9,7 +9,7 @@ function formatScore(value) {
 // 控制台共用的本地时间格式化（内容抽屉、检索抽屉归因共用）。
 // 后端返回带 Z 的 UTC 时间，必须经 new Date 按本地时区取值；
 // 直接截字符串等于把 UTC 当本地时间显示，凌晨入库的文章日期会差一天。
-function formatContentDrawerTime(iso) {
+function formatLocalDateTime(iso) {
     if (!iso) return '-';
     const date = new Date(iso);
     if (Number.isNaN(date.getTime())) return String(iso);

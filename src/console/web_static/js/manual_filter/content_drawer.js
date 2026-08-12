@@ -33,7 +33,7 @@ function getContentDrawerEls() {
     };
 }
 
-// formatContentDrawerTime 已移至 utils.js（检索抽屉共用），此处不再重复定义。
+// formatLocalDateTime 已移至 utils.js（检索抽屉共用），此处不再重复定义。
 
 function resolveContentDrawerBonusKeywords(triggerBtn) {
     const bonusRaw = triggerBtn.dataset.bonusKeywords || '';
@@ -128,7 +128,7 @@ function renderContentDrawerHeader(data, charCount) {
     clearEl(meta);
     const items = [
         `来源: ${data.source || '-'}`,
-        `收录时间: ${formatContentDrawerTime(data.created_at)}`
+        `收录时间: ${formatLocalDateTime(data.created_at)}`
     ];
     if (charCount !== null) items.push(`正文 ${charCount.toLocaleString('zh-CN')} 字`);
     items.forEach(text => meta.appendChild(createEl('span', '', text)));

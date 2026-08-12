@@ -195,13 +195,13 @@ function buildSearchResultItem(item, summaryToggles) {
     const meta = createEl('div', 'search-meta');
     meta.appendChild(createEl('span', '', item.source || '-'));
     // 时间口径统一为「收录时间」，不显示发布时间；
-    // 与内容抽屉一样走 formatContentDrawerTime（UTC → 本地时区）。
+    // 与内容抽屉一样走 formatLocalDateTime（UTC → 本地时区）。
     const ingestedSource = attribution ? attribution.ingested_at_source : '';
     const ingestedSpan = createEl('span', 'search-ingested-time', '', {
         dataset: { ingestedSource: ingestedSource || '' }
     });
     ingestedSpan.appendChild(document.createTextNode(
-        `收录时间：${formatContentDrawerTime(attribution && attribution.ingested_at)}`
+        `收录时间：${formatLocalDateTime(attribution && attribution.ingested_at)}`
     ));
     if (ingestedSource === 'raw_articles.fetched_at') {
         ingestedSpan.appendChild(createEl('span', 'ingested-source-badge', '仅抓取未入库', {

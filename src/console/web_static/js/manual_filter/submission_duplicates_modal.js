@@ -15,19 +15,27 @@ function getSubmissionDuplicatesModal() {
     return document.getElementById('submission-duplicates-modal');
 }
 
+// 复用搜索抽屉存档命中（archive-item）的卡片样式：报别徽章 + 日期 + 标题一行，
+// 相似度与确认状态作为补充信息跟在标题后。
 function renderSubmissionDuplicateMatch(match) {
-    const reportLabel = SUBMISSION_DUPLICATE_REPORT_LABELS[match.report_type]
-        || match.report_type
+    const reportType = match.report_type || '';
+    const reportLabel = SUBMISSION_DUPLICATE_REPORT_LABELS[reportType]
+        || reportType
         || '存档';
     const score = Number(match.similarity);
-    const scoreText = Number.isFinite(score) ? ` · 相似度 ${score.toFixed(2)}` : '';
+    const scoreText = Number.isFinite(score) ? `相似度 ${score.toFixed(2)}` : '';
     const stateText = match.state === 'confirmed' ? '已确认' : '疑似';
+    const metaExtra = [scoreText, stateText].filter(Boolean).join(' · ');
     const body = String(match.body || '').trim();
     return `
-        <section class="submission-duplicate-item">
-            <div class="submission-duplicate-item-meta">${safeHtml(match.report_date || '')} ${safeHtml(reportLabel)}${scoreText} · ${stateText}</div>
-            <h4 class="submission-duplicate-item-title">${safeHtml(match.title || '(无标题)')}</h4>
-            <div class="submission-duplicate-item-body">${body ? safeHtml(body) : '（该条目没有正文）'}</div>
+        <section class="archive-item">
+            <div class="archive-item-head">
+                <span class="archive-item-badge" data-report-type="${safeHtml(reportType)}">${safeHtml(reportLabel)}</span>
+                <span class="archive-item-date">${safeHtml(match.report_date || '')}</span>
+                <span class="archive-item-title">${safeHtml(match.title || '(无标题)')}</span>
+                <span class="submission-duplicate-item-state">${safeHtml(metaExtra)}</span>
+            </div>
+            <div class="archive-item-body">${body ? safeHtml(body) : '（该条目没有正文）'}</div>
         </section>
     `;
 }

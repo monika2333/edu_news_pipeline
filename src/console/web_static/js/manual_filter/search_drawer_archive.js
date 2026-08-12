@@ -10,8 +10,6 @@ const ARCHIVE_REPORT_TYPE_LABELS = {
     feedback: '反馈'
 };
 
-const ARCHIVE_BODY_SNIPPET_LENGTH = 200;
-
 function setupArchiveSearch() {
     const section = document.getElementById('archive-search-section');
     if (!section) return;
@@ -110,12 +108,10 @@ function renderArchiveResults(data) {
         head.appendChild(createEl('span', 'archive-item-title', item.title || '（无标题）'));
         itemEl.appendChild(head);
 
+        // 存档正文是最终报送版，长度可控，直接显示全文，不做截断。
         const bodyText = String(item.body || '').trim();
         if (bodyText) {
-            const snippet = bodyText.length > ARCHIVE_BODY_SNIPPET_LENGTH
-                ? `${bodyText.slice(0, ARCHIVE_BODY_SNIPPET_LENGTH)}…`
-                : bodyText;
-            itemEl.appendChild(createEl('div', 'archive-item-body', snippet));
+            itemEl.appendChild(createEl('div', 'archive-item-body', bodyText));
         }
         fragment.appendChild(itemEl);
     });

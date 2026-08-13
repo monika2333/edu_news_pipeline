@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from src.console import articles_service
 from src.console.articles_schemas import NewsArticleContentResponse, NewsArticleSearchResponse
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/articles", tags=["articles"])
     summary="Search articles and explain their pipeline outcome",
 )
 def search_articles_api(
-    q: Optional[str] = Query(None, min_length=1, max_length=200),
+    q: str = Query(..., min_length=1, max_length=200),
     page: int = Query(1, ge=1, le=200),
     limit: int = Query(20, ge=1, le=100),
     lookback_days: int = Query(
@@ -25,8 +25,11 @@ def search_articles_api(
         le=articles_service.MAX_ARTICLE_SEARCH_LOOKBACK_DAYS,
     ),
 ) -> NewsArticleSearchResponse:
+    normalized_query = q.strip()
+    if not normalized_query:
+        raise HTTPException(status_code=422, detail="Search query must not be blank")
     result = articles_service.search_articles(
-        query=q,
+        query=normalized_query,
         page=page,
         limit=limit,
         lookback_days=lookback_days,

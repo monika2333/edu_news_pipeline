@@ -129,7 +129,7 @@ function loadSearchFilters() {
 function saveSearchFilters() {
     const qInput = document.getElementById('search-q');
     const filters = {
-        q: qInput ? qInput.value : ''
+        q: qInput ? qInput.value.trim() : ''
     };
     localStorage.setItem('search_filters', JSON.stringify(filters));
     return filters;
@@ -165,12 +165,22 @@ async function performDrawerSearch() {
 
     const filters = saveSearchFilters();
 
+    if (!filters.q) {
+        clearEl(statsInfo);
+        clearEl(pagination);
+        clearEl(container);
+        container.appendChild(createEl('div', 'error', '请输入检索词'));
+        const queryInput = document.getElementById('search-q');
+        if (queryInput) queryInput.focus();
+        return;
+    }
+
     const params = new URLSearchParams({
         page: searchState.page.toString(),
         limit: SEARCH_PAGE_LIMIT.toString()
     });
 
-    if (filters.q) params.set('q', filters.q);
+    params.set('q', filters.q);
     if (searchState.lookbackDays) params.set('lookback_days', String(searchState.lookbackDays));
 
     try {

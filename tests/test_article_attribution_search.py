@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from unittest.mock import Mock
 from uuid import UUID
 
 import psycopg
+import pytest
 from psycopg.rows import dict_row
 
-from src.adapters.db_postgres_article_attribution import search_article_attributions
+from src.adapters.db_postgres_article_attribution import (
+    SUMMARY_SEARCH_TEXT_EXPRESSION,
+    search_article_attributions,
+)
 from src.config import get_settings
 from src.console import articles_service
 from src.console.articles_schemas import NewsArticleSearchResponse
@@ -404,3 +409,35 @@ def test_service_preserves_missing_fields_and_zero_scores(monkeypatch) -> None:
 
     assert default_result["lookback_days"] == 30
     assert default_result["window_start"] == adapter.news_summaries.kwargs["fetched_after"]
+
+
+def test_service_rejects_blank_query_before_getting_adapter(monkeypatch) -> None:
+    def fail_get_adapter():
+        raise AssertionError("blank searches must not reach the database adapter")
+
+    monkeypatch.setattr(articles_service, "_get_adapter_safe", fail_get_adapter)
+
+    with pytest.raises(ValueError, match="must not be blank"):
+        articles_service.search_articles(query="   ")
+
+
+def test_adapter_rejects_blank_query_before_executing_sql() -> None:
+    cursor = Mock(spec=psycopg.Cursor)
+
+    with pytest.raises(ValueError, match="must not be blank"):
+        search_article_attributions(
+            cursor,
+            query="   ",
+            fetched_after=datetime.now(timezone.utc),
+            limit=20,
+            offset=0,
+        )
+
+    cursor.execute.assert_not_called()
+
+
+def test_summary_search_expression_matches_trigram_index_definition() -> None:
+    assert SUMMARY_SEARCH_TEXT_EXPRESSION == (
+        "(coalesce(ns.title, '') || ' ' || coalesce(ns.llm_summary, '') || ' ' || "
+        "coalesce(ns.content_markdown, ''))"
+    )

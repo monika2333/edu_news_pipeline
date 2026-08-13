@@ -429,6 +429,19 @@ def test_duty_editor_can_use_read_only_article_search(monkeypatch) -> None:
     assert response.json()["lookback_days"] == 30
 
 
+def test_article_search_rejects_blank_query_before_service(monkeypatch) -> None:
+    editor = _user("duty_editor")
+
+    def fail_search(**kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("blank searches must not reach the service")
+
+    monkeypatch.setattr(articles_service, "search_articles", fail_search)
+
+    response = _client_for(editor).get("/api/articles/search?q=%20%20%20")
+
+    assert response.status_code == 422
+
+
 def test_admin_cannot_use_editor_shift_workspace() -> None:
     admin = _user("admin")
 

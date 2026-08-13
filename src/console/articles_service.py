@@ -84,11 +84,14 @@ def _serialize_article(row: Dict[str, Any]) -> Dict[str, Any]:
 
 def search_articles(
     *,
-    query: Optional[str] = None,
+    query: str,
     page: int = 1,
     limit: int = 20,
     lookback_days: int = DEFAULT_ARTICLE_SEARCH_LOOKBACK_DAYS,
 ) -> Dict[str, Any]:
+    normalized_query = str(query or "").strip()
+    if not normalized_query:
+        raise ValueError("Article search query must not be blank")
     adapter = _get_adapter_safe()
     limit = max(1, min(int(limit or 20), 100))
     page = max(1, int(page or 1))
@@ -112,7 +115,7 @@ def search_articles(
             "window_start": window_start,
         }
     raw = adapter.news_summaries.search_with_attribution(
-        query=query,
+        query=normalized_query,
         fetched_after=window_start,
         limit=limit,
         offset=offset,

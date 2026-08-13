@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import psycopg
 
@@ -9,12 +9,16 @@ import psycopg
 RAW_SEARCH_TEXT_EXPRESSION = (
     "(coalesce(ra.title, '') || ' ' || coalesce(ra.content_markdown, ''))"
 )
+SUMMARY_SEARCH_TEXT_EXPRESSION = (
+    "(coalesce(ns.title, '') || ' ' || coalesce(ns.llm_summary, '') || ' ' || "
+    "coalesce(ns.content_markdown, ''))"
+)
 
 
 def search_article_attributions(
     cur: psycopg.Cursor,
     *,
-    query: Optional[str],
+    query: str,
     fetched_after: datetime,
     limit: int,
     offset: int,
@@ -23,6 +27,8 @@ def search_article_attributions(
     safe_limit = max(1, min(int(limit or 20), 100))
     safe_offset = max(0, int(offset or 0))
     normalized_query = (query or "").strip()
+    if not normalized_query:
+        raise ValueError("Article search query must not be blank")
     like_pattern = f"%{normalized_query}%"
     sql = f"""
         WITH raw_hits AS (
@@ -33,7 +39,7 @@ def search_article_attributions(
                 0 AS match_rank
             FROM raw_articles ra
             WHERE ra.fetched_at >= %s
-              AND (%s = '' OR {RAW_SEARCH_TEXT_EXPRESSION} ILIKE %s)
+              AND {RAW_SEARCH_TEXT_EXPRESSION} ILIKE %s
         ),
         -- Assumption: raw_articles is never pruned, so every news_summaries ID remains joinable.
         summary_hits AS (
@@ -45,7 +51,8 @@ def search_article_attributions(
             FROM news_summaries ns
             JOIN raw_articles ra ON ra.article_id = ns.article_id
             WHERE ra.fetched_at >= %s
-              AND (%s = '' OR COALESCE(ns.llm_summary, '') ILIKE %s)
+              AND {SUMMARY_SEARCH_TEXT_EXPRESSION} ILIKE %s
+              AND COALESCE(ns.llm_summary, '') ILIKE %s
         ),
         matched_hits AS (
             SELECT * FROM raw_hits
@@ -217,10 +224,9 @@ def search_article_attributions(
         sql,
         (
             fetched_after,
-            normalized_query,
             like_pattern,
             fetched_after,
-            normalized_query,
+            like_pattern,
             like_pattern,
             safe_limit,
             safe_offset,
@@ -250,5 +256,6 @@ def search_article_attributions(
 
 __all__ = [
     "RAW_SEARCH_TEXT_EXPRESSION",
+    "SUMMARY_SEARCH_TEXT_EXPRESSION",
     "search_article_attributions",
 ]

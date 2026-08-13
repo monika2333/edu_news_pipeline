@@ -71,10 +71,9 @@ class NewsArticleContentResponse(BaseModel):
 
 class NewsArticleSearchResponse(BaseModel):
     items: list[NewsArticleSearchItem] = Field(default_factory=list)
-    total: int
     limit: int
-    page: int
-    pages: int
+    has_more: bool
+    next_cursor: Optional[str] = None
     lookback_days: int
     window_start: datetime
 

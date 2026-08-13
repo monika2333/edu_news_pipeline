@@ -16,7 +16,8 @@ const SEARCH_TAB_STORAGE_KEY = 'search_drawer_tab';
 const SEARCH_TAB_DEFAULT = 'archive';
 
 let searchState = {
-    page: 1,
+    cursor: null,
+    nextCursor: null,
     // null = 使用后端默认窗口；从空态「扩大时间范围重搜」后显式带上
     lookbackDays: null
 };
@@ -88,7 +89,8 @@ function setupSearchDrawer() {
     // 新关键词 = 新一轮检索，窗口回到后端默认值；
     // 扩大窗口只对当前这轮检索（含翻页）生效。
     function startNewSearch() {
-        searchState.page = 1;
+        searchState.cursor = null;
+        searchState.nextCursor = null;
         searchState.lookbackDays = null;
         performDrawerSearch();
     }
@@ -140,7 +142,8 @@ function saveSearchFilters() {
 function clearDrawerSearch() {
     const qInput = document.getElementById('search-q');
     if (qInput) qInput.value = '';
-    searchState.page = 1;
+    searchState.cursor = null;
+    searchState.nextCursor = null;
     searchState.lookbackDays = null;
     localStorage.removeItem('search_filters');
 
@@ -176,11 +179,11 @@ async function performDrawerSearch() {
     }
 
     const params = new URLSearchParams({
-        page: searchState.page.toString(),
         limit: SEARCH_PAGE_LIMIT.toString()
     });
 
     params.set('q', filters.q);
+    if (searchState.cursor) params.set('cursor', searchState.cursor);
     if (searchState.lookbackDays) params.set('lookback_days', String(searchState.lookbackDays));
 
     try {
@@ -199,7 +202,8 @@ function expandSearchWindow() {
     const next = Math.min(current * 2, SEARCH_MAX_LOOKBACK_DAYS);
     if (next <= current) return;
     searchState.lookbackDays = next;
-    searchState.page = 1;
+    searchState.cursor = null;
+    searchState.nextCursor = null;
     performDrawerSearch();
 }
 
@@ -327,9 +331,8 @@ function renderDrawerSearchResults(data) {
     if (!container || !statsInfo || !pagination) return;
 
     const items = data.items || [];
-    const total = data.total || 0;
-    const page = data.page || 1;
-    const pages = data.pages || 1;
+    const hasMore = Boolean(data.has_more);
+    searchState.nextCursor = data.next_cursor || null;
     searchState.lookbackDays = data.lookback_days || searchState.lookbackDays;
 
     clearEl(statsInfo);
@@ -346,7 +349,11 @@ function renderDrawerSearchResults(data) {
         return;
     }
 
-    statsInfo.appendChild(createEl('span', 'search-total', `共找到 ${total} 条结果`));
+    statsInfo.appendChild(createEl(
+        'span',
+        'search-total',
+        hasMore ? `本次显示 ${items.length} 条，仍有更多结果` : `本次显示 ${items.length} 条`
+    ));
     if (typeof renderSearchWindowInfo === 'function') {
         statsInfo.appendChild(renderSearchWindowInfo(data));
     }
@@ -367,29 +374,19 @@ function renderDrawerSearchResults(data) {
     });
     clearEl(pagination);
 
-    const prevBtn = createEl('button', 'btn btn-secondary btn-sm', '上一页');
-    if (page > 1) {
-        prevBtn.addEventListener('click', () => changeSearchPage(page - 1));
-    } else {
-        prevBtn.disabled = true;
-    }
-    const pageInfo = createEl('span', '', `第 ${page} 页 / 共 ${pages} 页`, {
-        style: { margin: '0 10px' }
-    });
     const nextBtn = createEl('button', 'btn btn-secondary btn-sm', '下一页');
-    if (page < pages) {
-        nextBtn.addEventListener('click', () => changeSearchPage(page + 1));
+    if (hasMore && searchState.nextCursor) {
+        nextBtn.addEventListener('click', loadNextSearchPage);
     } else {
         nextBtn.disabled = true;
     }
 
-    pagination.appendChild(prevBtn);
-    pagination.appendChild(pageInfo);
     pagination.appendChild(nextBtn);
 }
 
-function changeSearchPage(newPage) {
-    searchState.page = newPage;
+function loadNextSearchPage() {
+    if (!searchState.nextCursor) return;
+    searchState.cursor = searchState.nextCursor;
     performDrawerSearch();
 }
 

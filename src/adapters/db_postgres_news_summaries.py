@@ -131,10 +131,11 @@ class NewsSummariesNamespace:
     def search_with_attribution(
         self,
         *,
-        query: Optional[str],
+        query: str,
         fetched_after: datetime,
         limit: int,
-        offset: int,
+        cursor_ingested_at: Optional[datetime] = None,
+        cursor_article_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         with self._adapter._cursor() as cur:
             return search_article_attributions(
@@ -142,7 +143,8 @@ class NewsSummariesNamespace:
                 query=query,
                 fetched_after=fetched_after,
                 limit=limit,
-                offset=offset,
+                cursor_ingested_at=cursor_ingested_at,
+                cursor_article_id=cursor_article_id,
             )
 
     def fetch_content(self, article_id: str) -> Optional[Dict[str, Any]]:

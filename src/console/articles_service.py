@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
+import binascii
 from datetime import datetime, timedelta, timezone
-from math import ceil
+import hashlib
+import json
 from typing import Any, Dict, List, Optional
 
 from src.adapters.db_postgres_core import get_adapter
@@ -9,6 +12,60 @@ from src.adapters.db_postgres_core import get_adapter
 
 DEFAULT_ARTICLE_SEARCH_LOOKBACK_DAYS = 30
 MAX_ARTICLE_SEARCH_LOOKBACK_DAYS = 3650
+ARTICLE_SEARCH_CURSOR_VERSION = 1
+
+
+def _query_digest(query: str) -> str:
+    return hashlib.sha256(query.encode("utf-8")).hexdigest()
+
+
+def _encode_search_cursor(
+    *,
+    ingested_at: datetime,
+    article_id: str,
+    window_start: datetime,
+    query: str,
+    lookback_days: int,
+) -> str:
+    payload = json.dumps(
+        {
+            "v": ARTICLE_SEARCH_CURSOR_VERSION,
+            "t": ingested_at.isoformat(),
+            "id": article_id,
+            "ws": window_start.isoformat(),
+            "qh": _query_digest(query),
+            "d": lookback_days,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_search_cursor(
+    cursor: Optional[str],
+    *,
+    query: str,
+    lookback_days: int,
+) -> tuple[Optional[datetime], Optional[str], Optional[datetime]]:
+    normalized = str(cursor or "").strip()
+    if not normalized:
+        return None, None, None
+    try:
+        padding = "=" * (-len(normalized) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(normalized + padding).decode("utf-8"))
+        if payload.get("v") != ARTICLE_SEARCH_CURSOR_VERSION:
+            raise ValueError("Unsupported article search cursor version")
+        ingested_at = datetime.fromisoformat(str(payload["t"]))
+        article_id = str(payload["id"])
+        window_start = datetime.fromisoformat(str(payload["ws"]))
+    except (binascii.Error, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Invalid article search cursor") from exc
+    if ingested_at.tzinfo is None or window_start.tzinfo is None or not article_id:
+        raise ValueError("Invalid article search cursor")
+    if payload.get("qh") != _query_digest(query) or payload.get("d") != lookback_days:
+        raise ValueError("Article search cursor does not match the current search")
+    return ingested_at, article_id, window_start
 
 
 def _get_adapter_safe():
@@ -85,16 +142,14 @@ def _serialize_article(row: Dict[str, Any]) -> Dict[str, Any]:
 def search_articles(
     *,
     query: str,
-    page: int = 1,
     limit: int = 20,
     lookback_days: int = DEFAULT_ARTICLE_SEARCH_LOOKBACK_DAYS,
+    cursor: Optional[str] = None,
 ) -> Dict[str, Any]:
     normalized_query = str(query or "").strip()
     if not normalized_query:
         raise ValueError("Article search query must not be blank")
-    adapter = _get_adapter_safe()
     limit = max(1, min(int(limit or 20), 100))
-    page = max(1, int(page or 1))
     lookback_days = max(
         1,
         min(
@@ -102,15 +157,21 @@ def search_articles(
             MAX_ARTICLE_SEARCH_LOOKBACK_DAYS,
         ),
     )
-    window_start = datetime.now(timezone.utc) - timedelta(days=lookback_days)
-    offset = (page - 1) * limit
+    cursor_ingested_at, cursor_article_id, cursor_window_start = _decode_search_cursor(
+        cursor,
+        query=normalized_query,
+        lookback_days=lookback_days,
+    )
+    window_start = cursor_window_start or (
+        datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    )
+    adapter = _get_adapter_safe()
     if adapter is None:
         return {
             "items": [],
-            "total": 0,
             "limit": limit,
-            "page": page,
-            "pages": 1,
+            "has_more": False,
+            "next_cursor": None,
             "lookback_days": lookback_days,
             "window_start": window_start,
         }
@@ -118,17 +179,27 @@ def search_articles(
         query=normalized_query,
         fetched_after=window_start,
         limit=limit,
-        offset=offset,
+        cursor_ingested_at=cursor_ingested_at,
+        cursor_article_id=cursor_article_id,
     )
     items = [_serialize_article(row) for row in raw.get("items", [])]
-    total = int(raw.get("total") or 0)
-    pages = max(1, ceil(total / limit)) if limit else 1
+    has_more = bool(raw.get("has_more"))
+    next_cursor = None
+    next_ingested_at = raw.get("next_ingested_at")
+    next_article_id = raw.get("next_article_id")
+    if has_more and isinstance(next_ingested_at, datetime) and next_article_id:
+        next_cursor = _encode_search_cursor(
+            ingested_at=next_ingested_at,
+            article_id=str(next_article_id),
+            window_start=window_start,
+            query=normalized_query,
+            lookback_days=lookback_days,
+        )
     return {
         "items": items,
-        "total": total,
         "limit": limit,
-        "page": page,
-        "pages": pages,
+        "has_more": has_more,
+        "next_cursor": next_cursor,
         "lookback_days": lookback_days,
         "window_start": window_start,
     }

@@ -17,8 +17,8 @@ router = APIRouter(prefix="/api/articles", tags=["articles"])
 )
 def search_articles_api(
     q: str = Query(..., min_length=1, max_length=200),
-    page: int = Query(1, ge=1, le=200),
     limit: int = Query(20, ge=1, le=100),
+    cursor: Optional[str] = Query(None, max_length=1000),
     lookback_days: int = Query(
         articles_service.DEFAULT_ARTICLE_SEARCH_LOOKBACK_DAYS,
         ge=1,
@@ -28,12 +28,15 @@ def search_articles_api(
     normalized_query = q.strip()
     if not normalized_query:
         raise HTTPException(status_code=422, detail="Search query must not be blank")
-    result = articles_service.search_articles(
-        query=normalized_query,
-        page=page,
-        limit=limit,
-        lookback_days=lookback_days,
-    )
+    try:
+        result = articles_service.search_articles(
+            query=normalized_query,
+            limit=limit,
+            lookback_days=lookback_days,
+            cursor=cursor,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return NewsArticleSearchResponse.model_validate(result)
 
 

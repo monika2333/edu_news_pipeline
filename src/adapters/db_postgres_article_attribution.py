@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import psycopg
 
@@ -21,15 +21,27 @@ def search_article_attributions(
     query: str,
     fetched_after: datetime,
     limit: int,
-    offset: int,
+    cursor_ingested_at: Optional[datetime] = None,
+    cursor_article_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Search the full article pipeline and resolve each hit to its primary article."""
     safe_limit = max(1, min(int(limit or 20), 100))
-    safe_offset = max(0, int(offset or 0))
     normalized_query = (query or "").strip()
     if not normalized_query:
         raise ValueError("Article search query must not be blank")
+    if (cursor_ingested_at is None) != (cursor_article_id is None):
+        raise ValueError("Article search cursor fields must be provided together")
     like_pattern = f"%{normalized_query}%"
+    cursor_clause = ""
+    cursor_params: tuple[Any, ...] = ()
+    if cursor_ingested_at is not None and cursor_article_id is not None:
+        cursor_clause = """
+            WHERE (
+                ingested_at < %s
+                OR (ingested_at = %s AND canonical_article_id > %s)
+            )
+        """
+        cursor_params = (cursor_ingested_at, cursor_ingested_at, cursor_article_id)
     sql = f"""
         WITH raw_hits AS (
             SELECT
@@ -95,15 +107,13 @@ def search_article_attributions(
             LEFT JOIN raw_articles ra ON ra.article_id = ch.canonical_article_id
             LEFT JOIN news_summaries ns ON ns.article_id = ch.canonical_article_id
         ),
-        totals AS (
-            SELECT COUNT(*)::bigint AS total
-            FROM canonical_hits
-        ),
         page_hits AS (
             SELECT *
             FROM ranked_hits
+            {cursor_clause}
             ORDER BY ingested_at DESC NULLS LAST, canonical_article_id
-            LIMIT %s OFFSET %s
+            -- Fetch one sentinel row so callers can expose has_more without an exact total.
+            LIMIT %s
         ),
         decision_rows AS (
             SELECT
@@ -215,9 +225,8 @@ def search_article_attributions(
             LEFT JOIN news_summaries ns ON ns.article_id = ph.canonical_article_id
             LEFT JOIN decisions d ON d.article_id = ph.canonical_article_id
         )
-        SELECT totals.total, enriched.*
-        FROM totals
-        LEFT JOIN enriched ON TRUE
+        SELECT enriched.*
+        FROM enriched
         ORDER BY attribution_ingested_at DESC NULLS LAST, article_id
     """
     cur.execute(
@@ -228,29 +237,22 @@ def search_article_attributions(
             fetched_after,
             like_pattern,
             like_pattern,
-            safe_limit,
-            safe_offset,
+            *cursor_params,
+            safe_limit + 1,
         ),
     )
     rows = [dict(row) for row in cur.fetchall()]
-    if not rows:
-        return {
-            "items": [],
-            "total": 0,
-            "limit": safe_limit,
-            "offset": safe_offset,
-        }
-    total = int(rows[0].get("total") or 0)
-    items = []
-    for row in rows:
-        row.pop("total", None)
-        if row.get("article_id") is not None:
-            items.append(row)
+    has_more = len(rows) > safe_limit
+    items = rows[:safe_limit]
+    last_item = items[-1] if items else None
     return {
         "items": items,
-        "total": total,
         "limit": safe_limit,
-        "offset": safe_offset,
+        "has_more": has_more,
+        "next_ingested_at": (
+            last_item.get("attribution_ingested_at") if has_more and last_item else None
+        ),
+        "next_article_id": last_item.get("article_id") if has_more and last_item else None,
     }
 
 

@@ -36,7 +36,8 @@ def _search(
     query: str,
     *,
     limit: int = 20,
-    offset: int = 0,
+    cursor_ingested_at: datetime | None = None,
+    cursor_article_id: str | None = None,
 ) -> tuple[dict[str, Any], int]:
     counting_cursor = _CountingCursor(cur)
     result = search_article_attributions(
@@ -44,7 +45,8 @@ def _search(
         query=query,
         fetched_after=datetime.now(timezone.utc) - timedelta(days=7),
         limit=limit,
-        offset=offset,
+        cursor_ingested_at=cursor_ingested_at,
+        cursor_article_id=cursor_article_id,
     )
     return result, counting_cursor.execute_count
 
@@ -333,13 +335,17 @@ def test_full_pipeline_attribution_and_primary_deduplication() -> None:
     assert review_exported_item["attribution_manual_decisions"][0]["decision"] == "exported"
 
     duplicate_item = duplicate["items"][0]
-    assert duplicate["total"] == 1
     assert duplicate_item["article_id"] == "attr-dup-primary"
     assert duplicate_item["attribution_matched_article_title"] == "Matched Duplicate Title"
-    assert same_group["total"] == 1
     assert same_group["items"][0]["article_id"] == "attr-dup-primary"
     assert same_group["items"][0]["attribution_matched_article_title"] is None
-    assert missing == {"items": [], "total": 0, "limit": 20, "offset": 0}
+    assert missing == {
+        "items": [],
+        "limit": 20,
+        "has_more": False,
+        "next_ingested_at": None,
+        "next_article_id": None,
+    }
     assert {
         keyword_queries,
         relevance_queries,
@@ -375,7 +381,9 @@ class _FakeNewsSummaries:
                     "attribution_matched_article_title": None,
                 }
             ],
-            "total": 1,
+            "has_more": False,
+            "next_ingested_at": None,
+            "next_article_id": None,
         }
 
 
@@ -390,7 +398,6 @@ def test_service_preserves_missing_fields_and_zero_scores(monkeypatch) -> None:
 
     result = articles_service.search_articles(
         query="raw",
-        page=1,
         limit=20,
         lookback_days=45,
     )
@@ -430,7 +437,6 @@ def test_adapter_rejects_blank_query_before_executing_sql() -> None:
             query="   ",
             fetched_after=datetime.now(timezone.utc),
             limit=20,
-            offset=0,
         )
 
     cursor.execute.assert_not_called()
@@ -441,3 +447,96 @@ def test_summary_search_expression_matches_trigram_index_definition() -> None:
         "(coalesce(ns.title, '') || ' ' || coalesce(ns.llm_summary, '') || ' ' || "
         "coalesce(ns.content_markdown, ''))"
     )
+
+
+def test_adapter_uses_limit_plus_one_without_count_or_offset() -> None:
+    cursor = Mock(spec=psycopg.Cursor)
+    cursor.fetchall.return_value = []
+
+    result = search_article_attributions(
+        cursor,
+        query="education",
+        fetched_after=datetime.now(timezone.utc),
+        limit=10,
+    )
+
+    sql, params = cursor.execute.call_args.args
+    assert "COUNT(*)" not in sql
+    assert "OFFSET" not in sql
+    assert "LIMIT %s" in sql
+    assert params[-1] == 11
+    assert result["has_more"] is False
+
+
+def test_cursor_pagination_is_stable_and_has_no_duplicates() -> None:
+    settings = get_settings()
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            _create_temp_search_tables(cur)
+            _seed_attribution_scenarios(cur)
+
+            first, _ = _search(cur, "only", limit=3)
+            second, _ = _search(
+                cur,
+                "only",
+                limit=3,
+                cursor_ingested_at=first["next_ingested_at"],
+                cursor_article_id=first["next_article_id"],
+            )
+
+    first_ids = [item["article_id"] for item in first["items"]]
+    second_ids = [item["article_id"] for item in second["items"]]
+    assert first["has_more"] is True
+    assert len(first_ids) == 3
+    assert len(second_ids) == 3
+    assert set(first_ids).isdisjoint(second_ids)
+
+
+def test_service_cursor_round_trip_preserves_window_and_search(monkeypatch) -> None:
+    adapter = _FakeAdapter()
+    ingested_at = datetime(2026, 8, 12, 8, 30, tzinfo=timezone.utc)
+    adapter.news_summaries.search_with_attribution = Mock(
+        side_effect=[
+            {
+                "items": [],
+                "has_more": True,
+                "next_ingested_at": ingested_at,
+                "next_article_id": "article-10",
+            },
+            {
+                "items": [],
+                "has_more": False,
+                "next_ingested_at": None,
+                "next_article_id": None,
+            },
+        ]
+    )
+    monkeypatch.setattr(articles_service, "_get_adapter_safe", lambda: adapter)
+
+    first = articles_service.search_articles(query="raw", lookback_days=45)
+    second = articles_service.search_articles(
+        query="raw",
+        lookback_days=45,
+        cursor=first["next_cursor"],
+    )
+
+    second_kwargs = adapter.news_summaries.search_with_attribution.call_args_list[1].kwargs
+    assert first["has_more"] is True
+    assert second["window_start"] == first["window_start"]
+    assert second_kwargs["cursor_ingested_at"] == ingested_at
+    assert second_kwargs["cursor_article_id"] == "article-10"
+
+    with pytest.raises(ValueError, match="does not match"):
+        articles_service.search_articles(
+            query="different",
+            lookback_days=45,
+            cursor=first["next_cursor"],
+        )

@@ -413,10 +413,9 @@ def test_duty_editor_can_use_read_only_article_search(monkeypatch) -> None:
         "search_articles",
         lambda **kwargs: {
             "items": [],
-            "total": 0,
             "limit": kwargs["limit"],
-            "page": kwargs["page"],
-            "pages": 1,
+            "has_more": False,
+            "next_cursor": None,
             "lookback_days": kwargs["lookback_days"],
             "window_start": "2026-08-12T00:00:00Z",
         },
@@ -425,7 +424,7 @@ def test_duty_editor_can_use_read_only_article_search(monkeypatch) -> None:
     response = _client_for(editor).get("/api/articles/search?q=教育")
 
     assert response.status_code == 200
-    assert response.json()["total"] == 0
+    assert response.json()["has_more"] is False
     assert response.json()["lookback_days"] == 30
 
 
@@ -440,6 +439,17 @@ def test_article_search_rejects_blank_query_before_service(monkeypatch) -> None:
     response = _client_for(editor).get("/api/articles/search?q=%20%20%20")
 
     assert response.status_code == 422
+
+
+def test_article_search_rejects_invalid_cursor() -> None:
+    editor = _user("duty_editor")
+
+    response = _client_for(editor).get(
+        "/api/articles/search?q=教育&cursor=not-a-valid-cursor"
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Invalid article search cursor"
 
 
 def test_admin_cannot_use_editor_shift_workspace() -> None:

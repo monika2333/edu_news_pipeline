@@ -117,9 +117,23 @@ def test_submission_archive_pages_follow_role_permissions() -> None:
 
     assert admin.get("/submission-archive").status_code == 200
     assert admin.get("/submission-archive/new").status_code == 200
-    assert editor.get("/submission-archive").status_code == 200
-    assert editor.get("/submission-archive/link-queue").status_code == 200
-    assert editor.get("/submission-archive/new").status_code == 403
+    assert admin.get("/submission-archive/link-queue").status_code == 200
+    assert admin.get("/submission-archive/report-1").status_code == 200
+    search_response = admin.get("/submission-archive/search", follow_redirects=False)
+    assert search_response.status_code == 302
+    assert search_response.headers["location"].endswith("/submission-archive")
+
+    # 值班编辑访问存档页面时重定向回值班工作区，而不是看到管理员页面。
+    for path in (
+        "/submission-archive",
+        "/submission-archive/new",
+        "/submission-archive/link-queue",
+        "/submission-archive/search",
+        "/submission-archive/report-1",
+    ):
+        response = editor.get(path, follow_redirects=False)
+        assert response.status_code == 302
+        assert response.headers["location"].endswith("/duty")
 
 
 def test_submission_archive_separates_all_type_filter_from_report_types() -> None:
@@ -325,6 +339,8 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'id="btn-refresh"' in html
     assert 'aria-describedby="refresh-cluster-hint"' in html
     assert 'aria-label="管理员主视图"' not in html
+    assert 'aria-label="值班编辑主视图"' not in html
+    assert 'href="/submission-archive"' not in html
     assert 'id="workspace-shift-select"' in html
     assert 'data-tab="filter">筛选</button>' in html
     assert 'data-tab="review">已选结果</button>' in html

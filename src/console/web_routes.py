@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -180,19 +180,35 @@ def _submission_archive_response(
     )
 
 
+def _redirect_non_admin_to_duty(
+    request: Request,
+    user: ConsoleUser,
+) -> RedirectResponse | None:
+    # 报送存档是管理员工作区，值班编辑访问时重定向回值班工作区。
+    if user.role == "admin":
+        return None
+    return RedirectResponse(url=request.url_for("duty_page"), status_code=302)
+
+
 @router.get("/submission-archive", response_class=HTMLResponse)
 async def submission_archive_page(
     request: Request,
     user: ConsoleUser = Depends(require_console_user),
-) -> HTMLResponse:
+) -> Response:
+    redirect = _redirect_non_admin_to_duty(request, user)
+    if redirect is not None:
+        return redirect
     return _submission_archive_response(request, user, view="list")
 
 
 @router.get("/submission-archive/new", response_class=HTMLResponse)
 async def submission_archive_new_page(
     request: Request,
-    user: ConsoleUser = Depends(require_role("admin")),
-) -> HTMLResponse:
+    user: ConsoleUser = Depends(require_console_user),
+) -> Response:
+    redirect = _redirect_non_admin_to_duty(request, user)
+    if redirect is not None:
+        return redirect
     return _submission_archive_response(request, user, view="new")
 
 
@@ -200,14 +216,21 @@ async def submission_archive_new_page(
 async def submission_archive_link_queue_page(
     request: Request,
     user: ConsoleUser = Depends(require_console_user),
-) -> HTMLResponse:
+) -> Response:
+    redirect = _redirect_non_admin_to_duty(request, user)
+    if redirect is not None:
+        return redirect
     return _submission_archive_response(request, user, view="link-queue")
 
 
 @router.get("/submission-archive/search", response_class=RedirectResponse)
 async def submission_archive_search_page(
+    request: Request,
     user: ConsoleUser = Depends(require_console_user),
 ) -> RedirectResponse:
+    redirect = _redirect_non_admin_to_duty(request, user)
+    if redirect is not None:
+        return redirect
     # 全库搜索页已删除（功能由检索抽屉覆盖）。直接删路由会落到
     # /submission-archive/{report_id}，以 report_id="search" 进入详情逻辑，
     # 因此保留一条重定向回存档库列表。
@@ -219,7 +242,10 @@ async def submission_archive_detail_page(
     request: Request,
     report_id: str,
     user: ConsoleUser = Depends(require_console_user),
-) -> HTMLResponse:
+) -> Response:
+    redirect = _redirect_non_admin_to_duty(request, user)
+    if redirect is not None:
+        return redirect
     return _submission_archive_response(
         request,
         user,

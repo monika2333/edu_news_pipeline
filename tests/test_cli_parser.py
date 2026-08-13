@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Callable
 
 import pytest
@@ -41,6 +42,34 @@ def test_cli_help_available() -> None:
         "refresh-manual-clusters",
     ]:
         assert keyword in help_text
+
+
+def test_export_min_score_defaults_to_promotion_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cli_main,
+        "get_settings",
+        lambda: SimpleNamespace(score_promotion_threshold=30),
+    )
+
+    args = build_parser().parse_args(["export"])
+
+    assert args.min_score == 30
+
+
+def test_export_min_score_explicit_value_overrides_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cli_main,
+        "get_settings",
+        lambda: SimpleNamespace(score_promotion_threshold=30),
+    )
+
+    args = build_parser().parse_args(["export", "--min-score", "45"])
+
+    assert args.min_score == 45
 
 
 def test_refresh_manual_clusters_rejects_report_type() -> None:

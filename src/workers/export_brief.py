@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.title_cluster import cluster_titles
+from src.config import get_settings
 from src.domain import ExportCandidate
 from src.notifications.feishu import FeishuConfigError, FeishuRequestError, notify_export_summary
 from src.workers import log_info, log_summary, worker_session
@@ -299,12 +300,14 @@ def run(
     limit: Optional[int] = None,
     *,
     date: Optional[str] = None,
-    min_score: int = 60,
+    min_score: Optional[int] = None,
     report_tag: Optional[str] = None,
     skip_exported: bool = True,
     record_history: bool = True,
     output_base: Optional[Path] = None,
 ) -> Optional[Path]:
+    if min_score is None:
+        min_score = get_settings().score_promotion_threshold
     adapter = get_adapter()
 
     with worker_session(WORKER, limit=limit if limit is not None else min_score):

@@ -105,7 +105,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 **写入**：`brief_batches`、`brief_items`
 
-取数条件为 `news_summaries.status = 'ready_for_export'` 且 `summary_status = 'completed'` 且 `score >= min_score`（默认 60），按报别生成 TXT 简报并推送飞书。
+取数条件为 `news_summaries.status = 'ready_for_export'` 且 `summary_status = 'completed'` 且 `score >= min_score`（默认读取 `SCORE_PROMOTION_THRESHOLD`），按报别生成 TXT 简报并推送飞书。
 
 该查询**不涉及 `manual_reviews` 或 `shift_reviews`**：凡是过阈值的文章都会进入 `brief_items`，与人工是否采纳无关。这条路径产出的是供人工参考的初稿，不是最终报送内容。
 

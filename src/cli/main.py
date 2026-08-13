@@ -8,6 +8,7 @@ import threading
 import time
 from pathlib import Path
 
+from src.config import get_settings
 from src.workers.crawl_sources import run as crawl_sources
 from src.workers.enrich_summary import run as enrich_summaries
 from src.workers.external_filter import run as run_external_filter
@@ -126,7 +127,12 @@ def _add_export(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--limit", type=_positive_int, default=None, help="Max number of summaries to export")
     parser.add_argument("--date", type=str, default=None, help="Report date (YYYY-MM-DD). Defaults to today")
     parser.add_argument("--report-tag", type=str, default=None, help="Explicit report tag identifier")
-    parser.add_argument("--min-score", type=_positive_int, default=60, help="Minimum score to include")
+    parser.add_argument(
+        "--min-score",
+        type=_positive_int,
+        default=get_settings().score_promotion_threshold,
+        help="Minimum score to include (defaults to SCORE_PROMOTION_THRESHOLD)",
+    )
     parser.add_argument("--skip-exported", action=argparse.BooleanOptionalAction, default=True, help="Skip items already exported in previous runs")
     parser.add_argument("--record-history", action=argparse.BooleanOptionalAction, default=True, help="Persist export metadata back to the database")
     parser.add_argument("--output", type=Path, default=None, help="Override output file path")

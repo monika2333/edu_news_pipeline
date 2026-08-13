@@ -416,15 +416,17 @@
 }
 
 .toast-close {
+    position: absolute;
+    top: 2px;
+    right: 2px;
     background: transparent;
     border: none;
-    color: rgba(255, 255, 255, 0.55);
+    color: rgba(255, 255, 255, 0.4);
     cursor: pointer;
     padding: 2px;
     display: inline-flex;
     align-items: center;
     line-height: 1;
-    flex-shrink: 0;
 }
 
 .toast-close:hover {

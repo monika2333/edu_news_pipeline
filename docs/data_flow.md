@@ -27,19 +27,18 @@ primary_articles ──────────────────► score
 news_summaries ────────────────────► summarize / enrich-summary
      │                                geo-classify / external-filter
      │
-     ├──────────────┬─────────────────┐
-     │              │                 │
-     ▼              ▼                 ▼
-manual_reviews   shift_reviews    submission_duplicate_matches
-（管理员复核）    （值班编辑复核）   （与历史报送比对）
-     │              │
-     │              │ 管理员采纳
+     ├──────────────┬─────────────────┬─────────────────┐
+     │              │                 │                 │
+     ▼              ▼                 ▼                 ▼
+manual_reviews   shift_reviews    submission_        brief_items /
+（管理员复核）    （值班编辑复核）   duplicate_matches  brief_batches
+     │              │              （与历史报送比对）  （简报初稿，自动
+     │              │ 管理员采纳                        生成，不经人工）
      │◄─────────────┘
      │
-     │ 导出
+     │ 人工采纳、编辑、定稿
      ▼
-brief_items / brief_batches
-（简报批次，TXT 导出 + 飞书推送）
+（实际报送稿由人工发出，系统内不留记录）
 
 
 另一条独立入口：
@@ -106,7 +105,11 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 **写入**：`brief_batches`、`brief_items`
 
-按报别生成 TXT 简报，推送飞书，并把对应 `manual_reviews` 行标记为 `exported`。
+取数条件为 `news_summaries.status = 'ready_for_export'` 且 `summary_status = 'completed'` 且 `score >= min_score`（默认 60），按报别生成 TXT 简报并推送飞书。
+
+该查询**不涉及 `manual_reviews` 或 `shift_reviews`**：凡是过阈值的文章都会进入 `brief_items`，与人工是否采纳无关。这条路径产出的是供人工参考的初稿，不是最终报送内容。
+
+`manual_reviews.status = 'exported'` 由控制台的「归档」操作写入（`POST /api/manual-filter/archive` → `manual_filter_decisions.archive_items`），是管理员的手动动作，与本阶段的导出脚本无关。
 
 ---
 
@@ -209,9 +212,12 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 | 表 | 职责 | 权威性 |
 |---|---|---|
-| `brief_batches` / `brief_items` | 简报导出批次与条目 | 权威，历史留档 |
+| `brief_batches` / `brief_items` | 自动生成的简报初稿批次与条目 | 对「导出事件本身」权威；**不代表人工采纳，也不代表已报送** |
 | `submitted_reports` / `submitted_report_items` | 人工录入的已报送稿件 | 权威 |
 | `submission_duplicate_matches` | 查重结果 | 派生，可重算 |
+
+> **判断某篇是否报送过，一律以 `submitted_report_items` 为准，不得依据 `brief_items`。**
+> `brief_items` 只说明这篇进入过自动初稿，所有过阈值的文章都会进入；实际报送稿由人工定稿后发出，系统内唯一的记录来源是人工录入的报送存档。
 
 ### 辅助
 

@@ -315,6 +315,21 @@
     font-size: 0.95rem;
 }
 
+/* 可点击的分类筛选 chip（已匹配/待确认/未覆盖） */
+button.archive-stat-chip {
+    border: none;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+button.archive-stat-chip:hover {
+    filter: brightness(0.96);
+}
+
+.archive-stat-chip.is-active {
+    box-shadow: 0 0 0 2px var(--primary-color);
+}
+
 .archive-stat-chip.is-pending {
     background: #fef3c7;
     color: #92400e;

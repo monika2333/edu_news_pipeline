@@ -5,6 +5,15 @@ const listState = { offset: 0, total: 0, loading: false, type: '' };
 let activeReportId = initialReportId;
 let reportRefreshTimer = null;
 let activeReportStatusSignature = '';
+// 详情区按回链状态筛选：'' 表示不过滤，其余取值 linked/pending/uncovered
+let detailStatusFilter = '';
+
+function linkStatusGroup(status) {
+    if (status === 'exact' || status === 'fuzzy' || status === 'manual') return 'linked';
+    if (status === 'pending') return 'pending';
+    if (status === 'unmatched' || status === 'rejected') return 'uncovered';
+    return 'processing';
+}
 
 function reportCardStatsHtml(report) {
     const linked = Number(report.exact_count || 0) + Number(report.fuzzy_count || 0)
@@ -113,13 +122,19 @@ function detailStats(items) {
     });
     const auto = stats.exact + stats.fuzzy + stats.manual;
     const uncovered = stats.unmatched + stats.rejected;
+    // 已匹配/待确认/未覆盖渲染为可点击按钮，点击后仅展示该分类条目，再次点击取消筛选
+    const filterChip = (filter, label, count, extraClass = '') => {
+        const active = detailStatusFilter === filter;
+        return `<button class="archive-stat-chip${extraClass}${active ? ' is-active' : ''}" type="button"`
+            + ` data-status-filter="${filter}" aria-pressed="${active}">${label} <strong>${count}</strong></button>`;
+    };
     return `
         <div class="archive-stat-chips" id="archive-detail-stats">
             <span class="archive-stat-chip">共 <strong>${items.length}</strong> 条</span>
             ${stats.processing ? `<span class="archive-stat-chip is-processing">正在判断 <strong>${stats.processing}</strong></span>` : ''}
-            <span class="archive-stat-chip is-linked">已回链 <strong>${auto}</strong></span>
-            <span class="archive-stat-chip${stats.pending ? ' is-pending' : ''}">待确认 <strong>${stats.pending}</strong></span>
-            <span class="archive-stat-chip">未覆盖 <strong>${uncovered}</strong></span>
+            ${filterChip('linked', '已匹配', auto, ' is-linked')}
+            ${filterChip('pending', '待确认', stats.pending, stats.pending ? ' is-pending' : '')}
+            ${filterChip('uncovered', '未覆盖', uncovered)}
         </div>
     `;
 }
@@ -143,7 +158,7 @@ function detailItemMetaHtml(item) {
 function detailItemCard(item) {
     return `
         <article class="archive-item${item.link_status === 'pending' ? ' is-pending' : ''}${item.link_status === 'processing' ? ' is-processing' : ''}"
-            data-item-id="${escapeHtml(item.id)}">
+            data-item-id="${escapeHtml(item.id)}" data-link-group="${linkStatusGroup(item.link_status)}">
             <div class="archive-item-head">
                 <span class="archive-item-order">${item.order_index + 1}</span>
                 <h4 class="archive-item-title">${escapeHtml(item.title)}</h4>
@@ -167,6 +182,32 @@ function detailItemsHtml(items) {
         parts.push(detailItemCard(item));
     });
     return parts.join('');
+}
+
+// 按 detailStatusFilter 隐藏不匹配的条目卡片；所在章节全部不可见时一并隐藏章节标题
+function applyDetailFilter() {
+    const container = document.querySelector('#archive-detail .archive-detail-items');
+    if (!container) return;
+    const filtering = Boolean(detailStatusFilter);
+    container.querySelectorAll('.archive-item[data-item-id]').forEach(card => {
+        card.hidden = filtering && card.dataset.linkGroup !== detailStatusFilter;
+    });
+    let heading = null;
+    let anyVisible = false;
+    const flushHeading = () => {
+        if (heading) heading.hidden = filtering && !anyVisible;
+    };
+    container.childNodes.forEach(node => {
+        if (!(node instanceof HTMLElement)) return;
+        if (node.classList.contains('archive-section-heading')) {
+            flushHeading();
+            heading = node;
+            anyVisible = false;
+        } else if (node.classList.contains('archive-item') && !node.hidden) {
+            anyVisible = true;
+        }
+    });
+    flushHeading();
 }
 
 function reportStatusSignature(items) {
@@ -211,11 +252,13 @@ function updateReportStatusComponents(id, items) {
         if (!item) return;
         card.classList.toggle('is-processing', item.link_status === 'processing');
         card.classList.toggle('is-pending', item.link_status === 'pending');
+        card.dataset.linkGroup = linkStatusGroup(item.link_status);
         const pill = card.querySelector('.archive-link-pill');
         if (pill) pill.outerHTML = linkPill(item.link_status, item.article_id);
         const meta = card.querySelector('.archive-item-meta');
         if (meta) meta.innerHTML = detailItemMetaHtml(item);
     });
+    applyDetailFilter();
     const activeCard = Array.from(
         document.querySelectorAll('.archive-report-card')
     ).find(card => card.dataset.reportId === id);
@@ -266,6 +309,7 @@ async function selectReport(id, pushUrl = true) {
     }
     activeReportId = id;
     activeReportStatusSignature = '';
+    detailStatusFilter = '';
     markActiveReport(id);
     if (pushUrl) {
         window.history.replaceState(null, '', `/submission-archive/${encodeURIComponent(id)}`);
@@ -320,6 +364,19 @@ async function initBrowserView() {
     document.getElementById('archive-report-list').addEventListener('click', event => {
         const card = event.target.closest('.archive-report-card');
         if (card) selectReport(card.dataset.reportId);
+    });
+    // 统计 chip 点击筛选：再次点击同一 chip 取消筛选（事件委托，轮询重渲染后仍生效）
+    document.getElementById('archive-detail').addEventListener('click', event => {
+        const chip = event.target.closest('[data-status-filter]');
+        if (!chip) return;
+        const value = chip.dataset.statusFilter || '';
+        detailStatusFilter = detailStatusFilter === value ? '' : value;
+        document.querySelectorAll('#archive-detail [data-status-filter]').forEach(btn => {
+            const active = btn.dataset.statusFilter === detailStatusFilter;
+            btn.classList.toggle('is-active', active);
+            btn.setAttribute('aria-pressed', String(active));
+        });
+        applyDetailFilter();
     });
     const items = await loadReportList(false);
     if (initialReportId) {

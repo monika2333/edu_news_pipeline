@@ -147,7 +147,7 @@ function detailItemCard(item) {
             <div class="archive-item-head">
                 <span class="archive-item-order">${item.order_index + 1}</span>
                 <h4 class="archive-item-title">${escapeHtml(item.title)}</h4>
-                ${linkPill(item.link_status)}
+                ${linkPill(item.link_status, item.article_id)}
             </div>
             ${item.body ? `<p class="archive-item-body">${escapeHtml(item.body)}</p>` : ''}
             <div class="archive-item-meta">${detailItemMetaHtml(item)}</div>
@@ -212,7 +212,7 @@ function updateReportStatusComponents(id, items) {
         card.classList.toggle('is-processing', item.link_status === 'processing');
         card.classList.toggle('is-pending', item.link_status === 'pending');
         const pill = card.querySelector('.archive-link-pill');
-        if (pill) pill.outerHTML = linkPill(item.link_status);
+        if (pill) pill.outerHTML = linkPill(item.link_status, item.article_id);
         const meta = card.querySelector('.archive-item-meta');
         if (meta) meta.innerHTML = detailItemMetaHtml(item);
     });

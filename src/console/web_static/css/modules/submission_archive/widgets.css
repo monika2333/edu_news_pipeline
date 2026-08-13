@@ -104,6 +104,22 @@
     color: #991b1b;
 }
 
+/* 已回链条目的 pill 可点击，点击打开原文抽屉 */
+.archive-link-pill-btn {
+    border: none;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.archive-link-pill-btn:hover {
+    filter: brightness(0.95);
+}
+
+.archive-link-pill-btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
 .archive-empty {
     padding: 48px 16px;
     color: var(--text-secondary);

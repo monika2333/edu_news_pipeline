@@ -163,6 +163,19 @@ def test_submission_archive_separates_all_type_filter_from_report_types() -> Non
     assert "background: #cbd5e1;" in stylesheet
 
 
+def test_submission_archive_browser_wires_content_drawer() -> None:
+    response = _build_client().get("/submission-archive")
+
+    assert response.status_code == 200
+    html = response.text
+    assert 'id="content-drawer"' in html
+    assert "/static/css/modules/content_drawer.css?v=" in html
+    assert "/static/js/submission_archive/content_drawer.js?v=" in html
+    # 抽屉只挂在存档库视图，录入与回链确认视图不渲染
+    for path in ("/submission-archive/new", "/submission-archive/link-queue"):
+        assert 'id="content-drawer"' not in _build_client().get(path).text
+
+
 def test_admin_page_separates_user_search_from_account_creation(
     monkeypatch: MonkeyPatch,
 ) -> None:

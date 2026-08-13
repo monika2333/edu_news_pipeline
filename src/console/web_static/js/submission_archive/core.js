@@ -35,8 +35,14 @@ const scoreValue = value => {
     return Number.isFinite(score) ? score.toFixed(2) : '-';
 };
 const typePill = type => `<span class="archive-type-pill is-${escapeHtml(type)}">${typeLabels[type] || escapeHtml(type)}</span>`;
-const linkPill = status => {
+// 已回链（精确/模糊/人工）且带 article_id 的 pill 渲染为按钮，点击打开原文抽屉
+const LINKED_STATUSES = new Set(['exact', 'fuzzy', 'manual']);
+const linkPill = (status, articleId) => {
     const meta = linkStatusMeta[status] || { label: status || '未知', className: 'is-unmatched' };
+    if (articleId && LINKED_STATUSES.has(status)) {
+        return `<button class="archive-link-pill ${meta.className} archive-link-pill-btn" type="button"`
+            + ` data-article-id="${escapeHtml(articleId)}" title="查看原文">${meta.label}</button>`;
+    }
     return `<span class="archive-link-pill ${meta.className}">${meta.label}</span>`;
 };
 

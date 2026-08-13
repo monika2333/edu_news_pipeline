@@ -333,28 +333,7 @@
     </div>
     {% endif %}
 
-    <!-- Article Content Drawer -->
-    <aside id="content-drawer" class="content-drawer" aria-hidden="true" aria-label="原文">
-        <div class="drawer-header content-drawer-topbar">
-            <input id="content-drawer-search" class="content-drawer-search" type="search"
-                placeholder="检索正文" aria-label="检索正文" autocomplete="off">
-            <span id="content-drawer-search-count" class="content-drawer-search-count" aria-live="polite"></span>
-            <button id="content-drawer-search-prev" class="content-drawer-search-nav" type="button"
-                title="上一个" aria-label="上一个命中">‹</button>
-            <button id="content-drawer-search-next" class="content-drawer-search-nav" type="button"
-                title="下一个" aria-label="下一个命中">›</button>
-            <button id="content-drawer-close" class="btn-icon" type="button" aria-label="关闭原文">✕</button>
-        </div>
-        <div class="content-drawer-info">
-            <h4 class="content-drawer-title" id="content-drawer-title"></h4>
-            <div class="content-drawer-meta-row">
-                <div class="content-drawer-meta" id="content-drawer-meta"></div>
-                <a class="content-drawer-source-link" id="content-drawer-source-link" href="#" target="_blank"
-                    rel="noopener noreferrer" hidden>原文链接</a>
-            </div>
-        </div>
-        <div class="content-drawer-body" id="content-drawer-body"></div>
-    </aside>
+    {% include "_content_drawer.html" %}
 
     <!-- Preview Modal -->
     {% if is_duty_workspace or is_admin_review %}

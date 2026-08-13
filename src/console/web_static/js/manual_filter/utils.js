@@ -320,6 +320,11 @@ const UNDO_ACTION_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" hei
   <path d="M12 7l-3 3 3 3" />
 </svg>`;
 
+const TOAST_CLOSE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M18 6 6 18" />
+  <path d="m6 6 12 12" />
+</svg>`;
+
 function buildUndoToastAction(callback, title = '撤销操作') {
     return {
         icon: UNDO_ACTION_ICON,
@@ -373,6 +378,22 @@ function showToastAt(toastElement, msg, type = 'success', action = null) {
         };
         toastElement.appendChild(btn);
     }
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'toast-close';
+    closeBtn.title = '关闭提示';
+    closeBtn.setAttribute('aria-label', '关闭提示');
+    closeBtn.innerHTML = TOAST_CLOSE_ICON;
+    closeBtn.onclick = (e) => {
+        e.stopPropagation();
+        if (toastTimeout) {
+            clearTimeout(toastTimeout);
+            toastTimeout = null;
+        }
+        toastElement.classList.remove('show');
+    };
+    toastElement.appendChild(closeBtn);
 
     toastElement.className = `toast show ${type}`;
 

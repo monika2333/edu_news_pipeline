@@ -46,14 +46,37 @@ const linkPill = (status, articleId) => {
     return `<span class="archive-link-pill ${meta.className}">${meta.label}</span>`;
 };
 
+let archiveToastTimer = null;
 function toast(message, type = 'success') {
     const target = document.getElementById('archive-toast');
     if (!target) return;
-    target.textContent = message;
+    if (archiveToastTimer) {
+        window.clearTimeout(archiveToastTimer);
+        archiveToastTimer = null;
+    }
+    target.textContent = '';
+    const span = document.createElement('span');
+    span.textContent = message;
+    target.appendChild(span);
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'toast-close';
+    closeBtn.title = '关闭提示';
+    closeBtn.setAttribute('aria-label', '关闭提示');
+    closeBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>';
+    closeBtn.onclick = () => {
+        if (archiveToastTimer) {
+            window.clearTimeout(archiveToastTimer);
+            archiveToastTimer = null;
+        }
+        target.classList.remove('show');
+    };
+    target.appendChild(closeBtn);
     target.className = `toast show ${type}`;
-    window.setTimeout(() => {
+    archiveToastTimer = window.setTimeout(() => {
         target.classList.remove('show');
         target.textContent = '';
+        archiveToastTimer = null;
     }, 3500);
 }
 

@@ -415,6 +415,22 @@
     transform: translateY(0);
 }
 
+.toast-close {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.55);
+    cursor: pointer;
+    padding: 2px;
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.toast-close:hover {
+    color: white;
+}
+
 /* Skeleton Loading */
 .skeleton-card {
     background: var(--card-bg);

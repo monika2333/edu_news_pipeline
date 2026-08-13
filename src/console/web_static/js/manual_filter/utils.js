@@ -228,6 +228,9 @@ function setReviewReportType(value) {
     if (state.reviewReportType === normalized) return;
 
     state.reviewReportType = normalized;
+    if (elements.reportTypeTabText) {
+        elements.reportTypeTabText.textContent = normalized === 'wanbao' ? '晚报' : '综报';
+    }
     if (elements.reportTypeButtons && elements.reportTypeButtons.length) {
         elements.reportTypeButtons.forEach(btn => {
             const isActive = btn.dataset.type === normalized;

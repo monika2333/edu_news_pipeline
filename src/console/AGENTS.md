@@ -41,6 +41,7 @@
 - 前端文件一律 UTF-8 无 BOM。
 - 除非样式确实很小且只服务于局部元素，否则避免在模板中写 inline style。
 - 人工筛选页的搜索抽屉依赖 `/api/articles/search`（链上归因）与 `/api/submission-archive/search`（报送存档命中）两个接口，相关 API、JS 和 CSS 变更需要一起检查。抽屉 markup 由 `_search_drawer.html` 提供，被 `manual_filter.html` 与 `duty_summary.html` 同时引用；JS 拆为 `search_drawer.js`（抽屉本体与检索请求）、`search_drawer_attribution.js`（归因呈现）、`search_drawer_archive.js`（存档命中）三个文件，后两个模块的 `<script>` 标签写在 `_search_drawer.html` 内，改动会同时影响两个页面。
+- 报别切换（采纳/备选归入综报还是晚报）是页面右缘的固定小标签 + 弹出面板，markup 直接在 `manual_filter.html`（admin review 模式不渲染），交互在 `report_type_tab.js`，样式在 `filter.css` 的 report-type-dock 段。报别状态与数据刷新仍统一由 `utils.js` 的 `setReviewReportType` 处理，面板按钮沿用 `.report-type-btn` class 以保持既有绑定和同步逻辑生效；新增报别相关入口时也必须走 `setReviewReportType`，不要自行改 `state.reviewReportType`。
 - JavaScript 状态变更尽量集中在现有 manual-filter 模块中，避免多个模块重复发起同类 API 请求。
 - `web_static/js/manual_filter/utils.js` 会被 `duty_summary.html` 一并加载（因为共享搜索抽屉组件），其中被跨页面复用的是 `createEl`、`clearEl`、`renderSkeleton`、`formatScore`、`getSentimentClass`、`showToastAt`、`formatLocalDateTime` 这类纯函数。新增跨页面复用的工具函数时，不要依赖 `elements` 或 `state` 全局；需要读写页面状态的函数放 `manual_filter/core.js` 或对应功能文件。文件里现存的其他带状态函数是历史遗留，暂不调整。
 - 控制台面向用户的时间展示统一走 `formatLocalDateTime`（`new Date` + 本地时区取值）：后端返回的是带 `Z` 的 UTC 时间，直接截取 ISO 字符串会把 UTC 当本地时间显示，凌晨入库的记录日期会差一天。不带时区的 `date` 字段（如报送存档的 `report_date`）不适用此函数，按字符串截取即可。

@@ -398,3 +398,91 @@
     background: var(--primary-color);
     color: #fff;
 }
+
+/* 报别切换侧标签与弹出面板（右侧固定，样式对齐 search.css 的 search-drawer-toggle） */
+.report-type-tab {
+    position: fixed;
+    right: 0;
+    top: 56%;
+    transform: translateY(-50%);
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-right: none;
+    border-radius: 8px 0 0 8px;
+    padding: 12px 8px;
+    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.05);
+    cursor: pointer;
+    z-index: 1050;
+    transition: background 0.2s, padding-right 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.report-type-tab:hover,
+.report-type-tab[aria-expanded="true"] {
+    background: #f8fafc;
+    padding-right: 12px;
+}
+
+.report-type-tab-text {
+    writing-mode: vertical-rl;
+    letter-spacing: 2px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+.report-type-popover {
+    display: none;
+    position: fixed;
+    right: 40px;
+    top: 56%;
+    transform: translateY(-50%);
+    z-index: 1060;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.1);
+    padding: 12px;
+}
+
+.report-type-popover.active {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+@media (max-width: 768px) {
+    .report-type-tab {
+        top: auto;
+        right: 16px;
+        bottom: calc(82px + env(safe-area-inset-bottom));
+        transform: none;
+        width: 48px;
+        height: 48px;
+        padding: 0;
+        border: 1px solid var(--border-color);
+        border-radius: 50%;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+    }
+
+    .report-type-tab:hover,
+    .report-type-tab[aria-expanded="true"] {
+        padding-right: 0;
+    }
+
+    .report-type-tab-text {
+        writing-mode: horizontal-tb;
+        letter-spacing: 0;
+        font-size: 0.85rem;
+    }
+
+    .report-type-popover {
+        top: auto;
+        right: 16px;
+        bottom: calc(138px + env(safe-area-inset-bottom));
+        transform: none;
+    }
+}

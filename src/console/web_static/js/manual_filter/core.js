@@ -78,6 +78,9 @@ const elements = {
     discardSearchMeta: document.getElementById('discard-search-meta'),
     sortToggleBtn: document.getElementById('btn-toggle-sort'),
     reportTypeButtons: document.querySelectorAll('.report-type-btn'),
+    reportTypeTab: document.getElementById('report-type-tab'),
+    reportTypeTabText: document.getElementById('report-type-tab-text'),
+    reportTypePopover: document.getElementById('report-type-popover'),
     stats: {
         pending: document.getElementById('stat-pending'),
         selected: document.getElementById('stat-selected'),

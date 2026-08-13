@@ -57,6 +57,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     setupSubmissionDuplicatesModal();
     setupScoreFeedback();
+    setupReportTypeTab();
 
     // Global event listeners
     const btnRefresh = document.getElementById('btn-refresh');

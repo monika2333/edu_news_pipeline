@@ -115,13 +115,6 @@
                 <button class="tab-btn" data-tab="discard">放弃</button>
             </div>
             <div class="workspace-tab-actions">
-                <div class="report-type-switch" role="group" aria-label="报别切换">
-                    <span class="report-type-switch-label">采纳/备选归入</span>
-                    <button type="button" class="report-type-btn active" data-type="zongbao"
-                        aria-pressed="true">综报</button>
-                    <button type="button" class="report-type-btn" data-type="wanbao"
-                        aria-pressed="false">晚报</button>
-                </div>
                 <span class="refresh-action workspace-tabs-refresh workspace-tab-action"
                     data-workspace-action-tab="filter">
                     <button class="btn btn-secondary" id="btn-refresh" aria-describedby="refresh-cluster-hint">
@@ -152,13 +145,6 @@
                 <button class="tab-btn" data-tab="discard">放弃</button>
             </div>
             <div class="workspace-tab-actions">
-                <div class="report-type-switch" role="group" aria-label="报别切换">
-                    <span class="report-type-switch-label">采纳/备选归入</span>
-                    <button type="button" class="report-type-btn active" data-type="zongbao"
-                        aria-pressed="true">综报</button>
-                    <button type="button" class="report-type-btn" data-type="wanbao"
-                        aria-pressed="false">晚报</button>
-                </div>
                 <button class="btn btn-secondary workspace-tab-action" id="btn-open-cleanup" type="button"
                     data-workspace-action-tab="filter">清理旧新闻</button>
                 <span class="refresh-action workspace-tabs-refresh">
@@ -325,6 +311,27 @@
 
 
     {% include "_search_drawer.html" %}
+
+    {% if is_duty_workspace or not is_admin_review %}
+    {# 报别切换侧标签：替代原顶部 workspace-tab-actions 里的开关。
+       面板按钮沿用 .report-type-btn，状态同步与数据刷新仍由 setReviewReportType 统一处理；
+       交互逻辑在 report_type_tab.js。 #}
+    <div class="report-type-dock">
+        <button id="report-type-tab" class="report-type-tab" type="button" aria-expanded="false"
+            aria-controls="report-type-popover" aria-label="切换报别" title="切换报别">
+            <span class="report-type-tab-text" id="report-type-tab-text">综报</span>
+        </button>
+        <div id="report-type-popover" class="report-type-popover">
+            <span class="report-type-switch-label">采纳/备选归入</span>
+            <div class="report-type-switch" role="group" aria-label="报别切换">
+                <button type="button" class="report-type-btn active" data-type="zongbao"
+                    aria-pressed="true">综报</button>
+                <button type="button" class="report-type-btn" data-type="wanbao"
+                    aria-pressed="false">晚报</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Article Content Drawer -->
     <aside id="content-drawer" class="content-drawer" aria-hidden="true" aria-label="原文">
@@ -513,6 +520,7 @@
     <script src="/static/js/manual_filter/layout_anchor.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/content_drawer.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/sidebar_collapse.js?v={{ version }}"></script>
+    <script src="/static/js/manual_filter/report_type_tab.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/init.js?v={{ version }}"></script>
 </body>
 

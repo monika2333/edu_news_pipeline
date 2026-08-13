@@ -645,3 +645,8 @@
     background: #fef08a;
     color: inherit;
 }
+
+/* 存档正文结尾的来源标注，弱化颜色以区别于正文。 */
+.archive-item-source {
+    color: var(--text-secondary);
+}

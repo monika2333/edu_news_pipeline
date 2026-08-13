@@ -27,6 +27,11 @@ function renderSubmissionDuplicateMatch(match) {
     const stateText = match.state === 'confirmed' ? '已确认' : '疑似';
     const metaExtra = [scoreText, stateText].filter(Boolean).join(' · ');
     const body = String(match.body || '').trim();
+    // 来源拼在正文结尾，如「（北京日报）」，与抽屉存档检索一致。
+    const source = String(match.source || '').trim();
+    const sourceHtml = source
+        ? `<span class="archive-item-source">（${safeHtml(source)}）</span>`
+        : '';
     return `
         <section class="archive-item">
             <div class="archive-item-head">
@@ -35,7 +40,7 @@ function renderSubmissionDuplicateMatch(match) {
                 <span class="archive-item-title">${safeHtml(match.title || '(无标题)')}</span>
                 <span class="submission-duplicate-item-state">${safeHtml(metaExtra)}</span>
             </div>
-            <div class="archive-item-body">${body ? safeHtml(body) : '（该条目没有正文）'}</div>
+            <div class="archive-item-body">${body ? safeHtml(body) : '（该条目没有正文）'}${sourceHtml}</div>
         </section>
     `;
 }

@@ -878,6 +878,7 @@ def fetch_duplicate_match_details(
             m.similarity,
             i.title,
             i.body,
+            i.source,
             r.report_date,
             r.report_type
         from submission_duplicate_matches m
@@ -896,6 +897,7 @@ def fetch_duplicate_match_details(
             "similarity": float(row["similarity"]),
             "title": row["title"],
             "body": row["body"],
+            "source": row["source"],
             "report_date": row["report_date"],
             "report_type": row["report_type"],
         }

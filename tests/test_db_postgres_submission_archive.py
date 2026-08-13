@@ -86,6 +86,7 @@ def test_fetch_duplicate_match_details_returns_item_bodies() -> None:
                 "similarity": 0.96,
                 "title": "条目一",
                 "body": "报送稿正文一",
+                "source": "北京日报",
                 "report_date": date(2026, 8, 8),
                 "report_type": "zongbao",
             }
@@ -104,6 +105,7 @@ def test_fetch_duplicate_match_details_returns_item_bodies() -> None:
             "similarity": 0.96,
             "title": "条目一",
             "body": "报送稿正文一",
+            "source": "北京日报",
             "report_date": date(2026, 8, 8),
             "report_type": "zongbao",
         }

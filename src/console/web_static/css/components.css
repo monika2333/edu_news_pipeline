@@ -233,6 +233,36 @@
     color: var(--primary-color);
 }
 
+/* Icon Button（搜索抽屉、原文抽屉及各弹窗的关闭/导航按钮共用） */
+.btn-icon {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+    padding: 4px;
+    line-height: 1;
+}
+
+.btn-icon:hover {
+    color: var(--text-primary);
+}
+
+/* Drawer Header（搜索抽屉与原文抽屉共用） */
+.drawer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.drawer-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
 /* Group Pill */
 .group-pill {
     display: inline-flex;

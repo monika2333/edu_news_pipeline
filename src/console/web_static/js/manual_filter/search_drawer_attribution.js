@@ -2,12 +2,12 @@
 // 只做后端 attribution 枚举到中文文案的映射与呈现，判据全部在后端，前端不重算。
 // 由 _search_drawer.html 引入，运行期依赖 utils.js 的 createEl/clearEl/formatLocalDateTime。
 
+// 链上节点：brief_items 只是自动导出的初稿，不代表筛选结果，不再作为链上节点。
 const ATTRIBUTION_CHAIN_STEPS = [
     { key: 'keyword', label: '初筛' },
     { key: 'relevance', label: '相关性' },
     { key: 'importance', label: '重要性' },
-    { key: 'review', label: '人工复核' },
-    { key: 'export', label: '导出' }
+    { key: 'review', label: '人工复核' }
 ];
 
 // level → 中文文案 + 在链上停下的节点下标。
@@ -17,8 +17,7 @@ const ATTRIBUTION_LEVELS = {
     relevance_below: { label: '相关性未达标', stepIndex: 1 },
     importance_below: { label: '重要性未达标', stepIndex: 2 },
     not_reviewed: { label: '尚未报出', stepIndex: 3 },
-    discarded: { label: '人工放弃', stepIndex: 3 },
-    exported: { label: '已导出', stepIndex: 4 }
+    discarded: { label: '人工放弃', stepIndex: 3 }
 };
 
 const MANUAL_WORKSPACE_LABELS = {
@@ -29,7 +28,7 @@ const MANUAL_WORKSPACE_LABELS = {
 // datetime（ingested_at / decided_at / window_start）一律走 utils.js 的
 // formatLocalDateTime（new Date + 本地取值）：后端返回带 Z 的 UTC 时间，
 // 截字符串等于把 UTC 当本地时间，凌晨入库的文章日期会差一天，与内容抽屉也对不上。
-// formatSearchDate 只用于不带时区的 date 字段（export_batch_dates、存档 report_date），保持截取。
+// formatSearchDate 只用于不带时区的 date 字段（存档 report_date），保持截取。
 function formatSearchDate(value) {
     if (!value) return '';
     return String(value).substring(0, 10);
@@ -105,7 +104,7 @@ function renderSearchEmptyState(data) {
     return box;
 }
 
-// 链上位置：整条链五个节点，高亮停下的那一级，之前的节点视为已通过。
+// 链上位置：整条链四个节点，高亮停下的那一级，之前的节点视为已通过。
 function renderAttributionChain(attribution) {
     const level = attribution && attribution.level ? attribution.level : '';
     const config = ATTRIBUTION_LEVELS[level] || null;
@@ -149,7 +148,7 @@ function buildAttributionScoreRow(label, score, field) {
     return row;
 }
 
-// 展开后的归因详情：分数、人工决定（可能多条，全列）、导出批次、fallback 平实标注。
+// 展开后的归因详情：分数、人工决定（可能多条，全列）。
 function renderAttributionDetails(attribution) {
     const box = createEl('div', 'search-attribution', '', {
         hidden: true,
@@ -187,32 +186,5 @@ function renderAttributionDetails(attribution) {
     }
     box.appendChild(decisionRow);
 
-    const batches = Array.isArray(attribution.export_batch_dates) ? attribution.export_batch_dates : [];
-    const batchRow = createEl('div', 'search-attribution-row', '', {
-        dataset: { detailField: 'export_batch_dates' }
-    });
-    batchRow.appendChild(createEl('span', 'search-attribution-label', '导出批次'));
-    if (!batches.length) {
-        batchRow.appendChild(createEl('span', 'search-attribution-null', '无'));
-    } else {
-        const chips = createEl('span', 'search-attribution-batches');
-        batches.forEach(batchDate => {
-            chips.appendChild(createEl('span', 'search-attribution-batch', formatSearchDate(batchDate), {
-                dataset: { exportBatch: formatSearchDate(batchDate) }
-            }));
-        });
-        batchRow.appendChild(chips);
-    }
-    box.appendChild(batchRow);
-
-    // is_fallback 极少出现：只在详情里平实标注一行，不做醒目提示。
-    if (attribution.is_fallback) {
-        box.appendChild(createEl(
-            'div',
-            'search-attribution-fallback',
-            '注：人工记录与导出记录不一致，级别按「尚未报出」展示。',
-            { dataset: { isFallback: 'true' } }
-        ));
-    }
     return box;
 }

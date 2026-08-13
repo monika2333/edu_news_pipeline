@@ -5,9 +5,10 @@ const initialReportId = body.dataset.reportId || '';
 const typeLabels = { zongbao: '综报', wanbao: '晚报', feedback: '反馈' };
 const linkStatusMeta = {
     processing: { label: '正在判断中', className: 'is-processing' },
-    exact: { label: '精确匹配', className: 'is-exact' },
-    fuzzy: { label: '模糊匹配', className: 'is-fuzzy' },
-    manual: { label: '人工确认', className: 'is-manual' },
+    // exact/fuzzy/manual 统一展示为“已匹配”，状态本身仍保留在数据中
+    exact: { label: '已匹配', className: 'is-linked' },
+    fuzzy: { label: '已匹配', className: 'is-linked' },
+    manual: { label: '已匹配', className: 'is-linked' },
     pending: { label: '待确认', className: 'is-pending' },
     unmatched: { label: '未覆盖', className: 'is-unmatched' },
     rejected: { label: '已否决', className: 'is-rejected' }

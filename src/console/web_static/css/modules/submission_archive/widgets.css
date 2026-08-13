@@ -73,15 +73,9 @@
     white-space: nowrap;
 }
 
-.archive-link-pill.is-exact,
-.archive-link-pill.is-fuzzy {
+.archive-link-pill.is-linked {
     background: #dcfce7;
     color: #166534;
-}
-
-.archive-link-pill.is-manual {
-    background: #eff6ff;
-    color: #1d4ed8;
 }
 
 .archive-link-pill.is-processing {

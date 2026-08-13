@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import threading
 from datetime import date, datetime, timezone
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
@@ -26,6 +27,7 @@ from src.adapters import (
 from src.config import get_settings
 
 _CONNECTION: Optional[psycopg.Connection] = None
+_CONNECTION_LOCK = threading.Lock()
 _ADAPTER: Optional["PostgresAdapter"] = None
 _BUSINESS_TIMEZONE = ZoneInfo("Asia/Shanghai")
 _CLUSTER_STATEMENT_TIMEOUT_SQL = "SET LOCAL statement_timeout = '120s'"
@@ -56,23 +58,24 @@ def _future_shift_error_message(
 def _get_connection() -> psycopg.Connection:
     global _CONNECTION
     settings = get_settings()
-    if _CONNECTION is None or _CONNECTION.closed:
-        _CONNECTION = psycopg.connect(
-            host=settings.db_host,
-            port=settings.db_port,
-            user=settings.db_user,
-            password=settings.db_password,
-            dbname=settings.db_name,
-            autocommit=True,
-            connect_timeout=10,
-            keepalives=1,
-            keepalives_idle=30,
-            keepalives_interval=10,
-            keepalives_count=3,
-        )
-        schema = settings.db_schema or "public"
-        with _CONNECTION.cursor() as cur:
-            cur.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(schema)))
+    with _CONNECTION_LOCK:
+        if _CONNECTION is None or _CONNECTION.closed:
+            _CONNECTION = psycopg.connect(
+                host=settings.db_host,
+                port=settings.db_port,
+                user=settings.db_user,
+                password=settings.db_password,
+                dbname=settings.db_name,
+                autocommit=True,
+                connect_timeout=10,
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=3,
+            )
+            schema = settings.db_schema or "public"
+            with _CONNECTION.cursor() as cur:
+                cur.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(schema)))
     return _CONNECTION
 
 
@@ -83,6 +86,11 @@ class PostgresAdapter:
         self._settings = get_settings()
         self._schema = self._settings.db_schema or "public"
         self._conn = connection or _get_connection()
+        # psycopg 连接不是线程安全的：console 的同步 endpoint 跑在线程池里，
+        # 页面加载时多个请求会并发使用这条共享连接（例如 transaction() 切换
+        # autocommit 时另一线程正在执行语句，触发 ProgrammingError: INTRANS）。
+        # 用一把可重入锁把连接的整个使用期串行化。
+        self._conn_lock = threading.RLock()
         self.export = export.ExportNamespace(self)
         self.ingest = ingest.IngestNamespace(self)
         self.manual_reviews = manual_reviews.ManualReviewsNamespace(self)
@@ -102,21 +110,22 @@ class PostgresAdapter:
 
     @contextlib.contextmanager
     def transaction(self):
-        if self._conn.closed:
-            self._conn = _get_connection()
-        prev_autocommit = self._conn.autocommit
-        if prev_autocommit:
-            self._conn.autocommit = False
-        cur = self._conn.cursor(row_factory=dict_row)
-        try:
-            yield cur
-            self._conn.commit()
-        except Exception:
-            self._conn.rollback()
-            raise
-        finally:
-            cur.close()
-            self._conn.autocommit = prev_autocommit
+        with self._conn_lock:
+            if self._conn.closed:
+                self._conn = _get_connection()
+            prev_autocommit = self._conn.autocommit
+            if prev_autocommit:
+                self._conn.autocommit = False
+            cur = self._conn.cursor(row_factory=dict_row)
+            try:
+                yield cur
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
+            finally:
+                cur.close()
+                self._conn.autocommit = prev_autocommit
 
     @contextlib.contextmanager
     def _cluster_transaction(self) -> Iterator[Any]:
@@ -126,17 +135,18 @@ class PostgresAdapter:
 
     @contextlib.contextmanager
     def _cursor(self):
-        cur = self._conn_cursor()
-        try:
-            yield cur
-            if not self._conn.autocommit:
-                self._conn.commit()
-        except Exception:
-            if not self._conn.autocommit:
-                self._conn.rollback()
-            raise
-        finally:
-            cur.close()
+        with self._conn_lock:
+            cur = self._conn_cursor()
+            try:
+                yield cur
+                if not self._conn.autocommit:
+                    self._conn.commit()
+            except Exception:
+                if not self._conn.autocommit:
+                    self._conn.rollback()
+                raise
+            finally:
+                cur.close()
 
     # ------------------------------------------------------------------
     # Console users + sessions

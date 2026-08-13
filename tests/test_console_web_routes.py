@@ -176,6 +176,20 @@ def test_submission_archive_browser_wires_content_drawer() -> None:
         assert 'id="content-drawer"' not in _build_client().get(path).text
 
 
+def test_submission_archive_pages_include_search_drawer() -> None:
+    # 检索抽屉（报送存档检索 + 全库文章检索）在存档各视图都应有入口
+    for path in (
+        "/submission-archive",
+        "/submission-archive/new",
+        "/submission-archive/link-queue",
+    ):
+        html = _build_client().get(path).text
+        assert 'id="search-drawer-toggle"' in html
+        assert 'id="search-drawer"' in html
+        assert "/static/css/modules/search.css" in html
+        assert "/static/js/manual_filter/search_drawer.js?v=" in html
+
+
 def test_admin_page_separates_user_search_from_account_creation(
     monkeypatch: MonkeyPatch,
 ) -> None:

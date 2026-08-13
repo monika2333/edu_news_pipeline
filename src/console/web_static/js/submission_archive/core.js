@@ -2,7 +2,6 @@
 const body = document.body;
 const view = body.dataset.archiveView;
 const initialReportId = body.dataset.reportId || '';
-const isAdmin = body.dataset.userRole === 'admin';
 const typeLabels = { zongbao: '综报', wanbao: '晚报', feedback: '反馈' };
 const linkStatusMeta = {
     processing: { label: '正在判断中', className: 'is-processing' },

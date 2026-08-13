@@ -164,31 +164,6 @@ def get_report(report_id: str) -> dict[str, Any]:
     return report
 
 
-def delete_report(report_id: str) -> None:
-    if not get_adapter().submission_archive.delete_report(report_id):
-        raise SubmissionReportNotFoundError("未找到这份存档报告")
-
-
-def reparse_report(report_id: str) -> dict[str, Any]:
-    adapter = get_adapter()
-    report = adapter.submission_archive.fetch_report(report_id)
-    if not report:
-        raise SubmissionReportNotFoundError("未找到这份存档报告")
-    parsed = parse_submission_report(str(report["pasted_text"]))
-    items = _prepare_items([asdict(item) for item in parsed.items])
-    rebuilt = adapter.submission_archive.replace_report_items(
-        report_id=report_id,
-        items=items,
-    )
-    report["items"] = rebuilt
-    report["item_count"] = len(rebuilt)
-    return {
-        "report": adapter.submission_archive.fetch_report(report_id),
-        "link_summary": {"processing": len(rebuilt)},
-        "warnings": parsed.warnings,
-    }
-
-
 def list_pending_links(*, limit: int, offset: int) -> dict[str, Any]:
     rows, total = get_adapter().submission_archive.fetch_pending_links(
         limit=limit,
@@ -284,13 +259,11 @@ __all__ = [
     "attach_duplicate_badges",
     "create_report",
     "decide_link",
-    "delete_report",
     "dismiss_duplicates",
     "fetch_duplicate_details",
     "get_report",
     "list_pending_links",
     "list_reports",
     "parse_report",
-    "reparse_report",
     "search_archive",
 ]

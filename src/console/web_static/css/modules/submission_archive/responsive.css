@@ -33,15 +33,6 @@
         gap: 14px;
     }
 
-    .archive-detail-actions {
-        align-self: stretch;
-        justify-content: flex-end;
-        padding-left: 0;
-        border-left: none;
-        padding-top: 12px;
-        border-top: 1px solid #e8eef5;
-    }
-
     .archive-save-bar {
         align-items: stretch;
         flex-direction: column;

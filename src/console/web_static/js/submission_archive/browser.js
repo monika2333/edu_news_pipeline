@@ -287,42 +287,12 @@ async function selectReport(id, pushUrl = true) {
                     </p>
                     ${detailStats(items)}
                 </div>
-                ${isAdmin ? `
-                    <div class="archive-detail-actions">
-                        <button class="btn btn-secondary" id="archive-reparse" type="button">重新解析</button>
-                        <button class="btn btn-danger" id="archive-delete" type="button">删除报告</button>
-                    </div>
-                ` : ''}
             </div>
             <div class="archive-detail-items">
                 ${items.length ? detailItemsHtml(items) : '<div class="archive-empty">这份报告没有条目。</div>'}
             </div>
         `;
         activeReportStatusSignature = reportStatusSignature(items);
-        document.getElementById('archive-reparse')?.addEventListener('click', async () => {
-            if (!window.confirm('重新解析会删除旧条目，已人工确认的回链结果也会丢失。确定继续？')) return;
-            try {
-                await api(`/reports/${encodeURIComponent(id)}/reparse`, { method: 'POST' });
-                toast('已重新解析，正在判断回链');
-                await selectReport(id, false);
-                loadReportList(false);
-            } catch (error) {
-                toast(error.message, 'error');
-            }
-        });
-        document.getElementById('archive-delete')?.addEventListener('click', async () => {
-            if (!window.confirm('确定删除整份报告及其条目和查重结果吗？')) return;
-            try {
-                await api(`/reports/${encodeURIComponent(id)}`, { method: 'DELETE' });
-                toast('报告已删除');
-                activeReportId = '';
-                window.history.replaceState(null, '', '/submission-archive');
-                target.innerHTML = '<div class="archive-empty">从左侧选择一份报告查看条目和回链情况。</div>';
-                loadReportList(false);
-            } catch (error) {
-                toast(error.message, 'error');
-            }
-        });
         if (items.some(item => item.link_status === 'processing')) {
             scheduleReportStatusPoll(id);
         }

@@ -111,31 +111,6 @@ def get_report_api(report_id: str) -> dict[str, Any]:
         _raise_service_error(exc)
 
 
-@router.delete("/reports/{report_id}")
-def delete_report_api(
-    report_id: str,
-    _user: ConsoleUser = Depends(require_role("admin")),
-) -> dict[str, bool]:
-    try:
-        submission_archive_service.delete_report(report_id)
-    except ValueError as exc:
-        _raise_service_error(exc)
-    return {"deleted": True}
-
-
-@router.post("/reports/{report_id}/reparse")
-def reparse_report_api(
-    report_id: str,
-    _user: ConsoleUser = Depends(require_role("admin")),
-) -> dict[str, Any]:
-    try:
-        result = submission_archive_service.reparse_report(report_id)
-    except (ValueError, RuntimeError) as exc:
-        _raise_service_error(exc)
-    _schedule_report_processing(report_id)
-    return result
-
-
 @router.get("/link-queue")
 def list_pending_links_api(
     limit: int = 50,

@@ -70,19 +70,6 @@ class SubmissionArchiveNamespace:
         with self._adapter._cursor() as cur:
             return fetch_report(cur, report_id)
 
-    def delete_report(self, report_id: str) -> bool:
-        with self._adapter.transaction() as cur:
-            return delete_report(cur, report_id)
-
-    def replace_report_items(
-        self,
-        *,
-        report_id: str,
-        items: Sequence[Mapping[str, Any]],
-    ) -> list[dict[str, Any]]:
-        with self._adapter.transaction() as cur:
-            return replace_report_items(cur, report_id=report_id, items=items)
-
     def search_report_items(self, *, query: str, limit: int) -> list[dict[str, Any]]:
         with self._adapter._cursor() as cur:
             return search_items(cur, query=query, limit=limit)
@@ -332,19 +319,6 @@ def delete_report(cur: psycopg.Cursor, report_id: str) -> bool:
         (report_id,),
     )
     return cur.rowcount > 0
-
-
-def replace_report_items(
-    cur: psycopg.Cursor,
-    *,
-    report_id: str,
-    items: Sequence[Mapping[str, Any]],
-) -> list[dict[str, Any]]:
-    cur.execute(
-        "delete from submitted_report_items where report_id = %s",
-        (report_id,),
-    )
-    return insert_report_items(cur, report_id=report_id, items=items)
 
 
 def fetch_reports(
@@ -943,7 +917,6 @@ __all__ = [
     "find_report_conflict",
     "insert_report",
     "insert_report_items",
-    "replace_report_items",
     "search_items",
     "update_item_embeddings",
     "update_link_results",

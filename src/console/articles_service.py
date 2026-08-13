@@ -72,13 +72,11 @@ def _serialize_article(row: Dict[str, Any]) -> Dict[str, Any]:
         "updated_at": row.get("updated_at"),
         "attribution": {
             "level": row.get("attribution_level"),
-            "is_fallback": bool(row.get("attribution_is_fallback")),
             "ingested_at": row.get("attribution_ingested_at"),
             "ingested_at_source": row.get("attribution_ingested_at_source"),
             "relevance_score": _to_float(row.get("attribution_relevance_score")),
             "importance_score": _to_float(row.get("attribution_importance_score")),
             "manual_decisions": list(row.get("attribution_manual_decisions") or []),
-            "export_batch_dates": list(row.get("attribution_export_batch_dates") or []),
             "matched_article_title": row.get("attribution_matched_article_title"),
         },
     }

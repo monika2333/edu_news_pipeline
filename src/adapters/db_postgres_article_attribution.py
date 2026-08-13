@@ -125,8 +125,6 @@ def search_article_attributions(
             SELECT
                 article_id,
                 BOOL_OR(decision = 'discarded') AS has_discarded,
-                BOOL_OR(workspace = 'admin' AND decision = 'exported')
-                    AS has_review_marked_exported,
                 JSONB_AGG(
                     JSONB_BUILD_OBJECT(
                         'workspace', workspace,
@@ -138,18 +136,6 @@ def search_article_attributions(
                 ) AS manual_decisions
             FROM decision_rows
             GROUP BY article_id
-        ),
-        exports AS (
-            SELECT
-                bi.article_id,
-                ARRAY_AGG(
-                    DISTINCT bb.report_date
-                    ORDER BY bb.report_date DESC
-                ) AS export_batch_dates
-            FROM brief_items bi
-            JOIN page_hits ph ON ph.canonical_article_id = bi.article_id
-            JOIN brief_batches bb ON bb.id = bi.brief_batch_id
-            GROUP BY bi.article_id
         ),
         enriched AS (
             SELECT
@@ -181,37 +167,27 @@ def search_article_attributions(
                 ns.created_at,
                 ns.updated_at,
                 CASE
-                    WHEN ex.article_id IS NOT NULL THEN 'exported'
                     WHEN COALESCE(d.has_discarded, FALSE) THEN 'discarded'
-                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
-                         AND (
-                             (
-                                 ns.article_id IS NOT NULL
-                                 AND ns.status IS DISTINCT FROM 'external_filtered'
-                             )
-                             OR (
-                                 ns.article_id IS NULL
-                                 AND fa.article_id IS NOT NULL
-                                 AND pa.status IS DISTINCT FROM 'filtered_out'
-                             )
+                    WHEN (
+                        (
+                            ns.article_id IS NOT NULL
+                            AND ns.status IS DISTINCT FROM 'external_filtered'
                          )
+                        OR (
+                            ns.article_id IS NULL
+                            AND fa.article_id IS NOT NULL
+                            AND pa.status IS DISTINCT FROM 'filtered_out'
+                        )
+                    )
                     THEN 'not_reviewed'
-                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
-                         AND ns.status = 'external_filtered'
+                    WHEN ns.status = 'external_filtered'
                     THEN 'importance_below'
-                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
-                         AND pa.status = 'filtered_out'
+                    WHEN pa.status = 'filtered_out'
                     THEN 'relevance_below'
-                    WHEN NOT COALESCE(d.has_review_marked_exported, FALSE)
-                         AND fa.article_id IS NULL
+                    WHEN fa.article_id IS NULL
                     THEN 'keyword_missed'
                     ELSE 'not_reviewed'
                 END AS attribution_level,
-                (
-                    COALESCE(d.has_review_marked_exported, FALSE)
-                    AND ex.article_id IS NULL
-                    AND NOT COALESCE(d.has_discarded, FALSE)
-                ) AS attribution_is_fallback,
                 COALESCE(ns.created_at, ra.fetched_at) AS attribution_ingested_at,
                 CASE
                     WHEN ns.created_at IS NOT NULL THEN 'news_summaries.created_at'
@@ -220,7 +196,6 @@ def search_article_attributions(
                 COALESCE(ns.score, pa.score) AS attribution_relevance_score,
                 ns.external_importance_score AS attribution_importance_score,
                 COALESCE(d.manual_decisions, '[]'::jsonb) AS attribution_manual_decisions,
-                COALESCE(ex.export_batch_dates, '{{}}'::date[]) AS attribution_export_batch_dates,
                 CASE
                     WHEN ph.matched_article_id <> ph.canonical_article_id
                     THEN ph.matched_title
@@ -232,7 +207,6 @@ def search_article_attributions(
             LEFT JOIN primary_articles pa ON pa.article_id = ph.canonical_article_id
             LEFT JOIN news_summaries ns ON ns.article_id = ph.canonical_article_id
             LEFT JOIN decisions d ON d.article_id = ph.canonical_article_id
-            LEFT JOIN exports ex ON ex.article_id = ph.canonical_article_id
         )
         SELECT totals.total, enriched.*
         FROM totals

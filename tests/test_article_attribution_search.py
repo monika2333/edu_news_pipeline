@@ -69,9 +69,9 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
         ("attr-relevance", "Relevance Below", "relevanceonly body", now),
         ("attr-importance", "Importance Below", "importanceonly body", now),
         ("attr-not-reviewed", "Not Reviewed", "notreviewedonly body", now),
-        ("attr-exported", "Exported", "exportedonly body", now),
+        ("attr-discarded", "Discarded", "discardedonly body", now),
         ("attr-selected", "Selected Pending Export", "selectedonly body", now),
-        ("attr-fallback", "Fallback State", "fallbackonly body", now),
+        ("attr-review-exported", "Review Exported", "reviewexportedonly body", now),
         (
             "attr-dup-primary",
             "Primary Title",
@@ -96,9 +96,9 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
             ("attr-relevance", "pending", None),
             ("attr-importance", "pending", None),
             ("attr-not-reviewed", "pending", None),
-            ("attr-exported", "pending", None),
+            ("attr-discarded", "pending", None),
             ("attr-selected", "pending", None),
-            ("attr-fallback", "pending", None),
+            ("attr-review-exported", "pending", None),
             ("attr-dup-primary", "pending", None),
             ("attr-duplicate", "duplicate", "attr-dup-primary"),
         ],
@@ -117,9 +117,9 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
             ("attr-relevance", "attr-relevance", "filtered_out", 12),
             ("attr-importance", "attr-importance", "promoted", 81),
             ("attr-not-reviewed", "attr-not-reviewed", "promoted", 82),
-            ("attr-exported", "attr-exported", "promoted", 83),
+            ("attr-discarded", "attr-discarded", "promoted", 83),
             ("attr-selected", "attr-selected", "promoted", 83),
-            ("attr-fallback", "attr-fallback", "promoted", 83),
+            ("attr-review-exported", "attr-review-exported", "promoted", 83),
             ("attr-dup-primary", "attr-dup-primary", "promoted", 84),
         ],
     )
@@ -156,8 +156,8 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
                 now,
             ),
             (
-                "attr-exported",
-                "Exported",
+                "attr-discarded",
+                "Discarded",
                 "ready_for_export",
                 83,
                 "ready_for_export",
@@ -174,8 +174,8 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
                 now,
             ),
             (
-                "attr-fallback",
-                "Fallback State",
+                "attr-review-exported",
+                "Review Exported",
                 "ready_for_export",
                 83,
                 "ready_for_export",
@@ -217,7 +217,7 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
             decided_by_user_id,
             decided_at
         )
-        VALUES ('attr-exported', 'selected', %s, %s)
+        VALUES ('attr-discarded', 'selected', %s, %s)
         """,
         (user_id, now - timedelta(minutes=2)),
     )
@@ -241,7 +241,7 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
             decided_by_user_id,
             decided_at
         )
-        VALUES ('attr-fallback', 'exported', %s, %s)
+        VALUES ('attr-review-exported', 'exported', %s, %s)
         """,
         (user_id, now - timedelta(seconds=30)),
     )
@@ -255,7 +255,7 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
             decision,
             decided_at
         )
-        VALUES (%s, 'attr-exported', %s, %s, 'discarded', %s)
+        VALUES (%s, 'attr-discarded', %s, %s, 'discarded', %s)
         """,
         (shift_id, user_id, user_id, now - timedelta(minutes=3)),
     )
@@ -266,7 +266,7 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
     cur.execute(
         """
         INSERT INTO brief_items (brief_batch_id, article_id)
-        VALUES (%s, 'attr-exported')
+        VALUES (%s, 'attr-discarded')
         """,
         (batch_id,),
     )
@@ -291,45 +291,41 @@ def test_full_pipeline_attribution_and_primary_deduplication() -> None:
             relevance, relevance_queries = _search(cur, "relevanceonly")
             importance, importance_queries = _search(cur, "importanceonly")
             not_reviewed, not_reviewed_queries = _search(cur, "notreviewedonly")
-            exported, exported_queries = _search(cur, "exportedonly")
+            discarded, discarded_queries = _search(cur, "discardedonly")
             selected, selected_queries = _search(cur, "selectedonly")
-            fallback, fallback_queries = _search(cur, "fallbackonly")
+            review_exported, review_exported_queries = _search(cur, "reviewexportedonly")
             duplicate, duplicate_queries = _search(cur, "duplicateonly")
             same_group, same_group_queries = _search(cur, "sharedterm")
             missing, missing_queries = _search(cur, "absent-everywhere")
 
     assert keyword["items"][0]["attribution_level"] == "keyword_missed"
-    assert keyword["items"][0]["attribution_is_fallback"] is False
     assert keyword["items"][0]["attribution_ingested_at_source"] == "raw_articles.fetched_at"
     assert relevance["items"][0]["attribution_level"] == "relevance_below"
     assert float(relevance["items"][0]["attribution_relevance_score"]) == 12
     assert importance["items"][0]["attribution_level"] == "importance_below"
     assert float(importance["items"][0]["attribution_importance_score"]) == 41
     assert not_reviewed["items"][0]["attribution_level"] == "not_reviewed"
-    assert not_reviewed["items"][0]["attribution_is_fallback"] is False
 
-    exported_item = exported["items"][0]
-    assert exported_item["attribution_level"] == "exported"
-    assert exported_item["attribution_export_batch_dates"] == [date(2026, 8, 12)]
-    assert {item["workspace"] for item in exported_item["attribution_manual_decisions"]} == {
+    discarded_item = discarded["items"][0]
+    assert discarded_item["attribution_level"] == "discarded"
+    assert "attribution_export_batch_dates" not in discarded_item
+    assert "attribution_is_fallback" not in discarded_item
+    assert {item["workspace"] for item in discarded_item["attribution_manual_decisions"]} == {
         "admin",
         "duty",
     }
     assert any(
         item["workspace"] == "duty" and item["decision"] == "discarded"
-        for item in exported_item["attribution_manual_decisions"]
+        for item in discarded_item["attribution_manual_decisions"]
     )
 
     selected_item = selected["items"][0]
     assert selected_item["attribution_level"] == "not_reviewed"
-    assert selected_item["attribution_is_fallback"] is False
     assert selected_item["attribution_manual_decisions"][0]["decision"] == "selected"
 
-    fallback_item = fallback["items"][0]
-    assert fallback_item["attribution_level"] == "not_reviewed"
-    assert fallback_item["attribution_is_fallback"] is True
-    assert fallback_item["attribution_manual_decisions"][0]["decision"] == "exported"
-    assert fallback_item["attribution_export_batch_dates"] == []
+    review_exported_item = review_exported["items"][0]
+    assert review_exported_item["attribution_level"] == "not_reviewed"
+    assert review_exported_item["attribution_manual_decisions"][0]["decision"] == "exported"
 
     duplicate_item = duplicate["items"][0]
     assert duplicate["total"] == 1
@@ -344,9 +340,9 @@ def test_full_pipeline_attribution_and_primary_deduplication() -> None:
         relevance_queries,
         importance_queries,
         not_reviewed_queries,
-        exported_queries,
+        discarded_queries,
         selected_queries,
-        fallback_queries,
+        review_exported_queries,
         duplicate_queries,
         same_group_queries,
         missing_queries,
@@ -366,13 +362,11 @@ class _FakeNewsSummaries:
                     "title": "Raw only",
                     "score": None,
                     "attribution_level": "keyword_missed",
-                    "attribution_is_fallback": False,
                     "attribution_ingested_at": datetime(2026, 8, 12, tzinfo=timezone.utc),
                     "attribution_ingested_at_source": "raw_articles.fetched_at",
                     "attribution_relevance_score": 0,
                     "attribution_importance_score": None,
                     "attribution_manual_decisions": [],
-                    "attribution_export_batch_dates": [],
                     "attribution_matched_article_title": None,
                 }
             ],
@@ -401,7 +395,8 @@ def test_service_preserves_missing_fields_and_zero_scores(monkeypatch) -> None:
     assert response["items"][0]["score"] is None
     assert response["items"][0]["attribution"]["relevance_score"] == 0
     assert response["items"][0]["attribution"]["importance_score"] is None
-    assert response["items"][0]["attribution"]["is_fallback"] is False
+    assert "is_fallback" not in response["items"][0]["attribution"]
+    assert "export_batch_dates" not in response["items"][0]["attribution"]
     assert response["lookback_days"] == 45
     assert response["window_start"] == adapter.news_summaries.kwargs["fetched_after"]
 

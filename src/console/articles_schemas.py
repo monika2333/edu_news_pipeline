@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -20,9 +20,7 @@ class NewsArticleAttribution(BaseModel):
         "importance_below",
         "not_reviewed",
         "discarded",
-        "exported",
     ]
-    is_fallback: bool
     ingested_at: datetime
     ingested_at_source: Literal[
         "news_summaries.created_at",
@@ -31,7 +29,6 @@ class NewsArticleAttribution(BaseModel):
     relevance_score: Optional[float] = None
     importance_score: Optional[float] = None
     manual_decisions: list[NewsArticleManualDecision] = Field(default_factory=list)
-    export_batch_dates: list[date] = Field(default_factory=list)
     matched_article_title: Optional[str] = None
 
 

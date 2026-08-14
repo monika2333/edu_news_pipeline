@@ -39,3 +39,19 @@ def test_duplicate_badge_is_rendered_as_clickable_button() -> None:
 
     assert '<button type="button" class="submission-duplicate-badge' in source
     assert "data-duplicate-state" in source
+
+
+def test_archive_frontend_consumes_only_unified_matched_status() -> None:
+    core = Path(
+        "src/console/web_static/js/submission_archive/core.js"
+    ).read_text(encoding="utf-8")
+    browser = Path(
+        "src/console/web_static/js/submission_archive/browser.js"
+    ).read_text(encoding="utf-8")
+
+    assert "matched: { label: '已匹配'" in core
+    assert "new Set(['matched'])" in core
+    assert "report.matched_count" in browser
+    assert "exact_count" not in browser
+    assert "fuzzy_count" not in browser
+    assert "manual_count" not in browser

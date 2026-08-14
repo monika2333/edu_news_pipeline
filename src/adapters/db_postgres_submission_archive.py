@@ -352,9 +352,7 @@ def fetch_reports(
         f"""
         select
             r.*,
-            count(i.id) filter (where i.link_status = 'exact') as exact_count,
-            count(i.id) filter (where i.link_status = 'fuzzy') as fuzzy_count,
-            count(i.id) filter (where i.link_status = 'manual') as manual_count,
+            count(i.id) filter (where i.link_status = 'matched') as matched_count,
             count(i.id) filter (
                 where i.link_status = 'processing'
             ) as processing_count,
@@ -477,7 +475,7 @@ def update_link_results(
                 link_combined_score = %s,
                 best_candidate_article_id = %s,
                 link_matched_at = case
-                    when %s in ('exact', 'fuzzy') then now()
+                    when %s = 'matched' then now()
                     else null
                 end,
                 updated_at = now()
@@ -554,7 +552,7 @@ def decide_link(
                 when %s then best_candidate_article_id
                 else null
             end,
-            link_status = case when %s then 'manual' else 'rejected' end,
+            link_status = case when %s then 'matched' else 'rejected' end,
             link_decided_by = %s,
             link_matched_at = case when %s then now() else null end,
             updated_at = now()

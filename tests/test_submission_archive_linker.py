@@ -8,17 +8,17 @@ from src.domain.submission_archive_linker import (
 )
 
 
-def test_link_l1_exact_normalized_title() -> None:
+def test_identical_normalized_title_matches() -> None:
     result = link_submission_item(
         "学校发布新规！",
         "正文",
         [LinkCandidate("a", "学校发布新规", "正文")],
     )
-    assert result.status == "exact"
+    assert result.status == "matched"
     assert result.article_id == "a"
 
 
-def test_link_l2_fuzzy_auto_binds() -> None:
+def test_similar_title_and_body_match() -> None:
     result = link_submission_item(
         "北京某高校发布招生新政策",
         "学校今天公布招生政策细节",
@@ -32,7 +32,7 @@ def test_link_l2_fuzzy_auto_binds() -> None:
         auto_threshold=0.75,
         review_threshold=0.40,
     )
-    assert result.status == "fuzzy"
+    assert result.status == "matched"
     assert result.article_id == "a"
 
 
@@ -78,10 +78,10 @@ def test_link_title_guard_prevents_false_auto_binding() -> None:
         review_threshold=0.30,
     )
     assert result.title_score < 0.70
-    assert result.status != "fuzzy"
+    assert result.status != "matched"
 
 
-def test_candidate_index_preserves_first_exact_candidate() -> None:
+def test_candidate_selection_preserves_source_order_for_ties() -> None:
     candidate_index = build_link_candidate_index(
         [
             LinkCandidate("first", "学校发布新规"),
@@ -91,5 +91,7 @@ def test_candidate_index_preserves_first_exact_candidate() -> None:
 
     selection = select_link_candidates("学校发布新规", candidate_index)
 
-    assert selection.exact is not None
-    assert selection.exact.candidate.article_id == "first"
+    assert [
+        candidate.candidate.article_id
+        for candidate in selection.candidates[:2]
+    ] == ["first", "second"]

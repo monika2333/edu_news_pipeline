@@ -5,10 +5,7 @@ const initialReportId = body.dataset.reportId || '';
 const typeLabels = { zongbao: '综报', wanbao: '晚报', feedback: '反馈' };
 const linkStatusMeta = {
     processing: { label: '正在判断中', className: 'is-processing' },
-    // exact/fuzzy/manual 统一展示为“已匹配”，状态本身仍保留在数据中
-    exact: { label: '已匹配', className: 'is-linked' },
-    fuzzy: { label: '已匹配', className: 'is-linked' },
-    manual: { label: '已匹配', className: 'is-linked' },
+    matched: { label: '已匹配', className: 'is-linked' },
     pending: { label: '待确认', className: 'is-pending' },
     unmatched: { label: '未覆盖', className: 'is-unmatched' },
     rejected: { label: '已否决', className: 'is-rejected' }
@@ -35,8 +32,8 @@ const scoreValue = value => {
     return Number.isFinite(score) ? score.toFixed(2) : '-';
 };
 const typePill = type => `<span class="archive-type-pill is-${escapeHtml(type)}">${typeLabels[type] || escapeHtml(type)}</span>`;
-// 已回链（精确/模糊/人工）且带 article_id 的 pill 渲染为按钮，点击打开原文抽屉
-const LINKED_STATUSES = new Set(['exact', 'fuzzy', 'manual']);
+// 已匹配且带 article_id 的 pill 渲染为按钮，点击打开原文抽屉
+const LINKED_STATUSES = new Set(['matched']);
 const linkPill = (status, articleId) => {
     const meta = linkStatusMeta[status] || { label: status || '未知', className: 'is-unmatched' };
     if (articleId && LINKED_STATUSES.has(status)) {

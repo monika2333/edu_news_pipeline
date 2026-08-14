@@ -47,8 +47,7 @@ def test_process_submission_report_only_processes_links(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     expected = {
-        "exact": 1,
-        "fuzzy": 2,
+        "matched": 3,
         "pending": 3,
         "unmatched": 4,
     }

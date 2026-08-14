@@ -303,7 +303,7 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
         """,
         (batch_id,),
     )
-    # 报送存档回链：attr-selected 有一条已确认回链（exact），
+    # 报送存档回链：attr-selected 有一条已确认回链（matched），
     # attr-discarded 只有待确认回链（pending），不算「有存档」。
     report_id = UUID("44444444-4444-4444-4444-444444444444")
     cur.execute(
@@ -336,7 +336,7 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
                 "selected archive title",
                 "hash-selected",
                 "attr-selected",
-                "exact",
+                "matched",
             ),
             (
                 report_id,
@@ -411,7 +411,7 @@ def test_full_pipeline_attribution_and_primary_deduplication() -> None:
     selected_links = selected_item["archive_links"]
     assert len(selected_links) == 1
     assert selected_links[0]["report_type"] == "zongbao"
-    assert selected_links[0]["link_status"] == "exact"
+    assert selected_links[0]["link_status"] == "matched"
     assert selected_links[0]["title"] == "Selected Archive Title"
 
     review_exported_item = review_exported["items"][0]
@@ -470,7 +470,7 @@ class _FakeNewsSummaries:
                             "item_id": "55555555-5555-5555-5555-555555555555",
                             "report_type": "wanbao",
                             "report_date": "2026-08-12",
-                            "link_status": "manual",
+                            "link_status": "matched",
                             "title": "晚报存档",
                             "body": "存档正文",
                             "source": "测试来源",
@@ -508,7 +508,7 @@ def test_service_preserves_missing_fields_and_zero_scores(monkeypatch) -> None:
     assert "export_batch_dates" not in response["items"][0]["attribution"]
     archive_link = response["items"][0]["archive_links"][0]
     assert archive_link["report_type"] == "wanbao"
-    assert archive_link["link_status"] == "manual"
+    assert archive_link["link_status"] == "matched"
     assert archive_link["report_date"] == date(2026, 8, 12)
     assert response["items"][0]["score_feedback"] == {
         "feedback_type": "too_high",

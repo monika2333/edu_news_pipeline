@@ -154,7 +154,7 @@ def search_article_attributions(
             FROM decision_rows
             GROUP BY article_id
         ),
-        -- 「有存档」口径：只有已确认的回链（exact/fuzzy/manual）；
+        -- 「有存档」口径：只有 matched；
         -- pending 仍待人工确认，processing/unmatched/rejected 都不算。
         archive_links AS (
             SELECT
@@ -174,7 +174,7 @@ def search_article_attributions(
             FROM submitted_report_items sri
             JOIN submitted_reports sr ON sr.id = sri.report_id
             JOIN page_hits ph ON ph.canonical_article_id = sri.article_id
-            WHERE sri.link_status IN ('exact', 'fuzzy', 'manual')
+            WHERE sri.link_status = 'matched'
             GROUP BY sri.article_id
         ),
         enriched AS (

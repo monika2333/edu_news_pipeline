@@ -168,13 +168,12 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | 值 | 含义 |
 |---|---|
 | `processing` | 后台正在处理 |
-| `exact` / `fuzzy` | 自动匹配成功 |
+| `matched` | 已匹配到系统新闻（自动匹配或人工确认均使用此状态） |
 | `pending` | 相似度落在中间地带，需要人工确认 |
-| `manual` | 人工确认过 |
 | `unmatched` | 没找到对应新闻 |
 | `rejected` | 人工判定不匹配 |
 
-下游消费口径：全库文章检索卡片的「有存档」徽章只认 `exact` / `fuzzy` / `manual` 三类已确认回链；`pending` 尚未人工确认，不算有存档。
+数据库、worker、控制台 API 与前端统一使用 `matched`，报告汇总统一返回 `matched_count`；不区分标题完全一致、相似度自动通过或人工确认。`pending` 尚未人工确认，不算匹配成功。
 
 ### 查重（`submission-dedup`）
 

@@ -9,15 +9,14 @@ let activeReportStatusSignature = '';
 let detailStatusFilter = '';
 
 function linkStatusGroup(status) {
-    if (status === 'exact' || status === 'fuzzy' || status === 'manual') return 'linked';
+    if (status === 'matched') return 'linked';
     if (status === 'pending') return 'pending';
     if (status === 'unmatched' || status === 'rejected') return 'uncovered';
     return 'processing';
 }
 
 function reportCardStatsHtml(report) {
-    const linked = Number(report.exact_count || 0) + Number(report.fuzzy_count || 0)
-        + Number(report.manual_count || 0);
+    const linked = Number(report.matched_count || 0);
     const processing = Number(report.processing_count || 0);
     const pending = Number(report.pending_count || 0);
     const unmatched = Number(report.unmatched_count || 0) + Number(report.rejected_count || 0);
@@ -110,9 +109,7 @@ async function loadReportList(append = false) {
 function detailStats(items) {
     const stats = {
         processing: 0,
-        exact: 0,
-        fuzzy: 0,
-        manual: 0,
+        matched: 0,
         pending: 0,
         unmatched: 0,
         rejected: 0
@@ -120,7 +117,7 @@ function detailStats(items) {
     items.forEach(item => {
         if (item.link_status in stats) stats[item.link_status] += 1;
     });
-    const auto = stats.exact + stats.fuzzy + stats.manual;
+    const matched = stats.matched;
     const uncovered = stats.unmatched + stats.rejected;
     // 已匹配/待确认/未覆盖渲染为可点击按钮，点击后仅展示该分类条目，再次点击取消筛选
     const filterChip = (filter, label, count, extraClass = '') => {
@@ -132,7 +129,7 @@ function detailStats(items) {
         <div class="archive-stat-chips" id="archive-detail-stats">
             <span class="archive-stat-chip">共 <strong>${items.length}</strong> 条</span>
             ${stats.processing ? `<span class="archive-stat-chip is-processing">正在判断 <strong>${stats.processing}</strong></span>` : ''}
-            ${filterChip('linked', '已匹配', auto, ' is-linked')}
+            ${filterChip('linked', '已匹配', matched, ' is-linked')}
             ${filterChip('pending', '待确认', stats.pending, stats.pending ? ' is-pending' : '')}
             ${filterChip('uncovered', '未覆盖', uncovered)}
         </div>
@@ -146,7 +143,7 @@ function detailItemMetaHtml(item) {
         meta.push(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`);
     });
     const score = Number(item.link_combined_score);
-    if (Number.isFinite(score) && item.link_status !== 'exact') {
+    if (Number.isFinite(score) && item.link_status !== 'matched') {
         meta.push(`综合分 ${scoreValue(score)}`);
     }
     if (item.link_status === 'pending') {
@@ -224,9 +221,7 @@ function reportCountsFromItems(items) {
     const counts = {
         item_count: items.length,
         processing_count: 0,
-        exact_count: 0,
-        fuzzy_count: 0,
-        manual_count: 0,
+        matched_count: 0,
         pending_count: 0,
         unmatched_count: 0
     };

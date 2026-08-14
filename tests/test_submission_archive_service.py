@@ -128,11 +128,11 @@ def test_create_report_saves_before_processing_links(
 
     summary = submission_archive_processing.process_report_links("report-id")
 
-    assert summary["exact"] == 1
+    assert summary["matched"] == 1
     assert adapter.title_fetch_count == 1
     assert adapter.body_fetch_calls == [["article-1"]]
     assert adapter.link_results[0]["article_id"] == "article-1"
-    assert adapter.link_results[0]["status"] == "exact"
+    assert adapter.link_results[0]["status"] == "matched"
 
 
 def test_create_report_requires_explicit_overwrite(
@@ -179,13 +179,12 @@ def test_process_report_links_does_not_overwrite_finished_items(
         overwrite=False,
     )
     assert adapter.report is not None
-    adapter.report["items"][0]["link_status"] = "manual"
+    adapter.report["items"][0]["link_status"] = "matched"
 
     summary = submission_archive_processing.process_report_links("report-id")
 
     assert summary == {
-        "exact": 0,
-        "fuzzy": 0,
+        "matched": 0,
         "pending": 0,
         "unmatched": 0,
     }

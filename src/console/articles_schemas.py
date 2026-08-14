@@ -9,12 +9,12 @@ from src.domain.report_type import SubmissionDocType
 
 
 class NewsArticleArchiveLink(BaseModel):
-    """一条已确认的报送存档回链（exact/fuzzy/manual）。"""
+    """一条已确认的报送存档回链。"""
 
     item_id: Optional[str] = None
     report_type: SubmissionDocType
     report_date: Optional[date] = None
-    link_status: Literal["exact", "fuzzy", "manual"]
+    link_status: Literal["matched"]
     title: Optional[str] = None
     body: Optional[str] = None
     source: Optional[str] = None

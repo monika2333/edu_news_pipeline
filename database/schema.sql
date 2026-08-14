@@ -606,7 +606,7 @@ CREATE TABLE public.submitted_report_items (
     link_decided_by uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT submitted_report_items_link_status_check CHECK ((link_status = ANY (ARRAY['processing'::text, 'pending'::text, 'exact'::text, 'fuzzy'::text, 'manual'::text, 'unmatched'::text, 'rejected'::text])))
+    CONSTRAINT submitted_report_items_link_status_check CHECK ((link_status = ANY (ARRAY['processing'::text, 'pending'::text, 'matched'::text, 'unmatched'::text, 'rejected'::text])))
 );
 
 

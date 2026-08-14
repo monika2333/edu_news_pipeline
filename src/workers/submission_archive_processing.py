@@ -48,8 +48,7 @@ def _link_report(report: Mapping[str, Any]) -> dict[str, int]:
         if item.get("link_status") == "processing"
     ]
     counts = {
-        "exact": 0,
-        "fuzzy": 0,
+        "matched": 0,
         "pending": 0,
         "unmatched": 0,
     }
@@ -111,8 +110,7 @@ def process_report_links(report_id: str) -> dict[str, int]:
     report = adapter.submission_archive.fetch_report(report_id)
     if not report:
         return {
-            "exact": 0,
-            "fuzzy": 0,
+            "matched": 0,
             "pending": 0,
             "unmatched": 0,
         }

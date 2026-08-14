@@ -228,11 +228,9 @@ function searchCategoryLabel(item) {
     return `${region}${sentiment}`;
 }
 
-// 回链方式的中文文案；「有存档」口径在后端 SQL（仅 exact/fuzzy/manual），前端不重算。
+// 报送存档匹配状态的中文文案；是否命中由后端统一判定，前端不重算。
 const ARCHIVE_LINK_STATUS_LABELS = {
-    exact: '精确回链',
-    fuzzy: '模糊回链',
-    manual: '人工回链'
+    matched: '已匹配'
 };
 
 // 「有存档」展开区：列出每个已确认回链的存档条目（报别/日期/回链方式/标题/正文）。
@@ -294,7 +292,7 @@ function buildSearchResultItem(item, summaryToggles) {
     });
     header.appendChild(contentBtn);
     // 「有存档」徽章跟在「原文」后面：回链在存档流程中已确定，
-    // 只有已确认回链（exact/fuzzy/manual）的文章才有，点开在卡片内看存档详情。
+    // 只有状态为 matched 的文章才有，点开在卡片内看存档详情。
     const archiveLinks = Array.isArray(item.archive_links) ? item.archive_links : [];
     let archiveDetails = null;
     if (archiveLinks.length) {

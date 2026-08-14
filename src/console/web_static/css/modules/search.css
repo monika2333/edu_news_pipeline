@@ -108,6 +108,10 @@
     margin-bottom: 8px;
 }
 
+.search-meta .score-feedback-value {
+    display: none;
+}
+
 .search-details {
     position: relative;
     display: flex;

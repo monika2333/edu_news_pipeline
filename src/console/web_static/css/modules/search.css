@@ -240,40 +240,19 @@
 
 .attribution-chain.level-keyword_missed,
 .attribution-chain.level-relevance_below,
-.attribution-chain.level-importance_below,
-.search-status-badge.level-keyword_missed,
-.search-status-badge.level-relevance_below,
-.search-status-badge.level-importance_below {
+.attribution-chain.level-importance_below {
     --level-color: #b45309;
     --level-bg: #fef3c7;
 }
 
-.attribution-chain.level-not_reviewed,
-.search-status-badge.level-not_reviewed {
+.attribution-chain.level-not_reviewed {
     --level-color: #1d4ed8;
     --level-bg: #dbeafe;
 }
 
-.attribution-chain.level-discarded,
-.search-status-badge.level-discarded {
+.attribution-chain.level-discarded {
     --level-color: #b91c1c;
     --level-bg: #fee2e2;
-}
-
-/* 状态徽章：跟在标题链接后面，配色与归因链同级别一致。 */
-.search-status-badge {
-    --level-color: #64748b;
-    --level-bg: #f1f5f9;
-    display: inline-block;
-    margin-left: 8px;
-    padding: 1px 8px;
-    border-radius: 999px;
-    background: var(--level-bg);
-    color: var(--level-color);
-    font-size: 0.72rem;
-    font-weight: 600;
-    white-space: nowrap;
-    vertical-align: middle;
 }
 
 .attribution-chain-steps {

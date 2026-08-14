@@ -237,10 +237,6 @@ function buildSearchResultItem(item, summaryToggles) {
         });
         header.appendChild(link);
     }
-    // 状态徽章跟在标题链接后面（如「重要性未达标」），不再单独占一行。
-    if (typeof renderAttributionStatusBadge === 'function') {
-        header.appendChild(renderAttributionStatusBadge(attribution));
-    }
     itemEl.appendChild(header);
 
     // 命中的是被合并的重复报道时标明是哪一篇，避免使用者以为搜错了。

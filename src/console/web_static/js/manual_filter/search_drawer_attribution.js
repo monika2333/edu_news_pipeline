@@ -11,14 +11,14 @@ const ATTRIBUTION_CHAIN_STEPS = [
     { key: 'review', label: '人工复核' }
 ];
 
-// level → 中文文案 + 在链上停下的节点下标。
+// level → 在链上停下的节点下标。
 // not_reviewed 与 discarded 都落在「人工复核」节点：一个未报出，一个被放弃。
 const ATTRIBUTION_LEVELS = {
-    keyword_missed: { label: '初筛未命中', stepIndex: 0 },
-    relevance_below: { label: '相关性未达标', stepIndex: 1 },
-    importance_below: { label: '重要性未达标', stepIndex: 2 },
-    not_reviewed: { label: '尚未报出', stepIndex: 3 },
-    discarded: { label: '人工放弃', stepIndex: 3 }
+    keyword_missed: { stepIndex: 0 },
+    relevance_below: { stepIndex: 1 },
+    importance_below: { stepIndex: 2 },
+    not_reviewed: { stepIndex: 3 },
+    discarded: { stepIndex: 3 }
 };
 
 const MANUAL_WORKSPACE_LABELS = {
@@ -105,18 +105,6 @@ function renderSearchEmptyState(data) {
     return box;
 }
 
-// 状态徽章：跟在标题链接后面，标明文章目前停在哪一级。
-function renderAttributionStatusBadge(attribution) {
-    const level = attribution && attribution.level ? attribution.level : '';
-    const config = ATTRIBUTION_LEVELS[level] || null;
-    return createEl(
-        'span',
-        `search-status-badge${level ? ` level-${level}` : ''}`,
-        config ? config.label : '级别未知',
-        { dataset: { level } }
-    );
-}
-
 // 人工复核节点的小字与悬浮内容：全部人工决定，一行一条。
 function formatDecisionTooltip(decisions) {
     return decisions.map(decision => {
@@ -159,7 +147,6 @@ function renderStepExtra(stepKey, stepState, attribution) {
 }
 
 // 链上位置：整条链四个节点，高亮停下的那一级，之前的节点视为已通过。
-// 状态文案已挪到标题后的徽章（renderAttributionStatusBadge），链条只保留节点。
 function renderAttributionChain(attribution) {
     const level = attribution && attribution.level ? attribution.level : '';
     const config = ATTRIBUTION_LEVELS[level] || null;

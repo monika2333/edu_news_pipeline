@@ -1,6 +1,7 @@
 // Manual Filter JS - Search Drawer · 归因（A 块）
 // 只做后端 attribution 枚举到中文文案的映射与呈现，判据全部在后端，前端不重算。
-// 由 _search_drawer.html 引入，运行期依赖 utils.js 的 createEl/clearEl/formatLocalDateTime。
+// 由 _search_drawer.html 引入，运行期依赖 utils.js 的
+// createEl/clearEl/formatLocalDateTime/formatScore。
 
 // 链上节点：brief_items 只是自动导出的初稿，不代表筛选结果，不再作为链上节点。
 const ATTRIBUTION_CHAIN_STEPS = [
@@ -104,87 +105,81 @@ function renderSearchEmptyState(data) {
     return box;
 }
 
+// 状态徽章：跟在标题链接后面，标明文章目前停在哪一级。
+function renderAttributionStatusBadge(attribution) {
+    const level = attribution && attribution.level ? attribution.level : '';
+    const config = ATTRIBUTION_LEVELS[level] || null;
+    return createEl(
+        'span',
+        `search-status-badge${level ? ` level-${level}` : ''}`,
+        config ? config.label : '级别未知',
+        { dataset: { level } }
+    );
+}
+
+// 人工复核节点的小字与悬浮内容：全部人工决定，一行一条。
+function formatDecisionTooltip(decisions) {
+    return decisions.map(decision => {
+        const workspace = MANUAL_WORKSPACE_LABELS[decision.workspace] || decision.workspace || '未知工作区';
+        const actor = decision.actor || '未知操作人';
+        const time = formatLocalDateTime(decision.decided_at);
+        return `${workspace} · ${actor} · ${time} · ${decision.decision || '-'}`;
+    }).join('\n');
+}
+
+// 节点小字：相关性/重要性标分数（无分数则不标），
+// 人工复核标决定条数（悬浮看明细），轮到它却还没有决定时标「无」。
+function renderStepExtra(stepKey, stepState, attribution) {
+    if (!attribution) return null;
+    if (stepKey === 'relevance' || stepKey === 'importance') {
+        const score = stepKey === 'relevance'
+            ? attribution.relevance_score
+            : attribution.importance_score;
+        // null（无此值）与 0（分数确实是零）必须区分，不能用假值判断。
+        if (score === null || score === undefined) return null;
+        const label = stepKey === 'relevance' ? '相关性分' : '重要性分';
+        return createEl('span', 'attribution-step-extra', formatScore(score), {
+            title: `${label}：${formatScore(score)}`
+        });
+    }
+    if (stepKey === 'review') {
+        const decisions = Array.isArray(attribution.manual_decisions)
+            ? attribution.manual_decisions
+            : [];
+        if (decisions.length) {
+            return createEl('span', 'attribution-step-extra', `${decisions.length} 条决定`, {
+                title: formatDecisionTooltip(decisions)
+            });
+        }
+        if (stepState === 'current') {
+            return createEl('span', 'attribution-step-extra', '无');
+        }
+    }
+    return null;
+}
+
 // 链上位置：整条链四个节点，高亮停下的那一级，之前的节点视为已通过。
+// 状态文案已挪到标题后的徽章（renderAttributionStatusBadge），链条只保留节点。
 function renderAttributionChain(attribution) {
     const level = attribution && attribution.level ? attribution.level : '';
     const config = ATTRIBUTION_LEVELS[level] || null;
     const chain = createEl('div', `attribution-chain${level ? ` level-${level}` : ''}`, '', {
         dataset: { attributionLevel: level }
     });
-    chain.appendChild(createEl(
-        'div',
-        'attribution-chain-status',
-        config ? config.label : '级别未知',
-        { dataset: { level } }
-    ));
     const currentIndex = config ? config.stepIndex : -1;
     const steps = createEl('div', 'attribution-chain-steps');
     ATTRIBUTION_CHAIN_STEPS.forEach((step, index) => {
         const stepState = index < currentIndex ? 'passed' : (index === currentIndex ? 'current' : 'pending');
-        steps.appendChild(createEl('div', `attribution-step is-${stepState}`, [
+        const stepEl = createEl('div', `attribution-step is-${stepState}`, [
             createEl('span', 'attribution-step-dot'),
             createEl('span', 'attribution-step-label', step.label)
         ], {
             dataset: { step: step.key, stepState }
-        }));
+        });
+        const extra = renderStepExtra(step.key, stepState, attribution);
+        if (extra) stepEl.appendChild(extra);
+        steps.appendChild(stepEl);
     });
     chain.appendChild(steps);
     return chain;
-}
-
-function buildAttributionScoreRow(label, score, field) {
-    const row = createEl('div', 'search-attribution-row', '', { dataset: { detailField: field } });
-    row.appendChild(createEl('span', 'search-attribution-label', label));
-    // null（无此值）与 0（分数确实是零）必须区分，不能用假值判断。
-    if (score === null || score === undefined) {
-        row.appendChild(createEl('span', 'search-attribution-null', '无此项', {
-            dataset: { field, isNull: 'true' }
-        }));
-    } else {
-        row.appendChild(createEl('span', 'search-attribution-value', String(score), {
-            dataset: { field, isNull: 'false' }
-        }));
-    }
-    return row;
-}
-
-// 展开后的归因详情：分数、人工决定（可能多条，全列）。
-function renderAttributionDetails(attribution) {
-    const box = createEl('div', 'search-attribution', '', {
-        hidden: true,
-        dataset: { attributionDetails: 'true' }
-    });
-    if (!attribution) {
-        box.appendChild(createEl('div', 'search-attribution-row', '无归因数据。'));
-        return box;
-    }
-
-    box.appendChild(buildAttributionScoreRow('相关性分', attribution.relevance_score, 'relevance_score'));
-    box.appendChild(buildAttributionScoreRow('重要性分', attribution.importance_score, 'importance_score'));
-
-    const decisions = Array.isArray(attribution.manual_decisions) ? attribution.manual_decisions : [];
-    const decisionRow = createEl('div', 'search-attribution-row', '', {
-        dataset: { detailField: 'manual_decisions' }
-    });
-    decisionRow.appendChild(createEl('span', 'search-attribution-label', '人工决定'));
-    if (!decisions.length) {
-        decisionRow.appendChild(createEl('span', 'search-attribution-null', '无'));
-    } else {
-        const list = createEl('ul', 'search-attribution-decisions');
-        decisions.forEach(decision => {
-            const workspace = MANUAL_WORKSPACE_LABELS[decision.workspace] || decision.workspace || '未知工作区';
-            const actor = decision.actor || '未知操作人';
-            const time = formatLocalDateTime(decision.decided_at);
-            list.appendChild(createEl(
-                'li',
-                'search-attribution-decision',
-                `${workspace} · ${actor} · ${time} · ${decision.decision || '-'}`,
-                { dataset: { workspace: decision.workspace || '' } }
-            ));
-        });
-        decisionRow.appendChild(list);
-    }
-    box.appendChild(decisionRow);
-
-    return box;
 }

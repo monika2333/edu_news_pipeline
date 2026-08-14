@@ -207,6 +207,17 @@ function expandSearchWindow() {
     performDrawerSearch();
 }
 
+// 全库检索卡片的分类徽章：京内/京外 × 正面/负面。
+// 与 duty_summary/utils.js 的 articleCategoryLabel 同一口径；
+// 地域（geo-classify）或情感（summarize）任一判定未就绪时不归类，返回空串。
+function searchCategoryLabel(item) {
+    if (item.is_beijing_related === null || item.is_beijing_related === undefined) return '';
+    if (!item.sentiment_label) return '';
+    const region = item.is_beijing_related ? '京内' : '京外';
+    const sentiment = String(item.sentiment_label).toLowerCase() === 'negative' ? '负面' : '正面';
+    return `${region}${sentiment}`;
+}
+
 function buildSearchResultItem(item, summaryToggles) {
     const itemEl = createEl('div', 'search-item', '', {
         dataset: { articleId: item.article_id || '' }
@@ -225,6 +236,10 @@ function buildSearchResultItem(item, summaryToggles) {
             title: '打开原始链接'
         });
         header.appendChild(link);
+    }
+    // 状态徽章跟在标题链接后面（如「重要性未达标」），不再单独占一行。
+    if (typeof renderAttributionStatusBadge === 'function') {
+        header.appendChild(renderAttributionStatusBadge(attribution));
     }
     itemEl.appendChild(header);
 
@@ -259,25 +274,19 @@ function buildSearchResultItem(item, summaryToggles) {
         }));
     }
     meta.appendChild(ingestedSpan);
-    meta.appendChild(createEl('span', `badge ${getSentimentClass(item.sentiment_label)}`, item.sentiment_label || '-'));
+    // 分类徽章取代原 sentiment 徽章：京内/京外 × 正面/负面。
+    // 两个判定（地域、情感）都就绪才显示，没走到分类环节的文章不显示。
+    const categoryText = searchCategoryLabel(item);
+    if (categoryText) {
+        meta.appendChild(createEl(
+            'span',
+            `badge search-category-badge ${getSentimentClass(item.sentiment_label)}`,
+            categoryText
+        ));
+    }
     itemEl.appendChild(meta);
 
     const actions = createEl('div', 'search-item-actions');
-    let attributionDetails = null;
-    if (typeof renderAttributionDetails === 'function') {
-        attributionDetails = renderAttributionDetails(attribution);
-        const detailToggle = createEl('button', 'search-attribution-toggle', '归因详情 ▾', {
-            type: 'button',
-            'aria-expanded': 'false'
-        });
-        detailToggle.addEventListener('click', () => {
-            const expanded = attributionDetails.hidden;
-            attributionDetails.hidden = !expanded;
-            detailToggle.textContent = expanded ? '归因详情 ▴' : '归因详情 ▾';
-            detailToggle.setAttribute('aria-expanded', String(expanded));
-        });
-        actions.appendChild(detailToggle);
-    }
     const archiveBtn = createEl('button', 'search-archive-jump', '查报送存档', {
         type: 'button',
         title: '以本篇标题检索报送存档，检索词可再修改'
@@ -289,7 +298,6 @@ function buildSearchResultItem(item, summaryToggles) {
     });
     actions.appendChild(archiveBtn);
     itemEl.appendChild(actions);
-    if (attributionDetails) itemEl.appendChild(attributionDetails);
 
     const details = createEl('div', 'search-details');
     const summaryText = String(item.llm_summary || '').trim();

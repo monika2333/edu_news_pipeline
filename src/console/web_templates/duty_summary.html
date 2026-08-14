@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="/static/css/modules/filter.css">
     <link rel="stylesheet" href="/static/css/modules/review.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/search.css">
+    <link rel="stylesheet" href="/static/css/modules/content_drawer.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/auth.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/duty_summary.css?v={{ version }}">
 </head>
@@ -149,6 +150,9 @@
     </div>
 
     {% include "_search_drawer.html" %}
+    {# 检索抽屉卡片的「原文」按钮依赖内容抽屉：markup + css + 独立实现脚本。
+       本页没有侧栏折叠与列表锚定，与存档库页共用 submission_archive/content_drawer.js。 #}
+    {% include "_content_drawer.html" %}
 
     <div class="modal" id="summary-import-conflict-modal" role="dialog" aria-modal="true"
         aria-labelledby="summary-import-conflict-title" aria-hidden="true">
@@ -211,6 +215,7 @@
     <script src="/static/js/shift_date.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/utils.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/search_drawer.js?v={{ version }}"></script>
+    <script src="/static/js/submission_archive/content_drawer.js?v={{ version }}"></script>
     <script src="/static/js/duty_summary/core.js?v={{ version }}"></script>
     <script src="/static/js/duty_summary/utils.js?v={{ version }}"></script>
     <script src="/static/js/duty_summary/mutations.js?v={{ version }}"></script>

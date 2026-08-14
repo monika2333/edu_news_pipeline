@@ -99,22 +99,6 @@
     line-height: 1.4;
 }
 
-.search-item h4 a {
-    color: var(--text-primary);
-    text-decoration: none;
-}
-
-.search-item h4 a:hover {
-    color: var(--primary-color);
-    text-decoration: underline;
-}
-
-.search-item h4 .search-source-link {
-    display: inline-block;
-    margin-left: 6px;
-    white-space: nowrap;
-}
-
 .search-meta {
     display: flex;
     flex-wrap: wrap;

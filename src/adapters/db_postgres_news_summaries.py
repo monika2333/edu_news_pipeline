@@ -657,16 +657,19 @@ def search_news_summaries(
 def fetch_news_summary_content(cur: psycopg.Cursor, article_id: str) -> Optional[Dict[str, Any]]:
     if not article_id:
         return None
+    # 以 raw_articles 为基表：全库检索会命中只抓了原文、未进摘要环节的文章，
+    # 内容接口必须也能给出它们的正文；news_summaries 的字段优先（收录时间口径与归因一致）。
     query = """
         SELECT
-            article_id,
-            title,
-            source,
-            url,
-            created_at,
-            content_markdown
-        FROM news_summaries
-        WHERE article_id = %s
+            ra.article_id,
+            COALESCE(ns.title, ra.title) AS title,
+            COALESCE(ns.source, ra.source) AS source,
+            COALESCE(ns.url, ra.url) AS url,
+            COALESCE(ns.created_at, ra.fetched_at) AS created_at,
+            COALESCE(NULLIF(ns.content_markdown, ''), ra.content_markdown) AS content_markdown
+        FROM raw_articles ra
+        LEFT JOIN news_summaries ns ON ns.article_id = ra.article_id
+        WHERE ra.article_id = %s
     """
     cur.execute(query, (article_id,))
     row = cur.fetchone()

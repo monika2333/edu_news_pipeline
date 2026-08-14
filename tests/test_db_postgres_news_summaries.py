@@ -75,7 +75,11 @@ def test_fetch_news_summary_content_selects_drawer_metadata() -> None:
     ):
         assert column in query
     assert "publish_time_iso" not in query
-    assert "fetched_at" not in query
+    # 以 raw_articles 为基表、news_summaries 字段优先：
+    # 全库检索会命中未进摘要环节的文章，内容接口也要能给出它们的正文。
+    assert "FROM raw_articles" in query
+    assert "LEFT JOIN news_summaries" in query
+    assert "ra.fetched_at" in query
     assert params == ("article-1",)
 
 

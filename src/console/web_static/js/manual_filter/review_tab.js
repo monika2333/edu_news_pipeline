@@ -263,6 +263,7 @@ function renderReviewCard(item) {
                         data-article-id="${escapeReviewAttr(item.article_id || '')}"
                         data-bonus-keywords="${escapeReviewAttr((item.bonus_keywords || []).join('\n'))}"
                         title="查看原文">原文</button>
+                    ${renderSubmissionDuplicateBadge(item)}
                 </h4>
                 <div class="review-card-actions">
                     <button type="button" class="review-discard-btn" data-id="${item.article_id || ''}" title="放弃新闻" aria-label="放弃新闻">🗑️</button>

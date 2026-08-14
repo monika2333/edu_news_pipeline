@@ -134,8 +134,10 @@ function setupSubmissionDuplicatesModal() {
             closeSubmissionDuplicatesModal();
         }
     });
-    if (elements.filterList) {
-        elements.filterList.addEventListener('click', event => {
+    // 筛选页与审阅页卡片都会渲染重复徽章，两个列表都要委托点击。
+    const bindBadgeClick = listEl => {
+        if (!listEl) return;
+        listEl.addEventListener('click', event => {
             const badge = event.target.closest('.submission-duplicate-badge');
             if (!badge) return;
             const articleId = badge.dataset.articleId;
@@ -146,5 +148,7 @@ function setupSubmissionDuplicatesModal() {
                 badge
             );
         });
-    }
+    };
+    bindBadgeClick(elements.filterList);
+    bindBadgeClick(elements.reviewList);
 }

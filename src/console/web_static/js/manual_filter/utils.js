@@ -68,15 +68,14 @@ async function requireManualMutationSuccess(response, fallbackMessage) {
     return payload;
 }
 
-function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) {
+// 报送重复标记（已报送/疑似已报送）的徽章 markup，筛选页与审阅页卡片共用。
+function renderSubmissionDuplicateBadge(item) {
     const safe = item || {};
-    const currentStatus = safe.manual_status || safe.status || 'pending';
-    const sourcePlaceholder = safe.llm_source_raw ? `(LLM: ${safe.llm_source_raw})` : '留空则回退抓取来源';
-    const bonusClass = safe.bonus_keywords && safe.bonus_keywords.length ? ' has-bonus' : '';
     const duplicate = safe.submission_duplicate;
     const duplicateState = duplicate?.has_confirmed ? 'confirmed'
         : duplicate?.has_suspected ? 'suspected'
             : '';
+    if (!duplicateState) return '';
     const duplicateLabel = duplicateState === 'confirmed' ? '已报送' : '疑似已报送';
     const duplicateTitle = (duplicate?.matches || []).map(match => {
         const reportLabel = {
@@ -90,7 +89,7 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
         const extraText = extraCount > 0 ? `，另有 ${extraCount} 条记录` : '';
         return `${match.report_date || ''} ${reportLabel}：${match.title || ''}${scoreText}${extraText}`;
     }).join('\n');
-    const duplicateBadge = duplicateState ? `
+    return `
         <span class="submission-duplicate-wrap">
             <button type="button" class="submission-duplicate-badge ${duplicateState}"
                 data-article-id="${safeHtml(safe.article_id || '')}"
@@ -101,7 +100,15 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
                 data-article-id="${safeHtml(safe.article_id || '')}">不是重复</button>
             ` : ''}
         </span>
-    ` : '';
+    `;
+}
+
+function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) {
+    const safe = item || {};
+    const currentStatus = safe.manual_status || safe.status || 'pending';
+    const sourcePlaceholder = safe.llm_source_raw ? `(LLM: ${safe.llm_source_raw})` : '留空则回退抓取来源';
+    const bonusClass = safe.bonus_keywords && safe.bonus_keywords.length ? ' has-bonus' : '';
+    const duplicateBadge = renderSubmissionDuplicateBadge(safe);
     const statusGroup = showStatus ? `
         <div class="radio-group" role="radiogroup">
             <div class="radio-option">

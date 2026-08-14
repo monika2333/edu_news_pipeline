@@ -28,29 +28,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadFilterCounts();
     }
     setupFilterRealtimeDecisionHandlers();
+    // 筛选页与审阅页卡片都会渲染「不是重复」按钮，两个列表都要委托点击。
+    const handleDuplicateDismissClick = async event => {
+        const button = event.target.closest('.submission-duplicate-dismiss');
+        if (!button) return;
+        const articleId = button.dataset.articleId;
+        if (!articleId) return;
+        button.disabled = true;
+        try {
+            const response = await window.fetch(
+                `/api/submission-archive/duplicates/${encodeURIComponent(articleId)}/dismiss`,
+                { method: 'POST' }
+            );
+            if (!response.ok) throw new Error('dismiss failed');
+            document.querySelectorAll('.article-card[data-id]').forEach(card => {
+                if (card.dataset.id !== articleId) return;
+                card.querySelectorAll('.submission-duplicate-wrap').forEach(wrap => wrap.remove());
+            });
+            showToast('已移除重复标记');
+        } catch (error) {
+            button.disabled = false;
+            showToast('移除重复标记失败', 'error');
+        }
+    };
     if (elements.filterList) {
-        elements.filterList.addEventListener('click', async event => {
-            const button = event.target.closest('.submission-duplicate-dismiss');
-            if (!button) return;
-            const articleId = button.dataset.articleId;
-            if (!articleId) return;
-            button.disabled = true;
-            try {
-                const response = await window.fetch(
-                    `/api/submission-archive/duplicates/${encodeURIComponent(articleId)}/dismiss`,
-                    { method: 'POST' }
-                );
-                if (!response.ok) throw new Error('dismiss failed');
-                document.querySelectorAll('.article-card[data-id]').forEach(card => {
-                    if (card.dataset.id !== articleId) return;
-                    card.querySelectorAll('.submission-duplicate-wrap').forEach(wrap => wrap.remove());
-                });
-                showToast('已移除重复标记');
-            } catch (error) {
-                button.disabled = false;
-                showToast('移除重复标记失败', 'error');
-            }
-        });
+        elements.filterList.addEventListener('click', handleDuplicateDismissClick);
+    }
+    if (elements.reviewList) {
+        elements.reviewList.addEventListener('click', handleDuplicateDismissClick);
     }
     if (elements.reviewList) {
         setupDuplicateReview();

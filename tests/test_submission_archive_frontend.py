@@ -41,6 +41,23 @@ def test_duplicate_badge_is_rendered_as_clickable_button() -> None:
     assert "data-duplicate-state" in source
 
 
+def test_review_card_renders_submission_duplicate_badge() -> None:
+    review_tab = Path(
+        "src/console/web_static/js/manual_filter/review_tab.js"
+    ).read_text(encoding="utf-8")
+    modal = Path(
+        "src/console/web_static/js/manual_filter/submission_duplicates_modal.js"
+    ).read_text(encoding="utf-8")
+    init = Path(
+        "src/console/web_static/js/manual_filter/init.js"
+    ).read_text(encoding="utf-8")
+
+    # 审阅页卡片复用筛选页的徽章 markup，且徽章点击与「不是重复」在两个列表都委托。
+    assert "renderSubmissionDuplicateBadge(item)" in review_tab
+    assert "bindBadgeClick(elements.reviewList)" in modal
+    assert "elements.reviewList.addEventListener('click', handleDuplicateDismissClick)" in init
+
+
 def test_archive_frontend_consumes_only_unified_matched_status() -> None:
     core = Path(
         "src/console/web_static/js/submission_archive/core.js"

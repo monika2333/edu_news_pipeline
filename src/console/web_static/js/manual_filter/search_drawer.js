@@ -82,6 +82,8 @@ function setupSearchDrawer() {
         if (e.key !== 'Escape' || !drawer.classList.contains('active')) return;
         // 原文抽屉还开着时 Escape 先关原文（由内容抽屉脚本处理），检索抽屉保持
         if (document.body.classList.contains('content-drawer-open')) return;
+        // 评分反馈弹层开着时 Escape 先关弹层（由 score_feedback.js 处理）
+        if (typeof activeScoreFeedbackControl !== 'undefined' && activeScoreFeedbackControl) return;
         toggleDrawer(false);
     });
 
@@ -352,6 +354,23 @@ function buildSearchResultItem(item, summaryToggles) {
             `badge search-category-badge ${getSentimentClass(item.sentiment_label)}`,
             categoryText
         ));
+    }
+    // 评分反馈入口：复用筛选页的 ⓘ 控件（score_feedback.js 的委托处理交互），
+    // 控件带 data-score-feedback-scope="article" 走通用 /api/articles 接口。
+    // 只有有重要性评分的文章才显示——反馈绑定当前评分上下文，
+    // 没走到评分的文章后端也会拒绝（ScoreFeedbackContextMissingError）。
+    if (
+        item.external_importance_score !== null
+        && item.external_importance_score !== undefined
+        && typeof renderScoreFeedbackControl === 'function'
+    ) {
+        const feedbackWrap = document.createElement('span');
+        feedbackWrap.innerHTML = renderScoreFeedbackControl(item);
+        const feedbackControl = feedbackWrap.firstElementChild;
+        if (feedbackControl) {
+            feedbackControl.dataset.scoreFeedbackScope = 'article';
+            meta.appendChild(feedbackControl);
+        }
     }
     itemEl.appendChild(meta);
     if (archiveDetails) itemEl.appendChild(archiveDetails);

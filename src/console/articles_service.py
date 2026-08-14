@@ -137,6 +137,15 @@ def _serialize_article(row: Dict[str, Any]) -> Dict[str, Any]:
             "matched_article_title": row.get("attribution_matched_article_title"),
         },
         "archive_links": list(row.get("archive_links") or []),
+        # 仅在有反馈记录时给出 dict，前端据此渲染 ▲/▼；无记录为 None。
+        "score_feedback": (
+            {
+                "feedback_type": row["score_feedback_type"],
+                "notes": row.get("score_feedback_notes"),
+            }
+            if row.get("score_feedback_type") in ("too_high", "too_low")
+            else None
+        ),
     }
 
 

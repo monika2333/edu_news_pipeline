@@ -228,7 +228,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | `console_users` / `console_user_sessions` | 账号与登录会话 |
 | `review_events` | 审计日志，记录谁在什么时候改了什么 |
 | `pipeline_runs` / `pipeline_run_steps` | 流水线执行记录，用于控制台的运行状态页 |
-| `score_feedbacks` | 编辑对 AI 打分的反馈（偏高/偏低） |
+| `score_feedbacks` | 编辑对 AI 打分的反馈（偏高/偏低），按文章当前评分上下文（prompt_key + prompt_version）关联；人工筛选/值班工作区与全库检索卡片（经 `/api/articles/score-feedback`）都写这张表 |
 | `news_title_embeddings` | 仅编码新闻标题的向量，用于人工筛选聚类；不参与报送查重 |
 | `schema_migrations` | dbmate 迁移记录，**不要手工修改** |
 

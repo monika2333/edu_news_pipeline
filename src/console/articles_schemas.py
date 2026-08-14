@@ -46,6 +46,13 @@ class NewsArticleAttribution(BaseModel):
     matched_article_title: Optional[str] = None
 
 
+class NewsArticleScoreFeedback(BaseModel):
+    """文章当前重要性评分上下文对应的编辑反馈（无反馈时为 None）。"""
+
+    feedback_type: Literal["too_high", "too_low"]
+    notes: Optional[str] = None
+
+
 class NewsArticleSearchItem(BaseModel):
     article_id: str
     title: Optional[str] = None
@@ -73,6 +80,7 @@ class NewsArticleSearchItem(BaseModel):
     updated_at: Optional[datetime] = None
     attribution: NewsArticleAttribution
     archive_links: list[NewsArticleArchiveLink] = Field(default_factory=list)
+    score_feedback: Optional[NewsArticleScoreFeedback] = None
 
 
 class NewsArticleContentResponse(BaseModel):
@@ -98,6 +106,7 @@ __all__ = [
     "NewsArticleAttribution",
     "NewsArticleContentResponse",
     "NewsArticleManualDecision",
+    "NewsArticleScoreFeedback",
     "NewsArticleSearchItem",
     "NewsArticleSearchResponse",
 ]

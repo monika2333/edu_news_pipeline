@@ -8,6 +8,7 @@ from uuid import UUID
 import psycopg
 import pytest
 from psycopg.rows import dict_row
+from psycopg.types.json import Json
 
 from src.adapters.db_postgres_article_attribution import (
     SUMMARY_SEARCH_TEXT_EXPRESSION,
@@ -64,6 +65,7 @@ def _create_temp_search_tables(cur: psycopg.Cursor) -> None:
         "console_users",
         "submitted_reports",
         "submitted_report_items",
+        "score_feedbacks",
     ):
         cur.execute(
             f"CREATE TEMP TABLE {table} "
@@ -141,9 +143,10 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
             score,
             external_importance_status,
             external_importance_score,
+            external_importance_raw,
             created_at
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """,
         [
             (
@@ -153,6 +156,7 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
                 81,
                 "external_filtered",
                 41,
+                Json({"prompt_key": "external_positive", "prompt_version": "v1"}),
                 now,
             ),
             (
@@ -162,6 +166,7 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
                 82,
                 "ready_for_export",
                 70,
+                None,
                 now,
             ),
             (
@@ -171,6 +176,7 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
                 83,
                 "ready_for_export",
                 71,
+                None,
                 now,
             ),
             (
@@ -180,6 +186,7 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
                 83,
                 "ready_for_export",
                 71,
+                None,
                 now,
             ),
             (
@@ -189,6 +196,7 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
                 83,
                 "ready_for_export",
                 71,
+                None,
                 now,
             ),
             (
@@ -198,9 +206,25 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
                 84,
                 "ready_for_export",
                 72,
+                None,
                 now,
             ),
         ],
+    )
+    # 评分反馈：attr-importance 的当前评分上下文上有一条「偏低」反馈。
+    cur.execute(
+        """
+        INSERT INTO score_feedbacks (
+            article_id,
+            feedback_type,
+            score_value,
+            prompt_key,
+            prompt_version,
+            notes,
+            score_context
+        )
+        VALUES ('attr-importance', 'too_low', 41, 'external_positive', 'v1', '分数打低了', '{}')
+        """
     )
     user_id = UUID("11111111-1111-1111-1111-111111111111")
     shift_id = UUID("22222222-2222-2222-2222-222222222222")
@@ -360,7 +384,11 @@ def test_full_pipeline_attribution_and_primary_deduplication() -> None:
     assert float(relevance["items"][0]["attribution_relevance_score"]) == 12
     assert importance["items"][0]["attribution_level"] == "importance_below"
     assert float(importance["items"][0]["attribution_importance_score"]) == 41
+    # 评分反馈按当前评分上下文（prompt_key + prompt_version）匹配返回
+    assert importance["items"][0]["score_feedback_type"] == "too_low"
+    assert importance["items"][0]["score_feedback_notes"] == "分数打低了"
     assert not_reviewed["items"][0]["attribution_level"] == "not_reviewed"
+    assert not_reviewed["items"][0]["score_feedback_type"] is None
 
     discarded_item = discarded["items"][0]
     assert discarded_item["attribution_level"] == "discarded"
@@ -435,6 +463,8 @@ class _FakeNewsSummaries:
                     "attribution_importance_score": None,
                     "attribution_manual_decisions": [],
                     "attribution_matched_article_title": None,
+                    "score_feedback_type": "too_high",
+                    "score_feedback_notes": None,
                     "archive_links": [
                         {
                             "item_id": "55555555-5555-5555-5555-555555555555",
@@ -480,6 +510,10 @@ def test_service_preserves_missing_fields_and_zero_scores(monkeypatch) -> None:
     assert archive_link["report_type"] == "wanbao"
     assert archive_link["link_status"] == "manual"
     assert archive_link["report_date"] == date(2026, 8, 12)
+    assert response["items"][0]["score_feedback"] == {
+        "feedback_type": "too_high",
+        "notes": None,
+    }
     assert response["lookback_days"] == 45
     assert response["window_start"] == adapter.news_summaries.kwargs["fetched_after"]
 

@@ -104,15 +104,41 @@ function setScoreFeedbackState(control, feedbackType, notes) {
     updateScoreFeedbackCount(control);
 }
 
-async function requestScoreFeedback(path, method, payload) {
-    const response = await workspaceFetch(`${API_BASE}${path}`, {
+// 提示通知：筛选页用 showToast；其他页面回退到 showToastAt + 页面 toast 元素
+// （值班汇总/管理员页是 #toast，存档库页是 #archive-toast）。
+function notifyScoreFeedback(message, type) {
+    if (typeof showToast === 'function') {
+        showToast(message, type);
+        return;
+    }
+    const toastEl = document.getElementById('toast') || document.getElementById('archive-toast');
+    if (toastEl && typeof showToastAt === 'function') {
+        showToastAt(toastEl, message, type);
+    }
+}
+
+// 控件带 data-score-feedback-scope="article" 时走通用文章接口
+// （全库检索卡片：文章不一定在当前工作区范围内，不能用工作区接口），
+// 否则保持原工作区行为（管理员 /api/manual_filter，值班 shift 作用域）。
+async function requestScoreFeedback(path, method, payload, control) {
+    const useArticleApi = Boolean(
+        control && control.dataset.scoreFeedbackScope === 'article'
+    );
+    const base = useArticleApi ? '/api/articles' : API_BASE;
+    const fetchImpl = useArticleApi || typeof workspaceFetch !== 'function'
+        ? window.fetch.bind(window)
+        : workspaceFetch;
+    const response = await fetchImpl(`${base}${path}`, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-        throw new Error(formatApiError(data, '评分反馈保存失败'));
+        const fallback = '评分反馈保存失败';
+        throw new Error(
+            typeof formatApiError === 'function' ? formatApiError(data, fallback) : fallback
+        );
     }
     return data;
 }
@@ -133,17 +159,17 @@ async function saveScoreFeedbackNotes(control, { showSuccess = true } = {}) {
         article_id: control.dataset.articleId,
         feedback_type: feedbackType,
         notes: requestedNotes
-    });
+    }, control);
     try {
         const data = await control.scoreFeedbackPromise;
         const saved = data.score_feedback || {};
         notesBox.value = saved.notes || '';
         notesBox.dataset.savedNotes = notesBox.value;
         updateScoreFeedbackCount(control);
-        if (showSuccess) showToast('备注已保存');
+        if (showSuccess) notifyScoreFeedback('备注已保存', 'success');
         return true;
     } catch (error) {
-        showToast('备注保存失败', 'error');
+        notifyScoreFeedback('备注保存失败', 'error');
         return false;
     } finally {
         control.scoreFeedbackPromise = null;
@@ -167,7 +193,7 @@ async function handleScoreFeedbackDirection(control, targetType) {
         if (targetType === previousType) {
             await requestScoreFeedback('/score-feedback/clear', 'POST', {
                 article_id: control.dataset.articleId
-            });
+            }, control);
             setScoreFeedbackState(control, '', '');
         } else {
             const requestedNotes = previousType ? '' : previousNotes;
@@ -175,14 +201,14 @@ async function handleScoreFeedbackDirection(control, targetType) {
                 article_id: control.dataset.articleId,
                 feedback_type: targetType,
                 notes: requestedNotes
-            });
+            }, control);
             const saved = data.score_feedback || {};
             setScoreFeedbackState(control, targetType, saved.notes || requestedNotes);
             if (notesBox) notesBox.focus();
         }
     } catch (error) {
         setScoreFeedbackState(control, previousType, previousNotes);
-        showToast(error.message || '评分反馈保存失败', 'error');
+        notifyScoreFeedback(error.message || '评分反馈保存失败', 'error');
     } finally {
         setScoreFeedbackBusy(control, false);
         control.dataset.directionBusy = 'false';
@@ -228,7 +254,13 @@ async function openScoreFeedback(control) {
     updateScoreFeedbackCount(control);
 }
 
+// 幂等：manual_filter/init.js 会显式调用一次，其他页面（值班汇总/存档库）
+// 靠文件末尾的自启动注册，两边都可能走到，不能重复绑定 document 监听。
+let scoreFeedbackReady = false;
+
 function setupScoreFeedback() {
+    if (scoreFeedbackReady) return;
+    scoreFeedbackReady = true;
     document.addEventListener('click', async event => {
         const trigger = event.target.closest('.score-feedback-trigger');
         if (trigger) {
@@ -263,4 +295,10 @@ function setupScoreFeedback() {
         event.preventDefault();
         await closeScoreFeedback(activeScoreFeedbackControl);
     });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupScoreFeedback, { once: true });
+} else {
+    setupScoreFeedback();
 }

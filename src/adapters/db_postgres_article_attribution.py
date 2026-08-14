@@ -241,7 +241,9 @@ def search_article_attributions(
                     THEN ph.matched_title
                     ELSE NULL
                 END AS attribution_matched_article_title,
-                COALESCE(al.links, '[]'::jsonb) AS archive_links
+                COALESCE(al.links, '[]'::jsonb) AS archive_links,
+                sf.feedback_type AS score_feedback_type,
+                sf.notes AS score_feedback_notes
             FROM page_hits ph
             LEFT JOIN raw_articles ra ON ra.article_id = ph.canonical_article_id
             LEFT JOIN filtered_articles fa ON fa.article_id = ph.canonical_article_id
@@ -249,6 +251,11 @@ def search_article_attributions(
             LEFT JOIN news_summaries ns ON ns.article_id = ph.canonical_article_id
             LEFT JOIN decisions d ON d.article_id = ph.canonical_article_id
             LEFT JOIN archive_links al ON al.article_id = ph.canonical_article_id
+            -- 与人工筛选列表同一口径：反馈绑定当前评分上下文（prompt_key + prompt_version）
+            LEFT JOIN score_feedbacks sf
+              ON sf.article_id = ns.article_id
+             AND sf.prompt_key = ns.external_importance_raw ->> 'prompt_key'
+             AND sf.prompt_version = ns.external_importance_raw ->> 'prompt_version'
         )
         SELECT enriched.*
         FROM enriched

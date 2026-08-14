@@ -1,13 +1,28 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import NoReturn, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from src.console import articles_service
+from src.console import articles_service, score_feedback_service
 from src.console.articles_schemas import NewsArticleContentResponse, NewsArticleSearchResponse
+from src.console.auth_service import ConsoleUser
+from src.console.score_feedback_schemas import (
+    ClearScoreFeedbackRequest,
+    ScoreFeedbackRequest,
+    ScoreFeedbackResponse,
+)
+from src.console.security import require_console_user
 
 router = APIRouter(prefix="/api/articles", tags=["articles"])
+
+
+def _raise_score_feedback_http_error(exc: ValueError) -> NoReturn:
+    if isinstance(exc, score_feedback_service.ScoreFeedbackNotFoundError):
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if isinstance(exc, score_feedback_service.ScoreFeedbackContextError):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -50,6 +65,40 @@ def get_article_content_api(
 ) -> NewsArticleContentResponse:
     result = articles_service.get_article_content(article_id=article_id)
     return NewsArticleContentResponse.model_validate(result)
+
+
+@router.put("/score-feedback", response_model=ScoreFeedbackResponse)
+def save_article_score_feedback_api(
+    req: ScoreFeedbackRequest,
+    user: ConsoleUser = Depends(require_console_user),
+) -> ScoreFeedbackResponse:
+    """Create or update score feedback from anywhere an article shows up.
+
+    与工作区接口的区别：全库检索可能命中不在当前人工筛选/值班范围内的文章，
+    这里只做登录校验，反馈仍绑定文章当前的重要性评分上下文并记录提交人。
+    """
+    try:
+        feedback = score_feedback_service.save_score_feedback(
+            article_id=req.article_id,
+            feedback_type=req.feedback_type,
+            notes=req.notes,
+            actor=user,
+        )
+    except ValueError as exc:
+        _raise_score_feedback_http_error(exc)
+    return ScoreFeedbackResponse(score_feedback=feedback)
+
+
+@router.post("/score-feedback/clear", response_model=ScoreFeedbackResponse)
+def clear_article_score_feedback_api(
+    req: ClearScoreFeedbackRequest,
+) -> ScoreFeedbackResponse:
+    """Clear score feedback for the article's current external score."""
+    try:
+        score_feedback_service.clear_score_feedback(article_id=req.article_id)
+    except ValueError as exc:
+        _raise_score_feedback_http_error(exc)
+    return ScoreFeedbackResponse(score_feedback=None)
 
 
 @router.get(

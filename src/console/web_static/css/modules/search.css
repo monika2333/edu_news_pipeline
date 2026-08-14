@@ -112,6 +112,11 @@
     display: none;
 }
 
+.search-item .score-feedback-popover {
+    left: auto;
+    right: 0;
+}
+
 .search-details {
     position: relative;
     display: flex;

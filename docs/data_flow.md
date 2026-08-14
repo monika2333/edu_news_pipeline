@@ -174,6 +174,8 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | `unmatched` | 没找到对应新闻 |
 | `rejected` | 人工判定不匹配 |
 
+下游消费口径：全库文章检索卡片的「有存档」徽章只认 `exact` / `fuzzy` / `manual` 三类已确认回链；`pending` 尚未人工确认，不算有存档。
+
 ### 查重（`submission-dedup`）
 
 用向量相似度，把**当天全部 `ready_for_export` 新闻**与回看窗口内的**全部历史报送存档条目**比对，找出"这条已经报过了"的情况，结果写入 `submission_duplicate_matches`。这一步每轮都保持完整比对范围，不按向量缓存的新旧程度缩小候选集。

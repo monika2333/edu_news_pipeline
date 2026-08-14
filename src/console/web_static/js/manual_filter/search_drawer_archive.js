@@ -2,7 +2,7 @@
 // 事件级检索：调用已有的 /api/submission-archive/search，只呈现候选条目，
 // 是否同一件事由使用者判断，这里不给「已报送」的硬结论。
 // 由 _search_drawer.html 引入，运行期依赖 utils.js 与 search_drawer.js 的
-// searchDrawerFetch / switchSearchTab。
+// searchDrawerFetch。
 
 const ARCHIVE_REPORT_TYPE_LABELS = {
     zongbao: '综报',
@@ -150,16 +150,4 @@ function renderArchiveResults(data, query) {
         fragment.appendChild(itemEl);
     });
     results.appendChild(fragment);
-}
-
-// A 块每条结果的「查报送存档」入口：切到存档 tab，带入该结果标题并立即检索。
-// 检索词始终可编辑——匹配是事件级的，逐字搜标题很容易搜空。
-function searchArchiveByTitle(title) {
-    const queryInput = document.getElementById('archive-search-q');
-    if (!queryInput) return;
-    if (typeof switchSearchTab === 'function') {
-        switchSearchTab('archive');
-    }
-    queryInput.value = title || '';
-    performArchiveSearch();
 }

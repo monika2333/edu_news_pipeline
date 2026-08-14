@@ -154,6 +154,29 @@ def search_article_attributions(
             FROM decision_rows
             GROUP BY article_id
         ),
+        -- 「有存档」口径：只有已确认的回链（exact/fuzzy/manual）；
+        -- pending 仍待人工确认，processing/unmatched/rejected 都不算。
+        archive_links AS (
+            SELECT
+                sri.article_id,
+                JSONB_AGG(
+                    JSONB_BUILD_OBJECT(
+                        'item_id', sri.id,
+                        'report_type', sr.report_type,
+                        'report_date', sr.report_date,
+                        'link_status', sri.link_status,
+                        'title', sri.title,
+                        'body', sri.body,
+                        'source', sri.source
+                    )
+                    ORDER BY sr.report_date DESC, sri.id
+                ) AS links
+            FROM submitted_report_items sri
+            JOIN submitted_reports sr ON sr.id = sri.report_id
+            JOIN page_hits ph ON ph.canonical_article_id = sri.article_id
+            WHERE sri.link_status IN ('exact', 'fuzzy', 'manual')
+            GROUP BY sri.article_id
+        ),
         enriched AS (
             SELECT
                 ph.canonical_article_id AS article_id,
@@ -217,13 +240,15 @@ def search_article_attributions(
                     WHEN ph.matched_article_id <> ph.canonical_article_id
                     THEN ph.matched_title
                     ELSE NULL
-                END AS attribution_matched_article_title
+                END AS attribution_matched_article_title,
+                COALESCE(al.links, '[]'::jsonb) AS archive_links
             FROM page_hits ph
             LEFT JOIN raw_articles ra ON ra.article_id = ph.canonical_article_id
             LEFT JOIN filtered_articles fa ON fa.article_id = ph.canonical_article_id
             LEFT JOIN primary_articles pa ON pa.article_id = ph.canonical_article_id
             LEFT JOIN news_summaries ns ON ns.article_id = ph.canonical_article_id
             LEFT JOIN decisions d ON d.article_id = ph.canonical_article_id
+            LEFT JOIN archive_links al ON al.article_id = ph.canonical_article_id
         )
         SELECT enriched.*
         FROM enriched

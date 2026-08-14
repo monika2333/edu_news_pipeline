@@ -334,26 +334,65 @@
     font-size: 0.72rem;
 }
 
-/* ── 卡片操作区 ────────────────────────────────────── */
-.search-item-actions {
-    display: flex;
-    gap: 8px;
-    margin: 8px 0;
+/* ── 「有存档」徽章与卡片内展开区 ────────────────────── */
+/* 徽章样式与 .content-drawer-trigger（content_drawer.css）同形，配色用存档绿以示区分。 */
+.search-archive-badge {
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 8px;
+    padding: 1px 8px;
+    border: 1px solid #bbf7d0;
+    border-radius: 999px;
+    background: #f0fdf4;
+    color: #15803d;
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.5;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
 }
 
-.search-archive-jump {
-    background: transparent;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    padding: 3px 10px;
+.search-archive-badge:hover,
+.search-archive-badge[aria-expanded="true"] {
+    border-color: #16a34a;
+    background: #dcfce7;
+}
+
+.search-archive-badge:focus-visible {
+    outline: 2px solid #16a34a;
+    outline-offset: 2px;
+}
+
+.search-archive-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding: 10px;
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.search-archive-details[hidden] {
+    display: none;
+}
+
+.search-archive-entry + .search-archive-entry {
+    padding-top: 8px;
+    border-top: 1px dashed var(--border-color);
+}
+
+.search-archive-link-status {
     font-size: 0.78rem;
     color: var(--text-secondary);
-    cursor: pointer;
 }
 
-.search-archive-jump:hover {
-    color: var(--primary-color);
-    border-color: var(--primary-color);
+.search-archive-entry-title {
+    font-size: 0.88rem;
+    font-weight: 600;
+    margin-bottom: 4px;
 }
 
 /* ── 空态：写明检索窗口的结论 ───────────────────────── */

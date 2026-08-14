@@ -30,7 +30,6 @@ function searchDrawerFetch(url) {
 }
 
 // tab 切换：报送存档检索（archive）/ 全库文章检索（articles）。
-// search_drawer_archive.js 的「查报送存档」也会调用它切到存档 tab。
 function switchSearchTab(tab) {
     const drawer = document.getElementById('search-drawer');
     if (!drawer) return;
@@ -227,6 +226,52 @@ function searchCategoryLabel(item) {
     return `${region}${sentiment}`;
 }
 
+// 回链方式的中文文案；「有存档」口径在后端 SQL（仅 exact/fuzzy/manual），前端不重算。
+const ARCHIVE_LINK_STATUS_LABELS = {
+    exact: '精确回链',
+    fuzzy: '模糊回链',
+    manual: '人工回链'
+};
+
+// 「有存档」展开区：列出每个已确认回链的存档条目（报别/日期/回链方式/标题/正文）。
+function buildArchiveLinksDetails(links) {
+    const box = createEl('div', 'search-archive-details', '', { hidden: true });
+    const typeLabels = typeof ARCHIVE_REPORT_TYPE_LABELS === 'object' && ARCHIVE_REPORT_TYPE_LABELS
+        ? ARCHIVE_REPORT_TYPE_LABELS
+        : {};
+    links.forEach(link => {
+        const entry = createEl('div', 'search-archive-entry');
+        const head = createEl('div', 'archive-item-head');
+        const reportType = link.report_type || '';
+        head.appendChild(createEl(
+            'span',
+            'archive-item-badge',
+            typeLabels[reportType] || reportType || '未知',
+            { dataset: { reportType } }
+        ));
+        head.appendChild(createEl('span', 'archive-item-date', formatSearchDate(link.report_date) || '-'));
+        head.appendChild(createEl(
+            'span',
+            'search-archive-link-status',
+            ARCHIVE_LINK_STATUS_LABELS[link.link_status] || link.link_status || '-'
+        ));
+        entry.appendChild(head);
+        entry.appendChild(createEl('div', 'search-archive-entry-title', link.title || '（无标题）'));
+        // 存档正文是最终报送版，长度可控，直接显示全文，不做截断。
+        const bodyText = String(link.body || '').trim();
+        if (bodyText) {
+            const bodyEl = createEl('div', 'archive-item-body', bodyText);
+            const sourceText = String(link.source || '').trim();
+            if (sourceText) {
+                bodyEl.appendChild(createEl('span', 'archive-item-source', `（${sourceText}）`));
+            }
+            entry.appendChild(bodyEl);
+        }
+        box.appendChild(entry);
+    });
+    return box;
+}
+
 function buildSearchResultItem(item, summaryToggles) {
     const itemEl = createEl('div', 'search-item', '', {
         dataset: { articleId: item.article_id || '' }
@@ -246,6 +291,25 @@ function buildSearchResultItem(item, summaryToggles) {
         dataset: { articleId: item.article_id || '', bonusKeywords: '' }
     });
     header.appendChild(contentBtn);
+    // 「有存档」徽章跟在「原文」后面：回链在存档流程中已确定，
+    // 只有已确认回链（exact/fuzzy/manual）的文章才有，点开在卡片内看存档详情。
+    const archiveLinks = Array.isArray(item.archive_links) ? item.archive_links : [];
+    let archiveDetails = null;
+    if (archiveLinks.length) {
+        const archiveBadge = createEl(
+            'button',
+            'search-archive-badge',
+            archiveLinks.length > 1 ? `有存档 ×${archiveLinks.length}` : '有存档',
+            { type: 'button', 'aria-expanded': 'false', title: '查看报送存档详情' }
+        );
+        archiveDetails = buildArchiveLinksDetails(archiveLinks);
+        archiveBadge.addEventListener('click', () => {
+            const expanded = archiveDetails.hidden;
+            archiveDetails.hidden = !expanded;
+            archiveBadge.setAttribute('aria-expanded', String(expanded));
+        });
+        header.appendChild(archiveBadge);
+    }
     itemEl.appendChild(header);
 
     // 命中的是被合并的重复报道时标明是哪一篇，避免使用者以为搜错了。
@@ -290,19 +354,7 @@ function buildSearchResultItem(item, summaryToggles) {
         ));
     }
     itemEl.appendChild(meta);
-
-    const actions = createEl('div', 'search-item-actions');
-    const archiveBtn = createEl('button', 'search-archive-jump', '查报送存档', {
-        type: 'button',
-        title: '以本篇标题检索报送存档，检索词可再修改'
-    });
-    archiveBtn.addEventListener('click', () => {
-        if (typeof searchArchiveByTitle === 'function') {
-            searchArchiveByTitle(item.title || '');
-        }
-    });
-    actions.appendChild(archiveBtn);
-    itemEl.appendChild(actions);
+    if (archiveDetails) itemEl.appendChild(archiveDetails);
 
     const details = createEl('div', 'search-details');
     const summaryText = String(item.llm_summary || '').trim();

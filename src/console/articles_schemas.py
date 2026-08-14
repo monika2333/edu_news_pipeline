@@ -1,9 +1,23 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
+
+from src.domain.report_type import SubmissionDocType
+
+
+class NewsArticleArchiveLink(BaseModel):
+    """一条已确认的报送存档回链（exact/fuzzy/manual）。"""
+
+    item_id: Optional[str] = None
+    report_type: SubmissionDocType
+    report_date: Optional[date] = None
+    link_status: Literal["exact", "fuzzy", "manual"]
+    title: Optional[str] = None
+    body: Optional[str] = None
+    source: Optional[str] = None
 
 
 class NewsArticleManualDecision(BaseModel):
@@ -58,6 +72,7 @@ class NewsArticleSearchItem(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     attribution: NewsArticleAttribution
+    archive_links: list[NewsArticleArchiveLink] = Field(default_factory=list)
 
 
 class NewsArticleContentResponse(BaseModel):
@@ -79,6 +94,7 @@ class NewsArticleSearchResponse(BaseModel):
 
 
 __all__ = [
+    "NewsArticleArchiveLink",
     "NewsArticleAttribution",
     "NewsArticleContentResponse",
     "NewsArticleManualDecision",

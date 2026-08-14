@@ -136,6 +136,7 @@ def _serialize_article(row: Dict[str, Any]) -> Dict[str, Any]:
             "manual_decisions": list(row.get("attribution_manual_decisions") or []),
             "matched_article_title": row.get("attribution_matched_article_title"),
         },
+        "archive_links": list(row.get("archive_links") or []),
     }
 
 

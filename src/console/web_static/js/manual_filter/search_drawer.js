@@ -62,6 +62,8 @@ function setupSearchDrawer() {
     function toggleDrawer(show) {
         drawer.classList.toggle('active', show);
         overlay.classList.toggle('active', show);
+        // body 类用于把原文抽屉抬到检索抽屉之上（见 content_drawer.css）
+        document.body.classList.toggle('search-drawer-open', show);
         if (toggleBtn) {
             toggleBtn.style.display = show ? 'none' : 'flex';
         }
@@ -70,11 +72,18 @@ function setupSearchDrawer() {
 
     if (toggleBtn) toggleBtn.addEventListener('click', () => toggleDrawer(true));
     if (closeBtn) closeBtn.addEventListener('click', () => toggleDrawer(false));
-    if (overlay) overlay.addEventListener('click', () => toggleDrawer(false));
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && drawer.classList.contains('active')) {
+    if (overlay) {
+        overlay.addEventListener('click', () => {
+            // 原文抽屉盖在检索抽屉上时，点到的是遮罩但意图是关原文，不动检索抽屉
+            if (document.body.classList.contains('content-drawer-open')) return;
             toggleDrawer(false);
-        }
+        });
+    }
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape' || !drawer.classList.contains('active')) return;
+        // 原文抽屉还开着时 Escape 先关原文（由内容抽屉脚本处理），检索抽屉保持
+        if (document.body.classList.contains('content-drawer-open')) return;
+        toggleDrawer(false);
     });
 
     if (localStorage.getItem('search_drawer_open') === 'true') {
@@ -135,19 +144,6 @@ function saveSearchFilters() {
     };
     localStorage.setItem('search_filters', JSON.stringify(filters));
     return filters;
-}
-
-// 关闭检索抽屉（不改动已渲染的检索结果，重开时还在）。
-// 与 setupSearchDrawer 里的 toggleDrawer(false) 等价，供卡片「原文」按钮调用。
-function closeSearchDrawer() {
-    const drawer = document.getElementById('search-drawer');
-    const overlay = document.getElementById('search-overlay');
-    const toggleBtn = document.getElementById('search-drawer-toggle');
-    if (!drawer) return;
-    drawer.classList.remove('active');
-    if (overlay) overlay.classList.remove('active');
-    if (toggleBtn) toggleBtn.style.display = 'flex';
-    localStorage.setItem('search_drawer_open', false);
 }
 
 // 清空全库检索：输入框、结果、统计、分页与状态一并重置，
@@ -243,13 +239,12 @@ function buildSearchResultItem(item, summaryToggles) {
     // 「原文」按钮打开内容抽屉（content-drawer），复用筛选页逻辑：
     // 触发走各页面内容抽屉脚本的 .content-drawer-trigger 委托，
     // 外部原始链接在抽屉顶栏的「原文链接」里保留。
+    // 内容抽屉直接盖在检索抽屉之上，关掉后检索结果还在。
     const contentBtn = createEl('button', 'content-drawer-trigger', '原文', {
         type: 'button',
         title: '查看原文',
         dataset: { articleId: item.article_id || '', bonusKeywords: '' }
     });
-    // 内容抽屉 z-index 低于检索抽屉，先关检索抽屉否则原文会被盖住。
-    contentBtn.addEventListener('click', closeSearchDrawer);
     header.appendChild(contentBtn);
     itemEl.appendChild(header);
 

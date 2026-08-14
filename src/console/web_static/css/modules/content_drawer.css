@@ -20,6 +20,12 @@
     transform: none;
 }
 
+/* 检索抽屉（z-index 1100）打开时，原文抽屉抬到它之上：点「原文」直接盖上去，
+   关掉原文后底下的检索结果原样保留。modal（1000）与原文抽屉的相对层级不变。 */
+body.search-drawer-open .content-drawer {
+    z-index: 1200;
+}
+
 /* 抽屉打开时挤压列表宽度（margin 变化不做动画，保证锚定计算精确） */
 body.content-drawer-open .container {
     margin-right: min(560px, 92vw);

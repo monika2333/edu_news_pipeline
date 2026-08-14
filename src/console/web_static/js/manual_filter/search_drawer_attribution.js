@@ -105,18 +105,16 @@ function renderSearchEmptyState(data) {
     return box;
 }
 
-// 人工复核节点的小字与悬浮内容：全部人工决定，一行一条。
-function formatDecisionTooltip(decisions) {
-    return decisions.map(decision => {
-        const workspace = MANUAL_WORKSPACE_LABELS[decision.workspace] || decision.workspace || '未知工作区';
-        const actor = decision.actor || '未知操作人';
-        const time = formatLocalDateTime(decision.decided_at);
-        return `${workspace} · ${actor} · ${time} · ${decision.decision || '-'}`;
-    }).join('\n');
+// 人工复核节点的决定明细行：工作区 · 操作人 · 时间 · 决定。
+function formatDecisionLine(decision) {
+    const workspace = MANUAL_WORKSPACE_LABELS[decision.workspace] || decision.workspace || '未知工作区';
+    const actor = decision.actor || '未知操作人';
+    const time = formatLocalDateTime(decision.decided_at);
+    return `${workspace} · ${actor} · ${time} · ${decision.decision || '-'}`;
 }
 
 // 节点小字：相关性/重要性标分数（无分数则不标），
-// 人工复核标决定条数（悬浮看明细），轮到它却还没有决定时标「无」。
+// 人工复核标决定条数（悬浮节点可见明细浮层），轮到它却还没有决定时标「无」。
 function renderStepExtra(stepKey, stepState, attribution) {
     if (!attribution) return null;
     if (stepKey === 'relevance' || stepKey === 'importance') {
@@ -135,9 +133,20 @@ function renderStepExtra(stepKey, stepState, attribution) {
             ? attribution.manual_decisions
             : [];
         if (decisions.length) {
-            return createEl('span', 'attribution-step-extra', `${decisions.length} 条决定`, {
-                title: formatDecisionTooltip(decisions)
+            const extra = createEl('span', 'attribution-step-extra', `${decisions.length} 条决定`);
+            // 浮层定位依赖 .attribution-step 的 position: relative，
+            // 悬浮整个节点（圆点/标签/小字）都会触发，由 CSS 控制显隐。
+            const tooltip = createEl('div', 'attribution-step-tooltip');
+            decisions.forEach(decision => {
+                tooltip.appendChild(createEl(
+                    'div',
+                    'attribution-step-tooltip-row',
+                    formatDecisionLine(decision),
+                    { dataset: { workspace: decision.workspace || '' } }
+                ));
             });
+            extra.appendChild(tooltip);
+            return extra;
         }
         if (stepState === 'current') {
             return createEl('span', 'attribution-step-extra', '无');

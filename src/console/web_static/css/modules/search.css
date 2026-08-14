@@ -311,7 +311,7 @@
     opacity: 0.55;
 }
 
-/* 节点小字：相关性/重要性分数、人工复核决定条数（悬浮看明细）。 */
+/* 节点小字：相关性/重要性分数、人工复核决定条数。 */
 .attribution-step-extra {
     font-size: 0.68rem;
     color: var(--text-secondary);
@@ -320,6 +320,38 @@
 
 .attribution-step.is-current .attribution-step-extra {
     color: var(--text-primary);
+}
+
+/* 人工复核节点的决定明细浮层：悬浮节点任意位置触发；
+   定位锚点是 .attribution-step（position: relative），extra 自身不设定位。 */
+.attribution-step-tooltip {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    min-width: 200px;
+    max-width: 320px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: #1e293b;
+    color: #f8fafc;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    text-align: left;
+    white-space: normal;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25);
+}
+
+.attribution-step:hover .attribution-step-tooltip {
+    display: block;
+}
+
+.attribution-step-tooltip-row + .attribution-step-tooltip-row {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(248, 250, 252, 0.2);
 }
 
 /* ── 归因：命中稿提示、收录时间标注 ─────────────────── */

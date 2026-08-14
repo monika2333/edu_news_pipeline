@@ -51,6 +51,8 @@ function setContentDrawerOpen(open, { anchor = true } = {}) {
     drawer.classList.toggle('active', open);
     drawer.setAttribute('aria-hidden', open ? 'false' : 'true');
     document.body.classList.toggle('content-drawer-open', open);
+    // 叠加模式随抽屉关闭一并解除
+    if (!open) document.body.classList.remove('content-drawer-overlay');
     // anchor:false 时由调用方在完成所有布局变化后统一补偿，避免连续宽度变化重复锚定
     if (anchor) relayoutListsAfterWidthChange(anchorCard, previousTop);
 }
@@ -290,6 +292,19 @@ function handleContentDrawerTrigger(triggerBtn) {
     contentDrawerState.anchorCard = card || null;
     contentDrawerState.articleId = articleId;
     const bonusKeywords = resolveContentDrawerBonusKeywords(triggerBtn);
+
+    // 从检索抽屉打开：抽屉盖在检索抽屉上即可，外层页面的侧栏与列表布局保持不变
+    if (triggerBtn.closest('#search-drawer')) {
+        if (!contentDrawerState.open) {
+            document.body.classList.add('content-drawer-overlay');
+            setContentDrawerOpen(true, { anchor: false });
+        }
+        loadContentDrawerArticle(articleId, bonusKeywords);
+        return;
+    }
+
+    // 从页面列表打开：解除可能残留的叠加模式，恢复挤压布局
+    document.body.classList.remove('content-drawer-overlay');
 
     // 打开抽屉时自动折叠侧栏（不写 localStorage，仅本次浏览生效）。
     // 折叠与抽屉挤压是两次连续宽度变化：基准位置取两者都未发生之前，

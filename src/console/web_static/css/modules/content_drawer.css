@@ -26,8 +26,10 @@ body.search-drawer-open .content-drawer {
     z-index: 1200;
 }
 
-/* 抽屉打开时挤压列表宽度（margin 变化不做动画，保证锚定计算精确） */
-body.content-drawer-open .container {
+/* 抽屉打开时挤压列表宽度（margin 变化不做动画，保证锚定计算精确）。
+   叠加模式（从检索抽屉打开，body.content-drawer-overlay）下不挤压：
+   抽屉只是盖在检索抽屉上，外层页面布局保持不变。 */
+body.content-drawer-open:not(.content-drawer-overlay) .container {
     margin-right: min(560px, 92vw);
 }
 

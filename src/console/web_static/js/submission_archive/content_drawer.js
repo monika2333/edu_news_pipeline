@@ -54,6 +54,8 @@ function setArchiveDrawerOpen(open) {
     drawer.classList.toggle('active', open);
     drawer.setAttribute('aria-hidden', open ? 'false' : 'true');
     document.body.classList.toggle('content-drawer-open', open);
+    // 叠加模式随抽屉关闭一并解除
+    if (!open) document.body.classList.remove('content-drawer-overlay');
 }
 
 function closeArchiveDrawer() {
@@ -261,6 +263,11 @@ function handleArchiveDrawerTrigger(triggerBtn) {
         return;
     }
     archiveDrawerState.articleId = articleId;
+    // 从检索抽屉打开时外层页面布局保持不变（不挤压 .container）
+    document.body.classList.toggle(
+        'content-drawer-overlay',
+        Boolean(triggerBtn.closest('#search-drawer'))
+    );
     setArchiveDrawerOpen(true);
     loadArchiveDrawerArticle(articleId);
 }

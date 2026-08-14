@@ -323,16 +323,17 @@
 }
 
 /* 人工复核节点的决定明细浮层：悬浮节点任意位置触发；
-   定位锚点是 .attribution-step（position: relative），extra 自身不设定位。 */
+   定位锚点是 .attribution-step（position: relative），extra 自身不设定位。
+   目前只有最右侧的人工复核节点使用浮层，右对齐节点右缘向左展开，
+   避免居中展开时右半部分溢出抽屉、撑出横向滚动条。 */
 .attribution-step-tooltip {
     display: none;
     position: absolute;
     top: calc(100% + 6px);
-    left: 50%;
-    transform: translateX(-50%);
+    right: 0;
     z-index: 30;
     min-width: 200px;
-    max-width: 320px;
+    max-width: 300px;
     padding: 6px 10px;
     border-radius: 6px;
     background: #1e293b;

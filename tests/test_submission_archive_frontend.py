@@ -67,7 +67,12 @@ def test_archive_frontend_consumes_only_unified_matched_status() -> None:
     ).read_text(encoding="utf-8")
 
     assert "matched: { label: '已匹配'" in core
-    assert "new Set(['matched'])" in core
+    # pill 只表示状态，不再渲染为打开抽屉的按钮；
+    # 「原文」入口是标题后的 .content-drawer-trigger 标签
+    assert "archive-link-pill-btn" not in core
+    assert "new Set(['matched'])" not in core
+    assert "detailOriginalTriggerHtml" in browser
+    assert "content-drawer-trigger" in browser
     assert "report.matched_count" in browser
     assert "exact_count" not in browser
     assert "fuzzy_count" not in browser

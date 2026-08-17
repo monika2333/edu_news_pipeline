@@ -161,14 +161,22 @@ function detailItemMetaHtml(item) {
     return meta.map(part => `<span>${part}</span>`).join('');
 }
 
+// 已匹配条目在标题后渲染「原文」标签，点击打开内容抽屉（.content-drawer-trigger 委托）
+const detailOriginalTriggerHtml = item => (
+    item.link_status === 'matched' && item.article_id
+        ? `<button type="button" class="content-drawer-trigger" data-article-id="${escapeHtml(item.article_id)}"`
+            + ` data-bonus-keywords="" title="查看原文">原文</button>`
+        : ''
+);
+
 function detailItemCard(item) {
     return `
         <article class="archive-item${item.link_status === 'pending' ? ' is-pending' : ''}${item.link_status === 'processing' ? ' is-processing' : ''}"
             data-item-id="${escapeHtml(item.id)}" data-link-group="${linkStatusGroup(item.link_status)}">
             <div class="archive-item-head">
                 <span class="archive-item-order">${item.order_index + 1}</span>
-                <h4 class="archive-item-title">${escapeHtml(item.title)}</h4>
-                ${linkPill(item.link_status, item.article_id)}
+                <h4 class="archive-item-title">${escapeHtml(item.title)}${detailOriginalTriggerHtml(item)}</h4>
+                ${linkPill(item.link_status)}
             </div>
             ${item.body ? `<p class="archive-item-body">${escapeHtml(item.body)}</p>` : ''}
             <div class="archive-item-meta">${detailItemMetaHtml(item)}</div>
@@ -259,7 +267,21 @@ function updateReportStatusComponents(id, items) {
         card.classList.toggle('is-pending', item.link_status === 'pending');
         card.dataset.linkGroup = linkStatusGroup(item.link_status);
         const pill = card.querySelector('.archive-link-pill');
-        if (pill) pill.outerHTML = linkPill(item.link_status, item.article_id);
+        if (pill) pill.outerHTML = linkPill(item.link_status);
+        // 状态变化后同步标题后的「原文」标签：仅 matched 且有 article_id 时存在
+        const titleEl = card.querySelector('.archive-item-title');
+        const trigger = titleEl?.querySelector('.content-drawer-trigger');
+        if (titleEl) {
+            if (item.link_status === 'matched' && item.article_id) {
+                if (trigger) {
+                    trigger.dataset.articleId = item.article_id;
+                } else {
+                    titleEl.insertAdjacentHTML('beforeend', detailOriginalTriggerHtml(item));
+                }
+            } else if (trigger) {
+                trigger.remove();
+            }
+        }
         const meta = card.querySelector('.archive-item-meta');
         if (meta) meta.innerHTML = detailItemMetaHtml(item);
     });

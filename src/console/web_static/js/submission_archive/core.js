@@ -32,14 +32,9 @@ const scoreValue = value => {
     return Number.isFinite(score) ? score.toFixed(2) : '-';
 };
 const typePill = type => `<span class="archive-type-pill is-${escapeHtml(type)}">${typeLabels[type] || escapeHtml(type)}</span>`;
-// 已匹配且带 article_id 的 pill 渲染为按钮，点击打开原文抽屉
-const LINKED_STATUSES = new Set(['matched']);
-const linkPill = (status, articleId) => {
+// pill 只表示回链状态，不再可点击；查看原文走标题后的「原文」标签（detailOriginalTriggerHtml）
+const linkPill = (status) => {
     const meta = linkStatusMeta[status] || { label: status || '未知', className: 'is-unmatched' };
-    if (articleId && LINKED_STATUSES.has(status)) {
-        return `<button class="archive-link-pill ${meta.className} archive-link-pill-btn" type="button"`
-            + ` data-article-id="${escapeHtml(articleId)}" title="查看原文">${meta.label}</button>`;
-    }
     return `<span class="archive-link-pill ${meta.className}">${meta.label}</span>`;
 };
 

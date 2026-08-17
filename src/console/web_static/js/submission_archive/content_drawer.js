@@ -305,9 +305,8 @@ function setupArchiveContentDrawer() {
         closeArchiveDrawer();
     });
     document.addEventListener('click', (event) => {
-        // .archive-link-pill-btn 是存档页回链 pill 的入口；
-        // .content-drawer-trigger 是共享检索抽屉卡片「原文」按钮的入口。
-        const triggerBtn = event.target.closest('.archive-link-pill-btn, .content-drawer-trigger');
+        // .content-drawer-trigger 是存档条目「原文」标签与检索卡片「原文」按钮的统一入口。
+        const triggerBtn = event.target.closest('.content-drawer-trigger');
         if (triggerBtn) handleArchiveDrawerTrigger(triggerBtn);
     });
 }

@@ -37,9 +37,14 @@ class LinkDecisionRequest(BaseModel):
     accepted: bool
 
 
+class ManualLinkRequest(BaseModel):
+    article_id: str = Field(min_length=1)
+
+
 __all__ = [
     "CreateSubmissionReportRequest",
     "LinkDecisionRequest",
+    "ManualLinkRequest",
     "ParseSubmissionReportRequest",
     "SubmissionItemInput",
     "SubmissionReportType",

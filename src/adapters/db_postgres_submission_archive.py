@@ -1,12 +1,22 @@
 from __future__ import annotations
 
-from datetime import date
-from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
+from datetime import date, timedelta
+from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Sequence, TypedDict
 
 import psycopg
 
 if TYPE_CHECKING:
     from src.adapters.db_postgres_core import PostgresAdapter
+
+
+class ManualLinkMutationResult(TypedDict):
+    state: Literal[
+        "updated",
+        "not_found",
+        "processing",
+        "article_not_found",
+    ]
+    item: Optional[dict[str, Any]]
 
 
 class SubmissionArchiveNamespace:
@@ -120,6 +130,53 @@ class SubmissionArchiveNamespace:
                 cur,
                 item_id=item_id,
                 accepted=accepted,
+                actor_user_id=actor_user_id,
+            )
+
+    def fetch_manual_link_candidates(
+        self,
+        *,
+        item_id: str,
+        query: str,
+        window_days: int,
+        limit: int,
+        offset: int,
+    ) -> Optional[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_manual_link_candidates(
+                cur,
+                item_id=item_id,
+                query=query,
+                window_days=window_days,
+                limit=limit,
+                offset=offset,
+            )
+
+    def manual_link_item(
+        self,
+        *,
+        item_id: str,
+        article_id: str,
+        actor_user_id: str,
+    ) -> ManualLinkMutationResult:
+        with self._adapter.transaction() as cur:
+            return manual_link_item(
+                cur,
+                item_id=item_id,
+                article_id=article_id,
+                actor_user_id=actor_user_id,
+            )
+
+    def manual_unlink_item(
+        self,
+        *,
+        item_id: str,
+        actor_user_id: str,
+    ) -> ManualLinkMutationResult:
+        with self._adapter.transaction() as cur:
+            return manual_unlink_item(
+                cur,
+                item_id=item_id,
                 actor_user_id=actor_user_id,
             )
 
@@ -575,6 +632,194 @@ def decide_link(
     return dict(row) if row else None
 
 
+def fetch_manual_link_candidates(
+    cur: psycopg.Cursor,
+    *,
+    item_id: str,
+    query: str,
+    window_days: int,
+    limit: int,
+    offset: int,
+) -> Optional[dict[str, Any]]:
+    cur.execute(
+        """
+        select
+            i.id,
+            i.title,
+            i.body,
+            r.report_type,
+            r.report_date,
+            r.compiled_date,
+            i.link_status,
+            i.article_id
+        from submitted_report_items i
+        join submitted_reports r on r.id = i.report_id
+        where i.id = %s
+        """,
+        (item_id,),
+    )
+    item_row = cur.fetchone()
+    if not item_row:
+        return None
+
+    item = dict(item_row)
+    compiled_date = item["compiled_date"]
+    window_start = compiled_date - timedelta(days=window_days)
+    window_end = compiled_date + timedelta(days=window_days)
+    pattern = f"%{query}%"
+    cur.execute(
+        """
+        select
+            ns.article_id,
+            coalesce(ns.title, '') as title,
+            ns.source,
+            ns.url,
+            ns.publish_time_iso,
+            ns.created_at as ingested_at,
+            coalesce(ns.llm_summary, '') as llm_summary,
+            coalesce(
+                (
+                    select jsonb_agg(
+                        jsonb_build_object(
+                            'item_id', linked.id,
+                            'report_id', linked.report_id,
+                            'report_type', linked_report.report_type,
+                            'report_date', linked_report.report_date,
+                            'title', linked.title
+                        )
+                        order by linked_report.report_date desc, linked.order_index
+                    )
+                    from submitted_report_items linked
+                    join submitted_reports linked_report
+                      on linked_report.id = linked.report_id
+                    where linked.article_id = ns.article_id
+                      and linked.link_status = 'matched'
+                ),
+                '[]'::jsonb
+            ) as linked_items
+        from news_summaries ns
+        where ns.created_at >= %s::date
+          and ns.created_at < %s::date + interval '1 day'
+          and (
+              coalesce(ns.title, '') ilike %s
+              or coalesce(ns.llm_summary, '') ilike %s
+          )
+        order by ns.created_at desc, ns.article_id
+        limit %s offset %s
+        """,
+        (window_start, window_end, pattern, pattern, limit + 1, offset),
+    )
+    rows = [dict(row) for row in cur.fetchall()]
+    return {
+        "item": item,
+        "items": rows[:limit],
+        "window_start": window_start,
+        "window_end": window_end,
+        "has_more": len(rows) > limit,
+    }
+
+
+_LINK_DECISION_RETURNING_COLUMNS = """
+    id,
+    report_id,
+    article_id,
+    link_status,
+    link_title_score,
+    link_body_score,
+    link_combined_score,
+    best_candidate_article_id,
+    link_matched_at,
+    link_decided_by
+"""
+
+
+def manual_link_item(
+    cur: psycopg.Cursor,
+    *,
+    item_id: str,
+    article_id: str,
+    actor_user_id: str,
+) -> ManualLinkMutationResult:
+    cur.execute(
+        """
+        select
+            i.link_status,
+            exists(
+                select 1 from news_summaries ns where ns.article_id = %s
+            ) as article_exists
+        from submitted_report_items i
+        where i.id = %s
+        for update
+        """,
+        (article_id, item_id),
+    )
+    context = cur.fetchone()
+    if not context:
+        return {"state": "not_found", "item": None}
+    if context["link_status"] == "processing":
+        return {"state": "processing", "item": None}
+    if not context["article_exists"]:
+        return {"state": "article_not_found", "item": None}
+
+    cur.execute(
+        f"""
+        update submitted_report_items
+        set article_id = %s,
+            link_status = 'matched',
+            link_decided_by = %s,
+            link_matched_at = now(),
+            updated_at = now()
+        where id = %s and link_status <> 'processing'
+        returning {_LINK_DECISION_RETURNING_COLUMNS}
+        """,
+        (article_id, actor_user_id, item_id),
+    )
+    row = cur.fetchone()
+    if not row:
+        return {"state": "processing", "item": None}
+    return {"state": "updated", "item": dict(row)}
+
+
+def manual_unlink_item(
+    cur: psycopg.Cursor,
+    *,
+    item_id: str,
+    actor_user_id: str,
+) -> ManualLinkMutationResult:
+    cur.execute(
+        """
+        select link_status
+        from submitted_report_items
+        where id = %s
+        for update
+        """,
+        (item_id,),
+    )
+    context = cur.fetchone()
+    if not context:
+        return {"state": "not_found", "item": None}
+    if context["link_status"] == "processing":
+        return {"state": "processing", "item": None}
+
+    cur.execute(
+        f"""
+        update submitted_report_items
+        set article_id = null,
+            link_status = 'unmatched',
+            link_matched_at = null,
+            link_decided_by = %s,
+            updated_at = now()
+        where id = %s and link_status <> 'processing'
+        returning {_LINK_DECISION_RETURNING_COLUMNS}
+        """,
+        (actor_user_id, item_id),
+    )
+    row = cur.fetchone()
+    if not row:
+        return {"state": "processing", "item": None}
+    return {"state": "updated", "item": dict(row)}
+
+
 def search_items(
     cur: psycopg.Cursor,
     *,
@@ -898,6 +1143,7 @@ def dismiss_duplicate_matches(
 
 
 __all__ = [
+    "ManualLinkMutationResult",
     "SubmissionArchiveNamespace",
     "decide_link",
     "delete_report",
@@ -908,6 +1154,7 @@ __all__ = [
     "fetch_items_missing_embeddings",
     "fetch_link_candidate_bodies",
     "fetch_link_candidate_titles",
+    "fetch_manual_link_candidates",
     "fetch_news_for_submission_dedup",
     "fetch_pending_links",
     "fetch_report",
@@ -915,6 +1162,8 @@ __all__ = [
     "find_report_conflict",
     "insert_report",
     "insert_report_items",
+    "manual_link_item",
+    "manual_unlink_item",
     "search_items",
     "update_item_embeddings",
     "update_link_results",

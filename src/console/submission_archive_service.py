@@ -29,6 +29,10 @@ class SubmissionReportNotFoundError(ValueError):
     """Raised when a submitted report or item does not exist."""
 
 
+class SubmissionLinkProcessingError(RuntimeError):
+    """Raised when the worker still owns a submission item."""
+
+
 def _require_business_user_id(user: ConsoleUser) -> str:
     if not user.user_id:
         raise PermissionError("该操作需要数据库用户账号登录")
@@ -195,6 +199,86 @@ def decide_link(
     return updated
 
 
+def search_link_candidates(
+    *,
+    item_id: str,
+    query: str,
+    window_days: int,
+    limit: int,
+    offset: int,
+) -> dict[str, Any]:
+    normalized_query = (query or "").strip()
+    if not normalized_query:
+        raise ValueError("q 去空白后不能为空")
+    if not 0 <= window_days <= 3650:
+        raise ValueError("window_days 必须在 0 到 3650 之间")
+    if not 1 <= limit <= 50:
+        raise ValueError("limit 必须在 1 到 50 之间")
+    if offset < 0:
+        raise ValueError("offset 不能小于 0")
+
+    result = get_adapter().submission_archive.fetch_manual_link_candidates(
+        item_id=item_id,
+        query=normalized_query,
+        window_days=window_days,
+        limit=limit,
+        offset=offset,
+    )
+    if not result:
+        raise SubmissionReportNotFoundError("未找到这个存档条目")
+    return {
+        **result,
+        "window_days": window_days,
+    }
+
+
+def _updated_manual_link_item(
+    result: Mapping[str, Any],
+) -> dict[str, Any]:
+    state = result.get("state")
+    if state == "not_found":
+        raise SubmissionReportNotFoundError("未找到这个存档条目")
+    if state == "processing":
+        raise SubmissionLinkProcessingError(
+            "条目正在自动回链处理中，请稍后再试"
+        )
+    if state == "article_not_found":
+        raise ValueError("article_id 在 news_summaries 中不存在")
+    item = result.get("item")
+    if state != "updated" or not isinstance(item, dict):
+        raise RuntimeError("人工回链更新未返回条目")
+    return item
+
+
+def manual_link_item(
+    *,
+    item_id: str,
+    article_id: str,
+    user: ConsoleUser,
+) -> dict[str, Any]:
+    normalized_article_id = (article_id or "").strip()
+    if not normalized_article_id:
+        raise ValueError("article_id 不能为空")
+    result = get_adapter().submission_archive.manual_link_item(
+        item_id=item_id,
+        article_id=normalized_article_id,
+        actor_user_id=_require_business_user_id(user),
+    )
+    return _updated_manual_link_item(result)
+
+
+def manual_unlink_item(
+    *,
+    item_id: str,
+    user: ConsoleUser,
+) -> dict[str, Any]:
+    result = get_adapter().submission_archive.manual_unlink_item(
+        item_id=item_id,
+        actor_user_id=_require_business_user_id(user),
+    )
+    return _updated_manual_link_item(result)
+
+
 def search_archive(*, query: str, limit: int) -> dict[str, Any]:
     normalized_query = (query or "").strip()
     if not normalized_query:
@@ -254,6 +338,7 @@ def dismiss_duplicates(
 
 
 __all__ = [
+    "SubmissionLinkProcessingError",
     "SubmissionReportConflictError",
     "SubmissionReportNotFoundError",
     "attach_duplicate_badges",
@@ -264,6 +349,9 @@ __all__ = [
     "get_report",
     "list_pending_links",
     "list_reports",
+    "manual_link_item",
+    "manual_unlink_item",
     "parse_report",
     "search_archive",
+    "search_link_candidates",
 ]

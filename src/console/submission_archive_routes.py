@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, NoReturn, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 
 from src.console import submission_archive_service
@@ -11,6 +11,7 @@ from src.console.security import ConsoleUser, require_console_user, require_role
 from src.console.submission_archive_schemas import (
     CreateSubmissionReportRequest,
     LinkDecisionRequest,
+    ManualLinkRequest,
     ParseSubmissionReportRequest,
 )
 from src.domain.submission_archive_parser import SubmissionArchiveParseError
@@ -25,6 +26,11 @@ router = APIRouter(
 
 
 def _raise_service_error(exc: Exception) -> NoReturn:
+    if isinstance(
+        exc,
+        submission_archive_service.SubmissionLinkProcessingError,
+    ):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if isinstance(
         exc,
         submission_archive_service.SubmissionReportConflictError,
@@ -135,6 +141,59 @@ def decide_link_api(
             user=user,
         )
     except (ValueError, PermissionError) as exc:
+        _raise_service_error(exc)
+
+
+@router.get("/items/{item_id}/link-candidates")
+def search_link_candidates_api(
+    item_id: str,
+    q: str = Query(..., min_length=1),
+    window_days: int = Query(default=15, ge=0, le=3650),
+    limit: int = Query(default=20, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    """Search news summaries around the submitted report's compiled date."""
+    try:
+        return submission_archive_service.search_link_candidates(
+            item_id=item_id,
+            query=q,
+            window_days=window_days,
+            limit=limit,
+            offset=offset,
+        )
+    except ValueError as exc:
+        _raise_service_error(exc)
+
+
+@router.post("/items/{item_id}/manual-link")
+def manual_link_item_api(
+    item_id: str,
+    req: ManualLinkRequest,
+    user: ConsoleUser = Depends(require_console_user),
+) -> dict[str, Any]:
+    """Manually link a submitted report item to a news summary."""
+    try:
+        return submission_archive_service.manual_link_item(
+            item_id=item_id,
+            article_id=req.article_id,
+            user=user,
+        )
+    except (ValueError, RuntimeError, PermissionError) as exc:
+        _raise_service_error(exc)
+
+
+@router.delete("/items/{item_id}/manual-link")
+def manual_unlink_item_api(
+    item_id: str,
+    user: ConsoleUser = Depends(require_console_user),
+) -> dict[str, Any]:
+    """Remove a manual link from a submitted report item."""
+    try:
+        return submission_archive_service.manual_unlink_item(
+            item_id=item_id,
+            user=user,
+        )
+    except (ValueError, RuntimeError, PermissionError) as exc:
         _raise_service_error(exc)
 
 

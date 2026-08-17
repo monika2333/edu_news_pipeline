@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from src.console import submission_archive_service
+from src.console.auth_service import ConsoleUser
 from src.workers import submission_archive_processing
 
 
@@ -91,6 +92,16 @@ class FakeSubmissionArchiveAdapter:
         self.body_fetch_calls: list[list[str]] = []
         self.created = False
         self.submission_archive = FakeSubmissionArchiveNamespace(self)
+
+
+def _editor() -> ConsoleUser:
+    return ConsoleUser(
+        method="test",
+        user_id="editor-id",
+        username="editor",
+        display_name="值班编辑",
+        role="duty_editor",
+    )
 
 
 def test_create_report_saves_before_processing_links(
@@ -307,3 +318,148 @@ def test_create_report_rejects_non_http_urls(
             ],
             overwrite=False,
         )
+
+
+def test_search_link_candidates_normalizes_query_and_returns_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class CandidateNamespace:
+        def fetch_manual_link_candidates(self, **kwargs: Any) -> dict[str, Any]:
+            captured.update(kwargs)
+            return {
+                "item": {"id": "item-1"},
+                "items": [{"article_id": "article-1"}],
+                "window_start": date(2026, 7, 25),
+                "window_end": date(2026, 8, 24),
+                "has_more": False,
+            }
+
+    class CandidateAdapter:
+        def __init__(self) -> None:
+            self.submission_archive = CandidateNamespace()
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "get_adapter",
+        CandidateAdapter,
+    )
+
+    result = submission_archive_service.search_link_candidates(
+        item_id="item-1",
+        query="  招生  ",
+        window_days=15,
+        limit=20,
+        offset=0,
+    )
+
+    assert captured["query"] == "招生"
+    assert result["window_days"] == 15
+    assert result["window_start"] == date(2026, 7, 25)
+    assert "total" not in result
+
+
+def test_search_link_candidates_rejects_blank_query() -> None:
+    with pytest.raises(ValueError, match="q"):
+        submission_archive_service.search_link_candidates(
+            item_id="item-1",
+            query="   ",
+            window_days=15,
+            limit=20,
+            offset=0,
+        )
+
+
+def test_manual_link_passes_business_user_and_returns_updated_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+    updated = {
+        "article_id": "article-manual",
+        "link_status": "matched",
+        "best_candidate_article_id": "article-auto",
+        "link_title_score": 0.7,
+        "link_body_score": 0.6,
+        "link_combined_score": 0.65,
+    }
+
+    class ManualNamespace:
+        def manual_link_item(self, **kwargs: Any) -> dict[str, Any]:
+            captured.update(kwargs)
+            return {"state": "updated", "item": updated}
+
+    class ManualAdapter:
+        def __init__(self) -> None:
+            self.submission_archive = ManualNamespace()
+
+    monkeypatch.setattr(submission_archive_service, "get_adapter", ManualAdapter)
+
+    result = submission_archive_service.manual_link_item(
+        item_id="item-1",
+        article_id=" article-manual ",
+        user=_editor(),
+    )
+
+    assert result == updated
+    assert captured == {
+        "item_id": "item-1",
+        "article_id": "article-manual",
+        "actor_user_id": "editor-id",
+    }
+
+
+@pytest.mark.parametrize(
+    ("state", "error_type"),
+    [
+        ("not_found", submission_archive_service.SubmissionReportNotFoundError),
+        ("processing", submission_archive_service.SubmissionLinkProcessingError),
+        ("article_not_found", ValueError),
+    ],
+)
+def test_manual_link_maps_adapter_outcomes(
+    monkeypatch: pytest.MonkeyPatch,
+    state: str,
+    error_type: type[Exception],
+) -> None:
+    class ManualNamespace:
+        def manual_link_item(self, **_kwargs: Any) -> dict[str, Any]:
+            return {"state": state, "item": None}
+
+    class ManualAdapter:
+        def __init__(self) -> None:
+            self.submission_archive = ManualNamespace()
+
+    monkeypatch.setattr(submission_archive_service, "get_adapter", ManualAdapter)
+
+    with pytest.raises(error_type):
+        submission_archive_service.manual_link_item(
+            item_id="item-1",
+            article_id="article-1",
+            user=_editor(),
+        )
+
+
+def test_manual_unlink_returns_updated_unmatched_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    updated = {"article_id": None, "link_status": "unmatched"}
+
+    class ManualNamespace:
+        def manual_unlink_item(self, **kwargs: Any) -> dict[str, Any]:
+            assert kwargs == {
+                "item_id": "item-1",
+                "actor_user_id": "editor-id",
+            }
+            return {"state": "updated", "item": updated}
+
+    class ManualAdapter:
+        def __init__(self) -> None:
+            self.submission_archive = ManualNamespace()
+
+    monkeypatch.setattr(submission_archive_service, "get_adapter", ManualAdapter)
+
+    assert submission_archive_service.manual_unlink_item(
+        item_id="item-1",
+        user=_editor(),
+    ) == updated

@@ -160,8 +160,9 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 1. 管理员在 `/submission-archive` 粘贴一份已经报出去的稿件 → `submitted_reports`
 2. 系统解析拆分成条目 → `submitted_report_items`
-3. 后台子进程做**回链**：把每个条目匹配回系统里的 `news_summaries`（标题相似度 + 正文相似度）
-4. 匹配结果写回 `submitted_report_items.link_status`
+3. 后台子进程做**自动回链**：把每个条目匹配回系统里的 `news_summaries`（标题相似度 + 正文相似度）
+4. 编辑可以确认自动候选，也可以围绕报告 `compiled_date` 检索 `news_summaries.title` / `llm_summary`，人工绑定或解绑条目
+5. 自动与人工结果都写回 `submitted_report_items`；人工绑定只改 `article_id`、`link_status`、`link_decided_by`、`link_matched_at`，解绑将状态恢复为 `unmatched`
 
 `link_status` 的取值含义：
 
@@ -173,7 +174,9 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | `unmatched` | 没找到对应新闻 |
 | `rejected` | 人工判定不匹配 |
 
-数据库、worker、控制台 API 与前端统一使用 `matched`，报告汇总统一返回 `matched_count`；不区分标题完全一致、相似度自动通过或人工确认。`pending` 尚未人工确认，不算匹配成功。
+数据库、worker、控制台 API 与前端统一使用 `matched`，报告汇总统一返回 `matched_count`；不区分标题完全一致、相似度自动通过、队列确认或人工检索绑定。`pending` 尚未人工确认，不算匹配成功。
+
+人工检索绑定保留自动回链证据：`best_candidate_article_id` 与 `link_title_score` / `link_body_score` / `link_combined_score` 一律不改。因而当 `article_id` 与 `best_candidate_article_id` 不同时，可以事后识别人工检索介入。人工绑定与解绑都拒绝 `processing` 条目，避免独立 worker 的整体回写覆盖人工决定。
 
 ### 查重（`submission-dedup`）
 

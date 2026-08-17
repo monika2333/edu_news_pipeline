@@ -146,6 +146,149 @@ def test_create_report_conflict_serializes_database_types(
     assert existing["item_count"] == 12
 
 
+def test_link_candidates_api_uses_contract_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_search_link_candidates(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {
+            "item": {"id": "item-1"},
+            "items": [],
+            "window_days": 15,
+            "window_start": date(2026, 7, 25),
+            "window_end": date(2026, 8, 24),
+            "has_more": False,
+        }
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "search_link_candidates",
+        fake_search_link_candidates,
+    )
+
+    response = _client(_editor).get(
+        "/api/submission-archive/items/item-1/link-candidates",
+        params={"q": "招生"},
+    )
+
+    assert response.status_code == 200
+    assert captured == {
+        "item_id": "item-1",
+        "query": "招生",
+        "window_days": 15,
+        "limit": 20,
+        "offset": 0,
+    }
+    assert response.json()["window_start"] == "2026-07-25"
+    assert "total" not in response.json()
+
+
+def test_link_candidates_api_rejects_blank_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        submission_archive_service,
+        "search_link_candidates",
+        lambda **_kwargs: (_ for _ in ()).throw(ValueError("q 不能为空")),
+    )
+
+    response = _client(_editor).get(
+        "/api/submission-archive/items/item-1/link-candidates",
+        params={"q": "   "},
+    )
+
+    assert response.status_code == 422
+
+
+def test_manual_link_and_unlink_routes_return_updated_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    linked = {"article_id": "article-1", "link_status": "matched"}
+    unlinked = {"article_id": None, "link_status": "unmatched"}
+    monkeypatch.setattr(
+        submission_archive_service,
+        "manual_link_item",
+        lambda **_kwargs: linked,
+    )
+    monkeypatch.setattr(
+        submission_archive_service,
+        "manual_unlink_item",
+        lambda **_kwargs: unlinked,
+    )
+    client = _client(_editor)
+
+    link_response = client.post(
+        "/api/submission-archive/items/item-1/manual-link",
+        json={"article_id": "article-1"},
+    )
+    unlink_response = client.delete(
+        "/api/submission-archive/items/item-1/manual-link"
+    )
+
+    assert link_response.status_code == 200
+    assert link_response.json() == linked
+    assert unlink_response.status_code == 200
+    assert unlink_response.json() == unlinked
+
+
+def test_manual_link_processing_conflict_returns_409(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_processing(**_kwargs: object) -> dict[str, object]:
+        raise submission_archive_service.SubmissionLinkProcessingError(
+            "正在处理"
+        )
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "manual_link_item",
+        raise_processing,
+    )
+
+    response = _client(_editor).post(
+        "/api/submission-archive/items/item-1/manual-link",
+        json={"article_id": "article-1"},
+    )
+
+    assert response.status_code == 409
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status"),
+    [
+        (
+            submission_archive_service.SubmissionReportNotFoundError(
+                "未找到这个存档条目"
+            ),
+            404,
+        ),
+        (ValueError("article_id 在 news_summaries 中不存在"), 422),
+    ],
+)
+def test_manual_link_maps_not_found_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    expected_status: int,
+) -> None:
+    def raise_error(**_kwargs: object) -> dict[str, object]:
+        raise error
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "manual_link_item",
+        raise_error,
+    )
+
+    response = _client(_editor).post(
+        "/api/submission-archive/items/item-1/manual-link",
+        json={"article_id": "article-1"},
+    )
+
+    assert response.status_code == expected_status
+
+
 def test_fetch_duplicate_details_accepts_article_id_with_slashes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

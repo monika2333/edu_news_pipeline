@@ -18,6 +18,7 @@
     <link rel="stylesheet" href="/static/css/modules/submission_archive/widgets.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/create.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/link_queue.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/modules/submission_archive/manual_link.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/responsive.css?v={{ version }}">
 </head>
 <body data-archive-view="{{ archive_view }}"
@@ -171,6 +172,39 @@
         </main>
     </div>
     {% if archive_view in ("list", "detail") %}
+    <!-- 人工回链弹窗（manual_link.js）：参照区 + 检索区 + 结果区 -->
+    <div class="modal" id="archive-link-modal" role="dialog" aria-modal="true"
+        aria-labelledby="archive-link-modal-title" aria-hidden="true">
+        <div class="modal-content archive-link-modal-content">
+            <div class="modal-header">
+                <h3 id="archive-link-modal-title">手动匹配回链</h3>
+                <button type="button" class="btn-icon" id="archive-link-modal-close"
+                    aria-label="关闭">✕</button>
+            </div>
+            <div class="modal-body">
+                <section class="archive-link-ref" aria-label="当前存档条目">
+                    <h4 class="archive-link-ref-title" id="archive-link-ref-title"></h4>
+                    <p class="archive-link-ref-body" id="archive-link-ref-body"></p>
+                </section>
+                <div class="archive-link-controls">
+                    <input type="search" id="archive-link-q" aria-label="检索关键词"
+                        placeholder="输入标题或摘要关键词检索">
+                    <select id="archive-link-window" aria-label="时间范围">
+                        <option value="15" selected>±15 天</option>
+                        <option value="30">±30 天</option>
+                        <option value="90">±90 天</option>
+                        <option value="3650">不限</option>
+                    </select>
+                    <button class="btn btn-primary" id="archive-link-search" type="button">检索</button>
+                </div>
+                <p class="archive-link-window-hint" id="archive-link-window-hint"></p>
+                <div class="archive-link-results" id="archive-link-results"></div>
+                <div class="archive-link-more-row">
+                    <button class="archive-btn-text" id="archive-link-more" type="button" hidden>加载更多</button>
+                </div>
+            </div>
+        </div>
+    </div>
     {% include "_content_drawer.html" %}
     {% endif %}
     {% include "_search_drawer.html" %}
@@ -182,6 +216,8 @@
     <script src="/static/js/manual_filter/search_drawer.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/core.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/browser.js?v={{ version }}"></script>
+    <!-- manual_link.js 必须先于 content_drawer.js：抽屉盖在弹窗上时 Escape 先关抽屉 -->
+    <script src="/static/js/submission_archive/manual_link.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/content_drawer.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/create.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/link_queue.js?v={{ version }}"></script>

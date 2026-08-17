@@ -7,6 +7,9 @@ let reportRefreshTimer = null;
 let activeReportStatusSignature = '';
 // 详情区按回链状态筛选：'' 表示不过滤，其余取值 linked/pending/uncovered
 let detailStatusFilter = '';
+// 当前详情报告的条目缓存与整理日期：人工回链弹窗的参照区与局部更新都从这里取数
+let activeReportItems = [];
+let activeReportCompiledDate = '';
 
 function linkStatusGroup(status) {
     if (status === 'matched') return 'linked';
@@ -149,6 +152,12 @@ function detailItemMetaHtml(item) {
     if (item.link_status === 'pending') {
         meta.push('<a href="/submission-archive/link-queue">去确认</a>');
     }
+    // 人工回链入口：未覆盖给「手动匹配」，已匹配给「解绑」；processing/pending 不给入口
+    if (item.link_status === 'unmatched' || item.link_status === 'rejected') {
+        meta.push(`<button class="archive-manual-link-btn" type="button" data-item-id="${escapeHtml(item.id)}">手动匹配</button>`);
+    } else if (item.link_status === 'matched') {
+        meta.push(`<button class="archive-manual-unlink-btn" type="button" data-item-id="${escapeHtml(item.id)}">解绑</button>`);
+    }
     return meta.map(part => `<span>${part}</span>`).join('');
 }
 
@@ -237,6 +246,7 @@ function reportCountsFromItems(items) {
 }
 
 function updateReportStatusComponents(id, items) {
+    activeReportItems = items;
     const statsTarget = document.getElementById('archive-detail-stats');
     if (statsTarget) {
         statsTarget.outerHTML = detailStats(items);
@@ -263,6 +273,20 @@ function updateReportStatusComponents(id, items) {
             reportCountsFromItems(items)
         );
     }
+}
+
+// 人工绑定/解绑成功后局部更新这一条卡片：复用轮询的组件更新（pill、meta、统计 chips、
+// 左侧进度条、筛选显隐），并同步状态指纹，避免轮询误判变化触发一次多余的整体重绘。
+function applyManualLinkResult(updatedItem) {
+    const index = activeReportItems.findIndex(
+        item => String(item.id) === String(updatedItem.id)
+    );
+    if (index !== -1) {
+        // 接口只返回回链字段，合并进缓存条目以保留 title/body/source 等展示字段
+        activeReportItems[index] = { ...activeReportItems[index], ...updatedItem };
+    }
+    updateReportStatusComponents(activeReportId, activeReportItems);
+    activeReportStatusSignature = reportStatusSignature(activeReportItems);
 }
 
 function scheduleReportStatusPoll(id, delay = 1500) {
@@ -314,6 +338,8 @@ async function selectReport(id, pushUrl = true) {
     try {
         const report = await api(`/reports/${encodeURIComponent(id)}`);
         const items = report.items || [];
+        activeReportItems = items;
+        activeReportCompiledDate = report.compiled_date || '';
         target.innerHTML = `
             <div class="archive-detail-head">
                 <div class="archive-detail-head-main">

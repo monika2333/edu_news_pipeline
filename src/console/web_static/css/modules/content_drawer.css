@@ -21,8 +21,10 @@
 }
 
 /* 检索抽屉（z-index 1100）打开时，原文抽屉抬到它之上：点「原文」直接盖上去，
-   关掉原文后底下的检索结果原样保留。modal（1000）与原文抽屉的相对层级不变。 */
-body.search-drawer-open .content-drawer {
+   关掉原文后底下的检索结果原样保留。modal（1000）与原文抽屉的相对层级不变。
+   人工回链弹窗（.modal，z-index 1000）打开时同理：抽屉必须盖在弹窗之上。 */
+body.search-drawer-open .content-drawer,
+body.archive-link-modal-open .content-drawer {
     z-index: 1200;
 }
 

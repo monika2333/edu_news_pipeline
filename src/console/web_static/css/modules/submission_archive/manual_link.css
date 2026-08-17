@@ -1,13 +1,14 @@
 /* 报送存档 · 人工回链弹窗（manual_link.js） */
-/* 弹窗骨架复用 components.css 的 .modal / .modal-content / .modal-header / .modal-body */
+/* 弹窗骨架复用 components.css 的 .modal / .modal-content / .modal-header / .modal-body；
+   控件样式对齐设计令牌（variables.css）与 archive-date-filter 的输入框约定 */
 
-/* 条目卡片 meta 行里的「手动匹配」「解绑」入口，与 archive-btn-text 同风格的小型按钮 */
+/* 条目卡片 meta 行里的「手动匹配」「解绑」入口 */
 .archive-manual-link-btn,
 .archive-manual-unlink-btn {
     padding: 2px 10px;
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    background: #fff;
+    background: var(--card-bg);
     color: var(--text-secondary);
     font: inherit;
     font-size: 0.8rem;
@@ -28,25 +29,35 @@
 }
 
 .archive-link-modal-content {
-    width: min(860px, 96vw);
+    width: min(880px, 96vw);
+    gap: 14px;
 }
 
 /* 参照区：当前存档条目的标题 + 最终报送版正文，编辑对着它判断候选 */
 .archive-link-ref {
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: #f8fafc;
-    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--bg-color);
+    padding: 12px 16px;
+}
+
+.archive-link-ref-label {
+    margin-bottom: 6px;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
 }
 
 .archive-link-ref-title {
     margin: 0 0 6px;
     font-size: 0.95rem;
+    line-height: 1.5;
 }
 
 .archive-link-ref-body {
     margin: 0;
-    max-height: 30vh;
+    max-height: 26vh;
     overflow-y: auto;
     color: var(--text-secondary);
     font-size: 0.85rem;
@@ -54,76 +65,251 @@
     white-space: pre-wrap;
 }
 
+/* 检索区：搜索框 + 时间范围分段控件 + 检索按钮 */
 .archive-link-controls {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     align-items: center;
 }
 
 .archive-link-controls input[type="search"] {
-    flex: 1 1 auto;
+    flex: 1 1 220px;
     min-width: 0;
+    min-height: 38px;
+    box-sizing: border-box;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.9rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+.archive-link-controls input[type="search"]::placeholder {
+    color: #94a3b8;
+}
+
+.archive-link-controls input[type="search"]:focus {
+    border-color: var(--primary-color);
+    outline: none;
+    box-shadow: 0 0 0 3px rgb(37 99 235 / 12%);
+}
+
+/* 时间范围分段控件，与存档库类型筛选（archive-type-filter）同款 pill 组 */
+.archive-link-window-group {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: #f1f5f9;
+}
+
+.archive-link-window-option {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.archive-link-window-option:hover {
+    color: var(--text-primary);
+}
+
+.archive-link-window-option.active {
+    background: var(--card-bg);
+    color: var(--primary-color);
+    box-shadow: 0 1px 2px rgb(15 23 42 / 10%);
+}
+
+.archive-link-controls .btn {
+    min-height: 38px;
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+}
+
+/* 窗口说明：以整理日期为中心，避免编辑误以为「最近 N 天」 */
 .archive-link-window-hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin: 0;
     color: var(--text-secondary);
     font-size: 0.8rem;
 }
 
+.archive-link-window-hint::before {
+    content: '';
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    opacity: 0.45;
+}
+
+/* 结果区 */
 .archive-link-results {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    max-height: 42vh;
+    max-height: 44vh;
     overflow-y: auto;
+    padding-right: 2px;
+}
+
+.archive-link-results .archive-empty {
+    padding: 24px 12px;
+    text-align: center;
+}
+
+.archive-link-results .archive-empty p {
+    margin: 0 0 4px;
+}
+
+.archive-link-results .archive-empty .archive-link-widen-btn {
+    margin-top: 8px;
 }
 
 .archive-link-candidate {
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 10px 12px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--card-bg);
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.archive-link-candidate:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 1px 4px rgb(15 23 42 / 6%);
+}
+
+.archive-link-candidate-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
 }
 
 .archive-link-candidate-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--text-primary);
     font-weight: 600;
-    font-size: 0.9rem;
+    font-size: 0.92rem;
+    line-height: 1.5;
 }
 
 .archive-link-candidate-meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 14px;
     color: var(--text-secondary);
-    font-size: 0.8rem;
+    font-size: 0.78rem;
+}
+
+.archive-link-candidate-meta span + span::before {
+    content: '·';
+    margin: 0 8px;
+    color: #cbd5e1;
 }
 
 .archive-link-candidate-linked {
-    color: #b45309;
-    background: #fffbeb;
+    padding: 4px 8px;
     border: 1px solid #fde68a;
     border-radius: 6px;
-    padding: 4px 8px;
-    font-size: 0.8rem;
+    background: #fffbeb;
+    color: #b45309;
+    font-size: 0.78rem;
+    line-height: 1.5;
 }
 
+.archive-link-candidate-summary-wrap {
+    position: relative;
+}
+
+/* 摘要默认截断为 3 行，展开按钮悬浮在右下角（与检索抽屉 search-summary 同一模式） */
 .archive-link-candidate-summary {
     margin: 0;
+    padding-left: 10px;
+    border-left: 3px solid var(--border-color);
     color: var(--text-secondary);
-    font-size: 0.85rem;
-    line-height: 1.6;
+    font-size: 0.84rem;
+    line-height: 1.65;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.archive-link-candidate-summary.expanded {
+    display: block;
+    overflow: visible;
+}
+
+.archive-link-summary-toggle {
+    position: absolute;
+    right: 0;
+    bottom: 1px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 0.78rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.archive-link-summary-toggle[hidden] {
+    display: none;
+}
+
+.archive-link-summary-toggle:hover,
+.archive-link-summary-toggle:focus-visible {
+    background: #f1f5f9;
+    color: var(--primary-color);
+}
+
+.archive-link-summary-toggle:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
 }
 
 .archive-link-candidate-actions {
     display: flex;
-    justify-content: flex-end;
+    flex: none;
     gap: 8px;
+}
+
+.archive-link-candidate-actions .btn {
+    min-height: 32px;
+    padding: 5px 14px;
+    border-radius: 7px;
+    font-size: 0.82rem;
 }
 
 .archive-link-more-row {
     display: flex;
     justify-content: center;
+    padding-top: 2px;
 }

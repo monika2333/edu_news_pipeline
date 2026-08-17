@@ -30,12 +30,29 @@ function getManualLinkEls() {
         refTitle: document.getElementById('archive-link-ref-title'),
         refBody: document.getElementById('archive-link-ref-body'),
         query: document.getElementById('archive-link-q'),
-        windowSelect: document.getElementById('archive-link-window'),
+        windowGroup: document.getElementById('archive-link-window'),
         searchBtn: document.getElementById('archive-link-search'),
         windowHint: document.getElementById('archive-link-window-hint'),
         results: document.getElementById('archive-link-results'),
         moreBtn: document.getElementById('archive-link-more')
     };
+}
+
+function getManualLinkWindowDays() {
+    const active = getManualLinkEls().windowGroup
+        ?.querySelector('.archive-link-window-option.active');
+    return Number(active?.dataset.windowDays) || 15;
+}
+
+function setManualLinkWindowDays(value) {
+    getManualLinkEls().windowGroup
+        ?.querySelectorAll('.archive-link-window-option')
+        .forEach(option => {
+            option.classList.toggle(
+                'active',
+                Number(option.dataset.windowDays) === Number(value)
+            );
+        });
 }
 
 function nextWindowOption(current) {
@@ -74,28 +91,41 @@ function manualLinkLinkedBadgeHtml(candidate) {
     return `<div class="archive-link-candidate-linked">已绑定到：${escapeHtml(text)}（仅提示，不阻止绑定）</div>`;
 }
 
+// 摘要完整渲染，由 CSS 截断为 3 行；超出时右下角出现展开按钮（与检索抽屉同一交互）
+function manualLinkSummaryHtml(summary) {
+    if (!summary) return '';
+    return `
+        <div class="archive-link-candidate-summary-wrap">
+            <p class="archive-link-candidate-summary">${escapeHtml(summary)}</p>
+            <button class="archive-link-summary-toggle" type="button" aria-expanded="false"
+                aria-label="展开摘要" title="展开摘要" hidden>▾</button>
+        </div>
+    `;
+}
+
 function manualLinkCandidateHtml(candidate) {
     const summary = String(candidate.llm_summary || '').trim();
-    const snippet = summary.length > 120 ? `${summary.slice(0, 120)}…` : summary;
     const articleId = escapeHtml(candidate.article_id || '');
     // ingested_at / publish_time_iso 是带 Z 的 UTC 时间，必须走 formatLocalDateTime
     // 按本地时区取值；直接截字符串会把 UTC 当本地时间，凌晨入库的记录日期差一天
     return `
         <section class="archive-link-candidate">
-            <div class="archive-link-candidate-title">${escapeHtml(candidate.title || '(无标题)')}</div>
+            <div class="archive-link-candidate-head">
+                <div class="archive-link-candidate-title">${escapeHtml(candidate.title || '(无标题)')}<button
+                    class="content-drawer-trigger" type="button" data-article-id="${articleId}"
+                    data-bonus-keywords="" title="查看原文">原文</button></div>
+                <div class="archive-link-candidate-actions">
+                    <button class="btn btn-primary archive-link-bind-btn" type="button"
+                        data-article-id="${articleId}">绑定</button>
+                </div>
+            </div>
             <div class="archive-link-candidate-meta">
                 <span>来源：${escapeHtml(candidate.source || '-')}</span>
                 <span>入库：${escapeHtml(formatLocalDateTime(candidate.ingested_at))}</span>
                 ${candidate.publish_time_iso ? `<span>发布：${escapeHtml(formatLocalDateTime(candidate.publish_time_iso))}</span>` : ''}
             </div>
             ${manualLinkLinkedBadgeHtml(candidate)}
-            ${snippet ? `<p class="archive-link-candidate-summary">${escapeHtml(snippet)}</p>` : ''}
-            <div class="archive-link-candidate-actions">
-                <button class="archive-btn-text content-drawer-trigger" type="button"
-                    data-article-id="${articleId}">原文</button>
-                <button class="btn btn-primary archive-link-bind-btn" type="button"
-                    data-article-id="${articleId}">绑定</button>
-            </div>
+            ${manualLinkSummaryHtml(summary)}
         </section>
     `;
 }
@@ -114,7 +144,7 @@ function openManualLinkModal(itemId) {
     els.refTitle.textContent = item.title || '(无标题)';
     els.refBody.textContent = item.body || '';
     els.query.value = '';
-    els.windowSelect.value = '15';
+    setManualLinkWindowDays(15);
     // 检索窗口以报告整理日期为中心向前后展开，不是「最近 N 天」，文案必须讲清楚，
     // 否则编辑会以为搜不到就是库里没有
     const compiled = dateValue(activeReportCompiledDate);
@@ -139,6 +169,19 @@ function closeManualLinkModal() {
     document.body.classList.remove('archive-link-modal-open');
 }
 
+// 只测量新渲染的摘要（toggle 仍 hidden 的）；已展开的不重算，避免展开态下误隐藏按钮
+function refreshManualLinkSummaryToggles() {
+    const els = getManualLinkEls();
+    requestAnimationFrame(() => {
+        els.results.querySelectorAll('.archive-link-candidate-summary-wrap').forEach(wrap => {
+            const summary = wrap.querySelector('.archive-link-candidate-summary');
+            const toggle = wrap.querySelector('.archive-link-summary-toggle');
+            if (!summary || !toggle || !toggle.hidden) return;
+            toggle.hidden = summary.scrollHeight <= summary.clientHeight + 1;
+        });
+    });
+}
+
 async function searchManualLinkCandidates(append = false) {
     const els = getManualLinkEls();
     const query = els.query.value.trim();
@@ -150,7 +193,7 @@ async function searchManualLinkCandidates(append = false) {
     if (manualLinkState.loading) return;
     manualLinkState.loading = true;
     manualLinkState.query = query;
-    manualLinkState.windowDays = Number(els.windowSelect.value) || 15;
+    manualLinkState.windowDays = getManualLinkWindowDays();
     const itemId = manualLinkState.itemId;
     const offset = append ? manualLinkState.offset : 0;
     if (!append) {
@@ -181,6 +224,7 @@ async function searchManualLinkCandidates(append = false) {
             els.results.innerHTML = items.length ? html : manualLinkEmptyHtml();
         }
         els.moreBtn.hidden = !manualLinkState.hasMore;
+        refreshManualLinkSummaryToggles();
     } catch (error) {
         if (manualLinkState.itemId !== itemId) return;
         if (append) {
@@ -244,14 +288,30 @@ function setupManualLinkModal() {
             searchManualLinkCandidates(false);
         }
     });
-    els.windowSelect.addEventListener('change', () => {
+    els.windowGroup.addEventListener('click', event => {
+        const option = event.target.closest('.archive-link-window-option');
+        if (!option || option.classList.contains('active')) return;
+        setManualLinkWindowDays(option.dataset.windowDays);
         if (els.query.value.trim()) searchManualLinkCandidates(false);
     });
     els.moreBtn.addEventListener('click', () => searchManualLinkCandidates(true));
     els.results.addEventListener('click', event => {
+        const toggleBtn = event.target.closest('.archive-link-summary-toggle');
+        if (toggleBtn) {
+            const summary = toggleBtn.closest('.archive-link-candidate-summary-wrap')
+                ?.querySelector('.archive-link-candidate-summary');
+            if (!summary) return;
+            const expanded = summary.classList.toggle('expanded');
+            const actionLabel = expanded ? '收起摘要' : '展开摘要';
+            toggleBtn.textContent = expanded ? '▴' : '▾';
+            toggleBtn.setAttribute('aria-expanded', String(expanded));
+            toggleBtn.setAttribute('aria-label', actionLabel);
+            toggleBtn.setAttribute('title', actionLabel);
+            return;
+        }
         const widenBtn = event.target.closest('.archive-link-widen-btn');
         if (widenBtn) {
-            els.windowSelect.value = widenBtn.dataset.windowDays;
+            setManualLinkWindowDays(widenBtn.dataset.windowDays);
             searchManualLinkCandidates(false);
             return;
         }

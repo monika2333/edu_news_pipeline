@@ -183,18 +183,24 @@
             </div>
             <div class="modal-body">
                 <section class="archive-link-ref" aria-label="当前存档条目">
+                    <div class="archive-link-ref-label">当前存档条目</div>
                     <h4 class="archive-link-ref-title" id="archive-link-ref-title"></h4>
                     <p class="archive-link-ref-body" id="archive-link-ref-body"></p>
                 </section>
                 <div class="archive-link-controls">
                     <input type="search" id="archive-link-q" aria-label="检索关键词"
-                        placeholder="输入标题或摘要关键词检索">
-                    <select id="archive-link-window" aria-label="时间范围">
-                        <option value="15" selected>±15 天</option>
-                        <option value="30">±30 天</option>
-                        <option value="90">±90 天</option>
-                        <option value="3650">不限</option>
-                    </select>
+                        placeholder="输入标题或摘要关键词，回车检索">
+                    <div class="archive-link-window-group" id="archive-link-window"
+                        role="group" aria-label="时间范围">
+                        <button type="button" class="archive-link-window-option active"
+                            data-window-days="15">±15 天</button>
+                        <button type="button" class="archive-link-window-option"
+                            data-window-days="30">±30 天</button>
+                        <button type="button" class="archive-link-window-option"
+                            data-window-days="90">±90 天</button>
+                        <button type="button" class="archive-link-window-option"
+                            data-window-days="3650">不限</button>
+                    </div>
                     <button class="btn btn-primary" id="archive-link-search" type="button">检索</button>
                 </div>
                 <p class="archive-link-window-hint" id="archive-link-window-hint"></p>

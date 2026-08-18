@@ -92,6 +92,12 @@ class NewsArticleContentResponse(BaseModel):
     content_markdown: Optional[str] = None
 
 
+class NewsArticleIngestStatusResponse(BaseModel):
+    """全库最新收录时间（news_summaries.created_at），库内无数据或数据库不可用为 None。"""
+
+    latest_created_at: Optional[datetime] = None
+
+
 class NewsArticleSearchResponse(BaseModel):
     items: list[NewsArticleSearchItem] = Field(default_factory=list)
     limit: int
@@ -105,6 +111,7 @@ __all__ = [
     "NewsArticleArchiveLink",
     "NewsArticleAttribution",
     "NewsArticleContentResponse",
+    "NewsArticleIngestStatusResponse",
     "NewsArticleManualDecision",
     "NewsArticleScoreFeedback",
     "NewsArticleSearchItem",

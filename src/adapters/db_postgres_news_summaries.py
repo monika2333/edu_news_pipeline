@@ -151,6 +151,10 @@ class NewsSummariesNamespace:
         with self._adapter._cursor() as cur:
             return fetch_news_summary_content(cur, article_id)
 
+    def fetch_latest_created_at(self) -> Optional[datetime]:
+        with self._adapter._cursor() as cur:
+            return fetch_latest_news_summary_created_at(cur)
+
     def upsert_from_primary(self, rows: Sequence[Mapping[str, Any]]) -> int:
         with self._adapter._cursor() as cur:
             return upsert_news_summaries_from_primary(cur, rows)
@@ -674,6 +678,15 @@ def fetch_news_summary_content(cur: psycopg.Cursor, article_id: str) -> Optional
     cur.execute(query, (article_id,))
     row = cur.fetchone()
     return dict(row) if row else None
+
+
+def fetch_latest_news_summary_created_at(cur: psycopg.Cursor) -> Optional[datetime]:
+    """全库最新收录时间，与筛选页/内容抽屉的收录时间口径一致（news_summaries.created_at）。"""
+    cur.execute("SELECT MAX(created_at) AS latest_created_at FROM news_summaries")
+    row = cur.fetchone()
+    if not row:
+        return None
+    return row["latest_created_at"]
 
 
 def fetch_raw_articles_for_summary(

@@ -23,6 +23,7 @@ let state = {
     filterQuery: '',
     filterViewMode: 'browse',
     filterSearchTotal: 0,
+    latestIngestedAt: null,
     reviewView: 'selected',
     reviewReportType: 'zongbao',
     discardQuery: '',

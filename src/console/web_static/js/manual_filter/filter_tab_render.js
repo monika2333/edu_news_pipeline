@@ -31,10 +31,13 @@ function syncFilterToolbarState() {
     if (!elements.filterSearchMeta) return;
 
     const bucketTotal = state.filterCounts[state.filterCategory || 'internal_positive'] || 0;
+    const ingestSuffix = state.latestIngestedAt
+        ? ` · 最新收录 ${formatLocalDateTime(state.latestIngestedAt)}`
+        : '';
     if (isFilterSearchMode()) {
-        elements.filterSearchMeta.textContent = `检索到 ${state.filterSearchTotal} 条，共 ${bucketTotal} 条。`;
+        elements.filterSearchMeta.textContent = `检索到 ${state.filterSearchTotal} 条，共 ${bucketTotal} 条。${ingestSuffix}`;
     } else {
-        elements.filterSearchMeta.textContent = `当前共 ${bucketTotal} 条。`;
+        elements.filterSearchMeta.textContent = `当前共 ${bucketTotal} 条。${ingestSuffix}`;
     }
 
     if (elements.filterBulkDiscardBtn) {

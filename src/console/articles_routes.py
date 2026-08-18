@@ -5,7 +5,11 @@ from typing import NoReturn, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.console import articles_service, score_feedback_service
-from src.console.articles_schemas import NewsArticleContentResponse, NewsArticleSearchResponse
+from src.console.articles_schemas import (
+    NewsArticleContentResponse,
+    NewsArticleIngestStatusResponse,
+    NewsArticleSearchResponse,
+)
 from src.console.auth_service import ConsoleUser
 from src.console.score_feedback_schemas import (
     ClearScoreFeedbackRequest,
@@ -99,6 +103,17 @@ def clear_article_score_feedback_api(
     except ValueError as exc:
         _raise_score_feedback_http_error(exc)
     return ScoreFeedbackResponse(score_feedback=None)
+
+
+@router.get(
+    "/ingest-status",
+    response_model=NewsArticleIngestStatusResponse,
+    summary="Latest article ingest timestamp",
+)
+def get_ingest_status_api() -> NewsArticleIngestStatusResponse:
+    """返回全库最新收录时间，管理员与值班编辑共用（挂在受保护而非仅管理员的路由上）。"""
+    result = articles_service.get_latest_ingest_status()
+    return NewsArticleIngestStatusResponse.model_validate(result)
 
 
 @router.get(

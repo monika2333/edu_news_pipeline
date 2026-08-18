@@ -16,9 +16,11 @@ class FakeNewsSummariesNamespace:
         row: Optional[dict[str, Any]],
         *,
         error: Optional[Exception] = None,
+        latest_created_at: Optional[datetime] = None,
     ) -> None:
         self.row = row
         self.error = error
+        self.latest_created_at = latest_created_at
 
     def fetch_content(self, article_id: str) -> Optional[dict[str, Any]]:
         if self.error is not None:
@@ -27,6 +29,11 @@ class FakeNewsSummariesNamespace:
             return None
         return dict(self.row)
 
+    def fetch_latest_created_at(self) -> Optional[datetime]:
+        if self.error is not None:
+            raise self.error
+        return self.latest_created_at
+
 
 class FakeAdapter:
     def __init__(
@@ -34,8 +41,13 @@ class FakeAdapter:
         row: Optional[dict[str, Any]],
         *,
         error: Optional[Exception] = None,
+        latest_created_at: Optional[datetime] = None,
     ) -> None:
-        self.news_summaries = FakeNewsSummariesNamespace(row, error=error)
+        self.news_summaries = FakeNewsSummariesNamespace(
+            row,
+            error=error,
+            latest_created_at=latest_created_at,
+        )
 
 
 def _client(monkeypatch, adapter: FakeAdapter) -> TestClient:
@@ -118,3 +130,39 @@ def test_article_content_database_error_uses_null_fallback(monkeypatch) -> None:
         "created_at": None,
         "content_markdown": None,
     }
+
+
+def test_ingest_status_returns_latest_created_at(monkeypatch) -> None:
+    client = _client(
+        monkeypatch,
+        FakeAdapter(
+            None,
+            latest_created_at=datetime(2026, 8, 17, 2, 30, tzinfo=timezone.utc),
+        ),
+    )
+
+    response = client.get("/api/articles/ingest-status")
+
+    assert response.status_code == 200
+    assert response.json() == {"latest_created_at": "2026-08-17T02:30:00Z"}
+
+
+def test_ingest_status_empty_database_returns_null(monkeypatch) -> None:
+    client = _client(monkeypatch, FakeAdapter(None))
+
+    response = client.get("/api/articles/ingest-status")
+
+    assert response.status_code == 200
+    assert response.json() == {"latest_created_at": None}
+
+
+def test_ingest_status_database_error_uses_null_fallback(monkeypatch) -> None:
+    client = _client(
+        monkeypatch,
+        FakeAdapter(None, error=RuntimeError("database unavailable")),
+    )
+
+    response = client.get("/api/articles/ingest-status")
+
+    assert response.status_code == 200
+    assert response.json() == {"latest_created_at": None}

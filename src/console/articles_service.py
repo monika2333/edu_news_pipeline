@@ -244,9 +244,22 @@ def get_article_content(*, article_id: str) -> Dict[str, Any]:
     }
 
 
+def get_latest_ingest_status() -> Dict[str, Any]:
+    """全库最新收录时间，供筛选页展示并间接判断抓取流水线是否在运行。"""
+    adapter = _get_adapter_safe()
+    if adapter is None:
+        return {"latest_created_at": None}
+    try:
+        latest_created_at = adapter.news_summaries.fetch_latest_created_at()
+    except Exception:  # pragma: no cover - degrade gracefully when DB is unavailable
+        return {"latest_created_at": None}
+    return {"latest_created_at": latest_created_at}
+
+
 __all__ = [
     "DEFAULT_ARTICLE_SEARCH_LOOKBACK_DAYS",
     "MAX_ARTICLE_SEARCH_LOOKBACK_DAYS",
     "get_article_content",
+    "get_latest_ingest_status",
     "search_articles",
 ]

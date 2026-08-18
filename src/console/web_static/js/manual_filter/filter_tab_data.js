@@ -1,10 +1,25 @@
 // Manual Filter JS - Filter Tab Data
 
+// 全库最新收录时间，与筛选列表无关，单独拉取；失败时静默保留旧值。
+// 走 /api/articles（登录即可访问），管理员页与值班页共用同一接口。
+async function loadLatestIngestStatus() {
+    try {
+        const res = await fetch('/api/articles/ingest-status');
+        if (!res.ok) return;
+        const data = await res.json();
+        state.latestIngestedAt = data.latest_created_at || null;
+        syncFilterToolbarState();
+    } catch (error) {
+        // Keep previous value on failure.
+    }
+}
+
 async function loadFilterData(options = {}) {
     const forceClusterRefresh = Boolean(options.forceClusterRefresh) || shouldForceClusterRefresh;
     shouldForceClusterRefresh = false;
     syncFilterToolbarState();
     elements.filterList.innerHTML = renderSkeleton(3);
+    loadLatestIngestStatus();
 
     try {
         const searchMode = isFilterSearchMode();

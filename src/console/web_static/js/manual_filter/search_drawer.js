@@ -110,13 +110,17 @@ function setupSearchDrawer() {
     }
 
     if (clearBtn) {
-        clearBtn.addEventListener('click', clearDrawerSearch);
+        clearBtn.addEventListener('click', () => {
+            clearDrawerSearch();
+            queryInput?.focus();
+        });
     }
 
     if (queryInput) {
         queryInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') startNewSearch();
         });
+        queryInput.addEventListener('input', syncDrawerClearButton);
     }
 
     if (typeof setupArchiveSearch === 'function') {
@@ -124,6 +128,15 @@ function setupSearchDrawer() {
     }
 
     loadSearchFilters();
+    syncDrawerClearButton();
+}
+
+// 清空 icon 只在有检索词时显示。
+function syncDrawerClearButton() {
+    const clearBtn = document.getElementById('btn-drawer-clear');
+    const qInput = document.getElementById('search-q');
+    if (!clearBtn || !qInput) return;
+    clearBtn.hidden = !qInput.value.trim();
 }
 
 function loadSearchFilters() {
@@ -163,6 +176,7 @@ function clearDrawerSearch() {
     if (container) clearEl(container);
     if (statsInfo) clearEl(statsInfo);
     if (pagination) clearEl(pagination);
+    syncDrawerClearButton();
 }
 
 async function performDrawerSearch() {

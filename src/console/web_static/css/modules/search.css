@@ -490,6 +490,66 @@
     flex: none;
 }
 
+/* 隐藏式清空 icon：包一层 relative 容器，按钮绝对定位在输入框右缘内侧，
+   有检索词时才显示。样式与 review.css 的 .review-search-clear 对齐。
+   容器用 display:flex 让输入框撑满整行高度——表单行高由「搜索」按钮决定，
+   否则输入框比按钮矮，且绝对定位的 icon 会按容器（而非输入框）居中而偏下。 */
+.search-drawer-input-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+}
+
+.search-drawer-input-wrap input {
+    width: 100%;
+    padding-right: 40px;
+    box-sizing: border-box;
+}
+
+.search-drawer-clear {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #334155;
+    cursor: pointer;
+}
+
+.search-drawer-clear[hidden] {
+    display: none;
+}
+
+.search-drawer-clear svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+}
+
+.search-drawer-clear:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+
+.search-drawer-clear:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
 .archive-search-results {
     display: flex;
     flex-direction: column;

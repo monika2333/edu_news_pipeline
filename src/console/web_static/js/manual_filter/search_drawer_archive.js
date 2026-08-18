@@ -23,13 +23,26 @@ function setupArchiveSearch() {
         searchBtn.addEventListener('click', () => performArchiveSearch());
     }
     if (clearBtn) {
-        clearBtn.addEventListener('click', () => clearArchiveSearch());
+        clearBtn.addEventListener('click', () => {
+            clearArchiveSearch();
+            queryInput?.focus();
+        });
     }
     if (queryInput) {
         queryInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') performArchiveSearch();
         });
+        queryInput.addEventListener('input', syncArchiveClearButton);
+        syncArchiveClearButton();
     }
+}
+
+// 清空 icon 只在有检索词时显示。
+function syncArchiveClearButton() {
+    const clearBtn = document.getElementById('btn-archive-clear');
+    const queryInput = document.getElementById('archive-search-q');
+    if (!clearBtn || !queryInput) return;
+    clearBtn.hidden = !queryInput.value.trim();
 }
 
 // 清空存档检索：检索词与候选结果一并清掉。
@@ -38,6 +51,7 @@ function clearArchiveSearch() {
     const results = document.getElementById('archive-search-results');
     if (queryInput) queryInput.value = '';
     if (results) clearEl(results);
+    syncArchiveClearButton();
 }
 
 // 关键词高亮：行为与报送存档库全库搜索的 highlight 一致（大小写不敏感的 <mark>），

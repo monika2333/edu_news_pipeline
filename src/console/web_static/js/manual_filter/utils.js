@@ -135,6 +135,9 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
                         data-article-id="${escapeAttr(safe.article_id || '')}"
                         data-bonus-keywords="${escapeAttr((safe.bonus_keywords || []).join('\n'))}"
                         title="查看原文">原文</button>
+                    <button type="button" class="copy-article-btn"
+                        data-source="${escapeAttr(safe.source || '')}"
+                        title="复制标题、摘要和来源">复制</button>
                     ${duplicateBadge}
                 </h3>
                 ${statusGroup}

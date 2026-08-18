@@ -263,6 +263,9 @@ function renderReviewCard(item) {
                         data-article-id="${escapeReviewAttr(item.article_id || '')}"
                         data-bonus-keywords="${escapeReviewAttr((item.bonus_keywords || []).join('\n'))}"
                         title="查看原文">原文</button>
+                    <button type="button" class="copy-article-btn"
+                        data-source="${escapeReviewAttr(item.source || '')}"
+                        title="复制标题、摘要和来源">复制</button>
                     ${renderSubmissionDuplicateBadge(item)}
                 </h4>
                 <div class="review-card-actions">

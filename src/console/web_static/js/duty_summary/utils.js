@@ -79,11 +79,17 @@ function selectedImportTarget() {
 }
 
 function isAdminProcessed(item) {
+    if (isRecoveredManualDiscard(item)) return false;
     return Boolean(item.admin_discarded_at)
         || ['selected', 'backup', 'discarded', 'exported'].includes(item?.admin_status);
 }
 
+function isRecoveredManualDiscard(item) {
+    return !item?.admin_discarded_at && item?.admin_status === 'discarded';
+}
+
 function adminProcessLabel(item) {
+    if (isRecoveredManualDiscard(item)) return '未处理';
     if (item.admin_discarded_at || item.admin_status === 'discarded') return '已放弃';
     if (item.admin_status === 'selected') return '已采纳';
     if (item.admin_status === 'backup') return '已备选';
@@ -104,6 +110,7 @@ function findAdminItem(articleId) {
 }
 
 function canUndoAdminProcess(item) {
+    if (isRecoveredManualDiscard(item)) return false;
     if (item?.admin_status === 'exported') return false;
     return Boolean(item.admin_discarded_at)
         || ['selected', 'backup', 'discarded'].includes(item?.admin_status);

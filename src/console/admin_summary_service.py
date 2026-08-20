@@ -225,7 +225,7 @@ def preview_import_results(
         }
         for row in rows
         if row.get("existing_id")
-        and row.get("existing_status") != "pending"
+        and row.get("existing_status") not in {"pending", "discarded"}
     ]
     return {
         "total": len(rows),

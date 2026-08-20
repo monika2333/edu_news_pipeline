@@ -89,8 +89,10 @@ function renderItems() {
         return;
     }
     elements.items.innerHTML = visibleItems.map(item => {
-        const discardedActive = Boolean(item.admin_discarded_at)
-            || item.admin_status === 'discarded';
+        const recoveredManualDiscard = isRecoveredManualDiscard(item);
+        const discardedActive = !recoveredManualDiscard && (
+            Boolean(item.admin_discarded_at) || item.admin_status === 'discarded'
+        );
         const selectedActive = !discardedActive && item.admin_status === 'selected';
         const showUndoAction = canUndoAdminProcess(item);
         const adminProcessTag = `<span class="summary-admin-process-tag${

@@ -318,16 +318,22 @@ def test_preview_import_results_returns_editable_conflict_versions(
             "existing_id": "manual-3",
             "existing_status": "pending",
         },
+        {
+            "article_id": "article-4",
+            "title": "全量页已放弃的新闻",
+            "existing_id": "manual-4",
+            "existing_status": "discarded",
+        },
     ]
     monkeypatch.setattr(admin_summary_service, "get_adapter", lambda: adapter)
 
     result = admin_summary_service.preview_import_results(
         shift_id="shift-1",
-        article_ids=["article-1", "article-2", "article-3"],
+        article_ids=["article-1", "article-2", "article-3", "article-4"],
     )
 
-    assert result["total"] == 3
-    assert result["ready_count"] == 2
+    assert result["total"] == 4
+    assert result["ready_count"] == 3
     assert len(result["conflicts"]) == 1
     conflict = result["conflicts"][0]
     assert conflict["existing"]["summary"] == "管理员摘要"

@@ -10,6 +10,7 @@ async function quickDecideItem(button) {
     if (button.dataset.quickStatus === 'discarded') {
         if (
             button.dataset.cancelDiscarded === 'true'
+            && !isRecoveredManualDiscard(item)
             && !item.admin_discarded_at
             && item.admin_status === 'discarded'
         ) {
@@ -74,9 +75,11 @@ async function setAdminDiscarded(button, discarded) {
     if (button.disabled || !state.shiftId) return;
     const item = findAdminItem(button.dataset.articleId);
     if (!item) return;
-    const nextDiscarded = button.dataset.cancelDiscarded === 'true'
-        ? false
-        : discarded;
+    const nextDiscarded = isRecoveredManualDiscard(item)
+        ? true
+        : button.dataset.cancelDiscarded === 'true'
+            ? false
+            : discarded;
     button.disabled = true;
     try {
         await patchAdminDiscard(item.article_id, nextDiscarded);

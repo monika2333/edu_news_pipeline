@@ -1088,7 +1088,7 @@ def import_shift_reviews_into_manual(
         existing = existing_by_id.get(article_id)
         has_conflict = bool(
             existing
-            and existing.get("status") != "pending"
+            and existing.get("status") not in {"pending", "discarded"}
         )
         resolution = conflict_resolutions.get(article_id, {})
         if has_conflict:

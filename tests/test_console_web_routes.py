@@ -842,6 +842,10 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "function getVisibleItems()" in script
     assert "adminProcessScope: 'unprocessed'" in script
     assert "function adminProcessLabel(item)" in script
+    assert "function isRecoveredManualDiscard(item)" in script
+    assert "if (isRecoveredManualDiscard(item)) return '未处理'" in script
+    assert "const discardedActive = !recoveredManualDiscard" in script
+    assert "const nextDiscarded = isRecoveredManualDiscard(item)" in script
     assert "function articleCategoryLabel(item)" in script
     assert "item.is_beijing_related ? '京内' : '京外'" in script
     assert "? '负面'" in script

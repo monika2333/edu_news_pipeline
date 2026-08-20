@@ -458,6 +458,43 @@ def test_duty_import_moves_pending_candidate_without_conflict_prompt() -> None:
     assert cur.params[-1][0] == "selected"
 
 
+def test_duty_import_reopens_discarded_candidate_without_conflict_prompt() -> None:
+    cur = FakeDutyImportCursor(
+        [
+            {
+                "article_id": "article-1",
+                "edited_summary": "值班摘要",
+                "manual_llm_source": "值班来源",
+                "notes": None,
+                "llm_summary": "机器摘要",
+                "score": 80,
+            }
+        ]
+    )
+
+    db_postgres_manual_reviews.import_shift_reviews_into_manual(
+        cur,
+        shift_id="shift-1",
+        article_ids=["article-1"],
+        target_status="selected",
+        report_type="zongbao",
+        actor_username="admin",
+        actor_user_id="admin-id",
+        existing_reviews=[
+            {
+                "article_id": "article-1",
+                "status": "discarded",
+                "version": 2,
+            }
+        ],
+        conflict_resolutions={},
+    )
+
+    assert "status = %s" in cur.queries[-1]
+    assert cur.params[-1][0] == "selected"
+    assert cur.params[-1][1] == "值班摘要"
+
+
 def test_duty_import_rejects_discarded_target() -> None:
     cur = FakeDutyImportCursor(
         [

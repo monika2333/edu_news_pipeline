@@ -32,7 +32,7 @@ function syncFilterToolbarState() {
 
     const bucketTotal = state.filterCounts[state.filterCategory || 'internal_positive'] || 0;
     const ingestSuffix = state.latestIngestedAt
-        ? ` · 最新收录 ${formatLocalDateTime(state.latestIngestedAt)}`
+        ? `最新收录 ${formatLocalDateTime(state.latestIngestedAt)}`
         : '';
     if (isFilterSearchMode()) {
         elements.filterSearchMeta.textContent = `检索到 ${state.filterSearchTotal} 条，共 ${bucketTotal} 条。${ingestSuffix}`;

@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <noscript>
+        <meta http-equiv="refresh" content="0; url=/admin/duty-summary">
+    </noscript>
+    <title>正在打开新闻筛选控制台</title>
+    <script src="/static/js/admin_last_view.js?v={{ version }}"
+        data-admin-view-user="{{ current_user.user_id or current_user.username }}"
+        data-admin-view-default="/admin/duty-summary"></script>
+</head>
+<body>
+    <p>正在打开上次访问的页面……</p>
+    <p><a href="/admin/duty-summary">如果页面没有自动打开，请点击这里</a></p>
+</body>
+</html>

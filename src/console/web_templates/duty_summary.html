@@ -207,6 +207,9 @@
     <div class="toast" id="toast">操作成功</div>
     <script src="/static/js/api_error.js?v={{ version }}"></script>
     <script src="/static/js/auth.js?v={{ version }}"></script>
+    <script src="/static/js/admin_last_view.js?v={{ version }}"
+        data-admin-view-user="{{ current_user.user_id or current_user.username }}"
+        data-admin-view-current="/admin/duty-summary"></script>
     <script src="/static/js/shift_date.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/utils.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/score_feedback.js?v={{ version }}"></script>

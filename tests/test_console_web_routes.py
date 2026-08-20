@@ -32,13 +32,16 @@ def _build_editor_client() -> TestClient:
     return TestClient(app)
 
 
-def test_console_root_redirects_admin_to_duty_summary() -> None:
+def test_console_root_restores_admin_last_view_in_browser() -> None:
     client = _build_client()
 
     response = client.get("/", follow_redirects=False)
 
-    assert response.status_code == 307
-    assert response.headers["location"].endswith("/admin/duty-summary")
+    assert response.status_code == 200
+    assert 'content="0; url=/admin/duty-summary"' in response.text
+    assert 'src="/static/js/admin_last_view.js?v=' in response.text
+    assert 'data-admin-view-user="tester"' in response.text
+    assert 'data-admin-view-default="/admin/duty-summary"' in response.text
 
 
 def test_console_root_redirects_duty_editor_to_duty_workspace() -> None:
@@ -48,6 +51,43 @@ def test_console_root_redirects_duty_editor_to_duty_workspace() -> None:
 
     assert response.status_code == 307
     assert response.headers["location"].endswith("/duty")
+
+
+def test_admin_main_views_persist_only_their_canonical_view() -> None:
+    client = _build_client()
+
+    expected_views = {
+        "/admin/duty-summary": "/admin/duty-summary",
+        "/manual_filter": "/manual_filter",
+        "/admin/review": "/admin/review",
+        "/submission-archive": "/submission-archive",
+    }
+    for path, expected_view in expected_views.items():
+        response = client.get(path)
+
+        assert response.status_code == 200
+        assert 'src="/static/js/admin_last_view.js?v=' in response.text
+        assert 'data-admin-view-user="tester"' in response.text
+        assert f'data-admin-view-current="{expected_view}"' in response.text
+
+    for path in (
+        "/submission-archive/new",
+        "/submission-archive/link-queue",
+        "/submission-archive/report-1",
+    ):
+        assert "/static/js/admin_last_view.js" not in client.get(path).text
+
+
+def test_admin_last_view_script_scopes_storage_by_user_and_validates_paths() -> None:
+    script = (
+        Path(__file__).parents[1]
+        / "src/console/web_static/js/admin_last_view.js"
+    ).read_text(encoding="utf-8")
+
+    assert "`admin_last_view:${userId}`" in script
+    assert "allowedViews.has(savedView)" in script
+    assert "localStorage.setItem(storageKey, currentView)" in script
+    assert "window.location.replace(target)" in script
 
 
 def test_removed_console_pages_are_not_registered() -> None:
@@ -362,6 +402,7 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "<title>新闻筛选控制台</title>" in html
     assert "<h1>新闻筛选控制台</h1>" in html
     assert 'data-workspace-mode="duty"' in html
+    assert "/static/js/admin_last_view.js" not in html
     assert 'class="stats"' in html
     assert 'id="btn-refresh"' in html
     assert 'aria-describedby="refresh-cluster-hint"' in html

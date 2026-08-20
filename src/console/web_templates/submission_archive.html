@@ -215,6 +215,11 @@
     <div class="toast" id="archive-toast" role="status"></div>
     <script src="/static/js/api_error.js?v={{ version }}"></script>
     <script src="/static/js/auth.js?v={{ version }}"></script>
+    {% if current_user.role == 'admin' and archive_view == 'list' %}
+    <script src="/static/js/admin_last_view.js?v={{ version }}"
+        data-admin-view-user="{{ current_user.user_id or current_user.username }}"
+        data-admin-view-current="/submission-archive"></script>
+    {% endif %}
     <script src="/static/js/manual_filter/utils.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/score_feedback.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/search_drawer.js?v={{ version }}"></script>

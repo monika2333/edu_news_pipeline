@@ -61,11 +61,15 @@ async def admin_review_page(
 async def root_page(
     request: Request,
     user: ConsoleUser = Depends(require_console_user),
-) -> RedirectResponse:
-    """Redirect the console root to the active workflow for the user's role."""
+) -> Response:
+    """Open the active workflow for the user's role and browser history."""
     if user.role == "duty_editor":
         return RedirectResponse(url=request.url_for("duty_page"), status_code=307)
-    return RedirectResponse(url=request.url_for("duty_summary_page"), status_code=307)
+    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    return templates.TemplateResponse(
+        "admin_entry.html",
+        {"request": request, "version": version, "current_user": user},
+    )
 
 
 @router.get("/duty", response_class=HTMLResponse)

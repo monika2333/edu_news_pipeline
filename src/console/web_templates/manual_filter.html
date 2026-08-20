@@ -477,6 +477,11 @@
     <script src="/static/vendor/Sortable.min.js?v={{ version }}"></script>
     <script src="/static/js/api_error.js?v={{ version }}"></script>
     <script src="/static/js/auth.js?v={{ version }}"></script>
+    {% if not is_duty_workspace %}
+    <script src="/static/js/admin_last_view.js?v={{ version }}"
+        data-admin-view-user="{{ current_user.user_id or current_user.username }}"
+        data-admin-view-current="{{ '/admin/review' if is_admin_review else '/manual_filter' }}"></script>
+    {% endif %}
     <script src="/static/js/shift_date.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/core.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/workspace.js?v={{ version }}"></script>

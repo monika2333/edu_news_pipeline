@@ -18,6 +18,10 @@ _COLUMN_COUNT_FIELDS = (
     "zongbao_backup",
     "wanbao_selected",
     "wanbao_backup",
+    "zongbao_selected_all",
+    "zongbao_backup_all",
+    "wanbao_selected_all",
+    "wanbao_backup_all",
 )
 
 

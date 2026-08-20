@@ -49,7 +49,11 @@ function renderColumnCounts() {
     elements.columnTabs.forEach(tab => {
         const reportType = tab.dataset.reportType;
         const status = tab.dataset.targetStatus;
-        const count = Number(shift?.[`${reportType}_${status}`]) || 0;
+        const baseField = `${reportType}_${status}`;
+        const countField = state.adminProcessScope === 'all'
+            ? `${baseField}_all`
+            : baseField;
+        const count = Number(shift?.[countField]) || 0;
         tab.textContent = `${reviewColumnLabel(reportType, status)}（${count}）`;
     });
 }

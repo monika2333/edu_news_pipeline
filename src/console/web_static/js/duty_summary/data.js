@@ -58,6 +58,7 @@ elements.processTabs.forEach(tab => {
             : 'unprocessed';
         state.selected.clear();
         syncAdminProcessTabs();
+        renderColumnCounts();
         loadResults();
     });
 });

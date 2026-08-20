@@ -253,7 +253,7 @@ def test_admin_result_queries_separate_active_and_discarded_items() -> None:
     )
 
 
-def test_admin_unprocessed_query_excludes_imported_and_discarded_items() -> None:
+def test_admin_unprocessed_query_includes_manual_discarded_items() -> None:
     cursor = ShiftReviewListCursor()
 
     db_postgres_shift_reviews.fetch_shift_review_items(
@@ -276,7 +276,7 @@ def test_admin_unprocessed_query_excludes_imported_and_discarded_items() -> None
         for query in cursor.queries
     )
     assert all(
-        "(mr.id IS NULL OR COALESCE(mr.status, 'pending') = 'pending')"
+        "COALESCE(mr.status, 'pending') IN ('pending', 'discarded')"
         in query
         for query in cursor.queries
     )

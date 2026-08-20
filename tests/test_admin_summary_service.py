@@ -232,6 +232,10 @@ def test_shift_summaries_exclude_future_and_sort_latest_first(monkeypatch) -> No
                     "zongbao_backup": 2,
                     "wanbao_selected": 7,
                     "wanbao_backup": 4,
+                    "zongbao_selected_all": "5",
+                    "zongbao_backup_all": 3,
+                    "wanbao_selected_all": 9,
+                    "wanbao_backup_all": 6,
                 },
             ]
 
@@ -252,7 +256,12 @@ def test_shift_summaries_exclude_future_and_sort_latest_first(monkeypatch) -> No
     assert result[0]["zongbao_backup"] == 2
     assert result[0]["wanbao_selected"] == 7
     assert result[0]["wanbao_backup"] == 4
+    assert result[0]["zongbao_selected_all"] == 5
+    assert result[0]["zongbao_backup_all"] == 3
+    assert result[0]["wanbao_selected_all"] == 9
+    assert result[0]["wanbao_backup_all"] == 6
     assert result[1]["zongbao_selected"] == 0
+    assert result[1]["zongbao_selected_all"] == 0
 
 
 def test_admin_shift_summary_query_excludes_future_shifts() -> None:
@@ -277,7 +286,12 @@ def test_admin_shift_summary_query_excludes_future_shifts() -> None:
     assert "AS zongbao_backup" in cursor.query
     assert "AS wanbao_selected" in cursor.query
     assert "AS wanbao_backup" in cursor.query
-    assert "sr.admin_discarded_at IS NULL" in cursor.query
+    assert "AS zongbao_selected_all" in cursor.query
+    assert "AS zongbao_backup_all" in cursor.query
+    assert "AS wanbao_selected_all" in cursor.query
+    assert "AS wanbao_backup_all" in cursor.query
+    assert "LEFT JOIN manual_reviews mr ON mr.article_id = ns.article_id" in cursor.query
+    assert "COALESCE(mr.status, 'pending') IN ('pending', 'discarded')" in cursor.query
 
 
 def test_preview_import_results_returns_editable_conflict_versions(

@@ -793,7 +793,9 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "tab.dataset.reportType" in script
     assert "tab.dataset.targetStatus" in script
     assert "function renderColumnCounts()" in script
-    assert "shift?.[`${reportType}_${status}`]" in script
+    assert "state.adminProcessScope === 'all'" in script
+    assert "? `${baseField}_all`" in script
+    assert "shift?.[countField]" in script
     assert "elements.title" not in script
     assert "function activeColumnLabel()" not in script
     assert "当前没有待处理新闻" in script

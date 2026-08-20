@@ -25,6 +25,13 @@ _EDITABLE_FIELDS = (
     "manual_llm_source",
     "notes",
 )
+_ADMIN_UNPROCESSED_SQL = """(
+    sr.admin_discarded_at IS NULL
+    AND (
+        mr.id IS NULL
+        OR COALESCE(mr.status, 'pending') IN ('pending', 'discarded')
+    )
+)"""
 
 SHIFT_REVIEW_SELECT = """
     ns.article_id,
@@ -225,10 +232,7 @@ def fetch_shift_review_items(
     if exclude_finalized:
         clauses.append("sr.finalized_batch_id IS NULL")
     if admin_unprocessed_only:
-        clauses.append("sr.admin_discarded_at IS NULL")
-        clauses.append(
-            "(mr.id IS NULL OR COALESCE(mr.status, 'pending') = 'pending')"
-        )
+        clauses.append(_ADMIN_UNPROCESSED_SQL)
     elif admin_discarded_only:
         clauses.append("sr.admin_discarded_at IS NOT NULL")
     elif exclude_admin_discarded:
@@ -1203,7 +1207,7 @@ def fetch_admin_shift_summaries(
     limit: int = 60,
 ) -> list[dict[str, Any]]:
     cur.execute(
-        """
+        f"""
         SELECT
             s.id AS shift_id,
             s.user_id,
@@ -1229,23 +1233,39 @@ def fetch_admin_shift_summaries(
             count(ns.article_id) FILTER (
                 WHERE sr.decision = 'selected'
                   AND COALESCE(sr.report_type, 'zongbao') = 'zongbao'
-                  AND sr.admin_discarded_at IS NULL
+                  AND {_ADMIN_UNPROCESSED_SQL}
             ) AS zongbao_selected,
             count(ns.article_id) FILTER (
                 WHERE sr.decision = 'backup'
                   AND COALESCE(sr.report_type, 'zongbao') = 'zongbao'
-                  AND sr.admin_discarded_at IS NULL
+                  AND {_ADMIN_UNPROCESSED_SQL}
             ) AS zongbao_backup,
             count(ns.article_id) FILTER (
                 WHERE sr.decision = 'selected'
                   AND COALESCE(sr.report_type, 'zongbao') = 'wanbao'
-                  AND sr.admin_discarded_at IS NULL
+                  AND {_ADMIN_UNPROCESSED_SQL}
             ) AS wanbao_selected,
             count(ns.article_id) FILTER (
                 WHERE sr.decision = 'backup'
                   AND COALESCE(sr.report_type, 'zongbao') = 'wanbao'
-                  AND sr.admin_discarded_at IS NULL
-            ) AS wanbao_backup
+                  AND {_ADMIN_UNPROCESSED_SQL}
+            ) AS wanbao_backup,
+            count(ns.article_id) FILTER (
+                WHERE sr.decision = 'selected'
+                  AND COALESCE(sr.report_type, 'zongbao') = 'zongbao'
+            ) AS zongbao_selected_all,
+            count(ns.article_id) FILTER (
+                WHERE sr.decision = 'backup'
+                  AND COALESCE(sr.report_type, 'zongbao') = 'zongbao'
+            ) AS zongbao_backup_all,
+            count(ns.article_id) FILTER (
+                WHERE sr.decision = 'selected'
+                  AND COALESCE(sr.report_type, 'zongbao') = 'wanbao'
+            ) AS wanbao_selected_all,
+            count(ns.article_id) FILTER (
+                WHERE sr.decision = 'backup'
+                  AND COALESCE(sr.report_type, 'zongbao') = 'wanbao'
+            ) AS wanbao_backup_all
         FROM duty_shifts s
         JOIN console_users u ON u.id = s.user_id
         LEFT JOIN news_summaries ns
@@ -1255,6 +1275,7 @@ def fetch_admin_shift_summaries(
         LEFT JOIN shift_reviews sr
           ON sr.shift_id = s.id
          AND sr.article_id = ns.article_id
+        LEFT JOIN manual_reviews mr ON mr.article_id = ns.article_id
         WHERE s.starts_at <= CURRENT_TIMESTAMP
         GROUP BY
             s.id,

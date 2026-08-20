@@ -34,7 +34,7 @@ class BulkDecideRequest(BaseModel):
     discarded_ids: List[str] = Field(default_factory=list)
     pending_ids: List[str] = Field(default_factory=list)
     versions: Dict[str, int] = Field(default_factory=dict)
-    report_type: str = "zongbao"
+    report_type: NewsReportType = "zongbao"
 
 
 class SaveEditsRequest(BaseModel):

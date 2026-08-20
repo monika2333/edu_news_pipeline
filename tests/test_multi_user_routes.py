@@ -598,6 +598,38 @@ def test_stale_batch_review_decision_returns_409(monkeypatch) -> None:
     assert response.status_code == 409
 
 
+def test_editor_decision_can_target_wanbao_without_changing_workspace_state(
+    monkeypatch,
+) -> None:
+    editor = _user("duty_editor")
+    captured: dict[str, Any] = {}
+
+    def bulk_decide(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {
+            "selected": 1,
+            "backup": 0,
+            "discarded": 0,
+            "pending": 0,
+            "versions": {"article-1": 2},
+        }
+
+    monkeypatch.setattr(duty_review_service, "bulk_decide", bulk_decide)
+
+    response = _client_for(editor).post(
+        "/api/duty/shifts/shift-id/decide",
+        json={
+            "selected_ids": ["article-1"],
+            "versions": {"article-1": 1},
+            "report_type": "wanbao",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["selected_ids"] == ["article-1"]
+    assert captured["report_type"] == "wanbao"
+
+
 def test_editor_order_forwards_review_groups(monkeypatch) -> None:
     editor = _user("duty_editor")
     captured: dict[str, Any] = {}

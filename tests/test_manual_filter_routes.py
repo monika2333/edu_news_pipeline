@@ -344,6 +344,74 @@ def test_decide_uses_authenticated_user_instead_of_forged_actor(monkeypatch) -> 
     assert captured["actor"].username == "real-admin"
 
 
+def test_decide_can_target_wanbao_without_changing_workspace_state(
+    monkeypatch,
+) -> None:
+    from src.console import manual_filter_admin_service
+
+    captured: Dict[str, Any] = {}
+
+    def bulk_decide(**kwargs: Any) -> Dict[str, Any]:
+        captured.update(kwargs)
+        return {
+            "selected": 0,
+            "backup": 1,
+            "discarded": 0,
+            "pending": 0,
+            "versions": {"a1": 8},
+        }
+
+    monkeypatch.setattr(manual_filter_admin_service, "bulk_decide", bulk_decide)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = lambda: ConsoleUser(
+        method="test",
+        user_id="real-user-id",
+        username="real-admin",
+        display_name="真实管理员",
+        role="admin",
+    )
+
+    response = TestClient(app).post(
+        "/api/manual_filter/decide",
+        json={
+            "backup_ids": ["a1"],
+            "versions": {"a1": 7},
+            "report_type": "wanbao",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["backup_ids"] == ["a1"]
+    assert captured["report_type"] == "wanbao"
+
+
+def test_decide_rejects_unknown_target_report_type(monkeypatch) -> None:
+    from src.console import manual_filter_admin_service
+
+    called = False
+
+    def bulk_decide(**kwargs: Any) -> Dict[str, Any]:
+        del kwargs
+        nonlocal called
+        called = True
+        return {}
+
+    monkeypatch.setattr(manual_filter_admin_service, "bulk_decide", bulk_decide)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+
+    response = TestClient(app).post(
+        "/api/manual_filter/decide",
+        json={
+            "selected_ids": ["a1"],
+            "report_type": "other",
+        },
+    )
+
+    assert response.status_code == 422
+    assert called is False
+
+
 def test_decide_api_returns_conflict_for_stale_manual_review(
     monkeypatch,
 ) -> None:

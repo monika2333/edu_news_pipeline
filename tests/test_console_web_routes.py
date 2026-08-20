@@ -509,6 +509,28 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "finalization-history" not in finalization_script
 
 
+def test_duty_workspace_defaults_to_latest_ended_shift_before_upcoming() -> None:
+    workspace_script = (
+        Path(__file__).parents[1]
+        / "src/console/web_static/js/manual_filter/workspace.js"
+    ).read_text(encoding="utf-8")
+    chooser = workspace_script.split(
+        "function chooseInitialWorkspaceShift", 1
+    )[1].split("function escapeWorkspaceHtml", 1)[0]
+
+    assert chooser.index("shift.status === 'active'") < chooser.index(
+        "shift.status === 'ended'"
+    )
+    assert chooser.index("shift.status === 'ended'") < chooser.index(
+        "shift.status === 'upcoming'"
+    )
+    assert (
+        "return left.status === 'ended' ? rightTime - leftTime : leftTime - rightTime;"
+        in workspace_script
+    )
+    assert "const initial = chooseInitialWorkspaceShift(shifts);" in workspace_script
+
+
 def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     response = _build_client().get("/manual_filter")
     root = Path(__file__).parents[1]

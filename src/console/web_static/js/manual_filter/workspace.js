@@ -29,6 +29,14 @@ function compareWorkspaceShifts(left, right) {
     return left.status === 'ended' ? rightTime - leftTime : leftTime - rightTime;
 }
 
+function chooseInitialWorkspaceShift(shifts) {
+    return shifts.find(shift => shift.status === 'active')
+        || shifts.find(shift => shift.status === 'ended')
+        || shifts.find(shift => shift.status === 'upcoming')
+        || shifts[0]
+        || null;
+}
+
 function escapeWorkspaceHtml(value) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -93,7 +101,7 @@ async function prepareManualFilterWorkspace() {
         return false;
     }
 
-    const initial = shifts[0];
+    const initial = chooseInitialWorkspaceShift(shifts);
     if (select) {
         select.innerHTML = shifts.map(shift => {
             const label = `${window.formatDutyShiftDate(shift.ends_at)} · ${workspaceShiftStatusLabel(shift.status)}`;

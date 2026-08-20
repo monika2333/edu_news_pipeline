@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadFilterCounts();
     }
     setupFilterRealtimeDecisionHandlers();
+    setupFilterDecisionMenu();
     // 筛选页与审阅页卡片都会渲染「不是重复」按钮，两个列表都要委托点击。
     const handleDuplicateDismissClick = async event => {
         const button = event.target.closest('.submission-duplicate-dismiss');

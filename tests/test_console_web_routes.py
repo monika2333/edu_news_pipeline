@@ -440,7 +440,7 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "`${API_BASE}/stats${url.search}`" in workspace_script
     assert "if (response.ok) invalidateDutyListCache();" in workspace_script
     assert "detachDutyFilterRemoval(removal);" in filter_actions_script
-    assert "updateDutyFilterDecisionCounts(status, 1, 1);" in filter_actions_script
+    assert "updateDutyFilterDecisionCounts(status, 1, 1, reportType);" in filter_actions_script
     assert "restoreDutyFilterRemoval(removal, undoMutation.versions || {});" in filter_actions_script
     assert "撤销失败，原操作保持不变" in filter_actions_script
     card_handler = filter_actions_script.split(
@@ -461,7 +461,7 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "loadStats" not in duty_card_branch
     assert "const pageEmptied = detachDutyFilterRemoval(removal);" in duty_card_branch
     assert "if (pageEmptied) await reloadFilterPageAfterRemoval();" in duty_card_branch
-    assert "{ reloadOnUndo: pageEmptied }" in duty_card_branch
+    assert "{ reloadOnUndo: pageEmptied, reportType }" in duty_card_branch
     assert "if (card.isConnected) setInputsDisabled(radios, false);" not in card_handler
     assert "finally {\n        setInputsDisabled(radios, false);\n    }" in card_handler
     cluster_handler = filter_actions_script.split(
@@ -477,7 +477,7 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     )[1].split("} else {", maxsplit=1)[0]
     assert "const pageEmptied = detachDutyFilterRemoval(removal);" in duty_cluster_branch
     assert "if (pageEmptied) await reloadFilterPageAfterRemoval();" in duty_cluster_branch
-    assert "{ reloadOnUndo: pageEmptied }" in duty_cluster_branch
+    assert "{ reloadOnUndo: pageEmptied, reportType }" in duty_cluster_branch
     assert "if (cluster.isConnected) setInputsDisabled(radios, false);" not in cluster_handler
     assert "finally {\n        setInputsDisabled(radios, false);\n    }" in cluster_handler
     assert "return pageEmptied;" in filter_actions_script

@@ -1,10 +1,11 @@
 // Manual Filter JS - Filter Tab Actions
 
-function describeFilterDecision(status, count) {
+function describeFilterDecision(status, count, reportType = null) {
     const items = count > 1 ? ` ${count} 条新闻` : '';
     if (status === 'selected' || status === 'backup') {
         const actionLabel = status === 'selected' ? '采纳' : '备选';
-        const reportLabel = state.reviewReportType === 'wanbao' ? '晚报' : '综报';
+        const effectiveReportType = reportType || state.reviewReportType;
+        const reportLabel = effectiveReportType === 'wanbao' ? '晚报' : '综报';
         return `已${actionLabel}到${reportLabel}${items}`;
     }
     if (status === 'discarded') return `已放弃${items || '该条新闻'}`;
@@ -46,7 +47,7 @@ async function handleFilterEditChange(target) {
     }
 }
 
-async function handleCardDecisionChange(input) {
+async function handleCardDecisionChange(input, reportType = null) {
     const card = input.closest('.article-card');
     if (!card) return;
 
@@ -63,12 +64,12 @@ async function handleCardDecisionChange(input) {
 
     try {
         await persistEdits(edits);
-        const mutation = await submitDecisions([articleId], status);
-        const decisionMessage = describeFilterDecision(status, 1);
+        const mutation = await submitDecisions([articleId], status, null, reportType);
+        const decisionMessage = describeFilterDecision(status, 1, reportType);
         if (IS_DUTY_WORKSPACE) {
             const removal = captureDutyFilterRemoval([card]);
             const pageEmptied = detachDutyFilterRemoval(removal);
-            updateDutyFilterDecisionCounts(status, 1, 1);
+            updateDutyFilterDecisionCounts(status, 1, 1, reportType);
             if (pageEmptied) await reloadFilterPageAfterRemoval();
             attachDutyUndo(
                 removal,
@@ -76,7 +77,7 @@ async function handleCardDecisionChange(input) {
                 status,
                 mutation,
                 decisionMessage,
-                { reloadOnUndo: pageEmptied }
+                { reloadOnUndo: pageEmptied, reportType }
             );
         } else {
             removeCardAndMaybeCluster(card);
@@ -90,7 +91,8 @@ async function handleCardDecisionChange(input) {
                         await submitDecisions(
                             [articleId],
                             'pending',
-                            mutation.versions || {}
+                            mutation.versions || {},
+                            reportType
                         );
                         showToast('已撤销');
                         await loadFilterData();
@@ -111,7 +113,7 @@ async function handleCardDecisionChange(input) {
     }
 }
 
-async function handleClusterDecisionChange(input) {
+async function handleClusterDecisionChange(input, reportType = null) {
     const cluster = input.closest('.filter-cluster');
     if (!cluster) return;
 
@@ -141,12 +143,12 @@ async function handleClusterDecisionChange(input) {
 
     try {
         await persistEdits(edits);
-        const mutation = await submitDecisions(ids, status);
-        const decisionMessage = describeFilterDecision(status, ids.length);
+        const mutation = await submitDecisions(ids, status, null, reportType);
+        const decisionMessage = describeFilterDecision(status, ids.length, reportType);
         if (IS_DUTY_WORKSPACE) {
             const removal = captureDutyFilterRemoval(cards);
             const pageEmptied = detachDutyFilterRemoval(removal);
-            updateDutyFilterDecisionCounts(status, ids.length, 1);
+            updateDutyFilterDecisionCounts(status, ids.length, 1, reportType);
             if (pageEmptied) await reloadFilterPageAfterRemoval();
             attachDutyUndo(
                 removal,
@@ -154,7 +156,7 @@ async function handleClusterDecisionChange(input) {
                 status,
                 mutation,
                 decisionMessage,
-                { reloadOnUndo: pageEmptied }
+                { reloadOnUndo: pageEmptied, reportType }
             );
         } else {
             cluster.remove();
@@ -165,7 +167,7 @@ async function handleClusterDecisionChange(input) {
             const undoAction = buildUndoToastAction(
                 async () => {
                     try {
-                        await submitDecisions(ids, 'pending', mutation.versions || {});
+                        await submitDecisions(ids, 'pending', mutation.versions || {}, reportType);
                         showToast('已撤销');
                         await loadFilterData();
                         loadStats();
@@ -265,7 +267,7 @@ function adjustVisibleStat(key, delta) {
     target.textContent = String(Math.max(0, current + delta));
 }
 
-function updateDutyFilterDecisionCounts(status, itemCount, direction) {
+function updateDutyFilterDecisionCounts(status, itemCount, direction, reportType = null) {
     const delta = Math.max(0, Number(itemCount) || 0) * direction;
     const { cat } = getCurrentFilterBucket();
     state.filterCounts[cat] = Math.max(
@@ -281,10 +283,11 @@ function updateDutyFilterDecisionCounts(status, itemCount, direction) {
     adjustVisibleStat('pending', -delta);
     if (status === 'selected' || status === 'backup') {
         adjustVisibleStat(status, delta);
-        const reportType = state.reviewReportType === 'wanbao' ? 'wanbao' : 'zongbao';
-        state.reviewCounts[reportType][status] = Math.max(
+        const effectiveReportType = reportType
+            || (state.reviewReportType === 'wanbao' ? 'wanbao' : 'zongbao');
+        state.reviewCounts[effectiveReportType][status] = Math.max(
             0,
-            (Number(state.reviewCounts[reportType][status]) || 0) + delta
+            (Number(state.reviewCounts[effectiveReportType][status]) || 0) + delta
         );
     }
     updateFilterCountsUI();
@@ -301,18 +304,20 @@ function attachDutyUndo(
     options = {}
 ) {
     const reloadOnUndo = Boolean(options.reloadOnUndo);
+    const reportType = options.reportType || null;
     const undoAction = buildUndoToastAction(async () => {
         try {
             const undoMutation = await submitDecisions(
                 ids,
                 'pending',
-                mutation.versions || {}
+                mutation.versions || {},
+                reportType
             );
             if (reloadOnUndo) {
                 await Promise.all([loadFilterData(), loadStats()]);
             } else {
                 restoreDutyFilterRemoval(removal, undoMutation.versions || {});
-                updateDutyFilterDecisionCounts(status, ids.length, -1);
+                updateDutyFilterDecisionCounts(status, ids.length, -1, reportType);
             }
             showToast('已撤销');
         } catch (error) {

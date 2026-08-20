@@ -102,7 +102,6 @@ class ShiftReviewsNamespace:
         query: Optional[str] = None,
         created_before: Optional[date] = None,
         article_ids: Optional[Sequence[str]] = None,
-        mismatch_only: bool = False,
         include_admin_state: bool = False,
         admin_discarded_only: bool = False,
         exclude_admin_discarded: bool = False,
@@ -122,7 +121,6 @@ class ShiftReviewsNamespace:
                 query=query,
                 created_before=created_before,
                 article_ids=article_ids,
-                mismatch_only=mismatch_only,
                 include_admin_state=include_admin_state,
                 admin_discarded_only=admin_discarded_only,
                 exclude_admin_discarded=exclude_admin_discarded,
@@ -183,7 +181,6 @@ def fetch_shift_review_items(
     query: Optional[str] = None,
     created_before: Optional[date] = None,
     article_ids: Optional[Sequence[str]] = None,
-    mismatch_only: bool = False,
     include_admin_state: bool = False,
     admin_discarded_only: bool = False,
     exclude_admin_discarded: bool = False,
@@ -237,24 +234,10 @@ def fetch_shift_review_items(
         clauses.append("sr.admin_discarded_at IS NOT NULL")
     elif exclude_admin_discarded:
         clauses.append("sr.admin_discarded_at IS NULL")
-    if mismatch_only:
-        clauses.extend(
-            [
-                "sr.id IS NOT NULL",
-                """(
-                    CASE
-                        WHEN mr.status = 'exported' THEN 'selected'
-                        ELSE COALESCE(mr.status, 'pending')
-                    END IS DISTINCT FROM sr.decision
-                    OR COALESCE(mr.report_type, 'zongbao')
-                       IS DISTINCT FROM COALESCE(sr.report_type, 'zongbao')
-                )""",
-            ]
-        )
     where_sql = " AND ".join(clauses)
     manual_join_sql = (
         "LEFT JOIN manual_reviews mr ON mr.article_id = ns.article_id"
-        if mismatch_only or include_admin_state or admin_unprocessed_only
+        if include_admin_state or admin_unprocessed_only
         else ""
     )
     admin_select_sql = (

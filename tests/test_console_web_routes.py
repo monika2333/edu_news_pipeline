@@ -671,6 +671,7 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert ".summary-empty {" not in stylesheet
     assert ".summary-items {" not in stylesheet
     assert ".summary-workspace-context {" in stylesheet
+    assert ".summary-filters" not in stylesheet
     assert "font-size: 1rem;" in stylesheet
     assert "font-size: 1.25rem;" in stylesheet
     assert "font-size: 0.78rem;" in stylesheet
@@ -756,9 +757,9 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert 'id="summary-search-input" class="search-input" type="text"' in html
     assert "function syncSearchClearButton()" in script
     assert "elements.searchClear.addEventListener('click'" in script
-    assert 'id="summary-comparison"' in html
-    assert html.index('id="summary-comparison"') < html.index('id="btn-toggle-shifts"')
-    assert "当前栏目全部" in html
+    assert 'id="summary-comparison"' not in html
+    assert "与管理员结论不同" not in html
+    assert "mismatch_only" not in script
     assert 'id="summary-process-filter"' in html
     assert 'data-admin-process-scope="unprocessed">未处理</button>' in html
     assert 'data-admin-process-scope="all">全部</button>' in html

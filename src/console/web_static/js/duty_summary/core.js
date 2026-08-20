@@ -20,7 +20,6 @@ const elements = {
     shiftList: document.getElementById('summary-shift-list'),
     items: document.getElementById('summary-items'),
     context: document.getElementById('summary-context'),
-    comparison: document.getElementById('summary-comparison'),
     importTarget: document.getElementById('summary-import-target'),
     discardButton: document.getElementById('btn-discard-selected'),
     importBar: document.getElementById('summary-import-bar'),

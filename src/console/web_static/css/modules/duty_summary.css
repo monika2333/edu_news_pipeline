@@ -96,13 +96,6 @@
     white-space: nowrap;
 }
 
-.summary-filters {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
 .summary-process-filter {
     display: flex;
     flex: 1;
@@ -133,7 +126,6 @@
     display: none;
 }
 
-.summary-filters select,
 .summary-search-input {
     padding: 8px 9px;
     border: 1px solid #cbd5e1;

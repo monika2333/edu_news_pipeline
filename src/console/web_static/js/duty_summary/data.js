@@ -22,9 +22,6 @@ async function loadResults() {
         } else {
             params.set('include_admin_discarded', 'true');
         }
-        if (elements.comparison.value === 'mismatch') {
-            params.set('mismatch_only', 'true');
-        }
         params.set('report_type', state.targetReportType);
     }
     const payload = await request(
@@ -44,11 +41,6 @@ elements.shiftsToggle.addEventListener('click', () => {
 
 elements.shiftsClose.addEventListener('click', () => {
     setShiftPanelOpen(false);
-});
-
-elements.comparison.addEventListener('change', () => {
-    state.selected.clear();
-    loadResults();
 });
 
 elements.processTabs.forEach(tab => {
@@ -106,8 +98,6 @@ elements.viewTabs.forEach(tab => {
         state.selected.clear();
         elements.searchInput.value = '';
         syncSearchClearButton();
-        elements.comparison.value = '';
-        elements.comparison.disabled = state.adminDiscarded;
         elements.filterLayout.classList.toggle('is-discarded', state.adminDiscarded);
         syncAdminProcessTabs();
         elements.viewTabs.forEach(item => {

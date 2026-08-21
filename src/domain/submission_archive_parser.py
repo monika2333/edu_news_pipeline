@@ -18,6 +18,12 @@ _URL_PATTERN = re.compile(r"https?://[^\s、）]+")
 _LEADING_MARKER_PATTERN = re.compile(
     r"^\s*(?:[★■▲]|[一二三四五六七八九十百]+、)\s*"
 )
+_SUPPORTED_TITLE_LINES = frozenset(
+    {
+        "首都教育每日舆情综报",
+        "首都教育舆情",
+    }
+)
 
 
 class SubmissionArchiveParseError(ValueError):
@@ -46,6 +52,15 @@ class ParsedSubmissionReport:
     detected_report_type: str
     items: list[ParsedSubmissionItem] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+
+
+def looks_like_submission_report(value: str) -> bool:
+    """Return whether the first non-empty line is a supported report title."""
+    first_line = next(
+        (line.strip() for line in (value or "").splitlines() if line.strip()),
+        "",
+    )
+    return first_line in _SUPPORTED_TITLE_LINES
 
 
 def normalize_submission_text(value: str) -> str:
@@ -236,6 +251,7 @@ __all__ = [
     "SubmissionArchiveParseError",
     "default_compiled_date",
     "detect_report_type",
+    "looks_like_submission_report",
     "normalize_submission_text",
     "normalized_title_hash",
     "parse_submission_report",

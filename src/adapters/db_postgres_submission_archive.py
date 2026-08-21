@@ -49,6 +49,8 @@ class SubmissionArchiveNamespace:
             if replace_report_id:
                 delete_report(cur, replace_report_id)
             created = insert_report(cur, **report)
+            if created is None:
+                raise RuntimeError("Failed to create submitted report")
             created["items"] = insert_report_items(
                 cur,
                 report_id=str(created["id"]),
@@ -56,6 +58,53 @@ class SubmissionArchiveNamespace:
             )
             created["item_count"] = len(created["items"])
             return created
+
+    def create_report_idempotent(
+        self,
+        *,
+        report: Mapping[str, Any],
+        items: Sequence[Mapping[str, Any]],
+        replace_report_id: Optional[str] = None,
+    ) -> tuple[dict[str, Any], bool]:
+        """Create one externally sourced report or return its prior result."""
+        ingest_source = str(report.get("ingest_source") or "").strip()
+        source_message_id = str(report.get("source_message_id") or "").strip()
+        if not ingest_source or not source_message_id:
+            raise ValueError("External report source and message id are required")
+
+        with self._adapter.transaction() as cur:
+            existing = fetch_report_by_source_message(
+                cur,
+                ingest_source=ingest_source,
+                source_message_id=source_message_id,
+            )
+            if existing:
+                return existing, False
+            if replace_report_id:
+                delete_report(cur, replace_report_id)
+            created = insert_report(
+                cur,
+                **report,
+                ignore_source_conflict=True,
+            )
+            if created is None:
+                existing = fetch_report_by_source_message(
+                    cur,
+                    ingest_source=ingest_source,
+                    source_message_id=source_message_id,
+                )
+                if not existing:
+                    raise RuntimeError(
+                        "Failed to resolve idempotent submitted report"
+                    )
+                return existing, False
+            created["items"] = insert_report_items(
+                cur,
+                report_id=str(created["id"]),
+                items=items,
+            )
+            created["item_count"] = len(created["items"])
+            return created, True
 
     def fetch_reports(
         self,
@@ -79,6 +128,19 @@ class SubmissionArchiveNamespace:
     def fetch_report(self, report_id: str) -> Optional[dict[str, Any]]:
         with self._adapter._cursor() as cur:
             return fetch_report(cur, report_id)
+
+    def fetch_report_by_source_message(
+        self,
+        *,
+        ingest_source: str,
+        source_message_id: str,
+    ) -> Optional[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_report_by_source_message(
+                cur,
+                ingest_source=ingest_source,
+                source_message_id=source_message_id,
+            )
 
     def search_report_items(self, *, query: str, limit: int) -> list[dict[str, Any]]:
         with self._adapter._cursor() as cur:
@@ -289,18 +351,31 @@ def insert_report(
     issue_no: Optional[str],
     title_line: Optional[str],
     pasted_text: str,
-) -> dict[str, Any]:
+    ingest_source: str = "console",
+    source_message_id: Optional[str] = None,
+    source_sender_id: Optional[str] = None,
+    ignore_source_conflict: bool = False,
+) -> Optional[dict[str, Any]]:
+    conflict_sql = (
+        "on conflict (ingest_source, source_message_id) do nothing"
+        if ignore_source_conflict
+        else ""
+    )
     cur.execute(
-        """
+        f"""
         insert into submitted_reports (
             report_type,
             report_date,
             compiled_date,
             issue_no,
             title_line,
-            pasted_text
+            pasted_text,
+            ingest_source,
+            source_message_id,
+            source_sender_id
         )
-        values (%s, %s, %s, %s, %s, %s)
+        values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        {conflict_sql}
         returning *
         """,
         (
@@ -310,12 +385,13 @@ def insert_report(
             issue_no,
             title_line,
             pasted_text,
+            ingest_source,
+            source_message_id,
+            source_sender_id,
         ),
     )
     row = cur.fetchone()
-    if not row:
-        raise RuntimeError("Failed to create submitted report")
-    return dict(row)
+    return dict(row) if row else None
 
 
 def insert_report_items(
@@ -452,6 +528,26 @@ def fetch_report(
     )
     report["items"] = [dict(item) for item in cur.fetchall()]
     return report
+
+
+def fetch_report_by_source_message(
+    cur: psycopg.Cursor,
+    *,
+    ingest_source: str,
+    source_message_id: str,
+) -> Optional[dict[str, Any]]:
+    cur.execute(
+        """
+        select id
+        from submitted_reports
+        where ingest_source = %s and source_message_id = %s
+        """,
+        (ingest_source, source_message_id),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    return fetch_report(cur, str(row["id"]))
 
 
 def fetch_link_candidate_titles(
@@ -1158,6 +1254,7 @@ __all__ = [
     "fetch_news_for_submission_dedup",
     "fetch_pending_links",
     "fetch_report",
+    "fetch_report_by_source_message",
     "fetch_reports",
     "find_report_conflict",
     "insert_report",

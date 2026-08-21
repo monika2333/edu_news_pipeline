@@ -141,3 +141,18 @@ def test_notify_console_registration_builds_text_message(
     assert "用户名：zhangming" in captured["message"]
     assert "首选值班日：周四" in captured["message"]
     assert "尚未自动排班" in captured["message"]
+
+
+def test_send_text_to_chat_uses_chat_id(monkeypatch, fake_settings):
+    captured = {}
+
+    def fake_send(config, message):
+        captured["config"] = config
+        captured["message"] = message
+
+    monkeypatch.setattr(feishu, "_send_text_message", fake_send)
+
+    assert feishu.send_text_to_chat(chat_id="oc_chat", message="存档成功") is True
+    assert captured["config"].receive_id == "oc_chat"
+    assert captured["config"].receive_id_type == "chat_id"
+    assert captured["message"] == "存档成功"

@@ -85,7 +85,8 @@ def create_report_api(
         )
     except (ValueError, RuntimeError) as exc:
         _raise_service_error(exc)
-    _schedule_report_processing(str(result["report"]["id"]))
+    if result.get("created", True):
+        _schedule_report_processing(str(result["report"]["id"]))
     return result
 
 

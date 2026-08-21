@@ -160,11 +160,13 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 ### 流程
 
-1. 管理员在 `/submission-archive` 粘贴一份已经报出去的稿件 → `submitted_reports`
+1. 管理员在 `/submission-archive` 粘贴一份已经报出去的稿件，或白名单用户将格式完整的稿件私聊发送给飞书机器人 → `submitted_reports`
 2. 系统解析拆分成条目 → `submitted_report_items`
 3. 后台子进程做**自动回链**：把每个条目匹配回系统里的 `news_summaries`（标题相似度 + 正文相似度）
 4. 编辑可以确认自动候选，也可以围绕报告 `compiled_date` 检索 `news_summaries.title` / `llm_summary`，人工绑定或解绑条目
 5. 自动与人工结果都写回 `submitted_report_items`；人工绑定只改 `article_id`、`link_status`、`link_decided_by`、`link_matched_at`，解绑将状态恢复为 `unmatched`
+
+飞书入口只接受首行匹配当前报送稿标题的私聊纯文本；普通聊天、群聊、非文本消息和非白名单用户消息不进入解析。识别成功后直接保存，解析警告随回复返回但不阻止入库；同报别同日期冲突绝不自动覆盖。`submitted_reports.ingest_source` 记录入口，`source_message_id` 以唯一索引提供跨进程重启的幂等保证，`source_sender_id` 保留提交人审计标识。控制台录入的 `ingest_source` 为 `console`，外部消息字段为空；飞书录入为 `feishu`。
 
 `link_status` 的取值含义：
 

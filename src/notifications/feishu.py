@@ -125,6 +125,26 @@ def notify_console_registration(
     return True
 
 
+def send_text_to_chat(*, chat_id: str, message: str) -> bool:
+    """Send a text reply to a Feishu chat using the configured application."""
+    normalized_chat_id = chat_id.strip()
+    if not normalized_chat_id:
+        raise ValueError("chat_id must not be empty")
+    settings = get_settings()
+    if not (settings.feishu_app_id and settings.feishu_app_secret):
+        raise FeishuConfigError(
+            "Feishu credentials missing. Set FEISHU_APP_ID and FEISHU_APP_SECRET."
+        )
+    config = _FeishuConfig(
+        app_id=settings.feishu_app_id,
+        app_secret=settings.feishu_app_secret,
+        receive_id=normalized_chat_id,
+        receive_id_type="chat_id",
+    )
+    _send_text_message(config, message)
+    return True
+
+
 def is_configured() -> bool:
     """Return True if Feishu credentials are present."""
     try:
@@ -391,4 +411,5 @@ __all__ = [
     "notify_console_registration",
     "notify_export_summary",
     "notify_llm_quota_alert",
+    "send_text_to_chat",
 ]

@@ -35,6 +35,62 @@ class FakeCursor:
         return row
 
 
+def test_insert_report_persists_external_message_identity() -> None:
+    cursor = FakeCursor(
+        fetchone_rows=[
+            {
+                "id": "report-1",
+                "ingest_source": "feishu",
+                "source_message_id": "om_1",
+            }
+        ]
+    )
+
+    row = db_postgres_submission_archive.insert_report(
+        cursor,
+        report_type="wanbao",
+        report_date=date(2026, 8, 21),
+        compiled_date=date(2026, 8, 20),
+        issue_no="总第1期",
+        title_line="首都教育舆情",
+        pasted_text="全文",
+        ingest_source="feishu",
+        source_message_id="om_1",
+        source_sender_id="ou_owner",
+        ignore_source_conflict=True,
+    )
+
+    assert row is not None
+    query, params = cursor.calls[0]
+    normalized = " ".join(query.split())
+    assert "ingest_source" in normalized
+    assert "source_message_id" in normalized
+    assert "source_sender_id" in normalized
+    assert "on conflict (ingest_source, source_message_id) do nothing" in normalized
+    assert params[-3:] == ("feishu", "om_1", "ou_owner")
+
+
+def test_fetch_report_by_source_message_returns_report_with_items() -> None:
+    cursor = FakeCursor(
+        rows=[{"id": "item-1", "title": "条目"}],
+        fetchone_rows=[
+            {"id": "report-1"},
+            {"id": "report-1", "report_type": "wanbao"},
+        ],
+    )
+
+    report = db_postgres_submission_archive.fetch_report_by_source_message(
+        cursor,
+        ingest_source="feishu",
+        source_message_id="om_1",
+    )
+
+    assert report is not None
+    assert report["id"] == "report-1"
+    assert report["items"] == [{"id": "item-1", "title": "条目"}]
+    assert cursor.calls[0][1] == ("feishu", "om_1")
+
+
 def test_fetch_link_candidate_titles_only_reads_news_summaries() -> None:
     cursor = FakeCursor(
         [{"article_id": "article-1", "title": "测试标题"}]

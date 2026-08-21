@@ -626,8 +626,32 @@ CREATE TABLE public.submitted_reports (
     imported_at timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    ingest_source text DEFAULT 'console'::text NOT NULL,
+    source_message_id text,
+    source_sender_id text,
     CONSTRAINT submitted_reports_type_check CHECK ((report_type = ANY (ARRAY['zongbao'::text, 'wanbao'::text, 'feedback'::text])))
 );
+
+
+--
+-- Name: COLUMN submitted_reports.ingest_source; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.submitted_reports.ingest_source IS 'Archive entry channel, such as console or feishu.';
+
+
+--
+-- Name: COLUMN submitted_reports.source_message_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.submitted_reports.source_message_id IS 'Provider message id used for durable idempotency.';
+
+
+--
+-- Name: COLUMN submitted_reports.source_sender_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.submitted_reports.source_sender_id IS 'Provider-scoped sender id retained for audit.';
 
 
 --
@@ -1300,6 +1324,13 @@ CREATE INDEX submitted_reports_report_date_idx ON public.submitted_reports USING
 
 
 --
+-- Name: submitted_reports_source_message_uidx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX submitted_reports_source_message_uidx ON public.submitted_reports USING btree (ingest_source, source_message_id);
+
+
+--
 -- Name: submitted_reports_type_date_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1619,4 +1650,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260804180449'),
     ('20260810120000'),
     ('20260812120000'),
-    ('20260814120000');
+    ('20260814120000'),
+    ('20260821120000');

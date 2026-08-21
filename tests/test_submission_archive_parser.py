@@ -6,10 +6,34 @@ import pytest
 
 from src.domain.submission_archive_parser import (
     SubmissionArchiveParseError,
+    looks_like_submission_report,
     normalize_submission_text,
     normalized_title_hash,
     parse_submission_report,
 )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "首都教育每日舆情综报\n2026年8月21日",
+        "\n  首都教育舆情  \n2026年8月21日",
+    ],
+)
+def test_supported_title_recognizes_submission_report_candidate(text: str) -> None:
+    assert looks_like_submission_report(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "存档\n首都教育舆情\n2026年8月21日",
+        "今天辛苦了\n2026年8月21日\n一、普通安排",
+        "",
+    ],
+)
+def test_unsupported_title_is_not_submission_report_candidate(text: str) -> None:
+    assert looks_like_submission_report(text) is False
 
 
 def test_parse_zongbao_with_sections_sources_and_urls() -> None:

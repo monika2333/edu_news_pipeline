@@ -58,6 +58,11 @@ LLM_ENV_KEYS = (
     "INTERNAL_FILTER_PROMPT_PATH",
     "INTERNAL_NEGATIVE_FILTER_PROMPT_PATH",
     "BEIJING_GATE_PROMPT_PATH",
+    "FEISHU_APP_ID",
+    "FEISHU_APP_SECRET",
+    "FEISHU_RECEIVE_ID",
+    "FEISHU_RECEIVE_ID_TYPE",
+    "FEISHU_ARCHIVE_ALLOWED_OPEN_IDS",
 )
 
 
@@ -232,3 +237,26 @@ def test_settings_resolves_prompt_path_overrides(
     assert settings.external_filter_prompt_path == (
         config._REPO_ROOT / "custom" / "external.md"
     ).resolve()
+
+
+def test_settings_reads_feishu_archive_allowlist(
+    clean_settings_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FEISHU_ARCHIVE_ALLOWED_OPEN_IDS", "ou_a, ou_b,ou_a")
+
+    settings = config.get_settings()
+
+    assert settings.feishu_archive_allowed_open_ids == ("ou_a", "ou_b")
+
+
+def test_settings_defaults_feishu_archive_allowlist_to_open_id_recipient(
+    clean_settings_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FEISHU_RECEIVE_ID", "ou_owner")
+    monkeypatch.setenv("FEISHU_RECEIVE_ID_TYPE", "open_id")
+
+    settings = config.get_settings()
+
+    assert settings.feishu_archive_allowed_open_ids == ("ou_owner",)

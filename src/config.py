@@ -146,6 +146,7 @@ class Settings:
     feishu_app_secret: Optional[str]
     feishu_receive_id: Optional[str]
     feishu_receive_id_type: str
+    feishu_archive_allowed_open_ids: tuple[str, ...]
     beijing_keywords_path: Path
     score_keyword_bonus_rules: Dict[str, int]
     llm_external_filter_model: str
@@ -356,6 +357,20 @@ def get_settings() -> Settings:
     feishu_receive_id_type = os.getenv("FEISHU_RECEIVE_ID_TYPE", "open_id")
     if feishu_receive_id_type not in {"open_id", "user_id", "union_id"}:
         feishu_receive_id_type = "open_id"
+    raw_archive_allowed_ids = os.getenv("FEISHU_ARCHIVE_ALLOWED_OPEN_IDS", "")
+    feishu_archive_allowed_open_ids = tuple(
+        dict.fromkeys(
+            value.strip()
+            for value in raw_archive_allowed_ids.split(",")
+            if value.strip()
+        )
+    )
+    if (
+        not feishu_archive_allowed_open_ids
+        and feishu_receive_id
+        and feishu_receive_id_type == "open_id"
+    ):
+        feishu_archive_allowed_open_ids = (feishu_receive_id,)
 
     keywords_path = keywords_path.resolve()
     beijing_keywords_path = beijing_keywords_path.resolve()
@@ -410,6 +425,7 @@ def get_settings() -> Settings:
         feishu_app_secret=feishu_app_secret,
         feishu_receive_id=feishu_receive_id,
         feishu_receive_id_type=feishu_receive_id_type,
+        feishu_archive_allowed_open_ids=feishu_archive_allowed_open_ids,
         beijing_keywords_path=beijing_keywords_path,
         score_keyword_bonus_rules=keyword_bonus_rules,
         llm_external_filter_model=llm_external_filter_model,

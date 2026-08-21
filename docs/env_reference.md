@@ -301,9 +301,14 @@ FEISHU_APP_ID=replace-with-feishu-app-id
 FEISHU_APP_SECRET=replace-with-feishu-app-secret
 FEISHU_RECEIVE_ID=replace-with-open-id
 FEISHU_RECEIVE_ID_TYPE=open_id
+FEISHU_ARCHIVE_ALLOWED_OPEN_IDS=replace-with-open-id
 ```
 
 `FEISHU_RECEIVE_ID_TYPE` 可选：`open_id`、`user_id`、`union_id`。
+
+`FEISHU_ARCHIVE_ALLOWED_OPEN_IDS` 是允许通过机器人私聊自动新增报送存档的飞书 `open_id` 白名单，多个值用英文逗号分隔。未设置时，如果 `FEISHU_RECEIVE_ID_TYPE=open_id`，系统会将现有 `FEISHU_RECEIVE_ID` 作为唯一白名单用户。白名单为空时，`feishu-archive-bot` 会拒绝启动。
+
+接收存档还需要在飞书自建应用中开启机器人能力、长连接订阅和 `im.message.receive_v1` 事件。部署步骤见 [`docs/feishu_archive_bot.md`](feishu_archive_bot.md)。
 
 如果未配置飞书凭证，LLM 额度类错误仍会按原异常失败并写日志，但不会发送提醒。
 

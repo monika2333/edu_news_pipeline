@@ -20,6 +20,7 @@ from src.console import manual_filter_service
         "score",
         "export",
         "refresh-manual-clusters",
+        "feishu-archive-bot",
     ],
 )
 def test_cli_supports_expected_subcommands(command: str) -> None:
@@ -40,6 +41,7 @@ def test_cli_help_available() -> None:
         "score",
         "export",
         "refresh-manual-clusters",
+        "feishu-archive-bot",
     ]:
         assert keyword in help_text
 

@@ -196,6 +196,13 @@ def _add_refresh_manual_clusters(subparsers: argparse._SubParsersAction) -> None
     )
 
 
+def _add_feishu_archive_bot(subparsers: argparse._SubParsersAction) -> None:
+    subparsers.add_parser(
+        "feishu-archive-bot",
+        help="Receive submission archives from trusted Feishu private chats",
+    )
+
+
 def _read_initial_password(password_env: str | None) -> str:
     if password_env:
         password = os.getenv(password_env)
@@ -283,6 +290,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_cleanup_console_sessions(subparsers)
     _add_generate_shifts(subparsers)
     _add_refresh_manual_clusters(subparsers)
+    _add_feishu_archive_bot(subparsers)
     return parser
 
 
@@ -338,6 +346,10 @@ def main(argv: list[str] | None = None) -> int:
         _generate_shifts(args.days)
     elif command == "refresh-manual-clusters":
         return _refresh_manual_clusters()
+    elif command == "feishu-archive-bot":
+        from src.workers.feishu_archive_bot import run as run_feishu_archive_bot
+
+        run_feishu_archive_bot()
     else:
         parser.error(f"Unknown command: {command}")
     return 0

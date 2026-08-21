@@ -3,26 +3,17 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import date
 from typing import Any, Mapping, Optional, Sequence
-from urllib.parse import urlparse
 
 from src.adapters.db_postgres_core import get_adapter
 from src.console.auth_service import ConsoleUser
 from src.domain.report_type import SUBMISSION_DOC_TYPES as VALID_REPORT_TYPES
-from src.domain.submission_archive_parser import (
-    normalize_submission_text,
-    normalized_title_hash,
-    parse_submission_report,
+from src.domain.submission_archive_parser import parse_submission_report
+from src.workers import submission_archive_ingest
+
+
+SubmissionReportConflictError = (
+    submission_archive_ingest.SubmissionReportConflictError
 )
-
-
-class SubmissionReportConflictError(RuntimeError):
-    """Raised when a report with the same type and date already exists."""
-
-    def __init__(self, report: Mapping[str, Any]) -> None:
-        self.report = dict(report)
-        super().__init__(
-            "同一类型和日期的报告已存在，请取消或选择覆盖"
-        )
 
 
 class SubmissionReportNotFoundError(ValueError):
@@ -56,47 +47,6 @@ def parse_report(pasted_text: str) -> dict[str, Any]:
     return _serialize_parse_result(pasted_text)
 
 
-def _prepare_items(
-    items: Sequence[Mapping[str, Any]],
-) -> list[dict[str, Any]]:
-    prepared: list[dict[str, Any]] = []
-    for index, item in enumerate(items):
-        title = str(item.get("title") or "").strip()
-        if not title:
-            raise ValueError(f"第 {index + 1} 条标题不能为空")
-        body = str(item.get("body") or "").strip()
-        urls = [
-            str(url).strip()
-            for url in item.get("urls") or []
-            if str(url).strip()
-        ]
-        invalid_urls = [
-            url
-            for url in urls
-            if urlparse(url).scheme not in {"http", "https"}
-        ]
-        if invalid_urls:
-            raise ValueError(
-                f"第 {index + 1} 条包含非 HTTP(S) URL"
-            )
-        prepared.append(
-            {
-                "section": str(item.get("section") or "").strip() or None,
-                "marker": str(item.get("marker") or "").strip() or None,
-                "order_index": index,
-                "title": title,
-                "body": body,
-                "source": str(item.get("source") or "").strip() or None,
-                "urls": urls,
-                "norm_title": normalize_submission_text(title),
-                "norm_title_hash": normalized_title_hash(title),
-            }
-        )
-    if not prepared:
-        raise ValueError("报告至少需要一个条目")
-    return prepared
-
-
 def create_report(
     *,
     report_type: str,
@@ -108,32 +58,17 @@ def create_report(
     items: Sequence[Mapping[str, Any]],
     overwrite: bool,
 ) -> dict[str, Any]:
-    if report_type not in VALID_REPORT_TYPES:
-        raise ValueError(f"不支持的报告类型: {report_type}")
-    adapter = get_adapter()
-    conflict = adapter.submission_archive.find_report_conflict(
+    return submission_archive_ingest.create_report(
         report_type=report_type,
         report_date=report_date,
+        compiled_date=compiled_date,
+        issue_no=issue_no,
+        title_line=title_line,
+        pasted_text=pasted_text,
+        items=items,
+        overwrite=overwrite,
+        adapter=get_adapter(),
     )
-    if conflict and not overwrite:
-        raise SubmissionReportConflictError(conflict)
-    prepared_items = _prepare_items(items)
-    created = adapter.submission_archive.create_report(
-        report={
-            "report_type": report_type,
-            "report_date": report_date,
-            "compiled_date": compiled_date,
-            "issue_no": (issue_no or "").strip() or None,
-            "title_line": (title_line or "").strip() or None,
-            "pasted_text": pasted_text,
-        },
-        items=prepared_items,
-        replace_report_id=str(conflict["id"]) if conflict else None,
-    )
-    return {
-        "report": created,
-        "link_summary": {"processing": len(created.get("items") or [])},
-    }
 
 
 def list_reports(

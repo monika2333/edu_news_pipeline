@@ -17,11 +17,13 @@ try {
         $PythonPath = Join-Path $resolvedRepoRoot ".venv\Scripts\python.exe"
     }
     $resolvedPythonPath = (Resolve-Path -LiteralPath $PythonPath).Path
+    $pythonwPath = Join-Path (Split-Path -Parent $resolvedPythonPath) "pythonw.exe"
+    $resolvedPythonwPath = (Resolve-Path -LiteralPath $pythonwPath).Path
 
     $task = Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
 
     $action = New-ScheduledTaskAction `
-        -Execute $resolvedPythonPath `
+        -Execute $resolvedPythonwPath `
         -Argument "-m src.cli.main refresh-manual-clusters" `
         -WorkingDirectory $resolvedRepoRoot
 
@@ -37,7 +39,7 @@ try {
         -Settings $task.Settings | Out-Null
 
     Write-Host "Updated scheduled task '$TaskPath$TaskName'."
-    Write-Host "Execute          : $resolvedPythonPath"
+    Write-Host "Execute          : $resolvedPythonwPath"
     Write-Host "Arguments        : $($action.Arguments)"
     Write-Host "WorkingDirectory : $resolvedRepoRoot"
     Write-Host "Interval         : $IntervalMinutes minutes"

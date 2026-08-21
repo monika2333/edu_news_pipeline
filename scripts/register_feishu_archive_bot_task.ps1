@@ -11,7 +11,7 @@ if (-not (Test-Path -LiteralPath $scriptPath)) {
     exit 1
 }
 
-$actionArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -RepoRoot `"$RepoRoot`""
+$actionArgs = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$scriptPath`" -RepoRoot `"$RepoRoot`""
 if ($PythonPath) {
     $actionArgs += " -PythonPath `"$PythonPath`""
 }

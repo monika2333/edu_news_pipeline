@@ -146,3 +146,34 @@ def test_content_drawer_stacks_above_manual_link_modal() -> None:
     ).read_text(encoding="utf-8")
 
     assert "body.archive-link-modal-open .content-drawer" in css
+
+
+def test_archive_detail_edit_mode_is_admin_only() -> None:
+    template = Path(
+        "src/console/web_templates/submission_archive.html"
+    ).read_text(encoding="utf-8")
+    core = Path(
+        "src/console/web_static/js/submission_archive/core.js"
+    ).read_text(encoding="utf-8")
+    browser = Path(
+        "src/console/web_static/js/submission_archive/browser.js"
+    ).read_text(encoding="utf-8")
+
+    # 模板暴露角色，core.js 读取，browser.js 仅对管理员渲染「修改」入口
+    assert 'data-user-role="{{ current_user.role }}"' in template
+    assert "body.dataset.userRole === 'admin'" in core
+    assert "isAdminUser" in browser
+    assert "archive-edit-toggle" in browser
+
+
+def test_archive_item_edit_saves_via_patch_and_updates_card_locally() -> None:
+    browser = Path(
+        "src/console/web_static/js/submission_archive/browser.js"
+    ).read_text(encoding="utf-8")
+
+    # 保存走单条 PATCH，成功后局部更新卡片展示区，不重拉整份报告
+    assert "method: 'PATCH'" in browser
+    assert "function applyItemEditResult(updatedItem)" in browser
+    assert "selectReport(" not in browser.split(
+        "function applyItemEditResult(updatedItem)", maxsplit=1
+    )[1].split("async function saveItemEdit", maxsplit=1)[0]

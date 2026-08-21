@@ -13,6 +13,7 @@ from src.console.submission_archive_schemas import (
     LinkDecisionRequest,
     ManualLinkRequest,
     ParseSubmissionReportRequest,
+    UpdateSubmissionItemRequest,
 )
 from src.domain.submission_archive_parser import SubmissionArchiveParseError
 from src.workers.submission_archive_processing import (
@@ -195,6 +196,25 @@ def manual_unlink_item_api(
             user=user,
         )
     except (ValueError, RuntimeError, PermissionError) as exc:
+        _raise_service_error(exc)
+
+
+@router.patch("/items/{item_id}")
+def update_item_api(
+    item_id: str,
+    req: UpdateSubmissionItemRequest,
+    _user: ConsoleUser = Depends(require_role("admin")),
+) -> dict[str, Any]:
+    """Edit stored text fields (title/body/source/urls) of a report item."""
+    try:
+        return submission_archive_service.update_item_fields(
+            item_id=item_id,
+            title=req.title,
+            body=req.body,
+            source=req.source,
+            urls=req.urls,
+        )
+    except (ValueError, RuntimeError) as exc:
         _raise_service_error(exc)
 
 

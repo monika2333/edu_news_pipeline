@@ -22,7 +22,8 @@
     <link rel="stylesheet" href="/static/css/modules/submission_archive/responsive.css?v={{ version }}">
 </head>
 <body data-archive-view="{{ archive_view }}"
-    data-report-id="{{ report_id or '' }}">
+    data-report-id="{{ report_id or '' }}"
+    data-user-role="{{ current_user.role }}">
     <div class="container archive-shell">
         <header>
             <div class="header-left">

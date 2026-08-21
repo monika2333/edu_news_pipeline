@@ -19,6 +19,15 @@ class ManualLinkMutationResult(TypedDict):
     item: Optional[dict[str, Any]]
 
 
+class ItemFieldUpdateResult(TypedDict):
+    state: Literal[
+        "updated",
+        "not_found",
+        "processing",
+    ]
+    item: Optional[dict[str, Any]]
+
+
 class SubmissionArchiveNamespace:
     """Access to submitted reports, link decisions, and duplicate metadata."""
 
@@ -240,6 +249,29 @@ class SubmissionArchiveNamespace:
                 cur,
                 item_id=item_id,
                 actor_user_id=actor_user_id,
+            )
+
+    def update_item_fields(
+        self,
+        *,
+        item_id: str,
+        title: str,
+        body: str,
+        source: Optional[str],
+        urls: Sequence[str],
+        norm_title: str,
+        norm_title_hash: str,
+    ) -> ItemFieldUpdateResult:
+        with self._adapter.transaction() as cur:
+            return update_item_fields(
+                cur,
+                item_id=item_id,
+                title=title,
+                body=body,
+                source=source,
+                urls=urls,
+                norm_title=norm_title,
+                norm_title_hash=norm_title_hash,
             )
 
     def fetch_items_missing_embeddings(self, *, limit: int) -> list[dict[str, Any]]:
@@ -916,6 +948,70 @@ def manual_unlink_item(
     return {"state": "updated", "item": dict(row)}
 
 
+def update_item_fields(
+    cur: psycopg.Cursor,
+    *,
+    item_id: str,
+    title: str,
+    body: str,
+    source: Optional[str],
+    urls: Sequence[str],
+    norm_title: str,
+    norm_title_hash: str,
+) -> ItemFieldUpdateResult:
+    """Edit stored text fields of one item; refuses worker-owned items."""
+    cur.execute(
+        """
+        select link_status, title, body
+        from submitted_report_items
+        where id = %s
+        for update
+        """,
+        (item_id,),
+    )
+    context = cur.fetchone()
+    if not context:
+        return {"state": "not_found", "item": None}
+    if context["link_status"] == "processing":
+        return {"state": "processing", "item": None}
+
+    # 标题或正文变化会让既有查重向量失效：清空后由 backfill-submission-embeddings 重算
+    text_changed = context["title"] != title or context["body"] != body
+    cur.execute(
+        f"""
+        update submitted_report_items i
+        set title = %s,
+            body = %s,
+            source = %s,
+            urls = %s,
+            norm_title = %s,
+            norm_title_hash = %s,
+            embedding = case when %s then null else embedding end,
+            embedding_model = case when %s then null else embedding_model end,
+            embedded_at = case when %s then null else embedded_at end,
+            updated_at = now()
+        where i.id = %s
+        returning {_ITEM_PUBLIC_COLUMNS}
+        """,
+        (
+            title,
+            body,
+            source,
+            list(urls),
+            norm_title,
+            norm_title_hash,
+            text_changed,
+            text_changed,
+            text_changed,
+            item_id,
+        ),
+    )
+    row = cur.fetchone()
+    if not row:
+        return {"state": "not_found", "item": None}
+    return {"state": "updated", "item": dict(row)}
+
+
 def search_items(
     cur: psycopg.Cursor,
     *,
@@ -1239,6 +1335,7 @@ def dismiss_duplicate_matches(
 
 
 __all__ = [
+    "ItemFieldUpdateResult",
     "ManualLinkMutationResult",
     "SubmissionArchiveNamespace",
     "decide_link",
@@ -1263,6 +1360,7 @@ __all__ = [
     "manual_unlink_item",
     "search_items",
     "update_item_embeddings",
+    "update_item_fields",
     "update_link_results",
     "upsert_duplicate_matches",
 ]

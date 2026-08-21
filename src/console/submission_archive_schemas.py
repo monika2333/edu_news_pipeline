@@ -41,6 +41,13 @@ class ManualLinkRequest(BaseModel):
     article_id: str = Field(min_length=1)
 
 
+class UpdateSubmissionItemRequest(BaseModel):
+    title: str = Field(min_length=1)
+    body: str = ""
+    source: Optional[str] = None
+    urls: list[str] = Field(default_factory=list)
+
+
 __all__ = [
     "CreateSubmissionReportRequest",
     "LinkDecisionRequest",
@@ -48,4 +55,5 @@ __all__ = [
     "ParseSubmissionReportRequest",
     "SubmissionItemInput",
     "SubmissionReportType",
+    "UpdateSubmissionItemRequest",
 ]

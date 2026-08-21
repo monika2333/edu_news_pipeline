@@ -340,3 +340,49 @@ def test_dismiss_duplicates_accepts_article_id_with_slashes(
     assert response.json() == {"dismissed": 1}
     assert captured["article_id"] == article_id
     assert captured["user"] == _editor()
+
+
+def test_update_item_route_returns_updated_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    updated = {"id": "item-1", "title": "新标题", "source": "北京日报"}
+
+    def fake_update_item_fields(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return updated
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "update_item_fields",
+        fake_update_item_fields,
+    )
+
+    response = _client(_admin).patch(
+        "/api/submission-archive/items/item-1",
+        json={
+            "title": "新标题",
+            "body": "新正文",
+            "source": "北京日报",
+            "urls": ["https://example.com/a"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == updated
+    assert captured == {
+        "item_id": "item-1",
+        "title": "新标题",
+        "body": "新正文",
+        "source": "北京日报",
+        "urls": ["https://example.com/a"],
+    }
+
+
+def test_duty_editor_cannot_update_item() -> None:
+    response = _client(_editor).patch(
+        "/api/submission-archive/items/item-1",
+        json={"title": "新标题"},
+    )
+
+    assert response.status_code == 403

@@ -145,3 +145,51 @@
     margin-top: 10px;
 }
 
+/* ===== 详情修改模式 ===== */
+
+/* 修改模式下隐藏展示区，表单承担展示与编辑；轮询的局部更新仍写这些节点 */
+.archive-item.is-editing .archive-item-title,
+.archive-item.is-editing .archive-item-body,
+.archive-item.is-editing .archive-item-meta {
+    display: none;
+}
+
+.archive-item-edit {
+    margin-top: 10px;
+    padding-top: 12px;
+    border-top: 1px dashed #e2e8f0;
+}
+
+.archive-item-edit input {
+    width: 100%;
+    min-height: 38px;
+    box-sizing: border-box;
+    padding: 7px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 7px;
+    font: inherit;
+    font-size: 0.88rem;
+}
+
+.archive-item-edit textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 7px;
+    font: inherit;
+    font-size: 0.88rem;
+    line-height: 1.6;
+    resize: vertical;
+}
+
+.archive-item-edit textarea[data-edit-field="body"] {
+    min-height: 110px;
+}
+
+.archive-item-edit input:focus,
+.archive-item-edit textarea:focus {
+    border-color: var(--primary-color);
+    outline: 3px solid rgb(37 99 235 / 12%);
+}
+

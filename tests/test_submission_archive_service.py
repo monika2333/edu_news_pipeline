@@ -463,3 +463,92 @@ def test_manual_unlink_returns_updated_unmatched_item(
         item_id="item-1",
         user=_editor(),
     ) == updated
+
+
+def test_update_item_fields_normalizes_and_recomputes_norm_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+    updated = {"id": "item-1", "title": "新标题", "link_status": "matched"}
+
+    class UpdateNamespace:
+        def update_item_fields(self, **kwargs: Any) -> dict[str, Any]:
+            captured.update(kwargs)
+            return {"state": "updated", "item": updated}
+
+    class UpdateAdapter:
+        def __init__(self) -> None:
+            self.submission_archive = UpdateNamespace()
+
+    monkeypatch.setattr(submission_archive_service, "get_adapter", UpdateAdapter)
+
+    result = submission_archive_service.update_item_fields(
+        item_id="item-1",
+        title="  新标题  ",
+        body="  新正文  ",
+        source="  北京日报  ",
+        urls=[" https://example.com/a ", "  "],
+    )
+
+    assert result == updated
+    assert captured["item_id"] == "item-1"
+    assert captured["title"] == "新标题"
+    assert captured["body"] == "新正文"
+    assert captured["source"] == "北京日报"
+    assert captured["urls"] == ["https://example.com/a"]
+    assert captured["norm_title"]
+    assert captured["norm_title_hash"]
+
+
+def test_update_item_fields_rejects_blank_title() -> None:
+    with pytest.raises(ValueError, match="标题"):
+        submission_archive_service.update_item_fields(
+            item_id="item-1",
+            title="   ",
+            body="",
+            source=None,
+            urls=[],
+        )
+
+
+def test_update_item_fields_rejects_non_http_urls() -> None:
+    with pytest.raises(ValueError, match=r"HTTP\(S\)"):
+        submission_archive_service.update_item_fields(
+            item_id="item-1",
+            title="条目",
+            body="",
+            source=None,
+            urls=["javascript:alert(1)"],
+        )
+
+
+@pytest.mark.parametrize(
+    ("state", "error_type"),
+    [
+        ("not_found", submission_archive_service.SubmissionReportNotFoundError),
+        ("processing", submission_archive_service.SubmissionLinkProcessingError),
+    ],
+)
+def test_update_item_fields_maps_adapter_outcomes(
+    monkeypatch: pytest.MonkeyPatch,
+    state: str,
+    error_type: type[Exception],
+) -> None:
+    class UpdateNamespace:
+        def update_item_fields(self, **_kwargs: Any) -> dict[str, Any]:
+            return {"state": state, "item": None}
+
+    class UpdateAdapter:
+        def __init__(self) -> None:
+            self.submission_archive = UpdateNamespace()
+
+    monkeypatch.setattr(submission_archive_service, "get_adapter", UpdateAdapter)
+
+    with pytest.raises(error_type):
+        submission_archive_service.update_item_fields(
+            item_id="item-1",
+            title="条目",
+            body="",
+            source=None,
+            urls=[],
+        )

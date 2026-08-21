@@ -7,6 +7,8 @@ let reportRefreshTimer = null;
 let activeReportStatusSignature = '';
 // 详情区按回链状态筛选：'' 表示不过滤，其余取值 linked/pending/uncovered
 let detailStatusFilter = '';
+// 修改模式：管理员在详情头部开启后，每条卡片下方展开可编辑表单
+let detailEditMode = false;
 // 当前详情报告的条目缓存与整理日期：人工回链弹窗的参照区与局部更新都从这里取数
 let activeReportItems = [];
 let activeReportCompiledDate = '';
@@ -169,9 +171,39 @@ const detailOriginalTriggerHtml = item => (
         : ''
 );
 
+function detailItemEditFormHtml(item) {
+    const urls = (item.urls || []).join('\n');
+    return `
+        <div class="archive-item-edit">
+            <div class="archive-item-editor-grid">
+                <label class="archive-field is-wide">
+                    <span>标题</span>
+                    <input data-edit-field="title" value="${escapeHtml(item.title)}">
+                </label>
+                <label class="archive-field is-wide">
+                    <span>正文</span>
+                    <textarea data-edit-field="body" rows="4">${escapeHtml(item.body || '')}</textarea>
+                </label>
+                <label class="archive-field is-wide">
+                    <span>来源</span>
+                    <input data-edit-field="source" value="${escapeHtml(item.source || '')}">
+                </label>
+                <label class="archive-field is-wide">
+                    <span>URL（每行一个）</span>
+                    <textarea data-edit-field="urls" rows="2">${escapeHtml(urls)}</textarea>
+                </label>
+            </div>
+            <div class="archive-item-editor-actions">
+                <button class="btn btn-primary archive-item-save-btn" type="button"
+                    data-item-id="${escapeHtml(item.id)}">保存本条</button>
+            </div>
+        </div>
+    `;
+}
+
 function detailItemCard(item) {
     return `
-        <article class="archive-item${item.link_status === 'pending' ? ' is-pending' : ''}${item.link_status === 'processing' ? ' is-processing' : ''}"
+        <article class="archive-item${item.link_status === 'pending' ? ' is-pending' : ''}${item.link_status === 'processing' ? ' is-processing' : ''}${detailEditMode ? ' is-editing' : ''}"
             data-item-id="${escapeHtml(item.id)}" data-link-group="${linkStatusGroup(item.link_status)}">
             <div class="archive-item-head">
                 <span class="archive-item-order">${item.order_index + 1}</span>
@@ -180,6 +212,7 @@ function detailItemCard(item) {
             </div>
             ${item.body ? `<p class="archive-item-body">${escapeHtml(item.body)}</p>` : ''}
             <div class="archive-item-meta">${detailItemMetaHtml(item)}</div>
+            ${detailEditMode ? detailItemEditFormHtml(item) : ''}
         </article>
     `;
 }
@@ -311,6 +344,88 @@ function applyManualLinkResult(updatedItem) {
     activeReportStatusSignature = reportStatusSignature(activeReportItems);
 }
 
+// 条目字段保存成功后局部更新卡片展示区（标题 / 正文 / meta），表单留在原地；
+// 回链字段不变，状态指纹不受影响
+function applyItemEditResult(updatedItem) {
+    const index = activeReportItems.findIndex(
+        item => String(item.id) === String(updatedItem.id)
+    );
+    if (index === -1) return;
+    activeReportItems[index] = { ...activeReportItems[index], ...updatedItem };
+    const item = activeReportItems[index];
+    const card = document.querySelector(
+        `#archive-detail .archive-item[data-item-id="${CSS.escape(String(item.id))}"]`
+    );
+    if (!card) return;
+    const titleEl = card.querySelector('.archive-item-title');
+    if (titleEl) {
+        titleEl.innerHTML = `${escapeHtml(item.title)}${detailOriginalTriggerHtml(item)}`;
+    }
+    let bodyEl = card.querySelector('.archive-item-body');
+    if (item.body) {
+        if (bodyEl) {
+            bodyEl.textContent = item.body;
+        } else {
+            card.querySelector('.archive-item-head')
+                .insertAdjacentHTML('afterend', `<p class="archive-item-body">${escapeHtml(item.body)}</p>`);
+        }
+    } else if (bodyEl) {
+        bodyEl.remove();
+    }
+    const meta = card.querySelector('.archive-item-meta');
+    if (meta) meta.innerHTML = detailItemMetaHtml(item);
+}
+
+async function saveItemEdit(button) {
+    const card = button.closest('.archive-item[data-item-id]');
+    if (!card) return;
+    const itemId = card.dataset.itemId;
+    const readField = field => {
+        const input = card.querySelector(`[data-edit-field="${field}"]`);
+        return input ? input.value : '';
+    };
+    const payload = {
+        title: readField('title').trim(),
+        body: readField('body'),
+        source: readField('source'),
+        urls: readField('urls')
+            .split(/\r?\n/)
+            .map(part => part.trim())
+            .filter(Boolean)
+    };
+    if (!payload.title) {
+        toast('标题不能为空', 'error');
+        return;
+    }
+    button.disabled = true;
+    try {
+        const updated = await api(`/items/${encodeURIComponent(itemId)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        applyItemEditResult(updated);
+        toast('已保存');
+    } catch (error) {
+        toast(error.message, 'error');
+    } finally {
+        button.disabled = false;
+    }
+}
+
+// 修改模式开关：重绘条目区（表单随 detailEditMode 渲染），不重拉报告
+function toggleDetailEditMode(toggle) {
+    detailEditMode = !detailEditMode;
+    toggle.textContent = detailEditMode ? '完成' : '修改';
+    toggle.setAttribute('aria-pressed', String(detailEditMode));
+    const container = document.querySelector('#archive-detail .archive-detail-items');
+    if (!container) return;
+    container.innerHTML = activeReportItems.length
+        ? detailItemsHtml(activeReportItems)
+        : '<div class="archive-empty">这份报告没有条目。</div>';
+    applyDetailFilter();
+}
+
 function scheduleReportStatusPoll(id, delay = 1500) {
     reportRefreshTimer = window.setTimeout(
         () => pollReportStatus(id),
@@ -351,6 +466,7 @@ async function selectReport(id, pushUrl = true) {
     activeReportId = id;
     activeReportStatusSignature = '';
     detailStatusFilter = '';
+    detailEditMode = false;
     markActiveReport(id);
     if (pushUrl) {
         window.history.replaceState(null, '', `/submission-archive/${encodeURIComponent(id)}`);
@@ -374,6 +490,11 @@ async function selectReport(id, pushUrl = true) {
                     </p>
                     ${detailStats(items)}
                 </div>
+                ${isAdminUser ? `
+                <div class="archive-detail-head-actions">
+                    <button class="btn btn-secondary" id="archive-edit-toggle" type="button"
+                        aria-pressed="false">修改</button>
+                </div>` : ''}
             </div>
             <div class="archive-detail-items">
                 ${items.length ? detailItemsHtml(items) : '<div class="archive-empty">这份报告没有条目。</div>'}
@@ -420,6 +541,16 @@ async function initBrowserView() {
             btn.setAttribute('aria-pressed', String(active));
         });
         applyDetailFilter();
+    });
+    // 修改模式：头部「修改/完成」开关 + 每条卡片的「保存本条」（事件委托，重绘后仍生效）
+    document.getElementById('archive-detail').addEventListener('click', event => {
+        const toggle = event.target.closest('#archive-edit-toggle');
+        if (toggle) {
+            toggleDetailEditMode(toggle);
+            return;
+        }
+        const saveBtn = event.target.closest('.archive-item-save-btn');
+        if (saveBtn) saveItemEdit(saveBtn);
     });
     const items = await loadReportList(false);
     if (initialReportId) {

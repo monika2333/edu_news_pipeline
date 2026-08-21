@@ -3,11 +3,16 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import date
 from typing import Any, Mapping, Optional, Sequence
+from urllib.parse import urlparse
 
 from src.adapters.db_postgres_core import get_adapter
 from src.console.auth_service import ConsoleUser
 from src.domain.report_type import SUBMISSION_DOC_TYPES as VALID_REPORT_TYPES
-from src.domain.submission_archive_parser import parse_submission_report
+from src.domain.submission_archive_parser import (
+    normalize_submission_text,
+    normalized_title_hash,
+    parse_submission_report,
+)
 from src.workers import submission_archive_ingest
 
 
@@ -214,6 +219,52 @@ def manual_unlink_item(
     return _updated_manual_link_item(result)
 
 
+def update_item_fields(
+    *,
+    item_id: str,
+    title: str,
+    body: str,
+    source: Optional[str],
+    urls: Sequence[str],
+) -> dict[str, Any]:
+    normalized_title = (title or "").strip()
+    if not normalized_title:
+        raise ValueError("标题不能为空")
+    normalized_body = (body or "").strip()
+    normalized_urls = [
+        str(url).strip()
+        for url in urls or []
+        if str(url).strip()
+    ]
+    invalid_urls = [
+        url
+        for url in normalized_urls
+        if urlparse(url).scheme not in {"http", "https"}
+    ]
+    if invalid_urls:
+        raise ValueError("包含非 HTTP(S) URL")
+    result = get_adapter().submission_archive.update_item_fields(
+        item_id=item_id,
+        title=normalized_title,
+        body=normalized_body,
+        source=(source or "").strip() or None,
+        urls=normalized_urls,
+        norm_title=normalize_submission_text(normalized_title),
+        norm_title_hash=normalized_title_hash(normalized_title),
+    )
+    state = result.get("state")
+    if state == "not_found":
+        raise SubmissionReportNotFoundError("未找到这个存档条目")
+    if state == "processing":
+        raise SubmissionLinkProcessingError(
+            "条目正在自动回链处理中，请稍后再试"
+        )
+    item = result.get("item")
+    if state != "updated" or not isinstance(item, dict):
+        raise RuntimeError("条目更新未返回结果")
+    return item
+
+
 def search_archive(*, query: str, limit: int) -> dict[str, Any]:
     normalized_query = (query or "").strip()
     if not normalized_query:
@@ -289,4 +340,5 @@ __all__ = [
     "parse_report",
     "search_archive",
     "search_link_candidates",
+    "update_item_fields",
 ]

@@ -1,4 +1,7 @@
 // Duty Summary JS - Render
+
+// 卡片按四桶分类分组展示（京内/京外 × 正面/负面），分组顺序固定。
+const SUMMARY_CATEGORY_ORDER = ['京内正面', '京内负面', '京外正面', '京外负面'];
 function getVisibleItems() {
     const query = state.searchQuery.trim().toLocaleLowerCase('zh-CN');
     if (!query) return state.items;
@@ -88,7 +91,7 @@ function renderItems() {
         elements.items.innerHTML = '<div class="summary-empty empty-state">没有找到匹配的新闻。</div>';
         return;
     }
-    elements.items.innerHTML = visibleItems.map(item => {
+    const renderSummaryItem = (item) => {
         const recoveredManualDiscard = isRecoveredManualDiscard(item);
         const discardedActive = !recoveredManualDiscard && (
             Boolean(item.admin_discarded_at) || item.admin_status === 'discarded'
@@ -98,10 +101,6 @@ function renderItems() {
         const adminProcessTag = `<span class="summary-admin-process-tag${
             isAdminProcessed(item) ? ' is-processed' : ' is-pending'
         }">${escapeHtml(adminProcessLabel(item))}</span>`;
-        const categoryLabel = articleCategoryLabel(item);
-        const categoryTag = categoryLabel
-            ? `<span class="badge summary-article-category ${getSentimentClass(item.sentiment_label)}">${categoryLabel}</span>`
-            : '';
         const finalizationTag = item.decision === 'selected'
             ? `<span class="summary-finalization-tag${item.finalized_at ? '' : ' is-pending'}">${
                 item.finalized_at
@@ -163,12 +162,39 @@ function renderItems() {
                     ${state.adminDiscarded ? `<span>放弃人：${escapeHtml(item.admin_discarded_by_display_name || '管理员')}</span>` : ''}
                     <span>${escapeHtml(item.source || item.llm_source || '未知来源')}</span>
                     <span>${escapeHtml(formatDateTime(item.publish_time_iso || item.created_at))}</span>
-                    ${categoryTag}
             </div>
             <p class="summary-box">${escapeHtml(item.edited_summary || item.summary || item.llm_summary || '')}</p>
         </article>
     `;
+    };
+    elements.items.innerHTML = SUMMARY_CATEGORY_ORDER.map(label => {
+        const groupItems = visibleItems.filter(item => articleCategoryLabel(item) === label);
+        if (!groupItems.length) return '';
+        const collapsedClass = state.collapsedCategories[label] ? ' collapsed' : '';
+        return `
+            <div class="review-group${collapsedClass}" data-category="${label}">
+                <div class="review-group-header" title="点击展开/收起">
+                    <span class="toggle-icon">▼</span>
+                    ${label} (${groupItems.length})
+                </div>
+                <div class="review-group-body">
+                    ${groupItems.map(renderSummaryItem).join('')}
+                </div>
+            </div>
+        `;
     }).join('');
+    elements.items.querySelectorAll('.review-group-header').forEach(header => {
+        header.addEventListener('click', () => {
+            const group = header.closest('.review-group');
+            if (!group) return;
+            const label = group.dataset.category || '';
+            if (group.classList.toggle('collapsed')) {
+                state.collapsedCategories[label] = true;
+            } else {
+                delete state.collapsedCategories[label];
+            }
+        });
+    });
     elements.items.querySelectorAll('input[type="checkbox"][data-article-id]').forEach(checkbox => {
         checkbox.addEventListener('change', () => {
             if (checkbox.checked) state.selected.add(checkbox.dataset.articleId);

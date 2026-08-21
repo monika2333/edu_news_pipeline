@@ -232,7 +232,7 @@ function expandSearchWindow() {
 }
 
 // 全库检索卡片的分类徽章：京内/京外 × 正面/负面。
-// 与 duty_summary/utils.js 的 articleCategoryLabel 同一口径；
+// 判定口径与 duty_summary/utils.js 的 articleCategoryLabel 相同（那边字段必然齐全，无需守卫）；
 // 地域（geo-classify）或情感（summarize）任一判定未就绪时不归类，返回空串。
 function searchCategoryLabel(item) {
     if (item.is_beijing_related === null || item.is_beijing_related === undefined) return '';

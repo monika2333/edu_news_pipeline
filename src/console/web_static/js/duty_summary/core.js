@@ -10,6 +10,7 @@ const state = {
     adminDiscarded: false,
     adminProcessScope: 'unprocessed',
     selected: new Set(),
+    collapsedCategories: {},
     pendingImport: null,
     pendingUndoTargets: [],
     importConflicts: [],

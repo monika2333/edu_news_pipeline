@@ -180,10 +180,9 @@
     white-space: nowrap;
 }
 
+/* 分类徽章的配色与尺寸复用 components.css 的 .badge / .badge.positive / .badge.negative，
+   本类仅作为脚本与测试锚点，不再覆盖文字样式。 */
 .summary-article-category {
-    color: #475569;
-    font-size: 0.82rem;
-    font-weight: 600;
 }
 
 .summary-item > .summary-box {

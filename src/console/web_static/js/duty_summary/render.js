@@ -98,6 +98,10 @@ function renderItems() {
         const adminProcessTag = `<span class="summary-admin-process-tag${
             isAdminProcessed(item) ? ' is-processed' : ' is-pending'
         }">${escapeHtml(adminProcessLabel(item))}</span>`;
+        const categoryLabel = articleCategoryLabel(item);
+        const categoryTag = categoryLabel
+            ? `<span class="badge summary-article-category ${getSentimentClass(item.sentiment_label)}">${categoryLabel}</span>`
+            : '';
         const finalizationTag = item.decision === 'selected'
             ? `<span class="summary-finalization-tag${item.finalized_at ? '' : ' is-pending'}">${
                 item.finalized_at
@@ -159,7 +163,7 @@ function renderItems() {
                     ${state.adminDiscarded ? `<span>放弃人：${escapeHtml(item.admin_discarded_by_display_name || '管理员')}</span>` : ''}
                     <span>${escapeHtml(item.source || item.llm_source || '未知来源')}</span>
                     <span>${escapeHtml(formatDateTime(item.publish_time_iso || item.created_at))}</span>
-                    <span class="summary-article-category">${articleCategoryLabel(item)}</span>
+                    ${categoryTag}
             </div>
             <p class="summary-box">${escapeHtml(item.edited_summary || item.summary || item.llm_summary || '')}</p>
         </article>

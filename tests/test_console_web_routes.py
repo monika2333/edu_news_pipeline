@@ -848,9 +848,10 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "const nextDiscarded = isRecoveredManualDiscard(item)" in script
     assert "function articleCategoryLabel(item)" in script
     assert "item.is_beijing_related ? '京内' : '京外'" in script
+    assert "if (!item.sentiment_label) return '';" in script
     assert "? '负面'" in script
     assert ": '正面'" in script
-    assert 'class="summary-article-category"' in script
+    assert 'class="badge summary-article-category' in script
     assert 'class="summary-admin-process-tag' in script
     assert "elements.processTabs.forEach" in script
     assert "params.set('admin_unprocessed_only', 'true')" in script

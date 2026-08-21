@@ -97,7 +97,12 @@ function adminProcessLabel(item) {
     return '未处理';
 }
 
+// 分类徽章：京内/京外 × 正面/负面。
+// 与 manual_filter/search_drawer.js 的 searchCategoryLabel 同一口径；
+// 地域（geo-classify）或情感（summarize）任一判定未就绪时不归类，返回空串。
 function articleCategoryLabel(item) {
+    if (item.is_beijing_related === null || item.is_beijing_related === undefined) return '';
+    if (!item.sentiment_label) return '';
     const region = item.is_beijing_related ? '京内' : '京外';
     const sentiment = String(item.sentiment_label || '').toLowerCase() === 'negative'
         ? '负面'

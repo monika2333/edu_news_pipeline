@@ -159,11 +159,22 @@ def test_archive_detail_edit_mode_is_admin_only() -> None:
         "src/console/web_static/js/submission_archive/browser.js"
     ).read_text(encoding="utf-8")
 
-    # 模板暴露角色，core.js 读取，browser.js 仅对管理员渲染「修改」入口
+    # 模板暴露角色，core.js 读取，browser.js 仅对管理员渲染铅笔修改入口
     assert 'data-user-role="{{ current_user.role }}"' in template
     assert "body.dataset.userRole === 'admin'" in core
     assert "isAdminUser" in browser
-    assert "archive-edit-toggle" in browser
+    assert "archive-item-edit-btn" in browser
+    # 全局修改模式开关已移除，入口在每条卡片的状态标签左侧
+    assert "archive-edit-toggle" not in browser
+
+
+def test_archive_item_edit_entry_follows_link_status() -> None:
+    browser = Path(
+        "src/console/web_static/js/submission_archive/browser.js"
+    ).read_text(encoding="utf-8")
+
+    # 未覆盖（unmatched/rejected）与已匹配（matched）给铅笔入口，processing/pending 不给
+    assert "['unmatched', 'rejected', 'matched'].includes(item.link_status)" in browser
 
 
 def test_archive_item_edit_saves_via_patch_and_updates_card_locally() -> None:

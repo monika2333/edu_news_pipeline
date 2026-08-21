@@ -274,10 +274,6 @@
     min-width: 0;
 }
 
-.archive-detail-head-actions {
-    flex: 0 0 auto;
-}
-
 .archive-detail-title-row {
     display: flex;
     align-items: center;

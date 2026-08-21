@@ -182,7 +182,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 人工检索绑定保留自动回链证据：`best_candidate_article_id` 与 `link_title_score` / `link_body_score` / `link_combined_score` 一律不改。因而当 `article_id` 与 `best_candidate_article_id` 不同时，可以事后识别人工检索介入。人工绑定与解绑都拒绝 `processing` 条目，避免独立 worker 的整体回写覆盖人工决定。
 
-存档库详情页的「修改」模式（仅管理员）允许事后修正已入库条目的 `title` / `body` / `source` / `urls`：改标题会同步重算 `norm_title` / `norm_title_hash`；标题或正文任一变化会清空 `embedding` / `embedding_model` / `embedded_at`，由 `backfill-submission-embeddings` 在下一轮重算查重向量。与人工绑定/解绑一样，`processing` 条目拒绝修改；回链字段（`article_id`、`link_status`、相似度分数）不受条目修改影响。
+存档库详情页条目上的修改入口（铅笔图标，仅管理员）允许事后修正已入库条目的 `title` / `body` / `source` / `urls`：改标题会同步重算 `norm_title` / `norm_title_hash`；标题或正文任一变化会清空 `embedding` / `embedding_model` / `embedded_at`，由 `backfill-submission-embeddings` 在下一轮重算查重向量。与人工绑定/解绑一样，`processing` 条目拒绝修改；回链字段（`article_id`、`link_status`、相似度分数）不受条目修改影响。
 
 ### 查重（`submission-dedup`）
 

@@ -7,8 +7,8 @@ let reportRefreshTimer = null;
 let activeReportStatusSignature = '';
 // 详情区按回链状态筛选：'' 表示不过滤，其余取值 linked/pending/uncovered
 let detailStatusFilter = '';
-// 修改模式：管理员在详情头部开启后，每条卡片下方展开可编辑表单
-let detailEditMode = false;
+// 处于编辑态的条目 id 集合：点卡片上的铅笔图标按条展开/收起
+const detailEditingItemIds = new Set();
 // 当前详情报告的条目缓存与整理日期：人工回链弹窗的参照区与局部更新都从这里取数
 let activeReportItems = [];
 let activeReportCompiledDate = '';
@@ -201,18 +201,32 @@ function detailItemEditFormHtml(item) {
     `;
 }
 
+// 修改入口：未覆盖/已匹配条目的状态标签左边渲染铅笔图标（仅管理员）；
+// processing/pending 条目不给入口（与后端拒绝 processing 的约定一致）
+const detailEditTriggerHtml = item => {
+    if (!isAdminUser) return '';
+    if (!['unmatched', 'rejected', 'matched'].includes(item.link_status)) return '';
+    const active = detailEditingItemIds.has(String(item.id));
+    return `<button type="button" class="archive-item-edit-btn${active ? ' is-active' : ''}"
+        data-item-id="${escapeHtml(item.id)}" title="修改条目" aria-label="修改条目"
+        aria-pressed="${active}"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>`;
+};
+
 function detailItemCard(item) {
+    const editing = detailEditingItemIds.has(String(item.id));
     return `
-        <article class="archive-item${item.link_status === 'pending' ? ' is-pending' : ''}${item.link_status === 'processing' ? ' is-processing' : ''}${detailEditMode ? ' is-editing' : ''}"
+        <article class="archive-item${item.link_status === 'pending' ? ' is-pending' : ''}${item.link_status === 'processing' ? ' is-processing' : ''}${editing ? ' is-editing' : ''}"
             data-item-id="${escapeHtml(item.id)}" data-link-group="${linkStatusGroup(item.link_status)}">
             <div class="archive-item-head">
                 <span class="archive-item-order">${item.order_index + 1}</span>
                 <h4 class="archive-item-title">${escapeHtml(item.title)}${detailOriginalTriggerHtml(item)}</h4>
-                ${linkPill(item.link_status)}
+                ${detailEditTriggerHtml(item)}${linkPill(item.link_status)}
             </div>
             ${item.body ? `<p class="archive-item-body">${escapeHtml(item.body)}</p>` : ''}
             <div class="archive-item-meta">${detailItemMetaHtml(item)}</div>
-            ${detailEditMode ? detailItemEditFormHtml(item) : ''}
+            ${editing ? detailItemEditFormHtml(item) : ''}
         </article>
     `;
 }
@@ -299,8 +313,11 @@ function updateReportStatusComponents(id, items) {
         card.classList.toggle('is-processing', item.link_status === 'processing');
         card.classList.toggle('is-pending', item.link_status === 'pending');
         card.dataset.linkGroup = linkStatusGroup(item.link_status);
+        // 铅笔入口随状态同步：先移除旧按钮，再和新 pill 一起按当前状态重渲染
+        const editBtn = card.querySelector('.archive-item-edit-btn');
+        if (editBtn) editBtn.remove();
         const pill = card.querySelector('.archive-link-pill');
-        if (pill) pill.outerHTML = linkPill(item.link_status);
+        if (pill) pill.outerHTML = `${detailEditTriggerHtml(item)}${linkPill(item.link_status)}`;
         // 状态变化后同步标题后的「原文」标签：仅 matched 且有 article_id 时存在
         const titleEl = card.querySelector('.archive-item-title');
         const trigger = titleEl?.querySelector('.content-drawer-trigger');
@@ -344,7 +361,16 @@ function applyManualLinkResult(updatedItem) {
     activeReportStatusSignature = reportStatusSignature(activeReportItems);
 }
 
-// 条目字段保存成功后局部更新卡片展示区（标题 / 正文 / meta），表单留在原地；
+// 单条卡片整体重绘（编辑态展开/收起、保存成功后回到展示态），随后恢复筛选显隐
+function rerenderDetailItemCard(item) {
+    const card = document.querySelector(
+        `#archive-detail .archive-item[data-item-id="${CSS.escape(String(item.id))}"]`
+    );
+    if (card) card.outerHTML = detailItemCard(item);
+    applyDetailFilter();
+}
+
+// 条目字段保存成功后合并缓存并收起该条编辑框，整体重绘卡片；
 // 回链字段不变，状态指纹不受影响
 function applyItemEditResult(updatedItem) {
     const index = activeReportItems.findIndex(
@@ -352,28 +378,8 @@ function applyItemEditResult(updatedItem) {
     );
     if (index === -1) return;
     activeReportItems[index] = { ...activeReportItems[index], ...updatedItem };
-    const item = activeReportItems[index];
-    const card = document.querySelector(
-        `#archive-detail .archive-item[data-item-id="${CSS.escape(String(item.id))}"]`
-    );
-    if (!card) return;
-    const titleEl = card.querySelector('.archive-item-title');
-    if (titleEl) {
-        titleEl.innerHTML = `${escapeHtml(item.title)}${detailOriginalTriggerHtml(item)}`;
-    }
-    let bodyEl = card.querySelector('.archive-item-body');
-    if (item.body) {
-        if (bodyEl) {
-            bodyEl.textContent = item.body;
-        } else {
-            card.querySelector('.archive-item-head')
-                .insertAdjacentHTML('afterend', `<p class="archive-item-body">${escapeHtml(item.body)}</p>`);
-        }
-    } else if (bodyEl) {
-        bodyEl.remove();
-    }
-    const meta = card.querySelector('.archive-item-meta');
-    if (meta) meta.innerHTML = detailItemMetaHtml(item);
+    detailEditingItemIds.delete(String(updatedItem.id));
+    rerenderDetailItemCard(activeReportItems[index]);
 }
 
 async function saveItemEdit(button) {
@@ -413,17 +419,17 @@ async function saveItemEdit(button) {
     }
 }
 
-// 修改模式开关：重绘条目区（表单随 detailEditMode 渲染），不重拉报告
-function toggleDetailEditMode(toggle) {
-    detailEditMode = !detailEditMode;
-    toggle.textContent = detailEditMode ? '完成' : '修改';
-    toggle.setAttribute('aria-pressed', String(detailEditMode));
-    const container = document.querySelector('#archive-detail .archive-detail-items');
-    if (!container) return;
-    container.innerHTML = activeReportItems.length
-        ? detailItemsHtml(activeReportItems)
-        : '<div class="archive-empty">这份报告没有条目。</div>';
-    applyDetailFilter();
+// 铅笔图标开关单条编辑框：展开/收起只重绘这一条卡片，不动其他条目
+function toggleItemEdit(button) {
+    const itemId = String(button.dataset.itemId || '');
+    const item = activeReportItems.find(entry => String(entry.id) === itemId);
+    if (!item) return;
+    if (detailEditingItemIds.has(itemId)) {
+        detailEditingItemIds.delete(itemId);
+    } else {
+        detailEditingItemIds.add(itemId);
+    }
+    rerenderDetailItemCard(item);
 }
 
 function scheduleReportStatusPoll(id, delay = 1500) {
@@ -466,7 +472,7 @@ async function selectReport(id, pushUrl = true) {
     activeReportId = id;
     activeReportStatusSignature = '';
     detailStatusFilter = '';
-    detailEditMode = false;
+    detailEditingItemIds.clear();
     markActiveReport(id);
     if (pushUrl) {
         window.history.replaceState(null, '', `/submission-archive/${encodeURIComponent(id)}`);
@@ -490,11 +496,6 @@ async function selectReport(id, pushUrl = true) {
                     </p>
                     ${detailStats(items)}
                 </div>
-                ${isAdminUser ? `
-                <div class="archive-detail-head-actions">
-                    <button class="btn btn-secondary" id="archive-edit-toggle" type="button"
-                        aria-pressed="false">修改</button>
-                </div>` : ''}
             </div>
             <div class="archive-detail-items">
                 ${items.length ? detailItemsHtml(items) : '<div class="archive-empty">这份报告没有条目。</div>'}
@@ -542,11 +543,11 @@ async function initBrowserView() {
         });
         applyDetailFilter();
     });
-    // 修改模式：头部「修改/完成」开关 + 每条卡片的「保存本条」（事件委托，重绘后仍生效）
+    // 条目修改：铅笔图标展开/收起单条编辑框，「保存本条」提交（事件委托，重绘后仍生效）
     document.getElementById('archive-detail').addEventListener('click', event => {
-        const toggle = event.target.closest('#archive-edit-toggle');
-        if (toggle) {
-            toggleDetailEditMode(toggle);
+        const editBtn = event.target.closest('.archive-item-edit-btn');
+        if (editBtn) {
+            toggleItemEdit(editBtn);
             return;
         }
         const saveBtn = event.target.closest('.archive-item-save-btn');

@@ -147,6 +147,42 @@
 
 /* ===== 详情修改模式 ===== */
 
+/* 铅笔入口：状态标签左侧的小图标按钮，平时弱化，悬停或编辑态高亮 */
+.archive-item-edit-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
+    margin-top: 1px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    opacity: 0.5;
+    transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.archive-item-edit-btn svg {
+    width: 13px;
+    height: 13px;
+}
+
+.archive-item:hover .archive-item-edit-btn,
+.archive-item-edit-btn:focus-visible,
+.archive-item-edit-btn.is-active {
+    opacity: 1;
+}
+
+.archive-item-edit-btn:hover,
+.archive-item-edit-btn.is-active {
+    background: #eef2f7;
+    color: var(--primary-color);
+}
+
 /* 修改模式下隐藏展示区，表单承担展示与编辑；轮询的局部更新仍写这些节点 */
 .archive-item.is-editing .archive-item-title,
 .archive-item.is-editing .archive-item-body,

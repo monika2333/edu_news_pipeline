@@ -196,7 +196,9 @@
     border-top: 1px dashed #e2e8f0;
 }
 
-.archive-item-edit input {
+/* 选择器加一层 .archive-field：压住 create.css 的 .archive-field input 字号继承，
+   让修改表单里输入框与 textarea 统一 0.88rem */
+.archive-item-edit .archive-field input {
     width: 100%;
     min-height: 38px;
     box-sizing: border-box;
@@ -221,6 +223,12 @@
 
 .archive-item-edit textarea[data-edit-field="body"] {
     min-height: 110px;
+}
+
+/* URL 通常只有一条短链接：单行展示，不允许拖拽改大小 */
+.archive-item-edit textarea[data-edit-field="urls"] {
+    min-height: 38px;
+    resize: none;
 }
 
 .archive-item-edit input:focus,

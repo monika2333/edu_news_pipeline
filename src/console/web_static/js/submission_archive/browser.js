@@ -190,10 +190,12 @@ function detailItemEditFormHtml(item) {
                 </label>
                 <label class="archive-field is-wide">
                     <span>URL（每行一个）</span>
-                    <textarea data-edit-field="urls" rows="2">${escapeHtml(urls)}</textarea>
+                    <textarea data-edit-field="urls" rows="1">${escapeHtml(urls)}</textarea>
                 </label>
             </div>
             <div class="archive-item-editor-actions">
+                <button class="btn btn-secondary archive-item-cancel-btn" type="button"
+                    data-item-id="${escapeHtml(item.id)}">退出修改</button>
                 <button class="btn btn-primary archive-item-save-btn" type="button"
                     data-item-id="${escapeHtml(item.id)}">保存本条</button>
             </div>
@@ -548,6 +550,11 @@ async function initBrowserView() {
         const editBtn = event.target.closest('.archive-item-edit-btn');
         if (editBtn) {
             toggleItemEdit(editBtn);
+            return;
+        }
+        const cancelBtn = event.target.closest('.archive-item-cancel-btn');
+        if (cancelBtn) {
+            toggleItemEdit(cancelBtn);
             return;
         }
         const saveBtn = event.target.closest('.archive-item-save-btn');

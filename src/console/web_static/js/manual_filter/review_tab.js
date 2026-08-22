@@ -213,8 +213,11 @@ function renderSortableReviewItems(items) {
     GROUP_ORDER.forEach(group => {
         const groupItems = buckets[group.key] || [];
         html += `
-            <div class="review-group sort-group" data-group="${group.key}">
-                <div class="review-group-header">${group.label}(${groupItems.length})</div>
+            <div class="review-group sort-group${isReviewGroupCollapsed(group.key) ? ' collapsed' : ''}" data-group="${group.key}">
+                <div class="review-group-header" title="点击展开/收起">
+                    <span class="toggle-icon">▼</span>
+                     ${group.label} (${groupItems.length})
+                </div>
                 <div class="review-group-body sort-group-body${groupItems.length ? '' : ' is-empty'}">
                     ${groupItems.map(item => {
             const currentStatus = item.manual_status || item.status || state.reviewView || 'selected';

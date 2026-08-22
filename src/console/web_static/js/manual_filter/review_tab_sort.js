@@ -179,7 +179,7 @@ function updateReviewSortGroupCounts() {
         const header = group.querySelector('.review-group-header');
         const body = group.querySelector('.sort-group-body');
         const count = body ? body.querySelectorAll('.article-card').length : 0;
-        if (header) header.textContent = `${getGroupLabel(key)}(${count})`;
+        if (header) header.innerHTML = `<span class="toggle-icon">▼</span> ${getGroupLabel(key)} (${count})`;
         if (body) body.classList.toggle('is-empty', count === 0);
     });
 }

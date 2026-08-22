@@ -244,13 +244,22 @@ def get_article_content(*, article_id: str) -> Dict[str, Any]:
     }
 
 
-def get_latest_ingest_status() -> Dict[str, Any]:
-    """全库最新收录时间，供筛选页展示并间接判断抓取流水线是否在运行。"""
+def get_latest_ingest_status(
+    *,
+    created_at_gte: Optional[datetime] = None,
+    created_at_lt: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """最新收录时间；默认全库，也可限定为左闭右开的收录时间区间。"""
     adapter = _get_adapter_safe()
     if adapter is None:
         return {"latest_created_at": None}
     try:
-        latest_created_at = adapter.news_summaries.fetch_latest_created_at()
+        bounds: dict[str, datetime] = {}
+        if created_at_gte is not None:
+            bounds["created_at_gte"] = created_at_gte
+        if created_at_lt is not None:
+            bounds["created_at_lt"] = created_at_lt
+        latest_created_at = adapter.news_summaries.fetch_latest_created_at(**bounds)
     except Exception:  # pragma: no cover - degrade gracefully when DB is unavailable
         return {"latest_created_at": None}
     return {"latest_created_at": latest_created_at}

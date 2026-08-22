@@ -10,6 +10,7 @@ from src.adapters.db_postgres_shift_reviews import (
     VALID_REPORT_TYPES,
 )
 from src.console import (
+    articles_service,
     manual_filter_admin_service,
     manual_filter_cluster,
     manual_filter_duplicate_service,
@@ -23,6 +24,21 @@ from src.console.submission_archive_service import attach_duplicate_badges
 
 class ShiftReviewArticleNotFoundError(ValueError):
     """Raised when an article is not available in the requested shift."""
+
+
+def get_ingest_status(
+    *,
+    shift_id: str,
+    user: ConsoleUser,
+) -> dict[str, Any]:
+    """Return the latest ingest time visible inside an owned shift."""
+    shift = require_owned_shift(shift_id, user)
+    if shift.get("status") == "upcoming":
+        return {"latest_created_at": None}
+    return articles_service.get_latest_ingest_status(
+        created_at_gte=shift["starts_at"],
+        created_at_lt=shift["ends_at"],
+    )
 
 
 def _version_map(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
@@ -715,6 +731,7 @@ __all__ = [
     "clear_score_feedback",
     "finalize_selected_batch",
     "get_finalization_status",
+    "get_ingest_status",
     "get_stats",
     "list_clusters",
     "list_items",

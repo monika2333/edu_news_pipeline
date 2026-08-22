@@ -572,6 +572,21 @@ def test_duty_workspace_defaults_to_latest_ended_shift_before_upcoming() -> None
     assert "const initial = chooseInitialWorkspaceShift(shifts);" in workspace_script
 
 
+def test_filter_ingest_status_uses_current_workspace_scope() -> None:
+    root = Path(__file__).parents[1]
+    filter_data_script = (
+        root / "src/console/web_static/js/manual_filter/filter_tab_data.js"
+    ).read_text(encoding="utf-8")
+    workspace_script = (
+        root / "src/console/web_static/js/manual_filter/workspace.js"
+    ).read_text(encoding="utf-8")
+
+    assert "? `${requestBase}/ingest-status`" in filter_data_script
+    assert ": '/api/articles/ingest-status'" in filter_data_script
+    assert "API_BASE !== requestBase" in filter_data_script
+    assert "state.latestIngestedAt = null;" in workspace_script
+
+
 def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     response = _build_client().get("/manual_filter")
     root = Path(__file__).parents[1]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Mapping, Optional, Sequence
 
 import pytest
@@ -260,6 +261,73 @@ def test_save_review_uses_authenticated_editor_id(
 
     assert fake_adapter.saved["actor_user_id"] == "editor-id"
     assert result["decision"] == "selected"
+
+
+def test_ingest_status_uses_owned_shift_half_open_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    starts_at = datetime(2026, 8, 20, 14, 0, tzinfo=timezone.utc)
+    ends_at = datetime(2026, 8, 21, 14, 0, tzinfo=timezone.utc)
+    latest = datetime(2026, 8, 21, 13, 50, tzinfo=timezone.utc)
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        duty_review_service,
+        "require_owned_shift",
+        lambda *args, **kwargs: {
+            "id": "shift-id",
+            "status": "ended",
+            "starts_at": starts_at,
+            "ends_at": ends_at,
+        },
+    )
+
+    def get_latest_ingest_status(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"latest_created_at": latest}
+
+    monkeypatch.setattr(
+        duty_review_service.articles_service,
+        "get_latest_ingest_status",
+        get_latest_ingest_status,
+    )
+
+    result = duty_review_service.get_ingest_status(
+        shift_id="shift-id",
+        user=_editor(),
+    )
+
+    assert result == {"latest_created_at": latest}
+    assert captured == {
+        "created_at_gte": starts_at,
+        "created_at_lt": ends_at,
+    }
+
+
+def test_ingest_status_hides_upcoming_shift_without_querying_news(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_on_news_query(**kwargs: Any) -> dict[str, Any]:
+        del kwargs
+        raise AssertionError("future shifts must not query news")
+
+    monkeypatch.setattr(
+        duty_review_service,
+        "require_owned_shift",
+        lambda *args, **kwargs: {"id": "shift-id", "status": "upcoming"},
+    )
+    monkeypatch.setattr(
+        duty_review_service.articles_service,
+        "get_latest_ingest_status",
+        fail_on_news_query,
+    )
+
+    result = duty_review_service.get_ingest_status(
+        shift_id="shift-id",
+        user=_editor(),
+    )
+
+    assert result == {"latest_created_at": None}
 
 
 def test_bulk_discard_uses_owned_shift_and_server_side_filter(

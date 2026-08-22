@@ -6,6 +6,7 @@ from typing import Any, NoReturn, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException
 
 from src.console import duty_review_service, score_feedback_service, shifts_service
+from src.console.articles_schemas import NewsArticleIngestStatusResponse
 from src.console.auth_service import ConsoleUser
 from src.console.duty_review_schemas import (
     DutyReviewBatchDecisionRequest,
@@ -80,6 +81,22 @@ def shift_stats(
         )
     except (ValueError, PermissionError) as exc:
         _raise_review_error(exc)
+
+
+@router.get("/ingest-status", response_model=NewsArticleIngestStatusResponse)
+def shift_ingest_status(
+    shift_id: str,
+    user: ConsoleUser = Depends(require_role("duty_editor")),
+) -> NewsArticleIngestStatusResponse:
+    """Return the latest ingest time visible inside the owned shift."""
+    try:
+        result = duty_review_service.get_ingest_status(
+            shift_id=shift_id,
+            user=user,
+        )
+    except (ValueError, PermissionError) as exc:
+        _raise_review_error(exc)
+    return NewsArticleIngestStatusResponse.model_validate(result)
 
 
 @router.get("/candidates")

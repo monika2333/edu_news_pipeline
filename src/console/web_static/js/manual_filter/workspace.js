@@ -67,6 +67,7 @@ function resetWorkspaceViewState() {
     state.filterQuery = '';
     state.discardQuery = '';
     state.filterViewMode = 'browse';
+    state.latestIngestedAt = null;
     state.reviewData = { selected: [], backup: [] };
     state.filterCounts = {
         internal_positive: 0,
@@ -78,6 +79,7 @@ function resetWorkspaceViewState() {
 
 async function reloadDutyWorkspace() {
     resetWorkspaceViewState();
+    syncFilterToolbarState();
     await Promise.all([loadStats(), loadFilterCounts()]);
     reloadCurrentTab();
 }

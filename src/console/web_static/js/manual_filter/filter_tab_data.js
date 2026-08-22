@@ -1,12 +1,17 @@
 // Manual Filter JS - Filter Tab Data
 
-// 全库最新收录时间，与筛选列表无关，单独拉取；失败时静默保留旧值。
-// 走 /api/articles（登录即可访问），管理员页与值班页共用同一接口。
+// 最新收录时间与筛选列表无关，单独拉取；管理员看全库，值班编辑看当前班次。
+// 失败时静默保留当前班次已有值，切换班次时由 workspace.js 主动清空。
 async function loadLatestIngestStatus() {
+    const requestBase = API_BASE;
+    const endpoint = IS_DUTY_WORKSPACE
+        ? `${requestBase}/ingest-status`
+        : '/api/articles/ingest-status';
     try {
-        const res = await fetch('/api/articles/ingest-status');
+        const res = await fetch(endpoint);
         if (!res.ok) return;
         const data = await res.json();
+        if (IS_DUTY_WORKSPACE && API_BASE !== requestBase) return;
         state.latestIngestedAt = data.latest_created_at || null;
         syncFilterToolbarState();
     } catch (error) {

@@ -148,7 +148,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 **因此 `news_summaries.created_at` 必须是不可变的。** 任何会更新这个字段的操作（比如 upsert 时误写 `created_at = now()`）都会导致新闻在班次之间跳动，已经做过的复核记录会对不上。
 
-面向用户的时间展示统一称为「收录时间」，原文内容接口读取该字段。待处理新闻的日期筛选与批量放弃也以该字段转换后的 `Asia/Shanghai` 本地日期判定，条件为严格早于所选日期（不含当天）。`publish_time_iso` / `publish_time` 与 `fetched_at` 仍按原链路入库，但不再是这两类读取用途的时间口径。
+面向用户的时间展示统一称为「收录时间」，原文内容接口读取该字段。筛选页的管理员视图显示全库最新收录时间；值班编辑视图只显示当前班次半开区间内的最大值，未来班次不显示。待处理新闻的日期筛选与批量放弃也以该字段转换后的 `Asia/Shanghai` 本地日期判定，条件为严格早于所选日期（不含当天）。`publish_time_iso` / `publish_time` 与 `fetched_at` 仍按原链路入库，但不再是这两类读取用途的时间口径。
 
 班次边界默认在 22:00（由 `duty_shift_boundary_hour` 配置）。
 

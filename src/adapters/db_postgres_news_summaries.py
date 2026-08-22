@@ -151,9 +151,18 @@ class NewsSummariesNamespace:
         with self._adapter._cursor() as cur:
             return fetch_news_summary_content(cur, article_id)
 
-    def fetch_latest_created_at(self) -> Optional[datetime]:
+    def fetch_latest_created_at(
+        self,
+        *,
+        created_at_gte: Optional[datetime] = None,
+        created_at_lt: Optional[datetime] = None,
+    ) -> Optional[datetime]:
         with self._adapter._cursor() as cur:
-            return fetch_latest_news_summary_created_at(cur)
+            return fetch_latest_news_summary_created_at(
+                cur,
+                created_at_gte=created_at_gte,
+                created_at_lt=created_at_lt,
+            )
 
     def upsert_from_primary(self, rows: Sequence[Mapping[str, Any]]) -> int:
         with self._adapter._cursor() as cur:
@@ -680,9 +689,26 @@ def fetch_news_summary_content(cur: psycopg.Cursor, article_id: str) -> Optional
     return dict(row) if row else None
 
 
-def fetch_latest_news_summary_created_at(cur: psycopg.Cursor) -> Optional[datetime]:
-    """全库最新收录时间，与筛选页/内容抽屉的收录时间口径一致（news_summaries.created_at）。"""
-    cur.execute("SELECT MAX(created_at) AS latest_created_at FROM news_summaries")
+def fetch_latest_news_summary_created_at(
+    cur: psycopg.Cursor,
+    *,
+    created_at_gte: Optional[datetime] = None,
+    created_at_lt: Optional[datetime] = None,
+) -> Optional[datetime]:
+    """Return the latest ingest time in an optional half-open time range."""
+    clauses: list[str] = []
+    params: list[datetime] = []
+    if created_at_gte is not None:
+        clauses.append("created_at >= %s")
+        params.append(created_at_gte)
+    if created_at_lt is not None:
+        clauses.append("created_at < %s")
+        params.append(created_at_lt)
+    where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    cur.execute(
+        f"SELECT MAX(created_at) AS latest_created_at FROM news_summaries{where_sql}",
+        tuple(params),
+    )
     row = cur.fetchone()
     if not row:
         return None

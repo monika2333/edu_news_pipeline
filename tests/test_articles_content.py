@@ -21,6 +21,7 @@ class FakeNewsSummariesNamespace:
         self.row = row
         self.error = error
         self.latest_created_at = latest_created_at
+        self.latest_bounds: Optional[dict[str, Optional[datetime]]] = None
 
     def fetch_content(self, article_id: str) -> Optional[dict[str, Any]]:
         if self.error is not None:
@@ -29,9 +30,18 @@ class FakeNewsSummariesNamespace:
             return None
         return dict(self.row)
 
-    def fetch_latest_created_at(self) -> Optional[datetime]:
+    def fetch_latest_created_at(
+        self,
+        *,
+        created_at_gte: Optional[datetime] = None,
+        created_at_lt: Optional[datetime] = None,
+    ) -> Optional[datetime]:
         if self.error is not None:
             raise self.error
+        self.latest_bounds = {
+            "created_at_gte": created_at_gte,
+            "created_at_lt": created_at_lt,
+        }
         return self.latest_created_at
 
 
@@ -145,6 +155,27 @@ def test_ingest_status_returns_latest_created_at(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"latest_created_at": "2026-08-17T02:30:00Z"}
+
+
+def test_ingest_status_service_forwards_half_open_bounds(monkeypatch) -> None:
+    starts_at = datetime(2026, 8, 20, 14, 0, tzinfo=timezone.utc)
+    ends_at = datetime(2026, 8, 21, 14, 0, tzinfo=timezone.utc)
+    adapter = FakeAdapter(
+        None,
+        latest_created_at=datetime(2026, 8, 21, 13, 50, tzinfo=timezone.utc),
+    )
+    monkeypatch.setattr(articles_service, "_get_adapter_safe", lambda: adapter)
+
+    result = articles_service.get_latest_ingest_status(
+        created_at_gte=starts_at,
+        created_at_lt=ends_at,
+    )
+
+    assert result["latest_created_at"] == adapter.news_summaries.latest_created_at
+    assert adapter.news_summaries.latest_bounds == {
+        "created_at_gte": starts_at,
+        "created_at_lt": ends_at,
+    }
 
 
 def test_ingest_status_empty_database_returns_null(monkeypatch) -> None:

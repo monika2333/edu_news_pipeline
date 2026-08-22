@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -133,6 +134,37 @@ def test_editor_stats_report_type_is_forwarded(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert captured["report_type"] == "zongbao"
+    assert captured["user"].user_id == "editor-id"
+
+
+def test_editor_ingest_status_is_scoped_to_selected_shift(monkeypatch) -> None:
+    editor = _user("duty_editor")
+    captured: dict[str, Any] = {}
+
+    def get_ingest_status(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {
+            "latest_created_at": datetime(
+                2026,
+                8,
+                21,
+                13,
+                50,
+                tzinfo=timezone.utc,
+            )
+        }
+
+    monkeypatch.setattr(
+        duty_review_service,
+        "get_ingest_status",
+        get_ingest_status,
+    )
+
+    response = _client_for(editor).get("/api/duty/shifts/shift-id/ingest-status")
+
+    assert response.status_code == 200
+    assert response.json() == {"latest_created_at": "2026-08-21T13:50:00Z"}
+    assert captured["shift_id"] == "shift-id"
     assert captured["user"].user_id == "editor-id"
 
 

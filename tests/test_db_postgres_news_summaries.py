@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from src.adapters.db_postgres_news_summaries import (
+    fetch_latest_news_summary_created_at,
     fetch_news_summary_content,
     insert_pending_summary,
     update_dedup_embeddings,
@@ -81,6 +83,25 @@ def test_fetch_news_summary_content_selects_drawer_metadata() -> None:
     assert "LEFT JOIN news_summaries" in query
     assert "ra.fetched_at" in query
     assert params == ("article-1",)
+
+
+def test_fetch_latest_created_at_uses_shift_half_open_range() -> None:
+    latest = datetime(2026, 8, 21, 13, 50, tzinfo=timezone.utc)
+    starts_at = datetime(2026, 8, 20, 14, 0, tzinfo=timezone.utc)
+    ends_at = datetime(2026, 8, 21, 14, 0, tzinfo=timezone.utc)
+    cursor = FakeCursor({"latest_created_at": latest})
+
+    result = fetch_latest_news_summary_created_at(
+        cursor,
+        created_at_gte=starts_at,
+        created_at_lt=ends_at,
+    )
+
+    assert result == latest
+    query, params = cursor.calls[0]
+    assert "created_at >= %s" in query
+    assert "created_at < %s" in query
+    assert params == (starts_at, ends_at)
 
 
 def test_update_dedup_embeddings_only_updates_cache_columns() -> None:

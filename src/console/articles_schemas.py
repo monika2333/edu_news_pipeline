@@ -93,7 +93,7 @@ class NewsArticleContentResponse(BaseModel):
 
 
 class NewsArticleIngestStatusResponse(BaseModel):
-    """全库最新收录时间（news_summaries.created_at），库内无数据或数据库不可用为 None。"""
+    """请求范围内的最新收录时间；无数据或数据库不可用时为 None。"""
 
     latest_created_at: Optional[datetime] = None
 

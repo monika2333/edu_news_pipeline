@@ -46,7 +46,7 @@ def _result(*, created: bool = True, warnings: list[str] | None = None) -> dict[
     }
 
 
-def test_normal_private_chat_is_silently_ignored() -> None:
+def test_trusted_private_text_with_invalid_format_gets_guidance() -> None:
     replies: list[dict[str, str]] = []
 
     status = feishu_archive_bot.handle_inbound_message(
@@ -55,8 +55,10 @@ def test_normal_private_chat_is_silently_ignored() -> None:
         reply_sender=lambda **kwargs: replies.append(kwargs) or True,
     )
 
-    assert status == "ignored"
-    assert replies == []
+    assert status == "invalid_format"
+    assert "未存档：消息格式不符合要求" in replies[0]["message"]
+    assert "首都教育每日舆情综报" in replies[0]["message"]
+    assert "首都教育舆情" in replies[0]["message"]
 
 
 @pytest.mark.parametrize(
@@ -128,6 +130,43 @@ def test_parse_failure_replies_without_saving(
 
     assert status == "parse_failed"
     assert "解析失败" in replies[0]["message"]
+
+
+def test_missing_message_id_replies_with_failure() -> None:
+    replies: list[dict[str, str]] = []
+
+    status = feishu_archive_bot.handle_inbound_message(
+        _message(message_id=""),
+        allowed_sender_ids=frozenset({"ou_owner"}),
+        reply_sender=lambda **kwargs: replies.append(kwargs) or True,
+    )
+
+    assert status == "failed"
+    assert "未获取到飞书消息编号" in replies[0]["message"]
+
+
+def test_unexpected_handler_failure_replies_with_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    replies: list[dict[str, str]] = []
+
+    def fail_recognition(_text: str) -> bool:
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(
+        feishu_archive_bot,
+        "looks_like_submission_report",
+        fail_recognition,
+    )
+
+    status = feishu_archive_bot.handle_inbound_message(
+        _message(),
+        allowed_sender_ids=frozenset({"ou_owner"}),
+        reply_sender=lambda **kwargs: replies.append(kwargs) or True,
+    )
+
+    assert status == "failed"
+    assert "存档失败" in replies[0]["message"]
 
 
 def test_same_date_conflict_is_not_overwritten(

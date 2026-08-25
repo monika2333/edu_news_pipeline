@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Callable, Literal, Optional
 
 from src.config import get_settings
 from src.domain.submission_archive_parser import (
+    SUPPORTED_SUBMISSION_TITLES,
     SubmissionArchiveParseError,
     looks_like_submission_report,
 )
@@ -45,6 +46,7 @@ class FeishuInboundMessage:
 
 MessageResult = Literal[
     "ignored",
+    "invalid_format",
     "parse_failed",
     "conflict",
     "duplicate",
@@ -94,26 +96,39 @@ def _success_message(result: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
-def handle_inbound_message(
+def _invalid_format_message() -> str:
+    supported_titles = "\n".join(
+        f"- {title}" for title in SUPPORTED_SUBMISSION_TITLES
+    )
+    return (
+        "未存档：消息格式不符合要求。\n"
+        "请直接发送完整报送稿，并确保首个非空行是以下标题之一：\n"
+        f"{supported_titles}"
+    )
+
+
+def _handle_trusted_text_message(
     message: FeishuInboundMessage,
     *,
-    allowed_sender_ids: frozenset[str],
     adapter: Optional[PostgresAdapter] = None,
     reply_sender: ReplySender = send_text_to_chat,
     processing_launcher: ProcessingLauncher = launch_submission_report_processing,
 ) -> MessageResult:
-    """Recognize and persist one trusted private-chat archive message."""
-    if (
-        message.chat_type != "p2p"
-        or message.sender_type != "user"
-        or message.message_type != "text"
-        or message.sender_open_id not in allowed_sender_ids
-    ):
-        return "ignored"
     if not looks_like_submission_report(message.text):
-        return "ignored"
+        _safe_reply(
+            message.chat_id,
+            _invalid_format_message(),
+            reply_sender=reply_sender,
+        )
+        return "invalid_format"
     if not message.message_id:
-        log_error(WORKER, "message", ValueError("Missing Feishu message_id"))
+        error = ValueError("Missing Feishu message_id")
+        log_error(WORKER, "message", error)
+        _safe_reply(
+            message.chat_id,
+            "存档失败：未获取到飞书消息编号，请稍后重新发送。",
+            reply_sender=reply_sender,
+        )
         return "failed"
 
     try:
@@ -184,6 +199,40 @@ def handle_inbound_message(
     )
     log_info(WORKER, f"Archived Feishu message {message.message_id} as {report_id}")
     return "created"
+
+
+def handle_inbound_message(
+    message: FeishuInboundMessage,
+    *,
+    allowed_sender_ids: frozenset[str],
+    adapter: Optional[PostgresAdapter] = None,
+    reply_sender: ReplySender = send_text_to_chat,
+    processing_launcher: ProcessingLauncher = launch_submission_report_processing,
+) -> MessageResult:
+    """Recognize and persist one trusted private-chat archive message."""
+    if (
+        message.chat_type != "p2p"
+        or message.sender_type != "user"
+        or message.message_type != "text"
+        or message.sender_open_id not in allowed_sender_ids
+    ):
+        return "ignored"
+
+    try:
+        return _handle_trusted_text_message(
+            message,
+            adapter=adapter,
+            reply_sender=reply_sender,
+            processing_launcher=processing_launcher,
+        )
+    except Exception as exc:
+        log_error(WORKER, f"handle:{message.message_id or message.chat_id}", exc)
+        _safe_reply(
+            message.chat_id,
+            "存档失败，系统已记录错误，请稍后重试或使用控制台录入。",
+            reply_sender=reply_sender,
+        )
+        return "failed"
 
 
 def _attribute(value: object, name: str) -> object:

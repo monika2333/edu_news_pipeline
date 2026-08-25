@@ -16,6 +16,8 @@ from urllib3.util.retry import Retry
 LOGGER = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://beijing.qianlong.com/"
+DEFAULT_EDU_BASE_URL = "https://edu.qianlong.com/"
+DEFAULT_BASE_URLS: Tuple[str, ...] = (DEFAULT_BASE_URL, DEFAULT_EDU_BASE_URL)
 DEFAULT_MAX_PAGES: Optional[int] = None
 DEFAULT_TIMEOUT = 20.0
 DEFAULT_DELAY = 0.0
@@ -244,6 +246,50 @@ def _collect_article_urls(
     return collected
 
 
+def _resolve_base_urls(
+    base_url: Optional[str],
+    base_urls: Optional[Sequence[str]],
+) -> List[str]:
+    candidates: Sequence[str]
+    if base_urls is not None:
+        candidates = base_urls
+    elif base_url:
+        candidates = (base_url,)
+    else:
+        candidates = DEFAULT_BASE_URLS
+
+    resolved: List[str] = []
+    seen: Set[str] = set()
+    for candidate in candidates:
+        normalized = str(candidate or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        resolved.append(normalized)
+    return resolved or list(DEFAULT_BASE_URLS)
+
+
+def _merge_article_url_groups(
+    groups: Sequence[Sequence[str]],
+    limit: Optional[int],
+) -> List[str]:
+    merged: List[str] = []
+    seen: Set[str] = set()
+    max_group_size = max((len(group) for group in groups), default=0)
+    for index in range(max_group_size):
+        for group in groups:
+            if index >= len(group):
+                continue
+            url = group[index]
+            if url in seen:
+                continue
+            seen.add(url)
+            merged.append(url)
+            if limit is not None and len(merged) >= limit:
+                return merged
+    return merged
+
+
 def _fetch_article_html(session: requests.Session, url: str) -> requests.Response:
     LOGGER.info("Fetching Qianlong article: %s", url)
     response = session.get(url)
@@ -296,14 +342,15 @@ def fetch_article(url: str, *, timeout: float = DEFAULT_TIMEOUT) -> Optional[Qia
 def fetch_articles(
     limit: Optional[int] = None,
     *,
-    base_url: str = DEFAULT_BASE_URL,
+    base_url: Optional[str] = None,
+    base_urls: Optional[Sequence[str]] = None,
     pages: Optional[int] = None,
     timeout: float = DEFAULT_TIMEOUT,
     delay: float = DEFAULT_DELAY,
     existing_ids: Optional[Set[str]] = None,
     consecutive_stop: Optional[int] = None,
 ) -> List[QianlongArticle]:
-    """Crawl 千龙网 articles following the shared adapter contract."""
+    """Crawl configured 千龙网 channels following the shared adapter contract."""
     max_pages = None
     if pages is not None:
         try:
@@ -316,14 +363,18 @@ def fetch_articles(
         max_pages = DEFAULT_MAX_PAGES
     session = _create_session(timeout)
     try:
-        urls = _collect_article_urls(
-            session,
-            base_url=base_url,
-            max_pages=max_pages,
-            limit=limit,
-            existing_ids=existing_ids,
-            consecutive_stop=consecutive_stop,
+        url_groups = (
+            _collect_article_urls(
+                session,
+                base_url=listing_base_url,
+                max_pages=max_pages,
+                limit=limit,
+                existing_ids=existing_ids,
+                consecutive_stop=consecutive_stop,
+            )
+            for listing_base_url in _resolve_base_urls(base_url, base_urls)
         )
+        urls = _merge_article_url_groups(list(url_groups), limit)
     finally:
         session.close()
 
@@ -402,6 +453,8 @@ __all__ = [
     "article_to_detail_row",
     "SOURCE_NAME",
     "DEFAULT_BASE_URL",
+    "DEFAULT_EDU_BASE_URL",
+    "DEFAULT_BASE_URLS",
     "DEFAULT_MAX_PAGES",
     "DEFAULT_TIMEOUT",
 ]

@@ -272,6 +272,8 @@ GMW_TIMEOUT=15
 GMW_EXISTING_CONSECUTIVE_STOP=5
 
 # Qianlong
+# 默认同时抓取 https://beijing.qianlong.com/ 与 https://edu.qianlong.com/。
+# 设置 QIANLONG_BASE_URL 后改为只抓取该入口。
 QIANLONG_BASE_URL=
 QIANLONG_TIMEOUT=15
 QIANLONG_DELAY=0.5

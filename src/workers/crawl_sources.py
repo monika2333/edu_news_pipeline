@@ -36,7 +36,7 @@ from src.adapters.http_gmw import (
     make_article_id as gmw_make_article_id,
 )
 from src.adapters.http_qianlong import (
-    DEFAULT_BASE_URL as QIANLONG_DEFAULT_BASE_URL,
+    DEFAULT_BASE_URLS as QIANLONG_DEFAULT_BASE_URLS,
     DEFAULT_TIMEOUT as QIANLONG_DEFAULT_TIMEOUT,
     DEFAULT_MAX_PAGES as QIANLONG_DEFAULT_MAX_PAGES,
     DEFAULT_DELAY as QIANLONG_DEFAULT_DELAY,
@@ -957,7 +957,7 @@ def _run_qianlong_flow(
     adapter,
     keywords: Sequence[str],
     remaining_limit: Optional[int],
-    base_url: str,
+    base_urls: Sequence[str],
     timeout_value: float,
     delay_value: float,
     pages_hint: Optional[int],
@@ -973,7 +973,7 @@ def _run_qianlong_flow(
     try:
         articles = qianlong_fetch_articles(
             limit=remaining_limit,
-            base_url=base_url,
+            base_urls=base_urls,
             pages=pages_hint,
             timeout=timeout_value,
             delay=delay_value,
@@ -1313,8 +1313,10 @@ def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Option
         gmw_timeout = GMW_DEFAULT_TIMEOUT
 
     qianlong_base_url_env = os.getenv("QIANLONG_BASE_URL")
-    qianlong_base_url = (
-        qianlong_base_url_env.strip() if qianlong_base_url_env and qianlong_base_url_env.strip() else QIANLONG_DEFAULT_BASE_URL
+    qianlong_base_urls = (
+        (qianlong_base_url_env.strip(),)
+        if qianlong_base_url_env and qianlong_base_url_env.strip()
+        else QIANLONG_DEFAULT_BASE_URLS
     )
     qianlong_timeout_env = os.getenv("QIANLONG_TIMEOUT")
     try:
@@ -1402,7 +1404,7 @@ def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Option
                     adapter=adapter,
                     keywords=keywords,
                     remaining_limit=remaining_limit,
-                    base_url=qianlong_base_url,
+                    base_urls=qianlong_base_urls,
                     timeout_value=qianlong_timeout,
                     delay_value=qianlong_delay,
                     pages_hint=pages if pages is not None else qianlong_pages_config,

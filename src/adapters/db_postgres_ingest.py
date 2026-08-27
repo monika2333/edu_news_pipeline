@@ -27,13 +27,6 @@ class IngestNamespace:
         with self._adapter._cursor() as cur:
             return get_raw_articles_missing_content(cur, article_ids)
 
-    def fetch_raw_missing_content(
-        self,
-        limit: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
-        with self._adapter._cursor() as cur:
-            return fetch_raw_articles_missing_content(cur, limit)
-
     def get_existing_raw_ids(self) -> Set[str]:
         with self._adapter._cursor() as cur:
             return get_existing_raw_article_ids(cur)
@@ -177,40 +170,6 @@ def get_raw_articles_missing_content(cur: psycopg.Cursor, article_ids: Sequence[
     cur.execute(query, (unique_ids,))
     rows = cur.fetchall()
     return {str(row["article_id"]) for row in rows if row.get("article_id")}
-
-
-def fetch_raw_articles_missing_content(
-    cur: psycopg.Cursor,
-    limit: Optional[int] = None,
-) -> List[Dict[str, Any]]:
-    query = [
-        "SELECT token, profile_url, article_id, title, source, publish_time, publish_time_iso, url, summary,",
-        "       comment_count, digg_count, fetched_at, detail_fetched_at",
-        "FROM raw_articles",
-        "WHERE content_markdown IS NULL OR LENGTH(TRIM(content_markdown)) = 0",
-        "ORDER BY fetched_at ASC NULLS LAST",
-    ]
-    params: List[Any] = []
-    if limit and limit > 0:
-        query.append("LIMIT %s")
-        params.append(limit)
-    sql_query = " ".join(query)
-    cur.execute(sql_query, tuple(params))
-    rows = cur.fetchall()
-    result: List[Dict[str, Any]] = []
-    for row in rows:
-        record = dict(row)
-        fetched = record.get("fetched_at")
-        if isinstance(fetched, datetime):
-            record["fetched_at"] = fetched.isoformat()
-        publish_iso = record.get("publish_time_iso")
-        if isinstance(publish_iso, datetime):
-            record["publish_time_iso"] = publish_iso.isoformat()
-        detail_fetched = record.get("detail_fetched_at")
-        if isinstance(detail_fetched, datetime):
-            record["detail_fetched_at"] = detail_fetched.isoformat()
-        result.append(record)
-    return result
 
 
 def upsert_filtered_articles(cur: psycopg.Cursor, rows: Sequence[Mapping[str, Any]]) -> int:
@@ -547,7 +506,6 @@ __all__ = [
     "fetch_filtered_articles_by_band",
     "fetch_filtered_articles_by_hashes",
     "fetch_filtered_articles_for_hashing",
-    "fetch_raw_articles_missing_content",
     "get_existing_raw_article_ids",
     "get_raw_articles_missing_content",
     "update_filtered_article_features",

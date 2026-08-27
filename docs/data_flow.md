@@ -12,7 +12,7 @@
 
 ```
                     [抓取]
-raw_articles ──────────────────────► crawl / repair
+raw_articles ──────────────────────► crawl
      │
      │ 关键词初筛 + 去重指纹
      ▼
@@ -51,7 +51,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 ## 二、流水线各阶段
 
-### 阶段 1：抓取（`crawl`、`repair`）
+### 阶段 1：抓取（`crawl`）
 
 **写入**：`raw_articles`、`filtered_articles`
 
@@ -59,7 +59,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 `raw_articles` 的抓取分两步：先写列表信息（`upsert_raw_feed_rows`），再补正文（`update_raw_article_details`，同时写 `detail_fetched_at`）。
 
-> **`detail_fetched_at` 是"正文是否已获取"的判据。** `repair` 命令靠它找出缺正文的行。任何新的入库路径都必须遵守这个两阶段约定——如果一次性写入正文却不写 `detail_fetched_at`，这条数据会被"缺正文修复"逻辑反复扫描；反之如果写了 `detail_fetched_at` 但正文为空，这条数据会被永久跳过。
+> **`detail_fetched_at` 是"正文是否已获取"的判据。** `crawl` 命令靠它找出缺正文的行。任何新的入库路径都必须遵守这个两阶段约定——如果一次性写入正文却不写 `detail_fetched_at`，这条数据会被 `crawl` 的详情补抓逻辑反复扫描；反之如果写了 `detail_fetched_at` 但正文为空，这条数据会被永久跳过。
 
 ### 阶段 2：去重与选主（`hash-primary`）
 

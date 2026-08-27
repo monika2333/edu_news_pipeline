@@ -70,7 +70,6 @@ python -m src.cli.main export
 | 命令 | 作用 |
 | --- | --- |
 | `create-console-user` | 创建控制台账号 |
-| `repair` | 为缺正文的记录补抓正文 |
 | `geo-tag` | 为存量摘要回填北京相关标记 |
 | `backfill-submission-embeddings` | 补齐报送存档条目缺失的向量 |
 

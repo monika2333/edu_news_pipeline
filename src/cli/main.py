@@ -15,7 +15,6 @@ from src.workers.external_filter import run as run_external_filter
 from src.workers.geo_classify import run as classify_geography
 from src.workers.geo_tag import run as geo_tag
 from src.workers.hash_primary import run as hash_primary
-from src.workers.repair_missing_content import run as repair_missing
 from src.workers.score import run as score_summaries
 from src.workers.summarize import run as summarize_articles
 
@@ -35,11 +34,6 @@ def _add_crawl(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
     parser.add_argument("--sources", type=str, default="toutiao", help="Comma-separated sources, e.g. 'toutiao,tencent,chinanews'")
     parser.add_argument("--pages", type=_positive_int, default=None, help="Optional pages per paginated source (e.g., ChinaNews)")
-
-
-def _add_repair(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("repair", help="Fetch article bodies for rows missing content")
-    parser.add_argument("--limit", type=_positive_int, default=100, help="Max number of articles to repair")
 
 
 def _add_summarize(subparsers: argparse._SubParsersAction) -> None:
@@ -275,7 +269,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="edu-news", description="Edu news pipeline controller")
     subparsers = parser.add_subparsers(dest="command", required=True)
     _add_crawl(subparsers)
-    _add_repair(subparsers)
     _add_hash_primary(subparsers)
     _add_summarize(subparsers)
     _add_enrich_summary(subparsers)
@@ -301,8 +294,6 @@ def main(argv: list[str] | None = None) -> int:
     command = args.command
     if command == "crawl":
         crawl_sources(limit=args.limit, concurrency=args.concurrency, sources=args.sources, pages=args.pages)
-    elif command == "repair":
-        repair_missing(limit=args.limit)
     elif command == "hash-primary":
         hash_primary(limit=args.limit)
     elif command == "summarize":

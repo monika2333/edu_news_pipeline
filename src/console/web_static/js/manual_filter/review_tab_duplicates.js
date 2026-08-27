@@ -302,7 +302,7 @@ async function handleDuplicateSourceUpdate(event) {
 function getSelectableDuplicateItems() {
     const activeGroup = getActiveDuplicateReviewGroup();
     if (!activeGroup) return [];
-    return Array.from(activeGroup.querySelectorAll('.duplicate-review-item'));
+    return getVisibleDuplicateReviewItems(activeGroup);
 }
 
 function updateDuplicateReviewSelectionState() {

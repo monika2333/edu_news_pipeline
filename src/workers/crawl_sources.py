@@ -3,79 +3,12 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Set, Tuple, TypedDict
 
-from src.adapters.http_toutiao import (
-    FeedItem,
-    build_detail_update as tt_build_detail_update,
-    fetch_feed_items,
-    fetch_info,
-    feed_item_to_row,
-    load_author_tokens,
-    resolve_article_id_from_feed,
-)
 from src.adapters.db_postgres_core import get_adapter
-from src.config import get_settings
-from src.workers import log_error, log_info, log_summary, worker_session
-from src.adapters.http_chinanews import (
-    FeedItemLike as CNFeedItem,
-    list_items as cn_list_items,
-    fetch_detail as cn_fetch_detail,
-    feed_item_to_row as cn_feed_item_to_row,
-    make_article_id as cn_make_article_id,
-    build_detail_update as cn_build_detail_update,
-)
-from src.adapters.http_gmw import (
-    DEFAULT_BASE_URL as GMW_DEFAULT_BASE_URL,
-    DEFAULT_TIMEOUT as GMW_DEFAULT_TIMEOUT,
-    article_to_detail_row as gmw_article_to_detail_row,
-    article_to_feed_row as gmw_article_to_feed_row,
-    fetch_articles as gmw_fetch_articles,
-    make_article_id as gmw_make_article_id,
-)
-from src.adapters.http_qianlong import (
-    DEFAULT_BASE_URLS as QIANLONG_DEFAULT_BASE_URLS,
-    DEFAULT_TIMEOUT as QIANLONG_DEFAULT_TIMEOUT,
-    DEFAULT_MAX_PAGES as QIANLONG_DEFAULT_MAX_PAGES,
-    DEFAULT_DELAY as QIANLONG_DEFAULT_DELAY,
-    article_to_detail_row as qianlong_article_to_detail_row,
-    article_to_feed_row as qianlong_article_to_feed_row,
-    fetch_articles as qianlong_fetch_articles,
-    make_article_id as qianlong_make_article_id,
-)
-from src.adapters.http_chinadaily import (
-    FeedItemLike as CDLFeedItem,
-    list_items as cd_list_items,
-    fetch_detail as cd_fetch_detail,
-    feed_item_to_row as cd_feed_item_to_row,
-    make_article_id as cd_make_article_id,
-    build_detail_update as cd_build_detail_update,
-)
-from src.adapters.http_chinaeducationdaily import (
-    FeedItemLike as JYBFeedItem,
-    list_items as jyb_list_items,
-    fetch_detail as jyb_fetch_detail,
-    feed_item_to_row as jyb_feed_item_to_row,
-    is_detail_url as jyb_is_detail_url,
-    make_article_id as jyb_make_article_id,
-    build_detail_update as jyb_build_detail_update,
-)
-from src.adapters.http_tencent import (
-    DEFAULT_AUTHORS_FILE as TENCENT_DEFAULT_AUTHORS_FILE,
-    DEFAULT_MAX_PAGES as TENCENT_DEFAULT_MAX_PAGES,
-    build_detail_update as tencent_build_detail_update,
-    fetch_article_detail as tencent_fetch_article_detail,
-    feed_item_to_row as tencent_feed_item_to_row,
-    list_feed_items as tencent_list_feed_items,
-    load_author_entries as tencent_load_author_entries,
-)
-from src.adapters.http_laodongwubao import (
-    crawl_latest_issue as ldwb_crawl_latest_issue,
-    article_to_feed_row as ldwb_article_to_feed_row,
-    article_to_detail_row as ldwb_article_to_detail_row,
-)
 from src.adapters.http_bjrb import (
     DEFAULT_DELAY as BJRB_DEFAULT_DELAY,
     DEFAULT_TIMEOUT as BJRB_DEFAULT_TIMEOUT,
@@ -85,11 +18,114 @@ from src.adapters.http_bjrb import (
     fetch_article as bjrb_fetch_article,
     list_issue_items as bjrb_list_issue_items,
 )
+from src.adapters.http_chinadaily import (
+    build_detail_update as cd_build_detail_update,
+    feed_item_to_row as cd_feed_item_to_row,
+    fetch_detail as cd_fetch_detail,
+    list_items as cd_list_items,
+    make_article_id as cd_make_article_id,
+)
+from src.adapters.http_chinaeducationdaily import (
+    FeedItemLike as JYBFeedItem,
+    build_detail_update as jyb_build_detail_update,
+    feed_item_to_row as jyb_feed_item_to_row,
+    fetch_detail as jyb_fetch_detail,
+    is_detail_url as jyb_is_detail_url,
+    list_items as jyb_list_items,
+    make_article_id as jyb_make_article_id,
+)
+from src.adapters.http_chinanews import (
+    build_detail_update as cn_build_detail_update,
+    feed_item_to_row as cn_feed_item_to_row,
+    fetch_detail as cn_fetch_detail,
+    list_items as cn_list_items,
+    make_article_id as cn_make_article_id,
+)
+from src.adapters.http_gmw import (
+    DEFAULT_BASE_URL as GMW_DEFAULT_BASE_URL,
+    DEFAULT_TIMEOUT as GMW_DEFAULT_TIMEOUT,
+    article_to_detail_row as gmw_article_to_detail_row,
+    article_to_feed_row as gmw_article_to_feed_row,
+    fetch_articles as gmw_fetch_articles,
+    make_article_id as gmw_make_article_id,
+)
+from src.adapters.http_laodongwubao import (
+    article_to_detail_row as ldwb_article_to_detail_row,
+    article_to_feed_row as ldwb_article_to_feed_row,
+    crawl_latest_issue as ldwb_crawl_latest_issue,
+)
+from src.adapters.http_qianlong import (
+    DEFAULT_BASE_URLS as QIANLONG_DEFAULT_BASE_URLS,
+    DEFAULT_DELAY as QIANLONG_DEFAULT_DELAY,
+    DEFAULT_MAX_PAGES as QIANLONG_DEFAULT_MAX_PAGES,
+    DEFAULT_TIMEOUT as QIANLONG_DEFAULT_TIMEOUT,
+    article_to_detail_row as qianlong_article_to_detail_row,
+    article_to_feed_row as qianlong_article_to_feed_row,
+    fetch_articles as qianlong_fetch_articles,
+    make_article_id as qianlong_make_article_id,
+)
+from src.adapters.http_tencent import (
+    DEFAULT_AUTHORS_FILE as TENCENT_DEFAULT_AUTHORS_FILE,
+    DEFAULT_MAX_PAGES as TENCENT_DEFAULT_MAX_PAGES,
+    build_detail_update as tencent_build_detail_update,
+    feed_item_to_row as tencent_feed_item_to_row,
+    fetch_article_detail as tencent_fetch_article_detail,
+    list_feed_items as tencent_list_feed_items,
+    load_author_entries as tencent_load_author_entries,
+)
+from src.adapters.http_toutiao import (
+    FeedItem,
+    build_detail_update as tt_build_detail_update,
+    fetch_feed_items,
+    fetch_info,
+    feed_item_to_row,
+    load_author_tokens,
+    resolve_article_id_from_feed,
+)
+from src.config import get_settings
+from src.workers import log_error, log_info, log_summary, worker_session
 
 WORKER = "crawl"
 DEFAULT_AUTHORS_FILE = Path("config/toutiao_author.txt")
 DEFAULT_LANG = "zh-CN,zh;q=0.9"
 DEFAULT_TIMEOUT = 15
+
+
+class CrawlStats(TypedDict):
+    consumed: int
+    ok: int
+    failed: int
+    skipped: int
+
+
+ListItems = Callable[[Optional[int], Set[str]], Sequence[Any]]
+PrepareFeed = Callable[[Any, datetime], Tuple[str, Dict[str, Any]]]
+FetchDetail = Callable[[Any, str, datetime], Dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class SourceFlow:
+    """Source-specific callbacks and the small policy differences around them."""
+
+    source: str
+    display_name: str
+    list_items: ListItems
+    prepare_feed: PrepareFeed
+    fetch_detail: FetchDetail
+    details_in_list: bool = False
+    load_existing_ids: bool = True
+    skip_existing_ids: bool = False
+    count_prepare_errors: bool = False
+    count_feed_errors: bool = True
+    continue_after_feed_error: bool = False
+    missing_ids_fallback: Literal["raise", "all", "none"] = "raise"
+    detail_delay: float = 0.0
+    delay_after_failure: bool = False
+    delay_after_last: bool = False
+
+
+def _empty_stats() -> CrawlStats:
+    return {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
 
 
 def _truthy_env(value: Optional[str]) -> bool:
@@ -113,7 +149,6 @@ def _resolve_authors_path() -> Path:
     default_path = DEFAULT_AUTHORS_FILE
     root = _repo_root()
     return (root / default_path) if not default_path.is_absolute() else default_path
-
 
 
 def _resolve_tencent_authors_path() -> Path:
@@ -226,25 +261,170 @@ def _persist_filtered_candidates(
     return len(candidates)
 
 
-
-def _prepare_feed_rows(feed_items):
-    rows: List[Dict[str, Any]] = []
-    items_by_id: Dict[str, FeedItem] = {}
-    unresolved = 0
-    duplicates = 0
-    for item in feed_items:
-        try:
-            article_id = resolve_article_id_from_feed(item)
-        except Exception as exc:
-            log_error(WORKER, "feed_article_id", exc)
-            unresolved += 1
+def _queue_filtered_rows(
+    adapter: Any,
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    source: str,
+    keywords: Sequence[str],
+) -> None:
+    candidates: List[Dict[str, Any]] = []
+    for row in rows:
+        content = str(row.get("content_markdown") or "").strip()
+        matched, hits = _contains_keywords(content, keywords)
+        if not matched:
             continue
-        if article_id in items_by_id:
+        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
+        if candidate:
+            candidates.append(candidate)
+    _persist_filtered_candidates(adapter, candidates, source=source)
+
+
+def _resolve_missing_ids(
+    adapter: Any,
+    flow: SourceFlow,
+    article_ids: Sequence[str],
+) -> Set[str]:
+    try:
+        return set(adapter.ingest.get_raw_ids_missing_content(article_ids))
+    except Exception as exc:
+        if flow.missing_ids_fallback == "raise":
+            raise
+        log_error(WORKER, f"{flow.source}_missing_content", exc)
+        if flow.missing_ids_fallback == "all":
+            return set(article_ids)
+        return set()
+
+
+def _run_source_flow(
+    *,
+    adapter: Any,
+    flow: SourceFlow,
+    keywords: Sequence[str],
+    remaining_limit: Optional[int],
+) -> CrawlStats:
+    """Run the shared list -> feed -> detail -> filter persistence pipeline."""
+
+    stats = _empty_stats()
+    existing_ids: Set[str] = set()
+    if flow.load_existing_ids:
+        try:
+            existing_ids = set(adapter.ingest.get_existing_raw_ids() or [])
+        except Exception as exc:
+            log_error(WORKER, f"{flow.source}_existing_ids", exc)
+
+    try:
+        items = flow.list_items(remaining_limit, existing_ids)
+    except Exception as exc:
+        log_error(WORKER, f"{flow.source}_list", exc)
+        return stats
+    if not items:
+        log_info(WORKER, f"No articles returned from {flow.display_name}.")
+        return stats
+
+    feed_rows: List[Dict[str, Any]] = []
+    index: Dict[str, Any] = {}
+    embedded_detail_rows: Dict[str, Dict[str, Any]] = {}
+    seen_ids: Set[str] = set()
+    duplicates = 0
+    existing_skips = 0
+    for item in items:
+        fetched_at = datetime.now(timezone.utc)
+        try:
+            article_id, feed_row = flow.prepare_feed(item, fetched_at)
+            article_id = str(article_id or "").strip()
+            if not article_id:
+                raise ValueError("Empty article_id encountered")
+        except Exception as exc:
+            log_error(WORKER, f"{flow.source}_feed_row", exc)
+            if flow.count_prepare_errors:
+                stats["failed"] += 1
+            continue
+        if article_id in seen_ids:
             duplicates += 1
             continue
-        rows.append(feed_item_to_row(item, article_id, fetched_at=datetime.now(timezone.utc)))
-        items_by_id[article_id] = item
-    return rows, items_by_id, unresolved, duplicates
+        seen_ids.add(article_id)
+        if flow.skip_existing_ids and article_id in existing_ids:
+            existing_skips += 1
+            continue
+        feed_rows.append(feed_row)
+        index[article_id] = item
+        if flow.details_in_list:
+            try:
+                embedded_detail_rows[article_id] = flow.fetch_detail(item, article_id, fetched_at)
+            except Exception as exc:
+                stats["failed"] += 1
+                log_error(WORKER, f"{flow.source}_detail_row:{article_id}", exc)
+
+    stats["consumed"] = len(seen_ids)
+    stats["skipped"] += duplicates + existing_skips
+    if duplicates:
+        log_info(WORKER, f"{flow.source} duplicate articles skipped: {duplicates}")
+    if existing_skips:
+        log_info(WORKER, f"{flow.source} existing articles skipped: {existing_skips}")
+    if not feed_rows:
+        log_info(WORKER, f"No {flow.display_name} rows to upsert after filtering.")
+        return stats
+
+    feed_failed = False
+    try:
+        upserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
+    except Exception as exc:
+        feed_failed = True
+        if flow.count_feed_errors:
+            stats["failed"] += len(feed_rows)
+        log_error(WORKER, f"{flow.source}_postgres_feed", exc)
+        if not flow.continue_after_feed_error:
+            return stats
+    else:
+        log_info(WORKER, f"{flow.source} feed rows upserted: {upserted}")
+
+    detail_rows: List[Dict[str, Any]] = []
+    if flow.details_in_list:
+        detail_rows = [
+            embedded_detail_rows[article_id]
+            for article_id in index
+            if article_id in embedded_detail_rows
+        ]
+    elif not feed_failed:
+        missing_ids = _resolve_missing_ids(adapter, flow, list(index.keys()))
+        targets = [(article_id, index[article_id]) for article_id in index if article_id in missing_ids]
+        already_populated = len(index) - len(targets)
+        stats["skipped"] += already_populated
+        if already_populated:
+            log_info(WORKER, f"{flow.source} articles already populated: {already_populated}")
+        if targets:
+            log_info(WORKER, f"{flow.source} articles needing detail refresh: {len(targets)}")
+
+        for position, (article_id, item) in enumerate(targets, start=1):
+            succeeded = False
+            try:
+                detail_rows.append(
+                    flow.fetch_detail(item, article_id, datetime.now(timezone.utc))
+                )
+                succeeded = True
+            except Exception as exc:
+                stats["failed"] += 1
+                log_error(WORKER, f"{flow.source}_detail:{article_id}", exc)
+            finally:
+                should_delay = flow.detail_delay and (succeeded or flow.delay_after_failure)
+                if should_delay and (position < len(targets) or flow.delay_after_last):
+                    time.sleep(flow.detail_delay)
+
+    if detail_rows:
+        try:
+            adapter.ingest.update_raw_details(detail_rows)
+        except Exception as exc:
+            stats["failed"] += len(detail_rows)
+            log_error(WORKER, f"{flow.source}_postgres_detail", exc)
+            detail_rows = []
+        else:
+            for row in detail_rows:
+                log_info(WORKER, f"{flow.source.upper()} DETAIL OK {row['article_id']}")
+
+    stats["ok"] = len(detail_rows)
+    _queue_filtered_rows(adapter, detail_rows, source=flow.source, keywords=keywords)
+    return stats
 
 
 def _build_toutiao_detail_update(
@@ -288,673 +468,303 @@ def _build_toutiao_detail_update(
     )
 
 
+def _linked_page_flow(
+    *,
+    source: str,
+    display_name: str,
+    list_items: ListItems,
+    make_article_id: Callable[[str], str],
+    feed_item_to_row_func: Callable[..., Dict[str, Any]],
+    fetch_detail_func: Callable[[str], Mapping[str, Any]],
+    build_detail_update_func: Callable[..., Dict[str, Any]],
+) -> SourceFlow:
+    def prepare_feed(item: Any, fetched_at: datetime) -> Tuple[str, Dict[str, Any]]:
+        article_id = make_article_id(item.url)
+        return article_id, feed_item_to_row_func(item, article_id, fetched_at=fetched_at)
+
+    def fetch_detail_row(
+        item: Any,
+        article_id: str,
+        detail_fetched_at: datetime,
+    ) -> Dict[str, Any]:
+        payload = fetch_detail_func(item.url)
+        return build_detail_update_func(
+            item,
+            article_id,
+            payload,
+            detail_fetched_at=detail_fetched_at,
+        )
+
+    return SourceFlow(
+        source=source,
+        display_name=display_name,
+        list_items=list_items,
+        prepare_feed=prepare_feed,
+        fetch_detail=fetch_detail_row,
+        count_feed_errors=False,
+    )
+
+
 def _run_toutiao_flow(
     *,
-    adapter,
+    adapter: Any,
     authors_path: Path,
     show_browser: bool,
     timeout_value: int,
     lang: str,
     keywords: Sequence[str],
     remaining_limit: Optional[int],
-) -> Dict[str, Any]:
-    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
-    if not authors_path.exists():
-        log_info(WORKER, f"Author token file not found: {authors_path}")
-        return stats
-    try:
+) -> CrawlStats:
+    def list_items(limit: Optional[int], existing_ids: Set[str]) -> Sequence[Any]:
+        if not authors_path.exists():
+            log_info(WORKER, f"Author token file not found: {authors_path}")
+            return []
         entries = _load_author_entries(authors_path)
-    except Exception as exc:
-        log_error(WORKER, authors_path.as_posix(), exc)
-        return stats
-    if not entries:
-        log_info(WORKER, "Author token list is empty.")
-        return stats
-    try:
-        existing_ids = adapter.ingest.get_existing_raw_ids()
-    except Exception as exc:
-        log_error(WORKER, "local_existing", exc)
-        existing_ids = set()
-    feed_limit = remaining_limit
-    try:
-        feed_items = _collect_feed(entries, feed_limit, show_browser=show_browser, existing_ids=existing_ids)
-    except Exception as exc:
-        log_error(WORKER, "feed", exc)
-        return stats
-    if not feed_items:
-        log_info(WORKER, "No feed items returned from Toutiao.")
-        return stats
-    feed_rows, feed_index, unresolved_count, duplicate_count = _prepare_feed_rows(feed_items)
-    stats["consumed"] = len(feed_index)
-    if not feed_rows:
-        log_info(WORKER, "No feed rows to upsert after filtering.")
-        stats["failed"] += unresolved_count
-        stats["skipped"] += duplicate_count
-        return stats
-    try:
-        feed_upserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
-    except Exception as exc:
-        log_error(WORKER, "postgres_feed", exc)
-        stats["failed"] += len(feed_rows)
-        return stats
-    log_info(WORKER, f"feed rows upserted: {feed_upserted}")
-    if duplicate_count:
-        log_info(WORKER, f"duplicate feed items skipped: {duplicate_count}")
-    if unresolved_count:
-        log_info(WORKER, f"feed items missing article_id: {unresolved_count}")
-    missing_content_ids = adapter.ingest.get_raw_ids_missing_content(list(feed_index.keys()))
-    detail_targets = [(article_id, feed_index[article_id]) for article_id in feed_index if article_id in missing_content_ids]
-    already_complete = len(feed_index) - len(detail_targets)
-    if already_complete:
-        log_info(WORKER, f"articles already populated: {already_complete}")
-    if detail_targets:
-        log_info(WORKER, f"articles needing detail refresh: {len(detail_targets)}")
-    detail_rows = []
-    detail_fetch_failures = 0
-    for article_id, item in detail_targets:
-        try:
-            detail_payload = fetch_info(article_id, timeout=timeout_value, lang=lang)
-        except Exception as exc:
-            detail_fetch_failures += 1
-            log_error(WORKER, f"detail_fetch:{article_id}", exc)
-            continue
-        detail_rows.append(
-            _build_toutiao_detail_update(
-                item,
-                article_id,
-                detail_payload,
-                detail_fetched_at=datetime.now(timezone.utc),
-            )
+        if not entries:
+            log_info(WORKER, "Author token list is empty.")
+            return []
+        return _collect_feed(
+            entries,
+            limit,
+            show_browser=show_browser,
+            existing_ids=existing_ids,
         )
-    detail_db_failures = 0
-    if detail_rows:
-        try:
-            adapter.ingest.update_raw_details(detail_rows)
-        except Exception as exc:
-            detail_db_failures = len(detail_rows)
-            detail_rows = []
-            log_error(WORKER, "postgres_detail", exc)
-        else:
-            for row in detail_rows:
-                log_info(WORKER, f"DETAIL OK {row['article_id']}")
-    filtered_candidates: List[Dict[str, Any]] = []
-    if detail_rows:
-        for row in detail_rows:
-            article_id = str(row.get('article_id') or '').strip()
-            content = str(row.get('content_markdown') or '').strip()
-            if not article_id or not content:
-                continue
-            ok, hits = _contains_keywords(content, keywords)
-            if not ok:
-                continue
-            candidate = _build_filtered_candidate(row, content=content, keywords=hits)
-            if candidate:
-                filtered_candidates.append(candidate)
-    if filtered_candidates:
-        _persist_filtered_candidates(adapter, filtered_candidates, source="toutiao")
-    detail_success_count = len(detail_rows)
-    failed_total = detail_fetch_failures + detail_db_failures + unresolved_count
-    skipped_total = already_complete + duplicate_count
-    if detail_fetch_failures:
-        log_info(WORKER, f"detail fetch failures: {detail_fetch_failures}")
-    if detail_db_failures:
-        log_info(WORKER, f"detail persistence failures: {detail_db_failures}")
-    stats["ok"] = detail_success_count
-    stats["failed"] += failed_total
-    stats["skipped"] += skipped_total
-    return stats
+
+    def prepare_feed(item: FeedItem, fetched_at: datetime) -> Tuple[str, Dict[str, Any]]:
+        article_id = resolve_article_id_from_feed(item)
+        return article_id, feed_item_to_row(item, article_id, fetched_at=fetched_at)
+
+    def fetch_detail_row(
+        item: FeedItem,
+        article_id: str,
+        detail_fetched_at: datetime,
+    ) -> Dict[str, Any]:
+        payload = fetch_info(article_id, timeout=timeout_value, lang=lang)
+        return _build_toutiao_detail_update(
+            item,
+            article_id,
+            payload,
+            detail_fetched_at=detail_fetched_at,
+        )
+
+    return _run_source_flow(
+        adapter=adapter,
+        flow=SourceFlow(
+            source="toutiao",
+            display_name="Toutiao",
+            list_items=list_items,
+            prepare_feed=prepare_feed,
+            fetch_detail=fetch_detail_row,
+            count_prepare_errors=True,
+        ),
+        keywords=keywords,
+        remaining_limit=remaining_limit,
+    )
 
 
 def _run_tencent_flow(
     *,
-    adapter,
+    adapter: Any,
     keywords: Sequence[str],
     remaining_limit: Optional[int],
     pages: Optional[int],
-) -> Dict[str, Any]:
-    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
+) -> CrawlStats:
     authors_path = _resolve_tencent_authors_path()
-    if not authors_path.exists():
-        log_info(WORKER, f"Tencent author list not found: {authors_path}")
-        return stats
-    try:
+
+    def list_items(limit: Optional[int], existing_ids: Set[str]) -> Sequence[Any]:
+        if not authors_path.exists():
+            log_info(WORKER, f"Tencent author list not found: {authors_path}")
+            return []
         entries = tencent_load_author_entries(authors_path)
-    except Exception as exc:
-        log_error(WORKER, authors_path.as_posix(), exc)
-        return stats
-    if not entries:
-        log_info(WORKER, "Tencent author list is empty.")
-        return stats
-    max_pages = pages if pages is not None else TENCENT_DEFAULT_MAX_PAGES
-    try:
-        existing_ids_raw = adapter.ingest.get_existing_raw_ids()
-        existing_ids: Set[str] = set(existing_ids_raw or [])
-    except Exception as exc:
-        log_error(WORKER, "tencent_existing_ids", exc)
-        existing_ids = set()
-    try:
-        feed_items = tencent_list_feed_items(
+        if not entries:
+            log_info(WORKER, "Tencent author list is empty.")
+            return []
+        return tencent_list_feed_items(
             entries,
-            max_pages=max_pages,
-            limit=remaining_limit,
+            max_pages=pages if pages is not None else TENCENT_DEFAULT_MAX_PAGES,
+            limit=limit,
             existing_ids=existing_ids,
         )
-    except Exception as exc:
-        log_error(WORKER, "tencent_feed_list", exc)
-        return stats
-    if not feed_items:
-        log_info(WORKER, "No feed items returned from Tencent.")
-        return stats
-    feed_rows: List[Dict[str, Any]] = []
-    index: Dict[str, Any] = {}
-    duplicates = 0
-    fetched_at = datetime.now(timezone.utc)
-    for item in feed_items:
+
+    def prepare_feed(item: Any, fetched_at: datetime) -> Tuple[str, Dict[str, Any]]:
         article_id = str(item.article_id or "").strip()
-        if not article_id:
-            log_error(WORKER, "tencent_feed_id", ValueError("Empty article_id encountered"))
-            stats["failed"] += 1
-            continue
-        if article_id in index:
-            duplicates += 1
-            continue
-        feed_rows.append(tencent_feed_item_to_row(item, fetched_at=fetched_at))
-        index[article_id] = item
-    stats["consumed"] = len(index)
-    if not feed_rows:
-        if duplicates:
-            log_info(WORKER, f"Tencent duplicate feed items skipped: {duplicates}")
-        return stats
+        return article_id, tencent_feed_item_to_row(item, fetched_at=fetched_at)
+
+    def fetch_detail_row(
+        item: Any,
+        _article_id: str,
+        detail_fetched_at: datetime,
+    ) -> Dict[str, Any]:
+        detail = tencent_fetch_article_detail(item)
+        return tencent_build_detail_update(detail, detail_fetched_at=detail_fetched_at)
+
     try:
-        upserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
-    except Exception as exc:
-        log_error(WORKER, "tencent_postgres_feed", exc)
-        stats["failed"] += len(feed_rows)
-        return stats
-    log_info(WORKER, f"Tencent feed rows upserted: {upserted}")
-    if duplicates:
-        log_info(WORKER, f"Tencent duplicate feed items skipped: {duplicates}")
-    try:
-        missing_content_ids = adapter.ingest.get_raw_ids_missing_content(list(index.keys()))
-    except Exception as exc:
-        log_error(WORKER, "tencent_missing_content", exc)
-        missing_content_ids = []
-    detail_targets = [index[aid] for aid in index if aid in missing_content_ids]
-    already_populated = len(index) - len(detail_targets)
-    if already_populated:
-        log_info(WORKER, f"Tencent articles already populated: {already_populated}")
-    if detail_targets:
-        log_info(WORKER, f"Tencent articles needing detail refresh: {len(detail_targets)}")
-    detail_delay_env = os.getenv("TENCENT_DETAIL_DELAY", "0.5")
-    try:
-        detail_delay = max(0.0, float(detail_delay_env))
+        detail_delay = max(0.0, float(os.getenv("TENCENT_DETAIL_DELAY", "0.5")))
     except (TypeError, ValueError):
         detail_delay = 0.5
-    detail_rows: List[Dict[str, Any]] = []
-    detail_failures = 0
-    for item in detail_targets:
-        try:
-            detail = tencent_fetch_article_detail(item)
-        except Exception as exc:
-            detail_failures += 1
-            log_error(WORKER, f"tencent_detail_fetch:{item.article_id}", exc)
-        else:
-            detail_rows.append(
-                tencent_build_detail_update(
-                    detail,
-                    detail_fetched_at=datetime.now(timezone.utc),
-                )
-            )
-        finally:
-            if detail_delay:
-                time.sleep(detail_delay)
-    db_failures = 0
-    if detail_rows:
-        try:
-            adapter.ingest.update_raw_details(detail_rows)
-        except Exception as exc:
-            db_failures = len(detail_rows)
-            log_error(WORKER, "tencent_detail_update", exc)
-            detail_rows = []
-        else:
-            for row in detail_rows:
-                log_info(WORKER, f"TENCENT DETAIL OK {row['article_id']}")
-    filtered_candidates: List[Dict[str, Any]] = []
-    for row in detail_rows:
-        article_id = str(row.get("article_id") or "").strip()
-        content = str(row.get("content_markdown") or "").strip()
-        if not article_id or not content:
-            continue
-        ok_hit, hits = _contains_keywords(content, keywords)
-        if not ok_hit:
-            continue
-        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
-        if candidate:
-            filtered_candidates.append(candidate)
-    if filtered_candidates:
-        _persist_filtered_candidates(adapter, filtered_candidates, source="tencent")
-    detail_success_count = len(detail_rows)
-    stats["ok"] = detail_success_count
-    stats["failed"] += detail_failures + db_failures
-    stats["skipped"] += duplicates + already_populated
-    return stats
+    return _run_source_flow(
+        adapter=adapter,
+        flow=SourceFlow(
+            source="tencent",
+            display_name="Tencent",
+            list_items=list_items,
+            prepare_feed=prepare_feed,
+            fetch_detail=fetch_detail_row,
+            count_prepare_errors=True,
+            missing_ids_fallback="none",
+            detail_delay=detail_delay,
+            delay_after_failure=True,
+            delay_after_last=True,
+        ),
+        keywords=keywords,
+        remaining_limit=remaining_limit,
+    )
+
+
 def _run_chinanews_flow(
     *,
-    adapter,
+    adapter: Any,
     keywords: Sequence[str],
     remaining_limit: Optional[int],
     pages: Optional[int],
-) -> Dict[str, Any]:
-    """Run ChinaNews ingestion; return stats and consumption.
-
-    Returns a dict with keys: consumed, ok, failed, skipped.
-    """
-    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
-    try:
-        existing_ids = adapter.ingest.get_existing_raw_ids()
-    except Exception as exc:
-        log_error(WORKER, "local_existing", exc)
-        existing_ids = set()
-
-    try:
-        items = cn_list_items(limit=remaining_limit, pages=pages or 1, existing_ids=existing_ids)
-    except Exception as exc:
-        log_error(WORKER, "chinanews_list", exc)
-        return stats
-    if not items:
-        log_info(WORKER, "No feed items returned from ChinaNews.")
-        return stats
-
-    feed_rows: List[Dict[str, Any]] = []
-    index: Dict[str, CNFeedItem] = {}
-    duplicates = 0
-    for it in items:
-        try:
-            aid = cn_make_article_id(it.url)
-        except Exception as exc:
-            log_error(WORKER, "cn_feed_id", exc)
-            continue
-        if aid in index:
-            duplicates += 1
-            continue
-        feed_rows.append(cn_feed_item_to_row(it, aid, fetched_at=datetime.now(timezone.utc)))
-        index[aid] = it
-
-    stats["consumed"] = len(index)
-    if not feed_rows:
-        log_info(WORKER, "No ChinaNews rows to upsert after filtering.")
-        stats["skipped"] = duplicates
-        return stats
-
-    try:
-        upserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
-    except Exception as exc:
-        log_error(WORKER, "postgres_feed_cn", exc)
-        return stats
-    log_info(WORKER, f"chinanews feed rows upserted: {upserted}")
-    if duplicates:
-        log_info(WORKER, f"chinanews duplicate feed items skipped: {duplicates}")
-
-    missing_ids = adapter.ingest.get_raw_ids_missing_content(list(index.keys()))
-    targets = [(aid, index[aid]) for aid in index if aid in missing_ids]
-    already = len(index) - len(targets)
-    if already:
-        log_info(WORKER, f"chinanews articles already populated: {already}")
-    if targets:
-        log_info(WORKER, f"chinanews articles needing detail refresh: {len(targets)}")
-
-    detail_rows: List[Dict[str, Any]] = []
-    for aid, it in targets:
-        try:
-            payload = cn_fetch_detail(it.url)
-        except Exception as exc:
-            stats["failed"] += 1
-            log_error(WORKER, f"cn_detail_fetch:{aid}", exc)
-            continue
-        try:
-            detail_rows.append(
-                cn_build_detail_update(
-                    it,
-                    aid,
-                    payload,
-                    detail_fetched_at=datetime.now(timezone.utc),
-                )
-            )
-        except Exception as exc:
-            stats["failed"] += 1
-            log_error(WORKER, f"cn_build_update:{aid}", exc)
-
-    if detail_rows:
-        try:
-            adapter.ingest.update_raw_details(detail_rows)
-        except Exception as exc:
-            stats["failed"] += len(detail_rows)
-            log_error(WORKER, "postgres_detail_cn", exc)
-            detail_rows = []
-        else:
-            for row in detail_rows:
-                log_info(WORKER, f"CN DETAIL OK {row['article_id']}")
-
-    filtered_candidates: List[Dict[str, Any]] = []
-    for row in detail_rows:
-        aid = str(row.get('article_id') or '').strip()
-        content = str(row.get('content_markdown') or '').strip()
-        if not aid or not content:
-            continue
-        ok_hit, hits = _contains_keywords(content, keywords)
-        if not ok_hit:
-            continue
-        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
-        if candidate:
-            filtered_candidates.append(candidate)
-    if filtered_candidates:
-        _persist_filtered_candidates(adapter, filtered_candidates, source="chinanews")
-
-    stats["ok"] = len(detail_rows)
-    stats["skipped"] += already + duplicates
-    return stats
+) -> CrawlStats:
+    flow = _linked_page_flow(
+        source="chinanews",
+        display_name="ChinaNews",
+        list_items=lambda limit, existing: cn_list_items(
+            limit=limit,
+            pages=pages or 1,
+            existing_ids=existing,
+        ),
+        make_article_id=cn_make_article_id,
+        feed_item_to_row_func=cn_feed_item_to_row,
+        fetch_detail_func=cn_fetch_detail,
+        build_detail_update_func=cn_build_detail_update,
+    )
+    return _run_source_flow(
+        adapter=adapter,
+        flow=flow,
+        keywords=keywords,
+        remaining_limit=remaining_limit,
+    )
 
 
 def _run_gmw_flow(
     *,
-    adapter,
+    adapter: Any,
     keywords: Sequence[str],
     remaining_limit: Optional[int],
     base_url: str,
     timeout_value: float,
-) -> Dict[str, Any]:
-    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
-    # Load existing IDs to allow early-stop on consecutive existing items
+) -> CrawlStats:
     try:
-        existing_ids = adapter.ingest.get_existing_raw_ids()
-    except Exception as exc:
-        log_error(WORKER, "gmw_local_existing", exc)
-        existing_ids = set()
+        consecutive_stop = max(0, int(os.getenv("GMW_EXISTING_CONSECUTIVE_STOP", "5")))
+    except (TypeError, ValueError):
+        consecutive_stop = 5
 
-    # Read early-stop threshold from env (default 5; 0 disables early-stop)
-    try:
-        gmw_consecutive_stop = int(os.getenv("GMW_EXISTING_CONSECUTIVE_STOP", "5"))
-    except Exception:
-        gmw_consecutive_stop = 5
-    if gmw_consecutive_stop < 0:
-        gmw_consecutive_stop = 0
+    def prepare_feed(item: Any, fetched_at: datetime) -> Tuple[str, Dict[str, Any]]:
+        article_id = gmw_make_article_id(item.url)
+        return article_id, gmw_article_to_feed_row(item, article_id, fetched_at=fetched_at)
 
-    try:
-        articles = gmw_fetch_articles(
-            limit=remaining_limit,
-            base_url=base_url,
-            timeout=timeout_value,
-            existing_ids=existing_ids,
-            consecutive_stop=gmw_consecutive_stop,
-        )
-    except Exception as exc:
-        log_error(WORKER, "gmw_fetch", exc)
-        return stats
-    if not articles:
-        log_info(WORKER, "No articles returned from Guangming Daily.")
-        return stats
-
-    feed_rows: List[Dict[str, Any]] = []
-    detail_rows: List[Dict[str, Any]] = []
-    seen_ids: Set[str] = set()
-    duplicates = 0
-    for article in articles:
-        try:
-            article_id = gmw_make_article_id(article.url)
-        except Exception as exc:
-            log_error(WORKER, "gmw_article_id", exc)
-            continue
-        if article_id in seen_ids:
-            duplicates += 1
-            continue
-        seen_ids.add(article_id)
-        fetched_at = datetime.now(timezone.utc)
-        feed_rows.append(gmw_article_to_feed_row(article, article_id, fetched_at=fetched_at))
-        detail_rows.append(gmw_article_to_detail_row(article, article_id, detail_fetched_at=datetime.now(timezone.utc)))
-
-    stats["consumed"] = len(seen_ids)
-    if duplicates:
-        log_info(WORKER, f"gmw duplicate articles skipped: {duplicates}")
-        stats["skipped"] += duplicates
-    if not feed_rows:
-        log_info(WORKER, "No Guangming Daily rows to upsert after filtering.")
-        return stats
-
-    try:
-        inserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
-    except Exception as exc:
-        log_error(WORKER, "gmw_postgres_feed", exc)
-        stats["failed"] += len(feed_rows)
-        return stats
-    log_info(WORKER, f"gmw feed rows upserted: {inserted}")
-
-    try:
-        adapter.ingest.update_raw_details(detail_rows)
-    except Exception as exc:
-        log_error(WORKER, "gmw_postgres_detail", exc)
-        stats["failed"] += len(detail_rows)
-        detail_rows = []
-    else:
-        for row in detail_rows:
-            log_info(WORKER, f"GMW DETAIL OK {row['article_id']}")
-
-    stats["ok"] = len(detail_rows)
-    filtered_candidates: List[Dict[str, Any]] = []
-    for row in detail_rows:
-        article_id = str(row.get("article_id") or "").strip()
-        content = str(row.get("content_markdown") or "").strip()
-        if not article_id or not content:
-            continue
-        ok_hit, hits = _contains_keywords(content, keywords)
-        if not ok_hit:
-            continue
-        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
-        if candidate:
-            filtered_candidates.append(candidate)
-    if filtered_candidates:
-        _persist_filtered_candidates(adapter, filtered_candidates, source="gmw")
-    return stats
+    return _run_source_flow(
+        adapter=adapter,
+        flow=SourceFlow(
+            source="gmw",
+            display_name="Guangming Daily",
+            list_items=lambda limit, existing: gmw_fetch_articles(
+                limit=limit,
+                base_url=base_url,
+                timeout=timeout_value,
+                existing_ids=existing,
+                consecutive_stop=consecutive_stop,
+            ),
+            prepare_feed=prepare_feed,
+            fetch_detail=lambda item, article_id, fetched_at: gmw_article_to_detail_row(
+                item,
+                article_id,
+                detail_fetched_at=fetched_at,
+            ),
+            details_in_list=True,
+        ),
+        keywords=keywords,
+        remaining_limit=remaining_limit,
+    )
 
 
 def _run_ldwb_flow(
     *,
-    adapter,
+    adapter: Any,
     keywords: Sequence[str],
     remaining_limit: Optional[int],
-) -> Dict[str, Any]:
-    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
-    try:
-        existing_ids = adapter.ingest.get_existing_raw_ids()
-    except Exception as exc:
-        log_error(WORKER, "ldwb_local_existing", exc)
-        existing_ids = set()
+) -> CrawlStats:
+    def prepare_feed(item: Any, fetched_at: datetime) -> Tuple[str, Dict[str, Any]]:
+        article_id = str(item.article_id or "").strip()
+        return article_id, ldwb_article_to_feed_row(item, fetched_at=fetched_at)
 
-    try:
-        records = ldwb_crawl_latest_issue(limit=remaining_limit)
-    except Exception as exc:
-        log_error(WORKER, "ldwb_fetch", exc)
-        return stats
-
-    if not records:
-        log_info(WORKER, "No articles returned from Laodong Wubao.")
-        return stats
-
-    seen_ids: Set[str] = set()
-    feed_rows: List[Dict[str, Any]] = []
-    detail_rows: List[Dict[str, Any]] = []
-    duplicates = already = 0
-    for record in records:
-        aid = str(record.article_id or "").strip()
-        if not aid:
-            continue
-        if aid in seen_ids:
-            duplicates += 1
-            continue
-        seen_ids.add(aid)
-        if aid in existing_ids:
-            already += 1
-            continue
-        fetched_at = datetime.now(timezone.utc)
-        feed_rows.append(ldwb_article_to_feed_row(record, fetched_at=fetched_at))
-        detail_rows.append(ldwb_article_to_detail_row(record, detail_fetched_at=fetched_at))
-
-    stats["consumed"] = len(seen_ids)
-    stats["skipped"] += duplicates + already
-    if not feed_rows:
-        log_info(WORKER, "No new Laodong Wubao rows to upsert.")
-        return stats
-
-    try:
-        adapter.ingest.upsert_raw_feed_rows(feed_rows)
-    except Exception as exc:
-        stats["failed"] += len(feed_rows)
-        log_error(WORKER, "ldwb_postgres_feed", exc)
-        feed_rows = []
-    else:
-        log_info(WORKER, f"LDWB feed rows upserted: {len(feed_rows)}")
-
-    if detail_rows:
-        try:
-            adapter.ingest.update_raw_details(detail_rows)
-        except Exception as exc:
-            stats["failed"] += len(detail_rows)
-            log_error(WORKER, "ldwb_postgres_detail", exc)
-            detail_rows = []
-        else:
-            for row in detail_rows:
-                log_info(WORKER, f"LDWB DETAIL OK {row['article_id']}")
-
-    stats["ok"] = len(detail_rows)
-    filtered_candidates: List[Dict[str, Any]] = []
-    for row in detail_rows:
-        aid = str(row.get("article_id") or "").strip()
-        content = str(row.get("content_markdown") or "").strip()
-        if not aid or not content:
-            continue
-        ok_hit, hits = _contains_keywords(content, keywords)
-        if not ok_hit:
-            continue
-        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
-        if candidate:
-            filtered_candidates.append(candidate)
-    if filtered_candidates:
-        _persist_filtered_candidates(adapter, filtered_candidates, source="laodongwubao")
-    return stats
+    return _run_source_flow(
+        adapter=adapter,
+        flow=SourceFlow(
+            source="ldwb",
+            display_name="Laodong Wubao",
+            list_items=lambda limit, _existing: ldwb_crawl_latest_issue(limit=limit),
+            prepare_feed=prepare_feed,
+            fetch_detail=lambda item, _article_id, fetched_at: ldwb_article_to_detail_row(
+                item,
+                detail_fetched_at=fetched_at,
+            ),
+            details_in_list=True,
+            skip_existing_ids=True,
+            continue_after_feed_error=True,
+        ),
+        keywords=keywords,
+        remaining_limit=remaining_limit,
+    )
 
 
 def _run_bjrb_flow(
     *,
-    adapter,
+    adapter: Any,
     keywords: Sequence[str],
     remaining_limit: Optional[int],
     timeout_value: float,
     delay_value: float,
-) -> Dict[str, Any]:
-    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
-    try:
-        items = bjrb_list_issue_items(limit=remaining_limit, timeout=timeout_value)
-    except Exception as exc:
-        log_error(WORKER, "bjrb_list", exc)
-        return stats
-
-    if not items:
-        log_info(WORKER, "No articles returned from Beijing Daily.")
-        return stats
-
-    feed_rows: List[Dict[str, Any]] = []
-    index: Dict[str, BjrbIssueItem] = {}
-    duplicates = 0
-    for item in items:
+) -> CrawlStats:
+    def prepare_feed(item: BjrbIssueItem, fetched_at: datetime) -> Tuple[str, Dict[str, Any]]:
         article_id = str(item.article_id or "").strip()
-        if not article_id:
-            stats["failed"] += 1
-            log_error(WORKER, "bjrb_feed_id", ValueError("Empty article_id encountered"))
-            continue
-        if article_id in index:
-            duplicates += 1
-            continue
-        index[article_id] = item
-        feed_rows.append(bjrb_article_to_feed_row(item, fetched_at=datetime.now(timezone.utc)))
+        return article_id, bjrb_article_to_feed_row(item, fetched_at=fetched_at)
 
-    stats["consumed"] = len(index)
-    stats["skipped"] += duplicates
-    if duplicates:
-        log_info(WORKER, f"bjrb duplicate articles skipped: {duplicates}")
-    if not feed_rows:
-        log_info(WORKER, "No Beijing Daily rows to upsert after filtering.")
-        return stats
+    def fetch_detail_row(
+        item: BjrbIssueItem,
+        _article_id: str,
+        detail_fetched_at: datetime,
+    ) -> Dict[str, Any]:
+        article = bjrb_fetch_article(item, timeout=timeout_value)
+        return bjrb_article_to_detail_row(article, detail_fetched_at=detail_fetched_at)
 
-    try:
-        upserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
-    except Exception as exc:
-        stats["failed"] += len(feed_rows)
-        log_error(WORKER, "bjrb_postgres_feed", exc)
-        return stats
-    log_info(WORKER, f"bjrb feed rows upserted: {upserted}")
-
-    try:
-        missing_ids = adapter.ingest.get_raw_ids_missing_content(list(index.keys()))
-    except Exception as exc:
-        log_error(WORKER, "bjrb_missing_content", exc)
-        missing_ids = set(index.keys())
-
-    targets = [(aid, index[aid]) for aid in index if aid in missing_ids]
-    already = len(index) - len(targets)
-    stats["skipped"] += already
-    if already:
-        log_info(WORKER, f"bjrb articles already populated: {already}")
-    if targets:
-        log_info(WORKER, f"bjrb articles needing detail refresh: {len(targets)}")
-
-    detail_rows: List[Dict[str, Any]] = []
-    for position, (article_id, item) in enumerate(targets, start=1):
-        try:
-            article = bjrb_fetch_article(item, timeout=timeout_value)
-        except Exception as exc:
-            stats["failed"] += 1
-            log_error(WORKER, f"bjrb_detail_fetch:{article_id}", exc)
-            continue
-        detail_rows.append(
-            bjrb_article_to_detail_row(
-                article,
-                detail_fetched_at=datetime.now(timezone.utc),
-            )
-        )
-        if delay_value and position < len(targets):
-            time.sleep(delay_value)
-
-    if detail_rows:
-        try:
-            adapter.ingest.update_raw_details(detail_rows)
-        except Exception as exc:
-            stats["failed"] += len(detail_rows)
-            log_error(WORKER, "bjrb_postgres_detail", exc)
-            detail_rows = []
-        else:
-            for row in detail_rows:
-                log_info(WORKER, f"BJRB DETAIL OK {row['article_id']}")
-
-    stats["ok"] = len(detail_rows)
-    filtered_candidates: List[Dict[str, Any]] = []
-    for row in detail_rows:
-        article_id = str(row.get("article_id") or "").strip()
-        content = str(row.get("content_markdown") or "").strip()
-        if not article_id or not content:
-            continue
-        ok_hit, hits = _contains_keywords(content, keywords)
-        if not ok_hit:
-            continue
-        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
-        if candidate:
-            filtered_candidates.append(candidate)
-    if filtered_candidates:
-        _persist_filtered_candidates(adapter, filtered_candidates, source="bjrb")
-    return stats
+    return _run_source_flow(
+        adapter=adapter,
+        flow=SourceFlow(
+            source="bjrb",
+            display_name="Beijing Daily",
+            list_items=lambda limit, _existing: bjrb_list_issue_items(
+                limit=limit,
+                timeout=timeout_value,
+            ),
+            prepare_feed=prepare_feed,
+            fetch_detail=fetch_detail_row,
+            load_existing_ids=False,
+            count_prepare_errors=True,
+            missing_ids_fallback="all",
+            detail_delay=delay_value,
+        ),
+        keywords=keywords,
+        remaining_limit=remaining_limit,
+    )
 
 
 def _run_qianlong_flow(
     *,
-    adapter,
+    adapter: Any,
     keywords: Sequence[str],
     remaining_limit: Optional[int],
     base_urls: Sequence[str],
@@ -962,330 +772,101 @@ def _run_qianlong_flow(
     delay_value: float,
     pages_hint: Optional[int],
     consecutive_stop: Optional[int],
-) -> Dict[str, Any]:
-    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
-    try:
-        existing_ids = adapter.ingest.get_existing_raw_ids()
-    except Exception as exc:
-        log_error(WORKER, "qianlong_local_existing", exc)
-        existing_ids = set()
+) -> CrawlStats:
+    def prepare_feed(item: Any, fetched_at: datetime) -> Tuple[str, Dict[str, Any]]:
+        article_id = qianlong_make_article_id(item.url)
+        return article_id, qianlong_article_to_feed_row(item, article_id, fetched_at=fetched_at)
 
-    try:
-        articles = qianlong_fetch_articles(
-            limit=remaining_limit,
-            base_urls=base_urls,
-            pages=pages_hint,
-            timeout=timeout_value,
-            delay=delay_value,
-            existing_ids=existing_ids,
-            consecutive_stop=consecutive_stop,
-        )
-    except Exception as exc:
-        log_error(WORKER, "qianlong_fetch", exc)
-        return stats
-    if not articles:
-        log_info(WORKER, "No articles returned from Qianlong.")
-        return stats
-
-    feed_rows: List[Dict[str, Any]] = []
-    detail_rows: List[Dict[str, Any]] = []
-    seen_ids: Set[str] = set()
-    duplicates = 0
-    for article in articles:
-        try:
-            article_id = qianlong_make_article_id(article.url)
-        except Exception as exc:
-            log_error(WORKER, "qianlong_article_id", exc)
-            continue
-        if article_id in seen_ids:
-            duplicates += 1
-            continue
-        seen_ids.add(article_id)
-        fetched_at = datetime.now(timezone.utc)
-        feed_rows.append(qianlong_article_to_feed_row(article, article_id, fetched_at=fetched_at))
-        detail_rows.append(
-            qianlong_article_to_detail_row(
-                article,
+    return _run_source_flow(
+        adapter=adapter,
+        flow=SourceFlow(
+            source="qianlong",
+            display_name="Qianlong",
+            list_items=lambda limit, existing: qianlong_fetch_articles(
+                limit=limit,
+                base_urls=base_urls,
+                pages=pages_hint,
+                timeout=timeout_value,
+                delay=delay_value,
+                existing_ids=existing,
+                consecutive_stop=consecutive_stop,
+            ),
+            prepare_feed=prepare_feed,
+            fetch_detail=lambda item, article_id, fetched_at: qianlong_article_to_detail_row(
+                item,
                 article_id,
-                detail_fetched_at=datetime.now(timezone.utc),
-            )
-        )
-
-    stats["consumed"] = len(seen_ids)
-    if duplicates:
-        log_info(WORKER, f"qianlong duplicate articles skipped: {duplicates}")
-        stats["skipped"] += duplicates
-    if not feed_rows:
-        log_info(WORKER, "No Qianlong rows to upsert after filtering.")
-        return stats
-
-    try:
-        inserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
-    except Exception as exc:
-        log_error(WORKER, "qianlong_postgres_feed", exc)
-        stats["failed"] += len(feed_rows)
-        return stats
-    log_info(WORKER, f"qianlong feed rows upserted: {inserted}")
-
-    try:
-        adapter.ingest.update_raw_details(detail_rows)
-    except Exception as exc:
-        log_error(WORKER, "qianlong_postgres_detail", exc)
-        stats["failed"] += len(detail_rows)
-        detail_rows = []
-    else:
-        for row in detail_rows:
-            log_info(WORKER, f"QIANLONG DETAIL OK {row['article_id']}")
-
-    stats["ok"] = len(detail_rows)
-    filtered_candidates: List[Dict[str, Any]] = []
-    for row in detail_rows:
-        aid = str(row.get("article_id") or "").strip()
-        content = str(row.get("content_markdown") or "").strip()
-        if not aid or not content:
-            continue
-        ok_hit, hits = _contains_keywords(content, keywords)
-        if not ok_hit:
-            continue
-        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
-        if candidate:
-            filtered_candidates.append(candidate)
-    if filtered_candidates:
-        _persist_filtered_candidates(adapter, filtered_candidates, source="qianlong")
-    return stats
+                detail_fetched_at=fetched_at,
+            ),
+            details_in_list=True,
+        ),
+        keywords=keywords,
+        remaining_limit=remaining_limit,
+    )
 
 
 def _run_jyb_flow(
     *,
-    adapter,
+    adapter: Any,
     keywords: Sequence[str],
     remaining_limit: Optional[int],
     pages: Optional[int],
-) -> Dict[str, Any]:
-    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
-    try:
-        existing_ids = adapter.ingest.get_existing_raw_ids()
-    except Exception as exc:
-        log_error(WORKER, "jyb_local_existing", exc)
-        existing_ids = set()
-
-    try:
-        items = jyb_list_items(limit=remaining_limit, pages=pages or 1, existing_ids=existing_ids)
-    except Exception as exc:
-        log_error(WORKER, "jyb_list", exc)
-        return stats
-    if not items:
-        log_info(WORKER, "No feed items returned from JYB.")
-        return stats
-
-    feed_rows: List[Dict[str, Any]] = []
-    index: Dict[str, JYBFeedItem] = {}
-    duplicates = 0
-    for it in items:
-        try:
-            aid = jyb_make_article_id(it.url)
-        except Exception as exc:
-            log_error(WORKER, "jyb_feed_id", exc)
-            continue
-        if aid in index:
-            duplicates += 1
-            continue
-        feed_rows.append(jyb_feed_item_to_row(it, aid, fetched_at=datetime.now(timezone.utc)))
-        index[aid] = it
-
-    stats["consumed"] = len(index)
-    if not feed_rows:
-        log_info(WORKER, "No JYB rows to upsert after filtering.")
-        stats["skipped"] = duplicates
-        return stats
-
-    try:
-        upserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
-    except Exception as exc:
-        log_error(WORKER, "postgres_feed_jyb", exc)
-        return stats
-    log_info(WORKER, f"jyb feed rows upserted: {upserted}")
-    if duplicates:
-        log_info(WORKER, f"jyb duplicate feed items skipped: {duplicates}")
-
-    missing_ids = adapter.ingest.get_raw_ids_missing_content(list(index.keys()))
-    targets = [(aid, index[aid]) for aid in index if aid in missing_ids]
-    already = len(index) - len(targets)
-    if already:
-        log_info(WORKER, f"jyb articles already populated: {already}")
-    if targets:
-        log_info(WORKER, f"jyb articles needing detail refresh: {len(targets)}")
-
-    detail_rows: List[Dict[str, Any]] = []
-    for aid, it in targets:
-        try:
-            payload = jyb_fetch_detail(it.url)
-        except Exception as exc:
-            stats["failed"] += 1
-            log_error(WORKER, f"jyb_detail_fetch:{aid}", exc)
-            continue
-        try:
-            detail_rows.append(
-                jyb_build_detail_update(
-                    it,
-                    aid,
-                    payload,
-                    detail_fetched_at=datetime.now(timezone.utc),
-                )
-            )
-        except Exception as exc:
-            stats["failed"] += 1
-            log_error(WORKER, f"jyb_build_update:{aid}", exc)
-
-    if detail_rows:
-        try:
-            adapter.ingest.update_raw_details(detail_rows)
-        except Exception as exc:
-            stats["failed"] += len(detail_rows)
-            log_error(WORKER, "postgres_detail_jyb", exc)
-            detail_rows = []
-        else:
-            for row in detail_rows:
-                log_info(WORKER, f"JYB DETAIL OK {row['article_id']}")
-
-    filtered_candidates: List[Dict[str, Any]] = []
-    for row in detail_rows:
-        aid = str(row.get('article_id') or '').strip()
-        content = str(row.get('content_markdown') or '').strip()
-        if not aid or not content:
-            continue
-        ok_hit, hits = _contains_keywords(content, keywords)
-        if not ok_hit:
-            continue
-        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
-        if candidate:
-            filtered_candidates.append(candidate)
-    if filtered_candidates:
-        _persist_filtered_candidates(adapter, filtered_candidates, source="jyb")
-
-    stats["ok"] = len(detail_rows)
-    stats["skipped"] += already + duplicates
-    return stats
+) -> CrawlStats:
+    flow = _linked_page_flow(
+        source="jyb",
+        display_name="JYB",
+        list_items=lambda limit, existing: jyb_list_items(
+            limit=limit,
+            pages=pages or 1,
+            existing_ids=existing,
+        ),
+        make_article_id=jyb_make_article_id,
+        feed_item_to_row_func=jyb_feed_item_to_row,
+        fetch_detail_func=jyb_fetch_detail,
+        build_detail_update_func=jyb_build_detail_update,
+    )
+    return _run_source_flow(
+        adapter=adapter,
+        flow=flow,
+        keywords=keywords,
+        remaining_limit=remaining_limit,
+    )
 
 
 def _run_chinadaily_flow(
     *,
-    adapter,
+    adapter: Any,
     keywords: Sequence[str],
     remaining_limit: Optional[int],
     pages: Optional[int],
-) -> Dict[str, Any]:
-    """Run China Daily ingestion; return stats and consumption.
-
-    Returns a dict with keys: consumed, ok, failed, skipped.
-    """
-    stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
-    try:
-        existing_ids = adapter.ingest.get_existing_raw_ids()
-    except Exception as exc:
-        log_error(WORKER, "chinadaily_local_existing", exc)
-        existing_ids = set()
-
-    try:
-        items = cd_list_items(limit=remaining_limit, pages=pages or 1, existing_ids=existing_ids)
-    except Exception as exc:
-        log_error(WORKER, "chinadaily_list", exc)
-        return stats
-    if not items:
-        log_info(WORKER, "No feed items returned from China Daily.")
-        return stats
-
-    feed_rows: List[Dict[str, Any]] = []
-    index: Dict[str, CDLFeedItem] = {}
-    duplicates = 0
-    for it in items:
-        try:
-            aid = cd_make_article_id(it.url)
-        except Exception as exc:
-            log_error(WORKER, "cd_feed_id", exc)
-            continue
-        if aid in index:
-            duplicates += 1
-            continue
-        feed_rows.append(cd_feed_item_to_row(it, aid, fetched_at=datetime.now(timezone.utc)))
-        index[aid] = it
-
-    stats["consumed"] = len(index)
-    if not feed_rows:
-        log_info(WORKER, "No China Daily rows to upsert after filtering.")
-        stats["skipped"] = duplicates
-        return stats
-
-    try:
-        upserted = adapter.ingest.upsert_raw_feed_rows(feed_rows)
-    except Exception as exc:
-        log_error(WORKER, "postgres_feed_chinadaily", exc)
-        return stats
-    log_info(WORKER, f"chinadaily feed rows upserted: {upserted}")
-    if duplicates:
-        log_info(WORKER, f"chinadaily duplicate feed items skipped: {duplicates}")
-
-    missing_ids = adapter.ingest.get_raw_ids_missing_content(list(index.keys()))
-    targets = [(aid, index[aid]) for aid in index if aid in missing_ids]
-    already = len(index) - len(targets)
-    if already:
-        log_info(WORKER, f"chinadaily articles already populated: {already}")
-    if targets:
-        log_info(WORKER, f"chinadaily articles needing detail refresh: {len(targets)}")
-
-    detail_rows: List[Dict[str, Any]] = []
-    for aid, it in targets:
-        try:
-            payload = cd_fetch_detail(it.url)
-        except Exception as exc:
-            stats["failed"] += 1
-            log_error(WORKER, f"cd_detail_fetch:{aid}", exc)
-            continue
-        try:
-            detail_rows.append(
-                cd_build_detail_update(
-                    it,
-                    aid,
-                    payload,
-                    detail_fetched_at=datetime.now(timezone.utc),
-                )
-            )
-        except Exception as exc:
-            stats["failed"] += 1
-            log_error(WORKER, f"cd_build_update:{aid}", exc)
-
-    if detail_rows:
-        try:
-            adapter.ingest.update_raw_details(detail_rows)
-        except Exception as exc:
-            stats["failed"] += len(detail_rows)
-            log_error(WORKER, "postgres_detail_chinadaily", exc)
-            detail_rows = []
-        else:
-            for row in detail_rows:
-                log_info(WORKER, f"CD DETAIL OK {row['article_id']}")
-
-    filtered_candidates: List[Dict[str, Any]] = []
-    for row in detail_rows:
-        aid = str(row.get('article_id') or '').strip()
-        content = str(row.get('content_markdown') or '').strip()
-        if not aid or not content:
-            continue
-        ok_hit, hits = _contains_keywords(content, keywords)
-        if not ok_hit:
-            continue
-        candidate = _build_filtered_candidate(row, content=content, keywords=hits)
-        if candidate:
-            filtered_candidates.append(candidate)
-    if filtered_candidates:
-        _persist_filtered_candidates(adapter, filtered_candidates, source="chinadaily")
-
-    stats["ok"] = len(detail_rows)
-    stats["skipped"] += already + duplicates
-    return stats
+) -> CrawlStats:
+    flow = _linked_page_flow(
+        source="chinadaily",
+        display_name="China Daily",
+        list_items=lambda limit, existing: cd_list_items(
+            limit=limit,
+            pages=pages or 1,
+            existing_ids=existing,
+        ),
+        make_article_id=cd_make_article_id,
+        feed_item_to_row_func=cd_feed_item_to_row,
+        fetch_detail_func=cd_fetch_detail,
+        build_detail_update_func=cd_build_detail_update,
+    )
+    return _run_source_flow(
+        adapter=adapter,
+        flow=flow,
+        keywords=keywords,
+        remaining_limit=remaining_limit,
+    )
 
 
-def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Optional[Sequence[str]] = None, pages: Optional[int] = None) -> None:  # pylint: disable=unused-argument
+def run(
+    limit: int = 5000,
+    *,
+    concurrency: Optional[int] = None,
+    sources: Optional[Sequence[str]] = None,
+    pages: Optional[int] = None,
+) -> None:  # pylint: disable=unused-argument
     settings = get_settings()
     # Normalize selected sources preserving order
     if sources is None:
@@ -1381,26 +962,54 @@ def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Option
     remaining_limit = effective_limit
     adapter = get_adapter()
     total_ok = total_failed = total_skipped = 0
+    source_aliases = {
+        "beijingdaily": "bjrb",
+        "laodongwubao": "ldwb",
+        "qq": "tencent",
+    }
     with worker_session(WORKER, limit=effective_limit):
         for source in selected_order:
             if remaining_limit is not None and remaining_limit <= 0:
                 break
-            if source == 'chinanews':
-                stats = _run_chinanews_flow(adapter=adapter, keywords=keywords, remaining_limit=remaining_limit, pages=pages)
-            elif source == 'chinadaily':
-                stats = _run_chinadaily_flow(adapter=adapter, keywords=keywords, remaining_limit=remaining_limit, pages=pages)
-            elif source == 'jyb':
-                stats = _run_jyb_flow(adapter=adapter, keywords=keywords, remaining_limit=remaining_limit, pages=pages)
-            elif source == 'gmw':
-                stats = _run_gmw_flow(
+            source_runners: Dict[str, Callable[[], CrawlStats]] = {
+                "bjrb": lambda: _run_bjrb_flow(
+                    adapter=adapter,
+                    keywords=keywords,
+                    remaining_limit=remaining_limit,
+                    timeout_value=bjrb_timeout,
+                    delay_value=bjrb_delay,
+                ),
+                "chinadaily": lambda: _run_chinadaily_flow(
+                    adapter=adapter,
+                    keywords=keywords,
+                    remaining_limit=remaining_limit,
+                    pages=pages,
+                ),
+                "chinanews": lambda: _run_chinanews_flow(
+                    adapter=adapter,
+                    keywords=keywords,
+                    remaining_limit=remaining_limit,
+                    pages=pages,
+                ),
+                "gmw": lambda: _run_gmw_flow(
                     adapter=adapter,
                     keywords=keywords,
                     remaining_limit=remaining_limit,
                     base_url=gmw_base_url,
                     timeout_value=gmw_timeout,
-                )
-            elif source == 'qianlong':
-                stats = _run_qianlong_flow(
+                ),
+                "jyb": lambda: _run_jyb_flow(
+                    adapter=adapter,
+                    keywords=keywords,
+                    remaining_limit=remaining_limit,
+                    pages=pages,
+                ),
+                "ldwb": lambda: _run_ldwb_flow(
+                    adapter=adapter,
+                    keywords=keywords,
+                    remaining_limit=remaining_limit,
+                ),
+                "qianlong": lambda: _run_qianlong_flow(
                     adapter=adapter,
                     keywords=keywords,
                     remaining_limit=remaining_limit,
@@ -1409,30 +1018,14 @@ def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Option
                     delay_value=qianlong_delay,
                     pages_hint=pages if pages is not None else qianlong_pages_config,
                     consecutive_stop=qianlong_consecutive_stop,
-                )
-            elif source in {'tencent', 'qq'}:
-                stats = _run_tencent_flow(
+                ),
+                "tencent": lambda: _run_tencent_flow(
                     adapter=adapter,
                     keywords=keywords,
                     remaining_limit=remaining_limit,
                     pages=pages,
-                )
-            elif source in {'laodongwubao', 'ldwb'}:
-                stats = _run_ldwb_flow(
-                    adapter=adapter,
-                    keywords=keywords,
-                    remaining_limit=remaining_limit,
-                )
-            elif source in {'bjrb', 'beijingdaily'}:
-                stats = _run_bjrb_flow(
-                    adapter=adapter,
-                    keywords=keywords,
-                    remaining_limit=remaining_limit,
-                    timeout_value=bjrb_timeout,
-                    delay_value=bjrb_delay,
-                )
-            elif source == 'toutiao':
-                stats = _run_toutiao_flow(
+                ),
+                "toutiao": lambda: _run_toutiao_flow(
                     adapter=adapter,
                     authors_path=authors_path,
                     show_browser=show_browser,
@@ -1440,10 +1033,14 @@ def run(limit: int = 5000, *, concurrency: Optional[int] = None, sources: Option
                     lang=lang,
                     keywords=keywords,
                     remaining_limit=remaining_limit,
-                )
-            else:
+                ),
+            }
+            runner = source_runners.get(source_aliases.get(source, source))
+            if runner is None:
                 log_info(WORKER, f"Unknown source '{source}' skipped")
-                stats = {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
+                stats = _empty_stats()
+            else:
+                stats = runner()
 
             try:
                 consumed = int(stats.get('consumed') or 0)

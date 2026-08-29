@@ -1023,18 +1023,19 @@ def test_duplicate_check_tracks_loading_state_by_review_column() -> None:
 
 
 def test_processed_duplicate_items_remain_editable_and_selectable() -> None:
-    script_path = (
-        Path(__file__).parents[1]
-        / "src/console/web_static/js/manual_filter/review_tab_duplicates.js"
+    scripts_dir = (
+        Path(__file__).parents[1] / "src/console/web_static/js/manual_filter"
     )
-    script = script_path.read_text(encoding="utf-8")
+    script = (scripts_dir / "review_tab_duplicates.js").read_text(encoding="utf-8")
+    modal_script = (scripts_dir / "review_duplicates_modal.js").read_text(encoding="utf-8")
     mark_section = script.split("function markDuplicateReviewItemProcessed", 1)[1].split(
         "function restoreDuplicateReviewItem", 1
     )[0]
 
     assert ".duplicate-review-item:not(.is-processed)" not in script
     assert "control.disabled = true" not in mark_section
-    assert "activeGroup.querySelectorAll('.duplicate-review-item')" in script
+    assert "return getVisibleDuplicateReviewItems(activeGroup)" in script
+    assert "group.querySelectorAll('.duplicate-review-item:not([hidden])')" in modal_script
 
 
 def test_discarded_duplicate_items_are_hidden_until_undo() -> None:

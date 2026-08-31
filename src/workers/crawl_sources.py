@@ -41,6 +41,13 @@ from src.adapters.http_chinanews import (
     list_items as cn_list_items,
     make_article_id as cn_make_article_id,
 )
+from src.adapters.http_chinanews_xj import (
+    build_detail_update as cn_xj_build_detail_update,
+    feed_item_to_row as cn_xj_feed_item_to_row,
+    fetch_detail as cn_xj_fetch_detail,
+    list_items as cn_xj_list_items,
+    make_article_id as cn_xj_make_article_id,
+)
 from src.adapters.http_gmw import (
     DEFAULT_BASE_URL as GMW_DEFAULT_BASE_URL,
     DEFAULT_TIMEOUT as GMW_DEFAULT_TIMEOUT,
@@ -649,6 +656,34 @@ def _run_chinanews_flow(
     )
 
 
+def _run_chinanews_xj_flow(
+    *,
+    adapter: Any,
+    keywords: Sequence[str],
+    remaining_limit: Optional[int],
+    pages: Optional[int],
+) -> CrawlStats:
+    flow = _linked_page_flow(
+        source="chinanews_xj",
+        display_name="ChinaNews Xinjiang",
+        list_items=lambda limit, existing: cn_xj_list_items(
+            limit=limit,
+            pages=pages or 1,
+            existing_ids=existing,
+        ),
+        make_article_id=cn_xj_make_article_id,
+        feed_item_to_row_func=cn_xj_feed_item_to_row,
+        fetch_detail_func=cn_xj_fetch_detail,
+        build_detail_update_func=cn_xj_build_detail_update,
+    )
+    return _run_source_flow(
+        adapter=adapter,
+        flow=flow,
+        keywords=keywords,
+        remaining_limit=remaining_limit,
+    )
+
+
 def _run_gmw_flow(
     *,
     adapter: Any,
@@ -986,6 +1021,12 @@ def run(
                     pages=pages,
                 ),
                 "chinanews": lambda: _run_chinanews_flow(
+                    adapter=adapter,
+                    keywords=keywords,
+                    remaining_limit=remaining_limit,
+                    pages=pages,
+                ),
+                "chinanews_xj": lambda: _run_chinanews_xj_flow(
                     adapter=adapter,
                     keywords=keywords,
                     remaining_limit=remaining_limit,

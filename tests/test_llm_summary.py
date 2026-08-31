@@ -41,13 +41,21 @@ def test_summarise_raises_quota_error_without_retry(monkeypatch, tmp_path) -> No
     )
     calls = []
 
+    class _RawResponse:
+        def __init__(self) -> None:
+            self._body = iter((b"insufficient credits", b""))
+
+        def read1(self, amount: int, *, decode_content: bool) -> bytes:
+            assert amount == 8192
+            assert decode_content is True
+            return next(self._body)
+
     class _Response:
         status_code = 402
         encoding = "utf-8"
 
-        @staticmethod
-        def iter_content(chunk_size):
-            yield b"insufficient credits"
+        def __init__(self) -> None:
+            self.raw = _RawResponse()
 
         @staticmethod
         def close():

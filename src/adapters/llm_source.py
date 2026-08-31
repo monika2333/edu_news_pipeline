@@ -98,9 +98,6 @@ def detect_source(
             data.get("choices", [{}])[0].get("message", {}).get("content") or ""
         ).strip()
 
-    def validate_response(data: dict[str, Any]) -> None:
-        extract_raw_text(data)
-
     data = post_chat_completion(
         url,
         payload=payload,
@@ -112,7 +109,6 @@ def detect_source(
         operation="source_detection",
         model=settings.llm_source_model,
         deadline=deadline,
-        response_validator=validate_response,
         attempt_callback=record_attempt,
     )
     raw_text = extract_raw_text(data)

@@ -228,16 +228,16 @@ def _read_response_body(
         operation=operation,
         budget=budget,
     )
-    # A one-byte chunk ensures provider keepalives are yielded immediately
-    # instead of being buffered until a larger application chunk is full.
-    for chunk in response.iter_content(chunk_size=1):
+    while True:
+        chunk = response.raw.read1(8192, decode_content=True)
+        if not chunk:
+            break
         _raise_if_deadline_exceeded(
             deadline=deadline,
             operation=operation,
             budget=budget,
         )
-        if chunk:
-            body.extend(chunk)
+        body.extend(chunk)
         _raise_if_deadline_exceeded(
             deadline=deadline,
             operation=operation,

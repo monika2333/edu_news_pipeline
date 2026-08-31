@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import gzip
 import json
+import threading
 import time
+from contextlib import contextmanager
 from dataclasses import replace
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
+from typing import Iterator
 
 import pytest
 
@@ -127,40 +132,119 @@ class _StreamingResponse:
 
     def __init__(self, status_code: int, chunks) -> None:
         self.status_code = status_code
-        self._chunks = chunks
+        self.raw = _RawStream(chunks)
         self.closed = False
-
-    def iter_content(self, chunk_size: int):
-        assert chunk_size > 0
-        yield from self._chunks
 
     def close(self) -> None:
         self.closed = True
 
 
-def test_post_chat_completion_stops_keepalive_stream_at_wall_clock_budget(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    response = _StreamingResponse(200, _keepalive_chunks())
-    monkeypatch.setattr(llm_chat.requests, "post", lambda *args, **kwargs: response)
+class _RawStream:
+    def __init__(self, chunks) -> None:
+        self._chunks = iter(chunks)
 
-    started_at = time.monotonic()
-    with pytest.raises(LLMWallClockTimeout):
-        post_chat_completion(
-            "https://llm.example.test/chat/completions",
+    def read1(self, amount: int, *, decode_content: bool) -> bytes:
+        assert amount == 8192
+        assert decode_content is True
+        return next(self._chunks, b"")
+
+
+_GZIP_RESPONSE = {
+    "choices": [{"message": {"content": "gzip-ok"}}],
+    "provider": "local-test",
+}
+
+
+class _LocalLLMHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def do_POST(self) -> None:
+        content_length = int(self.headers.get("Content-Length", "0"))
+        if content_length:
+            self.rfile.read(content_length)
+
+        if self.path == "/keepalive":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", "30")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            try:
+                for _ in range(30):
+                    self.wfile.write(b" ")
+                    self.wfile.flush()
+                    time.sleep(0.02)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+
+        if self.path == "/gzip":
+            body = gzip.compress(json.dumps(_GZIP_RESPONSE).encode("utf-8"))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        self.send_error(404)
+
+    def log_message(self, format: str, *args) -> None:
+        return
+
+
+@contextmanager
+def _local_llm_server() -> Iterator[str]:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _LocalLLMHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_post_chat_completion_stops_keepalive_stream_at_wall_clock_budget(
+) -> None:
+    with _local_llm_server() as base_url:
+        started_at = time.monotonic()
+        with pytest.raises(LLMWallClockTimeout):
+            post_chat_completion(
+                f"{base_url}/keepalive",
+                payload={"model": "model-a", "messages": []},
+                headers={"Authorization": "Bearer test"},
+                timeout=1,
+                budget=0.12,
+                retries=1,
+                retryable_statuses={429, 500},
+                operation="test_keepalive",
+                model="model-a",
+            )
+        elapsed = time.monotonic() - started_at
+
+    assert 0.07 <= elapsed < 1.0
+
+
+def test_post_chat_completion_decodes_gzip_response_body() -> None:
+    with _local_llm_server() as base_url:
+        result = post_chat_completion(
+            f"{base_url}/gzip",
             payload={"model": "model-a", "messages": []},
-            headers={"Authorization": "Bearer test"},
+            headers={},
             timeout=1,
-            budget=0.06,
+            budget=1,
             retries=1,
-            retryable_statuses={429, 500},
-            operation="test_keepalive",
+            retryable_statuses=set(),
+            operation="test_gzip",
             model="model-a",
         )
-    elapsed = time.monotonic() - started_at
 
-    assert 0.04 <= elapsed < 0.5
-    assert response.closed is True
+    assert result == _GZIP_RESPONSE
 
 
 def test_post_chat_completion_stops_retries_when_backoff_uses_budget(
@@ -216,9 +300,3 @@ def test_post_chat_completion_returns_complete_json_object(
     )
 
     assert result == expected
-
-
-def _keepalive_chunks():
-    while True:
-        time.sleep(0.01)
-        yield b" "

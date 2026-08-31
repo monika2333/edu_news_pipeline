@@ -106,7 +106,7 @@ LLM_REASONING_EXCLUDE=true
 
 ### 覆盖 timeout
 
-通常不需要设置。需要应对慢模型或限速时可用：
+这些值是单次 HTTP 读取的间隔超时：若相邻响应字节之间超过该时长，请求会失败。通常不需要设置；需要应对慢模型或限速时可用：
 
 ```env
 LLM_TIMEOUT=90
@@ -114,6 +114,23 @@ LLM_SCORING_TIMEOUT=90
 LLM_SUMMARY_TIMEOUT=90
 LLM_EXTERNAL_FILTER_TIMEOUT=90
 LLM_BEIJING_GATE_TIMEOUT=90
+```
+
+### 覆盖单任务墙钟预算
+
+墙钟预算限制一次业务调用的总耗时，包括该条任务内部的全部 HTTP 请求、重试与退避等待。它与上面的 timeout 不同：`LLM_TIMEOUT` 系列限制单次读取的字节间隔，`LLM_BUDGET` 系列限制整次业务调用的累计墙钟时长。
+
+全局预算默认 180 秒。该值是尚待生产耗时分布校准的初值；各阶段未配置覆盖项时继承全局值：
+
+```env
+LLM_BUDGET=180
+LLM_BEIJING_GATE_BUDGET=180
+LLM_SCORING_BUDGET=180
+LLM_SUMMARY_BUDGET=180
+LLM_EXTERNAL_FILTER_BUDGET=180
+LLM_SENTIMENT_BUDGET=180
+LLM_SOURCE_BUDGET=180
+LLM_DUPLICATE_REVIEW_BUDGET=180
 ```
 
 ### 额度不足飞书提醒

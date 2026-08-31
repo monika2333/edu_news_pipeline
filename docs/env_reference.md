@@ -252,10 +252,10 @@ TENCENT_DETAIL_DELAY=0.5
 TENCENT_EXISTING_CONSECUTIVE_STOP=5
 
 # Btime / 北京时间
-BTIME_UIDS_PATH=config/btime_uid.txt
+BTIME_UIDS_PATH=config/btime_author.txt
 
 # Beijinghao / 北京号
-BEIJINGHAO_COLUMNS_PATH=config/bjh_column.txt
+BEIJINGHAO_COLUMNS_PATH=config/beijinghao_author.txt
 
 # China Education Daily / JYB
 JYB_TIMEOUT=20

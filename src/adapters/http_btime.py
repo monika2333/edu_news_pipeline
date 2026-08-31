@@ -19,7 +19,7 @@ PROFILE_BASE_URL = "https://record.btime.com/show"
 ITEM_BASE_URL = "https://item.btime.com/"
 SOURCE_NAME = "北京时间"
 ARTICLE_ID_PREFIX = "btime:"
-DEFAULT_UIDS_FILE = Path("config/btime_uid.txt")
+DEFAULT_UIDS_FILE = Path("config/btime_author.txt")
 UIDS_PATH_ENV = "BTIME_UIDS_PATH"
 CHINA_TZ = timezone(timedelta(hours=8))
 USER_AGENT = (

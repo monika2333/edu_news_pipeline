@@ -19,7 +19,7 @@ DETAIL_BASE_URL = "https://peking.bjd.com.cn/content/"
 DETAIL_HOST = "peking.bjd.com.cn"
 SOURCE_NAME = "现代教育报"
 ARTICLE_ID_PREFIX = "beijinghao:"
-DEFAULT_COLUMNS_FILE = Path("config/bjh_column.txt")
+DEFAULT_COLUMNS_FILE = Path("config/beijinghao_author.txt")
 COLUMNS_PATH_ENV = "BEIJINGHAO_COLUMNS_PATH"
 CHINA_TZ = timezone(timedelta(hours=8))
 USER_AGENT = (

@@ -53,6 +53,8 @@ outputs/
 # Replace news JGW txt files
 config/toutiao_author.txt
 config/qq_author.txt
+config/btime_author.txt
+config/beijinghao_author.txt
 config/summarized_cursor.json
 
 # Logs

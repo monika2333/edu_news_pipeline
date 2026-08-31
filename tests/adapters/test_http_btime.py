@@ -103,14 +103,14 @@ def test_verified_list_params_keep_refresh_one_and_omit_jsonp_fields() -> None:
     assert "_" not in params
 
 
-def test_parse_feed_payload_maps_gid_url_time_and_source() -> None:
+def test_parse_feed_payload_maps_gid_url_time_and_normalizes_source() -> None:
     items = http_btime._parse_feed_payload(LIST_PAYLOAD)
 
     assert len(items) == 2
     assert items[0].gid == "43r9knd9fc388q9qfgtr1q0k5i0"
     assert items[0].url == "https://item.btime.com/43r9knd9fc388q9qfgtr1q0k5i0"
     assert items[0].publish_time_iso == "2026-08-31T07:07:54+08:00"
-    assert items[0].section == "BRTV新闻 社会新闻"
+    assert items[0].section == "北京时间"
     assert http_btime.make_article_id(items[0].url) == "btime:43r9knd9fc388q9qfgtr1q0k5i0"
 
 
@@ -141,6 +141,7 @@ def test_detail_parser_uses_article_node_and_removes_page_noise() -> None:
     )
 
     assert data["title"] == "珍稀标本被当成玩具"
+    assert data["source"] == "北京时间"
     assert "视频稿的一句说明" in data["content_markdown"]
     assert "https://example.com/cover.jpg" in data["content_markdown"]
     assert "重复的 SEO 正文" not in data["content_markdown"]
@@ -164,4 +165,30 @@ def test_empty_video_body_is_valid_and_feed_summary_stays_none() -> None:
     assert detail["content_markdown"] == ""
     assert row["summary"] is None
     assert row["profile_url"] is None
+    assert row["source"] == "北京时间"
 
+
+def test_row_builders_force_btime_as_source() -> None:
+    item = http_btime.FeedItemLike(
+        title="测试新闻",
+        url="https://item.btime.com/testarticle",
+        section="具体账号或栏目名称",
+        publish_time_iso=None,
+        raw={},
+        gid="testarticle",
+    )
+    fetched_at = datetime(2026, 8, 31, 0, 0, tzinfo=timezone.utc)
+
+    feed_row = http_btime.feed_item_to_row(
+        item,
+        "btime:testarticle",
+        fetched_at=fetched_at,
+    )
+    detail_row = http_btime.build_detail_update(
+        item,
+        "btime:testarticle",
+        {"source": "另一个具体栏目名称", "content": "<p>正文</p>"},
+        detail_fetched_at=fetched_at,
+    )
+
+    assert feed_row["source"] == detail_row["source"] == "北京时间"

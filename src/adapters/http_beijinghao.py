@@ -17,7 +17,7 @@ from src.adapters.http_linked_page_rows import feed_item_to_row as linked_feed_i
 COLUMN_BASE_URL = "https://peking.bjd.com.cn/bjhrootcolumn/system/"
 DETAIL_BASE_URL = "https://peking.bjd.com.cn/content/"
 DETAIL_HOST = "peking.bjd.com.cn"
-SOURCE_NAME = "现代教育报"
+SOURCE_NAME = "北京日报"
 ARTICLE_ID_PREFIX = "beijinghao:"
 DEFAULT_COLUMNS_FILE = Path("config/beijinghao_author.txt")
 COLUMNS_PATH_ENV = "BEIJINGHAO_COLUMNS_PATH"
@@ -272,7 +272,7 @@ def _parse_detail_payload(payload: dict[str, Any], url: str) -> dict[str, Any]:
     content_html = str(data.get("content") or "")
     return {
         "title": str(data.get("title") or "").strip() or None,
-        "source": str(data.get("columnName") or "").strip() or None,
+        "source": SOURCE_NAME,
         "publish_time": None,
         "publish_time_iso": _timestamp_to_iso(data.get("publishTime")),
         "url": normalize_url(str(data.get("url") or url)),
@@ -294,15 +294,13 @@ def feed_item_to_row(
     *,
     fetched_at: datetime,
 ) -> dict[str, Any]:
-    source_item = item
-    if not item.section:
-        source_item = FeedItemLike(
-            title=item.title,
-            url=item.url,
-            section=SOURCE_NAME,
-            publish_time_iso=item.publish_time_iso,
-            raw=item.raw,
-        )
+    source_item = FeedItemLike(
+        title=item.title,
+        url=item.url,
+        section=SOURCE_NAME,
+        publish_time_iso=item.publish_time_iso,
+        raw=item.raw,
+    )
     return linked_feed_item_to_row(source_item, article_id, fetched_at=fetched_at)
 
 
@@ -316,7 +314,7 @@ def build_detail_update(
     return build_linked_detail_update(
         item,
         article_id,
-        data,
+        {**data, "source": SOURCE_NAME},
         detail_fetched_at=detail_fetched_at,
         default_source=SOURCE_NAME,
         render_content=html_to_markdown,

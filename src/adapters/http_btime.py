@@ -187,7 +187,7 @@ def _parse_feed_payload(
             FeedItemLike(
                 title=title,
                 url=url,
-                section=str(data.get("source") or SOURCE_NAME).strip(),
+                section=SOURCE_NAME,
                 publish_time_iso=_publish_time_iso(data.get("pdate")),
                 raw=row,
                 gid=gid,
@@ -289,7 +289,7 @@ def _parse_detail_html(html_text: str, url: str) -> dict[str, Any]:
     # Short or empty bodies are valid for video posts and must not be reported as crawl failures.
     return {
         "title": _strip_title_suffix(title) or None,
-        "source": None,
+        "source": SOURCE_NAME,
         "publish_time": None,
         "publish_time_iso": None,
         "url": normalize_url(url),
@@ -311,16 +311,14 @@ def feed_item_to_row(
     *,
     fetched_at: datetime,
 ) -> dict[str, Any]:
-    source_item = item
-    if not item.section:
-        source_item = FeedItemLike(
-            title=item.title,
-            url=item.url,
-            section=SOURCE_NAME,
-            publish_time_iso=item.publish_time_iso,
-            raw=item.raw,
-            gid=item.gid,
-        )
+    source_item = FeedItemLike(
+        title=item.title,
+        url=item.url,
+        section=SOURCE_NAME,
+        publish_time_iso=item.publish_time_iso,
+        raw=item.raw,
+        gid=item.gid,
+    )
     return linked_feed_item_to_row(source_item, article_id, fetched_at=fetched_at)
 
 
@@ -334,7 +332,7 @@ def build_detail_update(
     return build_linked_detail_update(
         item,
         article_id,
-        data,
+        {**data, "source": SOURCE_NAME},
         detail_fetched_at=detail_fetched_at,
         default_source=SOURCE_NAME,
         render_content=html_to_markdown,

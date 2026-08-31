@@ -101,7 +101,7 @@ def test_parse_list_extracts_title_detail_id_and_beijing_date() -> None:
         "https://peking.bjd.com.cn/content/s6a943dc1e4b03fa51a83960a.html"
     )
     assert items[0].publish_time_iso == "2026-08-30T00:00:00+08:00"
-    assert items[0].section == "现代教育报"
+    assert items[0].section == "北京日报"
     assert http_beijinghao.make_article_id(items[0].url) == (
         "beijinghao:s6a943dc1e4b03fa51a83960a"
     )
@@ -128,7 +128,7 @@ def test_detail_payload_uses_json_content_and_removes_noise() -> None:
     data = http_beijinghao._parse_detail_payload(DETAIL_PAYLOAD, url)
 
     assert data["title"] == "2000余名师生同台展演"
-    assert data["source"] == "现代教育报"
+    assert data["source"] == "北京日报"
     assert data["publish_time_iso"] == "2026-08-30T14:27:13.505000+00:00"
     assert "这是正文第一段" in data["content_markdown"]
     assert "这是正文第二段" in data["content_markdown"]
@@ -158,8 +158,33 @@ def test_linked_rows_keep_shared_shape_and_ignore_original_id() -> None:
     )
 
     assert feed_row["summary"] is None
+    assert feed_row["source"] == detail_row["source"] == "北京日报"
     assert feed_row["article_id"] == detail_row["article_id"] == (
         "beijinghao:s6a943dc1e4b03fa51a83960a"
     )
     assert "CO6a943af7d5de5a8cf8a79be2" not in detail_row.values()
 
+
+def test_row_builders_force_beijing_daily_as_source() -> None:
+    item = http_beijinghao.FeedItemLike(
+        title="测试新闻",
+        url="https://peking.bjd.com.cn/content/testarticle.html",
+        section="具体北京号名称",
+        publish_time_iso=None,
+        raw={},
+    )
+    fetched_at = datetime(2026, 8, 31, 0, 0, tzinfo=timezone.utc)
+
+    feed_row = http_beijinghao.feed_item_to_row(
+        item,
+        "beijinghao:testarticle",
+        fetched_at=fetched_at,
+    )
+    detail_row = http_beijinghao.build_detail_update(
+        item,
+        "beijinghao:testarticle",
+        {"source": "另一个具体北京号名称", "content": "<p>正文</p>"},
+        detail_fetched_at=fetched_at,
+    )
+
+    assert feed_row["source"] == detail_row["source"] == "北京日报"

@@ -166,11 +166,11 @@ class _LocalLLMHandler(BaseHTTPRequestHandler):
         if self.path == "/keepalive":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", "30")
+            self.send_header("Content-Length", "200")
             self.send_header("Connection", "close")
             self.end_headers()
             try:
-                for _ in range(30):
+                for _ in range(200):
                     self.wfile.write(b" ")
                     self.wfile.flush()
                     time.sleep(0.02)

@@ -9,6 +9,13 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Set, Tuple, TypedDict
 
 from src.adapters.db_postgres_core import get_adapter
+from src.adapters.http_beijinghao import (
+    build_detail_update as beijinghao_build_detail_update,
+    feed_item_to_row as beijinghao_feed_item_to_row,
+    fetch_detail as beijinghao_fetch_detail,
+    list_items as beijinghao_list_items,
+    make_article_id as beijinghao_make_article_id,
+)
 from src.adapters.http_bjrb import (
     DEFAULT_DELAY as BJRB_DEFAULT_DELAY,
     DEFAULT_TIMEOUT as BJRB_DEFAULT_TIMEOUT,
@@ -17,6 +24,13 @@ from src.adapters.http_bjrb import (
     article_to_feed_row as bjrb_article_to_feed_row,
     fetch_article as bjrb_fetch_article,
     list_issue_items as bjrb_list_issue_items,
+)
+from src.adapters.http_btime import (
+    build_detail_update as btime_build_detail_update,
+    feed_item_to_row as btime_feed_item_to_row,
+    fetch_detail as btime_fetch_detail,
+    list_items as btime_list_items,
+    make_article_id as btime_make_article_id,
 )
 from src.adapters.http_chinadaily import (
     build_detail_update as cd_build_detail_update,
@@ -656,6 +670,62 @@ def _run_chinanews_flow(
     )
 
 
+def _run_btime_flow(
+    *,
+    adapter: Any,
+    keywords: Sequence[str],
+    remaining_limit: Optional[int],
+    pages: Optional[int],
+) -> CrawlStats:
+    flow = _linked_page_flow(
+        source="btime",
+        display_name="Btime",
+        list_items=lambda limit, existing: btime_list_items(
+            limit=limit,
+            pages=pages or 1,
+            existing_ids=existing,
+        ),
+        make_article_id=btime_make_article_id,
+        feed_item_to_row_func=btime_feed_item_to_row,
+        fetch_detail_func=btime_fetch_detail,
+        build_detail_update_func=btime_build_detail_update,
+    )
+    return _run_source_flow(
+        adapter=adapter,
+        flow=flow,
+        keywords=keywords,
+        remaining_limit=remaining_limit,
+    )
+
+
+def _run_beijinghao_flow(
+    *,
+    adapter: Any,
+    keywords: Sequence[str],
+    remaining_limit: Optional[int],
+    pages: Optional[int],
+) -> CrawlStats:
+    flow = _linked_page_flow(
+        source="beijinghao",
+        display_name="Beijinghao",
+        list_items=lambda limit, existing: beijinghao_list_items(
+            limit=limit,
+            pages=pages or 1,
+            existing_ids=existing,
+        ),
+        make_article_id=beijinghao_make_article_id,
+        feed_item_to_row_func=beijinghao_feed_item_to_row,
+        fetch_detail_func=beijinghao_fetch_detail,
+        build_detail_update_func=beijinghao_build_detail_update,
+    )
+    return _run_source_flow(
+        adapter=adapter,
+        flow=flow,
+        keywords=keywords,
+        remaining_limit=remaining_limit,
+    )
+
+
 def _run_chinanews_xj_flow(
     *,
     adapter: Any,
@@ -1007,6 +1077,12 @@ def run(
             if remaining_limit is not None and remaining_limit <= 0:
                 break
             source_runners: Dict[str, Callable[[], CrawlStats]] = {
+                "beijinghao": lambda: _run_beijinghao_flow(
+                    adapter=adapter,
+                    keywords=keywords,
+                    remaining_limit=remaining_limit,
+                    pages=pages,
+                ),
                 "bjrb": lambda: _run_bjrb_flow(
                     adapter=adapter,
                     keywords=keywords,
@@ -1027,6 +1103,12 @@ def run(
                     pages=pages,
                 ),
                 "chinanews_xj": lambda: _run_chinanews_xj_flow(
+                    adapter=adapter,
+                    keywords=keywords,
+                    remaining_limit=remaining_limit,
+                    pages=pages,
+                ),
+                "btime": lambda: _run_btime_flow(
                     adapter=adapter,
                     keywords=keywords,
                     remaining_limit=remaining_limit,

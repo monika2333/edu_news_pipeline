@@ -229,10 +229,10 @@ SCORE_KEYWORD_BONUSES={"高考":10,"中考":8}
 一次性流水线可用 `CRAWL_SOURCES` 选择来源：
 
 ```env
-CRAWL_SOURCES=toutiao,tencent,chinanews,chinanews_xj,jyb,chinadaily,gmw,qianlong,laodongwubao
+CRAWL_SOURCES=toutiao,tencent,chinanews,chinanews_xj,jyb,chinadaily,gmw,qianlong,laodongwubao,btime,beijinghao
 ```
 
-当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`chinanews_xj`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`laodongwubao`/`ldwb`、`bjrb`/`beijingdaily`。
+当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`chinanews_xj`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`laodongwubao`/`ldwb`、`bjrb`/`beijingdaily`、`btime`、`beijinghao`。
 
 北京日报不建议加入常规小时流水线的全局 `CRAWL_SOURCES`。服务器每日定时抓取时，优先调用 `scripts/run_bjrb_daily.ps1`；该脚本会在任务进程内临时设置 `CRAWL_SOURCES=bjrb`。
 
@@ -250,6 +250,12 @@ TOUTIAO_EXISTING_CONSECUTIVE_STOP=5
 TENCENT_AUTHORS_PATH=config/qq_author.txt
 TENCENT_DETAIL_DELAY=0.5
 TENCENT_EXISTING_CONSECUTIVE_STOP=5
+
+# Btime / 北京时间
+BTIME_UIDS_PATH=config/btime_uid.txt
+
+# Beijinghao / 北京号
+BEIJINGHAO_COLUMNS_PATH=config/bjh_column.txt
 
 # China Education Daily / JYB
 JYB_TIMEOUT=20

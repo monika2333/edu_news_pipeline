@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from src.adapters import http_chinanews_xj
 
@@ -50,6 +51,55 @@ DETAIL_HTML = """
   </body>
 </html>
 """
+
+
+MULTI_ITEM_LIST_HTML = """
+<html><body>
+  <div class="CLtitle">
+    <a href="/dizhou/2026-08-31/detail-existing-1.shtml">已有文章一</a>
+    [2026.08.31 12:30]
+  </div>
+  <div class="CLtitle">
+    <a href="/dizhou/2026-08-31/detail-existing-2.shtml">已有文章二</a>
+    [2026.08.31 12:20]
+  </div>
+  <div class="CLtitle">
+    <a href="/dizhou/2026-08-31/detail-middle-new.shtml">中间的新文章</a>
+    [2026.08.31 12:10]
+  </div>
+  <div class="CLtitle">
+    <a href="/dizhou/2026-08-31/detail-existing-3.shtml">已有文章三</a>
+    [2026.08.31 12:00]
+  </div>
+  <div class="CLtitle">
+    <a href="/dizhou/2026-08-31/detail-existing-4.shtml">已有文章四</a>
+    [2026.08.31 11:50]
+  </div>
+  <div class="CLtitle">
+    <a href="/dizhou/2026-08-31/detail-after-stop.shtml">停止点后的新文章</a>
+    [2026.08.31 11:40]
+  </div>
+</body></html>
+"""
+
+
+def _multi_item_id(slug: str) -> str:
+    return f"chinanewsxj:/dizhou/2026-08-31/detail-{slug}"
+
+
+class _FakeResponse:
+    encoding = "utf-8"
+    apparent_encoding = "utf-8"
+    text = MULTI_ITEM_LIST_HTML
+
+    def raise_for_status(self) -> None:
+        return None
+
+
+class _FakeSession:
+    def get(self, url: str, **kwargs: Any) -> _FakeResponse:
+        del url, kwargs
+        return _FakeResponse()
 
 
 def test_make_article_id_uses_distinct_prefix_and_normalizes_protocol() -> None:
@@ -150,3 +200,92 @@ def test_linked_page_rows_keep_shape_and_default_source() -> None:
         "content_markdown",
         "detail_fetched_at",
     }
+
+
+def test_parse_list_stops_after_consecutive_existing_threshold() -> None:
+    existing_ids = {_multi_item_id("existing-1"), _multi_item_id("existing-2")}
+
+    items = http_chinanews_xj._parse_list_html(
+        MULTI_ITEM_LIST_HTML,
+        existing_ids=existing_ids,
+        existing_consecutive_stop=2,
+    )
+
+    assert items == []
+
+
+def test_new_item_resets_consecutive_existing_count() -> None:
+    existing_ids = {
+        _multi_item_id("existing-1"),
+        _multi_item_id("existing-2"),
+        _multi_item_id("existing-3"),
+        _multi_item_id("existing-4"),
+    }
+
+    items = http_chinanews_xj._parse_list_html(
+        MULTI_ITEM_LIST_HTML,
+        existing_ids=existing_ids,
+        existing_consecutive_stop=3,
+    )
+
+    assert [item.title for item in items] == ["中间的新文章", "停止点后的新文章"]
+
+
+def test_zero_threshold_scans_all_existing_items(monkeypatch: Any) -> None:
+    existing_ids = {
+        _multi_item_id("existing-1"),
+        _multi_item_id("existing-2"),
+        _multi_item_id("middle-new"),
+        _multi_item_id("existing-3"),
+        _multi_item_id("existing-4"),
+        _multi_item_id("after-stop"),
+    }
+    visited_urls: list[str] = []
+    original_make_article_id = http_chinanews_xj.make_article_id
+
+    def track_make_article_id(url: str) -> str:
+        visited_urls.append(url)
+        return original_make_article_id(url)
+
+    monkeypatch.setattr(http_chinanews_xj, "make_article_id", track_make_article_id)
+
+    items = http_chinanews_xj._parse_list_html(
+        MULTI_ITEM_LIST_HTML,
+        existing_ids=existing_ids,
+        existing_consecutive_stop=0,
+    )
+
+    assert items == []
+    assert len(visited_urls) == 6
+
+
+def test_invalid_environment_threshold_falls_back_to_five(monkeypatch: Any) -> None:
+    existing_ids = {
+        _multi_item_id("existing-1"),
+        _multi_item_id("existing-2"),
+        _multi_item_id("middle-new"),
+        _multi_item_id("existing-3"),
+        _multi_item_id("existing-4"),
+    }
+    monkeypatch.setenv("CHINANEWS_XJ_EXISTING_CONSECUTIVE_STOP", "abc")
+    monkeypatch.setattr(http_chinanews_xj, "_session", _FakeSession)
+
+    items = http_chinanews_xj.list_items(existing_ids=existing_ids)
+
+    assert items == []
+
+
+def test_negative_environment_threshold_disables_stop(monkeypatch: Any) -> None:
+    existing_ids = {
+        _multi_item_id("existing-1"),
+        _multi_item_id("existing-2"),
+        _multi_item_id("middle-new"),
+        _multi_item_id("existing-3"),
+        _multi_item_id("existing-4"),
+    }
+    monkeypatch.setenv("CHINANEWS_XJ_EXISTING_CONSECUTIVE_STOP", "-1")
+    monkeypatch.setattr(http_chinanews_xj, "_session", _FakeSession)
+
+    items = http_chinanews_xj.list_items(existing_ids=existing_ids)
+
+    assert [item.title for item in items] == ["停止点后的新文章"]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -95,10 +96,12 @@ def _parse_list_html(
     html_text: str,
     *,
     existing_ids: Optional[set[str]] = None,
+    existing_consecutive_stop: int = 0,
 ) -> list[FeedItemLike]:
     soup = BeautifulSoup(html_text, "html.parser")
     items: list[FeedItemLike] = []
     seen_urls: set[str] = set()
+    consecutive_hits = 0
 
     for anchor in soup.find_all("a", href=True):
         url = normalize_url(str(anchor.get("href") or ""))
@@ -112,7 +115,12 @@ def _parse_list_html(
         article_id = make_article_id(url)
         if existing_ids is not None and article_id in existing_ids:
             seen_urls.add(url)
+            if existing_consecutive_stop > 0:
+                consecutive_hits += 1
+                if consecutive_hits >= existing_consecutive_stop:
+                    return items
             continue
+        consecutive_hits = 0
 
         row = anchor.find_parent(class_="CLtitle") or anchor.parent
         row_text = row.get_text(" ", strip=True) if isinstance(row, Tag) else ""
@@ -147,7 +155,16 @@ def list_items(
     session = _session()
     response = session.get(LIST_URL, timeout=15)
     response.raise_for_status()
-    items = _parse_list_html(_response_text(response), existing_ids=existing_ids)
+    try:
+        consecutive_stop = int(os.getenv("CHINANEWS_XJ_EXISTING_CONSECUTIVE_STOP", "5"))
+    except (TypeError, ValueError):
+        consecutive_stop = 5
+    consecutive_stop = max(0, consecutive_stop)
+    items = _parse_list_html(
+        _response_text(response),
+        existing_ids=existing_ids,
+        existing_consecutive_stop=consecutive_stop,
+    )
     return items[:limit] if limit is not None else items
 
 

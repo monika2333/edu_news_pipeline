@@ -4,14 +4,11 @@ import re
 import time
 from typing import Optional
 
-import requests
-
 from src.adapters.llm_chat import (
-    LLMQuotaError,
     apply_reasoning_config,
     build_headers,
     extract_message_text,
-    raise_for_llm_quota_error,
+    post_chat_completion,
 )
 from src.config import get_settings
 
@@ -36,7 +33,9 @@ def _build_prompt(text: str) -> str:
 
 
 def call_relevance_api(text: str, *, retries: int = 4, timeout: Optional[int] = None) -> str:
+    started_at = time.monotonic()
     settings = get_settings()
+    deadline = started_at + settings.llm_scoring_budget
     api_key = settings.llm_api_key
     if not api_key:
         raise RuntimeError("Missing LLM API key (set LLM_API_KEY)")
@@ -59,35 +58,23 @@ def call_relevance_api(text: str, *, retries: int = 4, timeout: Optional[int] = 
         title=settings.llm_api_title,
     )
 
-    backoff = 1.0
-    last_error: Optional[Exception] = None
     # Resolve timeout from settings if not explicitly provided
     resolved_timeout = timeout or settings.llm_scoring_timeout
-
-    for _ in range(max(1, retries)):
-        try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=resolved_timeout)
-            if resp.status_code == 200:
-                data = resp.json()
-                choice = data.get("choices", [{}])[0]
-                return extract_message_text(choice)
-            raise_for_llm_quota_error(
-                status_code=resp.status_code,
-                response_text=resp.text,
-                operation="score",
-                model=settings.llm_scoring_model,
-            )
-            if resp.status_code in _RETRYABLE_STATUS:
-                time.sleep(backoff)
-                backoff = min(backoff * 2, 8)
-                continue
-            last_error = RuntimeError(f"API {resp.status_code}: {resp.text[:160]}")
-        except LLMQuotaError:
-            raise
-        except Exception as exc:
-            last_error = exc
-        time.sleep(backoff)
-    raise last_error or RuntimeError("Relevance scoring call failed")
+    data = post_chat_completion(
+        url,
+        payload=payload,
+        headers=headers,
+        timeout=resolved_timeout,
+        budget=settings.llm_scoring_budget,
+        retries=retries,
+        retryable_statuses=_RETRYABLE_STATUS,
+        operation="score",
+        model=settings.llm_scoring_model,
+        deadline=deadline,
+        advance_backoff_on_exception=False,
+    )
+    choice = data.get("choices", [{}])[0]
+    return extract_message_text(choice)
 
 
 def parse_score(value: str) -> Optional[int]:

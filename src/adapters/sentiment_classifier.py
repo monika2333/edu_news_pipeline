@@ -2,15 +2,12 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Dict, Optional, Tuple
-
-import requests
+from typing import Any, Dict, Optional, Tuple
 
 from src.adapters.llm_chat import (
-    LLMQuotaError,
     apply_reasoning_config,
     build_headers,
-    raise_for_llm_quota_error,
+    post_chat_completion,
 )
 from src.config import get_settings
 
@@ -64,7 +61,9 @@ def _parse_response(raw_text: str) -> Tuple[str, float]:
 
 
 def classify_sentiment(content: str, *, retries: int = 4, timeout: Optional[int] = None) -> Dict[str, object]:
+    started_at = time.monotonic()
     settings = get_settings()
+    deadline = started_at + settings.llm_sentiment_budget
     api_key = settings.llm_api_key
     if not api_key:
         raise RuntimeError("Missing LLM API key (set LLM_API_KEY)")
@@ -87,39 +86,32 @@ def classify_sentiment(content: str, *, retries: int = 4, timeout: Optional[int]
         title=settings.llm_api_title,
     )
 
-    backoff = 1.0
-    last_error: Optional[Exception] = None
     resolved_timeout = timeout or settings.llm_summary_timeout
-    for _ in range(max(1, retries)):
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=resolved_timeout)
-            if response.status_code == 200:
-                data = response.json()
-                content = (data["choices"][0]["message"]["content"] or "").strip()
-                label, confidence = _parse_response(content)
-                return {
-                    "label": label,
-                    "confidence": confidence,
-                    "raw": data,
-                }
-            raise_for_llm_quota_error(
-                status_code=response.status_code,
-                response_text=response.text,
-                operation="sentiment",
-                model=settings.llm_sentiment_model,
-            )
-            if response.status_code in _RETRYABLE_STATUS:
-                time.sleep(backoff)
-                backoff = min(backoff * 2, 8)
-                continue
-            last_error = RuntimeError(f"API {response.status_code}: {response.text[:160]}")
-        except LLMQuotaError:
-            raise
-        except Exception as exc:
-            last_error = exc
-        time.sleep(backoff)
-        backoff = min(backoff * 2, 8)
-    raise last_error or RuntimeError("Sentiment classification failed")
+
+    def validate_response(data: dict[str, Any]) -> None:
+        raw_text = (data["choices"][0]["message"]["content"] or "").strip()
+        _parse_response(raw_text)
+
+    data = post_chat_completion(
+        url,
+        payload=payload,
+        headers=headers,
+        timeout=resolved_timeout,
+        budget=settings.llm_sentiment_budget,
+        retries=retries,
+        retryable_statuses=_RETRYABLE_STATUS,
+        operation="sentiment",
+        model=settings.llm_sentiment_model,
+        deadline=deadline,
+        response_validator=validate_response,
+    )
+    raw_text = (data["choices"][0]["message"]["content"] or "").strip()
+    label, confidence = _parse_response(raw_text)
+    return {
+        "label": label,
+        "confidence": confidence,
+        "raw": data,
+    }
 
 
 __all__ = ["classify_sentiment"]

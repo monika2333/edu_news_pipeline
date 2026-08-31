@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 import threading
 import time
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, MutableMapping, Optional
+
+import requests
 
 from src.config import Settings, get_settings
 
@@ -48,6 +51,227 @@ class LLMQuotaError(RuntimeError):
             f"LLM quota or billing error during {self.operation} "
             f"(model={self.model}, status={self.status_code}): {self.response_text}",
         )
+
+
+class LLMWallClockTimeout(requests.Timeout):
+    """Raised when one business call exhausts its total LLM time budget."""
+
+    def __init__(self, *, operation: str, budget: float) -> None:
+        self.operation = operation
+        self.budget = budget
+        super().__init__(
+            f"LLM wall-clock budget exhausted during {self.operation} "
+            f"(budget={self.budget:g}s)",
+        )
+
+
+class _StopRetry(Exception):
+    def __init__(self, error: Exception) -> None:
+        super().__init__(str(error))
+        self.error = error
+
+
+def post_chat_completion(
+    url: str,
+    *,
+    payload: Mapping[str, Any],
+    headers: Mapping[str, str],
+    timeout: float,
+    budget: float,
+    retries: int,
+    retryable_statuses: Collection[int],
+    operation: str,
+    model: str,
+    deadline: Optional[float] = None,
+    backoff_initial: float = 1.0,
+    backoff_multiplier: float = 2.0,
+    backoff_max: float = 8.0,
+    advance_backoff_on_exception: bool = True,
+    retry_non_retryable_statuses: bool = True,
+    response_validator: Optional[Callable[[dict[str, Any]], None]] = None,
+    non_retryable_exceptions: tuple[type[Exception], ...] = (),
+    http_error_factory: Optional[Callable[[int, str], Exception]] = None,
+    attempt_callback: Optional[Callable[[int], None]] = None,
+) -> dict[str, Any]:
+    """POST one chat task with retries bounded by a shared wall-clock deadline.
+
+    ``timeout`` remains the per-request socket timeout. ``budget`` limits the
+    complete business call, including response reads, retries, and backoff.
+    Callers with outer semantic retries may pass the same absolute ``deadline``
+    to every invocation. The optional callback receives each HTTP attempt number.
+    """
+
+    resolved_deadline = deadline if deadline is not None else time.monotonic() + budget
+    attempts = max(1, retries)
+    backoff = max(0.0, backoff_initial)
+    last_error: Optional[Exception] = None
+
+    for attempt in range(1, attempts + 1):
+        request_timeout = _remaining_request_timeout(
+            deadline=resolved_deadline,
+            timeout=timeout,
+            operation=operation,
+            budget=budget,
+        )
+        if attempt_callback is not None:
+            attempt_callback(attempt)
+
+        response: Optional[requests.Response] = None
+        status_failure = False
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=request_timeout,
+                stream=True,
+            )
+            raw_body = _read_response_body(
+                response,
+                deadline=resolved_deadline,
+                operation=operation,
+                budget=budget,
+            )
+            if response.status_code == 200:
+                data = json.loads(raw_body)
+                if not isinstance(data, dict):
+                    raise ValueError("LLM response body must be a JSON object")
+                if response_validator is not None:
+                    response_validator(data)
+                _raise_if_deadline_exceeded(
+                    deadline=resolved_deadline,
+                    operation=operation,
+                    budget=budget,
+                )
+                return data
+
+            response_text = _decode_response_body(response, raw_body)
+            _raise_if_deadline_exceeded(
+                deadline=resolved_deadline,
+                operation=operation,
+                budget=budget,
+            )
+            raise_for_llm_quota_error(
+                status_code=response.status_code,
+                response_text=response_text,
+                operation=operation,
+                model=model,
+            )
+            error_factory = http_error_factory or _default_http_error
+            http_error = error_factory(response.status_code, response_text)
+            if (
+                response.status_code not in retryable_statuses
+                and not retry_non_retryable_statuses
+            ):
+                raise _StopRetry(http_error)
+            last_error = http_error
+            status_failure = True
+        except _StopRetry as exc:
+            raise exc.error
+        except (LLMQuotaError, LLMWallClockTimeout):
+            raise
+        except Exception as exc:
+            if isinstance(exc, non_retryable_exceptions):
+                raise
+            _raise_if_deadline_exceeded(
+                deadline=resolved_deadline,
+                operation=operation,
+                budget=budget,
+                cause=exc,
+            )
+            last_error = exc
+        finally:
+            if response is not None:
+                response.close()
+
+        if attempt >= attempts:
+            break
+
+        remaining = resolved_deadline - time.monotonic()
+        if remaining <= 0:
+            raise LLMWallClockTimeout(operation=operation, budget=budget)
+        time.sleep(min(backoff, remaining))
+        _raise_if_deadline_exceeded(
+            deadline=resolved_deadline,
+            operation=operation,
+            budget=budget,
+        )
+        if status_failure or advance_backoff_on_exception:
+            backoff = min(backoff * backoff_multiplier, backoff_max)
+
+    raise last_error or RuntimeError(f"LLM call failed during {operation}")
+
+
+def _remaining_request_timeout(
+    *,
+    deadline: float,
+    timeout: float,
+    operation: str,
+    budget: float,
+) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise LLMWallClockTimeout(operation=operation, budget=budget)
+    return min(float(timeout), remaining)
+
+
+def _read_response_body(
+    response: requests.Response,
+    *,
+    deadline: float,
+    operation: str,
+    budget: float,
+) -> bytes:
+    body = bytearray()
+    _raise_if_deadline_exceeded(
+        deadline=deadline,
+        operation=operation,
+        budget=budget,
+    )
+    # A one-byte chunk ensures provider keepalives are yielded immediately
+    # instead of being buffered until a larger application chunk is full.
+    for chunk in response.iter_content(chunk_size=1):
+        _raise_if_deadline_exceeded(
+            deadline=deadline,
+            operation=operation,
+            budget=budget,
+        )
+        if chunk:
+            body.extend(chunk)
+        _raise_if_deadline_exceeded(
+            deadline=deadline,
+            operation=operation,
+            budget=budget,
+        )
+    _raise_if_deadline_exceeded(
+        deadline=deadline,
+        operation=operation,
+        budget=budget,
+    )
+    return bytes(body)
+
+
+def _decode_response_body(response: requests.Response, body: bytes) -> str:
+    return body.decode(response.encoding or "utf-8", errors="replace")
+
+
+def _raise_if_deadline_exceeded(
+    *,
+    deadline: float,
+    operation: str,
+    budget: float,
+    cause: Optional[Exception] = None,
+) -> None:
+    if time.monotonic() < deadline:
+        return
+    error = LLMWallClockTimeout(operation=operation, budget=budget)
+    if cause is None:
+        raise error
+    raise error from cause
+
+
+def _default_http_error(status_code: int, response_text: str) -> Exception:
+    return RuntimeError(f"API {status_code}: {response_text[:160]}")
 
 
 def build_headers(
@@ -218,9 +442,11 @@ def _write_quota_alert_state(state_path: Path, *, now: float) -> None:
 
 __all__ = [
     "LLMQuotaError",
+    "LLMWallClockTimeout",
     "apply_reasoning_config",
     "build_headers",
     "extract_message_text",
     "is_llm_quota_response",
+    "post_chat_completion",
     "raise_for_llm_quota_error",
 ]

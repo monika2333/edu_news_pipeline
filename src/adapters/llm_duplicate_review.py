@@ -8,11 +8,10 @@ from typing import Any, Mapping, Optional, Sequence
 import requests
 
 from src.adapters.llm_chat import (
-    LLMQuotaError,
     apply_reasoning_config,
     build_headers,
     extract_message_text,
-    raise_for_llm_quota_error,
+    post_chat_completion,
 )
 from src.config import get_settings
 
@@ -75,6 +74,7 @@ def _post_chat_completion(
     *,
     retries: int,
     timeout: int,
+    deadline: Optional[float] = None,
 ) -> str:
     settings = get_settings()
     api_key = settings.llm_api_key
@@ -87,41 +87,34 @@ def _post_chat_completion(
         referer=settings.llm_api_http_referer,
         title=settings.llm_api_title,
     )
-    backoff = 1.0
-    last_error: Optional[Exception] = None
-    for _ in range(max(1, retries)):
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=timeout)
-            if response.status_code == 200:
-                data = response.json()
-                choice = data.get("choices", [{}])[0]
-                message = extract_message_text(choice)
-                if not message:
-                    raise DuplicateReviewResponseError("查重模型返回了空内容")
-                return message
-            raise_for_llm_quota_error(
-                status_code=response.status_code,
-                response_text=response.text,
-                operation="duplicate_review",
-                model=settings.llm_scoring_model,
-            )
-            if response.status_code in RETRYABLE_STATUS_CODES:
-                last_error = requests.HTTPError(
-                    f"Duplicate review API {response.status_code}: {response.text[:160]}"
-                )
-                time.sleep(backoff)
-                backoff = min(backoff * 2, 8)
-                continue
-            raise requests.HTTPError(
-                f"Duplicate review API {response.status_code}: {response.text[:160]}"
-            )
-        except (LLMQuotaError, DuplicateReviewResponseError, requests.Timeout):
-            raise
-        except requests.RequestException as exc:
-            last_error = exc
-            time.sleep(backoff)
-            backoff = min(backoff * 2, 8)
-    raise last_error or RuntimeError("Duplicate review call failed")
+    def validate_response(data: dict[str, Any]) -> None:
+        choice = data.get("choices", [{}])[0]
+        if not extract_message_text(choice):
+            raise DuplicateReviewResponseError("查重模型返回了空内容")
+
+    def build_http_error(status_code: int, response_text: str) -> Exception:
+        return requests.HTTPError(
+            f"Duplicate review API {status_code}: {response_text[:160]}"
+        )
+
+    data = post_chat_completion(
+        url,
+        payload=payload,
+        headers=headers,
+        timeout=timeout,
+        budget=settings.llm_duplicate_review_budget,
+        retries=retries,
+        retryable_statuses=RETRYABLE_STATUS_CODES,
+        operation="duplicate_review",
+        model=settings.llm_scoring_model,
+        deadline=deadline,
+        retry_non_retryable_statuses=False,
+        response_validator=validate_response,
+        non_retryable_exceptions=(DuplicateReviewResponseError, requests.Timeout),
+        http_error_factory=build_http_error,
+    )
+    choice = data.get("choices", [{}])[0]
+    return extract_message_text(choice)
 
 
 def call_duplicate_review(
@@ -129,7 +122,9 @@ def call_duplicate_review(
     *,
     retries: int = 2,
 ) -> list[list[str]]:
+    started_at = time.monotonic()
     settings = get_settings()
+    deadline = started_at + settings.llm_duplicate_review_budget
     payload: dict[str, Any] = {
         "model": settings.llm_scoring_model,
         "messages": [{"role": "user", "content": build_prompt(items)}],
@@ -144,6 +139,7 @@ def call_duplicate_review(
         payload,
         retries=retries,
         timeout=settings.llm_scoring_timeout,
+        deadline=deadline,
     )
     return parse_duplicate_groups(raw_output)
 

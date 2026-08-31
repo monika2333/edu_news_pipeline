@@ -43,13 +43,21 @@ def test_summarise_raises_quota_error_without_retry(monkeypatch, tmp_path) -> No
 
     class _Response:
         status_code = 402
-        text = "insufficient credits"
+        encoding = "utf-8"
+
+        @staticmethod
+        def iter_content(chunk_size):
+            yield b"insufficient credits"
+
+        @staticmethod
+        def close():
+            return None
 
     monkeypatch.setattr(llm_chat, "get_settings", lambda: settings)
     monkeypatch.setattr("src.notifications.feishu.notify_llm_quota_alert", lambda **kwargs: calls.append(kwargs) or True)
 
     with patch("src.adapters.llm_summary.get_settings", return_value=settings), patch(
-        "src.adapters.llm_summary.requests.post",
+        "src.adapters.llm_chat.requests.post",
         return_value=_Response(),
     ) as post:
         with pytest.raises(LLMQuotaError):
@@ -57,3 +65,17 @@ def test_summarise_raises_quota_error_without_retry(monkeypatch, tmp_path) -> No
 
     assert post.call_count == 1
     assert calls[0]["operation"] == "summarize"
+
+
+def test_summarise_preserves_complete_raw_response() -> None:
+    raw = {
+        "id": "completion-1",
+        "choices": [{"message": {"content": "完整摘要"}}],
+        "usage": {"total_tokens": 42},
+    }
+
+    with patch("src.adapters.llm_summary.post_chat_completion", return_value=raw):
+        result = summarise({"title": "测试标题", "content": "正文内容"}, retries=1)
+
+    assert result["summary"] == "完整摘要"
+    assert result["raw"] is raw

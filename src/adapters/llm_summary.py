@@ -3,13 +3,10 @@
 import time
 from typing import Any, Dict, Optional
 
-import requests
-
 from src.adapters.llm_chat import (
-    LLMQuotaError,
     apply_reasoning_config,
     build_headers,
-    raise_for_llm_quota_error,
+    post_chat_completion,
 )
 from src.config import get_settings
 
@@ -45,7 +42,9 @@ def summarise(
 ) -> Dict[str, Any]:
     """Call the configured LLM chat completions API to summarise an article."""
 
+    started_at = time.monotonic()
     settings = get_settings()
+    deadline = started_at + settings.llm_summary_budget
     api_key = settings.llm_api_key
     if not api_key:
         raise RuntimeError("Missing LLM API key (set LLM_API_KEY)")
@@ -70,40 +69,26 @@ def summarise(
         title=settings.llm_api_title,
     )
 
-    backoff = 1.0
-    last_error: Optional[Exception] = None
     # Resolve timeout from settings if not explicitly provided
     resolved_timeout = timeout or settings.llm_summary_timeout
-
-    for _ in range(max(1, retries)):
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=resolved_timeout)
-            if response.status_code == 200:
-                data = response.json()
-                summary = (data["choices"][0]["message"]["content"] or "").strip()
-                return {
-                    "summary": summary,
-                    "model": settings.llm_summary_model,
-                    "raw": data,
-                }
-            raise_for_llm_quota_error(
-                status_code=response.status_code,
-                response_text=response.text,
-                operation="summarize",
-                model=settings.llm_summary_model,
-            )
-            if response.status_code in _RETRYABLE_STATUS:
-                time.sleep(backoff)
-                backoff = min(backoff * 2, 8)
-                continue
-            last_error = RuntimeError(f"API {response.status_code}: {response.text[:160]}")
-        except LLMQuotaError:
-            raise
-        except Exception as exc:
-            last_error = exc
-        time.sleep(backoff)
-        backoff = min(backoff * 2, 8)
-    raise last_error or RuntimeError("Summarisation call failed")
+    data = post_chat_completion(
+        url,
+        payload=payload,
+        headers=headers,
+        timeout=resolved_timeout,
+        budget=settings.llm_summary_budget,
+        retries=retries,
+        retryable_statuses=_RETRYABLE_STATUS,
+        operation="summarize",
+        model=settings.llm_summary_model,
+        deadline=deadline,
+    )
+    summary = (data["choices"][0]["message"]["content"] or "").strip()
+    return {
+        "summary": summary,
+        "model": settings.llm_summary_model,
+        "raw": data,
+    }
 
 
 __all__ = ["build_summary_payload", "summarise"]

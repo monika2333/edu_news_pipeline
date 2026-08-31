@@ -3,16 +3,13 @@ from __future__ import annotations
 import re
 import time
 from pathlib import Path
-from typing import Optional
-
-import requests
+from typing import Any, Optional
 
 from src.adapters.llm_chat import (
-    LLMQuotaError,
     apply_reasoning_config,
     build_headers,
     extract_message_text,
-    raise_for_llm_quota_error,
+    post_chat_completion,
 )
 from src.adapters.llm_scoring import parse_score
 from src.config import get_settings
@@ -138,7 +135,9 @@ def call_external_filter_model(
     retries: int = 3,
     timeout: Optional[int] = None,
 ) -> str:
+    started_at = time.monotonic()
     settings = get_settings()
+    deadline = started_at + settings.llm_external_filter_budget
     api_key = settings.llm_api_key
     if not api_key:
         raise RuntimeError("Missing LLM API key (set LLM_API_KEY)")
@@ -158,38 +157,30 @@ def call_external_filter_model(
         referer=settings.llm_api_http_referer,
         title=settings.llm_api_title,
     )
-    backoff = 1.0
-    last_error: Optional[Exception] = None
     # Resolve timeout from settings if not explicitly provided
     resolved_timeout = timeout or settings.llm_external_filter_timeout
 
-    for _ in range(max(1, retries)):
-        try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=resolved_timeout)
-            if resp.status_code == 200:
-                data = resp.json()
-                choice = data.get("choices", [{}])[0]
-                message_content = extract_message_text(choice)
-                if not message_content:
-                    raise RuntimeError("Empty response from external filter model")
-                return message_content
-            raise_for_llm_quota_error(
-                status_code=resp.status_code,
-                response_text=resp.text,
-                operation=f"external_filter:{category}",
-                model=settings.llm_external_filter_model,
-            )
-            if resp.status_code in _RETRYABLE_STATUS:
-                time.sleep(backoff)
-                backoff = min(backoff * 2, 8)
-                continue
-            last_error = RuntimeError(f"API {resp.status_code}: {resp.text[:160]}")
-        except LLMQuotaError:
-            raise
-        except Exception as exc:
-            last_error = exc
-        time.sleep(backoff)
-    raise last_error or RuntimeError("External filter model call failed")
+    def validate_response(data: dict[str, Any]) -> None:
+        choice = data.get("choices", [{}])[0]
+        if not extract_message_text(choice):
+            raise RuntimeError("Empty response from external filter model")
+
+    data = post_chat_completion(
+        url,
+        payload=payload,
+        headers=headers,
+        timeout=resolved_timeout,
+        budget=settings.llm_external_filter_budget,
+        retries=retries,
+        retryable_statuses=_RETRYABLE_STATUS,
+        operation=f"external_filter:{category}",
+        model=settings.llm_external_filter_model,
+        deadline=deadline,
+        advance_backoff_on_exception=False,
+        response_validator=validate_response,
+    )
+    choice = data.get("choices", [{}])[0]
+    return extract_message_text(choice)
 
 
 def parse_external_filter_score(raw_output: str) -> Optional[int]:

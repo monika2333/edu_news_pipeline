@@ -6,14 +6,11 @@ import time
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional
 
-import requests
-
 from src.adapters.llm_chat import (
-    LLMQuotaError,
     apply_reasoning_config,
     build_headers,
     extract_message_text,
-    raise_for_llm_quota_error,
+    post_chat_completion,
 )
 from src.config import get_settings
 from src.domain import BeijingGateCandidate
@@ -128,6 +125,8 @@ def _post_chat_completion(
     payload: Mapping[str, Any],
     retries: int,
     timeout: int,
+    *,
+    deadline: Optional[float] = None,
 ) -> BeijingGateResponse:
     settings = get_settings()
     api_key = settings.llm_api_key
@@ -139,52 +138,39 @@ def _post_chat_completion(
         referer=settings.llm_api_http_referer,
         title=settings.llm_api_title,
     )
-    backoff = 1.0
-    last_error: Optional[Exception] = None
-    attempts = max(1, retries)
-    for attempt in range(attempts):
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=timeout)
-            if response.status_code == 200:
-                data = response.json()
-                choice = data.get("choices", [{}])[0]
-                message = extract_message_text(choice)
-                if message:
-                    provider = data.get("provider")
-                    model = data.get("model")
-                    return BeijingGateResponse(
-                        raw_text=message,
-                        provider=str(provider).strip() if provider else None,
-                        model=str(model).strip() if model else None,
-                    )
-                raise RuntimeError("Empty response from Beijing gate model")
-            raise_for_llm_quota_error(
-                status_code=response.status_code,
-                response_text=response.text,
-                operation="beijing_gate",
-                model=_resolve_model_name(settings),
-            )
-            if response.status_code in RETRYABLE_STATUS:
-                last_error = RuntimeError(
-                    f"API {response.status_code}: {response.text[:160]}"
-                )
-                if attempt < attempts - 1:
-                    time.sleep(backoff)
-                    backoff = min(backoff * 2, 8)
-                continue
-            last_error = RuntimeError(f"API {response.status_code}: {response.text[:160]}")
-        except LLMQuotaError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            last_error = exc
-        if attempt < attempts - 1:
-            time.sleep(backoff)
-            backoff = min(backoff * 2, 8)
-    raise last_error or RuntimeError("Beijing gate model call failed")
+    def validate_response(data: dict[str, Any]) -> None:
+        choice = data.get("choices", [{}])[0]
+        if not extract_message_text(choice):
+            raise RuntimeError("Empty response from Beijing gate model")
+
+    data = post_chat_completion(
+        url,
+        payload=payload,
+        headers=headers,
+        timeout=timeout,
+        budget=settings.llm_beijing_gate_budget,
+        retries=retries,
+        retryable_statuses=RETRYABLE_STATUS,
+        operation="beijing_gate",
+        model=_resolve_model_name(settings),
+        deadline=deadline,
+        response_validator=validate_response,
+    )
+    choice = data.get("choices", [{}])[0]
+    message = extract_message_text(choice)
+    provider = data.get("provider")
+    model = data.get("model")
+    return BeijingGateResponse(
+        raw_text=message,
+        provider=str(provider).strip() if provider else None,
+        model=str(model).strip() if model else None,
+    )
 
 
 def call_beijing_gate(candidate: BeijingGateCandidate, *, retries: int = 3) -> BeijingGateDecision:
+    started_at = time.monotonic()
     settings = get_settings()
+    deadline = started_at + settings.llm_beijing_gate_budget
     prompt = build_prompt(candidate)
     payload: dict[str, Any] = {
         "model": _resolve_model_name(settings),
@@ -199,7 +185,12 @@ def call_beijing_gate(candidate: BeijingGateCandidate, *, retries: int = 3) -> B
     )
     timeout = _resolve_timeout(settings)
     semantic_attempts = max(1, retries)
-    response = _post_chat_completion(payload, retries=semantic_attempts, timeout=timeout)
+    response = _post_chat_completion(
+        payload,
+        retries=semantic_attempts,
+        timeout=timeout,
+        deadline=deadline,
+    )
     for attempt in range(1, semantic_attempts + 1):
         decision = _parse_decision(response.raw_text)
         if decision["is_beijing_related"] is not None:
@@ -212,7 +203,12 @@ def call_beijing_gate(candidate: BeijingGateCandidate, *, retries: int = 3) -> B
                 attempts=attempt,
             )
         if attempt < semantic_attempts:
-            response = _post_chat_completion(payload, retries=1, timeout=timeout)
+            response = _post_chat_completion(
+                payload,
+                retries=1,
+                timeout=timeout,
+                deadline=deadline,
+            )
     raise BeijingGateIndeterminateError(response, attempts=semantic_attempts)
 
 

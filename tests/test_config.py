@@ -30,6 +30,14 @@ LLM_ENV_KEYS = (
     "LLM_SUMMARY_TIMEOUT",
     "LLM_EXTERNAL_FILTER_TIMEOUT",
     "LLM_BEIJING_GATE_TIMEOUT",
+    "LLM_BUDGET",
+    "LLM_BEIJING_GATE_BUDGET",
+    "LLM_SCORING_BUDGET",
+    "LLM_SUMMARY_BUDGET",
+    "LLM_EXTERNAL_FILTER_BUDGET",
+    "LLM_SENTIMENT_BUDGET",
+    "LLM_SOURCE_BUDGET",
+    "LLM_DUPLICATE_REVIEW_BUDGET",
     "LLM_QUOTA_ALERT_ENABLED",
     "LLM_QUOTA_ALERT_COOLDOWN_SECONDS",
     "LLM_QUOTA_ALERT_STATE_PATH",
@@ -95,6 +103,14 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
     monkeypatch.setenv("LLM_SUMMARY_TIMEOUT", "22")
     monkeypatch.setenv("LLM_EXTERNAL_FILTER_TIMEOUT", "33")
     monkeypatch.setenv("LLM_BEIJING_GATE_TIMEOUT", "44")
+    monkeypatch.setenv("LLM_BUDGET", "180")
+    monkeypatch.setenv("LLM_BEIJING_GATE_BUDGET", "181")
+    monkeypatch.setenv("LLM_SCORING_BUDGET", "182")
+    monkeypatch.setenv("LLM_SUMMARY_BUDGET", "183")
+    monkeypatch.setenv("LLM_EXTERNAL_FILTER_BUDGET", "184")
+    monkeypatch.setenv("LLM_SENTIMENT_BUDGET", "185")
+    monkeypatch.setenv("LLM_SOURCE_BUDGET", "186")
+    monkeypatch.setenv("LLM_DUPLICATE_REVIEW_BUDGET", "187")
     monkeypatch.setenv("LLM_QUOTA_ALERT_ENABLED", "false")
     monkeypatch.setenv("LLM_QUOTA_ALERT_COOLDOWN_SECONDS", "99")
     monkeypatch.setenv("LLM_QUOTA_ALERT_STATE_PATH", "logs/test_quota_state.json")
@@ -118,6 +134,14 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
     assert settings.llm_summary_timeout == 22
     assert settings.llm_external_filter_timeout == 33
     assert settings.llm_beijing_gate_timeout == 44
+    assert settings.llm_global_budget == 180
+    assert settings.llm_beijing_gate_budget == 181
+    assert settings.llm_scoring_budget == 182
+    assert settings.llm_summary_budget == 183
+    assert settings.llm_external_filter_budget == 184
+    assert settings.llm_sentiment_budget == 185
+    assert settings.llm_source_budget == 186
+    assert settings.llm_duplicate_review_budget == 187
     assert settings.llm_quota_alert_enabled is False
     assert settings.llm_quota_alert_cooldown_seconds == 99
     assert settings.llm_quota_alert_state_path.name == "test_quota_state.json"
@@ -199,6 +223,14 @@ def test_settings_ignores_removed_llm_variable_names(
     assert settings.llm_summary_timeout == 90
     assert settings.llm_external_filter_timeout == 90
     assert settings.llm_beijing_gate_timeout == 90
+    assert settings.llm_global_budget == 180
+    assert settings.llm_beijing_gate_budget == 180
+    assert settings.llm_scoring_budget == 180
+    assert settings.llm_summary_budget == 180
+    assert settings.llm_external_filter_budget == 180
+    assert settings.llm_sentiment_budget == 180
+    assert settings.llm_source_budget == 180
+    assert settings.llm_duplicate_review_budget == 180
     assert settings.llm_quota_alert_enabled is True
     assert settings.llm_quota_alert_cooldown_seconds == 21600
     assert settings.llm_quota_alert_state_path.name == "llm_quota_alert_state.json"

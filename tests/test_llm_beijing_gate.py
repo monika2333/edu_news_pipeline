@@ -102,15 +102,18 @@ def test_call_beijing_gate_uses_json_schema_and_retries_indeterminate_output(
             ),
         ]
     )
-    calls: list[tuple[dict[str, object], int]] = []
+    calls: list[tuple[dict[str, object], int, float]] = []
 
     def fake_post(
         payload: dict[str, object],
         retries: int,
         timeout: int,
+        *,
+        deadline: float,
     ) -> gate.BeijingGateResponse:
         assert timeout > 0
-        calls.append((payload, retries))
+        assert deadline > 0
+        calls.append((payload, retries, deadline))
         return next(responses)
 
     monkeypatch.setattr(gate, "_post_chat_completion", fake_post)
@@ -121,7 +124,8 @@ def test_call_beijing_gate_uses_json_schema_and_retries_indeterminate_output(
     assert decision.attempts == 2
     assert decision.provider == "provider-b"
     assert decision.model == "model-b"
-    assert [retries for _, retries in calls] == [3, 1]
+    assert [retries for _, retries, _ in calls] == [3, 1]
+    assert calls[0][2] == calls[1][2]
     response_format = calls[0][0]["response_format"]
     assert isinstance(response_format, dict)
     assert response_format["type"] == "json_schema"
@@ -139,7 +143,7 @@ def test_call_beijing_gate_preserves_final_indeterminate_response(
     monkeypatch.setattr(
         gate,
         "_post_chat_completion",
-        lambda payload, retries, timeout: invalid_response,
+        lambda payload, retries, timeout, *, deadline: invalid_response,
     )
 
     with pytest.raises(gate.BeijingGateIndeterminateError) as exc_info:

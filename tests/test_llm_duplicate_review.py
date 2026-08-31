@@ -61,10 +61,11 @@ def test_call_duplicate_review_uses_scoring_model(monkeypatch: pytest.MonkeyPatc
     settings = replace(get_settings(), llm_scoring_model="score-model-for-duplicates")
     captured: dict[str, object] = {}
 
-    def fake_post(payload, *, retries: int, timeout: int) -> str:
+    def fake_post(payload, *, retries: int, timeout: int, deadline: float) -> str:
         captured["payload"] = payload
         captured["retries"] = retries
         captured["timeout"] = timeout
+        captured["deadline"] = deadline
         return '{"duplicate_groups":[]}'
 
     monkeypatch.setattr(duplicate_review, "get_settings", lambda: settings)
@@ -75,3 +76,4 @@ def test_call_duplicate_review_uses_scoring_model(monkeypatch: pytest.MonkeyPatc
     assert groups == []
     assert captured["payload"]["model"] == "score-model-for-duplicates"
     assert captured["timeout"] == settings.llm_scoring_timeout
+    assert captured["deadline"] > 0

@@ -37,16 +37,24 @@ if __name__ == "__main__":
 
 
 def test_classify_sentiment_uses_sentiment_reasoning_setting():
-    class _Response:
-        status_code = 200
+    raw = {
+        "choices": [
+            {
+                "message": {
+                    "content": "{\"label\":\"positive\",\"confidence\":0.8}"
+                }
+            }
+        ],
+        "usage": {"total_tokens": 12},
+    }
 
-        @staticmethod
-        def json():
-            return {"choices": [{"message": {"content": "{\"label\":\"positive\",\"confidence\":0.8}"}}]}
-
-    with patch("src.adapters.sentiment_classifier.requests.post", return_value=_Response()) as post:
+    with patch(
+        "src.adapters.sentiment_classifier.post_chat_completion",
+        return_value=raw,
+    ) as post:
         result = classify_sentiment("学校举办实践教学活动。", retries=1)
 
-    payload = post.call_args.kwargs["json"]
+    payload = post.call_args.kwargs["payload"]
     assert result["label"] == "positive"
+    assert result["raw"] is raw
     assert payload["reasoning"]["enabled"] is True

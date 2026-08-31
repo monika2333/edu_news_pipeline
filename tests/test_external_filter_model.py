@@ -111,20 +111,18 @@ def test_call_external_filter_model_sends_reasoning_payload():
         llm_reasoning_exclude=True,
     )
 
-    class _Response:
-        status_code = 200
-
-        @staticmethod
-        def json():
-            return {"choices": [{"message": {"content": "80"}}]}
+    raw = {"choices": [{"message": {"content": "80"}}]}
 
     with patch("src.adapters.external_filter_model.get_settings", return_value=settings), patch(
         "src.adapters.external_filter_model._load_prompt_template",
         return_value="PROMPT",
-    ), patch("src.adapters.external_filter_model.requests.post", return_value=_Response()) as post:
+    ), patch(
+        "src.adapters.external_filter_model.post_chat_completion",
+        return_value=raw,
+    ) as post:
         assert model.call_external_filter_model(candidate, category="internal_positive") == "80"
 
-    payload = post.call_args.kwargs["json"]
+    payload = post.call_args.kwargs["payload"]
     assert payload["model"] == "deepseek/deepseek-v4-flash"
     assert payload["reasoning"] == {
         "enabled": True,

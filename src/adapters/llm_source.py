@@ -3,13 +3,10 @@
 import time
 from typing import Any, Dict, Optional
 
-import requests
-
 from src.adapters.llm_chat import (
-    LLMQuotaError,
     apply_reasoning_config,
     build_headers,
-    raise_for_llm_quota_error,
+    post_chat_completion,
 )
 from src.config import get_settings
 
@@ -62,7 +59,9 @@ def detect_source(
 ) -> Dict[str, Any]:
     """Call the configured LLM chat completions API to infer the article source."""
 
+    started_at = time.monotonic()
     settings = get_settings()
+    deadline = started_at + settings.llm_source_budget
     api_key = settings.llm_api_key
     if not api_key:
         raise RuntimeError("Missing LLM API key (set LLM_API_KEY)")
@@ -87,49 +86,52 @@ def detect_source(
         title=settings.llm_api_title,
     )
 
-    backoff = 1.0
-    last_error: Optional[Exception] = None
     resolved_timeout = timeout or settings.llm_summary_timeout
-    for attempt in range(1, max(1, retries) + 1):
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=resolved_timeout)
-            if response.status_code == 200:
-                data = response.json()
-                raw_text = (data.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
-                llm_source = _normalise_response(raw_text)
-                discarded_length: Optional[int] = None
-                guard_triggered_attempt = 0
-                if len(llm_source) > MAX_LLM_SOURCE_LENGTH:
-                    discarded_length = len(llm_source)
-                    guard_triggered_attempt = attempt
-                    llm_source = None
-                if llm_source == "未知":
-                    llm_source = None
-                return {
-                    "llm_source": llm_source,
-                    "model": settings.llm_source_model,
-                    "raw": data,
-                    "source_guard_discarded_length": discarded_length,
-                    "source_guard_triggered_attempt": guard_triggered_attempt,
-                }
-            raise_for_llm_quota_error(
-                status_code=response.status_code,
-                response_text=response.text,
-                operation="source_detection",
-                model=settings.llm_source_model,
-            )
-            if response.status_code in _RETRYABLE_STATUS:
-                time.sleep(backoff)
-                backoff = min(backoff * 2, 8)
-                continue
-            last_error = RuntimeError(f"API {response.status_code}: {response.text[:160]}")
-        except LLMQuotaError:
-            raise
-        except Exception as exc:
-            last_error = exc
-        time.sleep(backoff)
-        backoff = min(backoff * 2, 8)
-    raise last_error or RuntimeError("Source detection call failed")
+    current_attempt = 0
+
+    def record_attempt(attempt: int) -> None:
+        nonlocal current_attempt
+        current_attempt = attempt
+
+    def extract_raw_text(data: dict[str, Any]) -> str:
+        return (
+            data.get("choices", [{}])[0].get("message", {}).get("content") or ""
+        ).strip()
+
+    def validate_response(data: dict[str, Any]) -> None:
+        extract_raw_text(data)
+
+    data = post_chat_completion(
+        url,
+        payload=payload,
+        headers=headers,
+        timeout=resolved_timeout,
+        budget=settings.llm_source_budget,
+        retries=retries,
+        retryable_statuses=_RETRYABLE_STATUS,
+        operation="source_detection",
+        model=settings.llm_source_model,
+        deadline=deadline,
+        response_validator=validate_response,
+        attempt_callback=record_attempt,
+    )
+    raw_text = extract_raw_text(data)
+    llm_source = _normalise_response(raw_text)
+    discarded_length: Optional[int] = None
+    guard_triggered_attempt = 0
+    if len(llm_source) > MAX_LLM_SOURCE_LENGTH:
+        discarded_length = len(llm_source)
+        guard_triggered_attempt = current_attempt
+        llm_source = None
+    if llm_source == "未知":
+        llm_source = None
+    return {
+        "llm_source": llm_source,
+        "model": settings.llm_source_model,
+        "raw": data,
+        "source_guard_discarded_length": discarded_length,
+        "source_guard_triggered_attempt": guard_triggered_attempt,
+    }
 
 
 __all__ = ["MAX_LLM_SOURCE_LENGTH", "build_source_payload", "detect_source"]

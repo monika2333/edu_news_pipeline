@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from .external_filter import (
+    BeijingGateCandidate,
+    ExternalFilterCandidate,
+    ExternalFilterResult,
+    determine_candidate_category,
+)
 from .models import (
     ArticleInput,
     BriefExportRecord,
@@ -12,16 +18,15 @@ from .models import (
     SummaryCandidate,
     SummaryForScoring,
 )
+from .region import is_beijing_related, load_beijing_keywords
 from .scoring import DEFAULT_WEIGHTS, ScoreResult, ScoreWeights, score_summary
+from .source_aliases import (
+    SourceAliasRules,
+    load_source_aliases,
+    normalize_source_name,
+)
 from .states import IN_PROGRESS_STATES, TERMINAL_STATES, ProcessState, is_terminal
 from .templates import BriefTemplate, DEFAULT_BRIEF_TEMPLATE
-from .region import load_beijing_keywords, is_beijing_related
-from .external_filter import (
-    BeijingGateCandidate,
-    ExternalFilterCandidate,
-    ExternalFilterResult,
-    determine_candidate_category,
-)
 
 __all__ = [
     "ArticleInput",
@@ -42,6 +47,9 @@ __all__ = [
     "SummaryForScoring",
     "is_terminal",
     "score_summary",
+    "SourceAliasRules",
+    "load_source_aliases",
+    "normalize_source_name",
     "load_beijing_keywords",
     "is_beijing_related",
     "BeijingGateCandidate",

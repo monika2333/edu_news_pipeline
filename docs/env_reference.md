@@ -210,6 +210,7 @@ Copy-Item config/score_keyword_bonuses.example.json config/score_keyword_bonuses
 ```env
 KEYWORDS_PATH=config/education_keywords.txt
 BEIJING_KEYWORDS_PATH=config/beijing_keywords.txt
+SOURCE_ALIASES_PATH=config/source_aliases.json
 SCORE_KEYWORD_BONUSES_PATH=config/score_keyword_bonuses.json
 EXTERNAL_FILTER_PROMPT_PATH=config/prompts/external_positive_importance_prompt.md
 EXTERNAL_NEGATIVE_FILTER_PROMPT_PATH=config/prompts/external_negative_importance_prompt.md

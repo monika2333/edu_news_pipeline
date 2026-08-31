@@ -9,6 +9,7 @@ from src.adapters.db_postgres_core import get_adapter
 from src.adapters.llm_source import detect_source
 from src.adapters.sentiment_classifier import classify_sentiment
 from src.config import get_settings
+from src.domain import SourceAliasRules, load_source_aliases, normalize_source_name
 from src.workers import log_error, log_info, log_summary, worker_session
 
 WORKER = "enrich_summary"
@@ -55,7 +56,10 @@ def _classify_summary(summary_text: str) -> EnrichmentResult:
     )
 
 
-def _detect_article_source(article: dict[str, Any]) -> EnrichmentResult:
+def _detect_article_source(
+    article: dict[str, Any],
+    source_aliases: Optional[SourceAliasRules] = None,
+) -> EnrichmentResult:
     started = time.perf_counter()
     content = str(article.get("content_markdown") or "").strip()
     payload = detect_source(
@@ -77,6 +81,18 @@ def _detect_article_source(article: dict[str, Any]) -> EnrichmentResult:
         )
     raw_source = payload.get("llm_source")
     llm_source = str(raw_source).strip() if raw_source else None
+    original_llm_source = llm_source
+    if source_aliases is None:
+        source_aliases = load_source_aliases(get_settings().source_aliases_path)
+    llm_source = normalize_source_name(llm_source, source_aliases)
+    if llm_source != original_llm_source:
+        article_id = str(article.get("article_id") or "<unknown>")
+        log_info(
+            WORKER,
+            "NORMALIZED source name "
+            f"article_id={article_id} original={original_llm_source!r} "
+            f"normalized={llm_source!r}",
+        )
     return EnrichmentResult(
         kind="source",
         llm_source=llm_source,
@@ -87,6 +103,7 @@ def _detect_article_source(article: dict[str, Any]) -> EnrichmentResult:
 def _submit_tasks(
     rows: list[dict[str, Any]],
     executor: ThreadPoolExecutor,
+    source_aliases: SourceAliasRules,
 ) -> tuple[
     dict[Future[EnrichmentResult], tuple[str, TaskKind]],
     dict[str, ArticleEnrichment],
@@ -102,7 +119,7 @@ def _submit_tasks(
             _classify_summary,
             str(row.get("llm_summary") or "").strip(),
         )
-        source_future = executor.submit(_detect_article_source, row)
+        source_future = executor.submit(_detect_article_source, row, source_aliases)
         futures[sentiment_future] = (article_id, "sentiment")
         futures[source_future] = (article_id, "source")
     return futures, article_results
@@ -160,6 +177,7 @@ def _persist_completed(adapter: Any, results: dict[str, ArticleEnrichment]) -> t
 
 def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
     settings = get_settings()
+    source_aliases = load_source_aliases(settings.source_aliases_path)
     adapter = get_adapter()
     limit_value = limit if limit and limit > 0 else None
     if settings.process_limit is not None:
@@ -183,7 +201,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
             f"Using {max_workers} workers for independent sentiment and source requests",
         )
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures, article_results = _submit_tasks(rows, executor)
+            futures, article_results = _submit_tasks(rows, executor, source_aliases)
             task_stats = _collect_results(futures, article_results)
 
         completed, failed = _persist_completed(adapter, article_results)

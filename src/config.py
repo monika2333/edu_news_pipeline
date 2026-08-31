@@ -148,6 +148,7 @@ class Settings:
     feishu_receive_id_type: str
     feishu_archive_allowed_open_ids: tuple[str, ...]
     beijing_keywords_path: Path
+    source_aliases_path: Path
     score_keyword_bonus_rules: Dict[str, int]
     llm_external_filter_model: str
     external_filter_threshold: int
@@ -283,6 +284,12 @@ def get_settings() -> Settings:
         default=config_dir / "beijing_keywords.txt",
     )
 
+    raw_source_aliases_env = os.getenv("SOURCE_ALIASES_PATH")
+    source_aliases_path = _resolve_path(
+        raw_source_aliases_env,
+        default=config_dir / "source_aliases.json",
+    )
+
     prompts_dir = config_dir / "prompts"
 
     raw_external_prompt = os.getenv("EXTERNAL_FILTER_PROMPT_PATH")
@@ -374,6 +381,7 @@ def get_settings() -> Settings:
 
     keywords_path = keywords_path.resolve()
     beijing_keywords_path = beijing_keywords_path.resolve()
+    source_aliases_path = source_aliases_path.resolve()
     external_filter_prompt_path = external_filter_prompt_path.resolve()
     external_negative_filter_prompt_path = external_negative_filter_prompt_path.resolve()
     internal_filter_prompt_path = internal_filter_prompt_path.resolve()
@@ -427,6 +435,7 @@ def get_settings() -> Settings:
         feishu_receive_id_type=feishu_receive_id_type,
         feishu_archive_allowed_open_ids=feishu_archive_allowed_open_ids,
         beijing_keywords_path=beijing_keywords_path,
+        source_aliases_path=source_aliases_path,
         score_keyword_bonus_rules=keyword_bonus_rules,
         llm_external_filter_model=llm_external_filter_model,
         external_filter_threshold=external_filter_threshold,

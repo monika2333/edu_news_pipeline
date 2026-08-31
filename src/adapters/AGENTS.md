@@ -43,7 +43,7 @@
 
 ## 建议测试
 
-- HTTP source 变更：`python -m pytest tests/test_http_gmw_adapter.py tests/adapters/test_http_laodongwubao.py`
+- HTTP source 变更：`python -m pytest tests/test_http_gmw_adapter.py tests/adapters/test_http_laodongwubao.py tests/adapters/test_http_toutiao.py tests/adapters/test_http_linked_page_rows.py`
 - 数据库 adapter 变更：`python -m pytest tests/test_db_postgres_adapter.py tests/test_db_postgres_manual_reviews.py`
 - LLM adapter 变更：`python -m pytest tests/test_llm_beijing_gate.py tests/test_external_filter_model.py tests/test_sentiment_prompt.py`
 - 爬虫流程变更：`python -m pytest tests/test_crawl_gmw_flow.py`

@@ -1,17 +1,13 @@
 """Guangming Daily crawler and pipeline adapter utilities."""
 from __future__ import annotations
 
-import argparse
 import gzip
 import http.cookiejar
-import io
-import json
 import logging
 import re
-import sys
 import urllib.request
 import zlib
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
@@ -565,56 +561,6 @@ def _strip_tags(fragment: str) -> str:
     return text.strip()
 
 
-def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Crawl Guangming Daily node_4108 channel")
-    parser.add_argument("--url", default=DEFAULT_LISTING_URL, help="Listing page to crawl")
-    parser.add_argument(
-        "--max-articles",
-        type=int,
-        default=None,
-        help="Maximum number of articles to crawl (default: all discovered on the listing page)",
-    )
-    parser.add_argument("--timeout", type=float, default=15.0, help="Request timeout in seconds")
-    parser.add_argument("--output", type=str, default=None, help="Optional file path to store JSON result")
-    parser.add_argument("--indent", type=int, default=2, help="Indentation to use for JSON output")
-    parser.add_argument("--log-level", default="INFO", help="Logging level (DEBUG, INFO, ...)")
-    return parser.parse_args(argv)
-
-
-def _ensure_utf8_stdio() -> None:
-    for name in ("stdout", "stderr"):
-        stream = getattr(sys, name, None)
-        if stream is None:
-            continue
-        try:
-            stream.reconfigure(encoding="utf-8", errors="strict")  # type: ignore[attr-defined]
-        except (AttributeError, ValueError):
-            buffer = getattr(stream, "buffer", None)
-            if buffer is None:
-                continue
-            wrapper = io.TextIOWrapper(buffer, encoding="utf-8", errors="strict")
-            setattr(sys, name, wrapper)
-
-
-def main(argv: Optional[Sequence[str]] = None) -> None:
-    args = parse_args(argv)
-    _ensure_utf8_stdio()
-    logging.basicConfig(level=args.log_level.upper(), format="%(levelname)s %(message)s")
-
-    crawler = GMWCrawler(base_url=args.url, timeout=args.timeout)
-    articles = crawler.crawl(max_articles=args.max_articles)
-
-    data = [asdict(article) for article in articles]
-    serialized = json.dumps(data, ensure_ascii=False, indent=args.indent)
-
-    if args.output:
-        with open(args.output, "w", encoding="utf-8") as file:
-            file.write(serialized)
-        LOGGER.info("Saved %d articles to %s", len(articles), args.output)
-    else:
-        print(serialized)
-
-
 # ---------------------------------------------------------------------------
 # Pipeline-facing helpers
 # ---------------------------------------------------------------------------
@@ -802,8 +748,6 @@ __all__ = [
     "Article",
     "GMWCrawler",
     "DEFAULT_LISTING_URL",
-    "parse_args",
-    "main",
     "GMWArticle",
     "fetch_articles",
     "make_article_id",
@@ -813,7 +757,3 @@ __all__ = [
     "DEFAULT_TIMEOUT",
     "SOURCE_NAME",
 ]
-
-
-if __name__ == "__main__":
-    main()

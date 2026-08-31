@@ -14,7 +14,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Set
+from typing import Any, Dict, List, Optional, Tuple, Set
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -100,35 +100,6 @@ class FeedItem:
             digg_count=int(item.get("digg_count") or 0),
             raw=item,
         )
-
-@dataclass
-class ArticleRecord:
-    token: str
-    profile_url: str
-    article_id: str
-    title: str
-    source: str
-    publish_time: Optional[int]
-    publish_time_iso: Optional[str]
-    url: str
-    summary: str
-    comment_count: int
-    digg_count: int
-    content_markdown: str
-    fetched_at: str
-
-def load_env_file(path: Path) -> None:
-    if not path.exists():
-        return
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if key and value and key not in os.environ:
-            os.environ[key] = value
 
 def extract_token_from_url(url: str) -> str:
     match = TOKEN_PATTERN.search(url)
@@ -417,39 +388,6 @@ def resolve_article_id_from_feed(item: FeedItem) -> str:
         raise ValueError(f"Could not resolve article_id for feed item: {item.title}")
     return article_id
 
-def build_article_record(item: FeedItem, article_id: str, data: Dict[str, Any]) -> ArticleRecord:
-    publish_time: Optional[int] = None
-    for option in (data.get("publish_time"), item.publish_time):
-        if not option:
-            continue
-        try:
-            publish_time = int(option)
-            break
-        except (TypeError, ValueError):
-            continue
-    publish_iso = data.get("publish_time_iso") or to_iso(publish_time) or item.publish_time_iso
-    url = (data.get("url") or item.article_url or "").strip()
-    title = (data.get("title") or item.title or "").strip()
-    source = (data.get("source") or data.get("detail_source") or item.source or "").strip()
-    content_md = html_to_markdown(data.get("content") or "")
-    return ArticleRecord(
-        token=item.token,
-        profile_url=item.profile_url,
-        article_id=str(article_id),
-        title=title,
-        source=source,
-        publish_time=publish_time,
-        publish_time_iso=publish_iso,
-        url=url,
-        summary=item.summary,
-        comment_count=item.comment_count,
-        digg_count=item.digg_count,
-        content_markdown=content_md,
-        fetched_at=datetime.now(timezone.utc).astimezone().isoformat(),
-    )
-
-
-
 def feed_item_to_row(item: FeedItem, article_id: str, *, fetched_at: datetime) -> Dict[str, Any]:
     """Convert a feed item into a minimal row for feed upserts."""
     return {
@@ -476,65 +414,31 @@ def build_detail_update(
     detail_fetched_at: datetime,
 ) -> Dict[str, Any]:
     """Build a detail update payload using article content response data."""
-    record = build_article_record(item, article_id, data)
-    rows = format_article_rows([record])
-    if not rows:
-        raise ValueError(f"Unable to format article row for {article_id}")
-    row = rows[0]
-    row.pop('fetched_at', None)
-    row['detail_fetched_at'] = detail_fetched_at
-    return row
-
-
-def fetch_article_records(
-    feed_items: Iterable[FeedItem],
-    timeout: int,
-    lang: Optional[str],
-    existing_ids: Optional[Set[str]],
-) -> List[ArticleRecord]:
-    records: List[ArticleRecord] = []
-    baseline_ids: Set[str] = set(existing_ids or [])
-    seen_new: Set[str] = set()
-    for item in feed_items:
-        try:
-            article_id = resolve_article_id_from_feed(item)
-        except Exception as exc:
-            print(f"[warn] Skip article because ID could not be resolved: {exc}", file=sys.stderr)
-            continue
-        if article_id in baseline_ids:
-            print(f"[info] Article {article_id} already in database; skipping.", file=sys.stderr)
-            continue
-        if article_id in seen_new:
+    publish_time: Optional[int] = None
+    for option in (data.get("publish_time"), item.publish_time):
+        if not option:
             continue
         try:
-            data = fetch_info(article_id, timeout=timeout, lang=lang)
-        except Exception as exc:
-            print(f"[warn] Failed to fetch article {article_id}: {exc}", file=sys.stderr)
+            publish_time = int(option)
+            break
+        except (TypeError, ValueError):
             continue
-        records.append(build_article_record(item, article_id, data))
-        seen_new.add(article_id)
-    if existing_ids is not None:
-        existing_ids.update(seen_new)
-    return records
+    publish_iso = data.get("publish_time_iso") or to_iso(publish_time) or item.publish_time_iso
+    return {
+        'token': item.token,
+        'profile_url': item.profile_url,
+        'article_id': str(article_id),
+        'title': (data.get("title") or item.title or "").strip(),
+        'source': (data.get("source") or data.get("detail_source") or item.source or "").strip(),
+        'publish_time': publish_time,
+        'publish_time_iso': parse_iso_datetime(publish_iso),
+        'url': (data.get("url") or item.article_url or "").strip(),
+        'summary': item.summary,
+        'comment_count': item.comment_count,
+        'digg_count': item.digg_count,
+        'content_markdown': html_to_markdown(data.get("content") or ""),
+        'detail_fetched_at': detail_fetched_at,
+    }
 
-def format_article_rows(records: Sequence[ArticleRecord]) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
-    for record in records:
-        rows.append({
-            'token': record.token,
-            'profile_url': record.profile_url,
-            'article_id': record.article_id,
-            'title': record.title,
-            'source': record.source,
-            'publish_time': record.publish_time,
-            'publish_time_iso': parse_iso_datetime(record.publish_time_iso),
-            'url': record.url,
-            'summary': record.summary,
-            'comment_count': record.comment_count,
-            'digg_count': record.digg_count,
-            'content_markdown': record.content_markdown,
-            'fetched_at': parse_iso_datetime(record.fetched_at),
-        })
-    return rows
 
-__all__ = ["FeedItem", "ArticleRecord", "load_env_file", "load_author_tokens", "fetch_feed_items", "fetch_article_records", "format_article_rows", "DEFAULT_LIMIT", "feed_item_to_row", "build_detail_update", "resolve_article_id_from_feed"]
+__all__ = ["FeedItem", "load_author_tokens", "fetch_feed_items", "DEFAULT_LIMIT", "feed_item_to_row", "build_detail_update", "resolve_article_id_from_feed"]

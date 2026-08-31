@@ -12,6 +12,9 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from src.adapters.http_linked_page_rows import build_detail_update as build_linked_detail_update
+from src.adapters.http_linked_page_rows import feed_item_to_row as linked_feed_item_to_row
+
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -96,15 +99,6 @@ def _extract_iso_from_text(text: str) -> Optional[str]:
         ss_i = int(ss) if ss else 0
         dt = datetime(int(y), int(M), int(d), hh_i, mm_i, ss_i, tzinfo=CHINA_TZ)
         return dt.isoformat()
-    except Exception:
-        return None
-
-
-def _dt_from_iso(iso: Optional[str]) -> Optional[datetime]:
-    if not iso:
-        return None
-    try:
-        return datetime.fromisoformat(iso.replace("Z", "+00:00"))
     except Exception:
         return None
 
@@ -350,45 +344,18 @@ def fetch_detail(url: str) -> Dict[str, Any]:
 
 
 def feed_item_to_row(item: FeedItemLike, article_id: str, *, fetched_at: datetime) -> Dict[str, Any]:
-    dt = _dt_from_iso(item.publish_time_iso)
-    ts = int(dt.astimezone(timezone.utc).timestamp()) if dt else None
-    return {
-        'token': None,
-        'profile_url': None,
-        'article_id': article_id,
-        'title': item.title,
-        'source': item.section,
-        'publish_time': ts,
-        'publish_time_iso': dt,
-        'url': item.url,
-        'summary': None,
-        'comment_count': None,
-        'digg_count': None,
-        'fetched_at': fetched_at,
-    }
+    return linked_feed_item_to_row(item, article_id, fetched_at=fetched_at)
 
 
 def build_detail_update(item: FeedItemLike, article_id: str, data: Dict[str, Any], *, detail_fetched_at: datetime) -> Dict[str, Any]:
-    pub_iso = data.get('publish_time_iso') or item.publish_time_iso
-    pub_dt = _dt_from_iso(pub_iso)
-    pub_ts = data.get('publish_time')
-    if pub_ts is None and pub_dt is not None:
-        pub_ts = int(pub_dt.astimezone(timezone.utc).timestamp())
-    return {
-        'token': None,
-        'profile_url': None,
-        'article_id': article_id,
-        'title': (data.get('title') or item.title or '').strip(),
-        'source': (data.get('source') or item.section or '中国教育报').strip(),
-        'publish_time': pub_ts,
-        'publish_time_iso': pub_dt,
-        'url': data.get('url') or item.url,
-        'summary': None,
-        'comment_count': None,
-        'digg_count': None,
-        'content_markdown': data.get('content_markdown') or html_to_markdown(data.get('content') or ''),
-        'detail_fetched_at': detail_fetched_at,
-    }
+    return build_linked_detail_update(
+        item,
+        article_id,
+        data,
+        detail_fetched_at=detail_fetched_at,
+        default_source='中国教育报',
+        render_content=html_to_markdown,
+    )
 
 
 __all__ = [

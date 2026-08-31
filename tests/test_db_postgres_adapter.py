@@ -3,11 +3,11 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 import psycopg
 
 from src.adapters import db_postgres_core as db_factory
-from src.adapters.http_toutiao import ArticleRecord, format_article_rows
 from src.config import get_settings
 
 
@@ -27,57 +27,56 @@ def test_postgres_adapter_core_roundtrip() -> None:
     fetched_at = datetime.now(timezone.utc)
     publish_iso = fetched_at.replace(microsecond=0)
 
-    article_record = ArticleRecord(
-        token="unit-test",
-        profile_url="https://example.com/profile",
-        article_id=article_id,
-        title="Unit Test Article",
-        source="Unit Test Source",
-        publish_time=int(fetched_at.timestamp()),
-        publish_time_iso=publish_iso.isoformat(),
-        url=f"https://example.com/articles/{article_id}",
-        summary="placeholder",
-        comment_count=1,
-        digg_count=2,
-        content_markdown="# Heading\nBody content",
-        fetched_at=fetched_at.isoformat(),
-    )
+    article_row: dict[str, Any] = {
+        "token": "unit-test",
+        "profile_url": "https://example.com/profile",
+        "article_id": article_id,
+        "title": "Unit Test Article",
+        "source": "Unit Test Source",
+        "publish_time": int(fetched_at.timestamp()),
+        "publish_time_iso": publish_iso,
+        "url": f"https://example.com/articles/{article_id}",
+        "summary": "placeholder",
+        "comment_count": 1,
+        "digg_count": 2,
+        "content_markdown": "# Heading\nBody content",
+        "fetched_at": fetched_at,
+    }
 
     run_id = f"run-{uuid.uuid4()}"
     summary_text = "This is a generated summary."
 
     try:
-        rows = format_article_rows([article_record])
-        adapter.ingest.upsert_raw_feed_rows(rows)
+        adapter.ingest.upsert_raw_feed_rows([article_row])
         adapter.ingest.update_raw_details(
             [
                 {
                     "article_id": article_id,
-                    "token": article_record.token,
-                    "profile_url": article_record.profile_url,
-                    "title": article_record.title,
-                    "source": article_record.source,
-                    "publish_time": article_record.publish_time,
-                    "publish_time_iso": article_record.publish_time_iso,
-                    "url": article_record.url,
-                    "summary": article_record.summary,
-                    "comment_count": article_record.comment_count,
-                    "digg_count": article_record.digg_count,
-                    "content_markdown": article_record.content_markdown,
-                    "detail_fetched_at": fetched_at.isoformat(),
+                    "token": article_row["token"],
+                    "profile_url": article_row["profile_url"],
+                    "title": article_row["title"],
+                    "source": article_row["source"],
+                    "publish_time": article_row["publish_time"],
+                    "publish_time_iso": article_row["publish_time_iso"],
+                    "url": article_row["url"],
+                    "summary": article_row["summary"],
+                    "comment_count": article_row["comment_count"],
+                    "digg_count": article_row["digg_count"],
+                    "content_markdown": article_row["content_markdown"],
+                    "detail_fetched_at": fetched_at,
                 }
             ]
         )
 
         article_payload = {
             "article_id": article_id,
-            "title": article_record.title,
-            "source": article_record.source,
-            "publish_time": article_record.publish_time,
-            "publish_time_iso": article_record.publish_time_iso,
-            "url": article_record.url,
-            "content_markdown": article_record.content_markdown,
-            "fetched_at": article_record.fetched_at,
+            "title": article_row["title"],
+            "source": article_row["source"],
+            "publish_time": article_row["publish_time"],
+            "publish_time_iso": article_row["publish_time_iso"],
+            "url": article_row["url"],
+            "content_markdown": article_row["content_markdown"],
+            "fetched_at": article_row["fetched_at"],
         }
 
         promoted = adapter.news_summaries.upsert_from_primary(

@@ -1597,59 +1597,6 @@ def update_manual_review_order_as_user(
     return before, after
 
 
-def fetch_manual_selected_for_export(
-    cur: psycopg.Cursor,
-    *,
-    report_type: Optional[str] = None,
-) -> List[Dict[str, Any]]:
-    type_expr = report_type_expr("mr")
-    normalized_report_type = normalize_report_type_value(report_type)
-    clauses = ["mr.status = 'selected'"]
-    params: List[Any] = []
-    if normalized_report_type:
-        clauses.append(f"{type_expr} = %s")
-        params.append(normalized_report_type)
-    where_sql = " AND ".join(clauses)
-    query = f"""
-        SELECT
-            mr.article_id,
-            mr.summary AS manual_summary,
-            mr.manual_llm_source,
-            mr.rank AS manual_rank,
-            mr.notes AS manual_notes,
-            mr.score AS manual_score,
-            {type_expr} AS report_type,
-            mr.decided_by,
-            mr.decided_at,
-            ns.title,
-            ns.llm_summary,
-            ns.llm_source,
-            ns.score,
-            ns.content_markdown,
-            ns.url,
-            ns.source,
-            ns.publish_time_iso,
-            ns.publish_time,
-            ns.sentiment_label,
-            ns.sentiment_confidence,
-            ns.is_beijing_related,
-            ns.external_importance_score,
-            ns.external_importance_checked_at
-        FROM manual_reviews mr
-        JOIN news_summaries ns ON ns.article_id = mr.article_id
-        WHERE {where_sql}
-        ORDER BY mr.rank ASC NULLS LAST,
-                 mr.decided_at DESC NULLS LAST,
-                 ns.external_importance_score DESC NULLS LAST,
-                 ns.score DESC NULLS LAST,
-                 ns.publish_time_iso DESC NULLS LAST,
-                 mr.article_id ASC
-    """
-    cur.execute(query, tuple(params))
-    rows = cur.fetchall()
-    return [dict(row) for row in rows]
-
-
 __all__ = [
     "MANUAL_REVIEW_DECISION_LOCK_ID",
     "ManualReviewsNamespace",
@@ -1662,7 +1609,6 @@ __all__ = [
     "fetch_manual_pending_for_cluster",
     "fetch_manual_reviews",
     "fetch_manual_review_rows",
-    "fetch_manual_selected_for_export",
     "import_shift_reviews_into_manual",
     "insert_manual_clusters",
     "manual_review_max_rank",

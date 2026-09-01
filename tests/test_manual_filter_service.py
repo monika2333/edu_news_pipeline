@@ -452,11 +452,6 @@ class FakeAdapter:
                 break
         return updated
 
-    def fetch_manual_selected_for_export(self, *, report_type: Optional[str] = None) -> List[Dict[str, Any]]:
-        rows, _ = self._fetch(status="selected", limit=10_000, offset=0, report_type=report_type)
-        return rows
-
-
 @pytest.fixture()
 def fake_adapter(monkeypatch):
     rows = [

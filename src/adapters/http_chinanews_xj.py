@@ -14,7 +14,7 @@ from src.adapters.http_linked_page_rows import build_detail_update as build_link
 from src.adapters.http_linked_page_rows import feed_item_to_row as linked_feed_item_to_row
 
 LIST_URL = "https://www.xj.chinanews.com.cn/dizhou/"
-SOURCE_NAME = "中新网·新疆"
+SOURCE_NAME = "中国新闻网"
 ARTICLE_ID_PREFIX = "chinanewsxj:"
 CANONICAL_HOST = "www.xj.chinanews.com.cn"
 CHINA_TZ = timezone(timedelta(hours=8))
@@ -222,8 +222,6 @@ def _parse_detail_html(html_text: str, url: str) -> dict[str, Any]:
 
     info_node = soup.select_one(".left-time .left-t, .left-t, .left-time")
     info_text = info_node.get_text(" ", strip=True) if info_node else ""
-    source_match = re.search(r"来源[：:]\s*([^\s　]+)", info_text)
-    source = source_match.group(1).strip() if source_match else None
     time_match = _DETAIL_TIME_RE.search(info_text)
     publish_time_iso = None
     if time_match:
@@ -241,7 +239,7 @@ def _parse_detail_html(html_text: str, url: str) -> dict[str, Any]:
 
     return {
         "title": title.strip() or None,
-        "source": source,
+        "source": SOURCE_NAME,
         "publish_time": None,
         "publish_time_iso": publish_time_iso,
         "url": normalize_url(url),
@@ -263,15 +261,13 @@ def feed_item_to_row(
     *,
     fetched_at: datetime,
 ) -> dict[str, Any]:
-    source_item = item
-    if not item.section:
-        source_item = FeedItemLike(
-            title=item.title,
-            url=item.url,
-            section=SOURCE_NAME,
-            publish_time_iso=item.publish_time_iso,
-            raw=item.raw,
-        )
+    source_item = FeedItemLike(
+        title=item.title,
+        url=item.url,
+        section=SOURCE_NAME,
+        publish_time_iso=item.publish_time_iso,
+        raw=item.raw,
+    )
     return linked_feed_item_to_row(source_item, article_id, fetched_at=fetched_at)
 
 
@@ -285,7 +281,7 @@ def build_detail_update(
     return build_linked_detail_update(
         item,
         article_id,
-        data,
+        {**data, "source": SOURCE_NAME},
         detail_fetched_at=detail_fetched_at,
         default_source=SOURCE_NAME,
         render_content=html_to_markdown,

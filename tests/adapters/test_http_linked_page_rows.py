@@ -33,7 +33,7 @@ ADAPTERS = (
         http_chinanews.FeedItemLike,
         http_chinanews.feed_item_to_row,
         http_chinanews.build_detail_update,
-        "",
+        "中国新闻网",
     ),
 )
 
@@ -46,7 +46,7 @@ def test_feed_rows_have_complete_shared_shape(
     detail_row: AdapterFunction,
     default_source: str,
 ) -> None:
-    del detail_row, default_source
+    del detail_row
     fetched_at = datetime(2024, 9, 10, 8, 30, tzinfo=timezone.utc)
     publish_dt = datetime.fromisoformat("2024-09-09T20:00:00+08:00")
     item = item_type(
@@ -64,7 +64,7 @@ def test_feed_rows_have_complete_shared_shape(
         "profile_url": None,
         "article_id": f"{name}:article",
         "title": f"{name} feed title",
-        "source": f"{name} section",
+        "source": default_source if name == "chinanews" else f"{name} section",
         "publish_time": int(publish_dt.astimezone(timezone.utc).timestamp()),
         "publish_time_iso": publish_dt,
         "url": f"https://example.com/{name}/feed",
@@ -145,14 +145,14 @@ def test_detail_rows_keep_source_defaults_and_time_contracts(
 
 
 @pytest.mark.parametrize(("name", "item_type", "feed_row", "detail_row", "default_source"), ADAPTERS)
-def test_detail_payload_source_overrides_feed_and_default_sources(
+def test_detail_payload_source_handling(
     name: str,
     item_type: type[Any],
     feed_row: AdapterFunction,
     detail_row: AdapterFunction,
     default_source: str,
 ) -> None:
-    del feed_row, default_source
+    del feed_row
     detail_fetched_at = datetime(2024, 9, 10, 9, 45, tzinfo=timezone.utc)
     publish_dt = datetime.fromisoformat("2024-09-10T01:02:03Z")
     item = item_type(
@@ -183,7 +183,7 @@ def test_detail_payload_source_overrides_feed_and_default_sources(
         "profile_url": None,
         "article_id": f"{name}:article",
         "title": "Payload title",
-        "source": "Payload source",
+        "source": default_source if name == "chinanews" else "Payload source",
         "publish_time": 456,
         "publish_time_iso": publish_dt,
         "url": "https://example.com/payload",

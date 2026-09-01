@@ -121,7 +121,7 @@ def test_parse_list_extracts_item_filters_other_sections_and_deduplicates() -> N
         "https://www.xj.chinanews.com.cn/dizhou/2026-08-31/detail-alpha.shtml"
     )
     assert items[0].publish_time_iso == "2026-08-31T12:25:00+08:00"
-    assert items[0].section == "中新网·新疆"
+    assert items[0].section == "中国新闻网"
 
 
 def test_parse_list_skips_existing_article_ids() -> None:
@@ -137,7 +137,7 @@ def test_parse_detail_extracts_title_and_content_without_page_noise() -> None:
     )
 
     assert data["title"] == "和静县开展高校毕业生专场招聘会"
-    assert data["source"] == "中新网新疆"
+    assert data["source"] == "中国新闻网"
     assert data["publish_time_iso"] == "2026-08-31T12:25:20+08:00"
     assert data["url"].startswith("https://")
     assert "这是正文第一段" in data["content_markdown"]
@@ -148,11 +148,11 @@ def test_parse_detail_extracts_title_and_content_without_page_noise() -> None:
     assert "版权声明" not in data["content_markdown"]
 
 
-def test_linked_page_rows_keep_shape_and_default_source() -> None:
+def test_linked_page_rows_keep_shape_and_fixed_source() -> None:
     item = http_chinanews_xj.FeedItemLike(
         title="测试新闻",
         url="https://www.xj.chinanews.com.cn/dizhou/2026-08-31/detail-alpha.shtml",
-        section=None,
+        section="和田市融媒体中心",
         publish_time_iso="2026-08-31T12:25:00+08:00",
         raw={},
     )
@@ -163,12 +163,17 @@ def test_linked_page_rows_keep_shape_and_default_source() -> None:
     detail_row = http_chinanews_xj.build_detail_update(
         item,
         article_id,
-        {"title": "", "source": "", "content": "<p>正文</p>", "url": item.url},
+        {
+            "title": "",
+            "source": "另一个具体来源",
+            "content": "<p>正文</p>",
+            "url": item.url,
+        },
         detail_fetched_at=fetched_at,
     )
 
-    assert feed_row["source"] == "中新网·新疆"
-    assert detail_row["source"] == "中新网·新疆"
+    assert feed_row["source"] == "中国新闻网"
+    assert detail_row["source"] == "中国新闻网"
     assert detail_row["content_markdown"] == "正文"
     assert feed_row["article_id"] == detail_row["article_id"] == article_id
     assert set(feed_row) == {

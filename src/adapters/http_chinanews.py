@@ -21,6 +21,7 @@ USER_AGENT = (
 
 # China timezone for ChinaNews timestamps
 CHINA_TZ = timezone(timedelta(hours=8))
+SOURCE_NAME = "中国新闻网"
 
 
 @dataclass
@@ -106,64 +107,6 @@ def _get_meta(soup: BeautifulSoup, *, names: Sequence[str] = (), props: Sequence
         el = soup.find("meta", attrs={"itemprop": ip})
         if el and el.get("content"):
             return (el.get("content") or "").strip()
-    return None
-
-
-# ---- Source extraction aligned with chinanews_crawler.py ----
-SOURCE_SELECTORS: Sequence[str] = (
-    "#source_baidu",
-    ".content_left_time",
-    ".content_left .content_left_time",
-    ".left_time",
-    ".content_title .left",
-    ".content_title p",
-    ".left .time-source",
-    ".newsInfo",
-    ".cont .source",
-    "#source",
-    ".source",
-    ".time-source",
-    ".article-source",
-    ".photo .source",
-    ".photo-source",
-    ".photo-info .from",
-    ".xwly",
-    ".laiyuan",
-)
-
-
-def _normalize_ws(text: str) -> str:
-    s = (text or "").replace("\xa0", " ").replace("\u3000", " ").strip()
-    return re.sub(r"[ \t\r\f\v]+", " ", s)
-
-
-def _clean_source_text(text: Optional[str]) -> Optional[str]:
-    if not text:
-        return None
-    s = _normalize_ws(text)
-    m = re.search(r"来源[:：]\s*(.+)", s)
-    if m:
-        s = m.group(1)
-    # remove tail markers like 编辑/责任编辑/作者/记者
-    s = re.sub(r"(责任编辑|编辑|作者|记者)[:：]?.*$", "", s).strip()
-    s = s.strip("【】[]()（）")
-    return s or None
-
-
-def _extract_source_from_soup(soup: BeautifulSoup) -> Optional[str]:
-    for sel in SOURCE_SELECTORS:
-        node = soup.select_one(sel)
-        if not node:
-            continue
-        link = node.find("a")
-        if link and link.get_text(strip=True):
-            cleaned = _clean_source_text(link.get_text(strip=True))
-            if cleaned:
-                return cleaned
-        text = node.get_text(" ", strip=True)
-        cleaned = _clean_source_text(text)
-        if cleaned:
-            return cleaned
     return None
 
 
@@ -264,10 +207,6 @@ def _parse_page_items(
             continue
         href = normalize_url(a["href"]) 
         title = (a.get_text() or "").strip()
-        section = None
-        lm = li.select_one(".dd_lm")
-        if lm:
-            section = (lm.get_text() or "").strip()
         tnode = li.select_one(".dd_time")
         # Build publish iso from URL date + time (e.g., 10-7 23:43)
         base_date = _date_from_url(href) or datetime.now(tz=CHINA_TZ)
@@ -286,7 +225,13 @@ def _parse_page_items(
                     hh, mm = int(m2.group(1)), int(m2.group(2))
         publish_dt = base_date.replace(hour=hh, minute=mm, second=0, microsecond=0)
         iso: Optional[str] = publish_dt.isoformat()
-        item = FeedItemLike(title=title, url=href, section=section, publish_time_iso=iso, raw={})
+        item = FeedItemLike(
+            title=title,
+            url=href,
+            section=SOURCE_NAME,
+            publish_time_iso=iso,
+            raw={},
+        )
         aid = make_article_id(href)
         if existing_ids is not None and aid in existing_ids:
             if consecutive_stop == 0:
@@ -367,9 +312,6 @@ def _parse_detail_html(html_text: str, url: str) -> Dict[str, Any]:
     if not title and soup.title and soup.title.string:
         title = _strip_site_suffix(str(soup.title.string))
 
-    # Source extraction aligned with crawler: prefer visible nodes, then meta
-    source = _extract_source_from_soup(soup) or _get_meta(soup, names=["source"]) or _get_meta(soup, props=["og:site_name"]) or "ChinaNews"
-
     publish_iso = None
     for tag in soup.find_all("script", type="application/ld+json"):
         try:
@@ -383,7 +325,7 @@ def _parse_detail_html(html_text: str, url: str) -> Dict[str, Any]:
     if not publish_iso:
         publish_iso = _get_meta(soup, names=["pubdate"], itemprops=["datePublished"], props=["article:published_time"]) or None
 
-    if not publish_iso or not source:
+    if not publish_iso:
         time_line = None
         cand = _first(soup, [".left-time", ".time", ".news-time", ".content .time"]) or None
         if cand:
@@ -393,8 +335,6 @@ def _parse_detail_html(html_text: str, url: str) -> Dict[str, Any]:
                 dt = _parse_datetime_str(time_line)
                 if dt:
                     publish_iso = dt.isoformat()
-            if not source:
-                source = _clean_source_text(time_line) or source
 
     # Content with multiple fallbacks
     content_node = None
@@ -423,11 +363,9 @@ def _parse_detail_html(html_text: str, url: str) -> Dict[str, Any]:
 
     if title:
         title = title.strip()
-    if source:
-        source = source.strip()
     return {
         "title": title,
-        "source": source,
+        "source": SOURCE_NAME,
         "publish_time": publish_time,
         "publish_time_iso": publish_time_iso,
         "url": normalize_url(url),
@@ -442,16 +380,23 @@ def fetch_detail(url: str) -> Dict[str, Any]:
 
 
 def feed_item_to_row(item: FeedItemLike, article_id: str, *, fetched_at: datetime) -> Dict[str, Any]:
-    return linked_feed_item_to_row(item, article_id, fetched_at=fetched_at)
+    source_item = FeedItemLike(
+        title=item.title,
+        url=item.url,
+        section=SOURCE_NAME,
+        publish_time_iso=item.publish_time_iso,
+        raw=item.raw,
+    )
+    return linked_feed_item_to_row(source_item, article_id, fetched_at=fetched_at)
 
 
 def build_detail_update(item: FeedItemLike, article_id: str, data: Dict[str, Any], *, detail_fetched_at: datetime) -> Dict[str, Any]:
     return build_linked_detail_update(
         item,
         article_id,
-        data,
+        {**data, "source": SOURCE_NAME},
         detail_fetched_at=detail_fetched_at,
-        default_source='',
+        default_source=SOURCE_NAME,
         render_content=html_to_markdown,
     )
 

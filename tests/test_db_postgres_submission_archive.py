@@ -91,6 +91,24 @@ def test_fetch_report_by_source_message_returns_report_with_items() -> None:
     assert cursor.calls[0][1] == ("feishu", "om_1")
 
 
+def test_search_items_includes_source_in_keyword_scope() -> None:
+    cursor = FakeCursor(
+        rows=[{"id": "item-1", "source": "北京时间"}],
+    )
+
+    rows = db_postgres_submission_archive.search_items(
+        cursor,
+        query="北京时间",
+        limit=20,
+    )
+
+    assert rows == [{"id": "item-1", "source": "北京时间"}]
+    query, params = cursor.calls[0]
+    normalized = " ".join(query.split())
+    assert "i.title ilike %s or i.body ilike %s or i.source ilike %s" in normalized
+    assert params == ("%北京时间%", "%北京时间%", "%北京时间%", 20)
+
+
 def test_fetch_link_candidate_titles_only_reads_news_summaries() -> None:
     cursor = FakeCursor(
         [{"article_id": "article-1", "title": "测试标题"}]

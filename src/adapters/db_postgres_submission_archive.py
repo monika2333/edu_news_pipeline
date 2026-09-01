@@ -1037,11 +1037,11 @@ def search_items(
             r.title_line as report_title_line
         from submitted_report_items i
         join submitted_reports r on r.id = i.report_id
-        where i.title ilike %s or i.body ilike %s
+        where i.title ilike %s or i.body ilike %s or i.source ilike %s
         order by r.report_date desc, i.order_index
         limit %s
         """,
-        (pattern, pattern, max(1, min(limit, 200))),
+        (pattern, pattern, pattern, max(1, min(limit, 200))),
     )
     return [dict(row) for row in cur.fetchall()]
 

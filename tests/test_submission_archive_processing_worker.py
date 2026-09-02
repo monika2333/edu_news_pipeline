@@ -169,6 +169,36 @@ def test_vector_match_uses_cosine_threshold() -> None:
     assert counts["vector"] == 1
 
 
+def test_vector_match_includes_similarity_equal_to_threshold() -> None:
+    from src.workers.submission_dedup import _pack_embedding
+
+    matches, counts = submission_archive_processing._build_prior_item_matches(
+        [
+            {
+                "id": "feedback-item",
+                "article_id": None,
+                "norm_title_hash": "feedback-hash",
+                "embedding": _pack_embedding(np.asarray([1.0, 0.0])),
+                "embedding_model": "BAAI/bge-large-zh",
+            }
+        ],
+        [
+            {
+                "id": "prior-item",
+                "article_id": None,
+                "norm_title_hash": "prior-hash",
+                "embedding": _pack_embedding(np.asarray([1.0, 0.0])),
+                "embedding_model": "BAAI/bge-large-zh",
+            }
+        ],
+        threshold=1.0,
+    )
+
+    assert matches[0]["match_method"] == "vector"
+    assert matches[0]["similarity"] == 1.0
+    assert counts["vector"] == 1
+
+
 def test_prior_matching_refetches_article_id_after_link(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

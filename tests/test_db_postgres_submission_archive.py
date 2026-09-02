@@ -446,6 +446,45 @@ def test_prior_candidates_use_report_date_window_boundaries_and_news_types() -> 
     assert not window_start <= feedback_date < window_end
 
 
+def test_item_duplicate_summaries_prioritize_confirmed_match_methods() -> None:
+    vector_only_item_id = "11111111-1111-1111-1111-111111111111"
+    mixed_item_id = "22222222-2222-2222-2222-222222222222"
+    match_methods_by_item = {
+        vector_only_item_id: ["vector"],
+        mixed_item_id: ["vector", "title_hash"],
+    }
+    cursor = FakeCursor(
+        rows=[
+            {
+                "item_id": item_id,
+                "status": (
+                    "submitted"
+                    if any(
+                        method in {"article", "title_hash"}
+                        for method in match_methods
+                    )
+                    else "suspected"
+                ),
+                "top_similarity": 1.0,
+                "match_count": len(match_methods),
+            }
+            for item_id, match_methods in match_methods_by_item.items()
+        ]
+    )
+
+    summaries = (
+        db_postgres_submission_archive.fetch_item_duplicate_match_summaries(
+            cursor,
+            [vector_only_item_id, mixed_item_id],
+        )
+    )
+
+    assert summaries[vector_only_item_id]["status"] == "suspected"
+    assert summaries[mixed_item_id]["status"] == "submitted"
+    normalized_query = " ".join(cursor.calls[0][0].split())
+    assert "bool_or(match_method in ('article', 'title_hash'))" in normalized_query
+
+
 def test_replace_item_duplicate_matches_deletes_then_inserts() -> None:
     cursor = FakeCursor()
 

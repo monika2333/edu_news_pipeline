@@ -315,6 +315,38 @@ def test_fetch_duplicate_details_accepts_article_id_with_slashes(
     assert captured["article_id"] == article_id
 
 
+def test_fetch_prior_item_match_details_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = {
+        "matches": [
+            {
+                "prior_item_id": "22222222-2222-2222-2222-222222222222",
+                "title": "更早条目",
+                "body": "报送稿正文",
+                "source": "北京日报",
+                "report_type": "zongbao",
+                "report_date": "2026-08-31",
+                "issue_no": "第10期",
+                "similarity": 1.0,
+                "match_method": "article",
+            }
+        ]
+    }
+    monkeypatch.setattr(
+        submission_archive_service,
+        "fetch_prior_item_match_details",
+        lambda item_id: expected if item_id == "item-1" else {"matches": []},
+    )
+
+    response = _client(_editor).get(
+        "/api/submission-archive/items/item-1/prior-matches"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
 def test_dismiss_duplicates_accepts_article_id_with_slashes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

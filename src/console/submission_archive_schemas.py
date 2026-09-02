@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from src.domain.report_type import SubmissionDocType as SubmissionReportType
+from src.domain.report_type import (
+    NewsReportType,
+    SubmissionDocType as SubmissionReportType,
+)
 
 
 class ParseSubmissionReportRequest(BaseModel):
@@ -48,11 +51,29 @@ class UpdateSubmissionItemRequest(BaseModel):
     urls: list[str] = Field(default_factory=list)
 
 
+class PriorItemMatchDetail(BaseModel):
+    prior_item_id: str
+    title: str
+    body: str
+    source: Optional[str] = None
+    report_type: NewsReportType
+    report_date: date
+    issue_no: Optional[str] = None
+    similarity: float
+    match_method: Literal["article", "title_hash", "vector"]
+
+
+class PriorItemMatchesResponse(BaseModel):
+    matches: list[PriorItemMatchDetail]
+
+
 __all__ = [
     "CreateSubmissionReportRequest",
     "LinkDecisionRequest",
     "ManualLinkRequest",
     "ParseSubmissionReportRequest",
+    "PriorItemMatchDetail",
+    "PriorItemMatchesResponse",
     "SubmissionItemInput",
     "SubmissionReportType",
     "UpdateSubmissionItemRequest",

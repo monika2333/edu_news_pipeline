@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Sequence, Typ
 
 import psycopg
 
+from src.domain.report_type import NEWS_REPORT_TYPES
+
 if TYPE_CHECKING:
     from src.adapters.db_postgres_core import PostgresAdapter
 
@@ -137,6 +139,10 @@ class SubmissionArchiveNamespace:
     def fetch_report(self, report_id: str) -> Optional[dict[str, Any]]:
         with self._adapter._cursor() as cur:
             return fetch_report(cur, report_id)
+
+    def fetch_report_ids_by_type(self, report_type: str) -> list[str]:
+        with self._adapter._cursor() as cur:
+            return fetch_report_ids_by_type(cur, report_type=report_type)
 
     def fetch_report_by_source_message(
         self,
@@ -284,6 +290,53 @@ class SubmissionArchiveNamespace:
     ) -> int:
         with self._adapter.transaction() as cur:
             return update_item_embeddings(cur, embeddings)
+
+    def fetch_item_match_inputs(
+        self,
+        item_ids: Sequence[str],
+    ) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_item_match_inputs(cur, item_ids=item_ids)
+
+    def fetch_prior_submission_candidates(
+        self,
+        *,
+        report_date: date,
+        lookback_days: int,
+    ) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_prior_submission_candidates(
+                cur,
+                report_date=report_date,
+                lookback_days=lookback_days,
+            )
+
+    def replace_item_duplicate_matches(
+        self,
+        *,
+        item_ids: Sequence[str],
+        matches: Sequence[Mapping[str, Any]],
+    ) -> int:
+        with self._adapter.transaction() as cur:
+            return replace_item_duplicate_matches(
+                cur,
+                item_ids=item_ids,
+                matches=matches,
+            )
+
+    def fetch_item_duplicate_match_summaries(
+        self,
+        item_ids: Sequence[str],
+    ) -> dict[str, dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_item_duplicate_match_summaries(cur, item_ids)
+
+    def fetch_item_duplicate_match_details(
+        self,
+        item_id: str,
+    ) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_item_duplicate_match_details(cur, item_id)
 
     def fetch_embeddings(self, *, lookback_days: int) -> list[dict[str, Any]]:
         with self._adapter._cursor() as cur:
@@ -559,7 +612,32 @@ def fetch_report(
         (report_id,),
     )
     report["items"] = [dict(item) for item in cur.fetchall()]
+    summaries: dict[str, dict[str, Any]] = {}
+    if report.get("report_type") == "feedback":
+        summaries = fetch_item_duplicate_match_summaries(
+            cur,
+            [str(item["id"]) for item in report["items"]],
+        )
+    for item in report["items"]:
+        item["prior_match"] = summaries.get(str(item["id"]))
     return report
+
+
+def fetch_report_ids_by_type(
+    cur: psycopg.Cursor,
+    *,
+    report_type: str,
+) -> list[str]:
+    cur.execute(
+        """
+        select id
+        from submitted_reports
+        where report_type = %s
+        order by report_date, imported_at, id
+        """,
+        (report_type,),
+    )
+    return [str(row["id"]) for row in cur.fetchall()]
 
 
 def fetch_report_by_source_message(
@@ -1089,6 +1167,176 @@ def update_item_embeddings(
     return updated
 
 
+def fetch_item_match_inputs(
+    cur: psycopg.Cursor,
+    *,
+    item_ids: Sequence[str],
+) -> list[dict[str, Any]]:
+    normalized_ids = [str(item_id) for item_id in item_ids if item_id]
+    if not normalized_ids:
+        return []
+    cur.execute(
+        """
+        select id, article_id, norm_title_hash, embedding, embedding_model
+        from submitted_report_items
+        where id = any(%s::uuid[])
+        order by order_index, id
+        """,
+        (normalized_ids,),
+    )
+    return [dict(row) for row in cur.fetchall()]
+
+
+def fetch_prior_submission_candidates(
+    cur: psycopg.Cursor,
+    *,
+    report_date: date,
+    lookback_days: int,
+) -> list[dict[str, Any]]:
+    window_start = report_date - timedelta(days=max(1, lookback_days))
+    cur.execute(
+        """
+        select
+            i.id,
+            i.article_id,
+            i.norm_title_hash,
+            i.embedding,
+            i.embedding_model
+        from submitted_report_items i
+        join submitted_reports r on r.id = i.report_id
+        where r.report_type = any(%s::text[])
+          and r.report_date >= %s
+          and r.report_date < %s
+        order by r.report_date desc, i.order_index, i.id
+        """,
+        (
+            sorted(NEWS_REPORT_TYPES),
+            window_start,
+            report_date,
+        ),
+    )
+    return [dict(row) for row in cur.fetchall()]
+
+
+def replace_item_duplicate_matches(
+    cur: psycopg.Cursor,
+    *,
+    item_ids: Sequence[str],
+    matches: Sequence[Mapping[str, Any]],
+) -> int:
+    normalized_ids = [str(item_id) for item_id in item_ids if item_id]
+    if not normalized_ids:
+        return 0
+    cur.execute(
+        """
+        delete from submission_item_duplicate_matches
+        where item_id = any(%s::uuid[])
+        """,
+        (normalized_ids,),
+    )
+    for match in matches:
+        cur.execute(
+            """
+            insert into submission_item_duplicate_matches (
+                item_id,
+                prior_item_id,
+                similarity,
+                match_method
+            )
+            values (%s, %s, %s, %s)
+            """,
+            (
+                match.get("item_id"),
+                match.get("prior_item_id"),
+                match.get("similarity"),
+                match.get("match_method"),
+            ),
+        )
+    return len(matches)
+
+
+def fetch_item_duplicate_match_summaries(
+    cur: psycopg.Cursor,
+    item_ids: Sequence[str],
+) -> dict[str, dict[str, Any]]:
+    normalized_ids = [str(item_id) for item_id in item_ids if item_id]
+    if not normalized_ids:
+        return {}
+    cur.execute(
+        """
+        select
+            item_id,
+            case
+                when bool_or(match_method in ('article', 'title_hash'))
+                then 'submitted'
+                else 'suspected'
+            end as status,
+            max(similarity) as top_similarity,
+            count(*) as match_count
+        from submission_item_duplicate_matches
+        where item_id = any(%s::uuid[])
+        group by item_id
+        """,
+        (normalized_ids,),
+    )
+    return {
+        str(row["item_id"]): {
+            "status": row["status"],
+            "top_similarity": float(row["top_similarity"]),
+            "count": int(row["match_count"]),
+        }
+        for row in cur.fetchall()
+    }
+
+
+def fetch_item_duplicate_match_details(
+    cur: psycopg.Cursor,
+    item_id: str,
+) -> list[dict[str, Any]]:
+    cur.execute(
+        """
+        select
+            m.prior_item_id,
+            i.title,
+            i.body,
+            i.source,
+            r.report_type,
+            r.report_date,
+            r.issue_no,
+            m.similarity,
+            m.match_method
+        from submission_item_duplicate_matches m
+        join submitted_report_items i on i.id = m.prior_item_id
+        join submitted_reports r on r.id = i.report_id
+        where m.item_id = %s
+        order by
+            case m.match_method
+                when 'article' then 1
+                when 'title_hash' then 2
+                else 3
+            end,
+            m.similarity desc,
+            r.report_date desc,
+            m.prior_item_id
+        """,
+        (item_id,),
+    )
+    return [
+        {
+            "prior_item_id": str(row["prior_item_id"]),
+            "title": row["title"],
+            "body": row["body"],
+            "source": row["source"],
+            "report_type": row["report_type"],
+            "report_date": row["report_date"],
+            "issue_no": row["issue_no"],
+            "similarity": float(row["similarity"]),
+            "match_method": row["match_method"],
+        }
+        for row in cur.fetchall()
+    ]
+
+
 def fetch_archive_embeddings(
     cur: psycopg.Cursor,
     *,
@@ -1344,20 +1592,26 @@ __all__ = [
     "fetch_archive_embeddings",
     "fetch_duplicate_badges",
     "fetch_duplicate_match_details",
+    "fetch_item_duplicate_match_details",
+    "fetch_item_duplicate_match_summaries",
+    "fetch_item_match_inputs",
     "fetch_items_missing_embeddings",
     "fetch_link_candidate_bodies",
     "fetch_link_candidate_titles",
     "fetch_manual_link_candidates",
     "fetch_news_for_submission_dedup",
     "fetch_pending_links",
+    "fetch_prior_submission_candidates",
     "fetch_report",
     "fetch_report_by_source_message",
+    "fetch_report_ids_by_type",
     "fetch_reports",
     "find_report_conflict",
     "insert_report",
     "insert_report_items",
     "manual_link_item",
     "manual_unlink_item",
+    "replace_item_duplicate_matches",
     "search_items",
     "update_item_embeddings",
     "update_item_fields",

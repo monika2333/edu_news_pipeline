@@ -45,6 +45,9 @@ manual_reviews   shift_reviews    submission_        brief_items /
 
 submitted_reports ──► submitted_report_items ──► 回链到 news_summaries
 （人工粘贴已报送的稿件）      （逐条拆分 + 相似度回链）
+                                  │
+                                  └── 反馈条目与更早综报/晚报条目比对
+                                      └──► submission_item_duplicate_matches
 ```
 
 ---
@@ -165,6 +168,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 3. 后台子进程做**自动回链**：把每个条目匹配回系统里的 `news_summaries`（标题相似度 + 正文相似度）
 4. 编辑可以确认自动候选，也可以围绕报告 `compiled_date` 检索 `news_summaries.title` / `llm_summary`，人工绑定或解绑条目
 5. 自动与人工结果都写回 `submitted_report_items`；人工绑定只改 `article_id`、`link_status`、`link_decided_by`、`link_matched_at`，解绑将状态恢复为 `unmatched`
+6. 对反馈报告，在回链完成后把每条反馈与其 `report_date` 前 7 天内（不含当天）的综报/晚报条目逐级比对，结果写入 `submission_item_duplicate_matches`
 
 飞书入口只接受首行匹配当前报送稿标题的私聊纯文本；普通聊天、群聊、非文本消息和非白名单用户消息不进入解析。识别成功后直接保存，解析警告随回复返回但不阻止入库；同报别同日期冲突绝不自动覆盖。`submitted_reports.ingest_source` 记录入口，`source_message_id` 以唯一索引提供跨进程重启的幂等保证，`source_sender_id` 保留提交人审计标识。控制台录入的 `ingest_source` 为 `console`，外部消息字段为空；飞书录入为 `feishu`。
 
@@ -183,6 +187,18 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 人工检索绑定保留自动回链证据：`best_candidate_article_id` 与 `link_title_score` / `link_body_score` / `link_combined_score` 一律不改。因而当 `article_id` 与 `best_candidate_article_id` 不同时，可以事后识别人工检索介入。人工绑定与解绑都拒绝 `processing` 条目，避免独立 worker 的整体回写覆盖人工决定。
 
 存档库详情页条目上的修改入口（铅笔图标，仅管理员）允许事后修正已入库条目的 `title` / `body` / `source` / `urls`：改标题会同步重算 `norm_title` / `norm_title_hash`；标题或正文任一变化会清空 `embedding` / `embedding_model` / `embedded_at`，由 `backfill-submission-embeddings` 在下一轮重算查重向量。与人工绑定/解绑一样，`processing` 条目拒绝修改；回链字段（`article_id`、`link_status`、相似度分数）不受条目修改影响。
+
+### 反馈条目已报送判定
+
+`submission_item_duplicate_matches` 记录“反馈条目 → 更早综报/晚报条目”的匹配，
+按共同 `article_id`、共同 `norm_title_hash`、向量余弦相似度三个级别依次判定；同一
+对条目只保留最高级别。前两级显示为“已报送”，向量级显示为“疑似已报送”。该表
+是派生数据，每次重算都先删除目标反馈条目的旧结果再完整写入，可安全重复重建；它
+不承载人工消除状态。
+
+自动回链围绕 `compiled_date` 查找 `news_summaries`，因为它处理的是新闻内容时间轴；
+反馈已报送判定两侧都是存档条目，必须围绕 `report_date` 查找更早报告，处理的是报送
+时间轴。两者不是不一致，而是两个不同的问题，不能把任一方“统一”到另一日期字段。
 
 ### 查重（`submission-dedup`）
 
@@ -225,6 +241,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | `brief_batches` / `brief_items` | 自动生成的简报初稿批次与条目 | 对「导出事件本身」权威；**不代表人工采纳，也不代表已报送** |
 | `submitted_reports` / `submitted_report_items` | 人工录入的已报送稿件 | 权威 |
 | `submission_duplicate_matches` | 查重结果 | 派生，可重算 |
+| `submission_item_duplicate_matches` | 反馈条目与更早综报/晚报条目的已报送判定 | 派生，可重算 |
 
 > **判断某篇是否报送过，一律以 `submitted_report_items` 为准，不得依据 `brief_items`。**
 > `brief_items` 只说明这篇进入过自动初稿，所有过阈值的文章都会进入；实际报送稿由人工定稿后发出，系统内唯一的记录来源是人工录入的报送存档。

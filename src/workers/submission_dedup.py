@@ -249,6 +249,7 @@ __all__ = [
     "_pack_embedding",
     "_prepare_news_vectors",
     "_unpack_embedding",
+    "_validate_archive_vectors",
     "backfill_archive_embeddings",
     "run",
 ]

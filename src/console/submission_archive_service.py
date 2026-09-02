@@ -309,6 +309,23 @@ def fetch_duplicate_details(
     return {"matches": matches}
 
 
+def fetch_prior_item_match_details(
+    item_id: str,
+    *,
+    adapter: Any = None,
+) -> dict[str, Any]:
+    normalized_item_id = (item_id or "").strip()
+    if not normalized_item_id:
+        raise ValueError("item_id 不能为空")
+    target_adapter = adapter or get_adapter()
+    matches = (
+        target_adapter.submission_archive.fetch_item_duplicate_match_details(
+            normalized_item_id
+        )
+    )
+    return {"matches": matches}
+
+
 def dismiss_duplicates(
     *,
     article_id: str,
@@ -332,6 +349,7 @@ __all__ = [
     "decide_link",
     "dismiss_duplicates",
     "fetch_duplicate_details",
+    "fetch_prior_item_match_details",
     "get_report",
     "list_pending_links",
     "list_reports",

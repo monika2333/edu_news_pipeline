@@ -115,6 +115,24 @@ def _add_backfill_submission_embeddings(
     )
 
 
+def _add_submission_feedback_dedup(
+    subparsers: argparse._SubParsersAction,
+) -> None:
+    parser = subparsers.add_parser(
+        "submission-feedback-dedup",
+        help="Recompute prior-submission matches for feedback reports",
+    )
+    scope = parser.add_mutually_exclusive_group(required=True)
+    scope.add_argument(
+        "--report-id",
+        help="Recompute one feedback report by id",
+    )
+    scope.add_argument(
+        "--all",
+        action="store_true",
+        dest="all_reports",
+        help="Recompute all feedback reports",
+    )
 
 def _add_export(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("export", help="Export high scoring summaries")
@@ -277,6 +295,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_external_filter(subparsers)
     _add_submission_dedup(subparsers)
     _add_backfill_submission_embeddings(subparsers)
+    _add_submission_feedback_dedup(subparsers)
     _add_export(subparsers)
     _add_geo_tag(subparsers)
     _add_create_console_user(subparsers)
@@ -315,6 +334,18 @@ def main(argv: list[str] | None = None) -> int:
 
         count = backfill_archive_embeddings(batch_size=args.batch_size)
         print(f"Embedded {count} submission archive items")
+    elif command == "submission-feedback-dedup":
+        from src.workers.submission_archive_processing import (
+            recompute_feedback_prior_matches,
+        )
+
+        result = recompute_feedback_prior_matches(
+            None if args.all_reports else args.report_id
+        )
+        print(
+            "Recomputed feedback prior matches: "
+            f"reports={result['reports']}, matches={result['matches']}"
+        )
     elif command == "export":
         from src.workers.export_brief import run as export_brief
 

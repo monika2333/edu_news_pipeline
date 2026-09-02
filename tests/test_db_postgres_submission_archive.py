@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Optional
 
 from src.adapters import db_postgres_submission_archive
@@ -11,9 +11,12 @@ class FakeCursor:
         self,
         rows: Optional[list[dict[str, Any]]] = None,
         fetchone_rows: Optional[list[Optional[dict[str, Any]]]] = None,
+        fetchall_rows: Optional[list[list[dict[str, Any]]]] = None,
     ) -> None:
         self.rows = rows or []
         self.fetchone_rows = fetchone_rows or []
+        self.fetchall_rows = fetchall_rows or []
+        self.fetchall_index = 0
         self.fetchone_index = 0
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
 
@@ -25,6 +28,10 @@ class FakeCursor:
         self.calls.append((query, params))
 
     def fetchall(self) -> list[dict[str, Any]]:
+        if self.fetchall_index < len(self.fetchall_rows):
+            rows = self.fetchall_rows[self.fetchall_index]
+            self.fetchall_index += 1
+            return rows
         return self.rows
 
     def fetchone(self) -> Optional[dict[str, Any]]:
@@ -87,8 +94,44 @@ def test_fetch_report_by_source_message_returns_report_with_items() -> None:
 
     assert report is not None
     assert report["id"] == "report-1"
-    assert report["items"] == [{"id": "item-1", "title": "条目"}]
+    assert report["items"] == [
+        {"id": "item-1", "title": "条目", "prior_match": None}
+    ]
     assert cursor.calls[0][1] == ("feishu", "om_1")
+
+
+def test_fetch_feedback_report_attaches_prior_match_summary() -> None:
+    cursor = FakeCursor(
+        fetchone_rows=[
+            {"id": "report-1", "report_type": "feedback"},
+        ],
+        fetchall_rows=[
+            [
+                {
+                    "id": "11111111-1111-1111-1111-111111111111",
+                    "title": "反馈条目",
+                }
+            ],
+            [
+                {
+                    "item_id": "11111111-1111-1111-1111-111111111111",
+                    "status": "submitted",
+                    "top_similarity": 1,
+                    "match_count": 2,
+                }
+            ],
+        ],
+    )
+
+    report = db_postgres_submission_archive.fetch_report(cursor, "report-1")
+
+    assert report is not None
+    assert report["items"][0]["prior_match"] == {
+        "status": "submitted",
+        "top_similarity": 1.0,
+        "count": 2,
+    }
+    assert "submission_item_duplicate_matches" in cursor.calls[2][0]
 
 
 def test_search_items_includes_source_in_keyword_scope() -> None:
@@ -371,3 +414,81 @@ def test_fetch_news_for_submission_dedup_keeps_scope_and_reads_cache() -> None:
     assert "dedup_source_hash" in normalized
     assert "dedup_embedded_at" in normalized
     assert params == ()
+
+
+def test_prior_candidates_use_report_date_window_boundaries_and_news_types() -> None:
+    cursor = FakeCursor()
+    feedback_date = date(2026, 9, 2)
+
+    db_postgres_submission_archive.fetch_prior_submission_candidates(
+        cursor,
+        report_date=feedback_date,
+        lookback_days=7,
+    )
+
+    query, params = cursor.calls[0]
+    normalized = " ".join(query.split())
+    assert "r.report_type = any(%s::text[])" in normalized
+    assert "r.report_date >= %s" in normalized
+    assert "r.report_date < %s" in normalized
+    assert "compiled_date" not in normalized
+    where_clause = normalized.split("where", maxsplit=1)[1]
+    assert "embedding is not null" not in where_clause
+    assert params == (
+        ["wanbao", "zongbao"],
+        feedback_date - timedelta(days=7),
+        feedback_date,
+    )
+
+    window_start, window_end = params[1:]
+    assert window_start <= feedback_date - timedelta(days=7) < window_end
+    assert not window_start <= feedback_date - timedelta(days=8) < window_end
+    assert not window_start <= feedback_date < window_end
+
+
+def test_replace_item_duplicate_matches_deletes_then_inserts() -> None:
+    cursor = FakeCursor()
+
+    inserted = db_postgres_submission_archive.replace_item_duplicate_matches(
+        cursor,
+        item_ids=["11111111-1111-1111-1111-111111111111"],
+        matches=[
+            {
+                "item_id": "11111111-1111-1111-1111-111111111111",
+                "prior_item_id": "22222222-2222-2222-2222-222222222222",
+                "similarity": 1.0,
+                "match_method": "title_hash",
+            }
+        ],
+    )
+
+    assert inserted == 1
+    assert "delete from submission_item_duplicate_matches" in cursor.calls[0][0]
+    assert "insert into submission_item_duplicate_matches" in cursor.calls[1][0]
+
+
+def test_fetch_item_duplicate_match_details_returns_report_metadata() -> None:
+    cursor = FakeCursor(
+        [
+            {
+                "prior_item_id": "22222222-2222-2222-2222-222222222222",
+                "title": "更早条目",
+                "body": "正文",
+                "source": "北京日报",
+                "report_type": "zongbao",
+                "report_date": date(2026, 8, 31),
+                "issue_no": "第10期",
+                "similarity": 0.96,
+                "match_method": "vector",
+            }
+        ]
+    )
+
+    rows = db_postgres_submission_archive.fetch_item_duplicate_match_details(
+        cursor,
+        "11111111-1111-1111-1111-111111111111",
+    )
+
+    assert rows[0]["issue_no"] == "第10期"
+    assert rows[0]["similarity"] == 0.96
+    assert rows[0]["match_method"] == "vector"

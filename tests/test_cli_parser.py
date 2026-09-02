@@ -21,6 +21,7 @@ from src.console import manual_filter_service
         "export",
         "refresh-manual-clusters",
         "feishu-archive-bot",
+        "submission-feedback-dedup",
     ],
 )
 def test_cli_supports_expected_subcommands(command: str) -> None:
@@ -42,6 +43,7 @@ def test_cli_help_available() -> None:
         "export",
         "refresh-manual-clusters",
         "feishu-archive-bot",
+        "submission-feedback-dedup",
     ]:
         assert keyword in help_text
 
@@ -58,6 +60,20 @@ def test_export_min_score_defaults_to_promotion_threshold(
     args = build_parser().parse_args(["export"])
 
     assert args.min_score == 30
+
+
+def test_feedback_dedup_cli_supports_single_report_or_all() -> None:
+    single = build_parser().parse_args(
+        ["submission-feedback-dedup", "--report-id", "report-1"]
+    )
+    all_reports = build_parser().parse_args(
+        ["submission-feedback-dedup", "--all"]
+    )
+
+    assert single.report_id == "report-1"
+    assert single.all_reports is False
+    assert all_reports.report_id is None
+    assert all_reports.all_reports is True
 
 
 def test_export_min_score_explicit_value_overrides_settings(

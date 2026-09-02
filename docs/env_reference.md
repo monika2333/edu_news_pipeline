@@ -201,17 +201,25 @@ BEIJING_GATE_MAX_RETRIES=3
 
 ### 报送存档与查重
 
-以下四项都可省略；不配置时使用代码默认值：
+以下六项都可省略；不配置时使用代码默认值：
 
 ```env
 SUBMISSION_DEDUP_LOOKBACK_DAYS=15
 SUBMISSION_LINK_AUTO_THRESHOLD=0.85
 SUBMISSION_LINK_REVIEW_THRESHOLD=0.55
-SUBMISSION_DEDUP_RECALL_THRESHOLD=0.72
+SUBMISSION_DEDUP_RECALL_THRESHOLD=0.90
+SUBMISSION_FEEDBACK_LOOKBACK_DAYS=7
+SUBMISSION_FEEDBACK_MATCH_THRESHOLD=0.90
 ```
 
+以上六个数值就是 `submission_archive_config.py` 中的代码默认值；修改该文件中的
+默认值时必须同步更新本节。
+
 `SUBMISSION_DEDUP_LOOKBACK_DAYS` 只控制每天自动比对的日期窗口，不会
-删除历史存档。嵌入模型固定为 `BAAI/bge-large-zh`，不能通过环境变量更换；
+删除历史存档。`SUBMISSION_FEEDBACK_LOOKBACK_DAYS` 控制反馈条目向前查找综报/
+晚报条目的报送日期窗口（不含反馈当天），`SUBMISSION_FEEDBACK_MATCH_THRESHOLD`
+是条目间向量余弦相似度阈值；二者与新闻查重配置相互独立。嵌入模型固定为
+`BAAI/bge-large-zh`，不能通过环境变量更换；
 更换模型必须清空已有存档向量并完整重算。
 
 ## 关键词和提示词路径

@@ -13,6 +13,7 @@ from src.console.submission_archive_schemas import (
     LinkDecisionRequest,
     ManualLinkRequest,
     ParseSubmissionReportRequest,
+    PriorItemMatchesResponse,
     UpdateSubmissionItemRequest,
 )
 from src.domain.submission_archive_parser import SubmissionArchiveParseError
@@ -231,6 +232,20 @@ def fetch_duplicate_details_api(article_id: str) -> dict[str, Any]:
     """返回某条新闻命中的已报送重复记录明细，含报送稿正文。"""
     try:
         return submission_archive_service.fetch_duplicate_details(article_id)
+    except ValueError as exc:
+        _raise_service_error(exc)
+
+
+@router.get(
+    "/items/{item_id}/prior-matches",
+    response_model=PriorItemMatchesResponse,
+)
+def fetch_prior_item_match_details_api(
+    item_id: str,
+) -> dict[str, Any]:
+    """Return prior zongbao/wanbao items matched to one feedback item."""
+    try:
+        return submission_archive_service.fetch_prior_item_match_details(item_id)
     except ValueError as exc:
         _raise_service_error(exc)
 

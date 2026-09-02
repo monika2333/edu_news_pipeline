@@ -295,6 +295,33 @@ def test_fetch_duplicate_details_returns_matches() -> None:
     assert result == {"matches": [{"title": "条目", "body": "报送稿正文"}]}
 
 
+def test_fetch_prior_item_match_details_returns_matches() -> None:
+    class DetailsSubmissionArchiveNamespace:
+        def fetch_item_duplicate_match_details(
+            self,
+            item_id: str,
+        ) -> list[dict[str, Any]]:
+            assert item_id == "item-1"
+            return [
+                {
+                    "prior_item_id": "prior-1",
+                    "title": "更早条目",
+                    "match_method": "article",
+                }
+            ]
+
+    class DetailsAdapter:
+        def __init__(self) -> None:
+            self.submission_archive = DetailsSubmissionArchiveNamespace()
+
+    result = submission_archive_service.fetch_prior_item_match_details(
+        " item-1 ",
+        adapter=DetailsAdapter(),
+    )
+
+    assert result["matches"][0]["prior_item_id"] == "prior-1"
+
+
 def test_create_report_rejects_non_http_urls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

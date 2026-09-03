@@ -3,17 +3,24 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def _strip_js_comments(text: str) -> str:
+    """去掉 JS 行注释，避免注释里的词误命中源码切片上的断言。"""
+    return "\n".join(line.split("//", 1)[0] for line in text.splitlines())
+
+
 def test_status_poll_updates_components_without_rerendering_report() -> None:
     source = Path(
         "src/console/web_static/js/submission_archive/browser.js"
     ).read_text(encoding="utf-8")
-    poll_body = source.split(
-        "async function pollReportStatus(id) {",
-        maxsplit=1,
-    )[1].split(
-        "async function selectReport(id, pushUrl = true) {",
-        maxsplit=1,
-    )[0]
+    poll_body = _strip_js_comments(
+        source.split(
+            "async function pollReportStatus(id) {",
+            maxsplit=1,
+        )[1].split(
+            "async function selectReport(id, pushUrl = true) {",
+            maxsplit=1,
+        )[0]
+    )
 
     assert "updateReportStatusComponents(id, items)" in poll_body
     assert "selectReport(" not in poll_body
@@ -185,9 +192,12 @@ def test_archive_item_edit_saves_via_patch_and_updates_card_locally() -> None:
     # 保存走单条 PATCH，成功后局部更新卡片展示区，不重拉整份报告
     assert "method: 'PATCH'" in browser
     assert "function applyItemEditResult(updatedItem)" in browser
-    assert "selectReport(" not in browser.split(
-        "function applyItemEditResult(updatedItem)", maxsplit=1
-    )[1].split("async function saveItemEdit", maxsplit=1)[0]
+    apply_edit_body = _strip_js_comments(
+        browser.split(
+            "function applyItemEditResult(updatedItem)", maxsplit=1
+        )[1].split("async function saveItemEdit", maxsplit=1)[0]
+    )
+    assert "selectReport(" not in apply_edit_body
 
 
 BROWSER_JS = "src/console/web_static/js/submission_archive/browser.js"
@@ -197,27 +207,34 @@ TEMPLATE_HTML = "src/console/web_templates/submission_archive.html"
 
 def test_report_status_signature_includes_prior_match() -> None:
     source = Path(BROWSER_JS).read_text(encoding="utf-8")
-    signature_body = source.split(
-        "function reportStatusSignature(items) {", maxsplit=1
-    )[1].split("function reportCountsFromItems", maxsplit=1)[0]
+    signature_body = _strip_js_comments(
+        source.split(
+            "function reportStatusSignature(items) {", maxsplit=1
+        )[1].split("function reportCountsFromItems", maxsplit=1)[0]
+    )
 
     # prior_match 在回链完成后的某一轮轮询里才出现，指纹不含它页面不会重绘
-    assert "prior_match" in signature_body
+    assert "item.prior_match ?" in signature_body
+    assert "item.prior_match.status" in signature_body
 
 
 def test_status_poll_continues_until_prior_match_done() -> None:
     source = Path(BROWSER_JS).read_text(encoding="utf-8")
-    poll_body = source.split(
-        "async function pollReportStatus(id) {", maxsplit=1
-    )[1].split("async function selectReport(id, pushUrl = true) {", maxsplit=1)[0]
-    select_body = source.split(
-        "async function selectReport(id, pushUrl = true) {", maxsplit=1
-    )[1].split("async function initBrowserView()", maxsplit=1)[0]
+    poll_body = _strip_js_comments(
+        source.split(
+            "async function pollReportStatus(id) {", maxsplit=1
+        )[1].split("async function selectReport(id, pushUrl = true) {", maxsplit=1)[0]
+    )
+    select_body = _strip_js_comments(
+        source.split(
+            "async function selectReport(id, pushUrl = true) {", maxsplit=1
+        )[1].split("async function initBrowserView()", maxsplit=1)[0]
+    )
 
     # 两处继续轮询的条件都同时看 processing 与 prior_match_pending
     for body in (poll_body, select_body):
         assert "link_status === 'processing'" in body
-        assert "prior_match_pending" in body
+        assert "report.prior_match_pending" in body
 
 
 def test_prior_match_only_polling_is_capped() -> None:
@@ -239,7 +256,9 @@ def test_prior_match_pill_rendered_only_when_present() -> None:
     # 新标签是可点击按钮、带 data-item-id，且不复用 .archive-link-pill
     assert '<button type="button" class="archive-prior-match-pill' in core
     assert "data-item-id" in core
-    pill_body = core.split("const priorMatchPill = item => {", maxsplit=1)[1]
+    pill_body = _strip_js_comments(
+        core.split("const priorMatchPill = item => {", maxsplit=1)[1]
+    )
     assert "archive-link-pill" not in pill_body
     # 追加在 linkPill 之后
     assert "${linkPill(item.link_status)}${priorMatchPill(item)}" in browser
@@ -260,9 +279,11 @@ def test_detail_stats_prior_match_chip_is_feedback_only() -> None:
 
 def test_local_update_covers_prior_match_pill_transitions() -> None:
     source = Path(BROWSER_JS).read_text(encoding="utf-8")
-    update_body = source.split(
-        "function updateReportStatusComponents(id, items) {", maxsplit=1
-    )[1].split("function applyManualLinkResult", maxsplit=1)[0]
+    update_body = _strip_js_comments(
+        source.split(
+            "function updateReportStatusComponents(id, items) {", maxsplit=1
+        )[1].split("function applyManualLinkResult", maxsplit=1)[0]
+    )
 
     # 局部更新必须处理三种迁移：先移除旧标签（有→无/变化），
     # 再借 linkPill 的 outerHTML 插入新标签（无→有）

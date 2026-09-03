@@ -274,16 +274,32 @@ def test_prior_match_pill_rendered_only_when_present() -> None:
     assert "${linkPill(item.link_status)}${detailPriorMatchPill(item)}" in browser
 
 
-def test_detail_stats_prior_match_chip_is_feedback_only() -> None:
+def test_detail_stats_prior_match_chips_are_filters() -> None:
     source = Path(BROWSER_JS).read_text(encoding="utf-8")
+    stats_body = source.split("function detailStats(items) {", maxsplit=1)[1].split(
+        "function detailItemMetaHtml", maxsplit=1
+    )[0]
 
-    assert "activeReportType === 'feedback'" in source
-    assert "activeReportType = report.report_type || ''" in source
-    chip_line = next(
-        line for line in source.splitlines() if "is-prior-matched" in line
-    )
-    assert "<span" in chip_line
-    assert "data-status-filter" not in chip_line
+    # 已报送/未报送 chip 仅反馈报告且判定结束后渲染（进行中计数没有含义），
+    # 是可点击的筛选按钮，与 link_status 的 data-status-filter 是不同的维度
+    assert "activeReportType === 'feedback' && !activeReportPriorMatchPending" in stats_body
+    assert "data-prior-filter" in stats_body
+    assert "priorChip('matched', '已报送'" in stats_body
+    assert "priorChip('unmatched', '未报送'" in stats_body
+
+
+def test_prior_match_filter_is_independent_second_dimension() -> None:
+    source = _strip_js_comments(Path(BROWSER_JS).read_text(encoding="utf-8"))
+    filter_body = source.split("function applyDetailFilter()", maxsplit=1)[1].split(
+        "function reportStatusSignature", maxsplit=1
+    )[0]
+
+    # 两个筛选维度叠加判定显隐；卡片带 data-prior-group，局部更新时同步
+    assert "card.dataset.priorGroup !== detailPriorFilter" in filter_body
+    assert "card.dataset.linkGroup !== detailStatusFilter" in filter_body
+    assert "statusHidden || priorHidden" in filter_body
+    assert 'data-prior-group="${detailPriorGroup(item)}"' in source
+    assert "card.dataset.priorGroup = detailPriorGroup(item)" in source
 
 
 def test_local_update_covers_prior_match_pill_transitions() -> None:

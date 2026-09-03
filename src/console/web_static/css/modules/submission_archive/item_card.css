@@ -281,7 +281,7 @@
     filter: none;
 }
 
-/* 详情统计 chip 的已报送计数：纯展示，与标签同色 */
+/* 详情统计 chip 的已报送/未报送计数：与条目卡片上的标签同色 */
 .archive-stat-chip.is-prior-matched {
     background: #ccfbf1;
     color: #0f766e;
@@ -289,6 +289,15 @@
 
 .archive-stat-chip.is-prior-matched strong {
     color: #0f766e;
+}
+
+.archive-stat-chip.is-prior-unmatched {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.archive-stat-chip.is-prior-unmatched strong {
+    color: #b91c1c;
 }
 
 /* ===== 已报送命中明细弹窗 ===== */

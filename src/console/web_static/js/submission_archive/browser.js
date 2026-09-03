@@ -7,6 +7,8 @@ let reportRefreshTimer = null;
 let activeReportStatusSignature = '';
 // 详情区按回链状态筛选：'' 表示不过滤，其余取值 linked/pending/uncovered
 let detailStatusFilter = '';
+// 详情区按已报送判定筛选（与回链状态筛选独立、可叠加）：'' / matched / unmatched
+let detailPriorFilter = '';
 // 处于编辑态的条目 id 集合：点卡片上的铅笔图标按条展开/收起
 const detailEditingItemIds = new Set();
 // 当前详情报告的条目缓存与整理日期：人工回链弹窗的参照区与局部更新都从这里取数
@@ -134,10 +136,15 @@ function detailStats(items) {
     });
     const matched = stats.matched;
     const uncovered = stats.unmatched + stats.rejected;
-    // 已报送命中 chip：仅反馈报告渲染，纯展示不可点击（筛选只有 link_status 一个维度）
-    const priorMatched = activeReportType === 'feedback'
-        ? items.filter(item => item.prior_match).length
-        : 0;
+    // 已报送/未报送 chip：仅反馈报告且判定结束后渲染（进行中 prior_match 全为 null，
+    // 计数没有含义），可点击筛选，与 link_status 筛选相互独立
+    const showPriorChips = activeReportType === 'feedback' && !activeReportPriorMatchPending;
+    const priorMatched = showPriorChips ? items.filter(item => item.prior_match).length : 0;
+    const priorChip = (filter, label, count, extraClass = '') => {
+        const active = detailPriorFilter === filter;
+        return `<button class="archive-stat-chip${extraClass}${active ? ' is-active' : ''}" type="button"`
+            + ` data-prior-filter="${filter}" aria-pressed="${active}">${label} <strong>${count}</strong></button>`;
+    };
     // 已匹配/待确认/未覆盖渲染为可点击按钮，点击后仅展示该分类条目，再次点击取消筛选
     const filterChip = (filter, label, count, extraClass = '') => {
         const active = detailStatusFilter === filter;
@@ -148,7 +155,8 @@ function detailStats(items) {
         <div class="archive-stat-chips" id="archive-detail-stats">
             <span class="archive-stat-chip">共 <strong>${items.length}</strong> 条</span>
             ${stats.processing ? `<span class="archive-stat-chip is-processing">正在判断 <strong>${stats.processing}</strong></span>` : ''}
-            ${priorMatched ? `<span class="archive-stat-chip is-prior-matched" title="命中更早综报/晚报的条目数">已报送 <strong>${priorMatched}</strong></span>` : ''}
+            ${showPriorChips ? priorChip('matched', '已报送', priorMatched, ' is-prior-matched')
+                + priorChip('unmatched', '未报送', items.length - priorMatched, ' is-prior-unmatched') : ''}
             ${filterChip('linked', '已匹配', matched, ' is-linked')}
             ${filterChip('pending', '待确认', stats.pending, stats.pending ? ' is-pending' : '')}
             ${filterChip('uncovered', '未覆盖', uncovered)}
@@ -231,17 +239,25 @@ const detailEditTriggerHtml = item => {
         stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>`;
 };
 
-// 条目卡片上的已报送标签：「未报送」只在反馈报告且判定结束后展示，
-// 判定进行中（prior_match_pending）时不能误贴
+// 已报送筛选分组：matched（命中更早报送）/ unmatched（未报送）/ ''（非反馈报告
+// 或判定进行中——此时 prior_match 全为 null，分组没有意义，也不能误贴「未报送」）。
+// 卡片标签与 data-prior-group、统计 chip 共用这一门控
+const detailPriorGroup = item => (
+    activeReportType === 'feedback' && !activeReportPriorMatchPending
+        ? (item.prior_match ? 'matched' : 'unmatched')
+        : ''
+);
+
 const detailPriorMatchPill = item => priorMatchPill(item, {
-    showUnmatched: activeReportType === 'feedback' && !activeReportPriorMatchPending
+    showUnmatched: detailPriorGroup(item) === 'unmatched'
 });
 
 function detailItemCard(item) {
     const editing = detailEditingItemIds.has(String(item.id));
     return `
         <article class="archive-item${item.link_status === 'pending' ? ' is-pending' : ''}${item.link_status === 'processing' ? ' is-processing' : ''}${editing ? ' is-editing' : ''}"
-            data-item-id="${escapeHtml(item.id)}" data-link-group="${linkStatusGroup(item.link_status)}">
+            data-item-id="${escapeHtml(item.id)}" data-link-group="${linkStatusGroup(item.link_status)}"
+            data-prior-group="${detailPriorGroup(item)}">
             <div class="archive-item-head">
                 <span class="archive-item-order">${item.order_index + 1}</span>
                 <h4 class="archive-item-title">${escapeHtml(item.title)}${detailOriginalTriggerHtml(item)}</h4>
@@ -268,13 +284,18 @@ function detailItemsHtml(items) {
     return parts.join('');
 }
 
-// 按 detailStatusFilter 隐藏不匹配的条目卡片；所在章节全部不可见时一并隐藏章节标题
+// 按 detailStatusFilter / detailPriorFilter 隐藏不匹配的条目卡片（两个维度叠加）；
+// 所在章节全部不可见时一并隐藏章节标题
 function applyDetailFilter() {
     const container = document.querySelector('#archive-detail .archive-detail-items');
     if (!container) return;
-    const filtering = Boolean(detailStatusFilter);
+    const filtering = Boolean(detailStatusFilter) || Boolean(detailPriorFilter);
     container.querySelectorAll('.archive-item[data-item-id]').forEach(card => {
-        card.hidden = filtering && card.dataset.linkGroup !== detailStatusFilter;
+        const statusHidden = Boolean(detailStatusFilter)
+            && card.dataset.linkGroup !== detailStatusFilter;
+        const priorHidden = Boolean(detailPriorFilter)
+            && card.dataset.priorGroup !== detailPriorFilter;
+        card.hidden = statusHidden || priorHidden;
     });
     let heading = null;
     let anyVisible = false;
@@ -340,6 +361,7 @@ function updateReportStatusComponents(id, items) {
         card.classList.toggle('is-processing', item.link_status === 'processing');
         card.classList.toggle('is-pending', item.link_status === 'pending');
         card.dataset.linkGroup = linkStatusGroup(item.link_status);
+        card.dataset.priorGroup = detailPriorGroup(item);
         // 铅笔入口随状态同步：先移除旧按钮，再和新 pill 一起按当前状态重渲染
         const editBtn = card.querySelector('.archive-item-edit-btn');
         if (editBtn) editBtn.remove();
@@ -514,6 +536,7 @@ async function selectReport(id, pushUrl = true) {
     activeReportId = id;
     activeReportStatusSignature = '';
     detailStatusFilter = '';
+    detailPriorFilter = '';
     detailEditingItemIds.clear();
     markActiveReport(id);
     if (pushUrl) {
@@ -587,6 +610,19 @@ async function initBrowserView() {
         detailStatusFilter = detailStatusFilter === value ? '' : value;
         document.querySelectorAll('#archive-detail [data-status-filter]').forEach(btn => {
             const active = btn.dataset.statusFilter === detailStatusFilter;
+            btn.classList.toggle('is-active', active);
+            btn.setAttribute('aria-pressed', String(active));
+        });
+        applyDetailFilter();
+    });
+    // 已报送/未报送 chip 点击筛选：与 link_status 筛选相互独立、可叠加
+    document.getElementById('archive-detail').addEventListener('click', event => {
+        const chip = event.target.closest('[data-prior-filter]');
+        if (!chip) return;
+        const value = chip.dataset.priorFilter || '';
+        detailPriorFilter = detailPriorFilter === value ? '' : value;
+        document.querySelectorAll('#archive-detail [data-prior-filter]').forEach(btn => {
+            const active = btn.dataset.priorFilter === detailPriorFilter;
             btn.classList.toggle('is-active', active);
             btn.setAttribute('aria-pressed', String(active));
         });

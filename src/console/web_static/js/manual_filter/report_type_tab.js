@@ -1,5 +1,5 @@
 // Manual Filter JS - Report Type Tab
-// 右侧报别切换标签 + 弹出面板。报别状态本身由 setReviewReportType（utils.js）统一管理，
+// 右侧报别切换标签 + 弹出面板。归入报别状态本身由 setFilterAssignReportType（utils.js）统一管理，
 // 本模块只负责面板的开合；admin review 模式不渲染该标签，所有入口都要容忍元素缺失。
 
 function openReportTypePopover() {

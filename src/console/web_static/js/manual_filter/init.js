@@ -199,11 +199,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         elements.reportTypeButtons.forEach(btn => {
             btn.addEventListener('click', () => {
                 const val = btn.dataset.type || 'zongbao';
-                setReviewReportType(val);
+                setFilterAssignReportType(val);
             });
         });
         elements.reportTypeButtons.forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.type === state.reviewReportType);
+            btn.classList.toggle('active', btn.dataset.type === state.filterAssignReportType);
         });
     }
     if (elements.reviewSearchInput) {

@@ -1,6 +1,6 @@
 // Manual Filter JS - Filter Decision Context Menu
 // 右键点击筛选卡片（或聚类）上的「采纳」「备选」，弹出小菜单，把条目直接归入另一报别，
-// 页面当前报别状态保持不变（不走 setReviewReportType）；左键点击仍是归入当前报别的默认逻辑。
+// 「采纳/备选归入」报别状态保持不变（不走 setFilterAssignReportType）；左键点击仍是归入当前报别的默认逻辑。
 // 菜单元素懒创建并挂在 body 上，不进入 elements 注册表。
 
 let filterDecisionMenuEl = null;
@@ -23,7 +23,7 @@ function closeFilterDecisionMenu() {
 
 function openFilterDecisionMenu(x, y, input) {
     const menu = ensureFilterDecisionMenu();
-    const otherReportType = state.reviewReportType === 'wanbao' ? 'zongbao' : 'wanbao';
+    const otherReportType = state.filterAssignReportType === 'wanbao' ? 'zongbao' : 'wanbao';
     const actionLabel = input.value === 'selected' ? '采纳' : '备选';
     const reportLabel = otherReportType === 'wanbao' ? '晚报' : '综报';
 

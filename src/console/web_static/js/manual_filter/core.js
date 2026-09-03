@@ -26,6 +26,7 @@ let state = {
     latestIngestedAt: null,
     reviewView: 'selected',
     reviewReportType: 'zongbao',
+    filterAssignReportType: 'zongbao',
     discardQuery: '',
     showGroups: true,
     reviewCollapsedGroups: {},

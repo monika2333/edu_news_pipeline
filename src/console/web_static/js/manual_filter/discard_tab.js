@@ -147,7 +147,7 @@ function parseDiscardRestoreTarget(rawValue) {
 
     return {
         status: rawValue,
-        reportType: state.reviewReportType
+        reportType: state.filterAssignReportType
     };
 }
 

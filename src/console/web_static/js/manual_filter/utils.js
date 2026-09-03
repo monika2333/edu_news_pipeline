@@ -233,21 +233,12 @@ function updateFilterCountsUI() {
     });
 }
 
+// review-tab 当前桶（报别 × 采纳/备选）。只影响 review 列表与值班收尾，不影响 filter-tab 的归入报别。
 function setReviewReportType(value) {
     const normalized = value === 'wanbao' ? 'wanbao' : 'zongbao';
     if (state.reviewReportType === normalized) return;
 
     state.reviewReportType = normalized;
-    if (elements.reportTypeTabText) {
-        elements.reportTypeTabText.textContent = normalized === 'wanbao' ? '晚报' : '综报';
-    }
-    if (elements.reportTypeButtons && elements.reportTypeButtons.length) {
-        elements.reportTypeButtons.forEach(btn => {
-            const isActive = btn.dataset.type === normalized;
-            btn.classList.toggle('active', isActive);
-            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-        });
-    }
     // Update rail buttons active state based on new report type
     if (elements.reviewRailButtons && elements.reviewRailButtons.length) {
         elements.reviewRailButtons.forEach(btn => {
@@ -258,9 +249,27 @@ function setReviewReportType(value) {
         });
     }
     updateReviewRailCounts();
-    loadStats();
     loadReviewData();
     if (IS_DUTY_WORKSPACE) loadDutyFinalizationStatus();
+}
+
+// filter-tab「采纳/备选归入」报别（页面右缘报别 dock）。与 review-tab 当前桶相互独立，不联动。
+function setFilterAssignReportType(value) {
+    const normalized = value === 'wanbao' ? 'wanbao' : 'zongbao';
+    if (state.filterAssignReportType === normalized) return;
+
+    state.filterAssignReportType = normalized;
+    if (elements.reportTypeTabText) {
+        elements.reportTypeTabText.textContent = normalized === 'wanbao' ? '晚报' : '综报';
+    }
+    if (elements.reportTypeButtons && elements.reportTypeButtons.length) {
+        elements.reportTypeButtons.forEach(btn => {
+            const isActive = btn.dataset.type === normalized;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+    }
+    loadStats();
 }
 
 function setReviewView(view) {
@@ -295,8 +304,8 @@ async function loadStats() {
             zongbao: { selected: zbData.selected || 0, backup: zbData.backup || 0 },
             wanbao: { selected: wbData.selected || 0, backup: wbData.backup || 0 }
         };
-        // pending / discarded 不分报别，两个响应里的数值一致；采纳 / 备选徽标按当前报别取值
-        const currentData = state.reviewReportType === 'wanbao' ? wbData : zbData;
+        // pending / discarded 不分报别，两个响应里的数值一致；采纳 / 备选徽标按归入报别取值
+        const currentData = state.filterAssignReportType === 'wanbao' ? wbData : zbData;
         const badgeValues = {
             pending: zbData.pending,
             discarded: zbData.discarded,

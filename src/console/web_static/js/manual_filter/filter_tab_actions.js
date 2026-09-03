@@ -4,7 +4,7 @@ function describeFilterDecision(status, count, reportType = null) {
     const items = count > 1 ? ` ${count} 条新闻` : '';
     if (status === 'selected' || status === 'backup') {
         const actionLabel = status === 'selected' ? '采纳' : '备选';
-        const effectiveReportType = reportType || state.reviewReportType;
+        const effectiveReportType = reportType || state.filterAssignReportType;
         const reportLabel = effectiveReportType === 'wanbao' ? '晚报' : '综报';
         return `已${actionLabel}到${reportLabel}${items}`;
     }
@@ -284,7 +284,7 @@ function updateDutyFilterDecisionCounts(status, itemCount, direction, reportType
     if (status === 'selected' || status === 'backup') {
         adjustVisibleStat(status, delta);
         const effectiveReportType = reportType
-            || (state.reviewReportType === 'wanbao' ? 'wanbao' : 'zongbao');
+            || (state.filterAssignReportType === 'wanbao' ? 'wanbao' : 'zongbao');
         state.reviewCounts[effectiveReportType][status] = Math.max(
             0,
             (Number(state.reviewCounts[effectiveReportType][status]) || 0) + delta

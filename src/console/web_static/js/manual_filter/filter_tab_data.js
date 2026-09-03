@@ -103,7 +103,7 @@ async function persistEdits(edits) {
     await requireManualMutationSuccess(res, '编辑保存失败，请重试');
 }
 
-// reportType 缺省用当前页面报别；右键快捷菜单可覆盖为另一报别，不改变页面报别状态。
+// reportType 缺省用「采纳/备选归入」报别（dock）；右键快捷菜单可覆盖为另一报别，不改变归入报别状态。
 async function submitDecisions(ids, status, versions = null, reportType = null) {
     const payload = {
         selected_ids: status === 'selected' ? ids : [],
@@ -111,7 +111,7 @@ async function submitDecisions(ids, status, versions = null, reportType = null) 
         discarded_ids: status === 'discarded' ? ids : [],
         pending_ids: status === 'pending' ? ids : [],
         versions: versions || collectManualReviewVersions(ids),
-        report_type: reportType || state.reviewReportType
+        report_type: reportType || state.filterAssignReportType
     };
 
     const res = await workspaceFetch(`${API_BASE}/decide`, {

@@ -188,3 +188,113 @@ def test_archive_item_edit_saves_via_patch_and_updates_card_locally() -> None:
     assert "selectReport(" not in browser.split(
         "function applyItemEditResult(updatedItem)", maxsplit=1
     )[1].split("async function saveItemEdit", maxsplit=1)[0]
+
+
+BROWSER_JS = "src/console/web_static/js/submission_archive/browser.js"
+CORE_JS = "src/console/web_static/js/submission_archive/core.js"
+TEMPLATE_HTML = "src/console/web_templates/submission_archive.html"
+
+
+def test_report_status_signature_includes_prior_match() -> None:
+    source = Path(BROWSER_JS).read_text(encoding="utf-8")
+    signature_body = source.split(
+        "function reportStatusSignature(items) {", maxsplit=1
+    )[1].split("function reportCountsFromItems", maxsplit=1)[0]
+
+    # prior_match 在回链完成后的某一轮轮询里才出现，指纹不含它页面不会重绘
+    assert "prior_match" in signature_body
+
+
+def test_status_poll_continues_until_prior_match_done() -> None:
+    source = Path(BROWSER_JS).read_text(encoding="utf-8")
+    poll_body = source.split(
+        "async function pollReportStatus(id) {", maxsplit=1
+    )[1].split("async function selectReport(id, pushUrl = true) {", maxsplit=1)[0]
+    select_body = source.split(
+        "async function selectReport(id, pushUrl = true) {", maxsplit=1
+    )[1].split("async function initBrowserView()", maxsplit=1)[0]
+
+    # 两处继续轮询的条件都同时看 processing 与 prior_match_pending
+    for body in (poll_body, select_body):
+        assert "link_status === 'processing'" in body
+        assert "prior_match_pending" in body
+
+
+def test_prior_match_only_polling_is_capped() -> None:
+    source = Path(BROWSER_JS).read_text(encoding="utf-8")
+
+    # 仅剩 prior_match_pending 一个原因时轮询次数有上限，达到上限后不再调度
+    assert "PRIOR_MATCH_POLL_LIMIT" in source
+    assert "priorMatchPollCount < PRIOR_MATCH_POLL_LIMIT" in source
+    assert "priorMatchPollCount += 1" in source
+
+
+def test_prior_match_pill_rendered_only_when_present() -> None:
+    core = Path(CORE_JS).read_text(encoding="utf-8")
+    browser = Path(BROWSER_JS).read_text(encoding="utf-8")
+
+    # 渲染以 item.prior_match 非空为前提，为 null 时不输出节点
+    assert "const priorMatchPill = item => {" in core
+    assert "if (!priorMatch) return '';" in core
+    # 新标签是可点击按钮、带 data-item-id，且不复用 .archive-link-pill
+    assert '<button type="button" class="archive-prior-match-pill' in core
+    assert "data-item-id" in core
+    pill_body = core.split("const priorMatchPill = item => {", maxsplit=1)[1]
+    assert "archive-link-pill" not in pill_body
+    # 追加在 linkPill 之后
+    assert "${linkPill(item.link_status)}${priorMatchPill(item)}" in browser
+
+
+def test_detail_stats_prior_match_chip_is_feedback_only() -> None:
+    source = Path(BROWSER_JS).read_text(encoding="utf-8")
+
+    # chip 只在反馈报告渲染、不可点击（无 data-status-filter），报别经模块级变量传递
+    assert "activeReportType === 'feedback'" in source
+    assert "activeReportType = report.report_type || ''" in source
+    chip_line = next(
+        line for line in source.splitlines() if "is-prior-matched" in line
+    )
+    assert "<span" in chip_line
+    assert "data-status-filter" not in chip_line
+
+
+def test_local_update_covers_prior_match_pill_transitions() -> None:
+    source = Path(BROWSER_JS).read_text(encoding="utf-8")
+    update_body = source.split(
+        "function updateReportStatusComponents(id, items) {", maxsplit=1
+    )[1].split("function applyManualLinkResult", maxsplit=1)[0]
+
+    # 局部更新必须处理三种迁移：先移除旧标签（有→无/变化），
+    # 再借 linkPill 的 outerHTML 插入新标签（无→有）
+    assert "archive-prior-match-pill" in update_body
+    assert "priorPill.remove()" in update_body
+    assert "priorMatchPill(item)" in update_body
+
+
+def test_prior_matches_modal_markup_and_script_order() -> None:
+    template = Path(TEMPLATE_HTML).read_text(encoding="utf-8")
+
+    assert 'id="archive-prior-matches-modal"' in template
+    assert "submission_archive/prior_matches.js" in template
+    # Escape 关闭顺序依赖脚本加载顺序：晚于 browser.js、早于 content_drawer.js
+    assert template.index("submission_archive/browser.js") < template.index(
+        "submission_archive/prior_matches.js"
+    )
+    assert template.index("submission_archive/prior_matches.js") < template.index(
+        "submission_archive/content_drawer.js"
+    )
+
+
+def test_prior_matches_modal_escapes_and_labels() -> None:
+    modal = Path(
+        "src/console/web_static/js/submission_archive/prior_matches.js"
+    ).read_text(encoding="utf-8")
+
+    # 判定依据中文说明与接口字段一一对应；接口文本一律走 escapeHtml
+    assert "article: '同一篇原文'" in modal
+    assert "title_hash: '标题一致'" in modal
+    assert "vector: '语义相似'" in modal
+    assert "/prior-matches`" in modal
+    assert "escapeHtml(entry.title" in modal
+    assert "escapeHtml(entry.body)" in modal
+    assert "escapeHtml(entry.source)" in modal

@@ -12,6 +12,13 @@ const detailEditingItemIds = new Set();
 // 当前详情报告的条目缓存与整理日期：人工回链弹窗的参照区与局部更新都从这里取数
 let activeReportItems = [];
 let activeReportCompiledDate = '';
+// 当前详情报告的报别：已报送命中 chip 只在反馈报告上渲染（detailStats 的两条调用路径都读它）
+let activeReportType = '';
+// 已报送判定在回链完成后才执行（含加载嵌入模型，十几秒），轮询必须等它结束；
+// 后台进程崩溃会让 prior_match_pending 永远为真，因此仅剩这一原因时给轮询设兜底上限
+// （60 次 × 1.5s ≈ 90 秒），达到上限后静默停止
+const PRIOR_MATCH_POLL_LIMIT = 60;
+let priorMatchPollCount = 0;
 
 function linkStatusGroup(status) {
     if (status === 'matched') return 'linked';
@@ -124,6 +131,10 @@ function detailStats(items) {
     });
     const matched = stats.matched;
     const uncovered = stats.unmatched + stats.rejected;
+    // 已报送命中 chip：仅反馈报告渲染，纯展示不可点击（筛选只有 link_status 一个维度）
+    const priorMatched = activeReportType === 'feedback'
+        ? items.filter(item => item.prior_match).length
+        : 0;
     // 已匹配/待确认/未覆盖渲染为可点击按钮，点击后仅展示该分类条目，再次点击取消筛选
     const filterChip = (filter, label, count, extraClass = '') => {
         const active = detailStatusFilter === filter;
@@ -134,6 +145,7 @@ function detailStats(items) {
         <div class="archive-stat-chips" id="archive-detail-stats">
             <span class="archive-stat-chip">共 <strong>${items.length}</strong> 条</span>
             ${stats.processing ? `<span class="archive-stat-chip is-processing">正在判断 <strong>${stats.processing}</strong></span>` : ''}
+            ${priorMatched ? `<span class="archive-stat-chip is-prior-matched" title="命中更早综报/晚报的条目数">已报送 <strong>${priorMatched}</strong></span>` : ''}
             ${filterChip('linked', '已匹配', matched, ' is-linked')}
             ${filterChip('pending', '待确认', stats.pending, stats.pending ? ' is-pending' : '')}
             ${filterChip('uncovered', '未覆盖', uncovered)}
@@ -224,7 +236,7 @@ function detailItemCard(item) {
             <div class="archive-item-head">
                 <span class="archive-item-order">${item.order_index + 1}</span>
                 <h4 class="archive-item-title">${escapeHtml(item.title)}${detailOriginalTriggerHtml(item)}</h4>
-                ${detailEditTriggerHtml(item)}${linkPill(item.link_status)}
+                ${detailEditTriggerHtml(item)}${linkPill(item.link_status)}${priorMatchPill(item)}
             </div>
             ${item.body ? `<p class="archive-item-body">${escapeHtml(item.body)}</p>` : ''}
             <div class="archive-item-meta">${detailItemMetaHtml(item)}</div>
@@ -274,12 +286,15 @@ function applyDetailFilter() {
 }
 
 function reportStatusSignature(items) {
+    // prior_match 必须纳入指纹：它在回链完成后的某一轮轮询里才出现，
+    // 指纹不含它的话判定结果送达了页面也不会重绘
     return items.map(item => [
         item.id,
         item.link_status,
         item.link_combined_score ?? '',
         item.article_id ?? '',
-        item.best_candidate_article_id ?? ''
+        item.best_candidate_article_id ?? '',
+        item.prior_match ? `${item.prior_match.status}~${item.prior_match.count}` : ''
     ].join(':')).join('|');
 }
 
@@ -318,8 +333,12 @@ function updateReportStatusComponents(id, items) {
         // 铅笔入口随状态同步：先移除旧按钮，再和新 pill 一起按当前状态重渲染
         const editBtn = card.querySelector('.archive-item-edit-btn');
         if (editBtn) editBtn.remove();
+        // 已报送标签三种迁移：无→有（判定完成）、内容变化、有→无（重算后不再命中）。
+        // 先移除旧标签覆盖后两种，再借 linkPill 的 outerHTML 把新标签插到它后面覆盖第一种
+        const priorPill = card.querySelector('.archive-prior-match-pill');
+        if (priorPill) priorPill.remove();
         const pill = card.querySelector('.archive-link-pill');
-        if (pill) pill.outerHTML = `${detailEditTriggerHtml(item)}${linkPill(item.link_status)}`;
+        if (pill) pill.outerHTML = `${detailEditTriggerHtml(item)}${linkPill(item.link_status)}${priorMatchPill(item)}`;
         // 状态变化后同步标题后的「原文」标签：仅 matched 且有 article_id 时存在
         const titleEl = card.querySelector('.archive-item-title');
         const trigger = titleEl?.querySelector('.content-drawer-trigger');
@@ -453,9 +472,17 @@ async function pollReportStatus(id) {
             updateReportStatusComponents(id, items);
             activeReportStatusSignature = signature;
         }
+        // 继续轮询的条件：有条目处于 processing，或报告的已报送判定未结束
+        // （prior_match_pending）。判定在回链完成后才跑，只看 processing 会提前停轮
         if (items.some(item => item.link_status === 'processing')) {
+            priorMatchPollCount = 0;
+            scheduleReportStatusPoll(id);
+        } else if (report.prior_match_pending && priorMatchPollCount < PRIOR_MATCH_POLL_LIMIT) {
+            // 仅剩已报送判定一个原因时计数兜底：后台崩溃导致标志永远为真时静默停止
+            priorMatchPollCount += 1;
             scheduleReportStatusPoll(id);
         } else {
+            priorMatchPollCount = 0;
             loadNavPending();
         }
     } catch (error) {
@@ -486,6 +513,8 @@ async function selectReport(id, pushUrl = true) {
         const items = report.items || [];
         activeReportItems = items;
         activeReportCompiledDate = report.compiled_date || '';
+        activeReportType = report.report_type || '';
+        priorMatchPollCount = 0;
         target.innerHTML = `
             <div class="archive-detail-head">
                 <div class="archive-detail-head-main">
@@ -504,7 +533,11 @@ async function selectReport(id, pushUrl = true) {
             </div>
         `;
         activeReportStatusSignature = reportStatusSignature(items);
+        // 与 pollReportStatus 同一条件：processing 或已报送判定未结束都继续轮询
         if (items.some(item => item.link_status === 'processing')) {
+            scheduleReportStatusPoll(id);
+        } else if (report.prior_match_pending && priorMatchPollCount < PRIOR_MATCH_POLL_LIMIT) {
+            priorMatchPollCount += 1;
             scheduleReportStatusPoll(id);
         }
     } catch (error) {

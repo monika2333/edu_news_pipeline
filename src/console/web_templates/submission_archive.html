@@ -210,6 +210,25 @@
             </div>
         </div>
     </div>
+    <!-- 已报送命中明细弹窗（prior_matches.js）：反馈条目的「已报送」标签点开 -->
+    <div class="modal" id="archive-prior-matches-modal" role="dialog" aria-modal="true"
+        aria-labelledby="archive-prior-matches-modal-title" aria-hidden="true">
+        <div class="modal-content archive-prior-matches-modal-content">
+            <div class="modal-header">
+                <h3 id="archive-prior-matches-modal-title">已报送命中明细</h3>
+                <button type="button" class="btn-icon" id="archive-prior-matches-modal-close"
+                    aria-label="关闭">✕</button>
+            </div>
+            <div class="modal-body">
+                <section class="archive-link-ref" aria-label="当前反馈条目">
+                    <div class="archive-link-ref-label">当前反馈条目</div>
+                    <h4 class="archive-link-ref-title" id="archive-prior-matches-ref-title"></h4>
+                    <p class="archive-link-ref-body" id="archive-prior-matches-ref-body"></p>
+                </section>
+                <div class="archive-prior-matches-results" id="archive-prior-matches-results"></div>
+            </div>
+        </div>
+    </div>
     {% include "_content_drawer.html" %}
     {% endif %}
     {% include "_search_drawer.html" %}
@@ -228,6 +247,8 @@
     <script src="/static/js/submission_archive/browser.js?v={{ version }}"></script>
     <!-- manual_link.js 必须先于 content_drawer.js：抽屉盖在弹窗上时 Escape 先关抽屉 -->
     <script src="/static/js/submission_archive/manual_link.js?v={{ version }}"></script>
+    <!-- prior_matches.js 遵守同一约定：先于 content_drawer.js 注册，Escape 先关抽屉 -->
+    <script src="/static/js/submission_archive/prior_matches.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/content_drawer.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/create.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/link_queue.js?v={{ version }}"></script>

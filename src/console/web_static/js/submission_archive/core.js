@@ -39,6 +39,26 @@ const linkPill = (status) => {
     return `<span class="archive-link-pill ${meta.className}">${meta.label}</span>`;
 };
 
+// 已报送标签（仅反馈条目，item.prior_match 非空时渲染）：与回链 pill 完全独立，
+// 不共用 .archive-link-pill 的 is-* 修饰；点击打开命中明细弹窗（prior_matches.js）
+const priorMatchStatusMeta = {
+    submitted: { label: '已报送', className: 'is-submitted' },
+    suspected: { label: '疑似已报送', className: 'is-suspected' }
+};
+const priorMatchPill = item => {
+    const priorMatch = item.prior_match;
+    if (!priorMatch) return '';
+    const meta = priorMatchStatusMeta[priorMatch.status]
+        || { label: priorMatch.status || '未知', className: 'is-suspected' };
+    const count = Number(priorMatch.count) || 0;
+    const similarity = scoreValue(priorMatch.top_similarity);
+    const title = count > 1
+        ? `命中 ${count} 条更早报送，最高相似度 ${similarity}，点击查看明细`
+        : `最高相似度 ${similarity}，点击查看明细`;
+    return `<button type="button" class="archive-prior-match-pill ${meta.className}"`
+        + ` data-item-id="${escapeHtml(item.id)}" title="${escapeHtml(title)}">${meta.label}</button>`;
+};
+
 let archiveToastTimer = null;
 function toast(message, type = 'success') {
     const target = document.getElementById('archive-toast');

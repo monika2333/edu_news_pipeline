@@ -237,3 +237,111 @@
     outline: 3px solid rgb(37 99 235 / 12%);
 }
 
+/* ===== 已报送标签（反馈条目） ===== */
+/* 与 .archive-link-pill 独立：回链状态的 is-* 修饰不适用于已报送判定，互不污染 */
+.archive-prior-match-pill {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    margin-top: 1px;
+    padding: 3px 10px;
+    border: none;
+    border-radius: 999px;
+    font-family: inherit;
+    font-size: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: filter 0.15s;
+}
+
+.archive-prior-match-pill:hover {
+    filter: brightness(0.95);
+}
+
+.archive-prior-match-pill.is-submitted {
+    background: #ccfbf1;
+    color: #0f766e;
+}
+
+.archive-prior-match-pill.is-suspected {
+    background: #ffedd5;
+    color: #c2410c;
+}
+
+/* 详情统计 chip 的已报送计数：纯展示，与标签同色 */
+.archive-stat-chip.is-prior-matched {
+    background: #ccfbf1;
+    color: #0f766e;
+}
+
+.archive-stat-chip.is-prior-matched strong {
+    color: #0f766e;
+}
+
+/* ===== 已报送命中明细弹窗 ===== */
+.archive-prior-matches-modal-content {
+    width: min(720px, 96vw);
+    gap: 14px;
+}
+
+.archive-prior-matches-results {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.archive-prior-match-entry {
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--card-bg);
+}
+
+.archive-prior-match-entry-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+}
+
+.archive-prior-match-entry-similarity {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.archive-prior-match-entry-method {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #eef2f7;
+    font-weight: 600;
+}
+
+.archive-prior-match-entry-title {
+    margin: 6px 0 0;
+    font-size: 0.92rem;
+    font-weight: 700;
+    line-height: 1.5;
+}
+
+.archive-prior-match-entry-body {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin: 6px 0 0;
+    color: #475569;
+    font-size: 0.85rem;
+    line-height: 1.7;
+    white-space: pre-wrap;
+}
+
+.archive-prior-match-entry-source {
+    margin-top: 6px;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+}
+

@@ -464,34 +464,54 @@ def test_fetch_news_for_submission_dedup_keeps_scope_and_reads_cache() -> None:
     assert params == ()
 
 
-def test_prior_candidates_use_report_date_window_boundaries_and_news_types() -> None:
+def test_prior_candidates_use_compiled_date_closed_window_and_news_types() -> None:
     cursor = FakeCursor()
-    feedback_date = date(2026, 9, 2)
+    feedback_report_date = date(2026, 9, 2)
+    feedback_compiled_date = feedback_report_date - timedelta(days=1)
+    lookback_days = 7
 
     db_postgres_submission_archive.fetch_prior_submission_candidates(
         cursor,
-        report_date=feedback_date,
-        lookback_days=7,
+        compiled_date=feedback_compiled_date,
+        lookback_days=lookback_days,
     )
 
     query, params = cursor.calls[0]
     normalized = " ".join(query.split())
     assert "r.report_type = any(%s::text[])" in normalized
-    assert "r.report_date >= %s" in normalized
-    assert "r.report_date < %s" in normalized
-    assert "compiled_date" not in normalized
+    assert "r.compiled_date >= %s" in normalized
+    assert "r.compiled_date <= %s" in normalized
     where_clause = normalized.split("where", maxsplit=1)[1]
+    assert "r.report_date" not in where_clause
     assert "embedding is not null" not in where_clause
     assert params == (
         ["wanbao", "zongbao"],
-        feedback_date - timedelta(days=7),
-        feedback_date,
+        feedback_compiled_date - timedelta(days=lookback_days),
+        feedback_compiled_date,
     )
 
     window_start, window_end = params[1:]
-    assert window_start <= feedback_date - timedelta(days=7) < window_end
-    assert not window_start <= feedback_date - timedelta(days=8) < window_end
-    assert not window_start <= feedback_date < window_end
+    wanbao_same_report_date = {
+        "report_type": "wanbao",
+        "report_date": feedback_report_date,
+        "compiled_date": feedback_compiled_date,
+    }
+    zongbao_same_report_date = {
+        "report_type": "zongbao",
+        "report_date": feedback_report_date,
+        "compiled_date": feedback_report_date,
+    }
+
+    assert window_start <= wanbao_same_report_date["compiled_date"] <= window_end
+    assert not (
+        window_start <= zongbao_same_report_date["compiled_date"] <= window_end
+    )
+    assert window_start <= feedback_compiled_date - timedelta(days=7) <= window_end
+    assert not (
+        window_start
+        <= feedback_compiled_date - timedelta(days=8)
+        <= window_end
+    )
 
 
 def test_item_duplicate_summaries_prioritize_confirmed_match_methods() -> None:

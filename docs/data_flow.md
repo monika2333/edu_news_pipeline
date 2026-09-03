@@ -168,7 +168,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 3. 后台子进程做**自动回链**：把每个条目匹配回系统里的 `news_summaries`（标题相似度 + 正文相似度）
 4. 编辑可以确认自动候选，也可以围绕报告 `compiled_date` 检索 `news_summaries.title` / `llm_summary`，人工绑定或解绑条目
 5. 自动与人工结果都写回 `submitted_report_items`；人工绑定只改 `article_id`、`link_status`、`link_decided_by`、`link_matched_at`，解绑将状态恢复为 `unmatched`
-6. 对反馈报告，在回链完成后把每条反馈与其 `report_date` 前 7 天内（不含当天）的综报/晚报条目逐级比对，结果写入 `submission_item_duplicate_matches`
+6. 对反馈报告，在回链完成后把每条反馈与其 `compiled_date`（取材日）向前 7 天至取材日当天（闭区间）的综报/晚报条目逐级比对，结果写入 `submission_item_duplicate_matches`
 
 飞书入口只接受首行匹配当前报送稿标题的私聊纯文本；普通聊天、群聊、非文本消息和非白名单用户消息不进入解析。识别成功后直接保存，解析警告随回复返回但不阻止入库；同报别同日期冲突绝不自动覆盖。`submitted_reports.ingest_source` 记录入口，`source_message_id` 以唯一索引提供跨进程重启的幂等保证，`source_sender_id` 保留提交人审计标识。控制台录入的 `ingest_source` 为 `console`，外部消息字段为空；飞书录入为 `feishu`。
 
@@ -202,9 +202,11 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 进度信号：后者只表示自动回链是否结束，前者表示回链之后的已报送判定是否结束。API
 据此在报告详情返回 `prior_match_pending`，不能用回链状态代替该字段。
 
-自动回链围绕 `compiled_date` 查找 `news_summaries`，因为它处理的是新闻内容时间轴；
-反馈已报送判定两侧都是存档条目，必须围绕 `report_date` 查找更早报告，处理的是报送
-时间轴。两者不是不一致，而是两个不同的问题，不能把任一方“统一”到另一日期字段。
+自动回链与反馈已报送判定都走 `compiled_date`（取材日轴）。反馈已报送判定的候选
+边界为 `compiled_date <= 反馈报告的 compiled_date`，上界是闭区间：晚报的取材日比
+报送日早一天，若改用报送日作边界，会把“取材于同一天、且早已发出的晚报”误判为
+未来内容而排除。这里曾使用 `report_date` 轴并因此造成大量漏判，后续不要改回去；报别
+偏移知识只由 `default_compiled_date` 维护，候选查询不得再按报别复制分支。
 
 ### 查重（`submission-dedup`）
 

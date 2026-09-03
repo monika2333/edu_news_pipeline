@@ -238,7 +238,7 @@ def process_report_prior_matches(
         items = adapter.submission_archive.fetch_item_match_inputs(item_ids)
         candidates = (
             adapter.submission_archive.fetch_prior_submission_candidates(
-                report_date=refreshed_report["report_date"],
+                compiled_date=refreshed_report["compiled_date"],
                 lookback_days=feedback_lookback_days(),
             )
         )

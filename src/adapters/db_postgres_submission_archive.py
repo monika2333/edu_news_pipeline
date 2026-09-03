@@ -308,13 +308,13 @@ class SubmissionArchiveNamespace:
     def fetch_prior_submission_candidates(
         self,
         *,
-        report_date: date,
+        compiled_date: date,
         lookback_days: int,
     ) -> list[dict[str, Any]]:
         with self._adapter._cursor() as cur:
             return fetch_prior_submission_candidates(
                 cur,
-                report_date=report_date,
+                compiled_date=compiled_date,
                 lookback_days=lookback_days,
             )
 
@@ -1211,10 +1211,10 @@ def fetch_item_match_inputs(
 def fetch_prior_submission_candidates(
     cur: psycopg.Cursor,
     *,
-    report_date: date,
+    compiled_date: date,
     lookback_days: int,
 ) -> list[dict[str, Any]]:
-    window_start = report_date - timedelta(days=max(1, lookback_days))
+    window_start = compiled_date - timedelta(days=max(1, lookback_days))
     cur.execute(
         """
         select
@@ -1226,14 +1226,14 @@ def fetch_prior_submission_candidates(
         from submitted_report_items i
         join submitted_reports r on r.id = i.report_id
         where r.report_type = any(%s::text[])
-          and r.report_date >= %s
-          and r.report_date < %s
-        order by r.report_date desc, i.order_index, i.id
+          and r.compiled_date >= %s
+          and r.compiled_date <= %s
+        order by r.compiled_date desc, i.order_index, i.id
         """,
         (
             sorted(NEWS_REPORT_TYPES),
             window_start,
-            report_date,
+            compiled_date,
         ),
     )
     return [dict(row) for row in cur.fetchall()]

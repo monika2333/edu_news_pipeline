@@ -216,8 +216,10 @@ SUBMISSION_FEEDBACK_MATCH_THRESHOLD=0.90
 默认值时必须同步更新本节。
 
 `SUBMISSION_DEDUP_LOOKBACK_DAYS` 只控制每天自动比对的日期窗口，不会
-删除历史存档。`SUBMISSION_FEEDBACK_LOOKBACK_DAYS` 控制反馈条目向前查找综报/
-晚报条目的报送日期窗口（不含反馈当天），`SUBMISSION_FEEDBACK_MATCH_THRESHOLD`
+删除历史存档。`SUBMISSION_FEEDBACK_LOOKBACK_DAYS` 控制反馈条目在取材日
+（`compiled_date`）轴上向前查找综报/晚报条目的天数；候选窗口为
+`[反馈 compiled_date - 天数, 反馈 compiled_date]`，上界是闭区间。
+`SUBMISSION_FEEDBACK_MATCH_THRESHOLD`
 是条目间向量余弦相似度阈值；二者与新闻查重配置相互独立。嵌入模型固定为
 `BAAI/bge-large-zh`，不能通过环境变量更换；
 更换模型必须清空已有存档向量并完整重算。

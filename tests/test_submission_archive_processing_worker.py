@@ -215,6 +215,7 @@ def test_prior_matching_refetches_article_id_after_link(
                 "id": report_id,
                 "report_type": "feedback",
                 "report_date": date(2026, 9, 2),
+                "compiled_date": date(2026, 9, 1),
                 "items": [
                     {
                         "id": "feedback-item",
@@ -243,7 +244,7 @@ def test_prior_matching_refetches_article_id_after_link(
 
         def fetch_prior_submission_candidates(self, **kwargs: Any) -> list[dict[str, Any]]:
             assert kwargs == {
-                "report_date": date(2026, 9, 2),
+                "compiled_date": date(2026, 9, 1),
                 "lookback_days": 7,
             }
             return [
@@ -299,6 +300,7 @@ def test_prior_match_recompute_is_idempotent(
                 "id": report_id,
                 "report_type": "feedback",
                 "report_date": date(2026, 9, 2),
+                "compiled_date": date(2026, 9, 1),
                 "items": [{"id": "feedback-item"}],
             }
 
@@ -394,6 +396,7 @@ def test_prior_matching_marks_completed_when_candidates_are_empty(
                 "id": report_id,
                 "report_type": "feedback",
                 "report_date": date(2026, 9, 2),
+                "compiled_date": date(2026, 9, 1),
                 "items": [{"id": "feedback-item"}],
             }
 
@@ -444,6 +447,7 @@ def test_prior_matching_marks_completed_when_processing_raises(
             self.report = {
                 "id": "report-1",
                 "report_type": "feedback",
+                "compiled_date": date(2026, 9, 1),
                 "prior_match_completed_at": None,
                 "items": [],
             }
@@ -484,6 +488,7 @@ def test_recompute_single_and_all_reports_use_completion_path(
                 "id": report_id,
                 "report_type": "feedback",
                 "report_date": date(2026, 9, 2),
+                "compiled_date": date(2026, 9, 1),
                 "items": [],
             }
 

@@ -258,6 +258,11 @@ def test_prior_match_pill_rendered_only_when_present() -> None:
     assert "if (!showUnmatched) return '';" in core
     assert "未报送" in core
     assert "is-unmatched" in core
+    # 「未报送」是纯展示的 span，不可点击；弹窗委托只匹配 button
+    assert ">未报送</span>" in core
+    assert "button.archive-prior-match-pill" in Path(
+        "src/console/web_static/js/submission_archive/prior_matches.js"
+    ).read_text(encoding="utf-8")
     assert "activeReportType === 'feedback' && !activeReportPriorMatchPending" in browser
     assert '<button type="button" class="archive-prior-match-pill' in core
     assert "data-item-id" in core

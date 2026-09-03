@@ -50,9 +50,9 @@ const priorMatchPill = (item, { showUnmatched = false } = {}) => {
     const priorMatch = item.prior_match;
     if (!priorMatch) {
         if (!showUnmatched) return '';
-        return `<button type="button" class="archive-prior-match-pill is-unmatched"`
-            + ` data-item-id="${escapeHtml(item.id)}"`
-            + ` title="此前未通过综报/晚报报送，点击查看判定明细">未报送</button>`;
+        // 「未报送」是纯展示标签，不可点击（没有命中明细可看）
+        return '<span class="archive-prior-match-pill is-unmatched"'
+            + ' title="此前未通过综报/晚报报送">未报送</span>';
     }
     const meta = priorMatchStatusMeta[priorMatch.status]
         || { label: priorMatch.status || '未知', className: 'is-suspected' };

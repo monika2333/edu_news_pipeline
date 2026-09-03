@@ -1,10 +1,10 @@
 // Submission Archive JS - Prior Matches Modal (反馈条目已报送命中明细)
 //
-// 反馈条目卡片上的「已报送 / 疑似已报送 / 未报送」标签点开本弹窗：前两种展示
-// 该条目命中的全部更早综报/晚报条目（GET /items/{id}/prior-matches），
-// 「未报送」打开后呈现空态。标签只在反馈报告上渲染，其他报别不会触发本弹窗。
-// 本脚本必须先于 content_drawer.js 加载：原文抽屉盖在弹窗上时 Escape 先关抽屉，
-// 依赖这里的 keydown 处理器先注册并主动跳过。
+// 反馈条目卡片上的「已报送 / 疑似已报送」标签点开本弹窗，展示该条目命中的
+// 全部更早综报/晚报条目（GET /items/{id}/prior-matches）。「未报送」是纯展示
+// 标签、不可点击（委托只匹配 button），也没有明细可看。标签只在反馈报告上渲染，
+// 其他报别不会触发本弹窗。本脚本必须先于 content_drawer.js 加载：
+// 原文抽屉盖在弹窗上时 Escape 先关抽屉，依赖这里的 keydown 处理器先注册并主动跳过。
 
 // 判定依据的中文说明，与后端 match_method 取值一一对应
 const priorMatchMethodLabels = {
@@ -47,7 +47,7 @@ function priorMatchEntryHtml(entry) {
 async function openPriorMatchesModal(itemId) {
     const els = getPriorMatchesEls();
     const item = activeReportItems.find(entry => String(entry.id) === String(itemId));
-    // 兜底：标签只出现在反馈报告上（已报送/疑似/未报送三种），其他报别不渲染也就点不到
+    // 兜底：标签只出现在反馈报告上（已报送/疑似两种可点击），其他报别不渲染也就点不到
     if (!els.modal || !item) return;
     priorMatchesState.open = true;
     priorMatchesState.itemId = item.id;
@@ -92,9 +92,9 @@ function setupPriorMatchesModal() {
         if (archiveDrawerState.open) return;
         closePriorMatchesModal();
     });
-    // 标签会被轮询的局部更新替换，必须用事件委托
+    // 标签会被轮询的局部更新替换，必须用事件委托；「未报送」是 span，天然点不进这里
     document.getElementById('archive-detail')?.addEventListener('click', event => {
-        const pill = event.target.closest('.archive-prior-match-pill');
+        const pill = event.target.closest('button.archive-prior-match-pill');
         if (pill) openPriorMatchesModal(pill.dataset.itemId);
     });
 }

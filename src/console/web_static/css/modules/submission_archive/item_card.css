@@ -270,10 +270,15 @@
     color: #15803d;
 }
 
-/* 未报送才是真正需要编辑注意的，用偏红色调，比前两种更醒目 */
+/* 未报送才是真正需要编辑注意的，用偏红色调，比前两种更醒目；纯展示不可点击 */
 .archive-prior-match-pill.is-unmatched {
     background: #fee2e2;
     color: #b91c1c;
+    cursor: default;
+}
+
+.archive-prior-match-pill.is-unmatched:hover {
+    filter: none;
 }
 
 /* 详情统计 chip 的已报送计数：纯展示，与标签同色 */

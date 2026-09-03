@@ -6,6 +6,7 @@ from typing import Any, Mapping, Optional, Sequence
 from urllib.parse import urlparse
 
 from src.adapters.db_postgres_core import get_adapter
+from src.adapters.db_postgres_submission_archive import PRIOR_MATCH_REPORT_TYPES
 from src.console.auth_service import ConsoleUser
 from src.domain.report_type import SUBMISSION_DOC_TYPES as VALID_REPORT_TYPES
 from src.domain.submission_archive_parser import (
@@ -105,6 +106,10 @@ def get_report(report_id: str) -> dict[str, Any]:
     report = get_adapter().submission_archive.fetch_report(report_id)
     if not report:
         raise SubmissionReportNotFoundError("未找到这份存档报告")
+    report["prior_match_pending"] = (
+        report.get("report_type") in PRIOR_MATCH_REPORT_TYPES
+        and report.get("prior_match_completed_at") is None
+    )
     return report
 
 

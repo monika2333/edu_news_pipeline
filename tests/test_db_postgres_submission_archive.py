@@ -134,6 +134,54 @@ def test_fetch_feedback_report_attaches_prior_match_summary() -> None:
     assert "submission_item_duplicate_matches" in cursor.calls[2][0]
 
 
+def test_fetch_report_uses_prior_match_report_types_for_summary(
+    monkeypatch: Any,
+) -> None:
+    cursor = FakeCursor(
+        fetchone_rows=[{"id": "report-1", "report_type": "zongbao"}],
+        fetchall_rows=[
+            [{"id": "11111111-1111-1111-1111-111111111111"}],
+            [
+                {
+                    "item_id": "11111111-1111-1111-1111-111111111111",
+                    "status": "submitted",
+                    "top_similarity": 1,
+                    "match_count": 1,
+                }
+            ],
+        ],
+    )
+    monkeypatch.setattr(
+        db_postgres_submission_archive,
+        "PRIOR_MATCH_REPORT_TYPES",
+        frozenset({"feedback", "zongbao"}),
+    )
+
+    report = db_postgres_submission_archive.fetch_report(cursor, "report-1")
+
+    assert report is not None
+    assert report["items"][0]["prior_match"] == {
+        "status": "submitted",
+        "top_similarity": 1.0,
+        "count": 1,
+    }
+    assert "submission_item_duplicate_matches" in cursor.calls[2][0]
+
+
+def test_mark_prior_match_completed_sets_timestamp() -> None:
+    cursor = FakeCursor()
+
+    db_postgres_submission_archive.mark_prior_match_completed(
+        cursor,
+        "report-1",
+    )
+
+    query, params = cursor.calls[0]
+    normalized = " ".join(query.split())
+    assert "set prior_match_completed_at = now()" in normalized
+    assert params == ("report-1",)
+
+
 def test_search_items_includes_source_in_keyword_scope() -> None:
     cursor = FakeCursor(
         rows=[{"id": "item-1", "source": "北京时间"}],

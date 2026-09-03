@@ -322,6 +322,34 @@ def test_fetch_prior_item_match_details_returns_matches() -> None:
     assert result["matches"][0]["prior_item_id"] == "prior-1"
 
 
+@pytest.mark.parametrize(
+    ("report_type", "completed_at", "expected_pending"),
+    [
+        ("feedback", None, True),
+        ("feedback", "2026-09-03T12:00:00+08:00", False),
+        ("zongbao", None, False),
+    ],
+)
+def test_get_report_exposes_prior_match_pending(
+    monkeypatch: pytest.MonkeyPatch,
+    report_type: str,
+    completed_at: str | None,
+    expected_pending: bool,
+) -> None:
+    adapter = FakeSubmissionArchiveAdapter()
+    adapter.report = {
+        "id": "report-id",
+        "report_type": report_type,
+        "prior_match_completed_at": completed_at,
+        "items": [],
+    }
+    monkeypatch.setattr(submission_archive_service, "get_adapter", lambda: adapter)
+
+    report = submission_archive_service.get_report("report-id")
+
+    assert report["prior_match_pending"] is expected_pending
+
+
 def test_create_report_rejects_non_http_urls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

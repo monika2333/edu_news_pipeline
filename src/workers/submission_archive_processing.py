@@ -10,6 +10,7 @@ from typing import Any, Mapping, Optional, Sequence
 import numpy as np
 
 from src.adapters.db_postgres_core import get_adapter
+from src.adapters.db_postgres_submission_archive import PRIOR_MATCH_REPORT_TYPES
 from src.domain.submission_archive_config import (
     LINK_WINDOW_DAYS,
     feedback_lookback_days,
@@ -30,7 +31,6 @@ from src.workers.submission_dedup import (
 
 WORKER = "submission_archive_processing"
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-PRIOR_MATCH_REPORT_TYPES = frozenset({"feedback"})
 
 
 def launch_submission_report_processing(report_id: str) -> int:
@@ -226,43 +226,56 @@ def process_report_prior_matches(
     if not report or report.get("report_type") not in PRIOR_MATCH_REPORT_TYPES:
         return _empty_prior_match_summary()
 
-    embedded = backfill_archive_embeddings() if backfill else 0
-    refreshed_report = adapter.submission_archive.fetch_report(report_id)
-    if not refreshed_report:
-        return _empty_prior_match_summary()
-    item_ids = [str(item["id"]) for item in refreshed_report.get("items") or []]
-    items = adapter.submission_archive.fetch_item_match_inputs(item_ids)
-    candidates = adapter.submission_archive.fetch_prior_submission_candidates(
-        report_date=refreshed_report["report_date"],
-        lookback_days=feedback_lookback_days(),
-    )
-    if not candidates:
-        log_info(WORKER, f"No prior submission candidates for report {report_id}.")
-    if items and not any(item.get("embedding") is not None for item in items):
-        log_info(WORKER, f"Report {report_id} has no item embeddings.")
+    try:
+        embedded = backfill_archive_embeddings() if backfill else 0
+        refreshed_report = adapter.submission_archive.fetch_report(report_id)
+        if not refreshed_report:
+            return _empty_prior_match_summary()
+        item_ids = [
+            str(item["id"])
+            for item in refreshed_report.get("items") or []
+        ]
+        items = adapter.submission_archive.fetch_item_match_inputs(item_ids)
+        candidates = (
+            adapter.submission_archive.fetch_prior_submission_candidates(
+                report_date=refreshed_report["report_date"],
+                lookback_days=feedback_lookback_days(),
+            )
+        )
+        if not candidates:
+            log_info(
+                WORKER,
+                f"No prior submission candidates for report {report_id}.",
+            )
+        if items and not any(
+            item.get("embedding") is not None for item in items
+        ):
+            log_info(WORKER, f"Report {report_id} has no item embeddings.")
 
-    matches, counts = _build_prior_item_matches(
-        items,
-        candidates,
-        threshold=feedback_match_threshold(),
-    )
-    persisted = adapter.submission_archive.replace_item_duplicate_matches(
-        item_ids=item_ids,
-        matches=matches,
-    )
-    log_info(
-        WORKER,
-        f"Prior matches for report {report_id}: items={len(items)}, "
-        f"candidates={len(candidates)}, article={counts['article']}, "
-        f"title_hash={counts['title_hash']}, vector={counts['vector']}.",
-    )
-    return {
-        "embedded": embedded,
-        "items": len(items),
-        "candidates": len(candidates),
-        **counts,
-        "matches": persisted,
-    }
+        matches, counts = _build_prior_item_matches(
+            items,
+            candidates,
+            threshold=feedback_match_threshold(),
+        )
+        persisted = adapter.submission_archive.replace_item_duplicate_matches(
+            item_ids=item_ids,
+            matches=matches,
+        )
+        log_info(
+            WORKER,
+            f"Prior matches for report {report_id}: items={len(items)}, "
+            f"candidates={len(candidates)}, article={counts['article']}, "
+            f"title_hash={counts['title_hash']}, vector={counts['vector']}.",
+        )
+        return {
+            "embedded": embedded,
+            "items": len(items),
+            "candidates": len(candidates),
+            **counts,
+            "matches": persisted,
+        }
+    finally:
+        adapter.submission_archive.mark_prior_match_completed(report_id)
 
 
 def recompute_feedback_prior_matches(

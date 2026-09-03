@@ -196,6 +196,12 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 是派生数据，每次重算都先删除目标反馈条目的旧结果再完整写入，可安全重复重建；它
 不承载人工消除状态。
 
+`submitted_reports.prior_match_completed_at` 是报告级的判定终止信号。仅需执行上述判定
+的报别在判定流程终止时写入当前时间，正常完成、提前返回与异常退出都必须写入；历史
+报告由新增字段的迁移统一回填。它与条目级 `link_status = 'processing'` 是两个独立的
+进度信号：后者只表示自动回链是否结束，前者表示回链之后的已报送判定是否结束。API
+据此在报告详情返回 `prior_match_pending`，不能用回链状态代替该字段。
+
 自动回链围绕 `compiled_date` 查找 `news_summaries`，因为它处理的是新闻内容时间轴；
 反馈已报送判定两侧都是存档条目，必须围绕 `report_date` 查找更早报告，处理的是报送
 时间轴。两者不是不一致，而是两个不同的问题，不能把任一方“统一”到另一日期字段。

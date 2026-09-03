@@ -206,6 +206,7 @@ def test_prior_matching_refetches_article_id_after_link(
         def __init__(self) -> None:
             self.fetch_count = 0
             self.persisted: list[dict[str, Any]] = []
+            self.completed: list[str] = []
 
         def fetch_report(self, report_id: str) -> dict[str, Any]:
             assert report_id == "report-1"
@@ -259,6 +260,9 @@ def test_prior_matching_refetches_article_id_after_link(
             self.persisted = list(kwargs["matches"])
             return len(self.persisted)
 
+        def mark_prior_match_completed(self, report_id: str) -> None:
+            self.completed.append(report_id)
+
     namespace = Namespace()
     adapter = type("Adapter", (), {"submission_archive": namespace})()
     monkeypatch.setattr(
@@ -278,6 +282,7 @@ def test_prior_matching_refetches_article_id_after_link(
 
     assert namespace.fetch_count == 2
     assert namespace.persisted[0]["match_method"] == "article"
+    assert namespace.completed == ["report-1"]
     assert result["article"] == 1
 
 
@@ -287,6 +292,7 @@ def test_prior_match_recompute_is_idempotent(
     class Namespace:
         def __init__(self) -> None:
             self.rows: list[dict[str, Any]] = []
+            self.completed: list[str] = []
 
         def fetch_report(self, report_id: str) -> dict[str, Any]:
             return {
@@ -322,6 +328,9 @@ def test_prior_match_recompute_is_idempotent(
             self.rows = [dict(match) for match in kwargs["matches"]]
             return len(self.rows)
 
+        def mark_prior_match_completed(self, report_id: str) -> None:
+            self.completed.append(report_id)
+
     namespace = Namespace()
     adapter = type("Adapter", (), {"submission_archive": namespace})()
     monkeypatch.setattr(submission_archive_processing, "get_adapter", lambda: adapter)
@@ -337,16 +346,24 @@ def test_prior_match_recompute_is_idempotent(
 
     assert first == second
     assert namespace.rows == first_rows
+    assert namespace.completed == ["report-1", "report-1"]
 
 
 def test_non_feedback_report_skips_prior_matching(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class Namespace:
+        def __init__(self) -> None:
+            self.completed: list[str] = []
+
         def fetch_report(self, report_id: str) -> dict[str, Any]:
             return {"id": report_id, "report_type": "zongbao", "items": []}
 
-    adapter = type("Adapter", (), {"submission_archive": Namespace()})()
+        def mark_prior_match_completed(self, report_id: str) -> None:
+            self.completed.append(report_id)
+
+    namespace = Namespace()
+    adapter = type("Adapter", (), {"submission_archive": namespace})()
     monkeypatch.setattr(submission_archive_processing, "get_adapter", lambda: adapter)
     monkeypatch.setattr(
         submission_archive_processing,
@@ -359,3 +376,155 @@ def test_non_feedback_report_skips_prior_matching(
     )
 
     assert result["matches"] == 0
+    assert namespace.completed == []
+
+
+def test_prior_matching_marks_completed_when_candidates_are_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Namespace:
+        def __init__(self) -> None:
+            self.fetch_count = 0
+            self.completed: list[str] = []
+            self.replaced = False
+
+        def fetch_report(self, report_id: str) -> dict[str, Any]:
+            self.fetch_count += 1
+            return {
+                "id": report_id,
+                "report_type": "feedback",
+                "report_date": date(2026, 9, 2),
+                "items": [{"id": "feedback-item"}],
+            }
+
+        def fetch_item_match_inputs(
+            self,
+            _item_ids: list[str],
+        ) -> list[dict[str, Any]]:
+            return []
+
+        def fetch_prior_submission_candidates(
+            self,
+            **_kwargs: Any,
+        ) -> list[dict[str, Any]]:
+            return []
+
+        def replace_item_duplicate_matches(self, **kwargs: Any) -> int:
+            assert kwargs["matches"] == []
+            self.replaced = True
+            return 0
+
+        def mark_prior_match_completed(self, report_id: str) -> None:
+            self.completed.append(report_id)
+
+    namespace = Namespace()
+    adapter = type("Adapter", (), {"submission_archive": namespace})()
+    monkeypatch.setattr(submission_archive_processing, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(
+        submission_archive_processing,
+        "backfill_archive_embeddings",
+        lambda: 0,
+    )
+
+    result = submission_archive_processing.process_report_prior_matches(
+        "report-1"
+    )
+
+    assert result["candidates"] == 0
+    assert namespace.replaced is True
+    assert namespace.completed == ["report-1"]
+
+
+def test_prior_matching_marks_completed_when_processing_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Namespace:
+        def __init__(self) -> None:
+            self.completed: list[str] = []
+            self.report = {
+                "id": "report-1",
+                "report_type": "feedback",
+                "prior_match_completed_at": None,
+                "items": [],
+            }
+
+        def fetch_report(self, report_id: str) -> dict[str, Any]:
+            assert report_id == "report-1"
+            return self.report
+
+        def mark_prior_match_completed(self, report_id: str) -> None:
+            self.completed.append(report_id)
+            self.report["prior_match_completed_at"] = "completed"
+
+    namespace = Namespace()
+    adapter = type("Adapter", (), {"submission_archive": namespace})()
+    monkeypatch.setattr(submission_archive_processing, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(
+        submission_archive_processing,
+        "backfill_archive_embeddings",
+        lambda: (_ for _ in ()).throw(RuntimeError("embedding failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="embedding failed"):
+        submission_archive_processing.process_report_prior_matches("report-1")
+
+    assert namespace.completed == ["report-1"]
+    assert namespace.report["prior_match_completed_at"] == "completed"
+
+
+def test_recompute_single_and_all_reports_use_completion_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Namespace:
+        def __init__(self) -> None:
+            self.completed: list[str] = []
+
+        def fetch_report(self, report_id: str) -> dict[str, Any]:
+            return {
+                "id": report_id,
+                "report_type": "feedback",
+                "report_date": date(2026, 9, 2),
+                "items": [],
+            }
+
+        def fetch_report_ids_by_type(self, report_type: str) -> list[str]:
+            assert report_type == "feedback"
+            return ["report-all"]
+
+        def fetch_item_match_inputs(
+            self,
+            _item_ids: list[str],
+        ) -> list[dict[str, Any]]:
+            return []
+
+        def fetch_prior_submission_candidates(
+            self,
+            **_kwargs: Any,
+        ) -> list[dict[str, Any]]:
+            return []
+
+        def replace_item_duplicate_matches(self, **_kwargs: Any) -> int:
+            return 0
+
+        def mark_prior_match_completed(self, report_id: str) -> None:
+            self.completed.append(report_id)
+
+    namespace = Namespace()
+    adapter = type("Adapter", (), {"submission_archive": namespace})()
+    monkeypatch.setattr(submission_archive_processing, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(
+        submission_archive_processing,
+        "backfill_archive_embeddings",
+        lambda: 0,
+    )
+
+    single = submission_archive_processing.recompute_feedback_prior_matches(
+        "report-single"
+    )
+    all_reports = (
+        submission_archive_processing.recompute_feedback_prior_matches()
+    )
+
+    assert single["reports"] == 1
+    assert all_reports["reports"] == 1
+    assert namespace.completed == ["report-single", "report-all"]

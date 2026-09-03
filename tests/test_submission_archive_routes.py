@@ -146,6 +146,28 @@ def test_create_report_conflict_serializes_database_types(
     assert existing["item_count"] == 12
 
 
+def test_get_report_api_returns_prior_match_pending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        submission_archive_service,
+        "get_report",
+        lambda report_id: {
+            "id": report_id,
+            "report_type": "feedback",
+            "prior_match_pending": True,
+            "items": [],
+        },
+    )
+
+    response = _client(_editor).get(
+        "/api/submission-archive/reports/report-1"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["prior_match_pending"] is True
+
+
 def test_link_candidates_api_uses_contract_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -11,6 +11,9 @@ if TYPE_CHECKING:
     from src.adapters.db_postgres_core import PostgresAdapter
 
 
+PRIOR_MATCH_REPORT_TYPES = frozenset({"feedback"})
+
+
 class ManualLinkMutationResult(TypedDict):
     state: Literal[
         "updated",
@@ -139,6 +142,10 @@ class SubmissionArchiveNamespace:
     def fetch_report(self, report_id: str) -> Optional[dict[str, Any]]:
         with self._adapter._cursor() as cur:
             return fetch_report(cur, report_id)
+
+    def mark_prior_match_completed(self, report_id: str) -> None:
+        with self._adapter._cursor() as cur:
+            mark_prior_match_completed(cur, report_id)
 
     def fetch_report_ids_by_type(self, report_type: str) -> list[str]:
         with self._adapter._cursor() as cur:
@@ -613,7 +620,7 @@ def fetch_report(
     )
     report["items"] = [dict(item) for item in cur.fetchall()]
     summaries: dict[str, dict[str, Any]] = {}
-    if report.get("report_type") == "feedback":
+    if report.get("report_type") in PRIOR_MATCH_REPORT_TYPES:
         summaries = fetch_item_duplicate_match_summaries(
             cur,
             [str(item["id"]) for item in report["items"]],
@@ -621,6 +628,20 @@ def fetch_report(
     for item in report["items"]:
         item["prior_match"] = summaries.get(str(item["id"]))
     return report
+
+
+def mark_prior_match_completed(
+    cur: psycopg.Cursor,
+    report_id: str,
+) -> None:
+    cur.execute(
+        """
+        update submitted_reports
+        set prior_match_completed_at = now()
+        where id = %s
+        """,
+        (report_id,),
+    )
 
 
 def fetch_report_ids_by_type(
@@ -1583,6 +1604,7 @@ def dismiss_duplicate_matches(
 
 
 __all__ = [
+    "PRIOR_MATCH_REPORT_TYPES",
     "ItemFieldUpdateResult",
     "ManualLinkMutationResult",
     "SubmissionArchiveNamespace",
@@ -1611,6 +1633,7 @@ __all__ = [
     "insert_report_items",
     "manual_link_item",
     "manual_unlink_item",
+    "mark_prior_match_completed",
     "replace_item_duplicate_matches",
     "search_items",
     "update_item_embeddings",

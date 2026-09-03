@@ -121,7 +121,8 @@ def test_manual_link_updates_card_locally_without_report_reload() -> None:
     # 局部更新复用轮询的组件更新，并同步状态指纹避免轮询误判触发整体重绘
     assert "function applyManualLinkResult(updatedItem)" in browser
     assert "updateReportStatusComponents(activeReportId, activeReportItems)" in browser
-    assert "activeReportStatusSignature = reportStatusSignature(activeReportItems)" in browser
+    assert "activeReportStatusSignature = reportStatusSignature(" in browser
+    assert "activeReportItems, activeReportPriorMatchPending" in browser
 
 
 def test_manual_link_entries_follow_link_status() -> None:
@@ -209,13 +210,16 @@ def test_report_status_signature_includes_prior_match() -> None:
     source = Path(BROWSER_JS).read_text(encoding="utf-8")
     signature_body = _strip_js_comments(
         source.split(
-            "function reportStatusSignature(items) {", maxsplit=1
+            "function reportStatusSignature(items, priorMatchPending = false) {",
+            maxsplit=1,
         )[1].split("function reportCountsFromItems", maxsplit=1)[0]
     )
 
-    # prior_match 在回链完成后的某一轮轮询里才出现，指纹不含它页面不会重绘
+    # prior_match 在回链完成后的某一轮轮询里才出现，指纹不含它页面不会重绘；
+    # 判定进度（pending→结束）也要入指纹，否则全部未命中时「未报送」贴不上
     assert "item.prior_match ?" in signature_body
     assert "item.prior_match.status" in signature_body
+    assert "priorMatchPending" in signature_body
 
 
 def test_status_poll_continues_until_prior_match_done() -> None:
@@ -231,7 +235,6 @@ def test_status_poll_continues_until_prior_match_done() -> None:
         )[1].split("async function initBrowserView()", maxsplit=1)[0]
     )
 
-    # 两处继续轮询的条件都同时看 processing 与 prior_match_pending
     for body in (poll_body, select_body):
         assert "link_status === 'processing'" in body
         assert "report.prior_match_pending" in body
@@ -240,34 +243,35 @@ def test_status_poll_continues_until_prior_match_done() -> None:
 def test_prior_match_only_polling_is_capped() -> None:
     source = Path(BROWSER_JS).read_text(encoding="utf-8")
 
-    # 仅剩 prior_match_pending 一个原因时轮询次数有上限，达到上限后不再调度
     assert "PRIOR_MATCH_POLL_LIMIT" in source
     assert "priorMatchPollCount < PRIOR_MATCH_POLL_LIMIT" in source
     assert "priorMatchPollCount += 1" in source
 
 
 def test_prior_match_pill_rendered_only_when_present() -> None:
-    core = Path(CORE_JS).read_text(encoding="utf-8")
-    browser = Path(BROWSER_JS).read_text(encoding="utf-8")
+    core = _strip_js_comments(Path(CORE_JS).read_text(encoding="utf-8"))
+    browser = _strip_js_comments(Path(BROWSER_JS).read_text(encoding="utf-8"))
 
-    # 渲染以 item.prior_match 非空为前提，为 null 时不输出节点
-    assert "const priorMatchPill = item => {" in core
-    assert "if (!priorMatch) return '';" in core
-    # 新标签是可点击按钮、带 data-item-id，且不复用 .archive-link-pill
+    # 判定未结束时 prior_match 为 null 也不能贴标签；「未报送」由调用方按
+    # 报告级状态（反馈报告且判定已结束）显式开启
+    assert "const priorMatchPill = (item, { showUnmatched = false } = {}) => {" in core
+    assert "if (!showUnmatched) return '';" in core
+    assert "未报送" in core
+    assert "is-unmatched" in core
+    assert "activeReportType === 'feedback' && !activeReportPriorMatchPending" in browser
     assert '<button type="button" class="archive-prior-match-pill' in core
     assert "data-item-id" in core
-    pill_body = _strip_js_comments(
-        core.split("const priorMatchPill = item => {", maxsplit=1)[1]
-    )
+    pill_body = core.split(
+        "const priorMatchPill = (item, { showUnmatched = false } = {}) => {",
+        maxsplit=1,
+    )[1]
     assert "archive-link-pill" not in pill_body
-    # 追加在 linkPill 之后
-    assert "${linkPill(item.link_status)}${priorMatchPill(item)}" in browser
+    assert "${linkPill(item.link_status)}${detailPriorMatchPill(item)}" in browser
 
 
 def test_detail_stats_prior_match_chip_is_feedback_only() -> None:
     source = Path(BROWSER_JS).read_text(encoding="utf-8")
 
-    # chip 只在反馈报告渲染、不可点击（无 data-status-filter），报别经模块级变量传递
     assert "activeReportType === 'feedback'" in source
     assert "activeReportType = report.report_type || ''" in source
     chip_line = next(
@@ -289,7 +293,29 @@ def test_local_update_covers_prior_match_pill_transitions() -> None:
     # 再借 linkPill 的 outerHTML 插入新标签（无→有）
     assert "archive-prior-match-pill" in update_body
     assert "priorPill.remove()" in update_body
-    assert "priorMatchPill(item)" in update_body
+    assert "detailPriorMatchPill(item)" in update_body
+
+
+def test_prior_match_pending_flag_tracked_per_report() -> None:
+    source = _strip_js_comments(Path(BROWSER_JS).read_text(encoding="utf-8"))
+
+    # 初次加载与轮询都要同步报告级判定进度：「未报送」标签的门控和指纹都依赖它
+    assert source.count(
+        "activeReportPriorMatchPending = Boolean(report.prior_match_pending)"
+    ) == 2
+
+
+def test_prior_match_pill_color_semantics() -> None:
+    css = Path(
+        "src/console/web_static/css/modules/submission_archive/item_card.css"
+    ).read_text(encoding="utf-8")
+
+    assert ".archive-prior-match-pill.is-suspected" in css
+    assert ".archive-prior-match-pill.is-unmatched" in css
+    suspected_block = css.split(".archive-prior-match-pill.is-suspected", maxsplit=1)[1]
+    assert "#fee2e2" not in suspected_block.split("}")[0]
+    unmatched_block = css.split(".archive-prior-match-pill.is-unmatched", maxsplit=1)[1]
+    assert "#fee2e2" in unmatched_block.split("}")[0]
 
 
 def test_prior_matches_modal_markup_and_script_order() -> None:
@@ -311,7 +337,6 @@ def test_prior_matches_modal_escapes_and_labels() -> None:
         "src/console/web_static/js/submission_archive/prior_matches.js"
     ).read_text(encoding="utf-8")
 
-    # 判定依据中文说明与接口字段一一对应；接口文本一律走 escapeHtml
     assert "article: '同一篇原文'" in modal
     assert "title_hash: '标题一致'" in modal
     assert "vector: '语义相似'" in modal

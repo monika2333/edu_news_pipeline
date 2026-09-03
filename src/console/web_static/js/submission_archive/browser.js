@@ -14,6 +14,9 @@ let activeReportItems = [];
 let activeReportCompiledDate = '';
 // 当前详情报告的报别：已报送命中 chip 只在反馈报告上渲染（detailStats 的两条调用路径都读它）
 let activeReportType = '';
+// 当前详情报告的已报送判定是否进行中：进行中条目 prior_match 全为 null，
+// 此时不得给未命中条目贴「未报送」（detailPriorMatchPill 读它）
+let activeReportPriorMatchPending = false;
 // 已报送判定在回链完成后才执行（含加载嵌入模型，十几秒），轮询必须等它结束；
 // 后台进程崩溃会让 prior_match_pending 永远为真，因此仅剩这一原因时给轮询设兜底上限
 // （60 次 × 1.5s ≈ 90 秒），达到上限后静默停止
@@ -228,6 +231,12 @@ const detailEditTriggerHtml = item => {
         stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>`;
 };
 
+// 条目卡片上的已报送标签：「未报送」只在反馈报告且判定结束后展示，
+// 判定进行中（prior_match_pending）时不能误贴
+const detailPriorMatchPill = item => priorMatchPill(item, {
+    showUnmatched: activeReportType === 'feedback' && !activeReportPriorMatchPending
+});
+
 function detailItemCard(item) {
     const editing = detailEditingItemIds.has(String(item.id));
     return `
@@ -236,7 +245,7 @@ function detailItemCard(item) {
             <div class="archive-item-head">
                 <span class="archive-item-order">${item.order_index + 1}</span>
                 <h4 class="archive-item-title">${escapeHtml(item.title)}${detailOriginalTriggerHtml(item)}</h4>
-                ${detailEditTriggerHtml(item)}${linkPill(item.link_status)}${priorMatchPill(item)}
+                ${detailEditTriggerHtml(item)}${linkPill(item.link_status)}${detailPriorMatchPill(item)}
             </div>
             ${item.body ? `<p class="archive-item-body">${escapeHtml(item.body)}</p>` : ''}
             <div class="archive-item-meta">${detailItemMetaHtml(item)}</div>
@@ -285,10 +294,11 @@ function applyDetailFilter() {
     flushHeading();
 }
 
-function reportStatusSignature(items) {
-    // prior_match 必须纳入指纹：它在回链完成后的某一轮轮询里才出现，
-    // 指纹不含它的话判定结果送达了页面也不会重绘
-    return items.map(item => [
+function reportStatusSignature(items, priorMatchPending = false) {
+    // prior_match 与判定进度都必须纳入指纹：prior_match 在回链完成后的某一轮轮询里才出现；
+    // 判定结束（pending 由真变假）时，即使全部未命中也要给条目贴上「未报送」，
+    // 指纹不含进度的话这一刻页面不会重绘
+    return (priorMatchPending ? 'pending|' : 'done|') + items.map(item => [
         item.id,
         item.link_status,
         item.link_combined_score ?? '',
@@ -338,7 +348,7 @@ function updateReportStatusComponents(id, items) {
         const priorPill = card.querySelector('.archive-prior-match-pill');
         if (priorPill) priorPill.remove();
         const pill = card.querySelector('.archive-link-pill');
-        if (pill) pill.outerHTML = `${detailEditTriggerHtml(item)}${linkPill(item.link_status)}${priorMatchPill(item)}`;
+        if (pill) pill.outerHTML = `${detailEditTriggerHtml(item)}${linkPill(item.link_status)}${detailPriorMatchPill(item)}`;
         // 状态变化后同步标题后的「原文」标签：仅 matched 且有 article_id 时存在
         const titleEl = card.querySelector('.archive-item-title');
         const trigger = titleEl?.querySelector('.content-drawer-trigger');
@@ -379,7 +389,9 @@ function applyManualLinkResult(updatedItem) {
         activeReportItems[index] = { ...activeReportItems[index], ...updatedItem };
     }
     updateReportStatusComponents(activeReportId, activeReportItems);
-    activeReportStatusSignature = reportStatusSignature(activeReportItems);
+    activeReportStatusSignature = reportStatusSignature(
+        activeReportItems, activeReportPriorMatchPending
+    );
 }
 
 // 单条卡片整体重绘（编辑态展开/收起、保存成功后回到展示态），随后恢复筛选显隐
@@ -467,7 +479,8 @@ async function pollReportStatus(id) {
         const report = await api(`/reports/${encodeURIComponent(id)}`);
         if (activeReportId !== id) return;
         const items = report.items || [];
-        const signature = reportStatusSignature(items);
+        activeReportPriorMatchPending = Boolean(report.prior_match_pending);
+        const signature = reportStatusSignature(items, activeReportPriorMatchPending);
         if (signature !== activeReportStatusSignature) {
             updateReportStatusComponents(id, items);
             activeReportStatusSignature = signature;
@@ -514,6 +527,7 @@ async function selectReport(id, pushUrl = true) {
         activeReportItems = items;
         activeReportCompiledDate = report.compiled_date || '';
         activeReportType = report.report_type || '';
+        activeReportPriorMatchPending = Boolean(report.prior_match_pending);
         priorMatchPollCount = 0;
         target.innerHTML = `
             <div class="archive-detail-head">
@@ -532,7 +546,7 @@ async function selectReport(id, pushUrl = true) {
                 ${items.length ? detailItemsHtml(items) : '<div class="archive-empty">这份报告没有条目。</div>'}
             </div>
         `;
-        activeReportStatusSignature = reportStatusSignature(items);
+        activeReportStatusSignature = reportStatusSignature(items, activeReportPriorMatchPending);
         // 与 pollReportStatus 同一条件：processing 或已报送判定未结束都继续轮询
         if (items.some(item => item.link_status === 'processing')) {
             scheduleReportStatusPoll(id);

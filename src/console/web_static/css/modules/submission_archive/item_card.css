@@ -264,9 +264,16 @@
     color: #0f766e;
 }
 
+/* 疑似已报送与已报送同属偏绿色调：语义上都是「已经报上了」，不另起醒目的颜色 */
 .archive-prior-match-pill.is-suspected {
-    background: #ffedd5;
-    color: #c2410c;
+    background: #dcfce7;
+    color: #15803d;
+}
+
+/* 未报送才是真正需要编辑注意的，用偏红色调，比前两种更醒目 */
+.archive-prior-match-pill.is-unmatched {
+    background: #fee2e2;
+    color: #b91c1c;
 }
 
 /* 详情统计 chip 的已报送计数：纯展示，与标签同色 */

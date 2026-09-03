@@ -39,15 +39,21 @@ const linkPill = (status) => {
     return `<span class="archive-link-pill ${meta.className}">${meta.label}</span>`;
 };
 
-// 已报送标签（仅反馈条目，item.prior_match 非空时渲染）：与回链 pill 完全独立，
-// 不共用 .archive-link-pill 的 is-* 修饰；点击打开命中明细弹窗（prior_matches.js）
+// 已报送标签（反馈条目）：与回链 pill 完全独立，不共用 .archive-link-pill 的 is-* 修饰；
+// 点击打开命中明细弹窗（prior_matches.js）。「未报送」是否展示由调用方按报告级状态
+// 决定（showUnmatched）：已报送判定进行中时条目 prior_match 全为 null，不能误贴
 const priorMatchStatusMeta = {
     submitted: { label: '已报送', className: 'is-submitted' },
     suspected: { label: '疑似已报送', className: 'is-suspected' }
 };
-const priorMatchPill = item => {
+const priorMatchPill = (item, { showUnmatched = false } = {}) => {
     const priorMatch = item.prior_match;
-    if (!priorMatch) return '';
+    if (!priorMatch) {
+        if (!showUnmatched) return '';
+        return `<button type="button" class="archive-prior-match-pill is-unmatched"`
+            + ` data-item-id="${escapeHtml(item.id)}"`
+            + ` title="此前未通过综报/晚报报送，点击查看判定明细">未报送</button>`;
+    }
     const meta = priorMatchStatusMeta[priorMatch.status]
         || { label: priorMatch.status || '未知', className: 'is-suspected' };
     const count = Number(priorMatch.count) || 0;

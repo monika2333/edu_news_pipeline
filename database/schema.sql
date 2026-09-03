@@ -1,4 +1,4 @@
-\restrict X7rgTp0FCMQhEMmikZA1KKtk1iPM8AzJwoqXiHxRouckR6b9KmjXTFgBy1CiDi0
+\restrict 1nibvixbj9FIplwBwyLUD523nlt8mao1e19s6DzM5Rh3hZ2u8dOjMDiIKOqa1xK
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
@@ -578,6 +578,24 @@ CREATE TABLE public.submission_duplicate_matches (
 
 
 --
+-- Name: submission_item_duplicate_matches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.submission_item_duplicate_matches (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    item_id uuid NOT NULL,
+    prior_item_id uuid NOT NULL,
+    similarity numeric(5,4) NOT NULL,
+    match_method text NOT NULL,
+    detected_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT submission_item_duplicate_matches_method_check CHECK ((match_method = ANY (ARRAY['article'::text, 'title_hash'::text, 'vector'::text]))),
+    CONSTRAINT submission_item_duplicate_matches_not_self CHECK ((item_id <> prior_item_id))
+);
+
+
+--
 -- Name: submitted_report_items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -629,6 +647,7 @@ CREATE TABLE public.submitted_reports (
     ingest_source text DEFAULT 'console'::text NOT NULL,
     source_message_id text,
     source_sender_id text,
+    prior_match_completed_at timestamp with time zone,
     CONSTRAINT submitted_reports_type_check CHECK ((report_type = ANY (ARRAY['zongbao'::text, 'wanbao'::text, 'feedback'::text])))
 );
 
@@ -899,6 +918,22 @@ ALTER TABLE ONLY public.submission_duplicate_matches
 
 ALTER TABLE ONLY public.submission_duplicate_matches
     ADD CONSTRAINT submission_duplicate_matches_unique UNIQUE (article_id, item_id);
+
+
+--
+-- Name: submission_item_duplicate_matches submission_item_duplicate_matches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submission_item_duplicate_matches
+    ADD CONSTRAINT submission_item_duplicate_matches_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: submission_item_duplicate_matches submission_item_duplicate_matches_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submission_item_duplicate_matches
+    ADD CONSTRAINT submission_item_duplicate_matches_unique UNIQUE (item_id, prior_item_id);
 
 
 --
@@ -1289,6 +1324,13 @@ CREATE INDEX submission_duplicate_matches_state_idx ON public.submission_duplica
 
 
 --
+-- Name: submission_item_duplicate_matches_item_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX submission_item_duplicate_matches_item_idx ON public.submission_item_duplicate_matches USING btree (item_id);
+
+
+--
 -- Name: submitted_report_items_article_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1579,6 +1621,22 @@ ALTER TABLE ONLY public.submission_duplicate_matches
 
 
 --
+-- Name: submission_item_duplicate_matches submission_item_duplicate_matches_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submission_item_duplicate_matches
+    ADD CONSTRAINT submission_item_duplicate_matches_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.submitted_report_items(id) ON DELETE CASCADE;
+
+
+--
+-- Name: submission_item_duplicate_matches submission_item_duplicate_matches_prior_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submission_item_duplicate_matches
+    ADD CONSTRAINT submission_item_duplicate_matches_prior_item_id_fkey FOREIGN KEY (prior_item_id) REFERENCES public.submitted_report_items(id) ON DELETE CASCADE;
+
+
+--
 -- Name: submitted_report_items submitted_report_items_link_decided_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1598,7 +1656,7 @@ ALTER TABLE ONLY public.submitted_report_items
 -- PostgreSQL database dump complete
 --
 
-\unrestrict X7rgTp0FCMQhEMmikZA1KKtk1iPM8AzJwoqXiHxRouckR6b9KmjXTFgBy1CiDi0
+\unrestrict 1nibvixbj9FIplwBwyLUD523nlt8mao1e19s6DzM5Rh3hZ2u8dOjMDiIKOqa1xK
 
 
 --
@@ -1651,4 +1709,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260810120000'),
     ('20260812120000'),
     ('20260814120000'),
-    ('20260821120000');
+    ('20260821120000'),
+    ('20260902030306'),
+    ('20260903120000');

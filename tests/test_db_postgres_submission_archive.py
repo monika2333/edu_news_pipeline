@@ -489,6 +489,7 @@ def test_prior_candidates_use_compiled_date_closed_window_and_news_types() -> No
         feedback_compiled_date - timedelta(days=lookback_days),
         feedback_compiled_date,
     )
+    assert "'wanbao'" not in normalized and "'zongbao'" not in normalized
 
     window_start, window_end = params[1:]
     wanbao_same_report_date = {

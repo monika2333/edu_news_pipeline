@@ -281,6 +281,13 @@
     filter: none;
 }
 
+/* 人工判定为未报送（dismissed）：配色同 is-unmatched，但背后有明细可查、判定可撤销，
+   保持指针与 hover，与纯展示的无命中「未报送」区分，两者不要合并 */
+.archive-prior-match-pill.is-dismissed {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
 /* 详情统计 chip 的已报送/未报送计数：与条目卡片上的标签同色 */
 .archive-stat-chip.is-prior-matched {
     background: #ccfbf1;
@@ -364,5 +371,21 @@
     margin-top: 6px;
     color: var(--text-secondary);
     font-size: 0.78rem;
+}
+
+/* 弹窗底部人工判定区：沿用 components.css 的 .modal-footer 布局与 .btn 按钮体系；
+   .modal-footer 的 display:flex 会盖掉 hidden 属性的 UA 样式，需要显式压制 */
+.archive-prior-matches-footer[hidden] {
+    display: none;
+}
+
+.archive-prior-matches-footer {
+    align-items: center;
+}
+
+.archive-prior-matches-decision-note {
+    margin-right: auto;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
 }
 

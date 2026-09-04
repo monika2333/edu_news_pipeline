@@ -44,13 +44,18 @@ const linkPill = (status) => {
 // 决定（showUnmatched）：已报送判定进行中时条目 prior_match 全为 null，不能误贴
 const priorMatchStatusMeta = {
     submitted: { label: '已报送', className: 'is-submitted' },
-    suspected: { label: '疑似已报送', className: 'is-suspected' }
+    suspected: { label: '疑似已报送', className: 'is-suspected' },
+    dismissed: { label: '未报送', className: 'is-dismissed' }
 };
+// 「已报送」分组的共用判定：dismissed（人工判为不是同一条）有命中明细但归入未报送；
+// detailStats 计数与 detailPriorGroup 分组必须共用这一处，不能各写一遍布尔表达式
+const isPriorSubmitted = item => Boolean(item.prior_match) && item.prior_match.status !== 'dismissed';
 const priorMatchPill = (item, { showUnmatched = false } = {}) => {
     const priorMatch = item.prior_match;
     if (!priorMatch) {
         if (!showUnmatched) return '';
-        // 「未报送」是纯展示标签，不可点击（没有命中明细可看）
+        // 无命中的「未报送」是纯展示标签，不可点击（没有命中明细可看）；
+        // dismissed 的「未报送」走下方 button 分支，两者不要合并
         return '<span class="archive-prior-match-pill is-unmatched"'
             + ' title="此前未通过综报/晚报报送">未报送</span>';
     }
@@ -58,9 +63,17 @@ const priorMatchPill = (item, { showUnmatched = false } = {}) => {
         || { label: priorMatch.status || '未知', className: 'is-suspected' };
     const count = Number(priorMatch.count) || 0;
     const similarity = scoreValue(priorMatch.top_similarity);
-    const title = count > 1
-        ? `命中 ${count} 条更早报送，最高相似度 ${similarity}，点击查看明细`
-        : `最高相似度 ${similarity}，点击查看明细`;
+    // 人工判定来源只放 title：人工确认的已报送不加角标，dismissed 标明可查看明细
+    let title;
+    if (priorMatch.decision === 'submitted') {
+        title = '人工确认已报送，点击查看明细';
+    } else if (priorMatch.decision === 'not_submitted') {
+        title = '人工判定为未报送，点击查看明细';
+    } else {
+        title = count > 1
+            ? `命中 ${count} 条更早报送，最高相似度 ${similarity}，点击查看明细`
+            : `最高相似度 ${similarity}，点击查看明细`;
+    }
     return `<button type="button" class="archive-prior-match-pill ${meta.className}"`
         + ` data-item-id="${escapeHtml(item.id)}" title="${escapeHtml(title)}">${meta.label}</button>`;
 };

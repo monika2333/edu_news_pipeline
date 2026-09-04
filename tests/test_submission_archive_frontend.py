@@ -203,6 +203,7 @@ def test_archive_item_edit_saves_via_patch_and_updates_card_locally() -> None:
 
 BROWSER_JS = "src/console/web_static/js/submission_archive/browser.js"
 CORE_JS = "src/console/web_static/js/submission_archive/core.js"
+PRIOR_MATCHES_JS = "src/console/web_static/js/submission_archive/prior_matches.js"
 TEMPLATE_HTML = "src/console/web_templates/submission_archive.html"
 
 
@@ -365,3 +366,107 @@ def test_prior_matches_modal_escapes_and_labels() -> None:
     assert "escapeHtml(entry.title" in modal
     assert "escapeHtml(entry.body)" in modal
     assert "escapeHtml(entry.source)" in modal
+
+
+def test_prior_match_pill_dismissed_is_button_but_no_match_stays_span() -> None:
+    core = _strip_js_comments(Path(CORE_JS).read_text(encoding="utf-8"))
+    pill_body = core.split(
+        "const priorMatchPill = (item, { showUnmatched = false } = {}) => {",
+        maxsplit=1,
+    )[1].split("let archiveToastTimer", maxsplit=1)[0]
+
+    # dismissed（人工判定未报送）有独立状态项，走可点 button 分支（有明细可查、判定可撤销）
+    assert "dismissed: { label: '未报送', className: 'is-dismissed' }" in core
+    assert '<button type="button" class="archive-prior-match-pill' in pill_body
+    # 无命中的「未报送」仍是纯展示 span，两个分支不得合并
+    assert "'<span class=\"archive-prior-match-pill is-unmatched\"'" in pill_body
+    assert ">未报送</span>" in pill_body
+
+
+def test_report_status_signature_includes_prior_match_decision() -> None:
+    source = Path(BROWSER_JS).read_text(encoding="utf-8")
+    signature_body = _strip_js_comments(
+        source.split(
+            "function reportStatusSignature(items, priorMatchPending = false) {",
+            maxsplit=1,
+        )[1].split("function reportCountsFromItems", maxsplit=1)[0]
+    )
+
+    # 撤销与再判定的组合下 status 可能相同而弹窗底部入口状态不同，指纹必须含 decision
+    assert "item.prior_match.status" in signature_body
+    assert "item.prior_match.decision" in signature_body
+
+
+def test_dismissed_prior_match_groups_as_unmatched() -> None:
+    core = _strip_js_comments(Path(CORE_JS).read_text(encoding="utf-8"))
+    browser = Path(BROWSER_JS).read_text(encoding="utf-8")
+    stats_body = browser.split("function detailStats(items) {", maxsplit=1)[1].split(
+        "function detailItemMetaHtml", maxsplit=1
+    )[0]
+    group_body = _strip_js_comments(
+        browser.split("const detailPriorGroup = item =>", maxsplit=1)[1].split(
+            "const detailPriorMatchPill", maxsplit=1
+        )[0]
+    )
+
+    # 计数与分组共用 core.js 的 isPriorSubmitted：dismissed 一律归入未报送
+    assert "const isPriorSubmitted" in core
+    assert "status !== 'dismissed'" in core
+    assert "items.filter(isPriorSubmitted)" in stats_body
+    assert "isPriorSubmitted(item) ? 'matched' : 'unmatched'" in group_body
+
+
+def test_prior_match_decision_footer_markup_and_script_order() -> None:
+    template = Path(TEMPLATE_HTML).read_text(encoding="utf-8")
+    modal = Path(PRIOR_MATCHES_JS).read_text(encoding="utf-8")
+
+    # 弹窗底部有稳定 DOM id 的判定区与三个按钮
+    assert 'id="archive-prior-matches-footer"' in template
+    assert "archive-prior-matches-confirm" in modal
+    assert "archive-prior-matches-reject" in modal
+    assert "archive-prior-matches-undo" in modal
+    # 底部在 modal-body 之后渲染，decidable === false 时整体隐藏
+    assert template.index('id="archive-prior-matches-results"') < template.index(
+        'id="archive-prior-matches-footer"'
+    )
+    assert "priorMatch.decidable === false" in modal
+    # Escape 关闭顺序不变：prior_matches.js 仍排在 content_drawer.js 之前
+    assert template.index("submission_archive/prior_matches.js") < template.index(
+        "submission_archive/content_drawer.js"
+    )
+
+
+def test_prior_match_decision_updates_card_locally_without_report_reload() -> None:
+    modal = _strip_js_comments(Path(PRIOR_MATCHES_JS).read_text(encoding="utf-8"))
+    browser = Path(BROWSER_JS).read_text(encoding="utf-8")
+
+    # 判定走专用 POST；成功后不关闭弹窗、就地重渲染底部，并局部更新卡片，不重拉报告
+    assert "/prior-match-decision`" in modal
+    assert "applyPriorMatchDecisionResult(itemId, data.prior_match)" in modal
+    assert "renderPriorMatchesFooter(updated)" in modal
+    assert "selectReport(" not in modal
+    assert "loadReportList(" not in modal
+    # 局部更新复用轮询的组件更新，并同步状态指纹避免轮询误判触发整体重绘
+    assert "function applyPriorMatchDecisionResult(itemId, priorMatch)" in browser
+    decision_body = _strip_js_comments(
+        browser.split(
+            "function applyPriorMatchDecisionResult(itemId, priorMatch)", maxsplit=1
+        )[1].split("function rerenderDetailItemCard", maxsplit=1)[0]
+    )
+    assert "updateReportStatusComponents(activeReportId, activeReportItems)" in decision_body
+    assert "activeReportStatusSignature = reportStatusSignature(" in decision_body
+
+
+def test_dismissed_pill_css_keeps_pointer_and_footer_hidden_works() -> None:
+    css = Path(
+        "src/console/web_static/css/modules/submission_archive/item_card.css"
+    ).read_text(encoding="utf-8")
+
+    # dismissed 配色同 is-unmatched，但不覆盖指针/hover（可点击）
+    dismissed_block = css.split(
+        ".archive-prior-match-pill.is-dismissed", maxsplit=1
+    )[1].split("}")[0]
+    assert "#fee2e2" in dismissed_block
+    assert "cursor" not in dismissed_block
+    # .modal-footer 的 display:flex 会盖掉 hidden，必须显式压制
+    assert ".archive-prior-matches-footer[hidden]" in css

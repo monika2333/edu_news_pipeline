@@ -137,9 +137,10 @@ function detailStats(items) {
     const matched = stats.matched;
     const uncovered = stats.unmatched + stats.rejected;
     // 已报送/未报送 chip：仅反馈报告且判定结束后渲染（进行中 prior_match 全为 null，
-    // 计数没有含义），可点击筛选，与 link_status 筛选相互独立
+    // 计数没有含义），可点击筛选，与 link_status 筛选相互独立；
+    // dismissed（人工判为未报送）计入未报送，与 detailPriorGroup 共用 isPriorSubmitted
     const showPriorChips = activeReportType === 'feedback' && !activeReportPriorMatchPending;
-    const priorMatched = showPriorChips ? items.filter(item => item.prior_match).length : 0;
+    const priorMatched = showPriorChips ? items.filter(isPriorSubmitted).length : 0;
     const priorChip = (filter, label, count, extraClass = '') => {
         const active = detailPriorFilter === filter;
         return `<button class="archive-stat-chip${extraClass}${active ? ' is-active' : ''}" type="button"`
@@ -239,12 +240,13 @@ const detailEditTriggerHtml = item => {
         stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>`;
 };
 
-// 已报送筛选分组：matched（命中更早报送）/ unmatched（未报送）/ ''（非反馈报告
-// 或判定进行中——此时 prior_match 全为 null，分组没有意义，也不能误贴「未报送」）。
-// 卡片标签与 data-prior-group、统计 chip 共用这一门控
+// 已报送筛选分组：matched（已报送，含人工确认）/ unmatched（未报送，含 dismissed
+// 人工判定与无命中两种）/ ''（非反馈报告或判定进行中——此时 prior_match 全为 null，
+// 分组没有意义，也不能误贴「未报送」）。dismissed 的归属与 detailStats 计数一致，
+// 都走 isPriorSubmitted；卡片标签与 data-prior-group、统计 chip 共用这一门控
 const detailPriorGroup = item => (
     activeReportType === 'feedback' && !activeReportPriorMatchPending
-        ? (item.prior_match ? 'matched' : 'unmatched')
+        ? (isPriorSubmitted(item) ? 'matched' : 'unmatched')
         : ''
 );
 
@@ -318,14 +320,15 @@ function applyDetailFilter() {
 function reportStatusSignature(items, priorMatchPending = false) {
     // prior_match 与判定进度都必须纳入指纹：prior_match 在回链完成后的某一轮轮询里才出现；
     // 判定结束（pending 由真变假）时，即使全部未命中也要给条目贴上「未报送」，
-    // 指纹不含进度的话这一刻页面不会重绘
+    // 指纹不含进度的话这一刻页面不会重绘；decision 也要入指纹——撤销与再判定的组合下
+    // status 可能相同而弹窗底部入口状态不同，指纹必须能区分
     return (priorMatchPending ? 'pending|' : 'done|') + items.map(item => [
         item.id,
         item.link_status,
         item.link_combined_score ?? '',
         item.article_id ?? '',
         item.best_candidate_article_id ?? '',
-        item.prior_match ? `${item.prior_match.status}~${item.prior_match.count}` : ''
+        item.prior_match ? `${item.prior_match.status}~${item.prior_match.count}~${item.prior_match.decision ?? ''}` : ''
     ].join(':')).join('|');
 }
 
@@ -410,6 +413,21 @@ function applyManualLinkResult(updatedItem) {
         // 接口只返回回链字段，合并进缓存条目以保留 title/body/source 等展示字段
         activeReportItems[index] = { ...activeReportItems[index], ...updatedItem };
     }
+    updateReportStatusComponents(activeReportId, activeReportItems);
+    activeReportStatusSignature = reportStatusSignature(
+        activeReportItems, activeReportPriorMatchPending
+    );
+}
+
+// 已报送人工判定（确认已报送 / 不是同一条 / 撤销）成功后的局部更新：把返回的
+// prior_match 合并进缓存条目，复用轮询的组件更新并同步状态指纹，不重拉报告；
+// 与 applyManualLinkResult 同一套路（prior_matches.js 调用）
+function applyPriorMatchDecisionResult(itemId, priorMatch) {
+    const index = activeReportItems.findIndex(
+        item => String(item.id) === String(itemId)
+    );
+    if (index === -1) return;
+    activeReportItems[index] = { ...activeReportItems[index], prior_match: priorMatch };
     updateReportStatusComponents(activeReportId, activeReportItems);
     activeReportStatusSignature = reportStatusSignature(
         activeReportItems, activeReportPriorMatchPending

@@ -67,6 +67,23 @@ class PriorItemMatchesResponse(BaseModel):
     matches: list[PriorItemMatchDetail]
 
 
+class PriorMatchDecisionRequest(BaseModel):
+    decision: Optional[Literal["submitted", "not_submitted"]] = None
+
+
+class PriorMatchSummary(BaseModel):
+    status: Literal["submitted", "suspected", "dismissed"]
+    decidable: bool
+    decision: Optional[Literal["submitted", "not_submitted"]] = None
+    top_similarity: float
+    count: int
+
+
+class PriorMatchDecisionResponse(BaseModel):
+    item_id: str
+    prior_match: PriorMatchSummary
+
+
 __all__ = [
     "CreateSubmissionReportRequest",
     "LinkDecisionRequest",
@@ -74,6 +91,9 @@ __all__ = [
     "ParseSubmissionReportRequest",
     "PriorItemMatchDetail",
     "PriorItemMatchesResponse",
+    "PriorMatchDecisionRequest",
+    "PriorMatchDecisionResponse",
+    "PriorMatchSummary",
     "SubmissionItemInput",
     "SubmissionReportType",
     "UpdateSubmissionItemRequest",

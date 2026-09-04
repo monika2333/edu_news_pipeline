@@ -5,6 +5,7 @@ from datetime import date
 from uuid import UUID
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from src.console import submission_archive_routes, submission_archive_service
@@ -367,6 +368,93 @@ def test_fetch_prior_item_match_details_route(
 
     assert response.status_code == 200
     assert response.json() == expected
+
+
+def test_decide_prior_match_route_returns_refreshed_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    expected = {
+        "item_id": "item-1",
+        "prior_match": {
+            "status": "submitted",
+            "decidable": True,
+            "decision": "submitted",
+            "top_similarity": 0.87,
+            "count": 2,
+        },
+    }
+
+    def fake_decide_prior_match(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return expected
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "decide_prior_match",
+        fake_decide_prior_match,
+    )
+
+    response = _client(_editor).post(
+        "/api/submission-archive/items/item-1/prior-match-decision",
+        json={"decision": "submitted"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == expected
+    assert captured == {
+        "item_id": "item-1",
+        "decision": "submitted",
+        "user": _editor(),
+    }
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status"),
+    [
+        (
+            submission_archive_service.SubmissionReportNotFoundError(
+                "未找到这个存档条目"
+            ),
+            404,
+        ),
+        (ValueError("该条目当前不可判定"), 422),
+    ],
+)
+def test_decide_prior_match_route_maps_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    expected_status: int,
+) -> None:
+    def raise_error(**_kwargs: object) -> dict[str, object]:
+        raise error
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "decide_prior_match",
+        raise_error,
+    )
+
+    response = _client(_editor).post(
+        "/api/submission-archive/items/item-1/prior-match-decision",
+        json={"decision": "not_submitted"},
+    )
+
+    assert response.status_code == expected_status
+
+
+def test_decide_prior_match_route_requires_authentication() -> None:
+    async def unauthenticated() -> ConsoleUser:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    app = create_app()
+    app.dependency_overrides[require_console_user] = unauthenticated
+    response = TestClient(app).post(
+        "/api/submission-archive/items/item-1/prior-match-decision",
+        json={"decision": None},
+    )
+
+    assert response.status_code == 401
 
 
 def test_dismiss_duplicates_accepts_article_id_with_slashes(

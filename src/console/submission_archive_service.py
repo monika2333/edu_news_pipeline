@@ -144,6 +144,37 @@ def decide_link(
     return updated
 
 
+def decide_prior_match(
+    *,
+    item_id: str,
+    decision: Optional[str],
+    user: ConsoleUser,
+) -> dict[str, Any]:
+    normalized_item_id = (item_id or "").strip()
+    if not normalized_item_id:
+        raise ValueError("item_id 不能为空")
+    normalized_decision: Optional[str] = None
+    if decision is not None:
+        normalized_decision = str(decision).strip()
+        if normalized_decision not in {"submitted", "not_submitted"}:
+            raise ValueError("不支持的已报送判定")
+
+    result = get_adapter().submission_archive.set_item_prior_match_decision(
+        item_id=normalized_item_id,
+        decision=normalized_decision,
+        actor_user_id=_require_business_user_id(user),
+    )
+    state = result.get("state")
+    if state == "not_found":
+        raise SubmissionReportNotFoundError("未找到这个存档条目")
+    if state == "not_decidable":
+        raise ValueError("该条目当前不可进行已报送人工判定")
+    prior_match = result.get("prior_match")
+    if state != "updated" or not isinstance(prior_match, dict):
+        raise RuntimeError("已报送人工判定未返回结果")
+    return {"item_id": normalized_item_id, "prior_match": prior_match}
+
+
 def search_link_candidates(
     *,
     item_id: str,
@@ -352,6 +383,7 @@ __all__ = [
     "attach_duplicate_badges",
     "create_report",
     "decide_link",
+    "decide_prior_match",
     "dismiss_duplicates",
     "fetch_duplicate_details",
     "fetch_prior_item_match_details",

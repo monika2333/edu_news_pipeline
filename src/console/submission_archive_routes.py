@@ -14,6 +14,8 @@ from src.console.submission_archive_schemas import (
     ManualLinkRequest,
     ParseSubmissionReportRequest,
     PriorItemMatchesResponse,
+    PriorMatchDecisionRequest,
+    PriorMatchDecisionResponse,
     UpdateSubmissionItemRequest,
 )
 from src.domain.submission_archive_parser import SubmissionArchiveParseError
@@ -247,6 +249,26 @@ def fetch_prior_item_match_details_api(
     try:
         return submission_archive_service.fetch_prior_item_match_details(item_id)
     except ValueError as exc:
+        _raise_service_error(exc)
+
+
+@router.post(
+    "/items/{item_id}/prior-match-decision",
+    response_model=PriorMatchDecisionResponse,
+)
+def decide_prior_match_api(
+    item_id: str,
+    req: PriorMatchDecisionRequest,
+    user: ConsoleUser = Depends(require_console_user),
+) -> dict[str, Any]:
+    """Set or revoke a human decision for a vector-only prior match."""
+    try:
+        return submission_archive_service.decide_prior_match(
+            item_id=item_id,
+            decision=req.decision,
+            user=user,
+        )
+    except (ValueError, RuntimeError, PermissionError) as exc:
         _raise_service_error(exc)
 
 

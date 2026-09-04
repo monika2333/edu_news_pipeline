@@ -116,6 +116,8 @@ def test_fetch_feedback_report_attaches_prior_match_summary() -> None:
                 {
                     "item_id": "11111111-1111-1111-1111-111111111111",
                     "status": "submitted",
+                    "decidable": False,
+                    "decision": None,
                     "top_similarity": 1,
                     "match_count": 2,
                 }
@@ -128,6 +130,8 @@ def test_fetch_feedback_report_attaches_prior_match_summary() -> None:
     assert report is not None
     assert report["items"][0]["prior_match"] == {
         "status": "submitted",
+        "decidable": False,
+        "decision": None,
         "top_similarity": 1.0,
         "count": 2,
     }
@@ -145,6 +149,8 @@ def test_fetch_report_uses_prior_match_report_types_for_summary(
                 {
                     "item_id": "11111111-1111-1111-1111-111111111111",
                     "status": "submitted",
+                    "decidable": False,
+                    "decision": None,
                     "top_similarity": 1,
                     "match_count": 1,
                 }
@@ -162,6 +168,8 @@ def test_fetch_report_uses_prior_match_report_types_for_summary(
     assert report is not None
     assert report["items"][0]["prior_match"] == {
         "status": "submitted",
+        "decidable": False,
+        "decision": None,
         "top_similarity": 1.0,
         "count": 1,
     }
@@ -515,25 +523,257 @@ def test_prior_candidates_use_compiled_date_closed_window_and_news_types() -> No
     )
 
 
-def test_item_duplicate_summaries_prioritize_confirmed_match_methods() -> None:
-    vector_only_item_id = "11111111-1111-1111-1111-111111111111"
-    mixed_item_id = "22222222-2222-2222-2222-222222222222"
-    cursor = FakeCursor()
+def test_item_duplicate_summaries_derive_all_match_states() -> None:
+    unmatched_id = "00000000-0000-0000-0000-000000000000"
+    suspected_id = "11111111-1111-1111-1111-111111111111"
+    submitted_id = "22222222-2222-2222-2222-222222222222"
+    dismissed_id = "33333333-3333-3333-3333-333333333333"
+    deterministic_id = "44444444-4444-4444-4444-444444444444"
+    cursor = FakeCursor(
+        rows=[
+            {
+                "item_id": suspected_id,
+                "status": "suspected",
+                "decidable": True,
+                "decision": None,
+                "top_similarity": 0.87,
+                "match_count": 2,
+            },
+            {
+                "item_id": submitted_id,
+                "status": "submitted",
+                "decidable": True,
+                "decision": "submitted",
+                "top_similarity": 0.88,
+                "match_count": 1,
+            },
+            {
+                "item_id": dismissed_id,
+                "status": "dismissed",
+                "decidable": True,
+                "decision": "not_submitted",
+                "top_similarity": 0.89,
+                "match_count": 1,
+            },
+            {
+                "item_id": deterministic_id,
+                "status": "submitted",
+                "decidable": False,
+                "decision": None,
+                "top_similarity": 1,
+                "match_count": 2,
+            },
+        ]
+    )
 
     summaries = (
         db_postgres_submission_archive.fetch_item_duplicate_match_summaries(
             cursor,
-            [vector_only_item_id, mixed_item_id],
+            [
+                unmatched_id,
+                suspected_id,
+                submitted_id,
+                dismissed_id,
+                deterministic_id,
+            ],
         )
     )
 
-    assert summaries == {}
+    assert unmatched_id not in summaries
+    assert summaries[suspected_id] == {
+        "status": "suspected",
+        "decidable": True,
+        "decision": None,
+        "top_similarity": 0.87,
+        "count": 2,
+    }
+    assert summaries[submitted_id]["status"] == "submitted"
+    assert summaries[submitted_id]["decision"] == "submitted"
+    assert summaries[dismissed_id]["status"] == "dismissed"
+    assert summaries[dismissed_id]["decision"] == "not_submitted"
+    assert summaries[deterministic_id]["decidable"] is False
+    assert summaries[deterministic_id]["decision"] is None
     normalized_query = " ".join(cursor.calls[0][0].split())
-    assert (
-        "case when bool_or(match_method in ('article', 'title_hash')) "
-        "then 'submitted' else 'suspected' end as status"
-        in normalized_query
+    assert "join submitted_report_items i on i.id = m.item_id" in normalized_query
+    assert "i.prior_match_decision = 'submitted'" in normalized_query
+    assert "i.prior_match_decision = 'not_submitted'" in normalized_query
+    assert "then 'dismissed'" in normalized_query
+    assert "as decidable" in normalized_query
+    assert "as decision" in normalized_query
+
+
+def test_set_item_prior_match_decision_writes_and_returns_refreshed_state() -> None:
+    item_id = "11111111-1111-1111-1111-111111111111"
+    cursor = FakeCursor(
+        fetchone_rows=[{"id": item_id}],
+        fetchall_rows=[
+            [
+                {
+                    "item_id": item_id,
+                    "status": "suspected",
+                    "decidable": True,
+                    "decision": None,
+                    "top_similarity": 0.87,
+                    "match_count": 2,
+                }
+            ],
+            [
+                {
+                    "item_id": item_id,
+                    "status": "submitted",
+                    "decidable": True,
+                    "decision": "submitted",
+                    "top_similarity": 0.87,
+                    "match_count": 2,
+                }
+            ],
+        ],
     )
+
+    result = db_postgres_submission_archive.set_item_prior_match_decision(
+        cursor,
+        item_id=item_id,
+        decision="submitted",
+        actor_user_id="55555555-5555-5555-5555-555555555555",
+    )
+
+    assert result["state"] == "updated"
+    assert result["prior_match"] is not None
+    assert result["prior_match"]["status"] == "submitted"
+    update_query, params = cursor.calls[2]
+    assert "prior_match_decision = %s" in update_query
+    assert "prior_match_decided_by = case" in update_query
+    assert "prior_match_decided_at = case" in update_query
+    assert params == (
+        "submitted",
+        "submitted",
+        "55555555-5555-5555-5555-555555555555",
+        "submitted",
+        item_id,
+    )
+
+
+def test_set_item_prior_match_decision_can_dismiss_and_revoke() -> None:
+    item_id = "11111111-1111-1111-1111-111111111111"
+    actor_id = "55555555-5555-5555-5555-555555555555"
+    dismissed_cursor = FakeCursor(
+        fetchone_rows=[{"id": item_id}],
+        fetchall_rows=[
+            [
+                {
+                    "item_id": item_id,
+                    "status": "suspected",
+                    "decidable": True,
+                    "decision": None,
+                    "top_similarity": 0.87,
+                    "match_count": 1,
+                }
+            ],
+            [
+                {
+                    "item_id": item_id,
+                    "status": "dismissed",
+                    "decidable": True,
+                    "decision": "not_submitted",
+                    "top_similarity": 0.87,
+                    "match_count": 1,
+                }
+            ],
+        ],
+    )
+    revoked_cursor = FakeCursor(
+        fetchone_rows=[{"id": item_id}],
+        fetchall_rows=[
+            [
+                {
+                    "item_id": item_id,
+                    "status": "dismissed",
+                    "decidable": True,
+                    "decision": "not_submitted",
+                    "top_similarity": 0.87,
+                    "match_count": 1,
+                }
+            ],
+            [
+                {
+                    "item_id": item_id,
+                    "status": "suspected",
+                    "decidable": True,
+                    "decision": None,
+                    "top_similarity": 0.87,
+                    "match_count": 1,
+                }
+            ],
+        ],
+    )
+
+    dismissed = db_postgres_submission_archive.set_item_prior_match_decision(
+        dismissed_cursor,
+        item_id=item_id,
+        decision="not_submitted",
+        actor_user_id=actor_id,
+    )
+    revoked = db_postgres_submission_archive.set_item_prior_match_decision(
+        revoked_cursor,
+        item_id=item_id,
+        decision=None,
+        actor_user_id=actor_id,
+    )
+
+    assert dismissed["prior_match"] is not None
+    assert dismissed["prior_match"]["status"] == "dismissed"
+    assert revoked["prior_match"] is not None
+    assert revoked["prior_match"]["status"] == "suspected"
+    assert revoked_cursor.calls[2][1] == (None, None, actor_id, None, item_id)
+
+
+def test_set_item_prior_match_decision_rejects_missing_or_not_decidable() -> None:
+    item_id = "11111111-1111-1111-1111-111111111111"
+    missing_cursor = FakeCursor(fetchone_rows=[None])
+    no_matches_cursor = FakeCursor(
+        fetchone_rows=[{"id": item_id}],
+        fetchall_rows=[[]],
+    )
+    deterministic_cursor = FakeCursor(
+        fetchone_rows=[{"id": item_id}],
+        fetchall_rows=[
+            [
+                {
+                    "item_id": item_id,
+                    "status": "submitted",
+                    "decidable": False,
+                    "decision": None,
+                    "top_similarity": 1,
+                    "match_count": 1,
+                }
+            ]
+        ],
+    )
+
+    missing = db_postgres_submission_archive.set_item_prior_match_decision(
+        missing_cursor,
+        item_id=item_id,
+        decision="submitted",
+        actor_user_id="actor-id",
+    )
+    no_matches = db_postgres_submission_archive.set_item_prior_match_decision(
+        no_matches_cursor,
+        item_id=item_id,
+        decision="submitted",
+        actor_user_id="actor-id",
+    )
+    deterministic = db_postgres_submission_archive.set_item_prior_match_decision(
+        deterministic_cursor,
+        item_id=item_id,
+        decision="not_submitted",
+        actor_user_id="actor-id",
+    )
+
+    assert missing == {"state": "not_found", "prior_match": None}
+    assert no_matches == {"state": "not_decidable", "prior_match": None}
+    assert deterministic["state"] == "not_decidable"
+    assert len(no_matches_cursor.calls) == 2
+    assert len(deterministic_cursor.calls) == 2
 
 
 def test_replace_item_duplicate_matches_deletes_then_inserts() -> None:
@@ -555,6 +795,118 @@ def test_replace_item_duplicate_matches_deletes_then_inserts() -> None:
     assert inserted == 1
     assert "delete from submission_item_duplicate_matches" in cursor.calls[0][0]
     assert "insert into submission_item_duplicate_matches" in cursor.calls[1][0]
+
+
+def test_replacing_vector_matches_preserves_not_submitted_decision() -> None:
+    item_id = "11111111-1111-1111-1111-111111111111"
+    prior_item_id = "22222222-2222-2222-2222-222222222222"
+
+    class StatefulCursor:
+        def __init__(self) -> None:
+            self.decision: Optional[str] = None
+            self.decided_by: Optional[str] = None
+            self.decided_at = False
+            self.matches = [
+                {
+                    "item_id": item_id,
+                    "prior_item_id": prior_item_id,
+                    "similarity": 0.87,
+                    "match_method": "vector",
+                }
+            ]
+            self.fetchone_value: Optional[dict[str, Any]] = None
+            self.fetchall_value: list[dict[str, Any]] = []
+            self.rowcount = 0
+
+        def execute(self, query: str, params: tuple[Any, ...]) -> None:
+            normalized = " ".join(query.split())
+            if normalized.startswith("select id from submitted_report_items"):
+                self.fetchone_value = {"id": item_id}
+                return
+            if "from submission_item_duplicate_matches m" in normalized:
+                if not self.matches:
+                    self.fetchall_value = []
+                    return
+                deterministic = any(
+                    match["match_method"] in {"article", "title_hash"}
+                    for match in self.matches
+                )
+                decision = None if deterministic else self.decision
+                status = "submitted" if deterministic else "suspected"
+                if decision == "submitted":
+                    status = "submitted"
+                elif decision == "not_submitted":
+                    status = "dismissed"
+                self.fetchall_value = [
+                    {
+                        "item_id": item_id,
+                        "status": status,
+                        "decidable": not deterministic,
+                        "decision": decision,
+                        "top_similarity": max(
+                            float(match["similarity"])
+                            for match in self.matches
+                        ),
+                        "match_count": len(self.matches),
+                    }
+                ]
+                return
+            if normalized.startswith("update submitted_report_items"):
+                self.decision = params[0]
+                self.decided_by = params[2] if self.decision else None
+                self.decided_at = self.decision is not None
+                return
+            if normalized.startswith("delete from submission_item_duplicate_matches"):
+                self.matches = []
+                return
+            if normalized.startswith("insert into submission_item_duplicate_matches"):
+                self.matches.append(
+                    {
+                        "item_id": params[0],
+                        "prior_item_id": params[1],
+                        "similarity": params[2],
+                        "match_method": params[3],
+                    }
+                )
+
+        def fetchone(self) -> Optional[dict[str, Any]]:
+            return self.fetchone_value
+
+        def fetchall(self) -> list[dict[str, Any]]:
+            return self.fetchall_value
+
+    cursor = StatefulCursor()
+
+    decided = db_postgres_submission_archive.set_item_prior_match_decision(
+        cursor,
+        item_id=item_id,
+        decision="not_submitted",
+        actor_user_id="55555555-5555-5555-5555-555555555555",
+    )
+    db_postgres_submission_archive.replace_item_duplicate_matches(
+        cursor,
+        item_ids=[item_id],
+        matches=[
+            {
+                "item_id": item_id,
+                "prior_item_id": prior_item_id,
+                "similarity": 0.87,
+                "match_method": "vector",
+            }
+        ],
+    )
+    rebuilt = db_postgres_submission_archive.fetch_item_duplicate_match_summaries(
+        cursor,
+        [item_id],
+    )
+
+    assert decided["prior_match"] is not None
+    assert decided["prior_match"]["status"] == "dismissed"
+    assert cursor.decision == "not_submitted"
+    assert cursor.decided_by == "55555555-5555-5555-5555-555555555555"
+    assert cursor.decided_at is True
+    assert rebuilt[item_id]["status"] == "dismissed"
+    assert rebuilt[item_id]["decision"] == "not_submitted"
 
 
 def test_fetch_item_duplicate_match_details_returns_report_metadata() -> None:

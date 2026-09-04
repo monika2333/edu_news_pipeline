@@ -33,6 +33,11 @@ class ItemFieldUpdateResult(TypedDict):
     item: Optional[dict[str, Any]]
 
 
+class PriorMatchDecisionMutationResult(TypedDict):
+    state: Literal["updated", "not_found", "not_decidable"]
+    prior_match: Optional[dict[str, Any]]
+
+
 class SubmissionArchiveNamespace:
     """Access to submitted reports, link decisions, and duplicate metadata."""
 
@@ -337,6 +342,21 @@ class SubmissionArchiveNamespace:
     ) -> dict[str, dict[str, Any]]:
         with self._adapter._cursor() as cur:
             return fetch_item_duplicate_match_summaries(cur, item_ids)
+
+    def set_item_prior_match_decision(
+        self,
+        *,
+        item_id: str,
+        decision: Optional[str],
+        actor_user_id: str,
+    ) -> PriorMatchDecisionMutationResult:
+        with self._adapter.transaction() as cur:
+            return set_item_prior_match_decision(
+                cur,
+                item_id=item_id,
+                decision=decision,
+                actor_user_id=actor_user_id,
+            )
 
     def fetch_item_duplicate_match_details(
         self,
@@ -1286,28 +1306,90 @@ def fetch_item_duplicate_match_summaries(
     cur.execute(
         """
         select
-            item_id,
+            m.item_id,
             case
-                when bool_or(match_method in ('article', 'title_hash'))
+                when bool_or(m.match_method in ('article', 'title_hash'))
                 then 'submitted'
+                when i.prior_match_decision = 'submitted'
+                then 'submitted'
+                when i.prior_match_decision = 'not_submitted'
+                then 'dismissed'
                 else 'suspected'
             end as status,
-            max(similarity) as top_similarity,
+            not bool_or(
+                m.match_method in ('article', 'title_hash')
+            ) as decidable,
+            case
+                when bool_or(m.match_method in ('article', 'title_hash'))
+                then null
+                else i.prior_match_decision
+            end as decision,
+            max(m.similarity) as top_similarity,
             count(*) as match_count
-        from submission_item_duplicate_matches
-        where item_id = any(%s::uuid[])
-        group by item_id
+        from submission_item_duplicate_matches m
+        join submitted_report_items i on i.id = m.item_id
+        where m.item_id = any(%s::uuid[])
+        group by m.item_id, i.prior_match_decision
         """,
         (normalized_ids,),
     )
     return {
         str(row["item_id"]): {
             "status": row["status"],
+            "decidable": bool(row["decidable"]),
+            "decision": row["decision"],
             "top_similarity": float(row["top_similarity"]),
             "count": int(row["match_count"]),
         }
         for row in cur.fetchall()
     }
+
+
+def set_item_prior_match_decision(
+    cur: psycopg.Cursor,
+    *,
+    item_id: str,
+    decision: Optional[str],
+    actor_user_id: str,
+) -> PriorMatchDecisionMutationResult:
+    """Persist and re-derive one feedback item's human prior-match decision."""
+    cur.execute(
+        """
+        select id
+        from submitted_report_items
+        where id = %s
+        for update
+        """,
+        (item_id,),
+    )
+    if not cur.fetchone():
+        return {"state": "not_found", "prior_match": None}
+
+    current = fetch_item_duplicate_match_summaries(cur, [item_id]).get(item_id)
+    if not current or not current["decidable"]:
+        return {"state": "not_decidable", "prior_match": current}
+
+    cur.execute(
+        """
+        update submitted_report_items
+        set prior_match_decision = %s,
+            prior_match_decided_by = case
+                when %s::text is null then null
+                else %s::uuid
+            end,
+            prior_match_decided_at = case
+                when %s::text is null then null
+                else now()
+            end,
+            updated_at = now()
+        where id = %s
+        """,
+        (decision, decision, actor_user_id, decision, item_id),
+    )
+    refreshed = fetch_item_duplicate_match_summaries(cur, [item_id]).get(item_id)
+    if not refreshed:
+        raise RuntimeError("Prior-match summary disappeared during update")
+    return {"state": "updated", "prior_match": refreshed}
 
 
 def fetch_item_duplicate_match_details(
@@ -1607,6 +1689,7 @@ __all__ = [
     "PRIOR_MATCH_REPORT_TYPES",
     "ItemFieldUpdateResult",
     "ManualLinkMutationResult",
+    "PriorMatchDecisionMutationResult",
     "SubmissionArchiveNamespace",
     "decide_link",
     "delete_report",
@@ -1636,6 +1719,7 @@ __all__ = [
     "mark_prior_match_completed",
     "replace_item_duplicate_matches",
     "search_items",
+    "set_item_prior_match_decision",
     "update_item_embeddings",
     "update_item_fields",
     "update_link_results",

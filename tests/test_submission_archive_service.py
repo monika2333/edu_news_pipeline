@@ -350,6 +350,88 @@ def test_get_report_exposes_prior_match_pending(
     assert report["prior_match_pending"] is expected_pending
 
 
+def test_decide_prior_match_passes_business_user_and_returns_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+    prior_match = {
+        "status": "dismissed",
+        "decidable": True,
+        "decision": "not_submitted",
+        "top_similarity": 0.87,
+        "count": 2,
+    }
+
+    class DecisionNamespace:
+        def set_item_prior_match_decision(
+            self,
+            **kwargs: Any,
+        ) -> dict[str, Any]:
+            captured.update(kwargs)
+            return {"state": "updated", "prior_match": prior_match}
+
+    class DecisionAdapter:
+        def __init__(self) -> None:
+            self.submission_archive = DecisionNamespace()
+
+    monkeypatch.setattr(submission_archive_service, "get_adapter", DecisionAdapter)
+
+    result = submission_archive_service.decide_prior_match(
+        item_id=" item-1 ",
+        decision="not_submitted",
+        user=_editor(),
+    )
+
+    assert result == {"item_id": "item-1", "prior_match": prior_match}
+    assert captured == {
+        "item_id": "item-1",
+        "decision": "not_submitted",
+        "actor_user_id": "editor-id",
+    }
+
+
+@pytest.mark.parametrize(
+    ("state", "error_type"),
+    [
+        ("not_found", submission_archive_service.SubmissionReportNotFoundError),
+        ("not_decidable", ValueError),
+    ],
+)
+def test_decide_prior_match_maps_adapter_outcomes(
+    monkeypatch: pytest.MonkeyPatch,
+    state: str,
+    error_type: type[Exception],
+) -> None:
+    class DecisionNamespace:
+        def set_item_prior_match_decision(
+            self,
+            **_kwargs: Any,
+        ) -> dict[str, Any]:
+            return {"state": state, "prior_match": None}
+
+    class DecisionAdapter:
+        def __init__(self) -> None:
+            self.submission_archive = DecisionNamespace()
+
+    monkeypatch.setattr(submission_archive_service, "get_adapter", DecisionAdapter)
+
+    with pytest.raises(error_type):
+        submission_archive_service.decide_prior_match(
+            item_id="item-1",
+            decision="submitted",
+            user=_editor(),
+        )
+
+
+def test_decide_prior_match_rejects_unknown_decision() -> None:
+    with pytest.raises(ValueError, match="不支持"):
+        submission_archive_service.decide_prior_match(
+            item_id="item-1",
+            decision="maybe",
+            user=_editor(),
+        )
+
+
 def test_create_report_rejects_non_http_urls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

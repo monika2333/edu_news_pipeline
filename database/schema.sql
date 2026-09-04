@@ -624,7 +624,11 @@ CREATE TABLE public.submitted_report_items (
     link_decided_by uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT submitted_report_items_link_status_check CHECK ((link_status = ANY (ARRAY['processing'::text, 'pending'::text, 'matched'::text, 'unmatched'::text, 'rejected'::text])))
+    prior_match_decision text,
+    prior_match_decided_by uuid,
+    prior_match_decided_at timestamp with time zone,
+    CONSTRAINT submitted_report_items_link_status_check CHECK ((link_status = ANY (ARRAY['processing'::text, 'pending'::text, 'matched'::text, 'unmatched'::text, 'rejected'::text]))),
+    CONSTRAINT submitted_report_items_prior_match_decision_check CHECK (((prior_match_decision IS NULL) OR (prior_match_decision = ANY (ARRAY['submitted'::text, 'not_submitted'::text]))))
 );
 
 
@@ -1645,6 +1649,14 @@ ALTER TABLE ONLY public.submitted_report_items
 
 
 --
+-- Name: submitted_report_items submitted_report_items_prior_match_decided_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.submitted_report_items
+    ADD CONSTRAINT submitted_report_items_prior_match_decided_by_fkey FOREIGN KEY (prior_match_decided_by) REFERENCES public.console_users(id) ON DELETE SET NULL;
+
+
+--
 -- Name: submitted_report_items submitted_report_items_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1711,4 +1723,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260814120000'),
     ('20260821120000'),
     ('20260902030306'),
-    ('20260903120000');
+    ('20260903120000'),
+    ('20260904120000');

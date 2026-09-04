@@ -192,9 +192,20 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 `submission_item_duplicate_matches` 记录“反馈条目 → 更早综报/晚报条目”的匹配，
 按共同 `article_id`、共同 `norm_title_hash`、向量余弦相似度三个级别依次判定；同一
-对条目只保留最高级别。前两级显示为“已报送”，向量级显示为“疑似已报送”。该表
-是派生数据，每次重算都先删除目标反馈条目的旧结果再完整写入，可安全重复重建；它
-不承载人工消除状态。
+对条目只保留最高级别。该表是派生数据，每次重算都先删除目标反馈条目的旧结果再完整
+写入，可安全重复重建；它本身不承载人工判定。
+
+人工判定属于反馈条目自身的权威属性，由人工判定接口写入
+`submitted_report_items.prior_match_decision`（`submitted` / `not_submitted`）、
+`prior_match_decided_by` 和 `prior_match_decided_at`。撤销时三列同时置空。判定只在
+条目“仅有向量命中”时被采信：无匹配时没有可判对象，存在 `article` 或
+`title_hash` 确定性命中时则始终以确定性结果为准。
+
+条目级 `prior_match.status` 四态为：确定性命中或向量命中被人判为已报送时是
+`submitted`；未人工判定的纯向量命中是 `suspected`；纯向量命中被人判为未报送时是
+`dismissed`；无任何命中时 `prior_match` 为空，页面在报告级判定结束后展示“未报送”。
+`decidable` 明确表示当前命中是否可由人判定，仅纯向量命中为 `true`；`decision` 只在
+这种情况下返回已保存的人工结论。因此即使后续重算匹配明细，已保存的人工结论也不会丢失。
 
 `submitted_reports.prior_match_completed_at` 是报告级的判定终止信号。仅需执行上述判定
 的报别在判定流程终止时写入当前时间，正常完成、提前返回与异常退出都必须写入；历史

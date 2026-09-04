@@ -49,6 +49,7 @@
 - 存档条目修改入口：未覆盖（unmatched/rejected）与已匹配（matched）条目的状态标签左侧渲染铅笔图标（仅管理员可见，角色经模板 body[data-user-role] 暴露，core.js 读为 isAdminUser），点击按条展开/收起编辑表单，可改 title/body/source/urls；接口 `PATCH /api/submission-archive/items/{id}` 同样只放 admin。交互在 browser.js（toggleItemEdit / saveItemEdit / applyItemEditResult），表单样式复用录入编辑态（item_card.css）；保存成功后收起表单并重绘该条卡片，不改回链字段、不重拉报告。
 - JavaScript 状态变更尽量集中在现有 manual-filter 模块中，避免多个模块重复发起同类 API 请求。
 - 单条文章一键复制（标题 + 摘要（来源））在 `copy_article.js`，事件委托自启动、幂等，按钮 `.copy-article-btn` 由 `renderArticleCard` 与 `renderReviewCard` 渲染在「原文」按钮旁；逻辑直接读卡片 DOM（`.article-title`/`.summary-box`/`.source-box`，来源框留空回退按钮 `data-source` 的抓取来源），改这些 class 时需同步检查。
+- 双击卡片 meta 行的「来源」把抓取来源填入人工来源框，逻辑在 `source_autofill.js`（同样是事件委托自启动、幂等）：依赖 `renderArticleCard`/`renderReviewCard` 渲染的 `.meta-item-source`（携带 `data-source-fill`）与 `.source-box`；填入后派发 `change` 事件复用两个 tab 已有的编辑持久化逻辑，改这些 class/属性或 change 处理链时需同步检查。
 - `web_static/js/manual_filter/utils.js` 会被 `duty_summary.html` 一并加载（因为共享搜索抽屉组件），其中被跨页面复用的是 `createEl`、`clearEl`、`renderSkeleton`、`formatScore`、`getSentimentClass`、`showToastAt`、`formatLocalDateTime` 这类纯函数。新增跨页面复用的工具函数时，不要依赖 `elements` 或 `state` 全局；需要读写页面状态的函数放 `manual_filter/core.js` 或对应功能文件。文件里现存的其他带状态函数是历史遗留，暂不调整。
 - 控制台面向用户的时间展示统一走 `formatLocalDateTime`（`new Date` + 本地时区取值）：后端返回的是带 `Z` 的 UTC 时间，直接截取 ISO 字符串会把 UTC 当本地时间显示，凌晨入库的记录日期会差一天。不带时区的 `date` 字段（如报送存档的 `report_date`）不适用此函数，按字符串截取即可。
 - 模板和 JS 通过 DOM id 与 `data-*` 属性紧密耦合；修改时必须一起处理。

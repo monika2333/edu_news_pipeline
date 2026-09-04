@@ -70,6 +70,11 @@
     gap: 4px;
 }
 
+.meta-item-source {
+    cursor: pointer;
+    user-select: none;
+}
+
 /* Radio Group (Pill Buttons) */
 .radio-group {
     display: flex;

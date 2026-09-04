@@ -284,7 +284,7 @@ function renderReviewCard(item) {
                 </div>
             </div>
             <div class="meta-row">
-                <div class="meta-item">来源: ${sourceText}</div>
+                <div class="meta-item meta-item-source" data-source-fill="${escapeReviewAttr(sourceText === '-' ? '' : sourceText)}" title="双击填入人工来源">来源: ${sourceText}</div>
                 ${renderScoreFeedbackControl(item)}
                 ${bonusText ? `<div class="meta-item">Bonus: ${bonusText}</div>` : ''}
             </div>

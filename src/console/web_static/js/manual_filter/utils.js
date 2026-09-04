@@ -144,7 +144,7 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
             </div>
 
             <div class="meta-row">
-                <div class="meta-item">来源: ${safe.source || '-'}</div>
+                <div class="meta-item meta-item-source" data-source-fill="${escapeAttr(safe.source || '')}" title="双击填入人工来源">来源: ${safe.source || '-'}</div>
                 ${renderScoreFeedbackControl(safe)}
                 <div class="meta-item">
                     <span class="badge ${getSentimentClass(safe.sentiment_label)}">${safe.sentiment_label || '-'}</span>

@@ -597,6 +597,9 @@ def test_item_duplicate_summaries_derive_all_match_states() -> None:
     assert "join submitted_report_items i on i.id = m.item_id" in normalized_query
     assert "i.prior_match_decision = 'submitted'" in normalized_query
     assert "i.prior_match_decision = 'not_submitted'" in normalized_query
+    assert normalized_query.index(
+        "bool_or(m.match_method in ('article', 'title_hash')) then 'submitted'"
+    ) < normalized_query.index("i.prior_match_decision")
     assert "then 'dismissed'" in normalized_query
     assert "as decidable" in normalized_query
     assert "as decision" in normalized_query

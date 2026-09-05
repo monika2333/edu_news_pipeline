@@ -216,15 +216,18 @@ async def submission_archive_new_page(
     return _submission_archive_response(request, user, view="new")
 
 
-@router.get("/submission-archive/link-queue", response_class=HTMLResponse)
+@router.get("/submission-archive/link-queue", response_class=RedirectResponse)
 async def submission_archive_link_queue_page(
     request: Request,
     user: ConsoleUser = Depends(require_console_user),
-) -> Response:
+) -> RedirectResponse:
     redirect = _redirect_non_admin_to_duty(request, user)
     if redirect is not None:
         return redirect
-    return _submission_archive_response(request, user, view="link-queue")
+    # 回链确认页已删除（功能由报告详情页的批量入口覆盖）。直接删路由会落到
+    # /submission-archive/{report_id}，以 report_id="link-queue" 进入详情逻辑，
+    # 因此保留一条重定向回存档库列表。
+    return RedirectResponse(url="/submission-archive", status_code=302)
 
 
 @router.get("/submission-archive/search", response_class=RedirectResponse)

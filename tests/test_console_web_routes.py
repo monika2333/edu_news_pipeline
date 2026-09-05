@@ -72,7 +72,6 @@ def test_admin_main_views_persist_only_their_canonical_view() -> None:
 
     for path in (
         "/submission-archive/new",
-        "/submission-archive/link-queue",
         "/submission-archive/report-1",
     ):
         assert "/static/js/admin_last_view.js" not in client.get(path).text
@@ -157,8 +156,12 @@ def test_submission_archive_pages_follow_role_permissions() -> None:
 
     assert admin.get("/submission-archive").status_code == 200
     assert admin.get("/submission-archive/new").status_code == 200
-    assert admin.get("/submission-archive/link-queue").status_code == 200
     assert admin.get("/submission-archive/report-1").status_code == 200
+    link_queue_response = admin.get(
+        "/submission-archive/link-queue", follow_redirects=False
+    )
+    assert link_queue_response.status_code == 302
+    assert link_queue_response.headers["location"].endswith("/submission-archive")
     search_response = admin.get("/submission-archive/search", follow_redirects=False)
     assert search_response.status_code == 302
     assert search_response.headers["location"].endswith("/submission-archive")
@@ -211,8 +214,8 @@ def test_submission_archive_browser_wires_content_drawer() -> None:
     assert 'id="content-drawer"' in html
     assert "/static/css/modules/content_drawer.css?v=" in html
     assert "/static/js/submission_archive/content_drawer.js?v=" in html
-    # 抽屉只挂在存档库视图，录入与回链确认视图不渲染
-    for path in ("/submission-archive/new", "/submission-archive/link-queue"):
+    # 抽屉只挂在存档库视图，录入视图不渲染
+    for path in ("/submission-archive/new",):
         assert 'id="content-drawer"' not in _build_client().get(path).text
 
 
@@ -221,7 +224,6 @@ def test_submission_archive_pages_include_search_drawer() -> None:
     for path in (
         "/submission-archive",
         "/submission-archive/new",
-        "/submission-archive/link-queue",
     ):
         html = _build_client().get(path).text
         assert 'id="search-drawer-toggle"' in html

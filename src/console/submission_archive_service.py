@@ -113,10 +113,16 @@ def get_report(report_id: str) -> dict[str, Any]:
     return report
 
 
-def list_pending_links(*, limit: int, offset: int) -> dict[str, Any]:
+def list_pending_links(
+    *,
+    limit: int,
+    offset: int,
+    report_id: Optional[str] = None,
+) -> dict[str, Any]:
     rows, total = get_adapter().submission_archive.fetch_pending_links(
         limit=limit,
         offset=offset,
+        report_id=report_id,
     )
     return {
         "items": rows,

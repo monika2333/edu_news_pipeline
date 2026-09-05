@@ -203,9 +203,15 @@ class SubmissionArchiveNamespace:
         *,
         limit: int,
         offset: int,
+        report_id: Optional[str] = None,
     ) -> tuple[list[dict[str, Any]], int]:
         with self._adapter._cursor() as cur:
-            return fetch_pending_links(cur, limit=limit, offset=offset)
+            return fetch_pending_links(
+                cur,
+                limit=limit,
+                offset=offset,
+                report_id=report_id,
+            )
 
     def decide_link(
         self,
@@ -803,13 +809,19 @@ def fetch_pending_links(
     *,
     limit: int,
     offset: int,
+    report_id: Optional[str] = None,
 ) -> tuple[list[dict[str, Any]], int]:
+    count_report_filter = " and report_id = %s" if report_id else ""
+    detail_report_filter = " and i.report_id = %s" if report_id else ""
+    report_params = (report_id,) if report_id else ()
     cur.execute(
-        """
+        f"""
         select count(*) as total
         from submitted_report_items
         where link_status = 'pending'
-        """
+        {count_report_filter}
+        """,
+        report_params,
     )
     count_row = cur.fetchone()
     total = int(count_row["total"]) if count_row else 0
@@ -834,10 +846,15 @@ def fetch_pending_links(
           on ns.article_id = i.best_candidate_article_id
         left join manual_reviews mr on mr.article_id = ns.article_id
         where i.link_status = 'pending'
+        {detail_report_filter}
         order by r.report_date desc, i.order_index
         limit %s offset %s
         """,
-        (max(1, min(limit, 200)), max(0, offset)),
+        (
+            *report_params,
+            max(1, min(limit, 200)),
+            max(0, offset),
+        ),
     )
     return [dict(row) for row in cur.fetchall()], total
 

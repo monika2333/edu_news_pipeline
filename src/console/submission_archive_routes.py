@@ -126,10 +126,12 @@ def get_report_api(report_id: str) -> dict[str, Any]:
 def list_pending_links_api(
     limit: int = 50,
     offset: int = 0,
+    report_id: Optional[str] = None,
 ) -> dict[str, Any]:
     return submission_archive_service.list_pending_links(
         limit=limit,
         offset=offset,
+        report_id=report_id,
     )
 
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any, Optional
 
+import pytest
+
 from src.adapters import db_postgres_submission_archive
 
 
@@ -206,6 +208,104 @@ def test_search_items_includes_source_in_keyword_scope() -> None:
     normalized = " ".join(query.split())
     assert "i.title ilike %s or i.body ilike %s or i.source ilike %s" in normalized
     assert params == ("%北京时间%", "%北京时间%", "%北京时间%", 20)
+
+
+def test_fetch_pending_links_filters_count_and_items_by_report() -> None:
+    pending_item = {
+        "id": "item-1",
+        "report_id": "report-1",
+        "candidate_title": "系统候选标题",
+        "candidate_body": "系统候选正文",
+        "candidate_source": "北京日报",
+        "candidate_url": "https://example.com/article-1",
+        "report_type": "zongbao",
+        "report_date": date(2026, 9, 5),
+    }
+    cursor = FakeCursor(
+        fetchone_rows=[{"total": 2}],
+        fetchall_rows=[[pending_item]],
+    )
+
+    rows, total = db_postgres_submission_archive.fetch_pending_links(
+        cursor,
+        limit=1,
+        offset=1,
+        report_id="report-1",
+    )
+
+    assert rows == [pending_item]
+    assert total == 2
+    count_query, count_params = cursor.calls[0]
+    detail_query, detail_params = cursor.calls[1]
+    assert "where link_status = 'pending' and report_id = %s" in " ".join(
+        count_query.split()
+    )
+    normalized_detail = " ".join(detail_query.split())
+    assert "where i.link_status = 'pending' and i.report_id = %s" in (
+        normalized_detail
+    )
+    assert count_params == ("report-1",)
+    assert detail_params == ("report-1", 1, 1)
+    for field in (
+        "candidate_title",
+        "candidate_body",
+        "candidate_source",
+        "candidate_url",
+        "report_type",
+        "report_date",
+    ):
+        assert field in normalized_detail
+        assert field in rows[0]
+
+
+@pytest.mark.parametrize("report_id", [None, ""])
+def test_fetch_pending_links_without_report_filter_preserves_global_results(
+    report_id: Optional[str],
+) -> None:
+    pending_items = [
+        {"id": "item-newer", "report_id": "report-2"},
+        {"id": "item-older", "report_id": "report-1"},
+    ]
+    cursor = FakeCursor(
+        fetchone_rows=[{"total": 2}],
+        fetchall_rows=[pending_items],
+    )
+
+    rows, total = db_postgres_submission_archive.fetch_pending_links(
+        cursor,
+        limit=50,
+        offset=0,
+        report_id=report_id,
+    )
+
+    assert rows == pending_items
+    assert total == 2
+    count_query, count_params = cursor.calls[0]
+    detail_query, detail_params = cursor.calls[1]
+    assert "report_id = %s" not in count_query
+    assert "i.report_id = %s" not in detail_query
+    assert "order by r.report_date desc, i.order_index" in " ".join(
+        detail_query.split()
+    )
+    assert count_params == ()
+    assert detail_params == (50, 0)
+
+
+def test_fetch_pending_links_returns_empty_for_report_without_pending_items() -> None:
+    cursor = FakeCursor(
+        fetchone_rows=[{"total": 0}],
+        fetchall_rows=[[]],
+    )
+
+    rows, total = db_postgres_submission_archive.fetch_pending_links(
+        cursor,
+        limit=50,
+        offset=0,
+        report_id="report-without-pending-items",
+    )
+
+    assert rows == []
+    assert total == 0
 
 
 def test_fetch_link_candidate_titles_only_reads_news_summaries() -> None:

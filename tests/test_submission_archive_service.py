@@ -350,6 +350,58 @@ def test_get_report_exposes_prior_match_pending(
     assert report["prior_match_pending"] is expected_pending
 
 
+def test_list_pending_links_passes_report_filter_and_keeps_total(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+    pending_item = {
+        "id": "item-1",
+        "report_id": "report-1",
+        "candidate_title": "系统候选标题",
+        "candidate_body": "系统候选正文",
+        "candidate_source": "北京日报",
+        "candidate_url": "https://example.com/article-1",
+        "report_type": "zongbao",
+        "report_date": date(2026, 9, 5),
+    }
+
+    class PendingLinksNamespace:
+        def fetch_pending_links(
+            self,
+            **kwargs: Any,
+        ) -> tuple[list[dict[str, Any]], int]:
+            captured.update(kwargs)
+            return [pending_item], 3
+
+    class PendingLinksAdapter:
+        def __init__(self) -> None:
+            self.submission_archive = PendingLinksNamespace()
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "get_adapter",
+        PendingLinksAdapter,
+    )
+
+    result = submission_archive_service.list_pending_links(
+        limit=1,
+        offset=2,
+        report_id="report-1",
+    )
+
+    assert captured == {
+        "limit": 1,
+        "offset": 2,
+        "report_id": "report-1",
+    }
+    assert result == {
+        "items": [pending_item],
+        "total": 3,
+        "limit": 1,
+        "offset": 2,
+    }
+
+
 def test_decide_prior_match_passes_business_user_and_returns_summary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

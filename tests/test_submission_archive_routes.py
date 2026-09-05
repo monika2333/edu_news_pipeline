@@ -169,6 +169,77 @@ def test_get_report_api_returns_prior_match_pending(
     assert response.json()["prior_match_pending"] is True
 
 
+def test_link_queue_api_passes_optional_report_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    pending_item = {
+        "id": "item-1",
+        "report_id": "report-1",
+        "candidate_title": "系统候选标题",
+        "candidate_body": "系统候选正文",
+        "candidate_source": "北京日报",
+        "candidate_url": "https://example.com/article-1",
+        "report_type": "zongbao",
+        "report_date": "2026-09-05",
+    }
+
+    def fake_list_pending_links(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {
+            "items": [pending_item],
+            "total": 1,
+            "limit": 1,
+            "offset": 0,
+        }
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "list_pending_links",
+        fake_list_pending_links,
+    )
+
+    response = _client(_editor).get(
+        "/api/submission-archive/link-queue",
+        params={"report_id": "report-1", "limit": 1, "offset": 0},
+    )
+
+    assert response.status_code == 200
+    assert captured == {
+        "limit": 1,
+        "offset": 0,
+        "report_id": "report-1",
+    }
+    assert response.json()["items"] == [pending_item]
+
+
+def test_link_queue_api_omits_report_filter_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_list_pending_links(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"items": [], "total": 0, "limit": 50, "offset": 0}
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "list_pending_links",
+        fake_list_pending_links,
+    )
+
+    response = _client(_editor).get("/api/submission-archive/link-queue")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [],
+        "total": 0,
+        "limit": 50,
+        "offset": 0,
+    }
+    assert captured == {"limit": 50, "offset": 0, "report_id": None}
+
+
 def test_link_candidates_api_uses_contract_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

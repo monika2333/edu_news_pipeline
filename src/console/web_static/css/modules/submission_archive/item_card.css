@@ -46,6 +46,42 @@
     line-height: 1.5;
 }
 
+/* flags 容器：铅笔按钮 + 回链标签 + 已报送标签的恒定挂载点，任何状态都渲染；
+   局部更新（updateReportStatusComponents）整块替换它的 innerHTML */
+.archive-item-flags {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 6px;
+}
+
+/* 内容为空时不占位（matched/unmatched/rejected 且无已报送标签的条目） */
+.archive-item-flags:empty {
+    display: none;
+}
+
+/* 回链状态标签：只有 processing/pending 两种状态会渲染（detailLinkPill），
+   matched/unmatched/rejected 的状态已由操作入口表达，对应修饰样式已删除 */
+.archive-link-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.archive-link-pill.is-processing {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.archive-link-pill.is-pending {
+    background: #fef3c7;
+    color: #b45309;
+}
+
 .archive-item-tools {
     display: flex;
     flex: 0 0 auto;

@@ -63,41 +63,6 @@
     color: #c2410c;
 }
 
-.archive-link-pill {
-    display: inline-flex;
-    align-items: center;
-    padding: 3px 10px;
-    border-radius: 999px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    white-space: nowrap;
-}
-
-.archive-link-pill.is-linked {
-    background: #dcfce7;
-    color: #166534;
-}
-
-.archive-link-pill.is-processing {
-    background: #dbeafe;
-    color: #1d4ed8;
-}
-
-.archive-link-pill.is-pending {
-    background: #fef3c7;
-    color: #b45309;
-}
-
-.archive-link-pill.is-unmatched {
-    background: #f1f5f9;
-    color: #64748b;
-}
-
-.archive-link-pill.is-rejected {
-    background: #fee2e2;
-    color: #991b1b;
-}
-
 .archive-empty {
     padding: 48px 16px;
     color: var(--text-secondary);

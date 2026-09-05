@@ -5,7 +5,8 @@ const listState = { offset: 0, total: 0, loading: false, type: '' };
 let activeReportId = initialReportId;
 let reportRefreshTimer = null;
 let activeReportStatusSignature = '';
-// 详情区按回链状态筛选：'' 表示不过滤，其余取值 linked/pending/uncovered
+// 详情区按回链状态筛选：'' 表示不过滤，其余取值 linked/pending/uncovered；
+// pending 的筛选 chip 已删除（数量改由标题栏批量按钮体现），取值机制与分组保留
 let detailStatusFilter = '';
 // 详情区按已报送判定筛选（与回链状态筛选独立、可叠加）：'' / matched / unmatched
 let detailPriorFilter = '';
@@ -146,7 +147,9 @@ function detailStats(items) {
         return `<button class="archive-stat-chip${extraClass}${active ? ' is-active' : ''}" type="button"`
             + ` data-prior-filter="${filter}" aria-pressed="${active}">${label} <strong>${count}</strong></button>`;
     };
-    // 已匹配/待确认/未覆盖渲染为可点击按钮，点击后仅展示该分类条目，再次点击取消筛选
+    // 已匹配/未覆盖渲染为可点击按钮，点击后仅展示该分类条目，再次点击取消筛选；
+    // 待确认（pending）不提供筛选 chip——其数量由标题栏的「待确认回链」批量按钮
+    // （detailHeadActionsHtml）体现，否则「已匹配+未覆盖」与「共 N 条」的差值无处解释
     const filterChip = (filter, label, count, extraClass = '') => {
         const active = detailStatusFilter === filter;
         return `<button class="archive-stat-chip${extraClass}${active ? ' is-active' : ''}" type="button"`
@@ -159,10 +162,38 @@ function detailStats(items) {
             ${showPriorChips ? priorChip('matched', '已报送', priorMatched, ' is-prior-matched')
                 + priorChip('unmatched', '未报送', items.length - priorMatched, ' is-prior-unmatched') : ''}
             ${filterChip('linked', '已匹配', matched, ' is-linked')}
-            ${filterChip('pending', '待确认', stats.pending, stats.pending ? ' is-pending' : '')}
             ${filterChip('uncovered', '未覆盖', uncovered)}
         </div>
     `;
+}
+
+// 详情标题栏右侧的当期批量处理入口（#archive-detail-actions 的内容）。
+// 两条渲染路径都要走这个函数：selectReport 首次渲染详情、
+// updateReportStatusComponents 随统计 chips 一起刷新——漏掉任何一条，
+// 轮询回来或批量弹窗处理掉几条之后，按钮计数会停在旧值、该消失的按钮不消失
+function detailHeadActionsHtml(items) {
+    const buttons = [];
+    // 待确认回链：统计区没有 pending 筛选 chip，待确认数量只在这个按钮上体现
+    const pending = items.filter(item => item.link_status === 'pending').length;
+    if (pending > 0) {
+        buttons.push(
+            '<button class="btn btn-secondary archive-detail-action-btn is-pending" type="button"'
+                + ` data-batch-action="link">待确认回链 <strong>${pending}</strong></button>`
+        );
+    }
+    // 疑似已报送：仅反馈报告；判定进行中时所有条目 prior_match 为 null，计数没有意义，
+    // 必须等判定结束（与 detailPriorMatchPill 的门控一致）。status === 'suspected'
+    // 即「可人工判定且尚未判定」，后端 SQL 已保证，前端不再叠加 decidable/decision 判断
+    const suspected = items.filter(
+        item => item.prior_match && item.prior_match.status === 'suspected'
+    ).length;
+    if (activeReportType === 'feedback' && !activeReportPriorMatchPending && suspected > 0) {
+        buttons.push(
+            '<button class="btn btn-secondary archive-detail-action-btn is-suspected" type="button"'
+                + ` data-batch-action="prior">疑似已报送 <strong>${suspected}</strong></button>`
+        );
+    }
+    return buttons.join('');
 }
 
 function detailItemMetaHtml(item) {
@@ -254,6 +285,18 @@ const detailPriorMatchPill = item => priorMatchPill(item, {
     showUnmatched: detailPriorGroup(item) === 'unmatched'
 });
 
+// 回链标签只贴给「给不出操作入口」的状态：processing/pending 没有任何操作入口，
+// 必须靠标签说明；matched 的状态已由标题后的「原文」标签和 meta 的「解绑」表达，
+// unmatched/rejected 已由 meta 的「手动匹配」表达，再贴文字标签是重复信息
+const detailLinkPill = item => (
+    item.link_status === 'processing' || item.link_status === 'pending'
+        ? linkPill(item.link_status)
+        : ''
+);
+
+// archive-item-flags 是「铅笔按钮 + 回链标签 + 已报送标签」的恒定容器：
+// 无论条目什么状态都渲染（内容可为空），updateReportStatusComponents
+// 靠它做整块 innerHTML 替换，不依赖某个标签元素是否存在
 function detailItemCard(item) {
     const editing = detailEditingItemIds.has(String(item.id));
     return `
@@ -263,7 +306,7 @@ function detailItemCard(item) {
             <div class="archive-item-head">
                 <span class="archive-item-order">${item.order_index + 1}</span>
                 <h4 class="archive-item-title">${escapeHtml(item.title)}${detailOriginalTriggerHtml(item)}</h4>
-                ${detailEditTriggerHtml(item)}${linkPill(item.link_status)}${detailPriorMatchPill(item)}
+                <span class="archive-item-flags">${detailEditTriggerHtml(item)}${detailLinkPill(item)}${detailPriorMatchPill(item)}</span>
             </div>
             ${item.body ? `<p class="archive-item-body">${escapeHtml(item.body)}</p>` : ''}
             <div class="archive-item-meta">${detailItemMetaHtml(item)}</div>
@@ -357,6 +400,12 @@ function updateReportStatusComponents(id, items) {
     if (statsTarget) {
         statsTarget.outerHTML = detailStats(items);
     }
+    // 标题栏批量按钮随统计 chips 一起刷新（detailHeadActionsHtml 的另一条渲染路径）：
+    // 漏掉的话，轮询回来或批量弹窗处理掉几条之后按钮计数会停在旧值
+    const actionsTarget = document.getElementById('archive-detail-actions');
+    if (actionsTarget) {
+        actionsTarget.innerHTML = detailHeadActionsHtml(items);
+    }
     const itemsById = new Map(items.map(item => [String(item.id), item]));
     document.querySelectorAll('#archive-detail .archive-item[data-item-id]').forEach(card => {
         const item = itemsById.get(card.dataset.itemId);
@@ -365,15 +414,14 @@ function updateReportStatusComponents(id, items) {
         card.classList.toggle('is-pending', item.link_status === 'pending');
         card.dataset.linkGroup = linkStatusGroup(item.link_status);
         card.dataset.priorGroup = detailPriorGroup(item);
-        // 铅笔入口随状态同步：先移除旧按钮，再和新 pill 一起按当前状态重渲染
-        const editBtn = card.querySelector('.archive-item-edit-btn');
-        if (editBtn) editBtn.remove();
-        // 已报送标签三种迁移：无→有（判定完成）、内容变化、有→无（重算后不再命中）。
-        // 先移除旧标签覆盖后两种，再借 linkPill 的 outerHTML 把新标签插到它后面覆盖第一种
-        const priorPill = card.querySelector('.archive-prior-match-pill');
-        if (priorPill) priorPill.remove();
-        const pill = card.querySelector('.archive-link-pill');
-        if (pill) pill.outerHTML = `${detailEditTriggerHtml(item)}${linkPill(item.link_status)}${detailPriorMatchPill(item)}`;
+        // flags 容器恒定渲染（见 detailItemCard），局部更新直接整块替换 innerHTML：
+        // 铅笔入口、回链标签、已报送标签的三种迁移（无→有、内容变化、有→无）都被覆盖，
+        // 不再借某个标签元素做重插锚点——matched/unmatched/rejected 本来就不渲染
+        // 回链标签，锚点在这些状态上不存在
+        const flags = card.querySelector('.archive-item-flags');
+        if (flags) {
+            flags.innerHTML = `${detailEditTriggerHtml(item)}${detailLinkPill(item)}${detailPriorMatchPill(item)}`;
+        }
         // 状态变化后同步标题后的「原文」标签：仅 matched 且有 article_id 时存在
         const titleEl = card.querySelector('.archive-item-title');
         const trigger = titleEl?.querySelector('.content-drawer-trigger');
@@ -582,6 +630,7 @@ async function selectReport(id, pushUrl = true) {
                     </p>
                     ${detailStats(items)}
                 </div>
+                <div class="archive-detail-actions" id="archive-detail-actions">${detailHeadActionsHtml(items)}</div>
             </div>
             <div class="archive-detail-items">
                 ${items.length ? detailItemsHtml(items) : '<div class="archive-empty">这份报告没有条目。</div>'}

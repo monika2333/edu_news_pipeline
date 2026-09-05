@@ -19,6 +19,7 @@
     <link rel="stylesheet" href="/static/css/modules/submission_archive/create.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/link_queue.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/manual_link.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/modules/submission_archive/batch_decision.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/responsive.css?v={{ version }}">
 </head>
 <body data-archive-view="{{ archive_view }}"
@@ -231,6 +232,42 @@
             <div class="modal-footer archive-prior-matches-footer" id="archive-prior-matches-footer" hidden></div>
         </div>
     </div>
+    <!-- 当期回链确认弹窗（batch_decision.js）：只列当前报告的待确认条目，
+         对照卡复用 link_queue.js 的 linkCard -->
+    <div class="modal" id="archive-batch-link-modal" role="dialog" aria-modal="true"
+        aria-labelledby="archive-batch-link-modal-title" aria-hidden="true">
+        <div class="modal-content archive-batch-modal-content">
+            <div class="modal-header">
+                <h3 id="archive-batch-link-modal-title">当期回链确认</h3>
+                <div class="archive-batch-modal-head-side">
+                    <span class="archive-queue-count" id="archive-batch-link-count"></span>
+                    <button type="button" class="btn-icon" id="archive-batch-link-modal-close"
+                        aria-label="关闭">✕</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="archive-batch-modal-list" id="archive-batch-link-list"></div>
+            </div>
+        </div>
+    </div>
+    <!-- 当期疑似已报送判定弹窗（batch_decision.js）：仅反馈报告，
+         条目取自 activeReportItems，命中明细逐条并发拉取 -->
+    <div class="modal" id="archive-batch-prior-modal" role="dialog" aria-modal="true"
+        aria-labelledby="archive-batch-prior-modal-title" aria-hidden="true">
+        <div class="modal-content archive-batch-modal-content">
+            <div class="modal-header">
+                <h3 id="archive-batch-prior-modal-title">当期疑似已报送判定</h3>
+                <div class="archive-batch-modal-head-side">
+                    <span class="archive-queue-count" id="archive-batch-prior-count"></span>
+                    <button type="button" class="btn-icon" id="archive-batch-prior-modal-close"
+                        aria-label="关闭">✕</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="archive-batch-modal-list" id="archive-batch-prior-list"></div>
+            </div>
+        </div>
+    </div>
     {% include "_content_drawer.html" %}
     {% endif %}
     {% include "_search_drawer.html" %}
@@ -254,6 +291,9 @@
     <script src="/static/js/submission_archive/content_drawer.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/create.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/link_queue.js?v={{ version }}"></script>
+    <!-- batch_decision.js 用到 link_queue.js 的 linkCard 与 prior_matches.js 的
+         priorMatchEntryHtml，必须在它们之后、init.js 之前加载 -->
+    <script src="/static/js/submission_archive/batch_decision.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/init.js?v={{ version }}"></script>
 </body>
 </html>

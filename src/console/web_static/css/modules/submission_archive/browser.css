@@ -274,6 +274,36 @@
     min-width: 0;
 }
 
+/* 详情标题栏右侧的当期批量处理入口（browser.js detailHeadActionsHtml 渲染） */
+.archive-detail-actions {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.archive-detail-actions:empty {
+    display: none;
+}
+
+.archive-detail-action-btn strong {
+    font-size: 0.95rem;
+}
+
+/* 待确认回链是需要人工处理的信号，用警示色突出；疑似已报送与条目标签同色 */
+.archive-detail-action-btn.is-pending {
+    border-color: #fcd34d;
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.archive-detail-action-btn.is-suspected {
+    border-color: #86efac;
+    background: #dcfce7;
+    color: #15803d;
+}
+
 .archive-detail-title-row {
     display: flex;
     align-items: center;
@@ -315,7 +345,7 @@
     font-size: 0.95rem;
 }
 
-/* 可点击的分类筛选 chip（已匹配/待确认/未覆盖） */
+/* 可点击的分类筛选 chip（已匹配/未覆盖） */
 button.archive-stat-chip {
     border: none;
     font-family: inherit;
@@ -328,15 +358,6 @@ button.archive-stat-chip:hover {
 
 .archive-stat-chip.is-active {
     box-shadow: 0 0 0 2px var(--primary-color);
-}
-
-.archive-stat-chip.is-pending {
-    background: #fef3c7;
-    color: #92400e;
-}
-
-.archive-stat-chip.is-pending strong {
-    color: #b45309;
 }
 
 .archive-stat-chip.is-processing {

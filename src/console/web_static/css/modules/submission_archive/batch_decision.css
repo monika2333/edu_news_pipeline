@@ -1,0 +1,41 @@
+/* 报送存档 · 当期批量处理弹窗（回链确认 / 疑似已报送判定，batch_decision.js） */
+
+/* 弹窗比默认 modal-content 宽：双栏对照卡（复用 link_queue.css 的
+   .archive-link-grid / .archive-link-col）需要空间 */
+.archive-batch-modal-content {
+    width: min(1080px, 96vw);
+}
+
+.archive-batch-modal-head-side {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* 弹窗内对照卡列表：第一张卡去掉 .archive-link-card 的 margin-top，与弹窗标题对齐 */
+.archive-batch-modal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.archive-batch-modal-list .archive-link-card {
+    margin-top: 0;
+}
+
+/* 疑似已报送判定卡的右栏：命中的更早报送条目逐条堆叠
+   （条目样式复用 item_card.css 的 .archive-prior-match-entry） */
+.archive-batch-prior-matches {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.archive-batch-prior-matches .archive-empty {
+    padding: 16px 8px;
+}
+
+/* 与人工回链弹窗（archive-link-modal-open）同一约定：弹窗打开时原文抽屉抬到弹窗之上 */
+body.archive-batch-modal-open .content-drawer {
+    z-index: 1200;
+}

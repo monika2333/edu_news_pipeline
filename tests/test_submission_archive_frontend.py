@@ -272,7 +272,7 @@ def test_prior_match_pill_rendered_only_when_present() -> None:
         maxsplit=1,
     )[1]
     assert "archive-link-pill" not in pill_body
-    assert "${linkPill(item.link_status)}${detailPriorMatchPill(item)}" in browser
+    assert "${detailLinkPill(item)}${detailPriorMatchPill(item)}" in browser
 
 
 def test_detail_stats_prior_match_chips_are_filters() -> None:
@@ -311,11 +311,15 @@ def test_local_update_covers_prior_match_pill_transitions() -> None:
         )[1].split("function applyManualLinkResult", maxsplit=1)[0]
     )
 
-    # 局部更新必须处理三种迁移：先移除旧标签（有→无/变化），
-    # 再借 linkPill 的 outerHTML 插入新标签（无→有）
-    assert "archive-prior-match-pill" in update_body
-    assert "priorPill.remove()" in update_body
+    # 局部更新通过恒定渲染的 flags 容器整块替换 innerHTML，铅笔入口、回链标签、
+    # 已报送标签的三种迁移（无→有、内容变化、有→无）都被覆盖
+    assert "querySelector('.archive-item-flags')" in update_body
+    assert "flags.innerHTML" in update_body
     assert "detailPriorMatchPill(item)" in update_body
+    # 不再以某个标签元素作为重插锚点（matched/unmatched/rejected 不渲染
+    # 回链标签，锚点在这些状态上不存在）
+    assert "querySelector('.archive-link-pill')" not in update_body
+    assert "pill.outerHTML" not in update_body
 
 
 def test_prior_match_pending_flag_tracked_per_report() -> None:
@@ -470,3 +474,159 @@ def test_dismissed_pill_css_keeps_pointer_and_footer_hidden_works() -> None:
     assert "cursor" not in dismissed_block
     # .modal-footer 的 display:flex 会盖掉 hidden，必须显式压制
     assert ".archive-prior-matches-footer[hidden]" in css
+
+
+BATCH_DECISION_JS = "src/console/web_static/js/submission_archive/batch_decision.js"
+ITEM_CARD_CSS = "src/console/web_static/css/modules/submission_archive/item_card.css"
+WIDGETS_CSS = "src/console/web_static/css/modules/submission_archive/widgets.css"
+
+
+def test_detail_stats_drops_pending_filter_chip() -> None:
+    source = Path(BROWSER_JS).read_text(encoding="utf-8")
+    stats_body = _strip_js_comments(
+        source.split("function detailStats(items) {", maxsplit=1)[1].split(
+            "function detailHeadActionsHtml", maxsplit=1
+        )[0]
+    )
+
+    # 「待确认」筛选 chip 已删除（数量缺口由标题栏批量按钮补上）；
+    # 「已匹配」「未覆盖」两个筛选 chip 保留
+    assert "filterChip('pending'" not in stats_body
+    assert "filterChip('linked', '已匹配'" in stats_body
+    assert "filterChip('uncovered', '未覆盖'" in stats_body
+    # linkStatusGroup 的 pending 分组保留：卡片仍要正确标注 data-link-group
+    assert "if (status === 'pending') return 'pending';" in source
+
+
+def test_detail_link_pill_only_for_statuses_without_actions() -> None:
+    source = _strip_js_comments(Path(BROWSER_JS).read_text(encoding="utf-8"))
+    pill_body = source.split("const detailLinkPill = item =>", maxsplit=1)[1].split(
+        "function detailItemCard", maxsplit=1
+    )[0]
+
+    # 只给「没有操作入口」的状态贴回链标签：processing / pending；
+    # matched/unmatched/rejected 的状态已由操作入口（原文标签/解绑/手动匹配）表达
+    assert "item.link_status === 'processing'" in pill_body
+    assert "item.link_status === 'pending'" in pill_body
+    assert "linkPill(item.link_status)" in pill_body
+    assert "'matched'" not in pill_body
+    assert "'unmatched'" not in pill_body
+    assert "'rejected'" not in pill_body
+
+
+def test_detail_item_card_has_constant_flags_container() -> None:
+    source = _strip_js_comments(Path(BROWSER_JS).read_text(encoding="utf-8"))
+    card_body = source.split("function detailItemCard(item) {", maxsplit=1)[1].split(
+        "function detailItemsHtml", maxsplit=1
+    )[0]
+
+    # flags 容器恒定渲染，铅笔按钮、回链标签、已报送标签都挂在里面
+    assert '<span class="archive-item-flags">' in card_body
+    assert (
+        "${detailEditTriggerHtml(item)}${detailLinkPill(item)}${detailPriorMatchPill(item)}"
+        in card_body
+    )
+
+
+def test_link_pill_css_keeps_only_processing_and_pending_modifiers() -> None:
+    item_card = Path(ITEM_CARD_CSS).read_text(encoding="utf-8")
+    widgets = Path(WIDGETS_CSS).read_text(encoding="utf-8")
+
+    # 不再渲染的三种状态（matched/unmatched/rejected）的修饰样式已删除；
+    # pill 样式集中在 item_card.css，widgets.css 不再保留
+    for css in (item_card, widgets):
+        assert ".archive-link-pill.is-linked" not in css
+        assert ".archive-link-pill.is-unmatched" not in css
+        assert ".archive-link-pill.is-rejected" not in css
+    assert ".archive-link-pill" not in widgets
+    assert ".archive-link-pill.is-processing" in item_card
+    assert ".archive-link-pill.is-pending" in item_card
+    # flags 容器样式：横向排列、空容器不占位
+    assert ".archive-item-flags" in item_card
+    assert ".archive-item-flags:empty" in item_card
+
+
+def test_detail_head_actions_rendered_on_both_paths() -> None:
+    source = Path(BROWSER_JS).read_text(encoding="utf-8")
+    select_body = source.split(
+        "async function selectReport(id, pushUrl = true) {", maxsplit=1
+    )[1].split("async function initBrowserView()", maxsplit=1)[0]
+    update_body = _strip_js_comments(
+        source.split(
+            "function updateReportStatusComponents(id, items) {", maxsplit=1
+        )[1].split("function applyManualLinkResult", maxsplit=1)[0]
+    )
+
+    # 两条渲染路径都要走 detailHeadActionsHtml：selectReport 首次渲染、
+    # updateReportStatusComponents 随统计 chips 刷新
+    assert 'id="archive-detail-actions"' in select_body
+    assert "detailHeadActionsHtml(items)" in select_body
+    assert "archive-detail-actions" in update_body
+    assert "detailHeadActionsHtml(items)" in update_body
+
+
+def test_detail_head_action_button_visibility_conditions() -> None:
+    source = _strip_js_comments(Path(BROWSER_JS).read_text(encoding="utf-8"))
+    actions_body = source.split(
+        "function detailHeadActionsHtml(items) {", maxsplit=1
+    )[1].split("function detailItemMetaHtml", maxsplit=1)[0]
+
+    # 按钮 A：存在 pending 条目才渲染，文案带计数
+    assert "item.link_status === 'pending'" in actions_body
+    assert "待确认回链" in actions_body
+    # 按钮 B：反馈报别 + 判定未在进行中 + suspected 计数大于 0，三项缺一不可
+    assert "activeReportType === 'feedback'" in actions_body
+    assert "!activeReportPriorMatchPending" in actions_body
+    assert "item.prior_match.status === 'suspected'" in actions_body
+    assert "疑似已报送" in actions_body
+
+
+def test_batch_link_modal_requests_current_report_queue() -> None:
+    batch = _strip_js_comments(Path(BATCH_DECISION_JS).read_text(encoding="utf-8"))
+
+    # 回链批量弹窗只拉当期报告的待确认条目
+    assert "/link-queue?report_id=" in batch
+    assert "encodeURIComponent(activeReportId)" in batch
+    # 对照卡复用队列页的 linkCard，不重写一套结构
+    assert "items.map(linkCard)" in batch
+
+
+def test_batch_decisions_update_cards_locally_without_report_reload() -> None:
+    batch = _strip_js_comments(Path(BATCH_DECISION_JS).read_text(encoding="utf-8"))
+
+    # 两个弹窗的成功回调分别走局部更新，不允许重拉整份报告或报告列表
+    assert "applyManualLinkResult(updated)" in batch
+    assert "applyPriorMatchDecisionResult(itemId, data.prior_match)" in batch
+    assert "selectReport(" not in batch
+    assert "loadReportList(" not in batch
+    # 提交走既有接口；回链弹窗关闭时刷新「回链确认」tab 角标
+    assert "/link-decision`" in batch
+    assert "/prior-match-decision`" in batch
+    assert "loadNavPending()" in batch
+
+
+def test_batch_decision_assets_loaded_in_template() -> None:
+    template = Path(TEMPLATE_HTML).read_text(encoding="utf-8")
+
+    assert 'id="archive-batch-link-modal"' in template
+    assert 'id="archive-batch-prior-modal"' in template
+    assert "submission_archive/batch_decision.css" in template
+    # batch_decision.js 在 link_queue.js 之后、init.js 之前加载
+    assert template.index("submission_archive/link_queue.js") < template.index(
+        "submission_archive/batch_decision.js"
+    )
+    assert template.index("submission_archive/batch_decision.js") < template.index(
+        "submission_archive/init.js"
+    )
+
+
+def test_batch_prior_modal_method_labels_cover_all_match_methods() -> None:
+    batch = _strip_js_comments(Path(BATCH_DECISION_JS).read_text(encoding="utf-8"))
+    prior = Path(PRIOR_MATCHES_JS).read_text(encoding="utf-8")
+
+    # 疑似已报送批量弹窗复用 prior_matches.js 的 priorMatchEntryHtml 渲染命中明细，
+    # 判定依据文案由该模块的映射覆盖 article / title_hash / vector 三种取值
+    assert "priorMatchEntryHtml" in batch
+    assert "article: '同一篇原文'" in prior
+    assert "title_hash: '标题一致'" in prior
+    assert "vector: '语义相似'" in prior

@@ -115,9 +115,11 @@ async function loadReportList(append = false) {
     } catch (error) {
         if (!append) {
             target.innerHTML = `<div class="archive-empty">${escapeHtml(error.message)}</div>`;
-        } else {
-            toast(error.message, 'error');
+            // 非追加失败返回 null 而非空数组：调用方（initBrowserView）要据此区分
+            // 「列表加载失败」与「库里没有报告」（空数组），两者详情区口径不同
+            return null;
         }
+        toast(error.message, 'error');
         return [];
     } finally {
         listState.loading = false;
@@ -701,12 +703,26 @@ async function initBrowserView() {
     });
     const items = await loadReportList(false);
     if (initialReportId) {
-        if (items.some(item => item.id === initialReportId)) {
-            await selectReport(initialReportId, false);
-        } else {
-            // 详情页直达但报告不在当前筛选结果里：仍然加载详情
-            await selectReport(initialReportId, false);
-        }
+        // 详情页直达但报告不在当前筛选结果里仍然加载详情：筛选只影响左侧列表，
+        // 不拦截直达目标
+        await selectReport(initialReportId, false);
+    } else if (items === null) {
+        // 列表加载失败：左侧已显示错误信息，详情区保持中性提示，不谎称库是空的
+        document.getElementById('archive-detail').innerHTML =
+            '<div class="archive-empty">报告列表加载失败，请稍后重试。</div>';
+    } else if (items.length === 0) {
+        // 库里还没有报告：与左侧空列表口径一致，引导去新增存档
+        document.getElementById('archive-detail').innerHTML =
+            '<div class="archive-empty">还没有存档报告，点右上角「新增存档」录入第一份。</div>';
+    } else {
+        // 自动选中是「详情区的显示默认值」，不是「用户导航到了这份报告」，
+        // 必须传 pushUrl = false 不改写地址栏：若地址栏被 replaceState 改成
+        // /submission-archive/<id>，用户刷新或收藏后就被钉死在这一份，
+        // 明天录入新报告后默认打开的仍是旧的；保持 /submission-archive，
+        // 每次打开都自动落到当时最近的一份。
+        // 自动选中只发生在首次加载：类型筛选、日期筛选、加载更多也调用
+        // loadReportList，但不走这里，筛选时详情区不会自己跳转
+        await selectReport(items[0].id, false);
     }
     const notice = sessionStorage.getItem('archiveNotice');
     if (notice) {

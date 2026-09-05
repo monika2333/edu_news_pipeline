@@ -56,6 +56,7 @@
 - `web_static/js/manual_filter/utils.js` 会被 `duty_summary.html` 一并加载（因为共享搜索抽屉组件），其中被跨页面复用的是 `createEl`、`clearEl`、`renderSkeleton`、`formatScore`、`getSentimentClass`、`showToastAt`、`formatLocalDateTime` 这类纯函数。新增跨页面复用的工具函数时，不要依赖 `elements` 或 `state` 全局；需要读写页面状态的函数放 `manual_filter/core.js` 或对应功能文件。文件里现存的其他带状态函数是历史遗留，暂不调整。
 - 控制台面向用户的时间展示统一走 `formatLocalDateTime`（`new Date` + 本地时区取值）：后端返回的是带 `Z` 的 UTC 时间，直接截取 ISO 字符串会把 UTC 当本地时间显示，凌晨入库的记录日期会差一天。不带时区的 `date` 字段（如报送存档的 `report_date`）不适用此函数，按字符串截取即可。
 - 模板和 JS 通过 DOM id 与 `data-*` 属性紧密耦合；修改时必须一起处理。
+- 存档库列表视图加载完成后自动选中列表第一条（browser.js 的 `initBrowserView`）：报告列表接口按 `report_date desc, imported_at desc` 排序，第一条即最近一份。自动选中必须传 `pushUrl = false` 不改写地址栏——它是「详情区的显示默认值」而非用户导航，若 `replaceState` 成 `/submission-archive/<id>`，用户刷新或收藏后会被钉死在旧报告上，录入新报告后默认打开的仍是旧的；保持 `/submission-archive`，每次打开都落到当时最近的一份。自动选中只在首次加载发生，类型筛选、日期筛选、加载更多共用 `loadReportList` 但不触发它。`loadReportList` 非追加失败分支返回 `null`（区别于空数组）：空数组说明库里没有报告，详情区引导去「新增存档」；`null` 说明加载失败，详情区保持中性提示，不谎称库是空的。
 
 ## 建议测试
 

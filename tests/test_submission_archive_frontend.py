@@ -759,3 +759,90 @@ def test_init_drops_link_queue_branch_but_keeps_nav_pending_refresh() -> None:
     assert "link-queue" not in init
     assert "loadLinkQueue" not in init
     assert "loadNavPending()" in init
+
+
+def test_init_browser_view_auto_selects_latest_report_without_push_url() -> None:
+    source = _strip_js_comments(Path(BROWSER_JS).read_text(encoding="utf-8"))
+    init_body = source.split("async function initBrowserView()", maxsplit=1)[1]
+
+    # 无 initialReportId 且列表非空时自动选中第一条（列表按 report_date desc,
+    # imported_at desc 排序，第一条即最近一份），且必须 pushUrl = false：
+    # 自动选中是详情区的显示默认值，改写地址栏会把用户钉死在旧报告上
+    assert "await selectReport(items[0].id, false)" in init_body
+    assert "selectReport(items[0].id, true)" not in init_body
+    assert "selectReport(items[0].id)" not in init_body.replace(
+        "selectReport(items[0].id, false)", ""
+    )
+    # 有 initialReportId（详情页直达）时行为不变，只加载该报告
+    assert "await selectReport(initialReportId, false)" in init_body
+
+
+def test_load_report_list_returns_null_only_on_non_append_failure() -> None:
+    source = Path(BROWSER_JS).read_text(encoding="utf-8")
+    load_body = _strip_js_comments(
+        source.split("async function loadReportList(append = false) {", maxsplit=1)[
+            1
+        ].split("function detailStats", maxsplit=1)[0]
+    )
+
+    # 成功分支仍返回条目数组；追加失败仍返回空数组（调用方忽略返回值）；
+    # 只有非追加失败返回 null，与「库是空的」空数组区分
+    assert "return data.items;" in load_body
+    assert "return [];" in load_body
+    assert load_body.count("return null;") == 1
+    # null 在非追加分支（写错误信息到列表区）与追加分支（toast）之间
+    assert load_body.index("escapeHtml(error.message)") < load_body.index(
+        "return null;"
+    ) < load_body.index("toast(error.message")
+
+
+def test_auto_select_only_on_initial_load_not_filter_paths() -> None:
+    source = _strip_js_comments(Path(BROWSER_JS).read_text(encoding="utf-8"))
+    load_body = source.split("async function loadReportList(append = false) {", maxsplit=1)[
+        1
+    ].split("function detailStats", maxsplit=1)[0]
+    init_body = source.split("async function initBrowserView()", maxsplit=1)[1]
+
+    # 自动选中不得藏在 loadReportList 里：类型筛选、日期筛选、加载更多都调用它，
+    # 筛选时详情区不应自己跳转
+    assert "selectReport(" not in load_body
+    # initBrowserView 中只有首次加载的收尾段按列表内容选中；之前的事件绑定段
+    # （类型筛选、日期筛选、加载更多）不得按 items 选中
+    head, _, tail = init_body.partition("const items = await loadReportList(false)")
+    assert "selectReport(items" not in head
+    assert "selectReport(items[0].id, false)" in tail
+
+
+def test_init_browser_view_distinguishes_empty_archive_from_load_failure() -> None:
+    source = _strip_js_comments(Path(BROWSER_JS).read_text(encoding="utf-8"))
+    init_body = source.split("async function initBrowserView()", maxsplit=1)[1]
+
+    # 空数组 = 库里没有报告：引导去「新增存档」，与左侧空列表口径一致
+    assert "items.length === 0" in init_body
+    assert "新增存档" in init_body
+    # null = 加载失败：详情区保持中性提示，不出现「新增存档」口径的文案
+    assert "items === null" in init_body
+    failure_branch = init_body.split("items === null", maxsplit=1)[1].split(
+        "items.length === 0", maxsplit=1
+    )[0]
+    assert "新增存档" not in failure_branch
+
+
+def test_archive_detail_initial_content_is_neutral_loading() -> None:
+    template = Path(TEMPLATE_HTML).read_text(encoding="utf-8")
+
+    # 初始内容只在 JS 跑完前短暂可见，是中性加载提示，不再说「从左侧选择」
+    assert "从左侧选择" not in template
+    detail_block = template.split('id="archive-detail"', maxsplit=1)[1].split(
+        "</section>", maxsplit=1
+    )[0]
+    assert "正在加载" in detail_block
+
+
+def test_init_browser_view_has_no_duplicate_direct_link_branches() -> None:
+    source = _strip_js_comments(Path(BROWSER_JS).read_text(encoding="utf-8"))
+    init_body = source.split("async function initBrowserView()", maxsplit=1)[1]
+
+    # 详情页直达不再按「是否在筛选结果里」分两个相同分支，只加载一次
+    assert init_body.count("selectReport(initialReportId, false)") == 1
+    assert "items.some(item => item.id === initialReportId)" not in init_body

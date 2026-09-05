@@ -350,6 +350,28 @@ def test_get_report_exposes_prior_match_pending(
     assert report["prior_match_pending"] is expected_pending
 
 
+def test_get_report_preserves_item_coverage_excluded_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = FakeSubmissionArchiveAdapter()
+    adapter.report = {
+        "id": "report-id",
+        "report_type": "zongbao",
+        "items": [
+            {"id": "item-1", "coverage_excluded": True},
+            {"id": "item-2", "coverage_excluded": False},
+        ],
+    }
+    monkeypatch.setattr(submission_archive_service, "get_adapter", lambda: adapter)
+
+    report = submission_archive_service.get_report("report-id")
+
+    assert [item["coverage_excluded"] for item in report["items"]] == [
+        True,
+        False,
+    ]
+
+
 def test_list_pending_links_passes_report_filter_and_keeps_total(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

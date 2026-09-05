@@ -24,6 +24,12 @@
 - 尽量沿用现有 JS 模块边界，分别处理 filter、review、discard、search drawer、export/archive 等行为。原文抽屉（`content_drawer.js` + `css/modules/content_drawer.css`）是无遮罩的右侧抽屉，正文经 `/api/articles/content` 按需单篇获取并做页面会话内内存缓存；抽屉 markup 抽在 `_content_drawer.html`，被 `manual_filter.html`、`submission_archive.html` 与 `duty_summary.html` 共用。筛选页与已选结果页共用 `manual_filter/content_drawer.js`，入口按钮在 `renderArticleCard` 与 `renderReviewCard` 中渲染；存档库页与值班汇总页用独立的 `submission_archive/content_drawer.js`（无侧栏折叠与列表锚定逻辑），入口是 `matched` 条目标题后的「原文」标签和检索卡片的「原文」按钮（统一为 `.content-drawer-trigger`，委托只匹配该 class）。列表宽度变化后的锚定与摘要框重算抽在 `layout_anchor.js`，抽屉开合与侧栏折叠（`sidebar_collapse.js`）共用；筛选页摘要框是固定高度，任何路径都不得对其调用 resize。手动折叠状态存 `localStorage.sidebar_collapsed`；打开抽屉会自动折叠侧栏（`persist: false`，不写 localStorage），关闭抽屉不恢复。
 - 修改用户可见的工作流时，同时检查 API service 路径和浏览器端路径。
 
+## 报送存档覆盖率口径
+
+- 覆盖率统计对综报【重点关注舆情】采用不对称剔除：已经绑定原文的条目仍计入「已匹配」，未绑定或已否决的条目不计入「未覆盖」；待判断、待确认和报告总条数均不受影响。
+- 该规则只适用于综报【重点关注舆情】，不影响综报其他章节、晚报或反馈报告。报别与章节名常量及纯判断函数统一定义在 `src/domain/submission_archive_config.py`，SQL 与详情标记必须复用，禁止另写章节名字面量。
+- 这是可调整的统计口径，不是事实数据；应在读取报告列表和详情时计算，不新增数据库列，避免章节改名或规则调整时回填历史数据。
+
 ## API 和安全规则
 
 - 除了有意公开的 health endpoint，受保护的控制台路由应继续通过 `app.py` 中的 `require_console_user` dependencies 注册。

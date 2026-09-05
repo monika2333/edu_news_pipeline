@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import date, timedelta
 from typing import Any, Optional
 
 import pytest
 
 from src.adapters import db_postgres_submission_archive
+from src.domain.submission_archive_config import (
+    COVERAGE_EXCLUDED_REPORT_TYPE,
+    COVERAGE_EXCLUDED_SECTION,
+    is_coverage_excluded,
+)
 
 
 class FakeCursor:
@@ -42,6 +48,57 @@ class FakeCursor:
         row = self.fetchone_rows[self.fetchone_index]
         self.fetchone_index += 1
         return row
+
+
+class SqliteCursor:
+    def __init__(
+        self,
+        *,
+        reports: list[tuple[str, str, str, str, int]],
+        items: list[tuple[str, str, Optional[str], str]],
+    ) -> None:
+        self.connection = sqlite3.connect(":memory:")
+        self.connection.row_factory = sqlite3.Row
+        self.connection.executescript(
+            """
+            create table submitted_reports (
+                id text primary key,
+                report_type text not null,
+                report_date text not null,
+                imported_at text not null,
+                item_count integer not null
+            );
+            create table submitted_report_items (
+                id text primary key,
+                report_id text not null,
+                section text,
+                link_status text not null
+            );
+            """
+        )
+        self.connection.executemany(
+            "insert into submitted_reports values (?, ?, ?, ?, ?)",
+            reports,
+        )
+        self.connection.executemany(
+            "insert into submitted_report_items values (?, ?, ?, ?)",
+            items,
+        )
+        self.calls: list[tuple[str, tuple[Any, ...]]] = []
+        self.result: Optional[sqlite3.Cursor] = None
+
+    def execute(self, query: str, params: tuple[Any, ...]) -> None:
+        self.calls.append((query, params))
+        self.result = self.connection.execute(query.replace("%s", "?"), params)
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        assert self.result is not None
+        return [dict(row) for row in self.result.fetchall()]
+
+    def fetchone(self) -> Optional[dict[str, Any]]:
+        assert self.result is not None
+        row = self.result.fetchone()
+        return dict(row) if row else None
 
 
 def test_insert_report_persists_external_message_identity() -> None:
@@ -97,7 +154,12 @@ def test_fetch_report_by_source_message_returns_report_with_items() -> None:
     assert report is not None
     assert report["id"] == "report-1"
     assert report["items"] == [
-        {"id": "item-1", "title": "条目", "prior_match": None}
+        {
+            "id": "item-1",
+            "title": "条目",
+            "prior_match": None,
+            "coverage_excluded": False,
+        }
     ]
     assert cursor.calls[0][1] == ("feishu", "om_1")
 
@@ -138,6 +200,189 @@ def test_fetch_feedback_report_attaches_prior_match_summary() -> None:
         "count": 2,
     }
     assert "submission_item_duplicate_matches" in cursor.calls[2][0]
+
+
+@pytest.mark.parametrize(
+    ("report_type", "section", "expected"),
+    [
+        ("zongbao", "重点关注舆情", True),
+        ("zongbao", "新闻信息纵览", False),
+        ("wanbao", "重点关注舆情", False),
+        ("feedback", "重点关注舆情", False),
+        ("feedback", "任意章节", False),
+        ("zongbao", None, False),
+    ],
+)
+def test_is_coverage_excluded_has_narrow_scope(
+    report_type: str,
+    section: Optional[str],
+    expected: bool,
+) -> None:
+    assert is_coverage_excluded(report_type, section) is expected
+
+
+@pytest.mark.parametrize(
+    ("report_type", "expected_flags"),
+    [
+        ("zongbao", [True, False]),
+        ("wanbao", [False, False]),
+    ],
+)
+def test_fetch_report_attaches_coverage_excluded_flags(
+    report_type: str,
+    expected_flags: list[bool],
+) -> None:
+    cursor = FakeCursor(
+        fetchone_rows=[{"id": "report-1", "report_type": report_type}],
+        fetchall_rows=[
+            [
+                {
+                    "id": "item-1",
+                    "section": "重点关注舆情",
+                },
+                {
+                    "id": "item-2",
+                    "section": "新闻信息纵览",
+                },
+            ]
+        ],
+    )
+
+    report = db_postgres_submission_archive.fetch_report(cursor, "report-1")
+
+    assert report is not None
+    assert [item["coverage_excluded"] for item in report["items"]] == (
+        expected_flags
+    )
+
+
+def test_fetch_reports_applies_asymmetric_counts_only_to_zongbao() -> None:
+    cursor = SqliteCursor(
+        reports=[
+            ("report-z", "zongbao", "2026-09-05", "2026-09-05", 7),
+            ("report-w", "wanbao", "2026-09-04", "2026-09-04", 5),
+            ("report-f", "feedback", "2026-09-03", "2026-09-03", 4),
+        ],
+        items=[
+            ("z-1", "report-z", "重点关注舆情", "unmatched"),
+            ("z-2", "report-z", "重点关注舆情", "rejected"),
+            ("z-3", "report-z", "重点关注舆情", "matched"),
+            ("z-4", "report-z", "重点关注舆情", "processing"),
+            ("z-5", "report-z", "重点关注舆情", "pending"),
+            ("z-6", "report-z", "新闻信息纵览", "unmatched"),
+            ("z-7", "report-z", None, "rejected"),
+            ("w-1", "report-w", "重点关注舆情", "unmatched"),
+            ("w-2", "report-w", "重点关注舆情", "rejected"),
+            ("w-3", "report-w", "重点关注舆情", "matched"),
+            ("w-4", "report-w", "重点关注舆情", "processing"),
+            ("w-5", "report-w", "重点关注舆情", "pending"),
+            ("f-1", "report-f", "重点关注舆情", "unmatched"),
+            ("f-2", "report-f", "重点关注舆情", "matched"),
+            ("f-3", "report-f", "重点关注舆情", "processing"),
+            ("f-4", "report-f", "重点关注舆情", "pending"),
+        ],
+    )
+
+    rows, total = db_postgres_submission_archive.fetch_reports(
+        cursor,
+        report_type=None,
+        date_from=None,
+        date_to=None,
+        limit=20,
+        offset=0,
+    )
+
+    assert total == 3
+    counts = {
+        row["id"]: (
+            row["item_count"],
+            row["matched_count"],
+            row["processing_count"],
+            row["pending_count"],
+            row["unmatched_count"],
+        )
+        for row in rows
+    }
+    assert counts == {
+        "report-z": (7, 1, 1, 1, 2),
+        "report-w": (5, 1, 1, 1, 2),
+        "report-f": (4, 1, 1, 1, 1),
+    }
+    query, _params = cursor.calls[1]
+    normalized = " ".join(query.split())
+    assert (
+        "count(i.id) filter (where i.link_status = 'matched') as matched_count"
+        in normalized
+    )
+    assert "i.link_status = 'processing'" in normalized
+    assert "i.link_status = 'pending'" in normalized
+    assert (
+        "where i.link_status in ('unmatched', 'rejected') and not "
+        "( r.report_type is not distinct from %s "
+        "and i.section is not distinct from %s )"
+    ) in normalized
+    exclusion_position = normalized.index(
+        "r.report_type is not distinct from %s"
+    )
+    assert exclusion_position > normalized.index("as pending_count")
+
+
+def test_fetch_reports_places_coverage_params_before_where_params() -> None:
+    cursor = FakeCursor(
+        fetchone_rows=[{"total": 0}],
+        fetchall_rows=[[]],
+    )
+    date_from = date(2026, 9, 1)
+
+    db_postgres_submission_archive.fetch_reports(
+        cursor,
+        report_type="zongbao",
+        date_from=date_from,
+        date_to=None,
+        limit=25,
+        offset=5,
+    )
+
+    _query, params = cursor.calls[1]
+    assert params == (
+        COVERAGE_EXCLUDED_REPORT_TYPE,
+        COVERAGE_EXCLUDED_SECTION,
+        "zongbao",
+        date_from,
+        25,
+        5,
+    )
+
+
+def test_fetch_reports_unmatched_count_keeps_null_sections() -> None:
+    cursor = SqliteCursor(
+        reports=[
+            ("report-z", "zongbao", "2026-09-05", "2026-09-05", 2),
+        ],
+        items=[
+            ("z-1", "report-z", None, "unmatched"),
+            ("z-2", "report-z", "重点关注舆情", "unmatched"),
+        ],
+    )
+
+    rows, total = db_postgres_submission_archive.fetch_reports(
+        cursor,
+        report_type=None,
+        date_from=None,
+        date_to=None,
+        limit=20,
+        offset=0,
+    )
+
+    assert total == 1
+    assert rows[0]["unmatched_count"] == 1
+    query, _params = cursor.calls[1]
+    normalized = " ".join(query.split())
+    unmatched_filter = normalized.split(
+        "as pending_count,", maxsplit=1
+    )[1].split("as unmatched_count", maxsplit=1)[0]
+    assert "i.section is not distinct from %s" in unmatched_filter
+    assert "i.section = %s" not in unmatched_filter
 
 
 def test_fetch_report_uses_prior_match_report_types_for_summary(

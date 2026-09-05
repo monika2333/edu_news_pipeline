@@ -6,6 +6,11 @@ from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Sequence, Typ
 import psycopg
 
 from src.domain.report_type import NEWS_REPORT_TYPES
+from src.domain.submission_archive_config import (
+    COVERAGE_EXCLUDED_REPORT_TYPE,
+    COVERAGE_EXCLUDED_SECTION,
+    is_coverage_excluded,
+)
 
 if TYPE_CHECKING:
     from src.adapters.db_postgres_core import PostgresAdapter
@@ -610,6 +615,10 @@ def fetch_reports(
             count(i.id) filter (where i.link_status = 'pending') as pending_count,
             count(i.id) filter (
                 where i.link_status in ('unmatched', 'rejected')
+                  and not (
+                      r.report_type is not distinct from %s
+                      and i.section is not distinct from %s
+                  )
             ) as unmatched_count
         from submitted_reports r
         left join submitted_report_items i on i.report_id = r.id
@@ -618,7 +627,15 @@ def fetch_reports(
         order by r.report_date desc, r.imported_at desc
         limit %s offset %s
         """,
-        tuple(params + [max(1, min(limit, 200)), max(0, offset)]),
+        tuple(
+            [
+                COVERAGE_EXCLUDED_REPORT_TYPE,
+                COVERAGE_EXCLUDED_SECTION,
+                *params,
+                max(1, min(limit, 200)),
+                max(0, offset),
+            ]
+        ),
     )
     return [dict(row) for row in cur.fetchall()], total
 
@@ -653,6 +670,10 @@ def fetch_report(
         )
     for item in report["items"]:
         item["prior_match"] = summaries.get(str(item["id"]))
+        item["coverage_excluded"] = is_coverage_excluded(
+            report.get("report_type"),
+            item.get("section"),
+        )
     return report
 
 

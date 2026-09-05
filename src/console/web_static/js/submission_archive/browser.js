@@ -5,8 +5,8 @@ const listState = { offset: 0, total: 0, loading: false, type: '' };
 let activeReportId = initialReportId;
 let reportRefreshTimer = null;
 let activeReportStatusSignature = '';
-// 详情区按回链状态筛选：'' 表示不过滤，其余取值 linked/pending/uncovered；
-// pending 的筛选 chip 已删除（数量改由标题栏批量按钮体现），取值机制与分组保留
+// 详情区按回链状态筛选：'' 表示不过滤；「未覆盖」（uncovered）是唯一保留的筛选 chip，
+// 已匹配/待确认的 chip 均已删除（待确认数量由标题栏批量按钮体现），取值机制与分组保留
 let detailStatusFilter = '';
 // 详情区按已报送判定筛选（与回链状态筛选独立、可叠加）：'' / matched / unmatched
 let detailPriorFilter = '';
@@ -26,10 +26,15 @@ let activeReportPriorMatchPending = false;
 const PRIOR_MATCH_POLL_LIMIT = 60;
 let priorMatchPollCount = 0;
 
-function linkStatusGroup(status) {
+// 筛选分组：被剔除（coverage_excluded）的未覆盖条目归入独立的 excluded 分组，
+// 没有任何 chip 选中它，「未覆盖」chip 的计数与点击后的列表才能始终一致；
+// 剔除只影响统计与筛选，已匹配的舆情条目仍归 linked（与计数的不对称口径一致）
+function linkStatusGroup(status, coverageExcluded = false) {
     if (status === 'matched') return 'linked';
     if (status === 'pending') return 'pending';
-    if (status === 'unmatched' || status === 'rejected') return 'uncovered';
+    if (status === 'unmatched' || status === 'rejected') {
+        return coverageExcluded ? 'excluded' : 'uncovered';
+    }
     return 'processing';
 }
 
@@ -127,18 +132,14 @@ async function loadReportList(append = false) {
 }
 
 function detailStats(items) {
-    const stats = {
-        processing: 0,
-        matched: 0,
-        pending: 0,
-        unmatched: 0,
-        rejected: 0
-    };
-    items.forEach(item => {
-        if (item.link_status in stats) stats[item.link_status] += 1;
-    });
-    const matched = stats.matched;
-    const uncovered = stats.unmatched + stats.rejected;
+    const processing = items.filter(item => item.link_status === 'processing').length;
+    // 未覆盖口径与后端一致：被剔除（coverage_excluded）的舆情条目不计入。
+    // 计数为 0 也照常渲染——「未覆盖 0」明确告诉编辑这一期没有要补的，
+    // 而不是让人怀疑 chip 没加载出来
+    const uncovered = items.filter(
+        item => (item.link_status === 'unmatched' || item.link_status === 'rejected')
+            && !item.coverage_excluded
+    ).length;
     // 已报送/未报送 chip：仅反馈报告且判定结束后渲染（进行中 prior_match 全为 null，
     // 计数没有含义），可点击筛选，与 link_status 筛选相互独立；
     // dismissed（人工判为未报送）计入未报送，与 detailPriorGroup 共用 isPriorSubmitted
@@ -149,9 +150,12 @@ function detailStats(items) {
         return `<button class="archive-stat-chip${extraClass}${active ? ' is-active' : ''}" type="button"`
             + ` data-prior-filter="${filter}" aria-pressed="${active}">${label} <strong>${count}</strong></button>`;
     };
-    // 已匹配/未覆盖渲染为可点击按钮，点击后仅展示该分类条目，再次点击取消筛选；
-    // 待确认（pending）不提供筛选 chip——其数量由标题栏的「待确认回链」批量按钮
-    // （detailHeadActionsHtml）体现，否则「已匹配+未覆盖」与「共 N 条」的差值无处解释
+    // 「未覆盖」是统计区唯一可筛选口径：点击后仅展示未覆盖条目，再次点击取消筛选。
+    // 「已匹配」chip 已删除——覆盖率概览由左侧卡片进度条承担；剔除规则下
+    // 「共 N 条」不再等于各项之和（差值是系统本就不抓、无需覆盖的舆情条目），
+    // 统计区不对其余条目的归属做声称，也不再要求各项加起来等于总数。
+    // 待确认（pending）同样不提供 chip，其数量由标题栏的「待确认回链」批量按钮
+    // （detailHeadActionsHtml）体现
     const filterChip = (filter, label, count, extraClass = '') => {
         const active = detailStatusFilter === filter;
         return `<button class="archive-stat-chip${extraClass}${active ? ' is-active' : ''}" type="button"`
@@ -160,10 +164,9 @@ function detailStats(items) {
     return `
         <div class="archive-stat-chips" id="archive-detail-stats">
             <span class="archive-stat-chip">共 <strong>${items.length}</strong> 条</span>
-            ${stats.processing ? `<span class="archive-stat-chip is-processing">正在判断 <strong>${stats.processing}</strong></span>` : ''}
+            ${processing ? `<span class="archive-stat-chip is-processing">正在判断 <strong>${processing}</strong></span>` : ''}
             ${showPriorChips ? priorChip('matched', '已报送', priorMatched, ' is-prior-matched')
                 + priorChip('unmatched', '未报送', items.length - priorMatched, ' is-prior-unmatched') : ''}
-            ${filterChip('linked', '已匹配', matched, ' is-linked')}
             ${filterChip('uncovered', '未覆盖', uncovered)}
         </div>
     `;
@@ -292,7 +295,7 @@ function detailItemCard(item) {
     const editing = detailEditingItemIds.has(String(item.id));
     return `
         <article class="archive-item${item.link_status === 'pending' ? ' is-pending' : ''}${item.link_status === 'processing' ? ' is-processing' : ''}${editing ? ' is-editing' : ''}"
-            data-item-id="${escapeHtml(item.id)}" data-link-group="${linkStatusGroup(item.link_status)}"
+            data-item-id="${escapeHtml(item.id)}" data-link-group="${linkStatusGroup(item.link_status, item.coverage_excluded)}"
             data-prior-group="${detailPriorGroup(item)}">
             <div class="archive-item-head">
                 <span class="archive-item-order">${item.order_index + 1}</span>
@@ -366,6 +369,10 @@ function reportStatusSignature(items, priorMatchPending = false) {
     ].join(':')).join('|');
 }
 
+// 左侧报告卡片在手动匹配/轮询之后的本地重算：口径必须与后端 fetch_reports 的
+// SQL 保持一致（两处相隔很远，改一边必须同步另一边）——未绑定/已否决且被剔除
+// （coverage_excluded）的舆情条目不计入未覆盖；已匹配的舆情条目仍计入已匹配，
+// 待判断/待确认/总条数不受影响
 function reportCountsFromItems(items) {
     const counts = {
         item_count: items.length,
@@ -375,6 +382,12 @@ function reportCountsFromItems(items) {
         unmatched_count: 0
     };
     items.forEach(item => {
+        if (
+            item.coverage_excluded
+            && (item.link_status === 'unmatched' || item.link_status === 'rejected')
+        ) {
+            return;
+        }
         const key = `${item.link_status}_count`;
         if (key in counts) {
             counts[key] += 1;
@@ -403,7 +416,7 @@ function updateReportStatusComponents(id, items) {
         if (!item) return;
         card.classList.toggle('is-processing', item.link_status === 'processing');
         card.classList.toggle('is-pending', item.link_status === 'pending');
-        card.dataset.linkGroup = linkStatusGroup(item.link_status);
+        card.dataset.linkGroup = linkStatusGroup(item.link_status, item.coverage_excluded);
         card.dataset.priorGroup = detailPriorGroup(item);
         // flags 容器恒定渲染（见 detailItemCard），局部更新直接整块替换 innerHTML：
         // 铅笔入口、回链标签、已报送标签的三种迁移（无→有、内容变化、有→无）都被覆盖，

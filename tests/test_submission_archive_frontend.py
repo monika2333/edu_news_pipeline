@@ -483,7 +483,7 @@ ITEM_CARD_CSS = "src/console/web_static/css/modules/submission_archive/item_card
 WIDGETS_CSS = "src/console/web_static/css/modules/submission_archive/widgets.css"
 
 
-def test_detail_stats_drops_pending_filter_chip() -> None:
+def test_detail_stats_drops_linked_and_pending_filter_chips() -> None:
     source = Path(BROWSER_JS).read_text(encoding="utf-8")
     stats_body = _strip_js_comments(
         source.split("function detailStats(items) {", maxsplit=1)[1].split(
@@ -491,12 +491,23 @@ def test_detail_stats_drops_pending_filter_chip() -> None:
         )[0]
     )
 
-    # 「待确认」筛选 chip 已删除（数量缺口由标题栏批量按钮补上）；
-    # 「已匹配」「未覆盖」两个筛选 chip 保留
+    # 「已匹配」「待确认」筛选 chip 均已删除：已匹配的筛选入口无实际用途、
+    # 覆盖率概览由左侧卡片进度条承担；待确认数量由标题栏批量按钮补上。
+    # 「未覆盖」是唯一保留的筛选 chip
+    assert "filterChip('linked'" not in stats_body
     assert "filterChip('pending'" not in stats_body
-    assert "filterChip('linked', '已匹配'" in stats_body
     assert "filterChip('uncovered', '未覆盖'" in stats_body
-    # linkStatusGroup 的 pending 分组保留：卡片仍要正确标注 data-link-group
+    # 「共 N 条」「正在判断」与反馈报别的两个已报送 chip 保留
+    assert "共 <strong>${items.length}</strong> 条" in stats_body
+    assert "is-processing" in stats_body
+    assert "priorChip('matched', '已报送'" in stats_body
+    assert "priorChip('unmatched', '未报送'" in stats_body
+    # 已匹配 chip 的计数计算一并删除，不留算完却不用的残留
+    assert "const matched" not in stats_body
+    assert "matched: 0" not in stats_body
+    assert "stats.unmatched + stats.rejected" not in stats_body
+    # linkStatusGroup 的 linked/pending 分组保留：卡片仍要正确标注 data-link-group
+    assert "if (status === 'matched') return 'linked';" in source
     assert "if (status === 'pending') return 'pending';" in source
 
 
@@ -855,3 +866,94 @@ def test_report_card_stats_do_not_reference_rejected_count() -> None:
     # reportCountsFromItems 一致并入 unmatched_count，单独引用 rejected_count
     # 只会引入重复计数；未覆盖数直接取 unmatched_count
     assert "rejected_count" not in browser
+
+
+def _function_body(source: str, start_marker: str, end_marker: str) -> str:
+    return source.split(start_marker, maxsplit=1)[1].split(end_marker, maxsplit=1)[0]
+
+
+def test_detail_stats_uncovered_chip_skips_coverage_excluded() -> None:
+    source = Path(BROWSER_JS).read_text(encoding="utf-8")
+    stats_body = _function_body(
+        source, "function detailStats(items) {", "function detailHeadActionsHtml"
+    )
+
+    # 未覆盖计数跳过 coverage_excluded 为真的条目，与后端 SQL 口径一致
+    assert "item.coverage_excluded" in stats_body
+    assert "!item.coverage_excluded" in stats_body
+    assert "item.link_status === 'unmatched' || item.link_status === 'rejected'" in stats_body
+    # 计数为 0 也照常渲染：chip 无条件输出，不用三元门控
+    assert "${filterChip('uncovered', '未覆盖', uncovered)}" in stats_body
+    # 「正在判断」与已报送/未报送 chip 的统计逻辑未变
+    assert "item.link_status === 'processing'" in stats_body
+    assert "items.filter(isPriorSubmitted)" in stats_body
+    assert "activeReportType === 'feedback' && !activeReportPriorMatchPending" in stats_body
+
+
+def test_report_counts_from_items_matches_backend_coverage_sql() -> None:
+    source = Path(BROWSER_JS).read_text(encoding="utf-8")
+    # 不剥注释：必须断言函数上有点明「与 fetch_reports 的 SQL 口径一致」的注释
+    counts_body = _function_body(
+        source, "function reportCountsFromItems(items) {", "function updateReportStatusComponents"
+    )
+    comment = source.rsplit("function reportCountsFromItems(items) {", maxsplit=1)[0]
+
+    assert "fetch_reports" in comment
+    # 累加 unmatched_count 时跳过 coverage_excluded 为真的条目（unmatched 与 rejected）
+    assert "item.coverage_excluded" in counts_body
+    assert "item.link_status === 'unmatched' || item.link_status === 'rejected'" in counts_body
+    # 不对称口径保持：matched/processing/pending/item_count 的累加路径不变
+    assert "item_count: items.length" in counts_body
+    assert "matched_count: 0" in counts_body
+    assert "`${item.link_status}_count`" in counts_body
+    assert "counts.unmatched_count += 1" in counts_body
+
+
+def test_coverage_excluded_items_get_independent_link_group() -> None:
+    source = Path(BROWSER_JS).read_text(encoding="utf-8")
+    group_body = _function_body(
+        _strip_js_comments(source),
+        "function linkStatusGroup(status, coverageExcluded = false) {",
+        "function reportCardStatsHtml",
+    )
+
+    # 被剔除的未覆盖条目归入独立分组，不会被「未覆盖」chip 选中；
+    # 已匹配条目仍归 linked（与计数的不对称口径一致）
+    assert "coverageExcluded ? 'excluded' : 'uncovered'" in group_body
+    assert "'uncovered'" not in group_body.replace("coverageExcluded ? 'excluded' : 'uncovered'", "")
+    assert "if (status === 'matched') return 'linked';" in group_body
+    # 首次渲染与局部更新两处调用点都传入剔除标记
+    assert source.count("linkStatusGroup(item.link_status, item.coverage_excluded)") == 2
+
+
+def test_excluded_items_keep_manual_link_entry() -> None:
+    source = Path(BROWSER_JS).read_text(encoding="utf-8")
+    meta_body = _function_body(
+        source, "function detailItemMetaHtml(item) {", "detailOriginalTriggerHtml"
+    )
+
+    # 剔除只影响统计与筛选：被剔除条目仍渲染「手动匹配」入口，
+    # 操作入口的判定不引入 coverage_excluded
+    assert "archive-manual-link-btn" in meta_body
+    assert "item.link_status === 'unmatched' || item.link_status === 'rejected'" in meta_body
+    assert "coverage_excluded" not in meta_body
+
+
+def test_coverage_logic_has_no_section_name_literals() -> None:
+    js_dir = Path("src/console/web_static/js/submission_archive")
+    all_js = {path: path.read_text(encoding="utf-8") for path in js_dir.rglob("*.js")}
+
+    # 存档库前端不允许出现章节名字面量：规则在后端只有一份，前端复制必然漂移
+    # （manual_filter/review_tab_preview.js 的章节名是综报预览的输出格式定义，
+    # 与覆盖率口径无关，不在本约束范围）
+    for path, content in all_js.items():
+        assert "重点关注舆情" not in content, path
+    # 三处口径依据都是 coverage_excluded 字段，不存在按 section 判断的分支
+    browser = Path(BROWSER_JS).read_text(encoding="utf-8")
+    stripped = _strip_js_comments(browser)
+    for start, end in (
+        ("function detailStats(items) {", "function detailHeadActionsHtml"),
+        ("function reportCountsFromItems(items) {", "function updateReportStatusComponents"),
+        ("function linkStatusGroup(status, coverageExcluded = false) {", "function reportCardStatsHtml"),
+    ):
+        assert "section" not in _function_body(stripped, start, end)

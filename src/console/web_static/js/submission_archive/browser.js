@@ -285,18 +285,10 @@ const detailPriorMatchPill = item => priorMatchPill(item, {
     showUnmatched: detailPriorGroup(item) === 'unmatched'
 });
 
-// 回链标签只贴给「给不出操作入口」的状态：processing/pending 没有任何操作入口，
-// 必须靠标签说明；matched 的状态已由标题后的「原文」标签和 meta 的「解绑」表达，
-// unmatched/rejected 已由 meta 的「手动匹配」表达，再贴文字标签是重复信息
-const detailLinkPill = item => (
-    item.link_status === 'processing' || item.link_status === 'pending'
-        ? linkPill(item.link_status)
-        : ''
-);
-
 // archive-item-flags 是「铅笔按钮 + 回链标签 + 已报送标签」的恒定容器：
 // 无论条目什么状态都渲染（内容可为空），updateReportStatusComponents
-// 靠它做整块 innerHTML 替换，不依赖某个标签元素是否存在
+// 靠它做整块 innerHTML 替换，不依赖某个标签元素是否存在。
+// 回链标签的渲染规则（哪些状态贴标签）收在 core.js 的 linkPill
 function detailItemCard(item) {
     const editing = detailEditingItemIds.has(String(item.id));
     return `
@@ -306,7 +298,7 @@ function detailItemCard(item) {
             <div class="archive-item-head">
                 <span class="archive-item-order">${item.order_index + 1}</span>
                 <h4 class="archive-item-title">${escapeHtml(item.title)}${detailOriginalTriggerHtml(item)}</h4>
-                <span class="archive-item-flags">${detailEditTriggerHtml(item)}${detailLinkPill(item)}${detailPriorMatchPill(item)}</span>
+                <span class="archive-item-flags">${detailEditTriggerHtml(item)}${linkPill(item.link_status)}${detailPriorMatchPill(item)}</span>
             </div>
             ${item.body ? `<p class="archive-item-body">${escapeHtml(item.body)}</p>` : ''}
             <div class="archive-item-meta">${detailItemMetaHtml(item)}</div>
@@ -420,7 +412,7 @@ function updateReportStatusComponents(id, items) {
         // 回链标签，锚点在这些状态上不存在
         const flags = card.querySelector('.archive-item-flags');
         if (flags) {
-            flags.innerHTML = `${detailEditTriggerHtml(item)}${detailLinkPill(item)}${detailPriorMatchPill(item)}`;
+            flags.innerHTML = `${detailEditTriggerHtml(item)}${linkPill(item.link_status)}${detailPriorMatchPill(item)}`;
         }
         // 状态变化后同步标题后的「原文」标签：仅 matched 且有 article_id 时存在
         const titleEl = card.querySelector('.archive-item-title');

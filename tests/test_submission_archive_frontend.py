@@ -73,7 +73,9 @@ def test_archive_frontend_consumes_only_unified_matched_status() -> None:
         "src/console/web_static/js/submission_archive/browser.js"
     ).read_text(encoding="utf-8")
 
-    assert "matched: { label: '已匹配'" in core
+    # 回链标签表只保留 processing/pending 两个键（规则收在 linkPill 一处）；
+    # matched 状态的表达是标题后的「原文」标签，不再是状态标签
+    assert "matched: { label: '已匹配'" not in core
     # pill 只表示状态，不再渲染为打开抽屉的按钮；
     # 「原文」入口是标题后的 .content-drawer-trigger 标签
     assert "archive-link-pill-btn" not in core
@@ -272,7 +274,7 @@ def test_prior_match_pill_rendered_only_when_present() -> None:
         maxsplit=1,
     )[1]
     assert "archive-link-pill" not in pill_body
-    assert "${detailLinkPill(item)}${detailPriorMatchPill(item)}" in browser
+    assert "${linkPill(item.link_status)}${detailPriorMatchPill(item)}" in browser
 
 
 def test_detail_stats_prior_match_chips_are_filters() -> None:
@@ -498,20 +500,29 @@ def test_detail_stats_drops_pending_filter_chip() -> None:
     assert "if (status === 'pending') return 'pending';" in source
 
 
-def test_detail_link_pill_only_for_statuses_without_actions() -> None:
-    source = _strip_js_comments(Path(BROWSER_JS).read_text(encoding="utf-8"))
-    pill_body = source.split("const detailLinkPill = item =>", maxsplit=1)[1].split(
-        "function detailItemCard", maxsplit=1
+def test_link_pill_only_renders_statuses_without_actions() -> None:
+    core = _strip_js_comments(Path(CORE_JS).read_text(encoding="utf-8"))
+    meta_body = core.split("const linkStatusMeta = {", maxsplit=1)[1].split(
+        "};", maxsplit=1
+    )[0]
+    pill_body = core.split("const linkPill = (status) => {", maxsplit=1)[1].split(
+        "};", maxsplit=1
     )[0]
 
-    # 只给「没有操作入口」的状态贴回链标签：processing / pending；
-    # matched/unmatched/rejected 的状态已由操作入口（原文标签/解绑/手动匹配）表达
-    assert "item.link_status === 'processing'" in pill_body
-    assert "item.link_status === 'pending'" in pill_body
-    assert "linkPill(item.link_status)" in pill_body
-    assert "'matched'" not in pill_body
-    assert "'unmatched'" not in pill_body
-    assert "'rejected'" not in pill_body
+    # 渲染规则收在 core.js 一处：只给「没有操作入口」的状态（processing/pending）
+    # 贴回链标签；matched/unmatched/rejected 的状态已由操作入口
+    # （原文标签/解绑/手动匹配）表达，不在表内的一律不渲染
+    assert "processing" in meta_body
+    assert "pending" in meta_body
+    assert "matched" not in meta_body
+    assert "unmatched" not in meta_body
+    assert "rejected" not in meta_body
+    # 表外取值返回空串，不做兜底渲染（linkPill 内不存在「未知」这类兜底文案）
+    assert "if (!meta) return '';" in pill_body
+    assert "'未知'" not in pill_body
+    # browser.js 不再有门控 wrapper，两处调用点直接用 linkPill
+    browser = _strip_js_comments(Path(BROWSER_JS).read_text(encoding="utf-8"))
+    assert "detailLinkPill" not in browser
 
 
 def test_detail_item_card_has_constant_flags_container() -> None:
@@ -523,7 +534,7 @@ def test_detail_item_card_has_constant_flags_container() -> None:
     # flags 容器恒定渲染，铅笔按钮、回链标签、已报送标签都挂在里面
     assert '<span class="archive-item-flags">' in card_body
     assert (
-        "${detailEditTriggerHtml(item)}${detailLinkPill(item)}${detailPriorMatchPill(item)}"
+        "${detailEditTriggerHtml(item)}${linkPill(item.link_status)}${detailPriorMatchPill(item)}"
         in card_body
     )
 

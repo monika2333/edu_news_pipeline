@@ -4,12 +4,13 @@ const view = body.dataset.archiveView;
 const initialReportId = body.dataset.reportId || '';
 const isAdminUser = body.dataset.userRole === 'admin';
 const typeLabels = { zongbao: '综报', wanbao: '晚报', feedback: '反馈' };
+// 回链标签只贴给「给不出操作入口」的状态：processing/pending 没有任何操作入口，
+// 必须靠标签说明；matched 的状态由标题后的「原文」标签和 meta 的「解绑」表达，
+// unmatched/rejected 由 meta 的「手动匹配」表达，再贴文字标签是重复信息。
+// 因此这张表只收会渲染的状态，不在表内的一律不渲染（见 linkPill）
 const linkStatusMeta = {
     processing: { label: '正在判断中', className: 'is-processing' },
-    matched: { label: '已匹配', className: 'is-linked' },
-    pending: { label: '待确认', className: 'is-pending' },
-    unmatched: { label: '未覆盖', className: 'is-unmatched' },
-    rejected: { label: '已否决', className: 'is-rejected' }
+    pending: { label: '待确认', className: 'is-pending' }
 };
 let parsedState = null;
 let previewItems = [];
@@ -33,9 +34,12 @@ const scoreValue = value => {
     return Number.isFinite(score) ? score.toFixed(2) : '-';
 };
 const typePill = type => `<span class="archive-type-pill is-${escapeHtml(type)}">${typeLabels[type] || escapeHtml(type)}</span>`;
-// pill 只表示回链状态，不再可点击；查看原文走标题后的「原文」标签（detailOriginalTriggerHtml）
+// pill 只表示回链状态，不再可点击；查看原文走标题后的「原文」标签（detailOriginalTriggerHtml）。
+// 状态不在 linkStatusMeta 内时返回空串，不做兜底渲染：回链状态在库里是封闭集合，
+// 表外取值时静默不渲染比渲染一个没有样式的标签更安全
 const linkPill = (status) => {
-    const meta = linkStatusMeta[status] || { label: status || '未知', className: 'is-unmatched' };
+    const meta = linkStatusMeta[status];
+    if (!meta) return '';
     return `<span class="archive-link-pill ${meta.className}">${meta.label}</span>`;
 };
 

@@ -37,7 +37,7 @@ function reportCardStatsHtml(report) {
     const linked = Number(report.matched_count || 0);
     const processing = Number(report.processing_count || 0);
     const pending = Number(report.pending_count || 0);
-    const unmatched = Number(report.unmatched_count || 0) + Number(report.rejected_count || 0);
+    const unmatched = Number(report.unmatched_count || 0);
     const total = linked + processing + pending + unmatched;
     const pct = value => total > 0 ? (value / total) * 100 : 0;
     const bar = total > 0 ? `

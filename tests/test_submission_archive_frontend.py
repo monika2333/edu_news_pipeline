@@ -846,3 +846,12 @@ def test_init_browser_view_has_no_duplicate_direct_link_branches() -> None:
     # 详情页直达不再按「是否在筛选结果里」分两个相同分支，只加载一次
     assert init_body.count("selectReport(initialReportId, false)") == 1
     assert "items.some(item => item.id === initialReportId)" not in init_body
+
+
+def test_report_card_stats_do_not_reference_rejected_count() -> None:
+    browser = Path(BROWSER_JS).read_text(encoding="utf-8")
+
+    # rejected 已被后端计数（link_status in ('unmatched','rejected')）与
+    # reportCountsFromItems 一致并入 unmatched_count，单独引用 rejected_count
+    # 只会引入重复计数；未覆盖数直接取 unmatched_count
+    assert "rejected_count" not in browser

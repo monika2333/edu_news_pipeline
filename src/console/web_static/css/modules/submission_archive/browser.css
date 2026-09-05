@@ -5,33 +5,22 @@
     align-items: center;
 }
 
-.archive-tabs-row .archive-tabs {
-    flex: 0 0 360px;
-    box-sizing: border-box;
-    width: 360px;
-    margin-bottom: 0;
-}
-
-.archive-tab {
+/* 全局待确认提示：替代已下线的「回链确认」tab 角标，沿用其警示色语义 */
+.archive-nav-pending {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    text-decoration: none;
-}
-
-.archive-tab-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 20px;
-    min-height: 20px;
     box-sizing: border-box;
-    padding: 1px 6px;
+    padding: 6px 14px;
     border-radius: 999px;
     background: var(--warning-color);
     color: #fff;
-    font-size: 0.72rem;
+    font-size: 0.82rem;
     font-weight: 800;
+    text-decoration: none;
+}
+
+.archive-nav-pending[hidden] {
+    display: none;
 }
 
 .archive-tabs-row .btn {

@@ -18,7 +18,5 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         document.getElementById('archive-save').addEventListener('click', () => saveReport(false));
         bindPreviewItems();
-    } else if (view === 'link-queue') {
-        loadLinkQueue();
     }
 });

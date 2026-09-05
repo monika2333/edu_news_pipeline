@@ -2,11 +2,6 @@
 /* ===== 响应式 ===== */
 
 @media (max-width: 1080px) {
-    .archive-tabs-row .archive-tabs {
-        flex: 1 1 auto;
-        width: auto;
-    }
-
     .archive-browser {
         grid-template-columns: 1fr;
     }

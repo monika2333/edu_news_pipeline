@@ -128,20 +128,27 @@ async function api(path, options = {}) {
     return payload;
 }
 
-function setNavPending(total) {
-    const badge = document.getElementById('archive-nav-pending');
-    if (!badge) return;
+// 全局待确认提示（模板 .archive-nav-pending）：替代已下线的「回链确认」tab 角标。
+// 总数为 0 时整体隐藏；大于 0 时渲染指向目标报告详情页的链接
+function setNavPending(total, reportId) {
+    const hint = document.getElementById('archive-nav-pending');
+    if (!hint) return;
     const count = Number(total) || 0;
-    badge.hidden = count <= 0;
-    badge.textContent = count > 99 ? '99+' : String(count);
+    hint.hidden = count <= 0;
+    if (count > 0) {
+        hint.textContent = `待确认回链 ${count}`;
+        hint.href = `/submission-archive/${encodeURIComponent(reportId || '')}`;
+    }
 }
 
 async function loadNavPending() {
     try {
+        // limit=1 只为拿总数与第一份待处理报告的 id，不需要完整列表
         const data = await api('/link-queue?limit=1');
-        setNavPending(data.total);
+        const first = (data.items || [])[0];
+        setNavPending(data.total, first ? first.report_id : '');
     } catch (error) {
-        // 角标失败不影响主流程
+        // 提示失败不影响主流程
     }
 }
 

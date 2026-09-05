@@ -2,12 +2,11 @@
 //
 // 详情标题栏的两个批量入口（browser.js 的 detailHeadActionsHtml 渲染到
 // #archive-detail-actions，按钮带 data-batch-action）：
-// - 当期回链确认：拉取 GET /link-queue?report_id=<当前报告>，对照卡直接复用
-//   link_queue.js 的 linkCard；事件处理在本弹窗容器上自行委托（不复用队列页
-//   绑定在 #archive-link-queue 上的处理器）。提交仍走
-//   POST /items/{id}/link-decision，成功后经 browser.js 的 applyManualLinkResult
-//   局部同步背后的详情卡片，不重拉报告；关闭时 loadNavPending() 刷新左上角
-//   「回链确认」tab 角标。
+// - 当期回链确认：拉取 GET /link-queue?report_id=<当前报告>，对照卡由本文件的
+//   linkCard 渲染（原 link_queue.js，随回链确认队列页下线并入）；事件处理在
+//   本弹窗容器上自行委托。提交仍走 POST /items/{id}/link-decision，成功后经
+//   browser.js 的 applyManualLinkResult 局部同步背后的详情卡片，不重拉报告；
+//   关闭时 loadNavPending() 刷新顶部的全局待确认提示。
 // - 当期疑似已报送判定（仅反馈报告且判定结束后入口才出现）：条目取自
 //   activeReportItems（prior_match.status === 'suspected'），命中明细逐条并发
 //   拉取 GET /items/{id}/prior-matches，单条失败只在该卡片内提示；命中明细复用
@@ -57,6 +56,50 @@ function renderBatchPriorCount() {
 
 /* ===== 当期回链确认 ===== */
 
+// 对照卡：左栏存档条目，右栏系统最佳候选，底部相似度条与操作按钮
+// （自 link_queue.js 并入，样式在 batch_decision.css 的 archive-link-* 段）
+function linkCard(item) {
+    const combined = Number(item.link_combined_score);
+    const percent = Number.isFinite(combined) ? Math.round(combined * 100) : 0;
+    return `
+        <article class="archive-link-card" data-item-id="${item.id}">
+            <div class="archive-link-grid">
+                <section class="archive-link-col">
+                    <p class="archive-link-col-label">
+                        存档条目 ${typePill(item.report_type)} <span>${shortDate(item.report_date)}</span>
+                    </p>
+                    <h3>${escapeHtml(item.title)}</h3>
+                    <p class="archive-link-body">${escapeHtml(item.body || '')}</p>
+                    <footer><span>来源：${escapeHtml(item.source || '-')}</span></footer>
+                </section>
+                <section class="archive-link-col is-candidate">
+                    <p class="archive-link-col-label">系统最佳候选</p>
+                    <h3>${escapeHtml(item.candidate_title || '候选已不存在')}</h3>
+                    <p class="archive-link-body">${escapeHtml(item.candidate_body || '')}</p>
+                    <footer>
+                        <span>来源：${escapeHtml(item.candidate_source || '-')}</span>
+                        ${item.candidate_url ? `<a href="${escapeHtml(item.candidate_url)}" target="_blank" rel="noopener noreferrer">打开原文</a>` : ''}
+                    </footer>
+                </section>
+            </div>
+            <div class="archive-link-score">
+                <div class="archive-score-bar" role="img" aria-label="综合相似度 ${scoreValue(item.link_combined_score)}">
+                    <span style="width: ${percent}%"></span>
+                </div>
+                <div class="archive-score-nums">
+                    <span>综合 <strong>${scoreValue(item.link_combined_score)}</strong></span>
+                    <span>标题 <strong>${scoreValue(item.link_title_score)}</strong></span>
+                    <span>正文 <strong>${scoreValue(item.link_body_score)}</strong></span>
+                </div>
+            </div>
+            <div class="archive-link-actions">
+                <button class="btn btn-secondary archive-link-reject" type="button">不是同一条</button>
+                <button class="btn btn-primary archive-link-accept" type="button">确认绑定</button>
+            </div>
+        </article>
+    `;
+}
+
 async function openBatchLinkModal() {
     const els = getBatchLinkEls();
     if (!els.modal || !activeReportId) return;
@@ -91,7 +134,7 @@ function closeBatchLinkModal() {
     els.modal.classList.remove('active');
     els.modal.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('archive-batch-modal-open');
-    // 弹窗里的确认会改变全局待确认数量，关闭时刷新左上角 tab 角标
+    // 弹窗里的确认会改变全局待确认数量，关闭时刷新顶部待确认提示
     loadNavPending();
 }
 
@@ -127,7 +170,7 @@ async function submitBatchLinkDecision(button) {
 
 /* ===== 当期疑似已报送判定 ===== */
 
-// 对照卡与回链确认卡保持同一视觉语言（link_queue.css 的 archive-link-card /
+// 对照卡与回链确认卡保持同一视觉语言（batch_decision.css 的 archive-link-card /
 // archive-link-grid / archive-link-col）：左栏当前反馈条目，右栏命中的更早报送
 function batchPriorCardHtml(item) {
     return `

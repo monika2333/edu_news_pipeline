@@ -188,7 +188,7 @@ def test_submission_archive_separates_all_type_filter_from_report_types() -> Non
             "item_card",
             "widgets",
             "create",
-            "link_queue",
+            "batch_decision",
             "responsive",
         )
     )

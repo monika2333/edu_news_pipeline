@@ -17,7 +17,6 @@
     <link rel="stylesheet" href="/static/css/modules/submission_archive/item_card.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/widgets.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/create.css?v={{ version }}">
-    <link rel="stylesheet" href="/static/css/modules/submission_archive/link_queue.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/manual_link.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/batch_decision.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/responsive.css?v={{ version }}">
@@ -60,16 +59,8 @@
         </header>
 
         <div class="workspace-tabs-row archive-tabs-row">
-            <nav class="tabs archive-tabs" aria-label="报送存档视图">
-                <a class="tab-btn archive-tab{% if archive_view in ('list', 'detail') %} active{% endif %}"
-                    href="/submission-archive"
-                    {% if archive_view in ('list', 'detail') %}aria-current="page"{% endif %}>存档库</a>
-                <a class="tab-btn archive-tab{% if archive_view == 'link-queue' %} active{% endif %}"
-                    href="/submission-archive/link-queue"
-                    {% if archive_view == 'link-queue' %}aria-current="page"{% endif %}>
-                    回链确认<span class="archive-tab-badge" id="archive-nav-pending" hidden></span>
-                </a>
-            </nav>
+            <a class="archive-nav-pending" id="archive-nav-pending"
+                href="/submission-archive" hidden></a>
             {% if current_user.role == "admin" %}
             <div class="workspace-tab-actions">
                 <a class="btn btn-primary{% if archive_view == 'new' %} active{% endif %}"
@@ -159,17 +150,6 @@
                     </div>
                 </div>
             </section>
-            {% elif archive_view == "link-queue" %}
-            <section class="archive-queue">
-                <div class="archive-queue-heading">
-                    <div>
-                        <h2>回链确认队列</h2>
-                        <p>判断存档条目和系统候选是不是同一条新闻；不阻塞录入和语义查重。</p>
-                    </div>
-                    <span class="archive-queue-count" id="archive-queue-count"></span>
-                </div>
-                <div id="archive-link-queue"></div>
-            </section>
             {% endif %}
         </main>
     </div>
@@ -233,7 +213,7 @@
         </div>
     </div>
     <!-- 当期回链确认弹窗（batch_decision.js）：只列当前报告的待确认条目，
-         对照卡复用 link_queue.js 的 linkCard -->
+         对照卡的 linkCard 已并入 batch_decision.js -->
     <div class="modal" id="archive-batch-link-modal" role="dialog" aria-modal="true"
         aria-labelledby="archive-batch-link-modal-title" aria-hidden="true">
         <div class="modal-content archive-batch-modal-content">
@@ -290,9 +270,8 @@
     <script src="/static/js/submission_archive/prior_matches.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/content_drawer.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/create.js?v={{ version }}"></script>
-    <script src="/static/js/submission_archive/link_queue.js?v={{ version }}"></script>
-    <!-- batch_decision.js 用到 link_queue.js 的 linkCard 与 prior_matches.js 的
-         priorMatchEntryHtml，必须在它们之后、init.js 之前加载 -->
+    <!-- batch_decision.js 依赖 prior_matches.js 的 priorMatchEntryHtml 与 browser.js，
+         必须在它们之后、init.js 之前加载 -->
     <script src="/static/js/submission_archive/batch_decision.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/init.js?v={{ version }}"></script>
 </body>

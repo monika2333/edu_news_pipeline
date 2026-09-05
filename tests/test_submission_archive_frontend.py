@@ -598,7 +598,8 @@ def test_batch_link_modal_requests_current_report_queue() -> None:
     # 回链批量弹窗只拉当期报告的待确认条目
     assert "/link-queue?report_id=" in batch
     assert "encodeURIComponent(activeReportId)" in batch
-    # 对照卡复用队列页的 linkCard，不重写一套结构
+    # 回链确认队列页已下线，对照卡的 linkCard 并入本模块，不再依赖 link_queue.js
+    assert "function linkCard(item) {" in batch
     assert "items.map(linkCard)" in batch
 
 
@@ -610,7 +611,7 @@ def test_batch_decisions_update_cards_locally_without_report_reload() -> None:
     assert "applyPriorMatchDecisionResult(itemId, data.prior_match)" in batch
     assert "selectReport(" not in batch
     assert "loadReportList(" not in batch
-    # 提交走既有接口；回链弹窗关闭时刷新「回链确认」tab 角标
+    # 提交走既有接口；回链弹窗关闭时刷新顶部全局待确认提示
     assert "/link-decision`" in batch
     assert "/prior-match-decision`" in batch
     assert "loadNavPending()" in batch
@@ -622,8 +623,10 @@ def test_batch_decision_assets_loaded_in_template() -> None:
     assert 'id="archive-batch-link-modal"' in template
     assert 'id="archive-batch-prior-modal"' in template
     assert "submission_archive/batch_decision.css" in template
-    # batch_decision.js 在 link_queue.js 之后、init.js 之前加载
-    assert template.index("submission_archive/link_queue.js") < template.index(
+    # batch_decision.js 在 prior_matches.js 之后、init.js 之前加载
+    # （linkCard 已并入本模块，link_queue.js 的 script 标签随队列页下线删除）
+    assert "submission_archive/link_queue.js" not in template
+    assert template.index("submission_archive/prior_matches.js") < template.index(
         "submission_archive/batch_decision.js"
     )
     assert template.index("submission_archive/batch_decision.js") < template.index(
@@ -641,3 +644,118 @@ def test_batch_prior_modal_method_labels_cover_all_match_methods() -> None:
     assert "article: '同一篇原文'" in prior
     assert "title_hash: '标题一致'" in prior
     assert "vector: '语义相似'" in prior
+
+
+SUBMISSION_ARCHIVE_JS_DIR = "src/console/web_static/js/submission_archive"
+SUBMISSION_ARCHIVE_CSS_DIR = "src/console/web_static/css/modules/submission_archive"
+
+
+def test_link_queue_page_and_assets_removed() -> None:
+    template = Path(TEMPLATE_HTML).read_text(encoding="utf-8")
+
+    # 回链确认页面分支、视图切换栏与两个模块的资源引用全部下线
+    assert 'archive_view == "link-queue"' not in template
+    assert "archive_view == 'link-queue'" not in template
+    assert '<nav class="tabs archive-tabs">' not in template
+    assert "submission_archive/link_queue.js" not in template
+    assert "submission_archive/link_queue.css" not in template
+    # 两个模块文件已从仓库删除（linkCard 并入 batch_decision.js，
+    # 仍在服役的对照卡样式并入 batch_decision.css）
+    assert not Path(f"{SUBMISSION_ARCHIVE_JS_DIR}/link_queue.js").exists()
+    assert not Path(f"{SUBMISSION_ARCHIVE_CSS_DIR}/link_queue.css").exists()
+
+
+def test_tabs_row_keeps_create_button_and_adds_global_pending_hint() -> None:
+    template = Path(TEMPLATE_HTML).read_text(encoding="utf-8")
+
+    # 外层行保留：「新增存档」按钮在这一行；全局待确认提示是链接（不是按钮），
+    # 放在原 nav 的左侧位置，位于「新增存档」之前
+    assert "workspace-tabs-row archive-tabs-row" in template
+    assert "workspace-tab-actions" in template
+    assert '<a class="archive-nav-pending" id="archive-nav-pending"' in template
+    assert template.index('id="archive-nav-pending"') < template.index(
+        'href="/submission-archive/new"'
+    )
+
+
+def test_pending_item_meta_no_longer_links_to_queue_page() -> None:
+    browser = Path(BROWSER_JS).read_text(encoding="utf-8")
+
+    # 队列页下线后「去确认」是死链，pending 条目 meta 行不再渲染任何链接；
+    # 待确认统一由标题栏「待确认回链 N」批量按钮处理
+    assert "/submission-archive/link-queue" not in browser
+    assert "去确认" not in browser
+
+
+def test_tab_bar_css_rules_removed() -> None:
+    browser_css = Path(f"{SUBMISSION_ARCHIVE_CSS_DIR}/browser.css").read_text(
+        encoding="utf-8"
+    )
+    responsive_css = Path(f"{SUBMISSION_ARCHIVE_CSS_DIR}/responsive.css").read_text(
+        encoding="utf-8"
+    )
+
+    assert ".archive-tab {" not in browser_css
+    assert ".archive-tab-badge" not in browser_css
+    assert ".archive-tabs-row .archive-tabs" not in browser_css
+    assert ".archive-tabs" not in responsive_css
+
+
+def test_comparison_card_css_moved_into_batch_decision() -> None:
+    css = Path(f"{SUBMISSION_ARCHIVE_CSS_DIR}/batch_decision.css").read_text(
+        encoding="utf-8"
+    )
+
+    # 两个批量弹窗共用的对照卡与剩余计数样式整体并入
+    for selector in (
+        ".archive-queue-count {",
+        ".archive-queue-count:empty",
+        ".archive-link-card {",
+        ".archive-link-grid {",
+        ".archive-link-col {",
+        ".archive-link-score {",
+        ".archive-score-bar {",
+        ".archive-score-nums {",
+        ".archive-link-actions {",
+    ):
+        assert selector in css, selector
+    # 队列页专属的 heading 规则彻底删除，全模块 CSS 无残留引用
+    all_css = "".join(
+        path.read_text(encoding="utf-8")
+        for path in Path(SUBMISSION_ARCHIVE_CSS_DIR).glob("*.css")
+    )
+    assert ".archive-queue-heading" not in all_css
+
+
+def test_nav_pending_hint_renders_link_to_target_report() -> None:
+    # 不剥注释：断言里的 URL 含 //，会被 _strip_js_comments 截断
+    core = Path(CORE_JS).read_text(encoding="utf-8")
+
+    # setNavPending 同时接收总数与目标报告 id：0 时隐藏，大于 0 时渲染
+    # 「待确认回链 N」并指向该报告详情页
+    assert "function setNavPending(total, reportId)" in core
+    assert "hint.hidden = count <= 0;" in core
+    assert "待确认回链 ${count}" in core
+    assert "/submission-archive/${encodeURIComponent(reportId" in core
+    # loadNavPending 只取 limit=1：总数之外还要从 items[0] 拿待处理报告的 id
+    load_body = core.split("async function loadNavPending()", maxsplit=1)[1]
+    assert "/link-queue?limit=1" in load_body
+    assert "first.report_id" in load_body
+    assert "setNavPending(data.total," in load_body
+
+
+def test_nav_pending_hint_css_reuses_badge_warning_semantics() -> None:
+    css = Path(f"{SUBMISSION_ARCHIVE_CSS_DIR}/browser.css").read_text(encoding="utf-8")
+
+    block = css.split(".archive-nav-pending {", maxsplit=1)[1].split("}")[0]
+    assert "var(--warning-color)" in block
+    # display:inline-flex 会盖掉 hidden 属性，必须显式压制
+    assert ".archive-nav-pending[hidden]" in css
+
+
+def test_init_drops_link_queue_branch_but_keeps_nav_pending_refresh() -> None:
+    init = Path(f"{SUBMISSION_ARCHIVE_JS_DIR}/init.js").read_text(encoding="utf-8")
+
+    assert "link-queue" not in init
+    assert "loadLinkQueue" not in init
+    assert "loadNavPending()" in init

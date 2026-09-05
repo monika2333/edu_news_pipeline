@@ -206,9 +206,6 @@ function detailItemMetaHtml(item) {
     if (Number.isFinite(score) && item.link_status !== 'matched') {
         meta.push(`综合分 ${scoreValue(score)}`);
     }
-    if (item.link_status === 'pending') {
-        meta.push('<a href="/submission-archive/link-queue">去确认</a>');
-    }
     // 人工回链入口：未覆盖给「手动匹配」，已匹配给「解绑」；processing/pending 不给入口
     if (item.link_status === 'unmatched' || item.link_status === 'rejected') {
         meta.push(`<button class="archive-manual-link-btn" type="button" data-item-id="${escapeHtml(item.id)}">手动匹配</button>`);

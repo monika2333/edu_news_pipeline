@@ -329,6 +329,8 @@
     border-radius: 12px;
     width: min(800px, 96vw);
     max-height: 90vh;
+    /* max-height 需含 padding，否则整体高度会超出 90vh */
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -346,6 +348,8 @@
     gap: 10px;
     flex: 1 1 auto;
     min-height: 0;
+    /* 内容超出 max-height 时在 body 内部滚动，否则溢出弹窗外框且无法操作 */
+    overflow-y: auto;
 }
 
 .modal-body textarea {

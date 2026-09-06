@@ -1077,6 +1077,9 @@ def test_duplicate_review_items_use_content_drawer_trigger() -> None:
     assert "triggerBtn.closest('#duplicate-review-modal')" in drawer_script
     assert "body.duplicate-review-open .content-drawer" in drawer_css
     assert "document.body.classList.contains('content-drawer-open')" in controller_script
+    # Escape 处理器必须捕获阶段注册，抢在抽屉的冒泡处理器关抽屉之前读到抽屉状态
+    escape_section = controller_script.split("event.key === 'Escape'", 1)[1]
+    assert "finishDuplicateReview()" in escape_section.split("}, true);", 1)[0]
     assert "closeContentDrawer" in modal_script
 
 

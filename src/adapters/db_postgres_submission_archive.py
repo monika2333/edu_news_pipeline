@@ -303,9 +303,18 @@ class SubmissionArchiveNamespace:
                 norm_title_hash=norm_title_hash,
             )
 
-    def fetch_items_missing_embeddings(self, *, limit: int) -> list[dict[str, Any]]:
+    def fetch_items_missing_embeddings(
+        self,
+        *,
+        lookback_days: int,
+        limit: int,
+    ) -> list[dict[str, Any]]:
         with self._adapter._cursor() as cur:
-            return fetch_items_missing_embeddings(cur, limit=limit)
+            return fetch_items_missing_embeddings(
+                cur,
+                lookback_days=lookback_days,
+                limit=limit,
+            )
 
     def update_item_embeddings(
         self,
@@ -1206,17 +1215,23 @@ def search_items(
 def fetch_items_missing_embeddings(
     cur: psycopg.Cursor,
     *,
+    lookback_days: int,
     limit: int,
 ) -> list[dict[str, Any]]:
     cur.execute(
         """
-        select id, title, body
-        from submitted_report_items
-        where embedding is null
-        order by created_at, id
+        select i.id, i.title, i.body
+        from submitted_report_items i
+        join submitted_reports r on r.id = i.report_id
+        where r.report_date >= current_date - (%s * interval '1 day')
+          and i.embedding is null
+        order by i.created_at, i.id
         limit %s
         """,
-        (max(1, min(limit, 1000)),),
+        (
+            max(1, lookback_days),
+            max(1, min(limit, 1000)),
+        ),
     )
     return [dict(row) for row in cur.fetchall()]
 

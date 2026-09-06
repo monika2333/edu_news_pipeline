@@ -71,7 +71,7 @@ python -m src.cli.main export
 | --- | --- |
 | `create-console-user` | 创建控制台账号 |
 | `geo-tag` | 为存量摘要回填北京相关标记 |
-| `backfill-submission-embeddings` | 补齐报送存档条目缺失的向量 |
+| `backfill-submission-embeddings` | 补齐查重回看窗口内报送存档条目缺失的向量 |
 
 ## Web 控制台
 - 默认地址：`http://127.0.0.1:8000`，未登录时进入登录页，登录后按角色进入对应工作台。

@@ -101,6 +101,24 @@ class SqliteCursor:
         return dict(row) if row else None
 
 
+def test_fetch_items_missing_embeddings_limits_candidates_to_active_window() -> None:
+    cursor = FakeCursor()
+
+    rows = db_postgres_submission_archive.fetch_items_missing_embeddings(
+        cursor,
+        lookback_days=15,
+        limit=128,
+    )
+
+    assert rows == []
+    query, params = cursor.calls[0]
+    normalized = " ".join(query.split())
+    assert "join submitted_reports r on r.id = i.report_id" in normalized
+    assert "r.report_date >= current_date - (%s * interval '1 day')" in normalized
+    assert "i.embedding is null" in normalized
+    assert params == (15, 128)
+
+
 def test_insert_report_persists_external_message_identity() -> None:
     cursor = FakeCursor(
         fetchone_rows=[

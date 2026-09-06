@@ -22,6 +22,40 @@ def test_embedding_binary_round_trip_uses_little_endian_float32() -> None:
     assert np.allclose(unpacked, [0.25, -0.5, 1.0])
 
 
+def test_backfill_archive_embeddings_uses_dedup_lookback_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, int]] = []
+
+    class Namespace:
+        def fetch_items_missing_embeddings(
+            self,
+            *,
+            lookback_days: int,
+            limit: int,
+        ) -> list[dict[str, object]]:
+            calls.append(
+                {
+                    "lookback_days": lookback_days,
+                    "limit": limit,
+                }
+            )
+            return []
+
+    adapter = type(
+        "Adapter",
+        (),
+        {"submission_archive": Namespace()},
+    )()
+    monkeypatch.setattr(submission_dedup, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(submission_dedup, "dedup_lookback_days", lambda: 15)
+
+    embedded = submission_dedup.backfill_archive_embeddings(batch_size=64)
+
+    assert embedded == 0
+    assert calls == [{"lookback_days": 15, "limit": 64}]
+
+
 def test_build_matches_records_exact_and_top_vector_candidates() -> None:
     news = [
         {

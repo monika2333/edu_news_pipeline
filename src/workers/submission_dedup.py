@@ -31,11 +31,17 @@ def _embedding_source_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def backfill_archive_embeddings(*, batch_size: int = 128) -> int:
+def backfill_archive_embeddings(
+    *,
+    batch_size: int = 128,
+    lookback_days: Optional[int] = None,
+) -> int:
     adapter = get_adapter()
+    active_lookback_days = lookback_days or dedup_lookback_days()
     total = 0
     while True:
         items = adapter.submission_archive.fetch_items_missing_embeddings(
+            lookback_days=active_lookback_days,
             limit=batch_size,
         )
         if not items:

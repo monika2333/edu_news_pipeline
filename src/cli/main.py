@@ -105,7 +105,7 @@ def _add_backfill_submission_embeddings(
 ) -> None:
     parser = subparsers.add_parser(
         "backfill-submission-embeddings",
-        help="Fill missing submission archive embeddings",
+        help="Fill missing submission archive embeddings in the dedup lookback window",
     )
     parser.add_argument(
         "--batch-size",

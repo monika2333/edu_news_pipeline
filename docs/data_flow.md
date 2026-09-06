@@ -225,7 +225,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 复核界面据此显示重复标记，编辑可以确认或忽略（`state`：`suspected` / `confirmed` / `dismissed`）。
 
-存档侧向量保存在 `submitted_report_items.embedding`，由 `backfill-submission-embeddings` 补齐。新闻侧向量保存在 `news_summaries.dedup_embedding`，由 `submission-dedup` 在首次参与查重时写入；其编码文本固定为标题加 `llm_summary` 的前 `EMBED_BODY_CHARS` 个字符，不能复用只编码标题的 `news_title_embeddings`。
+存档侧向量保存在 `submitted_report_items.embedding`，由 `backfill-submission-embeddings` 补齐。补齐范围必须与 `submission-dedup` 读取存档的回看窗口一致（由 `SUBMISSION_DEDUP_LOOKBACK_DAYS` 控制）：窗口外条目即使缺少向量也不补齐，避免为不会参与查重的长期存档持续占用计算与存储资源。新闻侧向量保存在 `news_summaries.dedup_embedding`，由 `submission-dedup` 在首次参与查重时写入；其编码文本固定为标题加 `llm_summary` 的前 `EMBED_BODY_CHARS` 个字符，不能复用只编码标题的 `news_title_embeddings`。
 
 `dedup_embedding_model` 记录编码模型，读取已有向量时必须与代码中的当前模型常量完全一致，否则整轮报错终止。`dedup_source_hash` 是上述完整编码输入文本的 SHA-256；标题或 `llm_summary` 变化会导致哈希不一致，下一轮仅重新编码这些失效行并刷新 `dedup_embedded_at`，其余新闻直接复用缓存。常规摘要或主文 upsert 不写这四个字段，因此不会无意覆盖已生成缓存；摘要实际变化依靠源哈希在下轮失效。
 

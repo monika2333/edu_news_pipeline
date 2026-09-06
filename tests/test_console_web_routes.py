@@ -1075,6 +1075,9 @@ def test_duplicate_review_items_use_content_drawer_trigger() -> None:
     assert "safeDuplicateUrl" not in modal_script
     assert "🔗" not in modal_script
     assert "triggerBtn.closest('#duplicate-review-modal')" in drawer_script
+    # 点外收起只对查重弹窗内打开的抽屉生效，且不能拦截「原文」按钮自身的委托
+    assert "dismissOnOutsideClick" in drawer_script
+    assert "if (!contentDrawerState.open || !contentDrawerState.dismissOnOutsideClick) return;" in drawer_script
     assert "body.duplicate-review-open .content-drawer" in drawer_css
     assert "document.body.classList.contains('content-drawer-open')" in controller_script
     # Escape 处理器必须捕获阶段注册，抢在抽屉的冒泡处理器关抽屉之前读到抽屉状态

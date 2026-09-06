@@ -7,6 +7,9 @@ const contentDrawerState = {
     open: false,
     articleId: null,
     anchorCard: null,
+    // 仅从查重弹窗打开时为 true：点击抽屉外任意区域自动收起（检索抽屉场景
+    // 由它自己的遮罩处理，页面列表场景保持挤压布局、不点外收起）
+    dismissOnOutsideClick: false,
     // 当前已渲染的文章数据与加分词，供抽屉内检索时重绘正文
     currentData: null,
     currentBonusKeywords: [],
@@ -51,8 +54,11 @@ function setContentDrawerOpen(open, { anchor = true } = {}) {
     drawer.classList.toggle('active', open);
     drawer.setAttribute('aria-hidden', open ? 'false' : 'true');
     document.body.classList.toggle('content-drawer-open', open);
-    // 叠加模式随抽屉关闭一并解除
-    if (!open) document.body.classList.remove('content-drawer-overlay');
+    // 叠加模式与点外收起随抽屉关闭一并解除
+    if (!open) {
+        document.body.classList.remove('content-drawer-overlay');
+        contentDrawerState.dismissOnOutsideClick = false;
+    }
     // anchor:false 时由调用方在完成所有布局变化后统一补偿，避免连续宽度变化重复锚定
     if (anchor) relayoutListsAfterWidthChange(anchorCard, previousTop);
 }
@@ -295,6 +301,9 @@ function handleContentDrawerTrigger(triggerBtn) {
 
     // 从检索抽屉或查重弹窗打开：抽屉盖在其上即可，外层页面的侧栏与列表布局保持不变
     if (triggerBtn.closest('#search-drawer') || triggerBtn.closest('#duplicate-review-modal')) {
+        contentDrawerState.dismissOnOutsideClick = Boolean(
+            triggerBtn.closest('#duplicate-review-modal')
+        );
         if (!contentDrawerState.open) {
             document.body.classList.add('content-drawer-overlay');
             setContentDrawerOpen(true, { anchor: false });
@@ -305,6 +314,7 @@ function handleContentDrawerTrigger(triggerBtn) {
 
     // 从页面列表打开：解除可能残留的叠加模式，恢复挤压布局
     document.body.classList.remove('content-drawer-overlay');
+    contentDrawerState.dismissOnOutsideClick = false;
 
     // 打开抽屉时自动折叠侧栏（不写 localStorage，仅本次浏览生效）。
     // 折叠与抽屉挤压是两次连续宽度变化：基准位置取两者都未发生之前，
@@ -359,6 +369,14 @@ function setupContentDrawer() {
     document.addEventListener('click', (event) => {
         const triggerBtn = event.target.closest('.content-drawer-trigger');
         if (triggerBtn) handleContentDrawerTrigger(triggerBtn);
+    });
+    // 点外收起仅对查重弹窗内打开的抽屉生效；点到触发按钮交给上面的委托处理
+    // （同一条再次点击是关、换一条是切换），这里直接跳过
+    document.addEventListener('click', (event) => {
+        if (!contentDrawerState.open || !contentDrawerState.dismissOnOutsideClick) return;
+        if (event.target.closest('.content-drawer')) return;
+        if (event.target.closest('.content-drawer-trigger')) return;
+        closeContentDrawer();
     });
 }
 

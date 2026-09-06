@@ -83,7 +83,12 @@ def _response_item(item: Mapping[str, Any]) -> dict[str, Any]:
         "article_id": item.get("article_id"),
         "title": item.get("title") or "",
         "summary": item.get("summary") or "",
-        "source": item.get("llm_source_display") or item.get("source") or "",
+        "source": item.get("source") or "",
+        "llm_source_display": (
+            item.get("llm_source_display") or item.get("source") or ""
+        ),
+        "llm_source_raw": item.get("llm_source_raw") or "",
+        "llm_source_manual": item.get("llm_source_manual") or "",
         "url": item.get("url") or "",
         "status": item.get("manual_status") or item.get("status") or "",
         "report_type": item.get("report_type") or "",

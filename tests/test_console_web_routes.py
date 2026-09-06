@@ -978,6 +978,26 @@ def test_duplicate_check_button_is_before_sort_mode() -> None:
     assert "pending_ids" not in controller_script
 
 
+def test_duplicate_review_separates_crawl_source_and_reuses_source_autofill() -> None:
+    root = Path(__file__).parents[1]
+    scripts_dir = root / "src/console/web_static/js/manual_filter"
+    modal_script = (scripts_dir / "review_duplicates_modal.js").read_text(
+        encoding="utf-8"
+    )
+    autofill_script = (scripts_dir / "source_autofill.js").read_text(encoding="utf-8")
+    response = _build_client().get("/admin/review")
+
+    assert response.status_code == 200
+    assert '/static/js/manual_filter/source_autofill.js?v=' in response.text
+    assert 'class="meta-item meta-item-source"' in modal_script
+    assert 'data-source-fill="${sourceFill}"' in modal_script
+    assert "item.llm_source_display || item.source || ''" in modal_script
+    assert 'value="${editableSource}"' in modal_script
+    assert "source: current.source || item.source || ''" in modal_script
+    assert "event.target.closest('.meta-item-source')" in autofill_script
+    assert "sourceBox.dispatchEvent(new Event('change', { bubbles: true }))" in autofill_script
+
+
 def test_sort_mode_hides_incompatible_review_toolbar_controls() -> None:
     root = Path(__file__).parents[1]
     response = _build_client().get("/admin/review")

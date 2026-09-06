@@ -28,6 +28,11 @@ function duplicateStatusOptions(item) {
 function renderDuplicateReviewItem(item) {
     const title = escapeDuplicateHtml(item.title || '(无标题)');
     const source = escapeDuplicateHtml(item.source || '-');
+    const sourceFill = escapeDuplicateHtml(item.source || '');
+    const editableSource = escapeDuplicateHtml(item.llm_source_display || item.source || '');
+    const sourcePlaceholder = escapeDuplicateHtml(
+        item.llm_source_raw ? `(LLM: ${item.llm_source_raw})` : '留空则回退抓取来源'
+    );
     const summary = escapeDuplicateHtml(item.summary || '');
     const summaryCount = formatReviewSummaryCount(countReviewSummaryChars(item.summary));
     const score = formatScore(item.score);
@@ -58,7 +63,8 @@ function renderDuplicateReviewItem(item) {
                 </div>
             </div>
             <div class="meta-row duplicate-review-item-meta">
-                <div class="meta-item">来源：${source}</div>
+                <div class="meta-item meta-item-source" data-source-fill="${sourceFill}"
+                    title="双击填入人工来源">来源：${source}</div>
                 <div class="meta-item">分数：${escapeDuplicateHtml(score)}</div>
                 ${bonusText ? `<div class="meta-item">Bonus：${escapeDuplicateHtml(bonusText)}</div>` : ''}
             </div>
@@ -68,7 +74,7 @@ function renderDuplicateReviewItem(item) {
                 <span class="review-summary-count" title="摘要非空白字符数">${summaryCount}字</span>
             </div>
             <input class="source-box duplicate-review-source" data-id="${escapeDuplicateHtml(item.article_id)}"
-                value="${source}" placeholder="新闻来源">
+                value="${editableSource}" placeholder="${sourcePlaceholder}">
             <div class="duplicate-review-processed" hidden>已处理</div>
         </article>
     `;
@@ -89,7 +95,14 @@ function reconcileDuplicateReviewResult(result, scope) {
                 ...item,
                 title: current.title || item.title,
                 summary: current.summary || '',
-                source: current.llm_source_display || current.source || '',
+                source: current.source || item.source || '',
+                llm_source_display: current.llm_source_display
+                    || item.llm_source_display
+                    || current.source
+                    || item.source
+                    || '',
+                llm_source_raw: current.llm_source_raw || item.llm_source_raw || '',
+                llm_source_manual: current.llm_source_manual || item.llm_source_manual || '',
                 url: current.url || item.url,
                 status: current.manual_status || current.status || scope.decision,
                 report_type: current.report_type || scope.reportType,

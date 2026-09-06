@@ -19,6 +19,9 @@ def _item(
         "article_id": article_id,
         "title": f"标题 {article_id}",
         "summary": f"摘要 {article_id}",
+        "source": f"抓取来源 {article_id}",
+        "llm_source_raw": f"模型来源 {article_id}",
+        "llm_source_manual": f"人工来源 {article_id}",
         "llm_source_display": f"来源 {article_id}",
         "url": f"https://example.com/{article_id}",
         "manual_status": status,
@@ -113,13 +116,34 @@ def test_response_item_does_not_fall_back_to_primary_score() -> None:
     assert result["score"] is None
 
 
+def test_response_item_keeps_crawl_and_editable_sources_separate() -> None:
+    item = _item("a1")
+    item.update(
+        {
+            "source": "新华网",
+            "llm_source_raw": "人民日报",
+            "llm_source_manual": "人民日报",
+            "llm_source_display": "人民日报",
+        }
+    )
+
+    result = duplicate_service._response_item(item)
+
+    assert result["source"] == "新华网"
+    assert result["llm_source_display"] == "人民日报"
+    assert result["llm_source_raw"] == "人民日报"
+    assert result["llm_source_manual"] == "人民日报"
+    assert duplicate_service._model_input_item(item)["source"] == "人民日报"
+
+
 def test_check_duplicates_refreshes_items_and_filters_moved_news(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     initial_items = [_item("a1"), _item("a2"), _item("a3")]
     latest_a1 = _item("a1")
     latest_a1["summary"] = "最新摘要"
-    latest_a1["llm_source_display"] = "最新来源"
+    latest_a1["source"] = "最新抓取来源"
+    latest_a1["llm_source_display"] = "最新人工来源"
     latest_items = [latest_a1, _item("a3"), _item("a4")]
     review_results = iter(
         [
@@ -155,7 +179,8 @@ def test_check_duplicates_refreshes_items_and_filters_moved_news(
         "a3",
     ]
     assert result["groups"][0]["items"][0]["summary"] == "最新摘要"
-    assert result["groups"][0]["items"][0]["source"] == "最新来源"
+    assert result["groups"][0]["items"][0]["source"] == "最新抓取来源"
+    assert result["groups"][0]["items"][0]["llm_source_display"] == "最新人工来源"
 
 
 @pytest.mark.parametrize("count", [0, 1])

@@ -1054,7 +1054,8 @@ def test_archive_export_escape_uses_bubble_phase_and_stays_local() -> None:
     # Escape 冒泡阶段注册（不用捕获阶段，避免打断既有处理链），
     # 只在本弹窗打开时处理，处理后阻止继续传播；不新增任何轮询或定时器之外的周期任务
     assert "addEventListener('keydown', event => {" in source
-    assert "addEventListener('keydown', event => {, true" not in source
+    # 捕获阶段的写法是 }, true)，跟在箭头函数闭合大括号后
+    assert "}, true)" not in source
     assert "archiveExportState.open" in source
     assert "event.stopPropagation()" in source
     assert "setInterval" not in source

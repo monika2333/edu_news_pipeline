@@ -1,0 +1,66 @@
+/* 报送存档导出弹窗（export.js）：页面级导出，日期区间 + 报别 + 范围提示。
+   弹窗骨架复用 components.css 的 .modal/.modal-content/.modal-header/.modal-footer，
+   这里只放专属样式，class 一律以 archive-export- 前缀命名。 */
+
+.archive-export-modal-content {
+    width: min(560px, 96vw);
+}
+
+.archive-export-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.archive-export-field-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.archive-export-dates {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.archive-export-dates input[type="date"] {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-family: var(--font-family);
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.archive-export-field-note {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.archive-export-types {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.archive-export-type-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+/* 范围提示恒定占一行高度：内容在「将导出 N 份报告 · M 个条目」与空之间
+   切换时弹窗高度不跳动 */
+.archive-export-hint {
+    margin: 0;
+    min-height: 20px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}

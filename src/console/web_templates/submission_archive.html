@@ -19,6 +19,7 @@
     <link rel="stylesheet" href="/static/css/modules/submission_archive/create.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/manual_link.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/batch_decision.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/modules/submission_archive/export.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/submission_archive/responsive.css?v={{ version }}">
 </head>
 <body data-archive-view="{{ archive_view }}"
@@ -63,6 +64,11 @@
                 href="/submission-archive" hidden></a>
             {% if current_user.role == "admin" %}
             <div class="workspace-tab-actions">
+                {% if archive_view in ("list", "detail") %}
+                <!-- 导出是页面级动作（不针对当前选中的报告），入口放标签行而非详情标题栏；
+                     新增存档视图下弹窗 markup 不存在，按钮不能渲染 -->
+                <button class="btn btn-secondary" id="archive-export-open" type="button">导出</button>
+                {% endif %}
                 <a class="btn btn-primary{% if archive_view == 'new' %} active{% endif %}"
                     href="/submission-archive/new">新增存档</a>
             </div>
@@ -248,6 +254,39 @@
             </div>
         </div>
     </div>
+    <!-- 导出弹窗（export.js）：页面级导出，不针对当前选中的报告；
+         报别复选框由 export.js 按 core.js 的 typeLabels 渲染（值是后端枚举），
+         不在模板里另写一份中文映射 -->
+    <div class="modal" id="archive-export-modal" role="dialog" aria-modal="true"
+        aria-labelledby="archive-export-modal-title" aria-hidden="true">
+        <div class="modal-content archive-export-modal-content">
+            <div class="modal-header">
+                <h3 id="archive-export-modal-title">导出报送存档</h3>
+                <button type="button" class="btn-icon" id="archive-export-modal-close"
+                    aria-label="关闭">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="archive-export-field">
+                    <span class="archive-export-field-label">日期区间</span>
+                    <div class="archive-export-dates">
+                        <input type="date" id="archive-export-date-from" aria-label="起始日期">
+                        <span aria-hidden="true">–</span>
+                        <input type="date" id="archive-export-date-to" aria-label="结束日期">
+                    </div>
+                    <p class="archive-export-field-note">留空表示不限；默认导出整个存档库。</p>
+                </div>
+                <div class="archive-export-field">
+                    <span class="archive-export-field-label">报别</span>
+                    <div class="archive-export-types" id="archive-export-types"></div>
+                </div>
+                <p class="archive-export-hint" id="archive-export-hint"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="archive-export-cancel" type="button">取消</button>
+                <button class="btn btn-primary" id="archive-export-submit" type="button">导出</button>
+            </div>
+        </div>
+    </div>
     {% include "_content_drawer.html" %}
     {% endif %}
     {% include "_search_drawer.html" %}
@@ -273,6 +312,9 @@
     <!-- batch_decision.js 依赖 prior_matches.js 的 priorMatchEntryHtml 与 browser.js，
          必须在它们之后、init.js 之前加载 -->
     <script src="/static/js/submission_archive/batch_decision.js?v={{ version }}"></script>
+    <!-- export.js 只依赖 core.js 的 api()/toast()/escapeHtml()/typeLabels，
+         启动逻辑走 init.js（本目录约定：共享状态在 core.js，启动在 init.js） -->
+    <script src="/static/js/submission_archive/export.js?v={{ version }}"></script>
     <script src="/static/js/submission_archive/init.js?v={{ version }}"></script>
 </body>
 </html>

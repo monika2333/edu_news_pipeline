@@ -957,3 +957,108 @@ def test_coverage_logic_has_no_section_name_literals() -> None:
         ("function linkStatusGroup(status, coverageExcluded = false) {", "function reportCardStatsHtml"),
     ):
         assert "section" not in _function_body(stripped, start, end)
+
+EXPORT_JS = "src/console/web_static/js/submission_archive/export.js"
+EXPORT_CSS = "src/console/web_static/css/modules/submission_archive/export.css"
+
+
+def test_archive_export_modal_markup_and_assets() -> None:
+    template = Path(TEMPLATE_HTML).read_text(encoding="utf-8")
+
+    assert 'id="archive-export-modal"' in template
+    assert "submission_archive/export.css" in template
+    assert "submission_archive/export.js" in template
+    # export.js 在 batch_decision.js 之后、init.js 之前加载
+    assert template.index("submission_archive/batch_decision.js") < template.index(
+        "submission_archive/export.js"
+    )
+    assert template.index("submission_archive/export.js") < template.index(
+        "submission_archive/init.js"
+    )
+    # 弹窗 markup 只在 list/detail 视图渲染（新增存档视图下弹窗不存在，
+    # 入口按钮因此也不能渲染）
+    modal_block_start = template.rindex('{% if archive_view in ("list", "detail") %}')
+    assert modal_block_start < template.index('id="archive-export-modal"')
+
+
+def test_archive_export_entry_button_conditions() -> None:
+    template = Path(TEMPLATE_HTML).read_text(encoding="utf-8")
+
+    actions_block = template.split(
+        '<div class="workspace-tab-actions">', maxsplit=1
+    )[1].split("</div>", maxsplit=1)[0]
+    # 次要动作在主要动作左侧：「导出」在「新增存档」左边
+    assert 'id="archive-export-open"' in actions_block
+    assert actions_block.index('id="archive-export-open"') < actions_block.index(
+        'href="/submission-archive/new"'
+    )
+    # 渲染条件：archive_view in ("list", "detail")（新增存档视图下弹窗 markup 不存在）
+    assert 'archive_view in ("list", "detail")' in actions_block
+    # admin 条件在 workspace-tab-actions 外层
+    pre_actions = template.split('<div class="workspace-tab-actions">', maxsplit=1)[0]
+    assert pre_actions.rstrip().endswith('{% if current_user.role == "admin" %}')
+
+
+def test_init_calls_export_modal_in_list_and_detail_branch() -> None:
+    init = Path(f"{SUBMISSION_ARCHIVE_JS_DIR}/init.js").read_text(encoding="utf-8")
+
+    branch = init.split(
+        "if (view === 'list' || view === 'detail') {", maxsplit=1
+    )[1].split("} else if", maxsplit=1)[0]
+    assert "initExportModal()" in branch
+
+
+def test_archive_export_download_uses_blob_and_releases_object_url() -> None:
+    source = _strip_js_comments(Path(EXPORT_JS).read_text(encoding="utf-8"))
+
+    # fetch + blob 下载，createObjectURL / revokeObjectURL 成对释放；
+    # 不走导航式下载（接口出错时返回 JSON，直接导航会把用户从存档页冲走）
+    assert "response.blob()" in source
+    assert "URL.createObjectURL(blob)" in source
+    assert "URL.revokeObjectURL(objectUrl)" in source
+    assert "window.location" not in source
+    # 错误分支解析 JSON 并走 toast，与页面其他部分一致
+    error_branch = source.split("if (!response.ok) {", maxsplit=1)[1]
+    assert "toast(" in error_branch
+    assert "formatApiError(" in error_branch
+    # 文件名从 Content-Disposition 的 filename* 段读取，失败时按后端规则本地兜底
+    assert "filename\\*=UTF-8''" in source
+    assert "decodeURIComponent(" in source
+    assert "报送存档_全部.csv" in source
+
+
+def test_archive_export_preview_reads_max_rows_from_api() -> None:
+    source = _strip_js_comments(Path(EXPORT_JS).read_text(encoding="utf-8"))
+
+    # 预览接口刷新范围提示；上限数值读接口返回的 max_rows，不在前端写死
+    assert "/export/preview?" in source
+    assert "data.max_rows" in source
+    assert "data.item_count" in source
+    assert "data.report_count" in source
+    assert "50000" not in source
+    assert "50_000" not in source
+    # 预览失败不阻断导出：catch 分支提示区留空、按钮恢复可用
+    preview_body = source.split(
+        "async function refreshArchiveExportPreview()", maxsplit=1
+    )[1].split("function scheduleArchiveExportPreview", maxsplit=1)[0]
+    assert "catch (error)" in preview_body
+    assert "els.hint.textContent = '';" in preview_body
+    # 没勾选任何报别时不发请求，本地直接进入禁用态
+    assert "请至少选择一个报别" in preview_body
+    assert "els.exportBtn.disabled = true;" in preview_body
+
+
+def test_archive_export_escape_uses_bubble_phase_and_stays_local() -> None:
+    source = _strip_js_comments(Path(EXPORT_JS).read_text(encoding="utf-8"))
+
+    # Escape 冒泡阶段注册（不用捕获阶段，避免打断既有处理链），
+    # 只在本弹窗打开时处理，处理后阻止继续传播；不新增任何轮询或定时器之外的周期任务
+    assert "addEventListener('keydown', event => {" in source
+    assert "addEventListener('keydown', event => {, true" not in source
+    assert "archiveExportState.open" in source
+    assert "event.stopPropagation()" in source
+    assert "setInterval" not in source
+    # 报别显示文字复用 core.js 的 typeLabels，不另写中文映射
+    assert "typeLabels" in source
+    assert "综报" not in source
+    assert "晚报" not in source

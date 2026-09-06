@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadNavPending();
     if (view === 'list' || view === 'detail') {
         initBrowserView();
+        initExportModal();
     } else if (view === 'new') {
         document.getElementById('archive-parse').addEventListener('click', parsePastedReport);
         document.getElementById('archive-report-type').addEventListener('change', () => {

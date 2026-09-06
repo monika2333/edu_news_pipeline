@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, NoReturn, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.encoders import jsonable_encoder
 
 from src.console import submission_archive_service
@@ -92,6 +92,49 @@ def create_report_api(
     if result.get("created", True):
         _schedule_report_processing(str(result["report"]["id"]))
     return result
+
+
+@router.get("/export")
+def export_items_api(
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    report_types: Optional[list[str]] = Query(default=None),
+    _user: ConsoleUser = Depends(require_role("admin")),
+) -> Response:
+    """Export filtered submission items as an Excel-compatible CSV."""
+    try:
+        content, content_disposition = submission_archive_service.export_items(
+            date_from=date_from,
+            date_to=date_to,
+            report_types=report_types,
+        )
+    except ValueError as exc:
+        _raise_service_error(exc)
+    return Response(
+        content=content,
+        headers={
+            "Content-Type": "text/csv; charset=utf-8",
+            "Content-Disposition": content_disposition,
+        },
+    )
+
+
+@router.get("/export/preview")
+def preview_export_api(
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    report_types: Optional[list[str]] = Query(default=None),
+    _user: ConsoleUser = Depends(require_role("admin")),
+) -> dict[str, int]:
+    """Count reports and items in a prospective archive export."""
+    try:
+        return submission_archive_service.preview_export(
+            date_from=date_from,
+            date_to=date_to,
+            report_types=report_types,
+        )
+    except ValueError as exc:
+        _raise_service_error(exc)
 
 
 @router.get("/reports")

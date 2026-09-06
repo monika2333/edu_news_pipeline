@@ -12,6 +12,7 @@ from src.console import submission_archive_routes, submission_archive_service
 from src.console.app import create_app
 from src.console.auth_service import ConsoleUser
 from src.console.security import require_console_user
+from src.console.submission_archive_export import CSV_HEADERS, build_csv_bytes
 from src.console.submission_archive_schemas import (
     CreateSubmissionReportRequest,
 )
@@ -67,6 +68,149 @@ def test_duty_editor_cannot_use_report_import_api() -> None:
     )
 
     assert response.status_code == 403
+
+
+def test_admin_can_export_with_repeated_report_types(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    csv_content = build_csv_bytes([])
+
+    def fake_export_items(**kwargs: object) -> tuple[bytes, str]:
+        captured.update(kwargs)
+        return (
+            csv_content,
+            'attachment; filename="submission_archive_20260101-20260331.csv"; '
+            "filename*=UTF-8''%E6%8A%A5%E9%80%81%E5%AD%98%E6%A1%A3_20260101-20260331.csv",
+        )
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "export_items",
+        fake_export_items,
+    )
+
+    response = _client(_admin).get(
+        "/api/submission-archive/export",
+        params=[
+            ("date_from", "2026-01-01"),
+            ("date_to", "2026-03-31"),
+            ("report_types", "zongbao"),
+            ("report_types", "wanbao"),
+        ],
+    )
+
+    assert response.status_code == 200
+    assert response.content == csv_content
+    assert response.headers["content-type"] == "text/csv; charset=utf-8"
+    disposition = response.headers["content-disposition"]
+    assert 'filename="submission_archive_20260101-20260331.csv"' in disposition
+    assert "filename*=UTF-8''" in disposition
+    assert captured == {
+        "date_from": date(2026, 1, 1),
+        "date_to": date(2026, 3, 31),
+        "report_types": ["zongbao", "wanbao"],
+    }
+
+
+def test_empty_export_returns_header_only_csv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        submission_archive_service,
+        "export_items",
+        lambda **_kwargs: (
+            build_csv_bytes([]),
+            'attachment; filename="submission_archive_all.csv"; '
+            "filename*=UTF-8''%E6%8A%A5%E9%80%81%E5%AD%98%E6%A1%A3_%E5%85%A8%E9%83%A8.csv",
+        ),
+    )
+
+    response = _client(_admin).get("/api/submission-archive/export")
+
+    assert response.status_code == 200
+    decoded = response.content.decode("utf-8-sig")
+    assert decoded == ",".join(CSV_HEADERS) + "\r\n"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/submission-archive/export",
+        "/api/submission-archive/export/preview",
+    ],
+)
+def test_duty_editor_cannot_use_export_apis(path: str) -> None:
+    response = _client(_editor).get(path)
+
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "date_from=2026-04-01&date_to=2026-03-31",
+        "report_types=invalid",
+    ],
+)
+def test_export_rejects_invalid_filters(query: str) -> None:
+    response = _client(_admin).get(f"/api/submission-archive/export?{query}")
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/json")
+
+
+def test_export_above_row_limit_returns_json_error_without_csv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_export_items(**_kwargs: object) -> tuple[bytes, str]:
+        raise ValueError("导出条目超过 50000 行，请收窄日期范围后重试")
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "export_items",
+        fake_export_items,
+    )
+
+    response = _client(_admin).get("/api/submission-archive/export")
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/json")
+    assert "text/csv" not in response.headers["content-type"]
+    assert "请收窄日期范围" in response.json()["detail"]
+
+
+def test_export_preview_returns_counts_and_backend_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_preview_export(**kwargs: object) -> dict[str, int]:
+        captured.update(kwargs)
+        return {"report_count": 42, "item_count": 517, "max_rows": 50_000}
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "preview_export",
+        fake_preview_export,
+    )
+
+    response = _client(_admin).get(
+        "/api/submission-archive/export/preview",
+        params=[("report_types", "feedback")],
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "report_count": 42,
+        "item_count": 517,
+        "max_rows": 50_000,
+    }
+    assert captured == {
+        "date_from": None,
+        "date_to": None,
+        "report_types": ["feedback"],
+    }
 
 
 def test_create_report_api_returns_before_link_processing(

@@ -8,6 +8,11 @@ from urllib.parse import urlparse
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.db_postgres_submission_archive import PRIOR_MATCH_REPORT_TYPES
 from src.console.auth_service import ConsoleUser
+from src.console.submission_archive_export import (
+    MAX_EXPORT_ROWS,
+    build_content_disposition,
+    build_csv_bytes,
+)
 from src.domain.report_type import SUBMISSION_DOC_TYPES as VALID_REPORT_TYPES
 from src.domain.submission_archive_parser import (
     normalize_submission_text,
@@ -99,6 +104,79 @@ def list_reports(
         "total": total,
         "limit": max(1, min(limit, 200)),
         "offset": max(0, offset),
+    }
+
+
+def _normalize_export_filters(
+    *,
+    date_from: Optional[date],
+    date_to: Optional[date],
+    report_types: Optional[Sequence[str]],
+) -> Optional[tuple[str, ...]]:
+    if date_from and date_to and date_from > date_to:
+        raise ValueError("date_from 不能晚于 date_to")
+    normalized = tuple(
+        dict.fromkeys(
+            str(report_type).strip()
+            for report_type in (report_types or ())
+            if str(report_type).strip()
+        )
+    )
+    invalid = [value for value in normalized if value not in VALID_REPORT_TYPES]
+    if invalid:
+        raise ValueError(f"不支持的报告类型: {', '.join(invalid)}")
+    return normalized or None
+
+
+def export_items(
+    *,
+    date_from: Optional[date],
+    date_to: Optional[date],
+    report_types: Optional[Sequence[str]],
+) -> tuple[bytes, str]:
+    normalized_types = _normalize_export_filters(
+        date_from=date_from,
+        date_to=date_to,
+        report_types=report_types,
+    )
+    rows = get_adapter().submission_archive.fetch_export_rows(
+        date_from=date_from,
+        date_to=date_to,
+        report_types=normalized_types,
+        limit=MAX_EXPORT_ROWS + 1,
+    )
+    if len(rows) > MAX_EXPORT_ROWS:
+        raise ValueError(
+            f"导出条目超过 {MAX_EXPORT_ROWS} 行，请收窄日期范围后重试"
+        )
+    return (
+        build_csv_bytes(rows),
+        build_content_disposition(date_from, date_to),
+    )
+
+
+def preview_export(
+    *,
+    date_from: Optional[date],
+    date_to: Optional[date],
+    report_types: Optional[Sequence[str]],
+) -> dict[str, int]:
+    normalized_types = _normalize_export_filters(
+        date_from=date_from,
+        date_to=date_to,
+        report_types=report_types,
+    )
+    report_count, item_count = (
+        get_adapter().submission_archive.count_export_rows(
+            date_from=date_from,
+            date_to=date_to,
+            report_types=normalized_types,
+        )
+    )
+    return {
+        "report_count": report_count,
+        "item_count": item_count,
+        "max_rows": MAX_EXPORT_ROWS,
     }
 
 
@@ -391,6 +469,7 @@ __all__ = [
     "decide_link",
     "decide_prior_match",
     "dismiss_duplicates",
+    "export_items",
     "fetch_duplicate_details",
     "fetch_prior_item_match_details",
     "get_report",
@@ -399,6 +478,7 @@ __all__ = [
     "manual_link_item",
     "manual_unlink_item",
     "parse_report",
+    "preview_export",
     "search_archive",
     "search_link_candidates",
     "update_item_fields",

@@ -149,6 +149,38 @@ class SubmissionArchiveNamespace:
                 offset=offset,
             )
 
+    def fetch_export_rows(
+        self,
+        *,
+        date_from: Optional[date],
+        date_to: Optional[date],
+        report_types: Optional[Sequence[str]],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_export_rows(
+                cur,
+                date_from=date_from,
+                date_to=date_to,
+                report_types=report_types,
+                limit=limit,
+            )
+
+    def count_export_rows(
+        self,
+        *,
+        date_from: Optional[date],
+        date_to: Optional[date],
+        report_types: Optional[Sequence[str]],
+    ) -> tuple[int, int]:
+        with self._adapter._cursor() as cur:
+            return count_export_rows(
+                cur,
+                date_from=date_from,
+                date_to=date_to,
+                report_types=report_types,
+            )
+
     def fetch_report(self, report_id: str) -> Optional[dict[str, Any]]:
         with self._adapter._cursor() as cur:
             return fetch_report(cur, report_id)
@@ -647,6 +679,92 @@ def fetch_reports(
         ),
     )
     return [dict(row) for row in cur.fetchall()], total
+
+
+def _export_where_sql(
+    *,
+    date_from: Optional[date],
+    date_to: Optional[date],
+    report_types: Optional[Sequence[str]],
+) -> tuple[str, list[Any]]:
+    clauses = ["true"]
+    params: list[Any] = []
+    if date_from:
+        clauses.append("r.report_date >= %s")
+        params.append(date_from)
+    if date_to:
+        clauses.append("r.report_date <= %s")
+        params.append(date_to)
+    if report_types:
+        clauses.append("r.report_type = any(%s)")
+        params.append(list(report_types))
+    return " and ".join(clauses), params
+
+
+def fetch_export_rows(
+    cur: psycopg.Cursor,
+    *,
+    date_from: Optional[date],
+    date_to: Optional[date],
+    report_types: Optional[Sequence[str]],
+    limit: int,
+) -> list[dict[str, Any]]:
+    where_sql, params = _export_where_sql(
+        date_from=date_from,
+        date_to=date_to,
+        report_types=report_types,
+    )
+    cur.execute(
+        f"""
+        select
+            r.report_type,
+            r.report_date,
+            r.compiled_date,
+            r.issue_no,
+            i.order_index,
+            i.section,
+            i.title,
+            i.body,
+            i.source,
+            i.urls
+        from submitted_reports r
+        join submitted_report_items i on i.report_id = r.id
+        where {where_sql}
+        order by r.report_date, r.report_type, i.order_index, i.id
+        limit %s
+        """,
+        tuple([*params, max(1, limit)]),
+    )
+    return [dict(row) for row in cur.fetchall()]
+
+
+def count_export_rows(
+    cur: psycopg.Cursor,
+    *,
+    date_from: Optional[date],
+    date_to: Optional[date],
+    report_types: Optional[Sequence[str]],
+) -> tuple[int, int]:
+    where_sql, params = _export_where_sql(
+        date_from=date_from,
+        date_to=date_to,
+        report_types=report_types,
+    )
+    cur.execute(
+        f"""
+        select
+            count(distinct r.id) as report_count,
+            count(i.id) as item_count
+        from submitted_reports r
+        join submitted_report_items i on i.report_id = r.id
+        where {where_sql}
+        """,
+        tuple(params),
+    )
+    row = cur.fetchone()
+    if not row:
+        return 0, 0
+    return int(row["report_count"]), int(row["item_count"])
 
 
 def fetch_report(
@@ -1744,12 +1862,14 @@ __all__ = [
     "ManualLinkMutationResult",
     "PriorMatchDecisionMutationResult",
     "SubmissionArchiveNamespace",
+    "count_export_rows",
     "decide_link",
     "delete_report",
     "dismiss_duplicate_matches",
     "fetch_archive_embeddings",
     "fetch_duplicate_badges",
     "fetch_duplicate_match_details",
+    "fetch_export_rows",
     "fetch_item_duplicate_match_details",
     "fetch_item_duplicate_match_summaries",
     "fetch_item_match_inputs",

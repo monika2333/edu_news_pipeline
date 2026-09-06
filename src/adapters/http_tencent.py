@@ -35,6 +35,25 @@ CHINA_TZ = timezone(timedelta(hours=8))
 
 DATA_BLOCK_PATTERN = re.compile(r"DATA\s*=\s*(\{.*?\});\s*</script>", re.S)
 
+_LINE_BREAK_SENTINEL = "\ue000"
+_BLOCK_BREAK_SENTINEL = "\ue001"
+_CONTENT_BLOCK_TAGS = (
+    "article",
+    "blockquote",
+    "div",
+    "figcaption",
+    "figure",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "li",
+    "p",
+    "section",
+)
+
 DEFAULT_AUTHORS_FILE = Path("config/qq_author.txt")
 
 
@@ -444,7 +463,7 @@ def _clean_html_to_markdown(html_fragment: str) -> str:
         element.extract()
 
     for br in container.find_all("br"):
-        br.replace_with("\n")
+        br.replace_with(_LINE_BREAK_SENTINEL)
 
     for img in container.find_all("img"):
         src = (img.get("data-src") or img.get("src") or "").strip()
@@ -452,14 +471,26 @@ def _clean_html_to_markdown(html_fragment: str) -> str:
             img.decompose()
             continue
         alt = (img.get("alt") or "").strip()
-        replacement = f"\n\n![{alt}]({src})\n\n"
+        replacement = (
+            f"{_BLOCK_BREAK_SENTINEL}![{alt}]({src}){_BLOCK_BREAK_SENTINEL}"
+        )
         img.replace_with(replacement)
 
-    text = container.get_text("\n", strip=True)
-    lines = [line.strip() for line in text.splitlines()]
-    compact = [line for line in lines if line]
-    markdown = "\n\n".join(compact).strip()
-    return markdown
+    # Tencent injects comments such as VERTICAL_CARD and SECURE_LINK inside a
+    # paragraph.  After those comments are removed, get_text("\n") would add a
+    # separator between the adjacent text nodes and turn inline fragments into
+    # fake paragraphs.  Mark only real block and <br> boundaries, then join all
+    # remaining inline text without a separator.
+    for block in container.find_all(_CONTENT_BLOCK_TAGS):
+        block.insert_before(_BLOCK_BREAK_SENTINEL)
+        block.insert_after(_BLOCK_BREAK_SENTINEL)
+
+    text = container.get_text()
+    text = re.sub(r"\s+", " ", text).strip()
+    text = text.replace(_LINE_BREAK_SENTINEL, "\n")
+    text = text.replace(_BLOCK_BREAK_SENTINEL, "\n\n")
+    text = re.sub(r"[ \t]*\n[ \t]*", "\n", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
 def _fetch_detail_response_text(

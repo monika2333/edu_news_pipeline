@@ -113,6 +113,56 @@ def test_admin_can_export_with_repeated_report_types(
     }
 
 
+def test_export_end_to_end_encodes_chinese_filename_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise the real service, filename builder, and response header path."""
+
+    class _SubmissionArchiveNamespace:
+        def fetch_export_rows(
+            self,
+            **_kwargs: object,
+        ) -> list[dict[str, object]]:
+            return [
+                {
+                    "report_type": "zongbao",
+                    "report_date": date(2026, 1, 2),
+                    "compiled_date": date(2026, 1, 1),
+                    "issue_no": "总第1期",
+                    "order_index": 1,
+                    "section": "重点关注",
+                    "title": "测试标题",
+                    "body": "测试正文",
+                    "source": "测试来源",
+                    "urls": ["https://example.com/article"],
+                }
+            ]
+
+        def count_export_rows(self, **_kwargs: object) -> tuple[int, int]:
+            return 1, 1
+
+    class _Adapter:
+        submission_archive = _SubmissionArchiveNamespace()
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "get_adapter",
+        lambda: _Adapter(),
+    )
+
+    response = _client(_admin).get(
+        "/api/submission-archive/export"
+        "?date_from=2026-01-01&date_to=2026-03-31"
+    )
+
+    assert response.status_code == 200
+    disposition = response.headers["content-disposition"]
+    assert "filename*=UTF-8''%E6%8A%A5%E9%80%81%E5%AD%98%E6%A1%A3" in disposition
+    assert "20260101-20260331" in disposition
+    assert response.content.startswith(b"\xef\xbb\xbf")
+    assert "测试标题" in response.content.decode("utf-8-sig")
+
+
 def test_empty_export_returns_header_only_csv(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -473,15 +473,7 @@ function setupDuplicateReview() {
     if (bulkDiscard) bulkDiscard.addEventListener('click', handleDuplicateBulkDiscardClick);
     if (previousGroup) previousGroup.addEventListener('click', () => moveDuplicateReviewGroup(-1));
     if (nextGroup) nextGroup.addEventListener('click', () => moveDuplicateReviewGroup(1));
-    // 捕获阶段注册：本弹窗的处理器晚于 content_drawer.js 的冒泡处理器执行时，
-    // 抽屉已被关闭、content-drawer-open 类已移除，守卫会失效。捕获阶段才能抢在
-    // 抽屉处理器之前读到「抽屉仍开着」的状态——抽屉开着时跳过，Escape 先关抽屉
-    document.addEventListener('keydown', event => {
-        const modal = document.getElementById('duplicate-review-modal');
-        if (event.key === 'Escape' && modal && modal.classList.contains('active')) {
-            // 原文抽屉还开着时 Escape 先关抽屉（由内容抽屉脚本处理），弹窗保持
-            if (document.body.classList.contains('content-drawer-open')) return;
-            finishDuplicateReview();
-        }
-    }, true);
+    // 弹窗没有 Escape 退出与遮罩点击退出：唯一出口是「关闭并刷新列表」按钮
+    // （finishDuplicateReview）。弹窗内打开的原文抽屉由内容抽屉脚本自己的
+    // Escape 处理器关闭，不影响弹窗。
 }

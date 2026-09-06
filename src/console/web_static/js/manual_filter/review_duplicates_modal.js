@@ -11,11 +11,6 @@ function escapeDuplicateHtml(value) {
         .replace(/'/g, '&#039;');
 }
 
-function safeDuplicateUrl(value) {
-    const url = String(value || '').trim();
-    return /^https?:\/\//i.test(url) ? url : '';
-}
-
 function duplicateStatusOptions(item) {
     const currentValue = `${item.report_type || state.reviewReportType}:${item.status || state.reviewView}`;
     const options = [
@@ -37,12 +32,10 @@ function renderDuplicateReviewItem(item) {
     const summaryCount = formatReviewSummaryCount(countReviewSummaryChars(item.summary));
     const score = formatScore(item.score);
     const bonusText = (item.bonus_keywords || []).join(', ');
-    const safeUrl = safeDuplicateUrl(item.url);
-    const link = safeUrl
-        ? `<a href="${escapeDuplicateHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">🔗</a>`
-        : '';
+    const bonusKeywordsAttr = escapeDuplicateHtml((item.bonus_keywords || []).join('\n'));
+    const articleId = escapeDuplicateHtml(item.article_id);
     return `
-        <article class="article-card duplicate-review-item" data-id="${escapeDuplicateHtml(item.article_id)}"
+        <article class="article-card duplicate-review-item" data-id="${articleId}"
             data-status="${escapeDuplicateHtml(item.status)}"
             data-version="${Number(item.version) || 0}"
             data-report-type="${escapeDuplicateHtml(item.report_type)}">
@@ -50,7 +43,12 @@ function renderDuplicateReviewItem(item) {
                 <label class="review-select-wrap" title="选择">
                     <input type="checkbox" class="duplicate-review-select" aria-label="选择《${title}》">
                 </label>
-                <h5>${title} ${link}</h5>
+                <h5>${title}
+                    <button type="button" class="content-drawer-trigger"
+                        data-article-id="${articleId}"
+                        data-bonus-keywords="${bonusKeywordsAttr}"
+                        title="查看原文">原文</button>
+                </h5>
                 <div class="review-card-actions">
                     <button type="button" class="review-discard-btn duplicate-review-discard"
                         title="放弃新闻" aria-label="放弃《${title}》">🗑️</button>
@@ -264,5 +262,7 @@ function closeDuplicateReviewModal() {
     modal.classList.remove('active');
     modal.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('duplicate-review-open');
+    // 查重结束回到主列表，叠加在弹窗上的原文抽屉一并收起
+    if (typeof closeContentDrawer === 'function') closeContentDrawer();
     if (duplicateReviewTrigger) duplicateReviewTrigger.focus();
 }

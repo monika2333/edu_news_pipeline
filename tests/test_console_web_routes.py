@@ -1059,6 +1059,27 @@ def test_discarded_duplicate_items_are_hidden_until_undo() -> None:
     assert ".duplicate-review-group:not(.is-empty)" in modal
 
 
+def test_duplicate_review_items_use_content_drawer_trigger() -> None:
+    root = Path(__file__).parents[1]
+    scripts_dir = root / "src/console/web_static/js/manual_filter"
+    modal_script = (scripts_dir / "review_duplicates_modal.js").read_text(encoding="utf-8")
+    controller_script = (scripts_dir / "review_tab_duplicates.js").read_text(encoding="utf-8")
+    drawer_script = (scripts_dir / "content_drawer.js").read_text(encoding="utf-8")
+    drawer_css = (root / "src/console/web_static/css/modules/content_drawer.css").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'class="content-drawer-trigger"' in modal_script
+    assert "data-article-id" in modal_script
+    assert "data-bonus-keywords" in modal_script
+    assert "safeDuplicateUrl" not in modal_script
+    assert "🔗" not in modal_script
+    assert "triggerBtn.closest('#duplicate-review-modal')" in drawer_script
+    assert "body.duplicate-review-open .content-drawer" in drawer_css
+    assert "document.body.classList.contains('content-drawer-open')" in controller_script
+    assert "closeContentDrawer" in modal_script
+
+
 def test_review_sort_mode_supports_cross_group_dragging() -> None:
     root = Path(__file__).parents[1]
     scripts_dir = root / "src/console/web_static/js/manual_filter"

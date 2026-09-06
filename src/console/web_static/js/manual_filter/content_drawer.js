@@ -293,8 +293,8 @@ function handleContentDrawerTrigger(triggerBtn) {
     contentDrawerState.articleId = articleId;
     const bonusKeywords = resolveContentDrawerBonusKeywords(triggerBtn);
 
-    // 从检索抽屉打开：抽屉盖在检索抽屉上即可，外层页面的侧栏与列表布局保持不变
-    if (triggerBtn.closest('#search-drawer')) {
+    // 从检索抽屉或查重弹窗打开：抽屉盖在其上即可，外层页面的侧栏与列表布局保持不变
+    if (triggerBtn.closest('#search-drawer') || triggerBtn.closest('#duplicate-review-modal')) {
         if (!contentDrawerState.open) {
             document.body.classList.add('content-drawer-overlay');
             setContentDrawerOpen(true, { anchor: false });

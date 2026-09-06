@@ -476,6 +476,8 @@ function setupDuplicateReview() {
     document.addEventListener('keydown', event => {
         const modal = document.getElementById('duplicate-review-modal');
         if (event.key === 'Escape' && modal && modal.classList.contains('active')) {
+            // 原文抽屉还开着时 Escape 先关抽屉（由内容抽屉脚本处理），弹窗保持
+            if (document.body.classList.contains('content-drawer-open')) return;
             finishDuplicateReview();
         }
     });

@@ -730,9 +730,10 @@ def test_clear_review_buckets_button_state_stays_fresh() -> None:
     )
 
     # loadStats 是所有计数刷新的汇合点：末尾同步按钮空态，并返回成功与否
+    # 右边界取函数体的零缩进收尾括号，不依赖下一个函数的名字
     load_stats_body = utils_source.split(
         "async function loadStats()", maxsplit=1
-    )[1].split("function getSentimentClass", maxsplit=1)[0]
+    )[1].split("\n}\n", maxsplit=1)[0]
     assert "updateClearReviewBucketsButton();" in load_stats_body
     assert "return true;" in load_stats_body
     assert "return false;" in load_stats_body
@@ -743,6 +744,12 @@ def test_clear_review_buckets_button_state_stays_fresh() -> None:
     )[1].split("async function confirmClearReviewBuckets()", maxsplit=1)[0]
     assert "const statsLoaded = await loadStats();" in handle_body
     assert "if (!statsLoaded)" in handle_body
+    # 断言限定在 if (!statsLoaded) 块内部：块外还有两处 return;，在函数体范围断言会恒真
+    stats_fail_block = handle_body.split(
+        "if (!statsLoaded) {", maxsplit=1
+    )[1].split("\n    }", maxsplit=1)[0]
+    assert "updateClearReviewBucketsButton();" in stats_fail_block
+    assert "return;" in stats_fail_block
 
     # finally 里这次调用是清空请求失败路径上恢复主按钮的唯一位置，不能当重复代码删掉
     confirm_body = review_data_source.split(

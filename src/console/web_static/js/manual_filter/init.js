@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     setupTabs();
-    loadStats().then(updateClearReviewBucketsButton);
+    loadStats();
     if (state.currentTab === 'review') {
         loadReviewData();
         if (IS_DUTY_WORKSPACE) loadDutyFinalizationStatus();

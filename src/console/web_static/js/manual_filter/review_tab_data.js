@@ -546,7 +546,12 @@ async function handleClearReviewBuckets() {
     btn.disabled = true;
     // 先刷新计数再打开确认框：管理员看到的数字必须是服务端当前值，
     // 与后端实际清掉的数字对不上比不显示更糟。
-    await loadStats();
+    const statsLoaded = await loadStats();
+    if (!statsLoaded) {
+        // loadStats 已弹出失败提示，这里不再叠加；恢复按钮状态后直接返回
+        updateClearReviewBucketsButton();
+        return;
+    }
     const counts = getReviewBucketCounts();
     if (getReviewBucketsTotal(counts) === 0) {
         // 按钮保持禁用（此时状态已与空桶一致），仅作极端竞态下的兜底提示

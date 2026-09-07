@@ -32,6 +32,11 @@ def _build_editor_client() -> TestClient:
     return TestClient(app)
 
 
+def _strip_js_comments(text: str) -> str:
+    """去掉 JS 行注释，避免注释里的词误命中源码切片上的断言。"""
+    return "\n".join(line.split("//", 1)[0] for line in text.splitlines())
+
+
 def test_console_root_restores_admin_last_view_in_browser() -> None:
     client = _build_client()
 
@@ -712,6 +717,39 @@ def test_clear_review_buckets_button_only_on_admin_review() -> None:
     assert "clear-review-buckets" in review_data_script
     assert "body: JSON.stringify({ scope: 'all' })" in review_data_script
     assert "handleClearReviewBuckets" in init_script
+
+
+def test_clear_review_buckets_button_state_stays_fresh() -> None:
+    """一键清空按钮的状态同步：断言全部落在剥离注释后的函数体切片上。"""
+    scripts_dir = Path(__file__).parents[1] / "src/console/web_static/js/manual_filter"
+    utils_source = _strip_js_comments(
+        (scripts_dir / "utils.js").read_text(encoding="utf-8")
+    )
+    review_data_source = _strip_js_comments(
+        (scripts_dir / "review_tab_data.js").read_text(encoding="utf-8")
+    )
+
+    # loadStats 是所有计数刷新的汇合点：末尾同步按钮空态，并返回成功与否
+    load_stats_body = utils_source.split(
+        "async function loadStats()", maxsplit=1
+    )[1].split("function getSentimentClass", maxsplit=1)[0]
+    assert "updateClearReviewBucketsButton();" in load_stats_body
+    assert "return true;" in load_stats_body
+    assert "return false;" in load_stats_body
+
+    # 刷新计数失败时不得用陈旧数字打开确认框，且要恢复按钮状态
+    handle_body = review_data_source.split(
+        "async function handleClearReviewBuckets()", maxsplit=1
+    )[1].split("async function confirmClearReviewBuckets()", maxsplit=1)[0]
+    assert "const statsLoaded = await loadStats();" in handle_body
+    assert "if (!statsLoaded)" in handle_body
+
+    # finally 里这次调用是清空请求失败路径上恢复主按钮的唯一位置，不能当重复代码删掉
+    confirm_body = review_data_source.split(
+        "async function confirmClearReviewBuckets()", maxsplit=1
+    )[1]
+    finally_block = confirm_body.split("} finally {", maxsplit=1)[1]
+    assert "updateClearReviewBucketsButton();" in finally_block
 
 
 def test_duty_summary_collapses_shift_panel_by_default(

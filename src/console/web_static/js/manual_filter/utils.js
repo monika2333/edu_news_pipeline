@@ -318,8 +318,13 @@ async function loadStats() {
             }
         });
         updateReviewRailCounts();
+        // 所有计数刷新都汇合到 loadStats，在这里同步一键清空按钮的空态，
+        // 覆盖归档 / 批量移动 / 定稿回流等所有改动桶数量的路径
+        updateClearReviewBucketsButton();
+        return true;
     } catch (e) {
         showToast('加载统计信息失败', 'error');
+        return false;
     }
 }
 

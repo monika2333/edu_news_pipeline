@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     setupTabs();
-    loadStats();
+    loadStats().then(updateClearReviewBucketsButton);
     if (state.currentTab === 'review') {
         loadReviewData();
         if (IS_DUTY_WORKSPACE) loadDutyFinalizationStatus();
@@ -121,6 +121,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btnArchive = document.getElementById('btn-archive');
     if (btnArchive) {
         btnArchive.addEventListener('click', handleArchive);
+    }
+    const btnClearReviewBuckets = document.getElementById('btn-clear-review-buckets');
+    if (btnClearReviewBuckets) {
+        btnClearReviewBuckets.addEventListener('click', handleClearReviewBuckets);
+    }
+    if (elements.clearReviewBucketsModal) {
+        elements.clearReviewBucketsCancelBtn?.addEventListener('click', closeClearReviewBucketsModal);
+        elements.clearReviewBucketsConfirmBtn?.addEventListener('click', confirmClearReviewBuckets);
     }
     document.getElementById('btn-finalize-review')
         ?.addEventListener('click', finalizeCurrentDutyReview);

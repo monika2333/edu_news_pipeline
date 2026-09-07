@@ -471,3 +471,124 @@ async function handleArchive() {
         showToast(e.message || '归档失败', 'error');
     }
 }
+
+// --- Clear Review Buckets (admin review) ---
+// 一键清空是服务端集合操作：后端按 scope 清空四个桶，前端不传 article_ids / versions。
+// 页面一次只加载当前桶，拿不到全量条目，因此这里只发起调用并展示服务端计数。
+
+let isClearingReviewBuckets = false;
+
+function getReviewBucketCounts() {
+    const counts = state.reviewCounts || {};
+    const zongbao = counts.zongbao || {};
+    const wanbao = counts.wanbao || {};
+    return {
+        zongbao: {
+            selected: Number(zongbao.selected) || 0,
+            backup: Number(zongbao.backup) || 0
+        },
+        wanbao: {
+            selected: Number(wanbao.selected) || 0,
+            backup: Number(wanbao.backup) || 0
+        }
+    };
+}
+
+function getReviewBucketsTotal(counts) {
+    return counts.zongbao.selected + counts.zongbao.backup
+        + counts.wanbao.selected + counts.wanbao.backup;
+}
+
+function updateClearReviewBucketsButton() {
+    const btn = elements.clearReviewBucketsBtn;
+    if (!btn) return;
+    const total = getReviewBucketsTotal(getReviewBucketCounts());
+    btn.disabled = total === 0;
+    btn.title = total === 0 ? '四个桶当前都为空' : '';
+}
+
+function openClearReviewBucketsModal(counts) {
+    const modal = elements.clearReviewBucketsModal;
+    if (!modal) return;
+    const setCount = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = `${value} 条`;
+    };
+    setCount('clear-count-zongbao-selected', counts.zongbao.selected);
+    setCount('clear-count-zongbao-backup', counts.zongbao.backup);
+    setCount('clear-count-wanbao-selected', counts.wanbao.selected);
+    setCount('clear-count-wanbao-backup', counts.wanbao.backup);
+    if (elements.clearReviewBucketsTotal) {
+        elements.clearReviewBucketsTotal.textContent =
+            `合计 ${getReviewBucketsTotal(counts)} 条`;
+    }
+    if (elements.clearReviewBucketsConfirmBtn) {
+        elements.clearReviewBucketsConfirmBtn.disabled = false;
+        elements.clearReviewBucketsConfirmBtn.textContent = '确认清空';
+    }
+    if (elements.clearReviewBucketsCancelBtn) {
+        elements.clearReviewBucketsCancelBtn.disabled = false;
+    }
+    modal.classList.add('active');
+    modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeClearReviewBucketsModal() {
+    const modal = elements.clearReviewBucketsModal;
+    if (!modal) return;
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden', 'true');
+}
+
+async function handleClearReviewBuckets() {
+    const btn = elements.clearReviewBucketsBtn;
+    if (!btn || btn.disabled || isClearingReviewBuckets) return;
+    btn.disabled = true;
+    // 先刷新计数再打开确认框：管理员看到的数字必须是服务端当前值，
+    // 与后端实际清掉的数字对不上比不显示更糟。
+    await loadStats();
+    const counts = getReviewBucketCounts();
+    if (getReviewBucketsTotal(counts) === 0) {
+        // 按钮保持禁用（此时状态已与空桶一致），仅作极端竞态下的兜底提示
+        showToast('四个桶当前都为空', 'error');
+        return;
+    }
+    btn.disabled = false;
+    openClearReviewBucketsModal(counts);
+}
+
+async function confirmClearReviewBuckets() {
+    const confirmBtn = elements.clearReviewBucketsConfirmBtn;
+    if (!confirmBtn || confirmBtn.disabled || isClearingReviewBuckets) return;
+    isClearingReviewBuckets = true;
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '正在清空…';
+    if (elements.clearReviewBucketsCancelBtn) {
+        elements.clearReviewBucketsCancelBtn.disabled = true;
+    }
+    if (elements.clearReviewBucketsBtn) {
+        elements.clearReviewBucketsBtn.disabled = true;
+    }
+    try {
+        const res = await workspaceFetch(`${API_BASE}/clear-review-buckets`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scope: 'all' })
+        });
+        const result = await requireManualMutationSuccess(res, '清空失败');
+        closeClearReviewBucketsModal();
+        showToast(`已清空 ${Number(result.total) || 0} 条，条目已置为「放弃」`);
+        await loadReviewData();
+        await loadStats();
+    } catch (e) {
+        showToast(e.message || '清空失败', 'error');
+    } finally {
+        isClearingReviewBuckets = false;
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = '确认清空';
+        if (elements.clearReviewBucketsCancelBtn) {
+            elements.clearReviewBucketsCancelBtn.disabled = false;
+        }
+        updateClearReviewBucketsButton();
+    }
+}

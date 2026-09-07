@@ -680,6 +680,40 @@ def test_admin_review_is_an_independent_workspace() -> None:
     assert 'id="filter-hide-submitted"' not in html
 
 
+def test_clear_review_buckets_button_only_on_admin_review() -> None:
+    admin_review = _build_client().get("/admin/review")
+
+    assert admin_review.status_code == 200
+    assert 'id="btn-clear-review-buckets"' in admin_review.text
+    assert 'class="workspace-tabs-row"' in admin_review.text
+    assert 'class="workspace-tab-actions"' in admin_review.text
+    assert 'id="clear-review-buckets-modal"' in admin_review.text
+    assert 'id="btn-clear-review-cancel"' in admin_review.text
+    assert 'id="btn-clear-review-confirm"' in admin_review.text
+    assert 'id="clear-count-zongbao-selected"' in admin_review.text
+    assert 'id="clear-count-zongbao-backup"' in admin_review.text
+    assert 'id="clear-count-wanbao-selected"' in admin_review.text
+    assert 'id="clear-count-wanbao-backup"' in admin_review.text
+    assert "全量新闻筛选 → 放弃" in admin_review.text
+
+    filter_page = _build_client().get("/manual_filter")
+    assert filter_page.status_code == 200
+    assert 'id="btn-clear-review-buckets"' not in filter_page.text
+    assert 'id="clear-review-buckets-modal"' not in filter_page.text
+
+    duty_page = _build_editor_client().get("/duty")
+    assert duty_page.status_code == 200
+    assert 'id="btn-clear-review-buckets"' not in duty_page.text
+    assert 'id="clear-review-buckets-modal"' not in duty_page.text
+
+    scripts_dir = Path(__file__).parents[1] / "src/console/web_static/js/manual_filter"
+    review_data_script = (scripts_dir / "review_tab_data.js").read_text(encoding="utf-8")
+    init_script = (scripts_dir / "init.js").read_text(encoding="utf-8")
+    assert "clear-review-buckets" in review_data_script
+    assert "body: JSON.stringify({ scope: 'all' })" in review_data_script
+    assert "handleClearReviewBuckets" in init_script
+
+
 def test_duty_summary_collapses_shift_panel_by_default(
     monkeypatch: MonkeyPatch,
 ) -> None:

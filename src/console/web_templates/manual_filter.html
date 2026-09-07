@@ -157,6 +157,15 @@
                 </span>
             </div>
         </div>
+        {% else %}
+        {# 汇总审阅（is_admin_review）：无 tab 切换，操作区只放跨桶的一键清空，
+           与底部工具条上的排序/预览/归档保持物理距离。 #}
+        <div class="workspace-tabs-row">
+            <div class="workspace-tab-actions">
+                <button class="btn btn-secondary btn-clear-review-buckets" id="btn-clear-review-buckets"
+                    type="button">一键清空</button>
+            </div>
+        </div>
         {% endif %}
 
         <!-- Filter Tab -->
@@ -447,6 +456,39 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" id="btn-cleanup-cancel">取消</button>
                 <button type="button" class="btn btn-primary" id="btn-cleanup-confirm" disabled>确认放弃</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Clear Review Buckets Modal -->
+    {% if is_admin_review %}
+    <div class="modal" id="clear-review-buckets-modal" role="dialog" aria-modal="true"
+        aria-labelledby="clear-review-buckets-title" aria-hidden="true">
+        <div class="modal-content clear-review-buckets-modal-content">
+            <div class="modal-header">
+                <h3 id="clear-review-buckets-title">一键清空四个桶</h3>
+            </div>
+            <div class="modal-body">
+                <p class="clear-review-buckets-desc">
+                    将把综报/晚报的采纳与备选四个桶中的条目全部置为「放弃」。这不是删除：
+                    摘要与来源的编辑内容都会保留，被清掉的条目可在「全量新闻筛选 → 放弃」页逐条恢复。
+                </p>
+                <ul class="clear-review-buckets-counts">
+                    <li><span>综报采纳</span><span class="bucket-count"
+                        id="clear-count-zongbao-selected">0</span></li>
+                    <li><span>综报备选</span><span class="bucket-count"
+                        id="clear-count-zongbao-backup">0</span></li>
+                    <li><span>晚报采纳</span><span class="bucket-count"
+                        id="clear-count-wanbao-selected">0</span></li>
+                    <li><span>晚报备选</span><span class="bucket-count"
+                        id="clear-count-wanbao-backup">0</span></li>
+                </ul>
+                <p class="clear-review-buckets-total" id="clear-review-buckets-total" aria-live="polite"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="btn-clear-review-cancel">取消</button>
+                <button type="button" class="btn btn-primary" id="btn-clear-review-confirm">确认清空</button>
             </div>
         </div>
     </div>

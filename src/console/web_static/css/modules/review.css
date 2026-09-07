@@ -935,3 +935,55 @@ body.duplicate-review-open .search-drawer-toggle {
         padding: 8px;
     }
 }
+
+/* 一键清空（仅汇总审阅页）：跨四个桶的集合操作，用危险色描边表达点错代价，
+   与底部工具条上的排序/预览/归档等高频操作保持物理距离。 */
+.btn-clear-review-buckets {
+    border-color: #fecaca;
+    color: #b91c1c;
+}
+
+.btn-clear-review-buckets:hover:not(:disabled) {
+    border-color: #f87171;
+    background: #fef2f2;
+}
+
+.clear-review-buckets-modal-content {
+    width: min(480px, 96vw);
+}
+
+.clear-review-buckets-desc {
+    margin: 0;
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+.clear-review-buckets-counts {
+    list-style: none;
+    margin: 0;
+    padding: 12px 16px;
+    background: #f8fafc;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.clear-review-buckets-counts li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--text-secondary);
+}
+
+.clear-review-buckets-counts .bucket-count {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.clear-review-buckets-total {
+    margin: 0;
+    font-weight: 700;
+    color: #b91c1c;
+}

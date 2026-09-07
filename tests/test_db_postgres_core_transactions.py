@@ -285,6 +285,148 @@ def test_admin_discard_and_audit_share_one_transaction(
     assert events == ["begin", "duty_summary.discard", "commit"]
 
 
+def test_clear_review_buckets_uses_versioned_updates_and_one_audit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = object.__new__(db_postgres_core.PostgresAdapter)
+    cursor = object()
+    events: list[str] = []
+    targets = [
+        {
+            "article_id": "selected-1",
+            "version": 3,
+            "previous_status": "selected",
+            "report_type": "wanbao",
+        },
+        {
+            "article_id": "backup-1",
+            "version": 5,
+            "previous_status": "backup",
+            "report_type": "zongbao",
+        },
+    ]
+    before = [
+        {"article_id": "selected-1", "status": "selected"},
+        {"article_id": "backup-1", "status": "backup"},
+    ]
+    after = [
+        {
+            "article_id": "selected-1",
+            "status": "discarded",
+            "rank": None,
+            "report_type": "wanbao",
+        },
+        {
+            "article_id": "backup-1",
+            "status": "discarded",
+            "rank": None,
+            "report_type": "zongbao",
+        },
+    ]
+    audit_calls: list[dict[str, Any]] = []
+
+    @contextmanager
+    def fake_transaction() -> Iterator[object]:
+        events.append("begin")
+        yield cursor
+        events.append("commit")
+
+    def fake_update(
+        cur: object,
+        updates: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        assert cur is cursor
+        assert updates == [
+            {"article_id": "selected-1", "status": "discarded", "rank": None},
+            {"article_id": "backup-1", "status": "discarded", "rank": None},
+        ]
+        assert kwargs == {
+            "actor_username": "system:scheduled_clear",
+            "actor_user_id": None,
+            "expected_versions": {"selected-1": 3, "backup-1": 5},
+            "require_versions": True,
+            "report_type": None,
+        }
+        events.append("update")
+        return before, after
+
+    adapter.transaction = fake_transaction
+    monkeypatch.setattr(
+        db_postgres_core.manual_reviews,
+        "fetch_review_buckets_for_update",
+        lambda cur: events.append("fetch") or targets,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.manual_reviews,
+        "update_manual_review_statuses_with_versions",
+        fake_update,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        lambda cur, **kwargs: audit_calls.append(kwargs),
+    )
+
+    result = adapter.clear_review_buckets_as_user(
+        actor_username="system:scheduled_clear",
+        actor_user_id=None,
+        trigger="scheduled",
+        request_id="request-1",
+    )
+
+    assert events == ["begin", "fetch", "update", "commit"]
+    assert [row["previous_status"] for row in result] == ["selected", "backup"]
+    assert len(audit_calls) == 1
+    assert audit_calls[0] == {
+        "actor_user_id": None,
+        "action": "manual_review.clear_buckets",
+        "target_type": "manual_review_batch",
+        "target_id": "all",
+        "before_data": {"items": before},
+        "after_data": {"items": after, "trigger": "scheduled"},
+        "request_id": "request-1",
+    }
+
+
+def test_clear_review_buckets_does_not_audit_empty_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = object.__new__(db_postgres_core.PostgresAdapter)
+    cursor = object()
+    audit_calls: list[dict[str, Any]] = []
+
+    @contextmanager
+    def fake_transaction() -> Iterator[object]:
+        yield cursor
+
+    adapter.transaction = fake_transaction
+    monkeypatch.setattr(
+        db_postgres_core.manual_reviews,
+        "fetch_review_buckets_for_update",
+        lambda cur: [],
+    )
+    monkeypatch.setattr(
+        db_postgres_core.manual_reviews,
+        "update_manual_review_statuses_with_versions",
+        lambda cur, updates, **kwargs: ([], []),
+    )
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        lambda cur, **kwargs: audit_calls.append(kwargs),
+    )
+
+    result = adapter.clear_review_buckets_as_user(
+        actor_username="system:scheduled_clear",
+        actor_user_id=None,
+        trigger="scheduled",
+    )
+
+    assert result == []
+    assert audit_calls == []
+
+
 def test_bulk_admin_discard_uses_one_transaction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

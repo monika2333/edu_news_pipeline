@@ -207,6 +207,22 @@ def test_discard_manual_candidates_before_date_places_filter_params_first() -> N
     assert cur.params[7] == decided_at
 
 
+def test_fetch_review_buckets_for_update_locks_all_review_rows() -> None:
+    cur = FakeFetchCursor()
+
+    rows = db_postgres_manual_reviews.fetch_review_buckets_for_update(cur)
+
+    assert rows == []
+    assert len(cur.queries) == 1
+    query = cur.queries[0]
+    assert "mr.status IN (%s, %s)" in query
+    assert "mr.status AS previous_status" in query
+    assert "COALESCE(mr.report_type, 'zongbao') AS report_type" in query
+    assert "FOR UPDATE OF mr" in query
+    assert "ready_for_export" not in query
+    assert cur.params[0] == ("selected", "backup")
+
+
 def test_fetch_manual_reviews_orders_selected_items_by_manual_rank_first() -> None:
     cur = FakeFetchCursor()
 

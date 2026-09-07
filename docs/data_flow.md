@@ -126,6 +126,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 - 状态：`pending` / `selected` / `backup` / `discarded` / `exported`
 - `report_type` 只有 `zongbao` / `wanbao`，且**只在采纳时才有意义**——`pending` 状态下这个值不代表任何东西
 - `version` 用于乐观锁，防止两个管理员同时改同一条
+- 汇总审阅的「一键清空」接口与 `clear-review-buckets` 命令会把全部 `selected` / `backup` 行批量置为 `discarded`，同时清空排序值但保留摘要、来源、笔记、评分和原报别。命令行路径使用 `decided_by = 'system:scheduled_clear'` 标记系统操作，`decided_by_user_id` 保持为空。
 
 ### `shift_reviews` —— 值班编辑工作区
 

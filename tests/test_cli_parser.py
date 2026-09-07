@@ -20,6 +20,7 @@ from src.console import manual_filter_service
         "score",
         "export",
         "refresh-manual-clusters",
+        "clear-review-buckets",
         "feishu-archive-bot",
         "submission-feedback-dedup",
     ],
@@ -42,6 +43,7 @@ def test_cli_help_available() -> None:
         "score",
         "export",
         "refresh-manual-clusters",
+        "clear-review-buckets",
         "feishu-archive-bot",
         "submission-feedback-dedup",
     ]:
@@ -179,3 +181,44 @@ def test_main_propagates_refresh_exit_code(
     )
 
     assert cli_main.main(["refresh-manual-clusters"]) == 2
+
+
+def test_clear_review_buckets_cli_uses_scheduled_actor_and_prints_counts(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from src.console import manual_filter_admin_service
+
+    calls: list[dict[str, object]] = []
+
+    def fake_clear_review_buckets(**kwargs: object) -> dict[str, object]:
+        calls.append(kwargs)
+        return {
+            "total": 0,
+            "buckets": {
+                "zongbao": {"selected": 0, "backup": 0},
+                "wanbao": {"selected": 0, "backup": 0},
+            },
+        }
+
+    monkeypatch.setattr(
+        manual_filter_admin_service,
+        "clear_review_buckets",
+        fake_clear_review_buckets,
+    )
+
+    result = cli_main.main(["clear-review-buckets"])
+
+    assert result == 0
+    assert calls == [
+        {
+            "actor_username": "system:scheduled_clear",
+            "actor_user_id": None,
+            "trigger": "scheduled",
+        }
+    ]
+    output = capsys.readouterr().out
+    assert "[clear-review-buckets]" in output
+    assert "cleared=0" in output
+    assert "zongbao(selected=0, backup=0)" in output
+    assert "wanbao(selected=0, backup=0)" in output

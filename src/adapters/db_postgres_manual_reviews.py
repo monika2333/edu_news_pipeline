@@ -623,6 +623,27 @@ def fetch_manual_candidates_before_date_for_update(
     return [dict(row) for row in cur.fetchall()]
 
 
+def fetch_review_buckets_for_update(
+    cur: psycopg.Cursor,
+) -> list[dict[str, Any]]:
+    type_expr = report_type_expr("mr")
+    cur.execute(
+        f"""
+        SELECT
+            mr.article_id,
+            mr.version,
+            mr.status AS previous_status,
+            {type_expr} AS report_type
+        FROM manual_reviews mr
+        WHERE mr.status IN (%s, %s)
+        ORDER BY mr.article_id
+        FOR UPDATE OF mr
+        """,
+        ("selected", "backup"),
+    )
+    return [dict(row) for row in cur.fetchall()]
+
+
 def discard_manual_candidates_before_date(
     cur: psycopg.Cursor,
     *,
@@ -1606,6 +1627,7 @@ __all__ = [
     "enqueue_manual_review",
     "fetch_manual_clusters",
     "fetch_manual_candidates_before_date_for_update",
+    "fetch_review_buckets_for_update",
     "fetch_manual_pending_for_cluster",
     "fetch_manual_reviews",
     "fetch_manual_review_rows",

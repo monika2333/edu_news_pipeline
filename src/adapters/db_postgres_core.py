@@ -1053,6 +1053,62 @@ class PostgresAdapter:
                 )
             return after
 
+    def clear_review_buckets_as_user(
+        self,
+        *,
+        actor_username: str,
+        actor_user_id: Optional[str],
+        trigger: str,
+        request_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        with self.transaction() as cur:
+            targets = manual_reviews.fetch_review_buckets_for_update(cur)
+            updates = [
+                {
+                    "article_id": str(row["article_id"]),
+                    "status": "discarded",
+                    "rank": None,
+                }
+                for row in targets
+            ]
+            expected_versions = {
+                str(row["article_id"]): int(row["version"])
+                for row in targets
+            }
+            before, after = (
+                manual_reviews.update_manual_review_statuses_with_versions(
+                    cur,
+                    updates,
+                    actor_username=actor_username,
+                    actor_user_id=actor_user_id,
+                    expected_versions=expected_versions,
+                    require_versions=True,
+                    report_type=None,
+                )
+            )
+            if after:
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action="manual_review.clear_buckets",
+                    target_type="manual_review_batch",
+                    target_id="all",
+                    before_data={"items": before},
+                    after_data={"items": after, "trigger": trigger},
+                    request_id=request_id,
+                )
+            previous_statuses = {
+                str(row["article_id"]): str(row["previous_status"])
+                for row in targets
+            }
+            return [
+                {
+                    **row,
+                    "previous_status": previous_statuses[str(row["article_id"])],
+                }
+                for row in after
+            ]
+
     def update_manual_review_summaries_as_user(
         self,
         edits: Mapping[str, Mapping[str, Any]],

@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.console import manual_filter_service
+from src.console import manual_filter_admin_service, manual_filter_service
 
 
 class FakeSubmissionArchiveNamespace:
@@ -372,6 +372,7 @@ class FakeAdapter:
                 break
         return updated
 
+
     def update_manual_review_order_and_categories(
         self,
         review_updates: Sequence[Mapping[str, Any]],
@@ -451,6 +452,82 @@ class FakeAdapter:
                 updated += 1
                 break
         return updated
+
+
+def test_clear_review_buckets_counts_successful_rows_and_preserves_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    rows = [
+        {
+            "article_id": "selected-null-type",
+            "status": "discarded",
+            "previous_status": "selected",
+            "rank": None,
+            "report_type": None,
+            "summary": "摘要一",
+            "manual_llm_source": "来源一",
+            "notes": "备注一",
+            "score": 91,
+            "decided_by": "system:scheduled_clear",
+            "decided_by_user_id": None,
+        },
+        {
+            "article_id": "backup-wanbao",
+            "status": "discarded",
+            "previous_status": "backup",
+            "rank": None,
+            "report_type": "wanbao",
+            "summary": "摘要二",
+            "manual_llm_source": "来源二",
+            "notes": "备注二",
+            "score": 83,
+            "decided_by": "system:scheduled_clear",
+            "decided_by_user_id": None,
+        },
+    ]
+
+    class ClearAdapter:
+        def clear_review_buckets_as_user(self, **kwargs: Any) -> list[dict[str, Any]]:
+            calls.append(kwargs)
+            return rows
+
+    monkeypatch.setattr(
+        manual_filter_admin_service,
+        "get_adapter",
+        lambda: ClearAdapter(),
+    )
+
+    result = manual_filter_admin_service.clear_review_buckets(
+        actor_username="system:scheduled_clear",
+        actor_user_id=None,
+        trigger="scheduled",
+    )
+
+    assert result == {
+        "total": 2,
+        "buckets": {
+            "zongbao": {"selected": 1, "backup": 0},
+            "wanbao": {"selected": 0, "backup": 1},
+        },
+    }
+    assert calls == [
+        {
+            "actor_username": "system:scheduled_clear",
+            "actor_user_id": None,
+            "trigger": "scheduled",
+            "request_id": None,
+        }
+    ]
+    assert rows[0]["report_type"] is None
+    assert rows[0]["summary"] == "摘要一"
+    assert rows[0]["manual_llm_source"] == "来源一"
+    assert rows[0]["notes"] == "备注一"
+    assert rows[0]["score"] == 91
+    assert all(row["status"] == "discarded" for row in rows)
+    assert all(row["rank"] is None for row in rows)
+    assert all(row["decided_by_user_id"] is None for row in rows)
+
 
 @pytest.fixture()
 def fake_adapter(monkeypatch):

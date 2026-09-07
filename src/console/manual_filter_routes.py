@@ -22,7 +22,7 @@ from src.console.score_feedback_schemas import (
     ScoreFeedbackRequest,
     ScoreFeedbackResponse,
 )
-from src.console.security import ConsoleUser, require_console_user
+from src.console.security import ConsoleUser, require_console_user, require_role
 from src.domain.report_type import NewsReportType
 
 router = APIRouter(prefix="/api/manual_filter", tags=["manual_filter"])
@@ -72,6 +72,12 @@ class BulkDiscardRequest(BaseModel):
     q: Optional[str] = None
     created_before: Optional[date] = None
     dry_run: bool = True
+
+
+class ClearReviewBucketsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scope: Literal["all"]
 
 
 class DuplicateCheckRequest(BaseModel):
@@ -288,6 +294,24 @@ def bulk_discard_api(
             created_before=req.created_before,
             dry_run=req.dry_run,
             actor=user,
+            request_id=request_id,
+        )
+    except (ValueError, RuntimeError) as exc:
+        _raise_manual_write_http_error(exc)
+
+
+@router.post("/clear-review-buckets")
+def clear_review_buckets_api(
+    req: ClearReviewBucketsRequest,
+    user: ConsoleUser = Depends(require_role("admin")),
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
+) -> Dict[str, Any]:
+    del req
+    try:
+        return manual_filter_admin_service.clear_review_buckets(
+            actor_username=user.username,
+            actor_user_id=user.user_id,
+            trigger="manual",
             request_id=request_id,
         )
     except (ValueError, RuntimeError) as exc:

@@ -306,6 +306,124 @@ def _anonymous_console_user() -> ConsoleUser:
     return ConsoleUser(method="test")
 
 
+def _duty_editor_user() -> ConsoleUser:
+    return ConsoleUser(
+        method="test",
+        user_id="editor-1",
+        username="duty-editor",
+        display_name="值班编辑",
+        role="duty_editor",
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        ("/api/manual_filter/decide", {}),
+        ("/api/manual_filter/edit", {}),
+        ("/api/manual_filter/archive", {}),
+        ("/api/manual_filter/order", {}),
+        (
+            "/api/manual_filter/bulk-discard",
+            {
+                "region": "internal",
+                "sentiment": "positive",
+                "dry_run": True,
+            },
+        ),
+    ],
+)
+def test_manual_filter_writes_reject_duty_editor(
+    path: str,
+    payload: dict[str, Any],
+) -> None:
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _duty_editor_user
+
+    response = TestClient(app).post(path, json=payload)
+
+    assert response.status_code == 403
+
+
+def test_clear_review_buckets_rejects_duty_editor() -> None:
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _duty_editor_user
+
+    response = TestClient(app).post(
+        "/api/manual_filter/clear-review-buckets",
+        json={"scope": "all"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_clear_review_buckets_requires_explicit_all_scope() -> None:
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    empty = client.post("/api/manual_filter/clear-review-buckets", json={})
+    invalid = client.post(
+        "/api/manual_filter/clear-review-buckets",
+        json={"scope": "current"},
+    )
+    extra = client.post(
+        "/api/manual_filter/clear-review-buckets",
+        json={"scope": "all", "confirm": True},
+    )
+
+    assert empty.status_code == 422
+    assert invalid.status_code == 422
+    assert extra.status_code == 422
+
+
+def test_clear_review_buckets_returns_counts_and_authenticated_actor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.console import manual_filter_admin_service
+
+    captured: dict[str, Any] = {}
+    expected = {
+        "total": 12,
+        "buckets": {
+            "zongbao": {"selected": 5, "backup": 3},
+            "wanbao": {"selected": 4, "backup": 0},
+        },
+    }
+
+    def clear_review_buckets(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return expected
+
+    monkeypatch.setattr(
+        manual_filter_admin_service,
+        "clear_review_buckets",
+        clear_review_buckets,
+    )
+    app = create_app()
+    app.dependency_overrides[require_console_user] = lambda: ConsoleUser(
+        method="test",
+        user_id="admin-1",
+        username="admin-user",
+        role="admin",
+    )
+
+    response = TestClient(app).post(
+        "/api/manual_filter/clear-review-buckets",
+        json={"scope": "all"},
+        headers={"X-Request-ID": "request-1"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == expected
+    assert captured == {
+        "actor_username": "admin-user",
+        "actor_user_id": "admin-1",
+        "trigger": "manual",
+        "request_id": "request-1",
+    }
+
+
 def test_decide_uses_authenticated_user_instead_of_forged_actor(monkeypatch) -> None:
     from src.console import manual_filter_admin_service
 

@@ -4,6 +4,7 @@ from datetime import date, datetime
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
@@ -355,6 +356,43 @@ def test_clear_review_buckets_rejects_duty_editor() -> None:
     )
 
     assert response.status_code == 403
+
+
+def test_clear_review_buckets_route_itself_requires_admin_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.console import manual_filter_admin_service, manual_filter_routes
+
+    called = False
+
+    def clear_review_buckets(**kwargs: Any) -> dict[str, Any]:
+        del kwargs
+        nonlocal called
+        called = True
+        return {
+            "total": 0,
+            "buckets": {
+                "zongbao": {"selected": 0, "backup": 0},
+                "wanbao": {"selected": 0, "backup": 0},
+            },
+        }
+
+    monkeypatch.setattr(
+        manual_filter_admin_service,
+        "clear_review_buckets",
+        clear_review_buckets,
+    )
+    app = FastAPI()
+    app.include_router(manual_filter_routes.router)
+    app.dependency_overrides[require_console_user] = _duty_editor_user
+
+    response = TestClient(app).post(
+        "/api/manual_filter/clear-review-buckets",
+        json={"scope": "all"},
+    )
+
+    assert response.status_code == 403
+    assert called is False
 
 
 def test_clear_review_buckets_requires_explicit_all_scope() -> None:

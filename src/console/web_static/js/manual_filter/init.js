@@ -211,8 +211,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         });
         elements.reportTypeButtons.forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.type === state.filterAssignReportType);
+            const isActive = btn.dataset.type === state.filterAssignReportType;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
+        // 从 localStorage 恢复归入报别时，setFilterAssignReportType 因值未变化提前返回，
+        // 这里同步 dock 标签文本，避免标签停在模板默认的「综报」
+        if (elements.reportTypeTabText) {
+            elements.reportTypeTabText.textContent =
+                state.filterAssignReportType === 'wanbao' ? '晚报' : '综报';
+        }
     }
     if (elements.reviewSearchInput) {
         elements.reviewSearchInput.addEventListener('input', applyReviewSearchFilter);

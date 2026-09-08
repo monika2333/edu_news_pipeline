@@ -259,6 +259,11 @@ function setFilterAssignReportType(value) {
     if (state.filterAssignReportType === normalized) return;
 
     state.filterAssignReportType = normalized;
+    try {
+        localStorage.setItem(ASSIGN_REPORT_TYPE_KEY, normalized);
+    } catch (error) {
+        // 写入失败仅影响持久化，不影响本次切换
+    }
     if (elements.reportTypeTabText) {
         elements.reportTypeTabText.textContent = normalized === 'wanbao' ? '晚报' : '综报';
     }

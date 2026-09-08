@@ -13,6 +13,17 @@ const GROUP_ORDER = [
 
 const FILTER_CATEGORIES = ['internal_positive', 'internal_negative', 'external_positive', 'external_negative'];
 
+// 归入报别（采纳/备选归入综报/晚报）记入 localStorage，刷新后保持上次选择，直到用户主动切换
+const ASSIGN_REPORT_TYPE_KEY = 'manual_filter_assign_report_type';
+
+function readStoredAssignReportType() {
+    try {
+        return localStorage.getItem(ASSIGN_REPORT_TYPE_KEY) === 'wanbao' ? 'wanbao' : 'zongbao';
+    } catch (error) {
+        return 'zongbao'; // 读取失败时回退默认综报
+    }
+}
+
 // State
 let state = {
     filterPage: 1,
@@ -26,7 +37,7 @@ let state = {
     latestIngestedAt: null,
     reviewView: 'selected',
     reviewReportType: 'zongbao',
-    filterAssignReportType: 'zongbao',
+    filterAssignReportType: readStoredAssignReportType(),
     discardQuery: '',
     showGroups: true,
     reviewCollapsedGroups: {},

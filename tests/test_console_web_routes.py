@@ -1258,14 +1258,29 @@ def test_manual_filter_duty_scope_switch_admin_only() -> None:
     assert 'aria-pressed="true" data-duty-process-scope="all">全部</button>' in html
     assert 'aria-pressed="false" data-duty-process-scope="unprocessed">值班未处理</button>' in html
     # 默认选中「全部」，与值班侧默认「未处理」相反
-    assert 'class="admin-view-link is-active" type="button"' in html
-    # 位置：「检索」按钮与「全部放弃」按钮之间
-    assert html.index('id="btn-filter-search"') < html.index(
+    assert 'class="duty-scope-btn is-active" type="button"' in html
+    # 位置：顶部操作区「清理旧新闻」左侧，随筛选 tab 显隐（与清理旧新闻同一机制）
+    assert 'class="duty-scope-switch workspace-tab-action"' in html
+    assert 'data-workspace-action-tab="filter"' in html
+    assert html.index('class="workspace-tab-actions"') < html.index(
         'data-duty-process-scope="all"'
     )
     assert html.index('data-duty-process-scope="unprocessed"') < html.index(
-        'id="btn-filter-bulk-discard"'
+        'id="btn-open-cleanup"'
     )
+    # 筛选工具条（检索/全部放弃）恢复原有布局，开关不在其中
+    toolbar = html.split('class="filter-toolbar"', maxsplit=1)[1].split(
+        'id="filter-list"', maxsplit=1
+    )[0]
+    assert "data-duty-process-scope" not in toolbar
+
+    # 开关样式对齐页面 .tabs/.tab-btn 分段控件，定义在 filter.css
+    filter_css = (
+        Path(__file__).parents[1]
+        / "src/console/web_static/css/modules/filter.css"
+    ).read_text(encoding="utf-8")
+    assert ".duty-scope-switch" in filter_css
+    assert ".duty-scope-btn.is-active" in filter_css
 
     # 管理员 /admin/review 视图下筛选 tab 不渲染，开关同样不出现
     admin_review = _build_client().get("/admin/review")

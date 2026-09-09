@@ -106,6 +106,41 @@
     color: var(--text-secondary);
 }
 
+/* 「只看值班未处理」开关（管理员筛选 tab，清理旧新闻左侧）：
+   视觉对齐 layout.css 的 .tabs/.tab-btn 分段控件，高度对齐相邻 .btn（40px）。 */
+.duty-scope-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    background: #e2e8f0;
+    border-radius: 8px;
+}
+
+.duty-scope-btn {
+    padding: 8px 14px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-radius: 6px;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.duty-scope-btn:hover {
+    color: var(--primary-color);
+}
+
+.duty-scope-btn.is-active {
+    background: var(--card-bg);
+    color: var(--primary-color);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
 /* Cleanup Old News Modal */
 .cleanup-modal-content {
     width: min(480px, 96vw);

@@ -325,3 +325,41 @@ def test_cluster_refresh_input_remains_the_complete_pending_pool(
     assert "duty_unprocessed_only" not in inspect.signature(
         db_postgres_manual_reviews.fetch_manual_pending_for_cluster
     ).parameters
+
+
+def test_cancelled_and_active_shift_rows_on_one_article_count_as_processed(
+    duty_filter_adapter: PostgresAdapter,
+) -> None:
+    user_id = "00000000-0000-0000-0000-000000000001"
+    active_shift_id = "00000000-0000-0000-0000-000000000011"
+    cancelled_shift_id = "00000000-0000-0000-0000-000000000013"
+
+    with duty_filter_adapter._cursor() as cur:
+        cur.executemany(
+            """
+            INSERT INTO shift_reviews (
+                shift_id,
+                article_id,
+                decision,
+                created_by_user_id,
+                updated_by_user_id
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            [
+                (cancelled_shift_id, UNPROCESSED, "discarded", user_id, user_id),
+                (active_shift_id, UNPROCESSED, "selected", user_id, user_id),
+            ],
+        )
+
+    rows, total = duty_filter_adapter.manual_reviews.fetch(
+        status="pending",
+        limit=20,
+        offset=0,
+        only_ready=True,
+        duty_unprocessed_only=True,
+    )
+
+    # 在岗班次那条记录使它算作已处理；两条记录不得导致重复计数
+    assert _ids(rows) == {CANCELLED}
+    assert total == 1

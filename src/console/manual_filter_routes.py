@@ -72,6 +72,7 @@ class BulkDiscardRequest(BaseModel):
     q: Optional[str] = None
     created_before: Optional[date] = None
     dry_run: bool = True
+    duty_unprocessed_only: bool = False
 
 
 class ClearReviewBucketsRequest(BaseModel):
@@ -112,6 +113,7 @@ def list_candidates_api(
     created_before: Optional[date] = None,
     view_mode: Optional[str] = None,
     report_type: str = "zongbao",
+    duty_unprocessed_only: bool = False,
 ) -> Dict[str, Any]:
     return manual_filter_service.list_candidates(
         limit=limit,
@@ -125,6 +127,7 @@ def list_candidates_api(
         created_before=created_before,
         view_mode=view_mode,
         report_type=report_type,
+        duty_unprocessed_only=duty_unprocessed_only,
     )
 
 
@@ -293,6 +296,7 @@ def bulk_discard_api(
             query=req.q,
             created_before=req.created_before,
             dry_run=req.dry_run,
+            duty_unprocessed_only=req.duty_unprocessed_only,
             actor=user,
             request_id=request_id,
         )

@@ -96,6 +96,7 @@ class FakeAdapter:
         report_type: Optional[str] = None,
         order_by_decided_at: bool = False,
         query: Optional[str] = None,
+        duty_unprocessed_only: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         target_type = (
             self._normalized_report_type(report_type)
@@ -119,6 +120,8 @@ class FakeAdapter:
             filtered = [row for row in filtered if row.get("is_beijing_related") is target]
         if sentiment in ("positive", "negative"):
             filtered = [row for row in filtered if (row.get("sentiment_label") or "").lower() == sentiment]
+        if duty_unprocessed_only:
+            filtered = [row for row in filtered if not row.get("duty_processed")]
         normalized_query = (query or "").strip().lower()
         if normalized_query:
             filtered = [
@@ -174,6 +177,7 @@ class FakeAdapter:
         self,
         *,
         bucket_key: Optional[str] = None,
+        duty_unprocessed_only: bool = False,
     ) -> List[Dict[str, Any]]:
         rows: List[Dict[str, Any]] = []
         for row in self.rows:
@@ -181,6 +185,8 @@ class FakeAdapter:
             if bucket_key and row_bucket != bucket_key:
                 continue
             if row.get("status") != "pending" or row.get("news_status") != "ready_for_export":
+                continue
+            if duty_unprocessed_only and row.get("duty_processed"):
                 continue
             cluster_row = dict(row)
             cluster_row["bucket_key"] = row_bucket
@@ -210,6 +216,7 @@ class FakeAdapter:
         region: Optional[str] = None,
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
+        duty_unprocessed_only: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         rows, _ = self._fetch(
             status="pending",
@@ -219,6 +226,7 @@ class FakeAdapter:
             region=region,
             sentiment=sentiment,
             report_type=report_type,
+            duty_unprocessed_only=duty_unprocessed_only,
         )
         normalized_query = (query or "").strip().lower()
         filtered = list(rows)
@@ -251,6 +259,7 @@ class FakeAdapter:
         query: Optional[str] = None,
         created_before: Optional[date] = None,
         report_type: Optional[str] = None,
+        duty_unprocessed_only: bool = False,
     ) -> int:
         _, total = self._search_candidates(
             query=query,
@@ -260,6 +269,7 @@ class FakeAdapter:
             region=region,
             sentiment=sentiment,
             report_type=report_type,
+            duty_unprocessed_only=duty_unprocessed_only,
         )
         return total
 
@@ -273,6 +283,7 @@ class FakeAdapter:
         actor: Optional[str] = None,
         decided_at: Optional[Any] = None,
         report_type: Optional[str] = None,
+        duty_unprocessed_only: bool = False,
     ) -> int:
         rows, _ = self._search_candidates(
             query=query,
@@ -282,6 +293,7 @@ class FakeAdapter:
             region=region,
             sentiment=sentiment,
             report_type=report_type,
+            duty_unprocessed_only=duty_unprocessed_only,
         )
         updates = [
             {
@@ -929,6 +941,81 @@ def test_list_candidates_cluster_mode_returns_item_total(fake_adapter):
         for cluster in result["clusters"]
         for item in cluster["items"]
     )
+
+
+def test_duty_unprocessed_filter_keeps_flat_search_and_cluster_counts_consistent(
+    fake_adapter,
+):
+    base = dict(fake_adapter.rows[0])
+    fake_adapter.rows[:] = [
+        {
+            **base,
+            "article_id": "processed-mixed",
+            "title": "Processed higher rank",
+            "score": 100,
+            "external_importance_score": 100,
+            "cluster_id": "mixed",
+            "duty_processed": True,
+        },
+        {
+            **base,
+            "article_id": "unprocessed-mixed",
+            "title": "Unprocessed representative",
+            "score": 70,
+            "external_importance_score": 70,
+            "cluster_id": "mixed",
+            "duty_processed": False,
+        },
+        {
+            **base,
+            "article_id": "processed-only-1",
+            "title": "Processed only one",
+            "cluster_id": "fully-processed",
+            "duty_processed": True,
+        },
+        {
+            **base,
+            "article_id": "processed-only-2",
+            "title": "Processed only two",
+            "cluster_id": "fully-processed",
+            "duty_processed": True,
+        },
+    ]
+
+    flat = manual_filter_service.list_candidates(
+        limit=10,
+        offset=0,
+        duty_unprocessed_only=True,
+    )
+    clustered = manual_filter_service.list_candidates(
+        limit=10,
+        offset=0,
+        cluster=True,
+        duty_unprocessed_only=True,
+    )
+    searched = manual_filter_service.list_candidates(
+        limit=10,
+        offset=0,
+        q="Unprocessed",
+        duty_unprocessed_only=True,
+    )
+
+    assert flat["total"] == clustered["item_total"] == searched["total"] == 1
+    assert [item["article_id"] for item in flat["items"]] == ["unprocessed-mixed"]
+    assert [item["article_id"] for item in searched["items"]] == ["unprocessed-mixed"]
+    assert clustered["total"] == 1
+    assert clustered["clusters"][0]["cluster_id"] == "mixed"
+    assert clustered["clusters"][0]["size"] == 1
+    assert clustered["clusters"][0]["representative_title"] == "Unprocessed representative"
+
+
+def test_duty_unprocessed_filter_defaults_to_false(fake_adapter):
+    fake_adapter.rows[0]["duty_processed"] = True
+
+    result = manual_filter_service.list_candidates(limit=10, offset=0)
+
+    assert result["total"] == 2
+    assert {item["article_id"] for item in result["items"]} == {"a1", "a2"}
 
 
 def test_list_candidates_search_mode_uses_shanghai_calendar_day(fake_adapter):

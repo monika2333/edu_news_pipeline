@@ -435,6 +435,7 @@ def test_discard_manual_candidates_uses_versioned_updates_and_one_audit(
             "query": "keyword",
             "created_before": datetime(2026, 9, 1, tzinfo=timezone.utc).date(),
             "report_type": "wanbao",
+            "duty_unprocessed_only": False,
         }
         events.append("fetch")
         return targets

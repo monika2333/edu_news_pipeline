@@ -1003,6 +1003,7 @@ class PostgresAdapter:
         report_type: str,
         actor_username: str,
         actor_user_id: Optional[str],
+        duty_unprocessed_only: bool = False,
         request_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         with self.transaction() as cur:
@@ -1014,6 +1015,7 @@ class PostgresAdapter:
                     query=query,
                     created_before=created_before,
                     report_type=report_type,
+                    duty_unprocessed_only=duty_unprocessed_only,
                 )
             )
             updates = [

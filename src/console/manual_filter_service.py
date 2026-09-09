@@ -55,6 +55,7 @@ def list_candidates(
     created_before: Optional[date] = None,
     view_mode: Optional[str] = None,
     report_type: str = DEFAULT_REPORT_TYPE,
+    duty_unprocessed_only: bool = False,
 ) -> Dict[str, Any]:
     _sync_query_dependencies()
     return _list_candidates(
@@ -69,6 +70,7 @@ def list_candidates(
         created_before=created_before,
         view_mode=view_mode,
         report_type=report_type,
+        duty_unprocessed_only=duty_unprocessed_only,
     )
 
 def list_review(

@@ -281,6 +281,7 @@ def bulk_discard_candidates(
     created_before: Optional[date],
     dry_run: bool,
     actor: ConsoleUser,
+    duty_unprocessed_only: bool = False,
     request_id: Optional[str] = None,
 ) -> dict[str, int]:
     validate_bulk_discard_bucket(region=region, sentiment=sentiment)
@@ -292,6 +293,7 @@ def bulk_discard_candidates(
         query=normalized_query,
         created_before=created_before,
         report_type=None,
+        duty_unprocessed_only=duty_unprocessed_only,
     )
     if dry_run or matched <= 0:
         return {"matched": matched, "updated": 0, "skipped_finalized": 0}
@@ -303,6 +305,7 @@ def bulk_discard_candidates(
         report_type=None,
         actor_username=actor.username,
         actor_user_id=actor.user_id,
+        duty_unprocessed_only=duty_unprocessed_only,
         request_id=request_id,
     )
     return {

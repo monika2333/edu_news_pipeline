@@ -29,6 +29,7 @@ class ManualReviewsNamespace:
         report_type: Optional[str] = None,
         order_by_decided_at: bool = False,
         query: Optional[str] = None,
+        duty_unprocessed_only: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         with self._adapter._cursor() as cur:
             return fetch_manual_reviews(
@@ -42,6 +43,7 @@ class ManualReviewsNamespace:
                 report_type=report_type,
                 order_by_decided_at=order_by_decided_at,
                 query=query,
+                duty_unprocessed_only=duty_unprocessed_only,
             )
 
     def fetch_pending_for_cluster(
@@ -71,6 +73,7 @@ class ManualReviewsNamespace:
         region: Optional[str] = None,
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
+        duty_unprocessed_only: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int]:
         with self._adapter._cursor() as cur:
             return search_manual_candidates(
@@ -82,6 +85,7 @@ class ManualReviewsNamespace:
                 region=region,
                 sentiment=sentiment,
                 report_type=report_type,
+                duty_unprocessed_only=duty_unprocessed_only,
             )
 
     def count_candidates_before_date(
@@ -92,6 +96,7 @@ class ManualReviewsNamespace:
         query: Optional[str] = None,
         created_before: Optional[date] = None,
         report_type: Optional[str] = None,
+        duty_unprocessed_only: bool = False,
     ) -> int:
         with self._adapter._cursor() as cur:
             return count_manual_candidates_before_date(
@@ -101,6 +106,7 @@ class ManualReviewsNamespace:
                 query=query,
                 created_before=created_before,
                 report_type=report_type,
+                duty_unprocessed_only=duty_unprocessed_only,
             )
 
     def bulk_discard_candidates(
@@ -113,6 +119,7 @@ class ManualReviewsNamespace:
         actor: Optional[str] = None,
         decided_at: Optional[datetime] = None,
         report_type: Optional[str] = None,
+        duty_unprocessed_only: bool = False,
     ) -> int:
         with self._adapter._cursor() as cur:
             return discard_manual_candidates_before_date(
@@ -124,6 +131,7 @@ class ManualReviewsNamespace:
                 actor=actor,
                 decided_at=decided_at,
                 report_type=report_type,
+                duty_unprocessed_only=duty_unprocessed_only,
             )
 
     def replace_clusters(self, clusters: Sequence[Mapping[str, Any]]) -> int:
@@ -135,11 +143,13 @@ class ManualReviewsNamespace:
         self,
         *,
         bucket_key: Optional[str] = None,
+        duty_unprocessed_only: bool = False,
     ) -> List[Dict[str, Any]]:
         with self._adapter._cluster_transaction() as cur:
             return fetch_manual_clusters(
                 cur,
                 bucket_key=bucket_key,
+                duty_unprocessed_only=duty_unprocessed_only,
             )
 
     def status_counts(self, *, report_type: Optional[str] = None) -> Dict[str, int]:
@@ -212,6 +222,15 @@ SEARCH_TEXT_EXPRESSION = (
 CREATED_LOCAL_DATE_EXPRESSION = (
     "(ns.created_at AT TIME ZONE 'Asia/Shanghai')::date"
 )
+DUTY_UNPROCESSED_SQL = """
+NOT EXISTS (
+    SELECT 1
+    FROM shift_reviews sr
+    JOIN duty_shifts s ON s.id = sr.shift_id
+    WHERE sr.article_id = mr.article_id
+      AND s.cancelled_at IS NULL
+)
+""".strip()
 MANUAL_REVIEW_SELECT_COLUMNS = """
     mr.article_id,
     mr.status,
@@ -278,6 +297,7 @@ def _build_manual_review_filters(
     sentiment: Optional[str] = None,
     report_type: Optional[str] = None,
     query: Optional[str] = None,
+    duty_unprocessed_only: bool = False,
 ) -> Tuple[List[str], List[Any]]:
     clauses: List[str] = []
     params: List[Any] = []
@@ -301,6 +321,8 @@ def _build_manual_review_filters(
     if normalized_query:
         clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
         params.append(f"%{normalized_query}%")
+    if duty_unprocessed_only:
+        clauses.append(DUTY_UNPROCESSED_SQL)
     return clauses, params
 
 
@@ -400,6 +422,7 @@ def fetch_manual_reviews(
     report_type: Optional[str] = None,
     order_by_decided_at: bool = False,
     query: Optional[str] = None,
+    duty_unprocessed_only: bool = False,
 ) -> Tuple[List[Dict[str, Any]], int]:
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
@@ -411,6 +434,7 @@ def fetch_manual_reviews(
         sentiment=sentiment,
         report_type=report_type,
         query=query,
+        duty_unprocessed_only=duty_unprocessed_only,
     )
     where_sql = " AND ".join(clauses)
     order_by_sql = _manual_review_order_by(status=status, order_by_decided_at=order_by_decided_at)
@@ -488,6 +512,7 @@ def search_manual_candidates(
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
     report_type: Optional[str] = None,
+    duty_unprocessed_only: bool = False,
 ) -> Tuple[List[Dict[str, Any]], int]:
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
@@ -498,6 +523,7 @@ def search_manual_candidates(
         region=region,
         sentiment=sentiment,
         report_type=report_type,
+        duty_unprocessed_only=duty_unprocessed_only,
     )
     normalized_query = (query or "").strip()
     if normalized_query:
@@ -543,6 +569,7 @@ def _build_manual_candidate_filters(
     query: Optional[str] = None,
     created_before: Optional[date] = None,
     report_type: Optional[str] = None,
+    duty_unprocessed_only: bool = False,
 ) -> Tuple[List[str], List[Any]]:
     clauses, params = _build_manual_review_filters(
         status="pending",
@@ -550,6 +577,7 @@ def _build_manual_candidate_filters(
         region=region,
         sentiment=sentiment,
         report_type=report_type,
+        duty_unprocessed_only=duty_unprocessed_only,
     )
     normalized_query = (query or "").strip()
     if normalized_query:
@@ -569,6 +597,7 @@ def count_manual_candidates_before_date(
     query: Optional[str] = None,
     created_before: Optional[date] = None,
     report_type: Optional[str] = None,
+    duty_unprocessed_only: bool = False,
 ) -> int:
     clauses, params = _build_manual_candidate_filters(
         region=region,
@@ -576,6 +605,7 @@ def count_manual_candidates_before_date(
         query=query,
         created_before=created_before,
         report_type=report_type,
+        duty_unprocessed_only=duty_unprocessed_only,
     )
     where_sql = " AND ".join(clauses)
     query = f"""
@@ -600,6 +630,7 @@ def fetch_manual_candidates_before_date_for_update(
     query: Optional[str] = None,
     created_before: Optional[date] = None,
     report_type: Optional[str] = None,
+    duty_unprocessed_only: bool = False,
 ) -> list[dict[str, Any]]:
     clauses, params = _build_manual_candidate_filters(
         region=region,
@@ -607,6 +638,7 @@ def fetch_manual_candidates_before_date_for_update(
         query=query,
         created_before=created_before,
         report_type=report_type,
+        duty_unprocessed_only=duty_unprocessed_only,
     )
     where_sql = " AND ".join(clauses)
     cur.execute(
@@ -654,6 +686,7 @@ def discard_manual_candidates_before_date(
     actor: Optional[str] = None,
     decided_at: Optional[datetime] = None,
     report_type: Optional[str] = None,
+    duty_unprocessed_only: bool = False,
 ) -> int:
     clauses, filter_params = _build_manual_candidate_filters(
         region=region,
@@ -661,6 +694,7 @@ def discard_manual_candidates_before_date(
         query=query,
         created_before=created_before,
         report_type=report_type,
+        duty_unprocessed_only=duty_unprocessed_only,
     )
     where_sql = " AND ".join(clauses)
     query = f"""
@@ -717,8 +751,14 @@ def fetch_manual_clusters(
     cur: psycopg.Cursor,
     *,
     bucket_key: Optional[str] = None,
+    duty_unprocessed_only: bool = False,
 ) -> List[Dict[str, Any]]:
-    query = """
+    duty_filter_sql = (
+        f"AND {DUTY_UNPROCESSED_SQL}"
+        if duty_unprocessed_only
+        else ""
+    )
+    query = f"""
         WITH cluster_base AS (
             SELECT cluster_id, bucket_key, item_ids
             FROM manual_clusters
@@ -766,6 +806,7 @@ def fetch_manual_clusters(
           ON feedback_submitter.id = sf.submitted_by_user_id
         WHERE mr.status = 'pending'
           AND ns.status = 'ready_for_export'
+          {duty_filter_sql}
         ORDER BY
             ci.cluster_id,
             ns.external_importance_score DESC NULLS LAST,

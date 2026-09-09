@@ -75,6 +75,7 @@ class FakeManualFilterAdapter:
         report_type: Optional[str] = None,
         order_by_decided_at: bool = False,
         query: Optional[str] = None,
+        duty_unprocessed_only: bool = False,
     ) -> Tuple[list[Dict[str, Any]], int]:
         target_type = (
             self._normalized_report_type(report_type)
@@ -98,6 +99,8 @@ class FakeManualFilterAdapter:
             filtered = [row for row in filtered if row.get("is_beijing_related") is target]
         if sentiment in ("positive", "negative"):
             filtered = [row for row in filtered if (row.get("sentiment_label") or "").lower() == sentiment]
+        if duty_unprocessed_only:
+            filtered = [row for row in filtered if not row.get("duty_processed")]
         normalized_query = (query or "").strip().lower()
         if normalized_query:
             filtered = [
@@ -134,6 +137,7 @@ class FakeManualFilterAdapter:
         region: Optional[str] = None,
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
+        duty_unprocessed_only: bool = False,
     ) -> Tuple[list[Dict[str, Any]], int]:
         rows, _ = self._fetch(
             status="pending",
@@ -143,6 +147,7 @@ class FakeManualFilterAdapter:
             region=region,
             sentiment=sentiment,
             report_type=report_type,
+            duty_unprocessed_only=duty_unprocessed_only,
         )
         normalized_query = (query or "").strip().lower()
         filtered = list(rows)
@@ -175,6 +180,7 @@ class FakeManualFilterAdapter:
         query: Optional[str] = None,
         created_before: Optional[date] = None,
         report_type: Optional[str] = None,
+        duty_unprocessed_only: bool = False,
     ) -> int:
         _, total = self._search_candidates(
             query=query,
@@ -184,6 +190,7 @@ class FakeManualFilterAdapter:
             region=region,
             sentiment=sentiment,
             report_type=report_type,
+            duty_unprocessed_only=duty_unprocessed_only,
         )
         return total
 
@@ -197,6 +204,7 @@ class FakeManualFilterAdapter:
         actor: Optional[str] = None,
         decided_at: Optional[Any] = None,
         report_type: Optional[str] = None,
+        duty_unprocessed_only: bool = False,
     ) -> int:
         rows, _ = self._search_candidates(
             query=query,
@@ -206,6 +214,7 @@ class FakeManualFilterAdapter:
             region=region,
             sentiment=sentiment,
             report_type=report_type,
+            duty_unprocessed_only=duty_unprocessed_only,
         )
         updated = 0
         for item in rows:
@@ -229,7 +238,8 @@ class FakeManualFilterAdapter:
         report_type: str,
         actor_username: str,
         actor_user_id: Optional[str],
-        request_id: Optional[str],
+        duty_unprocessed_only: bool = False,
+        request_id: Optional[str] = None,
     ) -> list[Dict[str, Any]]:
         del actor_user_id, request_id
         rows, _ = self._search_candidates(
@@ -240,6 +250,7 @@ class FakeManualFilterAdapter:
             region=region,
             sentiment=sentiment,
             report_type=report_type,
+            duty_unprocessed_only=duty_unprocessed_only,
         )
         for row in rows:
             row["status"] = "discarded"
@@ -707,6 +718,121 @@ def test_candidates_api_ignores_report_type(monkeypatch) -> None:
     assert wanbao.status_code == 200
     assert wanbao.json() == zongbao.json()
     assert {item["article_id"] for item in zongbao.json()["items"]} == {"a1", "a2"}
+
+
+def test_candidates_api_passes_duty_unprocessed_filter_and_defaults_false(
+    monkeypatch,
+) -> None:
+    from src.console import manual_filter_service
+
+    rows = _build_rows()
+    rows[0]["duty_processed"] = True
+    rows.append(
+        {
+            **rows[0],
+            "article_id": "a3",
+            "title": "另一条学科建设新闻",
+            "duty_processed": False,
+        }
+    )
+    adapter = FakeManualFilterAdapter(rows)
+    monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    default_response = client.get("/api/manual_filter/candidates")
+    filtered_response = client.get(
+        "/api/manual_filter/candidates",
+        params={"duty_unprocessed_only": "true"},
+    )
+
+    assert default_response.status_code == 200
+    assert default_response.json()["total"] == 3
+    assert filtered_response.status_code == 200
+    assert filtered_response.json()["total"] == 2
+    assert {
+        item["article_id"] for item in filtered_response.json()["items"]
+    } == {"a2", "a3"}
+
+
+def test_bulk_discard_preview_uses_duty_unprocessed_scope(monkeypatch) -> None:
+    from src.console import manual_filter_admin_service
+
+    rows = _build_rows()
+    rows[0]["duty_processed"] = True
+    rows[1]["is_beijing_related"] = False
+    rows.append(
+        {
+            **rows[0],
+            "article_id": "a3",
+            "title": "另一条学科建设新闻",
+            "duty_processed": False,
+        }
+    )
+    adapter = FakeManualFilterAdapter(rows)
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/manual_filter/bulk-discard",
+        json={
+            "region": "internal",
+            "sentiment": "positive",
+            "dry_run": True,
+            "duty_unprocessed_only": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "matched": 1,
+        "updated": 0,
+        "skipped_finalized": 0,
+    }
+
+
+def test_bulk_discard_apply_uses_duty_unprocessed_scope(monkeypatch) -> None:
+    from src.console import manual_filter_admin_service
+
+    rows = _build_rows()
+    rows[0]["duty_processed"] = True
+    rows[1]["is_beijing_related"] = False
+    rows.append(
+        {
+            **rows[0],
+            "article_id": "a3",
+            "title": "另一条学科建设新闻",
+            "duty_processed": False,
+        }
+    )
+    adapter = FakeManualFilterAdapter(rows)
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/manual_filter/bulk-discard",
+        json={
+            "region": "internal",
+            "sentiment": "positive",
+            "dry_run": False,
+            "duty_unprocessed_only": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "matched": 1,
+        "updated": 1,
+        "skipped_finalized": 0,
+    }
+    statuses = {row["article_id"]: row["status"] for row in adapter.rows}
+    assert statuses["a1"] == "pending"
+    assert statuses["a3"] == "discarded"
 
 
 def test_bulk_discard_api_supports_keyword_only_preview_and_apply(monkeypatch) -> None:

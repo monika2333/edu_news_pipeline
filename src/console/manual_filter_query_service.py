@@ -30,6 +30,7 @@ def _paginate_by_status(
     report_type: Optional[str] = DEFAULT_REPORT_TYPE,
     order_by_decided_at: bool = False,
     query: Optional[str] = None,
+    duty_unprocessed_only: bool = False,
 ) -> Dict[str, Any]:
     adapter = get_adapter()
     limit = max(1, min(int(limit or 30), 200))
@@ -49,6 +50,7 @@ def _paginate_by_status(
         "report_type": target_report_type,
         "order_by_decided_at": order_by_decided_at,
         "query": (query or "").strip() or None,
+        "duty_unprocessed_only": duty_unprocessed_only,
     }
     rows, total = adapter.manual_reviews.fetch(  # type: ignore[attr-defined]
         **fetch_kwargs,
@@ -75,6 +77,7 @@ def _list_candidate_search(
     query: Optional[str],
     created_before: Optional[date],
     report_type: Optional[str],
+    duty_unprocessed_only: bool,
 ) -> Dict[str, Any]:
     adapter = get_adapter()
     fetch_kwargs = {
@@ -85,6 +88,7 @@ def _list_candidate_search(
         "region": region,
         "sentiment": sentiment,
         "report_type": report_type,
+        "duty_unprocessed_only": duty_unprocessed_only,
     }
     rows, total = adapter.manual_reviews.search_candidates(  # type: ignore[attr-defined]
         **fetch_kwargs,
@@ -117,6 +121,7 @@ def _list_candidate_browse(
     cluster_threshold: Optional[float],
     force_refresh: bool,
     report_type: Optional[str],
+    duty_unprocessed_only: bool,
 ) -> Dict[str, Any]:
     if cluster:
         result = cluster_pending(
@@ -127,6 +132,7 @@ def _list_candidate_browse(
             cluster_threshold=cluster_threshold,
             force_refresh=force_refresh,
             report_type=report_type,
+            duty_unprocessed_only=duty_unprocessed_only,
         )
         cluster_items = [
             item
@@ -143,6 +149,7 @@ def _list_candidate_browse(
         region=region,
         sentiment=sentiment,
         report_type=report_type,
+        duty_unprocessed_only=duty_unprocessed_only,
     )
     result["view_mode"] = "browse"
     return result
@@ -161,6 +168,7 @@ def list_candidates(
     created_before: Optional[date] = None,
     view_mode: Optional[str] = None,
     report_type: str = DEFAULT_REPORT_TYPE,
+    duty_unprocessed_only: bool = False,
 ) -> Dict[str, Any]:
     region = region if region in ("internal", "external") else None
     sentiment = sentiment if sentiment in ("positive", "negative") else None
@@ -190,6 +198,7 @@ def list_candidates(
             query=normalized_query,
             created_before=created_before,
             report_type=target_report_type,
+            duty_unprocessed_only=duty_unprocessed_only,
         )
     return _list_candidate_browse(
         limit=limit,
@@ -200,6 +209,7 @@ def list_candidates(
         cluster_threshold=cluster_threshold,
         force_refresh=force_refresh,
         report_type=target_report_type,
+        duty_unprocessed_only=duty_unprocessed_only,
     )
 
 

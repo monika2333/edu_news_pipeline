@@ -24,6 +24,17 @@ function readStoredAssignReportType() {
     }
 }
 
+// 「只看值班编辑未处理」开关（仅管理员侧渲染）记入 localStorage，刷新后保持上次选择
+const FILTER_DUTY_SCOPE_KEY = 'manual_filter_duty_scope';
+
+function readStoredFilterDutyScope() {
+    try {
+        return localStorage.getItem(FILTER_DUTY_SCOPE_KEY) === 'unprocessed' ? 'unprocessed' : 'all';
+    } catch (error) {
+        return 'all'; // 读取失败时回退默认「全部」
+    }
+}
+
 // State
 let state = {
     filterPage: 1,
@@ -38,6 +49,8 @@ let state = {
     reviewView: 'selected',
     reviewReportType: 'zongbao',
     filterAssignReportType: readStoredAssignReportType(),
+    // 值班工作区不渲染该开关，恒为 'all'，避免同浏览器管理员会话的存储值泄漏到值班请求
+    filterDutyScope: IS_DUTY_WORKSPACE ? 'all' : readStoredFilterDutyScope(),
     discardQuery: '',
     showGroups: true,
     reviewCollapsedGroups: {},
@@ -74,6 +87,7 @@ const elements = {
     filterSearchInput: document.getElementById('filter-search-input'),
     filterSearchClear: document.getElementById('filter-search-clear'),
     filterSearchMeta: document.getElementById('filter-search-meta'),
+    filterDutyScopeButtons: document.querySelectorAll('[data-duty-process-scope]'),
     filterBulkDiscardBtn: document.getElementById('btn-filter-bulk-discard'),
     cleanupModal: document.getElementById('cleanup-modal'),
     cleanupDateInput: document.getElementById('cleanup-date-input'),

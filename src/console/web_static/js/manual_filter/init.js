@@ -222,6 +222,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 state.filterAssignReportType === 'wanbao' ? '晚报' : '综报';
         }
     }
+    if (elements.filterDutyScopeButtons && elements.filterDutyScopeButtons.length) {
+        elements.filterDutyScopeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                setFilterDutyScope(btn.dataset.dutyProcessScope || 'all');
+            });
+        });
+        // 从 localStorage 恢复「值班未处理」时模板默认选中「全部」，这里同步按钮选中态
+        syncFilterDutyScopeButtons();
+    }
     if (elements.reviewSearchInput) {
         elements.reviewSearchInput.addEventListener('input', applyReviewSearchFilter);
         syncReviewSearchClearButton();

@@ -1247,3 +1247,32 @@ def test_score_feedback_control_is_shared_across_manual_filter_tabs() -> None:
     assert "action === '/score-feedback'" in workspace_script
     assert "action === '/score-feedback/clear'" in workspace_script
     assert ".score-feedback-popover" in feedback_css
+
+
+def test_manual_filter_duty_scope_switch_admin_only() -> None:
+    admin_page = _build_client().get("/manual_filter")
+
+    assert admin_page.status_code == 200
+    html = admin_page.text
+    assert 'aria-label="值班编辑处理状态"' in html
+    assert 'aria-pressed="true" data-duty-process-scope="all">全部</button>' in html
+    assert 'aria-pressed="false" data-duty-process-scope="unprocessed">值班未处理</button>' in html
+    # 默认选中「全部」，与值班侧默认「未处理」相反
+    assert 'class="admin-view-link is-active" type="button"' in html
+    # 位置：「检索」按钮与「全部放弃」按钮之间
+    assert html.index('id="btn-filter-search"') < html.index(
+        'data-duty-process-scope="all"'
+    )
+    assert html.index('data-duty-process-scope="unprocessed"') < html.index(
+        'id="btn-filter-bulk-discard"'
+    )
+
+    # 管理员 /admin/review 视图下筛选 tab 不渲染，开关同样不出现
+    admin_review = _build_client().get("/admin/review")
+    assert admin_review.status_code == 200
+    assert "data-duty-process-scope" not in admin_review.text
+
+    # 值班工作区共用模板，但不渲染该开关
+    duty_page = _build_editor_client().get("/duty")
+    assert duty_page.status_code == 200
+    assert "data-duty-process-scope" not in duty_page.text

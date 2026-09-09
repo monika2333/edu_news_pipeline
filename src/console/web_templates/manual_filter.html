@@ -196,6 +196,14 @@
                                 </button>
                             </div>
                             <button class="btn btn-secondary" id="btn-filter-search">检索</button>
+                            {% if not is_duty_workspace %}
+                            <div class="admin-view-switch" role="group" aria-label="值班编辑处理状态">
+                                <button class="admin-view-link is-active" type="button"
+                                    aria-pressed="true" data-duty-process-scope="all">全部</button>
+                                <button class="admin-view-link" type="button"
+                                    aria-pressed="false" data-duty-process-scope="unprocessed">值班未处理</button>
+                            </div>
+                            {% endif %}
                             <button class="btn btn-primary filter-discard-action"
                                 id="btn-filter-bulk-discard">全部放弃</button>
                         </div>

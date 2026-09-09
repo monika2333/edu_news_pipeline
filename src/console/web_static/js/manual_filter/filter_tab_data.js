@@ -41,6 +41,9 @@ async function loadFilterData(options = {}) {
             if (state.filterQuery) params.set('q', state.filterQuery);
         }
         if (forceClusterRefresh) params.set('force_refresh', 'true');
+        if (state.filterDutyScope === 'unprocessed') {
+            params.set('duty_unprocessed_only', 'true');
+        }
 
         const res = await workspaceFetch(`${API_BASE}/candidates?${params.toString()}`);
         if (!res.ok) throw new Error('failed to load candidates');
@@ -75,6 +78,10 @@ async function loadFilterCounts() {
                 if (cat.startsWith('external')) params.set('region', 'external');
                 if (cat.endsWith('positive')) params.set('sentiment', 'positive');
                 if (cat.endsWith('negative')) params.set('sentiment', 'negative');
+                // 侧栏计数必须与列表同口径，否则「放弃全部 N 条」的 N 会大于实际弃用范围
+                if (state.filterDutyScope === 'unprocessed') {
+                    params.set('duty_unprocessed_only', 'true');
+                }
 
                 const res = await workspaceFetch(`${API_BASE}/candidates?${params.toString()}`);
                 if (!res.ok) throw new Error('failed to load counts');

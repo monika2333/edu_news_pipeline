@@ -437,6 +437,7 @@ async function discardRemainingItems() {
 async function bulkDiscard() {
     const { region, sentiment } = getCurrentFilterBucket();
     const query = state.filterQuery || (elements.filterSearchInput ? elements.filterSearchInput.value.trim() : '');
+    const dutyUnprocessedOnly = state.filterDutyScope === 'unprocessed';
     try {
         const previewRes = await workspaceFetch(`${API_BASE}/bulk-discard`, {
             method: 'POST',
@@ -446,7 +447,8 @@ async function bulkDiscard() {
                 sentiment,
                 q: query || null,
                 created_before: null,
-                dry_run: true
+                dry_run: true,
+                duty_unprocessed_only: dutyUnprocessedOnly
             })
         });
         if (!previewRes.ok) throw new Error('failed preview');
@@ -456,7 +458,10 @@ async function bulkDiscard() {
             return;
         }
 
-        const scopeText = query ? `检索到的 ${preview.matched} 条` : `全部 ${preview.matched} 条`;
+        const scopeSuffix = dutyUnprocessedOnly ? '值班编辑未处理的' : '';
+        const scopeText = query
+            ? `检索到的 ${preview.matched} 条${scopeSuffix}`
+            : `全部 ${preview.matched} 条${scopeSuffix}`;
         const confirmed = window.confirm(`确定放弃${scopeText}待处理新闻吗？`);
         if (!confirmed) return;
 
@@ -468,7 +473,8 @@ async function bulkDiscard() {
                 sentiment,
                 q: query || null,
                 created_before: null,
-                dry_run: false
+                dry_run: false,
+                duty_unprocessed_only: dutyUnprocessedOnly
             })
         });
         if (!applyRes.ok) throw new Error('failed apply');

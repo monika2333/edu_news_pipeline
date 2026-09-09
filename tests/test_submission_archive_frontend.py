@@ -1063,3 +1063,146 @@ def test_archive_export_escape_uses_bubble_phase_and_stays_local() -> None:
     assert "typeLabels" in source
     assert "综报" not in source
     assert "晚报" not in source
+
+
+def test_filter_duty_scope_state_defaults_to_all_with_storage_fallback() -> None:
+    core = _strip_js_comments(
+        Path(
+            "src/console/web_static/js/manual_filter/core.js"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert "const FILTER_DUTY_SCOPE_KEY = 'manual_filter_duty_scope';" in core
+    reader = core.split(
+        "function readStoredFilterDutyScope()", maxsplit=1
+    )[1].split("// State", maxsplit=1)[0]
+    # 照 readStoredAssignReportType 的写法：try/catch 包裹，读取失败回退默认「全部」
+    assert "try {" in reader
+    assert "catch (error)" in reader
+    assert (
+        "localStorage.getItem(FILTER_DUTY_SCOPE_KEY) === 'unprocessed'"
+        " ? 'unprocessed' : 'all';"
+    ) in reader
+    assert "return 'all';" in reader
+    # 默认与值班侧相反：管理员打开页面看到的始终是完整候选池；
+    # 值班工作区不渲染开关，恒为 'all'，存储值不得泄漏到值班请求
+    assert (
+        "filterDutyScope: IS_DUTY_WORKSPACE ? 'all' : readStoredFilterDutyScope(),"
+        in core
+    )
+    assert (
+        "filterDutyScopeButtons: document.querySelectorAll('[data-duty-process-scope]'),"
+        in core
+    )
+
+
+def test_filter_duty_scope_param_on_candidates_and_counts() -> None:
+    source = _strip_js_comments(
+        Path(
+            "src/console/web_static/js/manual_filter/filter_tab_data.js"
+        ).read_text(encoding="utf-8")
+    )
+
+    load_data = source.split(
+        "async function loadFilterData(", maxsplit=1
+    )[1].split("async function loadFilterCounts()", maxsplit=1)[0]
+    assert "state.filterDutyScope === 'unprocessed'" in load_data
+    assert "params.set('duty_unprocessed_only', 'true');" in load_data
+
+    # 侧栏四个分类计数与列表走不同后端路径，必须同口径，
+    # 否则「放弃全部 N 条」的 N 会大于实际弃用范围
+    load_counts = source.split(
+        "async function loadFilterCounts()", maxsplit=1
+    )[1].split("async function persistEdits(", maxsplit=1)[0]
+    assert "state.filterDutyScope === 'unprocessed'" in load_counts
+    assert "params.set('duty_unprocessed_only', 'true');" in load_counts
+
+    # 'all' 时不传该参数，也不要传 'false' 字符串
+    assert "'duty_unprocessed_only', 'false'" not in source
+
+
+def test_bulk_discard_carries_duty_scope_in_preview_and_apply() -> None:
+    source = _strip_js_comments(
+        Path(
+            "src/console/web_static/js/manual_filter/filter_tab_actions.js"
+        ).read_text(encoding="utf-8")
+    )
+    body = source.split(
+        "async function bulkDiscard()", maxsplit=1
+    )[1].split("let cleanupPreviewSeq", maxsplit=1)[0]
+
+    assert (
+        "const dutyUnprocessedOnly = state.filterDutyScope === 'unprocessed';" in body
+    )
+    # 预览（dry_run: true）与执行（dry_run: false）两次请求都要带，只带一次会让数字对不上
+    assert body.count("duty_unprocessed_only: dutyUnprocessedOnly") == 2
+    preview_body = body.split("dry_run: true", maxsplit=1)[1].split(
+        "dry_run: false", maxsplit=1
+    )[0]
+    assert "duty_unprocessed_only: dutyUnprocessedOnly" in preview_body
+    apply_body = body.split("dry_run: false", maxsplit=1)[1]
+    assert "duty_unprocessed_only: dutyUnprocessedOnly" in apply_body
+    # 确认弹窗文案在过滤开启时必须体现收窄后的范围
+    assert "const scopeSuffix = dutyUnprocessedOnly ? '值班编辑未处理的' : '';" in body
+    assert "`检索到的 ${preview.matched} 条${scopeSuffix}`" in body
+    assert "`全部 ${preview.matched} 条${scopeSuffix}`" in body
+
+    # 「清理旧新闻」模态框按 created_before 跨分类清理，与当前筛选视图无关，不带该参数
+    cleanup_source = source.split("let cleanupPreviewSeq", maxsplit=1)[1]
+    assert "duty_unprocessed_only" not in cleanup_source
+
+
+def test_filter_duty_scope_toggle_resets_page_and_reloads() -> None:
+    source = _strip_js_comments(
+        Path(
+            "src/console/web_static/js/manual_filter/utils.js"
+        ).read_text(encoding="utf-8")
+    )
+    body = source.split(
+        "function setFilterDutyScope(", maxsplit=1
+    )[1].split("function syncFilterDutyScopeButtons()", maxsplit=1)[0]
+
+    # 写入时机与 setFilterAssignReportType 一致：用户主动切换时写入，失败不影响本次切换
+    assert "try {" in body
+    assert "catch (error)" in body
+    assert "localStorage.setItem(FILTER_DUTY_SCOPE_KEY, normalized);" in body
+    assert "syncFilterDutyScopeButtons();" in body
+    # 过滤范围变化后停在旧页码可能落在不存在的页上，重置分页并重拉列表与计数
+    assert "state.filterPage = 1;" in body
+    assert "loadFilterData();" in body
+    assert "loadFilterCounts();" in body
+    # 与检索关键词是叠加关系：切换开关不得清空检索状态
+    assert "filterQuery" not in body
+
+    sync_body = source.split(
+        "function syncFilterDutyScopeButtons()", maxsplit=1
+    )[1].split("function setReviewView(", maxsplit=1)[0]
+    assert "btn.classList.toggle('is-active', isActive);" in sync_body
+    assert (
+        "btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');" in sync_body
+    )
+
+
+def test_filter_duty_scope_buttons_bound_on_init() -> None:
+    source = _strip_js_comments(
+        Path(
+            "src/console/web_static/js/manual_filter/init.js"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert "elements.filterDutyScopeButtons.forEach" in source
+    assert "setFilterDutyScope(btn.dataset.dutyProcessScope || 'all');" in source
+    # 从 localStorage 恢复「值班未处理」时模板默认选中「全部」，初始化要同步按钮选中态
+    assert "syncFilterDutyScopeButtons();" in source
+
+
+def test_duty_scope_param_not_forwarded_to_duty_workspace() -> None:
+    workspace = _strip_js_comments(
+        Path(
+            "src/console/web_static/js/manual_filter/workspace.js"
+        ).read_text(encoding="utf-8")
+    )
+
+    # dutyCandidateBackendParams 是值班请求的参数白名单：值班编辑没有这个开关，
+    # 新参数加进白名单只会让不存在的 UI 状态泄漏到值班接口
+    assert "duty_unprocessed_only" not in workspace

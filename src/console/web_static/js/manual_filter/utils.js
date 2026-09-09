@@ -277,6 +277,33 @@ function setFilterAssignReportType(value) {
     loadStats();
 }
 
+// filter-tab「只看值班编辑未处理」开关（仅管理员侧渲染）。与检索关键词是叠加关系，切换时不动 filterQuery。
+function setFilterDutyScope(value) {
+    const normalized = value === 'unprocessed' ? 'unprocessed' : 'all';
+    if (state.filterDutyScope === normalized) return;
+
+    state.filterDutyScope = normalized;
+    try {
+        localStorage.setItem(FILTER_DUTY_SCOPE_KEY, normalized);
+    } catch (error) {
+        // 写入失败仅影响持久化，不影响本次切换
+    }
+    syncFilterDutyScopeButtons();
+    // 过滤范围变了，停在上一个页码可能落在不存在的页上，回到第 1 页重拉列表与计数
+    state.filterPage = 1;
+    loadFilterData();
+    loadFilterCounts();
+}
+
+function syncFilterDutyScopeButtons() {
+    if (!elements.filterDutyScopeButtons || !elements.filterDutyScopeButtons.length) return;
+    elements.filterDutyScopeButtons.forEach(btn => {
+        const isActive = btn.dataset.dutyProcessScope === state.filterDutyScope;
+        btn.classList.toggle('is-active', isActive);
+        btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+}
+
 function setReviewView(view) {
     const normalized = view === 'backup' ? 'backup' : 'selected';
     if (state.reviewView === normalized && state.reviewData[normalized]?.length) {

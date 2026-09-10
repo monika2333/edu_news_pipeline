@@ -337,6 +337,60 @@ def test_update_ranks_rejects_article_in_multiple_groups(monkeypatch) -> None:
         )
 
 
+def test_update_ranks_rejects_group_key_without_separator(monkeypatch) -> None:
+    adapter = FakeManualAdminAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid review group: internal",
+    ) as exc_info:
+        manual_filter_admin_service.update_ranks(
+            selected_order=[],
+            backup_order=[],
+            group_orders={"internal": []},
+            actor=_session_admin(),
+        )
+
+    assert str(exc_info.value) == "Invalid review group: internal"
+
+
+def test_update_ranks_rejects_unknown_region(monkeypatch) -> None:
+    adapter = FakeManualAdminAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid review group: unknown_positive",
+    ) as exc_info:
+        manual_filter_admin_service.update_ranks(
+            selected_order=[],
+            backup_order=[],
+            group_orders={"unknown_positive": []},
+            actor=_session_admin(),
+        )
+
+    assert str(exc_info.value) == "Invalid review group: unknown_positive"
+
+
+def test_update_ranks_rejects_unknown_sentiment(monkeypatch) -> None:
+    adapter = FakeManualAdminAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid review group: internal_neutral",
+    ) as exc_info:
+        manual_filter_admin_service.update_ranks(
+            selected_order=[],
+            backup_order=[],
+            group_orders={"internal_neutral": []},
+            actor=_session_admin(),
+        )
+
+    assert str(exc_info.value) == "Invalid review group: internal_neutral"
+
+
 def test_update_ranks_rejects_selected_backup_overlap(monkeypatch) -> None:
     adapter = FakeManualAdminAdapter()
     monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)

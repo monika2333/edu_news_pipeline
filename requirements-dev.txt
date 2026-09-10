@@ -13,3 +13,4 @@ beautifulsoup4>=4.12.0
 argon2-cffi>=23.1.0
 numpy
 playwright==1.55.0
+ruff

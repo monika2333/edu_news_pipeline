@@ -47,6 +47,9 @@ jobs:
       - name: 安装测试依赖
         run: pip install -r requirements-dev.txt
 
+      - name: 静态检查
+        run: ruff check .
+
       - name: 建立数据库表结构
         run: psql -v ON_ERROR_STOP=1 -f database/schema.sql
         env:

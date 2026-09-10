@@ -71,6 +71,10 @@ def _create_temp_search_tables(cur: psycopg.Cursor) -> None:
             f"CREATE TEMP TABLE {table} "
             f"(LIKE public.{table} INCLUDING DEFAULTS) ON COMMIT DROP"
         )
+    cur.execute(
+        "ALTER TABLE manual_reviews "
+        "ADD COLUMN IF NOT EXISTS owner_user_id uuid NOT NULL"
+    )
 
 
 def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
@@ -245,38 +249,41 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
     cur.execute(
         """
         INSERT INTO manual_reviews (
+            owner_user_id,
             article_id,
             status,
             decided_by_user_id,
             decided_at
         )
-        VALUES ('attr-discarded', 'selected', %s, %s)
+        VALUES (%s, 'attr-discarded', 'selected', %s, %s)
         """,
-        (user_id, now - timedelta(minutes=2)),
+        (user_id, user_id, now - timedelta(minutes=2)),
     )
     cur.execute(
         """
         INSERT INTO manual_reviews (
+            owner_user_id,
             article_id,
             status,
             decided_by_user_id,
             decided_at
         )
-        VALUES ('attr-selected', 'selected', %s, %s)
+        VALUES (%s, 'attr-selected', 'selected', %s, %s)
         """,
-        (user_id, now - timedelta(minutes=1)),
+        (user_id, user_id, now - timedelta(minutes=1)),
     )
     cur.execute(
         """
         INSERT INTO manual_reviews (
+            owner_user_id,
             article_id,
             status,
             decided_by_user_id,
             decided_at
         )
-        VALUES ('attr-review-exported', 'exported', %s, %s)
+        VALUES (%s, 'attr-review-exported', 'exported', %s, %s)
         """,
-        (user_id, now - timedelta(seconds=30)),
+        (user_id, user_id, now - timedelta(seconds=30)),
     )
     cur.execute(
         """

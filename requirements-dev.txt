@@ -1,0 +1,15 @@
+# CI / 本地测试用依赖。生产运行请用 requirements.txt。
+# 刻意不含 sentence-transformers 和 playwright 的浏览器二进制：
+# 前者会拖进 ~2GB 的 torch，后者测试只需要 pip 包本身。
+pytest
+psycopg[binary]==3.2.10
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+python-multipart==0.0.9
+jinja2
+requests>=2.32.0
+urllib3>=2.0
+beautifulsoup4>=4.12.0
+argon2-cffi>=23.1.0
+numpy
+playwright==1.55.0

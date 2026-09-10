@@ -9,10 +9,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Dict, Optional, Sequence
 
-from src.adapters.db_postgres_core import get_adapter
-
-from . import manual_filter_action_service
-from .manual_filter_action_service import (
+from .manual_filter_decisions import (
     archive_items as _archive_items,
     bulk_decide as _bulk_decide,
     bulk_discard_candidates as _bulk_discard_candidates,
@@ -31,17 +28,6 @@ from .manual_filter_query_service import (
     trigger_clustering as _trigger_clustering,
 )
 
-
-def _sync_query_dependencies() -> None:
-    from . import manual_filter_query_service
-
-    manual_filter_query_service.get_adapter = get_adapter
-
-
-def _sync_action_dependencies() -> None:
-    manual_filter_action_service.get_adapter = get_adapter
-
-
 def list_candidates(
     *,
     limit: int = 30,
@@ -57,7 +43,6 @@ def list_candidates(
     report_type: str = DEFAULT_REPORT_TYPE,
     duty_unprocessed_only: bool = False,
 ) -> Dict[str, Any]:
-    _sync_query_dependencies()
     return _list_candidates(
         limit=limit,
         offset=offset,
@@ -80,7 +65,6 @@ def list_review(
     offset: int = 0,
     report_type: str = DEFAULT_REPORT_TYPE,
 ) -> Dict[str, Any]:
-    _sync_query_dependencies()
     return _list_review(decision, limit=limit, offset=offset, report_type=report_type)
 
 
@@ -91,7 +75,6 @@ def list_discarded(
     report_type: str = DEFAULT_REPORT_TYPE,
     q: Optional[str] = None,
 ) -> Dict[str, Any]:
-    _sync_query_dependencies()
     return _list_discarded(
         limit=limit,
         offset=offset,
@@ -101,17 +84,14 @@ def list_discarded(
 
 
 def status_counts(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, int]:
-    _sync_query_dependencies()
     return _status_counts(report_type=report_type)
 
 
 def trigger_clustering() -> Dict[str, Any]:
-    _sync_query_dependencies()
     return _trigger_clustering()
 
 
 def check_duplicates(*, report_type: str, decision: str) -> Dict[str, Any]:
-    _sync_query_dependencies()
     return _check_duplicates(report_type=report_type, decision=decision)
 
 
@@ -177,7 +157,6 @@ def bulk_discard_candidates(
     actor: Optional[str] = None,
     dry_run: bool = True,
 ) -> Dict[str, int]:
-    _sync_action_dependencies()
     return _bulk_discard_candidates(
         region=region,
         sentiment=sentiment,

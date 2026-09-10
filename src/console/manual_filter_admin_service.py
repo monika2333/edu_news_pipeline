@@ -127,16 +127,23 @@ def save_edits(
     del report_type
     normalized: dict[str, dict[str, Any]] = {}
     for article_id, payload in edits.items():
-        normalized[str(article_id)] = {
-            "summary": payload.get("summary"),
-            "manual_llm_source": (
+        normalized_edit: dict[str, Any] = {}
+        if "summary" in payload:
+            normalized_edit["summary"] = payload.get("summary")
+        if "llm_source" in payload:
+            normalized_edit["manual_llm_source"] = (
                 str(payload.get("llm_source") or "").strip()
                 if payload.get("llm_source") is not None
                 else None
-            ),
-            "notes": payload.get("notes"),
-            "score": payload.get("score"),
-        }
+            )
+        if "notes" in payload:
+            normalized_edit["notes"] = payload.get("notes")
+        if "score" in payload:
+            normalized_edit["score"] = payload.get("score")
+        if normalized_edit:
+            normalized[str(article_id)] = normalized_edit
+    if not normalized:
+        return {"updated": 0, "versions": {}}
     after = get_adapter().update_manual_review_summaries_as_user(
         normalized,
         actor_username=actor.username,

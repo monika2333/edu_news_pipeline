@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
+from src.console import manual_filter_query_service
 from src.console.app import create_app
 from src.console.security import ConsoleUser, require_console_user
 
@@ -613,10 +614,8 @@ def test_decide_api_returns_conflict_for_stale_manual_review(
 
 
 def test_candidates_api_returns_search_mode_items(monkeypatch) -> None:
-    from src.console import manual_filter_service
-
     adapter = FakeManualFilterAdapter(_build_rows())
-    monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
 
     app = create_app()
     app.dependency_overrides[require_console_user] = _anonymous_console_user
@@ -640,13 +639,11 @@ def test_candidates_api_returns_search_mode_items(monkeypatch) -> None:
 
 
 def test_discarded_api_searches_and_treats_blank_query_as_absent(monkeypatch) -> None:
-    from src.console import manual_filter_service
-
     rows = _build_rows()
     for row in rows:
         row["status"] = "discarded"
     adapter = FakeManualFilterAdapter(rows)
-    monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
 
     app = create_app()
     app.dependency_overrides[require_console_user] = _anonymous_console_user
@@ -669,10 +666,8 @@ def test_discarded_api_searches_and_treats_blank_query_as_absent(monkeypatch) ->
 
 
 def test_candidates_api_uses_created_before_and_ignores_old_query_name(monkeypatch) -> None:
-    from src.console import manual_filter_service
-
     adapter = FakeManualFilterAdapter(_build_rows())
-    monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
 
     app = create_app()
     app.dependency_overrides[require_console_user] = _anonymous_console_user
@@ -694,12 +689,10 @@ def test_candidates_api_uses_created_before_and_ignores_old_query_name(monkeypat
 
 
 def test_candidates_api_ignores_report_type(monkeypatch) -> None:
-    from src.console import manual_filter_service
-
     rows = _build_rows()
     rows[0]["report_type"] = "wanbao"
     adapter = FakeManualFilterAdapter(rows)
-    monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
 
     app = create_app()
     app.dependency_overrides[require_console_user] = _anonymous_console_user
@@ -723,8 +716,6 @@ def test_candidates_api_ignores_report_type(monkeypatch) -> None:
 def test_candidates_api_passes_duty_unprocessed_filter_and_defaults_false(
     monkeypatch,
 ) -> None:
-    from src.console import manual_filter_service
-
     rows = _build_rows()
     rows[0]["duty_processed"] = True
     rows.append(
@@ -736,7 +727,7 @@ def test_candidates_api_passes_duty_unprocessed_filter_and_defaults_false(
         }
     )
     adapter = FakeManualFilterAdapter(rows)
-    monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
     app = create_app()
     app.dependency_overrides[require_console_user] = _anonymous_console_user
     client = TestClient(app)
@@ -836,10 +827,10 @@ def test_bulk_discard_apply_uses_duty_unprocessed_scope(monkeypatch) -> None:
 
 
 def test_bulk_discard_api_supports_keyword_only_preview_and_apply(monkeypatch) -> None:
-    from src.console import manual_filter_admin_service, manual_filter_service
+    from src.console import manual_filter_admin_service
 
     adapter = FakeManualFilterAdapter(_build_rows())
-    monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
     monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
 
     app = create_app()
@@ -883,10 +874,10 @@ def test_bulk_discard_api_supports_keyword_only_preview_and_apply(monkeypatch) -
 
 
 def test_bulk_discard_api_supports_empty_optional_filters(monkeypatch) -> None:
-    from src.console import manual_filter_admin_service, manual_filter_service
+    from src.console import manual_filter_admin_service
 
     adapter = FakeManualFilterAdapter(_build_rows())
-    monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
     monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
 
     app = create_app()
@@ -913,10 +904,10 @@ def test_bulk_discard_api_supports_empty_optional_filters(monkeypatch) -> None:
 
 
 def test_bulk_discard_api_uses_created_before_and_ignores_old_field(monkeypatch) -> None:
-    from src.console import manual_filter_admin_service, manual_filter_service
+    from src.console import manual_filter_admin_service
 
     adapter = FakeManualFilterAdapter(_build_rows())
-    monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
     monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
 
     app = create_app()

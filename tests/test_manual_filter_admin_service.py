@@ -10,6 +10,15 @@ class FakeManualAdminAdapter:
     def __init__(self) -> None:
         self.status_update: dict[str, Any] = {}
         self.summary_update: dict[str, Any] = {}
+        self.summary_update_calls = 0
+        self.rows = {
+            "article-1": {
+                "summary": "原摘要",
+                "manual_llm_source": "原来源",
+                "notes": "原备注",
+                "score": 88,
+            }
+        }
 
     def update_manual_review_statuses_as_user(
         self,
@@ -33,10 +42,13 @@ class FakeManualAdminAdapter:
         edits: dict[str, dict[str, Any]],
         **kwargs: Any,
     ) -> list[dict[str, Any]]:
+        self.summary_update_calls += 1
         self.summary_update = {
             "edits": edits,
             **kwargs,
         }
+        for article_id, edit in edits.items():
+            self.rows[article_id].update(edit)
         return [
             {
                 "article_id": article_id,
@@ -128,6 +140,93 @@ def test_save_edits_ignores_request_report_type(monkeypatch) -> None:
 
     assert "report_type" not in adapter.summary_update["edits"]["article-1"]
     assert adapter.summary_update["report_type"] is None
+
+
+def test_save_edits_summary_only_preserves_notes_and_score(monkeypatch) -> None:
+    adapter = FakeManualAdminAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    manual_filter_admin_service.save_edits(
+        {"article-1": {"summary": "编辑后摘要"}},
+        versions={"article-1": 3},
+        actor=_session_admin(),
+    )
+
+    assert adapter.rows["article-1"]["summary"] == "编辑后摘要"
+    assert adapter.rows["article-1"]["notes"] == "原备注"
+    assert adapter.rows["article-1"]["score"] == 88
+
+
+def test_save_edits_llm_source_only_preserves_summary(monkeypatch) -> None:
+    adapter = FakeManualAdminAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    manual_filter_admin_service.save_edits(
+        {"article-1": {"llm_source": "新来源"}},
+        versions={"article-1": 3},
+        actor=_session_admin(),
+    )
+
+    assert adapter.rows["article-1"]["manual_llm_source"] == "新来源"
+    assert adapter.rows["article-1"]["summary"] == "原摘要"
+
+
+def test_save_edits_applies_multiple_submitted_fields(monkeypatch) -> None:
+    adapter = FakeManualAdminAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    manual_filter_admin_service.save_edits(
+        {
+            "article-1": {
+                "summary": "编辑后摘要",
+                "llm_source": "新来源",
+                "notes": "新备注",
+                "score": 96,
+            }
+        },
+        versions={"article-1": 3},
+        actor=_session_admin(),
+    )
+
+    assert adapter.rows["article-1"] == {
+        "summary": "编辑后摘要",
+        "manual_llm_source": "新来源",
+        "notes": "新备注",
+        "score": 96,
+    }
+
+
+def test_save_edits_blank_llm_source_keeps_existing_normalization(monkeypatch) -> None:
+    adapter = FakeManualAdminAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    manual_filter_admin_service.save_edits(
+        {"article-1": {"llm_source": "  \t  "}},
+        versions={"article-1": 3},
+        actor=_session_admin(),
+    )
+
+    assert adapter.rows["article-1"]["manual_llm_source"] == ""
+
+
+def test_save_edits_skips_payload_without_recognized_fields(monkeypatch) -> None:
+    adapter = FakeManualAdminAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    result = manual_filter_admin_service.save_edits(
+        {"article-1": {"unknown": "ignored"}},
+        versions={"article-1": 3},
+        actor=_session_admin(),
+    )
+
+    assert result == {"updated": 0, "versions": {}}
+    assert adapter.summary_update_calls == 0
+    assert adapter.rows["article-1"] == {
+        "summary": "原摘要",
+        "manual_llm_source": "原来源",
+        "notes": "原备注",
+        "score": 88,
+    }
 
 
 def test_archive_preserves_existing_report_type(monkeypatch) -> None:

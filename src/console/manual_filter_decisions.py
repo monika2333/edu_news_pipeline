@@ -6,7 +6,7 @@ Decision and update logic for bulk status changes, ranking, and edits.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
 from src.adapters.db_postgres_core import get_adapter
@@ -273,6 +273,43 @@ def archive_items(ids: Sequence[str], *, actor: Optional[str] = None, report_typ
     target_report_type = _normalize_report_type(report_type)
     logger.info("Archiving manual review items: count=%s actor=%s report_type=%s", len(target_ids), actor, target_report_type)
     return _apply_decision(status="exported", ids=target_ids, actor=actor, report_type=target_report_type)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Bulk discard candidates
+# ─────────────────────────────────────────────────────────────────────────────
+def bulk_discard_candidates(
+    *,
+    region: str,
+    sentiment: str,
+    query: Optional[str] = None,
+    created_before: Optional[date] = None,
+    actor: Optional[str] = None,
+    dry_run: bool = True,
+) -> Dict[str, int]:
+    normalized_region = region if region in ("internal", "external") else None
+    normalized_sentiment = sentiment if sentiment in ("positive", "negative") else None
+    if normalized_region is None or normalized_sentiment is None:
+        raise ValueError("bulk-discard requires explicit filter bucket")
+    adapter = get_adapter()
+    matched = adapter.manual_reviews.count_candidates_before_date(  # type: ignore[attr-defined]
+        region=normalized_region,
+        sentiment=normalized_sentiment,
+        query=(query or "").strip() or None,
+        created_before=created_before,
+        report_type=None,
+    )
+    if dry_run or matched <= 0:
+        return {"matched": matched, "updated": 0}
+    updated = adapter.manual_reviews.bulk_discard_candidates(  # type: ignore[attr-defined]
+        region=normalized_region,
+        sentiment=normalized_sentiment,
+        query=(query or "").strip() or None,
+        created_before=created_before,
+        actor=actor,
+        report_type=None,
+    )
+    return {"matched": matched, "updated": updated}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

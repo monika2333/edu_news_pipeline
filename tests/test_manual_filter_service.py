@@ -593,10 +593,15 @@ def fake_adapter(monkeypatch):
     ]
     adapter = FakeAdapter(rows)
     # Patch get_adapter in all modules that use it
-    from src.console import manual_filter_cluster, manual_filter_decisions
-    monkeypatch.setattr(manual_filter_service, "get_adapter", lambda: adapter)
+    from src.console import (
+        manual_filter_cluster,
+        manual_filter_decisions,
+        manual_filter_query_service,
+    )
+
     monkeypatch.setattr(manual_filter_cluster, "get_adapter", lambda: adapter)
     monkeypatch.setattr(manual_filter_decisions, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
     return adapter
 
 

@@ -282,6 +282,43 @@ def test_registry_passes_each_runner_its_current_arguments(
     ], f"{source} runner arguments changed"
 
 
+def test_toutiao_absolute_authors_path_passes_through_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+    run_adapter: object,
+    tmp_path: Path,
+) -> None:
+    working_directory = tmp_path / "working-directory"
+    authors_directory = tmp_path / "authors-directory"
+    working_directory.mkdir()
+    authors_directory.mkdir()
+    absolute_authors_path = authors_directory / "authors.txt"
+    monkeypatch.chdir(working_directory)
+    monkeypatch.setenv("TOUTIAO_AUTHORS_PATH", str(absolute_authors_path))
+    calls: list[dict[str, Any]] = []
+
+    def record_runner(**kwargs: Any) -> crawl_sources.CrawlStats:
+        calls.append(kwargs)
+        return EMPTY_STATS.copy()
+
+    monkeypatch.setattr(crawl_sources, "_run_toutiao_flow", record_runner)
+
+    crawl_sources.run(limit=7, sources=["toutiao"], pages=3)
+
+    assert working_directory != absolute_authors_path.parent
+    assert absolute_authors_path.is_absolute()
+    assert calls == [
+        {
+            "adapter": run_adapter,
+            "keywords": [],
+            "remaining_limit": 7,
+            "authors_path": absolute_authors_path,
+            "show_browser": True,
+            "timeout_value": 21,
+            "lang": "zh-test",
+        }
+    ]
+
+
 @pytest.mark.parametrize(
     ("qianlong_pages", "qianlong_max_pages", "expected_pages"),
     [("8", "9", 8), (None, "9", 9)],

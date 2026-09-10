@@ -13,19 +13,20 @@
 ```bash
 pip install -r requirements.txt
 ```
-2) 应用数据库迁移并创建至少两个管理员账号
+1) 建库并创建至少两个管理员账号
 ```bash
-dbmate --migrations-dir database/migrations --schema-file database/schema.sql up
+dbmate create
+dbmate --migrations-dir database/migrations --schema-file database/schema.sql load
 python -m src.cli.main create-console-user --username admin-a --display-name "管理员 A" --role admin
 python -m src.cli.main create-console-user --username admin-b --display-name "管理员 B" --role admin
 ```
 
-3) 启动控制台（默认 8000）
+1) 启动控制台（默认 8000）
 ```bash
 python run_console.py
 ```
 
-4) 运行流水线单步（示例）
+1) 运行流水线单步（示例）
 ```bash
 python -m src.cli.main crawl --sources toutiao,tencent --limit 5000
 python -m src.cli.main hash-primary
@@ -94,6 +95,22 @@ python -m src.cli.main export
 ## 数据库迁移 (Database)
 
 我们使用 **Dbmate** 进行数据库版本管理。请确保设置了 `DATABASE_URL` 环境变量，以便 dbmate 识别。
+
+### 两种场景，两条命令
+
+- **从零建一个新库**（换机器、搭测试环境、灾难恢复）：用 `dbmate create` + `dbmate load`。
+  `load` 会读取 `database/schema.sql` 建好全部表结构，并把已有迁移标记为已应用。
+
+```powershell
+  dbmate create
+  dbmate --migrations-dir database/migrations --schema-file database/schema.sql load
+```
+
+- **在已有库上应用新迁移**（日常开发）：用 `dbmate up`，见下方常用操作。
+
+不要用 `dbmate up` 从空库建库。早期几个迁移的时间戳早于 `init_migration`，
+从空库按文件名顺序重放时会先执行「给表加字段」再执行「建表」，必然失败。
+`schema.sql` 才是「从零建库」的权威来源，迁移文件只负责「从已有库往前推一步」。
 
 ### 常用操作
 ```powershell

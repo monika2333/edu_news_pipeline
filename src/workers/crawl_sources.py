@@ -145,6 +145,54 @@ class SourceFlow:
     delay_after_last: bool = False
 
 
+@dataclass(frozen=True)
+class LinkedPageConfig:
+    """Data-only wiring for sources that share the linked-page flow."""
+
+    source: str
+    display_name: str
+    list_items_name: str
+    make_article_id_name: str
+    feed_item_to_row_name: str
+    fetch_detail_name: str
+    build_detail_update_name: str
+
+
+@dataclass(frozen=True)
+class SourceRunContext:
+    """Values shared by every registered source invocation."""
+
+    adapter: Any
+    keywords: Sequence[str]
+    remaining_limit: Optional[int]
+    pages: Optional[int]
+
+
+RunnerKwargs = Callable[[SourceRunContext], Dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class SourceRegistration:
+    """A source's dispatch target, aliases, and source-local configuration."""
+
+    runner_name: str
+    kwargs_factory: RunnerKwargs
+    aliases: Tuple[str, ...] = ()
+    linked_page: Optional[LinkedPageConfig] = None
+
+    def run(self, context: SourceRunContext) -> CrawlStats:
+        runner = globals()[self.runner_name]
+        kwargs = {
+            "adapter": context.adapter,
+            "keywords": context.keywords,
+            "remaining_limit": context.remaining_limit,
+            **self.kwargs_factory(context),
+        }
+        if self.linked_page is not None:
+            kwargs["config"] = self.linked_page
+        return runner(**kwargs)
+
+
 def _empty_stats() -> CrawlStats:
     return {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
 
@@ -153,6 +201,27 @@ def _truthy_env(value: Optional[str]) -> bool:
     if value is None:
         return False
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    try:
+        return float(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    try:
+        return int(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_str(name: str, default: str) -> str:
+    value = os.getenv(name)
+    return value.strip() if value and value.strip() else default
 
 
 def _repo_root() -> Path:
@@ -619,10 +688,7 @@ def _run_tencent_flow(
         detail = tencent_fetch_article_detail(item)
         return tencent_build_detail_update(detail, detail_fetched_at=detail_fetched_at)
 
-    try:
-        detail_delay = max(0.0, float(os.getenv("TENCENT_DETAIL_DELAY", "0.5")))
-    except (TypeError, ValueError):
-        detail_delay = 0.5
+    detail_delay = max(0.0, _env_float("TENCENT_DETAIL_DELAY", 0.5))
     return _run_source_flow(
         adapter=adapter,
         flow=SourceFlow(
@@ -642,109 +708,26 @@ def _run_tencent_flow(
     )
 
 
-def _run_chinanews_flow(
+def _run_registered_linked_page_flow(
     *,
     adapter: Any,
     keywords: Sequence[str],
     remaining_limit: Optional[int],
     pages: Optional[int],
+    config: LinkedPageConfig,
 ) -> CrawlStats:
     flow = _linked_page_flow(
-        source="chinanews",
-        display_name="ChinaNews",
-        list_items=lambda limit, existing: cn_list_items(
+        source=config.source,
+        display_name=config.display_name,
+        list_items=lambda limit, existing: globals()[config.list_items_name](
             limit=limit,
             pages=pages or 1,
             existing_ids=existing,
         ),
-        make_article_id=cn_make_article_id,
-        feed_item_to_row_func=cn_feed_item_to_row,
-        fetch_detail_func=cn_fetch_detail,
-        build_detail_update_func=cn_build_detail_update,
-    )
-    return _run_source_flow(
-        adapter=adapter,
-        flow=flow,
-        keywords=keywords,
-        remaining_limit=remaining_limit,
-    )
-
-
-def _run_btime_flow(
-    *,
-    adapter: Any,
-    keywords: Sequence[str],
-    remaining_limit: Optional[int],
-    pages: Optional[int],
-) -> CrawlStats:
-    flow = _linked_page_flow(
-        source="btime",
-        display_name="Btime",
-        list_items=lambda limit, existing: btime_list_items(
-            limit=limit,
-            pages=pages or 1,
-            existing_ids=existing,
-        ),
-        make_article_id=btime_make_article_id,
-        feed_item_to_row_func=btime_feed_item_to_row,
-        fetch_detail_func=btime_fetch_detail,
-        build_detail_update_func=btime_build_detail_update,
-    )
-    return _run_source_flow(
-        adapter=adapter,
-        flow=flow,
-        keywords=keywords,
-        remaining_limit=remaining_limit,
-    )
-
-
-def _run_beijinghao_flow(
-    *,
-    adapter: Any,
-    keywords: Sequence[str],
-    remaining_limit: Optional[int],
-    pages: Optional[int],
-) -> CrawlStats:
-    flow = _linked_page_flow(
-        source="beijinghao",
-        display_name="Beijinghao",
-        list_items=lambda limit, existing: beijinghao_list_items(
-            limit=limit,
-            pages=pages or 1,
-            existing_ids=existing,
-        ),
-        make_article_id=beijinghao_make_article_id,
-        feed_item_to_row_func=beijinghao_feed_item_to_row,
-        fetch_detail_func=beijinghao_fetch_detail,
-        build_detail_update_func=beijinghao_build_detail_update,
-    )
-    return _run_source_flow(
-        adapter=adapter,
-        flow=flow,
-        keywords=keywords,
-        remaining_limit=remaining_limit,
-    )
-
-
-def _run_chinanews_xj_flow(
-    *,
-    adapter: Any,
-    keywords: Sequence[str],
-    remaining_limit: Optional[int],
-    pages: Optional[int],
-) -> CrawlStats:
-    flow = _linked_page_flow(
-        source="chinanews_xj",
-        display_name="ChinaNews Xinjiang",
-        list_items=lambda limit, existing: cn_xj_list_items(
-            limit=limit,
-            pages=pages or 1,
-            existing_ids=existing,
-        ),
-        make_article_id=cn_xj_make_article_id,
-        feed_item_to_row_func=cn_xj_feed_item_to_row,
-        fetch_detail_func=cn_xj_fetch_detail,
-        build_detail_update_func=cn_xj_build_detail_update,
+        make_article_id=globals()[config.make_article_id_name],
+        feed_item_to_row_func=globals()[config.feed_item_to_row_name],
+        fetch_detail_func=globals()[config.fetch_detail_name],
+        build_detail_update_func=globals()[config.build_detail_update_name],
     )
     return _run_source_flow(
         adapter=adapter,
@@ -762,10 +745,7 @@ def _run_gmw_flow(
     base_url: str,
     timeout_value: float,
 ) -> CrawlStats:
-    try:
-        consecutive_stop = max(0, int(os.getenv("GMW_EXISTING_CONSECUTIVE_STOP", "5")))
-    except (TypeError, ValueError):
-        consecutive_stop = 5
+    consecutive_stop = max(0, _env_int("GMW_EXISTING_CONSECUTIVE_STOP", 5))
 
     def prepare_feed(item: Any, fetched_at: datetime) -> Tuple[str, Dict[str, Any]]:
         article_id = gmw_make_article_id(item.url)
@@ -909,59 +889,179 @@ def _run_qianlong_flow(
     )
 
 
-def _run_jyb_flow(
-    *,
-    adapter: Any,
-    keywords: Sequence[str],
-    remaining_limit: Optional[int],
-    pages: Optional[int],
-) -> CrawlStats:
-    flow = _linked_page_flow(
-        source="jyb",
-        display_name="JYB",
-        list_items=lambda limit, existing: jyb_list_items(
-            limit=limit,
-            pages=pages or 1,
-            existing_ids=existing,
-        ),
-        make_article_id=jyb_make_article_id,
-        feed_item_to_row_func=jyb_feed_item_to_row,
-        fetch_detail_func=jyb_fetch_detail,
-        build_detail_update_func=jyb_build_detail_update,
-    )
-    return _run_source_flow(
-        adapter=adapter,
-        flow=flow,
-        keywords=keywords,
-        remaining_limit=remaining_limit,
-    )
+def _no_runner_kwargs(_context: SourceRunContext) -> Dict[str, Any]:
+    return {}
 
 
-def _run_chinadaily_flow(
-    *,
-    adapter: Any,
-    keywords: Sequence[str],
-    remaining_limit: Optional[int],
-    pages: Optional[int],
-) -> CrawlStats:
-    flow = _linked_page_flow(
-        source="chinadaily",
-        display_name="China Daily",
-        list_items=lambda limit, existing: cd_list_items(
-            limit=limit,
-            pages=pages or 1,
-            existing_ids=existing,
+def _pages_runner_kwargs(context: SourceRunContext) -> Dict[str, Any]:
+    return {"pages": context.pages}
+
+
+def _toutiao_runner_kwargs(_context: SourceRunContext) -> Dict[str, Any]:
+    return {
+        "authors_path": _resolve_authors_path(),
+        "show_browser": _truthy_env(os.getenv("TOUTIAO_SHOW_BROWSER")),
+        "timeout_value": _env_int("TOUTIAO_FETCH_TIMEOUT", DEFAULT_TIMEOUT),
+        "lang": os.getenv("TOUTIAO_LANG", DEFAULT_LANG),
+    }
+
+
+def _gmw_runner_kwargs(_context: SourceRunContext) -> Dict[str, Any]:
+    return {
+        "base_url": _env_str("GMW_BASE_URL", GMW_DEFAULT_BASE_URL),
+        "timeout_value": _env_float("GMW_TIMEOUT", GMW_DEFAULT_TIMEOUT),
+    }
+
+
+def _qianlong_runner_kwargs(context: SourceRunContext) -> Dict[str, Any]:
+    base_url = _env_str("QIANLONG_BASE_URL", "")
+    pages_value = os.getenv("QIANLONG_PAGES") or os.getenv("QIANLONG_MAX_PAGES")
+    try:
+        configured_pages = int(pages_value) if pages_value is not None else None
+    except ValueError:
+        configured_pages = None
+    if configured_pages is not None and configured_pages <= 0:
+        configured_pages = QIANLONG_DEFAULT_MAX_PAGES
+
+    return {
+        "base_urls": (base_url,) if base_url else QIANLONG_DEFAULT_BASE_URLS,
+        "timeout_value": _env_float("QIANLONG_TIMEOUT", QIANLONG_DEFAULT_TIMEOUT),
+        "delay_value": _env_float("QIANLONG_DELAY", QIANLONG_DEFAULT_DELAY),
+        "pages_hint": context.pages if context.pages is not None else configured_pages,
+        "consecutive_stop": max(
+            0,
+            _env_int("QIANLONG_EXISTING_CONSECUTIVE_STOP", 5),
         ),
-        make_article_id=cd_make_article_id,
-        feed_item_to_row_func=cd_feed_item_to_row,
-        fetch_detail_func=cd_fetch_detail,
-        build_detail_update_func=cd_build_detail_update,
-    )
-    return _run_source_flow(
-        adapter=adapter,
-        flow=flow,
-        keywords=keywords,
-        remaining_limit=remaining_limit,
+    }
+
+
+def _bjrb_runner_kwargs(_context: SourceRunContext) -> Dict[str, Any]:
+    return {
+        "timeout_value": _env_float("BJRB_TIMEOUT", BJRB_DEFAULT_TIMEOUT),
+        "delay_value": max(0.0, _env_float("BJRB_DELAY", BJRB_DEFAULT_DELAY)),
+    }
+
+
+_SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
+    "beijinghao": SourceRegistration(
+        runner_name="_run_registered_linked_page_flow",
+        kwargs_factory=_pages_runner_kwargs,
+        linked_page=LinkedPageConfig(
+            source="beijinghao",
+            display_name="Beijinghao",
+            list_items_name="beijinghao_list_items",
+            make_article_id_name="beijinghao_make_article_id",
+            feed_item_to_row_name="beijinghao_feed_item_to_row",
+            fetch_detail_name="beijinghao_fetch_detail",
+            build_detail_update_name="beijinghao_build_detail_update",
+        ),
+    ),
+    "bjrb": SourceRegistration(
+        runner_name="_run_bjrb_flow",
+        kwargs_factory=_bjrb_runner_kwargs,
+        aliases=("beijingdaily",),
+    ),
+    "btime": SourceRegistration(
+        runner_name="_run_registered_linked_page_flow",
+        kwargs_factory=_pages_runner_kwargs,
+        linked_page=LinkedPageConfig(
+            source="btime",
+            display_name="Btime",
+            list_items_name="btime_list_items",
+            make_article_id_name="btime_make_article_id",
+            feed_item_to_row_name="btime_feed_item_to_row",
+            fetch_detail_name="btime_fetch_detail",
+            build_detail_update_name="btime_build_detail_update",
+        ),
+    ),
+    "chinadaily": SourceRegistration(
+        runner_name="_run_registered_linked_page_flow",
+        kwargs_factory=_pages_runner_kwargs,
+        linked_page=LinkedPageConfig(
+            source="chinadaily",
+            display_name="China Daily",
+            list_items_name="cd_list_items",
+            make_article_id_name="cd_make_article_id",
+            feed_item_to_row_name="cd_feed_item_to_row",
+            fetch_detail_name="cd_fetch_detail",
+            build_detail_update_name="cd_build_detail_update",
+        ),
+    ),
+    "chinanews": SourceRegistration(
+        runner_name="_run_registered_linked_page_flow",
+        kwargs_factory=_pages_runner_kwargs,
+        linked_page=LinkedPageConfig(
+            source="chinanews",
+            display_name="ChinaNews",
+            list_items_name="cn_list_items",
+            make_article_id_name="cn_make_article_id",
+            feed_item_to_row_name="cn_feed_item_to_row",
+            fetch_detail_name="cn_fetch_detail",
+            build_detail_update_name="cn_build_detail_update",
+        ),
+    ),
+    "chinanews_xj": SourceRegistration(
+        runner_name="_run_registered_linked_page_flow",
+        kwargs_factory=_pages_runner_kwargs,
+        linked_page=LinkedPageConfig(
+            source="chinanews_xj",
+            display_name="ChinaNews Xinjiang",
+            list_items_name="cn_xj_list_items",
+            make_article_id_name="cn_xj_make_article_id",
+            feed_item_to_row_name="cn_xj_feed_item_to_row",
+            fetch_detail_name="cn_xj_fetch_detail",
+            build_detail_update_name="cn_xj_build_detail_update",
+        ),
+    ),
+    "gmw": SourceRegistration(
+        runner_name="_run_gmw_flow",
+        kwargs_factory=_gmw_runner_kwargs,
+    ),
+    "jyb": SourceRegistration(
+        runner_name="_run_registered_linked_page_flow",
+        kwargs_factory=_pages_runner_kwargs,
+        linked_page=LinkedPageConfig(
+            source="jyb",
+            display_name="JYB",
+            list_items_name="jyb_list_items",
+            make_article_id_name="jyb_make_article_id",
+            feed_item_to_row_name="jyb_feed_item_to_row",
+            fetch_detail_name="jyb_fetch_detail",
+            build_detail_update_name="jyb_build_detail_update",
+        ),
+    ),
+    "ldwb": SourceRegistration(
+        runner_name="_run_ldwb_flow",
+        kwargs_factory=_no_runner_kwargs,
+        aliases=("laodongwubao",),
+    ),
+    "qianlong": SourceRegistration(
+        runner_name="_run_qianlong_flow",
+        kwargs_factory=_qianlong_runner_kwargs,
+    ),
+    "tencent": SourceRegistration(
+        runner_name="_run_tencent_flow",
+        kwargs_factory=_pages_runner_kwargs,
+        aliases=("qq",),
+    ),
+    "toutiao": SourceRegistration(
+        runner_name="_run_toutiao_flow",
+        kwargs_factory=_toutiao_runner_kwargs,
+    ),
+}
+
+
+def _get_source_registration(source: str) -> Optional[SourceRegistration]:
+    registration = _SOURCE_REGISTRY.get(source)
+    if registration is not None:
+        return registration
+    return next(
+        (
+            candidate
+            for candidate in _SOURCE_REGISTRY.values()
+            if source in candidate.aliases
+        ),
+        None,
     )
 
 
@@ -980,67 +1080,6 @@ def run(
         selected_order = [s.strip().lower() for s in sources.split(',') if s.strip()]
     else:
         selected_order = [str(s).strip().lower() for s in sources if str(s).strip()]
-
-    authors_path = _resolve_authors_path()
-    show_browser = _truthy_env(os.getenv("TOUTIAO_SHOW_BROWSER"))
-    timeout_env = os.getenv("TOUTIAO_FETCH_TIMEOUT")
-    try:
-        timeout_value = int(timeout_env) if timeout_env is not None else DEFAULT_TIMEOUT
-    except ValueError:
-        timeout_value = DEFAULT_TIMEOUT
-    lang = os.getenv("TOUTIAO_LANG", DEFAULT_LANG)
-
-    gmw_base_url_env = os.getenv("GMW_BASE_URL")
-    gmw_base_url = (gmw_base_url_env.strip() if gmw_base_url_env and gmw_base_url_env.strip() else GMW_DEFAULT_BASE_URL)
-    gmw_timeout_env = os.getenv("GMW_TIMEOUT")
-    try:
-        gmw_timeout = float(gmw_timeout_env) if gmw_timeout_env is not None else GMW_DEFAULT_TIMEOUT
-    except ValueError:
-        gmw_timeout = GMW_DEFAULT_TIMEOUT
-
-    qianlong_base_url_env = os.getenv("QIANLONG_BASE_URL")
-    qianlong_base_urls = (
-        (qianlong_base_url_env.strip(),)
-        if qianlong_base_url_env and qianlong_base_url_env.strip()
-        else QIANLONG_DEFAULT_BASE_URLS
-    )
-    qianlong_timeout_env = os.getenv("QIANLONG_TIMEOUT")
-    try:
-        qianlong_timeout = float(qianlong_timeout_env) if qianlong_timeout_env is not None else QIANLONG_DEFAULT_TIMEOUT
-    except ValueError:
-        qianlong_timeout = QIANLONG_DEFAULT_TIMEOUT
-    qianlong_delay_env = os.getenv("QIANLONG_DELAY")
-    try:
-        qianlong_delay = float(qianlong_delay_env) if qianlong_delay_env is not None else QIANLONG_DEFAULT_DELAY
-    except ValueError:
-        qianlong_delay = QIANLONG_DEFAULT_DELAY
-    qianlong_pages_env = os.getenv("QIANLONG_PAGES") or os.getenv("QIANLONG_MAX_PAGES")
-    try:
-        qianlong_pages_config = int(qianlong_pages_env) if qianlong_pages_env is not None else None
-    except ValueError:
-        qianlong_pages_config = None
-    if qianlong_pages_config is not None and qianlong_pages_config <= 0:
-        qianlong_pages_config = QIANLONG_DEFAULT_MAX_PAGES
-    qianlong_consecutive_env = os.getenv("QIANLONG_EXISTING_CONSECUTIVE_STOP")
-    try:
-        qianlong_consecutive_stop = int(qianlong_consecutive_env) if qianlong_consecutive_env is not None else 5
-    except ValueError:
-        qianlong_consecutive_stop = 5
-    if qianlong_consecutive_stop < 0:
-        qianlong_consecutive_stop = 0
-
-    bjrb_timeout_env = os.getenv("BJRB_TIMEOUT")
-    try:
-        bjrb_timeout = float(bjrb_timeout_env) if bjrb_timeout_env is not None else BJRB_DEFAULT_TIMEOUT
-    except ValueError:
-        bjrb_timeout = BJRB_DEFAULT_TIMEOUT
-    bjrb_delay_env = os.getenv("BJRB_DELAY")
-    try:
-        bjrb_delay = float(bjrb_delay_env) if bjrb_delay_env is not None else BJRB_DEFAULT_DELAY
-    except ValueError:
-        bjrb_delay = BJRB_DEFAULT_DELAY
-    if bjrb_delay < 0:
-        bjrb_delay = 0.0
 
     keywords_path_value = getattr(settings, 'keywords_path', None)
     keywords_file: Optional[Path]
@@ -1067,103 +1106,23 @@ def run(
     remaining_limit = effective_limit
     adapter = get_adapter()
     total_ok = total_failed = total_skipped = 0
-    source_aliases = {
-        "beijingdaily": "bjrb",
-        "laodongwubao": "ldwb",
-        "qq": "tencent",
-    }
     with worker_session(WORKER, limit=effective_limit):
         for source in selected_order:
             if remaining_limit is not None and remaining_limit <= 0:
                 break
-            source_runners: Dict[str, Callable[[], CrawlStats]] = {
-                "beijinghao": lambda: _run_beijinghao_flow(
-                    adapter=adapter,
-                    keywords=keywords,
-                    remaining_limit=remaining_limit,
-                    pages=pages,
-                ),
-                "bjrb": lambda: _run_bjrb_flow(
-                    adapter=adapter,
-                    keywords=keywords,
-                    remaining_limit=remaining_limit,
-                    timeout_value=bjrb_timeout,
-                    delay_value=bjrb_delay,
-                ),
-                "chinadaily": lambda: _run_chinadaily_flow(
-                    adapter=adapter,
-                    keywords=keywords,
-                    remaining_limit=remaining_limit,
-                    pages=pages,
-                ),
-                "chinanews": lambda: _run_chinanews_flow(
-                    adapter=adapter,
-                    keywords=keywords,
-                    remaining_limit=remaining_limit,
-                    pages=pages,
-                ),
-                "chinanews_xj": lambda: _run_chinanews_xj_flow(
-                    adapter=adapter,
-                    keywords=keywords,
-                    remaining_limit=remaining_limit,
-                    pages=pages,
-                ),
-                "btime": lambda: _run_btime_flow(
-                    adapter=adapter,
-                    keywords=keywords,
-                    remaining_limit=remaining_limit,
-                    pages=pages,
-                ),
-                "gmw": lambda: _run_gmw_flow(
-                    adapter=adapter,
-                    keywords=keywords,
-                    remaining_limit=remaining_limit,
-                    base_url=gmw_base_url,
-                    timeout_value=gmw_timeout,
-                ),
-                "jyb": lambda: _run_jyb_flow(
-                    adapter=adapter,
-                    keywords=keywords,
-                    remaining_limit=remaining_limit,
-                    pages=pages,
-                ),
-                "ldwb": lambda: _run_ldwb_flow(
-                    adapter=adapter,
-                    keywords=keywords,
-                    remaining_limit=remaining_limit,
-                ),
-                "qianlong": lambda: _run_qianlong_flow(
-                    adapter=adapter,
-                    keywords=keywords,
-                    remaining_limit=remaining_limit,
-                    base_urls=qianlong_base_urls,
-                    timeout_value=qianlong_timeout,
-                    delay_value=qianlong_delay,
-                    pages_hint=pages if pages is not None else qianlong_pages_config,
-                    consecutive_stop=qianlong_consecutive_stop,
-                ),
-                "tencent": lambda: _run_tencent_flow(
-                    adapter=adapter,
-                    keywords=keywords,
-                    remaining_limit=remaining_limit,
-                    pages=pages,
-                ),
-                "toutiao": lambda: _run_toutiao_flow(
-                    adapter=adapter,
-                    authors_path=authors_path,
-                    show_browser=show_browser,
-                    timeout_value=timeout_value,
-                    lang=lang,
-                    keywords=keywords,
-                    remaining_limit=remaining_limit,
-                ),
-            }
-            runner = source_runners.get(source_aliases.get(source, source))
-            if runner is None:
+            registration = _get_source_registration(source)
+            if registration is None:
                 log_info(WORKER, f"Unknown source '{source}' skipped")
                 stats = _empty_stats()
             else:
-                stats = runner()
+                stats = registration.run(
+                    SourceRunContext(
+                        adapter=adapter,
+                        keywords=keywords,
+                        remaining_limit=remaining_limit,
+                        pages=pages,
+                    )
+                )
 
             try:
                 consumed = int(stats.get('consumed') or 0)

@@ -5,9 +5,6 @@ from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
 
-MISSING = object()
-
-
 def article_hash(article_id: Optional[str], original_url: Optional[str], title: Optional[str]) -> str:
     import hashlib
 
@@ -51,4 +48,4 @@ def json_safe(value: Any) -> Any:
     return value
 
 
-__all__ = ["MISSING", "article_hash", "to_iso", "iso_datetime", "json_safe"]
+__all__ = ["article_hash", "to_iso", "iso_datetime", "json_safe"]

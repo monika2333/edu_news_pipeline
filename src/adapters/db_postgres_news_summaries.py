@@ -8,7 +8,6 @@ import psycopg
 from psycopg.types.json import Json
 
 from src.adapters.db_postgres_article_attribution import search_article_attributions
-from src.adapters.db_postgres_shared import MISSING
 
 if TYPE_CHECKING:
     from src.adapters.db_postgres_core import PostgresAdapter
@@ -290,87 +289,6 @@ def mark_summary_attempt(cur: psycopg.Cursor, article_id: str) -> bool:
     """
     cur.execute(query, (article_id,))
     return cur.rowcount == 1
-
-
-def complete_summary(
-    cur: psycopg.Cursor,
-    article_id: str,
-    summary_text: str,
-    *,
-    llm_source: Optional[str] = None,
-    keywords: Optional[Sequence[str]] = None,
-    beijing_related: Optional[bool] = None,
-    sentiment_label: Optional[str] = None,
-    sentiment_confidence: Optional[float] = None,
-    status: str = "ready_for_export",
-    external_importance_status: Any = MISSING,
-    external_importance_score: Any = MISSING,
-    external_importance_checked_at: Any = MISSING,
-    external_importance_raw: Any = MISSING,
-    external_filter_attempted_at: Any = MISSING,
-    external_filter_fail_count: Any = MISSING,
-    is_beijing_related_llm: Any = MISSING,
-    beijing_gate_checked_at: Any = MISSING,
-    beijing_gate_raw: Any = MISSING,
-    beijing_gate_attempted_at: Any = MISSING,
-    beijing_gate_fail_count: Any = MISSING,
-) -> None:
-    if not article_id:
-        raise ValueError("complete_summary requires article_id")
-    payload: Dict[str, Any] = {
-        "llm_summary": summary_text,
-        "summary_status": "completed",
-        "summary_generated_at": datetime.now(timezone.utc).isoformat(),
-        "summary_attempted_at": datetime.now(timezone.utc).isoformat(),
-        "status": status,
-    }
-    if llm_source is not None:
-        payload["llm_source"] = llm_source
-    if keywords:
-        deduped: List[str] = []
-        for kw in keywords:
-            if kw and kw not in deduped:
-                deduped.append(kw)
-        if deduped:
-            payload["llm_keywords"] = deduped
-    if beijing_related is not None:
-        payload["is_beijing_related"] = beijing_related
-    if sentiment_label is not None:
-        payload["sentiment_label"] = sentiment_label
-    if sentiment_confidence is not None:
-        payload["sentiment_confidence"] = float(sentiment_confidence)
-
-    def _maybe_set(field: str, value: Any) -> None:
-        if value is not MISSING:
-            payload[field] = value
-
-    _maybe_set("external_importance_status", external_importance_status)
-    _maybe_set("external_importance_score", external_importance_score)
-    _maybe_set("external_importance_checked_at", external_importance_checked_at)
-    _maybe_set(
-        "external_importance_raw",
-        Json(external_importance_raw)
-        if (external_importance_raw is not MISSING and external_importance_raw is not None)
-        else external_importance_raw,
-    )
-    _maybe_set("external_filter_attempted_at", external_filter_attempted_at)
-    _maybe_set("external_filter_fail_count", external_filter_fail_count)
-    _maybe_set("is_beijing_related_llm", is_beijing_related_llm)
-    _maybe_set("beijing_gate_checked_at", beijing_gate_checked_at)
-    if beijing_gate_raw is not MISSING:
-        payload["beijing_gate_raw"] = Json(beijing_gate_raw) if beijing_gate_raw is not None else None
-    _maybe_set("beijing_gate_attempted_at", beijing_gate_attempted_at)
-    _maybe_set("beijing_gate_fail_count", beijing_gate_fail_count)
-    sets = ", ".join(f"{field} = %s" for field in payload)
-    values = list(payload.values()) + [article_id]
-    query = f"""
-        UPDATE news_summaries
-        SET {sets}
-        WHERE article_id = %s
-    """
-    cur.execute(query, values)
-    if cur.rowcount != 1:
-        raise ValueError(f"Unable to complete summary for {article_id}")
 
 
 def complete_summary_generation(cur: psycopg.Cursor, article_id: str, summary_text: str) -> None:
@@ -972,7 +890,6 @@ def upsert_news_summaries_from_primary(cur: psycopg.Cursor, rows: Sequence[Mappi
 __all__ = [
     "NewsSummariesNamespace",
     "clear_oversized_llm_sources",
-    "complete_summary",
     "complete_summary_enrichment",
     "complete_summary_generation",
     "complete_summary_routing",

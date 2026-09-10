@@ -44,12 +44,14 @@
 |---|---|
 | `__init__.py` | 门面：`SubmissionArchiveNamespace` 与其显式再导出，无实现 |
 | `_base.py` | 共享底座：三个结果 TypedDict、`PRIOR_MATCH_REPORT_TYPES`、`_ITEM_PUBLIC_COLUMNS` |
-| `reports.py` | 报送单本身与导出：增删、列表、按来源消息幂等查找、导出取数与计数、`prior_match_completed` 标记 |
-| `links.py` | 条目与新闻的回链：候选标题/正文、待处理列表、自动与人工的匹配和解除匹配 |
-| `items.py` | 条目编辑与检索：字段改写、关键词检索、embedding 的补算与写入 |
-| `dedup.py` | 两级查重：条目级 prior-match（`submission_item_duplicate_matches`，`fetch_item_*` 一族）与新闻级去重（`submission_duplicate_matches`，`*_duplicate_*` 一族） |
+| `_reports.py` | 报送单本身与导出：增删、列表、按来源消息幂等查找、导出取数与计数、`prior_match_completed` 标记 |
+| `_links.py` | 条目与新闻的回链：候选标题/正文、待处理列表、自动与人工的匹配和解除匹配 |
+| `_items.py` | 条目编辑与检索：字段改写、关键词检索、embedding 的补算与写入 |
+| `_dedup.py` | 两级查重：条目级 prior-match（`submission_item_duplicate_matches`，`fetch_item_*` 一族）与新闻级去重（`submission_duplicate_matches`，`*_duplicate_*` 一族） |
 
-`dedup.py` 把两级查重放在一起是有意的：两者共用「相似度 + 匹配方式 + 人工判定」这套语义，改动其一时通常要同时确认另一处；分到两个文件会让这条关联重新变成跨文件隐式约定。
+`_dedup.py` 把两级查重放在一起是有意的：两者共用「相似度 + 匹配方式 + 人工判定」这套语义，改动其一时通常要同时确认另一处；分到两个文件会让这条关联重新变成跨文件隐式约定。
+
+拆分出的实现模块一律以下划线开头（`_base.py`、`_reports.py` …）。这不只是命名口味：Python 在 import 子模块时会把模块名绑到 package 上，只有下划线开头才不会污染 `dir(db_postgres_submission_archive)`——它现在的公开名与拆分前的单文件模块**逐名相同**，没有任何需要排除的多余名。
 
 `db_postgres_manual_reviews`（人工审阅队列、聚类缓存与值班导入）：
 
@@ -71,8 +73,8 @@
 
 `db_postgres_submission_archive` 有两条同包依赖是有意保留的，新增代码不要照此扩散：
 
-- `reports.py` import `dedup.py` 的 `fetch_item_duplicate_match_summaries`。这是拆分前就存在的唯一一处跨组调用（`fetch_report` 要给出条目的 prior_match 摘要），按普通模块 import 处理，没有为了消除它而搬动函数。
-- `reports.py` 通过 `import ... as _facade` 读取 `PRIOR_MATCH_REPORT_TYPES`。拆分前它是本模块全局名，`fetch_report` 在调用时从模块命名空间取值，`tests/test_db_postgres_submission_archive.py` 正是对这个公开名字打 monkeypatch；直接 `from ... import` 会把取值冻结在导入时刻，静默让该 patch 失效。取值语义与拆分前一致，定义仍在 `_base.py`。
+- `_reports.py` import `_dedup.py` 的 `fetch_item_duplicate_match_summaries`。这是拆分前就存在的唯一一处跨组调用（`fetch_report` 要给出条目的 prior_match 摘要），按普通模块 import 处理，没有为了消除它而搬动函数。
+- `_reports.py` 通过 `import ... as _facade` 读取 `PRIOR_MATCH_REPORT_TYPES`。拆分前它是本模块全局名，`fetch_report` 在调用时从模块命名空间取值，`tests/test_db_postgres_submission_archive.py` 正是对这个公开名字打 monkeypatch；直接 `from ... import` 会把取值冻结在导入时刻，静默让该 patch 失效。取值语义与拆分前一致，定义仍在 `_base.py`。
 
 `db_postgres_shift_reviews` 依赖 `_base.py` 的 `SEARCH_TEXT_EXPRESSION`、`CREATED_LOCAL_DATE_EXPRESSION`、`SCORE_FEEDBACK_JOIN`、`_build_manual_review_filters`，以及 `_filters.py` 的 `_build_manual_candidate_filters`。这些名字仍从 `db_postgres_manual_reviews` 包对外暴露，重命名或移动前先查引用。
 

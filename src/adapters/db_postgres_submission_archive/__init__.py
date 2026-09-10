@@ -32,7 +32,7 @@ from src.adapters.db_postgres_submission_archive._base import (
     PRIOR_MATCH_REPORT_TYPES,
     PriorMatchDecisionMutationResult,
 )
-from src.adapters.db_postgres_submission_archive.dedup import (
+from src.adapters.db_postgres_submission_archive._dedup import (
     dismiss_duplicate_matches,
     fetch_archive_embeddings,
     fetch_duplicate_badges,
@@ -46,13 +46,13 @@ from src.adapters.db_postgres_submission_archive.dedup import (
     set_item_prior_match_decision,
     upsert_duplicate_matches,
 )
-from src.adapters.db_postgres_submission_archive.items import (
+from src.adapters.db_postgres_submission_archive._items import (
     fetch_items_missing_embeddings,
     search_items,
     update_item_embeddings,
     update_item_fields,
 )
-from src.adapters.db_postgres_submission_archive.links import (
+from src.adapters.db_postgres_submission_archive._links import (
     decide_link,
     fetch_link_candidate_bodies,
     fetch_link_candidate_titles,
@@ -62,7 +62,7 @@ from src.adapters.db_postgres_submission_archive.links import (
     manual_unlink_item,
     update_link_results,
 )
-from src.adapters.db_postgres_submission_archive.reports import (
+from src.adapters.db_postgres_submission_archive._reports import (
     count_export_rows,
     delete_report,
     fetch_export_rows,

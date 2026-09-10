@@ -7,7 +7,7 @@ import psycopg
 
 import src.adapters.db_postgres_submission_archive as _facade
 from src.adapters.db_postgres_submission_archive._base import _ITEM_PUBLIC_COLUMNS
-from src.adapters.db_postgres_submission_archive.dedup import (
+from src.adapters.db_postgres_submission_archive._dedup import (
     fetch_item_duplicate_match_summaries,
 )
 from src.domain.submission_archive_config import (

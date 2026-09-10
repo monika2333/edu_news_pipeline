@@ -237,6 +237,19 @@ def test_submission_archive_pages_include_search_drawer() -> None:
         assert "/static/js/manual_filter/search_drawer.js?v=" in html
 
 
+def test_archive_search_drawer_highlights_source_matches() -> None:
+    script = (
+        Path(__file__).parents[1]
+        / "src/console/web_static/js/manual_filter/search_drawer_archive.js"
+    ).read_text(encoding="utf-8")
+
+    # 后端按 title/body/source 匹配，来源命中时前端也必须走同一个高亮 helper。
+    assert "const sourceEl = createEl('span', 'archive-item-source');" in script
+    assert "appendArchiveHighlight(sourceEl, `（${sourceText}）`, query);" in script
+    assert "bodyEl.appendChild(sourceEl);" in script
+    assert "createEl('span', 'archive-item-source', `（${sourceText}）`)" not in script
+
+
 def test_admin_page_separates_user_search_from_account_creation(
     monkeypatch: MonkeyPatch,
 ) -> None:

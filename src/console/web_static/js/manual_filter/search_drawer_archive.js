@@ -154,10 +154,12 @@ function renderArchiveResults(data, query) {
         if (bodyText) {
             const bodyEl = createEl('div', 'archive-item-body');
             appendArchiveHighlight(bodyEl, bodyText, query);
-            // 来源拼在正文结尾，如「（北京日报）」。
+            // 来源拼在正文结尾，如「（北京日报）」；与标题、正文共用同一套关键词高亮。
             const sourceText = String(item.source || '').trim();
             if (sourceText) {
-                bodyEl.appendChild(createEl('span', 'archive-item-source', `（${sourceText}）`));
+                const sourceEl = createEl('span', 'archive-item-source');
+                appendArchiveHighlight(sourceEl, `（${sourceText}）`, query);
+                bodyEl.appendChild(sourceEl);
             }
             itemEl.appendChild(bodyEl);
         }

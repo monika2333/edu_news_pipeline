@@ -102,7 +102,7 @@ def run_adapter(monkeypatch: pytest.MonkeyPatch) -> object:
     )
     monkeypatch.setattr(crawl_sources, "get_adapter", lambda: adapter)
     monkeypatch.setattr(crawl_sources, "worker_session", _worker_session)
-    monkeypatch.setenv("TOUTIAO_AUTHORS_PATH", "C:/crawl-test/toutiao-authors.txt")
+    monkeypatch.setenv("TOUTIAO_AUTHORS_PATH", "toutiao-authors.txt")
     monkeypatch.setenv("TOUTIAO_SHOW_BROWSER", "yes")
     monkeypatch.setenv("TOUTIAO_FETCH_TIMEOUT", "21")
     monkeypatch.setenv("TOUTIAO_LANG", "zh-test")
@@ -240,7 +240,7 @@ def test_every_dispatch_key_preserves_source_flow_strategy_and_callbacks(
         ("ldwb", "_run_ldwb_flow", {}, None),
         ("qianlong", "_run_qianlong_flow", {"base_urls": ("https://qianlong.test/list",), "timeout_value": 13.5, "delay_value": 0.35, "pages_hint": 3, "consecutive_stop": 7}, None),
         ("tencent", "_run_tencent_flow", {"pages": 3}, None),
-        ("toutiao", "_run_toutiao_flow", {"authors_path": Path("C:/crawl-test/toutiao-authors.txt"), "show_browser": True, "timeout_value": 21, "lang": "zh-test"}, None),
+        ("toutiao", "_run_toutiao_flow", {"authors_path": Path("toutiao-authors.txt"), "show_browser": True, "timeout_value": 21, "lang": "zh-test"}, None),
     ],
 )
 def test_registry_passes_each_runner_its_current_arguments(
@@ -250,8 +250,16 @@ def test_registry_passes_each_runner_its_current_arguments(
     runner_name: str,
     extra_kwargs: dict[str, Any],
     linked_source: Optional[str],
+    tmp_path: Path,
 ) -> None:
     calls: list[dict[str, Any]] = []
+
+    expected_kwargs = dict(extra_kwargs)
+    if source == "toutiao":
+        relative_authors_path = Path("toutiao-authors.txt")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("TOUTIAO_AUTHORS_PATH", str(relative_authors_path))
+        expected_kwargs["authors_path"] = tmp_path / relative_authors_path
 
     def record_runner(**kwargs: Any) -> crawl_sources.CrawlStats:
         calls.append(kwargs)
@@ -269,7 +277,7 @@ def test_registry_passes_each_runner_its_current_arguments(
             "adapter": run_adapter,
             "keywords": [],
             "remaining_limit": 7,
-            **extra_kwargs,
+            **expected_kwargs,
         }
     ], f"{source} runner arguments changed"
 

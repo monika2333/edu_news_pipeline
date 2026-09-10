@@ -6,6 +6,7 @@ import psycopg
 
 from src.adapters.db_postgres_manual_reviews._base import (
     MANUAL_REVIEW_DECISION_LOCK_ID,
+    ManualReviewConflictError,
     manual_review_max_rank,
 )
 from src.domain.report_type import normalize_report_type as normalize_report_type_value

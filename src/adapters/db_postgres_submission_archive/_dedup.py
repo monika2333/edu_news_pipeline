@@ -5,6 +5,9 @@ from typing import Any, Mapping, Optional, Sequence
 
 import psycopg
 
+from src.adapters.db_postgres_submission_archive._base import (
+    PriorMatchDecisionMutationResult,
+)
 from src.domain.report_type import NEWS_REPORT_TYPES
 
 

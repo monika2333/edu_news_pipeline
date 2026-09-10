@@ -614,3 +614,110 @@ def test_update_summary_categories_updates_canonical_group_fields() -> None:
     assert cur.query is not None
     assert "UPDATE news_summaries" in cur.query
     assert cur.payload == [(True, "positive", "a1"), (False, "negative", "a2")]
+
+
+class _ScriptedVersionedCursor:
+    """Cursor that answers the real version-check queries with scripted rows.
+
+    Unlike FakeVersionedReviewCursor, the UPDATE result is supplied by the test
+    instead of being derived from the row, so a stale version is expressible and
+    the conflict raise sites are actually reached.
+    """
+
+    def __init__(
+        self,
+        stored_version: int,
+        *,
+        update_row: Optional[dict[str, Any]],
+    ) -> None:
+        self.stored_version = stored_version
+        self.update_row = update_row
+        self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+    def execute(self, query: str, params: tuple[Any, ...] = ()) -> None:
+        self.executed.append((query, params))
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        # fetch_manual_review_rows(cur, ..., for_update=True)
+        return [
+            {
+                "id": 1,
+                "article_id": "a1",
+                "status": "selected",
+                "summary": "摘要",
+                "rank": 1.0,
+                "notes": None,
+                "score": None,
+                "decided_by": "editor",
+                "decided_by_user_id": None,
+                "decided_at": None,
+                "manual_llm_source": None,
+                "report_type": "zongbao",
+                "version": self.stored_version,
+                "created_at": None,
+                "updated_at": None,
+            }
+        ]
+
+    def fetchone(self) -> Optional[dict[str, Any]]:
+        # Result of the version-guarded UPDATE.
+        return self.update_row
+
+
+def _stale_update() -> tuple[_ScriptedVersionedCursor, list[dict[str, Any]]]:
+    updates = [{"article_id": "a1", "status": "discarded", "rank": None}]
+    return _ScriptedVersionedCursor(5, update_row=None), updates
+
+
+def test_version_check_rejects_stale_expected_version() -> None:
+    """A client holding an outdated version must get ManualReviewConflictError.
+
+    Guards the import of ManualReviewConflictError into _versions.py: without it
+    the raise becomes a NameError, and the isinstance() handlers in
+    manual_filter_routes.py / admin_summary_routes.py stop matching, so two
+    administrators editing the same article concurrently get a 500 instead of a
+    409.
+    """
+    cur, updates = _stale_update()
+
+    with pytest.raises(db_postgres_manual_reviews.ManualReviewConflictError) as excinfo:
+        db_postgres_manual_reviews.update_manual_review_statuses_with_versions(
+            cur,
+            updates,
+            actor_username="admin",
+            actor_user_id="admin-id",
+            expected_versions={"a1": 3},
+            require_versions=True,
+        )
+
+    assert not isinstance(excinfo.value, NameError)
+    assert "a1" in str(excinfo.value)
+    # The pre-check must fire before any write is attempted.
+    assert not any("UPDATE manual_reviews" in query for query, _ in cur.executed)
+
+
+def test_version_check_rejects_row_changed_by_concurrent_writer() -> None:
+    """The version matched at read time but the guarded UPDATE matched nothing."""
+    cur, updates = _stale_update()
+    cur.update_row = None
+
+    with pytest.raises(db_postgres_manual_reviews.ManualReviewConflictError) as excinfo:
+        db_postgres_manual_reviews.update_manual_review_statuses_with_versions(
+            cur,
+            updates,
+            actor_username="admin",
+            actor_user_id="admin-id",
+            expected_versions={"a1": 5},
+            require_versions=True,
+        )
+
+    assert not isinstance(excinfo.value, NameError)
+    assert "a1" in str(excinfo.value)
+    # Reaching the raise here proves the read/validate path ran and the guarded
+    # UPDATE was actually issued with the version read from the row.
+    update_params = [
+        params for query, params in cur.executed if "UPDATE manual_reviews" in query
+    ]
+    assert len(update_params) == 1
+    assert update_params[0][-1] == 5
+

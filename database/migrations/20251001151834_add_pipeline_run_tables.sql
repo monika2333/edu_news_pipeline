@@ -1,5 +1,5 @@
 -- migrate:up
-﻿-- Add pipeline run metadata tables
+-- Add pipeline run metadata tables
 create table if not exists public.pipeline_runs (
     id uuid primary key default gen_random_uuid(),
     run_id text not null unique,

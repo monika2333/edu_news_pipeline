@@ -1,5 +1,5 @@
 -- migrate:up
-﻿-- Add llm_source column to track which model generated the summary
+-- Add llm_source column to track which model generated the summary
 alter table if exists public.news_summaries
     add column if not exists llm_source text;
 

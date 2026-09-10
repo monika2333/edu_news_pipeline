@@ -1,5 +1,5 @@
 -- migrate:up
-﻿-- Postgres schema for Edu News Automation System
+-- Postgres schema for Edu News Automation System
 -- Run with `psql -f` after copying into database/migrations
 
 create table if not exists public.brief_batches (

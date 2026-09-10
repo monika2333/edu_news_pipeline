@@ -46,13 +46,17 @@ def _serialize_admin_result(
 
 def list_shift_summaries(
     *,
+    viewer_user_id: str,
     limit: int = 60,
     now: Optional[datetime] = None,
 ) -> list[dict[str, Any]]:
     current = now or datetime.now(timezone.utc)
     rows = [
         row
-        for row in get_adapter().shift_reviews.fetch_admin_summaries(limit=limit)
+        for row in get_adapter().shift_reviews.fetch_admin_summaries(
+            viewer_user_id=viewer_user_id,
+            limit=limit,
+        )
         if row.get("starts_at") and row["starts_at"] <= current
     ]
     rows.sort(
@@ -79,6 +83,7 @@ def list_shift_summaries(
 def list_shift_results(
     *,
     shift_id: str,
+    viewer_user_id: str,
     decision: Optional[str],
     report_type: Optional[str],
     limit: int,
@@ -101,6 +106,7 @@ def list_shift_results(
     )
     rows, total = get_adapter().shift_reviews.fetch_items(
         shift_id=shift_id,
+        viewer_user_id=viewer_user_id,
         decision=None if admin_discarded_only else decision,
         report_type=None if admin_discarded_only else report_type,
         limit=limit,
@@ -187,6 +193,7 @@ def set_admin_discarded_many(
 def preview_import_results(
     *,
     shift_id: str,
+    owner_user_id: str,
     article_ids: Sequence[str],
 ) -> dict[str, Any]:
     adapter = get_adapter()
@@ -198,6 +205,7 @@ def preview_import_results(
         if str(article_id).strip()
     }
     rows = adapter.manual_reviews.preview_shift_reviews(
+        owner_user_id=owner_user_id,
         shift_id=shift_id,
         article_ids=article_ids,
     )

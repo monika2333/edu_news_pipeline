@@ -27,12 +27,15 @@ class FakeManualReviewsNamespace:
         self._adapter = adapter
 
     def fetch(self, **kwargs: Any) -> Tuple[list[Dict[str, Any]], int]:
+        kwargs.pop("owner_user_id")
         return self._adapter._fetch(**kwargs)
 
     def search_candidates(self, **kwargs: Any) -> Tuple[list[Dict[str, Any]], int]:
+        kwargs.pop("owner_user_id")
         return self._adapter._search_candidates(**kwargs)
 
     def count_candidates_before_date(self, **kwargs: Any) -> int:
+        kwargs.pop("owner_user_id")
         return self._adapter._count_candidates_before_date(**kwargs)
 
     def bulk_discard_candidates(self, **kwargs: Any) -> int:
@@ -316,7 +319,12 @@ def _build_rows() -> list[Dict[str, Any]]:
 
 
 def _anonymous_console_user() -> ConsoleUser:
-    return ConsoleUser(method="test")
+    return ConsoleUser(
+        method="test",
+        user_id="admin-1",
+        username="tester",
+        role="admin",
+    )
 
 
 def _duty_editor_user() -> ConsoleUser:
@@ -366,6 +374,39 @@ def test_clear_review_buckets_rejects_duty_editor() -> None:
         "/api/manual_filter/clear-review-buckets",
         json={"scope": "all"},
     )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize("method", ["basic", "bearer"])
+def test_workspace_rejects_system_admin_without_user_id(method: str) -> None:
+    app = create_app()
+    app.dependency_overrides[require_console_user] = lambda: ConsoleUser(
+        method=method,
+        username=f"{method}-system",
+        role="admin",
+    )
+
+    response = TestClient(app).get("/api/manual_filter/stats")
+
+    assert response.status_code == 403
+
+
+def test_manual_filter_router_group_rejects_duty_editor_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = FastAPI()
+    from src.console import manual_filter_routes, manual_filter_service
+
+    app.include_router(manual_filter_routes.router)
+    app.dependency_overrides[require_console_user] = _duty_editor_user
+    monkeypatch.setattr(
+        manual_filter_service,
+        "trigger_clustering",
+        lambda: {"refreshed": True},
+    )
+
+    response = TestClient(app).post("/api/manual_filter/trigger_clustering")
 
     assert response.status_code == 403
 
@@ -450,6 +491,19 @@ def test_clear_review_buckets_returns_counts_and_authenticated_actor(
         "clear_review_buckets",
         clear_review_buckets,
     )
+    all_called = False
+
+    def clear_all_review_buckets(**kwargs: Any) -> dict[str, Any]:
+        del kwargs
+        nonlocal all_called
+        all_called = True
+        return expected
+
+    monkeypatch.setattr(
+        manual_filter_admin_service,
+        "clear_all_review_buckets",
+        clear_all_review_buckets,
+    )
     app = create_app()
     app.dependency_overrides[require_console_user] = lambda: ConsoleUser(
         method="test",
@@ -466,7 +520,9 @@ def test_clear_review_buckets_returns_counts_and_authenticated_actor(
 
     assert response.status_code == 200
     assert response.json() == expected
+    assert all_called is False
     assert captured == {
+        "owner_user_id": "admin-1",
         "actor_username": "admin-user",
         "actor_user_id": "admin-1",
         "trigger": "manual",
@@ -493,6 +549,7 @@ def test_decide_uses_authenticated_user_instead_of_forged_actor(monkeypatch) -> 
     app = create_app()
     app.dependency_overrides[require_console_user] = lambda: ConsoleUser(
         method="test",
+        user_id="real-user-id",
         username="real-admin",
         display_name="真实管理员",
         role="admin",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from functools import partial
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
@@ -23,18 +24,27 @@ class FakeManualReviewsNamespace:
         self._adapter = adapter
 
     def fetch(self, **kwargs: Any) -> Tuple[List[Dict[str, Any]], int]:
+        kwargs.pop("owner_user_id")
         return self._adapter._fetch(**kwargs)
 
-    def fetch_pending_for_cluster(self, **kwargs: Any) -> List[Dict[str, Any]]:
-        return self._adapter._fetch_pending_for_cluster(**kwargs)
+    def fetch_cluster_sources(self, **kwargs: Any) -> List[Dict[str, Any]]:
+        return self._adapter._fetch_cluster_sources(**kwargs)
 
     def fetch_clusters(self, **kwargs: Any) -> List[Dict[str, Any]]:
+        kwargs.pop("owner_user_id")
         return self._adapter._fetch_clusters(**kwargs)
 
     def search_candidates(self, **kwargs: Any) -> Tuple[List[Dict[str, Any]], int]:
+        kwargs.pop("owner_user_id")
         return self._adapter._search_candidates(**kwargs)
 
-    def status_counts(self, *, report_type: Optional[str] = None) -> Dict[str, int]:
+    def status_counts(
+        self,
+        *,
+        owner_user_id: str,
+        report_type: Optional[str] = None,
+    ) -> Dict[str, int]:
+        del owner_user_id
         return self._adapter._status_counts(report_type=report_type)
 
 
@@ -120,24 +130,16 @@ class FakeAdapter:
         total = len(filtered)
         return filtered[offset : offset + limit], total
 
-    def _fetch_pending_for_cluster(
+    def _fetch_cluster_sources(
         self,
         *,
-        region: Optional[str] = None,
-        sentiment: Optional[str] = None,
         fetch_limit: int = 5000,
-        report_type: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        rows, _ = self._fetch(
-            status="pending",
-            limit=fetch_limit,
-            offset=0,
-            only_ready=True,
-            region=region,
-            sentiment=sentiment,
-            report_type=None,
-        )
-        return rows
+        return [
+            row
+            for row in self.rows
+            if row.get("news_status") == "ready_for_export"
+        ][:fetch_limit]
 
     @staticmethod
     def _bucket_key_for_row(row: Mapping[str, Any]) -> str:
@@ -237,21 +239,21 @@ class FakeAdapter:
             counts[status] = counts.get(status, 0) + 1
         return counts
 
-    def manual_review_pending_count(self, *, report_type: Optional[str] = None) -> int:
-        target_type = (
-            self._normalized_report_type(report_type)
-            if report_type is not None
-            else None
-        )
-        return sum(
-            1
-            for row in self.rows
-            if (row.get("status") or "pending") == "pending"
-            and (
-                target_type is None
-                or self._normalized_report_type(row.get("report_type"))
-                == target_type
-            )
+@pytest.fixture(autouse=True)
+def scope_manual_service_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "list_candidates",
+        "list_review",
+        "list_discarded",
+        "status_counts",
+    ):
+        monkeypatch.setattr(
+            manual_filter_service,
+            name,
+            partial(
+                getattr(manual_filter_service, name),
+                owner_user_id="admin-1",
+            ),
         )
 
 @pytest.fixture()
@@ -387,9 +389,7 @@ def test_pending_wrong_report_type_still_enters_clustering(fake_adapter):
 
     fake_adapter.rows[0]["report_type"] = "wanbao"
 
-    records = manual_filter_cluster._collect_pending(
-        None,
-        None,
+    records = manual_filter_cluster._collect_cluster_sources(
         adapter=fake_adapter,
     )
 

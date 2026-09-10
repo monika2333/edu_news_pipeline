@@ -179,38 +179,13 @@ def test_enqueue_manual_review_rejects_missing_or_unscored_article(
     assert len(cur.queries) == 1
 
 
-def test_discard_manual_candidates_before_date_places_filter_params_first() -> None:
-    cur = FakeCursor()
-    decided_at = datetime(2025, 1, 3, 8, 0, tzinfo=timezone.utc)
-
-    updated = db_postgres_manual_reviews.discard_manual_candidates_before_date(
-        cur,
-        region="internal",
-        sentiment="positive",
-        query="keyword",
-        created_before=date(2025, 1, 2),
-        actor="tester",
-        decided_at=decided_at,
-        report_type="zongbao",
-    )
-
-    assert updated == 1
-    assert cur.query is not None
-    assert "decided_by = %s" in cur.query
-    assert "WHERE mr.status = %s" in cur.query
-    assert "(ns.created_at AT TIME ZONE 'Asia/Shanghai')::date < %s" in cur.query
-    assert "publish_time_iso" not in cur.query
-    assert "to_timestamp(ns.publish_time)" not in cur.query
-    assert cur.params is not None
-    assert cur.params[:6] == ("pending", "zongbao", True, "positive", "%keyword%", date(2025, 1, 2))
-    assert cur.params[6] == "tester"
-    assert cur.params[7] == decided_at
-
-
 def test_fetch_review_buckets_for_update_locks_all_review_rows() -> None:
     cur = FakeFetchCursor()
 
-    rows = db_postgres_manual_reviews.fetch_review_buckets_for_update(cur)
+    rows = db_postgres_manual_reviews.fetch_review_buckets_for_update(
+        cur,
+        owner_user_id="admin-1",
+    )
 
     assert rows == []
     assert len(cur.queries) == 1
@@ -220,7 +195,7 @@ def test_fetch_review_buckets_for_update_locks_all_review_rows() -> None:
     assert "COALESCE(mr.report_type, 'zongbao') AS report_type" in query
     assert "FOR UPDATE OF mr" in query
     assert "ready_for_export" not in query
-    assert cur.params[0] == ("selected", "backup")
+    assert cur.params[0] == ("admin-1", "selected", "backup")
 
 
 def test_fetch_manual_reviews_orders_selected_items_by_manual_rank_first() -> None:
@@ -228,6 +203,7 @@ def test_fetch_manual_reviews_orders_selected_items_by_manual_rank_first() -> No
 
     rows, total = db_postgres_manual_reviews.fetch_manual_reviews(
         cur,
+        owner_user_id="admin-1",
         status="selected",
         limit=20,
         offset=0,
@@ -251,6 +227,7 @@ def test_fetch_manual_reviews_applies_search_to_count_and_page_queries() -> None
 
     db_postgres_manual_reviews.fetch_manual_reviews(
         cur,
+        owner_user_id="admin-1",
         status="discarded",
         limit=10,
         offset=5,
@@ -263,22 +240,20 @@ def test_fetch_manual_reviews_applies_search_to_count_and_page_queries() -> None
     assert all("coalesce(ns.llm_summary, '')" in query for query in cur.queries)
     assert all("coalesce(ns.content_markdown, '')" in query for query in cur.queries)
     assert all("ILIKE %s" in query for query in cur.queries)
-    assert cur.params[0] == ("discarded", "%教育政策%")
-    assert cur.params[1] == ("discarded", "%教育政策%", 10, 5)
+    assert cur.params[0] == ("admin-1", "discarded", "%教育政策%")
+    assert cur.params[1] == ("admin-1", "discarded", "%教育政策%", 10, 5)
 
 
-def test_fetch_manual_pending_for_cluster_ignores_report_type() -> None:
+def test_fetch_manual_cluster_sources_reads_latest_ready_news_without_manual_reviews() -> None:
     cur = FakeFetchCursor()
 
-    db_postgres_manual_reviews.fetch_manual_pending_for_cluster(
-        cur,
-        region="internal",
-        sentiment="positive",
-        report_type="wanbao",
-    )
+    db_postgres_manual_reviews.fetch_manual_cluster_sources(cur)
 
-    assert cur.params[-1] == ("pending", True, "positive", 5000)
-    assert "COALESCE(mr.report_type, 'zongbao') = %s" not in cur.queries[-1]
+    assert cur.params[-1] == (5000,)
+    assert "FROM news_summaries" in cur.queries[-1]
+    assert "manual_reviews" not in cur.queries[-1]
+    assert "status = 'ready_for_export'" in cur.queries[-1]
+    assert "ORDER BY created_at DESC" in cur.queries[-1]
 
 
 def test_manual_review_status_counts_only_scopes_report_states() -> None:
@@ -286,6 +261,7 @@ def test_manual_review_status_counts_only_scopes_report_states() -> None:
 
     counts = db_postgres_manual_reviews.manual_review_status_counts(
         cur,
+        owner_user_id="admin-1",
         report_type="wanbao",
     )
 
@@ -300,7 +276,7 @@ def test_manual_review_status_counts_only_scopes_report_states() -> None:
     assert "COUNT(*) FILTER (WHERE status = 'pending')" in cur.query
     assert "COUNT(*) FILTER (WHERE status = 'discarded')" in cur.query
     assert "WHERE COALESCE(report_type, 'zongbao') = %s" not in cur.query
-    assert cur.params == ("wanbao", "wanbao", "wanbao")
+    assert cur.params == ("wanbao", "wanbao", "wanbao", "admin-1")
 
 
 def test_versioned_decide_preserves_report_type_for_shared_states() -> None:
@@ -339,6 +315,7 @@ def test_versioned_decide_preserves_report_type_for_shared_states() -> None:
         ],
         actor_username="admin",
         actor_user_id="admin-id",
+        owner_user_id="admin-id",
         expected_versions={"selected-1": 2, "pending-1": 4},
         require_versions=True,
         report_type=None,
@@ -686,6 +663,7 @@ def test_version_check_rejects_stale_expected_version() -> None:
             updates,
             actor_username="admin",
             actor_user_id="admin-id",
+            owner_user_id="admin-id",
             expected_versions={"a1": 3},
             require_versions=True,
         )
@@ -707,6 +685,7 @@ def test_version_check_rejects_row_changed_by_concurrent_writer() -> None:
             updates,
             actor_username="admin",
             actor_user_id="admin-id",
+            owner_user_id="admin-id",
             expected_versions={"a1": 5},
             require_versions=True,
         )

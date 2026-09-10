@@ -28,10 +28,12 @@ class FakeManualReviewsNamespace:
     def preview_shift_reviews(
         self,
         *,
+        owner_user_id: str,
         shift_id: str,
         article_ids: list[str],
     ) -> list[dict[str, Any]]:
         self._adapter.import_query = {
+            "owner_user_id": owner_user_id,
             "shift_id": shift_id,
             "article_ids": article_ids,
         }
@@ -52,6 +54,7 @@ class FakeAdminSummaryAdapter:
         self,
         *,
         shift_id: str,
+        viewer_user_id: str,
         decision: Optional[str],
         report_type: Optional[str],
         limit: int,
@@ -63,6 +66,7 @@ class FakeAdminSummaryAdapter:
     ) -> tuple[list[dict[str, Any]], int]:
         self.review_query = {
             "shift_id": shift_id,
+            "viewer_user_id": viewer_user_id,
             "decision": decision,
             "report_type": report_type,
             "limit": limit,
@@ -148,6 +152,7 @@ def test_shift_results_requests_and_returns_admin_state(
 
     result = admin_summary_service.list_shift_results(
         shift_id="shift-1",
+        viewer_user_id="admin-id",
         decision=None,
         report_type=None,
         limit=200,
@@ -169,6 +174,7 @@ def test_shift_results_can_request_only_admin_unprocessed_items(
 
     admin_summary_service.list_shift_results(
         shift_id="shift-1",
+        viewer_user_id="admin-id",
         decision="selected",
         report_type="zongbao",
         admin_unprocessed_only=True,
@@ -189,6 +195,7 @@ def test_shift_results_can_include_admin_discarded_in_all_scope(
 
     admin_summary_service.list_shift_results(
         shift_id="shift-1",
+        viewer_user_id="admin-id",
         decision="selected",
         report_type="zongbao",
         admin_unprocessed_only=False,
@@ -205,7 +212,13 @@ def test_shift_summaries_exclude_future_and_sort_latest_first(monkeypatch) -> No
     now = datetime(2026, 7, 25, 8, tzinfo=timezone.utc)
 
     class SummaryShiftReviewsNamespace:
-        def fetch_admin_summaries(self, *, limit: int) -> list[dict[str, Any]]:
+        def fetch_admin_summaries(
+            self,
+            *,
+            viewer_user_id: str,
+            limit: int,
+        ) -> list[dict[str, Any]]:
+            assert viewer_user_id == "admin-id"
             del limit
             return [
                 {
@@ -243,7 +256,11 @@ def test_shift_summaries_exclude_future_and_sort_latest_first(monkeypatch) -> No
         lambda: SummaryAdapter(),
     )
 
-    result = admin_summary_service.list_shift_summaries(limit=60, now=now)
+    result = admin_summary_service.list_shift_summaries(
+        viewer_user_id="admin-id",
+        limit=60,
+        now=now,
+    )
 
     assert [item["shift_id"] for item in result] == ["today", "previous"]
     assert result[0]["zongbao_selected"] == 3
@@ -271,7 +288,11 @@ def test_admin_shift_summary_query_excludes_future_shifts() -> None:
 
     cursor = SummaryCursor()
 
-    result = db_postgres_shift_reviews.fetch_admin_shift_summaries(cursor, limit=60)
+    result = db_postgres_shift_reviews.fetch_admin_shift_summaries(
+        cursor,
+        viewer_user_id="admin-id",
+        limit=60,
+    )
 
     assert result == []
     assert "s.starts_at <= CURRENT_TIMESTAMP" in cursor.query
@@ -284,7 +305,10 @@ def test_admin_shift_summary_query_excludes_future_shifts() -> None:
     assert "AS zongbao_backup_all" in cursor.query
     assert "AS wanbao_selected_all" in cursor.query
     assert "AS wanbao_backup_all" in cursor.query
-    assert "LEFT JOIN manual_reviews mr ON mr.article_id = ns.article_id" in cursor.query
+    assert "LEFT JOIN manual_reviews mr" in cursor.query
+    assert "mr.owner_user_id = %s" in cursor.query
+    assert "admin_discard.owner_user_id = %s" in cursor.query
+    assert cursor.params == ("admin-id", "admin-id", 60)
     assert "COALESCE(mr.status, 'pending') IN ('pending', 'discarded')" in cursor.query
 
 
@@ -329,6 +353,7 @@ def test_preview_import_results_returns_editable_conflict_versions(
 
     result = admin_summary_service.preview_import_results(
         shift_id="shift-1",
+        owner_user_id="admin-id",
         article_ids=["article-1", "article-2", "article-3", "article-4"],
     )
 
@@ -384,6 +409,7 @@ def test_admin_discarded_column_uses_shift_review_state(monkeypatch) -> None:
 
     result = admin_summary_service.list_shift_results(
         shift_id="shift-1",
+        viewer_user_id="admin-id",
         decision="selected",
         report_type="zongbao",
         admin_discarded_only=True,

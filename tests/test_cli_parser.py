@@ -190,6 +190,7 @@ def test_clear_review_buckets_cli_uses_scheduled_actor_and_prints_counts(
     from src.console import manual_filter_admin_service
 
     calls: list[dict[str, object]] = []
+    wrong_calls: list[dict[str, object]] = []
 
     def fake_clear_review_buckets(**kwargs: object) -> dict[str, object]:
         calls.append(kwargs)
@@ -203,17 +204,22 @@ def test_clear_review_buckets_cli_uses_scheduled_actor_and_prints_counts(
 
     monkeypatch.setattr(
         manual_filter_admin_service,
-        "clear_review_buckets",
+        "clear_all_review_buckets",
         fake_clear_review_buckets,
+    )
+    monkeypatch.setattr(
+        manual_filter_admin_service,
+        "clear_review_buckets",
+        lambda **kwargs: wrong_calls.append(kwargs) or fake_clear_review_buckets(),
     )
 
     result = cli_main.main(["clear-review-buckets"])
 
     assert result == 0
+    assert wrong_calls == []
     assert calls == [
         {
             "actor_username": "system:scheduled_clear",
-            "actor_user_id": None,
             "trigger": "scheduled",
         }
     ]

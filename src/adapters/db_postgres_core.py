@@ -795,6 +795,7 @@ class PostgresAdapter:
             before = manual_reviews.fetch_manual_review_rows(
                 cur,
                 article_ids,
+                owner_user_id=actor_user_id,
                 for_update=True,
             )
             resolution_by_id = {
@@ -885,29 +886,13 @@ class PostgresAdapter:
     # ------------------------------------------------------------------
     # Manual reviews
     # ------------------------------------------------------------------
-    def update_manual_review_order_and_categories(
-        self,
-        review_updates: Sequence[Mapping[str, Any]],
-        category_updates: Sequence[Mapping[str, Any]],
-        *,
-        report_type: Optional[str] = None,
-    ) -> Tuple[int, int]:
-        with self.transaction() as cur:
-            updated_reviews = manual_reviews.update_manual_review_statuses(
-                cur,
-                review_updates,
-                report_type=report_type,
-            )
-            updated_categories = news_summaries.update_summary_categories(cur, category_updates)
-        return updated_reviews, updated_categories
-
     def update_manual_review_order_as_user(
         self,
         review_updates: Sequence[Mapping[str, Any]],
         category_updates: Sequence[Mapping[str, Any]],
         *,
         actor_username: str,
-        actor_user_id: Optional[str],
+        actor_user_id: str,
         report_type: Optional[str] = None,
         request_id: Optional[str] = None,
     ) -> Tuple[int, int]:
@@ -915,6 +900,7 @@ class PostgresAdapter:
             before, after = manual_reviews.update_manual_review_order_as_user(
                 cur,
                 review_updates,
+                owner_user_id=actor_user_id,
                 actor_username=actor_username,
                 actor_user_id=actor_user_id,
                 report_type=report_type,
@@ -952,7 +938,7 @@ class PostgresAdapter:
         updates: Sequence[Mapping[str, Any]],
         *,
         actor_username: str,
-        actor_user_id: Optional[str],
+        actor_user_id: str,
         expected_versions: Mapping[str, int],
         require_versions: bool,
         action: str,
@@ -964,6 +950,7 @@ class PostgresAdapter:
                 manual_reviews.allocate_manual_review_decision_ranks(
                     cur,
                     updates,
+                    owner_user_id=actor_user_id,
                     report_type=report_type,
                 )
                 if action == "manual_review.decide"
@@ -973,6 +960,7 @@ class PostgresAdapter:
                 manual_reviews.update_manual_review_statuses_with_versions(
                     cur,
                     effective_updates,
+                    owner_user_id=actor_user_id,
                     actor_username=actor_username,
                     actor_user_id=actor_user_id,
                     expected_versions=expected_versions,
@@ -1002,7 +990,7 @@ class PostgresAdapter:
         created_before: Optional[date],
         report_type: str,
         actor_username: str,
-        actor_user_id: Optional[str],
+        actor_user_id: str,
         duty_unprocessed_only: bool = False,
         request_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
@@ -1010,6 +998,7 @@ class PostgresAdapter:
             targets = (
                 manual_reviews.fetch_manual_candidates_before_date_for_update(
                     cur,
+                    owner_user_id=actor_user_id,
                     region=region,
                     sentiment=sentiment,
                     query=query,
@@ -1035,6 +1024,7 @@ class PostgresAdapter:
                 manual_reviews.update_manual_review_statuses_with_versions(
                     cur,
                     updates,
+                    owner_user_id=actor_user_id,
                     actor_username=actor_username,
                     actor_user_id=actor_user_id,
                     expected_versions=expected_versions,
@@ -1055,16 +1045,20 @@ class PostgresAdapter:
                 )
             return after
 
-    def clear_review_buckets_as_user(
+    def clear_review_buckets_for_owner_as_user(
         self,
         *,
+        owner_user_id: str,
         actor_username: str,
-        actor_user_id: Optional[str],
+        actor_user_id: str,
         trigger: str,
         request_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         with self.transaction() as cur:
-            targets = manual_reviews.fetch_review_buckets_for_update(cur)
+            targets = manual_reviews.fetch_review_buckets_for_update(
+                cur,
+                owner_user_id=owner_user_id,
+            )
             updates = [
                 {
                     "article_id": str(row["article_id"]),
@@ -1081,6 +1075,7 @@ class PostgresAdapter:
                 manual_reviews.update_manual_review_statuses_with_versions(
                     cur,
                     updates,
+                    owner_user_id=owner_user_id,
                     actor_username=actor_username,
                     actor_user_id=actor_user_id,
                     expected_versions=expected_versions,
@@ -1094,7 +1089,7 @@ class PostgresAdapter:
                     actor_user_id=actor_user_id,
                     action="manual_review.clear_buckets",
                     target_type="manual_review_batch",
-                    target_id="all",
+                    target_id=owner_user_id,
                     before_data={"items": before},
                     after_data={"items": after, "trigger": trigger},
                     request_id=request_id,
@@ -1111,12 +1106,37 @@ class PostgresAdapter:
                 for row in after
             ]
 
+    def clear_all_review_buckets_as_system(
+        self,
+        *,
+        actor_username: str,
+        trigger: str,
+        request_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        with self.transaction() as cur:
+            after = manual_reviews.clear_all_review_buckets(
+                cur,
+                actor_username=actor_username,
+            )
+            if after:
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=None,
+                    action="manual_review.clear_buckets",
+                    target_type="manual_review_batch",
+                    target_id="all",
+                    before_data=None,
+                    after_data={"items": after, "trigger": trigger},
+                    request_id=request_id,
+                )
+            return after
+
     def update_manual_review_summaries_as_user(
         self,
         edits: Mapping[str, Mapping[str, Any]],
         *,
         actor_username: str,
-        actor_user_id: Optional[str],
+        actor_user_id: str,
         expected_versions: Mapping[str, int],
         require_versions: bool,
         report_type: Optional[str] = None,
@@ -1127,6 +1147,7 @@ class PostgresAdapter:
                 manual_reviews.update_manual_review_summaries_with_versions(
                     cur,
                     edits,
+                    owner_user_id=actor_user_id,
                     actor_username=actor_username,
                     actor_user_id=actor_user_id,
                     expected_versions=expected_versions,

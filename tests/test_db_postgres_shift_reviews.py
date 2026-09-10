@@ -52,6 +52,7 @@ class AdminDiscardCursor:
                 "admin_discarded_at": None,
                 "admin_discarded_by_user_id": None,
             },
+            {},
             {
                 "id": "review-1",
                 "shift_id": "shift-1",
@@ -231,6 +232,7 @@ def test_admin_result_queries_separate_active_and_discarded_items() -> None:
         report_type="zongbao",
         limit=200,
         offset=0,
+        viewer_user_id="admin-1",
         exclude_admin_discarded=True,
     )
     db_postgres_shift_reviews.fetch_shift_review_items(
@@ -240,15 +242,16 @@ def test_admin_result_queries_separate_active_and_discarded_items() -> None:
         report_type=None,
         limit=200,
         offset=0,
+        viewer_user_id="admin-1",
         admin_discarded_only=True,
     )
 
     assert all(
-        "sr.admin_discarded_at IS NULL" in query
+        "admin_discard.shift_review_id IS NULL" in query
         for query in active_cursor.queries
     )
     assert all(
-        "sr.admin_discarded_at IS NOT NULL" in query
+        "admin_discard.shift_review_id IS NOT NULL" in query
         for query in discarded_cursor.queries
     )
 
@@ -263,16 +266,18 @@ def test_admin_unprocessed_query_includes_manual_discarded_items() -> None:
         report_type="zongbao",
         limit=200,
         offset=0,
+        viewer_user_id="admin-1",
         include_admin_state=True,
         admin_unprocessed_only=True,
     )
 
     assert all(
-        "LEFT JOIN manual_reviews mr ON mr.article_id = ns.article_id" in query
+        "LEFT JOIN manual_reviews mr" in query
+        and "mr.owner_user_id = %s" in query
         for query in cursor.queries
     )
     assert all(
-        "sr.admin_discarded_at IS NULL" in query
+        "admin_discard.shift_review_id IS NULL" in query
         for query in cursor.queries
     )
     assert all(
@@ -372,9 +377,10 @@ def test_set_admin_discarded_preserves_editor_decision() -> None:
 
     assert before["decision"] == "selected"
     assert after["decision"] == "selected"
-    assert "SET admin_discarded_at" in cursor.queries[-1]
-    assert "decision =" not in cursor.queries[-1]
-    assert cursor.params[-1] == (True, True, "admin-1", "review-1")
+    assert "INSERT INTO shift_review_admin_discards" in cursor.queries[-2]
+    assert "decision =" not in cursor.queries[-2]
+    assert cursor.params[-2] == ("admin-1", "review-1", "admin-1")
+    assert cursor.params[-1] == ("admin-1", "review-1")
 
 
 def test_selected_queries_can_hide_finalized_items_and_sort_admin_results() -> None:

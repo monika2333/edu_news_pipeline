@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg
@@ -18,6 +18,7 @@ from src.adapters.db_postgres_manual_reviews._base import (
 def search_manual_candidates(
     cur: psycopg.Cursor,
     *,
+    owner_user_id: str,
     query: Optional[str] = None,
     created_before: Optional[date] = None,
     limit: int,
@@ -31,6 +32,7 @@ def search_manual_candidates(
     offset = max(0, int(offset or 0))
     type_expr = report_type_expr("mr")
     clauses, params = _build_manual_review_filters(
+        owner_user_id=owner_user_id,
         status="pending",
         only_ready=True,
         region=region,
@@ -77,6 +79,7 @@ def search_manual_candidates(
 
 def _build_manual_candidate_filters(
     *,
+    owner_user_id: str,
     region: str,
     sentiment: str,
     query: Optional[str] = None,
@@ -85,6 +88,7 @@ def _build_manual_candidate_filters(
     duty_unprocessed_only: bool = False,
 ) -> Tuple[List[str], List[Any]]:
     clauses, params = _build_manual_review_filters(
+        owner_user_id=owner_user_id,
         status="pending",
         only_ready=True,
         region=region,
@@ -105,6 +109,7 @@ def _build_manual_candidate_filters(
 def count_manual_candidates_before_date(
     cur: psycopg.Cursor,
     *,
+    owner_user_id: str,
     region: str,
     sentiment: str,
     query: Optional[str] = None,
@@ -113,6 +118,7 @@ def count_manual_candidates_before_date(
     duty_unprocessed_only: bool = False,
 ) -> int:
     clauses, params = _build_manual_candidate_filters(
+        owner_user_id=owner_user_id,
         region=region,
         sentiment=sentiment,
         query=query,
@@ -138,6 +144,7 @@ def count_manual_candidates_before_date(
 def fetch_manual_candidates_before_date_for_update(
     cur: psycopg.Cursor,
     *,
+    owner_user_id: str,
     region: str,
     sentiment: str,
     query: Optional[str] = None,
@@ -146,6 +153,7 @@ def fetch_manual_candidates_before_date_for_update(
     duty_unprocessed_only: bool = False,
 ) -> list[dict[str, Any]]:
     clauses, params = _build_manual_candidate_filters(
+        owner_user_id=owner_user_id,
         region=region,
         sentiment=sentiment,
         query=query,
@@ -168,51 +176,9 @@ def fetch_manual_candidates_before_date_for_update(
     return [dict(row) for row in cur.fetchall()]
 
 
-def discard_manual_candidates_before_date(
-    cur: psycopg.Cursor,
-    *,
-    region: str,
-    sentiment: str,
-    query: Optional[str] = None,
-    created_before: Optional[date] = None,
-    actor: Optional[str] = None,
-    decided_at: Optional[datetime] = None,
-    report_type: Optional[str] = None,
-    duty_unprocessed_only: bool = False,
-) -> int:
-    clauses, filter_params = _build_manual_candidate_filters(
-        region=region,
-        sentiment=sentiment,
-        query=query,
-        created_before=created_before,
-        report_type=report_type,
-        duty_unprocessed_only=duty_unprocessed_only,
-    )
-    where_sql = " AND ".join(clauses)
-    query = f"""
-        WITH matched AS (
-            SELECT mr.article_id
-            FROM manual_reviews mr
-            JOIN news_summaries ns ON ns.article_id = mr.article_id
-            WHERE {where_sql}
-        )
-        UPDATE manual_reviews mr
-        SET status = 'discarded',
-            rank = NULL,
-            decided_by = %s,
-            decided_at = %s
-        FROM matched
-        WHERE mr.article_id = matched.article_id
-    """
-    params = list(filter_params)
-    params.extend([actor, decided_at or datetime.now(timezone.utc)])
-    cur.execute(query, tuple(params))
-    return cur.rowcount
-
 __all__ = [
     "_build_manual_candidate_filters",
     "count_manual_candidates_before_date",
-    "discard_manual_candidates_before_date",
     "fetch_manual_candidates_before_date_for_update",
     "search_manual_candidates",
 ]

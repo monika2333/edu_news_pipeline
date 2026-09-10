@@ -22,10 +22,14 @@ from src.console.score_feedback_schemas import (
     ScoreFeedbackRequest,
     ScoreFeedbackResponse,
 )
-from src.console.security import ConsoleUser, require_console_user, require_role
+from src.console.security import ConsoleUser, require_admin_workspace_user
 from src.domain.report_type import NewsReportType
 
-router = APIRouter(prefix="/api/manual_filter", tags=["manual_filter"])
+router = APIRouter(
+    prefix="/api/manual_filter",
+    tags=["manual_filter"],
+    dependencies=[Depends(require_admin_workspace_user)],
+)
 
 
 class BulkDecideRequest(BaseModel):
@@ -114,8 +118,10 @@ def list_candidates_api(
     view_mode: Optional[str] = None,
     report_type: str = "zongbao",
     duty_unprocessed_only: bool = False,
+    user: ConsoleUser = Depends(require_admin_workspace_user),
 ) -> Dict[str, Any]:
     return manual_filter_service.list_candidates(
+        owner_user_id=str(user.user_id),
         limit=limit,
         offset=offset,
         region=region,
@@ -139,7 +145,7 @@ def trigger_clustering_api() -> Dict[str, Any]:
 @router.put("/score-feedback", response_model=ScoreFeedbackResponse)
 def save_score_feedback_api(
     req: ScoreFeedbackRequest,
-    user: ConsoleUser = Depends(require_console_user),
+    user: ConsoleUser = Depends(require_admin_workspace_user),
 ) -> ScoreFeedbackResponse:
     """Create or update feedback for the article's current external score."""
     try:
@@ -167,7 +173,7 @@ def clear_score_feedback_api(req: ClearScoreFeedbackRequest) -> ScoreFeedbackRes
 @router.post("/decide")
 def bulk_decide_api(
     req: BulkDecideRequest,
-    user: ConsoleUser = Depends(require_console_user),
+    user: ConsoleUser = Depends(require_admin_workspace_user),
     request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ) -> Dict[str, Any]:
     try:
@@ -186,15 +192,31 @@ def bulk_decide_api(
 
 
 @router.get("/review")
-def list_review_api(decision: str = "selected", limit: int = 30, offset: int = 0, report_type: str = "zongbao") -> Dict[str, Any]:
-    return manual_filter_service.list_review(decision, limit=limit, offset=offset, report_type=report_type)
+def list_review_api(
+    decision: str = "selected",
+    limit: int = 30,
+    offset: int = 0,
+    report_type: str = "zongbao",
+    user: ConsoleUser = Depends(require_admin_workspace_user),
+) -> Dict[str, Any]:
+    return manual_filter_service.list_review(
+        decision,
+        owner_user_id=str(user.user_id),
+        limit=limit,
+        offset=offset,
+        report_type=report_type,
+    )
 
 
 @router.post("/duplicate-check")
-def duplicate_check_api(req: DuplicateCheckRequest) -> Dict[str, Any]:
+def duplicate_check_api(
+    req: DuplicateCheckRequest,
+    user: ConsoleUser = Depends(require_admin_workspace_user),
+) -> Dict[str, Any]:
     """Check the active review column for duplicate news events."""
     try:
         return manual_filter_service.check_duplicates(
+            owner_user_id=str(user.user_id),
             report_type=req.report_type,
             decision=req.decision,
         )
@@ -214,8 +236,10 @@ def list_discarded_api(
     offset: int = 0,
     report_type: str = "zongbao",
     q: Optional[str] = None,
+    user: ConsoleUser = Depends(require_admin_workspace_user),
 ) -> Dict[str, Any]:
     return manual_filter_service.list_discarded(
+        owner_user_id=str(user.user_id),
         limit=limit,
         offset=offset,
         report_type=report_type,
@@ -226,7 +250,7 @@ def list_discarded_api(
 @router.post("/edit")
 def save_edits_api(
     req: SaveEditsRequest,
-    user: ConsoleUser = Depends(require_console_user),
+    user: ConsoleUser = Depends(require_admin_workspace_user),
     request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ) -> Dict[str, Any]:
     try:
@@ -242,14 +266,20 @@ def save_edits_api(
 
 
 @router.get("/stats")
-def status_counts_api(report_type: str = "zongbao") -> Dict[str, int]:
-    return manual_filter_service.status_counts(report_type=report_type)
+def status_counts_api(
+    report_type: str = "zongbao",
+    user: ConsoleUser = Depends(require_admin_workspace_user),
+) -> Dict[str, int]:
+    return manual_filter_service.status_counts(
+        owner_user_id=str(user.user_id),
+        report_type=report_type,
+    )
 
 
 @router.post("/archive")
 def archive_api(
     req: ArchiveRequest,
-    user: ConsoleUser = Depends(require_console_user),
+    user: ConsoleUser = Depends(require_admin_workspace_user),
     request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ) -> Dict[str, Any]:
     try:
@@ -267,7 +297,7 @@ def archive_api(
 @router.post("/order")
 def update_order_api(
     req: UpdateOrderRequest,
-    user: ConsoleUser = Depends(require_console_user),
+    user: ConsoleUser = Depends(require_admin_workspace_user),
     request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ) -> Dict[str, int]:
     try:
@@ -286,7 +316,7 @@ def update_order_api(
 @router.post("/bulk-discard")
 def bulk_discard_api(
     req: BulkDiscardRequest,
-    user: ConsoleUser = Depends(require_console_user),
+    user: ConsoleUser = Depends(require_admin_workspace_user),
     request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ) -> Dict[str, int]:
     try:
@@ -307,14 +337,15 @@ def bulk_discard_api(
 @router.post("/clear-review-buckets")
 def clear_review_buckets_api(
     req: ClearReviewBucketsRequest,
-    user: ConsoleUser = Depends(require_role("admin")),
+    user: ConsoleUser = Depends(require_admin_workspace_user),
     request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ) -> Dict[str, Any]:
     del req
     try:
         return manual_filter_admin_service.clear_review_buckets(
+            owner_user_id=str(user.user_id),
             actor_username=user.username,
-            actor_user_id=user.user_id,
+            actor_user_id=str(user.user_id),
             trigger="manual",
             request_id=request_id,
         )

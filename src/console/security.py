@@ -115,6 +115,18 @@ def require_role(*allowed_roles: str) -> Callable[..., ConsoleUser]:
     return dependency
 
 
+async def require_admin_workspace_user(
+    user: ConsoleUser = Depends(require_console_user),
+) -> ConsoleUser:
+    """Require a session-backed administrator with a persistent user id."""
+    if user.role != "admin" or not user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator workspace access requires a user account",
+        )
+    return user
+
+
 def _request_origin(request: Request) -> str:
     default_port = 443 if request.url.scheme == "https" else 80
     port = request.url.port or default_port
@@ -154,6 +166,7 @@ async def require_csrf(
 
 __all__ = [
     "ConsoleUser",
+    "require_admin_workspace_user",
     "require_console_user",
     "require_csrf",
     "require_role",

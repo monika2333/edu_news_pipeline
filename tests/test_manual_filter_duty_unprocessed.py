@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 from datetime import date, datetime, timezone
 from typing import Iterator
 
@@ -8,8 +7,11 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from src.adapters import db_postgres_manual_reviews
+from src.adapters import db_postgres_manual_reviews, db_postgres_shift_reviews
 from src.adapters.db_postgres_core import PostgresAdapter
+from src.adapters.db_postgres_submission_archive._links import (
+    fetch_link_candidate_bodies,
+)
 from src.config import get_settings
 
 
@@ -26,6 +28,12 @@ ALL_ARTICLE_IDS = {
     UNPROCESSED,
 }
 UNPROCESSED_ARTICLE_IDS = {CANCELLED, UNPROCESSED}
+OWNER_USER_ID = "00000000-0000-0000-0000-000000000101"
+SECOND_OWNER_USER_ID = "00000000-0000-0000-0000-000000000102"
+INACTIVE_ADMIN_ID = "00000000-0000-0000-0000-000000000103"
+DELETED_ADMIN_ID = "00000000-0000-0000-0000-000000000104"
+DUTY_EDITOR_ID = "00000000-0000-0000-0000-000000000001"
+NEW_ADMIN_ID = "00000000-0000-0000-0000-000000000106"
 
 
 @pytest.fixture
@@ -51,13 +59,49 @@ def duty_filter_adapter() -> Iterator[PostgresAdapter]:
                 "manual_clusters",
                 "score_feedbacks",
                 "review_events",
+                "brief_items",
             ):
                 cur.execute(
                     f"CREATE TEMP TABLE {table} "
-                    f"(LIKE public.{table} INCLUDING DEFAULTS) ON COMMIT PRESERVE ROWS"
+                    f"(LIKE public.{table} INCLUDING ALL) ON COMMIT PRESERVE ROWS"
                 )
             cur.execute(
-                "ALTER TABLE review_events ALTER COLUMN id SET DEFAULT -1"
+                "ALTER TABLE manual_reviews "
+                "DROP CONSTRAINT IF EXISTS manual_reviews_article_id_key"
+            )
+            cur.execute(
+                "ALTER TABLE manual_reviews "
+                "ADD COLUMN IF NOT EXISTS owner_user_id uuid"
+            )
+            cur.execute(
+                "CREATE UNIQUE INDEX duty_filter_manual_owner_article_idx "
+                "ON manual_reviews (owner_user_id, article_id)"
+            )
+            cur.execute(
+                """
+                CREATE TEMP TABLE shift_review_admin_discards (
+                    owner_user_id uuid NOT NULL,
+                    shift_review_id uuid NOT NULL,
+                    discarded_at timestamptz NOT NULL DEFAULT now(),
+                    discarded_by_user_id uuid,
+                    PRIMARY KEY (owner_user_id, shift_review_id)
+                ) ON COMMIT PRESERVE ROWS
+                """
+            )
+            cur.execute(
+                """
+                CREATE TEMP VIEW active_console_admins AS
+                SELECT id
+                FROM console_users
+                WHERE role = 'admin'
+                  AND is_active
+                  AND deleted_at IS NULL
+                """
+            )
+            cur.execute("CREATE TEMP SEQUENCE review_events_test_id_seq")
+            cur.execute(
+                "ALTER TABLE review_events ALTER COLUMN id SET DEFAULT "
+                "nextval('review_events_test_id_seq')"
             )
             _seed_duty_filter_rows(cur)
         yield PostgresAdapter(connection=conn)
@@ -66,10 +110,38 @@ def duty_filter_adapter() -> Iterator[PostgresAdapter]:
 
 
 def _seed_duty_filter_rows(cur: psycopg.Cursor) -> None:
-    user_id = "00000000-0000-0000-0000-000000000001"
+    user_id = DUTY_EDITOR_ID
     active_shift_id = "00000000-0000-0000-0000-000000000011"
     second_shift_id = "00000000-0000-0000-0000-000000000012"
     cancelled_shift_id = "00000000-0000-0000-0000-000000000013"
+    cur.executemany(
+        """
+        INSERT INTO console_users (
+            id,
+            username,
+            display_name,
+            password_hash,
+            role,
+            is_active,
+            deleted_at
+        )
+        VALUES (%s, %s, %s, 'hash', %s, %s, %s)
+        """,
+        [
+            (OWNER_USER_ID, "admin-a", "管理员 A", "admin", True, None),
+            (SECOND_OWNER_USER_ID, "admin-b", "管理员 B", "admin", True, None),
+            (INACTIVE_ADMIN_ID, "admin-c", "管理员 C", "admin", False, None),
+            (
+                DELETED_ADMIN_ID,
+                "admin-d",
+                "管理员 D",
+                "admin",
+                True,
+                datetime(2026, 8, 1, tzinfo=timezone.utc),
+            ),
+            (DUTY_EDITOR_ID, "editor-e", "值班编辑 E", "duty_editor", True, None),
+        ],
+    )
     cur.executemany(
         """
         INSERT INTO duty_shifts (id, user_id, starts_at, ends_at, cancelled_at)
@@ -138,10 +210,10 @@ def _seed_duty_filter_rows(cur: psycopg.Cursor) -> None:
     )
     cur.executemany(
         """
-        INSERT INTO manual_reviews (article_id, status, version)
-        VALUES (%s, 'pending', 1)
+        INSERT INTO manual_reviews (owner_user_id, article_id, status, version)
+        VALUES (%s, %s, 'pending', 1)
         """,
-        [(article_id,) for article_id in scores],
+        [(OWNER_USER_ID, article_id) for article_id in scores],
     )
     cur.executemany(
         """
@@ -186,10 +258,281 @@ def _ids(rows: list[dict[str, object]]) -> set[str]:
     return {str(row["article_id"]) for row in rows}
 
 
+def _insert_ready_article(
+    cur: psycopg.Cursor,
+    article_id: str,
+    *,
+    created_at: datetime,
+    sentiment_label: str | None = "positive",
+) -> None:
+    cur.execute(
+        """
+        INSERT INTO news_summaries (
+            article_id,
+            title,
+            llm_summary,
+            content_markdown,
+            status,
+            score,
+            external_importance_score,
+            external_importance_checked_at,
+            sentiment_label,
+            is_beijing_related,
+            created_at,
+            score_details
+        )
+        VALUES (%s, %s, %s, %s, 'ready_for_export', 80, 80, now(), %s, true, %s, '{}'::jsonb)
+        """,
+        (
+            article_id,
+            f"title {article_id}",
+            f"summary {article_id}",
+            f"body {article_id}",
+            sentiment_label,
+            created_at,
+        ),
+    )
+
+
+def test_enqueue_fans_out_only_to_active_admins_without_overwrite(
+    duty_filter_adapter: PostgresAdapter,
+) -> None:
+    article_id = "fanout"
+    with duty_filter_adapter.transaction() as cur:
+        _insert_ready_article(
+            cur,
+            article_id,
+            created_at=datetime(2026, 9, 5, tzinfo=timezone.utc),
+        )
+        db_postgres_manual_reviews.enqueue_manual_review(cur, article_id)
+        cur.execute(
+            """
+            UPDATE manual_reviews
+            SET status = 'selected', summary = 'A 的决定', version = 7
+            WHERE owner_user_id = %s AND article_id = %s
+            """,
+            (OWNER_USER_ID, article_id),
+        )
+        db_postgres_manual_reviews.enqueue_manual_review(cur, article_id)
+        cur.execute(
+            """
+            SELECT owner_user_id::text AS owner_user_id, status, summary, version
+            FROM manual_reviews
+            WHERE article_id = %s
+            ORDER BY owner_user_id
+            """,
+            (article_id,),
+        )
+        rows = cur.fetchall()
+        cur.execute(
+            """
+            INSERT INTO console_users (
+                id, username, display_name, password_hash, role, is_active
+            )
+            VALUES (%s, 'admin-new', '新管理员', 'hash', 'admin', true)
+            """,
+            (NEW_ADMIN_ID,),
+        )
+        _insert_ready_article(
+            cur,
+            "after-new-admin",
+            created_at=datetime(2026, 9, 6, tzinfo=timezone.utc),
+        )
+        db_postgres_manual_reviews.enqueue_manual_review(cur, "after-new-admin")
+        cur.execute(
+            """
+            SELECT article_id
+            FROM manual_reviews
+            WHERE owner_user_id = %s
+            ORDER BY article_id
+            """,
+            (NEW_ADMIN_ID,),
+        )
+        new_admin_articles = cur.fetchall()
+        cur.execute(
+            "UPDATE console_users SET is_active = false WHERE role = 'admin'"
+        )
+        _insert_ready_article(
+            cur,
+            "zero-active-admins",
+            created_at=datetime(2026, 9, 7, tzinfo=timezone.utc),
+        )
+        db_postgres_manual_reviews.enqueue_manual_review(
+            cur,
+            "zero-active-admins",
+        )
+        cur.execute(
+            "SELECT count(*) AS total FROM manual_reviews WHERE article_id = %s",
+            ("zero-active-admins",),
+        )
+        zero_admin_count = cur.fetchone()["total"]
+
+    assert rows == [
+        {
+            "owner_user_id": OWNER_USER_ID,
+            "status": "selected",
+            "summary": "A 的决定",
+            "version": 7,
+        },
+        {
+            "owner_user_id": SECOND_OWNER_USER_ID,
+            "status": "pending",
+            "summary": None,
+            "version": 1,
+        },
+    ]
+    assert new_admin_articles == [{"article_id": "after-new-admin"}]
+    assert zero_admin_count == 0
+
+
+def test_decision_rank_and_versioned_write_are_owner_scoped(
+    duty_filter_adapter: PostgresAdapter,
+) -> None:
+    with duty_filter_adapter._cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO manual_reviews (
+                owner_user_id, article_id, status, rank, summary, version
+            )
+            VALUES (%s, %s, 'selected', 10, 'B 的摘要', 1)
+            """,
+            (SECOND_OWNER_USER_ID, UNPROCESSED),
+        )
+
+    saved = duty_filter_adapter.update_manual_review_statuses_as_user(
+        [
+            {
+                "article_id": UNPROCESSED,
+                "status": "selected",
+                "report_type": "zongbao",
+            }
+        ],
+        actor_username="admin-a",
+        actor_user_id=OWNER_USER_ID,
+        expected_versions={UNPROCESSED: 1},
+        require_versions=True,
+        action="manual_review.decide",
+        report_type="zongbao",
+    )
+    with duty_filter_adapter._cursor() as cur:
+        cur.execute(
+            """
+            SELECT owner_user_id::text AS owner_user_id, status, rank, summary, version
+            FROM manual_reviews
+            WHERE article_id = %s
+            ORDER BY owner_user_id
+            """,
+            (UNPROCESSED,),
+        )
+        rows = cur.fetchall()
+
+    assert saved[0]["rank"] == 1
+    assert rows == [
+        {
+            "owner_user_id": OWNER_USER_ID,
+            "status": "selected",
+            "rank": 1.0,
+            "summary": None,
+            "version": 2,
+        },
+        {
+            "owner_user_id": SECOND_OWNER_USER_ID,
+            "status": "selected",
+            "rank": 10.0,
+            "summary": "B 的摘要",
+            "version": 1,
+        },
+    ]
+
+
+def test_edit_order_and_archive_writes_preserve_other_owner_rows(
+    duty_filter_adapter: PostgresAdapter,
+) -> None:
+    with duty_filter_adapter._cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO manual_reviews (
+                owner_user_id, article_id, status, rank, summary, version
+            )
+            SELECT %s, article_id, 'pending', 9, 'B 原文', 11
+            FROM manual_reviews
+            WHERE owner_user_id = %s
+            """,
+            (SECOND_OWNER_USER_ID, OWNER_USER_ID),
+        )
+
+    duty_filter_adapter.update_manual_review_summaries_as_user(
+        {ACTIVE_PENDING: {"summary": "A 编辑", "notes": "A 备注"}},
+        actor_username="admin-a",
+        actor_user_id=OWNER_USER_ID,
+        expected_versions={ACTIVE_PENDING: 1},
+        require_versions=True,
+        report_type="zongbao",
+    )
+    duty_filter_adapter.update_manual_review_order_as_user(
+        [
+            {
+                "article_id": ACTIVE_DISCARDED,
+                "status": "selected",
+                "rank": 2,
+                "report_type": "zongbao",
+            }
+        ],
+        [],
+        actor_username="admin-a",
+        actor_user_id=OWNER_USER_ID,
+        report_type="zongbao",
+    )
+    duty_filter_adapter.update_manual_review_statuses_as_user(
+        [
+            {
+                "article_id": MULTI_SHIFT,
+                "status": "exported",
+                "rank": None,
+            }
+        ],
+        actor_username="admin-a",
+        actor_user_id=OWNER_USER_ID,
+        expected_versions={MULTI_SHIFT: 1},
+        require_versions=True,
+        action="manual_review.archive",
+    )
+    with duty_filter_adapter._cursor() as cur:
+        cur.execute(
+            """
+            SELECT owner_user_id::text AS owner_user_id, article_id, status,
+                   rank, summary, notes, version
+            FROM manual_reviews
+            WHERE article_id = ANY(%s)
+            ORDER BY owner_user_id, article_id
+            """,
+            ([ACTIVE_PENDING, ACTIVE_DISCARDED, MULTI_SHIFT],),
+        )
+        rows = cur.fetchall()
+
+    by_owner_article = {
+        (row["owner_user_id"], row["article_id"]): row
+        for row in rows
+    }
+    assert by_owner_article[(OWNER_USER_ID, ACTIVE_PENDING)]["summary"] == "A 编辑"
+    assert by_owner_article[(OWNER_USER_ID, ACTIVE_PENDING)]["notes"] == "A 备注"
+    assert by_owner_article[(OWNER_USER_ID, ACTIVE_DISCARDED)]["status"] == "selected"
+    assert by_owner_article[(OWNER_USER_ID, ACTIVE_DISCARDED)]["rank"] == 2
+    assert by_owner_article[(OWNER_USER_ID, MULTI_SHIFT)]["status"] == "exported"
+    assert all(
+        by_owner_article[(SECOND_OWNER_USER_ID, article_id)]["status"] == "pending"
+        and by_owner_article[(SECOND_OWNER_USER_ID, article_id)]["rank"] == 9
+        and by_owner_article[(SECOND_OWNER_USER_ID, article_id)]["summary"] == "B 原文"
+        and by_owner_article[(SECOND_OWNER_USER_ID, article_id)]["version"] == 11
+        for article_id in (ACTIVE_PENDING, ACTIVE_DISCARDED, MULTI_SHIFT)
+    )
+
+
 def test_duty_filter_excludes_any_active_shift_review_and_preserves_count(
     duty_filter_adapter: PostgresAdapter,
 ) -> None:
     rows, total = duty_filter_adapter.manual_reviews.fetch(
+        owner_user_id=OWNER_USER_ID,
         status="pending",
         limit=20,
         offset=0,
@@ -205,6 +548,7 @@ def test_duty_filter_default_false_preserves_the_complete_pending_pool(
     duty_filter_adapter: PostgresAdapter,
 ) -> None:
     rows, total = duty_filter_adapter.manual_reviews.fetch(
+        owner_user_id=OWNER_USER_ID,
         status="pending",
         limit=20,
         offset=0,
@@ -219,12 +563,14 @@ def test_duty_filter_applies_to_search_and_cluster_reads(
     duty_filter_adapter: PostgresAdapter,
 ) -> None:
     search_rows, search_total = duty_filter_adapter.manual_reviews.search_candidates(
+        owner_user_id=OWNER_USER_ID,
         query="Needle",
         limit=20,
         offset=0,
         duty_unprocessed_only=True,
     )
     cluster_rows = duty_filter_adapter.manual_reviews.fetch_clusters(
+        owner_user_id=OWNER_USER_ID,
         bucket_key="internal_positive",
         duty_unprocessed_only=True,
     )
@@ -239,6 +585,7 @@ def test_duty_filter_scopes_bulk_discard_count_and_locked_targets(
     duty_filter_adapter: PostgresAdapter,
 ) -> None:
     matched = duty_filter_adapter.manual_reviews.count_candidates_before_date(
+        owner_user_id=OWNER_USER_ID,
         region="internal",
         sentiment="positive",
         created_before=date(2026, 1, 1),
@@ -247,6 +594,7 @@ def test_duty_filter_scopes_bulk_discard_count_and_locked_targets(
     with duty_filter_adapter.transaction() as cur:
         targets = db_postgres_manual_reviews.fetch_manual_candidates_before_date_for_update(
             cur,
+            owner_user_id=OWNER_USER_ID,
             region="internal",
             sentiment="positive",
             created_before=date(2026, 1, 1),
@@ -260,71 +608,426 @@ def test_duty_filter_scopes_bulk_discard_count_and_locked_targets(
 def test_core_bulk_discard_updates_only_duty_unprocessed_targets(
     duty_filter_adapter: PostgresAdapter,
 ) -> None:
+    with duty_filter_adapter._cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO manual_reviews (owner_user_id, article_id, status, version)
+            SELECT %s, article_id, status, version
+            FROM manual_reviews
+            WHERE owner_user_id = %s
+            """,
+            (SECOND_OWNER_USER_ID, OWNER_USER_ID),
+        )
     updated = duty_filter_adapter.discard_manual_candidates_before_date_as_user(
         region="internal",
         sentiment="positive",
         query=None,
         created_before=date(2026, 1, 1),
-        report_type=None,
+        report_type="zongbao",
         actor_username="admin",
-        actor_user_id=None,
+        actor_user_id=OWNER_USER_ID,
         duty_unprocessed_only=True,
     )
     with duty_filter_adapter._cursor() as cur:
         cur.execute(
-            "SELECT article_id, status FROM manual_reviews ORDER BY article_id",
+            """
+            SELECT owner_user_id::text AS owner_user_id, article_id, status
+            FROM manual_reviews
+            ORDER BY owner_user_id, article_id
+            """,
             (),
         )
         statuses = {
-            str(row["article_id"]): str(row["status"])
+            (str(row["owner_user_id"]), str(row["article_id"])): str(row["status"])
             for row in cur.fetchall()
         }
 
     assert _ids(updated) == UNPROCESSED_ARTICLE_IDS
-    assert statuses[UNPROCESSED] == "discarded"
-    assert statuses[CANCELLED] == "discarded"
-    assert statuses[ACTIVE_DISCARDED] == "pending"
-    assert statuses[ACTIVE_PENDING] == "pending"
-    assert statuses[MULTI_SHIFT] == "pending"
-
-
-def test_namespace_bulk_discard_updates_only_duty_unprocessed_targets(
-    duty_filter_adapter: PostgresAdapter,
-) -> None:
-    updated = duty_filter_adapter.manual_reviews.bulk_discard_candidates(
-        region="internal",
-        sentiment="positive",
-        created_before=date(2026, 1, 1),
-        duty_unprocessed_only=True,
+    assert statuses[(OWNER_USER_ID, UNPROCESSED)] == "discarded"
+    assert statuses[(OWNER_USER_ID, CANCELLED)] == "discarded"
+    assert statuses[(OWNER_USER_ID, ACTIVE_DISCARDED)] == "pending"
+    assert statuses[(OWNER_USER_ID, ACTIVE_PENDING)] == "pending"
+    assert statuses[(OWNER_USER_ID, MULTI_SHIFT)] == "pending"
+    assert all(
+        statuses[(SECOND_OWNER_USER_ID, article_id)] == "pending"
+        for article_id in ALL_ARTICLE_IDS
     )
-    with duty_filter_adapter._cursor() as cur:
-        cur.execute(
-            "SELECT article_id, status FROM manual_reviews ORDER BY article_id",
-            (),
-        )
-        statuses = {
-            str(row["article_id"]): str(row["status"])
-            for row in cur.fetchall()
-        }
-
-    assert updated == 2
-    assert statuses[UNPROCESSED] == "discarded"
-    assert statuses[CANCELLED] == "discarded"
-    assert statuses[ACTIVE_DISCARDED] == "pending"
-    assert statuses[ACTIVE_PENDING] == "pending"
-    assert statuses[MULTI_SHIFT] == "pending"
 
 
-def test_cluster_refresh_input_remains_the_complete_pending_pool(
+def test_cluster_refresh_input_ignores_manual_decisions(
     duty_filter_adapter: PostgresAdapter,
 ) -> None:
     with duty_filter_adapter._cluster_transaction() as cur:
-        rows = db_postgres_manual_reviews.fetch_manual_pending_for_cluster(cur)
+        rows = db_postgres_manual_reviews.fetch_manual_cluster_sources(cur)
 
     assert _ids(rows) == ALL_ARTICLE_IDS
-    assert "duty_unprocessed_only" not in inspect.signature(
-        db_postgres_manual_reviews.fetch_manual_pending_for_cluster
-    ).parameters
+
+
+def test_cluster_refresh_uses_latest_ready_limit_even_after_all_admins_decide(
+    duty_filter_adapter: PostgresAdapter,
+) -> None:
+    with duty_filter_adapter._cursor() as cur:
+        cur.execute("UPDATE manual_reviews SET status = 'selected'")
+        cur.execute(
+            """
+            UPDATE news_summaries
+            SET created_at = CASE article_id
+                WHEN %s THEN %s
+                WHEN %s THEN %s
+                ELSE %s
+            END
+            """,
+            (
+                UNPROCESSED,
+                datetime(2026, 9, 5, tzinfo=timezone.utc),
+                CANCELLED,
+                datetime(2026, 9, 4, tzinfo=timezone.utc),
+                datetime(2026, 9, 1, tzinfo=timezone.utc),
+            ),
+        )
+        rows = db_postgres_manual_reviews.fetch_manual_cluster_sources(
+            cur,
+            fetch_limit=2,
+        )
+
+    assert [str(row["article_id"]) for row in rows] == [UNPROCESSED, CANCELLED]
+
+
+def test_cluster_singleton_uses_owner_pending_and_null_sentiment_positive_bucket(
+    duty_filter_adapter: PostgresAdapter,
+) -> None:
+    article_id = "outside-cache"
+    with duty_filter_adapter._cursor() as cur:
+        _insert_ready_article(
+            cur,
+            article_id,
+            created_at=datetime(2026, 9, 5, tzinfo=timezone.utc),
+            sentiment_label=None,
+        )
+        cur.executemany(
+            """
+            INSERT INTO manual_reviews (
+                owner_user_id, article_id, status, report_type, version
+            )
+            VALUES (%s, %s, %s, 'zongbao', 1)
+            """,
+            [
+                (OWNER_USER_ID, article_id, "pending"),
+                (SECOND_OWNER_USER_ID, article_id, "selected"),
+            ],
+        )
+
+    a_rows = duty_filter_adapter.manual_reviews.fetch_clusters(
+        owner_user_id=OWNER_USER_ID,
+        bucket_key="internal_positive",
+    )
+    b_rows = duty_filter_adapter.manual_reviews.fetch_clusters(
+        owner_user_id=SECOND_OWNER_USER_ID,
+        bucket_key="internal_positive",
+    )
+
+    a_singletons = [row for row in a_rows if row["article_id"] == article_id]
+    b_singletons = [row for row in b_rows if row["article_id"] == article_id]
+    assert len(a_singletons) == 1
+    assert a_singletons[0]["cluster_id"] == f"single-{article_id}"
+    assert a_singletons[0]["bucket_key"] == "internal_positive"
+    assert b_singletons == []
+
+
+def test_owner_clear_and_explicit_system_clear_have_distinct_scopes(
+    duty_filter_adapter: PostgresAdapter,
+) -> None:
+    with duty_filter_adapter._cursor() as cur:
+        cur.execute(
+            """
+            UPDATE manual_reviews
+            SET status = 'selected', rank = 1
+            WHERE owner_user_id = %s AND article_id = %s
+            """,
+            (OWNER_USER_ID, UNPROCESSED),
+        )
+        cur.execute(
+            """
+            INSERT INTO manual_reviews (
+                owner_user_id, article_id, status, rank, version
+            )
+            VALUES (%s, %s, 'backup', 1, 1)
+            """,
+            (SECOND_OWNER_USER_ID, UNPROCESSED),
+        )
+
+    duty_filter_adapter.clear_review_buckets_for_owner_as_user(
+        owner_user_id=OWNER_USER_ID,
+        actor_username="admin-a",
+        actor_user_id=OWNER_USER_ID,
+        trigger="manual",
+    )
+    with duty_filter_adapter._cursor() as cur:
+        cur.execute(
+            """
+            SELECT owner_user_id::text AS owner_user_id, status
+            FROM manual_reviews
+            WHERE article_id = %s
+            ORDER BY owner_user_id
+            """,
+            (UNPROCESSED,),
+        )
+        after_owner_clear = cur.fetchall()
+
+    duty_filter_adapter.clear_all_review_buckets_as_system(
+        actor_username="system:scheduled_clear",
+        trigger="scheduled",
+    )
+    with duty_filter_adapter._cursor() as cur:
+        cur.execute(
+            """
+            SELECT owner_user_id::text AS owner_user_id, status
+            FROM manual_reviews
+            WHERE article_id = %s
+            ORDER BY owner_user_id
+            """,
+            (UNPROCESSED,),
+        )
+        after_system_clear = cur.fetchall()
+
+    assert [row["status"] for row in after_owner_clear] == ["discarded", "backup"]
+    assert [row["status"] for row in after_system_clear] == ["discarded", "discarded"]
+
+
+def test_submission_link_body_collapses_admin_rows_by_archive_then_update(
+    duty_filter_adapter: PostgresAdapter,
+) -> None:
+    article_id = UNPROCESSED
+    updated_fallback_article_id = ACTIVE_PENDING
+    with duty_filter_adapter._cursor() as cur:
+        cur.execute(
+            """
+            UPDATE manual_reviews
+            SET status = 'selected', summary = 'A newer edit',
+                decided_at = %s, updated_at = %s
+            WHERE owner_user_id = %s AND article_id = %s
+            """,
+            (
+                datetime(2026, 9, 5, tzinfo=timezone.utc),
+                datetime(2026, 9, 6, tzinfo=timezone.utc),
+                OWNER_USER_ID,
+                article_id,
+            ),
+        )
+        cur.execute(
+            """
+            INSERT INTO manual_reviews (
+                owner_user_id, article_id, status, summary,
+                decided_at, updated_at, version
+            )
+            VALUES (%s, %s, 'exported', 'B archived', %s, %s, 1)
+            """,
+            (
+                SECOND_OWNER_USER_ID,
+                article_id,
+                datetime(2026, 9, 4, tzinfo=timezone.utc),
+                datetime(2026, 9, 4, tzinfo=timezone.utc),
+            ),
+        )
+        cur.execute(
+            """
+            UPDATE manual_reviews
+            SET status = 'selected', summary = 'A recent decision',
+                decided_at = '2099-09-09T00:00:00Z',
+                updated_at = '2026-09-01T00:00:00Z'
+            WHERE owner_user_id = %s AND article_id = %s
+            """,
+            (OWNER_USER_ID, updated_fallback_article_id),
+        )
+        cur.execute(
+            """
+            INSERT INTO manual_reviews (
+                owner_user_id, article_id, status, summary,
+                decided_at, updated_at, version
+            )
+            VALUES (
+                %s, %s, 'selected', 'B latest update',
+                '2026-01-01T00:00:00Z', '2099-09-08T00:00:00Z', 1
+            )
+            """,
+            (SECOND_OWNER_USER_ID, updated_fallback_article_id),
+        )
+        rows = fetch_link_candidate_bodies(
+            cur,
+            article_ids=[article_id, updated_fallback_article_id],
+        )
+
+    assert rows == [
+        {"article_id": article_id, "body": "B archived"},
+        {
+            "article_id": updated_fallback_article_id,
+            "body": "B latest update",
+        },
+    ]
+
+
+def test_admin_summary_counts_and_discards_are_viewer_scoped(
+    duty_filter_adapter: PostgresAdapter,
+) -> None:
+    shift_id = "00000000-0000-0000-0000-000000000011"
+    count_article = "summary-count"
+    discard_article = "summary-discard"
+    with duty_filter_adapter._cursor() as cur:
+        for article_id in (count_article, discard_article):
+            _insert_ready_article(
+                cur,
+                article_id,
+                created_at=datetime(2026, 9, 1, 12, tzinfo=timezone.utc),
+            )
+        cur.executemany(
+            """
+            INSERT INTO shift_reviews (
+                shift_id, article_id, decision, report_type,
+                created_by_user_id, updated_by_user_id
+            )
+            VALUES (%s, %s, 'selected', 'zongbao', %s, %s)
+            """,
+            [
+                (shift_id, count_article, DUTY_EDITOR_ID, DUTY_EDITOR_ID),
+                (shift_id, discard_article, DUTY_EDITOR_ID, DUTY_EDITOR_ID),
+            ],
+        )
+        cur.executemany(
+            """
+            INSERT INTO manual_reviews (
+                owner_user_id, article_id, status, report_type, version
+            )
+            VALUES (%s, %s, %s, 'zongbao', 1)
+            """,
+            [
+                (OWNER_USER_ID, count_article, "pending"),
+                (SECOND_OWNER_USER_ID, count_article, "selected"),
+                (OWNER_USER_ID, discard_article, "pending"),
+                (SECOND_OWNER_USER_ID, discard_article, "pending"),
+            ],
+        )
+        a_summaries = db_postgres_shift_reviews.fetch_admin_shift_summaries(
+            cur,
+            viewer_user_id=OWNER_USER_ID,
+        )
+        b_summaries = db_postgres_shift_reviews.fetch_admin_shift_summaries(
+            cur,
+            viewer_user_id=SECOND_OWNER_USER_ID,
+        )
+        db_postgres_shift_reviews.set_admin_discarded(
+            cur,
+            shift_id=shift_id,
+            article_id=discard_article,
+            actor_user_id=OWNER_USER_ID,
+            discarded=True,
+        )
+        a_rows, _ = db_postgres_shift_reviews.fetch_shift_review_items(
+            cur,
+            shift_id=shift_id,
+            viewer_user_id=OWNER_USER_ID,
+            decision="selected",
+            report_type="zongbao",
+            limit=200,
+            offset=0,
+            include_admin_state=True,
+            admin_unprocessed_only=True,
+        )
+        b_rows, _ = db_postgres_shift_reviews.fetch_shift_review_items(
+            cur,
+            shift_id=shift_id,
+            viewer_user_id=SECOND_OWNER_USER_ID,
+            decision="selected",
+            report_type="zongbao",
+            limit=200,
+            offset=0,
+            include_admin_state=True,
+            admin_unprocessed_only=True,
+        )
+
+    a_summary = next(row for row in a_summaries if str(row["shift_id"]) == shift_id)
+    b_summary = next(row for row in b_summaries if str(row["shift_id"]) == shift_id)
+    assert a_summary["zongbao_selected_all"] == 2
+    assert b_summary["zongbao_selected_all"] == 2
+    assert a_summary["zongbao_selected"] == 2
+    assert b_summary["zongbao_selected"] == 1
+    assert _ids(a_rows) == {count_article}
+    assert _ids(b_rows) == {discard_article}
+
+
+def test_import_and_conflict_preview_ignore_other_admin_rows(
+    duty_filter_adapter: PostgresAdapter,
+) -> None:
+    shift_id = "00000000-0000-0000-0000-000000000011"
+    article_id = "import-owner-scope"
+    with duty_filter_adapter._cursor() as cur:
+        _insert_ready_article(
+            cur,
+            article_id,
+            created_at=datetime(2026, 9, 1, 12, tzinfo=timezone.utc),
+        )
+        cur.execute(
+            """
+            INSERT INTO shift_reviews (
+                shift_id, article_id, decision, report_type, edited_summary,
+                created_by_user_id, updated_by_user_id
+            )
+            VALUES (%s, %s, 'selected', 'zongbao', '值班摘要', %s, %s)
+            """,
+            (shift_id, article_id, DUTY_EDITOR_ID, DUTY_EDITOR_ID),
+        )
+        cur.execute(
+            """
+            INSERT INTO manual_reviews (
+                owner_user_id, article_id, status, summary, report_type, version
+            )
+            VALUES (%s, %s, 'selected', 'B 的摘要', 'zongbao', 6)
+            """,
+            (SECOND_OWNER_USER_ID, article_id),
+        )
+        preview = db_postgres_manual_reviews.preview_shift_reviews_for_manual(
+            cur,
+            owner_user_id=OWNER_USER_ID,
+            shift_id=shift_id,
+            article_ids=[article_id],
+        )
+
+    assert preview[0]["existing_id"] is None
+    imported = duty_filter_adapter.import_shift_reviews_into_manual(
+        shift_id=shift_id,
+        article_ids=[article_id],
+        target_status="selected",
+        report_type="zongbao",
+        actor_username="admin-a",
+        actor_user_id=OWNER_USER_ID,
+        conflict_resolutions=[],
+    )
+    with duty_filter_adapter._cursor() as cur:
+        cur.execute(
+            """
+            SELECT owner_user_id::text AS owner_user_id, status, summary, version
+            FROM manual_reviews
+            WHERE article_id = %s
+            ORDER BY owner_user_id
+            """,
+            (article_id,),
+        )
+        rows = cur.fetchall()
+
+    assert imported[0]["summary"] == "值班摘要"
+    assert rows == [
+        {
+            "owner_user_id": OWNER_USER_ID,
+            "status": "selected",
+            "summary": "值班摘要",
+            "version": 1,
+        },
+        {
+            "owner_user_id": SECOND_OWNER_USER_ID,
+            "status": "selected",
+            "summary": "B 的摘要",
+            "version": 6,
+        },
+    ]
 
 
 def test_cancelled_and_active_shift_rows_on_one_article_count_as_processed(
@@ -353,6 +1056,7 @@ def test_cancelled_and_active_shift_rows_on_one_article_count_as_processed(
         )
 
     rows, total = duty_filter_adapter.manual_reviews.fetch(
+        owner_user_id=OWNER_USER_ID,
         status="pending",
         limit=20,
         offset=0,

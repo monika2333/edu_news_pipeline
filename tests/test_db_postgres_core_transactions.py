@@ -285,7 +285,7 @@ def test_admin_discard_and_audit_share_one_transaction(
     assert events == ["begin", "duty_summary.discard", "commit"]
 
 
-def test_clear_review_buckets_uses_versioned_updates_and_one_audit(
+def test_clear_review_buckets_for_owner_uses_versioned_updates_and_one_audit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter = object.__new__(db_postgres_core.PostgresAdapter)
@@ -342,8 +342,9 @@ def test_clear_review_buckets_uses_versioned_updates_and_one_audit(
             {"article_id": "backup-1", "status": "discarded", "rank": None},
         ]
         assert kwargs == {
+            "owner_user_id": "admin-1",
             "actor_username": "system:scheduled_clear",
-            "actor_user_id": None,
+            "actor_user_id": "admin-1",
             "expected_versions": {"selected-1": 3, "backup-1": 5},
             "require_versions": True,
             "report_type": None,
@@ -355,7 +356,9 @@ def test_clear_review_buckets_uses_versioned_updates_and_one_audit(
     monkeypatch.setattr(
         db_postgres_core.manual_reviews,
         "fetch_review_buckets_for_update",
-        lambda cur: events.append("fetch") or targets,
+        lambda cur, *, owner_user_id: (
+            events.append(f"fetch:{owner_user_id}") or targets
+        ),
     )
     monkeypatch.setattr(
         db_postgres_core.manual_reviews,
@@ -368,21 +371,22 @@ def test_clear_review_buckets_uses_versioned_updates_and_one_audit(
         lambda cur, **kwargs: audit_calls.append(kwargs),
     )
 
-    result = adapter.clear_review_buckets_as_user(
+    result = adapter.clear_review_buckets_for_owner_as_user(
+        owner_user_id="admin-1",
         actor_username="system:scheduled_clear",
-        actor_user_id=None,
+        actor_user_id="admin-1",
         trigger="scheduled",
         request_id="request-1",
     )
 
-    assert events == ["begin", "fetch", "update", "commit"]
+    assert events == ["begin", "fetch:admin-1", "update", "commit"]
     assert [row["previous_status"] for row in result] == ["selected", "backup"]
     assert len(audit_calls) == 1
     assert audit_calls[0] == {
-        "actor_user_id": None,
+        "actor_user_id": "admin-1",
         "action": "manual_review.clear_buckets",
         "target_type": "manual_review_batch",
-        "target_id": "all",
+        "target_id": "admin-1",
         "before_data": {"items": before},
         "after_data": {"items": after, "trigger": "scheduled"},
         "request_id": "request-1",
@@ -431,6 +435,7 @@ def test_discard_manual_candidates_uses_versioned_updates_and_one_audit(
         assert cur is cursor
         assert kwargs == {
             "region": "external",
+            "owner_user_id": "admin-1",
             "sentiment": "negative",
             "query": "keyword",
             "created_before": datetime(2026, 9, 1, tzinfo=timezone.utc).date(),
@@ -461,6 +466,7 @@ def test_discard_manual_candidates_uses_versioned_updates_and_one_audit(
             },
         ]
         assert kwargs == {
+            "owner_user_id": "admin-1",
             "actor_username": "admin-user",
             "actor_user_id": "admin-1",
             "expected_versions": {"article-1": 3, "article-2": 7},
@@ -580,7 +586,7 @@ def test_discard_manual_candidates_does_not_audit_empty_match(
     assert audit_calls == []
 
 
-def test_clear_review_buckets_does_not_audit_empty_match(
+def test_clear_review_buckets_for_owner_does_not_audit_empty_match(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter = object.__new__(db_postgres_core.PostgresAdapter)
@@ -595,7 +601,7 @@ def test_clear_review_buckets_does_not_audit_empty_match(
     monkeypatch.setattr(
         db_postgres_core.manual_reviews,
         "fetch_review_buckets_for_update",
-        lambda cur: [],
+        lambda cur, *, owner_user_id: [],
     )
     monkeypatch.setattr(
         db_postgres_core.manual_reviews,
@@ -608,9 +614,10 @@ def test_clear_review_buckets_does_not_audit_empty_match(
         lambda cur, **kwargs: audit_calls.append(kwargs),
     )
 
-    result = adapter.clear_review_buckets_as_user(
+    result = adapter.clear_review_buckets_for_owner_as_user(
+        owner_user_id="admin-1",
         actor_username="system:scheduled_clear",
-        actor_user_id=None,
+        actor_user_id="admin-1",
         trigger="scheduled",
     )
 

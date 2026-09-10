@@ -292,12 +292,11 @@ def _refresh_manual_clusters() -> int:
 
 
 def _clear_review_buckets() -> int:
-    from src.console.manual_filter_admin_service import clear_review_buckets
+    from src.console.manual_filter_admin_service import clear_all_review_buckets
     from src.workers import log_info
 
-    result = clear_review_buckets(
+    result = clear_all_review_buckets(
         actor_username="system:scheduled_clear",
-        actor_user_id=None,
         trigger="scheduled",
     )
     buckets = result["buckets"]

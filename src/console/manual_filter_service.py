@@ -21,6 +21,7 @@ from .manual_filter_query_service import (
 
 def list_candidates(
     *,
+    owner_user_id: str,
     limit: int = 30,
     offset: int = 0,
     region: Optional[str] = None,
@@ -35,6 +36,7 @@ def list_candidates(
     duty_unprocessed_only: bool = False,
 ) -> Dict[str, Any]:
     return _list_candidates(
+        owner_user_id=owner_user_id,
         limit=limit,
         offset=offset,
         region=region,
@@ -52,21 +54,30 @@ def list_candidates(
 def list_review(
     decision: str,
     *,
+    owner_user_id: str,
     limit: int = 30,
     offset: int = 0,
     report_type: str = DEFAULT_REPORT_TYPE,
 ) -> Dict[str, Any]:
-    return _list_review(decision, limit=limit, offset=offset, report_type=report_type)
+    return _list_review(
+        decision,
+        owner_user_id=owner_user_id,
+        limit=limit,
+        offset=offset,
+        report_type=report_type,
+    )
 
 
 def list_discarded(
     *,
+    owner_user_id: str,
     limit: int = 30,
     offset: int = 0,
     report_type: str = DEFAULT_REPORT_TYPE,
     q: Optional[str] = None,
 ) -> Dict[str, Any]:
     return _list_discarded(
+        owner_user_id=owner_user_id,
         limit=limit,
         offset=offset,
         report_type=report_type,
@@ -74,16 +85,32 @@ def list_discarded(
     )
 
 
-def status_counts(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, int]:
-    return _status_counts(report_type=report_type)
+def status_counts(
+    report_type: str = DEFAULT_REPORT_TYPE,
+    *,
+    owner_user_id: str,
+) -> Dict[str, int]:
+    return _status_counts(
+        owner_user_id=owner_user_id,
+        report_type=report_type,
+    )
 
 
 def trigger_clustering() -> Dict[str, Any]:
     return _trigger_clustering()
 
 
-def check_duplicates(*, report_type: str, decision: str) -> Dict[str, Any]:
-    return _check_duplicates(report_type=report_type, decision=decision)
+def check_duplicates(
+    *,
+    owner_user_id: str,
+    report_type: str,
+    decision: str,
+) -> Dict[str, Any]:
+    return _check_duplicates(
+        owner_user_id=owner_user_id,
+        report_type=report_type,
+        decision=decision,
+    )
 
 
 __all__ = [

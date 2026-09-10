@@ -137,6 +137,16 @@ CREATE TABLE public.console_users (
 
 
 --
+-- Name: active_console_admins; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.active_console_admins AS
+ SELECT id
+   FROM public.console_users
+  WHERE ((role = 'admin'::text) AND is_active AND (deleted_at IS NULL));
+
+
+--
 -- Name: duty_schedules; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -213,6 +223,7 @@ CREATE TABLE public.manual_clusters (
 
 CREATE TABLE public.manual_reviews (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
+    owner_user_id uuid NOT NULL,
     article_id text NOT NULL,
     status text NOT NULL,
     summary text,
@@ -543,8 +554,6 @@ CREATE TABLE public.shift_reviews (
     decided_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    admin_discarded_at timestamp with time zone,
-    admin_discarded_by_user_id uuid,
     finalized_batch_id uuid,
     finalized_rank integer,
     CONSTRAINT shift_reviews_decision_check CHECK ((decision = ANY (ARRAY['pending'::text, 'selected'::text, 'backup'::text, 'discarded'::text]))),
@@ -553,6 +562,18 @@ CREATE TABLE public.shift_reviews (
     CONSTRAINT shift_reviews_rank_check CHECK (((rank IS NULL) OR (rank > 0))),
     CONSTRAINT shift_reviews_report_type_check CHECK (((report_type IS NULL) OR (report_type = ANY (ARRAY['zongbao'::text, 'wanbao'::text])))),
     CONSTRAINT shift_reviews_version_check CHECK ((version > 0))
+);
+
+
+--
+-- Name: shift_review_admin_discards; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.shift_review_admin_discards (
+    owner_user_id uuid NOT NULL,
+    shift_review_id uuid NOT NULL,
+    discarded_at timestamp with time zone DEFAULT now() NOT NULL,
+    discarded_by_user_id uuid
 );
 
 
@@ -781,11 +802,11 @@ ALTER TABLE ONLY public.manual_clusters
 
 
 --
--- Name: manual_reviews manual_reviews_article_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: manual_reviews manual_reviews_owner_article_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.manual_reviews
-    ADD CONSTRAINT manual_reviews_article_id_key UNIQUE (article_id);
+    ADD CONSTRAINT manual_reviews_owner_article_unique UNIQUE (owner_user_id, article_id);
 
 
 --
@@ -898,6 +919,14 @@ ALTER TABLE ONLY public.shift_review_finalization_batches
 
 ALTER TABLE ONLY public.shift_reviews
     ADD CONSTRAINT shift_reviews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: shift_review_admin_discards shift_review_admin_discards_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_review_admin_discards
+    ADD CONSTRAINT shift_review_admin_discards_pkey PRIMARY KEY (owner_user_id, shift_review_id);
 
 
 --
@@ -1079,21 +1108,21 @@ CREATE INDEX manual_clusters_bucket_key_idx ON public.manual_clusters USING btre
 -- Name: manual_reviews_pending_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX manual_reviews_pending_idx ON public.manual_reviews USING btree (COALESCE(report_type, 'zongbao'::text), rank, article_id) WHERE (status = 'pending'::text);
+CREATE INDEX manual_reviews_pending_idx ON public.manual_reviews USING btree (owner_user_id, COALESCE(report_type, 'zongbao'::text), rank, article_id) WHERE (status = 'pending'::text);
 
 
 --
 -- Name: manual_reviews_status_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX manual_reviews_status_idx ON public.manual_reviews USING btree (status, COALESCE(report_type, 'zongbao'::text));
+CREATE INDEX manual_reviews_status_idx ON public.manual_reviews USING btree (owner_user_id, status, COALESCE(report_type, 'zongbao'::text));
 
 
 --
 -- Name: manual_reviews_status_report_type_rank_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX manual_reviews_status_report_type_rank_idx ON public.manual_reviews USING btree (status, COALESCE(report_type, 'zongbao'::text), rank, article_id);
+CREATE INDEX manual_reviews_status_report_type_rank_idx ON public.manual_reviews USING btree (owner_user_id, status, COALESCE(report_type, 'zongbao'::text), rank, article_id);
 
 
 --
@@ -1265,10 +1294,10 @@ CREATE INDEX shift_review_finalization_batches_shift_idx ON public.shift_review_
 
 
 --
--- Name: shift_reviews_admin_discarded_idx; Type: INDEX; Schema: public; Owner: -
+-- Name: shift_review_admin_discards_shift_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX shift_reviews_admin_discarded_idx ON public.shift_reviews USING btree (shift_id, admin_discarded_at DESC) WHERE (admin_discarded_at IS NOT NULL);
+CREATE INDEX shift_review_admin_discards_shift_idx ON public.shift_review_admin_discards USING btree (shift_review_id, owner_user_id);
 
 
 --
@@ -1505,6 +1534,14 @@ ALTER TABLE ONLY public.manual_reviews
 
 
 --
+-- Name: manual_reviews manual_reviews_owner_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manual_reviews
+    ADD CONSTRAINT manual_reviews_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: news_title_embeddings news_title_embeddings_article_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1569,11 +1606,27 @@ ALTER TABLE ONLY public.shift_review_finalization_batches
 
 
 --
--- Name: shift_reviews shift_reviews_admin_discarded_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: shift_review_admin_discards shift_review_admin_discards_discarded_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.shift_reviews
-    ADD CONSTRAINT shift_reviews_admin_discarded_by_user_id_fkey FOREIGN KEY (admin_discarded_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.shift_review_admin_discards
+    ADD CONSTRAINT shift_review_admin_discards_discarded_by_user_id_fkey FOREIGN KEY (discarded_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: shift_review_admin_discards shift_review_admin_discards_owner_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_review_admin_discards
+    ADD CONSTRAINT shift_review_admin_discards_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: shift_review_admin_discards shift_review_admin_discards_shift_review_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_review_admin_discards
+    ADD CONSTRAINT shift_review_admin_discards_shift_review_id_fkey FOREIGN KEY (shift_review_id) REFERENCES public.shift_reviews(id) ON DELETE CASCADE;
 
 
 --
@@ -1724,4 +1777,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260821120000'),
     ('20260902030306'),
     ('20260903120000'),
-    ('20260904120000');
+    ('20260904120000'),
+    ('20260910120000');

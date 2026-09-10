@@ -12,7 +12,6 @@ from src.adapters.db_postgres_manual_reviews import (
     CREATED_LOCAL_DATE_EXPRESSION,
     SCORE_FEEDBACK_JOIN,
     SEARCH_TEXT_EXPRESSION,
-    _build_manual_candidate_filters,
 )
 from src.domain.report_type import NEWS_REPORT_TYPES as VALID_REPORT_TYPES
 
@@ -26,7 +25,7 @@ _EDITABLE_FIELDS = (
     "notes",
 )
 _ADMIN_UNPROCESSED_SQL = """(
-    sr.admin_discarded_at IS NULL
+    admin_discard.shift_review_id IS NULL
     AND (
         mr.id IS NULL
         OR COALESCE(mr.status, 'pending') IN ('pending', 'discarded')
@@ -102,6 +101,7 @@ class ShiftReviewsNamespace:
         query: Optional[str] = None,
         created_before: Optional[date] = None,
         article_ids: Optional[Sequence[str]] = None,
+        viewer_user_id: Optional[str] = None,
         include_admin_state: bool = False,
         admin_discarded_only: bool = False,
         exclude_admin_discarded: bool = False,
@@ -121,6 +121,7 @@ class ShiftReviewsNamespace:
                 query=query,
                 created_before=created_before,
                 article_ids=article_ids,
+                viewer_user_id=viewer_user_id,
                 include_admin_state=include_admin_state,
                 admin_discarded_only=admin_discarded_only,
                 exclude_admin_discarded=exclude_admin_discarded,
@@ -163,9 +164,18 @@ class ShiftReviewsNamespace:
         with self._adapter._cursor() as cur:
             return fetch_shift_stats(cur, shift_id, report_type=report_type)
 
-    def fetch_admin_summaries(self, *, limit: int = 60) -> list[dict[str, Any]]:
+    def fetch_admin_summaries(
+        self,
+        *,
+        viewer_user_id: str,
+        limit: int = 60,
+    ) -> list[dict[str, Any]]:
         with self._adapter._cursor() as cur:
-            return fetch_admin_shift_summaries(cur, limit=limit)
+            return fetch_admin_shift_summaries(
+                cur,
+                viewer_user_id=viewer_user_id,
+                limit=limit,
+            )
 
 
 def fetch_shift_review_items(
@@ -181,6 +191,7 @@ def fetch_shift_review_items(
     query: Optional[str] = None,
     created_before: Optional[date] = None,
     article_ids: Optional[Sequence[str]] = None,
+    viewer_user_id: Optional[str] = None,
     include_admin_state: bool = False,
     admin_discarded_only: bool = False,
     exclude_admin_discarded: bool = False,
@@ -228,15 +239,25 @@ def fetch_shift_review_items(
         params.append(normalized_article_ids)
     if exclude_finalized:
         clauses.append("sr.finalized_batch_id IS NULL")
+    uses_admin_workspace = (
+        include_admin_state
+        or admin_discarded_only
+        or exclude_admin_discarded
+        or admin_unprocessed_only
+    )
+    if uses_admin_workspace and not viewer_user_id:
+        raise ValueError("viewer_user_id is required for administrator state")
     if admin_unprocessed_only:
         clauses.append(_ADMIN_UNPROCESSED_SQL)
     elif admin_discarded_only:
-        clauses.append("sr.admin_discarded_at IS NOT NULL")
+        clauses.append("admin_discard.shift_review_id IS NOT NULL")
     elif exclude_admin_discarded:
-        clauses.append("sr.admin_discarded_at IS NULL")
+        clauses.append("admin_discard.shift_review_id IS NULL")
     where_sql = " AND ".join(clauses)
     manual_join_sql = (
-        "LEFT JOIN manual_reviews mr ON mr.article_id = ns.article_id"
+        """LEFT JOIN manual_reviews mr
+          ON mr.article_id = ns.article_id
+         AND mr.owner_user_id = %s"""
         if include_admin_state or admin_unprocessed_only
         else ""
     )
@@ -253,19 +274,27 @@ def fetch_shift_review_items(
     )
     admin_discard_select_sql = (
         """,
-        sr.admin_discarded_at,
-        sr.admin_discarded_by_user_id,
+        admin_discard.discarded_at AS admin_discarded_at,
+        admin_discard.discarded_by_user_id AS admin_discarded_by_user_id,
         admin_discarder.display_name AS admin_discarded_by_display_name
         """
         if include_admin_state
         else ""
     )
     admin_discard_join_sql = (
-        """LEFT JOIN console_users admin_discarder
-          ON admin_discarder.id = sr.admin_discarded_by_user_id"""
-        if include_admin_state
+        """LEFT JOIN shift_review_admin_discards admin_discard
+          ON admin_discard.shift_review_id = sr.id
+         AND admin_discard.owner_user_id = %s
+        LEFT JOIN console_users admin_discarder
+          ON admin_discarder.id = admin_discard.discarded_by_user_id"""
+        if uses_admin_workspace
         else ""
     )
+    join_params: list[Any] = []
+    if include_admin_state or admin_unprocessed_only:
+        join_params.append(viewer_user_id)
+    if uses_admin_workspace:
+        join_params.append(viewer_user_id)
     cur.execute(
         f"""
         SELECT count(*) AS total
@@ -277,9 +306,10 @@ def fetch_shift_review_items(
           ON sr.shift_id = s.id
          AND sr.article_id = ns.article_id
         {manual_join_sql}
+        {admin_discard_join_sql}
         WHERE {where_sql}
         """,
-        tuple(params),
+        tuple(join_params + params),
     )
     total_row = cur.fetchone()
     total = int(total_row["total"]) if total_row else 0
@@ -335,7 +365,7 @@ def fetch_shift_review_items(
             ns.article_id
         LIMIT %s OFFSET %s
         """,
-        tuple(params + [bounded_limit, bounded_offset]),
+        tuple(join_params + params + [bounded_limit, bounded_offset]),
     )
     return [dict(row) for row in cur.fetchall()], total
 
@@ -353,13 +383,21 @@ def bulk_discard_shift_candidates(
     dry_run: bool = True,
 ) -> dict[str, int]:
     """Discard pending candidates in one shift without per-row versions."""
-    clauses, filter_params = _build_manual_candidate_filters(
-        region=region,
-        sentiment=sentiment,
-        query=query,
-        created_before=created_before,
-        report_type=None,
-    )
+    clauses = ["mr.status = %s", "ns.status = 'ready_for_export'"]
+    filter_params: list[Any] = ["pending"]
+    if region in {"internal", "external"}:
+        clauses.append("ns.is_beijing_related = %s")
+        filter_params.append(region == "internal")
+    if sentiment in {"positive", "negative"}:
+        clauses.append("ns.sentiment_label = %s")
+        filter_params.append(sentiment)
+    normalized_query = (query or "").strip()
+    if normalized_query:
+        clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
+        filter_params.append(f"%{normalized_query}%")
+    if created_before is not None:
+        clauses.append(f"{CREATED_LOCAL_DATE_EXPRESSION} < %s")
+        filter_params.append(created_before)
     where_sql = " AND ".join(clauses)
     matched_sql = f"""
         SELECT
@@ -623,8 +661,6 @@ def fetch_shift_review(
             article_id,
             created_by_user_id,
             updated_by_user_id,
-            admin_discarded_at,
-            admin_discarded_by_user_id,
             report_type,
             decision,
             rank,
@@ -771,29 +807,61 @@ def set_admin_discarded(
         raise ValueError("值班审阅记录不存在")
     cur.execute(
         """
-        UPDATE shift_reviews
-        SET admin_discarded_at = CASE
-                WHEN %s THEN COALESCE(admin_discarded_at, now())
-                ELSE NULL
-            END,
-            admin_discarded_by_user_id = CASE
-                WHEN %s THEN %s::uuid
-                ELSE NULL
-            END
-        WHERE id = %s
-        RETURNING *
+        SELECT
+            discarded_at AS admin_discarded_at,
+            discarded_by_user_id AS admin_discarded_by_user_id
+        FROM shift_review_admin_discards
+        WHERE owner_user_id = %s
+          AND shift_review_id = %s
+        FOR UPDATE
         """,
-        (
-            discarded,
-            discarded,
-            actor_user_id,
-            existing["id"],
-        ),
+        (actor_user_id, existing["id"]),
     )
-    row = cur.fetchone()
-    if not row:
-        raise RuntimeError("管理员放弃状态保存失败")
-    return existing, dict(row)
+    prior_discard = cur.fetchone() or {}
+    before = {**existing, **dict(prior_discard)}
+    if discarded:
+        cur.execute(
+            """
+            INSERT INTO shift_review_admin_discards (
+                owner_user_id,
+                shift_review_id,
+                discarded_at,
+                discarded_by_user_id
+            )
+            VALUES (%s, %s, now(), %s)
+            ON CONFLICT (owner_user_id, shift_review_id) DO UPDATE
+            SET discarded_by_user_id = EXCLUDED.discarded_by_user_id
+            """,
+            (actor_user_id, existing["id"], actor_user_id),
+        )
+    else:
+        cur.execute(
+            """
+            DELETE FROM shift_review_admin_discards
+            WHERE owner_user_id = %s
+              AND shift_review_id = %s
+            """,
+            (actor_user_id, existing["id"]),
+        )
+    cur.execute(
+        """
+        SELECT
+            ad.discarded_at AS admin_discarded_at,
+            ad.discarded_by_user_id AS admin_discarded_by_user_id,
+            u.display_name AS admin_discarded_by_display_name
+        FROM shift_review_admin_discards ad
+        LEFT JOIN console_users u ON u.id = ad.discarded_by_user_id
+        WHERE ad.owner_user_id = %s
+          AND ad.shift_review_id = %s
+        """,
+        (actor_user_id, existing["id"]),
+    )
+    saved_discard = cur.fetchone() or {
+        "admin_discarded_at": None,
+        "admin_discarded_by_user_id": None,
+        "admin_discarded_by_display_name": None,
+    }
+    return before, {**existing, **dict(saved_discard)}
 
 
 def finalize_shift_review_batch(
@@ -1149,26 +1217,6 @@ def fetch_shift_stats(
     selected = int(row.get("selected") or 0)
     backup = int(row.get("backup") or 0)
     discarded = int(row.get("discarded") or 0)
-    cur.execute(
-        """
-        SELECT
-            COALESCE(mr.report_type, 'zongbao') AS report_type,
-            max(mr.decided_at) AS archived_at
-        FROM duty_shifts s
-        JOIN news_summaries ns
-          ON ns.created_at >= s.starts_at
-         AND ns.created_at < s.ends_at
-        JOIN manual_reviews mr ON mr.article_id = ns.article_id
-        WHERE s.id = %s
-          AND mr.status = 'exported'
-        GROUP BY COALESCE(mr.report_type, 'zongbao')
-        """,
-        (shift_id,),
-    )
-    archive_rows = {
-        str(item["report_type"]): item["archived_at"]
-        for item in cur.fetchall()
-    }
     return {
         "total": total,
         "decided": decided,
@@ -1177,16 +1225,13 @@ def fetch_shift_stats(
         "backup": backup,
         "discarded": discarded,
         "exported": discarded,
-        "archive_status": {
-            "zongbao": archive_rows.get("zongbao"),
-            "wanbao": archive_rows.get("wanbao"),
-        },
     }
 
 
 def fetch_admin_shift_summaries(
     cur: psycopg.Cursor,
     *,
+    viewer_user_id: str,
     limit: int = 60,
 ) -> list[dict[str, Any]]:
     cur.execute(
@@ -1258,7 +1303,12 @@ def fetch_admin_shift_summaries(
         LEFT JOIN shift_reviews sr
           ON sr.shift_id = s.id
          AND sr.article_id = ns.article_id
-        LEFT JOIN manual_reviews mr ON mr.article_id = ns.article_id
+        LEFT JOIN manual_reviews mr
+          ON mr.article_id = ns.article_id
+         AND mr.owner_user_id = %s
+        LEFT JOIN shift_review_admin_discards admin_discard
+          ON admin_discard.shift_review_id = sr.id
+         AND admin_discard.owner_user_id = %s
         WHERE s.starts_at <= CURRENT_TIMESTAMP
         GROUP BY
             s.id,
@@ -1272,7 +1322,7 @@ def fetch_admin_shift_summaries(
         ORDER BY s.ends_at DESC
         LIMIT %s
         """,
-        (max(1, min(limit, 365)),),
+        (viewer_user_id, viewer_user_id, max(1, min(limit, 365))),
     )
     return [dict(row) for row in cur.fetchall()]
 

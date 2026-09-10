@@ -84,6 +84,7 @@ def report_type_expr(alias: str = "") -> str:
 
 def _build_manual_review_filters(
     *,
+    owner_user_id: str,
     status: Optional[str] = None,
     only_ready: bool = False,
     region: Optional[str] = None,
@@ -92,8 +93,8 @@ def _build_manual_review_filters(
     query: Optional[str] = None,
     duty_unprocessed_only: bool = False,
 ) -> Tuple[List[str], List[Any]]:
-    clauses: List[str] = []
-    params: List[Any] = []
+    clauses: List[str] = ["mr.owner_user_id = %s"]
+    params: List[Any] = [owner_user_id]
     if status:
         clauses.append("mr.status = %s")
         params.append(status)
@@ -119,11 +120,23 @@ def _build_manual_review_filters(
     return clauses, params
 
 
-def manual_review_max_rank(cur: psycopg.Cursor, status: str, *, report_type: Optional[str] = None) -> float:
+def manual_review_max_rank(
+    cur: psycopg.Cursor,
+    status: str,
+    *,
+    owner_user_id: str,
+    report_type: Optional[str] = None,
+) -> float:
     type_expr = report_type_expr()
     normalized_report_type = normalize_report_type_value(report_type) or "zongbao"
-    query = f"SELECT COALESCE(MAX(rank), 0) AS max_rank FROM manual_reviews WHERE status = %s AND {type_expr} = %s"
-    cur.execute(query, (status, normalized_report_type))
+    query = f"""
+        SELECT COALESCE(MAX(rank), 0) AS max_rank
+        FROM manual_reviews
+        WHERE owner_user_id = %s
+          AND status = %s
+          AND {type_expr} = %s
+    """
+    cur.execute(query, (owner_user_id, status, normalized_report_type))
     row = cur.fetchone() or {}
     try:
         return float(row.get("max_rank") or 0.0)

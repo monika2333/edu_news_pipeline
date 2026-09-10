@@ -38,7 +38,7 @@ class FakeManualReviewsNamespace:
     def __init__(self, adapter: FakeClusterAdapter) -> None:
         self._adapter = adapter
 
-    def fetch_pending_for_cluster(self, **kwargs: Any) -> list[dict[str, Any]]:
+    def fetch_cluster_sources(self, **kwargs: Any) -> list[dict[str, Any]]:
         del kwargs
         return [dict(record) for record in self._adapter.records]
 

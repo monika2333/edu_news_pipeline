@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 DEFAULT_CLUSTER_THRESHOLD = 0.9
 MANUAL_CLUSTER_LOCK_ID = 9001001
+MANUAL_CLUSTER_SOURCE_LIMIT = 5000
 CLUSTER_BUCKET_KEYS = (
     "internal_positive",
     "internal_negative",
@@ -173,7 +174,10 @@ def refresh_clusters(
         return False
 
     try:
-        records = _collect_pending(None, None, fetch_limit=5000, adapter=adapter)
+        records = _collect_cluster_sources(
+            fetch_limit=MANUAL_CLUSTER_SOURCE_LIMIT,
+            adapter=adapter,
+        )
         embedding_map = _load_title_embedding_map(
             records,
             adapter=adapter,
@@ -226,30 +230,18 @@ def refresh_clusters(
         adapter.release_advisory_lock(MANUAL_CLUSTER_LOCK_ID)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Collect pending items for clustering
+# Collect recent ready-for-export items for the shared cluster cache
 # ─────────────────────────────────────────────────────────────────────────────
-def _collect_pending(
-    region: Optional[str],
-    sentiment: Optional[str],
-    fetch_limit: int = 5000,
+def _collect_cluster_sources(
+    fetch_limit: int = MANUAL_CLUSTER_SOURCE_LIMIT,
     *,
     adapter: Any = None,
 ) -> List[Dict[str, Any]]:
     adapter = adapter or get_adapter()
-    rows = adapter.manual_reviews.fetch_pending_for_cluster(  # type: ignore[attr-defined]
-        region=region,
-        sentiment=sentiment,
+    rows = adapter.manual_reviews.fetch_cluster_sources(  # type: ignore[attr-defined]
         fetch_limit=fetch_limit,
     )
-    records: List[Dict[str, Any]] = []
-    for row in rows:
-        record = serialize_manual_filter_item(
-            dict(row),
-            fallback_status="pending",
-            report_type=DEFAULT_REPORT_TYPE,
-        )
-        records.append(record)
-    return records
+    return [dict(row) for row in rows]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -258,6 +250,7 @@ def _collect_pending(
 
 def cluster_pending(
     *,
+    owner_user_id: str,
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
     limit: int = 10,
@@ -280,6 +273,7 @@ def cluster_pending(
 
     bucket_key = _bucket_key_from_filters(region, sentiment)
     rows = adapter.manual_reviews.fetch_clusters(  # type: ignore[attr-defined]
+        owner_user_id=owner_user_id,
         bucket_key=bucket_key,
         duty_unprocessed_only=duty_unprocessed_only,
     )

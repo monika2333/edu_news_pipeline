@@ -112,7 +112,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 该查询**不涉及 `manual_reviews` 或 `shift_reviews`**：凡是过阈值的文章都会进入 `brief_items`，与人工是否采纳无关。这条路径产出的是供人工参考的初稿，不是最终报送内容。
 
-`manual_reviews.status = 'exported'` 由控制台的「归档」操作写入（`POST /api/manual-filter/archive` → `manual_filter_decisions.archive_items`），是管理员的手动动作，与本阶段的导出脚本无关。
+`manual_reviews.status = 'exported'` 由控制台的「归档」操作写入（`POST /api/manual_filter/archive` → `manual_filter_admin_service.archive_items`），是管理员的手动动作，与本阶段的导出脚本无关。
 
 ---
 
@@ -122,11 +122,12 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 ### `manual_reviews` —— 管理员工作区
 
-- **一篇文章一行**（`article_id` 唯一）
+- 每位管理员对每篇文章各有一行，归属由 `owner_user_id` 标识；唯一约束为 `owner_user_id + article_id`
+- 外部重要性过滤通过时，为当时所有在职管理员（`role = 'admin' AND is_active AND deleted_at IS NULL`）各预写一行；新管理员只接收账号创建后的新闻，不回填历史
 - 状态：`pending` / `selected` / `backup` / `discarded` / `exported`
 - `report_type` 只有 `zongbao` / `wanbao`，且**只在采纳时才有意义**——`pending` 状态下这个值不代表任何东西
-- `version` 用于乐观锁，防止两个管理员同时改同一条
-- 汇总审阅的「一键清空」接口与 `clear-review-buckets` 命令会把全部 `selected` / `backup` 行批量置为 `discarded`，同时清空排序值但保留摘要、来源、笔记、评分和原报别。命令行路径使用 `decided_by = 'system:scheduled_clear'` 标记系统操作，`decided_by_user_id` 保持为空。
+- `version` 用于乐观锁，防止同一管理员的并发请求覆盖自己的新决定
+- 汇总审阅的「一键清空」只把当前管理员自己的 `selected` / `backup` 行置为 `discarded`；`clear-review-buckets` 命令显式清空所有管理员。两条路径都清空排序值但保留摘要、来源、笔记、评分和原报别；命令行路径使用 `decided_by = 'system:scheduled_clear'` 标记系统操作，`decided_by_user_id` 保持为空
 
 ### `shift_reviews` —— 值班编辑工作区
 
@@ -140,9 +141,9 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 值班编辑先做初筛，管理员通过"送入管理员工作区"把结果导入 `manual_reviews`（`import_shift_reviews_into_manual`）。**导入时会复制内容字段**（编辑过的摘要等），此后两张表各自独立演进。
 
-管理员查看值班结果时，默认的「未处理」范围会重新展示在全量新闻筛选中已被 `discarded` 的文章，给值班编辑的采纳或备选结论保留一次复核机会。此时全量页的放弃记录只作为后台历史存在：值班结果卡片按「未处理」呈现，管理员可以直接采纳、备选或放弃，不需要先撤回原决定，采纳或备选时也不触发版本选择。只有文章已在管理员工作区采纳、备选或归档，或者管理员已在值班结果页明确放弃（`shift_reviews.admin_discarded_at`）时，才从「未处理」中排除；切换到「全部」仍可查看该栏目的完整值班结果。值班结果页的栏目数字必须与当前「未处理 / 全部」范围使用相同口径。
+管理员查看值班结果时，默认的「未处理」范围会重新展示在自己全量新闻筛选中已被 `discarded` 的文章，给值班编辑的采纳或备选结论保留一次复核机会。此时全量页的放弃记录只作为当前管理员自己的后台历史存在：值班结果卡片按「未处理」呈现，管理员可以直接采纳、备选或放弃，不需要先撤回原决定，采纳或备选时也不触发版本选择。只有文章已在当前管理员工作区采纳、备选或归档，或者当前管理员已在值班结果页明确放弃时，才从其「未处理」中排除。管理员驳回记录存放在 `shift_review_admin_discards`，以 `owner_user_id + shift_review_id` 唯一；接口仍以 `admin_discarded_at`、`admin_discarded_by_user_id`、`admin_discarded_by_display_name` 返回当前查看者自己的记录。切换到「全部」仍可查看该栏目的完整值班结果，栏目数字必须与当前查看者的「未处理 / 全部」范围使用相同口径。
 
-对称地，管理员全量新闻筛选页可启用「只看值班编辑未处理」过滤：只要新闻存在一条属于未取消班次的 `shift_reviews` 记录，就视为值班编辑已处理，不区分 `decision`（包括 `pending`）；已取消班次的记录不生效，也不按新闻入库时间与班次时间窗另作判断。该过滤只在读取时收窄普通浏览、检索和聚类展示，不改变 `manual_clusters` 的全量 pending 缓存；开启过滤后执行「全部放弃」时，预览计数和实际写入范围必须同步收窄到当前可见的未处理新闻。
+对称地，管理员全量新闻筛选页可启用「只看值班编辑未处理」过滤：只要新闻存在一条属于未取消班次的 `shift_reviews` 记录，就视为值班编辑已处理，不区分 `decision`（包括 `pending`）；已取消班次的记录不生效，也不按新闻入库时间与班次时间窗另作判断。该过滤只在读取时收窄当前管理员的普通浏览、检索和聚类展示；开启过滤后执行「全部放弃」时，预览计数和实际写入范围必须同步收窄到当前可见的未处理新闻。`manual_clusters` 是共享缓存，固定从 `news_summaries.status = 'ready_for_export'` 中按 `created_at` 取最新 5000 条，完全不读取任何管理员的决定；展示时才与当前管理员自己的 pending 求交，未进入缓存的 pending 以 `single-<article_id>` 单条聚类兜底。
 
 ### ⚠️ 契约级约束：收录时间与班次划分统一依据 `news_summaries.created_at`
 
@@ -251,6 +252,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 |---|---|---|
 | `manual_reviews` | 管理员的采纳/放弃决定 | **权威，业务核心** |
 | `shift_reviews` | 值班编辑的班次内决定 | **权威，业务核心** |
+| `shift_review_admin_discards` | 每位管理员对值班审阅记录的独立驳回决定 | **权威，业务核心** |
 | `shift_review_finalization_batches` | 班次定稿批次 | 权威 |
 | `duty_shifts` | 具体班次（谁、什么时间段） | 权威 |
 | `duty_schedules` | 七天轮值模板，用于生成班次 | 权威 |
@@ -288,9 +290,11 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | 约束 | 原因 | 破坏后果 |
 |---|---|---|
 | `news_summaries.created_at` 不可变 | 班次划分的唯一依据 | 新闻在班次间跳动，复核记录对不上 |
-| `manual_reviews.article_id` 唯一 | 一篇文章只有一个管理员决定 | 状态冲突，采纳结果不确定 |
+| `manual_reviews(owner_user_id, article_id)` 唯一 | 每位管理员对每篇文章只有一份独立决定 | 同一工作区重复行或管理员之间互相覆盖 |
+| 入池为每位在职管理员各写一行 | 管理员候选池采用预写且彼此隔离 | 新闻缺失、重复或新决定被覆盖 |
 | 各来源 `article_id` 必须稳定 | 全链路的关联键 | 同一篇文章重复入库，去重失效 |
 | `detail_fetched_at` 与正文成对写入 | 缺正文修复的判据 | 数据被反复扫描或永久跳过 |
 | `manual_clusters` 是缓存 | 由计划任务整表重建 | ——（可安全清空） |
+| 管理员聚类取数与人工决定无关 | 共享缓存只覆盖最新 5000 条可导出新闻，展示时再按查看者 pending 过滤 | 一位管理员的进度改变其他人的聚类结果 |
 | 聚类不区分报别 | 待筛选池本来就不分报别 | 加回报别维度会导致 `cluster_id` 唯一约束冲突 |
 | `report_type` 的两个枚举不可合并 | 新闻报别两值，报送稿类型三值（含 `feedback`） | 值班编辑下拉出现"反馈"，或报送存档无法录入反馈 |

@@ -16,6 +16,7 @@ def fetch_manual_review_rows(
     cur: psycopg.Cursor,
     article_ids: Sequence[str],
     *,
+    owner_user_id: str,
     for_update: bool = False,
 ) -> list[dict[str, Any]]:
     normalized_ids = [
@@ -45,11 +46,12 @@ def fetch_manual_review_rows(
             created_at,
             updated_at
         FROM manual_reviews
-        WHERE article_id = ANY(%s)
+        WHERE owner_user_id = %s
+          AND article_id = ANY(%s)
         ORDER BY article_id
         {lock_sql}
         """,
-        (normalized_ids,),
+        (owner_user_id, normalized_ids),
     )
     return [dict(row) for row in cur.fetchall()]
 
@@ -79,6 +81,7 @@ def allocate_manual_review_decision_ranks(
     cur: psycopg.Cursor,
     updates: Sequence[Mapping[str, Any]],
     *,
+    owner_user_id: str,
     report_type: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     cur.execute(
@@ -103,6 +106,7 @@ def allocate_manual_review_decision_ranks(
             next_rank[key] = manual_review_max_rank(
                 cur,
                 status,
+                owner_user_id=owner_user_id,
                 report_type=target_report_type,
             )
         next_rank[key] += 1
@@ -115,6 +119,7 @@ def update_manual_review_statuses_with_versions(
     cur: psycopg.Cursor,
     updates: Sequence[Mapping[str, Any]],
     *,
+    owner_user_id: str,
     actor_username: str,
     actor_user_id: Optional[str],
     expected_versions: Mapping[str, int],
@@ -132,7 +137,12 @@ def update_manual_review_statuses_with_versions(
         return [], []
     if len(article_ids) != len(set(article_ids)):
         raise ValueError("A manual review appears more than once in one update")
-    before = fetch_manual_review_rows(cur, article_ids, for_update=True)
+    before = fetch_manual_review_rows(
+        cur,
+        article_ids,
+        owner_user_id=owner_user_id,
+        for_update=True,
+    )
     if len(before) != len(article_ids):
         found = {str(row["article_id"]) for row in before}
         missing = sorted(set(article_ids) - found)
@@ -163,7 +173,8 @@ def update_manual_review_statuses_with_versions(
                 report_type = COALESCE(%s, report_type),
                 version = version + 1,
                 updated_at = now()
-            WHERE article_id = %s
+            WHERE owner_user_id = %s
+              AND article_id = %s
               AND version = %s
             RETURNING
                 id,
@@ -189,6 +200,7 @@ def update_manual_review_statuses_with_versions(
                 actor_user_id,
                 item.get("decided_at"),
                 target_report_type,
+                owner_user_id,
                 article_id,
                 current["version"],
             ),
@@ -206,6 +218,7 @@ def update_manual_review_summaries_with_versions(
     cur: psycopg.Cursor,
     edits: Mapping[str, Mapping[str, Any]],
     *,
+    owner_user_id: str,
     actor_username: str,
     actor_user_id: Optional[str],
     expected_versions: Mapping[str, int],
@@ -220,7 +233,12 @@ def update_manual_review_summaries_with_versions(
     if not normalized_edits:
         return [], []
     article_ids = list(normalized_edits)
-    before = fetch_manual_review_rows(cur, article_ids, for_update=True)
+    before = fetch_manual_review_rows(
+        cur,
+        article_ids,
+        owner_user_id=owner_user_id,
+        for_update=True,
+    )
     if len(before) != len(article_ids):
         found = {str(row["article_id"]) for row in before}
         missing = sorted(set(article_ids) - found)
@@ -260,7 +278,8 @@ def update_manual_review_summaries_with_versions(
                 report_type = COALESCE(%s, report_type),
                 version = version + 1,
                 updated_at = now()
-            WHERE article_id = %s
+            WHERE owner_user_id = %s
+              AND article_id = %s
               AND version = %s
             RETURNING
                 id,
@@ -287,6 +306,7 @@ def update_manual_review_summaries_with_versions(
                 actor_username,
                 actor_user_id,
                 target_report_type,
+                owner_user_id,
                 article_id,
                 current["version"],
             ),
@@ -304,6 +324,7 @@ def update_manual_review_order_as_user(
     cur: psycopg.Cursor,
     updates: Sequence[Mapping[str, Any]],
     *,
+    owner_user_id: str,
     actor_username: str,
     actor_user_id: Optional[str],
     report_type: Optional[str] = None,
@@ -319,7 +340,12 @@ def update_manual_review_order_as_user(
         return [], []
     if len(article_ids) != len(set(article_ids)):
         raise ValueError("A manual review appears more than once in one order")
-    before = fetch_manual_review_rows(cur, article_ids, for_update=True)
+    before = fetch_manual_review_rows(
+        cur,
+        article_ids,
+        owner_user_id=owner_user_id,
+        for_update=True,
+    )
     if len(before) != len(article_ids):
         found = {str(row["article_id"]) for row in before}
         missing = sorted(set(article_ids) - found)
@@ -342,7 +368,8 @@ def update_manual_review_order_as_user(
                 decided_at = COALESCE(decided_at, now()),
                 report_type = COALESCE(%s, report_type),
                 updated_at = now()
-            WHERE article_id = %s
+            WHERE owner_user_id = %s
+              AND article_id = %s
             RETURNING
                 id,
                 article_id,
@@ -366,6 +393,7 @@ def update_manual_review_order_as_user(
                 actor_username,
                 actor_user_id,
                 target_report_type,
+                owner_user_id,
                 article_id,
             ),
         )
@@ -375,9 +403,58 @@ def update_manual_review_order_as_user(
         after.append(dict(row))
     return before, after
 
+
+def clear_all_review_buckets(
+    cur: psycopg.Cursor,
+    *,
+    actor_username: str,
+) -> list[dict[str, Any]]:
+    """Discard selected and backup rows across every explicit owner workspace."""
+    cur.execute(
+        """
+        WITH targets AS (
+            SELECT id, status AS previous_status
+            FROM manual_reviews
+            WHERE status IN ('selected', 'backup')
+            FOR UPDATE
+        )
+        UPDATE manual_reviews mr
+        SET status = 'discarded',
+            rank = NULL,
+            decided_by = %s,
+            decided_by_user_id = NULL,
+            decided_at = now(),
+            version = mr.version + 1,
+            updated_at = now()
+        FROM targets
+        WHERE mr.id = targets.id
+        RETURNING
+            mr.id,
+            mr.owner_user_id,
+            mr.article_id,
+            mr.status,
+            mr.summary,
+            mr.rank,
+            mr.notes,
+            mr.score,
+            mr.decided_by,
+            mr.decided_by_user_id,
+            mr.decided_at,
+            mr.manual_llm_source,
+            mr.report_type,
+            mr.version,
+            mr.created_at,
+            mr.updated_at,
+            targets.previous_status
+        """,
+        (actor_username,),
+    )
+    return [dict(row) for row in cur.fetchall()]
+
 __all__ = [
     "_validate_expected_versions",
     "allocate_manual_review_decision_ranks",
+    "clear_all_review_buckets",
     "fetch_manual_review_rows",
     "update_manual_review_order_as_user",
     "update_manual_review_statuses_with_versions",

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Dict, Optional
 
 import psycopg
 
@@ -8,7 +8,12 @@ from src.adapters.db_postgres_manual_reviews._base import report_type_expr
 from src.domain.report_type import normalize_report_type as normalize_report_type_value
 
 
-def manual_review_status_counts(cur: psycopg.Cursor, *, report_type: Optional[str] = None) -> Dict[str, int]:
+def manual_review_status_counts(
+    cur: psycopg.Cursor,
+    *,
+    owner_user_id: str,
+    report_type: Optional[str] = None,
+) -> Dict[str, int]:
     type_expr = report_type_expr()
     normalized_report_type = normalize_report_type_value(report_type) or "zongbao"
     query = f"""
@@ -25,8 +30,9 @@ def manual_review_status_counts(cur: psycopg.Cursor, *, report_type: Optional[st
                 WHERE status = 'exported' AND {type_expr} = %s
             ) AS exported
         FROM manual_reviews
+        WHERE owner_user_id = %s
     """
-    cur.execute(query, (normalized_report_type,) * 3)
+    cur.execute(query, (normalized_report_type,) * 3 + (owner_user_id,))
     row = cur.fetchone() or {}
     return {
         "pending": int(row.get("pending") or 0),
@@ -37,29 +43,6 @@ def manual_review_status_counts(cur: psycopg.Cursor, *, report_type: Optional[st
     }
 
 
-def manual_review_pending_count(cur: psycopg.Cursor, *, report_type: Optional[str] = None) -> int:
-    clauses = ["mr.status = 'pending'", "ns.status = 'ready_for_export'"]
-    params: List[Any] = []
-    type_expr = report_type_expr("mr")
-    normalized_report_type = normalize_report_type_value(report_type)
-    if normalized_report_type:
-        clauses.append(f"{type_expr} = %s")
-        params.append(normalized_report_type)
-    where_sql = " AND ".join(clauses)
-    query = f"""
-        SELECT COUNT(*) AS total
-        FROM manual_reviews mr
-        JOIN news_summaries ns ON ns.article_id = mr.article_id
-        WHERE {where_sql}
-    """
-    cur.execute(query, tuple(params))
-    row = cur.fetchone() or {}
-    try:
-        return int(row.get("total") or 0)
-    except Exception:
-        return 0
-
 __all__ = [
-    "manual_review_pending_count",
     "manual_review_status_counts",
 ]

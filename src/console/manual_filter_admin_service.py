@@ -17,6 +17,12 @@ def _require_client_versions(user: ConsoleUser) -> bool:
     return user.method == "session"
 
 
+def _workspace_user_id(user: ConsoleUser) -> str:
+    if user.role != "admin" or not user.user_id:
+        raise PermissionError("需要管理员账号才能访问工作区")
+    return str(user.user_id)
+
+
 def _version_map(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
     return {
         str(row["article_id"]): int(row["version"])
@@ -55,6 +61,7 @@ def bulk_decide(
     report_type: str = DEFAULT_REPORT_TYPE,
     request_id: Optional[str] = None,
 ) -> dict[str, Any]:
+    owner_user_id = _workspace_user_id(actor)
     selected = _normalize_ids(selected_ids)
     backup = _normalize_ids(backup_ids)
     discarded = _normalize_ids(discarded_ids)
@@ -103,7 +110,7 @@ def bulk_decide(
     after = get_adapter().update_manual_review_statuses_as_user(
         updates,
         actor_username=actor.username,
-        actor_user_id=actor.user_id,
+        actor_user_id=owner_user_id,
         expected_versions=versions,
         require_versions=_require_client_versions(actor),
         action="manual_review.decide",
@@ -124,6 +131,7 @@ def save_edits(
     report_type: str = DEFAULT_REPORT_TYPE,
     request_id: Optional[str] = None,
 ) -> dict[str, Any]:
+    owner_user_id = _workspace_user_id(actor)
     del report_type
     normalized: dict[str, dict[str, Any]] = {}
     for article_id, payload in edits.items():
@@ -147,7 +155,7 @@ def save_edits(
     after = get_adapter().update_manual_review_summaries_as_user(
         normalized,
         actor_username=actor.username,
-        actor_user_id=actor.user_id,
+        actor_user_id=owner_user_id,
         expected_versions=versions,
         require_versions=_require_client_versions(actor),
         report_type=None,
@@ -167,6 +175,7 @@ def archive_items(
     report_type: str = DEFAULT_REPORT_TYPE,
     request_id: Optional[str] = None,
 ) -> dict[str, Any]:
+    owner_user_id = _workspace_user_id(actor)
     target_ids = _normalize_ids(article_ids)
     del report_type
     timestamp = datetime.now(timezone.utc)
@@ -183,7 +192,7 @@ def archive_items(
     after = get_adapter().update_manual_review_statuses_as_user(
         updates,
         actor_username=actor.username,
-        actor_user_id=actor.user_id,
+        actor_user_id=owner_user_id,
         expected_versions=versions,
         require_versions=_require_client_versions(actor),
         action="manual_review.archive",
@@ -205,6 +214,7 @@ def update_ranks(
     report_type: str = DEFAULT_REPORT_TYPE,
     request_id: Optional[str] = None,
 ) -> dict[str, int]:
+    owner_user_id = _workspace_user_id(actor)
     selected_ids = _normalize_ids(selected_order)
     backup_ids = _normalize_ids(backup_order)
     _ensure_disjoint({"selected": selected_ids, "backup": backup_ids})
@@ -268,7 +278,7 @@ def update_ranks(
         review_updates,
         category_updates,
         actor_username=actor.username,
-        actor_user_id=actor.user_id,
+        actor_user_id=owner_user_id,
         report_type=target_report_type,
         request_id=request_id,
     )
@@ -291,10 +301,12 @@ def bulk_discard_candidates(
     duty_unprocessed_only: bool = False,
     request_id: Optional[str] = None,
 ) -> dict[str, int]:
+    owner_user_id = _workspace_user_id(actor)
     validate_bulk_discard_bucket(region=region, sentiment=sentiment)
     normalized_query = (query or "").strip() or None
     adapter = get_adapter()
     matched = adapter.manual_reviews.count_candidates_before_date(
+        owner_user_id=owner_user_id,
         region=region,
         sentiment=sentiment,
         query=normalized_query,
@@ -311,7 +323,7 @@ def bulk_discard_candidates(
         created_before=created_before,
         report_type=None,
         actor_username=actor.username,
-        actor_user_id=actor.user_id,
+        actor_user_id=owner_user_id,
         duty_unprocessed_only=duty_unprocessed_only,
         request_id=request_id,
     )
@@ -324,12 +336,16 @@ def bulk_discard_candidates(
 
 def clear_review_buckets(
     *,
+    owner_user_id: str,
     actor_username: str,
-    actor_user_id: Optional[str],
+    actor_user_id: str,
     trigger: str,
     request_id: Optional[str] = None,
 ) -> dict[str, Any]:
-    after = get_adapter().clear_review_buckets_as_user(
+    if owner_user_id != actor_user_id:
+        raise PermissionError("只能清空当前管理员自己的工作区")
+    after = get_adapter().clear_review_buckets_for_owner_as_user(
+        owner_user_id=owner_user_id,
         actor_username=actor_username,
         actor_user_id=actor_user_id,
         trigger=trigger,
@@ -348,12 +364,36 @@ def clear_review_buckets(
     return {"total": len(after), "buckets": buckets}
 
 
+def clear_all_review_buckets(
+    *,
+    actor_username: str,
+    trigger: str,
+    request_id: Optional[str] = None,
+) -> dict[str, Any]:
+    after = get_adapter().clear_all_review_buckets_as_system(
+        actor_username=actor_username,
+        trigger=trigger,
+        request_id=request_id,
+    )
+    buckets = {
+        "zongbao": {"selected": 0, "backup": 0},
+        "wanbao": {"selected": 0, "backup": 0},
+    }
+    for row in after:
+        report_type = _normalize_report_type(row.get("report_type"))
+        previous_status = str(row.get("previous_status") or "")
+        if previous_status in {"selected", "backup"}:
+            buckets[report_type][previous_status] += 1
+    return {"total": len(after), "buckets": buckets}
+
+
 __all__ = [
     "ManualReviewConflictError",
     "archive_items",
     "bulk_decide",
     "bulk_discard_candidates",
     "clear_review_buckets",
+    "clear_all_review_buckets",
     "save_edits",
     "update_ranks",
     "validate_bulk_discard_bucket",

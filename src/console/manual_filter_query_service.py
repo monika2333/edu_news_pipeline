@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 def _paginate_by_status(
     manual_status: str,
     *,
+    owner_user_id: str,
     limit: int,
     offset: int,
     only_ready: bool = False,
@@ -41,6 +42,7 @@ def _paginate_by_status(
         else None
     )
     fetch_kwargs = {
+        "owner_user_id": owner_user_id,
         "status": manual_status,
         "limit": limit,
         "offset": offset,
@@ -70,6 +72,7 @@ def _paginate_by_status(
 
 def _list_candidate_search(
     *,
+    owner_user_id: str,
     limit: int,
     offset: int,
     region: Optional[str],
@@ -81,6 +84,7 @@ def _list_candidate_search(
 ) -> Dict[str, Any]:
     adapter = get_adapter()
     fetch_kwargs = {
+        "owner_user_id": owner_user_id,
         "query": query,
         "created_before": created_before,
         "limit": limit,
@@ -113,6 +117,7 @@ def _list_candidate_search(
 
 def _list_candidate_browse(
     *,
+    owner_user_id: str,
     limit: int,
     offset: int,
     region: Optional[str],
@@ -125,6 +130,7 @@ def _list_candidate_browse(
 ) -> Dict[str, Any]:
     if cluster:
         result = cluster_pending(
+            owner_user_id=owner_user_id,
             region=region,
             sentiment=sentiment,
             limit=limit,
@@ -143,6 +149,7 @@ def _list_candidate_browse(
         return result
     result = _paginate_by_status(
         "pending",
+        owner_user_id=owner_user_id,
         limit=limit,
         offset=offset,
         only_ready=True,
@@ -157,6 +164,7 @@ def _list_candidate_browse(
 
 def list_candidates(
     *,
+    owner_user_id: str,
     limit: int = 30,
     offset: int = 0,
     region: Optional[str] = None,
@@ -191,6 +199,7 @@ def list_candidates(
     )
     if search_mode:
         return _list_candidate_search(
+            owner_user_id=owner_user_id,
             region=region,
             sentiment=sentiment,
             limit=limit,
@@ -201,6 +210,7 @@ def list_candidates(
             duty_unprocessed_only=duty_unprocessed_only,
         )
     return _list_candidate_browse(
+        owner_user_id=owner_user_id,
         limit=limit,
         offset=offset,
         region=region,
@@ -213,15 +223,30 @@ def list_candidates(
     )
 
 
-def list_review(decision: str, *, limit: int = 30, offset: int = 0, report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, Any]:
+def list_review(
+    decision: str,
+    *,
+    owner_user_id: str,
+    limit: int = 30,
+    offset: int = 0,
+    report_type: str = DEFAULT_REPORT_TYPE,
+) -> Dict[str, Any]:
     decision = decision if decision in ("selected", "backup") else "selected"
     target_report_type = _normalize_report_type(report_type)
     logger.info("Listing review items: decision=%s limit=%s offset=%s report_type=%s", decision, limit, offset, target_report_type)
-    return _paginate_by_status(decision, limit=limit, offset=offset, only_ready=False, report_type=target_report_type)
+    return _paginate_by_status(
+        decision,
+        owner_user_id=owner_user_id,
+        limit=limit,
+        offset=offset,
+        only_ready=False,
+        report_type=target_report_type,
+    )
 
 
 def list_discarded(
     *,
+    owner_user_id: str,
     limit: int = 30,
     offset: int = 0,
     report_type: str = DEFAULT_REPORT_TYPE,
@@ -237,6 +262,7 @@ def list_discarded(
     )
     return _paginate_by_status(
         "discarded",
+        owner_user_id=owner_user_id,
         limit=limit,
         offset=offset,
         only_ready=False,
@@ -246,10 +272,17 @@ def list_discarded(
     )
 
 
-def status_counts(report_type: str = DEFAULT_REPORT_TYPE) -> Dict[str, int]:
+def status_counts(
+    report_type: str = DEFAULT_REPORT_TYPE,
+    *,
+    owner_user_id: str,
+) -> Dict[str, int]:
     adapter = get_adapter()
     target_report_type = _normalize_report_type(report_type)
-    return adapter.manual_reviews.status_counts(report_type=target_report_type)  # type: ignore[attr-defined]
+    return adapter.manual_reviews.status_counts(  # type: ignore[attr-defined]
+        owner_user_id=owner_user_id,
+        report_type=target_report_type,
+    )
 
 
 def trigger_clustering() -> Dict[str, Any]:

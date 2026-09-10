@@ -114,6 +114,7 @@ def _call_model(items: Sequence[Mapping[str, str]]) -> list[list[str]]:
 
 def check_duplicates(
     *,
+    owner_user_id: Optional[str] = None,
     report_type: str,
     decision: str,
     review_loader: Optional[ReviewLoader] = None,
@@ -121,11 +122,16 @@ def check_duplicates(
     target_report_type = _normalize_report_type(report_type)
     target_decision = decision if decision in VALID_REVIEW_DECISIONS else "selected"
     load_review = review_loader or list_review
+    load_kwargs: dict[str, Any] = {
+        "limit": MAX_DUPLICATE_REVIEW_ITEMS,
+        "offset": 0,
+        "report_type": target_report_type,
+    }
+    if owner_user_id is not None:
+        load_kwargs["owner_user_id"] = owner_user_id
     review = load_review(
         target_decision,
-        limit=MAX_DUPLICATE_REVIEW_ITEMS,
-        offset=0,
-        report_type=target_report_type,
+        **load_kwargs,
     )
     total = int(review.get("total") or 0)
     if total > MAX_DUPLICATE_REVIEW_ITEMS:
@@ -155,9 +161,7 @@ def check_duplicates(
     raw_groups = _call_model(model_items)
     latest_review = load_review(
         target_decision,
-        limit=MAX_DUPLICATE_REVIEW_ITEMS,
-        offset=0,
-        report_type=target_report_type,
+        **load_kwargs,
     )
     latest_items = list(latest_review.get("items") or [])
     checked_ids = {item["article_id"] for item in model_items if item["article_id"]}

@@ -14,6 +14,7 @@ from src.adapters.db_postgres_manual_reviews._base import (
 def preview_shift_reviews_for_manual(
     cur: psycopg.Cursor,
     *,
+    owner_user_id: str,
     shift_id: str,
     article_ids: Sequence[str],
 ) -> list[dict[str, Any]]:
@@ -44,12 +45,14 @@ def preview_shift_reviews_for_manual(
             ns.source
         FROM shift_reviews sr
         JOIN news_summaries ns ON ns.article_id = sr.article_id
-        LEFT JOIN manual_reviews mr ON mr.article_id = sr.article_id
+        LEFT JOIN manual_reviews mr
+          ON mr.article_id = sr.article_id
+         AND mr.owner_user_id = %s
         WHERE sr.shift_id = %s
           AND sr.article_id = ANY(%s)
         ORDER BY array_position(%s::text[], sr.article_id)
         """,
-        (shift_id, normalized_ids, normalized_ids),
+        (owner_user_id, shift_id, normalized_ids, normalized_ids),
     )
     return [dict(row) for row in cur.fetchall()]
 
@@ -143,6 +146,7 @@ def import_shift_reviews_into_manual(
         manual_review_max_rank(
             cur,
             target_status,
+            owner_user_id=actor_user_id,
             report_type=normalized_report_type,
         )
         if uses_rank
@@ -183,7 +187,8 @@ def import_shift_reviews_into_manual(
                         decided_at = now(),
                         version = version + 1,
                         updated_at = now()
-                    WHERE article_id = %s
+                    WHERE owner_user_id = %s
+                      AND article_id = %s
                     RETURNING
                         id, article_id, status, summary, rank, notes, score,
                         decided_by, decided_by_user_id, decided_at,
@@ -197,6 +202,7 @@ def import_shift_reviews_into_manual(
                             existing.get("manual_llm_source"),
                         ),
                         actor_username,
+                        actor_user_id,
                         actor_user_id,
                         article_id,
                     ),
@@ -228,7 +234,8 @@ def import_shift_reviews_into_manual(
                     report_type = %s,
                     version = version + 1,
                     updated_at = now()
-                WHERE article_id = %s
+                WHERE owner_user_id = %s
+                  AND article_id = %s
                 RETURNING
                     id, article_id, status, summary, rank, notes, score,
                     decided_by, decided_by_user_id, decided_at,
@@ -244,6 +251,7 @@ def import_shift_reviews_into_manual(
                     actor_user_id,
                     source,
                     normalized_report_type,
+                    actor_user_id,
                     article_id,
                 ),
             )
@@ -251,6 +259,7 @@ def import_shift_reviews_into_manual(
             cur.execute(
                 """
                 INSERT INTO manual_reviews (
+                    owner_user_id,
                     article_id,
                     status,
                     summary,
@@ -264,8 +273,8 @@ def import_shift_reviews_into_manual(
                     report_type,
                     version
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now(), %s, %s, 1)
-                ON CONFLICT (article_id) DO NOTHING
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s, %s, 1)
+                ON CONFLICT (owner_user_id, article_id) DO NOTHING
                 RETURNING
                     id,
                     article_id,
@@ -284,6 +293,7 @@ def import_shift_reviews_into_manual(
                     updated_at
                 """,
                 (
+                    actor_user_id,
                     article_id,
                     target_status,
                     summary,

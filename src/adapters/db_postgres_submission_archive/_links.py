@@ -65,7 +65,19 @@ def fetch_link_candidate_bodies(
             ) as body
         from requested req
         left join latest_brief lb on lb.article_id = req.article_id
-        left join manual_reviews mr on mr.article_id = req.article_id
+        left join lateral (
+            select candidate.summary
+            from manual_reviews candidate
+            where candidate.article_id = req.article_id
+              and nullif(btrim(candidate.summary), '') is not null
+            order by
+                (candidate.status = 'exported') desc,
+                case when candidate.status = 'exported'
+                    then candidate.decided_at
+                end desc nulls last,
+                candidate.updated_at desc
+            limit 1
+        ) mr on true
         left join news_summaries ns on ns.article_id = req.article_id
         order by req.order_index
         """,
@@ -148,7 +160,19 @@ def fetch_pending_links(
         join submitted_reports r on r.id = i.report_id
         left join news_summaries ns
           on ns.article_id = i.best_candidate_article_id
-        left join manual_reviews mr on mr.article_id = ns.article_id
+        left join lateral (
+            select candidate.summary
+            from manual_reviews candidate
+            where candidate.article_id = ns.article_id
+              and nullif(btrim(candidate.summary), '') is not null
+            order by
+                (candidate.status = 'exported') desc,
+                case when candidate.status = 'exported'
+                    then candidate.decided_at
+                end desc nulls last,
+                candidate.updated_at desc
+            limit 1
+        ) mr on true
         where i.link_status = 'pending'
         {detail_report_filter}
         order by r.report_date desc, i.order_index

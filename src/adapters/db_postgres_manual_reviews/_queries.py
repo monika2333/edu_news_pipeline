@@ -79,9 +79,33 @@ def enqueue_manual_review(
         )
     normalized_report_type = normalize_report_type_value(report_type) or "zongbao"
     query = """
-        INSERT INTO manual_reviews (article_id, status, report_type, summary, manual_llm_source, rank, notes, score, decided_by, decided_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (article_id) DO NOTHING
+        INSERT INTO manual_reviews (
+            owner_user_id,
+            article_id,
+            status,
+            report_type,
+            summary,
+            manual_llm_source,
+            rank,
+            notes,
+            score,
+            decided_by,
+            decided_at
+        )
+        SELECT
+            admin.id,
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+            %s
+        FROM active_console_admins admin
+        ON CONFLICT (owner_user_id, article_id) DO NOTHING
     """
     cur.execute(
         query,
@@ -103,6 +127,7 @@ def enqueue_manual_review(
 def fetch_manual_reviews(
     cur: psycopg.Cursor,
     *,
+    owner_user_id: str,
     status: str,
     limit: int,
     offset: int,
@@ -118,6 +143,7 @@ def fetch_manual_reviews(
     offset = max(0, int(offset or 0))
     type_expr = report_type_expr("mr")
     clauses, params = _build_manual_review_filters(
+        owner_user_id=owner_user_id,
         status=status,
         only_ready=only_ready,
         region=region,
@@ -155,45 +181,40 @@ def fetch_manual_reviews(
     return items, total
 
 
-def fetch_manual_pending_for_cluster(
+def fetch_manual_cluster_sources(
     cur: psycopg.Cursor,
     *,
-    region: Optional[str] = None,
-    sentiment: Optional[str] = None,
     fetch_limit: int = 5000,
-    report_type: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    del report_type
-    type_expr = report_type_expr("mr")
-    clauses, params = _build_manual_review_filters(
-        status="pending",
-        only_ready=True,
-        region=region,
-        sentiment=sentiment,
-        report_type=None,
-    )
-    where_sql = " AND ".join(clauses)
-    query = f"""
+    query = """
+        WITH recent AS (
+            SELECT *
+            FROM news_summaries
+            WHERE status = 'ready_for_export'
+            ORDER BY created_at DESC, article_id
+            LIMIT %s
+        )
         SELECT
-            {MANUAL_REVIEW_SELECT_COLUMNS.format(type_expr=type_expr)}
-        FROM manual_reviews mr
-        JOIN news_summaries ns ON ns.article_id = mr.article_id
-        {SCORE_FEEDBACK_JOIN}
-        WHERE {where_sql}
-        ORDER BY ns.external_importance_score DESC NULLS LAST,
-                 mr.rank ASC NULLS LAST,
-                 ns.score DESC NULLS LAST,
-                 ns.publish_time_iso DESC NULLS LAST,
-                 mr.article_id ASC
-        LIMIT %s
+            article_id,
+            title,
+            score,
+            external_importance_score,
+            sentiment_label,
+            is_beijing_related,
+            publish_time_iso,
+            publish_time,
+            created_at
+        FROM recent
     """
-    cur.execute(query, tuple(params + [fetch_limit]))
+    cur.execute(query, (max(1, int(fetch_limit)),))
     rows = cur.fetchall()
     return [dict(row) for row in rows]
 
 
 def fetch_review_buckets_for_update(
     cur: psycopg.Cursor,
+    *,
+    owner_user_id: str,
 ) -> list[dict[str, Any]]:
     type_expr = report_type_expr("mr")
     cur.execute(
@@ -204,18 +225,19 @@ def fetch_review_buckets_for_update(
             mr.status AS previous_status,
             {type_expr} AS report_type
         FROM manual_reviews mr
-        WHERE mr.status IN (%s, %s)
+        WHERE mr.owner_user_id = %s
+          AND mr.status IN (%s, %s)
         ORDER BY mr.article_id
         FOR UPDATE OF mr
         """,
-        ("selected", "backup"),
+        (owner_user_id, "selected", "backup"),
     )
     return [dict(row) for row in cur.fetchall()]
 
 __all__ = [
     "_manual_review_order_by",
     "enqueue_manual_review",
-    "fetch_manual_pending_for_cluster",
+    "fetch_manual_cluster_sources",
     "fetch_manual_reviews",
     "fetch_review_buckets_for_update",
 ]

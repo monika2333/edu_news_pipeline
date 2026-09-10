@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from src.console import admin_summary_service, shifts_service
 from src.console.auth_service import ConsoleUser
-from src.console.security import require_role
+from src.console.security import require_admin_workspace_user, require_role
 from src.domain.report_type import NewsReportType
 
 router = APIRouter(prefix="/api/admin", tags=["duty_summary"])
@@ -59,10 +59,14 @@ def _raise_summary_error(exc: Exception) -> NoReturn:
 @router.get("/duty-summary")
 def duty_summary(
     limit: int = 60,
-    user: ConsoleUser = Depends(require_role("admin")),
+    user: ConsoleUser = Depends(require_admin_workspace_user),
 ) -> dict[str, Any]:
-    del user
-    return {"items": admin_summary_service.list_shift_summaries(limit=limit)}
+    return {
+        "items": admin_summary_service.list_shift_summaries(
+            viewer_user_id=str(user.user_id),
+            limit=limit,
+        )
+    }
 
 
 @router.get("/duty-summary/{shift_id}/reviews")
@@ -75,12 +79,12 @@ def shift_results(
     include_admin_discarded: bool = False,
     limit: int = 200,
     offset: int = 0,
-    user: ConsoleUser = Depends(require_role("admin")),
+    user: ConsoleUser = Depends(require_admin_workspace_user),
 ) -> dict[str, Any]:
-    del user
     try:
         return admin_summary_service.list_shift_results(
             shift_id=shift_id,
+            viewer_user_id=str(user.user_id),
             decision=decision,
             report_type=report_type,
             admin_discarded_only=admin_discarded_only,
@@ -96,7 +100,7 @@ def shift_results(
 @router.patch("/duty-summary/discard")
 def set_admin_discarded(
     payload: AdminDiscardRequest,
-    user: ConsoleUser = Depends(require_role("admin")),
+    user: ConsoleUser = Depends(require_admin_workspace_user),
     request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ) -> dict[str, Any]:
     try:
@@ -114,7 +118,7 @@ def set_admin_discarded(
 @router.patch("/duty-summary/discard-bulk")
 def set_admin_discarded_many(
     payload: AdminBulkDiscardRequest,
-    user: ConsoleUser = Depends(require_role("admin")),
+    user: ConsoleUser = Depends(require_admin_workspace_user),
     request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ) -> dict[str, Any]:
     try:
@@ -132,7 +136,7 @@ def set_admin_discarded_many(
 @router.post("/duty-summary/import")
 def import_results(
     payload: ImportDutyResultsRequest,
-    user: ConsoleUser = Depends(require_role("admin")),
+    user: ConsoleUser = Depends(require_admin_workspace_user),
     request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ) -> dict[str, Any]:
     try:
@@ -159,12 +163,12 @@ def import_results(
 @router.post("/duty-summary/import-preview")
 def preview_import_results(
     payload: ImportDutyPreviewRequest,
-    user: ConsoleUser = Depends(require_role("admin")),
+    user: ConsoleUser = Depends(require_admin_workspace_user),
 ) -> dict[str, Any]:
-    del user
     try:
         return admin_summary_service.preview_import_results(
             shift_id=payload.shift_id,
+            owner_user_id=str(user.user_id),
             article_ids=payload.article_ids,
         )
     except ValueError as exc:

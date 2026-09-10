@@ -22,7 +22,12 @@ from src.console import (
     users_routes,
     web_routes,
 )
-from src.console.security import require_console_user, require_csrf, require_role
+from src.console.security import (
+    require_admin_workspace_user,
+    require_console_user,
+    require_csrf,
+    require_role,
+)
 
 
 FAVICON_PATH = Path(__file__).parent / "web_static" / "favicon.svg"
@@ -72,13 +77,20 @@ def create_app() -> FastAPI:
         Depends(require_console_user),
         Depends(require_csrf),
     ]
+    admin_workspace_dependencies = [
+        Depends(require_admin_workspace_user),
+        Depends(require_csrf),
+    ]
 
     app.include_router(health_routes.router)
     app.include_router(auth_routes.router)
     app.include_router(runs_routes.router, dependencies=admin_dependencies)
     app.include_router(articles_routes.router, dependencies=protected_dependencies)
     app.include_router(exports_routes.router, dependencies=admin_dependencies)
-    app.include_router(manual_filter_routes.router, dependencies=admin_dependencies)
+    app.include_router(
+        manual_filter_routes.router,
+        dependencies=admin_workspace_dependencies,
+    )
     app.include_router(
         admin_summary_routes.router,
         dependencies=protected_dependencies,

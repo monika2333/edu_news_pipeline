@@ -510,7 +510,10 @@ def test_clear_review_buckets_counts_successful_rows_and_preserves_fields(
     ]
 
     class ClearAdapter:
-        def clear_review_buckets_as_user(self, **kwargs: Any) -> list[dict[str, Any]]:
+        def clear_all_review_buckets_as_system(
+            self,
+            **kwargs: Any,
+        ) -> list[dict[str, Any]]:
             calls.append(kwargs)
             return rows
 
@@ -520,9 +523,8 @@ def test_clear_review_buckets_counts_successful_rows_and_preserves_fields(
         lambda: ClearAdapter(),
     )
 
-    result = manual_filter_admin_service.clear_review_buckets(
+    result = manual_filter_admin_service.clear_all_review_buckets(
         actor_username="system:scheduled_clear",
-        actor_user_id=None,
         trigger="scheduled",
     )
 
@@ -536,7 +538,6 @@ def test_clear_review_buckets_counts_successful_rows_and_preserves_fields(
     assert calls == [
         {
             "actor_username": "system:scheduled_clear",
-            "actor_user_id": None,
             "trigger": "scheduled",
             "request_id": None,
         }

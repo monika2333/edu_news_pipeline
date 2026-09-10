@@ -8,7 +8,7 @@
 - `*_routes.py` 应保持轻量：解析 HTTP 输入，在合适时声明 route-local request model，然后调用 service 函数。
 - `*_service.py` 放控制台工作流逻辑，并调用 adapter 或 domain helper。
 - `*_schemas.py` 放可复用的请求/响应模型；如果某个 API 契约开始超出单个 route 的局部使用，应放到这里。
-- `manual_filter_service.py` 是为了稳定导入而保留的 public facade；更细的人工筛选逻辑放在相邻的 `manual_filter_*` 模块中。
+- `manual_filter_service.py` 只提供人工筛选读操作；写操作一律由 `manual_filter_admin_service.py` 承载，以保留版本校验、真实用户审计和 request id。
 - `web_templates/` 管理 Jinja markup；`web_static/` 管理 CSS 和 JavaScript。
 - 当前 Web 页面入口按角色分发，`web_routes.py` 负责根路径跳转：管理员由 `admin_entry.html` + `admin_last_view.js` 按浏览器中该用户最后访问的主视图进入（无有效记录时回退 `/admin/duty-summary`），值班编辑进入 `/duty`。
 - `/duty` 复用 `web_templates/manual_filter.html`，通过 `workspace_mode="duty"` 区分。值班编辑页面的可见控件应在这个共享模板及 `web_static/js/manual_filter/` 中维护。
@@ -17,7 +17,7 @@
 
 ## 人工筛选规则
 
-- 除非同步更新所有调用方和测试，否则不要破坏 `manual_filter_service.py` 导出的 facade 函数。
+- 人工筛选读操作走 `manual_filter_service.py`，写操作走 `manual_filter_admin_service.py`；不要为写操作新建第二套实现。
 - 谨慎处理 review decision 和 report type。状态、排序、归档和编辑操作会影响后续导出行为。
 - 聚类和序列化逻辑应与 route handler 分离。route handler 不应直接构造复杂的聚类响应。
 - 不要单独重命名 `web_static/js/manual_filter/*` 依赖的 DOM id、`data-*` 属性、CSS class 或 API path；如需修改，必须同步更新模板、JavaScript 和测试。
@@ -68,8 +68,9 @@
 
 ## 建议测试
 
-- 人工筛选 service 或 decision 变更：`python -m pytest tests/test_manual_filter_service.py`
+- 人工筛选读 service 变更：`python -m pytest tests/test_manual_filter_service.py`
+- 人工筛选写 service 变更：`python -m pytest tests/test_manual_filter_admin_service.py`
 - 人工筛选 route/API 变更：`python -m pytest tests/test_manual_filter_routes.py`
 - 控制台 Web 入口或页面路由变更：`python -m pytest tests/test_console_web_routes.py`
 - export、run 或 article service 变更：运行最接近的 `tests/test_*` 文件；如果影响 CLI 触发行为，再运行 `python -m pytest tests/test_cli_parser.py`
-- 较大的控制台重构：`python -m pytest tests/test_manual_filter_service.py tests/test_manual_filter_routes.py`
+- 较大的人工筛选控制台重构：`python -m pytest tests/test_manual_filter_service.py tests/test_manual_filter_admin_service.py tests/test_manual_filter_routes.py`

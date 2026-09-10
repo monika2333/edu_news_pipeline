@@ -1,22 +1,13 @@
 """
 manual_filter_service.py
 
-Public facade for manual filter operations.
-This module keeps legacy imports stable while delegating to focused sub-services.
+Read-only query entry point for manual filter operations.
 """
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional
 
-from .manual_filter_decisions import (
-    archive_items as _archive_items,
-    bulk_decide as _bulk_decide,
-    bulk_discard_candidates as _bulk_discard_candidates,
-    reset_to_pending as _reset_to_pending,
-    save_edits as _save_edits,
-    update_ranks as _update_ranks,
-)
 from .manual_filter_cluster import DEFAULT_CLUSTER_THRESHOLD
 from .manual_filter_duplicate_service import check_duplicates as _check_duplicates
 from .manual_filter_helpers import DEFAULT_REPORT_TYPE, VALID_REPORT_TYPES
@@ -95,91 +86,13 @@ def check_duplicates(*, report_type: str, decision: str) -> Dict[str, Any]:
     return _check_duplicates(report_type=report_type, decision=decision)
 
 
-def bulk_decide(
-    *,
-    selected_ids: Sequence[str],
-    backup_ids: Sequence[str],
-    discarded_ids: Sequence[str],
-    pending_ids: Sequence[str] = (),
-    actor: Optional[str] = None,
-    report_type: str = DEFAULT_REPORT_TYPE,
-) -> Dict[str, int]:
-    return _bulk_decide(
-        selected_ids=selected_ids,
-        backup_ids=backup_ids,
-        discarded_ids=discarded_ids,
-        pending_ids=pending_ids,
-        actor=actor,
-        report_type=report_type,
-    )
-
-
-def update_ranks(
-    *,
-    selected_order: Sequence[str],
-    backup_order: Sequence[str],
-    group_orders: Optional[Dict[str, Sequence[str]]] = None,
-    actor: Optional[str] = None,
-    report_type: str = DEFAULT_REPORT_TYPE,
-) -> Dict[str, int]:
-    return _update_ranks(
-        selected_order=selected_order,
-        backup_order=backup_order,
-        group_orders=group_orders,
-        actor=actor,
-        report_type=report_type,
-    )
-
-
-def save_edits(
-    edits: Dict[str, Dict[str, Any]],
-    *,
-    actor: Optional[str] = None,
-    report_type: str = DEFAULT_REPORT_TYPE,
-) -> int:
-    return _save_edits(edits, actor=actor, report_type=report_type)
-
-
-def reset_to_pending(ids: Sequence[str], *, actor: Optional[str] = None, report_type: str = DEFAULT_REPORT_TYPE) -> int:
-    return _reset_to_pending(ids, actor=actor, report_type=report_type)
-
-
-def archive_items(ids: Sequence[str], *, actor: Optional[str] = None, report_type: str = DEFAULT_REPORT_TYPE) -> int:
-    return _archive_items(ids, actor=actor, report_type=report_type)
-
-
-def bulk_discard_candidates(
-    *,
-    region: str,
-    sentiment: str,
-    query: Optional[str] = None,
-    created_before: Optional[date] = None,
-    actor: Optional[str] = None,
-    dry_run: bool = True,
-) -> Dict[str, int]:
-    return _bulk_discard_candidates(
-        region=region,
-        sentiment=sentiment,
-        query=query,
-        created_before=created_before,
-        actor=actor,
-        dry_run=dry_run,
-    )
-
-
 __all__ = [
     "list_candidates",
     "list_review",
     "list_discarded",
-    "bulk_discard_candidates",
     "status_counts",
     "trigger_clustering",
     "check_duplicates",
-    "bulk_decide",
-    "update_ranks",
-    "save_edits",
-    "reset_to_pending",
-    "archive_items",
     "DEFAULT_REPORT_TYPE",
     "VALID_REPORT_TYPES",
     "DEFAULT_CLUSTER_THRESHOLD",

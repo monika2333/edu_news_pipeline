@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.console import manual_filter_admin_service, manual_filter_service
+from src.console import manual_filter_service
 
 
 class FakeSubmissionArchiveNamespace:
@@ -34,42 +34,14 @@ class FakeManualReviewsNamespace:
     def search_candidates(self, **kwargs: Any) -> Tuple[List[Dict[str, Any]], int]:
         return self._adapter._search_candidates(**kwargs)
 
-    def count_candidates_before_date(self, **kwargs: Any) -> int:
-        return self._adapter._count_candidates_before_date(**kwargs)
-
-    def bulk_discard_candidates(self, **kwargs: Any) -> int:
-        return self._adapter._bulk_discard_candidates(**kwargs)
-
     def status_counts(self, *, report_type: Optional[str] = None) -> Dict[str, int]:
         return self._adapter._status_counts(report_type=report_type)
-
-    def max_rank(self, status: str, *, report_type: Optional[str] = None) -> float:
-        return self._adapter._max_rank(status, report_type=report_type)
-
-    def update_statuses(
-        self,
-        updates: Sequence[Mapping[str, Any]],
-        *,
-        report_type: Optional[str] = None,
-    ) -> int:
-        return self._adapter._update_statuses(updates, report_type=report_type)
-
-    def reset_to_pending(self, article_ids: Sequence[str], **kwargs: Any) -> int:
-        return self._adapter._reset_to_pending(article_ids, **kwargs)
-
-    def update_summaries(
-        self,
-        edits: Mapping[str, Mapping[str, Any]],
-        **kwargs: Any,
-    ) -> int:
-        return self._adapter._update_summaries(edits, **kwargs)
 
 
 class FakeAdapter:
     def __init__(self, rows: List[Dict[str, Any]]) -> None:
         # Each row represents a join of manual_reviews with news_summaries fields
         self.rows = rows
-        self.export_calls: List[Dict[str, Any]] = []
         self.manual_reviews = FakeManualReviewsNamespace(self)
         self.submission_archive = FakeSubmissionArchiveNamespace()
         for row in self.rows:
@@ -251,63 +223,6 @@ class FakeAdapter:
         total = len(filtered)
         return filtered[offset : offset + limit], total
 
-    def _count_candidates_before_date(
-        self,
-        *,
-        region: str,
-        sentiment: str,
-        query: Optional[str] = None,
-        created_before: Optional[date] = None,
-        report_type: Optional[str] = None,
-        duty_unprocessed_only: bool = False,
-    ) -> int:
-        _, total = self._search_candidates(
-            query=query,
-            created_before=created_before,
-            limit=10_000,
-            offset=0,
-            region=region,
-            sentiment=sentiment,
-            report_type=report_type,
-            duty_unprocessed_only=duty_unprocessed_only,
-        )
-        return total
-
-    def _bulk_discard_candidates(
-        self,
-        *,
-        region: str,
-        sentiment: str,
-        query: Optional[str] = None,
-        created_before: Optional[date] = None,
-        actor: Optional[str] = None,
-        decided_at: Optional[Any] = None,
-        report_type: Optional[str] = None,
-        duty_unprocessed_only: bool = False,
-    ) -> int:
-        rows, _ = self._search_candidates(
-            query=query,
-            created_before=created_before,
-            limit=10_000,
-            offset=0,
-            region=region,
-            sentiment=sentiment,
-            report_type=report_type,
-            duty_unprocessed_only=duty_unprocessed_only,
-        )
-        updates = [
-            {
-                "article_id": row["article_id"],
-                "status": "discarded",
-                "rank": None,
-                "report_type": report_type,
-                "decided_by": actor,
-                "decided_at": decided_at,
-            }
-            for row in rows
-        ]
-        return self._update_statuses(updates, report_type=report_type)
-
     def _status_counts(self, *, report_type: Optional[str] = None) -> Dict[str, int]:
         counts: Dict[str, int] = {"pending": 0, "selected": 0, "backup": 0, "discarded": 0, "exported": 0}
         target_type = self._normalized_report_type(report_type)
@@ -338,208 +253,6 @@ class FakeAdapter:
                 == target_type
             )
         )
-
-    def _max_rank(self, status: str, *, report_type: Optional[str] = None) -> float:
-        target_type = self._normalized_report_type(report_type)
-        ranks = [
-            r.get("rank")
-            for r in self.rows
-            if r.get("status") == status
-            and r.get("rank") is not None
-            and self._normalized_report_type(r.get("report_type")) == target_type
-        ]
-        if not ranks:
-            return 0.0
-        try:
-            return float(max(ranks))
-        except Exception:
-            return 0.0
-
-    def _update_statuses(self, updates: Sequence[Mapping[str, Any]], *, report_type: Optional[str] = None) -> int:
-        default_report_type = (
-            self._normalized_report_type(report_type)
-            if report_type is not None
-            else None
-        )
-        updated = 0
-        for item in updates:
-            aid = str(item.get("article_id") or "")
-            for row in self.rows:
-                if str(row.get("article_id")) != aid:
-                    continue
-                target_type = (
-                    self._normalized_report_type(
-                        item.get("report_type") or default_report_type
-                    )
-                    if item.get("report_type") is not None
-                    or default_report_type is not None
-                    else self._normalized_report_type(row.get("report_type"))
-                )
-                row["status"] = item.get("status", row.get("status"))
-                row["rank"] = item.get("rank", row.get("rank"))
-                row["decided_by"] = item.get("decided_by") or row.get("decided_by")
-                row["decided_at"] = item.get("decided_at") or row.get("decided_at")
-                row["report_type"] = target_type
-                updated += 1
-                break
-        return updated
-
-
-    def update_manual_review_order_and_categories(
-        self,
-        review_updates: Sequence[Mapping[str, Any]],
-        category_updates: Sequence[Mapping[str, Any]],
-        *,
-        report_type: Optional[str] = None,
-    ) -> Tuple[int, int]:
-        updated_reviews = self._update_statuses(review_updates, report_type=report_type)
-        updated_categories = 0
-        for item in category_updates:
-            for row in self.rows:
-                if row.get("article_id") != item.get("article_id"):
-                    continue
-                row["is_beijing_related"] = item["is_beijing_related"]
-                row["sentiment_label"] = item["sentiment_label"]
-                updated_categories += 1
-                break
-        return updated_reviews, updated_categories
-
-    def _reset_to_pending(
-        self,
-        article_ids: Sequence[str],
-        *,
-        actor: Optional[str] = None,
-        decided_at: Optional[Any] = None,
-        report_type: Optional[str] = None,
-    ) -> int:
-        updates = []
-        for aid in article_ids:
-            updates.append(
-                {
-                    "article_id": aid,
-                    "status": "pending",
-                    "rank": None,
-                    "report_type": report_type,
-                    "decided_by": actor,
-                    "decided_at": decided_at,
-                }
-            )
-        return self._update_statuses(updates, report_type=report_type)
-
-    def _update_summaries(
-        self,
-        edits: Mapping[str, Mapping[str, Any]],
-        *,
-        actor: Optional[str] = None,
-        decided_at: Optional[Any] = None,
-        report_type: Optional[str] = None,
-    ) -> int:
-        updated = 0
-        target_report_type = (
-            self._normalized_report_type(report_type)
-            if report_type is not None
-            else None
-        )
-        for aid, edit in edits.items():
-            for row in self.rows:
-                if str(row.get("article_id")) != str(aid):
-                    continue
-                item_report_type = (
-                    self._normalized_report_type(
-                        edit.get("report_type") or target_report_type
-                    )
-                    if edit.get("report_type") is not None
-                    or target_report_type is not None
-                    else self._normalized_report_type(row.get("report_type"))
-                )
-                if "summary" in edit:
-                    row["manual_summary"] = edit.get("summary")
-                if "notes" in edit:
-                    row["manual_notes"] = edit.get("notes")
-                if "score" in edit:
-                    row["manual_score"] = edit.get("score")
-                row["decided_by"] = actor or row.get("decided_by")
-                row["decided_at"] = decided_at or row.get("decided_at")
-                row["report_type"] = item_report_type
-                updated += 1
-                break
-        return updated
-
-
-def test_clear_review_buckets_counts_successful_rows_and_preserves_fields(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[dict[str, Any]] = []
-    rows = [
-        {
-            "article_id": "selected-null-type",
-            "status": "discarded",
-            "previous_status": "selected",
-            "rank": None,
-            "report_type": None,
-            "summary": "摘要一",
-            "manual_llm_source": "来源一",
-            "notes": "备注一",
-            "score": 91,
-            "decided_by": "system:scheduled_clear",
-            "decided_by_user_id": None,
-        },
-        {
-            "article_id": "backup-wanbao",
-            "status": "discarded",
-            "previous_status": "backup",
-            "rank": None,
-            "report_type": "wanbao",
-            "summary": "摘要二",
-            "manual_llm_source": "来源二",
-            "notes": "备注二",
-            "score": 83,
-            "decided_by": "system:scheduled_clear",
-            "decided_by_user_id": None,
-        },
-    ]
-
-    class ClearAdapter:
-        def clear_review_buckets_as_user(self, **kwargs: Any) -> list[dict[str, Any]]:
-            calls.append(kwargs)
-            return rows
-
-    monkeypatch.setattr(
-        manual_filter_admin_service,
-        "get_adapter",
-        lambda: ClearAdapter(),
-    )
-
-    result = manual_filter_admin_service.clear_review_buckets(
-        actor_username="system:scheduled_clear",
-        actor_user_id=None,
-        trigger="scheduled",
-    )
-
-    assert result == {
-        "total": 2,
-        "buckets": {
-            "zongbao": {"selected": 1, "backup": 0},
-            "wanbao": {"selected": 0, "backup": 1},
-        },
-    }
-    assert calls == [
-        {
-            "actor_username": "system:scheduled_clear",
-            "actor_user_id": None,
-            "trigger": "scheduled",
-            "request_id": None,
-        }
-    ]
-    assert rows[0]["report_type"] is None
-    assert rows[0]["summary"] == "摘要一"
-    assert rows[0]["manual_llm_source"] == "来源一"
-    assert rows[0]["notes"] == "备注一"
-    assert rows[0]["score"] == 91
-    assert all(row["status"] == "discarded" for row in rows)
-    assert all(row["rank"] is None for row in rows)
-    assert all(row["decided_by_user_id"] is None for row in rows)
-
 
 @pytest.fixture()
 def fake_adapter(monkeypatch):
@@ -595,12 +308,10 @@ def fake_adapter(monkeypatch):
     # Patch get_adapter in all modules that use it
     from src.console import (
         manual_filter_cluster,
-        manual_filter_decisions,
         manual_filter_query_service,
     )
 
     monkeypatch.setattr(manual_filter_cluster, "get_adapter", lambda: adapter)
-    monkeypatch.setattr(manual_filter_decisions, "get_adapter", lambda: adapter)
     monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
     return adapter
 
@@ -740,80 +451,23 @@ def test_list_candidates_serializes_current_score_feedback(fake_adapter):
     assert result["items"][1]["score_feedback"] is None
 
 
-def test_bulk_decide_updates_states(fake_adapter):
-    res = manual_filter_service.bulk_decide(
-        selected_ids=["a1"],
-        backup_ids=["a2"],
-        discarded_ids=[],
-        actor="tester",
+def test_list_review_serializes_manual_summary_and_bonus_keywords(fake_adapter):
+    fake_adapter.rows[0].update(
+        status="selected",
+        manual_summary="edited",
+        rank=1.0,
     )
-    assert res == {"selected": 1, "backup": 1, "discarded": 0, "pending": 0}
-    status_map = {r["article_id"]: r["status"] for r in fake_adapter.rows}
-    assert status_map == {"a1": "selected", "a2": "backup"}
-
-
-def test_update_ranks_persists_cross_group_category_change(fake_adapter):
-    manual_filter_service.bulk_decide(
-        selected_ids=["a1", "a2"],
-        backup_ids=[],
-        discarded_ids=[],
-        actor="tester",
-    )
-
-    result = manual_filter_service.update_ranks(
-        selected_order=["a2", "a1"],
-        backup_order=[],
-        group_orders={
-            "internal_positive": ["a2", "a1"],
-            "internal_negative": [],
-            "external_positive": [],
-            "external_negative": [],
-        },
-        actor="tester",
-    )
-
-    assert result == {
-        "selected": 2,
-        "backup": 0,
-        "updated_rows": 2,
-        "updated_categories": 2,
-    }
-    rows = {row["article_id"]: row for row in fake_adapter.rows}
-    assert rows["a2"]["is_beijing_related"] is True
-    assert rows["a2"]["sentiment_label"] == "positive"
-    assert rows["a2"]["rank"] == 1.0
-
-
-def test_update_ranks_rejects_article_in_multiple_groups(fake_adapter):
-    with pytest.raises(ValueError, match="multiple review groups"):
-        manual_filter_service.update_ranks(
-            selected_order=["a1"],
-            backup_order=[],
-            group_orders={
-                "internal_positive": ["a1"],
-                "external_positive": ["a1"],
-            },
-        )
-
-
-def test_save_edits_and_review(fake_adapter):
-    manual_filter_service.bulk_decide(selected_ids=["a1"], backup_ids=[], discarded_ids=[], actor=None)
-    manual_filter_service.save_edits({"a1": {"summary": "edited"}}, actor="tester")
     review = manual_filter_service.list_review("selected", limit=10, offset=0)
     assert review["items"][0]["summary"] == "edited"
     assert review["items"][0]["bonus_keywords"]  # still present
 
 
-def test_archive_items_marks_items_exported(fake_adapter):
-    manual_filter_service.bulk_decide(selected_ids=["a1", "a2"], backup_ids=[], discarded_ids=[], actor=None)
-    exported = manual_filter_service.archive_items(["a1", "a2"])
-    assert exported == 2
-    exported_status = {r["article_id"]: r["status"] for r in fake_adapter.rows}
-    assert exported_status == {"a1": "exported", "a2": "exported"}
-
-
-def test_report_type_filters_and_archive_scope(fake_adapter):
-    manual_filter_service.bulk_decide(selected_ids=["a1"], backup_ids=[], discarded_ids=[], actor=None, report_type="zongbao")
+def test_list_review_filters_by_report_type(fake_adapter):
+    fake_adapter.rows[0].update(
+        status="selected",
+        rank=1.0,
+        report_type="zongbao",
+    )
     fake_adapter.rows.append(
         {
             "article_id": "a3",
@@ -844,21 +498,12 @@ def test_report_type_filters_and_archive_scope(fake_adapter):
     assert [item["article_id"] for item in zb_review["items"]] == ["a1"]
     assert [item["article_id"] for item in wb_review["items"]] == ["a3"]
 
-    updated = manual_filter_service.archive_items(["a1"], report_type="zongbao")
-    assert updated == 1
-    status_map = {r["article_id"]: r["status"] for r in fake_adapter.rows}
-    assert status_map["a1"] == "exported"
-    assert status_map["a3"] == "selected"
 
-
-def test_reset_to_pending_and_discarded_listing(fake_adapter):
-    manual_filter_service.bulk_decide(selected_ids=[], backup_ids=[], discarded_ids=["a1", "a2"], actor=None)
+def test_list_discarded_returns_discarded_rows(fake_adapter):
+    for row in fake_adapter.rows:
+        row["status"] = "discarded"
     discarded = manual_filter_service.list_discarded(limit=10, offset=0)
     assert discarded["total"] == 2
-    updated = manual_filter_service.reset_to_pending(["a1"])
-    assert updated == 1
-    status_map = {r["article_id"]: r["status"] for r in fake_adapter.rows}
-    assert status_map["a1"] == "pending"
 
 
 def test_list_candidates_search_mode_returns_flat_items(fake_adapter):
@@ -1058,65 +703,3 @@ def test_list_candidates_search_mode_uses_shanghai_calendar_day(fake_adapter):
     )
     assert result["view_mode"] == "search"
     assert [item["article_id"] for item in result["items"]] == []
-
-
-def test_bulk_discard_matches_created_at_when_publish_times_are_null(fake_adapter):
-    preview = manual_filter_service.bulk_discard_candidates(
-        region="internal",
-        sentiment="positive",
-        created_before=date(2025, 1, 2),
-        actor="tester",
-        dry_run=True,
-    )
-    assert preview == {"matched": 1, "updated": 0}
-    matched = next(row for row in fake_adapter.rows if row["article_id"] == "a1")
-    assert matched["created_at"] == "2025-01-01T00:00:00Z"
-    assert matched["publish_time_iso"] is None
-    assert matched["publish_time"] is None
-    assert next(row for row in fake_adapter.rows if row["article_id"] == "a1")["status"] == "pending"
-
-    applied = manual_filter_service.bulk_discard_candidates(
-        region="internal",
-        sentiment="positive",
-        created_before=date(2025, 1, 2),
-        actor="tester",
-        dry_run=False,
-    )
-    assert applied == {"matched": 1, "updated": 1}
-    assert preview["matched"] == applied["updated"]
-    assert next(row for row in fake_adapter.rows if row["article_id"] == "a1")["status"] == "discarded"
-
-
-def test_bulk_discard_candidates_supports_keyword_only(fake_adapter):
-    preview = manual_filter_service.bulk_discard_candidates(
-        region="internal",
-        sentiment="positive",
-        query="Internal",
-        created_before=None,
-        actor="tester",
-        dry_run=True,
-    )
-    assert preview == {"matched": 1, "updated": 0}
-
-    applied = manual_filter_service.bulk_discard_candidates(
-        region="internal",
-        sentiment="positive",
-        query="Internal",
-        created_before=None,
-        actor="tester",
-        dry_run=False,
-    )
-    assert applied == {"matched": 1, "updated": 1}
-    assert next(row for row in fake_adapter.rows if row["article_id"] == "a1")["status"] == "discarded"
-
-
-def test_bulk_discard_candidates_supports_empty_filters(fake_adapter):
-    preview = manual_filter_service.bulk_discard_candidates(
-        region="internal",
-        sentiment="positive",
-        query=None,
-        created_before=None,
-        actor="tester",
-        dry_run=True,
-    )
-    assert preview == {"matched": 1, "updated": 0}

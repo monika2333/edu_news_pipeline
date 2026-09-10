@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from src.console import manual_filter_admin_service
 from src.console.auth_service import ConsoleUser
 
@@ -10,6 +12,7 @@ class FakeManualAdminAdapter:
     def __init__(self) -> None:
         self.status_update: dict[str, Any] = {}
         self.summary_update: dict[str, Any] = {}
+        self.order_update: dict[str, Any] = {}
         self.summary_update_calls = 0
         self.rows = {
             "article-1": {
@@ -56,6 +59,19 @@ class FakeManualAdminAdapter:
             }
             for article_id in edits
         ]
+
+    def update_manual_review_order_as_user(
+        self,
+        review_updates: list[dict[str, Any]],
+        category_updates: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> tuple[int, int]:
+        self.order_update = {
+            "review_updates": review_updates,
+            "category_updates": category_updates,
+            **kwargs,
+        }
+        return len(review_updates), len(category_updates)
 
 
 def _session_admin() -> ConsoleUser:
@@ -125,6 +141,28 @@ def test_bulk_decide_only_assigns_report_type_to_report_scoped_states(
     assert updates["discarded-1"]["report_type"] is None
     assert updates["pending-1"]["report_type"] is None
     assert adapter.status_update["report_type"] is None
+
+
+def test_bulk_decide_resets_item_to_pending(monkeypatch) -> None:
+    adapter = FakeManualAdminAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    result = manual_filter_admin_service.bulk_decide(
+        selected_ids=[],
+        backup_ids=[],
+        discarded_ids=[],
+        pending_ids=["article-1"],
+        versions={"article-1": 5},
+        actor=_session_admin(),
+    )
+
+    assert result["pending"] == 1
+    assert result["versions"] == {"article-1": 6}
+    update = adapter.status_update["updates"][0]
+    assert update["article_id"] == "article-1"
+    assert update["status"] == "pending"
+    assert update["rank"] is None
+    assert update["report_type"] is None
 
 
 def test_save_edits_ignores_request_report_type(monkeypatch) -> None:
@@ -243,3 +281,217 @@ def test_archive_preserves_existing_report_type(monkeypatch) -> None:
     assert adapter.status_update["updates"][0]["status"] == "exported"
     assert adapter.status_update["updates"][0]["report_type"] is None
     assert adapter.status_update["report_type"] is None
+
+
+def test_update_ranks_persists_cross_group_category_change(monkeypatch) -> None:
+    adapter = FakeManualAdminAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    result = manual_filter_admin_service.update_ranks(
+        selected_order=["article-2", "article-1"],
+        backup_order=[],
+        group_orders={
+            "internal_positive": ["article-2"],
+            "external_negative": ["article-1"],
+        },
+        actor=_session_admin(),
+        request_id="request-ranks",
+    )
+
+    assert result == {
+        "selected": 2,
+        "backup": 0,
+        "updated_rows": 2,
+        "updated_categories": 2,
+    }
+    assert adapter.order_update["category_updates"] == [
+        {
+            "article_id": "article-2",
+            "is_beijing_related": True,
+            "sentiment_label": "positive",
+        },
+        {
+            "article_id": "article-1",
+            "is_beijing_related": False,
+            "sentiment_label": "negative",
+        },
+    ]
+    assert adapter.order_update["actor_username"] == "admin-a"
+    assert adapter.order_update["actor_user_id"] == "admin-user-id"
+    assert adapter.order_update["request_id"] == "request-ranks"
+
+
+def test_update_ranks_rejects_article_in_multiple_groups(monkeypatch) -> None:
+    adapter = FakeManualAdminAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    with pytest.raises(ValueError, match="multiple review groups"):
+        manual_filter_admin_service.update_ranks(
+            selected_order=["article-1"],
+            backup_order=[],
+            group_orders={
+                "internal_positive": ["article-1"],
+                "external_positive": ["article-1"],
+            },
+            actor=_session_admin(),
+        )
+
+
+def test_update_ranks_rejects_selected_backup_overlap(monkeypatch) -> None:
+    adapter = FakeManualAdminAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    with pytest.raises(ValueError, match="more than one decision group"):
+        manual_filter_admin_service.update_ranks(
+            selected_order=["article-1"],
+            backup_order=["article-1"],
+            group_orders={},
+            actor=_session_admin(),
+        )
+
+
+def test_update_ranks_rejects_grouped_article_missing_from_order(monkeypatch) -> None:
+    adapter = FakeManualAdminAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    with pytest.raises(ValueError, match="missing from review order"):
+        manual_filter_admin_service.update_ranks(
+            selected_order=["article-1"],
+            backup_order=[],
+            group_orders={"internal_positive": ["article-2"]},
+            actor=_session_admin(),
+        )
+
+
+def test_update_ranks_assigns_independent_one_based_ranks(monkeypatch) -> None:
+    adapter = FakeManualAdminAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    manual_filter_admin_service.update_ranks(
+        selected_order=["selected-1", "selected-2"],
+        backup_order=["backup-1", "backup-2"],
+        group_orders={},
+        actor=_session_admin(),
+    )
+
+    assert adapter.order_update["review_updates"] == [
+        {
+            "article_id": "selected-1",
+            "status": "selected",
+            "rank": 1.0,
+            "report_type": "zongbao",
+        },
+        {
+            "article_id": "selected-2",
+            "status": "selected",
+            "rank": 2.0,
+            "report_type": "zongbao",
+        },
+        {
+            "article_id": "backup-1",
+            "status": "backup",
+            "rank": 1.0,
+            "report_type": "zongbao",
+        },
+        {
+            "article_id": "backup-2",
+            "status": "backup",
+            "rank": 2.0,
+            "report_type": "zongbao",
+        },
+    ]
+
+
+def test_update_ranks_empty_orders_skip_adapter_write(monkeypatch) -> None:
+    adapter = FakeManualAdminAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    result = manual_filter_admin_service.update_ranks(
+        selected_order=[],
+        backup_order=[],
+        group_orders={},
+        actor=_session_admin(),
+    )
+
+    assert result == {
+        "selected": 0,
+        "backup": 0,
+        "updated_rows": 0,
+        "updated_categories": 0,
+    }
+    assert adapter.order_update == {}
+
+
+def test_clear_review_buckets_counts_successful_rows_and_preserves_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    rows = [
+        {
+            "article_id": "selected-null-type",
+            "status": "discarded",
+            "previous_status": "selected",
+            "rank": None,
+            "report_type": None,
+            "summary": "摘要一",
+            "manual_llm_source": "来源一",
+            "notes": "备注一",
+            "score": 91,
+            "decided_by": "system:scheduled_clear",
+            "decided_by_user_id": None,
+        },
+        {
+            "article_id": "backup-wanbao",
+            "status": "discarded",
+            "previous_status": "backup",
+            "rank": None,
+            "report_type": "wanbao",
+            "summary": "摘要二",
+            "manual_llm_source": "来源二",
+            "notes": "备注二",
+            "score": 83,
+            "decided_by": "system:scheduled_clear",
+            "decided_by_user_id": None,
+        },
+    ]
+
+    class ClearAdapter:
+        def clear_review_buckets_as_user(self, **kwargs: Any) -> list[dict[str, Any]]:
+            calls.append(kwargs)
+            return rows
+
+    monkeypatch.setattr(
+        manual_filter_admin_service,
+        "get_adapter",
+        lambda: ClearAdapter(),
+    )
+
+    result = manual_filter_admin_service.clear_review_buckets(
+        actor_username="system:scheduled_clear",
+        actor_user_id=None,
+        trigger="scheduled",
+    )
+
+    assert result == {
+        "total": 2,
+        "buckets": {
+            "zongbao": {"selected": 1, "backup": 0},
+            "wanbao": {"selected": 0, "backup": 1},
+        },
+    }
+    assert calls == [
+        {
+            "actor_username": "system:scheduled_clear",
+            "actor_user_id": None,
+            "trigger": "scheduled",
+            "request_id": None,
+        }
+    ]
+    assert rows[0]["report_type"] is None
+    assert rows[0]["summary"] == "摘要一"
+    assert rows[0]["manual_llm_source"] == "来源一"
+    assert rows[0]["notes"] == "备注一"
+    assert rows[0]["score"] == 91
+    assert all(row["status"] == "discarded" for row in rows)
+    assert all(row["rank"] is None for row in rows)
+    assert all(row["decided_by_user_id"] is None for row in rows)

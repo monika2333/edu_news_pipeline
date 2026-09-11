@@ -319,6 +319,19 @@ def test_toutiao_absolute_authors_path_passes_through_unchanged(
     ]
 
 
+def test_tencent_authors_path_does_not_fall_back_to_legacy_location(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    legacy_path = tmp_path / "newsqq_crawl" / "qq_author.txt"
+    legacy_path.parent.mkdir()
+    legacy_path.write_text("legacy-author", encoding="utf-8")
+    monkeypatch.delenv("TENCENT_AUTHORS_PATH", raising=False)
+    monkeypatch.setattr(crawl_sources, "_repo_root", lambda: tmp_path)
+
+    assert crawl_sources._resolve_tencent_authors_path() == tmp_path / "config" / "qq_author.txt"
+
+
 @pytest.mark.parametrize(
     ("qianlong_pages", "qianlong_max_pages", "expected_pages"),
     [("8", "9", 8), (None, "9", 9)],

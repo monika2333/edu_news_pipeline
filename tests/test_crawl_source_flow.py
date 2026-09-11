@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional, Sequence
 
@@ -130,3 +131,67 @@ def test_run_dispatches_source_alias_through_registry(monkeypatch) -> None:
     crawl_sources.run(limit=2, sources=["qq"])
 
     assert calls == [2]
+
+
+def test_toutiao_without_enabled_authors_logs_and_returns_empty_stats(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    authors_path = tmp_path / "toutiao_author.txt"
+    authors_path.write_text("# all authors disabled\n", encoding="utf-8")
+    messages: list[str] = []
+    monkeypatch.setattr(
+        crawl_sources,
+        "log_info",
+        lambda _worker, message: messages.append(message),
+    )
+
+    stats = crawl_sources._run_toutiao_flow(
+        adapter=_Adapter(missing_ids=set()),
+        authors_path=authors_path,
+        show_browser=False,
+        timeout_value=15,
+        lang="zh-CN",
+        keywords=[],
+        remaining_limit=10,
+    )
+
+    assert stats == {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
+    assert "Author token list is empty." in messages
+
+
+def test_run_isolates_source_exception_and_continues_with_later_source(monkeypatch) -> None:
+    calls: list[str] = []
+    errors: list[tuple[str, str]] = []
+
+    @contextmanager
+    def worker_session(*_args: Any, **_kwargs: Any):
+        yield
+
+    def run_toutiao_flow(**_kwargs: Any) -> crawl_sources.CrawlStats:
+        calls.append("toutiao")
+        raise RuntimeError("broken source")
+
+    def run_tencent_flow(**_kwargs: Any) -> crawl_sources.CrawlStats:
+        calls.append("tencent")
+        return {"consumed": 1, "ok": 1, "failed": 0, "skipped": 0}
+
+    monkeypatch.setattr(
+        crawl_sources,
+        "get_settings",
+        lambda: SimpleNamespace(process_limit=None, keywords_path=None),
+    )
+    monkeypatch.setattr(crawl_sources, "get_adapter", object)
+    monkeypatch.setattr(crawl_sources, "worker_session", worker_session)
+    monkeypatch.setattr(crawl_sources, "_run_toutiao_flow", run_toutiao_flow)
+    monkeypatch.setattr(crawl_sources, "_run_tencent_flow", run_tencent_flow)
+    monkeypatch.setattr(
+        crawl_sources,
+        "log_error",
+        lambda _worker, item, error: errors.append((item, str(error))),
+    )
+
+    crawl_sources.run(limit=2, sources=["toutiao", "tencent"])
+
+    assert calls == ["toutiao", "tencent"]
+    assert errors == [("toutiao_source", "broken source")]

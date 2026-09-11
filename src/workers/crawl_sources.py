@@ -250,13 +250,7 @@ def _resolve_tencent_authors_path() -> Path:
         return candidate
     default_path = TENCENT_DEFAULT_AUTHORS_FILE
     root = _repo_root()
-    preferred = (root / default_path) if not default_path.is_absolute() else default_path
-    if preferred.exists():
-        return preferred
-    legacy = root / "newsqq_crawl" / "qq_author.txt"
-    if legacy.exists():
-        return legacy
-    return preferred
+    return (root / default_path) if not default_path.is_absolute() else default_path
 
 
 def _load_author_entries(path: Path) -> List[Tuple[str, str]]:
@@ -1115,14 +1109,19 @@ def run(
                 log_info(WORKER, f"Unknown source '{source}' skipped")
                 stats = _empty_stats()
             else:
-                stats = registration.run(
-                    SourceRunContext(
-                        adapter=adapter,
-                        keywords=keywords,
-                        remaining_limit=remaining_limit,
-                        pages=pages,
+                try:
+                    stats = registration.run(
+                        SourceRunContext(
+                            adapter=adapter,
+                            keywords=keywords,
+                            remaining_limit=remaining_limit,
+                            pages=pages,
+                        )
                     )
-                )
+                except Exception as exc:
+                    log_error(WORKER, f"{source}_source", exc)
+                    stats = _empty_stats()
+                    stats["failed"] = 1
 
             try:
                 consumed = int(stats.get('consumed') or 0)

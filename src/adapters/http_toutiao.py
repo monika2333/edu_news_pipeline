@@ -122,8 +122,6 @@ def load_author_tokens(path: Path) -> List[Tuple[str, str]]:
             token = stripped
             profile_url = PROFILE_URL_TEMPLATE.format(token=token)
         entries.append((token, profile_url))
-    if not entries:
-        raise ValueError("No author tokens found in input file.")
     return entries
 
 def resolve_short_url(url: str, timeout: int = 15) -> str:

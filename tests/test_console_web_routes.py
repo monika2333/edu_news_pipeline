@@ -521,8 +521,18 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "loadFilterData" not in duty_card_branch
     assert "loadStats" not in duty_card_branch
     assert "const pageEmptied = detachDutyFilterRemoval(removal);" in duty_card_branch
-    assert "if (pageEmptied) await reloadFilterPageAfterRemoval();" in duty_card_branch
+    # 值班分支先提示后补页：重载在后台进行，不得 await
+    assert "await reloadFilterPageAfterRemoval" not in duty_card_branch
+    assert "reloadFilterPageAfterRemoval" in duty_card_branch
+    assert duty_card_branch.index("attachDutyUndo(") < duty_card_branch.index(
+        "reloadFilterPageAfterRemoval"
+    )
     assert "{ reloadOnUndo: pageEmptied, reportType }" in duty_card_branch
+    # 决定前先让焦点编辑框失焦并等待进行中的编辑保存，再收集编辑与版本号
+    assert "await settlePendingFilterEdits();" in card_handler
+    assert card_handler.index("await settlePendingFilterEdits();") < card_handler.index(
+        "collectCardEdits(card, edits);"
+    )
     assert "if (card.isConnected) setInputsDisabled(radios, false);" not in card_handler
     assert "finally {\n        setInputsDisabled(radios, false);\n    }" in card_handler
     cluster_handler = filter_actions_script.split(
@@ -537,8 +547,17 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
         maxsplit=1,
     )[1].split("} else {", maxsplit=1)[0]
     assert "const pageEmptied = detachDutyFilterRemoval(removal);" in duty_cluster_branch
-    assert "if (pageEmptied) await reloadFilterPageAfterRemoval();" in duty_cluster_branch
+    # 值班分支先提示后补页：重载在后台进行，不得 await
+    assert "await reloadFilterPageAfterRemoval" not in duty_cluster_branch
+    assert "reloadFilterPageAfterRemoval" in duty_cluster_branch
+    assert duty_cluster_branch.index("attachDutyUndo(") < duty_cluster_branch.index(
+        "reloadFilterPageAfterRemoval"
+    )
     assert "{ reloadOnUndo: pageEmptied, reportType }" in duty_cluster_branch
+    assert "await settlePendingFilterEdits();" in cluster_handler
+    assert cluster_handler.index(
+        "await settlePendingFilterEdits();"
+    ) < cluster_handler.index("collectCardEdits(card, edits);")
     assert "if (cluster.isConnected) setInputsDisabled(radios, false);" not in cluster_handler
     assert "finally {\n        setInputsDisabled(radios, false);\n    }" in cluster_handler
     assert "return pageEmptied;" in filter_actions_script
@@ -553,10 +572,47 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
         "if (IS_DUTY_WORKSPACE)",
         maxsplit=1,
     )[1].split("} else {", maxsplit=1)[0]
-    assert "await reloadFilterPageAfterRemoval();" in duty_discard_branch
+    # 值班整页放弃：提示与撤销先出现，补页重载在后台进行，不得 await
+    assert "await reloadFilterPageAfterRemoval" not in duty_discard_branch
+    assert "reloadFilterPageAfterRemoval" in duty_discard_branch
+    assert duty_discard_branch.index("attachDutyUndo(") < duty_discard_branch.index(
+        "reloadFilterPageAfterRemoval"
+    )
     assert "{ reloadOnUndo: true }" in duty_discard_branch
+    assert "await settlePendingFilterEdits();" in discard_handler
+    assert discard_handler.index(
+        "await settlePendingFilterEdits();"
+    ) < discard_handler.index("collectCardEdits(card, edits);")
+    # 只保存真正改过的卡片：收集编辑前先做改动判定
+    assert "if (!isFilterCardEditDirty(card)) return;" in filter_actions_script
+    assert "function isFilterCardEditDirty(card)" in filter_actions_script
+    assert "function readCardEditValues(card)" in filter_actions_script
     assert "await Promise.all([loadFilterData(), loadStats()]);" in filter_actions_script
     assert "window.scrollTo({ top: 0, behavior: 'auto' });" in filter_actions_script
+    filter_core_script = (scripts_dir / "core.js").read_text(encoding="utf-8")
+    assert "let pendingFilterEditPromise = Promise.resolve();" in filter_core_script
+    assert "const filterEditBaselines = new Map();" in filter_core_script
+    assert "let filterLoadSeq = 0;" in filter_core_script
+    # 编辑保存串行化，仿审阅页 pendingReviewEditPromise
+    assert "pendingFilterEditPromise.then(" in filter_actions_script
+    assert "pendingFilterEditPromise = saveTask;" in filter_actions_script
+    # 基准：渲染时捕获编辑框实际值；保存成功后推进基准
+    assert "captureFilterEditBaselines();" in filter_data_script
+    assert filter_data_script.index("renderFilterList(data);") < filter_data_script.index(
+        "captureFilterEditBaselines();"
+    )
+    assert "markFilterEditBaselinesSaved(edits);" in filter_data_script
+    assert filter_data_script.index(
+        "requireManualMutationSuccess(res, '编辑保存失败，请重试')"
+    ) < filter_data_script.index("markFilterEditBaselinesSaved(edits);")
+    # 最新请求获胜：被取代的加载不渲染、不报「加载数据失败」
+    assert "function isLatestFilterLoad(seq)" in filter_data_script
+    assert filter_data_script.index(
+        "if (!isLatestFilterLoad(seq)) return false;"
+    ) < filter_data_script.index("renderFilterList(data);")
+    # 退页只在自己那次加载生效时执行
+    assert "const applied = await loadFilterData();" in filter_actions_script
+    assert "if (!applied) return;" in filter_actions_script
     assert "编辑保存失败，请重试" in (
         scripts_dir / "filter_tab_data.js"
     ).read_text(encoding="utf-8")

@@ -39,12 +39,28 @@ async function handleFilterEditChange(target) {
     if (!card) return;
     const edits = {};
     collectCardEdits(card, edits);
-    try {
-        await persistEdits(edits);
-        showToast('已保存');
-    } catch (error) {
-        showToast(error.message || '保存失败', 'error');
+    // 编辑保存串行化：决定操作前通过 pendingFilterEditPromise 等待队列排空，
+    // 避免失焦保存与决定预存带同一版本号并发导致 409
+    const saveTask = pendingFilterEditPromise.then(async () => {
+        try {
+            await persistEdits(edits);
+            showToast('已保存');
+        } catch (error) {
+            showToast(error.message || '保存失败', 'error');
+        }
+    });
+    pendingFilterEditPromise = saveTask;
+    await saveTask;
+}
+
+// 决定前让焦点中的摘要/来源框失焦（触发 change 保存入队），再等待进行中的编辑保存完成
+async function settlePendingFilterEdits() {
+    const activeElement = document.activeElement;
+    if (activeElement && typeof activeElement.matches === 'function'
+        && activeElement.matches('.summary-box, .source-box')) {
+        activeElement.blur();
     }
+    await pendingFilterEditPromise;
 }
 
 async function handleCardDecisionChange(input, reportType = null) {
@@ -59,6 +75,7 @@ async function handleCardDecisionChange(input, reportType = null) {
     const radios = card.querySelectorAll('input[type="radio"][name^="status-"]');
     setInputsDisabled(radios, true);
 
+    await settlePendingFilterEdits();
     const edits = {};
     collectCardEdits(card, edits);
 
@@ -70,7 +87,6 @@ async function handleCardDecisionChange(input, reportType = null) {
             const removal = captureDutyFilterRemoval([card]);
             const pageEmptied = detachDutyFilterRemoval(removal);
             updateDutyFilterDecisionCounts(status, 1, 1, reportType);
-            if (pageEmptied) await reloadFilterPageAfterRemoval();
             attachDutyUndo(
                 removal,
                 [articleId],
@@ -79,6 +95,10 @@ async function handleCardDecisionChange(input, reportType = null) {
                 decisionMessage,
                 { reloadOnUndo: pageEmptied, reportType }
             );
+            if (pageEmptied) {
+                // 后台补下一页，不阻塞提示；加载函数内部吞错，catch 兜底不产生未处理 rejection
+                reloadFilterPageAfterRemoval().catch(() => {});
+            }
         } else {
             removeCardAndMaybeCluster(card);
             loadStats();
@@ -127,6 +147,7 @@ async function handleClusterDecisionChange(input, reportType = null) {
     const radios = cluster.querySelectorAll('.cluster-radio input[type="radio"]');
     setInputsDisabled(radios, true);
 
+    await settlePendingFilterEdits();
     const edits = {};
     const ids = [];
     cards.forEach((card) => {
@@ -149,7 +170,6 @@ async function handleClusterDecisionChange(input, reportType = null) {
             const removal = captureDutyFilterRemoval(cards);
             const pageEmptied = detachDutyFilterRemoval(removal);
             updateDutyFilterDecisionCounts(status, ids.length, 1, reportType);
-            if (pageEmptied) await reloadFilterPageAfterRemoval();
             attachDutyUndo(
                 removal,
                 ids,
@@ -158,6 +178,9 @@ async function handleClusterDecisionChange(input, reportType = null) {
                 decisionMessage,
                 { reloadOnUndo: pageEmptied, reportType }
             );
+            if (pageEmptied) {
+                reloadFilterPageAfterRemoval().catch(() => {});
+            }
         } else {
             cluster.remove();
             loadStats();
@@ -187,14 +210,29 @@ async function handleClusterDecisionChange(input, reportType = null) {
     }
 }
 
-function collectCardEdits(card, edits) {
-    const articleId = card.dataset.id;
-    if (!articleId) return;
+function readCardEditValues(card) {
     const summaryBox = card.querySelector('.summary-box');
     const sourceBox = card.querySelector('.source-box');
-    const summary = summaryBox ? summaryBox.value : '';
-    const llm_source = sourceBox ? sourceBox.value : '';
-    edits[articleId] = { summary, llm_source };
+    return {
+        summary: summaryBox ? summaryBox.value : '',
+        llm_source: sourceBox ? sourceBox.value : ''
+    };
+}
+
+// 改动判定：与「最近一次被服务端确认的值」（基准）不同才算改过；没有基准时按改过处理，漏存比多存严重
+function isFilterCardEditDirty(card) {
+    const articleId = card.dataset.id;
+    if (!articleId) return false;
+    const baseline = filterEditBaselines.get(articleId);
+    if (!baseline) return true;
+    const current = readCardEditValues(card);
+    return baseline.summary !== current.summary || baseline.llm_source !== current.llm_source;
+}
+
+function collectCardEdits(card, edits) {
+    if (!isFilterCardEditDirty(card)) return;
+    const articleId = card.dataset.id;
+    edits[articleId] = readCardEditValues(card);
 }
 
 function setInputsDisabled(nodes, disabled) {
@@ -363,7 +401,9 @@ function scheduleReloadIfFilterPageEmpty() {
 
 async function reloadFilterPageAfterRemoval() {
     const currentPage = state.filterPage;
-    await loadFilterData();
+    const applied = await loadFilterData();
+    // 自己那次加载被更新的请求取代时，退页与滚动都交给生效的那次加载处理
+    if (!applied) return;
     const afterReload = elements.filterList.querySelectorAll('.article-card');
     if ((!afterReload || !afterReload.length) && currentPage > 1) {
         state.filterPage = currentPage - 1;
@@ -379,6 +419,7 @@ async function discardRemainingItems() {
         return;
     }
 
+    await settlePendingFilterEdits();
     const edits = {};
     const ids = [];
     cards.forEach((card) => {
@@ -400,7 +441,6 @@ async function discardRemainingItems() {
             const removal = captureDutyFilterRemoval(cards);
             detachDutyFilterRemoval(removal);
             updateDutyFilterDecisionCounts('discarded', ids.length, 1);
-            await reloadFilterPageAfterRemoval();
             attachDutyUndo(
                 removal,
                 ids,
@@ -409,6 +449,7 @@ async function discardRemainingItems() {
                 `已放弃 ${ids.length} 条新闻`,
                 { reloadOnUndo: true }
             );
+            reloadFilterPageAfterRemoval().catch(() => {});
         } else {
             removeCardsAndClusters(cards);
             loadStats();

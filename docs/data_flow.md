@@ -127,6 +127,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 - 状态：`pending` / `selected` / `backup` / `discarded` / `exported`
 - `report_type` 只有 `zongbao` / `wanbao`，且**只在采纳时才有意义**——`pending` 状态下这个值不代表任何东西
 - `version` 用于乐观锁，防止同一管理员的并发请求覆盖自己的新决定
+- 人工摘要/来源（`summary` / `manual_llm_source`）只在用户实际编辑时写入：前端以「最近一次被服务端确认的值」为基准做改动判定，决定操作不再顺带把界面显示值整份写成人工值；历史数据中已有的此类副本不做清理
 - 汇总审阅的「一键清空」只把当前管理员自己的 `selected` / `backup` 行置为 `discarded`；`clear-review-buckets` 命令显式清空所有管理员。两条路径都清空排序值但保留摘要、来源、笔记、评分和原报别；命令行路径使用 `decided_by = 'system:scheduled_clear'` 标记系统操作，`decided_by_user_id` 保持为空
 
 ### `shift_reviews` —— 值班编辑工作区
@@ -137,6 +138,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 - `finalized_batch_id` / `finalized_rank` 表示已定稿，两者必须同时有值或同时为空（有 CHECK 约束保证）
 - 批量编辑采用部分更新：请求中未提交的摘要或人工来源字段保持原值；显式提交空字符串时仍按空字符串写入
 - 值班编辑按筛选条件批量放弃时，服务端直接用 `INSERT ... SELECT ... ON CONFLICT DO UPDATE` 写入本表；匹配条件复用管理员候选池的统一筛选器，但额外受班次归属约束。该路径不读取或写入 `manual_reviews`，不覆盖已有决定或已定稿条目，也不做逐行版本校验。
+- 人工摘要/来源（`edited_summary` / `manual_llm_source`）只在用户实际编辑时写入：前端以「最近一次被服务端确认的值」为基准做改动判定，决定操作不再顺带把界面显示值整份写成人工值；历史数据中已有的此类副本不做清理
 
 ### 两者的关系
 

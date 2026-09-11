@@ -127,6 +127,12 @@ const elements = {
 
 let isBulkUpdatingReview = false;
 let pendingReviewEditPromise = Promise.resolve();
+// 筛选页编辑保存串行化队列，决定操作前必须等待它排空（参照审阅页 pendingReviewEditPromise）
+let pendingFilterEditPromise = Promise.resolve();
+// 筛选页卡片「最近一次被服务端确认的摘要/来源」基准，articleId → { summary, llm_source }
+const filterEditBaselines = new Map();
+// loadFilterData 请求序号，只有最新一次请求允许渲染列表
+let filterLoadSeq = 0;
 
 function showToast(msg, type = 'success', action = null) {
     showToastAt(elements.toast, msg, type, action);

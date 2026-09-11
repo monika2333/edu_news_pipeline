@@ -19,7 +19,13 @@ async function loadLatestIngestStatus() {
     }
 }
 
+// 最新请求获胜：只有最后发起的 loadFilterData 允许渲染，被取代的请求无论成败都静默丢弃
+function isLatestFilterLoad(seq) {
+    return seq === filterLoadSeq;
+}
+
 async function loadFilterData(options = {}) {
+    const seq = ++filterLoadSeq;
     const forceClusterRefresh = Boolean(options.forceClusterRefresh) || shouldForceClusterRefresh;
     shouldForceClusterRefresh = false;
     syncFilterToolbarState();
@@ -48,11 +54,13 @@ async function loadFilterData(options = {}) {
         const res = await workspaceFetch(`${API_BASE}/candidates?${params.toString()}`);
         if (!res.ok) throw new Error('failed to load candidates');
         const data = await res.json();
+        if (!isLatestFilterLoad(seq)) return false;
 
         state.filterViewMode = data.view_mode || (searchMode ? 'search' : 'browse');
         state.filterSearchTotal = searchMode ? (data.total || 0) : 0;
 
         renderFilterList(data);
+        captureFilterEditBaselines();
         updatePagination('filter', data.total || 0, state.filterPage, data.limit);
         if (!searchMode) {
             const bucketTotal = typeof data.item_total === 'number' ? data.item_total : data.total;
@@ -60,8 +68,11 @@ async function loadFilterData(options = {}) {
             updateFilterCountsUI();
         }
         syncFilterToolbarState();
+        return true;
     } catch (error) {
+        if (!isLatestFilterLoad(seq)) return false;
         elements.filterList.innerHTML = '<div class="error">加载数据失败</div>';
+        return false;
     }
 }
 
@@ -108,6 +119,25 @@ async function persistEdits(edits) {
         })
     });
     await requireManualMutationSuccess(res, '编辑保存失败，请重试');
+    markFilterEditBaselinesSaved(edits);
+}
+
+// 渲染后把编辑框实际值记为基准：初始基准 = 最近一次被服务端确认的值
+function captureFilterEditBaselines() {
+    if (!elements.filterList) return;
+    elements.filterList.querySelectorAll('.article-card[data-id]').forEach((card) => {
+        filterEditBaselines.set(card.dataset.id, readCardEditValues(card));
+    });
+}
+
+// 保存成功后推进基准；保存失败不调用，卡片保持「改过」等下一次决定流程重试
+function markFilterEditBaselinesSaved(edits) {
+    Object.entries(edits || {}).forEach(([articleId, value]) => {
+        filterEditBaselines.set(articleId, {
+            summary: value.summary,
+            llm_source: value.llm_source
+        });
+    });
 }
 
 // reportType 缺省用「采纳/备选归入」报别（dock）；右键快捷菜单可覆盖为另一报别，不改变归入报别状态。

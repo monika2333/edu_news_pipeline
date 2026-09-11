@@ -113,17 +113,9 @@ class Settings:
     llm_api_key: Optional[str]
     llm_api_http_referer: Optional[str]
     llm_api_title: Optional[str]
-    llm_summary_model: str
-    llm_source_model: str
-    llm_scoring_model: str
-    llm_sentiment_model: str
-    llm_reasoning_enabled: bool
     llm_reasoning_effort: Optional[str]
     llm_reasoning_max_tokens: Optional[int]
     llm_reasoning_exclude: bool
-    llm_summary_reasoning_enabled: bool
-    llm_source_reasoning_enabled: bool
-    llm_sentiment_reasoning_enabled: bool
     llm_scoring_timeout: int
     llm_summary_timeout: int
     llm_external_filter_timeout: int
@@ -158,7 +150,6 @@ class Settings:
     beijing_keywords_path: Path
     source_aliases_path: Path
     score_keyword_bonus_rules: Dict[str, int]
-    llm_external_filter_model: str
     external_filter_threshold: int
     external_filter_negative_threshold: int
     internal_filter_threshold: int
@@ -170,7 +161,6 @@ class Settings:
     beijing_gate_prompt_path: Path
     external_filter_batch_size: int
     external_filter_max_retries: int
-    llm_beijing_gate_model: str
     beijing_gate_max_retries: int
 
 
@@ -186,19 +176,10 @@ def get_settings() -> Settings:
     db_password = _get_env("DB_PASSWORD", "POSTGRES_PASSWORD")
     db_schema = _get_env("DB_SCHEMA", "POSTGRES_SCHEMA") or "public"
 
-    default_llm_model = os.getenv("LLM_MODEL") or "deepseek/deepseek-v4-flash"
     llm_api_base_url = os.getenv("LLM_API_BASE_URL") or "https://openrouter.ai/api/v1"
     llm_api_key = os.getenv("LLM_API_KEY")
     llm_api_http_referer = os.getenv("LLM_API_HTTP_REFERER")
     llm_api_title = os.getenv("LLM_API_TITLE")
-    llm_summary_model = os.getenv("LLM_SUMMARY_MODEL") or default_llm_model
-    llm_source_model = os.getenv("LLM_SOURCE_MODEL") or llm_summary_model
-    llm_scoring_model = os.getenv("LLM_SCORING_MODEL") or default_llm_model
-    llm_sentiment_model = os.getenv("LLM_SENTIMENT_MODEL") or llm_summary_model
-    llm_reasoning_enabled = _bool_from_env(
-        os.getenv("LLM_REASONING_ENABLED"),
-        default=True,
-    )
     raw_reasoning_effort = (os.getenv("LLM_REASONING_EFFORT") or "").strip().lower()
     llm_reasoning_effort = raw_reasoning_effort if raw_reasoning_effort in {"low", "medium", "high"} else None
     llm_reasoning_max_tokens = _optional_int(os.getenv("LLM_REASONING_MAX_TOKENS"))
@@ -206,19 +187,6 @@ def get_settings() -> Settings:
         os.getenv("LLM_REASONING_EXCLUDE"),
         default=True,
     )
-    llm_summary_reasoning_enabled = _bool_from_env(
-        os.getenv("LLM_SUMMARY_REASONING_ENABLED"),
-        default=False,
-    )
-    llm_source_reasoning_enabled = _bool_from_env(
-        os.getenv("LLM_SOURCE_REASONING_ENABLED"),
-        default=True,
-    )
-    llm_sentiment_reasoning_enabled = _bool_from_env(
-        os.getenv("LLM_SENTIMENT_REASONING_ENABLED"),
-        default=True,
-    )
-
     # LLM timeout configuration (in seconds)
     llm_global_timeout = _optional_int(os.getenv("LLM_TIMEOUT")) or 90
     llm_scoring_timeout = _optional_int(os.getenv("LLM_SCORING_TIMEOUT")) or llm_global_timeout or 30
@@ -260,7 +228,6 @@ def get_settings() -> Settings:
     llm_quota_alert_cooldown_seconds = (
         _optional_int(os.getenv("LLM_QUOTA_ALERT_COOLDOWN_SECONDS")) or 21600
     )
-    llm_external_filter_model = os.getenv("LLM_EXTERNAL_FILTER_MODEL") or llm_scoring_model
     raw_score_threshold = _optional_int(
         _get_env("SCORE_PROMOTION_THRESHOLD", "SCORE_THRESHOLD")
     )
@@ -287,7 +254,6 @@ def get_settings() -> Settings:
     )
     external_filter_batch_size = _optional_int(os.getenv("EXTERNAL_FILTER_BATCH_SIZE")) or 50
     external_filter_max_retries = _optional_int(os.getenv("EXTERNAL_FILTER_MAX_RETRIES")) or 3
-    llm_beijing_gate_model = os.getenv("LLM_BEIJING_GATE_MODEL") or llm_scoring_model
     beijing_gate_max_retries = _optional_int(os.getenv("BEIJING_GATE_MAX_RETRIES")) or 3
 
     process_limit = _optional_int(os.getenv("PROCESS_LIMIT"))
@@ -430,17 +396,9 @@ def get_settings() -> Settings:
         llm_api_key=llm_api_key,
         llm_api_http_referer=llm_api_http_referer,
         llm_api_title=llm_api_title,
-        llm_summary_model=llm_summary_model,
-        llm_source_model=llm_source_model,
-        llm_scoring_model=llm_scoring_model,
-        llm_sentiment_model=llm_sentiment_model,
-        llm_reasoning_enabled=llm_reasoning_enabled,
         llm_reasoning_effort=llm_reasoning_effort,
         llm_reasoning_max_tokens=llm_reasoning_max_tokens,
         llm_reasoning_exclude=llm_reasoning_exclude,
-        llm_summary_reasoning_enabled=llm_summary_reasoning_enabled,
-        llm_source_reasoning_enabled=llm_source_reasoning_enabled,
-        llm_sentiment_reasoning_enabled=llm_sentiment_reasoning_enabled,
         llm_scoring_timeout=llm_scoring_timeout,
         llm_summary_timeout=llm_summary_timeout,
         llm_external_filter_timeout=llm_external_filter_timeout,
@@ -475,7 +433,6 @@ def get_settings() -> Settings:
         beijing_keywords_path=beijing_keywords_path,
         source_aliases_path=source_aliases_path,
         score_keyword_bonus_rules=keyword_bonus_rules,
-        llm_external_filter_model=llm_external_filter_model,
         external_filter_threshold=external_filter_threshold,
         external_filter_negative_threshold=external_filter_negative_threshold,
         internal_filter_threshold=internal_filter_threshold,
@@ -487,7 +444,6 @@ def get_settings() -> Settings:
         beijing_gate_prompt_path=beijing_gate_prompt_path,
         external_filter_batch_size=external_filter_batch_size,
         external_filter_max_retries=external_filter_max_retries,
-        llm_beijing_gate_model=llm_beijing_gate_model,
         beijing_gate_max_retries=beijing_gate_max_retries,
     )
 

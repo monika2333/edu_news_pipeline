@@ -89,16 +89,6 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     monkeypatch.setenv("LLM_API_HTTP_REFERER", "https://console.example.test")
     monkeypatch.setenv("LLM_API_TITLE", "Edu News Pipeline")
-    monkeypatch.setenv("LLM_MODEL", "model-default")
-    monkeypatch.setenv("LLM_SUMMARY_MODEL", "model-summary")
-    monkeypatch.setenv("LLM_SOURCE_MODEL", "model-source")
-    monkeypatch.setenv("LLM_SCORING_MODEL", "model-scoring")
-    monkeypatch.setenv("LLM_SENTIMENT_MODEL", "model-sentiment")
-    monkeypatch.setenv("LLM_EXTERNAL_FILTER_MODEL", "model-external-filter")
-    monkeypatch.setenv("LLM_BEIJING_GATE_MODEL", "model-beijing-gate")
-    monkeypatch.setenv("LLM_SUMMARY_REASONING_ENABLED", "true")
-    monkeypatch.setenv("LLM_SOURCE_REASONING_ENABLED", "false")
-    monkeypatch.setenv("LLM_SENTIMENT_REASONING_ENABLED", "false")
     monkeypatch.setenv("LLM_SCORING_TIMEOUT", "11")
     monkeypatch.setenv("LLM_SUMMARY_TIMEOUT", "22")
     monkeypatch.setenv("LLM_EXTERNAL_FILTER_TIMEOUT", "33")
@@ -121,15 +111,12 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
     assert settings.llm_api_key == "test-key"
     assert settings.llm_api_http_referer == "https://console.example.test"
     assert settings.llm_api_title == "Edu News Pipeline"
-    assert settings.llm_summary_model == "model-summary"
-    assert settings.llm_source_model == "model-source"
-    assert settings.llm_scoring_model == "model-scoring"
-    assert settings.llm_sentiment_model == "model-sentiment"
-    assert settings.llm_external_filter_model == "model-external-filter"
-    assert settings.llm_beijing_gate_model == "model-beijing-gate"
-    assert settings.llm_summary_reasoning_enabled is True
-    assert settings.llm_source_reasoning_enabled is False
-    assert settings.llm_sentiment_reasoning_enabled is False
+    assert not hasattr(settings, "llm_summary_model")
+    assert not hasattr(settings, "llm_scoring_model")
+    assert not hasattr(settings, "llm_reasoning_enabled")
+    assert not hasattr(settings, "llm_summary_reasoning_enabled")
+    assert not hasattr(settings, "llm_source_reasoning_enabled")
+    assert not hasattr(settings, "llm_sentiment_reasoning_enabled")
     assert settings.llm_scoring_timeout == 11
     assert settings.llm_summary_timeout == 22
     assert settings.llm_external_filter_timeout == 33
@@ -145,22 +132,6 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
     assert settings.llm_quota_alert_enabled is False
     assert settings.llm_quota_alert_cooldown_seconds == 99
     assert settings.llm_quota_alert_state_path.name == "test_quota_state.json"
-
-
-def test_settings_uses_llm_model_for_all_task_models(
-    clean_settings_env: None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("LLM_MODEL", "model-shared")
-
-    settings = config.get_settings()
-
-    assert settings.llm_summary_model == "model-shared"
-    assert settings.llm_source_model == "model-shared"
-    assert settings.llm_scoring_model == "model-shared"
-    assert settings.llm_sentiment_model == "model-shared"
-    assert settings.llm_external_filter_model == "model-shared"
-    assert settings.llm_beijing_gate_model == "model-shared"
 
 
 def test_settings_prefers_positive_filter_threshold_names(
@@ -209,16 +180,14 @@ def test_settings_ignores_removed_llm_variable_names(
 
     assert settings.llm_api_base_url == "https://openrouter.ai/api/v1"
     assert settings.llm_api_key is None
-    assert settings.llm_scoring_model == "deepseek/deepseek-v4-flash"
-    assert settings.llm_summary_model == "deepseek/deepseek-v4-flash"
-    assert settings.llm_external_filter_model == settings.llm_scoring_model
-    assert settings.llm_beijing_gate_model == settings.llm_scoring_model
-    assert settings.llm_reasoning_enabled is True
+    assert not hasattr(settings, "llm_summary_model")
+    assert not hasattr(settings, "llm_scoring_model")
+    assert not hasattr(settings, "llm_reasoning_enabled")
     assert settings.llm_reasoning_effort is None
     assert settings.llm_reasoning_exclude is True
-    assert settings.llm_summary_reasoning_enabled is False
-    assert settings.llm_source_reasoning_enabled is True
-    assert settings.llm_sentiment_reasoning_enabled is True
+    assert not hasattr(settings, "llm_summary_reasoning_enabled")
+    assert not hasattr(settings, "llm_source_reasoning_enabled")
+    assert not hasattr(settings, "llm_sentiment_reasoning_enabled")
     assert settings.llm_scoring_timeout == 90
     assert settings.llm_summary_timeout == 90
     assert settings.llm_external_filter_timeout == 90

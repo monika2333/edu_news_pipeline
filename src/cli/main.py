@@ -2,12 +2,18 @@
 
 import argparse
 import getpass
+import json
 import os
 import sys
 import threading
 import time
 from pathlib import Path
 
+from src.business_config import (
+    business_config_context,
+    load_business_config,
+    warn_legacy_config,
+)
 from src.config import get_settings
 from src.workers.crawl_sources import run as crawl_sources
 from src.workers.enrich_summary import run as enrich_summaries
@@ -32,7 +38,7 @@ def _add_crawl(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("crawl", help="Collect fresh articles from configured sources")
     parser.add_argument("--limit", type=_positive_int, default=5000, help="Max number of feed items to ingest (across sources)")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
-    parser.add_argument("--sources", type=str, default="toutiao", help="Comma-separated sources, e.g. 'toutiao,tencent,chinanews'")
+    parser.add_argument("--sources", type=str, default=None, help="One-run comma-separated source override; defaults to database configuration")
     parser.add_argument("--pages", type=_positive_int, default=None, help="Optional pages per paginated source (e.g., ChinaNews)")
 
 
@@ -223,6 +229,68 @@ def _add_feishu_archive_bot(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_import_settings(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "import-settings",
+        help="Preview or import legacy model, source, and account configuration",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Write the previewed configuration in one transaction",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable preview output",
+    )
+
+
+def _import_settings(args: argparse.Namespace) -> int:
+    from src.adapters.db_postgres_core import get_adapter
+    from src.console.settings_service import preview_legacy_import
+
+    preview = preview_legacy_import()
+    if args.json:
+        print(json.dumps(preview, ensure_ascii=False, indent=2, default=str))
+    else:
+        print("Models:", json.dumps(preview["sections"]["llm_models"], ensure_ascii=False))
+        print("Hourly sources:", ", ".join(preview["sections"]["crawl_sources"]))
+        for source, summary in preview["account_summary"].items():
+            print(
+                f"{source}: parsed={summary['parsed_count']} "
+                f"duplicates={len(summary['duplicates'])} "
+                f"errors={len(summary['errors'])}"
+            )
+            for item in summary["duplicates"]:
+                print(
+                    f"  duplicate line {item['line_number']}: {item['input']}"
+                )
+            for item in summary["errors"]:
+                print(
+                    f"  invalid line {item['line_number']}: "
+                    f"{item['input']} ({item['error']})"
+                )
+        if preview["daily_only_sources"]:
+            print(
+                "Daily-only sources in hourly list: "
+                + ", ".join(preview["daily_only_sources"])
+            )
+    if not args.apply:
+        print("Preview only. Re-run with --apply to write.")
+        return 0
+    if preview["daily_only_sources"]:
+        raise ValueError("每小时来源含仅每日任务来源，拒绝导入")
+    if preview["has_parse_errors"]:
+        raise ValueError("账号文件存在无法解析的行，拒绝导入")
+    get_adapter().import_app_config(
+        sections=preview["sections"],
+        accounts=preview["accounts"],
+    )
+    print("Imported settings successfully.")
+    return 0
+
+
 def _read_initial_password(password_env: str | None) -> str:
     if password_env:
         password = os.getenv(password_env)
@@ -332,13 +400,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_refresh_manual_clusters(subparsers)
     _add_clear_review_buckets(subparsers)
     _add_feishu_archive_bot(subparsers)
+    _add_import_settings(subparsers)
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
+def _run_command(args: argparse.Namespace) -> int:
     command = args.command
     if command == "crawl":
         crawl_sources(limit=args.limit, concurrency=args.concurrency, sources=args.sources, pages=args.pages)
@@ -404,8 +470,37 @@ def main(argv: list[str] | None = None) -> int:
 
         run_feishu_archive_bot()
     else:
-        parser.error(f"Unknown command: {command}")
+        raise ValueError(f"Unknown command: {command}")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.command == "import-settings":
+        return _import_settings(args)
+
+    business_commands = {
+        "crawl",
+        "hash-primary",
+        "summarize",
+        "enrich-summary",
+        "geo-classify",
+        "score",
+        "external-filter",
+        "submission-dedup",
+    }
+    if args.command not in business_commands:
+        return _run_command(args)
+
+    warn_legacy_config()
+    config = load_business_config()
+    if args.command == "crawl" and args.sources:
+        config = config.with_crawl_sources(
+            [item.strip() for item in args.sources.split(",") if item.strip()]
+        )
+    with business_config_context(config):
+        return _run_command(args)
 
 
 __all__ = ["build_parser", "main"]

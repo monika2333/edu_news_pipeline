@@ -11,6 +11,7 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 from src.adapters import (
+    db_postgres_app_config as app_config,
     db_postgres_audit as audit,
     db_postgres_export as export,
     db_postgres_ingest as ingest,
@@ -91,6 +92,7 @@ class PostgresAdapter:
         # autocommit 时另一线程正在执行语句，触发 ProgrammingError: INTRANS）。
         # 用一把可重入锁把连接的整个使用期串行化。
         self._conn_lock = threading.RLock()
+        self.app_config = app_config.AppConfigNamespace(self)
         self.export = export.ExportNamespace(self)
         self.ingest = ingest.IngestNamespace(self)
         self.manual_reviews = manual_reviews.ManualReviewsNamespace(self)
@@ -1180,6 +1182,114 @@ class PostgresAdapter:
                     request_id=request_id,
                 )
             return after
+
+    # ------------------------------------------------------------------
+    # Console-managed business configuration
+    # ------------------------------------------------------------------
+    def update_app_setting_as_user(
+        self,
+        *,
+        section: str,
+        value: Any,
+        expected_version: int,
+        actor_user_id: str,
+    ) -> Dict[str, Any]:
+        with self.transaction() as cur:
+            return app_config.update_setting(
+                cur,
+                section=section,
+                value=value,
+                expected_version=expected_version,
+                actor_user_id=actor_user_id,
+            )
+
+    def create_crawl_account_as_user(
+        self,
+        *,
+        source: str,
+        normalized_identifier: str,
+        original_input: str,
+        profile_url: str,
+        display_name: Optional[str],
+        actor_user_id: str,
+    ) -> Dict[str, Any]:
+        with self.transaction() as cur:
+            after = app_config.insert_account(
+                cur,
+                source=source,
+                normalized_identifier=normalized_identifier,
+                original_input=original_input,
+                profile_url=profile_url,
+                display_name=display_name,
+                enabled=True,
+                actor_user_id=actor_user_id,
+            )
+            return after
+
+    def create_crawl_accounts_as_user(
+        self,
+        *,
+        accounts: Sequence[Mapping[str, Any]],
+        actor_user_id: str,
+    ) -> List[Dict[str, Any]]:
+        created: List[Dict[str, Any]] = []
+        with self.transaction() as cur:
+            for item in accounts:
+                after = app_config.insert_account(
+                    cur,
+                    source=str(item["source"]),
+                    normalized_identifier=str(item["normalized_identifier"]),
+                    original_input=str(item["original_input"]),
+                    profile_url=str(item["profile_url"]),
+                    display_name=item.get("display_name"),
+                    enabled=True,
+                    actor_user_id=actor_user_id,
+                )
+                created.append(after)
+        return created
+
+    def update_crawl_account_as_user(
+        self,
+        *,
+        account_id: str,
+        display_name: Optional[str],
+        set_display_name: bool,
+        enabled: Optional[bool],
+        set_enabled: bool,
+        actor_user_id: str,
+    ) -> Dict[str, Any]:
+        with self.transaction() as cur:
+            return app_config.update_account(
+                cur,
+                account_id=account_id,
+                display_name=display_name,
+                set_display_name=set_display_name,
+                enabled=enabled,
+                set_enabled=set_enabled,
+                actor_user_id=actor_user_id,
+            )
+
+    def delete_crawl_account_as_user(
+        self,
+        *,
+        account_id: str,
+        actor_user_id: str,
+    ) -> Dict[str, Any]:
+        with self.transaction() as cur:
+            return app_config.delete_account(cur, account_id)
+
+    def import_app_config(
+        self,
+        *,
+        sections: Mapping[str, Any],
+        accounts: Sequence[Mapping[str, Any]],
+    ) -> None:
+        with self.transaction() as cur:
+            app_config.import_config_bundle(
+                cur,
+                sections=sections,
+                accounts=accounts,
+            )
 
 
 def get_adapter() -> PostgresAdapter:

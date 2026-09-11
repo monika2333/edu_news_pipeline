@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.console import (
@@ -62,6 +63,58 @@ def test_duty_editor_cannot_change_admin_duty_discard_state() -> None:
             "article_id": "article-1",
             "discarded": True,
         },
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "json_body"),
+    [
+        ("GET", "/api/admin/settings", None),
+        (
+            "PUT",
+            "/api/admin/settings/crawl_sources",
+            {"value": ["toutiao"], "expected_version": 1},
+        ),
+        (
+            "POST",
+            "/api/admin/settings/llm_models/test",
+            {"step": "summary", "model": "model-a", "reasoning": False},
+        ),
+        ("GET", "/api/admin/crawl-accounts?source=toutiao", None),
+        (
+            "POST",
+            "/api/admin/crawl-accounts",
+            {"source": "toutiao", "text": "account-token"},
+        ),
+        (
+            "POST",
+            "/api/admin/crawl-accounts/preview",
+            {"source": "toutiao", "text": "account-token"},
+        ),
+        (
+            "POST",
+            "/api/admin/crawl-accounts/bulk",
+            {"source": "toutiao", "text": "account-token"},
+        ),
+        (
+            "PATCH",
+            "/api/admin/crawl-accounts/account-id",
+            {"enabled": False},
+        ),
+        ("DELETE", "/api/admin/crawl-accounts/account-id", None),
+    ],
+)
+def test_m15_duty_editor_cannot_access_any_settings_route(
+    method: str,
+    path: str,
+    json_body: Any,
+) -> None:
+    response = _client_for(_user("duty_editor")).request(
+        method,
+        path,
+        json=json_body,
     )
 
     assert response.status_code == 403

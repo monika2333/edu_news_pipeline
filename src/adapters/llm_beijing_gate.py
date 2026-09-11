@@ -12,6 +12,7 @@ from src.adapters.llm_chat import (
     extract_message_text,
     post_chat_completion,
 )
+from src.business_config import get_llm_step_config
 from src.config import get_settings
 from src.domain import BeijingGateCandidate
 
@@ -110,10 +111,6 @@ def build_prompt(candidate: BeijingGateCandidate) -> str:
     )
 
 
-def _resolve_model_name(settings) -> str:
-    return settings.llm_beijing_gate_model
-
-
 def _resolve_timeout(settings) -> int:
     value = getattr(settings, "llm_beijing_gate_timeout", None)
     if isinstance(value, int) and value > 0:
@@ -152,7 +149,7 @@ def _post_chat_completion(
         retries=retries,
         retryable_statuses=RETRYABLE_STATUS,
         operation="beijing_gate",
-        model=_resolve_model_name(settings),
+        model=str(payload["model"]),
         deadline=deadline,
         response_validator=validate_response,
     )
@@ -170,10 +167,12 @@ def _post_chat_completion(
 def call_beijing_gate(candidate: BeijingGateCandidate, *, retries: int = 3) -> BeijingGateDecision:
     started_at = time.monotonic()
     settings = get_settings()
+    step_config = get_llm_step_config("beijing_gate")
+    model = step_config.model
     deadline = started_at + settings.llm_beijing_gate_budget
     prompt = build_prompt(candidate)
     payload: dict[str, Any] = {
-        "model": _resolve_model_name(settings),
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0,
         "response_format": BEIJING_GATE_RESPONSE_FORMAT,
@@ -181,7 +180,7 @@ def call_beijing_gate(candidate: BeijingGateCandidate, *, retries: int = 3) -> B
     apply_reasoning_config(
         payload,
         settings=settings,
-        enabled=settings.llm_reasoning_enabled,
+        enabled=step_config.reasoning,
     )
     timeout = _resolve_timeout(settings)
     semantic_attempts = max(1, retries)

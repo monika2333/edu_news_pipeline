@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from src.adapters.http_tencent import _clean_html_to_markdown
+from src.adapters.http_tencent import _clean_html_to_markdown, parse_author_input
+
+
+def test_m11_tencent_parser_preserves_legacy_bare_and_url_results() -> None:
+    bare = parse_author_input("author=")
+    url = parse_author_input("https://news.qq.com/omn/author/author%3D")
+
+    assert bare.author_id == url.author_id == "author="
+    assert bare.profile_url == "https://news.qq.com/omn/author/author="
+    assert url.profile_url == url.raw_source
 
 
 def test_clean_html_keeps_tencent_inline_card_text_in_same_paragraph() -> None:

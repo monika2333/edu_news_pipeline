@@ -1,11 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import replace
-
 import pytest
 
 from src.adapters import llm_duplicate_review as duplicate_review
+from src.business_config import LLMStepConfig
 from src.config import get_settings
+
+
+@pytest.fixture(autouse=True)
+def _model_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        duplicate_review,
+        "get_llm_step_config",
+        lambda _step: LLMStepConfig("duplicate-review-model", True),
+    )
 
 
 def test_build_prompt_requests_only_article_id_groups() -> None:
@@ -57,9 +65,15 @@ def test_parse_duplicate_groups_rejects_invalid_responses(raw_output: str) -> No
         duplicate_review.parse_duplicate_groups(raw_output)
 
 
-def test_call_duplicate_review_uses_scoring_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = replace(get_settings(), llm_scoring_model="score-model-for-duplicates")
+def test_m4_duplicate_review_uses_independent_duplicate_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = get_settings()
     captured: dict[str, object] = {}
+
+    def get_model(step: str) -> LLMStepConfig:
+        captured["step"] = step
+        return LLMStepConfig("duplicate-review-model", True)
 
     def fake_post(payload, *, retries: int, timeout: int, deadline: float) -> str:
         captured["payload"] = payload
@@ -69,11 +83,13 @@ def test_call_duplicate_review_uses_scoring_model(monkeypatch: pytest.MonkeyPatc
         return '{"duplicate_groups":[]}'
 
     monkeypatch.setattr(duplicate_review, "get_settings", lambda: settings)
+    monkeypatch.setattr(duplicate_review, "get_llm_step_config", get_model)
     monkeypatch.setattr(duplicate_review, "_post_chat_completion", fake_post)
 
     groups = duplicate_review.call_duplicate_review([], retries=1)
 
     assert groups == []
-    assert captured["payload"]["model"] == "score-model-for-duplicates"
+    assert captured["step"] == "duplicate_review"
+    assert captured["payload"]["model"] == "duplicate-review-model"
     assert captured["timeout"] == settings.llm_scoring_timeout
     assert captured["deadline"] > 0

@@ -5,10 +5,20 @@ from unittest.mock import patch
 
 import pytest
 
-from src.adapters import llm_chat
+from src.adapters import llm_chat, llm_summary
 from src.adapters.llm_chat import LLMQuotaError
 from src.adapters.llm_summary import build_summary_payload, summarise
+from src.business_config import LLMStepConfig
 from src.config import get_settings
+
+
+@pytest.fixture(autouse=True)
+def _model_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        llm_summary,
+        "get_llm_step_config",
+        lambda _step: LLMStepConfig("model-summary", False),
+    )
 
 
 def test_build_summary_payload_requests_around_200_chinese_chars() -> None:
@@ -36,7 +46,6 @@ def test_summarise_raises_quota_error_without_retry(monkeypatch, tmp_path) -> No
     settings = replace(
         get_settings(),
         llm_api_key="test-key",
-        llm_summary_model="model-summary",
         llm_quota_alert_state_path=tmp_path / "quota_state.json",
     )
     calls = []

@@ -58,6 +58,10 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 **写入**：`raw_articles`、`filtered_articles`
 
+每小时来源顺序来自 `app_settings.crawl_sources`；四类账号型来源只读取
+`crawl_accounts` 中启用的行。流水线启动时读取一次业务配置，整轮不随控制台修改而
+变化；单次 `--sources` 仅覆盖本轮来源列表。
+
 各来源 adapter 抓取列表页后写入 `raw_articles`，同时做关键词初筛，命中的写入 `filtered_articles`。
 
 `raw_articles` 的抓取分两步：先写列表信息（`upsert_raw_feed_rows`），再补正文（`update_raw_article_details`，同时写 `detail_fetched_at`）。
@@ -95,6 +99,10 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 | `submission-dedup` | 无独立状态字段 | `dedup_embedding`、`dedup_embedding_model`、`dedup_source_hash`、`dedup_embedded_at` |
 
 前四个生成/富化步骤各有独立的 `*_attempted_at` 和 `*_fail_count`，用于重试控制和失败隔离——**某一步失败不会阻塞其他生成/富化步骤**。`submission-dedup` 的四个字段是可重建缓存，不承担流水线重试状态。
+
+七个 LLM 步骤的模型与 reasoning 开关由 `app_settings.llm_models` 提供。每一步的
+`model` 为 `null` 时只回退到该分区的 `default`，reasoning 则始终使用该步骤的
+明确布尔值，不再形成模型跨步骤回退或 reasoning 共用关系。
 
 `llm_source` 表示模型识别出的发布/署名媒体名称。来源响应完成既有格式清洗后，只有长度不超过 64 个字符的结果才会进入来源名称归一化；归一化依次剥离一次渠道后缀、再按整串全等规则替换别名，规则来自 `config/source_aliases.json`，处理后的值才写入数据库。超过 64 个字符的内容视为模型未按格式返回，必须整体丢弃并写入 `NULL`，不得截断保存。来源为空时，导出与人工复核界面回退使用抓取来源。
 
@@ -277,9 +285,11 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 | 表 | 职责 |
 |---|---|
+| `app_settings` | 分区保存模型和每小时来源配置；版本号用于控制台乐观锁 |
+| `crawl_accounts` | 四类账号型来源的账号权威清单；运行时只读取启用行 |
 | `console_users` / `console_user_sessions` | 账号与登录会话 |
 | `review_events` | 审计日志，记录谁在什么时候改了什么 |
-| `pipeline_runs` / `pipeline_run_steps` | 流水线执行记录，用于控制台的运行状态页 |
+| `pipeline_runs` / `pipeline_run_steps` | 流水线执行记录；`config_snapshot` 保存本轮各步骤解析后的模型与 reasoning、实际来源、启用账号和配置版本 |
 | `score_feedbacks` | 编辑对 AI 打分的反馈（偏高/偏低），按文章当前评分上下文（prompt_key + prompt_version）关联；人工筛选/值班工作区与全库检索卡片（经 `/api/articles/score-feedback`）都写这张表 |
 | `news_title_embeddings` | 仅编码新闻标题的向量，用于人工筛选聚类；不参与报送查重 |
 | `schema_migrations` | dbmate 迁移记录，**不要手工修改** |
@@ -301,3 +311,8 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | 管理员聚类取数与人工决定无关 | 共享缓存只覆盖最新 5000 条可导出新闻，展示时再按查看者 pending 过滤 | 一位管理员的进度改变其他人的聚类结果 |
 | 聚类不区分报别 | 待筛选池本来就不分报别 | 加回报别维度会导致 `cluster_id` 唯一约束冲突 |
 | `report_type` 的两个枚举不可合并 | 新闻报别两值，报送稿类型三值（含 `feedback`） | 值班编辑下拉出现"反馈"，或报送存档无法录入反馈 |
+| 业务配置一轮内冻结 | 文章各步骤必须使用同一轮启动时的配置 | 中途修改会让同一轮文章无法准确归因 |
+
+`pipeline_runs.config_snapshot` 是配置历史的唯一依据，直接记录整轮实际配置（包括
+各步骤解析后的模型与 reasoning，以及 `--sources` 覆盖）。将
+`news_summaries` 各步骤时间戳对应到当时的流水线轮次，即可还原文章处理时的实际配置。

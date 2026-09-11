@@ -8,6 +8,7 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from src.business_config import warn_legacy_config
 from src.console import (
     admin_summary_routes,
     articles_routes,
@@ -17,6 +18,7 @@ from src.console import (
     health_routes,
     manual_filter_routes,
     runs_routes,
+    settings_routes,
     shifts_routes,
     submission_archive_routes,
     users_routes,
@@ -35,6 +37,7 @@ FAVICON_PATH = Path(__file__).parent / "web_static" / "favicon.svg"
 
 def create_app() -> FastAPI:
     """Build and configure the FastAPI application for the console service."""
+    warn_legacy_config()
     app = FastAPI(
         title="Edu News Console",
         version="0.1.0",
@@ -85,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(health_routes.router)
     app.include_router(auth_routes.router)
     app.include_router(runs_routes.router, dependencies=admin_dependencies)
+    app.include_router(settings_routes.router, dependencies=admin_dependencies)
     app.include_router(articles_routes.router, dependencies=protected_dependencies)
     app.include_router(exports_routes.router, dependencies=admin_dependencies)
     app.include_router(

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -75,21 +74,14 @@ class FakeSession:
         return FakeResponse(FIRST_PAGE_HTML if url.endswith("e76510d9") else SECOND_PAGE_HTML)
 
 
-def test_load_column_entries_accepts_bare_ids_urls_bom_and_deduplicates(tmp_path: Path) -> None:
-    path = tmp_path / "columns.txt"
-    path.write_text(
-        "\ufeff# columns\n6142fe79e4b0a8b3e76510d9\n"
-        "https://peking.bjd.com.cn/bjhrootcolumn/system/6142fe79e4b0a8b3e76510d9\n"
-        "61443619e4b0637be8d99e0f\n",
-        encoding="utf-8",
+def test_m11_beijinghao_parser_preserves_legacy_bare_and_url_results() -> None:
+    bare = http_beijinghao.parse_column_input("6142fe79e4b0a8b3e76510d9")
+    url = http_beijinghao.parse_column_input(
+        "https://peking.bjd.com.cn/bjhrootcolumn/system/6142fe79e4b0a8b3e76510d9"
     )
 
-    entries = http_beijinghao.load_column_entries(path)
-
-    assert [entry.column_code for entry in entries] == [
-        "6142fe79e4b0a8b3e76510d9",
-        "61443619e4b0637be8d99e0f",
-    ]
+    assert bare.column_code == url.column_code == "6142fe79e4b0a8b3e76510d9"
+    assert bare.page_url == url.page_url
 
 
 def test_parse_list_extracts_title_detail_id_and_beijing_date() -> None:
@@ -107,14 +99,16 @@ def test_parse_list_extracts_title_detail_id_and_beijing_date() -> None:
     )
 
 
-def test_list_items_fetches_requested_numeric_pages(monkeypatch: Any, tmp_path: Path) -> None:
-    path = tmp_path / "columns.txt"
-    path.write_text("6142fe79e4b0a8b3e76510d9\n", encoding="utf-8")
+def test_list_items_fetches_requested_numeric_pages(monkeypatch: Any) -> None:
     session = FakeSession()
-    monkeypatch.setattr(http_beijinghao, "_resolve_columns_path", lambda: path)
     monkeypatch.setattr(http_beijinghao, "_session", lambda: session)
 
-    items = http_beijinghao.list_items(pages=2)
+    items = http_beijinghao.list_items(
+        entries=[
+            http_beijinghao.parse_column_input("6142fe79e4b0a8b3e76510d9")
+        ],
+        pages=2,
+    )
 
     assert len(items) == 2
     assert [call["url"] for call in session.calls] == [

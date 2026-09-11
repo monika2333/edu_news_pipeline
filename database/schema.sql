@@ -395,7 +395,41 @@ CREATE TABLE public.pipeline_runs (
     artifacts jsonb,
     error_summary text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    config_snapshot jsonb
+);
+
+
+--
+-- Name: app_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_settings (
+    section text NOT NULL,
+    value jsonb NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by_user_id uuid,
+    CONSTRAINT app_settings_version_check CHECK ((version > 0))
+);
+
+
+--
+-- Name: crawl_accounts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.crawl_accounts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    source text NOT NULL,
+    normalized_identifier text NOT NULL,
+    original_input text NOT NULL,
+    profile_url text NOT NULL,
+    display_name text,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by_user_id uuid,
+    updated_by_user_id uuid
 );
 
 
@@ -706,6 +740,14 @@ ALTER TABLE ONLY public.review_events ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: app_settings app_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_settings
+    ADD CONSTRAINT app_settings_pkey PRIMARY KEY (section);
+
+
+--
 -- Name: brief_batches brief_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -751,6 +793,22 @@ ALTER TABLE ONLY public.console_user_sessions
 
 ALTER TABLE ONLY public.console_users
     ADD CONSTRAINT console_users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: crawl_accounts crawl_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crawl_accounts
+    ADD CONSTRAINT crawl_accounts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: crawl_accounts crawl_accounts_source_identifier_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crawl_accounts
+    ADD CONSTRAINT crawl_accounts_source_identifier_unique UNIQUE (source, normalized_identifier);
 
 
 --
@@ -1018,6 +1076,13 @@ CREATE INDEX console_user_sessions_expires_at_idx ON public.console_user_session
 --
 
 CREATE INDEX console_user_sessions_user_id_idx ON public.console_user_sessions USING btree (user_id);
+
+
+--
+-- Name: crawl_accounts_enabled_source_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX crawl_accounts_enabled_source_idx ON public.crawl_accounts USING btree (source, created_at, id) WHERE enabled;
 
 
 --
@@ -1470,11 +1535,35 @@ ALTER TABLE ONLY public.brief_items
 
 
 --
+-- Name: app_settings app_settings_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_settings
+    ADD CONSTRAINT app_settings_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: console_user_sessions console_user_sessions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.console_user_sessions
     ADD CONSTRAINT console_user_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: crawl_accounts crawl_accounts_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crawl_accounts
+    ADD CONSTRAINT crawl_accounts_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: crawl_accounts crawl_accounts_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crawl_accounts
+    ADD CONSTRAINT crawl_accounts_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
 
 
 --

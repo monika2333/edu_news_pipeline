@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Any
 
 import pytest
 
-from src.config import get_settings
 from src.console import manual_filter_duplicate_service as duplicate_service
 
 
@@ -32,8 +30,11 @@ def _item(
 
 
 def _patch_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = replace(get_settings(), llm_scoring_model="duplicate-test-model")
-    monkeypatch.setattr(duplicate_service, "get_settings", lambda: settings)
+    monkeypatch.setattr(
+        duplicate_service,
+        "get_model_for_step",
+        lambda _step: "duplicate-test-model",
+    )
 
 
 def test_check_duplicates_merges_overlaps_and_filters_unknown_ids(

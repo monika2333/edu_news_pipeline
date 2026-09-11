@@ -3,11 +3,24 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.adapters import sentiment_classifier
 from src.adapters.sentiment_classifier import _build_prompt, classify_sentiment
+from src.business_config import LLMStepConfig
+
+
+@pytest.fixture(autouse=True)
+def _model_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sentiment_classifier,
+        "get_llm_step_config",
+        lambda _step: LLMStepConfig("sentiment-model", True),
+    )
 
 NEGATIVE_SAMPLE = """西安交大纪委：已查处多起涉教职工案件
 《中国纪检监察报》10月18日报道，作风建设是一场持久战。必须以永远在路上的清醒与执着，常抓不懈、严抓不怠。

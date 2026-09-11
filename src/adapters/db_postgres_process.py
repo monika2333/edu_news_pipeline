@@ -137,6 +137,7 @@ class ProcessNamespace:
         started_at: datetime,
         plan: Sequence[str],
         trigger_source: Optional[str] = None,
+        config_snapshot: Optional[Mapping[str, Any]] = None,
     ) -> None:
         with self._adapter._cursor() as cur:
             record_pipeline_run_start(
@@ -145,6 +146,7 @@ class ProcessNamespace:
                 started_at=started_at,
                 plan=plan,
                 trigger_source=trigger_source,
+                config_snapshot=config_snapshot,
             )
 
     def record_pipeline_run_step(
@@ -179,7 +181,7 @@ class ProcessNamespace:
         status: str,
         finished_at: datetime,
         steps_completed: int,
-        artifacts: Optional[Mapping[str, str]] = None,
+        artifacts: Optional[Mapping[str, Any]] = None,
         error_summary: Optional[str] = None,
     ) -> None:
         with self._adapter._cursor() as cur:
@@ -746,6 +748,7 @@ def record_pipeline_run_start(
     started_at: datetime,
     plan: Sequence[str],
     trigger_source: Optional[str] = None,
+    config_snapshot: Optional[Mapping[str, Any]] = None,
 ) -> None:
     payload = {
         "run_id": run_id,
@@ -759,6 +762,8 @@ def record_pipeline_run_start(
         "error_summary": None,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    if config_snapshot is not None:
+        payload["config_snapshot"] = config_snapshot
     columns = list(payload.keys())
     values = [Json(v) if isinstance(v, (list, dict)) else v for v in payload.values()]
     updates = [
@@ -772,6 +777,8 @@ def record_pipeline_run_start(
         "error_summary = EXCLUDED.error_summary",
         "updated_at = EXCLUDED.updated_at",
     ]
+    if config_snapshot is not None:
+        updates.append("config_snapshot = EXCLUDED.config_snapshot")
     query = f"""
         INSERT INTO pipeline_runs ({', '.join(columns)})
         VALUES ({', '.join(['%s'] * len(columns))})
@@ -835,7 +842,7 @@ def finalize_pipeline_run(
     status: str,
     finished_at: datetime,
     steps_completed: int,
-    artifacts: Optional[Mapping[str, str]] = None,
+    artifacts: Optional[Mapping[str, Any]] = None,
     error_summary: Optional[str] = None,
 ) -> None:
     cur.execute(

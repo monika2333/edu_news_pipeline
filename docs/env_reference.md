@@ -27,11 +27,10 @@ DB_SCHEMA=public
 LLM_API_KEY=replace-with-your-llm-api-key
 ```
 
-项目默认使用 OpenRouter 兼容接口和 DeepSeek V4 Flash。如果保持默认供应商和模型，下面两个可以不写；建议在共享模板中显式写出来，便于别人看懂当前配置：
+项目默认使用 OpenRouter 兼容接口。模型名已迁入控制台设置页，环境变量只保留供应商连接信息：
 
 ```env
 LLM_API_BASE_URL=https://openrouter.ai/api/v1
-LLM_MODEL=deepseek/deepseek-v4-flash
 ```
 
 ## 建议填写
@@ -60,7 +59,6 @@ DBMATE_SCHEMA_FILE=database/schema.sql
 ```env
 LLM_API_BASE_URL=https://openrouter.ai/api/v1
 LLM_API_KEY=replace-with-your-llm-api-key
-LLM_MODEL=deepseek/deepseek-v4-flash
 ```
 
 OpenRouter 可选请求标识：
@@ -72,35 +70,24 @@ LLM_API_TITLE=Edu News Pipeline
 
 默认行为：
 
-- 所有 LLM 任务默认继承 `LLM_MODEL`。
-- 评分、外部重要性判断、北京 gate、来源识别、情感判断默认开启 reasoning。
-- 摘要生成默认不开启 reasoning。
+- 各步骤模型、默认模型及 reasoning 开关已迁入控制台设置页。
 - reasoning 默认不传 `effort`，并设置 `exclude=true`，避免响应里返回思考内容。
 - LLM timeout 默认 90 秒。
 
-### 按任务覆盖模型
+### 模型配置
 
-只有当某个任务确实需要不同模型时再设置：
+默认模型、七个步骤的模型覆盖及各步骤 reasoning 开关已迁入控制台设置页；旧的
+`LLM_MODEL`、各 `LLM_*_MODEL`、`LLM_REASONING_ENABLED`、
+`LLM_SUMMARY_REASONING_ENABLED`、`LLM_SOURCE_REASONING_ENABLED` 和
+`LLM_SENTIMENT_REASONING_ENABLED` 变量不再生效。
 
-```env
-LLM_SCORING_MODEL=deepseek/deepseek-v4-flash
-LLM_SUMMARY_MODEL=deepseek/deepseek-v4-flash
-LLM_SOURCE_MODEL=deepseek/deepseek-v4-flash
-LLM_SENTIMENT_MODEL=deepseek/deepseek-v4-flash
-LLM_EXTERNAL_FILTER_MODEL=deepseek/deepseek-v4-flash
-LLM_BEIJING_GATE_MODEL=deepseek/deepseek-v4-flash
-```
+### reasoning 的全局参数
 
-### 按任务覆盖 reasoning
-
-通常不需要设置。需要临时调试时可用：
+effort、max tokens 和是否从响应排除 reasoning 仍由环境变量统一控制：
 
 ```env
-LLM_REASONING_ENABLED=true
-LLM_SUMMARY_REASONING_ENABLED=false
-LLM_SOURCE_REASONING_ENABLED=true
-LLM_SENTIMENT_REASONING_ENABLED=true
 LLM_REASONING_EFFORT=high
+LLM_REASONING_MAX_TOKENS=2048
 LLM_REASONING_EXCLUDE=true
 ```
 
@@ -254,36 +241,29 @@ SCORE_KEYWORD_BONUSES={"高考":10,"中考":8}
 
 ## 抓取来源
 
-一次性流水线可用 `CRAWL_SOURCES` 选择来源：
-
-```env
-CRAWL_SOURCES=toutiao,tencent,chinanews,chinanews_xj,jyb,chinadaily,gmw,qianlong,laodongwubao,btime,beijinghao
-```
+每小时抓取来源及其顺序已迁入控制台设置页。一次性流水线需要覆盖来源时，使用
+`python -m scripts.run_pipeline_once --sources ...` 或 `python -m src.cli.main crawl --sources ...`。
 
 当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`chinanews_xj`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`laodongwubao`/`ldwb`、`bjrb`/`beijingdaily`、`btime`、`beijinghao`。
 
-北京日报不建议加入常规小时流水线的全局 `CRAWL_SOURCES`。服务器每日定时抓取时，优先调用 `scripts/run_bjrb_daily.ps1`；该脚本会在任务进程内临时设置 `CRAWL_SOURCES=bjrb`。
+北京日报和劳动午报不能加入每小时来源列表。服务器每日定时抓取时，分别调用
+`scripts/run_bjrb_daily.ps1` 和 `scripts/run_ldwb_daily.ps1`，脚本通过单次
+`--sources` 覆盖指定来源。
 
 部分来源可选配置：
 
 ```env
-# Toutiao
-TOUTIAO_AUTHORS_PATH=config/toutiao_author.txt
+# Toutiao（账号已迁入控制台设置页）
 TOUTIAO_FETCH_TIMEOUT=20
 TOUTIAO_LANG=zh-CN
 TOUTIAO_SHOW_BROWSER=false
 TOUTIAO_EXISTING_CONSECUTIVE_STOP=5
 
-# Tencent
-TENCENT_AUTHORS_PATH=config/qq_author.txt
+# Tencent（账号已迁入控制台设置页）
 TENCENT_DETAIL_DELAY=0.5
 TENCENT_EXISTING_CONSECUTIVE_STOP=5
 
-# Btime / 北京时间
-BTIME_UIDS_PATH=config/btime_author.txt
-
-# Beijinghao / 北京号
-BEIJINGHAO_COLUMNS_PATH=config/beijinghao_author.txt
+# Btime / 北京时间与 Beijinghao / 北京号账号已迁入控制台设置页
 
 # China Education Daily / JYB
 JYB_TIMEOUT=20
@@ -377,7 +357,6 @@ DATABASE_URL=postgres://postgres:replace-with-your-password@localhost:5432/edu_n
 
 LLM_API_BASE_URL=https://openrouter.ai/api/v1
 LLM_API_KEY=replace-with-your-llm-api-key
-LLM_MODEL=deepseek/deepseek-v4-flash
 
 CONSOLE_BASIC_USERNAME=admin
 CONSOLE_BASIC_PASSWORD=replace-with-a-strong-password

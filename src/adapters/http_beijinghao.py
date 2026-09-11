@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -19,8 +17,6 @@ DETAIL_BASE_URL = "https://peking.bjd.com.cn/content/"
 DETAIL_HOST = "peking.bjd.com.cn"
 SOURCE_NAME = "北京日报"
 ARTICLE_ID_PREFIX = "beijinghao:"
-DEFAULT_COLUMNS_FILE = Path("config/beijinghao_author.txt")
-COLUMNS_PATH_ENV = "BEIJINGHAO_COLUMNS_PATH"
 CHINA_TZ = timezone(timedelta(hours=8))
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -84,36 +80,20 @@ def parse_column_code(raw: str) -> str:
     return value
 
 
-def load_column_entries(path: Path) -> list[ColumnEntry]:
-    if not path.exists():
-        raise FileNotFoundError(f"Beijinghao column file not found: {path}")
-    entries: list[ColumnEntry] = []
-    seen: set[str] = set()
-    for line in path.read_text(encoding="utf-8").splitlines():
-        cleaned = line.strip().lstrip("\ufeff")
-        if not cleaned or cleaned.startswith("#"):
-            continue
-        column_code = parse_column_code(cleaned)
-        if column_code in seen:
-            continue
-        seen.add(column_code)
-        entries.append(
-            ColumnEntry(
-                column_code=column_code,
-                page_url=(
-                    cleaned
-                    if re.match(r"^https?://", cleaned, re.IGNORECASE)
-                    else column_page_url(column_code)
-                ),
-                raw_source=cleaned,
-            )
-        )
-    return entries
-
-
-def _resolve_columns_path() -> Path:
-    configured = os.getenv(COLUMNS_PATH_ENV)
-    return Path(configured.strip()) if configured and configured.strip() else DEFAULT_COLUMNS_FILE
+def parse_column_input(raw: str) -> ColumnEntry:
+    cleaned = (raw or "").strip().lstrip("\ufeff")
+    if not cleaned:
+        raise ValueError("Empty Beijinghao column code")
+    column_code = parse_column_code(cleaned)
+    return ColumnEntry(
+        column_code=column_code,
+        page_url=(
+            cleaned
+            if re.match(r"^https?://", cleaned, re.IGNORECASE)
+            else column_page_url(column_code)
+        ),
+        raw_source=cleaned,
+    )
 
 
 def normalize_url(url: str) -> str:
@@ -205,6 +185,7 @@ def _list_page_url(entry: ColumnEntry, page_number: int) -> str:
 
 
 def list_items(
+    entries: list[ColumnEntry],
     limit: Optional[int] = None,
     pages: Optional[int] = None,
     *,
@@ -213,7 +194,6 @@ def list_items(
     if limit is not None and limit <= 0:
         return []
     page_count = max(1, pages or 1)
-    entries = load_column_entries(_resolve_columns_path())
     session = _session()
     items: list[FeedItemLike] = []
     known_ids = set(existing_ids or set())
@@ -323,15 +303,14 @@ def build_detail_update(
 
 __all__ = [
     "ColumnEntry",
-    "DEFAULT_COLUMNS_FILE",
     "FeedItemLike",
     "build_detail_update",
     "feed_item_to_row",
     "fetch_detail",
     "html_to_markdown",
     "list_items",
-    "load_column_entries",
     "make_article_id",
     "normalize_url",
     "parse_column_code",
+    "parse_column_input",
 ]

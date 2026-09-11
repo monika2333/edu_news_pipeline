@@ -10,7 +10,7 @@ from src.adapters.llm_duplicate_review import (
     DuplicateReviewResponseError,
     call_duplicate_review,
 )
-from src.config import get_settings
+from src.business_config import get_model_for_step
 
 from .manual_filter_helpers import _normalize_report_type
 from .manual_filter_query_service import list_review
@@ -140,7 +140,7 @@ def check_duplicates(
         )
 
     items = list(review.get("items") or [])
-    settings = get_settings()
+    model = get_model_for_step("duplicate_review")
     if len(items) < 2:
         checked_article_ids = [
             str(item.get("article_id")) for item in items if item.get("article_id")
@@ -151,7 +151,7 @@ def check_duplicates(
             "current_count": len(items),
             "added_count": 0,
             "removed_count": 0,
-            "model": settings.llm_scoring_model,
+            "model": model,
             "report_type": target_report_type,
             "decision": target_decision,
             "groups": [],
@@ -201,7 +201,7 @@ def check_duplicates(
         "current_count": len(latest_items),
         "added_count": len(current_ids - checked_ids),
         "removed_count": len(checked_ids - current_ids),
-        "model": settings.llm_scoring_model,
+        "model": model,
         "report_type": target_report_type,
         "decision": target_decision,
         "groups": response_groups,

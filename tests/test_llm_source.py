@@ -7,6 +7,16 @@ import pytest
 
 from src.adapters import llm_source
 from src.adapters.llm_source import MAX_LLM_SOURCE_LENGTH, build_source_payload
+from src.business_config import LLMStepConfig
+
+
+@pytest.fixture(autouse=True)
+def _model_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        llm_source,
+        "get_llm_step_config",
+        lambda _step: LLMStepConfig("source-model", True),
+    )
 
 
 def _completion_result(content: str, *, attempt: int = 1):

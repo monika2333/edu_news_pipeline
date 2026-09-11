@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from src.adapters import http_btime
@@ -80,17 +79,15 @@ class FakeSession:
         return FakeResponse(LIST_PAYLOAD)
 
 
-def test_load_uid_entries_accepts_bare_ids_urls_bom_and_deduplicates(tmp_path: Path) -> None:
-    path = tmp_path / "uids.txt"
-    path.write_text(
-        "\ufeff# accounts\n2874221\nhttps://record.btime.com/show?uid=2874221\n2874222\n",
-        encoding="utf-8",
+def test_m11_btime_parser_preserves_legacy_bare_and_url_results() -> None:
+    bare = http_btime.parse_uid_input("2874221")
+    url = http_btime.parse_uid_input("https://record.btime.com/show?uid=2874221")
+
+    assert (bare.uid, bare.profile_url) == (
+        "2874221",
+        "https://record.btime.com/show?uid=2874221",
     )
-
-    entries = http_btime.load_uid_entries(path)
-
-    assert [entry.uid for entry in entries] == ["2874221", "2874222"]
-    assert entries[0].profile_url == "https://record.btime.com/show?uid=2874221"
+    assert (url.uid, url.profile_url) == (bare.uid, url.raw_source)
 
 
 def test_verified_list_params_keep_refresh_one_and_omit_jsonp_fields() -> None:
@@ -116,15 +113,14 @@ def test_parse_feed_payload_maps_gid_url_time_and_normalizes_source() -> None:
 
 def test_list_items_uses_source_referer_and_ignores_unconfirmed_pages(
     monkeypatch: Any,
-    tmp_path: Path,
 ) -> None:
-    path = tmp_path / "uids.txt"
-    path.write_text("2874221\n", encoding="utf-8")
     session = FakeSession()
-    monkeypatch.setattr(http_btime, "_resolve_uids_path", lambda: path)
     monkeypatch.setattr(http_btime, "_session", lambda: session)
 
-    items = http_btime.list_items(pages=99)
+    items = http_btime.list_items(
+        entries=[http_btime.parse_uid_input("2874221")],
+        pages=99,
+    )
 
     assert len(items) == 2
     assert len(session.calls) == 1

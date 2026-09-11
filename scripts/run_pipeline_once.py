@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import traceback
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 from src.adapters.db_postgres_core import get_adapter
-from src.config import load_environment
+from src.business_config import (
+    business_config_context,
+    get_business_config,
+    load_business_config,
+    warn_legacy_config,
+)
 from src.workers.crawl_sources import run as run_crawl
 from src.workers.enrich_summary import run as run_enrich_summary
 from src.workers.export_brief import run as run_export
@@ -22,7 +26,7 @@ from src.workers.score import run as run_score
 from src.workers.submission_dedup import run as run_submission_dedup
 from src.workers.summarize import run as run_summarize
 
-StepHandler = Callable[[], Optional[Dict[str, str]]]
+StepHandler = Callable[[], Optional[Dict[str, Any]]]
 DEFAULT_PIPELINE: Sequence[str] = (
     "crawl",
     "hash-primary",
@@ -66,7 +70,7 @@ class PipelineRunResult:
     finished_at: Optional[datetime] = None
     status: str = "running"
     steps: List[StepResult] = field(default_factory=list)
-    artifacts: Dict[str, str] = field(default_factory=dict)
+    artifacts: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -110,6 +114,7 @@ def _record_run_start(
     plan: Sequence[str],
     trigger_source: Optional[str],
     started_at: datetime,
+    config_snapshot: Mapping[str, Any],
 ) -> None:
     if adapter is None:
         return
@@ -119,6 +124,7 @@ def _record_run_start(
             started_at=started_at,
             plan=plan,
             trigger_source=trigger_source,
+            config_snapshot=config_snapshot,
         )
     except Exception as exc:  # pragma: no cover - defensive logging
         print(f"[pipeline] warning: failed to record run start: {exc}", file=sys.stderr)
@@ -155,7 +161,7 @@ def _record_run_finish(
     status: str,
     finished_at: datetime,
     steps_completed: int,
-    artifacts: Dict[str, str],
+    artifacts: Dict[str, Any],
     error_summary: Optional[str],
 ) -> None:
     if adapter is None:
@@ -173,15 +179,9 @@ def _record_run_finish(
         print(f"[pipeline] warning: failed to finalize run: {exc}", file=sys.stderr)
 
 
-def _run_crawl_step() -> Dict[str, str]:
-    # Allow selecting sources via environment variable, e.g. CRAWL_SOURCES=toutiao,chinanews
-    load_environment()
-    sources_env = os.getenv("CRAWL_SOURCES")
-    if sources_env:
-        run_crawl(sources=sources_env)
-    else:
-        run_crawl()
-    return {}
+def _run_crawl_step() -> Dict[str, Any]:
+    failed_sources = run_crawl(sources=get_business_config().crawl_sources)
+    return {"crawl_failed_sources": failed_sources} if failed_sources else {}
 
 
 def _run_hash_primary_step() -> Dict[str, str]:
@@ -248,6 +248,7 @@ def run_pipeline_once(
     trigger_source: Optional[str] = None,
     record_metadata: bool = True,
     adapter: Optional[Any] = None,
+    sources: Optional[Sequence[str]] = None,
 ) -> PipelineRunResult:
     plan = list(steps) if steps is not None else list(DEFAULT_PIPELINE)
     unknown = [name for name in plan if name not in STEP_REGISTRY]
@@ -255,48 +256,66 @@ def run_pipeline_once(
         raise ValueError(f"Unknown pipeline step(s): {', '.join(unknown)}")
 
     trigger = trigger_source or "manual-cli"
+    warn_legacy_config()
+    config_adapter = adapter or get_adapter()
+    business_config = load_business_config(config_adapter)
+    if sources is not None:
+        business_config = business_config.with_crawl_sources(sources)
     result = PipelineRunResult(run_id=uuid.uuid4().hex, started_at=_utcnow())
-    metadata_adapter = _maybe_get_adapter(record_metadata, adapter)
-    _record_run_start(metadata_adapter, run_id=result.run_id, plan=plan, trigger_source=trigger, started_at=result.started_at)
+    metadata_adapter = _maybe_get_adapter(record_metadata, config_adapter)
+    _record_run_start(
+        metadata_adapter,
+        run_id=result.run_id,
+        plan=plan,
+        trigger_source=trigger,
+        started_at=result.started_at,
+        config_snapshot=business_config.snapshot(),
+    )
 
     had_failure = False
     error_summary: Optional[str] = None
 
-    for index, name in enumerate(plan, start=1):
-        handler = STEP_REGISTRY[name]
-        step_started = _utcnow()
-        error_text: Optional[str] = None
-        artifacts: Dict[str, str] = {}
-        try:
-            handler_result = handler()
-            if handler_result:
-                artifacts.update(handler_result)
-            status = "success"
-        except Exception as exc:  # pragma: no cover - defensive logging for manual runs
-            status = "failed"
-            had_failure = True
-            error_text = "".join(traceback.format_exception(exc)).rstrip()
-        step_finished = _utcnow()
-        step_result = StepResult(
-            name=name,
-            status=status,
-            started_at=step_started,
-            finished_at=step_finished,
-            error=error_text,
-        )
-        result.steps.append(step_result)
-        if artifacts:
-            result.artifacts.update({key: str(value) for key, value in artifacts.items()})
-        _record_run_step(metadata_adapter, run_id=result.run_id, order_index=index, step=step_result)
+    with business_config_context(business_config):
+        for index, name in enumerate(plan, start=1):
+            handler = STEP_REGISTRY[name]
+            step_started = _utcnow()
+            error_text: Optional[str] = None
+            artifacts: Dict[str, Any] = {}
+            try:
+                handler_result = handler()
+                if handler_result:
+                    artifacts.update(handler_result)
+                status = "success"
+            except Exception as exc:  # pragma: no cover - defensive logging for manual runs
+                status = "failed"
+                had_failure = True
+                error_text = "".join(traceback.format_exception(exc)).rstrip()
+            step_finished = _utcnow()
+            step_result = StepResult(
+                name=name,
+                status=status,
+                started_at=step_started,
+                finished_at=step_finished,
+                error=error_text,
+            )
+            result.steps.append(step_result)
+            if artifacts:
+                result.artifacts.update(artifacts)
+            _record_run_step(
+                metadata_adapter,
+                run_id=result.run_id,
+                order_index=index,
+                step=step_result,
+            )
 
-        if status != "success":
-            if error_text and not error_summary:
-                first_line = error_text.splitlines()[0].strip()
-                error_summary = first_line or f"{name} step failed"
-            elif not error_summary:
-                error_summary = f"{name} step failed"
-            if not continue_on_error:
-                break
+            if status != "success":
+                if error_text and not error_summary:
+                    first_line = error_text.splitlines()[0].strip()
+                    error_summary = first_line or f"{name} step failed"
+                elif not error_summary:
+                    error_summary = f"{name} step failed"
+                if not continue_on_error:
+                    break
 
     result.finished_at = result.steps[-1].finished_at if result.steps else result.started_at
 
@@ -330,6 +349,12 @@ def _format_plan(steps: Sequence[str], skip: Sequence[str]) -> List[str]:
 
 def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the edu news pipeline once.")
+    parser.add_argument(
+        "--sources",
+        type=str,
+        default=None,
+        help="One-run comma-separated crawl-source override.",
+    )
     parser.add_argument(
         "--steps",
         nargs="+",
@@ -395,6 +420,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         continue_on_error=args.continue_on_error,
         trigger_source=args.trigger_source,
         record_metadata=not args.no_metadata,
+        sources=(
+            [item.strip() for item in args.sources.split(",") if item.strip()]
+            if args.sources
+            else None
+        ),
     )
 
     if args.json:

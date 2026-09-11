@@ -3,9 +3,21 @@ from __future__ import annotations
 from dataclasses import replace
 from unittest.mock import patch
 
+import pytest
+
 from src.adapters import external_filter_model as model
+from src.business_config import LLMStepConfig
 from src.config import get_settings
 from src.domain.external_filter import ExternalFilterCandidate
+
+
+@pytest.fixture(autouse=True)
+def _model_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        model,
+        "get_llm_step_config",
+        lambda _step: LLMStepConfig("external-filter-model", True),
+    )
 
 
 def test_prompt_key_for_category_variants():
@@ -104,8 +116,6 @@ def test_call_external_filter_model_sends_reasoning_payload():
         get_settings(),
         llm_api_key="test-key",
         llm_api_base_url="https://openrouter.ai/api/v1",
-        llm_external_filter_model="deepseek/deepseek-v4-flash",
-        llm_reasoning_enabled=True,
         llm_reasoning_effort="high",
         llm_reasoning_max_tokens=None,
         llm_reasoning_exclude=True,
@@ -123,7 +133,7 @@ def test_call_external_filter_model_sends_reasoning_payload():
         assert model.call_external_filter_model(candidate, category="internal_positive") == "80"
 
     payload = post.call_args.kwargs["payload"]
-    assert payload["model"] == "deepseek/deepseek-v4-flash"
+    assert payload["model"] == "external-filter-model"
     assert payload["reasoning"] == {
         "enabled": True,
         "effort": "high",

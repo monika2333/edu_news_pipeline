@@ -7,7 +7,6 @@ import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from urllib.parse import urlparse, unquote
 
@@ -53,9 +52,6 @@ _CONTENT_BLOCK_TAGS = (
     "p",
     "section",
 )
-
-DEFAULT_AUTHORS_FILE = Path("config/qq_author.txt")
-
 
 @dataclass(frozen=True)
 class AuthorEntry:
@@ -127,29 +123,20 @@ def canonical_profile_url(author_id: str) -> str:
     return f"https://news.qq.com/omn/author/{author_id}"
 
 
-def load_author_entries(path: Path) -> List[AuthorEntry]:
-    if not path.exists():
-        raise FileNotFoundError(f"Tencent author file not found: {path}")
-    entries: List[AuthorEntry] = []
-    seen: set[str] = set()
-    text = path.read_text(encoding="utf-8")
-    for line in text.splitlines():
-        cleaned = line.strip().lstrip("\ufeff")
-        if not cleaned or cleaned.startswith("#"):
-            continue
-        author_id = parse_author_id(cleaned)
-        if author_id in seen:
-            continue
-        seen.add(author_id)
-        profile_url = cleaned if cleaned.startswith("http") else canonical_profile_url(author_id)
-        entries.append(
-            AuthorEntry(
-                author_id=author_id,
-                profile_url=profile_url,
-                raw_source=cleaned,
-            )
-        )
-    return entries
+def parse_author_input(raw: str) -> AuthorEntry:
+    cleaned = (raw or "").strip().lstrip("\ufeff")
+    if not cleaned:
+        raise ValueError("Empty Tencent author")
+    author_id = parse_author_id(cleaned)
+    return AuthorEntry(
+        author_id=author_id,
+        profile_url=(
+            cleaned
+            if cleaned.startswith("http")
+            else canonical_profile_url(author_id)
+        ),
+        raw_source=cleaned,
+    )
 
 
 def _request_with_retries(
@@ -615,10 +602,9 @@ __all__ = [
     "AuthorEntry",
     "FeedItem",
     "ArticleDetail",
-    "DEFAULT_AUTHORS_FILE",
     "parse_author_id",
     "canonical_profile_url",
-    "load_author_entries",
+    "parse_author_input",
     "fetch_author_profile",
     "resolve_tab_id",
     "list_feed_items",

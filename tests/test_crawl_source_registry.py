@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Iterator, Optional
 
@@ -94,15 +93,29 @@ def _worker_session(*_args: Any, **_kwargs: Any) -> Iterator[None]:
 
 @pytest.fixture
 def run_adapter(monkeypatch: pytest.MonkeyPatch) -> object:
-    adapter = object()
+    adapter = SimpleNamespace()
+    account = SimpleNamespace(
+        normalized_identifier="account-id",
+        profile_url="https://example.test/account",
+        original_input="account-id",
+    )
+    business_config = SimpleNamespace(
+        crawl_sources=("toutiao",),
+        accounts={
+            "toutiao": (account,),
+            "tencent": (account,),
+            "btime": (account,),
+            "beijinghao": (account,),
+        },
+    )
     monkeypatch.setattr(
         crawl_sources,
         "get_settings",
         lambda: SimpleNamespace(process_limit=None, keywords_path=None),
     )
     monkeypatch.setattr(crawl_sources, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(crawl_sources, "get_business_config", lambda: business_config)
     monkeypatch.setattr(crawl_sources, "worker_session", _worker_session)
-    monkeypatch.setenv("TOUTIAO_AUTHORS_PATH", "toutiao-authors.txt")
     monkeypatch.setenv("TOUTIAO_SHOW_BROWSER", "yes")
     monkeypatch.setenv("TOUTIAO_FETCH_TIMEOUT", "21")
     monkeypatch.setenv("TOUTIAO_LANG", "zh-test")
@@ -240,7 +253,7 @@ def test_every_dispatch_key_preserves_source_flow_strategy_and_callbacks(
         ("ldwb", "_run_ldwb_flow", {}, None),
         ("qianlong", "_run_qianlong_flow", {"base_urls": ("https://qianlong.test/list",), "timeout_value": 13.5, "delay_value": 0.35, "pages_hint": 3, "consecutive_stop": 7}, None),
         ("tencent", "_run_tencent_flow", {"pages": 3}, None),
-        ("toutiao", "_run_toutiao_flow", {"authors_path": Path("toutiao-authors.txt"), "show_browser": True, "timeout_value": 21, "lang": "zh-test"}, None),
+        ("toutiao", "_run_toutiao_flow", {"show_browser": True, "timeout_value": 21, "lang": "zh-test"}, None),
     ],
 )
 def test_registry_passes_each_runner_its_current_arguments(
@@ -250,16 +263,12 @@ def test_registry_passes_each_runner_its_current_arguments(
     runner_name: str,
     extra_kwargs: dict[str, Any],
     linked_source: Optional[str],
-    tmp_path: Path,
 ) -> None:
     calls: list[dict[str, Any]] = []
 
     expected_kwargs = dict(extra_kwargs)
-    if source == "toutiao":
-        relative_authors_path = Path("toutiao-authors.txt")
-        monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("TOUTIAO_AUTHORS_PATH", str(relative_authors_path))
-        expected_kwargs["authors_path"] = tmp_path / relative_authors_path
+    if source in {"toutiao", "tencent", "btime", "beijinghao"}:
+        expected_kwargs["accounts"] = crawl_sources.get_business_config().accounts[source]
 
     def record_runner(**kwargs: Any) -> crawl_sources.CrawlStats:
         calls.append(kwargs)
@@ -280,56 +289,6 @@ def test_registry_passes_each_runner_its_current_arguments(
             **expected_kwargs,
         }
     ], f"{source} runner arguments changed"
-
-
-def test_toutiao_absolute_authors_path_passes_through_unchanged(
-    monkeypatch: pytest.MonkeyPatch,
-    run_adapter: object,
-    tmp_path: Path,
-) -> None:
-    working_directory = tmp_path / "working-directory"
-    authors_directory = tmp_path / "authors-directory"
-    working_directory.mkdir()
-    authors_directory.mkdir()
-    absolute_authors_path = authors_directory / "authors.txt"
-    monkeypatch.chdir(working_directory)
-    monkeypatch.setenv("TOUTIAO_AUTHORS_PATH", str(absolute_authors_path))
-    calls: list[dict[str, Any]] = []
-
-    def record_runner(**kwargs: Any) -> crawl_sources.CrawlStats:
-        calls.append(kwargs)
-        return EMPTY_STATS.copy()
-
-    monkeypatch.setattr(crawl_sources, "_run_toutiao_flow", record_runner)
-
-    crawl_sources.run(limit=7, sources=["toutiao"], pages=3)
-
-    assert working_directory != absolute_authors_path.parent
-    assert absolute_authors_path.is_absolute()
-    assert calls == [
-        {
-            "adapter": run_adapter,
-            "keywords": [],
-            "remaining_limit": 7,
-            "authors_path": absolute_authors_path,
-            "show_browser": True,
-            "timeout_value": 21,
-            "lang": "zh-test",
-        }
-    ]
-
-
-def test_tencent_authors_path_does_not_fall_back_to_legacy_location(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    legacy_path = tmp_path / "newsqq_crawl" / "qq_author.txt"
-    legacy_path.parent.mkdir()
-    legacy_path.write_text("legacy-author", encoding="utf-8")
-    monkeypatch.delenv("TENCENT_AUTHORS_PATH", raising=False)
-    monkeypatch.setattr(crawl_sources, "_repo_root", lambda: tmp_path)
-
-    assert crawl_sources._resolve_tencent_authors_path() == tmp_path / "config" / "qq_author.txt"
 
 
 @pytest.mark.parametrize(
@@ -379,3 +338,23 @@ def test_invalid_bjrb_timeout_falls_back_to_current_default(
 
     assert len(calls) == 1
     assert calls[0]["timeout_value"] == 20.0
+
+
+def test_m8_sources_execute_in_database_order_without_sorting(
+    monkeypatch: pytest.MonkeyPatch,
+    run_adapter: object,
+) -> None:
+    del run_adapter
+    calls: list[str] = []
+    for source in ("qianlong", "chinanews", "gmw"):
+        registration = crawl_sources._SOURCE_REGISTRY[source]
+
+        def record_runner(*, marker: str = source, **_kwargs: Any) -> crawl_sources.CrawlStats:
+            calls.append(marker)
+            return EMPTY_STATS.copy()
+
+        monkeypatch.setattr(crawl_sources, registration.runner_name, record_runner)
+
+    crawl_sources.run(sources=["qianlong", "chinanews", "gmw"])
+
+    assert calls == ["qianlong", "chinanews", "gmw"]

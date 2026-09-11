@@ -10,6 +10,7 @@ from src.adapters.llm_chat import (
     extract_message_text,
     post_chat_completion,
 )
+from src.business_config import get_llm_step_config
 from src.config import get_settings
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
@@ -35,6 +36,8 @@ def _build_prompt(text: str) -> str:
 def call_relevance_api(text: str, *, retries: int = 4, timeout: Optional[int] = None) -> str:
     started_at = time.monotonic()
     settings = get_settings()
+    step_config = get_llm_step_config("scoring")
+    model = step_config.model
     deadline = started_at + settings.llm_scoring_budget
     api_key = settings.llm_api_key
     if not api_key:
@@ -42,14 +45,14 @@ def call_relevance_api(text: str, *, retries: int = 4, timeout: Optional[int] = 
 
     url = f"{settings.llm_api_base_url.rstrip('/')}/chat/completions"
     payload = {
-        "model": settings.llm_scoring_model,
+        "model": model,
         "messages": [{"role": "user", "content": _build_prompt(text)}],
         "temperature": 0.0,
     }
     apply_reasoning_config(
         payload,
         settings=settings,
-        enabled=settings.llm_reasoning_enabled,
+        enabled=step_config.reasoning,
     )
 
     headers = build_headers(
@@ -69,7 +72,7 @@ def call_relevance_api(text: str, *, retries: int = 4, timeout: Optional[int] = 
         retries=retries,
         retryable_statuses=_RETRYABLE_STATUS,
         operation="score",
-        model=settings.llm_scoring_model,
+        model=model,
         deadline=deadline,
         advance_backoff_on_exception=False,
     )

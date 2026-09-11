@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 
@@ -19,8 +17,6 @@ PROFILE_BASE_URL = "https://record.btime.com/show"
 ITEM_BASE_URL = "https://item.btime.com/"
 SOURCE_NAME = "北京时间"
 ARTICLE_ID_PREFIX = "btime:"
-DEFAULT_UIDS_FILE = Path("config/btime_author.txt")
-UIDS_PATH_ENV = "BTIME_UIDS_PATH"
 CHINA_TZ = timezone(timedelta(hours=8))
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -81,32 +77,20 @@ def parse_uid(raw: str) -> str:
     return value
 
 
-def load_uid_entries(path: Path) -> list[UidEntry]:
-    if not path.exists():
-        raise FileNotFoundError(f"Btime uid file not found: {path}")
-    entries: list[UidEntry] = []
-    seen: set[str] = set()
-    for line in path.read_text(encoding="utf-8").splitlines():
-        cleaned = line.strip().lstrip("\ufeff")
-        if not cleaned or cleaned.startswith("#"):
-            continue
-        uid = parse_uid(cleaned)
-        if uid in seen:
-            continue
-        seen.add(uid)
-        entries.append(
-            UidEntry(
-                uid=uid,
-                profile_url=cleaned if re.match(r"^https?://", cleaned, re.IGNORECASE) else profile_url(uid),
-                raw_source=cleaned,
-            )
-        )
-    return entries
-
-
-def _resolve_uids_path() -> Path:
-    configured = os.getenv(UIDS_PATH_ENV)
-    return Path(configured.strip()) if configured and configured.strip() else DEFAULT_UIDS_FILE
+def parse_uid_input(raw: str) -> UidEntry:
+    cleaned = (raw or "").strip().lstrip("\ufeff")
+    if not cleaned:
+        raise ValueError("Empty Btime uid")
+    uid = parse_uid(cleaned)
+    return UidEntry(
+        uid=uid,
+        profile_url=(
+            cleaned
+            if re.match(r"^https?://", cleaned, re.IGNORECASE)
+            else profile_url(uid)
+        ),
+        raw_source=cleaned,
+    )
 
 
 def _build_list_params(uid: str) -> dict[str, Any]:
@@ -197,6 +181,7 @@ def _parse_feed_payload(
 
 
 def list_items(
+    entries: list[UidEntry],
     limit: Optional[int] = None,
     pages: Optional[int] = None,
     *,
@@ -206,7 +191,6 @@ def list_items(
     if limit is not None and limit <= 0:
         return []
 
-    entries = load_uid_entries(_resolve_uids_path())
     session = _session()
     items: list[FeedItemLike] = []
     known_ids = set(existing_ids or set())
@@ -340,7 +324,6 @@ def build_detail_update(
 
 
 __all__ = [
-    "DEFAULT_UIDS_FILE",
     "FeedItemLike",
     "UidEntry",
     "build_detail_update",
@@ -348,8 +331,8 @@ __all__ = [
     "fetch_detail",
     "html_to_markdown",
     "list_items",
-    "load_uid_entries",
     "make_article_id",
     "normalize_url",
     "parse_uid",
+    "parse_uid_input",
 ]

@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from src.adapters.http_toutiao import (
     FeedItem,
     build_detail_update,
     feed_item_to_row,
-    load_author_tokens,
+    parse_author_input,
 )
 
 
@@ -30,11 +29,17 @@ def _feed_item(**overrides: object) -> FeedItem:
     return FeedItem(**values)
 
 
-def test_load_author_tokens_returns_empty_when_no_authors_are_enabled(tmp_path: Path) -> None:
-    authors_path = tmp_path / "authors.txt"
-    authors_path.write_text("\n# disabled author\n  # another disabled author\n", encoding="utf-8")
-
-    assert load_author_tokens(authors_path) == []
+def test_m11_toutiao_parser_preserves_legacy_token_and_url_results() -> None:
+    assert parse_author_input("token-123") == (
+        "token-123",
+        "https://www.toutiao.com/c/user/token/token-123/",
+    )
+    assert parse_author_input(
+        "https://www.toutiao.com/c/user/token/url-token"
+    ) == (
+        "url-token",
+        "https://www.toutiao.com/c/user/token/url-token/",
+    )
 
 
 def test_feed_item_to_row_preserves_all_fields() -> None:

@@ -12,6 +12,7 @@ from src.adapters.llm_chat import (
     post_chat_completion,
 )
 from src.adapters.llm_scoring import parse_score
+from src.business_config import get_llm_step_config
 from src.config import get_settings
 from src.domain import ExternalFilterCandidate
 
@@ -137,20 +138,22 @@ def call_external_filter_model(
 ) -> str:
     started_at = time.monotonic()
     settings = get_settings()
+    step_config = get_llm_step_config("external_filter")
+    model = step_config.model
     deadline = started_at + settings.llm_external_filter_budget
     api_key = settings.llm_api_key
     if not api_key:
         raise RuntimeError("Missing LLM API key (set LLM_API_KEY)")
     url = f"{settings.llm_api_base_url.rstrip('/')}/chat/completions"
     payload = {
-        "model": settings.llm_external_filter_model,
+        "model": model,
         "messages": [{"role": "user", "content": build_prompt(candidate, category=category)}],
         "temperature": 0.0,
     }
     apply_reasoning_config(
         payload,
         settings=settings,
-        enabled=settings.llm_reasoning_enabled,
+        enabled=step_config.reasoning,
     )
     headers = build_headers(
         api_key=api_key,
@@ -174,7 +177,7 @@ def call_external_filter_model(
         retries=retries,
         retryable_statuses=_RETRYABLE_STATUS,
         operation=f"external_filter:{category}",
-        model=settings.llm_external_filter_model,
+        model=model,
         deadline=deadline,
         advance_backoff_on_exception=False,
         response_validator=validate_response,

@@ -13,6 +13,7 @@ from src.adapters.llm_chat import (
     extract_message_text,
     post_chat_completion,
 )
+from src.business_config import get_llm_step_config
 from src.config import get_settings
 
 RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
@@ -106,7 +107,7 @@ def _post_chat_completion(
         retries=retries,
         retryable_statuses=RETRYABLE_STATUS_CODES,
         operation="duplicate_review",
-        model=settings.llm_scoring_model,
+        model=str(payload["model"]),
         deadline=deadline,
         retry_non_retryable_statuses=False,
         response_validator=validate_response,
@@ -124,16 +125,18 @@ def call_duplicate_review(
 ) -> list[list[str]]:
     started_at = time.monotonic()
     settings = get_settings()
+    step_config = get_llm_step_config("duplicate_review")
+    model = step_config.model
     deadline = started_at + settings.llm_duplicate_review_budget
     payload: dict[str, Any] = {
-        "model": settings.llm_scoring_model,
+        "model": model,
         "messages": [{"role": "user", "content": build_prompt(items)}],
         "temperature": 0.0,
     }
     apply_reasoning_config(
         payload,
         settings=settings,
-        enabled=settings.llm_reasoning_enabled,
+        enabled=step_config.reasoning,
     )
     raw_output = _post_chat_completion(
         payload,

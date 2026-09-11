@@ -44,6 +44,8 @@ $arguments = @(
     "scripts.run_pipeline_once",
     "--steps",
     "crawl",
+    "--sources",
+    "bjrb",
     "--trigger-source",
     "scheduler-bjrb"
 )
@@ -52,9 +54,6 @@ if ($ContinueOnError) {
 }
 
 $env:PYTHONUNBUFFERED = "1"
-$previousSources = $env:CRAWL_SOURCES
-$env:CRAWL_SOURCES = "bjrb"
-
 Push-Location $repoRoot
 try {
     $prevErr = $ErrorActionPreference
@@ -64,11 +63,6 @@ try {
     $ErrorActionPreference = $prevErr
 } finally {
     Pop-Location
-    if ($null -ne $previousSources) {
-        $env:CRAWL_SOURCES = $previousSources
-    } else {
-        Remove-Item Env:CRAWL_SOURCES -ErrorAction SilentlyContinue
-    }
     if ($lockFile) {
         $lockFile.Dispose()
         Remove-Item -LiteralPath $lockPath -ErrorAction SilentlyContinue

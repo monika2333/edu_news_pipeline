@@ -13,7 +13,6 @@ import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Set
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -107,22 +106,17 @@ def extract_token_from_url(url: str) -> str:
         raise ValueError(f"Could not extract token from: {url}")
     return match.group(1)
 
-def load_author_tokens(path: Path) -> List[Tuple[str, str]]:
-    if not path.exists():
-        raise FileNotFoundError(f"Input file not found: {path}")
-    entries: List[Tuple[str, str]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if stripped.startswith("http"):
-            token = extract_token_from_url(stripped)
-            profile_url = stripped if stripped.endswith("/") else f"{stripped}/"
-        else:
-            token = stripped
-            profile_url = PROFILE_URL_TEMPLATE.format(token=token)
-        entries.append((token, profile_url))
-    return entries
+def parse_author_input(raw: str) -> Tuple[str, str]:
+    cleaned = (raw or "").strip()
+    if not cleaned:
+        raise ValueError("Empty Toutiao author")
+    if cleaned.startswith("http"):
+        token = extract_token_from_url(cleaned)
+        profile_url = cleaned if cleaned.endswith("/") else f"{cleaned}/"
+    else:
+        token = cleaned
+        profile_url = PROFILE_URL_TEMPLATE.format(token=token)
+    return token, profile_url
 
 def resolve_short_url(url: str, timeout: int = 15) -> str:
     try:
@@ -439,4 +433,4 @@ def build_detail_update(
     }
 
 
-__all__ = ["FeedItem", "load_author_tokens", "fetch_feed_items", "DEFAULT_LIMIT", "feed_item_to_row", "build_detail_update", "resolve_article_id_from_feed"]
+__all__ = ["FeedItem", "parse_author_input", "fetch_feed_items", "DEFAULT_LIMIT", "feed_item_to_row", "build_detail_update", "resolve_article_id_from_feed"]

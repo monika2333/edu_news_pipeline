@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Sequen
 
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.http_beijinghao import (
+    ColumnEntry,
     build_detail_update as beijinghao_build_detail_update,
     feed_item_to_row as beijinghao_feed_item_to_row,
     fetch_detail as beijinghao_fetch_detail,
@@ -26,6 +28,7 @@ from src.adapters.http_bjrb import (
     list_issue_items as bjrb_list_issue_items,
 )
 from src.adapters.http_btime import (
+    UidEntry,
     build_detail_update as btime_build_detail_update,
     feed_item_to_row as btime_feed_item_to_row,
     fetch_detail as btime_fetch_detail,
@@ -86,13 +89,12 @@ from src.adapters.http_qianlong import (
     make_article_id as qianlong_make_article_id,
 )
 from src.adapters.http_tencent import (
-    DEFAULT_AUTHORS_FILE as TENCENT_DEFAULT_AUTHORS_FILE,
     DEFAULT_MAX_PAGES as TENCENT_DEFAULT_MAX_PAGES,
+    AuthorEntry as TencentAuthorEntry,
     build_detail_update as tencent_build_detail_update,
     feed_item_to_row as tencent_feed_item_to_row,
     fetch_article_detail as tencent_fetch_article_detail,
     list_feed_items as tencent_list_feed_items,
-    load_author_entries as tencent_load_author_entries,
 )
 from src.adapters.http_toutiao import (
     FeedItem,
@@ -100,14 +102,17 @@ from src.adapters.http_toutiao import (
     fetch_feed_items,
     fetch_info,
     feed_item_to_row,
-    load_author_tokens,
     resolve_article_id_from_feed,
+)
+from src.business_config import (
+    CrawlAccount,
+    get_business_config,
+    normalize_source_list,
 )
 from src.config import get_settings
 from src.workers import log_error, log_info, log_summary, worker_session
 
 WORKER = "crawl"
-DEFAULT_AUTHORS_FILE = Path("config/toutiao_author.txt")
 DEFAULT_LANG = "zh-CN,zh;q=0.9"
 DEFAULT_TIMEOUT = 15
 
@@ -156,6 +161,7 @@ class LinkedPageConfig:
     feed_item_to_row_name: str
     fetch_detail_name: str
     build_detail_update_name: str
+    account_source: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -166,6 +172,7 @@ class SourceRunContext:
     keywords: Sequence[str]
     remaining_limit: Optional[int]
     pages: Optional[int]
+    accounts: Mapping[str, tuple[CrawlAccount, ...]]
 
 
 RunnerKwargs = Callable[[SourceRunContext], Dict[str, Any]]
@@ -226,35 +233,6 @@ def _env_str(name: str, default: str) -> str:
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
-
-
-def _resolve_authors_path() -> Path:
-    env_value = os.getenv("TOUTIAO_AUTHORS_PATH")
-    if env_value:
-        candidate = Path(env_value).expanduser()
-        if not candidate.is_absolute():
-            candidate = Path.cwd() / candidate
-        return candidate
-    # Default to config/ path
-    default_path = DEFAULT_AUTHORS_FILE
-    root = _repo_root()
-    return (root / default_path) if not default_path.is_absolute() else default_path
-
-
-def _resolve_tencent_authors_path() -> Path:
-    env_value = os.getenv("TENCENT_AUTHORS_PATH")
-    if env_value:
-        candidate = Path(env_value).expanduser()
-        if not candidate.is_absolute():
-            candidate = Path.cwd() / candidate
-        return candidate
-    default_path = TENCENT_DEFAULT_AUTHORS_FILE
-    root = _repo_root()
-    return (root / default_path) if not default_path.is_absolute() else default_path
-
-
-def _load_author_entries(path: Path) -> List[Tuple[str, str]]:
-    return load_author_tokens(path)
 
 
 def _collect_feed(
@@ -592,7 +570,7 @@ def _linked_page_flow(
 def _run_toutiao_flow(
     *,
     adapter: Any,
-    authors_path: Path,
+    accounts: Sequence[CrawlAccount],
     show_browser: bool,
     timeout_value: int,
     lang: str,
@@ -600,12 +578,12 @@ def _run_toutiao_flow(
     remaining_limit: Optional[int],
 ) -> CrawlStats:
     def list_items(limit: Optional[int], existing_ids: Set[str]) -> Sequence[Any]:
-        if not authors_path.exists():
-            log_info(WORKER, f"Author token file not found: {authors_path}")
-            return []
-        entries = _load_author_entries(authors_path)
+        entries = [
+            (account.normalized_identifier, account.profile_url)
+            for account in accounts
+        ]
         if not entries:
-            log_info(WORKER, "Author token list is empty.")
+            log_info(WORKER, "Toutiao has no enabled accounts; skipped.")
             return []
         return _collect_feed(
             entries,
@@ -652,16 +630,19 @@ def _run_tencent_flow(
     keywords: Sequence[str],
     remaining_limit: Optional[int],
     pages: Optional[int],
+    accounts: Sequence[CrawlAccount],
 ) -> CrawlStats:
-    authors_path = _resolve_tencent_authors_path()
-
     def list_items(limit: Optional[int], existing_ids: Set[str]) -> Sequence[Any]:
-        if not authors_path.exists():
-            log_info(WORKER, f"Tencent author list not found: {authors_path}")
-            return []
-        entries = tencent_load_author_entries(authors_path)
+        entries = [
+            TencentAuthorEntry(
+                author_id=account.normalized_identifier,
+                profile_url=account.profile_url,
+                raw_source=account.original_input,
+            )
+            for account in accounts
+        ]
         if not entries:
-            log_info(WORKER, "Tencent author list is empty.")
+            log_info(WORKER, "Tencent has no enabled accounts; skipped.")
             return []
         return tencent_list_feed_items(
             entries,
@@ -709,7 +690,35 @@ def _run_registered_linked_page_flow(
     remaining_limit: Optional[int],
     pages: Optional[int],
     config: LinkedPageConfig,
+    accounts: Sequence[CrawlAccount] = (),
 ) -> CrawlStats:
+    list_kwargs: Dict[str, Any] = {}
+    if config.account_source == "btime":
+        list_kwargs["entries"] = [
+            UidEntry(
+                uid=account.normalized_identifier,
+                profile_url=account.profile_url,
+                raw_source=account.original_input,
+            )
+            for account in accounts
+        ]
+    elif config.account_source == "beijinghao":
+        list_kwargs["entries"] = [
+            ColumnEntry(
+                column_code=account.normalized_identifier,
+                page_url=account.profile_url,
+                raw_source=account.original_input,
+            )
+            for account in accounts
+        ]
+
+    if config.account_source and not list_kwargs["entries"]:
+        log_info(
+            WORKER,
+            f"{config.display_name} has no enabled accounts; skipped.",
+        )
+        return _empty_stats()
+
     flow = _linked_page_flow(
         source=config.source,
         display_name=config.display_name,
@@ -717,6 +726,7 @@ def _run_registered_linked_page_flow(
             limit=limit,
             pages=pages or 1,
             existing_ids=existing,
+            **list_kwargs,
         ),
         make_article_id=globals()[config.make_article_id_name],
         feed_item_to_row_func=globals()[config.feed_item_to_row_name],
@@ -891,9 +901,19 @@ def _pages_runner_kwargs(context: SourceRunContext) -> Dict[str, Any]:
     return {"pages": context.pages}
 
 
-def _toutiao_runner_kwargs(_context: SourceRunContext) -> Dict[str, Any]:
+def _account_pages_runner_kwargs(source: str) -> RunnerKwargs:
+    def factory(context: SourceRunContext) -> Dict[str, Any]:
+        return {
+            "pages": context.pages,
+            "accounts": context.accounts.get(source, ()),
+        }
+
+    return factory
+
+
+def _toutiao_runner_kwargs(context: SourceRunContext) -> Dict[str, Any]:
     return {
-        "authors_path": _resolve_authors_path(),
+        "accounts": context.accounts.get("toutiao", ()),
         "show_browser": _truthy_env(os.getenv("TOUTIAO_SHOW_BROWSER")),
         "timeout_value": _env_int("TOUTIAO_FETCH_TIMEOUT", DEFAULT_TIMEOUT),
         "lang": os.getenv("TOUTIAO_LANG", DEFAULT_LANG),
@@ -939,7 +959,7 @@ def _bjrb_runner_kwargs(_context: SourceRunContext) -> Dict[str, Any]:
 _SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
     "beijinghao": SourceRegistration(
         runner_name="_run_registered_linked_page_flow",
-        kwargs_factory=_pages_runner_kwargs,
+        kwargs_factory=_account_pages_runner_kwargs("beijinghao"),
         linked_page=LinkedPageConfig(
             source="beijinghao",
             display_name="Beijinghao",
@@ -948,6 +968,7 @@ _SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
             feed_item_to_row_name="beijinghao_feed_item_to_row",
             fetch_detail_name="beijinghao_fetch_detail",
             build_detail_update_name="beijinghao_build_detail_update",
+            account_source="beijinghao",
         ),
     ),
     "bjrb": SourceRegistration(
@@ -957,7 +978,7 @@ _SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
     ),
     "btime": SourceRegistration(
         runner_name="_run_registered_linked_page_flow",
-        kwargs_factory=_pages_runner_kwargs,
+        kwargs_factory=_account_pages_runner_kwargs("btime"),
         linked_page=LinkedPageConfig(
             source="btime",
             display_name="Btime",
@@ -966,6 +987,7 @@ _SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
             feed_item_to_row_name="btime_feed_item_to_row",
             fetch_detail_name="btime_fetch_detail",
             build_detail_update_name="btime_build_detail_update",
+            account_source="btime",
         ),
     ),
     "chinadaily": SourceRegistration(
@@ -1035,7 +1057,7 @@ _SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
     ),
     "tencent": SourceRegistration(
         runner_name="_run_tencent_flow",
-        kwargs_factory=_pages_runner_kwargs,
+        kwargs_factory=_account_pages_runner_kwargs("tencent"),
         aliases=("qq",),
     ),
     "toutiao": SourceRegistration(
@@ -1065,15 +1087,19 @@ def run(
     concurrency: Optional[int] = None,
     sources: Optional[Sequence[str]] = None,
     pages: Optional[int] = None,
-) -> None:  # pylint: disable=unused-argument
+) -> list[str]:  # pylint: disable=unused-argument
     settings = get_settings()
+    business_config = get_business_config()
     # Normalize selected sources preserving order
     if sources is None:
-        selected_order = ["toutiao"]
+        selected_order = list(business_config.crawl_sources)
     elif isinstance(sources, str):
-        selected_order = [s.strip().lower() for s in sources.split(',') if s.strip()]
+        selected_order = normalize_source_list(
+            [s for s in sources.split(",") if s.strip()],
+            allow_daily=True,
+        )
     else:
-        selected_order = [str(s).strip().lower() for s in sources if str(s).strip()]
+        selected_order = normalize_source_list(sources, allow_daily=True)
 
     keywords_path_value = getattr(settings, 'keywords_path', None)
     keywords_file: Optional[Path]
@@ -1100,6 +1126,7 @@ def run(
     remaining_limit = effective_limit
     adapter = get_adapter()
     total_ok = total_failed = total_skipped = 0
+    failed_sources: list[str] = []
     with worker_session(WORKER, limit=effective_limit):
         for source in selected_order:
             if remaining_limit is not None and remaining_limit <= 0:
@@ -1116,10 +1143,13 @@ def run(
                             keywords=keywords,
                             remaining_limit=remaining_limit,
                             pages=pages,
+                            accounts=business_config.accounts,
                         )
                     )
                 except Exception as exc:
                     log_error(WORKER, f"{source}_source", exc)
+                    log_info(WORKER, traceback.format_exc().rstrip())
+                    failed_sources.append(source)
                     stats = _empty_stats()
                     stats["failed"] = 1
 
@@ -1134,6 +1164,7 @@ def run(
             total_skipped += int(stats.get('skipped') or 0)
 
         log_summary(WORKER, ok=total_ok, failed=(total_failed or None), skipped=(total_skipped or None))
+    return failed_sources
 
 
 

@@ -358,3 +358,33 @@ def test_m8_sources_execute_in_database_order_without_sorting(
     crawl_sources.run(sources=["qianlong", "chinanews", "gmw"])
 
     assert calls == ["qianlong", "chinanews", "gmw"]
+
+
+def test_f8_default_sources_execute_in_database_order_without_sorting(
+    monkeypatch: pytest.MonkeyPatch,
+    run_adapter: object,
+) -> None:
+    del run_adapter
+    calls: list[str] = []
+    source_order = ("qianlong", "chinanews", "gmw")
+    monkeypatch.setattr(
+        crawl_sources,
+        "get_business_config",
+        lambda: SimpleNamespace(crawl_sources=source_order, accounts={}),
+    )
+    for source in source_order:
+        registration = crawl_sources._SOURCE_REGISTRY[source]
+
+        def record_runner(
+            *,
+            marker: str = source,
+            **_kwargs: Any,
+        ) -> crawl_sources.CrawlStats:
+            calls.append(marker)
+            return EMPTY_STATS.copy()
+
+        monkeypatch.setattr(crawl_sources, registration.runner_name, record_runner)
+
+    crawl_sources.run(sources=None)
+
+    assert calls == list(source_order)

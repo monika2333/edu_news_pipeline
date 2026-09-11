@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, as_completed
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
@@ -10,7 +10,13 @@ from src.adapters.llm_source import detect_source
 from src.adapters.sentiment_classifier import classify_sentiment
 from src.config import get_settings
 from src.domain import SourceAliasRules, load_source_aliases, normalize_source_name
-from src.workers import log_error, log_info, log_summary, worker_session
+from src.workers import (
+    ContextPropagatingThreadPoolExecutor,
+    log_error,
+    log_info,
+    log_summary,
+    worker_session,
+)
 
 WORKER = "enrich_summary"
 
@@ -102,7 +108,7 @@ def _detect_article_source(
 
 def _submit_tasks(
     rows: list[dict[str, Any]],
-    executor: ThreadPoolExecutor,
+    executor: ContextPropagatingThreadPoolExecutor,
     source_aliases: SourceAliasRules,
 ) -> tuple[
     dict[Future[EnrichmentResult], tuple[str, TaskKind]],
@@ -200,7 +206,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
             WORKER,
             f"Using {max_workers} workers for independent sentiment and source requests",
         )
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        with ContextPropagatingThreadPoolExecutor(max_workers=max_workers) as executor:
             futures, article_results = _submit_tasks(rows, executor, source_aliases)
             task_stats = _collect_results(futures, article_results)
 

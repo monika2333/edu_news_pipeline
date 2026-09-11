@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from typing import Any, Mapping, Optional
 
 from src.adapters.db_postgres_core import get_adapter
@@ -12,7 +12,13 @@ from src.adapters.external_filter_model import (
 )
 from src.config import get_settings
 from src.domain import ExternalFilterCandidate
-from src.workers import log_error, log_info, log_summary, worker_session
+from src.workers import (
+    ContextPropagatingThreadPoolExecutor,
+    log_error,
+    log_info,
+    log_summary,
+    worker_session,
+)
 
 WORKER = "external_filter"
 
@@ -54,7 +60,7 @@ def _score_candidate(
 def _process_external_filter_batch(
     adapter: Any,
     candidates: list[ExternalFilterCandidate],
-    executor: ThreadPoolExecutor,
+    executor: ContextPropagatingThreadPoolExecutor,
     thresholds: Mapping[str, int],
     max_retries: int,
     remaining_limit: Optional[int],
@@ -126,7 +132,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
     workers = max(1, concurrency or settings.default_concurrency or 5)
 
     with worker_session(WORKER, limit=limit):
-        with ThreadPoolExecutor(max_workers=workers) as executor:
+        with ContextPropagatingThreadPoolExecutor(max_workers=workers) as executor:
             while True:
                 fetch_size = batch_size
                 if remaining is not None:

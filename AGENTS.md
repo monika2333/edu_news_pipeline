@@ -256,6 +256,7 @@ db_config = {
 
 - 允许的方向：`src/console/` → `src/workers/` → `src/adapters/` 与 `src/domain/`。
 - `src/workers/` 和 `src/adapters/` **不得** import `src/console/`。后台流水线是定时独立运行的，必须能在控制台不运行时完整执行。
+- `src/workers/` 中的流水线并发任务必须使用 `ContextPropagatingThreadPoolExecutor`，不得直接构造 `ThreadPoolExecutor`，否则本轮冻结的业务配置不会传入工作线程，配置快照会与实际调用不一致。
 - `src/cli/` 可以 import `src/console/` 的 service —— CLI 是另一个入口，属于正常方向。
 - 如果某段逻辑同时被 console 和 workers 需要：纯业务规则放 `src/domain/`，数据访问放 `src/adapters/`，执行编排放 `src/workers/`。不要留在 `src/console/` 让 workers 反向依赖。
 - 如果你发现必须把 import 写在函数内部才能避免循环引用，那是依赖方向错了的信号，应该调整位置而不是延迟 import。

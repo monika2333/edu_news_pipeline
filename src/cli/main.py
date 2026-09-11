@@ -247,10 +247,9 @@ def _add_import_settings(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _import_settings(args: argparse.Namespace) -> int:
-    from src.adapters.db_postgres_core import get_adapter
-    from src.console.settings_service import preview_legacy_import
+    from src.console.settings_service import import_legacy_config
 
-    preview = preview_legacy_import()
+    preview = import_legacy_config(apply=False)
     if args.json:
         print(json.dumps(preview, ensure_ascii=False, indent=2, default=str))
     else:
@@ -279,14 +278,7 @@ def _import_settings(args: argparse.Namespace) -> int:
     if not args.apply:
         print("Preview only. Re-run with --apply to write.")
         return 0
-    if preview["daily_only_sources"]:
-        raise ValueError("每小时来源含仅每日任务来源，拒绝导入")
-    if preview["has_parse_errors"]:
-        raise ValueError("账号文件存在无法解析的行，拒绝导入")
-    get_adapter().import_app_config(
-        sections=preview["sections"],
-        accounts=preview["accounts"],
-    )
+    import_legacy_config(apply=True)
     print("Imported settings successfully.")
     return 0
 

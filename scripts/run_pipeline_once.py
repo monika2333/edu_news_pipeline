@@ -181,7 +181,9 @@ def _record_run_finish(
 
 def _run_crawl_step() -> Dict[str, Any]:
     failed_sources = run_crawl(sources=get_business_config().crawl_sources)
-    return {"crawl_failed_sources": failed_sources} if failed_sources else {}
+    if not failed_sources:
+        return {}
+    return {"crawl_failed_sources": ",".join(failed_sources)}
 
 
 def _run_hash_primary_step() -> Dict[str, str]:

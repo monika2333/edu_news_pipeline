@@ -7,7 +7,7 @@ import pytest
 
 from src.cli import main as cli_main
 from src.cli.main import build_parser
-from src.console import manual_filter_service
+from src.console import manual_filter_service, settings_service
 
 
 @pytest.mark.parametrize(
@@ -181,6 +181,101 @@ def test_main_propagates_refresh_exit_code(
     )
 
     assert cli_main.main(["refresh-manual-clusters"]) == 2
+
+
+def _import_preview(
+    *,
+    daily_only_sources: list[str] | None = None,
+    has_parse_errors: bool = False,
+) -> dict[str, object]:
+    return {
+        "sections": {
+            "llm_models": {"default": "model-a", "steps": {}},
+            "crawl_sources": daily_only_sources or ["toutiao"],
+        },
+        "account_summary": {},
+        "accounts": [],
+        "daily_only_sources": daily_only_sources or [],
+        "has_parse_errors": has_parse_errors,
+    }
+
+
+@pytest.mark.parametrize(
+    ("preview", "error"),
+    [
+        (_import_preview(daily_only_sources=["bjrb"]), "仅每日任务来源"),
+        (_import_preview(has_parse_errors=True), "无法解析"),
+    ],
+    ids=["daily-only-source", "parse-error"],
+)
+def test_f6_import_settings_apply_uses_service_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+    preview: dict[str, object],
+    error: str,
+) -> None:
+    calls: list[bool] = []
+    writes: list[dict[str, object]] = []
+    original_import = settings_service.import_legacy_config
+    monkeypatch.setattr(
+        settings_service,
+        "preview_legacy_import",
+        lambda **_kwargs: preview,
+    )
+    monkeypatch.setattr(
+        settings_service,
+        "get_adapter",
+        lambda: SimpleNamespace(
+            import_app_config=lambda **kwargs: writes.append(kwargs)
+        ),
+    )
+
+    def tracked_import(*, apply: bool) -> dict[str, object]:
+        calls.append(apply)
+        return original_import(apply=apply)
+
+    monkeypatch.setattr(settings_service, "import_legacy_config", tracked_import)
+
+    with pytest.raises(ValueError, match=error):
+        cli_main.main(["import-settings", "--apply", "--json"])
+
+    assert calls == [False, True]
+    assert writes == []
+
+
+def test_f6_import_settings_apply_writes_through_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview = _import_preview()
+    calls: list[bool] = []
+    writes: list[dict[str, object]] = []
+    original_import = settings_service.import_legacy_config
+    monkeypatch.setattr(
+        settings_service,
+        "preview_legacy_import",
+        lambda **_kwargs: preview,
+    )
+    monkeypatch.setattr(
+        settings_service,
+        "get_adapter",
+        lambda: SimpleNamespace(
+            import_app_config=lambda **kwargs: writes.append(kwargs)
+        ),
+    )
+
+    def tracked_import(*, apply: bool) -> dict[str, object]:
+        calls.append(apply)
+        return original_import(apply=apply)
+
+    monkeypatch.setattr(settings_service, "import_legacy_config", tracked_import)
+
+    assert cli_main.main(["import-settings", "--apply", "--json"]) == 0
+    assert calls == [False, True]
+    assert writes == [
+        {
+            "sections": preview["sections"],
+            "accounts": preview["accounts"],
+        }
+    ]
 
 
 def test_clear_review_buckets_cli_uses_scheduled_actor_and_prints_counts(

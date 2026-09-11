@@ -22,7 +22,7 @@ class CrawlAccountConflictError(RuntimeError):
 
 
 class AppConfigNamespace:
-    """Read-only access to console-managed business configuration."""
+    """Access to console-managed business configuration."""
 
     def __init__(self, adapter: PostgresAdapter) -> None:
         self._adapter = adapter
@@ -49,6 +49,97 @@ class AppConfigNamespace:
     def fetch_account(self, account_id: str) -> Optional[dict[str, Any]]:
         with self._adapter._cursor() as cur:
             return fetch_account(cur, account_id)
+
+    def update_app_setting_as_user(
+        self,
+        *,
+        section: str,
+        value: Any,
+        expected_version: int,
+        actor_user_id: str,
+    ) -> dict[str, Any]:
+        with self._adapter.transaction() as cur:
+            return update_setting(
+                cur,
+                section=section,
+                value=value,
+                expected_version=expected_version,
+                actor_user_id=actor_user_id,
+            )
+
+    def create_crawl_account_as_user(
+        self,
+        *,
+        source: str,
+        normalized_identifier: str,
+        original_input: str,
+        profile_url: str,
+        display_name: Optional[str],
+        actor_user_id: str,
+    ) -> dict[str, Any]:
+        with self._adapter.transaction() as cur:
+            return insert_account(
+                cur,
+                source=source,
+                normalized_identifier=normalized_identifier,
+                original_input=original_input,
+                profile_url=profile_url,
+                display_name=display_name,
+                enabled=True,
+                actor_user_id=actor_user_id,
+            )
+
+    def create_crawl_accounts_as_user(
+        self,
+        *,
+        accounts: Sequence[Mapping[str, Any]],
+        actor_user_id: str,
+    ) -> list[dict[str, Any]]:
+        created: list[dict[str, Any]] = []
+        with self._adapter.transaction() as cur:
+            for item in accounts:
+                created.append(
+                    insert_account(
+                        cur,
+                        source=str(item["source"]),
+                        normalized_identifier=str(item["normalized_identifier"]),
+                        original_input=str(item["original_input"]),
+                        profile_url=str(item["profile_url"]),
+                        display_name=item.get("display_name"),
+                        enabled=True,
+                        actor_user_id=actor_user_id,
+                    )
+                )
+        return created
+
+    def update_crawl_account_as_user(
+        self,
+        *,
+        account_id: str,
+        display_name: Optional[str],
+        set_display_name: bool,
+        enabled: Optional[bool],
+        set_enabled: bool,
+        actor_user_id: str,
+    ) -> dict[str, Any]:
+        with self._adapter.transaction() as cur:
+            return update_account(
+                cur,
+                account_id=account_id,
+                display_name=display_name,
+                set_display_name=set_display_name,
+                enabled=enabled,
+                set_enabled=set_enabled,
+                actor_user_id=actor_user_id,
+            )
+
+    def delete_crawl_account_as_user(
+        self,
+        *,
+        account_id: str,
+    ) -> dict[str, Any]:
+        with self._adapter.transaction() as cur:
+            return delete_account(cur, account_id)
 
 
 def fetch_settings(cur: psycopg.Cursor) -> list[dict[str, Any]]:

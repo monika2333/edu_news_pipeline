@@ -93,11 +93,19 @@ def test_llm_model(step: str, model: str, reasoning: bool) -> dict[str, Any]:
     settings = get_settings()
     if not settings.llm_api_key:
         return {"success": False, "elapsed_ms": 0, "error": "LLM_API_KEY 未配置"}
+    reasoning_limit = settings.llm_reasoning_max_tokens or 0
+    max_tokens = max(2048, reasoning_limit * 2) if reasoning else 8
+    request_timeout = (
+        max(120, settings.llm_scoring_timeout)
+        if reasoning
+        else min(10, settings.llm_scoring_timeout)
+    )
+    request_budget = max(180, request_timeout + 30) if reasoning else 12
     payload: dict[str, Any] = {
         "model": normalized_model,
         "messages": [{"role": "user", "content": "只回复 OK"}],
         "temperature": 0,
-        "max_tokens": 8,
+        "max_tokens": max_tokens,
     }
     apply_reasoning_config(
         payload,
@@ -114,8 +122,8 @@ def test_llm_model(step: str, model: str, reasoning: bool) -> dict[str, Any]:
                 referer=settings.llm_api_http_referer,
                 title=settings.llm_api_title,
             ),
-            timeout=min(10, settings.llm_scoring_timeout),
-            budget=12,
+            timeout=request_timeout,
+            budget=request_budget,
             retries=1,
             retryable_statuses=set(),
             operation=f"settings_model_test:{step}",
@@ -165,7 +173,7 @@ def update_setting(
                 raise ValueError(
                     f"{LLM_STEP_LABELS[step]}模型测试失败：{outcome['error']}"
                 )
-    return adapter.update_app_setting_as_user(
+    return adapter.app_config.update_app_setting_as_user(
         section=section,
         value=normalized,
         expected_version=expected_version,
@@ -273,7 +281,7 @@ def create_account(
 ) -> dict[str, Any]:
     actor_user_id = _require_actor(actor)
     parsed = parse_account(source, text)
-    return get_adapter().create_crawl_account_as_user(
+    return get_adapter().app_config.create_crawl_account_as_user(
         **parsed,
         display_name=(display_name or "").strip() or None,
         actor_user_id=actor_user_id,
@@ -299,7 +307,7 @@ def bulk_create_accounts(
         for item in preview
         if item["status"] == "addable"
     ]
-    created = get_adapter().create_crawl_accounts_as_user(
+    created = get_adapter().app_config.create_crawl_accounts_as_user(
         accounts=addable,
         actor_user_id=actor_user_id,
     )
@@ -328,7 +336,7 @@ def update_account(
 ) -> dict[str, Any]:
     if not set_display_name and not set_enabled:
         raise ValueError("至少提交一个可修改字段")
-    return get_adapter().update_crawl_account_as_user(
+    return get_adapter().app_config.update_crawl_account_as_user(
         account_id=account_id,
         display_name=(display_name or "").strip() or None,
         set_display_name=set_display_name,
@@ -339,9 +347,9 @@ def update_account(
 
 
 def delete_account(account_id: str, *, actor: ConsoleUser) -> dict[str, Any]:
-    return get_adapter().delete_crawl_account_as_user(
+    _require_actor(actor)
+    return get_adapter().app_config.delete_crawl_account_as_user(
         account_id=account_id,
-        actor_user_id=_require_actor(actor),
     )
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, Future, wait
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -9,7 +9,13 @@ from typing import Any, Optional
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.llm_summary import summarise
 from src.config import get_settings
-from src.workers import log_error, log_info, log_summary, worker_session
+from src.workers import (
+    ContextPropagatingThreadPoolExecutor,
+    log_error,
+    log_info,
+    log_summary,
+    worker_session,
+)
 
 WORKER = "summarize"
 DEFAULT_FETCH_MULTIPLIER = 4
@@ -56,7 +62,7 @@ def _generate_summary(article: dict[str, Any]) -> SummaryResult:
 
 def _submit_article(
     article: dict[str, Any],
-    executor: ThreadPoolExecutor,
+    executor: ContextPropagatingThreadPoolExecutor,
     adapter: Any,
     stats: SummaryStats,
 ) -> Optional[PendingTask]:
@@ -129,7 +135,7 @@ def run(
         rows_exhausted = False
         log_info(WORKER, f"Using {max_workers} workers for summary generation only")
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        with ContextPropagatingThreadPoolExecutor(max_workers=max_workers) as executor:
             while pending_tasks or not rows_exhausted:
                 remaining = None if limit_value is None else limit_value - stats.success
                 target_workers = max_workers if remaining is None else min(max_workers, remaining)

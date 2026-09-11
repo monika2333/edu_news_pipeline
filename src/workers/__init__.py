@@ -1,8 +1,27 @@
 ﻿from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor as _ThreadPoolExecutor
 from contextlib import contextmanager
+from contextvars import copy_context
 from time import perf_counter
-from typing import Optional
+from typing import Any, Callable, Optional, TypeVar
+
+
+_T = TypeVar("_T")
+
+
+class ContextPropagatingThreadPoolExecutor(_ThreadPoolExecutor):
+    """Run each submitted callable in a copy of the submitting context."""
+
+    def submit(
+        self,
+        fn: Callable[..., _T],
+        /,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Future[_T]:
+        context = copy_context()
+        return super().submit(context.run, fn, *args, **kwargs)
 
 
 def log_info(worker: str, message: str) -> None:
@@ -32,4 +51,10 @@ def worker_session(worker: str, *, limit: Optional[int] = None) -> None:
         log_info(worker, f"finished in {elapsed:.2f}s")
 
 
-__all__ = ["log_info", "log_error", "log_summary", "worker_session"]
+__all__ = [
+    "ContextPropagatingThreadPoolExecutor",
+    "log_error",
+    "log_info",
+    "log_summary",
+    "worker_session",
+]

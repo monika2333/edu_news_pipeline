@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from src.adapters import db_postgres_core, llm_duplicate_review
 from src.config import get_settings
 from src.console import manual_filter_duplicate_service, settings_service
 from src.console.app import create_app
@@ -42,15 +43,39 @@ def _llm_value(*, summary: str | None = None) -> dict[str, Any]:
 def test_m3_console_duplicate_review_reads_current_model_each_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    models = iter(["duplicate-model-a", "duplicate-model-b"])
+    current_value = _llm_value()
+    current_value["steps"]["scoring"]["model"] = "scoring-model"
+    current_value["steps"]["duplicate_review"]["model"] = "duplicate-model-a"
+    requested_models: list[str] = []
+    app_config = SimpleNamespace(
+        fetch_settings=lambda: [
+            {"section": "llm_models", "value": current_value, "version": 1},
+            {"section": "crawl_sources", "value": ["toutiao"], "version": 1},
+        ],
+        fetch_enabled_accounts=lambda: [],
+    )
+    adapter = SimpleNamespace(app_config=app_config)
+    settings = replace(get_settings(), llm_api_key="test-key")
+    monkeypatch.setattr(db_postgres_core, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(llm_duplicate_review, "get_settings", lambda: settings)
     monkeypatch.setattr(
-        manual_filter_duplicate_service,
-        "get_model_for_step",
-        lambda step: next(models),
+        llm_duplicate_review,
+        "post_chat_completion",
+        lambda _url, **kwargs: (
+            requested_models.append(kwargs["payload"]["model"])
+            or {
+                "choices": [
+                    {"message": {"content": '{"duplicate_groups":[]}'}}
+                ]
+            }
+        ),
     )
     review_loader = lambda *_args, **_kwargs: {
-        "total": 1,
-        "items": [{"article_id": "article-1"}],
+        "total": 2,
+        "items": [
+            {"article_id": "article-1"},
+            {"article_id": "article-2"},
+        ],
     }
 
     first = manual_filter_duplicate_service.check_duplicates(
@@ -58,6 +83,9 @@ def test_m3_console_duplicate_review_reads_current_model_each_call(
         decision="selected",
         review_loader=review_loader,
     )
+    current_value = _llm_value()
+    current_value["steps"]["scoring"]["model"] = "scoring-model"
+    current_value["steps"]["duplicate_review"]["model"] = "duplicate-model-b"
     second = manual_filter_duplicate_service.check_duplicates(
         report_type="zongbao",
         decision="selected",
@@ -66,6 +94,7 @@ def test_m3_console_duplicate_review_reads_current_model_each_call(
 
     assert first["model"] == "duplicate-model-a"
     assert second["model"] == "duplicate-model-b"
+    assert requested_models == ["duplicate-model-a", "duplicate-model-b"]
 
 
 def test_m14_import_refuses_parse_errors_before_opening_database(
@@ -117,6 +146,31 @@ def test_model_test_uses_requested_reasoning_in_payload(
     assert ("reasoning" in captured) is reasoning
 
 
+def test_f9_reasoning_model_test_has_room_beyond_reasoning_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = replace(
+        get_settings(),
+        llm_api_key="test-key",
+        llm_reasoning_max_tokens=3072,
+        llm_scoring_timeout=30,
+    )
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(settings_service, "get_settings", lambda: settings)
+    monkeypatch.setattr(
+        settings_service,
+        "post_chat_completion",
+        lambda _url, **kwargs: captured.update(kwargs) or {},
+    )
+
+    result = settings_service.test_llm_model("summary", "model-a", True)
+
+    assert result["success"] is True
+    assert captured["payload"]["max_tokens"] > 3072
+    assert captured["timeout"] >= 120
+    assert captured["budget"] > captured["timeout"]
+
+
 @pytest.mark.parametrize(
     "source",
     ["bjrb", "laodongwubao", "ldwb", "beijingdaily"],
@@ -146,12 +200,10 @@ def test_m16_changed_model_is_tested_server_side_before_save(
             "section": section,
             "value": _llm_value(),
             "version": 4,
-        }
-    )
-    adapter = SimpleNamespace(
-        app_config=app_config,
+        },
         update_app_setting_as_user=lambda **kwargs: calls.append(kwargs),
     )
+    adapter = SimpleNamespace(app_config=app_config)
     monkeypatch.setattr(settings_service, "get_adapter", lambda: adapter)
     monkeypatch.setattr(
         settings_service,
@@ -193,9 +245,9 @@ def test_m16_reasoning_only_change_is_tested_before_save(
                 "section": section,
                 "value": before,
                 "version": 4,
-            }
+            },
+            update_app_setting_as_user=lambda **kwargs: saves.append(kwargs) or kwargs,
         ),
-        update_app_setting_as_user=lambda **kwargs: saves.append(kwargs) or kwargs,
     )
     monkeypatch.setattr(settings_service, "get_adapter", lambda: adapter)
     monkeypatch.setattr(
@@ -232,9 +284,9 @@ def test_m16_default_change_tests_all_distinct_effective_combinations(
                 "section": section,
                 "value": before,
                 "version": 4,
-            }
+            },
+            update_app_setting_as_user=lambda **kwargs: saves.append(kwargs) or kwargs,
         ),
-        update_app_setting_as_user=lambda **kwargs: saves.append(kwargs) or kwargs,
     )
     monkeypatch.setattr(settings_service, "get_adapter", lambda: adapter)
     monkeypatch.setattr(
@@ -279,6 +331,79 @@ def test_legacy_import_preserves_each_reasoning_switch(
     assert value["steps"]["sentiment"]["reasoning"] is True
     for step in ("scoring", "external_filter", "beijing_gate", "duplicate_review"):
         assert value["steps"][step]["reasoning"] is False
+
+
+def _clear_legacy_model_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings_service, "load_environment", lambda: None)
+    for key in (
+        "CRAWL_SOURCES",
+        "LLM_MODEL",
+        "LLM_SUMMARY_MODEL",
+        "LLM_SOURCE_MODEL",
+        "LLM_SENTIMENT_MODEL",
+        "LLM_SCORING_MODEL",
+        "LLM_EXTERNAL_FILTER_MODEL",
+        "LLM_BEIJING_GATE_MODEL",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_f7_legacy_source_and_sentiment_models_follow_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    _clear_legacy_model_environment(monkeypatch)
+    monkeypatch.setenv("LLM_MODEL", "default-model")
+    monkeypatch.setenv("LLM_SUMMARY_MODEL", "summary-model")
+
+    value = settings_service.preview_legacy_import(root=tmp_path)["sections"][
+        "llm_models"
+    ]
+
+    assert value["steps"]["summary"]["model"] == "summary-model"
+    assert value["steps"]["source"]["model"] == "summary-model"
+    assert value["steps"]["sentiment"]["model"] == "summary-model"
+
+
+def test_f7_legacy_filter_gate_and_duplicate_models_follow_scoring(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    _clear_legacy_model_environment(monkeypatch)
+    monkeypatch.setenv("LLM_MODEL", "default-model")
+    monkeypatch.setenv("LLM_SCORING_MODEL", "scoring-model")
+
+    value = settings_service.preview_legacy_import(root=tmp_path)["sections"][
+        "llm_models"
+    ]
+
+    assert value["steps"]["scoring"]["model"] == "scoring-model"
+    assert value["steps"]["external_filter"]["model"] == "scoring-model"
+    assert value["steps"]["beijing_gate"]["model"] == "scoring-model"
+    assert value["steps"]["duplicate_review"]["model"] == "scoring-model"
+
+
+def test_f7_legacy_models_equal_to_default_are_stored_as_null(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    _clear_legacy_model_environment(monkeypatch)
+    monkeypatch.setenv("LLM_MODEL", "same-model")
+    for key in (
+        "LLM_SUMMARY_MODEL",
+        "LLM_SOURCE_MODEL",
+        "LLM_SENTIMENT_MODEL",
+        "LLM_SCORING_MODEL",
+        "LLM_EXTERNAL_FILTER_MODEL",
+        "LLM_BEIJING_GATE_MODEL",
+    ):
+        monkeypatch.setenv(key, "same-model")
+
+    value = settings_service.preview_legacy_import(root=tmp_path)["sections"][
+        "llm_models"
+    ]
+
+    assert all(item["model"] is None for item in value["steps"].values())
 
 
 def test_m19_account_preview_classifies_all_four_statuses(

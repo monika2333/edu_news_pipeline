@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional
 
@@ -16,7 +16,13 @@ from src.domain import (
     is_beijing_related,
     load_beijing_keywords,
 )
-from src.workers import log_error, log_info, log_summary, worker_session
+from src.workers import (
+    ContextPropagatingThreadPoolExecutor,
+    log_error,
+    log_info,
+    log_summary,
+    worker_session,
+)
 
 WORKER = "geo_classify"
 
@@ -115,7 +121,7 @@ def _beijing_gate_failure_payload(
 def _process_beijing_gate(
     adapter: Any,
     candidates: list[BeijingGateCandidate],
-    executor: ThreadPoolExecutor,
+    executor: ContextPropagatingThreadPoolExecutor,
     *,
     llm_retries: int,
     max_failures: int,
@@ -225,7 +231,7 @@ def _process_beijing_gate(
 
 def _process_gate_backlog(
     adapter: Any,
-    executor: ThreadPoolExecutor,
+    executor: ContextPropagatingThreadPoolExecutor,
     *,
     limit: Optional[int],
     batch_size: int,
@@ -283,7 +289,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
     with worker_session(WORKER, limit=limit_value):
         rows = adapter.news_summaries.fetch_pending_routes(limit_value)
         local_stats = _route_locally(adapter, rows, beijing_keywords)
-        with ThreadPoolExecutor(max_workers=workers) as executor:
+        with ContextPropagatingThreadPoolExecutor(max_workers=workers) as executor:
             confirmed, rerouted, gate_failures, fallbacks = _process_gate_backlog(
                 adapter,
                 executor,

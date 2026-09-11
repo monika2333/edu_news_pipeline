@@ -1,13 +1,19 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.llm_scoring import score_text
 from src.config import get_settings
 from src.domain import PrimaryArticleForScoring
-from src.workers import log_error, log_info, log_summary, worker_session
+from src.workers import (
+    ContextPropagatingThreadPoolExecutor,
+    log_error,
+    log_info,
+    log_summary,
+    worker_session,
+)
 
 WORKER = "score"
 
@@ -167,7 +173,7 @@ def _process_scores_multi_worker(
     if not candidates:
         return successes, failures, skipped_count
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
+    with ContextPropagatingThreadPoolExecutor(max_workers=workers) as pool:
         future_map = {
             pool.submit(_score_item, item): (item, bonus_score, matched_rules)
             for item, bonus_score, matched_rules in candidates

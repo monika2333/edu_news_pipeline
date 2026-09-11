@@ -222,7 +222,7 @@ def test_m5_stale_put_returns_409_and_keeps_current_value(
             sections=_sections(),
             accounts=[],
         )
-        adapter.update_app_setting_as_user(
+        adapter.app_config.update_app_setting_as_user(
             section="crawl_sources",
             value=["tencent", "toutiao"],
             expected_version=1,
@@ -310,6 +310,52 @@ def test_m10_runtime_query_excludes_disabled_accounts() -> None:
             account.normalized_identifier
             for account in loaded.accounts["toutiao"]
         ] == ["enabled-account"]
+
+
+def test_single_table_config_writes_are_exposed_only_by_namespace() -> None:
+    up_sql, _down_sql = _migration_parts()
+    with _isolated_database() as connection:
+        _create_legacy_schema(connection)
+        connection.execute(up_sql)
+        adapter = PostgresAdapter(connection)
+        adapter.import_app_config(sections=_sections(), accounts=[])
+
+        created = adapter.app_config.create_crawl_account_as_user(
+            source="toutiao",
+            normalized_identifier="one",
+            original_input="one",
+            profile_url="https://example.test/one",
+            display_name=None,
+            actor_user_id=ADMIN_ID,
+        )
+        bulk_created = adapter.app_config.create_crawl_accounts_as_user(
+            accounts=[
+                {
+                    "source": "toutiao",
+                    "normalized_identifier": "two",
+                    "original_input": "two",
+                    "profile_url": "https://example.test/two",
+                }
+            ],
+            actor_user_id=ADMIN_ID,
+        )
+        updated = adapter.app_config.update_crawl_account_as_user(
+            account_id=str(created["id"]),
+            display_name="账号一",
+            set_display_name=True,
+            enabled=False,
+            set_enabled=True,
+            actor_user_id=ADMIN_ID,
+        )
+        deleted = adapter.app_config.delete_crawl_account_as_user(
+            account_id=str(bulk_created[0]["id"]),
+        )
+
+        assert updated["display_name"] == "账号一"
+        assert updated["enabled"] is False
+        assert deleted["normalized_identifier"] == "two"
+        assert not hasattr(adapter, "create_crawl_account_as_user")
+        assert not hasattr(adapter, "delete_crawl_account_as_user")
 
 
 def test_m18_process_adapter_persists_the_effective_config_snapshot() -> None:

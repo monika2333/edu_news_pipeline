@@ -555,16 +555,28 @@ class PostgresAdapter:
         request_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         with self.transaction() as cur:
+            article_ids = [str(update["article_id"]) for update in updates]
+            if len(article_ids) != len(set(article_ids)):
+                raise ValueError("A shift review appears more than once in one update")
+            contained_article_ids = shift_reviews.fetch_shift_article_ids(
+                cur,
+                shift_id=shift_id,
+                article_ids=article_ids,
+            )
+            if set(contained_article_ids) != set(article_ids):
+                raise ValueError("Article does not belong to this active shift")
+            existing_rows = shift_reviews.fetch_shift_reviews_for_update(
+                cur,
+                shift_id=shift_id,
+                article_ids=article_ids,
+            )
+            existing_by_article_id = {
+                str(row["article_id"]): row for row in existing_rows
+            }
             before_items: List[Optional[Dict[str, Any]]] = []
             after_items: List[Dict[str, Any]] = []
             for update in updates:
                 article_id = str(update["article_id"])
-                if not shift_reviews.shift_contains_article(
-                    cur,
-                    shift_id=shift_id,
-                    article_id=article_id,
-                ):
-                    raise ValueError("Article does not belong to this active shift")
                 before, after = shift_reviews.upsert_shift_review(
                     cur,
                     shift_id=shift_id,
@@ -572,6 +584,7 @@ class PostgresAdapter:
                     actor_user_id=actor_user_id,
                     expected_version=update.get("expected_version"),
                     patch=update.get("patch") or {},
+                    prefetched_review=existing_by_article_id.get(article_id),
                 )
                 before_items.append(before)
                 after_items.append(after)

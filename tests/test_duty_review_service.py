@@ -467,6 +467,52 @@ def test_save_edits_batches_article_ids_with_slashes(
     assert result["versions"] == {article_id: 4}
 
 
+@pytest.mark.parametrize(
+    ("edit", "expected_patch"),
+    [
+        (
+            {"llm_source": "工人日报"},
+            {"manual_llm_source": "工人日报"},
+        ),
+        (
+            {"summary": "人工摘要"},
+            {"edited_summary": "人工摘要"},
+        ),
+        (
+            {"summary": "", "llm_source": ""},
+            {"edited_summary": "", "manual_llm_source": ""},
+        ),
+    ],
+)
+def test_save_edits_only_patches_submitted_fields(
+    fake_adapter: FakeDutyReviewAdapter,
+    edit: dict[str, str],
+    expected_patch: dict[str, str],
+) -> None:
+    duty_review_service.save_edits(
+        shift_id="shift-id",
+        user=_editor(),
+        edits={"article-1": edit},
+        versions={"article-1": 2},
+    )
+
+    assert fake_adapter.saved_batch["updates"][0]["patch"] == expected_patch
+
+
+def test_save_edits_skips_empty_patches_without_calling_adapter(
+    fake_adapter: FakeDutyReviewAdapter,
+) -> None:
+    result = duty_review_service.save_edits(
+        shift_id="shift-id",
+        user=_editor(),
+        edits={"article-1": {}, "article-2": {}},
+        versions={"article-1": 2, "article-2": 4},
+    )
+
+    assert result == {"updated": 0, "versions": {}}
+    assert fake_adapter.saved_batch == {}
+
+
 def test_bulk_decide_sends_one_batch_with_all_versions(
     fake_adapter: FakeDutyReviewAdapter,
 ) -> None:

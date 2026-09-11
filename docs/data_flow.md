@@ -135,6 +135,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 - 同一篇文章可以在多个班次里各有一行，互不冲突
 - 值班编辑只能读写**自己班次**的行
 - `finalized_batch_id` / `finalized_rank` 表示已定稿，两者必须同时有值或同时为空（有 CHECK 约束保证）
+- 批量编辑采用部分更新：请求中未提交的摘要或人工来源字段保持原值；显式提交空字符串时仍按空字符串写入
 - 值班编辑按筛选条件批量放弃时，服务端直接用 `INSERT ... SELECT ... ON CONFLICT DO UPDATE` 写入本表；匹配条件复用管理员候选池的统一筛选器，但额外受班次归属约束。该路径不读取或写入 `manual_reviews`，不覆盖已有决定或已定稿条目，也不做逐行版本校验。
 
 ### 两者的关系

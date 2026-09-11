@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from typing import Any, Iterator
+from typing import Any, Iterator, Optional
 
 import pytest
 
@@ -669,47 +669,132 @@ def test_bulk_admin_discard_uses_one_transaction(
     ]
 
 
-def test_bulk_shift_review_update_uses_one_transaction(
-    monkeypatch: pytest.MonkeyPatch,
+class ShiftReviewBatchCursor:
+    def __init__(
+        self,
+        *,
+        contained_article_ids: list[str],
+        existing_rows: list[dict[str, Any]],
+    ) -> None:
+        self.contained_article_ids = set(contained_article_ids)
+        self.existing_rows = {
+            str(row["article_id"]): dict(row) for row in existing_rows
+        }
+        self.queries: list[str] = []
+        self.params: list[tuple[Any, ...]] = []
+        self.last_query = ""
+        self.next_row: Optional[dict[str, Any]] = None
+
+    def execute(self, query: str, params: tuple[Any, ...]) -> None:
+        self.last_query = query
+        self.queries.append(query)
+        self.params.append(params)
+        if "INSERT INTO shift_reviews" in query:
+            self.next_row = {
+                "id": f"review-{params[1]}",
+                "shift_id": params[0],
+                "article_id": params[1],
+                "created_by_user_id": params[2],
+                "updated_by_user_id": params[3],
+                "report_type": params[4],
+                "decision": params[5],
+                "rank": None,
+                "excerpt_text": params[6],
+                "edited_summary": params[7],
+                "manual_llm_source": params[8],
+                "notes": params[9],
+                "version": 1,
+                "finalized_batch_id": None,
+                "finalized_rank": None,
+            }
+        elif "UPDATE shift_reviews" in query:
+            review_id = str(params[-1])
+            current = next(
+                row
+                for row in self.existing_rows.values()
+                if str(row["id"]) == review_id
+            )
+            self.next_row = {
+                **current,
+                "report_type": params[0],
+                "decision": params[1],
+                "rank": None if params[2] else current.get("rank"),
+                "excerpt_text": params[3],
+                "edited_summary": params[4],
+                "manual_llm_source": params[5],
+                "notes": params[6],
+                "updated_by_user_id": params[7],
+                "version": int(current["version"]) + 1,
+            }
+        elif "INSERT INTO review_events" in query:
+            self.next_row = {"id": 1}
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        requested_ids = self.params[-1][1]
+        if "FROM duty_shifts" in self.last_query:
+            return [
+                {"article_id": article_id}
+                for article_id in sorted(requested_ids)
+                if article_id in self.contained_article_ids
+            ]
+        if "FROM shift_reviews" in self.last_query:
+            return [
+                self.existing_rows[article_id]
+                for article_id in sorted(requested_ids)
+                if article_id in self.existing_rows
+            ]
+        raise AssertionError(f"Unexpected fetchall query: {self.last_query}")
+
+    def fetchone(self) -> Optional[dict[str, Any]]:
+        row = self.next_row
+        self.next_row = None
+        return row
+
+
+def _shift_review_row(
+    article_id: str,
+    *,
+    version: int = 2,
+    finalized_batch_id: Optional[str] = None,
+) -> dict[str, Any]:
+    return {
+        "id": f"review-{article_id}",
+        "shift_id": "shift-1",
+        "article_id": article_id,
+        "created_by_user_id": "editor-1",
+        "updated_by_user_id": "editor-1",
+        "report_type": "zongbao",
+        "decision": "selected",
+        "rank": 3,
+        "excerpt_text": "原摘录",
+        "edited_summary": "原摘要",
+        "manual_llm_source": "原来源",
+        "notes": "原备注",
+        "version": version,
+        "finalized_batch_id": finalized_batch_id,
+        "finalized_rank": 1 if finalized_batch_id else None,
+    }
+
+
+@pytest.mark.parametrize("item_count", [1, 10])
+def test_bulk_shift_review_update_uses_constant_queries_plus_one_per_item(
+    item_count: int,
 ) -> None:
     adapter = object.__new__(db_postgres_core.PostgresAdapter)
-    cursor = object()
+    article_ids = [f"article-{index:02d}" for index in range(item_count)]
+    cursor = ShiftReviewBatchCursor(
+        contained_article_ids=article_ids,
+        existing_rows=[],
+    )
     events: list[str] = []
-    article_ids = [
-        "article-1",
-        "chinanews:/sh/2026/07-27/10666981",
-    ]
 
     @contextmanager
-    def fake_transaction() -> Iterator[object]:
+    def fake_transaction() -> Iterator[ShiftReviewBatchCursor]:
         events.append("begin")
         yield cursor
         events.append("commit")
 
-    def fake_upsert(cur: object, **kwargs: Any) -> tuple[None, dict[str, Any]]:
-        assert cur is cursor
-        events.append(f"save:{kwargs['article_id']}")
-        return None, {
-            "article_id": kwargs["article_id"],
-            "version": 1,
-        }
-
     adapter.transaction = fake_transaction
-    monkeypatch.setattr(
-        db_postgres_core.shift_reviews,
-        "shift_contains_article",
-        lambda cur, **kwargs: True,
-    )
-    monkeypatch.setattr(
-        db_postgres_core.shift_reviews,
-        "upsert_shift_review",
-        fake_upsert,
-    )
-    monkeypatch.setattr(
-        db_postgres_core.audit,
-        "insert_review_event",
-        lambda cur, **kwargs: events.append(kwargs["action"]),
-    )
 
     result = adapter.save_shift_reviews(
         shift_id="shift-1",
@@ -726,13 +811,233 @@ def test_bulk_shift_review_update_uses_one_transaction(
     )
 
     assert [item["article_id"] for item in result] == article_ids
-    assert events == [
-        "begin",
-        "save:article-1",
-        "save:chinanews:/sh/2026/07-27/10666981",
-        "shift_review.decide",
-        "commit",
-    ]
+    assert events == ["begin", "commit"]
+    assert len(cursor.queries) == item_count + 3
+    assert sum("FROM duty_shifts" in query for query in cursor.queries) == 1
+    assert sum("FROM shift_reviews" in query for query in cursor.queries) == 1
+    assert sum("INSERT INTO shift_reviews" in query for query in cursor.queries) == item_count
+    lock_query = next(
+        query for query in cursor.queries if "FROM shift_reviews" in query
+    )
+    assert "ORDER BY article_id" in lock_query
+    assert "FOR UPDATE" in lock_query
+
+
+def _adapter_with_shift_batch_cursor(
+    cursor: ShiftReviewBatchCursor,
+) -> tuple[db_postgres_core.PostgresAdapter, list[str]]:
+    adapter = object.__new__(db_postgres_core.PostgresAdapter)
+    events: list[str] = []
+
+    @contextmanager
+    def fake_transaction() -> Iterator[ShiftReviewBatchCursor]:
+        events.append("begin")
+        try:
+            yield cursor
+        except Exception:
+            events.append("rollback")
+            raise
+        else:
+            events.append("commit")
+
+    adapter.transaction = fake_transaction
+    return adapter, events
+
+
+def test_bulk_shift_review_rejects_outside_article_before_any_write() -> None:
+    cursor = ShiftReviewBatchCursor(
+        contained_article_ids=["article-1"],
+        existing_rows=[],
+    )
+    adapter, events = _adapter_with_shift_batch_cursor(cursor)
+
+    with pytest.raises(
+        ValueError,
+        match="Article does not belong to this active shift",
+    ):
+        adapter.save_shift_reviews(
+            shift_id="shift-1",
+            actor_user_id="editor-1",
+            updates=[
+                {
+                    "article_id": "article-1",
+                    "expected_version": 0,
+                    "patch": {"decision": "selected"},
+                },
+                {
+                    "article_id": "outside-article",
+                    "expected_version": 0,
+                    "patch": {"decision": "selected"},
+                },
+            ],
+            action="shift_review.decide",
+        )
+
+    assert events == ["begin", "rollback"]
+    assert len(cursor.queries) == 1
+    assert "FROM duty_shifts" in cursor.queries[0]
+    assert not any("shift_reviews" in query for query in cursor.queries)
+
+
+def test_bulk_shift_review_rejects_duplicate_article_id_without_sql() -> None:
+    cursor = ShiftReviewBatchCursor(
+        contained_article_ids=["article-1"],
+        existing_rows=[],
+    )
+    adapter, events = _adapter_with_shift_batch_cursor(cursor)
+    duplicate_update = {
+        "article_id": "article-1",
+        "expected_version": 0,
+        "patch": {"decision": "selected"},
+    }
+
+    with pytest.raises(ValueError, match="more than once"):
+        adapter.save_shift_reviews(
+            shift_id="shift-1",
+            actor_user_id="editor-1",
+            updates=[duplicate_update, duplicate_update],
+            action="shift_review.decide",
+        )
+
+    assert events == ["begin", "rollback"]
+    assert cursor.queries == []
+
+
+def test_bulk_shift_review_rejects_stale_existing_version() -> None:
+    existing = _shift_review_row("article-1", version=2)
+    cursor = ShiftReviewBatchCursor(
+        contained_article_ids=["article-1"],
+        existing_rows=[existing],
+    )
+    adapter, events = _adapter_with_shift_batch_cursor(cursor)
+
+    with pytest.raises(
+        db_postgres_core.shift_reviews.ShiftReviewConflictError,
+        match="stale",
+    ):
+        adapter.save_shift_reviews(
+            shift_id="shift-1",
+            actor_user_id="editor-1",
+            updates=[
+                {
+                    "article_id": "article-1",
+                    "expected_version": 1,
+                    "patch": {"edited_summary": "新摘要"},
+                }
+            ],
+            action="shift_review.edit",
+        )
+
+    assert events == ["begin", "rollback"]
+    assert len(cursor.queries) == 2
+
+
+def test_bulk_shift_review_rejects_nonzero_version_for_new_row() -> None:
+    cursor = ShiftReviewBatchCursor(
+        contained_article_ids=["article-1"],
+        existing_rows=[],
+    )
+    adapter, events = _adapter_with_shift_batch_cursor(cursor)
+
+    with pytest.raises(
+        db_postgres_core.shift_reviews.ShiftReviewConflictError,
+        match="stale",
+    ):
+        adapter.save_shift_reviews(
+            shift_id="shift-1",
+            actor_user_id="editor-1",
+            updates=[
+                {
+                    "article_id": "article-1",
+                    "expected_version": 3,
+                    "patch": {"decision": "selected"},
+                }
+            ],
+            action="shift_review.decide",
+        )
+
+    assert events == ["begin", "rollback"]
+    assert len(cursor.queries) == 2
+
+
+def test_bulk_shift_review_rejects_finalized_existing_row() -> None:
+    existing = _shift_review_row(
+        "article-1",
+        version=2,
+        finalized_batch_id="batch-1",
+    )
+    cursor = ShiftReviewBatchCursor(
+        contained_article_ids=["article-1"],
+        existing_rows=[existing],
+    )
+    adapter, events = _adapter_with_shift_batch_cursor(cursor)
+
+    with pytest.raises(ValueError, match="先撤回"):
+        adapter.save_shift_reviews(
+            shift_id="shift-1",
+            actor_user_id="editor-1",
+            updates=[
+                {
+                    "article_id": "article-1",
+                    "expected_version": 2,
+                    "patch": {"edited_summary": "新摘要"},
+                }
+            ],
+            action="shift_review.edit",
+        )
+
+    assert events == ["begin", "rollback"]
+    assert len(cursor.queries) == 2
+
+
+def test_bulk_shift_review_mixed_rows_preserve_request_and_audit_order() -> None:
+    existing = _shift_review_row("article-a", version=2)
+    requested_ids = ["article-z", "article-a"]
+    cursor = ShiftReviewBatchCursor(
+        contained_article_ids=requested_ids,
+        existing_rows=[existing],
+    )
+    adapter, events = _adapter_with_shift_batch_cursor(cursor)
+
+    result = adapter.save_shift_reviews(
+        shift_id="shift-1",
+        actor_user_id="editor-1",
+        updates=[
+            {
+                "article_id": "article-z",
+                "expected_version": 0,
+                "patch": {"manual_llm_source": "新来源"},
+            },
+            {
+                "article_id": "article-a",
+                "expected_version": 2,
+                "patch": {"edited_summary": "新摘要"},
+            },
+        ],
+        action="shift_review.edit",
+        request_id="request-1",
+    )
+
+    assert events == ["begin", "commit"]
+    assert [row["article_id"] for row in result] == requested_ids
+    assert result[1]["edited_summary"] == "新摘要"
+    assert result[1]["manual_llm_source"] == "原来源"
+    audit_index = next(
+        index
+        for index, query in enumerate(cursor.queries)
+        if "INSERT INTO review_events" in query
+    )
+    audit_params = cursor.params[audit_index]
+    before_items = audit_params[4].obj["items"]
+    after_items = audit_params[5].obj["items"]
+    assert before_items == [None, existing]
+    assert [row["article_id"] for row in after_items] == requested_ids
+    assert audit_params[1:4] == (
+        "shift_review.edit",
+        "shift_review_batch",
+        "shift-1",
+    )
+    assert audit_params[6] == "request-1"
 
 
 def test_shift_bulk_discard_and_audit_share_one_transaction(
@@ -833,49 +1138,13 @@ def test_shift_bulk_discard_dry_run_does_not_audit(
     assert events == ["begin", "commit"]
 
 
-def test_bulk_shift_review_update_rolls_back_after_late_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    adapter = object.__new__(db_postgres_core.PostgresAdapter)
-    cursor = object()
-    events: list[str] = []
-
-    @contextmanager
-    def fake_transaction() -> Iterator[object]:
-        events.append("begin")
-        try:
-            yield cursor
-        except Exception:
-            events.append("rollback")
-            raise
-        else:
-            events.append("commit")
-
-    def fake_upsert(cur: object, **kwargs: Any) -> tuple[None, dict[str, Any]]:
-        article_id = kwargs["article_id"]
-        events.append(f"save:{article_id}")
-        if article_id == "article-2":
-            raise db_postgres_core.shift_reviews.ShiftReviewConflictError(
-                "Review version is stale"
-            )
-        return None, {"article_id": article_id, "version": 1}
-
-    adapter.transaction = fake_transaction
-    monkeypatch.setattr(
-        db_postgres_core.shift_reviews,
-        "shift_contains_article",
-        lambda cur, **kwargs: True,
+def test_bulk_shift_review_update_rolls_back_after_late_failure() -> None:
+    existing = _shift_review_row("article-2", version=2)
+    cursor = ShiftReviewBatchCursor(
+        contained_article_ids=["article-1", "article-2"],
+        existing_rows=[existing],
     )
-    monkeypatch.setattr(
-        db_postgres_core.shift_reviews,
-        "upsert_shift_review",
-        fake_upsert,
-    )
-    monkeypatch.setattr(
-        db_postgres_core.audit,
-        "insert_review_event",
-        lambda cur, **kwargs: events.append("audit"),
-    )
+    adapter, events = _adapter_with_shift_batch_cursor(cursor)
 
     with pytest.raises(
         db_postgres_core.shift_reviews.ShiftReviewConflictError,
@@ -892,19 +1161,18 @@ def test_bulk_shift_review_update_rolls_back_after_late_failure(
                 },
                 {
                     "article_id": "article-2",
-                    "expected_version": 0,
+                    "expected_version": 1,
                     "patch": {"decision": "selected"},
                 },
             ],
             action="shift_review.decide",
         )
 
-    assert events == [
-        "begin",
-        "save:article-1",
-        "save:article-2",
-        "rollback",
-    ]
+    assert events == ["begin", "rollback"]
+    assert sum(
+        "INSERT INTO shift_reviews" in query for query in cursor.queries
+    ) == 1
+    assert not any("INSERT INTO review_events" in query for query in cursor.queries)
 
 
 def test_shift_review_order_and_categories_share_one_transaction(

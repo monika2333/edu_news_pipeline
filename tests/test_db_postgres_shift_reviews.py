@@ -562,3 +562,43 @@ def test_finalized_review_must_be_restored_before_direct_edit() -> None:
             expected_version=2,
             patch={"edited_summary": "不应直接修改"},
         )
+
+
+def test_batch_membership_query_matches_single_article_contract() -> None:
+    cursor = ShiftReviewListCursor()
+    cursor.fetchall = lambda: [{"article_id": "article-1"}]
+
+    result = db_postgres_shift_reviews.fetch_shift_article_ids(
+        cursor,
+        shift_id="shift-1",
+        article_ids=["article-2", "article-1"],
+    )
+
+    query = cursor.queries[-1]
+    assert result == ["article-1"]
+    assert "ns.created_at >= s.starts_at" in query
+    assert "ns.created_at < s.ends_at" in query
+    assert "s.cancelled_at IS NULL" in query
+    assert "ns.status = 'ready_for_export'" in query
+    assert "ns.article_id = ANY(%s)" in query
+    assert cursor.params[-1] == (
+        "shift-1",
+        ["article-2", "article-1"],
+    )
+
+
+def test_batch_review_lock_uses_deterministic_order_and_for_update() -> None:
+    cursor = ShiftReviewListCursor()
+
+    result = db_postgres_shift_reviews.fetch_shift_reviews_for_update(
+        cursor,
+        shift_id="shift-1",
+        article_ids=["article-2", "article-1"],
+    )
+
+    query = cursor.queries[-1]
+    assert result == []
+    assert "article_id = ANY(%s)" in query
+    assert "ORDER BY article_id" in query
+    assert "FOR UPDATE" in query
+    assert query.index("ORDER BY article_id") < query.index("FOR UPDATE")

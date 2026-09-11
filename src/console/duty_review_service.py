@@ -433,10 +433,13 @@ def save_edits(
         article_id = str(raw_article_id).strip()
         if not article_id:
             raise ValueError("Article id cannot be empty")
-        patch = {
-            "edited_summary": edit.get("summary"),
-            "manual_llm_source": edit.get("llm_source"),
-        }
+        patch: dict[str, Any] = {}
+        if "summary" in edit:
+            patch["edited_summary"] = edit["summary"]
+        if "llm_source" in edit:
+            patch["manual_llm_source"] = edit["llm_source"]
+        if not patch:
+            continue
         updates.append(
             {
                 "article_id": article_id,
@@ -444,6 +447,8 @@ def save_edits(
                 "patch": patch,
             }
         )
+    if not updates:
+        return {"updated": 0, "versions": {}}
     saved = get_adapter().save_shift_reviews(
         shift_id=shift_id,
         actor_user_id=actor_user_id,

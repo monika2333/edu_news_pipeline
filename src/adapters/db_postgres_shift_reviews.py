@@ -645,6 +645,32 @@ def shift_contains_article(
     return cur.fetchone() is not None
 
 
+def fetch_shift_article_ids(
+    cur: psycopg.Cursor,
+    *,
+    shift_id: str,
+    article_ids: Sequence[str],
+) -> list[str]:
+    if not article_ids:
+        return []
+    cur.execute(
+        """
+        SELECT ns.article_id
+        FROM duty_shifts s
+        JOIN news_summaries ns
+          ON ns.created_at >= s.starts_at
+         AND ns.created_at < s.ends_at
+        WHERE s.id = %s
+          AND s.cancelled_at IS NULL
+          AND ns.article_id = ANY(%s)
+          AND ns.status = 'ready_for_export'
+        ORDER BY ns.article_id
+        """,
+        (shift_id, list(article_ids)),
+    )
+    return [str(row["article_id"]) for row in cur.fetchall()]
+
+
 def fetch_shift_review(
     cur: psycopg.Cursor,
     *,
@@ -685,6 +711,49 @@ def fetch_shift_review(
     return dict(row) if row else None
 
 
+def fetch_shift_reviews_for_update(
+    cur: psycopg.Cursor,
+    *,
+    shift_id: str,
+    article_ids: Sequence[str],
+) -> list[dict[str, Any]]:
+    if not article_ids:
+        return []
+    cur.execute(
+        """
+        SELECT
+            id,
+            shift_id,
+            article_id,
+            created_by_user_id,
+            updated_by_user_id,
+            report_type,
+            decision,
+            rank,
+            excerpt_text,
+            edited_summary,
+            manual_llm_source,
+            notes,
+            version,
+            finalized_batch_id,
+            finalized_rank,
+            decided_at,
+            created_at,
+            updated_at
+        FROM shift_reviews
+        WHERE shift_id = %s
+          AND article_id = ANY(%s)
+        ORDER BY article_id
+        FOR UPDATE
+        """,
+        (shift_id, list(article_ids)),
+    )
+    return [dict(row) for row in cur.fetchall()]
+
+
+_SHIFT_REVIEW_NOT_PREFETCHED = object()
+
+
 def upsert_shift_review(
     cur: psycopg.Cursor,
     *,
@@ -693,13 +762,19 @@ def upsert_shift_review(
     actor_user_id: str,
     expected_version: Optional[int],
     patch: Mapping[str, Any],
+    prefetched_review: Any = _SHIFT_REVIEW_NOT_PREFETCHED,
 ) -> tuple[Optional[dict[str, Any]], dict[str, Any]]:
-    existing = fetch_shift_review(
-        cur,
-        shift_id=shift_id,
-        article_id=article_id,
-        for_update=True,
-    )
+    if prefetched_review is _SHIFT_REVIEW_NOT_PREFETCHED:
+        existing = fetch_shift_review(
+            cur,
+            shift_id=shift_id,
+            article_id=article_id,
+            for_update=True,
+        )
+    else:
+        existing = (
+            dict(prefetched_review) if prefetched_review is not None else None
+        )
     if existing and existing.get("finalized_batch_id"):
         raise ValueError("已定稿新闻需先撤回当前列表后再修改")
     if existing is None:
@@ -1334,11 +1409,13 @@ __all__ = [
     "VALID_DECISIONS",
     "VALID_REPORT_TYPES",
     "bulk_discard_shift_candidates",
+    "fetch_shift_article_ids",
     "fetch_shift_finalized_items",
     "fetch_admin_shift_summaries",
     "fetch_shift_clusters",
     "fetch_shift_review",
     "fetch_shift_review_items",
+    "fetch_shift_reviews_for_update",
     "set_admin_discarded",
     "fetch_shift_stats",
     "finalize_shift_review_batch",

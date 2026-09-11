@@ -59,6 +59,14 @@ python -m pytest -v
 python -m pytest tests/test_score_worker.py::TestScoreWorker::test_scoring_logic -v
 ```
 
+人工筛选页有一组浏览器端行为测试（jsdom，位于 `tests/js/`），同样由 `python -m pytest` 触发。需要本机安装 Node 20+，并先执行一次：
+
+```bash
+npm ci --prefix tests/js
+```
+
+未安装时本地会跳过这组测试并给出原因；CI 中缺少依赖会直接失败。
+
 ### 开发环境
 
 ```bash

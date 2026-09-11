@@ -63,3 +63,6 @@ logs/
 
 # Lock files to prevent overlapping runs
 locks/
+
+# 浏览器端行为测试的 Node 依赖（npm ci --prefix tests/js 安装）
+tests/js/node_modules/

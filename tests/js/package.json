@@ -1,0 +1,11 @@
+{
+  "name": "edu-news-pipeline-js-tests",
+  "private": true,
+  "description": "人工筛选页浏览器端行为测试（jsdom），由 tests/test_manual_filter_js_behavior.py 经 pytest 触发",
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "jsdom": "24.1.3"
+  }
+}

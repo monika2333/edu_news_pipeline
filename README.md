@@ -116,6 +116,8 @@ python -m src.cli.main export
 ```powershell
 # 设置环境变量 (PowerShell)
 $env:DATABASE_URL="postgres://postgres:Postgres2025@localhost:5432/edu_news_pipeline?sslmode=disable"
+$env:DBMATE_MIGRATIONS_DIR="database/migrations"
+$env:DBMATE_SCHEMA_FILE="database/schema.sql"
 
 # 查看迁移状态
 dbmate status

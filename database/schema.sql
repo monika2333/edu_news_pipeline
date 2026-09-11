@@ -1,4 +1,4 @@
-\restrict 1nibvixbj9FIplwBwyLUD523nlt8mao1e19s6DzM5Rh3hZ2u8dOjMDiIKOqa1xK
+\restrict zp16mbgApUZeT0dzcxcfV8Xeu7xn3sd4GJa3YcUw0nvD2CUKXI6W0DsC9hQWakx
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
@@ -14,6 +14,13 @@ SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
+
+--
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
+--
+
+-- *not* creating schema, since initdb creates it
+
 
 --
 -- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
@@ -60,6 +67,54 @@ $$;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- Name: console_users; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.console_users (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    username text NOT NULL,
+    display_name text NOT NULL,
+    password_hash text NOT NULL,
+    role text NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    password_changed_at timestamp with time zone,
+    last_login_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    preferred_weekday smallint,
+    deleted_at timestamp with time zone,
+    CONSTRAINT console_users_display_name_not_blank CHECK ((btrim(display_name) <> ''::text)),
+    CONSTRAINT console_users_preferred_weekday_check CHECK (((preferred_weekday IS NULL) OR ((preferred_weekday >= 0) AND (preferred_weekday <= 6)))),
+    CONSTRAINT console_users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'duty_editor'::text]))),
+    CONSTRAINT console_users_username_not_blank CHECK ((btrim(username) <> ''::text))
+);
+
+
+--
+-- Name: active_console_admins; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.active_console_admins AS
+ SELECT id
+   FROM public.console_users
+  WHERE ((role = 'admin'::text) AND is_active AND (deleted_at IS NULL));
+
+
+--
+-- Name: app_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_settings (
+    section text NOT NULL,
+    value jsonb NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by_user_id uuid,
+    CONSTRAINT app_settings_version_check CHECK ((version > 0))
+);
+
 
 --
 -- Name: brief_batches; Type: TABLE; Schema: public; Owner: -
@@ -113,37 +168,22 @@ CREATE TABLE public.console_user_sessions (
 
 
 --
--- Name: console_users; Type: TABLE; Schema: public; Owner: -
+-- Name: crawl_accounts; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.console_users (
+CREATE TABLE public.crawl_accounts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    username text NOT NULL,
-    display_name text NOT NULL,
-    password_hash text NOT NULL,
-    role text NOT NULL,
-    is_active boolean DEFAULT true NOT NULL,
-    password_changed_at timestamp with time zone,
-    last_login_at timestamp with time zone,
+    source text NOT NULL,
+    normalized_identifier text NOT NULL,
+    original_input text NOT NULL,
+    profile_url text NOT NULL,
+    display_name text,
+    enabled boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    preferred_weekday smallint,
-    deleted_at timestamp with time zone,
-    CONSTRAINT console_users_display_name_not_blank CHECK ((btrim(display_name) <> ''::text)),
-    CONSTRAINT console_users_preferred_weekday_check CHECK (((preferred_weekday IS NULL) OR ((preferred_weekday >= 0) AND (preferred_weekday <= 6)))),
-    CONSTRAINT console_users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'duty_editor'::text]))),
-    CONSTRAINT console_users_username_not_blank CHECK ((btrim(username) <> ''::text))
+    created_by_user_id uuid,
+    updated_by_user_id uuid
 );
-
-
---
--- Name: active_console_admins; Type: VIEW; Schema: public; Owner: -
---
-
-CREATE VIEW public.active_console_admins AS
- SELECT id
-   FROM public.console_users
-  WHERE ((role = 'admin'::text) AND is_active AND (deleted_at IS NULL));
 
 
 --
@@ -223,7 +263,6 @@ CREATE TABLE public.manual_clusters (
 
 CREATE TABLE public.manual_reviews (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    owner_user_id uuid NOT NULL,
     article_id text NOT NULL,
     status text NOT NULL,
     summary text,
@@ -238,6 +277,7 @@ CREATE TABLE public.manual_reviews (
     report_type text,
     decided_by_user_id uuid,
     version integer DEFAULT 1 NOT NULL,
+    owner_user_id uuid NOT NULL,
     CONSTRAINT manual_reviews_report_type_check CHECK ((report_type = ANY (ARRAY['zongbao'::text, 'wanbao'::text]))),
     CONSTRAINT manual_reviews_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'selected'::text, 'backup'::text, 'discarded'::text, 'exported'::text]))),
     CONSTRAINT manual_reviews_version_check CHECK ((version > 0))
@@ -401,39 +441,6 @@ CREATE TABLE public.pipeline_runs (
 
 
 --
--- Name: app_settings; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.app_settings (
-    section text NOT NULL,
-    value jsonb NOT NULL,
-    version integer DEFAULT 1 NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_by_user_id uuid,
-    CONSTRAINT app_settings_version_check CHECK ((version > 0))
-);
-
-
---
--- Name: crawl_accounts; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.crawl_accounts (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    source text NOT NULL,
-    normalized_identifier text NOT NULL,
-    original_input text NOT NULL,
-    profile_url text NOT NULL,
-    display_name text,
-    enabled boolean DEFAULT true NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    created_by_user_id uuid,
-    updated_by_user_id uuid
-);
-
-
---
 -- Name: primary_articles; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -525,7 +532,7 @@ ALTER SEQUENCE public.review_events_id_seq OWNED BY public.review_events.id;
 --
 
 CREATE TABLE public.schema_migrations (
-    version character varying(128) NOT NULL
+    version character varying NOT NULL
 );
 
 
@@ -550,6 +557,18 @@ CREATE TABLE public.score_feedbacks (
     CONSTRAINT score_feedbacks_notes_length_check CHECK (((notes IS NULL) OR (char_length(notes) <= 500))),
     CONSTRAINT score_feedbacks_prompt_key_check CHECK ((prompt_key = ANY (ARRAY['external_positive'::text, 'external_negative'::text, 'internal_positive'::text, 'internal_negative'::text]))),
     CONSTRAINT score_feedbacks_prompt_version_check CHECK ((btrim(prompt_version) <> ''::text))
+);
+
+
+--
+-- Name: shift_review_admin_discards; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.shift_review_admin_discards (
+    owner_user_id uuid NOT NULL,
+    shift_review_id uuid NOT NULL,
+    discarded_at timestamp with time zone DEFAULT now() NOT NULL,
+    discarded_by_user_id uuid
 );
 
 
@@ -596,18 +615,6 @@ CREATE TABLE public.shift_reviews (
     CONSTRAINT shift_reviews_rank_check CHECK (((rank IS NULL) OR (rank > 0))),
     CONSTRAINT shift_reviews_report_type_check CHECK (((report_type IS NULL) OR (report_type = ANY (ARRAY['zongbao'::text, 'wanbao'::text])))),
     CONSTRAINT shift_reviews_version_check CHECK ((version > 0))
-);
-
-
---
--- Name: shift_review_admin_discards; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.shift_review_admin_discards (
-    owner_user_id uuid NOT NULL,
-    shift_review_id uuid NOT NULL,
-    discarded_at timestamp with time zone DEFAULT now() NOT NULL,
-    discarded_by_user_id uuid
 );
 
 
@@ -964,6 +971,14 @@ ALTER TABLE ONLY public.score_feedbacks
 
 
 --
+-- Name: shift_review_admin_discards shift_review_admin_discards_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_review_admin_discards
+    ADD CONSTRAINT shift_review_admin_discards_pkey PRIMARY KEY (owner_user_id, shift_review_id);
+
+
+--
 -- Name: shift_review_finalization_batches shift_review_finalization_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -977,14 +992,6 @@ ALTER TABLE ONLY public.shift_review_finalization_batches
 
 ALTER TABLE ONLY public.shift_reviews
     ADD CONSTRAINT shift_reviews_pkey PRIMARY KEY (id);
-
-
---
--- Name: shift_review_admin_discards shift_review_admin_discards_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.shift_review_admin_discards
-    ADD CONSTRAINT shift_review_admin_discards_pkey PRIMARY KEY (owner_user_id, shift_review_id);
 
 
 --
@@ -1079,17 +1086,17 @@ CREATE INDEX console_user_sessions_user_id_idx ON public.console_user_sessions U
 
 
 --
--- Name: crawl_accounts_enabled_source_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX crawl_accounts_enabled_source_idx ON public.crawl_accounts USING btree (source, created_at, id) WHERE enabled;
-
-
---
 -- Name: console_users_username_lower_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX console_users_username_lower_idx ON public.console_users USING btree (lower(username));
+
+
+--
+-- Name: crawl_accounts_enabled_source_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX crawl_accounts_enabled_source_idx ON public.crawl_accounts USING btree (source, created_at, id) WHERE enabled;
 
 
 --
@@ -1352,17 +1359,17 @@ CREATE INDEX score_feedbacks_submitted_by_user_idx ON public.score_feedbacks USI
 
 
 --
--- Name: shift_review_finalization_batches_shift_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX shift_review_finalization_batches_shift_idx ON public.shift_review_finalization_batches USING btree (shift_id, report_type, finalized_at);
-
-
---
 -- Name: shift_review_admin_discards_shift_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX shift_review_admin_discards_shift_idx ON public.shift_review_admin_discards USING btree (shift_review_id, owner_user_id);
+
+
+--
+-- Name: shift_review_finalization_batches_shift_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX shift_review_finalization_batches_shift_idx ON public.shift_review_finalization_batches USING btree (shift_id, report_type, finalized_at);
 
 
 --
@@ -1527,19 +1534,19 @@ CREATE TRIGGER raw_articles_set_updated_at BEFORE UPDATE ON public.raw_articles 
 
 
 --
--- Name: brief_items brief_items_brief_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.brief_items
-    ADD CONSTRAINT brief_items_brief_batch_id_fkey FOREIGN KEY (brief_batch_id) REFERENCES public.brief_batches(id) ON DELETE CASCADE;
-
-
---
 -- Name: app_settings app_settings_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.app_settings
     ADD CONSTRAINT app_settings_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: brief_items brief_items_brief_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.brief_items
+    ADD CONSTRAINT brief_items_brief_batch_id_fkey FOREIGN KEY (brief_batch_id) REFERENCES public.brief_batches(id) ON DELETE CASCADE;
 
 
 --
@@ -1679,22 +1686,6 @@ ALTER TABLE ONLY public.score_feedbacks
 
 
 --
--- Name: shift_review_finalization_batches shift_review_finalization_batches_finalized_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.shift_review_finalization_batches
-    ADD CONSTRAINT shift_review_finalization_batches_finalized_by_user_id_fkey FOREIGN KEY (finalized_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
-
-
---
--- Name: shift_review_finalization_batches shift_review_finalization_batches_shift_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.shift_review_finalization_batches
-    ADD CONSTRAINT shift_review_finalization_batches_shift_id_fkey FOREIGN KEY (shift_id) REFERENCES public.duty_shifts(id) ON DELETE RESTRICT;
-
-
---
 -- Name: shift_review_admin_discards shift_review_admin_discards_discarded_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1716,6 +1707,22 @@ ALTER TABLE ONLY public.shift_review_admin_discards
 
 ALTER TABLE ONLY public.shift_review_admin_discards
     ADD CONSTRAINT shift_review_admin_discards_shift_review_id_fkey FOREIGN KEY (shift_review_id) REFERENCES public.shift_reviews(id) ON DELETE CASCADE;
+
+
+--
+-- Name: shift_review_finalization_batches shift_review_finalization_batches_finalized_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_review_finalization_batches
+    ADD CONSTRAINT shift_review_finalization_batches_finalized_by_user_id_fkey FOREIGN KEY (finalized_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: shift_review_finalization_batches shift_review_finalization_batches_shift_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shift_review_finalization_batches
+    ADD CONSTRAINT shift_review_finalization_batches_shift_id_fkey FOREIGN KEY (shift_id) REFERENCES public.duty_shifts(id) ON DELETE RESTRICT;
 
 
 --
@@ -1810,7 +1817,7 @@ ALTER TABLE ONLY public.submitted_report_items
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 1nibvixbj9FIplwBwyLUD523nlt8mao1e19s6DzM5Rh3hZ2u8dOjMDiIKOqa1xK
+\unrestrict zp16mbgApUZeT0dzcxcfV8Xeu7xn3sd4GJa3YcUw0nvD2CUKXI6W0DsC9hQWakx
 
 
 --
@@ -1867,4 +1874,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260902030306'),
     ('20260903120000'),
     ('20260904120000'),
-    ('20260910120000');
+    ('20260910120000'),
+    ('20260911100000');

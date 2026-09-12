@@ -75,4 +75,5 @@
 - 控制台 Web 入口或页面路由变更：`python -m pytest tests/test_console_web_routes.py`
 - export、run 或 article service 变更：运行最接近的 `tests/test_*` 文件；如果影响 CLI 触发行为，再运行 `python -m pytest tests/test_cli_parser.py`
 - 较大的人工筛选控制台重构：`python -m pytest tests/test_manual_filter_service.py tests/test_manual_filter_admin_service.py tests/test_manual_filter_routes.py`
+- 设置页行为测试（`tests/test_settings_js_behavior.py`，夹具 `tests/js/settings_harness.js`）的等待辅助函数分两种语义：**`waitFor(predicate)` 是「等待条件成立」，超时即抛错使测试失败**（失败信息带条件源码），不允许依赖它的返回值做否定断言；**「某事在一段时间内不应发生」的否定断言必须用 `assertNever(predicate, windowMs)`**，它等满整个窗口、条件一旦成立即抛错。新增 harness 照抄等待辅助函数时必须保持这个约定——超时静默返回 `false` 的写法会让未检查返回值的调用点变成空断言。
 - 筛选页决定流程（单条/整簇决定、放弃本页剩余内容、摘要与来源编辑保存、列表加载）变更：`python -m pytest tests/test_manual_filter_js_behavior.py`。这组 jsdom 行为测试（`tests/js/filter_decision_flow.test.js`）锁定四项约定：值班端决定后先提示后补页、`loadFilterData` 最新请求获胜、只保存改过的卡片、决定前等待进行中的编辑保存。改动这些行为时同步更新该测试；不要用源码字符串断言代替行为测试，字符串断言锁不住逻辑。夹具 `tests/js/manual_filter_harness.js` 以真实路由渲染的页面启动，后端由其中的假服务模拟，接口字段变化时需同步更新假服务。

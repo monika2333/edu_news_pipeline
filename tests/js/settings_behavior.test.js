@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const {
     bootPage,
     waitFor,
+    assertNever,
     defaultSections,
     defaultAccounts,
     makeAccount,
@@ -16,11 +17,6 @@ const {
 function inputValue(page, el, value) {
     el.value = value;
     el.dispatchEvent(new page.window.Event('input', { bubbles: true }));
-}
-
-function changeValue(page, el, value) {
-    el.value = value;
-    el.dispatchEvent(new page.window.Event('change', { bubbles: true }));
 }
 
 function hourlyOrder(page) {
@@ -48,10 +44,9 @@ test('S1：配置分区缺失时对应页签显示导入提示且不渲染编辑
         assert.equal(page.document.getElementById('btn-sources-save'), null);
 
         // 抓取账号页签不依赖配置分区，仍可加载账号列表
-        const accounts = await waitFor(
+        await waitFor(
             () => page.document.querySelectorAll('#accounts-body tr[data-account-id]').length === 1,
         );
-        assert.ok(accounts);
     } finally {
         page.close();
     }
@@ -72,8 +67,7 @@ test('S2：修改默认模型联动跟随默认提示，保存请求包含全部
         assert.ok(scoringHint.hidden);
 
         page.document.getElementById('btn-models-save').click();
-        const sent = await waitFor(() => page.server.requests('save-models').length === 1);
-        assert.ok(sent);
+        await waitFor(() => page.server.requests('save-models').length === 1);
         const body = page.server.requests('save-models')[0].body;
         assert.equal(body.expected_version, 7);
         assert.equal(body.value.default, 'new/default-x');
@@ -112,8 +106,7 @@ test('S3：测试按钮发送页面当前值，修改步骤后旧结果被清除
         reasoning.dispatchEvent(new page.window.Event('change', { bubbles: true }));
 
         row.querySelector('.step-test-btn').click();
-        const sent = await waitFor(() => page.server.requests('model-test').length === 1);
-        assert.ok(sent);
+        await waitFor(() => page.server.requests('model-test').length === 1);
         const body = page.server.requests('model-test')[0].body;
         // 必须是页面当前值：跟随默认取默认输入框当前内容，reasoning 取当前开关
         assert.equal(body.step, 'summary');
@@ -140,9 +133,8 @@ test('S4：保存进行中再次点击保存不会发出第二个请求', async 
         saveBtn.click();
         saveBtn.click();
         await waitFor(() => page.server.requests('save-models').length >= 1);
-        // 给第二次点击的请求留出发出窗口
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        assert.equal(page.server.requests('save-models').length, 1);
+        // 保存进行中再次点击不应发出第二个请求
+        await assertNever(() => page.server.requests('save-models').length > 1, 200);
         assert.ok(saveBtn.disabled);
         assert.match(
             page.document.getElementById('models-save-status').textContent,
@@ -184,10 +176,11 @@ test('S6：保存返回 409 时保留修改，仅点击「载入最新配置」�
     const sections = defaultSections();
     const page = await bootPage({ sections });
     try {
-        // 模拟另一处已经把默认模型改掉
+        // 模拟另一处已经把默认模型改掉；detail 刻意不含「冲突」字样，
+        // 保证下面的断言锁的是界面自己的冲突前缀，而不是 fixture 文本回显
         page.server.saveBehavior.llm_models = {
             status: 409,
-            payload: { detail: '配置版本冲突：当前版本为 8' } ,
+            payload: { detail: '配置版本已变化：当前版本为 8' },
         };
         page.server.sections.llm_models = {
             ...page.server.sections.llm_models,
@@ -201,7 +194,8 @@ test('S6：保存返回 409 时保留修改，仅点击「载入最新配置」�
         await waitFor(() => page.server.requests('save-models').length === 1
             && page.server.requests('save-models')[0].done);
         const status = page.document.getElementById('models-save-status');
-        await waitFor(() => status.textContent.includes('冲突'));
+        await waitFor(() => status.textContent.startsWith('保存冲突：'));
+        assert.match(status.textContent, /配置版本已变化：当前版本为 8/);
         // 本地修改未被覆盖，也没有自动重新拉取
         assert.equal(defaultInput.value, 'local/edit');
         assert.equal(page.server.requests('get-settings').length, 0);
@@ -209,10 +203,9 @@ test('S6：保存返回 409 时保留修改，仅点击「载入最新配置」�
         assert.equal(reloadBtn.hidden, false);
 
         reloadBtn.click();
-        const reloaded = await waitFor(
+        await waitFor(
             () => page.server.requests('get-settings').length === 1,
         );
-        assert.ok(reloaded);
         await waitFor(
             () => page.document.getElementById('models-default-input').value === 'server/new-default',
         );
@@ -254,8 +247,7 @@ test('S7：数据源上移下移后保存顺序与页面一致，每日任务来
         assert.deepEqual(hourlyOrder(page), ['toutiao', 'chinanews']);
 
         page.document.getElementById('btn-sources-save').click();
-        const sent = await waitFor(() => page.server.requests('save-sources').length === 1);
-        assert.ok(sent);
+        await waitFor(() => page.server.requests('save-sources').length === 1);
         const body = page.server.requests('save-sources')[0].body;
         assert.equal(body.expected_version, 4);
         assert.deepEqual(body.value, ['toutiao', 'chinanews']);
@@ -277,8 +269,8 @@ test('S7b：每小时列表为空时前端拦截保存，不发送请求', async
         assert.deepEqual(hourlyOrder(page), []);
 
         page.document.getElementById('btn-sources-save').click();
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        assert.equal(page.server.requests('save-sources').length, 0);
+        // 前端拦截：不应发出保存请求
+        await assertNever(() => page.server.requests('save-sources').length > 0, 200);
         assert.match(
             page.document.getElementById('sources-save-status').textContent,
             /不能为空/,
@@ -350,7 +342,9 @@ test('S9：批量预览渲染四种状态、确认按钮受可新增数量与预
         assert.equal(confirmBtn.textContent, '确认添加 1 个');
         const invalidRow = page.document
             .querySelector('.account-bulk-row.is-invalid');
-        assert.match(invalidRow.textContent, /无法解析/);
+        // 「无法解析」是界面按状态生成的标签（fixture 的错误文案刻意不含这四个字），
+        // 后面的原因则来自服务端原文
+        assert.match(invalidRow.textContent, /无法解析：不认识的输入格式/);
 
         // 预览后修改文本：预览作废，确认按钮失效
         inputValue(page, textarea, 'new-id-1\ntoutiao-one\nnew-id-1\ninvalid-line\nnew-id-2');
@@ -396,6 +390,37 @@ test('S10：启用开关 PATCH 失败时开关恢复原状态并显示错误', a
         assert.equal(toggle.checked, true);
 
         page.server.failNext['patch-account'] = 1;
+        toggle.click();
+        assert.equal(toggle.checked, false);
+        await waitFor(() => page.server.requests('patch-account').length === 1
+            && page.server.requests('patch-account')[0].done);
+        await waitFor(() => toggle.checked === true);
+        assert.match(row.querySelector('.account-row-error').textContent, /状态切换失败/);
+    } finally {
+        page.close();
+    }
+});
+
+test('S10b：启用开关请求抛网络异常时开关恢复原状态并显示错误', async () => {
+    const accounts = defaultAccounts();
+    accounts.tencent = [makeAccount({
+        id: 'acc-tencent-1',
+        source: 'tencent',
+        normalized_identifier: 'tencent-one',
+        enabled: true,
+    })];
+    const page = await bootPage({ accounts });
+    try {
+        page.clickTab('accounts');
+        page.document.querySelector('[data-account-source="tencent"]').click();
+        await waitFor(() => page.document
+            .querySelector('#accounts-body tr[data-account-id="acc-tencent-1"]'));
+        const row = page.document
+            .querySelector('#accounts-body tr[data-account-id="acc-tencent-1"]');
+        const toggle = row.querySelector('.account-enabled-toggle');
+        assert.equal(toggle.checked, true);
+
+        page.server.throwNext['patch-account'] = 1;
         toggle.click();
         assert.equal(toggle.checked, false);
         await waitFor(() => page.server.requests('patch-account').length === 1

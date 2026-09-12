@@ -22,8 +22,11 @@ function nextTick() {
     return new Promise((resolve) => setImmediate(resolve));
 }
 
-// 轮询等待条件成立；只用于「最终会成立」的正向条件，超时即失败。
-async function waitFor(predicate, timeoutMs = 3000) {
+// 等待辅助函数分成两种语义，调用处一眼可辨：
+// - waitFor(predicate)：等待条件成立，超时即抛错（测试失败），失败信息带上条件源码；
+// - assertNever(predicate, windowMs)：确认条件在整个时间窗内始终不成立，
+//   窗口内成立即抛错。「某事不应发生」的否定断言必须用这个，禁止用 waitFor 的返回值代替。
+async function waitFor(predicate, timeoutMs = 3000, description = '') {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
         try {
@@ -33,7 +36,26 @@ async function waitFor(predicate, timeoutMs = 3000) {
         }
         await new Promise((resolve) => setTimeout(resolve, 5));
     }
-    return false;
+    const what = description || predicate.toString();
+    throw new Error(`waitFor 超时（${timeoutMs}ms），条件未成立：${what}`);
+}
+
+async function assertNever(predicate, windowMs = 300, description = '') {
+    const deadline = Date.now() + windowMs;
+    while (Date.now() < deadline) {
+        let fired = false;
+        try {
+            fired = !!predicate();
+        } catch (error) {
+            // 条件依赖的 DOM 尚未渲染视为未发生，继续观察
+        }
+        if (fired) {
+            const what = description || predicate.toString();
+            throw new Error(`assertNever 失败：条件在 ${windowMs}ms 窗口内成立：${what}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    return true;
 }
 
 function inlineScripts(html) {
@@ -168,6 +190,9 @@ class FakeSettingsServer {
         this.holds = {};
         this.held = [];
         this.failNext = {};
+        // 与 failNext 对齐的异常注入：按请求 kind 计数、消费一次，让 fetch 直接抛错，
+        // 覆盖「网络异常」而非「HTTP 错误状态码」的失败路径
+        this.throwNext = {};
         this.accountSeq = 0;
     }
 
@@ -190,7 +215,7 @@ class FakeSettingsServer {
 
     parseLine(source, cleaned) {
         if (cleaned.includes('invalid')) {
-            throw new Error(`无法解析：${cleaned}`);
+            throw new Error(`不认识的输入格式：${cleaned}`);
         }
         return {
             source,
@@ -351,7 +376,10 @@ class FakeSettingsServer {
         this.inflight += 1;
         const willFail = (this.failNext[kind] || 0) > 0;
         if (willFail) this.failNext[kind] -= 1;
+        const willThrow = (this.throwNext[kind] || 0) > 0;
+        if (willThrow) this.throwNext[kind] -= 1;
         try {
+            if (willThrow) throw new Error('injected network failure');
             if ((this.holds[kind] || 0) > 0) {
                 this.holds[kind] -= 1;
                 await new Promise((release) => this.held.push({ kind, release }));
@@ -440,6 +468,7 @@ async function bootPage(serverOptions = {}) {
 module.exports = {
     bootPage,
     waitFor,
+    assertNever,
     unhandledRejections,
     defaultSections,
     defaultAccounts,

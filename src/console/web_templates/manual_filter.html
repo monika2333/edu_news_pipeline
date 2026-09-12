@@ -21,7 +21,7 @@
     <link rel="stylesheet" href="/static/css/modules/sidebar_collapse.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/score_feedback.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/discard.css?v={{ version }}">
-    <link rel="stylesheet" href="/static/css/modules/auth.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/modules/header.css?v={{ version }}">
     <style>
         .source-box {
             width: 100%;
@@ -77,33 +77,10 @@
                 {% if is_duty_workspace %}
                 <select class="workspace-shift-select" id="workspace-shift-select" aria-label="选择班次"></select>
                 {% else %}
-                <nav class="admin-view-switch" aria-label="管理员主视图">
-                    <a class="admin-view-link" href="/admin/duty-summary">值班结果筛选</a>
-                    <a class="admin-view-link{% if not is_admin_review %} is-active{% endif %}" href="/manual_filter"
-                        {% if not is_admin_review %}aria-current="page"{% endif %}>
-                        全量新闻筛选
-                    </a>
-                    <span class="admin-view-stage-divider" aria-hidden="true"></span>
-                    <a class="admin-view-link{% if is_admin_review %} is-active{% endif %}" href="/admin/review"
-                        {% if is_admin_review %}aria-current="page"{% endif %}>
-                        汇总审阅
-                    </a>
-                    <span class="admin-view-stage-divider" aria-hidden="true"></span>
-                    <a class="admin-view-link" href="/submission-archive">报送存档</a>
-                </nav>
+                {% set active_view = "review" if is_admin_review else "filter" %}
+                {% include "_admin_view_switch.html" %}
                 {% endif %}
-                <details class="account-menu">
-                    <summary class="account-menu-trigger current-user" id="current-user">
-                        <span>{{ current_user.display_name }} · {{ '值班编辑' if is_duty_workspace else '管理员' }}</span>
-                    </summary>
-                    <div class="account-menu-panel">
-                        {% if not is_duty_workspace %}
-                        <a class="account-menu-item" href="/admin">用户与排班</a>
-                        {% endif %}
-                        <a class="account-menu-item" href="/account">修改密码</a>
-                        <button class="account-menu-item" id="btn-logout" type="button">退出登录</button>
-                    </div>
-                </details>
+                {% include "_account_menu.html" %}
             </div>
         </header>
 

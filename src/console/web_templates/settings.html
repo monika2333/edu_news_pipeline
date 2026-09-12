@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/static/css/layout.css">
     <link rel="stylesheet" href="/static/css/components.css">
     <link rel="stylesheet" href="/static/css/modules/admin.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/modules/header.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/settings.css?v={{ version }}">
 </head>
 
@@ -28,16 +29,12 @@
                     role="tab" data-settings-tab="models">模型</button>
                 <button class="settings-tab" id="settings-tab-sources" type="button"
                     role="tab" data-settings-tab="sources">数据源</button>
-                <button class="settings-tab" id="settings-tab-accounts" type="button"
-                    role="tab" data-settings-tab="accounts">抓取账号</button>
             </div>
 
             <section class="admin-panel settings-panel" id="settings-panel-models"
                 role="tabpanel" aria-labelledby="settings-tab-models"></section>
             <section class="admin-panel settings-panel" id="settings-panel-sources"
                 role="tabpanel" aria-labelledby="settings-tab-sources"></section>
-            <section class="admin-panel settings-panel" id="settings-panel-accounts"
-                role="tabpanel" aria-labelledby="settings-tab-accounts"></section>
         </main>
     </div>
 
@@ -73,7 +70,7 @@
     <script src="/static/js/settings/core.js?v={{ version }}"></script>
     <script src="/static/js/settings/models_tab.js?v={{ version }}"></script>
     <script src="/static/js/settings/sources_tab.js?v={{ version }}"></script>
-    <script src="/static/js/settings/accounts_tab.js?v={{ version }}"></script>
+    <script src="/static/js/settings/source_accounts.js?v={{ version }}"></script>
     <script src="/static/js/settings/init.js?v={{ version }}"></script>
 </body>
 

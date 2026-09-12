@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
@@ -1301,3 +1302,43 @@ def test_manual_filter_duty_scope_switch_admin_only() -> None:
     duty_page = _build_editor_client().get("/duty")
     assert duty_page.status_code == 200
     assert "data-duty-process-scope" not in duty_page.text
+
+
+# 账号菜单是公共片段（_account_menu.html），六个管理员主视图/管理页都必须包含
+# 「用户与排班」与「系统设置」两项；漏掉任何一个页面都应立刻红。
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/admin",
+        "/admin/settings",
+        "/admin/duty-summary",
+        "/manual_filter",
+        "/admin/review",
+        "/submission-archive",
+    ],
+)
+def test_admin_pages_account_menu_includes_users_and_settings_entries(
+    monkeypatch: MonkeyPatch, path: str
+) -> None:
+    monkeypatch.setattr(
+        "src.console.web_routes.generate_shifts",
+        lambda **kwargs: {"inserted": 0},
+    )
+
+    html = _build_client().get(path).text
+
+    assert re.search(
+        r'class="account-menu-item[^"]*" href="/admin"[^>]*>用户与排班</a>', html
+    )
+    assert re.search(
+        r'class="account-menu-item[^"]*" href="/admin/settings"[^>]*>系统设置</a>', html
+    )
+
+
+def test_duty_workspace_account_menu_has_no_admin_entries() -> None:
+    html = _build_editor_client().get("/duty").text
+
+    assert not re.search(
+        r'class="account-menu-item[^"]*" href="/admin"[^>]*>用户与排班</a>', html
+    )
+    assert 'href="/admin/settings"' not in html

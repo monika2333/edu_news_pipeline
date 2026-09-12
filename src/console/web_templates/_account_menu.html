@@ -1,0 +1,16 @@
+{# 公共账号菜单。输入变量：
+   - current_user（必需）：角色分支与触发器文案都按 current_user.role 判断；
+   - account_menu_active（可选，'users' / 'settings'）：给对应项加 is-active 与 aria-current。 #}
+<details class="account-menu">
+    <summary class="account-menu-trigger current-user" id="current-user">
+        <span>{{ current_user.display_name }} · {{ '管理员' if current_user.role == 'admin' else '值班编辑' }}</span>
+    </summary>
+    <div class="account-menu-panel">
+        {% if current_user.role == 'admin' %}
+        <a class="account-menu-item{% if account_menu_active == 'users' %} is-active{% endif %}" href="/admin"{% if account_menu_active == 'users' %} aria-current="page"{% endif %}>用户与排班</a>
+        <a class="account-menu-item{% if account_menu_active == 'settings' %} is-active{% endif %}" href="/admin/settings"{% if account_menu_active == 'settings' %} aria-current="page"{% endif %}>系统设置</a>
+        {% endif %}
+        <a class="account-menu-item" href="/account">修改密码</a>
+        <button class="account-menu-item" id="btn-logout" type="button">退出登录</button>
+    </div>
+</details>

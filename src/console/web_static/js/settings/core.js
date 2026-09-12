@@ -1,13 +1,14 @@
 // 系统设置页 - core：共享状态、DOM 引用、请求封装、页签与未保存守卫。
-// 加载顺序最前；页签逻辑见 models_tab.js / sources_tab.js / accounts_tab.js，
+// 加载顺序最前；页签逻辑见 models_tab.js / sources_tab.js / source_accounts.js，
 // 启动逻辑在 init.js。用户输入一律经 createEl/textContent 渲染，禁止拼接 innerHTML。
 'use strict';
 
-const SETTINGS_TABS = ['models', 'sources', 'accounts'];
+const SETTINGS_TABS = ['models', 'sources'];
 
 const state = {
     payload: null,
     activeTab: 'models',
+    // 数据源页签当前展开管理账号的来源（手风琴，同时最多一个）
     accountSource: null,
     accounts: {},
     accountCounts: {},
@@ -15,6 +16,10 @@ const state = {
     saving: { llm_models: false, crawl_sources: false },
     modelsDraft: null,
     sourcesDraft: null,
+    // 数据源页签视图：default（分组 + 即时启停）或 sort（纯排序草稿）
+    sourcesMode: 'default',
+    // 进行中的来源启停请求数；非零时禁用「调整抓取顺序」
+    sourceToggleInflight: 0,
     accountFilter: '',
     bulk: { text: '', items: null, stale: false },
 };
@@ -28,7 +33,6 @@ function cacheSettingsElements() {
     elements.panels = {
         models: document.getElementById('settings-panel-models'),
         sources: document.getElementById('settings-panel-sources'),
-        accounts: document.getElementById('settings-panel-accounts'),
     };
     elements.deleteModal = document.getElementById('delete-account-modal');
     elements.deleteName = document.getElementById('delete-account-name');
@@ -244,18 +248,31 @@ function writeSettingsHash(tab, sub) {
 }
 
 // 切换页签只隐藏面板，不重渲染，未保存的修改随 DOM 保留。
+// 旧 hash 兼容：#accounts[:来源key] 一律改写为 #sources[:来源key]（replaceState，不留历史）；
+// #sources:<key> 的 key 不在需要账号的来源里时降级为 #sources，不报错。
 function activateSettingsTab(tab, sub, { updateHash = true } = {}) {
-    const normalized = SETTINGS_TABS.includes(tab) ? tab : 'models';
-    state.activeTab = normalized;
+    let normalized = tab;
+    let hashSub = sub;
+    let forceHashRewrite = false;
     if (normalized === 'accounts') {
-        if (sub && accountSources().some((item) => item.key === sub)) {
-            state.accountSource = sub;
+        normalized = 'sources';
+        forceHashRewrite = true;
+    }
+    if (!SETTINGS_TABS.includes(normalized)) normalized = 'models';
+    state.activeTab = normalized;
+    if (normalized === 'sources') {
+        if (hashSub === undefined || hashSub === '') {
+            hashSub = state.accountSource || '';
+        } else if (accountSources().some((item) => item.key === hashSub)) {
+            if (!expandSourceRow(hashSub, { updateHash: false })) {
+                hashSub = '';
+                forceHashRewrite = true;
+            }
+        } else {
+            collapseSourceExpansion();
+            hashSub = '';
+            forceHashRewrite = true;
         }
-        if (!state.accountSource) {
-            const first = accountSources()[0];
-            state.accountSource = first ? first.key : null;
-        }
-        renderAccountsTab();
     }
     elements.tabButtons.forEach((btn) => {
         const active = btn.dataset.settingsTab === normalized;
@@ -265,7 +282,7 @@ function activateSettingsTab(tab, sub, { updateHash = true } = {}) {
     Object.entries(elements.panels).forEach(([name, panel]) => {
         panel.hidden = name !== normalized;
     });
-    if (updateHash) {
-        writeSettingsHash(normalized, normalized === 'accounts' ? state.accountSource : '');
+    if (updateHash || forceHashRewrite) {
+        writeSettingsHash(normalized, normalized === 'sources' ? hashSub : '');
     }
 }

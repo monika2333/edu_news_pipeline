@@ -422,7 +422,7 @@ async function bootPage(serverOptions = {}) {
     const virtualConsole = new VirtualConsole();
     virtualConsole.on('jsdomError', (error) => scriptErrors.push(error.message));
     const dom = new JSDOM(inlineScripts(fs.readFileSync(PAGE_HTML, 'utf8')), {
-        url: 'http://localhost/admin/settings',
+        url: `http://localhost/admin/settings${serverOptions.hash || ''}`,
         runScripts: 'dangerously',
         pretendToBeVisual: true,
         virtualConsole,
@@ -455,8 +455,7 @@ async function bootPage(serverOptions = {}) {
     const booted = await waitFor(
         () => server.inflight === 0
             && page.panel('models').children.length > 0
-            && page.panel('sources').children.length > 0
-            && page.panel('accounts').children.length > 0,
+            && page.panel('sources').children.length > 0,
     );
     if (!booted || scriptErrors.length) {
         throw new Error(`页面启动失败：${scriptErrors.join(' | ') || '面板未渲染'}`);

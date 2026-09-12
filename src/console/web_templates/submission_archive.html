@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="/static/css/utilities.css">
     <link rel="stylesheet" href="/static/css/layout.css">
     <link rel="stylesheet" href="/static/css/components.css">
-    <link rel="stylesheet" href="/static/css/modules/auth.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/modules/header.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/search.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/content_drawer.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/score_feedback.css?v={{ version }}">
@@ -31,31 +31,9 @@
                 <h1>新闻筛选控制台</h1>
             </div>
             <div class="header-right">
-                <nav class="admin-view-switch" aria-label="主视图">
-                    {% if current_user.role == 'admin' %}
-                    <a class="admin-view-link" href="/admin/duty-summary">值班结果筛选</a>
-                    <a class="admin-view-link" href="/manual_filter">全量新闻筛选</a>
-                    <span class="admin-view-stage-divider" aria-hidden="true"></span>
-                    <a class="admin-view-link" href="/admin/review">汇总审阅</a>
-                    <span class="admin-view-stage-divider" aria-hidden="true"></span>
-                    {% else %}
-                    <a class="admin-view-link" href="/duty">新闻筛选</a>
-                    {% endif %}
-                    <a class="admin-view-link is-active" href="/submission-archive"
-                        aria-current="page">报送存档</a>
-                </nav>
-                <details class="account-menu">
-                    <summary class="account-menu-trigger current-user">
-                        <span>{{ current_user.display_name }} · {{ '管理员' if current_user.role == 'admin' else '值班编辑' }}</span>
-                    </summary>
-                    <div class="account-menu-panel">
-                        {% if current_user.role == 'admin' %}
-                        <a class="account-menu-item" href="/admin">用户与排班</a>
-                        {% endif %}
-                        <a class="account-menu-item" href="/account">修改密码</a>
-                        <button class="account-menu-item" id="btn-logout" type="button">退出登录</button>
-                    </div>
-                </details>
+                {% set active_view = "archive" %}
+                {% include "_admin_view_switch.html" %}
+                {% include "_account_menu.html" %}
             </div>
         </header>
 

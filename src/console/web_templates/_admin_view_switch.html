@@ -1,0 +1,12 @@
+{# 公共管理员主视图导航。输入变量：
+   - current_user（必需）；
+   - active_view（可选，'duty_summary' / 'filter' / 'review' / 'archive'）：给对应项加 is-active 与 aria-current。
+   只渲染管理员版本；值班场景（/duty 顶部是班次选择器）由调用方负责不 include。 #}
+<nav class="admin-view-switch" aria-label="管理员主视图">
+    <a class="admin-view-link{% if active_view == 'duty_summary' %} is-active{% endif %}" href="/admin/duty-summary"{% if active_view == 'duty_summary' %} aria-current="page"{% endif %}>值班结果筛选</a>
+    <a class="admin-view-link{% if active_view == 'filter' %} is-active{% endif %}" href="/manual_filter"{% if active_view == 'filter' %} aria-current="page"{% endif %}>全量新闻筛选</a>
+    <span class="admin-view-stage-divider" aria-hidden="true"></span>
+    <a class="admin-view-link{% if active_view == 'review' %} is-active{% endif %}" href="/admin/review"{% if active_view == 'review' %} aria-current="page"{% endif %}>汇总审阅</a>
+    <span class="admin-view-stage-divider" aria-hidden="true"></span>
+    <a class="admin-view-link{% if active_view == 'archive' %} is-active{% endif %}" href="/submission-archive"{% if active_view == 'archive' %} aria-current="page"{% endif %}>报送存档</a>
+</nav>

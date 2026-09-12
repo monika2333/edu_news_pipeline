@@ -1,5 +1,5 @@
 // 系统设置页（/admin/settings）的 jsdom 行为测试。
-// 覆盖验收场景 S1-S12；各场景语义见 tests/test_settings_js_behavior.py 与交付说明。
+// 覆盖验收场景 S1-S18；各场景语义见 tests/test_settings_js_behavior.py 与交付说明。
 'use strict';
 
 const { test } = require('node:test');
@@ -24,9 +24,27 @@ function hourlyOrder(page) {
         .map((item) => item.dataset.source);
 }
 
+function sortOrder(page) {
+    return [...page.document.querySelectorAll('#sources-sort-list li[data-source]')]
+        .map((item) => item.dataset.source);
+}
+
 function buttonByText(container, text) {
     return [...container.querySelectorAll('button')]
         .find((btn) => btn.textContent.trim() === text);
+}
+
+function sourceRow(page, key) {
+    return page.document.querySelector(`li[data-source="${key}"]`);
+}
+
+// 点击来源行的展开箭头并等待展开区出现
+async function expandSource(page, key) {
+    const arrow = sourceRow(page, key).querySelector('.source-expand-toggle');
+    assert.ok(arrow, `来源 ${key} 应有展开箭头`);
+    arrow.click();
+    await waitFor(() => page.document
+        .querySelector(`.source-accounts-panel[data-accounts-for="${key}"]`));
 }
 
 test('S1：配置分区缺失时对应页签显示导入提示且不渲染编辑控件', async () => {
@@ -42,11 +60,8 @@ test('S1：配置分区缺失时对应页签显示导入提示且不渲染编辑
         const sourcesNotice = page.panel('sources').querySelector('.settings-import-notice');
         assert.ok(sourcesNotice);
         assert.equal(page.document.getElementById('btn-sources-save'), null);
-
-        // 抓取账号页签不依赖配置分区，仍可加载账号列表
-        await waitFor(
-            () => page.document.querySelectorAll('#accounts-body tr[data-account-id]').length === 1,
-        );
+        // 账号管理并入数据源页签，分区缺失时没有来源行可供展开
+        assert.equal(page.panel('sources').querySelector('li[data-source]'), null);
     } finally {
         page.close();
     }
@@ -218,20 +233,21 @@ test('S6：保存返回 409 时保留修改，仅点击「载入最新配置」�
     }
 });
 
-test('S7：数据源上移下移后保存顺序与页面一致，每日任务来源不参与每小时列表，空列表不能保存', async () => {
+test('S7：排序模式下上移下移后保存，排序模式不渲染启用开关与展开箭头', async () => {
     const sections = defaultSections();
     // 初始顺序与字母序不同，便于识别「保存时按字母排序」的变异
     sections.crawl_sources.value = ['chinanews', 'toutiao'];
     const page = await bootPage({ sections });
     try {
+        // 默认视图：已启用分组按 crawl_sources 顺序排列
         assert.deepEqual(hourlyOrder(page), ['chinanews', 'toutiao']);
 
-        // 每日任务来源只出现在只读分组，不在每小时列表、也没有启用按钮
+        // 每日任务来源只出现在只读分组，不在已启用/未启用分组、也没有启用开关
         const daily = page.document.getElementById('sources-daily-list');
         assert.match(daily.textContent, /北京日报/);
         assert.match(daily.textContent, /劳动午报/);
         assert.match(daily.textContent, /每日单独任务，由服务器计划任务调度/);
-        assert.equal(daily.querySelector('.source-enable-btn'), null);
+        assert.equal(daily.querySelector('.source-enabled-toggle'), null);
         assert.equal(
             page.document.querySelector('#sources-hourly-list li[data-source="bjrb"]'),
             null,
@@ -241,10 +257,27 @@ test('S7：数据源上移下移后保存顺序与页面一致，每日任务来
             null,
         );
 
+        // 进入排序模式
+        page.document.getElementById('btn-sources-sort-mode').click();
+        await waitFor(() => page.document.getElementById('sources-sort-list'));
+        assert.deepEqual(sortOrder(page), ['chinanews', 'toutiao']);
+        // 排序模式只显示已启用来源
+        assert.equal(page.document.getElementById('sources-available-list'), null);
+        assert.equal(page.document.getElementById('sources-daily-list'), null);
+        // 排序模式不渲染启用开关与展开箭头（不是 disabled，而是不存在）
+        await assertNever(
+            () => page.document.querySelector('#sources-sort-list .source-enabled-toggle'),
+            200,
+        );
+        await assertNever(
+            () => page.document.querySelector('#sources-sort-list .source-expand-toggle'),
+            200,
+        );
+
         const toutiaoItem = page.document
-            .querySelector('#sources-hourly-list li[data-source="toutiao"]');
+            .querySelector('#sources-sort-list li[data-source="toutiao"]');
         buttonByText(toutiaoItem, '上移').click();
-        assert.deepEqual(hourlyOrder(page), ['toutiao', 'chinanews']);
+        assert.deepEqual(sortOrder(page), ['toutiao', 'chinanews']);
 
         page.document.getElementById('btn-sources-save').click();
         await waitFor(() => page.server.requests('save-sources').length === 1);
@@ -252,39 +285,21 @@ test('S7：数据源上移下移后保存顺序与页面一致，每日任务来
         assert.equal(body.expected_version, 4);
         assert.deepEqual(body.value, ['toutiao', 'chinanews']);
         await waitFor(() => page.server.requests('save-sources')[0].done);
-    } finally {
-        page.close();
-    }
-});
 
-test('S7b：每小时列表为空时前端拦截保存，不发送请求', async () => {
-    const page = await bootPage();
-    try {
+        // 保存成功后回到默认视图，顺序已重排
+        await waitFor(() => page.document.getElementById('btn-sources-sort-mode'));
         assert.deepEqual(hourlyOrder(page), ['toutiao', 'chinanews']);
-        for (const key of ['toutiao', 'chinanews']) {
-            const item = page.document
-                .querySelector(`#sources-hourly-list li[data-source="${key}"]`);
-            buttonByText(item, '停用').click();
-        }
-        assert.deepEqual(hourlyOrder(page), []);
-
-        page.document.getElementById('btn-sources-save').click();
-        // 前端拦截：不应发出保存请求
-        await assertNever(() => page.server.requests('save-sources').length > 0, 200);
-        assert.match(
-            page.document.getElementById('sources-save-status').textContent,
-            /不能为空/,
-        );
     } finally {
         page.close();
     }
 });
 
-test('S8：需要账号的来源启用账号数为 0 时显示跳过提醒，点击跳到对应账号页签', async () => {
+test('S8：需要账号的来源启用账号数为 0 时显示跳过提醒，点击徽标就地展开该来源', async () => {
     const sections = defaultSections();
     sections.crawl_sources.value = ['toutiao', 'tencent'];
     const page = await bootPage({ sections });
     try {
+        page.clickTab('sources');
         const tencentItem = page.document
             .querySelector('#sources-hourly-list li[data-source="tencent"]');
         const badge = tencentItem.querySelector('.source-account-badge');
@@ -298,14 +313,11 @@ test('S8：需要账号的来源启用账号数为 0 时显示跳过提醒，点
         assert.match(toutiaoBadge.textContent, /启用账号 1/);
 
         badge.click();
-        assert.ok(!page.panel('accounts').hidden);
-        assert.ok(page.panel('sources').hidden);
-        const activeSourceBtn = page.document
-            .querySelector('.accounts-source-btn.is-active');
-        assert.equal(activeSourceBtn.dataset.accountSource, 'tencent');
-        assert.equal(page.window.location.hash, '#accounts:tencent');
-        // 让 renderAccountsTab 尾部的账号列表加载链落定，避免关页后触碰已销毁的 document
-        await new Promise((resolve) => setImmediate(resolve));
+        // 就地展开：停留在数据源页签，出现该来源的账号展开区
+        await waitFor(() => page.document
+            .querySelector('.source-accounts-panel[data-accounts-for="tencent"]'));
+        assert.ok(!page.panel('sources').hidden);
+        assert.equal(page.window.location.hash, '#sources:tencent');
     } finally {
         page.close();
     }
@@ -314,7 +326,14 @@ test('S8：需要账号的来源启用账号数为 0 时显示跳过提醒，点
 test('S9：批量预览渲染四种状态、确认按钮受可新增数量与预览时效约束', async () => {
     const page = await bootPage();
     try {
-        page.clickTab('accounts');
+        await expandSource(page, 'toutiao');
+        // 「新增账号」与「批量粘贴」收进默认折叠的「添加账号」<details>
+        const details = page.document.querySelector('.account-add-details');
+        assert.ok(details);
+        assert.equal(details.open, false);
+        details.querySelector('summary').click();
+        assert.equal(details.open, true);
+
         const textarea = page.document.getElementById('account-bulk-text');
         const confirmBtn = page.document.getElementById('btn-account-bulk-confirm');
         assert.ok(confirmBtn.disabled);
@@ -380,8 +399,8 @@ test('S10：启用开关 PATCH 失败时开关恢复原状态并显示错误', a
     })];
     const page = await bootPage({ accounts });
     try {
-        page.clickTab('accounts');
-        page.document.querySelector('[data-account-source="tencent"]').click();
+        // tencent 默认未启用，在未启用分组中展开
+        await expandSource(page, 'tencent');
         await waitFor(() => page.document
             .querySelector('#accounts-body tr[data-account-id="acc-tencent-1"]'));
         const row = page.document
@@ -411,8 +430,7 @@ test('S10b：启用开关请求抛网络异常时开关恢复原状态并显示�
     })];
     const page = await bootPage({ accounts });
     try {
-        page.clickTab('accounts');
-        page.document.querySelector('[data-account-source="tencent"]').click();
+        await expandSource(page, 'tencent');
         await waitFor(() => page.document
             .querySelector('#accounts-body tr[data-account-id="acc-tencent-1"]'));
         const row = page.document
@@ -444,13 +462,15 @@ test('S11：备注名与原始输入中的 HTML 按纯文本渲染，不生成�
     })];
     const page = await bootPage({ accounts });
     try {
-        page.clickTab('accounts');
+        await expandSource(page, 'toutiao');
         await waitFor(() => page.document
             .querySelector('#accounts-body tr[data-account-id="acc-xss"]'));
         const row = page.document
             .querySelector('#accounts-body tr[data-account-id="acc-xss"]');
+        const panel = page.document
+            .querySelector('.source-accounts-panel[data-accounts-for="toutiao"]');
         assert.equal(row.querySelectorAll('img').length, 0);
-        assert.equal(page.panel('accounts').querySelectorAll('img').length, 0);
+        assert.equal(panel.querySelectorAll('img').length, 0);
         assert.equal(page.window.__xssHit, undefined);
         assert.equal(
             row.querySelector('.account-name-input').value,
@@ -462,7 +482,7 @@ test('S11：备注名与原始输入中的 HTML 按纯文本渲染，不生成�
     }
 });
 
-test('S12：未保存修改在页签切换后保留，离开页面时触发离开确认', async () => {
+test('S12：排序模式下的未保存修改在页签切换后保留，离开页面时触发离开确认', async () => {
     const page = await bootPage();
     try {
         // 无修改时不拦截离开
@@ -470,30 +490,182 @@ test('S12：未保存修改在页签切换后保留，离开页面时触发离�
         page.window.dispatchEvent(cleanEvent);
         assert.equal(cleanEvent.defaultPrevented, false);
 
-        const defaultInput = page.document.getElementById('models-default-input');
-        inputValue(page, defaultInput, 'edited/model');
+        // 进入排序模式并调整顺序
+        page.document.getElementById('btn-sources-sort-mode').click();
+        await waitFor(() => page.document.getElementById('sources-sort-list'));
+        assert.deepEqual(sortOrder(page), ['toutiao', 'chinanews']);
+        const chinanewsItem = page.document
+            .querySelector('#sources-sort-list li[data-source="chinanews"]');
+        buttonByText(chinanewsItem, '上移').click();
+        assert.deepEqual(sortOrder(page), ['chinanews', 'toutiao']);
 
-        page.clickTab('sources');
-        assert.ok(page.panel('models').hidden);
+        // 切到模型页签再切回来，排序草稿仍在
         page.clickTab('models');
-        assert.equal(
-            page.document.getElementById('models-default-input').value,
-            'edited/model',
-        );
+        assert.ok(page.panel('sources').hidden);
+        page.clickTab('sources');
+        assert.ok(page.document.getElementById('sources-sort-list'));
+        assert.deepEqual(sortOrder(page), ['chinanews', 'toutiao']);
 
+        // 有未保存修改时拦截离开
         const dirtyEvent = new page.window.Event('beforeunload', { cancelable: true });
         page.window.dispatchEvent(dirtyEvent);
         assert.equal(dirtyEvent.defaultPrevented, true);
 
-        // 放弃修改后不再拦截
-        page.document.getElementById('btn-models-discard').click();
-        assert.equal(
-            page.document.getElementById('models-default-input').value,
-            'deepseek/default-model',
-        );
+        // 取消后回到默认视图，不再拦截
+        page.document.getElementById('btn-sources-cancel').click();
+        assert.ok(page.document.getElementById('btn-sources-sort-mode'));
+        assert.deepEqual(hourlyOrder(page), ['toutiao', 'chinanews']);
         const discardedEvent = new page.window.Event('beforeunload', { cancelable: true });
         page.window.dispatchEvent(discardedEvent);
         assert.equal(discardedEvent.defaultPrevented, false);
+    } finally {
+        page.close();
+    }
+});
+
+test('S13：来源启停即时保存，请求体是切换后的完整有序列表并带当前版本号', async () => {
+    const page = await bootPage();
+    try {
+        // 停用 chinanews：['toutiao', 'chinanews'] → ['toutiao']
+        const chinanewsToggle = page.document.querySelector(
+            '#sources-hourly-list li[data-source="chinanews"] .source-enabled-toggle',
+        );
+        chinanewsToggle.click();
+        await waitFor(() => page.server.requests('save-sources').length === 1);
+        let body = page.server.requests('save-sources')[0].body;
+        assert.deepEqual(body.value, ['toutiao']);
+        assert.equal(body.expected_version, 4);
+        await waitFor(() => page.server.requests('save-sources')[0].done);
+        // 成功后重排：chinanews 移到未启用分组
+        await waitFor(() => page.document
+            .querySelector('#sources-available-list li[data-source="chinanews"]'));
+        assert.deepEqual(hourlyOrder(page), ['toutiao']);
+
+        // 启用 tencent：追加到列表末尾，版本号跟随上一次保存
+        const tencentToggle = page.document.querySelector(
+            '#sources-available-list li[data-source="tencent"] .source-enabled-toggle',
+        );
+        tencentToggle.click();
+        await waitFor(() => page.server.requests('save-sources').length === 2);
+        body = page.server.requests('save-sources')[1].body;
+        assert.deepEqual(body.value, ['toutiao', 'tencent']);
+        assert.equal(body.expected_version, 5);
+        await waitFor(() => page.server.requests('save-sources')[1].done);
+        await waitFor(() => hourlyOrder(page).join(',') === 'toutiao,tencent');
+    } finally {
+        page.close();
+    }
+});
+
+test('S14：启停保存失败时开关回滚、行内显示错误且本地列表不变', async () => {
+    const page = await bootPage();
+    try {
+        page.server.saveBehavior.crawl_sources = {
+            status: 422,
+            payload: { detail: '来源列表无效' },
+        };
+        const row = page.document
+            .querySelector('#sources-hourly-list li[data-source="chinanews"]');
+        const toggle = row.querySelector('.source-enabled-toggle');
+        assert.equal(toggle.checked, true);
+
+        toggle.click();
+        assert.equal(toggle.checked, false);
+        await waitFor(() => page.server.requests('save-sources').length === 1
+            && page.server.requests('save-sources')[0].done);
+        // 开关回滚、行内错误、本地列表不做任何改动
+        await waitFor(() => toggle.checked === true);
+        assert.match(row.querySelector('.source-row-error').textContent, /停用失败/);
+        assert.match(row.querySelector('.source-row-error').textContent, /来源列表无效/);
+        assert.deepEqual(hourlyOrder(page), ['toutiao', 'chinanews']);
+        assert.equal(
+            page.document.querySelector('#sources-available-list li[data-source="chinanews"]'),
+            null,
+        );
+    } finally {
+        page.close();
+    }
+});
+
+test('S15：停用最后一个启用来源被前端拦截，不发出请求', async () => {
+    const sections = defaultSections();
+    sections.crawl_sources.value = ['toutiao'];
+    const page = await bootPage({ sections });
+    try {
+        assert.deepEqual(hourlyOrder(page), ['toutiao']);
+        const row = page.document
+            .querySelector('#sources-hourly-list li[data-source="toutiao"]');
+        const toggle = row.querySelector('.source-enabled-toggle');
+
+        toggle.click();
+        // 前端拦截：不应发出任何保存请求（这是本测试的判别性断言，必须最先检查）
+        await assertNever(() => page.server.requests('save-sources').length > 0, 300);
+        // 开关恢复、行内提示
+        assert.equal(toggle.checked, true);
+        assert.match(
+            row.querySelector('.source-row-error').textContent,
+            /每小时来源不能为空/,
+        );
+    } finally {
+        page.close();
+    }
+});
+
+test('S16：手风琴——展开第二个来源时第一个自动收起，未启用来源同样可展开', async () => {
+    const page = await bootPage();
+    try {
+        page.clickTab('sources');
+        await expandSource(page, 'toutiao');
+        assert.equal(page.document.querySelectorAll('.source-accounts-panel').length, 1);
+
+        // tencent 在未启用分组，同样可展开管理账号
+        await expandSource(page, 'tencent');
+        const panels = page.document.querySelectorAll('.source-accounts-panel');
+        assert.equal(panels.length, 1);
+        assert.equal(panels[0].dataset.accountsFor, 'tencent');
+        // 第一个来源的箭头恢复未展开状态
+        const toutiaoArrow = page.document.querySelector(
+            '#sources-hourly-list li[data-source="toutiao"] .source-expand-toggle',
+        );
+        assert.equal(toutiaoArrow.getAttribute('aria-expanded'), 'false');
+        assert.equal(page.window.location.hash, '#sources:tencent');
+    } finally {
+        page.close();
+    }
+});
+
+test('S17：排序模式「取消」丢弃草稿并回到默认视图，顺序不变也不发出请求', async () => {
+    const page = await bootPage();
+    try {
+        page.document.getElementById('btn-sources-sort-mode').click();
+        await waitFor(() => page.document.getElementById('sources-sort-list'));
+        const chinanewsItem = page.document
+            .querySelector('#sources-sort-list li[data-source="chinanews"]');
+        buttonByText(chinanewsItem, '上移').click();
+        assert.deepEqual(sortOrder(page), ['chinanews', 'toutiao']);
+
+        page.document.getElementById('btn-sources-cancel').click();
+        // 回到默认视图，顺序与进入排序模式前一致
+        assert.ok(page.document.getElementById('btn-sources-sort-mode'));
+        assert.deepEqual(hourlyOrder(page), ['toutiao', 'chinanews']);
+        // 取消不发出保存请求
+        await assertNever(() => page.server.requests('save-sources').length > 0, 200);
+        // 草稿已清理，离开页面不再拦截
+        const event = new page.window.Event('beforeunload', { cancelable: true });
+        page.window.dispatchEvent(event);
+        assert.equal(event.defaultPrevented, false);
+    } finally {
+        page.close();
+    }
+});
+
+test('S18：旧 hash #accounts:toutiao 被改写为 #sources:toutiao 并展开对应来源', async () => {
+    const page = await bootPage({ hash: '#accounts:toutiao' });
+    try {
+        await waitFor(() => page.window.location.hash === '#sources:toutiao');
+        assert.ok(!page.panel('sources').hidden);
+        await waitFor(() => page.document
+            .querySelector('.source-accounts-panel[data-accounts-for="toutiao"]'));
     } finally {
         page.close();
     }

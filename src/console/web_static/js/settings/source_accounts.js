@@ -1,5 +1,5 @@
-// 系统设置页 - 抓取账号页签：来源切换、账号列表（就地改备注、启停、删除）、
-// 单个新增与批量粘贴预览。所有用户输入经 textContent 渲染。
+// 系统设置页 - 来源账号管理：数据源页签行内展开区的账号列表（就地改备注、启停、删除）、
+// 单个新增与批量粘贴预览（收进「添加账号」<details>，默认折叠）。所有用户输入经 textContent 渲染。
 'use strict';
 
 const BULK_STATUS_LABELS = {
@@ -128,7 +128,14 @@ function bindDeleteAccountModal() {
 }
 
 async function refreshAccountsAndList() {
-    await loadAccountsForSource(state.accountSource, { force: true });
+    const source = state.accountSource;
+    if (!source) {
+        refreshSourcesAccountBadges();
+        return;
+    }
+    await loadAccountsForSource(source, { force: true });
+    // 请求返回时展开区可能已切换到其他来源，不要覆盖别人的列表
+    if (state.accountSource !== source) return;
     renderAccountList();
     refreshSourcesAccountBadges();
 }
@@ -324,39 +331,11 @@ async function runBulkConfirm() {
     }
 }
 
-function renderAccountsTab() {
-    const panel = elements.panels.accounts;
-    clearEl(panel);
-    const sources = accountSources();
-    if (!sources.length) {
-        panel.appendChild(createEl('p', 'settings-source-empty', '没有需要抓取账号的来源。'));
-        return;
-    }
-    if (!state.accountSource || !sources.some((item) => item.key === state.accountSource)) {
-        state.accountSource = sources[0].key;
-    }
-
-    panel.appendChild(createEl('p', 'settings-effect-note', '生效时间：下一轮抓取生效。'));
-
-    const switcher = createEl('div', 'accounts-source-switch', '', { id: 'accounts-source-switch' });
-    sources.forEach((source) => {
-        const btn = createEl('button', 'accounts-source-btn', source.display_name, {
-            type: 'button',
-            dataset: { accountSource: source.key },
-        });
-        btn.classList.toggle('is-active', source.key === state.accountSource);
-        btn.setAttribute('aria-pressed', source.key === state.accountSource ? 'true' : 'false');
-        btn.addEventListener('click', () => {
-            if (state.accountSource === source.key) return;
-            state.accountSource = source.key;
-            state.accountFilter = '';
-            resetBulkState();
-            writeSettingsHash('accounts', source.key);
-            renderAccountsTab();
-        });
-        switcher.appendChild(btn);
-    });
-    panel.appendChild(switcher);
+// 渲染某个来源的账号管理展开区。账号列表在页面初始化时已全量缓存，
+// 展开本身不发新请求；新增/删除/批量添加后由 refreshAccountsAndList 强制刷新。
+function renderSourceAccounts(sourceKey, containerEl) {
+    clearEl(containerEl);
+    state.accountSource = sourceKey;
 
     const filter = createEl('input', 'accounts-filter', '', {
         id: 'accounts-filter',
@@ -369,7 +348,7 @@ function renderAccountsTab() {
         state.accountFilter = filter.value;
         renderAccountList();
     });
-    panel.appendChild(filter);
+    containerEl.appendChild(filter);
 
     const tableWrap = createEl('div', 'admin-table-wrap');
     const table = createEl('table', 'admin-table accounts-table');
@@ -382,7 +361,10 @@ function renderAccountsTab() {
     table.appendChild(thead);
     table.appendChild(createEl('tbody', '', '', { id: 'accounts-body' }));
     tableWrap.appendChild(table);
-    panel.appendChild(tableWrap);
+    containerEl.appendChild(tableWrap);
+
+    const addDetails = createEl('details', 'account-add-details');
+    addDetails.appendChild(createEl('summary', 'account-add-summary', '添加账号'));
 
     const addBox = createEl('div', 'account-add-box');
     addBox.appendChild(createEl('h3', 'settings-group-heading', '新增账号'));
@@ -408,7 +390,7 @@ function renderAccountsTab() {
     addRow.appendChild(addBtn);
     addBox.appendChild(addRow);
     addBox.appendChild(createEl('p', 'account-add-error', '', { id: 'account-add-error' }));
-    panel.appendChild(addBox);
+    addDetails.appendChild(addBox);
 
     addBtn.addEventListener('click', async () => {
         const errorEl = document.getElementById('account-add-error');
@@ -474,10 +456,14 @@ function renderAccountsTab() {
     bulkBox.appendChild(bulkActions);
     bulkBox.appendChild(createEl('p', 'account-bulk-summary', '', { id: 'account-bulk-summary' }));
     bulkBox.appendChild(createEl('ul', 'account-bulk-results', '', { id: 'account-bulk-results' }));
-    panel.appendChild(bulkBox);
+    addDetails.appendChild(bulkBox);
+    containerEl.appendChild(addDetails);
 
-    loadAccountsForSource(state.accountSource)
+    loadAccountsForSource(sourceKey)
         .then(() => {
+            // 缓存命中也会异步返回；展开区若已收起/切换则放弃渲染
+            if (state.accountSource !== sourceKey) return;
+            if (!document.getElementById('accounts-body')) return;
             renderAccountList();
             refreshSourcesAccountBadges();
         })

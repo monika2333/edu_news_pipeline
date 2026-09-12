@@ -39,19 +39,28 @@ def test_admin_settings_page_structure() -> None:
     assert "<h1>系统设置</h1>" in html
     assert 'data-settings-tab="models">模型</button>' in html
     assert 'data-settings-tab="sources">数据源</button>' in html
-    assert 'data-settings-tab="accounts">抓取账号</button>' in html
+    # 抓取账号页签已并入数据源页签，不再存在独立页签与面板
+    assert 'data-settings-tab="accounts"' not in html
     assert 'id="settings-panel-models"' in html
     assert 'id="settings-panel-sources"' in html
-    assert 'id="settings-panel-accounts"' in html
+    assert 'id="settings-panel-accounts"' not in html
     assert 'id="delete-account-modal"' in html
     # 脚本顺序：core 最先，init 最后
     assert html.index("/static/js/settings/core.js") < html.index(
         "/static/js/settings/models_tab.js"
     )
     assert html.index("/static/js/settings/models_tab.js") < html.index(
+        "/static/js/settings/sources_tab.js"
+    )
+    assert html.index("/static/js/settings/sources_tab.js") < html.index(
+        "/static/js/settings/source_accounts.js"
+    )
+    assert html.index("/static/js/settings/source_accounts.js") < html.index(
         "/static/js/settings/init.js"
     )
     assert 'href="/static/css/modules/settings.css' in html
+    # 头部导航样式在 header.css（原 auth.css 改名），漏引会让标题栏完全无样式
+    assert 'href="/static/css/modules/header.css' in html
     # 设置页不是管理员主视图，不参与"记住上次访问页面"
     assert "admin_last_view.js" not in html
 

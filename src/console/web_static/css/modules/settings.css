@@ -220,27 +220,58 @@
     cursor: pointer;
 }
 
-.accounts-source-switch {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin: 12px 0;
-}
-
-.accounts-source-btn {
-    padding: 7px 14px;
+.source-expand-toggle {
+    padding: 3px 10px;
     border: 1px solid #cbd5e1;
     border-radius: 999px;
     background: #fff;
     color: #475569;
-    font: inherit;
+    font-size: 0.78rem;
     cursor: pointer;
 }
 
-.accounts-source-btn.is-active {
+.source-expand-toggle[aria-expanded="true"] {
     border-color: #2563eb;
-    background: #2563eb;
-    color: #fff;
+    color: #2563eb;
+}
+
+.settings-source-index {
+    min-width: 20px;
+    color: #64748b;
+    font-size: 0.86rem;
+    text-align: right;
+}
+
+.source-enabled-toggle {
+    cursor: pointer;
+}
+
+.source-row-error {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #b91c1c;
+    font-size: 0.8rem;
+}
+
+.source-accounts-panel {
+    margin: 4px 0 12px;
+    padding: 14px 16px;
+    border: 1px solid #e7edf5;
+    border-radius: 12px;
+    background: #f8fafc;
+    list-style: none;
+}
+
+.account-add-details {
+    margin-top: 14px;
+}
+
+.account-add-summary {
+    cursor: pointer;
+    color: #2563eb;
+    font-size: 0.9rem;
+    font-weight: 600;
 }
 
 .accounts-filter {

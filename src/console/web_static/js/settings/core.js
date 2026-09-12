@@ -18,8 +18,11 @@ const state = {
     sourcesDraft: null,
     // 数据源页签视图：default（分组 + 即时启停）或 sort（纯排序草稿）
     sourcesMode: 'default',
-    // 进行中的来源启停请求数；非零时禁用「调整抓取顺序」
+    // 进行中的来源启停请求数；非零时禁用全部来源开关与「调整抓取顺序」
     sourceToggleInflight: 0,
+    // 展开区「添加账号」<details> 的开合状态：重渲染前从 DOM 捕获，恢复时还原；
+    // 新展开一个来源时重置为折叠
+    accountAddDetailsOpen: false,
     accountFilter: '',
     bulk: { text: '', items: null, stale: false },
 };

@@ -1,5 +1,5 @@
 // 系统设置页（/admin/settings）的 jsdom 行为测试。
-// 覆盖验收场景 S1-S18；各场景语义见 tests/test_settings_js_behavior.py 与交付说明。
+// 覆盖验收场景 S1-S20；各场景语义见 tests/test_settings_js_behavior.py 与交付说明。
 'use strict';
 
 const { test } = require('node:test');
@@ -666,6 +666,77 @@ test('S18：旧 hash #accounts:toutiao 被改写为 #sources:toutiao 并展开�
         assert.ok(!page.panel('sources').hidden);
         await waitFor(() => page.document
             .querySelector('.source-accounts-panel[data-accounts-for="toutiao"]'));
+    } finally {
+        page.close();
+    }
+});
+
+
+test('S19：启停请求进行中锁定全部来源开关，放行后第二次启停基于最新列表', async () => {
+    const page = await bootPage();
+    try {
+        page.clickTab('sources');
+        assert.deepEqual(hourlyOrder(page), ['toutiao', 'chinanews']);
+        page.server.hold('save-sources');
+
+        // 停用 chinanews，请求被扣住
+        sourceRow(page, 'chinanews').querySelector('.source-enabled-toggle').click();
+        await waitFor(() => page.server.requests('save-sources').length === 1);
+
+        // 请求进行中：点击其余来源的开关发不出第二个请求（判别性断言，最先检查）
+        const tencentToggle = sourceRow(page, 'tencent')
+            .querySelector('.source-enabled-toggle');
+        tencentToggle.click();
+        await assertNever(() => page.server.requests('save-sources').length > 1, 300);
+        assert.equal(tencentToggle.disabled, true);
+        assert.equal(tencentToggle.checked, false);
+
+        // 放行第一个请求：停用成功后面板重渲染，开关恢复可点
+        page.server.release('save-sources');
+        await waitFor(() => {
+            const row = sourceRow(page, 'tencent');
+            const toggle = row && row.querySelector('.source-enabled-toggle');
+            return toggle && !toggle.disabled;
+        });
+        assert.deepEqual(hourlyOrder(page), ['toutiao']);
+
+        // 第二次启停基于更新后的列表与版本号
+        sourceRow(page, 'tencent').querySelector('.source-enabled-toggle').click();
+        await waitFor(() => page.server.requests('save-sources').length === 2);
+        const second = page.server.requests('save-sources')[1];
+        assert.deepEqual(second.body.value, ['toutiao', 'tencent']);
+        assert.equal(second.body.expected_version, 5);
+        // 等第二次保存收尾（重渲染完成）再关页面，避免异步续跑泄漏到测试结束后
+        await waitFor(() => second.done && hourlyOrder(page).includes('tencent'));
+    } finally {
+        page.server.release('save-sources');
+        page.close();
+    }
+});
+
+test('S20：启停其他来源触发重渲染后，展开区、筛选词与「添加账号」开合状态保留', async () => {
+    const page = await bootPage();
+    try {
+        page.clickTab('sources');
+        await expandSource(page, 'toutiao');
+        const filter = page.document.getElementById('accounts-filter');
+        inputValue(page, filter, '头条');
+        const details = page.document.querySelector('.account-add-details');
+        assert.equal(details.open, false, '「添加账号」默认折叠');
+        details.open = true;
+
+        // 停用另一个来源并等待保存成功，面板整体重渲染
+        sourceRow(page, 'chinanews').querySelector('.source-enabled-toggle').click();
+        await waitFor(() => page.server.requests('save-sources').length === 1
+            && page.server.requests('save-sources')[0].done);
+        // 等重渲染完成：展开区被销毁并重建（筛选框是新的 DOM 节点）
+        await waitFor(() => page.document.getElementById('accounts-filter') !== filter);
+
+        const panels = page.document.querySelectorAll('.source-accounts-panel');
+        assert.equal(panels.length, 1);
+        assert.equal(panels[0].dataset.accountsFor, 'toutiao');
+        assert.equal(page.document.getElementById('accounts-filter').value, '头条');
+        assert.equal(page.document.querySelector('.account-add-details').open, true);
     } finally {
         page.close();
     }

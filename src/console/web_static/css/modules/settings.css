@@ -254,6 +254,17 @@
     font-size: 0.8rem;
 }
 
+/* 409 时嵌在 .source-row-error 里的「载入最新配置」按钮：
+   用小一号尺寸，与错误文字对齐，不把行高撑起来（间距由 .source-row-error 的 gap 提供） */
+.source-row-reload {
+    flex: none;
+    min-height: 26px;
+    padding: 2px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
 .source-accounts-panel {
     margin: 4px 0 12px;
     padding: 14px 16px;

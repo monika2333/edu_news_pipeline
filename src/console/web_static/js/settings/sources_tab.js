@@ -54,6 +54,18 @@ function syncSortModeButton() {
     if (btn) btn.disabled = state.sourceToggleInflight > 0;
 }
 
+// 启停请求进行中锁住面板内所有来源开关：第二个请求会基于过期列表计算，
+// 且成功后 renderSourcesTab 重建面板会让失败分支的错误写进已销毁的节点。
+// 只锁来源行开关；展开区内的账号启停/编辑走独立接口，不受牵连。
+function syncSourceToggles() {
+    const locked = state.sourceToggleInflight > 0;
+    elements.panels.sources
+        .querySelectorAll('.source-enabled-toggle')
+        .forEach((toggle) => {
+            toggle.disabled = locked;
+        });
+}
+
 // 展开/收起账号管理区：手风琴（同时最多展开一个），切换时重置筛选词与批量粘贴状态，
 // 避免上一个来源的预览结果串到下一个。展开本身不发请求，账号已在初始化时缓存。
 function collapseSourceExpansion({ updateHash = false } = {}) {
@@ -77,6 +89,9 @@ function insertAccountsPanel(row, key) {
     const arrow = row.querySelector('.source-expand-toggle');
     if (arrow) arrow.setAttribute('aria-expanded', 'true');
     renderSourceAccounts(key, panel);
+    // 重渲染恢复展开区时还原「添加账号」的开合状态（renderSourcesTab 重建前从 DOM 捕获）
+    const addDetails = panel.querySelector('.account-add-details');
+    if (addDetails && state.accountAddDetailsOpen) addDetails.open = true;
 }
 
 function expandSourceRow(key, { updateHash = true } = {}) {
@@ -84,6 +99,7 @@ function expandSourceRow(key, { updateHash = true } = {}) {
     collapseSourceExpansion();
     state.accountSource = key;
     state.accountFilter = '';
+    state.accountAddDetailsOpen = false;
     resetBulkState();
     const row = elements.panels.sources
         .querySelector(`li[data-source="${key}"]`);
@@ -126,6 +142,7 @@ async function toggleSourceEnabled(key, target, toggle, errorEl) {
         : current.filter((item) => item !== key);
     toggle.disabled = true;
     state.sourceToggleInflight += 1;
+    syncSourceToggles();
     syncSortModeButton();
     try {
         const { response, payload } = await apiRequest('/api/admin/settings/crawl_sources', {
@@ -165,6 +182,7 @@ async function toggleSourceEnabled(key, target, toggle, errorEl) {
         errorEl.textContent = `${target ? '启用' : '停用'}失败：${error.message || '网络错误'}`;
     } finally {
         state.sourceToggleInflight -= 1;
+        syncSourceToggles();
         toggle.disabled = false;
         syncSortModeButton();
     }
@@ -193,6 +211,8 @@ function buildSourceRow(key, { index = null, enabled }) {
         'aria-label': `${enabled ? '停用' : '启用'} ${sourceDisplayName(key)}`,
     });
     toggle.checked = enabled;
+    // 重渲染发生在启停请求进行中时，新建的行也要处于锁定态
+    toggle.disabled = state.sourceToggleInflight > 0;
     const errorEl = createEl('span', 'source-row-error');
     toggle.addEventListener('change', () => {
         errorEl.textContent = '';
@@ -390,6 +410,9 @@ function renderSourcesSortMode(panel, section) {
 
 function renderSourcesTab() {
     const panel = elements.panels.sources;
+    // 重建面板前捕获「添加账号」<details> 的开合状态，insertAccountsPanel 恢复展开区时还原
+    const openDetails = panel.querySelector('.source-accounts-panel .account-add-details');
+    if (openDetails) state.accountAddDetailsOpen = openDetails.open;
     clearEl(panel);
     const section = settingsSection('crawl_sources');
     if (!section) {

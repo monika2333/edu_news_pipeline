@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统设置 · 新闻筛选控制台</title>
+    <link rel="stylesheet" href="/static/css/variables.css">
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/layout.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/modules/admin.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/modules/settings.css?v={{ version }}">
+</head>
+
+<body data-current-user-name="{{ current_user.display_name }}">
+    <div class="container admin-shell">
+        {% set page_eyebrow = "控制台管理" %}
+        {% set page_title = "系统设置" %}
+        {% set admin_menu_active = "settings" %}
+        {% include "_admin_header.html" %}
+
+        <main>
+            <p class="admin-alert" id="settings-alert" hidden></p>
+
+            <div class="settings-tabs" role="tablist" aria-label="系统设置分区">
+                <button class="settings-tab" id="settings-tab-models" type="button"
+                    role="tab" data-settings-tab="models">模型</button>
+                <button class="settings-tab" id="settings-tab-sources" type="button"
+                    role="tab" data-settings-tab="sources">数据源</button>
+                <button class="settings-tab" id="settings-tab-accounts" type="button"
+                    role="tab" data-settings-tab="accounts">抓取账号</button>
+            </div>
+
+            <section class="admin-panel settings-panel" id="settings-panel-models"
+                role="tabpanel" aria-labelledby="settings-tab-models"></section>
+            <section class="admin-panel settings-panel" id="settings-panel-sources"
+                role="tabpanel" aria-labelledby="settings-tab-sources"></section>
+            <section class="admin-panel settings-panel" id="settings-panel-accounts"
+                role="tabpanel" aria-labelledby="settings-tab-accounts"></section>
+        </main>
+    </div>
+
+    <div class="modal" id="delete-account-modal" role="dialog" aria-modal="true"
+        aria-labelledby="delete-account-modal-title" aria-hidden="true">
+        <section class="modal-content admin-modal-content">
+            <div class="modal-header">
+                <div>
+                    <p class="admin-delete-modal-eyebrow">删除抓取账号</p>
+                    <h3 id="delete-account-modal-title">确认删除账号</h3>
+                </div>
+            </div>
+            <div class="modal-body admin-delete-modal-body">
+                <p>
+                    即将删除账号
+                    <strong id="delete-account-name"></strong>
+                    。删除后下一轮抓取不再包含该账号。
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel-delete-account"
+                    type="button">取消</button>
+                <button class="btn admin-confirm-delete" id="btn-confirm-delete-account"
+                    type="button">删除账号</button>
+            </div>
+        </section>
+    </div>
+
+    <div class="toast" id="toast">操作成功</div>
+    <script src="/static/js/api_error.js?v={{ version }}"></script>
+    <script src="/static/js/auth.js?v={{ version }}"></script>
+    <script src="/static/js/manual_filter/utils.js?v={{ version }}"></script>
+    <script src="/static/js/settings/core.js?v={{ version }}"></script>
+    <script src="/static/js/settings/models_tab.js?v={{ version }}"></script>
+    <script src="/static/js/settings/sources_tab.js?v={{ version }}"></script>
+    <script src="/static/js/settings/accounts_tab.js?v={{ version }}"></script>
+    <script src="/static/js/settings/init.js?v={{ version }}"></script>
+</body>
+
+</html>

@@ -118,6 +118,19 @@ async def admin_user_create_page(
     )
 
 
+@router.get("/admin/settings", response_class=HTMLResponse)
+async def admin_settings_page(
+    request: Request,
+    user: ConsoleUser = Depends(require_role("admin")),
+) -> HTMLResponse:
+    """系统设置页：模型、数据源与抓取账号的管理员配置入口。"""
+    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    return templates.TemplateResponse(
+        "settings.html",
+        {"request": request, "version": version, "current_user": user},
+    )
+
+
 @router.get("/admin/duty-summary", response_class=HTMLResponse)
 async def duty_summary_page(
     request: Request,

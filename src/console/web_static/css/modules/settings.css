@@ -1,0 +1,347 @@
+/* 系统设置页（/admin/settings）样式；面板、表格、按钮等通用样式复用 admin.css 与 components.css。 */
+
+.settings-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.settings-tab {
+    padding: 9px 18px;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #fff;
+    color: #475569;
+    font: inherit;
+    cursor: pointer;
+}
+
+.settings-tab.is-active {
+    border-color: #2563eb;
+    background: #2563eb;
+    color: #fff;
+}
+
+.settings-effect-note,
+.settings-updated,
+.settings-sources-note,
+.settings-env-note,
+.settings-bulk-note {
+    margin: 4px 0;
+    color: #64748b;
+    font-size: 0.84rem;
+}
+
+.settings-updated {
+    margin-bottom: 14px;
+}
+
+.settings-import-notice {
+    padding: 22px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 12px;
+    background: #f8fafc;
+}
+
+.settings-import-notice p {
+    margin: 0 0 8px;
+    color: #475569;
+}
+
+.settings-import-notice .settings-import-title {
+    color: #b45309;
+    font-weight: 600;
+}
+
+.settings-env-block {
+    margin-bottom: 14px;
+    padding: 14px 16px;
+    border: 1px solid #e7edf5;
+    border-radius: 12px;
+    background: #f8fafc;
+}
+
+.settings-env-heading {
+    margin: 0 0 8px;
+    font-size: 0.95rem;
+}
+
+.settings-env-list {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 16px;
+    margin: 0 0 8px;
+}
+
+.settings-env-list dt {
+    color: #64748b;
+}
+
+.settings-env-list dd {
+    margin: 0;
+    word-break: break-all;
+}
+
+.settings-default-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 0;
+}
+
+.settings-default-label {
+    font-weight: 600;
+}
+
+.settings-default-input,
+.step-model-input,
+.account-name-input,
+.account-add-input,
+.account-add-name,
+.accounts-filter {
+    padding: 8px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    font: inherit;
+}
+
+.settings-default-input {
+    width: min(420px, 100%);
+}
+
+.step-model-input {
+    width: 240px;
+    margin-left: 8px;
+}
+
+.step-follow-hint {
+    margin-left: 8px;
+    color: #64748b;
+    font-size: 0.82rem;
+}
+
+.settings-step-model select {
+    padding: 7px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    font: inherit;
+}
+
+.step-test-result {
+    margin-left: 10px;
+    font-size: 0.82rem;
+}
+
+.step-test-result.is-ok {
+    color: #15803d;
+}
+
+.step-test-result.is-error {
+    color: #b91c1c;
+}
+
+.settings-save-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.settings-save-status {
+    color: #475569;
+    font-size: 0.86rem;
+}
+
+.settings-save-status.is-ok {
+    color: #15803d;
+}
+
+.settings-save-status.is-error {
+    color: #b91c1c;
+}
+
+.settings-group-heading {
+    margin: 18px 0 8px;
+    font-size: 0.95rem;
+}
+
+.settings-source-list {
+    margin: 0;
+    padding-left: 22px;
+}
+
+.settings-source-item {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 8px 0;
+}
+
+.settings-source-item.is-readonly {
+    color: #64748b;
+}
+
+.settings-source-name {
+    font-weight: 600;
+}
+
+.settings-source-actions {
+    display: inline-flex;
+    gap: 6px;
+}
+
+.settings-source-empty {
+    color: #94a3b8;
+}
+
+.settings-daily-note {
+    color: #64748b;
+    font-size: 0.82rem;
+}
+
+.source-account-badge {
+    padding: 3px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 0.78rem;
+    cursor: default;
+}
+
+.source-account-badge.is-warning {
+    border-color: #f59e0b;
+    background: #fffbeb;
+    color: #b45309;
+    cursor: pointer;
+}
+
+.accounts-source-switch {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px 0;
+}
+
+.accounts-source-btn {
+    padding: 7px 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #fff;
+    color: #475569;
+    font: inherit;
+    cursor: pointer;
+}
+
+.accounts-source-btn.is-active {
+    border-color: #2563eb;
+    background: #2563eb;
+    color: #fff;
+}
+
+.accounts-filter {
+    width: min(360px, 100%);
+    margin-bottom: 12px;
+}
+
+.account-name-input {
+    width: 180px;
+}
+
+.account-row-error {
+    display: block;
+    color: #b91c1c;
+    font-size: 0.78rem;
+}
+
+.account-identifier {
+    font-family: ui-monospace, monospace;
+    font-size: 0.8rem;
+    word-break: break-all;
+}
+
+.account-original {
+    max-width: 260px;
+    word-break: break-all;
+}
+
+.account-created {
+    color: #64748b;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.account-add-box,
+.account-bulk-box {
+    margin-top: 18px;
+}
+
+.account-add-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.account-add-input {
+    width: min(360px, 100%);
+}
+
+.account-add-error {
+    margin: 6px 0 0;
+    color: #b91c1c;
+    font-size: 0.84rem;
+}
+
+.account-bulk-text {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font: inherit;
+}
+
+.account-bulk-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.account-bulk-summary {
+    margin: 10px 0 4px;
+    color: #475569;
+    font-size: 0.86rem;
+}
+
+.account-bulk-stale {
+    margin-left: 10px;
+    color: #b45309;
+}
+
+.account-bulk-results {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.account-bulk-row {
+    padding: 3px 0;
+    font-size: 0.84rem;
+}
+
+.account-bulk-status {
+    margin-left: 8px;
+    color: #64748b;
+}
+
+.account-bulk-row.is-addable .account-bulk-status {
+    color: #15803d;
+}
+
+.account-bulk-row.is-invalid .account-bulk-status,
+.account-bulk-row.is-batch_duplicate .account-bulk-status {
+    color: #b91c1c;
+}

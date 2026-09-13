@@ -25,6 +25,8 @@ const state = {
     accountAddDetailsOpen: false,
     accountFilter: '',
     bulk: { text: '', items: null, stale: false },
+    // 「刷新账号名称」循环是否进行中：防止按钮点击与批量添加后的自动刷新并发
+    accountRefreshInflight: false,
 };
 
 const elements = {};

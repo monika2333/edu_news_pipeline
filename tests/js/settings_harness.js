@@ -145,6 +145,7 @@ function makeAccount(overrides = {}) {
         original_input: 'account-1',
         profile_url: 'https://example.com/account-1',
         display_name: null,
+        display_name_error: null,
         enabled: true,
         created_at: '2026-01-09T02:00:00Z',
         created_by_display_name: 'Wimp',
@@ -194,6 +195,11 @@ class FakeSettingsServer {
         // 覆盖「网络异常」而非「HTTP 错误状态码」的失败路径
         this.throwNext = {};
         this.accountSeq = 0;
+        // refresh-names 的可定制行为：refreshBehavior(id, attempt) 返回
+        // 'skipped' / { status: 'failed', error } / { name } / null（走默认解析）。
+        // attempt 是该 id 第几次被尝试，便于构造「首次 skipped、重试成功」的时序。
+        this.refreshBehavior = null;
+        this.refreshAttempts = {};
     }
 
     classify(url, method) {
@@ -207,6 +213,7 @@ class FakeSettingsServer {
         }
         if (pathname === '/api/admin/crawl-accounts/preview') return 'preview-accounts';
         if (pathname === '/api/admin/crawl-accounts/bulk') return 'bulk-accounts';
+        if (pathname === '/api/admin/crawl-accounts/refresh-names') return 'refresh-names';
         if (pathname.startsWith('/api/admin/crawl-accounts/')) {
             return method === 'DELETE' ? 'delete-account' : 'patch-account';
         }
@@ -253,6 +260,39 @@ class FakeSettingsServer {
             results.push({ ...base, ...parsed, status, error: null });
         });
         return results;
+    }
+
+    findAccount(id) {
+        for (const source of Object.keys(this.accounts)) {
+            const account = this.accounts[source].find((item) => item.id === id);
+            if (account) return account;
+        }
+        return null;
+    }
+
+    // 对齐后端 refresh_account_names：failed 时 account 为 null，error 带原因；
+    // 解析成功/未变时返回完整账号行
+    refreshResultFor(id) {
+        this.refreshAttempts[id] = (this.refreshAttempts[id] || 0) + 1;
+        const attempt = this.refreshAttempts[id];
+        const verdict = this.refreshBehavior ? this.refreshBehavior(id, attempt) : null;
+        if (verdict === 'skipped') {
+            return { id, status: 'skipped', account: null, error: '名称刷新已达到 30 秒预算' };
+        }
+        const account = this.findAccount(id);
+        if (!account) {
+            return { id, status: 'failed', account: null, error: '账号不存在' };
+        }
+        if (verdict && verdict.status === 'failed') {
+            account.display_name = null;
+            account.display_name_error = verdict.error || '名称解析失败';
+            return { id, status: 'failed', account: null, error: account.display_name_error };
+        }
+        const name = (verdict && verdict.name) || `自动名称-${account.normalized_identifier}`;
+        const status = name === account.display_name ? 'unchanged' : 'resolved';
+        account.display_name = name;
+        account.display_name_error = null;
+        return { id, status, account: { ...account }, error: null };
     }
 
     respond(url, method, body) {
@@ -315,7 +355,8 @@ class FakeSettingsServer {
             if (existing) return [409, { detail: '账号已存在' }];
             const account = makeAccount({
                 id: `acc-new-${this.accountSeq += 1}`,
-                display_name: body.display_name || null,
+                // 后端在单个新增时同步解析名称
+                display_name: `名称-${parsed.normalized_identifier}`,
                 ...parsed,
             });
             this.accounts[body.source] = [...(this.accounts[body.source] || []), account];
@@ -339,6 +380,9 @@ class FakeSettingsServer {
                 item.account = account;
             });
             return [200, { items }];
+        }
+        if (pathname === '/api/admin/crawl-accounts/refresh-names' && method === 'POST') {
+            return [200, { items: body.account_ids.map((id) => this.refreshResultFor(id)) }];
         }
         const accountMatch = pathname.match(/^\/api\/admin\/crawl-accounts\/([^/]+)$/);
         if (accountMatch) {

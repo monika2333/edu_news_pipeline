@@ -190,6 +190,22 @@ async function toggleSourceEnabled(key, target, toggle, errorEl) {
 
 function buildSourceRow(key, { index = null, enabled }) {
     const item = createEl('li', 'settings-source-item', '', { dataset: { source: key } });
+
+    // 开关打头（与账号表「开关在最前」一致），序号、名称、账号数标签、展开箭头依次在后
+    const toggle = createEl('input', 'settings-switch source-enabled-toggle', '', {
+        type: 'checkbox',
+        'aria-label': `${enabled ? '停用' : '启用'} ${sourceDisplayName(key)}`,
+    });
+    toggle.checked = enabled;
+    // 重渲染发生在启停请求进行中时，新建的行也要处于锁定态
+    toggle.disabled = state.sourceToggleInflight > 0;
+    const errorEl = createEl('span', 'source-row-error');
+    toggle.addEventListener('change', () => {
+        errorEl.textContent = '';
+        toggleSourceEnabled(key, toggle.checked, toggle, errorEl);
+    });
+    item.appendChild(toggle);
+
     if (index !== null) {
         item.appendChild(createEl('span', 'settings-source-index', `${index + 1}`));
     }
@@ -205,20 +221,6 @@ function buildSourceRow(key, { index = null, enabled }) {
         });
         item.appendChild(badge);
     }
-
-    const toggle = createEl('input', 'source-enabled-toggle', '', {
-        type: 'checkbox',
-        'aria-label': `${enabled ? '停用' : '启用'} ${sourceDisplayName(key)}`,
-    });
-    toggle.checked = enabled;
-    // 重渲染发生在启停请求进行中时，新建的行也要处于锁定态
-    toggle.disabled = state.sourceToggleInflight > 0;
-    const errorEl = createEl('span', 'source-row-error');
-    toggle.addEventListener('change', () => {
-        errorEl.textContent = '';
-        toggleSourceEnabled(key, toggle.checked, toggle, errorEl);
-    });
-    item.appendChild(toggle);
 
     if (sourceRequiresAccounts(key)) {
         const arrow = createEl('button', 'source-expand-toggle', '▸', {
@@ -283,6 +285,8 @@ function renderSourcesDefaultView(panel, section) {
             const item = createEl('li', 'settings-source-item is-readonly', '', {
                 dataset: { source: source.key },
             });
+            // 只读行没有开关，补一个与开关等宽的空占位，让三组行的名称左边缘对齐
+            item.appendChild(createEl('span', 'settings-source-toggle-placeholder'));
             item.appendChild(createEl('span', 'settings-source-name', source.display_name));
             item.appendChild(createEl(
                 'span',

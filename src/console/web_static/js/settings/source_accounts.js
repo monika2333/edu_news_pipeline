@@ -1,6 +1,10 @@
-// 系统设置页 - 来源账号管理：数据源页签行内展开区的账号列表（就地改备注、启停、删除）、
-// 单个新增与批量粘贴预览（收进「添加账号」<details>，默认折叠）。所有用户输入经 textContent 渲染。
+// 系统设置页 - 来源账号管理：数据源页签行内展开区的账号列表（启停、删除、名称展示）、
+// 单个新增与批量粘贴预览（收进「添加账号」<details>，默认折叠），以及「刷新账号名称」
+// 的分批串行刷新。账号名称由后端解析，前端不提供名称输入；所有用户输入经 textContent 渲染。
 'use strict';
+
+// 后端 refresh-names 接口单批上限 20（Pydantic max_length），前端切片必须与之对齐
+const REFRESH_NAMES_BATCH_SIZE = 20;
 
 const BULK_STATUS_LABELS = {
     addable: '可新增',
@@ -26,37 +30,6 @@ function filteredAccountItems() {
 function accountRowError(row, message) {
     const errorEl = row.querySelector('.account-row-error');
     errorEl.textContent = message || '';
-}
-
-async function saveAccountName(item, row, input) {
-    const next = input.value.trim();
-    const previous = item.display_name || '';
-    if (next === previous) {
-        input.value = previous;
-        return;
-    }
-    input.disabled = true;
-    try {
-        const { response, payload } = await apiRequest(
-            `/api/admin/crawl-accounts/${encodeURIComponent(item.id)}`,
-            { method: 'PATCH', body: { display_name: next } },
-        );
-        if (!response.ok) {
-            input.value = previous;
-            accountRowError(row, `备注保存失败：${formatApiError(payload, '请重试')}`);
-            return;
-        }
-        item.display_name = payload.item.display_name;
-        input.value = payload.item.display_name || '';
-        input.dataset.savedValue = payload.item.display_name || '';
-        accountRowError(row, '');
-        showSettingsToast('备注已保存');
-    } catch (error) {
-        input.value = previous;
-        accountRowError(row, `备注保存失败：${error.message || '网络错误'}`);
-    } finally {
-        input.disabled = false;
-    }
 }
 
 async function toggleAccountEnabled(item, row, toggle) {
@@ -140,60 +113,154 @@ async function refreshAccountsAndList() {
     refreshSourcesAccountBadges();
 }
 
-function buildAccountRow(item) {
-    const row = createEl('tr', '', '', { dataset: { accountId: item.id } });
+// 名称刷新结果就地落到单行：同步 state 缓存，只重绘该行的名称单元格，
+// 不整表重建——重建会打断进行中的启停操作，且会让失败分支的错误写进已销毁的节点。
+function applyRefreshedAccount(source, result) {
+    const accounts = state.accounts[source];
+    if (!accounts) return;
+    const item = accounts.find((account) => account.id === result.id);
+    if (!item) return;
+    if (result.account) {
+        Object.assign(item, result.account);
+    } else if (result.status === 'failed' && result.error) {
+        // 解析失败时后端不返回账号行，失败原因由 error 字段带入失败态标记
+        item.display_name = null;
+        item.display_name_error = result.error;
+    }
+    if (state.accountSource !== source) return;
+    const row = document.querySelector(`#accounts-body tr[data-account-id="${item.id}"]`);
+    if (!row) return;
+    renderAccountNameCell(row.querySelector('.account-name-cell'), item);
+    const toggle = row.querySelector('.account-enabled-toggle');
+    if (toggle) toggle.setAttribute('aria-label', accountToggleLabel(item));
+}
 
-    const nameCell = createEl('td', 'account-name-cell');
-    const nameInput = createEl('input', 'account-name-input', '', {
-        type: 'text',
-        'aria-label': '备注名',
-        placeholder: '未设置备注名',
-    });
-    nameInput.value = item.display_name || '';
-    nameInput.dataset.savedValue = item.display_name || '';
-    nameInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
-            event.preventDefault();
-            nameInput.blur();
-        } else if (event.key === 'Escape') {
-            nameInput.value = nameInput.dataset.savedValue;
-            nameInput.blur();
+// 「刷新账号名称」：全部（或指定）账号按每批最多 20 个切片串行请求，
+// skipped（后端 30 秒预算耗尽）的 id 重新排队；某批完全没有推进时停止兜底，
+// 否则 skipped 一直回队会成为死循环。切换来源后经 state.accountSource 守卫终止，
+// 结果不会写进已不属于当前来源的 DOM。
+async function refreshAccountNames(source, ids, button) {
+    if (state.accountRefreshInflight) return;
+    const queue = [...ids];
+    const total = queue.length;
+    if (!total) return;
+    const statusEl = document.getElementById('accounts-refresh-status');
+    const setStatus = (message) => {
+        // 切换来源后展开区已销毁，状态节点可能不存在
+        if (statusEl && statusEl.isConnected) statusEl.textContent = message;
+    };
+    state.accountRefreshInflight = true;
+    const originalText = button.textContent;
+    let processed = 0;
+    let resolved = 0;
+    let failed = 0;
+    let stalled = false;
+    button.disabled = true;
+    const syncProgress = () => {
+        button.textContent = `刷新中… ${processed}/${total}`;
+    };
+    setStatus('');
+    syncProgress();
+    try {
+        while (queue.length) {
+            if (state.accountSource !== source) return;
+            const batch = queue.splice(0, REFRESH_NAMES_BATCH_SIZE);
+            const { response, payload } = await apiRequest(
+                '/api/admin/crawl-accounts/refresh-names',
+                { method: 'POST', body: { account_ids: batch } },
+            );
+            if (state.accountSource !== source) return;
+            if (!response.ok) {
+                setStatus(`刷新失败：${formatApiError(payload, '请重试')}`);
+                return;
+            }
+            let progressed = 0;
+            (payload.items || []).forEach((result) => {
+                if (result.status === 'skipped') {
+                    queue.push(result.id);
+                    return;
+                }
+                progressed += 1;
+                processed += 1;
+                if (result.status === 'resolved') resolved += 1;
+                if (result.status === 'failed') failed += 1;
+                applyRefreshedAccount(source, result);
+            });
+            syncProgress();
+            if (progressed === 0) {
+                stalled = true;
+                break;
+            }
         }
-    });
-    nameInput.addEventListener('blur', () => {
-        saveAccountName(item, row, nameInput);
-    });
-    nameCell.appendChild(nameInput);
-    nameCell.appendChild(createEl('span', 'account-row-error'));
-    row.appendChild(nameCell);
+        if (stalled) {
+            setStatus('部分账号未能刷新，请稍后重试');
+        } else {
+            showSettingsToast(`已更新 ${resolved} 个名称，${failed} 个获取失败`);
+        }
+    } catch (error) {
+        if (state.accountSource === source) {
+            setStatus(`刷新失败：${error.message || '网络错误'}`);
+        }
+    } finally {
+        state.accountRefreshInflight = false;
+        if (button.isConnected) {
+            button.disabled = false;
+            button.textContent = originalText;
+        }
+    }
+}
 
-    row.appendChild(createEl('td', 'account-identifier', item.normalized_identifier));
-    row.appendChild(createEl('td', 'account-original', item.original_input));
-
-    const linkCell = createEl('td');
-    linkCell.appendChild(createEl('a', 'account-profile-link', '主页', {
+// 名称单元格的三种状态：已解析显示名称；未解析显示截断标识（CSS 省略号，
+// 完整值放 title）加弱化标记；解析失败时标记变为「名称获取失败」、原因放标记的 title。
+// 名称文本一律经 textContent 写入，禁止 innerHTML。
+function renderAccountNameCell(cell, item) {
+    clearEl(cell);
+    const link = createEl('a', 'account-name-link', '', {
         href: item.profile_url,
         target: '_blank',
         rel: 'noopener noreferrer',
-    }));
-    row.appendChild(linkCell);
+    });
+    if (item.display_name) {
+        link.textContent = item.display_name;
+        link.title = '打开主页';
+    } else {
+        link.classList.add('is-unresolved');
+        link.textContent = item.normalized_identifier;
+        link.title = item.normalized_identifier;
+    }
+    cell.appendChild(link);
+    if (!item.display_name) {
+        const hasError = !!item.display_name_error;
+        const badge = createEl('span',
+            `account-name-badge${hasError ? ' is-error' : ''}`,
+            hasError ? '名称获取失败' : '名称待获取');
+        if (hasError) badge.title = item.display_name_error;
+        cell.appendChild(badge);
+    }
+    cell.appendChild(createEl('span', 'account-row-error'));
+}
 
-    const enabledCell = createEl('td');
-    const toggle = createEl('input', 'account-enabled-toggle', '', {
+function accountToggleLabel(item) {
+    return `启用 ${item.display_name || item.normalized_identifier}`;
+}
+
+function buildAccountRow(item) {
+    const row = createEl('tr', '', '', { dataset: { accountId: item.id } });
+
+    // 启用开关放每行最前：开关本身说明含义，不再单设带表头的「启用」列
+    const enabledCell = createEl('td', 'account-toggle-cell');
+    const toggle = createEl('input', 'settings-switch account-enabled-toggle', '', {
         type: 'checkbox',
-        'aria-label': `启用 ${item.display_name || item.normalized_identifier}`,
+        'aria-label': accountToggleLabel(item),
     });
     toggle.checked = !!item.enabled;
     toggle.addEventListener('change', () => toggleAccountEnabled(item, row, toggle));
     enabledCell.appendChild(toggle);
     row.appendChild(enabledCell);
 
-    const creator = item.created_by_display_name || '未知';
-    row.appendChild(createEl(
-        'td',
-        'account-created',
-        `${creator} · ${formatLocalDateTime(item.created_at)}`,
-    ));
+    const nameCell = createEl('td', 'account-name-cell');
+    renderAccountNameCell(nameCell, item);
+    row.appendChild(nameCell);
 
     const actionCell = createEl('td');
     const deleteBtn = createEl('button', 'btn btn-secondary account-delete-btn', '删除', {
@@ -214,7 +281,7 @@ function renderAccountList() {
         const empty = createEl('tr');
         empty.appendChild(createEl('td', 'settings-source-empty',
             state.accountFilter ? '没有匹配的账号。' : '该来源还没有抓取账号。', {
-                colspan: '7',
+                colspan: '3',
             }));
         tbody.appendChild(empty);
         return;
@@ -323,8 +390,17 @@ async function runBulkConfirm() {
         // 已提交的结果仅供查看：确认按钮失效，继续编辑需重新预览
         state.bulk.stale = true;
         renderBulkRows(state.bulk.items, { final: true });
-        showSettingsToast('批量添加完成，可在列表中补充备注名');
+        showSettingsToast('批量添加完成，账号名称将自动获取');
+        // 批量添加后端不解析名称，对本批新建账号自动触发一次名称刷新（仅新建 id）
+        const newIds = state.bulk.items
+            .filter((item) => item.status === 'addable' && item.account)
+            .map((item) => item.account.id);
+        const source = state.accountSource;
         await refreshAccountsAndList();
+        if (newIds.length && state.accountSource === source) {
+            const refreshBtn = document.getElementById('btn-account-refresh-names');
+            if (refreshBtn) await refreshAccountNames(source, newIds, refreshBtn);
+        }
     } catch (error) {
         showSettingsToast(`批量添加失败：${error.message || '网络错误'}`, 'error');
         syncBulkConfirmButton();
@@ -337,10 +413,11 @@ function renderSourceAccounts(sourceKey, containerEl) {
     clearEl(containerEl);
     state.accountSource = sourceKey;
 
+    const toolbar = createEl('div', 'accounts-toolbar');
     const filter = createEl('input', 'accounts-filter', '', {
         id: 'accounts-filter',
         type: 'search',
-        placeholder: '按备注名、标识或原始输入筛选…',
+        placeholder: '按名称或链接筛选…',
         'aria-label': '筛选账号',
     });
     filter.value = state.accountFilter;
@@ -348,13 +425,29 @@ function renderSourceAccounts(sourceKey, containerEl) {
         state.accountFilter = filter.value;
         renderAccountList();
     });
-    containerEl.appendChild(filter);
+    const refreshBtn = createEl('button', 'btn btn-secondary accounts-refresh-btn', '刷新账号名称', {
+        id: 'btn-account-refresh-names',
+        type: 'button',
+    });
+    refreshBtn.addEventListener('click', () => {
+        const source = state.accountSource;
+        if (!source) return;
+        const ids = currentAccountItems().map((item) => item.id);
+        refreshAccountNames(source, ids, refreshBtn);
+    });
+    toolbar.appendChild(filter);
+    toolbar.appendChild(refreshBtn);
+    toolbar.appendChild(createEl('span', 'accounts-refresh-status', '', {
+        id: 'accounts-refresh-status',
+    }));
+    containerEl.appendChild(toolbar);
 
     const tableWrap = createEl('div', 'admin-table-wrap');
     const table = createEl('table', 'admin-table accounts-table');
     const thead = createEl('thead');
     const headRow = createEl('tr');
-    ['备注名', '标识', '原始输入', '主页', '启用', '添加', '操作'].forEach((text) => {
+    // 首列表头留空：启用开关本身说明含义，不单独占一列表头文字
+    ['', '名称', '操作'].forEach((text) => {
         headRow.appendChild(createEl('th', '', text));
     });
     thead.appendChild(headRow);
@@ -375,18 +468,11 @@ function renderSourceAccounts(sourceKey, containerEl) {
         placeholder: '主页链接或 ID',
         'aria-label': '账号链接或 ID',
     });
-    const addName = createEl('input', 'account-add-name', '', {
-        id: 'account-add-name',
-        type: 'text',
-        placeholder: '备注名（可选）',
-        'aria-label': '备注名（可选）',
-    });
     const addBtn = createEl('button', 'btn btn-primary', '添加', {
         id: 'btn-account-add',
         type: 'button',
     });
     addRow.appendChild(addInput);
-    addRow.appendChild(addName);
     addRow.appendChild(addBtn);
     addBox.appendChild(addRow);
     addBox.appendChild(createEl('p', 'account-add-error', '', { id: 'account-add-error' }));
@@ -402,19 +488,16 @@ function renderSourceAccounts(sourceKey, containerEl) {
         }
         addBtn.disabled = true;
         try {
-            const body = { source: state.accountSource, text };
-            const displayName = addName.value.trim();
-            if (displayName) body.display_name = displayName;
+            // 名称由后端同步解析，响应里的账号行直接可用，不再额外刷新
             const { response, payload } = await apiRequest('/api/admin/crawl-accounts', {
                 method: 'POST',
-                body,
+                body: { source: state.accountSource, text },
             });
             if (!response.ok) {
                 errorEl.textContent = formatApiError(payload, '添加失败，请重试');
                 return;
             }
             addInput.value = '';
-            addName.value = '';
             showSettingsToast('账号已添加');
             await refreshAccountsAndList();
         } catch (error) {
@@ -427,7 +510,7 @@ function renderSourceAccounts(sourceKey, containerEl) {
     const bulkBox = createEl('div', 'account-bulk-box');
     bulkBox.appendChild(createEl('h3', 'settings-group-heading', '批量粘贴'));
     bulkBox.appendChild(createEl('p', 'settings-bulk-note',
-        '每行一个主页链接或 ID；批量添加的账号没有备注名，可在列表中补充。'));
+        '每行一个主页链接或 ID；账号名称添加后由系统自动获取。'));
     const textarea = createEl('textarea', 'account-bulk-text', '', {
         id: 'account-bulk-text',
         rows: '5',
@@ -473,7 +556,7 @@ function renderSourceAccounts(sourceKey, containerEl) {
             clearEl(tbody);
             const row = createEl('tr');
             row.appendChild(createEl('td', 'settings-source-empty',
-                `账号加载失败：${error.message}`, { colspan: '7' }));
+                `账号加载失败：${error.message}`, { colspan: '3' }));
             tbody.appendChild(row);
         });
 }

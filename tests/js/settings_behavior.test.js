@@ -1,5 +1,5 @@
 // 系统设置页（/admin/settings）的 jsdom 行为测试。
-// 覆盖验收场景 S1-S20；各场景语义见 tests/test_settings_js_behavior.py 与交付说明。
+// 覆盖验收场景 S1-S31；各场景语义见 tests/test_settings_js_behavior.py 与交付说明。
 'use strict';
 
 const { test } = require('node:test');
@@ -12,6 +12,7 @@ const {
     defaultSections,
     defaultAccounts,
     makeAccount,
+    unhandledRejections,
 } = require('./settings_harness.js');
 
 function inputValue(page, el, value) {
@@ -450,14 +451,14 @@ test('S10b：启用开关请求抛网络异常时开关恢复原状态并显示�
     }
 });
 
-test('S11：备注名与原始输入中的 HTML 按纯文本渲染，不生成元素', async () => {
+test('S11：后端返回的 display_name 含 HTML 时在名称链接里按纯文本渲染，不生成元素', async () => {
     const payload = '<img src=x onerror=window.__xssHit=1>';
     const accounts = defaultAccounts();
     accounts.toutiao = [makeAccount({
         id: 'acc-xss',
         source: 'toutiao',
         normalized_identifier: 'xss-id',
-        original_input: payload,
+        profile_url: 'https://example.com/xss-profile',
         display_name: payload,
     })];
     const page = await bootPage({ accounts });
@@ -472,11 +473,12 @@ test('S11：备注名与原始输入中的 HTML 按纯文本渲染，不生成�
         assert.equal(row.querySelectorAll('img').length, 0);
         assert.equal(panel.querySelectorAll('img').length, 0);
         assert.equal(page.window.__xssHit, undefined);
-        assert.equal(
-            row.querySelector('.account-name-input').value,
-            payload,
-        );
-        assert.match(row.querySelector('.account-original').textContent, /<img src=x/);
+        // display_name 整体作为文本写进名称链接，href 取自 profile_url
+        const link = row.querySelector('.account-name-link');
+        assert.equal(link.textContent, payload);
+        assert.equal(link.getAttribute('href'), 'https://example.com/xss-profile');
+        assert.equal(link.target, '_blank');
+        assert.equal(link.rel, 'noopener noreferrer');
     } finally {
         page.close();
     }
@@ -737,6 +739,409 @@ test('S20：启停其他来源触发重渲染后，展开区、筛选词与「�
         assert.equal(panels[0].dataset.accountsFor, 'toutiao');
         assert.equal(page.document.getElementById('accounts-filter').value, '头条');
         assert.equal(page.document.querySelector('.account-add-details').open, true);
+    } finally {
+        page.close();
+    }
+});
+
+function makeToutiaoAccounts(count) {
+    return Array.from({ length: count }, (_, i) => makeAccount({
+        id: `tt-${i + 1}`,
+        source: 'toutiao',
+        normalized_identifier: `tt-token-${i + 1}`,
+        original_input: `https://www.toutiao.com/c/user/tt-token-${i + 1}/`,
+        profile_url: `https://www.toutiao.com/c/user/tt-token-${i + 1}/`,
+    }));
+}
+
+test('S21：名称单元格三种状态——已解析、待获取、获取失败', async () => {
+    const longToken = 'MS4wLjABAAAA-very-long-token-that-must-not-stretch-the-row-0123456789';
+    const accounts = defaultAccounts();
+    accounts.toutiao = [
+        makeAccount({
+            id: 'acc-resolved',
+            source: 'toutiao',
+            normalized_identifier: 'tok-resolved',
+            profile_url: 'https://example.com/resolved',
+            display_name: '头条账号甲',
+        }),
+        makeAccount({
+            id: 'acc-pending',
+            source: 'toutiao',
+            normalized_identifier: longToken,
+            profile_url: 'https://example.com/pending',
+        }),
+        makeAccount({
+            id: 'acc-failed',
+            source: 'toutiao',
+            normalized_identifier: 'tok-failed',
+            profile_url: 'https://example.com/failed',
+            display_name_error: '解析超时',
+        }),
+    ];
+    const page = await bootPage({ accounts });
+    try {
+        await expandSource(page, 'toutiao');
+        await waitFor(() => page.document
+            .querySelector('#accounts-body tr[data-account-id="acc-failed"]'));
+
+        // 已解析：名称文本，链接指向主页
+        const resolvedRow = page.document
+            .querySelector('#accounts-body tr[data-account-id="acc-resolved"]');
+        const resolvedLink = resolvedRow.querySelector('.account-name-link');
+        assert.equal(resolvedLink.textContent, '头条账号甲');
+        assert.equal(resolvedLink.getAttribute('href'), 'https://example.com/resolved');
+        assert.equal(resolvedLink.target, '_blank');
+        assert.equal(resolvedLink.rel, 'noopener noreferrer');
+        assert.equal(resolvedLink.title, '打开主页');
+        assert.equal(resolvedRow.querySelector('.account-name-badge'), null);
+
+        // 未解析：显示截断标识（is-unresolved 由 CSS 做单行省略号），完整值放 title
+        const pendingRow = page.document
+            .querySelector('#accounts-body tr[data-account-id="acc-pending"]');
+        const pendingLink = pendingRow.querySelector('.account-name-link');
+        assert.ok(pendingLink.classList.contains('is-unresolved'));
+        assert.equal(pendingLink.textContent, longToken);
+        assert.equal(pendingLink.title, longToken);
+        assert.match(
+            pendingRow.querySelector('.account-name-badge').textContent,
+            /名称待获取/,
+        );
+
+        // 解析失败：同样截断标识，标记为「名称获取失败」，原因放标记的 title
+        const failedRow = page.document
+            .querySelector('#accounts-body tr[data-account-id="acc-failed"]');
+        const failedLink = failedRow.querySelector('.account-name-link');
+        assert.ok(failedLink.classList.contains('is-unresolved'));
+        assert.equal(failedLink.textContent, 'tok-failed');
+        const failedBadge = failedRow.querySelector('.account-name-badge');
+        assert.match(failedBadge.textContent, /名称获取失败/);
+        assert.equal(failedBadge.title, '解析超时');
+    } finally {
+        page.close();
+    }
+});
+
+test('S22：启用开关是每行第一个单元格，仍是 checkbox 且 aria-label 带账号名；空状态 colspan=3', async () => {
+    const page = await bootPage();
+    try {
+        await expandSource(page, 'toutiao');
+        await waitFor(() => page.document
+            .querySelector('#accounts-body tr[data-account-id="acc-toutiao-1"]'));
+        const row = page.document
+            .querySelector('#accounts-body tr[data-account-id="acc-toutiao-1"]');
+        assert.equal(row.cells.length, 3);
+        const toggle = row.cells[0].querySelector('input[type="checkbox"].account-enabled-toggle');
+        assert.ok(toggle, '第一个单元格应是启用开关 checkbox');
+        assert.match(toggle.getAttribute('aria-label'), /头条一号/);
+
+        const headers = page.document.querySelectorAll('.accounts-table thead th');
+        assert.equal(headers.length, 3);
+        assert.equal(headers[0].textContent, '');
+        assert.equal(headers[1].textContent, '名称');
+        assert.equal(headers[2].textContent, '操作');
+
+        // 空状态行 colspan 与三列结构对齐
+        await expandSource(page, 'tencent');
+        await waitFor(() => page.document
+            .querySelector('.source-accounts-panel[data-accounts-for="tencent"] #accounts-body td'));
+        const emptyCell = page.document
+            .querySelector('.source-accounts-panel[data-accounts-for="tencent"] #accounts-body td');
+        assert.equal(emptyCell.getAttribute('colspan'), '3');
+    } finally {
+        page.close();
+    }
+});
+
+test('S23：账号启停请求进行中开关处于 disabled，放行后恢复可用', async () => {
+    const accounts = defaultAccounts();
+    accounts.tencent = [makeAccount({
+        id: 'acc-tencent-1',
+        source: 'tencent',
+        normalized_identifier: 'tencent-one',
+        enabled: true,
+    })];
+    const page = await bootPage({ accounts });
+    try {
+        await expandSource(page, 'tencent');
+        await waitFor(() => page.document
+            .querySelector('#accounts-body tr[data-account-id="acc-tencent-1"]'));
+        const toggle = page.document
+            .querySelector('#accounts-body tr[data-account-id="acc-tencent-1"] .account-enabled-toggle');
+
+        page.server.hold('patch-account');
+        toggle.click();
+        await waitFor(() => page.server.requests('patch-account').length === 1);
+        assert.equal(toggle.disabled, true);
+
+        page.server.release('patch-account');
+        await waitFor(() => page.server.requests('patch-account')[0].done);
+        await waitFor(() => toggle.disabled === false);
+        assert.equal(toggle.checked, false);
+    } finally {
+        page.close();
+    }
+});
+
+test('S24：来源行开关打头、序号名称徽标箭头依次在后；每日任务只读行有等宽占位', async () => {
+    const page = await bootPage();
+    try {
+        const toutiaoRow = page.document
+            .querySelector('#sources-hourly-list li[data-source="toutiao"]');
+        assert.ok(toutiaoRow.children[0].matches('input[type="checkbox"].source-enabled-toggle'));
+        assert.ok(toutiaoRow.children[1].classList.contains('settings-source-index'));
+        assert.ok(toutiaoRow.children[2].classList.contains('settings-source-name'));
+        assert.ok(toutiaoRow.children[3].classList.contains('source-account-badge'));
+        assert.ok(toutiaoRow.children[4].classList.contains('source-expand-toggle'));
+
+        // 未启用分组没有序号，开关仍在最前
+        const tencentRow = page.document
+            .querySelector('#sources-available-list li[data-source="tencent"]');
+        assert.ok(tencentRow.children[0].matches('input[type="checkbox"].source-enabled-toggle'));
+        assert.ok(tencentRow.children[1].classList.contains('settings-source-name'));
+
+        // 每日任务只读行：无开关，首个子元素是与开关等宽的占位，名称紧随其后
+        const dailyRow = page.document
+            .querySelector('#sources-daily-list li[data-source="bjrb"]');
+        assert.equal(dailyRow.querySelector('.source-enabled-toggle'), null);
+        assert.ok(dailyRow.children[0].classList.contains('settings-source-toggle-placeholder'));
+        assert.ok(dailyRow.children[1].classList.contains('settings-source-name'));
+    } finally {
+        page.close();
+    }
+});
+
+test('S25：刷新账号名称按每批最多 20 个切片串行请求，按钮显示进度', async () => {
+    const accounts = defaultAccounts();
+    accounts.toutiao = makeToutiaoAccounts(25);
+    const page = await bootPage({ accounts });
+    try {
+        await expandSource(page, 'toutiao');
+        await waitFor(() => page.document
+            .querySelector('#accounts-body tr[data-account-id="tt-25"]'));
+        const refreshBtn = page.document.getElementById('btn-account-refresh-names');
+        assert.equal(refreshBtn.textContent, '刷新账号名称');
+
+        page.server.hold('refresh-names');
+        refreshBtn.click();
+        await waitFor(() => page.server.requests('refresh-names').length === 1);
+        // 刷新进行中：按钮禁用并显示进度
+        assert.equal(refreshBtn.disabled, true);
+        assert.match(refreshBtn.textContent, /刷新中… 0\/25/);
+        // 串行：第一批未返回前不发第二批
+        await assertNever(() => page.server.requests('refresh-names').length > 1, 200);
+        page.server.release('refresh-names');
+
+        await waitFor(() => page.server.requests('refresh-names').length === 2
+            && page.server.requests('refresh-names').every((entry) => entry.done));
+        const [first, second] = page.server.requests('refresh-names');
+        assert.equal(first.body.account_ids.length, 20);
+        assert.equal(second.body.account_ids.length, 5);
+
+        await waitFor(() => page.document.getElementById('toast').textContent
+            .includes('已更新 25 个名称，0 个获取失败'));
+        assert.equal(refreshBtn.disabled, false);
+        assert.equal(refreshBtn.textContent, '刷新账号名称');
+        // 逐行更新到位：第一行显示解析出的名称
+        const firstLink = page.document
+            .querySelector('#accounts-body tr[data-account-id="tt-1"] .account-name-link');
+        assert.equal(firstLink.textContent, '自动名称-tt-token-1');
+    } finally {
+        page.close();
+    }
+});
+
+test('S26：返回 skipped 的账号被重新排入下一批继续刷新', async () => {
+    const accounts = defaultAccounts();
+    accounts.toutiao = makeToutiaoAccounts(2);
+    const page = await bootPage({ accounts });
+    try {
+        await expandSource(page, 'toutiao');
+        await waitFor(() => page.document
+            .querySelector('#accounts-body tr[data-account-id="tt-2"]'));
+        // tt-1 第一次尝试被 skipped（预算耗尽），重试时成功
+        page.server.refreshBehavior = (id, attempt) => (
+            id === 'tt-1' && attempt === 1 ? 'skipped' : null
+        );
+
+        page.document.getElementById('btn-account-refresh-names').click();
+        await waitFor(() => page.server.requests('refresh-names').length === 2
+            && page.server.requests('refresh-names').every((entry) => entry.done));
+        const second = page.server.requests('refresh-names')[1];
+        assert.deepEqual(second.body.account_ids, ['tt-1']);
+
+        await waitFor(() => page.document.getElementById('toast').textContent
+            .includes('已更新 2 个名称，0 个获取失败'));
+        const link = page.document
+            .querySelector('#accounts-body tr[data-account-id="tt-1"] .account-name-link');
+        assert.equal(link.textContent, '自动名称-tt-token-1');
+    } finally {
+        page.close();
+    }
+});
+
+test('S27：某一批完全没有推进时循环停止并提示，不会无限重发', async () => {
+    const accounts = defaultAccounts();
+    accounts.toutiao = makeToutiaoAccounts(25);
+    const page = await bootPage({ accounts });
+    try {
+        await expandSource(page, 'toutiao');
+        await waitFor(() => page.document
+            .querySelector('#accounts-body tr[data-account-id="tt-25"]'));
+        // 后 5 个账号始终 skipped：第一批推进 20 个，第二批 5 个全部 skipped、零推进
+        page.server.refreshBehavior = (id) => (
+            Number(id.split('-')[1]) > 20 ? 'skipped' : null
+        );
+
+        page.document.getElementById('btn-account-refresh-names').click();
+        await waitFor(() => page.server.requests('refresh-names').length === 2
+            && page.server.requests('refresh-names').every((entry) => entry.done));
+        // 兜底生效：不再发出第三次请求
+        await assertNever(() => page.server.requests('refresh-names').length >= 3, 300);
+        await waitFor(() => page.document
+            .getElementById('accounts-refresh-status').textContent
+            .includes('部分账号未能刷新，请稍后重试'));
+        const refreshBtn = page.document.getElementById('btn-account-refresh-names');
+        assert.equal(refreshBtn.disabled, false);
+        assert.equal(refreshBtn.textContent, '刷新账号名称');
+    } finally {
+        page.close();
+    }
+});
+
+test('S28：刷新逐行就地更新，进行中某行的启用开关仍可点击且不被重建打断', async () => {
+    const accounts = defaultAccounts();
+    accounts.toutiao = makeToutiaoAccounts(2);
+    const page = await bootPage({ accounts });
+    try {
+        await expandSource(page, 'toutiao');
+        await waitFor(() => page.document
+            .querySelector('#accounts-body tr[data-account-id="tt-2"]'));
+        const rowBefore = page.document
+            .querySelector('#accounts-body tr[data-account-id="tt-1"]');
+        const toggle = page.document
+            .querySelector('#accounts-body tr[data-account-id="tt-2"] .account-enabled-toggle');
+        assert.equal(toggle.checked, true);
+
+        page.server.hold('refresh-names');
+        page.document.getElementById('btn-account-refresh-names').click();
+        await waitFor(() => page.server.requests('refresh-names').length === 1);
+
+        // 刷新请求被扣住期间，另一行的启停照常可用
+        toggle.click();
+        await waitFor(() => page.server.requests('patch-account').length === 1
+            && page.server.requests('patch-account')[0].done);
+        await waitFor(() => toggle.checked === false);
+
+        page.server.release('refresh-names');
+        await waitFor(() => page.server.requests('refresh-names')[0].done);
+        await waitFor(() => page.document
+            .querySelector('#accounts-body tr[data-account-id="tt-1"] .account-name-link')
+            .textContent === '自动名称-tt-token-1');
+        // 就地更新：行节点没有被替换，启停结果保留
+        const rowAfter = page.document
+            .querySelector('#accounts-body tr[data-account-id="tt-1"]');
+        assert.equal(rowAfter, rowBefore);
+        assert.equal(toggle.checked, false);
+        assert.equal(toggle.disabled, false);
+    } finally {
+        page.close();
+    }
+});
+
+test('S29：批量添加成功后自动只对新建账号触发名称刷新', async () => {
+    const page = await bootPage();
+    try {
+        await expandSource(page, 'toutiao');
+        const details = page.document.querySelector('.account-add-details');
+        details.open = true;
+        const textarea = page.document.getElementById('account-bulk-text');
+        inputValue(page, textarea, 'new-x\nnew-y');
+        page.document.getElementById('btn-account-bulk-preview').click();
+        await waitFor(() => page.server.requests('preview-accounts').length === 1
+            && page.server.requests('preview-accounts')[0].done);
+        const confirmBtn = page.document.getElementById('btn-account-bulk-confirm');
+        await waitFor(() => !confirmBtn.disabled);
+        confirmBtn.click();
+        await waitFor(() => page.server.requests('bulk-accounts').length === 1
+            && page.server.requests('bulk-accounts')[0].done);
+
+        await waitFor(() => page.server.requests('refresh-names').length === 1
+            && page.server.requests('refresh-names')[0].done);
+        const newIds = page.server.accounts.toutiao
+            .filter((item) => item.id.startsWith('acc-bulk-'))
+            .map((item) => item.id);
+        assert.equal(newIds.length, 2);
+        // 只刷新本批新建的 id，不碰存量账号
+        assert.deepEqual(
+            page.server.requests('refresh-names')[0].body.account_ids,
+            newIds,
+        );
+
+        await waitFor(() => page.document.getElementById('toast').textContent
+            .includes('已更新 2 个名称，0 个获取失败'));
+    } finally {
+        page.close();
+    }
+});
+
+test('S30：刷新进行中切换到别的来源，后到的响应不写入 DOM 也不再发请求', async () => {
+    const accounts = defaultAccounts();
+    // 25 个账号：切走后若守卫缺失，串行循环会继续发第二批，可被确定地捕获
+    accounts.toutiao = makeToutiaoAccounts(25);
+    const page = await bootPage({ accounts });
+    try {
+        await expandSource(page, 'toutiao');
+        await waitFor(() => page.document
+            .querySelector('#accounts-body tr[data-account-id="tt-25"]'));
+
+        page.server.hold('refresh-names');
+        page.document.getElementById('btn-account-refresh-names').click();
+        await waitFor(() => page.server.requests('refresh-names').length === 1);
+
+        // 请求被扣住时切换到 tencent：toutiao 展开区被销毁
+        await expandSource(page, 'tencent');
+        await waitFor(() => page.document
+            .querySelector('.source-accounts-panel[data-accounts-for="tencent"]'));
+
+        page.server.release('refresh-names');
+        await waitFor(() => page.server.requests('refresh-names')[0].done);
+        // 响应归属守卫：循环终止不再发下一批，解析结果不写 DOM、不弹汇总 toast
+        await assertNever(() => page.server.requests('refresh-names').length > 1, 200);
+        await assertNever(() => page.document.body.textContent.includes('自动名称-tt-token'), 200);
+        await assertNever(() => page.document.getElementById('toast').textContent
+            .includes('已更新'), 200);
+        assert.deepEqual(unhandledRejections, []);
+    } finally {
+        page.close();
+    }
+});
+
+test('S31：单个新增后端已同步解析名称，前端不再额外调刷新', async () => {
+    const page = await bootPage();
+    try {
+        await expandSource(page, 'toutiao');
+        const details = page.document.querySelector('.account-add-details');
+        details.open = true;
+        const addInput = page.document.getElementById('account-add-input');
+        addInput.value = 'brand-new-id';
+        page.document.getElementById('btn-account-add').click();
+        await waitFor(() => page.server.requests('add-account').length === 1
+            && page.server.requests('add-account')[0].done);
+        // 请求体不再携带 display_name
+        assert.equal(page.server.requests('add-account')[0].body.display_name, undefined);
+
+        const created = page.server.accounts.toutiao
+            .find((item) => item.normalized_identifier === 'brand-new-id');
+        await waitFor(() => page.document
+            .querySelector(`#accounts-body tr[data-account-id="${created.id}"]`));
+        // 直接用响应里的行渲染：名称已解析，不显示「待获取」
+        const row = page.document
+            .querySelector(`#accounts-body tr[data-account-id="${created.id}"]`);
+        assert.equal(row.querySelector('.account-name-link').textContent, '名称-brand-new-id');
+        assert.equal(row.querySelector('.account-name-badge'), null);
+        // 没有发出任何 refresh-names 请求
+        await assertNever(() => page.server.requests('refresh-names').length > 0, 300);
     } finally {
         page.close();
     }

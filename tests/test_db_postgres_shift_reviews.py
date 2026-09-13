@@ -432,7 +432,8 @@ def test_shift_clusters_follow_current_representative_score_order() -> None:
         "representative_external_importance_score DESC NULLS LAST"
         in query
     )
-    assert "unclustered_items AS" in query
+    assert query.count("unnest(") == 1
+    assert "cluster_items AS MATERIALIZED" in query
     assert "'single-' || pending.article_id" in query
     assert "mc.created_at DESC" not in query
     assert cursor.params[-1] == (

@@ -503,7 +503,7 @@ def fetch_shift_clusters(
 ) -> list[dict[str, Any]]:
     cur.execute(
         """
-        WITH shift_pending AS (
+        WITH shift_pending AS MATERIALIZED (
             SELECT
                 ns.article_id,
                 ns.external_importance_score,
@@ -531,20 +531,27 @@ def fetch_shift_clusters(
               AND COALESCE(sr.decision, 'pending') = 'pending'
               AND COALESCE(sr.report_type, 'zongbao') = %s
         ),
-        cluster_memberships AS (
+        cluster_items AS MATERIALIZED (
             SELECT
                 mc.cluster_id,
                 mc.bucket_key,
+                cluster_item.article_id
+            FROM manual_clusters mc
+            CROSS JOIN LATERAL unnest(mc.item_ids)
+                AS cluster_item(article_id)
+        ),
+        cluster_memberships AS (
+            SELECT
+                ci.cluster_id,
+                ci.bucket_key,
                 pending.article_id,
                 pending.external_importance_score,
                 pending.manual_rank,
                 pending.score,
                 pending.publish_time_iso
-            FROM manual_clusters mc
-            CROSS JOIN LATERAL unnest(mc.item_ids)
-                AS cluster_item(article_id)
+            FROM cluster_items ci
             JOIN shift_pending pending
-              ON pending.article_id = cluster_item.article_id
+              ON pending.article_id = ci.article_id
         ),
         unclustered_items AS (
             SELECT
@@ -556,13 +563,9 @@ def fetch_shift_clusters(
                 pending.score,
                 pending.publish_time_iso
             FROM shift_pending pending
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM manual_clusters mc
-                CROSS JOIN LATERAL unnest(mc.item_ids)
-                    AS cluster_item(article_id)
-                WHERE cluster_item.article_id = pending.article_id
-            )
+            LEFT JOIN cluster_items ci
+              ON ci.article_id = pending.article_id
+            WHERE ci.article_id IS NULL
         ),
         all_cluster_items AS (
             SELECT * FROM cluster_memberships

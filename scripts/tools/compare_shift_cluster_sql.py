@@ -7,6 +7,7 @@ from typing import Any, Sequence
 import psycopg
 from psycopg.rows import dict_row
 
+from src.adapters.db_postgres_shift_reviews import fetch_shift_clusters
 from src.config import get_settings
 from src.domain.report_type import DEFAULT_REPORT_TYPE, NEWS_REPORT_TYPE_ORDER
 
@@ -125,125 +126,41 @@ ORDER BY
 """
 
 
-NEW_SQL = """
-WITH shift_pending AS MATERIALIZED (
-    SELECT
-        ns.article_id,
-        ns.external_importance_score,
-        sr.rank AS manual_rank,
-        ns.score,
-        ns.publish_time_iso,
-        CASE
-            WHEN ns.is_beijing_related THEN 'internal'
-            ELSE 'external'
-        END || '_' || CASE
-            WHEN lower(COALESCE(ns.sentiment_label, '')) = 'negative'
-                THEN 'negative'
-            ELSE 'positive'
-        END AS bucket_key
-    FROM duty_shifts s
-    JOIN news_summaries ns
-      ON ns.created_at >= s.starts_at
-     AND ns.created_at < s.ends_at
-    LEFT JOIN shift_reviews sr
-      ON sr.shift_id = s.id
-     AND sr.article_id = ns.article_id
-    WHERE s.id = %s
-      AND s.cancelled_at IS NULL
-      AND ns.status = 'ready_for_export'
-      AND COALESCE(sr.decision, 'pending') = 'pending'
-      AND COALESCE(sr.report_type, 'zongbao') = %s
-),
-cluster_items AS MATERIALIZED (
-    SELECT
-        mc.cluster_id,
-        mc.bucket_key,
-        cluster_item.article_id
-    FROM manual_clusters mc
-    CROSS JOIN LATERAL unnest(mc.item_ids)
-        AS cluster_item(article_id)
-),
-cluster_memberships AS (
-    SELECT
-        ci.cluster_id,
-        ci.bucket_key,
-        pending.article_id,
-        pending.external_importance_score,
-        pending.manual_rank,
-        pending.score,
-        pending.publish_time_iso
-    FROM cluster_items ci
-    JOIN shift_pending pending
-      ON pending.article_id = ci.article_id
-),
-unclustered_items AS (
-    SELECT
-        'single-' || pending.article_id AS cluster_id,
-        pending.bucket_key,
-        pending.article_id,
-        pending.external_importance_score,
-        pending.manual_rank,
-        pending.score,
-        pending.publish_time_iso
-    FROM shift_pending pending
-    LEFT JOIN cluster_items ci
-      ON ci.article_id = pending.article_id
-    WHERE ci.article_id IS NULL
-),
-all_cluster_items AS (
-    SELECT * FROM cluster_memberships
-    UNION ALL
-    SELECT * FROM unclustered_items
-),
-ranked_cluster_items AS (
-    SELECT
-        cluster_id,
-        bucket_key,
-        article_id,
-        external_importance_score,
-        manual_rank,
-        score,
-        publish_time_iso,
-        row_number() OVER (
-            PARTITION BY cluster_id
-            ORDER BY
-                external_importance_score DESC NULLS LAST,
-                manual_rank DESC NULLS LAST,
-                score DESC NULLS LAST,
-                publish_time_iso DESC NULLS LAST,
-                article_id
-        ) AS item_rank
-    FROM all_cluster_items
-)
-SELECT
-    cluster_id,
-    bucket_key,
-    array_agg(article_id ORDER BY item_rank) AS item_ids,
-    max(external_importance_score)
-        FILTER (WHERE item_rank = 1)
-        AS representative_external_importance_score,
-    max(manual_rank)
-        FILTER (WHERE item_rank = 1)
-        AS representative_manual_rank,
-    max(score)
-        FILTER (WHERE item_rank = 1)
-        AS representative_score,
-    max(publish_time_iso)
-        FILTER (WHERE item_rank = 1)
-        AS representative_publish_time
-FROM ranked_cluster_items
-GROUP BY cluster_id, bucket_key
-ORDER BY
-    representative_external_importance_score DESC NULLS LAST,
-    representative_manual_rank DESC NULLS LAST,
-    representative_score DESC NULLS LAST,
-    representative_publish_time DESC NULLS LAST,
-    cluster_id
-"""
-
-
 Row = dict[str, Any]
 Triple = tuple[Any, Any, tuple[Any, ...]]
+
+
+class RecordingCursor:
+    def __init__(self) -> None:
+        self.query: str | None = None
+        self.params: tuple[Any, ...] | None = None
+
+    def execute(self, query: str, params: tuple[Any, ...]) -> None:
+        self.query = query
+        self.params = params
+
+    def fetchall(self) -> list[Row]:
+        return []
+
+
+def _production_sql(*, shift_id: str, report_type: str) -> str:
+    cursor = RecordingCursor()
+    result = fetch_shift_clusters(
+        cursor,
+        shift_id=shift_id,
+        report_type=report_type,
+    )
+    expected_params = (shift_id, report_type)
+    if cursor.query is None:
+        raise AssertionError("fetch_shift_clusters did not execute SQL")
+    if cursor.params != expected_params:
+        raise AssertionError(
+            "Production SQL parameters do not match (shift_id, report_type): "
+            f"captured={cursor.params!r}"
+        )
+    if result:
+        raise AssertionError("Recording cursor unexpectedly returned rows")
+    return cursor.query
 
 
 def _connect() -> psycopg.Connection[Row]:
@@ -341,13 +258,17 @@ def main() -> None:
     )
     args = parser.parse_args()
     params = (args.shift_id, args.report_type)
+    new_sql = _production_sql(
+        shift_id=args.shift_id,
+        report_type=args.report_type,
+    )
 
     with _connect() as conn, conn.cursor() as cur:
         old_rows = _fetch_rows(cur, OLD_SQL, params)
-        new_rows = _fetch_rows(cur, NEW_SQL, params)
+        new_rows = _fetch_rows(cur, new_sql, params)
         _assert_equivalent(old_rows, new_rows)
         old_time_ms, _ = _explain(cur, OLD_SQL, params)
-        new_time_ms, new_plan = _explain(cur, NEW_SQL, params)
+        new_time_ms, new_plan = _explain(cur, new_sql, params)
 
     print(f"shift_id={args.shift_id}")
     print(f"report_type={args.report_type}")

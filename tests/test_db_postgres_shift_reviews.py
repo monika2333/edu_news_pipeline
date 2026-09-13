@@ -435,6 +435,7 @@ def test_shift_clusters_follow_current_representative_score_order() -> None:
     assert query.count("unnest(") == 1
     assert "cluster_items AS MATERIALIZED" in query
     assert "'single-' || pending.article_id" in query
+    assert "mc.created_at DESC" not in query
     assert cursor.params[-1] == (
         "shift-1",
         "zongbao",

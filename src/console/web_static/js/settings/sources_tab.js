@@ -1,17 +1,6 @@
-// 系统设置页 - 数据源页签：默认视图（已启用/未启用/每日任务分组、来源启停即时保存、
-// 需要账号的来源就地展开管理）与排序模式（上移/下移草稿 + 带版本号的保存）。
+// 系统设置页 - 数据源页签：每小时来源单列表（开关即写库的即时启停、行位置不随启停变化、
+// 需要账号的来源就地展开管理）与每日任务只读分组。
 'use strict';
-
-function moveSourceInDraft(key, delta) {
-    const index = state.sourcesDraft.indexOf(key);
-    const target = index + delta;
-    if (index < 0 || target < 0 || target >= state.sourcesDraft.length) return;
-    const next = [...state.sourcesDraft];
-    [next[index], next[target]] = [next[target], next[index]];
-    state.sourcesDraft = next;
-    markDirty('crawl_sources');
-    renderSourcesTab();
-}
 
 function sourceRequiresAccounts(key) {
     return accountSources().some((source) => source.key === key);
@@ -47,11 +36,6 @@ function applyAccountBadge(itemEl, badge, sourceKey) {
         badge.removeAttribute('title');
         delete badge.dataset.expandAccounts;
     }
-}
-
-function syncSortModeButton() {
-    const btn = document.getElementById('btn-sources-sort-mode');
-    if (btn) btn.disabled = state.sourceToggleInflight > 0;
 }
 
 // 启停请求进行中锁住面板内所有来源开关：第二个请求会基于过期列表计算，
@@ -95,7 +79,6 @@ function insertAccountsPanel(row, key) {
 }
 
 function expandSourceRow(key, { updateHash = true } = {}) {
-    if (state.sourcesMode !== 'default') return false;
     collapseSourceExpansion();
     state.accountSource = key;
     state.accountFilter = '';
@@ -122,8 +105,9 @@ function toggleSourceExpand(key) {
     }
 }
 
-// 来源启停即时保存：切换开关即写库（完整有序列表 + 当前版本号），不进草稿。
-// 失败时回滚开关视觉状态、行内显示错误、本地列表不动；成功用响应重排。
+// 来源启停即时保存：切换开关即写库（按目录序构造的完整启用列表 + 当前版本号），不进草稿。
+// 失败时回滚开关视觉状态、行内显示错误、行位置与本地列表不动；成功后整表重渲染，
+// 行位置始终由目录序决定，不随启停变化。
 async function toggleSourceEnabled(key, target, toggle, errorEl) {
     const section = settingsSection('crawl_sources');
     if (!section) {
@@ -137,13 +121,19 @@ async function toggleSourceEnabled(key, target, toggle, errorEl) {
         errorEl.textContent = '每小时来源不能为空，请至少保留一个来源。';
         return;
     }
-    const next = target
-        ? [...current, key]
-        : current.filter((item) => item !== key);
+    // 请求体按目录序构造：与后端规范化结果、页面渲染顺序三者保持一致
+    const enabledKeys = new Set(current);
+    if (target) {
+        enabledKeys.add(key);
+    } else {
+        enabledKeys.delete(key);
+    }
+    const next = sourceCatalog()
+        .filter((item) => !item.daily_only && enabledKeys.has(item.key))
+        .map((item) => item.key);
     toggle.disabled = true;
     state.sourceToggleInflight += 1;
     syncSourceToggles();
-    syncSortModeButton();
     try {
         const { response, payload } = await apiRequest('/api/admin/settings/crawl_sources', {
             method: 'PUT',
@@ -184,14 +174,15 @@ async function toggleSourceEnabled(key, target, toggle, errorEl) {
         state.sourceToggleInflight -= 1;
         syncSourceToggles();
         toggle.disabled = false;
-        syncSortModeButton();
     }
 }
 
-function buildSourceRow(key, { index = null, enabled }) {
+function buildSourceRow(key, { enabled }) {
     const item = createEl('li', 'settings-source-item', '', { dataset: { source: key } });
+    // 停用行只做视觉弱化（名称降灰）：行高、内边距与控件位置不变，开关切换时行不位移
+    if (!enabled) item.classList.add('is-disabled');
 
-    // 开关打头（与账号表「开关在最前」一致），序号、名称、账号数标签、展开箭头依次在后
+    // 开关打头（与账号表「开关在最前」一致），名称、账号数标签、展开箭头依次在后
     const toggle = createEl('input', 'settings-switch source-enabled-toggle', '', {
         type: 'checkbox',
         'aria-label': `${enabled ? '停用' : '启用'} ${sourceDisplayName(key)}`,
@@ -206,9 +197,6 @@ function buildSourceRow(key, { index = null, enabled }) {
     });
     item.appendChild(toggle);
 
-    if (index !== null) {
-        item.appendChild(createEl('span', 'settings-source-index', `${index + 1}`));
-    }
     item.appendChild(createEl('span', 'settings-source-name', sourceDisplayName(key)));
 
     if (sourceRequiresAccounts(key)) {
@@ -240,41 +228,20 @@ function renderSourcesDefaultView(panel, section) {
     panel.appendChild(createEl('p', 'settings-effect-note', '生效时间：下一轮抓取生效。'));
     panel.appendChild(buildLastModifiedLine(section));
 
-    const sortBtn = createEl('button', 'btn btn-secondary', '调整抓取顺序', {
-        id: 'btn-sources-sort-mode',
-        type: 'button',
-    });
-    sortBtn.disabled = state.sourceToggleInflight > 0;
-    sortBtn.addEventListener('click', enterSortMode);
-    panel.appendChild(sortBtn);
+    // 单一来源列表：全部非每日来源按 payload 目录序渲染（后端返回的启用列表也是目录序，
+    // 前端不再排序），开关状态即启停状态，启停不改变行位置
+    panel.appendChild(createEl('h3', 'settings-group-heading', '每小时来源'));
+    const list = createEl('ul', 'settings-source-list', '', { id: 'sources-list' });
+    sourceCatalog()
+        .filter((item) => !item.daily_only)
+        .forEach((source) => {
+            list.appendChild(buildSourceRow(source.key, {
+                enabled: section.value.includes(source.key),
+            }));
+        });
+    panel.appendChild(list);
 
-    panel.appendChild(createEl('h3', 'settings-group-heading', '已启用来源（按抓取顺序）'));
-    const enabledList = createEl('ul', 'settings-source-list', '', { id: 'sources-hourly-list' });
-    section.value.forEach((key, index) => {
-        enabledList.appendChild(buildSourceRow(key, { index, enabled: true }));
-    });
-    if (!section.value.length) {
-        enabledList.appendChild(createEl(
-            'li',
-            'settings-source-empty',
-            '每小时来源不能为空，请至少启用一个来源。',
-        ));
-    }
-    panel.appendChild(enabledList);
-
-    panel.appendChild(createEl('h3', 'settings-group-heading', '未启用来源'));
-    const availableList = createEl('ul', 'settings-source-list', '', { id: 'sources-available-list' });
-    const available = sourceCatalog().filter(
-        (item) => !item.daily_only && !section.value.includes(item.key),
-    );
-    if (!available.length) {
-        availableList.appendChild(createEl('li', 'settings-source-empty', '没有可启用的来源。'));
-    }
-    available.forEach((source) => {
-        availableList.appendChild(buildSourceRow(source.key, { enabled: false }));
-    });
-    panel.appendChild(availableList);
-
+    // 每日任务独立分组：只读行，由服务器计划任务调度，不在页面上启停
     const dailySources = sourceCatalog().filter((item) => item.daily_only);
     if (dailySources.length) {
         panel.appendChild(createEl('h3', 'settings-group-heading', '每日任务'));
@@ -285,7 +252,7 @@ function renderSourcesDefaultView(panel, section) {
             const item = createEl('li', 'settings-source-item is-readonly', '', {
                 dataset: { source: source.key },
             });
-            // 只读行没有开关，补一个与开关等宽的空占位，让三组行的名称左边缘对齐
+            // 只读行没有开关，补一个与开关等宽的空占位，让两组行的名称左边缘对齐
             item.appendChild(createEl('span', 'settings-source-toggle-placeholder'));
             item.appendChild(createEl('span', 'settings-source-name', source.display_name));
             item.appendChild(createEl(
@@ -298,7 +265,7 @@ function renderSourcesDefaultView(panel, section) {
         panel.appendChild(dailyList);
     }
 
-    // 重新渲染后恢复展开区（例如启停成功后的重排）
+    // 重新渲染后恢复展开区（例如启停成功后的重建）
     if (state.accountSource) {
         const key = state.accountSource;
         const row = panel.querySelector(`li[data-source="${key}"]`);
@@ -308,108 +275,6 @@ function renderSourcesDefaultView(panel, section) {
             state.accountSource = null;
         }
     }
-}
-
-function enterSortMode() {
-    const section = settingsSection('crawl_sources');
-    if (!section || state.sourceToggleInflight > 0) return;
-    collapseSourceExpansion();
-    state.sourcesMode = 'sort';
-    state.sourcesDraft = [...section.value];
-    renderSourcesTab();
-}
-
-function exitSortMode() {
-    state.sourcesMode = 'default';
-    state.sourcesDraft = null;
-}
-
-function buildSortListItem(key, index) {
-    const item = createEl('li', 'settings-source-item', '', { dataset: { source: key } });
-    item.appendChild(createEl('span', 'settings-source-index', `${index + 1}`));
-    item.appendChild(createEl('span', 'settings-source-name', sourceDisplayName(key)));
-    const actions = createEl('span', 'settings-source-actions');
-    const upBtn = createEl('button', 'btn btn-secondary', '上移', { type: 'button' });
-    upBtn.disabled = index === 0;
-    upBtn.addEventListener('click', () => moveSourceInDraft(key, -1));
-    const downBtn = createEl('button', 'btn btn-secondary', '下移', { type: 'button' });
-    downBtn.disabled = index === state.sourcesDraft.length - 1;
-    downBtn.addEventListener('click', () => moveSourceInDraft(key, 1));
-    actions.appendChild(upBtn);
-    actions.appendChild(downBtn);
-    item.appendChild(actions);
-    return item;
-}
-
-function renderSourcesSortMode(panel, section) {
-    panel.appendChild(createEl('p', 'settings-effect-note', '生效时间：下一轮抓取生效。'));
-    panel.appendChild(buildLastModifiedLine(section));
-    panel.appendChild(createEl(
-        'p',
-        'settings-sources-note',
-        '各来源按顺序抓取，并共用每轮的处理上限，排在前面的先消耗额度。',
-    ));
-
-    panel.appendChild(createEl('h3', 'settings-group-heading', '每小时来源（按抓取顺序）'));
-    const list = createEl('ol', 'settings-source-list', '', { id: 'sources-sort-list' });
-    state.sourcesDraft.forEach((key, index) => {
-        list.appendChild(buildSortListItem(key, index));
-    });
-    panel.appendChild(list);
-
-    const saveBar = createEl('div', 'settings-save-bar');
-    const saveBtn = createEl('button', 'btn btn-primary', '保存顺序', {
-        id: 'btn-sources-save',
-        type: 'button',
-    });
-    const cancelBtn = createEl('button', 'btn btn-secondary', '取消', {
-        id: 'btn-sources-cancel',
-        type: 'button',
-    });
-    const reloadBtn = createEl('button', 'btn btn-secondary', '载入最新配置', {
-        id: 'btn-sources-reload',
-        type: 'button',
-    });
-    reloadBtn.hidden = true;
-    const status = createEl('span', 'settings-save-status', '', { id: 'sources-save-status' });
-    saveBar.appendChild(saveBtn);
-    saveBar.appendChild(cancelBtn);
-    saveBar.appendChild(reloadBtn);
-    saveBar.appendChild(status);
-    panel.appendChild(saveBar);
-
-    saveBtn.addEventListener('click', async () => {
-        await saveSettingsSection('crawl_sources', [...state.sourcesDraft], {
-            statusEl: status,
-            saveBtn,
-            reloadBtn,
-            onSaved: () => {
-                exitSortMode();
-                renderSourcesTab();
-                showSettingsToast('数据源配置已保存');
-            },
-        });
-    });
-    cancelBtn.addEventListener('click', () => {
-        clearDirty('crawl_sources');
-        exitSortMode();
-        renderSourcesTab();
-        showSettingsToast('已放弃修改');
-    });
-    reloadBtn.addEventListener('click', async () => {
-        reloadBtn.disabled = true;
-        try {
-            await reloadSettingsPayload();
-            clearDirty('crawl_sources');
-            exitSortMode();
-            renderSourcesTab();
-            showSettingsToast('已载入最新配置');
-        } catch (error) {
-            setSettingsStatus(status, `载入失败：${error.message}`, 'error');
-        } finally {
-            reloadBtn.disabled = false;
-        }
-    });
 }
 
 function renderSourcesTab() {
@@ -424,10 +289,5 @@ function renderSourcesTab() {
         renderImportNotice(panel, '数据源配置');
         return;
     }
-    if (state.sourcesMode === 'sort' && state.sourcesDraft) {
-        renderSourcesSortMode(panel, section);
-        return;
-    }
-    state.sourcesMode = 'default';
     renderSourcesDefaultView(panel, section);
 }

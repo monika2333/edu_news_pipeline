@@ -12,13 +12,11 @@ const state = {
     accountSource: null,
     accounts: {},
     accountCounts: {},
-    dirty: { llm_models: false, crawl_sources: false },
-    saving: { llm_models: false, crawl_sources: false },
+    // 数据源页签没有草稿：来源启停即时写库，未保存守卫只服务模型页签
+    dirty: { llm_models: false },
+    saving: { llm_models: false },
     modelsDraft: null,
-    sourcesDraft: null,
-    // 数据源页签视图：default（分组 + 即时启停）或 sort（纯排序草稿）
-    sourcesMode: 'default',
-    // 进行中的来源启停请求数；非零时禁用全部来源开关与「调整抓取顺序」
+    // 进行中的来源启停请求数；非零时禁用面板内全部来源开关
     sourceToggleInflight: 0,
     // 展开区「添加账号」<details> 的开合状态：重渲染前从 DOM 捕获，恢复时还原；
     // 新展开一个来源时重置为折叠
@@ -171,8 +169,8 @@ async function reloadSettingsPayload() {
     state.payload = payload;
 }
 
-// 模型与数据源分区共用的保存流程：版本乐观锁、409 保留修改 + 手动载入最新、
-// 422 展示服务端原因、进行中防重复提交。
+// 分区保存的通用流程：版本乐观锁、409 保留修改 + 手动载入最新、
+// 422 展示服务端原因、进行中防重复提交。当前由模型页签使用。
 async function saveSettingsSection(section, value, controls) {
     if (state.saving[section]) return;
     const current = settingsSection(section);

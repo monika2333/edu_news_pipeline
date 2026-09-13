@@ -24,7 +24,6 @@
 
 .settings-effect-note,
 .settings-updated,
-.settings-sources-note,
 .settings-env-note,
 .settings-bulk-note {
     margin: 4px 0;
@@ -187,9 +186,10 @@
     font-weight: 600;
 }
 
-.settings-source-actions {
-    display: inline-flex;
-    gap: 6px;
+/* 停用来源的视觉弱化：只把名称降一档灰度，不改行高、内边距与控件位置，
+   开关切换时行不发生位移 */
+.settings-source-item.is-disabled .settings-source-name {
+    color: #94a3b8;
 }
 
 .settings-source-empty {
@@ -231,13 +231,6 @@
 .source-expand-toggle[aria-expanded="true"] {
     border-color: #2563eb;
     color: #2563eb;
-}
-
-.settings-source-index {
-    min-width: 20px;
-    color: #64748b;
-    font-size: 0.86rem;
-    text-align: right;
 }
 
 /* 胶囊滑块开关：账号行 .account-enabled-toggle 与来源行 .source-enabled-toggle 共用。
@@ -291,7 +284,7 @@
     outline-offset: 2px;
 }
 
-/* 每日任务只读行没有开关，用等宽占位让三组行的名称左边缘对齐 */
+/* 每日任务只读行没有开关，用等宽占位让两组行的名称左边缘对齐 */
 .settings-source-toggle-placeholder {
     width: 34px;
     flex: none;

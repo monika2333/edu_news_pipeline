@@ -224,7 +224,7 @@ function buildSourceRow(key, { enabled }) {
     return item;
 }
 
-function renderSourcesDefaultView(panel, section) {
+function renderSourcesPanel(panel, section) {
     panel.appendChild(createEl('p', 'settings-effect-note', '生效时间：下一轮抓取生效。'));
     panel.appendChild(buildLastModifiedLine(section));
 
@@ -289,5 +289,5 @@ function renderSourcesTab() {
         renderImportNotice(panel, '数据源配置');
         return;
     }
-    renderSourcesDefaultView(panel, section);
+    renderSourcesPanel(panel, section);
 }

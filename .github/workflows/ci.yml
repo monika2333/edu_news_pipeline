@@ -47,6 +47,16 @@ jobs:
       - name: 安装测试依赖
         run: pip install -r requirements-dev.txt
 
+      - name: 安装 Dbmate
+        env:
+          DBMATE_VERSION: "2.28.0"
+        run: |
+          curl -fsSL \
+            -o "$RUNNER_TEMP/dbmate" \
+            "https://github.com/amacneil/dbmate/releases/download/v${DBMATE_VERSION}/dbmate-linux-amd64"
+          sudo install -m 0755 "$RUNNER_TEMP/dbmate" /usr/local/bin/dbmate
+          dbmate --version
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

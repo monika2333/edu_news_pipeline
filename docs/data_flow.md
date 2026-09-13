@@ -58,9 +58,10 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 **写入**：`raw_articles`、`filtered_articles`
 
-每小时来源顺序来自 `app_settings.crawl_sources`；四类账号型来源只读取
+每小时来源集合来自 `app_settings.crawl_sources`，抓取顺序固定为 `SOURCE_CATALOG`
+的目录顺序；设置写入与运行时读取都会规范化为该顺序。四类账号型来源只读取
 `crawl_accounts` 中启用的行。流水线启动时读取一次业务配置，整轮不随控制台修改而
-变化；单次 `--sources` 仅覆盖本轮来源列表。
+变化；单次 `--sources` 仅覆盖本轮来源列表，并按命令行给定的顺序执行。
 
 各来源 adapter 抓取列表页后写入 `raw_articles`，同时做关键词初筛，命中的写入 `filtered_articles`。
 

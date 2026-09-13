@@ -214,7 +214,15 @@ def validate_llm_models(value: Any) -> dict[str, Any]:
 def validate_crawl_sources(value: Any, *, allow_daily: bool = False) -> list[str]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise ValueError("crawl_sources 必须是有序列表")
-    return normalize_source_list([str(item) for item in value], allow_daily=allow_daily)
+    normalized = normalize_source_list(
+        [str(item) for item in value],
+        allow_daily=allow_daily,
+    )
+    catalog_index = {
+        definition.key: index
+        for index, definition in enumerate(SOURCE_CATALOG)
+    }
+    return sorted(normalized, key=catalog_index.__getitem__)
 
 
 SECTION_VALIDATORS = {

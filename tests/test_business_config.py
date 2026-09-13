@@ -114,3 +114,59 @@ def test_m17_legacy_environment_and_files_emit_individual_warnings(
         for message in messages
     )
     assert "LLM_MODEL" in caplog.text
+
+
+def test_m21_crawl_sources_are_returned_in_catalog_order() -> None:
+    result = business_config.validate_crawl_sources(
+        ["gmw", "chinanews", "toutiao"]
+    )
+
+    assert result == ["toutiao", "chinanews", "gmw"]
+
+
+def test_m22_crawl_source_aliases_are_normalized_before_catalog_sorting() -> None:
+    result = business_config.validate_crawl_sources(["gmw", "qq", "toutiao"])
+
+    assert result == ["toutiao", "tencent", "gmw"]
+
+
+@pytest.mark.parametrize(
+    ("sources", "expected"),
+    [
+        (["bjrb", "toutiao"], ["toutiao", "bjrb"]),
+        (["ldwb", "bjrb", "toutiao"], ["toutiao", "bjrb", "ldwb"]),
+    ],
+)
+def test_m23_daily_only_sources_follow_catalog_order_when_allowed(
+    sources: list[str],
+    expected: list[str],
+) -> None:
+    assert business_config.validate_crawl_sources(
+        sources,
+        allow_daily=True,
+    ) == expected
+
+
+def test_m24_normalize_source_list_preserves_caller_order() -> None:
+    sources = ["gmw", "chinanews", "toutiao"]
+
+    assert business_config.normalize_source_list(
+        sources,
+        allow_daily=False,
+    ) == sources
+
+
+@pytest.mark.parametrize(
+    ("sources", "message"),
+    [
+        (["missing-source"], "未知来源"),
+        (["toutiao", "toutiao"], "来源重复"),
+        ([], "抓取来源列表不能为空"),
+    ],
+)
+def test_m25_crawl_source_validation_rejects_invalid_lists_before_sorting(
+    sources: list[str],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        business_config.validate_crawl_sources(sources)

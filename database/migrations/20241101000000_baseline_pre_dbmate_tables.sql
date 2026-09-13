@@ -121,5 +121,68 @@ create table if not exists public.manual_reviews (
     unique (article_id)
 );
 
+do $baseline$
+begin
+    if to_regprocedure('public.set_updated_at()') is null then
+        execute $function$
+            create function public.set_updated_at()
+            returns trigger
+            language plpgsql
+            as $body$
+            begin
+                new.updated_at = now();
+                return new;
+            end;
+            $body$
+        $function$;
+    end if;
+end
+$baseline$;
+
+do $baseline$
+begin
+    if not exists (
+        select 1
+        from pg_catalog.pg_trigger
+        where tgrelid = to_regclass('public.brief_batches')
+          and tgname = 'brief_batches_set_updated_at'
+          and not tgisinternal
+    ) then
+        execute 'create trigger brief_batches_set_updated_at before update on public.brief_batches for each row execute function public.set_updated_at()';
+    end if;
+
+    if not exists (
+        select 1
+        from pg_catalog.pg_trigger
+        where tgrelid = to_regclass('public.brief_items')
+          and tgname = 'brief_items_set_updated_at'
+          and not tgisinternal
+    ) then
+        execute 'create trigger brief_items_set_updated_at before update on public.brief_items for each row execute function public.set_updated_at()';
+    end if;
+
+    if not exists (
+        select 1
+        from pg_catalog.pg_trigger
+        where tgrelid = to_regclass('public.news_summaries')
+          and tgname = 'news_summaries_set_updated_at'
+          and not tgisinternal
+    ) then
+        execute 'create trigger news_summaries_set_updated_at before update on public.news_summaries for each row execute function public.set_updated_at()';
+    end if;
+
+    if to_regclass('public.toutiao_articles') is not null
+       and not exists (
+           select 1
+           from pg_catalog.pg_trigger
+           where tgrelid = to_regclass('public.toutiao_articles')
+             and tgname = 'toutiao_articles_set_updated_at'
+             and not tgisinternal
+       ) then
+        execute 'create trigger toutiao_articles_set_updated_at before update on public.toutiao_articles for each row execute function public.set_updated_at()';
+    end if;
+end
+$baseline$;
+
 -- migrate:down
 -- Intentionally empty: this historical baseline must never drop live tables.

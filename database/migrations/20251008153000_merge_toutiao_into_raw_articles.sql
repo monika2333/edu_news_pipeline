@@ -50,6 +50,33 @@ begin
     end if;
 end$$;
 
+-- Reconcile pre-Dbmate updated_at triggers with the live schema snapshot.
+do $triggers$
+begin
+    if to_regclass('public.brief_items') is not null
+       and exists (
+           select 1
+           from pg_catalog.pg_trigger
+           where tgrelid = to_regclass('public.brief_items')
+             and tgname = 'set_updated_at_brief_items'
+             and not tgisinternal
+       ) then
+        execute 'drop trigger set_updated_at_brief_items on public.brief_items';
+    end if;
+
+    if to_regclass('public.pipeline_runs') is not null
+       and not exists (
+           select 1
+           from pg_catalog.pg_trigger
+           where tgrelid = to_regclass('public.pipeline_runs')
+             and tgname = 'pipeline_runs_set_updated_at'
+             and not tgisinternal
+       ) then
+        execute 'create trigger pipeline_runs_set_updated_at before update on public.pipeline_runs for each row execute function public.set_updated_at()';
+    end if;
+end
+$triggers$;
+
 commit;
 
 

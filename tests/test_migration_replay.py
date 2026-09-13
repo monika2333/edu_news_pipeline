@@ -25,6 +25,15 @@ BACKDATED_MIGRATIONS = (
     "20250219090000_add_manual_llm_source_to_manual_reviews.sql",
     "20250304090000_add_report_type_to_manual_reviews.sql",
 )
+SCHEMA_CATEGORIES = (
+    "tables",
+    "columns",
+    "indexes",
+    "constraints",
+    "sequences",
+    "functions",
+    "triggers",
+)
 
 
 @contextmanager
@@ -226,11 +235,94 @@ def _schema_signature(connection: psycopg.Connection) -> dict[str, list[tuple[An
         ORDER BY c.relname, con.conname
         """
     ).fetchall()
+    sequences = connection.execute(
+        """
+        SELECT
+            sequence_class.relname,
+            pg_catalog.format_type(sequence.seqtypid, NULL),
+            sequence.seqstart,
+            sequence.seqincrement,
+            sequence.seqmin,
+            sequence.seqmax,
+            sequence.seqcache,
+            sequence.seqcycle,
+            owner_class.relname,
+            owner_attribute.attname
+        FROM pg_catalog.pg_class sequence_class
+        JOIN pg_catalog.pg_namespace namespace
+          ON namespace.oid = sequence_class.relnamespace
+        JOIN pg_catalog.pg_sequence sequence
+          ON sequence.seqrelid = sequence_class.oid
+        LEFT JOIN pg_catalog.pg_depend dependency
+          ON dependency.classid = 'pg_catalog.pg_class'::regclass
+         AND dependency.objid = sequence_class.oid
+         AND dependency.refclassid = 'pg_catalog.pg_class'::regclass
+         AND dependency.deptype IN ('a', 'i')
+        LEFT JOIN pg_catalog.pg_class owner_class
+          ON owner_class.oid = dependency.refobjid
+        LEFT JOIN pg_catalog.pg_attribute owner_attribute
+          ON owner_attribute.attrelid = dependency.refobjid
+         AND owner_attribute.attnum = dependency.refobjsubid
+        WHERE namespace.nspname = 'public'
+          AND sequence_class.relkind = 'S'
+        ORDER BY sequence_class.relname
+        """
+    ).fetchall()
+    functions = connection.execute(
+        """
+        SELECT
+            procedure.proname,
+            pg_catalog.pg_get_function_identity_arguments(procedure.oid),
+            pg_catalog.pg_get_function_result(procedure.oid),
+            language.lanname,
+            procedure.prokind,
+            procedure.provolatile,
+            procedure.proisstrict,
+            procedure.prosecdef,
+            procedure.proparallel,
+            pg_catalog.pg_get_functiondef(procedure.oid)
+        FROM pg_catalog.pg_proc procedure
+        JOIN pg_catalog.pg_namespace namespace
+          ON namespace.oid = procedure.pronamespace
+        JOIN pg_catalog.pg_language language
+          ON language.oid = procedure.prolang
+        WHERE namespace.nspname = 'public'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM pg_catalog.pg_depend dependency
+              WHERE dependency.classid = 'pg_catalog.pg_proc'::regclass
+                AND dependency.objid = procedure.oid
+                AND dependency.deptype = 'e'
+          )
+        ORDER BY procedure.proname,
+                 pg_catalog.pg_get_function_identity_arguments(procedure.oid)
+        """
+    ).fetchall()
+    triggers = connection.execute(
+        """
+        SELECT
+            relation.relname,
+            trigger.tgname,
+            trigger.tgenabled,
+            pg_catalog.pg_get_triggerdef(trigger.oid, true)
+        FROM pg_catalog.pg_trigger trigger
+        JOIN pg_catalog.pg_class relation
+          ON relation.oid = trigger.tgrelid
+        JOIN pg_catalog.pg_namespace namespace
+          ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = 'public'
+          AND NOT trigger.tgisinternal
+        ORDER BY relation.relname, trigger.tgname
+        """
+    ).fetchall()
     return {
         "tables": tables,
         "columns": columns,
         "indexes": indexes,
         "constraints": constraints,
+        "sequences": sequences,
+        "functions": functions,
+        "triggers": triggers,
     }
 
 
@@ -238,7 +330,7 @@ def _assert_matching_signatures(
     actual: dict[str, list[tuple[Any, ...]]],
     expected: dict[str, list[tuple[Any, ...]]],
 ) -> None:
-    for category in ("tables", "columns", "indexes", "constraints"):
+    for category in SCHEMA_CATEGORIES:
         actual_rows = set(actual[category])
         expected_rows = set(expected[category])
         assert actual_rows == expected_rows, (
@@ -258,6 +350,11 @@ def test_full_migration_replay_matches_schema_snapshot() -> None:
         with _connect(replay_database) as replay_connection:
             actual = _schema_signature(replay_connection)
 
+    assert "review_events_id_seq" in {row[0] for row in expected["sequences"]}
+    assert "set_updated_at" in {row[0] for row in expected["functions"]}
+    assert ("news_summaries", "news_summaries_set_updated_at") in {
+        row[:2] for row in expected["triggers"]
+    }
     _assert_matching_signatures(actual, expected)
 
 

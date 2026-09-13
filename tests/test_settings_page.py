@@ -100,3 +100,42 @@ def test_account_menu_includes_settings_entry(
 
     assert "系统设置" in html
     assert 'href="/admin/settings"' in html
+
+
+def test_m3_refresh_names_rejects_more_than_twenty_ids(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.console.settings_service.refresh_account_names",
+        lambda _ids: pytest.fail("oversized request reached the service"),
+    )
+    response = _build_client().post(
+        "/api/admin/crawl-accounts/refresh-names",
+        json={"account_ids": [f"account-{index}" for index in range(21)]},
+    )
+
+    assert response.status_code == 422
+
+
+def test_m4_patch_rejects_display_name_as_unknown_field(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.console.settings_service.update_account",
+        lambda *_args, **_kwargs: pytest.fail("display_name reached the service"),
+    )
+    response = _build_client().patch(
+        "/api/admin/crawl-accounts/account-1",
+        json={"display_name": "人工名称"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_duty_editor_cannot_refresh_account_names() -> None:
+    response = _build_client("duty_editor").post(
+        "/api/admin/crawl-accounts/refresh-names",
+        json={"account_ids": ["account-1"]},
+    )
+
+    assert response.status_code == 403

@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.adapters import db_postgres_core, llm_duplicate_review
+from src.adapters.account_profiles import AccountNameUnavailable
 from src.config import get_settings
 from src.console import manual_filter_duplicate_service, settings_service
 from src.console.app import create_app
@@ -432,3 +433,207 @@ def test_m19_account_preview_classifies_all_four_statuses(
         "existing_duplicate",
     ]
     assert items[2]["error"]
+
+
+class _AccountConfigFake:
+    def __init__(self, accounts: list[dict[str, Any]]) -> None:
+        self.accounts = {str(item["id"]): dict(item) for item in accounts}
+        self.article_names: dict[tuple[str, str], str] = {}
+        self.article_name_calls: list[tuple[str, str]] = []
+
+    def fetch_account(self, account_id: str) -> dict[str, Any] | None:
+        account = self.accounts.get(account_id)
+        return dict(account) if account else None
+
+    def fetch_accounts(self, source: str) -> list[dict[str, Any]]:
+        return [
+            dict(item)
+            for item in self.accounts.values()
+            if item["source"] == source
+        ]
+
+    def fetch_latest_account_article_source(
+        self,
+        *,
+        source: str,
+        normalized_identifier: str,
+    ) -> str | None:
+        self.article_name_calls.append((source, normalized_identifier))
+        return self.article_names.get((source, normalized_identifier))
+
+    def record_crawl_account_name_success(
+        self,
+        *,
+        account_id: str,
+        display_name: str,
+    ) -> dict[str, Any]:
+        account = self.accounts[account_id]
+        account["display_name"] = display_name
+        account["display_name_synced_at"] = "now"
+        account["display_name_error"] = None
+        return dict(account)
+
+    def record_crawl_account_name_failure(
+        self,
+        *,
+        account_id: str,
+        error: str,
+    ) -> dict[str, Any]:
+        account = self.accounts[account_id]
+        account["display_name_error"] = error
+        return dict(account)
+
+    def create_crawl_account_as_user(self, **kwargs: Any) -> dict[str, Any]:
+        account = {
+            "id": "created-id",
+            **kwargs,
+            "display_name_synced_at": None,
+            "display_name_error": None,
+        }
+        account.pop("actor_user_id")
+        self.accounts["created-id"] = account
+        return dict(account)
+
+
+def _account_row(
+    account_id: str,
+    *,
+    source: str = "tencent",
+    display_name: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": account_id,
+        "source": source,
+        "normalized_identifier": f"identifier-{account_id}",
+        "original_input": f"identifier-{account_id}",
+        "profile_url": f"https://example.test/{account_id}",
+        "display_name": display_name,
+        "display_name_synced_at": None,
+        "display_name_error": None,
+        "updated_by_user_id": "original-editor",
+    }
+
+
+def test_refresh_names_covers_resolved_unchanged_failed_and_m2_skipped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app_config = _AccountConfigFake(
+        [
+            _account_row("resolved"),
+            _account_row("unchanged", display_name="原名"),
+            _account_row("failed", display_name="保留名"),
+            _account_row("skipped"),
+        ]
+    )
+    adapter = SimpleNamespace(app_config=app_config)
+    monkeypatch.setattr(settings_service, "get_adapter", lambda: adapter)
+    clock = iter([0.0, 1.0, 2.0, 3.0, 31.0])
+    monkeypatch.setattr(settings_service.time, "monotonic", lambda: next(clock))
+
+    def resolve(source: str, **kwargs: Any) -> str:
+        identifier = kwargs["normalized_identifier"]
+        if identifier == "identifier-resolved":
+            return "新名称"
+        if identifier == "identifier-unchanged":
+            return "原名"
+        raise AccountNameUnavailable("主页返回 404")
+
+    monkeypatch.setattr(settings_service, "resolve_account_name", resolve)
+
+    items = settings_service.refresh_account_names(
+        ["resolved", "unchanged", "failed", "skipped"]
+    )
+
+    assert [item["status"] for item in items] == [
+        "resolved",
+        "unchanged",
+        "failed",
+        "skipped",
+    ]
+    assert items[0]["account"]["display_name"] == "新名称"
+    assert items[1]["account"]["display_name_synced_at"] == "now"
+    assert items[2]["account"] is None
+    assert items[2]["error"] == "主页返回 404"
+    assert app_config.accounts["failed"]["display_name"] == "保留名"
+    assert items[3]["account"] is None
+    assert "30 秒" in items[3]["error"]
+
+
+def test_toutiao_uses_database_before_http_and_tencent_falls_back_after_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    toutiao = _account_row("tt", source="toutiao")
+    tencent = _account_row("tx", source="tencent")
+    app_config = _AccountConfigFake([toutiao, tencent])
+    app_config.article_names[("toutiao", "identifier-tt")] = "头条库内名"
+    app_config.article_names[("tencent", "identifier-tx")] = "腾讯库内名"
+    adapter = SimpleNamespace(app_config=app_config)
+    calls: list[str] = []
+
+    def unavailable(source: str, **kwargs: Any) -> str:
+        calls.append(source)
+        raise AccountNameUnavailable("HTTP 失败")
+
+    monkeypatch.setattr(settings_service, "resolve_account_name", unavailable)
+
+    assert settings_service._resolve_account_name_with_fallback(
+        adapter, toutiao, timeout=8
+    ) == "头条库内名"
+    assert settings_service._resolve_account_name_with_fallback(
+        adapter, tencent, timeout=8
+    ) == "腾讯库内名"
+    assert calls == ["tencent"]
+
+
+@pytest.mark.parametrize("source", ["btime", "beijinghao"])
+def test_btime_and_beijinghao_never_use_article_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+) -> None:
+    account = _account_row("one", source=source)
+    app_config = _AccountConfigFake([account])
+    adapter = SimpleNamespace(app_config=app_config)
+    monkeypatch.setattr(
+        settings_service,
+        "resolve_account_name",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AccountNameUnavailable("HTTP 失败")
+        ),
+    )
+
+    with pytest.raises(AccountNameUnavailable, match="HTTP 失败"):
+        settings_service._resolve_account_name_with_fallback(
+            adapter,
+            account,
+            timeout=8,
+        )
+
+    assert app_config.article_name_calls == []
+
+
+def test_m7_create_api_returns_201_and_records_resolution_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app_config = _AccountConfigFake([])
+    adapter = SimpleNamespace(app_config=app_config)
+    observed_timeouts: list[float] = []
+    monkeypatch.setattr(settings_service, "get_adapter", lambda: adapter)
+
+    def fail_resolution(source: str, **kwargs: Any) -> str:
+        observed_timeouts.append(float(kwargs["timeout"]))
+        raise AccountNameUnavailable("页面里没有找到账号名")
+
+    monkeypatch.setattr(settings_service, "resolve_account_name", fail_resolution)
+    monkeypatch.setattr("src.console.app.warn_legacy_config", lambda: [])
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _admin
+
+    response = TestClient(app).post(
+        "/api/admin/crawl-accounts",
+        json={"source": "toutiao", "text": "token-1"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["item"]["display_name"] is None
+    assert response.json()["item"]["display_name_error"] == "页面里没有找到账号名"
+    assert observed_timeouts == [5.0]

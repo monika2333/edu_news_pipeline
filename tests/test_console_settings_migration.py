@@ -30,6 +30,12 @@ MIGRATION_PATH = (
     / "migrations"
     / "20260911100000_add_console_managed_settings.sql"
 )
+ACCOUNT_NAMES_MIGRATION_PATH = (
+    Path(__file__).parents[1]
+    / "database"
+    / "migrations"
+    / "20260913120000_sync_crawl_account_display_names.sql"
+)
 ADMIN_ID = "00000000-0000-0000-0000-000000000201"
 
 
@@ -71,6 +77,12 @@ def _isolated_database() -> Iterator[psycopg.Connection]:
 
 def _migration_parts() -> tuple[str, str]:
     source = MIGRATION_PATH.read_text(encoding="utf-8")
+    up, down = source.split("-- migrate:down", maxsplit=1)
+    return up.split("-- migrate:up", maxsplit=1)[1], down
+
+
+def _account_names_migration_parts() -> tuple[str, str]:
+    source = ACCOUNT_NAMES_MIGRATION_PATH.read_text(encoding="utf-8")
     up, down = source.split("-- migrate:down", maxsplit=1)
     return up.split("-- migrate:up", maxsplit=1)[1], down
 
@@ -210,6 +222,52 @@ def test_migration_up_and_down_create_all_configuration_storage() -> None:
         assert remaining_snapshot is None
 
 
+def test_account_name_columns_migration_up_and_down() -> None:
+    base_up, _base_down = _migration_parts()
+    up_sql, down_sql = _account_names_migration_parts()
+    with _isolated_database() as connection:
+        _create_legacy_schema(connection)
+        connection.execute(base_up)
+
+        connection.execute(up_sql)
+        columns = connection.execute(
+            """
+            SELECT column_name, data_type, is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'crawl_accounts'
+              AND column_name = ANY(%s)
+            ORDER BY column_name
+            """,
+            (["display_name_error", "display_name_synced_at"],),
+        ).fetchall()
+        assert columns == [
+            {
+                "column_name": "display_name_error",
+                "data_type": "text",
+                "is_nullable": "YES",
+            },
+            {
+                "column_name": "display_name_synced_at",
+                "data_type": "timestamp with time zone",
+                "is_nullable": "YES",
+            },
+        ]
+
+        connection.execute(down_sql)
+        remaining = connection.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'crawl_accounts'
+              AND column_name = ANY(%s)
+            """,
+            (["display_name_error", "display_name_synced_at"],),
+        ).fetchall()
+        assert remaining == []
+
+
 def test_m5_stale_put_returns_409_and_keeps_current_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -314,9 +372,11 @@ def test_m10_runtime_query_excludes_disabled_accounts() -> None:
 
 def test_single_table_config_writes_are_exposed_only_by_namespace() -> None:
     up_sql, _down_sql = _migration_parts()
+    names_up, _names_down = _account_names_migration_parts()
     with _isolated_database() as connection:
         _create_legacy_schema(connection)
         connection.execute(up_sql)
+        connection.execute(names_up)
         adapter = PostgresAdapter(connection)
         adapter.import_app_config(sections=_sections(), accounts=[])
 
@@ -341,21 +401,111 @@ def test_single_table_config_writes_are_exposed_only_by_namespace() -> None:
         )
         updated = adapter.app_config.update_crawl_account_as_user(
             account_id=str(created["id"]),
-            display_name="账号一",
-            set_display_name=True,
             enabled=False,
             set_enabled=True,
             actor_user_id=ADMIN_ID,
+        )
+        named = adapter.app_config.record_crawl_account_name_success(
+            account_id=str(created["id"]),
+            display_name="账号一",
         )
         deleted = adapter.app_config.delete_crawl_account_as_user(
             account_id=str(bulk_created[0]["id"]),
         )
 
-        assert updated["display_name"] == "账号一"
         assert updated["enabled"] is False
+        assert named["display_name"] == "账号一"
+        assert named["display_name_synced_at"] is not None
         assert deleted["normalized_identifier"] == "two"
         assert not hasattr(adapter, "create_crawl_account_as_user")
         assert not hasattr(adapter, "delete_crawl_account_as_user")
+
+
+def test_m1_name_failure_preserves_existing_name_and_m8_system_writes_keep_modifier() -> None:
+    base_up, _base_down = _migration_parts()
+    names_up, _names_down = _account_names_migration_parts()
+    with _isolated_database() as connection:
+        _create_legacy_schema(connection)
+        connection.execute(base_up)
+        connection.execute(names_up)
+        adapter = PostgresAdapter(connection)
+        created = adapter.app_config.create_crawl_account_as_user(
+            source="toutiao",
+            normalized_identifier="one",
+            original_input="one",
+            profile_url="https://example.test/account",
+            display_name="人工旧名",
+            actor_user_id=ADMIN_ID,
+        )
+
+        failed = adapter.app_config.record_crawl_account_name_failure(
+            account_id=str(created["id"]),
+            error="页面里没有找到账号名",
+        )
+        resolved = adapter.app_config.record_crawl_account_name_success(
+            account_id=str(created["id"]),
+            display_name="系统真名",
+        )
+
+        assert failed["display_name"] == "人工旧名"
+        assert failed["display_name_synced_at"] is None
+        assert str(failed["updated_by_user_id"]) == ADMIN_ID
+        assert resolved["display_name"] == "系统真名"
+        assert resolved["display_name_error"] is None
+        assert str(resolved["updated_by_user_id"]) == ADMIN_ID
+
+
+def test_m5_article_name_fallback_matches_token_and_uses_latest_nonempty_source() -> None:
+    base_up, _base_down = _migration_parts()
+    names_up, _names_down = _account_names_migration_parts()
+    with _isolated_database() as connection:
+        _create_legacy_schema(connection)
+        connection.execute(base_up)
+        connection.execute(names_up)
+        connection.execute(
+            """
+            CREATE TABLE raw_articles (
+                token text,
+                profile_url text,
+                article_id text PRIMARY KEY,
+                source text,
+                fetched_at timestamptz NOT NULL,
+                created_at timestamptz NOT NULL
+            )
+            """
+        )
+        adapter = PostgresAdapter(connection)
+        adapter.app_config.create_crawl_account_as_user(
+            source="toutiao",
+            normalized_identifier="token-1",
+            original_input="token-1",
+            profile_url="https://example.test/account-profile",
+            display_name=None,
+            actor_user_id=ADMIN_ID,
+        )
+        connection.execute(
+            """
+            INSERT INTO raw_articles (
+                token, profile_url, article_id, source, fetched_at, created_at
+            ) VALUES
+                ('token-1', 'https://example.test/not-account', 'old', '旧名称', '2026-01-01', '2026-01-01'),
+                ('token-1', 'https://example.test/not-account', 'new', '新名称', '2026-02-01', '2026-02-01'),
+                ('token-1', 'https://example.test/not-account', 'empty', '   ', '2026-03-01', '2026-03-01')
+            """
+        )
+
+        assert adapter.app_config.fetch_latest_account_article_source(
+            source="toutiao",
+            normalized_identifier="token-1",
+        ) == "新名称"
+        assert adapter.app_config.fetch_latest_account_article_source(
+            source="btime",
+            normalized_identifier="token-1",
+        ) is None
+        assert adapter.app_config.fetch_latest_account_article_source(
+            source="beijinghao",
+            normalized_identifier="token-1",
+        ) is None
 
 
 def test_m18_process_adapter_persists_the_effective_config_snapshot() -> None:

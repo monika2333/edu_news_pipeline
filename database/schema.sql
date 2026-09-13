@@ -182,7 +182,9 @@ CREATE TABLE public.crawl_accounts (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     created_by_user_id uuid,
-    updated_by_user_id uuid
+    updated_by_user_id uuid,
+    display_name_synced_at timestamp with time zone,
+    display_name_error text
 );
 
 
@@ -1875,4 +1877,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260903120000'),
     ('20260904120000'),
     ('20260910120000'),
-    ('20260911100000');
+    ('20260911100000'),
+    ('20260913120000');

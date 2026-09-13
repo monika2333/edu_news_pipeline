@@ -5,6 +5,10 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 
+from src.adapters.account_profiles import (
+    AccountNameUnavailable,
+    resolve_account_name,
+)
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.http_beijinghao import parse_column_input
 from src.adapters.http_btime import parse_uid_input
@@ -276,16 +280,18 @@ def create_account(
     *,
     source: str,
     text: str,
-    display_name: Optional[str],
     actor: ConsoleUser,
 ) -> dict[str, Any]:
     actor_user_id = _require_actor(actor)
     parsed = parse_account(source, text)
-    return get_adapter().app_config.create_crawl_account_as_user(
+    adapter = get_adapter()
+    created = adapter.app_config.create_crawl_account_as_user(
         **parsed,
-        display_name=(display_name or "").strip() or None,
+        display_name=None,
         actor_user_id=actor_user_id,
     )
+    _resolve_and_record_account_name(adapter, created, timeout=5.0)
+    return _account_payload(adapter, str(created["id"]), str(created["source"]))
 
 
 def bulk_create_accounts(
@@ -328,22 +334,137 @@ def bulk_create_accounts(
 def update_account(
     account_id: str,
     *,
-    display_name: Optional[str],
-    set_display_name: bool,
     enabled: Optional[bool],
     set_enabled: bool,
     actor: ConsoleUser,
 ) -> dict[str, Any]:
-    if not set_display_name and not set_enabled:
+    if not set_enabled:
         raise ValueError("至少提交一个可修改字段")
     return get_adapter().app_config.update_crawl_account_as_user(
         account_id=account_id,
-        display_name=(display_name or "").strip() or None,
-        set_display_name=set_display_name,
         enabled=enabled,
         set_enabled=set_enabled,
         actor_user_id=_require_actor(actor),
     )
+
+
+def _account_payload(adapter: Any, account_id: str, source: str) -> dict[str, Any]:
+    for row in adapter.app_config.fetch_accounts(source):
+        if str(row["id"]) == account_id:
+            return row
+    raise KeyError(account_id)
+
+
+def _stored_account_name(adapter: Any, account: Mapping[str, Any]) -> Optional[str]:
+    return adapter.app_config.fetch_latest_account_article_source(
+        source=str(account["source"]),
+        normalized_identifier=str(account["normalized_identifier"]),
+    )
+
+
+def _resolve_account_name_with_fallback(
+    adapter: Any,
+    account: Mapping[str, Any],
+    *,
+    timeout: float,
+) -> str:
+    source = str(account["source"])
+    if source == "toutiao":
+        stored = _stored_account_name(adapter, account)
+        if stored:
+            return stored[:200]
+    try:
+        return resolve_account_name(
+            source,
+            normalized_identifier=str(account["normalized_identifier"]),
+            profile_url=str(account["profile_url"]),
+            timeout=min(8.0, timeout),
+        )
+    except AccountNameUnavailable:
+        if source == "tencent":
+            stored = _stored_account_name(adapter, account)
+            if stored:
+                return stored[:200]
+        raise
+
+
+def _resolve_and_record_account_name(
+    adapter: Any,
+    account: Mapping[str, Any],
+    *,
+    timeout: float,
+) -> tuple[str, Optional[str]]:
+    try:
+        name = _resolve_account_name_with_fallback(
+            adapter,
+            account,
+            timeout=timeout,
+        )
+    except Exception as exc:
+        if isinstance(exc, AccountNameUnavailable):
+            error = str(exc) or "未能解析账号名"
+        else:
+            error = "解析账号名失败"
+        error = error[:200]
+        adapter.app_config.record_crawl_account_name_failure(
+            account_id=str(account["id"]),
+            error=error,
+        )
+        return "failed", error
+    status = "unchanged" if name == account.get("display_name") else "resolved"
+    adapter.app_config.record_crawl_account_name_success(
+        account_id=str(account["id"]),
+        display_name=name,
+    )
+    return status, None
+
+
+def refresh_account_names(account_ids: list[str]) -> list[dict[str, Any]]:
+    adapter = get_adapter()
+    deadline = time.monotonic() + 30.0
+    items: list[dict[str, Any]] = []
+    for index, account_id in enumerate(account_ids):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            items.extend(
+                {
+                    "id": skipped_id,
+                    "status": "skipped",
+                    "account": None,
+                    "error": "名称刷新已达到 30 秒预算",
+                }
+                for skipped_id in account_ids[index:]
+            )
+            break
+        account = adapter.app_config.fetch_account(account_id)
+        if account is None:
+            items.append(
+                {
+                    "id": account_id,
+                    "status": "failed",
+                    "account": None,
+                    "error": "账号不存在",
+                }
+            )
+            continue
+        status, error = _resolve_and_record_account_name(
+            adapter,
+            account,
+            timeout=min(8.0, remaining),
+        )
+        items.append(
+            {
+                "id": account_id,
+                "status": status,
+                "account": (
+                    _account_payload(adapter, account_id, str(account["source"]))
+                    if status != "failed"
+                    else None
+                ),
+                "error": error,
+            }
+        )
+    return items
 
 
 def delete_account(account_id: str, *, actor: ConsoleUser) -> dict[str, Any]:
@@ -529,6 +650,7 @@ __all__ = [
     "parse_account",
     "preview_accounts",
     "preview_legacy_import",
+    "refresh_account_names",
     "test_llm_model",
     "update_account",
     "update_setting",

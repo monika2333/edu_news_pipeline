@@ -64,6 +64,8 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 各来源 adapter 抓取列表页后写入 `raw_articles`，同时做关键词初筛，命中的写入 `filtered_articles`。
 
+账号名称由控制台解析并写入 `crawl_accounts.display_name`；抓取流程本身不回写账号名。头条优先使用、腾讯在官方接口失败后使用同一账号在 `raw_articles` 中最近一条非空记录的 `token → source` 作为兜底；北京时间和北京号不使用这条兜底。
+
 `raw_articles` 的抓取分两步：先写列表信息（`upsert_raw_feed_rows`），再补正文（`update_raw_article_details`，同时写 `detail_fetched_at`）。
 
 > **`detail_fetched_at` 是"正文是否已获取"的判据。** `crawl` 命令靠它找出缺正文的行。任何新的入库路径都必须遵守这个两阶段约定——如果一次性写入正文却不写 `detail_fetched_at`，这条数据会被 `crawl` 的详情补抓逻辑反复扫描；反之如果写了 `detail_fetched_at` 但正文为空，这条数据会被永久跳过。
@@ -286,7 +288,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | 表 | 职责 |
 |---|---|
 | `app_settings` | 分区保存模型和每小时来源配置；版本号用于控制台乐观锁 |
-| `crawl_accounts` | 四类账号型来源的账号权威清单；运行时只读取启用行 |
+| `crawl_accounts` | 四类账号型来源的账号权威清单；`display_name` 是系统解析的名称，`display_name_synced_at` / `display_name_error` 记录最近成功时间或失败原因；运行时只读取启用行 |
 | `console_users` / `console_user_sessions` | 账号与登录会话 |
 | `review_events` | 审计日志，记录谁在什么时候改了什么 |
 | `pipeline_runs` / `pipeline_run_steps` | 流水线执行记录；`config_snapshot` 保存本轮各步骤解析后的模型与 reasoning、实际来源、启用账号和配置版本 |

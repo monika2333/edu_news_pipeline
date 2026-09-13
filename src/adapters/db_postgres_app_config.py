@@ -50,6 +50,19 @@ class AppConfigNamespace:
         with self._adapter._cursor() as cur:
             return fetch_account(cur, account_id)
 
+    def fetch_latest_account_article_source(
+        self,
+        *,
+        source: str,
+        normalized_identifier: str,
+    ) -> Optional[str]:
+        with self._adapter._cursor() as cur:
+            return fetch_latest_account_article_source(
+                cur,
+                source=source,
+                normalized_identifier=normalized_identifier,
+            )
+
     def update_app_setting_as_user(
         self,
         *,
@@ -116,8 +129,6 @@ class AppConfigNamespace:
         self,
         *,
         account_id: str,
-        display_name: Optional[str],
-        set_display_name: bool,
         enabled: Optional[bool],
         set_enabled: bool,
         actor_user_id: str,
@@ -126,11 +137,35 @@ class AppConfigNamespace:
             return update_account(
                 cur,
                 account_id=account_id,
-                display_name=display_name,
-                set_display_name=set_display_name,
                 enabled=enabled,
                 set_enabled=set_enabled,
                 actor_user_id=actor_user_id,
+            )
+
+    def record_crawl_account_name_success(
+        self,
+        *,
+        account_id: str,
+        display_name: str,
+    ) -> dict[str, Any]:
+        with self._adapter.transaction() as cur:
+            return record_account_name_success(
+                cur,
+                account_id=account_id,
+                display_name=display_name,
+            )
+
+    def record_crawl_account_name_failure(
+        self,
+        *,
+        account_id: str,
+        error: str,
+    ) -> dict[str, Any]:
+        with self._adapter.transaction() as cur:
+            return record_account_name_failure(
+                cur,
+                account_id=account_id,
+                error=error,
             )
 
     def delete_crawl_account_as_user(
@@ -276,6 +311,33 @@ def find_account(
     return dict(row) if row else None
 
 
+def fetch_latest_account_article_source(
+    cur: psycopg.Cursor,
+    *,
+    source: str,
+    normalized_identifier: str,
+) -> Optional[str]:
+    if source not in {"toutiao", "tencent"}:
+        return None
+    cur.execute(
+        """
+        SELECT r.source
+        FROM raw_articles r
+        JOIN crawl_accounts a
+          ON a.normalized_identifier = r.token
+        WHERE a.source = %s
+          AND a.normalized_identifier = %s
+          AND r.source IS NOT NULL
+          AND btrim(r.source) <> ''
+        ORDER BY r.fetched_at DESC, r.created_at DESC, r.article_id DESC
+        LIMIT 1
+        """,
+        (source, normalized_identifier),
+    )
+    row = cur.fetchone()
+    return str(row["source"]).strip() if row else None
+
+
 def insert_account(
     cur: psycopg.Cursor,
     *,
@@ -319,8 +381,6 @@ def update_account(
     cur: psycopg.Cursor,
     *,
     account_id: str,
-    display_name: Optional[str],
-    set_display_name: bool,
     enabled: Optional[bool],
     set_enabled: bool,
     actor_user_id: str,
@@ -330,21 +390,62 @@ def update_account(
     cur.execute(
         """
         UPDATE crawl_accounts
-        SET display_name = CASE WHEN %s THEN %s ELSE display_name END,
-            enabled = CASE WHEN %s THEN %s ELSE enabled END,
+        SET enabled = CASE WHEN %s THEN %s ELSE enabled END,
             updated_at = now(),
             updated_by_user_id = %s
         WHERE id = %s
         RETURNING *
         """,
         (
-            set_display_name,
-            display_name,
             set_enabled,
             enabled,
             actor_user_id,
             account_id,
         ),
+    )
+    return dict(cur.fetchone())
+
+
+def record_account_name_success(
+    cur: psycopg.Cursor,
+    *,
+    account_id: str,
+    display_name: str,
+) -> dict[str, Any]:
+    if fetch_account(cur, account_id, for_update=True) is None:
+        raise KeyError(account_id)
+    cur.execute(
+        """
+        UPDATE crawl_accounts
+        SET display_name = %s,
+            display_name_synced_at = now(),
+            display_name_error = NULL,
+            updated_at = now()
+        WHERE id = %s
+        RETURNING *
+        """,
+        (display_name, account_id),
+    )
+    return dict(cur.fetchone())
+
+
+def record_account_name_failure(
+    cur: psycopg.Cursor,
+    *,
+    account_id: str,
+    error: str,
+) -> dict[str, Any]:
+    if fetch_account(cur, account_id, for_update=True) is None:
+        raise KeyError(account_id)
+    cur.execute(
+        """
+        UPDATE crawl_accounts
+        SET display_name_error = %s,
+            updated_at = now()
+        WHERE id = %s
+        RETURNING *
+        """,
+        (error, account_id),
     )
     return dict(cur.fetchone())
 
@@ -402,11 +503,14 @@ __all__ = [
     "fetch_account",
     "fetch_accounts",
     "fetch_enabled_accounts",
+    "fetch_latest_account_article_source",
     "fetch_setting",
     "fetch_settings",
     "find_account",
     "import_config_bundle",
     "insert_account",
+    "record_account_name_failure",
+    "record_account_name_success",
     "update_account",
     "update_setting",
 ]

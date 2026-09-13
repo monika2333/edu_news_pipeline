@@ -16,6 +16,7 @@ from src.console.settings_schemas import (
     CrawlAccountBulkRequest,
     CrawlAccountCreateRequest,
     CrawlAccountPreviewRequest,
+    CrawlAccountRefreshNamesRequest,
     CrawlAccountUpdateRequest,
     ModelTestRequest,
     SettingUpdateRequest,
@@ -88,7 +89,6 @@ def post_crawl_account(
         item = settings_service.create_account(
             source=payload.source,
             text=payload.text,
-            display_name=payload.display_name,
             actor=user,
         )
     except Exception as exc:
@@ -128,19 +128,23 @@ def patch_crawl_account(
     payload: CrawlAccountUpdateRequest,
     user: ConsoleUser = Depends(require_role("admin")),
 ) -> dict[str, Any]:
-    fields = payload.model_fields_set
     try:
         item = settings_service.update_account(
             account_id,
-            display_name=payload.display_name,
-            set_display_name="display_name" in fields,
             enabled=payload.enabled,
-            set_enabled="enabled" in fields,
+            set_enabled="enabled" in payload.model_fields_set,
             actor=user,
         )
     except Exception as exc:
         _raise_service_error(exc)
     return {"item": item}
+
+
+@router.post("/crawl-accounts/refresh-names")
+def refresh_crawl_account_names(
+    payload: CrawlAccountRefreshNamesRequest,
+) -> dict[str, Any]:
+    return {"items": settings_service.refresh_account_names(payload.account_ids)}
 
 
 @router.delete("/crawl-accounts/{account_id}")

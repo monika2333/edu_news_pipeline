@@ -1827,6 +1827,7 @@ ALTER TABLE ONLY public.submitted_report_items
 --
 
 INSERT INTO public.schema_migrations (version) VALUES
+    ('20241101000000'),
     ('20241112105800'),
     ('20250219090000'),
     ('20250304090000'),

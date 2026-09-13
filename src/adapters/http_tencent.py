@@ -165,8 +165,21 @@ def _request_with_retries(
     raise RuntimeError("Unexpected empty response without exception")
 
 
-def _safe_request_json(session: requests.Session, url: str, params: Dict[str, Any]) -> Dict[str, Any]:
-    resp = _request_with_retries(session, url, params=params, timeout=10)
+def _safe_request_json(
+    session: requests.Session,
+    url: str,
+    params: Dict[str, Any],
+    *,
+    timeout: int = 10,
+    retries: int = REQUEST_RETRIES,
+) -> Dict[str, Any]:
+    resp = _request_with_retries(
+        session,
+        url,
+        params=params,
+        timeout=timeout,
+        retries=retries,
+    )
     data = resp.json()
     ret = data.get("ret")
     if ret not in (None, 0):
@@ -175,7 +188,13 @@ def _safe_request_json(session: requests.Session, url: str, params: Dict[str, An
     return data
 
 
-def fetch_author_profile(author_id: str, *, session: Optional[requests.Session] = None) -> Dict[str, Any]:
+def fetch_author_profile(
+    author_id: str,
+    *,
+    session: Optional[requests.Session] = None,
+    timeout: int = 10,
+    retries: int = REQUEST_RETRIES,
+) -> Dict[str, Any]:
     sess = session or _session()
     params = {
         "guestSuid": author_id,
@@ -183,7 +202,13 @@ def fetch_author_profile(author_id: str, *, session: Optional[requests.Session] 
         "from_scene": "103",
         "isInGuest": "1",
     }
-    data = _safe_request_json(sess, AUTHOR_INFO_API, params)
+    data = _safe_request_json(
+        sess,
+        AUTHOR_INFO_API,
+        params,
+        timeout=timeout,
+        retries=retries,
+    )
     userinfo = data.get("userinfo") or {}
     if not userinfo:
         raise RuntimeError(f"No author info returned for {author_id}")

@@ -8,7 +8,7 @@ do $$
 begin
     if to_regclass('public.toutiao_articles') is not null
        and to_regclass('public.raw_articles') is not null then
-        execute $$
+        execute $merge$
             INSERT INTO public.raw_articles (
                 token,
                 profile_url,
@@ -46,7 +46,7 @@ begin
                 updated_at
             FROM public.toutiao_articles
             ON CONFLICT (article_id) DO NOTHING
-        $$;
+        $merge$;
     end if;
 end$$;
 

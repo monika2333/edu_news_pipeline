@@ -43,6 +43,12 @@ class _Session:
         return self.response
 
 
+class _FailingSession(_Session):
+    def get(self, url: str, **kwargs: Any) -> _Response:
+        self.calls.append({"url": url, **kwargs})
+        raise requests.Timeout("slow profile")
+
+
 def test_tencent_name_uses_official_profile_transport(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -59,6 +65,38 @@ def test_tencent_name_uses_official_profile_transport(
     assert name == "中国网"
     assert session.calls[0]["url"] == http_tencent.AUTHOR_INFO_API
     assert session.calls[0]["params"]["guestSuid"] == "author-1"
+
+
+def test_tencent_name_tightens_timeout_and_sends_one_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _FailingSession(_Response())
+    monkeypatch.setattr(http_tencent, "_session", lambda: session)
+    monkeypatch.setattr(http_tencent.time, "sleep", lambda _delay: None)
+
+    with pytest.raises(account_profiles.AccountNameUnavailable):
+        account_profiles.resolve_account_name(
+            "tencent",
+            normalized_identifier="author-1",
+            profile_url="https://news.qq.com/omn/author/author-1",
+            timeout=60,
+        )
+
+    assert len(session.calls) == 1
+    assert session.calls[0]["timeout"] == 8
+
+
+def test_fetch_author_profile_defaults_to_ten_seconds_and_three_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _FailingSession(_Response())
+    monkeypatch.setattr(http_tencent.time, "sleep", lambda _delay: None)
+
+    with pytest.raises(requests.Timeout):
+        http_tencent.fetch_author_profile("author-1", session=session)
+
+    assert len(session.calls) == 3
+    assert [call["timeout"] for call in session.calls] == [10, 10, 10]
 
 
 def test_btime_name_uses_create_name_from_list_transport(

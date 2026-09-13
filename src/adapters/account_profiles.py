@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 import requests
 from bs4 import BeautifulSoup
@@ -73,38 +73,13 @@ def _resolve_tencent(
     *,
     timeout: float,
 ) -> str:
-    transport = http_tencent._session()
-
-    class CappedSession:
-        def get(self, url: str, **kwargs: Any) -> requests.Response:
-            try:
-                return _request(
-                    transport,
-                    url,
-                    params=kwargs.get("params"),
-                    timeout=timeout,
-                    page_label="官方账号接口",
-                )
-            except AccountNameUnavailable as exc:
-                class FailedResponse:
-                    def __init__(self, error: AccountNameUnavailable) -> None:
-                        self.error = error
-
-                    def raise_for_status(self) -> None:
-                        return None
-
-                    def json(self) -> dict[str, Any]:
-                        raise self.error
-
-                return cast(requests.Response, FailedResponse(exc))
-
     try:
         profile = http_tencent.fetch_author_profile(
             normalized_identifier,
-            session=cast(requests.Session, CappedSession()),
+            session=http_tencent._session(),
+            timeout=int(min(8, timeout)),
+            retries=1,
         )
-    except AccountNameUnavailable:
-        raise
     except (json.JSONDecodeError, requests.JSONDecodeError, ValueError) as exc:
         raise AccountNameUnavailable("官方账号接口返回了无效数据") from exc
     except RuntimeError as exc:

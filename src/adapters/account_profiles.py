@@ -186,7 +186,7 @@ def resolve_account_name(
         if source == "beijinghao":
             return _resolve_beijinghao(profile_url, timeout=timeout)
         if source == "toutiao":
-            raise AccountNameUnavailable("头条主页当前无法直接解析账号名")
+            raise AccountNameUnavailable("头条账号名将在下一轮抓取后自动获取")
         raise AccountNameUnavailable("不支持的账号来源")
     except AccountNameUnavailable:
         raise

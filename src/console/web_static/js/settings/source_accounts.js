@@ -211,7 +211,9 @@ async function refreshAccountNames(source, ids, button) {
 }
 
 // 名称单元格的三种状态：已解析显示名称；未解析显示截断标识（CSS 省略号，
-// 完整值放 title）加弱化标记；解析失败时标记变为「名称获取失败」、原因放标记的 title。
+// 完整值放 title）加弱化标记；其他来源解析失败时标记变为「名称获取失败」。
+// 头条依赖下一轮抓取补名称，即使带错误原因也保持弱化的「名称待获取」外观；
+// 只要有错误原因都放进标记的 title。
 // 名称文本一律经 textContent 写入，禁止 innerHTML。
 function renderAccountNameCell(cell, item) {
     clearEl(cell);
@@ -231,9 +233,10 @@ function renderAccountNameCell(cell, item) {
     cell.appendChild(link);
     if (!item.display_name) {
         const hasError = !!item.display_name_error;
+        const showError = hasError && item.source !== 'toutiao';
         const badge = createEl('span',
-            `account-name-badge${hasError ? ' is-error' : ''}`,
-            hasError ? '名称获取失败' : '名称待获取');
+            `account-name-badge${showError ? ' is-error' : ''}`,
+            showError ? '名称获取失败' : '名称待获取');
         if (hasError) badge.title = item.display_name_error;
         cell.appendChild(badge);
     }

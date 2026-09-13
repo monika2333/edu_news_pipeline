@@ -771,19 +771,19 @@ test('S21：名称单元格三种状态——已解析、待获取、获取失�
             normalized_identifier: longToken,
             profile_url: 'https://example.com/pending',
         }),
-        makeAccount({
-            id: 'acc-failed',
-            source: 'toutiao',
-            normalized_identifier: 'tok-failed',
-            profile_url: 'https://example.com/failed',
-            display_name_error: '解析超时',
-        }),
     ];
+    accounts.tencent = [makeAccount({
+        id: 'acc-failed',
+        source: 'tencent',
+        normalized_identifier: 'author-failed',
+        profile_url: 'https://example.com/failed',
+        display_name_error: '解析超时',
+    })];
     const page = await bootPage({ accounts });
     try {
         await expandSource(page, 'toutiao');
         await waitFor(() => page.document
-            .querySelector('#accounts-body tr[data-account-id="acc-failed"]'));
+            .querySelector('#accounts-body tr[data-account-id="acc-pending"]'));
 
         // 已解析：名称文本，链接指向主页
         const resolvedRow = page.document
@@ -808,15 +808,45 @@ test('S21：名称单元格三种状态——已解析、待获取、获取失�
             /名称待获取/,
         );
 
-        // 解析失败：同样截断标识，标记为「名称获取失败」，原因放标记的 title
+        // 其他来源解析失败：同样截断标识，标记为「名称获取失败」，原因放标记的 title
+        await expandSource(page, 'tencent');
+        await waitFor(() => page.document
+            .querySelector('#accounts-body tr[data-account-id="acc-failed"]'));
         const failedRow = page.document
             .querySelector('#accounts-body tr[data-account-id="acc-failed"]');
         const failedLink = failedRow.querySelector('.account-name-link');
         assert.ok(failedLink.classList.contains('is-unresolved'));
-        assert.equal(failedLink.textContent, 'tok-failed');
+        assert.equal(failedLink.textContent, 'author-failed');
         const failedBadge = failedRow.querySelector('.account-name-badge');
         assert.match(failedBadge.textContent, /名称获取失败/);
+        assert.ok(failedBadge.classList.contains('is-error'));
         assert.equal(failedBadge.title, '解析超时');
+    } finally {
+        page.close();
+    }
+});
+
+test('S21b：头条账号带名称错误时仍显示中性待获取状态', async () => {
+    const accounts = defaultAccounts();
+    accounts.toutiao = [makeAccount({
+        id: 'acc-toutiao-waiting',
+        source: 'toutiao',
+        normalized_identifier: 'tok-waiting',
+        profile_url: 'https://example.com/toutiao-waiting',
+        display_name_error: '头条账号名将在下一轮抓取后自动获取',
+    })];
+    const page = await bootPage({ accounts });
+    try {
+        await expandSource(page, 'toutiao');
+        await waitFor(() => page.document
+            .querySelector('#accounts-body tr[data-account-id="acc-toutiao-waiting"]'));
+
+        const badge = page.document
+            .querySelector('#accounts-body tr[data-account-id="acc-toutiao-waiting"]')
+            .querySelector('.account-name-badge');
+        assert.equal(badge.textContent, '名称待获取');
+        assert.ok(!badge.classList.contains('is-error'));
+        assert.equal(badge.title, '头条账号名将在下一轮抓取后自动获取');
     } finally {
         page.close();
     }

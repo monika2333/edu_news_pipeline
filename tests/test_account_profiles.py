@@ -127,7 +127,7 @@ def test_toutiao_declines_http_after_real_homepage_proved_unusable(
 
     with pytest.raises(
         account_profiles.AccountNameUnavailable,
-        match="无法直接解析",
+        match="头条账号名将在下一轮抓取后自动获取",
     ):
         account_profiles.resolve_account_name(
             "toutiao",

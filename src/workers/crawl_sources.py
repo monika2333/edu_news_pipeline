@@ -97,6 +97,7 @@ from src.adapters.http_tencent import (
     list_feed_items as tencent_list_feed_items,
 )
 from src.adapters.http_toutiao import (
+    FeedEntry as ToutiaoFeedEntry,
     FeedItem,
     build_detail_update as tt_build_detail_update,
     fetch_feed_items,
@@ -115,6 +116,7 @@ from src.workers import log_error, log_info, log_summary, worker_session
 WORKER = "crawl"
 DEFAULT_LANG = "zh-CN,zh;q=0.9"
 DEFAULT_TIMEOUT = 15
+DEFAULT_FIRST_RUN_LIMIT = 10
 
 
 class CrawlStats(TypedDict):
@@ -173,6 +175,8 @@ class SourceRunContext:
     remaining_limit: Optional[int]
     pages: Optional[int]
     accounts: Mapping[str, tuple[CrawlAccount, ...]]
+    seen_tokens: Optional[Set[str]]
+    first_run_limit: int
 
 
 RunnerKwargs = Callable[[SourceRunContext], Dict[str, Any]]
@@ -236,7 +240,7 @@ def _repo_root() -> Path:
 
 
 def _collect_feed(
-    entries: Sequence[Tuple[str, str]],
+    entries: Sequence[ToutiaoFeedEntry],
     limit: Optional[int],
     *,
     show_browser: bool,
@@ -576,10 +580,21 @@ def _run_toutiao_flow(
     lang: str,
     keywords: Sequence[str],
     remaining_limit: Optional[int],
+    seen_tokens: Optional[Set[str]],
+    first_run_limit: int,
 ) -> CrawlStats:
     def list_items(limit: Optional[int], existing_ids: Set[str]) -> Sequence[Any]:
         entries = [
-            (account.normalized_identifier, account.profile_url)
+            ToutiaoFeedEntry(
+                token=account.normalized_identifier,
+                profile_url=account.profile_url,
+                first_run_limit=(
+                    first_run_limit
+                    if seen_tokens is not None
+                    and account.normalized_identifier not in seen_tokens
+                    else None
+                ),
+            )
             for account in accounts
         ]
         if not entries:
@@ -631,6 +646,8 @@ def _run_tencent_flow(
     remaining_limit: Optional[int],
     pages: Optional[int],
     accounts: Sequence[CrawlAccount],
+    seen_tokens: Optional[Set[str]],
+    first_run_limit: int,
 ) -> CrawlStats:
     def list_items(limit: Optional[int], existing_ids: Set[str]) -> Sequence[Any]:
         entries = [
@@ -638,6 +655,12 @@ def _run_tencent_flow(
                 author_id=account.normalized_identifier,
                 profile_url=account.profile_url,
                 raw_source=account.original_input,
+                first_run_limit=(
+                    first_run_limit
+                    if seen_tokens is not None
+                    and account.normalized_identifier not in seen_tokens
+                    else None
+                ),
             )
             for account in accounts
         ]
@@ -903,10 +926,16 @@ def _pages_runner_kwargs(context: SourceRunContext) -> Dict[str, Any]:
 
 def _account_pages_runner_kwargs(source: str) -> RunnerKwargs:
     def factory(context: SourceRunContext) -> Dict[str, Any]:
-        return {
+        kwargs: Dict[str, Any] = {
             "pages": context.pages,
             "accounts": context.accounts.get(source, ()),
         }
+        if source == "tencent":
+            kwargs.update(
+                seen_tokens=context.seen_tokens,
+                first_run_limit=context.first_run_limit,
+            )
+        return kwargs
 
     return factory
 
@@ -917,6 +946,8 @@ def _toutiao_runner_kwargs(context: SourceRunContext) -> Dict[str, Any]:
         "show_browser": _truthy_env(os.getenv("TOUTIAO_SHOW_BROWSER")),
         "timeout_value": _env_int("TOUTIAO_FETCH_TIMEOUT", DEFAULT_TIMEOUT),
         "lang": os.getenv("TOUTIAO_LANG", DEFAULT_LANG),
+        "seen_tokens": context.seen_tokens,
+        "first_run_limit": context.first_run_limit,
     }
 
 
@@ -1125,6 +1156,21 @@ def run(
     # initialize remaining capacity for multi-source run
     remaining_limit = effective_limit
     adapter = get_adapter()
+    seen_tokens: Optional[Set[str]] = None
+    account_sources_selected = any(
+        registration is not None
+        and registration.runner_name in {"_run_toutiao_flow", "_run_tencent_flow"}
+        for registration in (_get_source_registration(source) for source in selected_order)
+    )
+    if account_sources_selected:
+        try:
+            seen_tokens = set(adapter.ingest.get_seen_raw_tokens() or [])
+        except Exception as exc:
+            log_error(WORKER, "seen_raw_tokens", exc)
+    first_run_limit = max(
+        0,
+        _env_int("CRAWL_FIRST_RUN_LIMIT", DEFAULT_FIRST_RUN_LIMIT),
+    )
     total_ok = total_failed = total_skipped = 0
     failed_sources: list[str] = []
     with worker_session(WORKER, limit=effective_limit):
@@ -1144,6 +1190,8 @@ def run(
                             remaining_limit=remaining_limit,
                             pages=pages,
                             accounts=business_config.accounts,
+                            seen_tokens=seen_tokens,
+                            first_run_limit=first_run_limit,
                         )
                     )
                 except Exception as exc:

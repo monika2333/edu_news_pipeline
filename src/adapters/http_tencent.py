@@ -59,6 +59,7 @@ class AuthorEntry:
     profile_url: str
     raw_source: str
     tab_id: Optional[str] = None
+    first_run_limit: Optional[int] = None
 
 
 @dataclass
@@ -374,6 +375,8 @@ def list_feed_items_for_author(
     existing_ids: Optional[Set[str]] = None,
     consecutive_stop: int = 5,
 ) -> List[FeedItem]:
+    if limit == 0:
+        return []
     sess = session or _session()
     profile = fetch_author_profile(entry.author_id, session=sess)
     tab_id = entry.tab_id or tab_override or resolve_tab_id(profile)
@@ -435,13 +438,22 @@ def list_feed_items(
             remaining = None
         else:
             remaining = max(limit - len(aggregated), 0)
+        author_limit = remaining
+        author_max_pages = max_pages
+        if entry.first_run_limit is not None:
+            author_limit = (
+                entry.first_run_limit
+                if author_limit is None
+                else min(author_limit, entry.first_run_limit)
+            )
+            author_max_pages = 1
         items = list_feed_items_for_author(
             entry,
             session=sess,
             tab_override=tab_override,
-            max_pages=max_pages,
+            max_pages=author_max_pages,
             delay_seconds=delay_seconds,
-            limit=remaining,
+            limit=author_limit,
             existing_ids=existing_ids,
             consecutive_stop=consecutive_stop,
         )

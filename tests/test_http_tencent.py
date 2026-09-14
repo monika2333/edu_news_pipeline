@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from src.adapters.http_tencent import _clean_html_to_markdown, parse_author_input
+from typing import Any, Optional
+
+from src.adapters import http_tencent
+from src.adapters.http_tencent import AuthorEntry, _clean_html_to_markdown, parse_author_input
 
 
 def test_m11_tencent_parser_preserves_legacy_bare_and_url_results() -> None:
@@ -47,3 +50,131 @@ def test_clean_html_preserves_br_and_image_boundaries() -> None:
         "\n\n小标题"
         "\n\n末段正文。"
     )
+
+
+def test_first_run_tencent_author_uses_one_page_and_ten_item_limit(
+    monkeypatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def list_for_author(entry: AuthorEntry, **kwargs: Any) -> list[object]:
+        calls.append({"author_id": entry.author_id, **kwargs})
+        return [object() for _ in range(kwargs["limit"] or 0)]
+
+    monkeypatch.setattr(http_tencent, "list_feed_items_for_author", list_for_author)
+
+    items = http_tencent.list_feed_items(
+        [
+            AuthorEntry(
+                "new-author",
+                "https://example.test/new",
+                "new-author",
+                first_run_limit=10,
+            )
+        ],
+        session=object(),
+        max_pages=7,
+        delay_seconds=0,
+        limit=25,
+        existing_ids=set(),
+    )
+
+    assert len(items) == 10
+    assert calls[0]["author_id"] == "new-author"
+    assert calls[0]["max_pages"] == 1
+    assert calls[0]["limit"] == 10
+
+
+def test_mixed_tencent_authors_keep_first_run_policy_per_author(
+    monkeypatch,
+) -> None:
+    calls: list[tuple[str, int, Optional[int]]] = []
+
+    def list_for_author(entry: AuthorEntry, **kwargs: Any) -> list[object]:
+        calls.append((entry.author_id, kwargs["max_pages"], kwargs["limit"]))
+        count = 12 if entry.author_id == "seen-author" else 10
+        return [object() for _ in range(count)]
+
+    monkeypatch.setattr(http_tencent, "list_feed_items_for_author", list_for_author)
+
+    items = http_tencent.list_feed_items(
+        [
+            AuthorEntry("seen-author", "https://example.test/seen", "seen-author"),
+            AuthorEntry(
+                "new-author",
+                "https://example.test/new",
+                "new-author",
+                first_run_limit=10,
+            ),
+        ],
+        session=object(),
+        max_pages=7,
+        delay_seconds=0,
+        limit=30,
+        existing_ids=set(),
+    )
+
+    assert len(items) == 22
+    assert calls == [
+        ("seen-author", 7, 30),
+        ("new-author", 1, 10),
+    ]
+
+
+def test_tencent_first_run_limit_respects_smaller_global_remaining(
+    monkeypatch,
+) -> None:
+    calls: list[tuple[int, Optional[int]]] = []
+
+    def list_for_author(_entry: AuthorEntry, **kwargs: Any) -> list[object]:
+        calls.append((kwargs["max_pages"], kwargs["limit"]))
+        return [object() for _ in range(kwargs["limit"] or 0)]
+
+    monkeypatch.setattr(http_tencent, "list_feed_items_for_author", list_for_author)
+
+    items = http_tencent.list_feed_items(
+        [
+            AuthorEntry(
+                "new-author",
+                "https://example.test/new",
+                "new-author",
+                first_run_limit=10,
+            )
+        ],
+        session=object(),
+        max_pages=7,
+        delay_seconds=0,
+        limit=4,
+        existing_ids=set(),
+    )
+
+    assert len(items) == 4
+    assert calls == [(1, 4)]
+
+
+def test_tencent_zero_first_run_limit_does_not_request_an_author_page(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        http_tencent,
+        "fetch_author_profile",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("must not request an author page")
+        ),
+    )
+
+    items = http_tencent.list_feed_items(
+        [
+            AuthorEntry(
+                "new-author",
+                "https://example.test/new",
+                "new-author",
+                first_run_limit=0,
+            )
+        ],
+        session=object(),
+        limit=20,
+        existing_ids=set(),
+    )
+
+    assert items == []

@@ -1,14 +1,65 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
+from src.adapters import http_toutiao
 from src.adapters.http_toutiao import (
+    FeedEntry,
     FeedItem,
     build_detail_update,
     feed_item_to_row,
     parse_author_input,
 )
+
+
+def _raw_items(start: int, count: int) -> list[dict[str, Any]]:
+    return [
+        {
+            "title": f"Article {index}",
+            "group_id": str(10_000_000_000_000_000 + index),
+        }
+        for index in range(start, start + count)
+    ]
+
+
+class _FakePage:
+    async def wait_for_selector(self, _selector: str) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
+
+class _FakeContext:
+    async def new_page(self) -> _FakePage:
+        return _FakePage()
+
+
+class _FakeBrowser:
+    async def new_context(self, **_kwargs: Any) -> _FakeContext:
+        return _FakeContext()
+
+    async def close(self) -> None:
+        return None
+
+
+class _FakeChromium:
+    async def launch(self, **_kwargs: Any) -> _FakeBrowser:
+        return _FakeBrowser()
+
+
+class _FakePlaywright:
+    chromium = _FakeChromium()
+
+
+class _FakePlaywrightManager:
+    async def __aenter__(self) -> _FakePlaywright:
+        return _FakePlaywright()
+
+    async def __aexit__(self, *_args: Any) -> None:
+        return None
 
 
 def _feed_item(**overrides: object) -> FeedItem:
@@ -27,6 +78,198 @@ def _feed_item(**overrides: object) -> FeedItem:
     }
     values.update(overrides)
     return FeedItem(**values)
+
+
+def test_first_run_entry_collects_ten_items_from_only_one_feed_page(
+    monkeypatch,
+) -> None:
+    calls: list[str] = []
+
+    async def fetch_payload(_page, _token: str, max_behot_time: str) -> dict[str, Any]:
+        calls.append(max_behot_time)
+        return {
+            "data": _raw_items(0, 6),
+            "has_more": True,
+            "next": {"max_behot_time": "next-page"},
+        }
+
+    monkeypatch.setattr(http_toutiao, "_fetch_feed_page_payload", fetch_payload)
+
+    items, reached_existing = asyncio.run(
+        http_toutiao._collect_feed_from_page(
+            object(),
+            "new-token",
+            "https://example.test/new-token",
+            10,
+            set(),
+            first_page_only=True,
+        )
+    )
+
+    assert len(items) == 6
+    assert calls == ["0"]
+    assert reached_existing is False
+
+
+def test_reenabled_seen_account_keeps_multi_page_backfill_behavior(
+    monkeypatch,
+) -> None:
+    payloads = [
+        {
+            "data": _raw_items(0, 6),
+            "has_more": True,
+            "next": {"max_behot_time": "page-2"},
+        },
+        {
+            "data": _raw_items(6, 6),
+            "has_more": False,
+            "next": {"max_behot_time": "0"},
+        },
+    ]
+    calls: list[str] = []
+
+    async def fetch_payload(_page, _token: str, max_behot_time: str) -> dict[str, Any]:
+        calls.append(max_behot_time)
+        return payloads.pop(0)
+
+    monkeypatch.setattr(http_toutiao, "_fetch_feed_page_payload", fetch_payload)
+
+    items, reached_existing = asyncio.run(
+        http_toutiao._collect_feed_from_page(
+            object(),
+            "seen-token",
+            "https://example.test/seen-token",
+            None,
+            set(),
+        )
+    )
+
+    assert len(items) == 12
+    assert calls == ["0", "page-2"]
+    assert reached_existing is False
+
+
+def test_seen_account_still_paginates_until_consecutive_existing_stop(
+    monkeypatch,
+) -> None:
+    existing = {
+        str(10_000_000_000_000_000 + index)
+        for index in range(10, 15)
+    }
+    payloads = [
+        {
+            "data": _raw_items(0, 2),
+            "has_more": True,
+            "next": {"max_behot_time": "page-2"},
+        },
+        {
+            "data": _raw_items(10, 5),
+            "has_more": True,
+            "next": {"max_behot_time": "page-3"},
+        },
+    ]
+    calls: list[str] = []
+
+    async def fetch_payload(_page, _token: str, max_behot_time: str) -> dict[str, Any]:
+        calls.append(max_behot_time)
+        return payloads.pop(0)
+
+    monkeypatch.setattr(http_toutiao, "_fetch_feed_page_payload", fetch_payload)
+
+    items, reached_existing = asyncio.run(
+        http_toutiao._collect_feed_from_page(
+            object(),
+            "seen-token",
+            "https://example.test/seen-token",
+            None,
+            existing,
+        )
+    )
+
+    assert len(items) == 2
+    assert calls == ["0", "page-2"]
+    assert reached_existing is True
+
+
+def test_first_run_limit_and_global_remaining_use_the_smaller_value(
+    monkeypatch,
+) -> None:
+    calls: list[tuple[Optional[int], bool]] = []
+
+    async def collect(
+        _page,
+        _token: str,
+        _profile_url: str,
+        limit: Optional[int],
+        _existing_ids: set[str],
+        *,
+        first_page_only: bool = False,
+    ) -> tuple[list[object], bool]:
+        calls.append((limit, first_page_only))
+        return [object() for _ in range(limit or 0)], False
+
+    async def goto(_page, _profile_url: str) -> None:
+        return None
+
+    monkeypatch.setattr(http_toutiao, "async_playwright", _FakePlaywrightManager)
+    monkeypatch.setattr(http_toutiao, "_collect_feed_from_page", collect)
+    monkeypatch.setattr(http_toutiao, "_goto_with_retries", goto)
+
+    items = asyncio.run(
+        http_toutiao.fetch_feed_items(
+            [FeedEntry("new-token", "https://example.test/new", first_run_limit=10)],
+            limit=4,
+            show_browser=False,
+            existing_ids=set(),
+        )
+    )
+
+    assert len(items) == 4
+    assert calls == [(4, True)]
+
+
+def test_mixed_first_run_and_seen_entries_keep_independent_policies(
+    monkeypatch,
+) -> None:
+    calls: list[tuple[str, Optional[int], bool]] = []
+
+    async def collect(
+        _page,
+        token: str,
+        _profile_url: str,
+        limit: Optional[int],
+        _existing_ids: set[str],
+        *,
+        first_page_only: bool = False,
+    ) -> tuple[list[object], bool]:
+        calls.append((token, limit, first_page_only))
+        count = 10 if token == "new-token" else 2
+        return [object() for _ in range(count)], False
+
+    async def goto(_page, _profile_url: str) -> None:
+        return None
+
+    monkeypatch.setattr(http_toutiao, "async_playwright", _FakePlaywrightManager)
+    monkeypatch.setattr(http_toutiao, "_collect_feed_from_page", collect)
+    monkeypatch.setattr(http_toutiao, "_goto_with_retries", goto)
+
+    items = asyncio.run(
+        http_toutiao.fetch_feed_items(
+            [
+                FeedEntry("new-token", "https://example.test/new", first_run_limit=10),
+                FeedEntry("seen-token", "https://example.test/seen"),
+            ],
+            limit=20,
+            show_browser=False,
+            existing_ids=set(),
+        )
+    )
+
+    assert len(items) == 12
+    assert calls == [
+        ("new-token", 10, True),
+        ("seen-token", 10, False),
+    ]
 
 
 def test_m11_toutiao_parser_preserves_legacy_token_and_url_results() -> None:

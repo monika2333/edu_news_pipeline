@@ -93,7 +93,9 @@ def _worker_session(*_args: Any, **_kwargs: Any) -> Iterator[None]:
 
 @pytest.fixture
 def run_adapter(monkeypatch: pytest.MonkeyPatch) -> object:
-    adapter = SimpleNamespace()
+    adapter = SimpleNamespace(
+        ingest=SimpleNamespace(get_seen_raw_tokens=lambda: {"seen-token"})
+    )
     account = SimpleNamespace(
         normalized_identifier="account-id",
         profile_url="https://example.test/account",
@@ -120,6 +122,7 @@ def run_adapter(monkeypatch: pytest.MonkeyPatch) -> object:
     monkeypatch.setenv("TOUTIAO_FETCH_TIMEOUT", "21")
     monkeypatch.setenv("TOUTIAO_LANG", "zh-test")
     monkeypatch.setenv("TENCENT_DETAIL_DELAY", "0.75")
+    monkeypatch.setenv("CRAWL_FIRST_RUN_LIMIT", "6")
     monkeypatch.setenv("GMW_BASE_URL", "https://gmw.test/list")
     monkeypatch.setenv("GMW_TIMEOUT", "12.5")
     monkeypatch.setenv("GMW_EXISTING_CONSECUTIVE_STOP", "6")
@@ -269,6 +272,11 @@ def test_registry_passes_each_runner_its_current_arguments(
     expected_kwargs = dict(extra_kwargs)
     if source in {"toutiao", "tencent", "btime", "beijinghao"}:
         expected_kwargs["accounts"] = crawl_sources.get_business_config().accounts[source]
+    if source in {"toutiao", "tencent"}:
+        expected_kwargs.update(
+            seen_tokens={"seen-token"},
+            first_run_limit=6,
+        )
 
     def record_runner(**kwargs: Any) -> crawl_sources.CrawlStats:
         calls.append(kwargs)

@@ -31,6 +31,10 @@ class IngestNamespace:
         with self._adapter._cursor() as cur:
             return get_existing_raw_article_ids(cur)
 
+    def get_seen_raw_tokens(self) -> Set[str]:
+        with self._adapter._cursor() as cur:
+            return get_seen_raw_tokens(cur)
+
     def upsert_filtered(self, rows: Sequence[Mapping[str, Any]]) -> int:
         with self._adapter._cursor() as cur:
             return upsert_filtered_articles(cur, rows)
@@ -501,12 +505,26 @@ def get_existing_raw_article_ids(cur: psycopg.Cursor) -> Set[str]:
     return ids
 
 
+def get_seen_raw_tokens(cur: psycopg.Cursor) -> Set[str]:
+    tokens: Set[str] = set()
+    cur.execute(
+        "SELECT DISTINCT token FROM raw_articles "
+        "WHERE token IS NOT NULL AND BTRIM(token) <> ''"
+    )
+    for row in cur.fetchall():
+        token = row.get("token")
+        if token:
+            tokens.add(str(token))
+    return tokens
+
+
 __all__ = [
     "IngestNamespace",
     "fetch_filtered_articles_by_band",
     "fetch_filtered_articles_by_hashes",
     "fetch_filtered_articles_for_hashing",
     "get_existing_raw_article_ids",
+    "get_seen_raw_tokens",
     "get_raw_articles_missing_content",
     "update_filtered_article_features",
     "update_filtered_primary_ids",

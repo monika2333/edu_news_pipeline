@@ -123,7 +123,13 @@ def test_run_dispatches_source_alias_through_registry(monkeypatch) -> None:
         "get_settings",
         lambda: SimpleNamespace(process_limit=None, keywords_path=None),
     )
-    monkeypatch.setattr(crawl_sources, "get_adapter", object)
+    monkeypatch.setattr(
+        crawl_sources,
+        "get_adapter",
+        lambda: SimpleNamespace(
+            ingest=SimpleNamespace(get_seen_raw_tokens=lambda: set())
+        ),
+    )
     monkeypatch.setattr(
         crawl_sources,
         "get_business_config",
@@ -155,6 +161,8 @@ def test_toutiao_without_enabled_authors_logs_and_returns_empty_stats(
         lang="zh-CN",
         keywords=[],
         remaining_limit=10,
+        seen_tokens=set(),
+        first_run_limit=10,
     )
 
     assert stats == {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
@@ -186,7 +194,13 @@ def test_m20_run_isolates_source_exception_with_traceback_and_failure_count(
         "get_settings",
         lambda: SimpleNamespace(process_limit=None, keywords_path=None),
     )
-    monkeypatch.setattr(crawl_sources, "get_adapter", object)
+    monkeypatch.setattr(
+        crawl_sources,
+        "get_adapter",
+        lambda: SimpleNamespace(
+            ingest=SimpleNamespace(get_seen_raw_tokens=lambda: set())
+        ),
+    )
     monkeypatch.setattr(
         crawl_sources,
         "get_business_config",

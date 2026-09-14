@@ -13,7 +13,7 @@ import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -99,6 +99,14 @@ class FeedItem:
             digg_count=int(item.get("digg_count") or 0),
             raw=item,
         )
+
+
+@dataclass(frozen=True)
+class FeedEntry:
+    token: str
+    profile_url: str
+    first_run_limit: Optional[int] = None
+
 
 def extract_token_from_url(url: str) -> str:
     match = TOKEN_PATTERN.search(url)
@@ -285,7 +293,13 @@ def _parse_feed_payload(
 
 
 async def _collect_feed_from_page(
-    page, token: str, profile_url: str, limit: Optional[int], existing_ids: Optional[Set[str]]
+    page,
+    token: str,
+    profile_url: str,
+    limit: Optional[int],
+    existing_ids: Optional[Set[str]],
+    *,
+    first_page_only: bool = False,
 ) -> Tuple[List[FeedItem], bool]:
     if limit == 0:
         return [], False
@@ -309,7 +323,10 @@ async def _collect_feed_from_page(
             payload, token, profile_url, limit, len(collected), existing_ids, consecutive_stop, consecutive_hits
         )
         collected.extend(new_items)
-        
+
+        if first_page_only:
+            break
+
         if reached_existing:
             break
         if limit is not None and len(collected) >= limit:
@@ -326,7 +343,7 @@ async def _collect_feed_from_page(
     return collected, reached_existing
 
 async def fetch_feed_items(
-    entries: List[Tuple[str, str]],
+    entries: Sequence[FeedEntry],
     limit: Optional[int],
     show_browser: bool,
     existing_ids: Optional[Set[str]],
@@ -339,7 +356,7 @@ async def fetch_feed_items(
             locale="zh-CN",
             ignore_https_errors=True,
         )
-        for token, profile_url in entries:
+        for entry in entries:
             if limit is not None and len(all_items) >= limit:
                 break
             remaining: Optional[int]
@@ -347,12 +364,24 @@ async def fetch_feed_items(
                 remaining = None
             else:
                 remaining = max(limit - len(all_items), 0)
+            entry_limit = remaining
+            if entry.first_run_limit is not None:
+                entry_limit = (
+                    entry.first_run_limit
+                    if entry_limit is None
+                    else min(entry_limit, entry.first_run_limit)
+                )
             page = await context.new_page()
-            print(f"[info] Collecting feed for {profile_url}", file=sys.stderr)
-            await _goto_with_retries(page, profile_url)
+            print(f"[info] Collecting feed for {entry.profile_url}", file=sys.stderr)
+            await _goto_with_retries(page, entry.profile_url)
             await page.wait_for_selector("body")
             items, reached_existing = await _collect_feed_from_page(
-                page, token, profile_url, remaining, existing_ids
+                page,
+                entry.token,
+                entry.profile_url,
+                entry_limit,
+                existing_ids,
+                first_page_only=entry.first_run_limit is not None,
             )
             all_items.extend(items)
             await page.close()

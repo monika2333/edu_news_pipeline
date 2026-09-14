@@ -225,11 +225,13 @@ function buildSourceRow(key, { enabled }) {
     }
 
     if (sourceRequiresAccounts(key)) {
-        const arrow = createEl('button', 'source-expand-toggle', '▸', {
+        const arrow = createEl('button', 'source-expand-toggle', '', {
             type: 'button',
             'aria-label': `展开 ${sourceDisplayName(key)} 的账号管理`,
             'aria-expanded': 'false',
         });
+        // 三角放在独立 span 里：展开时靠 CSS 旋转 90°（朝右 → 朝下），不转按钮本体
+        arrow.appendChild(createEl('span', 'source-expand-icon', '▸', { 'aria-hidden': 'true' }));
         arrow.addEventListener('click', () => toggleSourceExpand(key));
         item.appendChild(arrow);
     }

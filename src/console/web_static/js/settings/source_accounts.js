@@ -356,13 +356,11 @@ async function refreshAccountNames(source, ids, button) {
 // 头条依赖下一轮抓取补名称，即使带错误原因也保持中性的「名称待获取」外观；
 // 只要有错误原因都放进标记的 title。
 // 名称文本一律经 textContent 写入，禁止 innerHTML。
-// 只重绘名称区（圆点、名称、标记），不动 label 里的 checkbox——刷新进行中
+// 只重绘名称区（名称、标记），不动 label 里的 checkbox——刷新进行中
 // 该芯片的启停操作不应被打断（芯片节点与开关节点都保持原样）。
 function renderChipNameContent(label, item) {
-    label.querySelectorAll('.account-chip-dot, .account-chip-name, .account-name-badge')
+    label.querySelectorAll('.account-chip-name, .account-name-badge')
         .forEach((node) => node.remove());
-    // 圆点在名称之前：实心 = 启用，空心 = 停用，不只靠颜色区分启停
-    label.appendChild(createEl('span', 'account-chip-dot', '', { 'aria-hidden': 'true' }));
     const nameEl = createEl('span', 'account-chip-name');
     if (item.display_name) {
         nameEl.textContent = item.display_name;

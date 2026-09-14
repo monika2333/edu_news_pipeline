@@ -802,7 +802,7 @@ test('S21b：头条账号带名称错误时仍显示中性待获取状态', asyn
     }
 });
 
-test('S22：芯片内结构为 checkbox + 圆点 + 名称（圆点在名称前），aria-label 带账号名；空状态渲染提示节点', async () => {
+test('S22：芯片内结构为 checkbox + 名称，aria-label 带账号名；空状态渲染提示节点', async () => {
     const page = await bootPage();
     try {
         await expandSource(page, 'toutiao');
@@ -813,15 +813,10 @@ test('S22：芯片内结构为 checkbox + 圆点 + 名称（圆点在名称前�
         assert.ok(toggle, '芯片内应是启用开关 checkbox');
         assert.match(toggle.getAttribute('aria-label'), /头条一号/);
 
-        // 圆点在名称之前：实心 = 启用，空心 = 停用
-        const labelChildren = [...label.children];
-        const dotIndex = labelChildren
-            .findIndex((el) => el.classList.contains('account-chip-dot'));
-        const nameIndex = labelChildren
-            .findIndex((el) => el.classList.contains('account-chip-name'));
-        assert.ok(dotIndex > -1, '芯片内应有启停圆点');
-        assert.ok(nameIndex > -1, '芯片内应有名称节点');
-        assert.ok(dotIndex < nameIndex, '圆点应排在名称之前');
+        // 启停状态由芯片整体配色表达，名称前不再有装饰圆点
+        assert.equal(label.querySelector('.account-chip-dot'), null,
+            '芯片内不应再有圆点节点');
+        assert.ok(label.querySelector('.account-chip-name'), '芯片内应有名称节点');
         // 默认态芯片上没有删除按钮与主页链接
         assert.equal(chip.querySelector('.account-chip-delete'), null);
         assert.equal(chip.querySelector('.account-chip-open'), null);

@@ -219,6 +219,9 @@
 }
 
 .source-expand-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     padding: 3px 10px;
     border: 1px solid #cbd5e1;
     border-radius: 999px;
@@ -231,6 +234,16 @@
 .source-expand-toggle[aria-expanded="true"] {
     border-color: #2563eb;
     color: #2563eb;
+}
+
+/* 折叠时三角朝右，展开时旋转 90° 朝下，与 aria-expanded 联动 */
+.source-expand-icon {
+    display: inline-block;
+    transition: transform 0.15s ease;
+}
+
+.source-expand-toggle[aria-expanded="true"] .source-expand-icon {
+    transform: rotate(90deg);
 }
 
 /* 胶囊滑块开关：账号行 .account-enabled-toggle 与来源行 .source-enabled-toggle 共用。
@@ -363,8 +376,8 @@
 }
 
 /* 芯片：默认态是启用开关（label 包裹视觉隐藏的 checkbox，整个芯片即点击区）。
-   启用 = 实心主色调 + 实心圆点；停用 = 灰色描边 + 空心圆点——
-   不只靠颜色区分，灰色描边容易被读成「未选中」而不是「已停用」。 */
+   启用 = 实心主色调；停用 = 白底灰字描边——灰色描边容易被读成「未选中」
+   而不是「已停用」，因此停用态保留描边与文字对比，不只靠底色区分。 */
 .account-chip {
     display: inline-flex;
     align-items: center;
@@ -414,20 +427,6 @@
     border: 0;
     opacity: 0;
     pointer-events: none;
-}
-
-.account-chip-dot {
-    flex: none;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    border: 1.5px solid #94a3b8;
-    background: transparent;
-}
-
-.account-chip:has(.account-enabled-toggle:checked) .account-chip-dot {
-    border-color: #fff;
-    background: #fff;
 }
 
 /* 名称超长时截断为省略号，完整值在 title */

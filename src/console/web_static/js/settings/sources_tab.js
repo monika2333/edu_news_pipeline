@@ -1,12 +1,13 @@
-// 系统设置页 - 数据源页签：每小时来源单列表（开关即写库的即时启停、行位置不随启停变化、
-// 需要账号的来源就地展开管理）与每日任务只读分组。
+// 系统设置页 - 数据源页签：顶部吸顶操作条（页面级管理模式开关 + 跨来源待删除提交条）、
+// 每小时来源三列网格（需要账号的来源行与其账号面板占满整行，无子账号的来源各占一列）、
+// 开关即写库的即时启停（行位置不随启停变化）与每日任务只读分组。
 'use strict';
 
 function sourceRequiresAccounts(key) {
     return accountSources().some((source) => source.key === key);
 }
 
-// 账号数量徽标只更新文本，不重建列表，避免打断进行中的账号编辑。
+// 账号数量徽标只更新文本，不重建列表，避免打断进行中的账号操作。
 function refreshSourcesAccountBadges() {
     elements.panels.sources
         .querySelectorAll('li[data-source] .source-account-badge')
@@ -16,19 +17,13 @@ function refreshSourcesAccountBadges() {
         });
 }
 
+// 徽标是纯展示（<span>），不再承担「点击展开」：账号面板始终平铺，无处可展开
 function applyAccountBadge(itemEl, badge, sourceKey) {
     const count = state.accountCounts[sourceKey];
     const total = state.accountTotals[sourceKey];
-    if (!sourceRequiresAccounts(sourceKey)) {
-        badge.hidden = true;
-        return;
-    }
-    badge.hidden = false;
     if (count === null || count === undefined || total === null || total === undefined) {
         badge.textContent = '账号数未知';
         badge.classList.remove('is-warning');
-        badge.removeAttribute('title');
-        delete badge.dataset.expandAccounts;
         return;
     }
     const skip = count === 0;
@@ -36,18 +31,11 @@ function applyAccountBadge(itemEl, badge, sourceKey) {
         ? `启用 0 / 共 ${total} · 本轮会跳过该来源`
         : `启用 ${count} / 共 ${total}`;
     badge.classList.toggle('is-warning', skip);
-    if (skip) {
-        badge.title = '点击展开账号管理';
-        badge.dataset.expandAccounts = sourceKey;
-    } else {
-        badge.removeAttribute('title');
-        delete badge.dataset.expandAccounts;
-    }
 }
 
 // 启停请求进行中锁住面板内所有来源开关：第二个请求会基于过期列表计算，
 // 且成功后 renderSourcesTab 重建面板会让失败分支的错误写进已销毁的节点。
-// 只锁来源行开关；展开区内的账号启停/编辑走独立接口，不受牵连。
+// 只锁来源行开关；账号芯片的启停走独立接口，不受牵连。
 function syncSourceToggles() {
     const locked = state.sourceToggleInflight > 0;
     elements.panels.sources
@@ -57,75 +45,23 @@ function syncSourceToggles() {
         });
 }
 
-// 展开面板的作用域锚点：面板内不再使用唯一 id，所有查找都以面板为作用域
+// 面板的作用域锚点：面板内不使用唯一 id，所有查找都以面板为作用域
 function accountPanelEl(source) {
     return elements.panels.sources
         .querySelector(`.source-accounts-panel[data-accounts-for="${source}"]`);
 }
 
-// 面板是否打开以 DOM 为准：收起即移除节点；启停重建的间隙面板暂时不存在，
-// 进行中的异步流程（删除提交、名称刷新）据此终止或跳过写入
+// 面板是否存在于 DOM：账号面板随来源行始终渲染（没有展开/收起），但来源启停成功后的
+// 整块重建会暂时移除面板节点，进行中的异步流程据此跳过写入已销毁的节点
 function isAccountPanelOpen(source) {
     return !!accountPanelEl(source);
 }
 
-// 收起指定来源的账号管理区：移除其面板、删除该来源的 panel state（收起即重置），
-// 互不影响其他打开着的面板。hash 正指着被收起的来源时，回写到剩余打开来源中
-// 最近展开的一个，没有则为 #sources。展开本身不发请求，账号已在初始化时缓存。
-function collapseSourceExpansion(key, { updateHash = false } = {}) {
-    const panel = accountPanelEl(key);
-    if (panel) panel.remove();
-    const row = elements.panels.sources.querySelector(`li[data-source="${key}"]`);
-    const arrow = row && row.querySelector('.source-expand-toggle');
-    if (arrow) arrow.setAttribute('aria-expanded', 'false');
-    state.expandedAccountSources = state.expandedAccountSources
-        .filter((source) => source !== key);
-    delete state.accountPanels[key];
-    if (updateHash && window.location.hash === `#sources:${key}`) {
-        const rest = state.expandedAccountSources;
-        writeSettingsHash('sources', rest.length ? rest[rest.length - 1] : '');
-    }
-}
-
+// 账号面板作为来源行之后的兄弟 <li> 紧随插入，随来源行始终存在
 function insertAccountsPanel(row, key) {
     const panel = createEl('li', 'source-accounts-panel', '', { dataset: { accountsFor: key } });
     row.after(panel);
-    const arrow = row.querySelector('.source-expand-toggle');
-    if (arrow) arrow.setAttribute('aria-expanded', 'true');
     renderSourceAccounts(key, panel);
-    // 重渲染恢复展开区时还原「添加账号」的开合状态（renderSourcesTab 重建前从 DOM 捕获）；
-    // 管理态下该折叠区被锁定收起，开合状态由退出管理态时恢复，这里不还原
-    const panelState = accountPanelState(key);
-    const addDetails = panel.querySelector('.account-add-details');
-    if (addDetails && !panelState.manageMode && panelState.addDetailsOpen) {
-        addDetails.open = true;
-    }
-}
-
-function expandSourceRow(key, { updateHash = true } = {}) {
-    // 已展开则直接成功：多开语义下再次展开同一来源是幂等的
-    if (isAccountPanelOpen(key)) return true;
-    const row = elements.panels.sources
-        .querySelector(`li[data-source="${key}"]`);
-    if (!row || !sourceRequiresAccounts(key)) {
-        return false;
-    }
-    state.expandedAccountSources.push(key);
-    // 懒创建该来源的 panel state；收起时对应 key 已删除，这里拿到的总是全新状态
-    accountPanelState(key);
-    insertAccountsPanel(row, key);
-    if (updateHash) {
-        writeSettingsHash('sources', key);
-    }
-    return true;
-}
-
-function toggleSourceExpand(key) {
-    if (isAccountPanelOpen(key)) {
-        collapseSourceExpansion(key, { updateHash: true });
-    } else {
-        expandSourceRow(key);
-    }
 }
 
 // 来源启停即时保存：切换开关即写库（按目录序构造的完整启用列表 + 当前版本号），不进草稿。
@@ -205,7 +141,8 @@ function buildSourceRow(key, { enabled }) {
     // 停用行只做视觉弱化（名称降灰）：行高、内边距与控件位置不变，开关切换时行不位移
     if (!enabled) item.classList.add('is-disabled');
 
-    // 开关打头（与账号表「开关在最前」一致），名称、账号数标签、展开箭头依次在后
+    // 开关打头（与账号芯片「开关在最前」一致），名称、账号数徽标依次在后；
+    // 「刷新账号名称」按钮仅管理模式下出现，排在徽标之后
     const toggle = createEl('input', 'settings-switch source-enabled-toggle', '', {
         type: 'checkbox',
         'aria-label': `${enabled ? '停用' : '启用'} ${sourceDisplayName(key)}`,
@@ -223,52 +160,69 @@ function buildSourceRow(key, { enabled }) {
     item.appendChild(createEl('span', 'settings-source-name', sourceDisplayName(key)));
 
     if (sourceRequiresAccounts(key)) {
-        const badge = createEl('button', 'source-account-badge', '', { type: 'button' });
+        // 需要账号的来源行与其账号面板在三列网格中占满整行；无子账号的来源行各占一列。
+        // 判定依据是 requires_accounts，不按具体来源硬编码
+        item.classList.add('has-accounts');
+        const badge = createEl('span', 'source-account-badge');
         applyAccountBadge(item, badge, key);
-        badge.addEventListener('click', () => {
-            const key = badge.dataset.expandAccounts;
-            if (!key) return;
-            // 多开语义下 expandSourceRow 对已展开的来源幂等返回；面板可能在视口外，
-            // 滚动过去给出可见反馈，否则点击像没反应
-            if (isAccountPanelOpen(key)) {
-                accountPanelEl(key).scrollIntoView({ block: 'nearest' });
-                return;
-            }
-            expandSourceRow(key);
-        });
         item.appendChild(badge);
-    }
-
-    if (sourceRequiresAccounts(key)) {
-        const arrow = createEl('button', 'source-expand-toggle', '', {
-            type: 'button',
-            'aria-label': `展开 ${sourceDisplayName(key)} 的账号管理`,
-            'aria-expanded': 'false',
-        });
-        // 三角放在独立 span 里：展开时靠 CSS 旋转 90°（朝右 → 朝下），不转按钮本体
-        arrow.appendChild(createEl('span', 'source-expand-icon', '▸', { 'aria-hidden': 'true' }));
-        arrow.addEventListener('click', () => toggleSourceExpand(key));
-        item.appendChild(arrow);
+        if (state.manageMode) {
+            const panelState = state.accountPanels[key];
+            const refreshBtn = createEl('button', 'btn btn-secondary accounts-refresh-btn',
+                '刷新账号名称', { type: 'button' });
+            refreshBtn.disabled = state.deleteSubmitting
+                || !!(panelState && panelState.refreshInflight);
+            refreshBtn.addEventListener('click', () => {
+                const ids = currentAccountItems(key).map((account) => account.id);
+                refreshAccountNames(key, ids, refreshBtn);
+            });
+            item.appendChild(refreshBtn);
+        }
     }
 
     item.appendChild(errorEl);
     return item;
 }
 
+// 页面级操作条：吸顶固定在数据源面板顶部（平铺后页面变长，开关必须始终够得着），
+// 左侧「数据源」，右侧「管理模式」开关；待删除提交条出现在其下方，跟着一起固定
+function buildSourcesActionBar() {
+    const bar = createEl('div', 'sources-action-bar');
+    const head = createEl('div', 'sources-action-head');
+    head.appendChild(createEl('span', 'sources-action-title', '数据源'));
+    const manageBtn = createEl('button', 'btn btn-secondary accounts-manage-btn', '管理模式', {
+        type: 'button',
+        'aria-pressed': state.manageMode ? 'true' : 'false',
+    });
+    manageBtn.addEventListener('click', () => setManageMode(!state.manageMode));
+    head.appendChild(manageBtn);
+    bar.appendChild(head);
+    bar.appendChild(createEl('div', 'accounts-delete-bar-wrap'));
+    return bar;
+}
+
 function renderSourcesPanel(panel, section) {
+    panel.appendChild(buildSourcesActionBar());
+    syncManageBar();
+
     panel.appendChild(createEl('p', 'settings-effect-note', '生效时间：下一轮抓取生效。'));
     panel.appendChild(buildLastModifiedLine(section));
 
     // 单一来源列表：全部非每日来源按 payload 目录序渲染（后端返回的启用列表也是目录序，
-    // 前端不再排序），开关状态即启停状态，启停不改变行位置
+    // 前端不再排序），开关状态即启停状态，启停不改变行位置。
+    // 需要账号的来源，其账号面板作为紧随的兄弟 <li> 始终平铺渲染
     panel.appendChild(createEl('h3', 'settings-group-heading', '每小时来源'));
     const list = createEl('ul', 'settings-source-list', '', { id: 'sources-list' });
     sourceCatalog()
         .filter((item) => !item.daily_only)
         .forEach((source) => {
-            list.appendChild(buildSourceRow(source.key, {
+            const row = buildSourceRow(source.key, {
                 enabled: section.value.includes(source.key),
-            }));
+            });
+            list.appendChild(row);
+            if (sourceRequiresAccounts(source.key)) {
+                insertAccountsPanel(row, source.key);
+            }
         });
     panel.appendChild(list);
 
@@ -295,37 +249,15 @@ function renderSourcesPanel(panel, section) {
         });
         panel.appendChild(dailyList);
     }
-
-    // 重新渲染后恢复全部打开着的展开区（例如启停成功后的重建）；
-    // 行已消失或不再需要账号的来源一并从展开记录与各面板状态中移除
-    state.expandedAccountSources = state.expandedAccountSources.filter((key) => {
-        const row = panel.querySelector(`li[data-source="${key}"]`);
-        if (!row || !sourceRequiresAccounts(key)) {
-            delete state.accountPanels[key];
-            return false;
-        }
-        insertAccountsPanel(row, key);
-        return true;
-    });
 }
 
+// 整块重建只读 state，不写回：页面级管理模式、全部待删标记与各来源进行中的
+// 名称刷新状态在重建后自然落回 DOM
 function renderSourcesTab() {
     const panel = elements.panels.sources;
-    // 重建面板前逐个捕获各打开面板的「添加账号」<details> 开合状态，
-    // renderSourcesPanel 恢复展开区时还原；管理态下折叠区被锁定收起，
-    // DOM 上的 false 是被强制的外观，真实开合状态已在进入管理态时存入 panel state，
-    // 这里不能覆盖
-    panel.querySelectorAll('.source-accounts-panel').forEach((accountsPanel) => {
-        const panelState = state.accountPanels[accountsPanel.dataset.accountsFor];
-        const openDetails = accountsPanel.querySelector('.account-add-details');
-        if (openDetails && panelState && !panelState.manageMode) {
-            panelState.addDetailsOpen = openDetails.open;
-        }
-    });
     clearEl(panel);
     const section = settingsSection('crawl_sources');
     if (!section) {
-        state.expandedAccountSources = [];
         state.accountPanels = {};
         renderImportNotice(panel, '数据源配置');
         return;

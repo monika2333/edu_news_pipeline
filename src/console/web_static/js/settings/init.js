@@ -1,6 +1,6 @@
 // 系统设置页 - init：启动逻辑。加载设置负载与各账号来源概览后渲染两个页签，
-// 页签与展开的来源从 URL hash 恢复（#models / #sources / #sources:toutiao；
-// 旧 hash #accounts[:key] 由 activateSettingsTab 兼容改写）。
+// 页签从 URL hash 恢复（#models / #sources；hash 只到页签级，子锚点一律忽略；
+// 旧 hash #accounts[:任意] 由 activateSettingsTab 兼容改写为 #sources）。
 'use strict';
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -17,11 +17,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
-    const { tab, sub } = parseSettingsHash();
+    const { tab } = parseSettingsHash();
 
     await loadAllAccountOverviews();
 
     renderModelsTab();
     renderSourcesTab();
-    activateSettingsTab(tab, sub, { updateHash: false });
+    activateSettingsTab(tab, { updateHash: false });
 });

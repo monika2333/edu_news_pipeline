@@ -24,8 +24,7 @@
 
 .settings-effect-note,
 .settings-updated,
-.settings-env-note,
-.settings-bulk-note {
+.settings-env-note {
     margin: 4px 0;
     color: #64748b;
     font-size: 0.84rem;
@@ -94,8 +93,7 @@
 
 .settings-default-input,
 .step-model-input,
-.account-add-input,
-.accounts-filter {
+.account-add-input {
     padding: 8px 10px;
     border: 1px solid #cbd5e1;
     border-radius: 8px;
@@ -165,9 +163,44 @@
     font-size: 0.95rem;
 }
 
+/* 每小时来源列表是三列网格：需要账号的来源行与其账号面板占满整行，
+   无子账号的来源行各占一列自然并排（判定依据 requires_accounts 带出的
+   has-accounts 类，不按具体来源硬编码） */
 .settings-source-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 24px;
     margin: 0;
     padding-left: 22px;
+}
+
+.settings-source-list > li.has-accounts,
+.settings-source-list > li.source-accounts-panel {
+    grid-column: 1 / -1;
+}
+
+/* 页面级操作条：吸顶固定在数据源面板顶部。平铺后页面变长，管理模式开关
+   必须始终够得着；z-index 高于滚过的芯片网格（网格内芯片不建层叠上下文，
+   10 足够压住），面板内没有其他吸顶元素，不存在偏移冲突 */
+.sources-action-bar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    margin: -4px 0 8px;
+    padding: 8px 0;
+    background: var(--card-bg, #fff);
+    border-bottom: 1px solid #e7edf5;
+}
+
+.sources-action-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.sources-action-title {
+    font-weight: 600;
 }
 
 .settings-source-item {
@@ -208,42 +241,12 @@
     background: #f1f5f9;
     color: #475569;
     font-size: 0.78rem;
-    cursor: default;
 }
 
 .source-account-badge.is-warning {
     border-color: #f59e0b;
     background: #fffbeb;
     color: #b45309;
-    cursor: pointer;
-}
-
-.source-expand-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 3px 10px;
-    border: 1px solid #cbd5e1;
-    border-radius: 999px;
-    background: #fff;
-    color: #475569;
-    font-size: 0.78rem;
-    cursor: pointer;
-}
-
-.source-expand-toggle[aria-expanded="true"] {
-    border-color: #2563eb;
-    color: #2563eb;
-}
-
-/* 折叠时三角朝右，展开时旋转 90° 朝下，与 aria-expanded 联动 */
-.source-expand-icon {
-    display: inline-block;
-    transition: transform 0.15s ease;
-}
-
-.source-expand-toggle[aria-expanded="true"] .source-expand-icon {
-    transform: rotate(90deg);
 }
 
 /* 胶囊滑块开关：账号行 .account-enabled-toggle 与来源行 .source-enabled-toggle 共用。
@@ -331,37 +334,13 @@
     list-style: none;
 }
 
-.account-add-details {
-    margin-top: 14px;
-}
-
-.account-add-summary {
-    cursor: pointer;
-    color: #2563eb;
-    font-size: 0.9rem;
-    font-weight: 600;
-}
-
-.accounts-toolbar {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 12px;
-}
-
-.accounts-filter {
-    width: min(360px, 100%);
-}
-
+/* 「刷新账号名称」是来源行内的小按钮，仅管理模式下渲染 */
 .accounts-refresh-btn {
-    margin-left: auto;
+    min-height: 26px;
+    padding: 2px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
     white-space: nowrap;
-}
-
-.accounts-refresh-status {
-    color: #b91c1c;
-    font-size: 0.82rem;
 }
 
 /* 账号芯片网格：换行排列，数量多时在容器内滚动（约 4 行芯片的高度上限），
@@ -461,7 +440,9 @@
     text-decoration: line-through;
 }
 
-/* 管理态下芯片右侧长出的两个操作：↗ 打开主页（<a>）、×/↩ 标记删除（<button>） */
+/* 管理态下芯片右侧的两个操作：↗ 打开主页（<a>）、×/↩ 标记删除（<button>）。
+   两个节点始终渲染、位置照常占用，切换模式芯片宽度不跳动；
+   默认态仅 visibility 隐藏，不可达性由 JS 侧属性保证 */
 .account-chip-open,
 .account-chip-delete {
     display: inline-flex;
@@ -480,6 +461,11 @@
     line-height: 1;
     text-decoration: none;
     cursor: pointer;
+}
+
+.accounts-chip-grid:not(.is-manage) .account-chip-open,
+.accounts-chip-grid:not(.is-manage) .account-chip-delete {
+    visibility: hidden;
 }
 
 .account-chip-delete {
@@ -521,13 +507,13 @@
     margin: 0;
 }
 
-/* 管理态待提交条 */
+/* 页面级待提交条：有标记时出现在吸顶操作条下方，跟着一起固定 */
 .accounts-delete-bar {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 10px;
-    margin-top: 12px;
+    margin-top: 8px;
     padding: 10px 12px;
     border: 1px solid #fecaca;
     border-radius: 10px;
@@ -540,86 +526,43 @@
     font-weight: 600;
 }
 
-/* 管理按钮按下态 */
+/* 管理模式开关按下态 */
 .accounts-manage-btn.is-active {
     border-color: #2563eb;
     color: #2563eb;
 }
 
-/* 管理态下「添加账号」锁定收起：summary 不可点、视觉弱化。
-   键盘点击由 JS 的 click 守卫拦截，这里只承担视觉表达 */
-.account-add-details.is-locked > .account-add-summary {
-    color: #94a3b8;
-    cursor: not-allowed;
-}
-
-.account-add-box,
-.account-bulk-box {
-    margin-top: 18px;
-}
-
-.account-add-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.account-add-input {
-    width: min(360px, 100%);
-}
-
-.account-add-error {
-    margin: 6px 0 0;
-    color: #b91c1c;
-    font-size: 0.84rem;
-}
-
-.account-bulk-text {
-    box-sizing: border-box;
-    width: 100%;
-    padding: 9px 12px;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    font: inherit;
-}
-
-.account-bulk-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 8px;
-}
-
-.account-bulk-summary {
-    margin: 10px 0 4px;
-    color: #475569;
-    font-size: 0.86rem;
-}
-
-.account-bulk-stale {
-    margin-left: 10px;
-    color: #b45309;
-}
-
-.account-bulk-results {
-    margin: 0;
-    padding-left: 20px;
-}
-
-.account-bulk-row {
-    padding: 3px 0;
-    font-size: 0.84rem;
-}
-
-.account-bulk-status {
-    margin-left: 8px;
+/* 管理模式下图标网格末尾的虚线「＋ 添加账号」芯片 */
+.account-add-chip {
+    border-style: dashed;
+    background: transparent;
     color: #64748b;
+    font: inherit;
+    font-size: 0.84rem;
+    padding: 5px 12px;
+    cursor: pointer;
 }
 
-.account-bulk-row.is-addable .account-bulk-status {
-    color: #15803d;
+.account-add-chip:hover {
+    color: #2563eb;
+    border-color: #2563eb;
 }
 
-.account-bulk-row.is-invalid .account-bulk-status,
-.account-bulk-row.is-batch_duplicate .account-bulk-status {
-    color: #b91c1c;
+/* 虚线芯片点击后就地变成的输入框：回车/点「添加」提交，Esc 退回虚线形态 */
+.account-add-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.account-add-inline .account-add-input {
+    width: 220px;
+    padding: 4px 10px;
+    font-size: 0.84rem;
+}
+
+.account-add-inline .btn-account-add {
+    min-height: 28px;
+    padding: 2px 12px;
+    font-size: 0.8rem;
 }

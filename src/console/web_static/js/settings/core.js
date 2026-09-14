@@ -8,17 +8,21 @@ const SETTINGS_TABS = ['models', 'sources'];
 const state = {
     payload: null,
     activeTab: 'models',
-    // 数据源页签当前打开的账号管理面板，按展开顺序记录来源 key（可同时展开多个；
-    // 渲染顺序由 DOM 决定，此数组只用于「哪些面板开着」与 hash 回写）
-    expandedAccountSources: [],
     accounts: {},
     // 启用数与总数成对维护：徽标文案「启用 X / 共 Y」；加载失败时两者都置 null（未知态）
     accountCounts: {},
     accountTotals: {},
-    // 各来源展开面板的 UI 状态，按来源 key 懒创建（见 source_accounts.js 的
-    // accountPanelState）：filter / manageMode / deleteMarks / deleteSubmitting /
-    // addDetailsOpen / bulk / refreshInflight。面板收起时删除对应 key（收起即重置）；
-    // 来源启停触发的整块重建不清这里，重建后各面板状态自然恢复
+    // 页面级管理模式：关闭时页面是「看 + 启停」，打开后才出现添加、删除、主页链接、
+    // 刷新名称。启停（来源开关与账号芯片）不受管理模式管辖，任何时候都可点
+    manageMode: false,
+    // 待删标记为页面级，元素形如 { id, source }，按标记先后顺序排列；
+    // 跨来源的标记共存，一次确认全部串行提交
+    deleteMarks: [],
+    // 批量删除提交进行中：锁死模式开关与确认/取消按钮，防重复提交
+    deleteSubmitting: false,
+    // 各来源账号面板的 UI 状态，按来源 key 懒创建（见 source_accounts.js 的
+    // accountPanelState）：只剩 refreshInflight（名称刷新按钮是按来源的）。
+    // 账号面板始终平铺，没有收起即重置的语义
     accountPanels: {},
     // 数据源页签没有草稿：来源启停即时写库，未保存守卫只服务模型页签
     dirty: { llm_models: false },
@@ -243,20 +247,18 @@ function parseSettingsHash() {
     return { tab, sub };
 }
 
-function writeSettingsHash(tab, sub) {
-    const target = `#${tab}${sub ? `:${sub}` : ''}`;
+function writeSettingsHash(tab) {
+    const target = `#${tab}`;
     if (window.location.hash === target) return;
     window.history.replaceState(null, '', target);
 }
 
 // 切换页签只隐藏面板，不重渲染，未保存的修改随 DOM 保留。
-// 旧 hash 兼容：#accounts[:来源key] 一律改写为 #sources[:来源key]（replaceState，不留历史）；
-// #sources:<key> 的 key 不在需要账号的来源里时降级为 #sources，不报错。
-// 账号面板可多开：合法 sub 只负责把该来源展开，不收起其他面板；
-// 无 sub 时回退到最近展开且仍打开的来源。
-function activateSettingsTab(tab, sub, { updateHash = true } = {}) {
+// hash 收敛到页签级：只写 #models / #sources，解析出的 sub 一律忽略
+// （#sources:<来源key> 这类子锚点已随展开抽屉取消而失效）。
+// 旧 hash 兼容：#accounts[:任意] 一律 replaceState 改写为 #sources，不报错、不留历史。
+function activateSettingsTab(tab, { updateHash = true } = {}) {
     let normalized = tab;
-    let hashSub = sub;
     let forceHashRewrite = false;
     if (normalized === 'accounts') {
         normalized = 'sources';
@@ -264,20 +266,6 @@ function activateSettingsTab(tab, sub, { updateHash = true } = {}) {
     }
     if (!SETTINGS_TABS.includes(normalized)) normalized = 'models';
     state.activeTab = normalized;
-    if (normalized === 'sources') {
-        if (hashSub === undefined || hashSub === '') {
-            const open = state.expandedAccountSources;
-            hashSub = open.length ? open[open.length - 1] : '';
-        } else if (accountSources().some((item) => item.key === hashSub)) {
-            if (!expandSourceRow(hashSub, { updateHash: false })) {
-                hashSub = '';
-                forceHashRewrite = true;
-            }
-        } else {
-            hashSub = '';
-            forceHashRewrite = true;
-        }
-    }
     elements.tabButtons.forEach((btn) => {
         const active = btn.dataset.settingsTab === normalized;
         btn.classList.toggle('is-active', active);
@@ -287,6 +275,6 @@ function activateSettingsTab(tab, sub, { updateHash = true } = {}) {
         panel.hidden = name !== normalized;
     });
     if (updateHash || forceHashRewrite) {
-        writeSettingsHash(normalized, normalized === 'sources' ? hashSub : '');
+        writeSettingsHash(normalized);
     }
 }

@@ -149,10 +149,13 @@ function syncManageModeUI() {
 // 确认删除：按标记顺序串行发 DELETE——串行而非并发，保证请求顺序确定、失败归属清晰。
 // 404 视为成功：前端标记与库中实际状态可能不同步（另一处已删除），此时目的已经达成。
 // 部分失败不回滚已成功的删除：失败的 id 保留标记并停留在管理态。
+// 来源守卫与 refreshAccountNames 同一写法：开头捕获来源，每次 await 返回后检查，
+// 切走则停止后续请求；收尾刷新针对捕获的来源，面板写入全部跳过，toast 照常。
 async function submitAccountDeletions() {
     if (state.accountDeleteSubmitting) return;
     const ids = [...state.accountDeleteMarks];
     if (!ids.length) return;
+    const source = state.accountSource;
     const panel = elements.panels.sources.querySelector('.source-accounts-panel');
     const confirmBtn = panel && panel.querySelector('#btn-account-delete-confirm');
     const cancelBtn = panel && panel.querySelector('#btn-account-delete-cancel');
@@ -171,6 +174,8 @@ async function submitAccountDeletions() {
     let processed = 0;
     try {
         for (const id of ids) {
+            // 提交中途切走了来源：停止后续请求（展开箭头在面板外，仍可点击）
+            if (state.accountSource !== source) break;
             processed += 1;
             if (confirmBtn && confirmBtn.isConnected) {
                 confirmBtn.textContent = `删除中… ${processed}/${ids.length}`;
@@ -194,36 +199,44 @@ async function submitAccountDeletions() {
     } finally {
         state.accountDeleteSubmitting = false;
     }
-    // 无论成功与否都重新拉取账号并同步来源行徽标
-    await refreshAccountsAndList();
-    const details = elements.panels.sources
-        .querySelector('.source-accounts-panel .account-add-details');
+    // 无论成功与否、是否中途切走，都按开头捕获的来源重新拉取账号并同步来源行徽标
+    await refreshAccountsAndList(source);
+    const switchedAway = state.accountSource !== source;
     if (!failures.length) {
         state.accountManageMode = false;
         state.accountDeleteMarks = [];
-        renderAccountList();
-        syncManageModeUI();
-        if (details) details.open = state.accountAddDetailsOpen;
+        if (!switchedAway) {
+            renderAccountList();
+            syncManageModeUI();
+            const details = elements.panels.sources
+                .querySelector('.source-accounts-panel .account-add-details');
+            if (details) details.open = state.accountAddDetailsOpen;
+        }
         showSettingsToast(`已删除 ${succeeded} 个账号`);
         return;
     }
-    renderAccountList();
-    syncManageModeUI();
     const message = `已删除 ${succeeded} 个，${failures.length} 个失败：${failures[0]}`;
-    accountPanelError(message);
+    if (!switchedAway) {
+        renderAccountList();
+        syncManageModeUI();
+        accountPanelError(message);
+    }
+    // toast 是全局的，切走了也要提示
     showSettingsToast(message, 'error');
 }
 
-async function refreshAccountsAndList() {
-    const source = state.accountSource;
+// 删除/新增后重新拉取账号并同步来源行徽标。source 默认取当前展开来源；
+// 批量删除这类跨多次请求的流程应传入开头捕获的来源——即使中途切走，
+// 被删来源的缓存与徽标也要更新。徽标无条件刷新（否则就是切走后徽标停在旧值
+// 的 bug），只有写回面板 DOM 的部分需要来源守卫。
+async function refreshAccountsAndList(source = state.accountSource) {
     if (!source) {
         refreshSourcesAccountBadges();
         return;
     }
     await loadAccountsForSource(source, { force: true });
     // 请求返回时展开区可能已切换到其他来源，不要覆盖别人的列表
-    if (state.accountSource !== source) return;
-    renderAccountList();
+    if (state.accountSource === source) renderAccountList();
     refreshSourcesAccountBadges();
 }
 

@@ -173,8 +173,9 @@ function syncManageModeUI(source) {
 // 确认删除：按标记顺序串行发 DELETE——串行而非并发，保证请求顺序确定、失败归属清晰。
 // 404 视为成功：前端标记与库中实际状态可能不同步（另一处已删除），此时目的已经达成。
 // 部分失败不回滚已成功的删除：失败的 id 保留标记并停留在管理态。
-// 面板守卫与 refreshAccountNames 同一写法：每次 await 返回后检查该来源面板是否还开着，
-// 被收起则停止后续请求；收尾刷新仍针对该来源，面板写入全部跳过，toast 照常。
+// 面板守卫与 refreshAccountNames 同一写法：判 panel state 身份而非 DOM 存在性——
+// 收起即删除 state，收起再展开属于另一次会话，旧会话立即停止后续请求、收尾不写入
+// 新面板；整块重建不清 state，重建不中断会话。收尾刷新仍针对该来源，toast 照常。
 async function submitAccountDeletions(source) {
     const panelState = accountPanelState(source);
     if (panelState.deleteSubmitting) return;
@@ -198,8 +199,9 @@ async function submitAccountDeletions(source) {
     let processed = 0;
     try {
         for (const id of ids) {
-            // 提交中途该来源面板被收起：停止后续请求（展开箭头在面板外，仍可点击）
-            if (!isAccountPanelOpen(source)) break;
+            // 提交中途面板会话结束（收起即重置；展开箭头在面板外，仍可点击）：停止后续请求
+            // 提交中途面板会话结束（收起即重置；展开箭头在面板外，仍可点击）：停止后续请求
+            if (state.accountPanels[source] !== panelState) break;
             processed += 1;
             if (confirmBtn && confirmBtn.isConnected) {
                 confirmBtn.textContent = `删除中… ${processed}/${ids.length}`;
@@ -225,7 +227,8 @@ async function submitAccountDeletions(source) {
     }
     // 无论成功与否、面板是否中途被收起，都要重新拉取该来源账号并同步来源行徽标
     await refreshAccountsAndList(source);
-    const panelGone = !isAccountPanelOpen(source);
+    // 会话身份判定：收起再展开会重建 panel state，旧会话的收尾不写入新面板
+    const panelGone = state.accountPanels[source] !== panelState;
     if (!failures.length) {
         panelState.manageMode = false;
         panelState.deleteMarks = [];
@@ -301,8 +304,8 @@ function applyRefreshedAccount(source, result) {
 
 // 「刷新账号名称」：全部（或指定）账号按每批最多 20 个切片串行请求，
 // skipped（后端 30 秒预算耗尽）的 id 重新排队；某批完全没有推进时停止兜底，
-// 否则 skipped 一直回队会成为死循环。面板被收起后经 isAccountPanelOpen 守卫终止，
-// 结果不会写进已销毁的 DOM。
+// 否则 skipped 一直回队会成为死循环。面板会话结束（收起即重置 panel state）后
+// 经身份比较守卫终止，结果不会写进新面板的 DOM。
 async function refreshAccountNames(source, ids, button) {
     const panelState = accountPanelState(source);
     if (panelState.refreshInflight) return;
@@ -329,13 +332,13 @@ async function refreshAccountNames(source, ids, button) {
     syncProgress();
     try {
         while (queue.length) {
-            if (!isAccountPanelOpen(source)) return;
+            if (state.accountPanels[source] !== panelState) return;
             const batch = queue.splice(0, REFRESH_NAMES_BATCH_SIZE);
             const { response, payload } = await apiRequest(
                 '/api/admin/crawl-accounts/refresh-names',
                 { method: 'POST', body: { account_ids: batch } },
             );
-            if (!isAccountPanelOpen(source)) return;
+            if (state.accountPanels[source] !== panelState) return;
             if (!response.ok) {
                 setStatus(`刷新失败：${formatApiError(payload, '请重试')}`);
                 return;
@@ -364,16 +367,16 @@ async function refreshAccountNames(source, ids, button) {
             showSettingsToast(`已更新 ${resolved} 个名称，${failed} 个获取失败`);
         }
     } catch (error) {
-        if (isAccountPanelOpen(source)) {
+        if (state.accountPanels[source] === panelState) {
             setStatus(`刷新失败：${error.message || '网络错误'}`);
         }
     } finally {
         panelState.refreshInflight = false;
-        if (button.isConnected) {
-            button.textContent = originalText;
-            // 可用性由 syncManageModeUI 统一裁决（管理态下保持禁用）
-            syncManageModeUI(source);
-        }
+        // 按钮可能已随整块重建脱离文档，文案只能写回仍在文档里的那个；
+        // 控件状态必须无条件重新同步，否则新面板的刷新按钮会一直停在禁用态
+        // （syncManageModeUI 在面板不存在时直接返回，无条件调用是安全的）
+        if (button.isConnected) button.textContent = originalText;
+        syncManageModeUI(source);
     }
 }
 

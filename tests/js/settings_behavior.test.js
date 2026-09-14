@@ -1,5 +1,5 @@
 // 系统设置页（/admin/settings）的 jsdom 行为测试。
-// 覆盖验收场景 S1-S33（S7、S17 已随排序模式一起删除）与芯片布局新增场景 N1-N15；
+// 覆盖验收场景 S1-S33（S7、S17 已随排序模式一起删除）与芯片布局新增场景 N1-N16；
 // 各场景语义见 tests/test_settings_js_behavior.py 与交付说明。
 'use strict';
 
@@ -1725,6 +1725,50 @@ test('N15：两个面板同时打开时，筛选词与管理态按来源隔离�
             'toutiao 面板列表不应被 tencent 的筛选词影响',
         );
         assert.equal(toutiaoPanel.querySelector('.accounts-filter').value, '');
+    } finally {
+        page.close();
+    }
+});
+
+test('N16：删除提交进行中收起并重新展开同一来源，旧会话立即终止、不污染新面板', async () => {
+    const accounts = defaultAccounts();
+    accounts.toutiao = makeToutiaoAccounts(3);
+    const page = await bootPage({ accounts });
+    try {
+        await expandSource(page, 'toutiao');
+        await waitForChip(page, 'tt-3');
+        await enterManageMode(page, 'toutiao');
+        accountChip(page, 'tt-1').querySelector('.account-chip-delete').click();
+        accountChip(page, 'tt-2').querySelector('.account-chip-delete').click();
+        accountChip(page, 'tt-3').querySelector('.account-chip-delete').click();
+
+        page.server.hold('delete-account', 1);
+        accountsPanel(page, 'toutiao').querySelector('.btn-account-delete-confirm').click();
+        await waitFor(() => page.server.requests('delete-account').length === 1);
+
+        // 提交进行中收起该来源面板、随即重新展开：新面板是另一次会话
+        sourceRow(page, 'toutiao').querySelector('.source-expand-toggle').click();
+        await waitFor(() => accountsPanel(page, 'toutiao') === null);
+        await expandSource(page, 'toutiao');
+        await waitForChip(page, 'tt-1');
+        // 在新面板里展开「添加账号」，旧会话收尾不得把它关掉
+        const addDetails = accountsPanel(page, 'toutiao')
+            .querySelector('.account-add-details');
+        addDetails.open = true;
+
+        page.server.release('delete-account');
+        await waitFor(() => page.server.requests('delete-account')[0].done);
+        // 旧会话在下一轮循环前终止：不再发出后续 DELETE
+        await assertNever(() => page.server.requests('delete-account').length > 1, 200);
+        // 等旧会话收尾完成（toast 是收尾的最后一步）
+        await waitFor(() => page.document.getElementById('toast').textContent
+            .includes('已删除'));
+        // 新面板的「添加账号」开合状态不被旧会话收尾覆盖
+        assert.equal(addDetails.open, true);
+        // 新面板不携带旧会话的管理态与待删标记
+        assert.equal(deleteBar(page, 'toutiao'), null);
+        assert.equal(manageButton(page, 'toutiao').getAttribute('aria-pressed'), 'false');
+        assert.deepEqual(unhandledRejections, []);
     } finally {
         page.close();
     }

@@ -226,9 +226,15 @@ function buildSourceRow(key, { enabled }) {
         const badge = createEl('button', 'source-account-badge', '', { type: 'button' });
         applyAccountBadge(item, badge, key);
         badge.addEventListener('click', () => {
-            if (badge.dataset.expandAccounts) {
-                expandSourceRow(badge.dataset.expandAccounts);
+            const key = badge.dataset.expandAccounts;
+            if (!key) return;
+            // 多开语义下 expandSourceRow 对已展开的来源幂等返回；面板可能在视口外，
+            // 滚动过去给出可见反馈，否则点击像没反应
+            if (isAccountPanelOpen(key)) {
+                accountPanelEl(key).scrollIntoView({ block: 'nearest' });
+                return;
             }
+            expandSourceRow(key);
         });
         item.appendChild(badge);
     }

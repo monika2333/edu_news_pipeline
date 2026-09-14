@@ -1168,7 +1168,7 @@ def run(
         except Exception as exc:
             log_error(WORKER, "seen_raw_tokens", exc)
     first_run_limit = max(
-        0,
+        1,
         _env_int("CRAWL_FIRST_RUN_LIMIT", DEFAULT_FIRST_RUN_LIMIT),
     )
     total_ok = total_failed = total_skipped = 0

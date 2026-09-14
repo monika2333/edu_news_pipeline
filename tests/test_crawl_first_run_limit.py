@@ -193,6 +193,39 @@ def test_seen_token_set_is_loaded_once_per_run_for_both_account_sources(
     assert observed == [({"seen-token"}, 10), ({"seen-token"}, 10)]
 
 
+def test_zero_configured_first_run_limit_is_clamped_to_one(monkeypatch) -> None:
+    adapter = SimpleNamespace(ingest=_CountingIngest(set()))
+    account = _account("new-token")
+    observed_limits: list[int] = []
+
+    monkeypatch.setenv("CRAWL_FIRST_RUN_LIMIT", "0")
+    monkeypatch.setattr(
+        crawl_sources,
+        "get_settings",
+        lambda: SimpleNamespace(process_limit=None, keywords_path=None),
+    )
+    monkeypatch.setattr(crawl_sources, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(
+        crawl_sources,
+        "get_business_config",
+        lambda: SimpleNamespace(
+            crawl_sources=("toutiao",),
+            accounts={"toutiao": (account,)},
+        ),
+    )
+    monkeypatch.setattr(crawl_sources, "worker_session", _worker_session)
+    monkeypatch.setattr(
+        crawl_sources,
+        "_run_toutiao_flow",
+        lambda **kwargs: observed_limits.append(kwargs["first_run_limit"])
+        or EMPTY_STATS.copy(),
+    )
+
+    crawl_sources.run(limit=100, sources=["toutiao"])
+
+    assert observed_limits == [1]
+
+
 def test_zero_row_first_run_creates_no_marker_and_is_first_run_again(
     monkeypatch,
 ) -> None:

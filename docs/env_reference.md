@@ -258,7 +258,7 @@ TOUTIAO_FETCH_TIMEOUT=20
 TOUTIAO_LANG=zh-CN
 TOUTIAO_SHOW_BROWSER=false
 TOUTIAO_EXISTING_CONSECUTIVE_STOP=5
-# 头条和腾讯新账号首次抓取的单账号条数上限；首次抓取同时只请求第一页
+# 头条和腾讯新账号首次抓取的单账号条数上限（最小为 1）；首次抓取同时只请求第一页
 CRAWL_FIRST_RUN_LIMIT=10
 
 # Tencent（账号已迁入控制台设置页）

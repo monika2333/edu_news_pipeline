@@ -11,7 +11,16 @@ const state = {
     // 数据源页签当前展开管理账号的来源（手风琴，同时最多一个）
     accountSource: null,
     accounts: {},
+    // 启用数与总数成对维护：徽标文案「启用 X / 共 Y」；加载失败时两者都置 null（未知态）
     accountCounts: {},
+    accountTotals: {},
+    // 展开区管理态与待删标记（按标记顺序排列，确认删除时按此顺序串行提交）：
+    // 与 accountFilter 一样放进 state，来源启停触发的整块重建后自然恢复；
+    // 收起展开区/切换来源时由 collapseSourceExpansion 一并清空
+    accountManageMode: false,
+    accountDeleteMarks: [],
+    // 批量删除提交进行中：锁定待提交条与管理态出口，防止重复提交
+    accountDeleteSubmitting: false,
     // 数据源页签没有草稿：来源启停即时写库，未保存守卫只服务模型页签
     dirty: { llm_models: false },
     saving: { llm_models: false },
@@ -37,10 +46,6 @@ function cacheSettingsElements() {
         models: document.getElementById('settings-panel-models'),
         sources: document.getElementById('settings-panel-sources'),
     };
-    elements.deleteModal = document.getElementById('delete-account-modal');
-    elements.deleteName = document.getElementById('delete-account-name');
-    elements.deleteConfirm = document.getElementById('btn-confirm-delete-account');
-    elements.deleteCancel = document.getElementById('btn-cancel-delete-account');
     state.currentUserName = document.body.dataset.currentUserName || '';
 }
 
@@ -225,6 +230,7 @@ async function loadAccountsForSource(source, { force = false } = {}) {
     state.accounts[source] = payload.items || [];
     state.accountCounts[source] = state.accounts[source]
         .filter((item) => item.enabled).length;
+    state.accountTotals[source] = state.accounts[source].length;
     return state.accounts[source];
 }
 
@@ -234,6 +240,7 @@ async function loadAllAccountOverviews() {
             await loadAccountsForSource(item.key);
         } catch (error) {
             state.accountCounts[item.key] = null;
+            state.accountTotals[item.key] = null;
         }
     }));
 }

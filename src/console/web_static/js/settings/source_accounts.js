@@ -1,6 +1,7 @@
-// 系统设置页 - 来源账号管理：数据源页签行内展开区的账号列表（启停、删除、名称展示）、
-// 单个新增与批量粘贴预览（收进「添加账号」<details>，默认折叠），以及「刷新账号名称」
-// 的分批串行刷新。账号名称由后端解析，前端不提供名称输入；所有用户输入经 textContent 渲染。
+// 系统设置页 - 来源账号管理：数据源页签行内展开区的账号芯片网格（默认态芯片即启用开关，
+// 管理态芯片提供打开主页与标记删除，删除为「标记 + 串行批量提交」）、单个新增与批量粘贴
+// 预览（收进「添加账号」<details>，默认折叠），以及「刷新账号名称」的分批串行刷新。
+// 账号名称由后端解析，前端不提供名称输入；所有用户输入经 textContent 渲染。
 'use strict';
 
 // 后端 refresh-names 接口单批上限 20（Pydantic max_length），前端切片必须与之对齐
@@ -27,12 +28,18 @@ function filteredAccountItems() {
     });
 }
 
-function accountRowError(row, message) {
-    const errorEl = row.querySelector('.account-row-error');
-    errorEl.textContent = message || '';
+function accountDisplayName(item) {
+    return item.display_name || item.normalized_identifier;
 }
 
-async function toggleAccountEnabled(item, row, toggle) {
+// 芯片区下方的共享错误行（单个节点）：表格行内错误在芯片布局下没有落点，
+// 改为显示最近一次失败的原因，下一次操作成功时清空。
+function accountPanelError(message) {
+    const errorEl = document.getElementById('accounts-panel-error');
+    if (errorEl) errorEl.textContent = message || '';
+}
+
+async function toggleAccountEnabled(item, toggle) {
     const target = toggle.checked;
     toggle.disabled = true;
     try {
@@ -42,62 +49,169 @@ async function toggleAccountEnabled(item, row, toggle) {
         );
         if (!response.ok) {
             toggle.checked = !target;
-            accountRowError(row, `状态切换失败：${formatApiError(payload, '请重试')}`);
+            accountPanelError(`状态切换失败：${formatApiError(payload, '请重试')}`);
             return;
         }
         item.enabled = !!payload.item.enabled;
         toggle.checked = item.enabled;
-        accountRowError(row, '');
+        accountPanelError('');
         state.accountCounts[item.source] = currentAccountItems()
             .filter((account) => account.enabled).length;
         refreshSourcesAccountBadges();
     } catch (error) {
         toggle.checked = !target;
-        accountRowError(row, `状态切换失败：${error.message || '网络错误'}`);
+        accountPanelError(`状态切换失败：${error.message || '网络错误'}`);
     } finally {
         toggle.disabled = false;
     }
 }
 
-let pendingDeleteAccount = null;
-
-function openDeleteAccountModal(item) {
-    pendingDeleteAccount = item;
-    elements.deleteName.textContent = item.display_name || item.normalized_identifier;
-    elements.deleteModal.classList.add('active');
-    elements.deleteModal.setAttribute('aria-hidden', 'false');
+function isAccountMarked(id) {
+    return state.accountDeleteMarks.includes(id);
 }
 
-function closeDeleteAccountModal() {
-    pendingDeleteAccount = null;
-    elements.deleteModal.classList.remove('active');
-    elements.deleteModal.setAttribute('aria-hidden', 'true');
+// 管理态进出。进入时捕获「添加账号」开合状态并锁定折叠区、禁用名称刷新——管理态
+// 只负责「打开主页」和「删除」两件事，不让新增、名称刷新和待删标记三种状态互相纠缠；
+// 退出时丢弃全部待删标记并恢复折叠区开合。DOM 一律由 renderAccountList +
+// syncManageModeUI 重建，保证与 state 一致。
+function setManageMode(on) {
+    if (state.accountDeleteSubmitting) return;
+    if (state.accountManageMode === on) return;
+    const panel = elements.panels.sources.querySelector('.source-accounts-panel');
+    const details = panel && panel.querySelector('.account-add-details');
+    if (on) {
+        if (details) state.accountAddDetailsOpen = details.open;
+        state.accountManageMode = true;
+    } else {
+        state.accountManageMode = false;
+        state.accountDeleteMarks = [];
+    }
+    renderAccountList();
+    syncManageModeUI();
+    if (details) details.open = !on && state.accountAddDetailsOpen;
 }
 
-function bindDeleteAccountModal() {
-    elements.deleteCancel.addEventListener('click', closeDeleteAccountModal);
-    elements.deleteConfirm.addEventListener('click', async () => {
-        const item = pendingDeleteAccount;
-        if (!item) return;
-        elements.deleteConfirm.disabled = true;
-        try {
-            const { response, payload } = await apiRequest(
-                `/api/admin/crawl-accounts/${encodeURIComponent(item.id)}`,
-                { method: 'DELETE' },
-            );
-            if (!response.ok) {
-                showSettingsToast(`删除失败：${formatApiError(payload, '请重试')}`, 'error');
-                return;
-            }
-            closeDeleteAccountModal();
-            showSettingsToast('账号已删除');
-            await refreshAccountsAndList();
-        } catch (error) {
-            showSettingsToast(`删除失败：${error.message || '网络错误'}`, 'error');
-        } finally {
-            elements.deleteConfirm.disabled = false;
-        }
+// 标记/撤回都只动 state 与前端外观，不发请求；撤销必须是零成本的
+function toggleAccountDeleteMark(item) {
+    if (state.accountDeleteSubmitting) return;
+    const index = state.accountDeleteMarks.indexOf(item.id);
+    if (index >= 0) {
+        state.accountDeleteMarks.splice(index, 1);
+    } else {
+        state.accountDeleteMarks.push(item.id);
+    }
+    renderAccountList();
+    syncManageModeUI();
+}
+
+// 管理态相关控件的统一同步：管理按钮按下态、名称刷新禁用、「添加账号」锁定、
+// 待提交条（数量取全部标记，不按筛选后的可见芯片统计——被筛选隐藏的标记仍然算数）。
+function syncManageModeUI() {
+    const panel = elements.panels.sources.querySelector('.source-accounts-panel');
+    if (!panel) return;
+    const manageBtn = panel.querySelector('#btn-account-manage');
+    if (manageBtn) {
+        manageBtn.setAttribute('aria-pressed', state.accountManageMode ? 'true' : 'false');
+        manageBtn.classList.toggle('is-active', state.accountManageMode);
+        manageBtn.disabled = state.accountDeleteSubmitting;
+    }
+    const refreshBtn = panel.querySelector('#btn-account-refresh-names');
+    if (refreshBtn) {
+        refreshBtn.disabled = state.accountManageMode || state.accountRefreshInflight;
+    }
+    const details = panel.querySelector('.account-add-details');
+    if (details) details.classList.toggle('is-locked', state.accountManageMode);
+
+    const wrap = panel.querySelector('#accounts-delete-bar-wrap');
+    if (!wrap) return;
+    clearEl(wrap);
+    if (!state.accountManageMode || state.accountDeleteMarks.length === 0) return;
+    const bar = createEl('div', 'accounts-delete-bar');
+    bar.appendChild(createEl('span', 'accounts-delete-count',
+        `将删除 ${state.accountDeleteMarks.length} 个账号`));
+    const cancelBtn = createEl('button', 'btn btn-secondary', '取消', {
+        id: 'btn-account-delete-cancel',
+        type: 'button',
     });
+    cancelBtn.disabled = state.accountDeleteSubmitting;
+    cancelBtn.addEventListener('click', () => setManageMode(false));
+    const confirmBtn = createEl('button', 'btn admin-confirm-delete', '确认删除', {
+        id: 'btn-account-delete-confirm',
+        type: 'button',
+    });
+    confirmBtn.disabled = state.accountDeleteSubmitting;
+    confirmBtn.addEventListener('click', submitAccountDeletions);
+    bar.appendChild(cancelBtn);
+    bar.appendChild(confirmBtn);
+    wrap.appendChild(bar);
+}
+
+// 确认删除：按标记顺序串行发 DELETE——串行而非并发，保证请求顺序确定、失败归属清晰。
+// 404 视为成功：前端标记与库中实际状态可能不同步（另一处已删除），此时目的已经达成。
+// 部分失败不回滚已成功的删除：失败的 id 保留标记并停留在管理态。
+async function submitAccountDeletions() {
+    if (state.accountDeleteSubmitting) return;
+    const ids = [...state.accountDeleteMarks];
+    if (!ids.length) return;
+    const panel = elements.panels.sources.querySelector('.source-accounts-panel');
+    const confirmBtn = panel && panel.querySelector('#btn-account-delete-confirm');
+    const cancelBtn = panel && panel.querySelector('#btn-account-delete-cancel');
+    const manageBtn = panel && panel.querySelector('#btn-account-manage');
+    state.accountDeleteSubmitting = true;
+    if (confirmBtn) confirmBtn.disabled = true;
+    if (cancelBtn) cancelBtn.disabled = true;
+    if (manageBtn) manageBtn.disabled = true;
+    // 提交进行中芯片区不接受任何操作（checkbox 在管理态本已禁用）
+    if (panel) {
+        panel.querySelectorAll('.account-chip-delete')
+            .forEach((btn) => { btn.disabled = true; });
+    }
+    let succeeded = 0;
+    const failures = [];
+    let processed = 0;
+    try {
+        for (const id of ids) {
+            processed += 1;
+            if (confirmBtn && confirmBtn.isConnected) {
+                confirmBtn.textContent = `删除中… ${processed}/${ids.length}`;
+            }
+            try {
+                const { response, payload } = await apiRequest(
+                    `/api/admin/crawl-accounts/${encodeURIComponent(id)}`,
+                    { method: 'DELETE' },
+                );
+                if (response.ok || response.status === 404) {
+                    succeeded += 1;
+                    state.accountDeleteMarks = state.accountDeleteMarks
+                        .filter((mark) => mark !== id);
+                } else {
+                    failures.push(formatApiError(payload, '请重试'));
+                }
+            } catch (error) {
+                failures.push(error.message || '网络错误');
+            }
+        }
+    } finally {
+        state.accountDeleteSubmitting = false;
+    }
+    // 无论成功与否都重新拉取账号并同步来源行徽标
+    await refreshAccountsAndList();
+    const details = elements.panels.sources
+        .querySelector('.source-accounts-panel .account-add-details');
+    if (!failures.length) {
+        state.accountManageMode = false;
+        state.accountDeleteMarks = [];
+        renderAccountList();
+        syncManageModeUI();
+        if (details) details.open = state.accountAddDetailsOpen;
+        showSettingsToast(`已删除 ${succeeded} 个账号`);
+        return;
+    }
+    renderAccountList();
+    syncManageModeUI();
+    const message = `已删除 ${succeeded} 个，${failures.length} 个失败：${failures[0]}`;
+    accountPanelError(message);
+    showSettingsToast(message, 'error');
 }
 
 async function refreshAccountsAndList() {
@@ -113,8 +227,8 @@ async function refreshAccountsAndList() {
     refreshSourcesAccountBadges();
 }
 
-// 名称刷新结果就地落到单行：同步 state 缓存，只重绘该行的名称单元格，
-// 不整表重建——重建会打断进行中的启停操作，且会让失败分支的错误写进已销毁的节点。
+// 名称刷新结果就地落到单个芯片：同步 state 缓存，只重绘该芯片的名称区，
+// 不整块重建——重建会打断进行中的启停操作，且会让失败分支的错误写进已销毁的节点。
 function applyRefreshedAccount(source, result) {
     const accounts = state.accounts[source];
     if (!accounts) return;
@@ -128,11 +242,24 @@ function applyRefreshedAccount(source, result) {
         item.display_name_error = result.error;
     }
     if (state.accountSource !== source) return;
-    const row = document.querySelector(`#accounts-body tr[data-account-id="${item.id}"]`);
-    if (!row) return;
-    renderAccountNameCell(row.querySelector('.account-name-cell'), item);
-    const toggle = row.querySelector('.account-enabled-toggle');
+    const chip = document.querySelector(
+        `#accounts-body .account-chip[data-account-id="${item.id}"]`);
+    if (!chip) return;
+    chip.classList.toggle('is-unresolved', !item.display_name);
+    renderChipNameContent(chip.querySelector('.account-chip-label'), item);
+    const toggle = chip.querySelector('.account-enabled-toggle');
     if (toggle) toggle.setAttribute('aria-label', accountToggleLabel(item));
+    const openLink = chip.querySelector('.account-chip-open');
+    if (openLink) {
+        openLink.setAttribute('aria-label', `打开 ${accountDisplayName(item)} 的主页`);
+    }
+    const deleteBtn = chip.querySelector('.account-chip-delete');
+    if (deleteBtn) {
+        const marked = isAccountMarked(item.id);
+        deleteBtn.setAttribute('aria-label', marked
+            ? `撤回删除 ${accountDisplayName(item)}`
+            : `删除 ${accountDisplayName(item)}`);
+    }
 }
 
 // 「刷新账号名称」：全部（或指定）账号按每批最多 20 个切片串行请求，
@@ -204,33 +331,34 @@ async function refreshAccountNames(source, ids, button) {
     } finally {
         state.accountRefreshInflight = false;
         if (button.isConnected) {
-            button.disabled = false;
             button.textContent = originalText;
+            // 可用性由 syncManageModeUI 统一裁决（管理态下保持禁用）
+            syncManageModeUI();
         }
     }
 }
 
-// 名称单元格的三种状态：已解析显示名称；未解析显示截断标识（CSS 省略号，
-// 完整值放 title）加弱化标记；其他来源解析失败时标记变为「名称获取失败」。
-// 头条依赖下一轮抓取补名称，即使带错误原因也保持弱化的「名称待获取」外观；
+// 芯片名称区的三种状态：已解析显示名称；未解析显示截断标识（CSS 省略号，
+// 完整值放 title）加弱化标记；非头条来源解析失败时标记变为「名称获取失败」（警示色）。
+// 头条依赖下一轮抓取补名称，即使带错误原因也保持中性的「名称待获取」外观；
 // 只要有错误原因都放进标记的 title。
 // 名称文本一律经 textContent 写入，禁止 innerHTML。
-function renderAccountNameCell(cell, item) {
-    clearEl(cell);
-    const link = createEl('a', 'account-name-link', '', {
-        href: item.profile_url,
-        target: '_blank',
-        rel: 'noopener noreferrer',
-    });
+// 只重绘名称区（圆点、名称、标记），不动 label 里的 checkbox——刷新进行中
+// 该芯片的启停操作不应被打断（芯片节点与开关节点都保持原样）。
+function renderChipNameContent(label, item) {
+    label.querySelectorAll('.account-chip-dot, .account-chip-name, .account-name-badge')
+        .forEach((node) => node.remove());
+    // 圆点在名称之前：实心 = 启用，空心 = 停用，不只靠颜色区分启停
+    label.appendChild(createEl('span', 'account-chip-dot', '', { 'aria-hidden': 'true' }));
+    const nameEl = createEl('span', 'account-chip-name');
     if (item.display_name) {
-        link.textContent = item.display_name;
-        link.title = '打开主页';
+        nameEl.textContent = item.display_name;
+        nameEl.title = item.display_name;
     } else {
-        link.classList.add('is-unresolved');
-        link.textContent = item.normalized_identifier;
-        link.title = item.normalized_identifier;
+        nameEl.textContent = item.normalized_identifier;
+        nameEl.title = item.normalized_identifier;
     }
-    cell.appendChild(link);
+    label.appendChild(nameEl);
     if (!item.display_name) {
         const hasError = !!item.display_name_error;
         const showError = hasError && item.source !== 'toutiao';
@@ -238,58 +366,72 @@ function renderAccountNameCell(cell, item) {
             `account-name-badge${showError ? ' is-error' : ''}`,
             showError ? '名称获取失败' : '名称待获取');
         if (hasError) badge.title = item.display_name_error;
-        cell.appendChild(badge);
+        label.appendChild(badge);
     }
-    cell.appendChild(createEl('span', 'account-row-error'));
 }
 
 function accountToggleLabel(item) {
-    return `启用 ${item.display_name || item.normalized_identifier}`;
+    return `启用 ${accountDisplayName(item)}`;
 }
 
-function buildAccountRow(item) {
-    const row = createEl('tr', '', '', { dataset: { accountId: item.id } });
+// 芯片的两种模式共用一个结构：
+// - 默认态：芯片 = 启用开关（label 包裹视觉隐藏的 checkbox，整个芯片即点击区），
+//   没有主页链接、没有删除入口；
+// - 管理态：checkbox 置 disabled（label 点击自然失效——管理态确实不能启停），
+//   右侧长出「打开主页」↗ 与「标记删除」×（已标记为 ↩ 撤回）。
+function buildAccountChip(item) {
+    const marked = isAccountMarked(item.id);
+    const chip = createEl('span',
+        `account-chip${item.display_name ? '' : ' is-unresolved'}${marked ? ' is-marked' : ''}`,
+        '', { dataset: { accountId: item.id } });
 
-    // 启用开关放每行最前：开关本身说明含义，不再单设带表头的「启用」列
-    const enabledCell = createEl('td', 'account-toggle-cell');
-    const toggle = createEl('input', 'settings-switch account-enabled-toggle', '', {
+    const label = createEl('label', 'account-chip-label');
+    const toggle = createEl('input', 'account-enabled-toggle account-chip-checkbox', '', {
         type: 'checkbox',
         'aria-label': accountToggleLabel(item),
     });
     toggle.checked = !!item.enabled;
-    toggle.addEventListener('change', () => toggleAccountEnabled(item, row, toggle));
-    enabledCell.appendChild(toggle);
-    row.appendChild(enabledCell);
+    toggle.disabled = state.accountManageMode;
+    toggle.addEventListener('change', () => toggleAccountEnabled(item, toggle));
+    label.appendChild(toggle);
+    renderChipNameContent(label, item);
+    chip.appendChild(label);
 
-    const nameCell = createEl('td', 'account-name-cell');
-    renderAccountNameCell(nameCell, item);
-    row.appendChild(nameCell);
-
-    const actionCell = createEl('td');
-    const deleteBtn = createEl('button', 'btn btn-secondary account-delete-btn', '删除', {
-        type: 'button',
-    });
-    deleteBtn.addEventListener('click', () => openDeleteAccountModal(item));
-    actionCell.appendChild(deleteBtn);
-    row.appendChild(actionCell);
-    return row;
+    if (state.accountManageMode) {
+        const openLink = createEl('a', 'account-chip-open', '↗', {
+            href: item.profile_url,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            'aria-label': `打开 ${accountDisplayName(item)} 的主页`,
+        });
+        openLink.addEventListener('click', (event) => {
+            if (state.accountDeleteSubmitting) event.preventDefault();
+        });
+        chip.appendChild(openLink);
+        const deleteBtn = createEl('button', 'account-chip-delete', marked ? '↩' : '×', {
+            type: 'button',
+            'aria-label': marked
+                ? `撤回删除 ${accountDisplayName(item)}`
+                : `删除 ${accountDisplayName(item)}`,
+        });
+        deleteBtn.disabled = state.accountDeleteSubmitting;
+        deleteBtn.addEventListener('click', () => toggleAccountDeleteMark(item));
+        chip.appendChild(deleteBtn);
+    }
+    return chip;
 }
 
 function renderAccountList() {
-    const tbody = document.getElementById('accounts-body');
-    if (!tbody) return;
-    clearEl(tbody);
+    const grid = document.getElementById('accounts-body');
+    if (!grid) return;
+    clearEl(grid);
     const items = filteredAccountItems();
     if (!items.length) {
-        const empty = createEl('tr');
-        empty.appendChild(createEl('td', 'settings-source-empty',
-            state.accountFilter ? '没有匹配的账号。' : '该来源还没有抓取账号。', {
-                colspan: '3',
-            }));
-        tbody.appendChild(empty);
+        grid.appendChild(createEl('p', 'settings-source-empty',
+            state.accountFilter ? '没有匹配的账号。' : '该来源还没有抓取账号。'));
         return;
     }
-    items.forEach((item) => tbody.appendChild(buildAccountRow(item)));
+    items.forEach((item) => grid.appendChild(buildAccountChip(item)));
 }
 
 function bulkAddableCount() {
@@ -412,6 +554,9 @@ async function runBulkConfirm() {
 
 // 渲染某个来源的账号管理展开区。账号列表在页面初始化时已全量缓存，
 // 展开本身不发新请求；新增/删除/批量添加后由 refreshAccountsAndList 强制刷新。
+// 布局：工具条（筛选框、管理按钮、刷新账号名称按钮、状态文字）+ 芯片网格
+// （#accounts-body）+ 共享错误行 + 待提交条容器 + 「添加账号」折叠区。
+// 管理态与待删标记读自 state，来源启停触发的整块重建后自然恢复。
 function renderSourceAccounts(sourceKey, containerEl) {
     clearEl(containerEl);
     state.accountSource = sourceKey;
@@ -427,7 +572,16 @@ function renderSourceAccounts(sourceKey, containerEl) {
     filter.addEventListener('input', () => {
         state.accountFilter = filter.value;
         renderAccountList();
+        // 待提交条也随筛选重渲染：计数始终取自全部标记（含被筛选隐藏的），
+        // 保证用户看到的数字与将提交的集合一致
+        syncManageModeUI();
     });
+    const manageBtn = createEl('button', 'btn btn-secondary accounts-manage-btn', '管理', {
+        id: 'btn-account-manage',
+        type: 'button',
+        'aria-pressed': state.accountManageMode ? 'true' : 'false',
+    });
+    manageBtn.addEventListener('click', () => setManageMode(!state.accountManageMode));
     const refreshBtn = createEl('button', 'btn btn-secondary accounts-refresh-btn', '刷新账号名称', {
         id: 'btn-account-refresh-names',
         type: 'button',
@@ -439,28 +593,32 @@ function renderSourceAccounts(sourceKey, containerEl) {
         refreshAccountNames(source, ids, refreshBtn);
     });
     toolbar.appendChild(filter);
+    toolbar.appendChild(manageBtn);
     toolbar.appendChild(refreshBtn);
     toolbar.appendChild(createEl('span', 'accounts-refresh-status', '', {
         id: 'accounts-refresh-status',
     }));
     containerEl.appendChild(toolbar);
 
-    const tableWrap = createEl('div', 'admin-table-wrap');
-    const table = createEl('table', 'admin-table accounts-table');
-    const thead = createEl('thead');
-    const headRow = createEl('tr');
-    // 首列表头留空：启用开关本身说明含义，不单独占一列表头文字
-    ['', '名称', '操作'].forEach((text) => {
-        headRow.appendChild(createEl('th', '', text));
-    });
-    thead.appendChild(headRow);
-    table.appendChild(thead);
-    table.appendChild(createEl('tbody', '', '', { id: 'accounts-body' }));
-    tableWrap.appendChild(table);
-    containerEl.appendChild(tableWrap);
+    containerEl.appendChild(createEl('div', 'accounts-chip-grid', '', { id: 'accounts-body' }));
+    containerEl.appendChild(createEl('p', 'accounts-panel-error', '', {
+        id: 'accounts-panel-error',
+    }));
+    containerEl.appendChild(createEl('div', 'accounts-delete-bar-wrap', '', {
+        id: 'accounts-delete-bar-wrap',
+    }));
 
     const addDetails = createEl('details', 'account-add-details');
-    addDetails.appendChild(createEl('summary', 'account-add-summary', '添加账号'));
+    const addSummary = createEl('summary', 'account-add-summary', '添加账号');
+    addSummary.addEventListener('click', (event) => {
+        // 管理态下「添加账号」锁定收起：管理态只负责打开主页与删除，
+        // 不让新增和待删标记两种状态互相纠缠
+        if (state.accountManageMode) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+    });
+    addDetails.appendChild(addSummary);
 
     const addBox = createEl('div', 'account-add-box');
     addBox.appendChild(createEl('h3', 'settings-group-heading', '新增账号'));
@@ -545,6 +703,9 @@ function renderSourceAccounts(sourceKey, containerEl) {
     addDetails.appendChild(bulkBox);
     containerEl.appendChild(addDetails);
 
+    // 展开区可能是来源启停重建后的恢复：管理态、待删标记、刷新进行中状态都要落回 DOM
+    syncManageModeUI();
+
     loadAccountsForSource(sourceKey)
         .then(() => {
             // 缓存命中也会异步返回；展开区若已收起/切换则放弃渲染
@@ -554,12 +715,10 @@ function renderSourceAccounts(sourceKey, containerEl) {
             refreshSourcesAccountBadges();
         })
         .catch((error) => {
-            const tbody = document.getElementById('accounts-body');
-            if (!tbody) return;
-            clearEl(tbody);
-            const row = createEl('tr');
-            row.appendChild(createEl('td', 'settings-source-empty',
-                `账号加载失败：${error.message}`, { colspan: '3' }));
-            tbody.appendChild(row);
+            const grid = document.getElementById('accounts-body');
+            if (!grid) return;
+            clearEl(grid);
+            grid.appendChild(createEl('p', 'settings-source-empty',
+                `账号加载失败：${error.message}`));
         });
 }

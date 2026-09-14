@@ -6,7 +6,6 @@
 document.addEventListener('DOMContentLoaded', async () => {
     cacheSettingsElements();
     registerUnsavedGuard();
-    bindDeleteAccountModal();
     elements.tabButtons.forEach((btn) => {
         btn.addEventListener('click', () => activateSettingsTab(btn.dataset.settingsTab));
     });

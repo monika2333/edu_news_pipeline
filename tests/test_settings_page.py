@@ -44,7 +44,6 @@ def test_admin_settings_page_structure() -> None:
     assert 'id="settings-panel-models"' in html
     assert 'id="settings-panel-sources"' in html
     assert 'id="settings-panel-accounts"' not in html
-    assert 'id="delete-account-modal"' in html
     # 脚本顺序：core 最先，init 最后
     assert html.index("/static/js/settings/core.js") < html.index(
         "/static/js/settings/models_tab.js"

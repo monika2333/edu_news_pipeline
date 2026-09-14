@@ -351,25 +351,149 @@
     font-size: 0.82rem;
 }
 
-/* 名称列：名称即主页链接；未解析时显示截断标识（单行省略号），
-   max-width 固定，长 token 不会再把行撑开 */
-.account-name-link {
-    display: inline-block;
-    max-width: 280px;
+/* 账号芯片网格：换行排列，数量多时在容器内滚动（约 4 行芯片的高度上限），
+   不把整页推得过长 */
+.accounts-chip-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    max-height: 160px;
+    overflow-y: auto;
+    padding: 2px;
+}
+
+/* 芯片：默认态是启用开关（label 包裹视觉隐藏的 checkbox，整个芯片即点击区）。
+   启用 = 实心主色调 + 实心圆点；停用 = 灰色描边 + 空心圆点——
+   不只靠颜色区分，灰色描边容易被读成「未选中」而不是「已停用」。 */
+.account-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-sizing: border-box;
+    max-width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #fff;
+    color: #475569;
+    font-size: 0.84rem;
+}
+
+.account-chip:has(.account-enabled-toggle:checked) {
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+    color: #fff;
+}
+
+.account-chip:focus-within {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.account-chip-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 5px 12px;
+    cursor: pointer;
+}
+
+/* 管理态 checkbox 被 disabled，但不能套用 .settings-switch:disabled 的半透明
+   （那是「请求进行中」的含义）：这里只收回手型，启用/停用配色保持原样清晰可读 */
+.account-chip:has(.account-enabled-toggle:disabled) .account-chip-label {
+    cursor: default;
+}
+
+/* 视觉隐藏的 checkbox：保留真实语义与键盘可达，视觉由芯片整体承担 */
+.account-chip-checkbox {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.account-chip-dot {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1.5px solid #94a3b8;
+    background: transparent;
+}
+
+.account-chip:has(.account-enabled-toggle:checked) .account-chip-dot {
+    border-color: #fff;
+    background: #fff;
+}
+
+/* 名称超长时截断为省略号，完整值在 title */
+.account-chip-name {
+    max-width: 180px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    vertical-align: bottom;
-    color: #2563eb;
-    text-decoration: none;
 }
 
-.account-name-link:hover {
-    text-decoration: underline;
+/* 名称未解析的芯片整体换底色，在一片已解析芯片中容易定位 */
+.account-chip.is-unresolved {
+    background: #f1f5f9;
+    border-style: dashed;
+}
+
+.account-chip.is-unresolved:has(.account-enabled-toggle:checked) {
+    background: #dbeafe;
+}
+
+.account-chip.is-unresolved .account-chip-name {
+    color: #64748b;
+}
+
+/* 已标记待删：名称加删除线、整体降灰 */
+.account-chip.is-marked {
+    opacity: 0.55;
+    border-color: #b91c1c;
+}
+
+.account-chip.is-marked .account-chip-name {
+    text-decoration: line-through;
+}
+
+/* 管理态下芯片右侧长出的两个操作：↗ 打开主页（<a>）、×/↩ 标记删除（<button>） */
+.account-chip-open,
+.account-chip-delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 22px;
+    height: 22px;
+    margin-right: 6px;
+    padding: 0;
+    border: 1px solid #cbd5e1;
+    border-radius: 50%;
+    background: #fff;
+    color: #475569;
+    font-size: 0.78rem;
+    line-height: 1;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.account-chip-delete {
+    color: #b91c1c;
+}
+
+.account-chip-delete:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .account-name-badge {
-    margin-left: 8px;
+    margin-left: 2px;
     color: #94a3b8;
     font-size: 0.76rem;
     white-space: nowrap;
@@ -379,15 +503,55 @@
     color: #b45309;
 }
 
-.account-row-error {
-    display: block;
-    color: #b91c1c;
-    font-size: 0.78rem;
+.account-chip:has(.account-enabled-toggle:checked) .account-name-badge {
+    color: #dbeafe;
 }
 
-.accounts-table td.account-toggle-cell,
-.accounts-table thead th:first-child {
-    width: 44px;
+.account-chip:has(.account-enabled-toggle:checked) .account-name-badge.is-error {
+    color: #fde68a;
+}
+
+/* 芯片区下方的共享错误行：显示最近一次失败的原因，下一次操作成功时清空 */
+.accounts-panel-error {
+    margin: 8px 0 0;
+    color: #b91c1c;
+    font-size: 0.8rem;
+}
+
+.accounts-panel-error:empty {
+    margin: 0;
+}
+
+/* 管理态待提交条 */
+.accounts-delete-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid #fecaca;
+    border-radius: 10px;
+    background: #fef2f2;
+}
+
+.accounts-delete-count {
+    color: #b91c1c;
+    font-size: 0.86rem;
+    font-weight: 600;
+}
+
+/* 管理按钮按下态 */
+.accounts-manage-btn.is-active {
+    border-color: #2563eb;
+    color: #2563eb;
+}
+
+/* 管理态下「添加账号」锁定收起：summary 不可点、视觉弱化。
+   键盘点击由 JS 的 click 守卫拦截，这里只承担视觉表达 */
+.account-add-details.is-locked > .account-add-summary {
+    color: #94a3b8;
+    cursor: not-allowed;
 }
 
 .account-add-box,

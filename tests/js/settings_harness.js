@@ -190,7 +190,9 @@ class FakeSettingsServer {
         this.inflight = 0;
         this.holds = {};
         this.held = [];
-        this.failNext = {};
+        // 支持经 serverOptions.failNext / throwNext 在 boot 前注入失败
+        // （例如让初始化时的账号概览加载失败，构造「账号数未知」徽标态）
+        this.failNext = options.failNext || {};
         // 与 failNext 对齐的异常注入：按请求 kind 计数、消费一次，让 fetch 直接抛错，
         // 覆盖「网络异常」而非「HTTP 错误状态码」的失败路径
         this.throwNext = {};
@@ -200,6 +202,11 @@ class FakeSettingsServer {
         // attempt 是该 id 第几次被尝试，便于构造「首次 skipped、重试成功」的时序。
         this.refreshBehavior = null;
         this.refreshAttempts = {};
+        // DELETE 的可定制行为：deleteBehavior(id) 返回 null（走默认删除）或
+        // { status, detail }（按该响应回复，不动数据），便于构造「第 2 个 id 删除
+        // 失败、第 3 个 404、其余成功」这类按 id 定制的时序——failNext 按 kind
+        // 计数，无法表达这种序列
+        this.deleteBehavior = null;
     }
 
     classify(url, method) {
@@ -403,6 +410,15 @@ class FakeSettingsServer {
                 return [200, { item: account }];
             }
             if (method === 'DELETE') {
+                const verdict = this.deleteBehavior ? this.deleteBehavior(id) : null;
+                if (verdict) {
+                    // 404 的语义是库里已无此账号：列表也不应再返回它
+                    if (verdict.status === 404) {
+                        this.accounts[source] = this.accounts[source]
+                            .filter((item) => item.id !== id);
+                    }
+                    return [verdict.status, { detail: verdict.detail || '删除失败' }];
+                }
                 this.accounts[source] = this.accounts[source].filter((item) => item.id !== id);
                 return [200, { item: account }];
             }
@@ -416,6 +432,10 @@ class FakeSettingsServer {
         const kind = this.classify(url, method);
         const body = options.body ? JSON.parse(options.body) : null;
         const entry = { kind, path: url.pathname, method, body, status: null, done: false };
+        // 账号级请求把 id 提到 entry.accountId，测试可按顺序读出每次 PATCH/DELETE 的目标
+        if (kind === 'delete-account' || kind === 'patch-account') {
+            entry.accountId = decodeURIComponent(url.pathname.split('/').pop());
+        }
         this.log.push(entry);
         this.inflight += 1;
         const willFail = (this.failNext[kind] || 0) > 0;

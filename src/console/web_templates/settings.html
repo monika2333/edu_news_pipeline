@@ -38,31 +38,6 @@
         </main>
     </div>
 
-    <div class="modal" id="delete-account-modal" role="dialog" aria-modal="true"
-        aria-labelledby="delete-account-modal-title" aria-hidden="true">
-        <section class="modal-content admin-modal-content">
-            <div class="modal-header">
-                <div>
-                    <p class="admin-delete-modal-eyebrow">删除抓取账号</p>
-                    <h3 id="delete-account-modal-title">确认删除账号</h3>
-                </div>
-            </div>
-            <div class="modal-body admin-delete-modal-body">
-                <p>
-                    即将删除账号
-                    <strong id="delete-account-name"></strong>
-                    。删除后下一轮抓取不再包含该账号。
-                </p>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" id="btn-cancel-delete-account"
-                    type="button">取消</button>
-                <button class="btn admin-confirm-delete" id="btn-confirm-delete-account"
-                    type="button">删除账号</button>
-            </div>
-        </section>
-    </div>
-
     <div class="toast" id="toast">操作成功</div>
     <script src="/static/js/api_error.js?v={{ version }}"></script>
     <script src="/static/js/auth.js?v={{ version }}"></script>

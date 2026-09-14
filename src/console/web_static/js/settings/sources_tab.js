@@ -18,16 +18,23 @@ function refreshSourcesAccountBadges() {
 
 function applyAccountBadge(itemEl, badge, sourceKey) {
     const count = state.accountCounts[sourceKey];
+    const total = state.accountTotals[sourceKey];
     if (!sourceRequiresAccounts(sourceKey)) {
         badge.hidden = true;
         return;
     }
     badge.hidden = false;
-    const countText = count === null || count === undefined ? '未知' : String(count);
+    if (count === null || count === undefined || total === null || total === undefined) {
+        badge.textContent = '账号数未知';
+        badge.classList.remove('is-warning');
+        badge.removeAttribute('title');
+        delete badge.dataset.expandAccounts;
+        return;
+    }
     const skip = count === 0;
     badge.textContent = skip
-        ? '启用账号 0 · 本轮会跳过该来源'
-        : `启用账号 ${countText}`;
+        ? `启用 0 / 共 ${total} · 本轮会跳过该来源`
+        : `启用 ${count} / 共 ${total}`;
     badge.classList.toggle('is-warning', skip);
     if (skip) {
         badge.title = '点击展开账号管理';
@@ -50,8 +57,9 @@ function syncSourceToggles() {
         });
 }
 
-// 展开/收起账号管理区：手风琴（同时最多展开一个），切换时重置筛选词与批量粘贴状态，
-// 避免上一个来源的预览结果串到下一个。展开本身不发请求，账号已在初始化时缓存。
+// 展开/收起账号管理区：手风琴（同时最多展开一个），切换时重置筛选词、批量粘贴状态
+// 与管理态（含待删标记），避免上一个来源的状态串到下一个。展开本身不发请求，
+// 账号已在初始化时缓存。
 function collapseSourceExpansion({ updateHash = false } = {}) {
     const had = !!state.accountSource;
     const panel = elements.panels.sources.querySelector('.source-accounts-panel');
@@ -61,6 +69,9 @@ function collapseSourceExpansion({ updateHash = false } = {}) {
         .forEach((btn) => btn.setAttribute('aria-expanded', 'false'));
     state.accountSource = null;
     state.accountFilter = '';
+    state.accountManageMode = false;
+    state.accountDeleteMarks = [];
+    state.accountDeleteSubmitting = false;
     resetBulkState();
     if (updateHash && had) {
         writeSettingsHash('sources');
@@ -73,9 +84,12 @@ function insertAccountsPanel(row, key) {
     const arrow = row.querySelector('.source-expand-toggle');
     if (arrow) arrow.setAttribute('aria-expanded', 'true');
     renderSourceAccounts(key, panel);
-    // 重渲染恢复展开区时还原「添加账号」的开合状态（renderSourcesTab 重建前从 DOM 捕获）
+    // 重渲染恢复展开区时还原「添加账号」的开合状态（renderSourcesTab 重建前从 DOM 捕获）；
+    // 管理态下该折叠区被锁定收起，开合状态由退出管理态时恢复，这里不还原
     const addDetails = panel.querySelector('.account-add-details');
-    if (addDetails && state.accountAddDetailsOpen) addDetails.open = true;
+    if (addDetails && !state.accountManageMode && state.accountAddDetailsOpen) {
+        addDetails.open = true;
+    }
 }
 
 function expandSourceRow(key, { updateHash = true } = {}) {
@@ -279,9 +293,13 @@ function renderSourcesPanel(panel, section) {
 
 function renderSourcesTab() {
     const panel = elements.panels.sources;
-    // 重建面板前捕获「添加账号」<details> 的开合状态，insertAccountsPanel 恢复展开区时还原
+    // 重建面板前捕获「添加账号」<details> 的开合状态，insertAccountsPanel 恢复展开区时还原；
+    // 管理态下折叠区被锁定收起，DOM 上的 false 是被强制的外观，
+    // 真实开合状态已在进入管理态时存入 state，这里不能覆盖
     const openDetails = panel.querySelector('.source-accounts-panel .account-add-details');
-    if (openDetails) state.accountAddDetailsOpen = openDetails.open;
+    if (openDetails && !state.accountManageMode) {
+        state.accountAddDetailsOpen = openDetails.open;
+    }
     clearEl(panel);
     const section = settingsSection('crawl_sources');
     if (!section) {

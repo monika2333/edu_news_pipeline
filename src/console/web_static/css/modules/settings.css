@@ -179,6 +179,12 @@
     grid-column: 1 / -1;
 }
 
+/* 每日任务分组复用 settings-source-list 的类但不应继承三列网格：
+   每日行没有 has-accounts，继承网格会被压成三分之一列、说明文字折行 */
+.settings-source-list.settings-daily-list {
+    display: block;
+}
+
 /* 页面级操作条：吸顶固定在数据源面板顶部。平铺后页面变长，管理模式开关
    必须始终够得着；z-index 高于滚过的芯片网格（网格内芯片不建层叠上下文，
    10 足够压住），面板内没有其他吸顶元素，不存在偏移冲突 */

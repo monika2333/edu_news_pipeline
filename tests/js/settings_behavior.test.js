@@ -1,5 +1,5 @@
 // 系统设置页（/admin/settings）的 jsdom 行为测试。
-// 覆盖验收场景 S1-S33（S7、S17 已随排序模式一起删除）与芯片布局新增场景 N1-N14；
+// 覆盖验收场景 S1-S33（S7、S17 已随排序模式一起删除）与芯片布局新增场景 N1-N15；
 // 各场景语义见 tests/test_settings_js_behavior.py 与交付说明。
 'use strict';
 
@@ -34,18 +34,25 @@ function sourceRow(page, key) {
     return page.document.querySelector(`li[data-source="${key}"]`);
 }
 
-// 点击来源行的展开箭头并等待展开区出现
+// 指定来源的账号展开面板（可同时打开多个，面板间状态隔离）
+function accountsPanel(page, key) {
+    return page.document
+        .querySelector(`.source-accounts-panel[data-accounts-for="${key}"]`);
+}
+
+// 点击来源行的展开箭头并等待展开区出现，返回该来源的面板
 async function expandSource(page, key) {
     const arrow = sourceRow(page, key).querySelector('.source-expand-toggle');
     assert.ok(arrow, `来源 ${key} 应有展开箭头`);
     arrow.click();
-    await waitFor(() => page.document
-        .querySelector(`.source-accounts-panel[data-accounts-for="${key}"]`));
+    await waitFor(() => accountsPanel(page, key));
+    return accountsPanel(page, key);
 }
 
-// 芯片布局下的常用取数：芯片、芯片内的启用开关、共享错误行、待提交条
+// 芯片布局下的常用取数：芯片（账号 id 全局唯一，不按面板区分）、
+// 面板内的共享错误行、待提交条
 function accountChip(page, id) {
-    return page.document.querySelector(`#accounts-body .account-chip[data-account-id="${id}"]`);
+    return page.document.querySelector(`.account-chip[data-account-id="${id}"]`);
 }
 
 async function waitForChip(page, id) {
@@ -53,27 +60,27 @@ async function waitForChip(page, id) {
     return accountChip(page, id);
 }
 
-function accountsPanelError(page) {
-    return page.document.querySelector('.source-accounts-panel #accounts-panel-error');
+function accountsPanelError(page, key) {
+    return accountsPanel(page, key).querySelector('.accounts-panel-error');
 }
 
-function deleteBar(page) {
-    return page.document.querySelector('.source-accounts-panel .accounts-delete-bar');
+function deleteBar(page, key) {
+    return accountsPanel(page, key).querySelector('.accounts-delete-bar');
 }
 
-function deleteBarCount(page) {
-    const bar = deleteBar(page);
+function deleteBarCount(page, key) {
+    const bar = deleteBar(page, key);
     return bar ? bar.querySelector('.accounts-delete-count').textContent : null;
 }
 
-function manageButton(page) {
-    return page.document.getElementById('btn-account-manage');
+function manageButton(page, key) {
+    return accountsPanel(page, key).querySelector('.accounts-manage-btn');
 }
 
 // 进入管理态并等芯片重建出管理态操作按钮
-async function enterManageMode(page) {
-    manageButton(page).click();
-    await waitFor(() => page.document.querySelector('#accounts-body .account-chip-delete'));
+async function enterManageMode(page, key) {
+    manageButton(page, key).click();
+    await waitFor(() => accountsPanel(page, key).querySelector('.account-chip-delete'));
 }
 
 test('S1：配置分区缺失时对应页签显示导入提示且不渲染编辑控件', async () => {
@@ -294,41 +301,40 @@ test('S8：需要账号的来源启用数为 0 时徽标显示跳过提醒，点
 test('S9：批量预览渲染四种状态、确认按钮受可新增数量与预览时效约束', async () => {
     const page = await bootPage();
     try {
-        await expandSource(page, 'toutiao');
+        const panel = await expandSource(page, 'toutiao');
         // 「新增账号」与「批量粘贴」收进默认折叠的「添加账号」<details>
-        const details = page.document.querySelector('.account-add-details');
+        const details = panel.querySelector('.account-add-details');
         assert.ok(details);
         assert.equal(details.open, false);
         details.querySelector('summary').click();
         assert.equal(details.open, true);
 
-        const textarea = page.document.getElementById('account-bulk-text');
-        const confirmBtn = page.document.getElementById('btn-account-bulk-confirm');
+        const textarea = panel.querySelector('.account-bulk-text');
+        const previewBtn = panel.querySelector('.btn-account-bulk-preview');
+        const confirmBtn = panel.querySelector('.btn-account-bulk-confirm');
         assert.ok(confirmBtn.disabled);
 
         // 全部为已存在/重复：没有可新增项时确认按钮不可用
         inputValue(page, textarea, 'toutiao-one');
-        page.document.getElementById('btn-account-bulk-preview').click();
+        previewBtn.click();
         await waitFor(() => page.server.requests('preview-accounts').length === 1
             && page.server.requests('preview-accounts')[0].done);
-        await waitFor(() => page.document
-            .getElementById('account-bulk-summary').textContent.includes('已存在 1'));
+        const summary = panel.querySelector('.account-bulk-summary');
+        await waitFor(() => summary.textContent.includes('已存在 1'));
         assert.ok(confirmBtn.disabled);
 
         // 四种状态同时出现
         inputValue(page, textarea, 'new-id-1\ntoutiao-one\nnew-id-1\ninvalid-line');
-        page.document.getElementById('btn-account-bulk-preview').click();
+        previewBtn.click();
         await waitFor(() => page.server.requests('preview-accounts').length === 2
             && page.server.requests('preview-accounts')[1].done);
-        const summary = page.document.getElementById('account-bulk-summary');
         await waitFor(() => summary.textContent.includes('可新增 1'));
         assert.match(summary.textContent, /已存在 1/);
         assert.match(summary.textContent, /本批内重复 1/);
         assert.match(summary.textContent, /无法解析 1/);
         assert.ok(!confirmBtn.disabled);
         assert.equal(confirmBtn.textContent, '确认添加 1 个');
-        const invalidRow = page.document
-            .querySelector('.account-bulk-row.is-invalid');
+        const invalidRow = panel.querySelector('.account-bulk-row.is-invalid');
         // 「无法解析」是界面按状态生成的标签（fixture 的错误文案刻意不含这四个字），
         // 后面的原因则来自服务端原文
         assert.match(invalidRow.textContent, /无法解析：不认识的输入格式/);
@@ -339,7 +345,7 @@ test('S9：批量预览渲染四种状态、确认按钮受可新增数量与预
         await waitFor(() => summary.textContent.includes('重新预览'));
 
         // 重新预览后确认，列表刷新、结果显示「已添加」
-        page.document.getElementById('btn-account-bulk-preview').click();
+        previewBtn.click();
         await waitFor(() => page.server.requests('preview-accounts').length === 3
             && page.server.requests('preview-accounts')[2].done);
         await waitFor(() => !confirmBtn.disabled);
@@ -347,10 +353,10 @@ test('S9：批量预览渲染四种状态、确认按钮受可新增数量与预
         confirmBtn.click();
         await waitFor(() => page.server.requests('bulk-accounts').length === 1
             && page.server.requests('bulk-accounts')[0].done);
-        await waitFor(() => page.document
-            .querySelector('#account-bulk-results').textContent.includes('已添加'));
-        await waitFor(() => page.document
-            .getElementById('accounts-body').textContent.includes('new-id-1'));
+        await waitFor(() => panel.querySelector('.account-bulk-results').textContent
+            .includes('已添加'));
+        await waitFor(() => panel.querySelector('.accounts-chip-grid').textContent
+            .includes('new-id-1'));
         assert.ok(confirmBtn.disabled);
     } finally {
         page.close();
@@ -378,7 +384,7 @@ test('S10：启用开关 PATCH 失败时芯片开关恢复原状态并在共享�
         await waitFor(() => page.server.requests('patch-account').length === 1
             && page.server.requests('patch-account')[0].done);
         await waitFor(() => toggle.checked === true);
-        assert.match(accountsPanelError(page).textContent, /状态切换失败/);
+        assert.match(accountsPanelError(page, 'tencent').textContent, /状态切换失败/);
     } finally {
         page.close();
     }
@@ -405,7 +411,7 @@ test('S10b：启用开关请求抛网络异常时芯片开关恢复原状态并�
         await waitFor(() => page.server.requests('patch-account').length === 1
             && page.server.requests('patch-account')[0].done);
         await waitFor(() => toggle.checked === true);
-        assert.match(accountsPanelError(page).textContent, /状态切换失败/);
+        assert.match(accountsPanelError(page, 'tencent').textContent, /状态切换失败/);
     } finally {
         page.close();
     }
@@ -595,24 +601,34 @@ test('S15：停用最后一个启用来源被前端拦截，不发出请求', as
     }
 });
 
-test('S16：手风琴——展开第二个来源时第一个自动收起，未启用来源同样可展开', async () => {
+test('S16：多开——同时展开多个来源互不收起，收起其中一个不影响另一个，hash 记最近展开的来源', async () => {
     const page = await bootPage();
     try {
         page.clickTab('sources');
         await expandSource(page, 'toutiao');
         assert.equal(page.document.querySelectorAll('.source-accounts-panel').length, 1);
 
-        // tencent 处于停用状态，同样可展开管理账号
+        // tencent 处于停用状态，同样可展开管理账号；展开后两个面板共存
         await expandSource(page, 'tencent');
-        const panels = page.document.querySelectorAll('.source-accounts-panel');
-        assert.equal(panels.length, 1);
-        assert.equal(panels[0].dataset.accountsFor, 'tencent');
-        // 第一个来源的箭头恢复未展开状态
+        assert.equal(page.document.querySelectorAll('.source-accounts-panel').length, 2);
+        // 两个箭头都处于展开态，hash 指向最近展开的 tencent
         const toutiaoArrow = page.document.querySelector(
             '#sources-list li[data-source="toutiao"] .source-expand-toggle',
         );
-        assert.equal(toutiaoArrow.getAttribute('aria-expanded'), 'false');
+        const tencentArrow = page.document.querySelector(
+            '#sources-list li[data-source="tencent"] .source-expand-toggle',
+        );
+        assert.equal(toutiaoArrow.getAttribute('aria-expanded'), 'true');
+        assert.equal(tencentArrow.getAttribute('aria-expanded'), 'true');
         assert.equal(page.window.location.hash, '#sources:tencent');
+
+        // 收起 tencent：toutiao 面板与箭头不受影响，hash 回写到仍打开的 toutiao
+        tencentArrow.click();
+        await waitFor(() => accountsPanel(page, 'tencent') === null);
+        assert.ok(accountsPanel(page, 'toutiao'));
+        assert.equal(toutiaoArrow.getAttribute('aria-expanded'), 'true');
+        assert.equal(tencentArrow.getAttribute('aria-expanded'), 'false');
+        assert.equal(page.window.location.hash, '#sources:toutiao');
     } finally {
         page.close();
     }
@@ -681,10 +697,10 @@ test('S20：启停其他来源触发重渲染后，展开区、筛选词与「�
     const page = await bootPage();
     try {
         page.clickTab('sources');
-        await expandSource(page, 'toutiao');
-        const filter = page.document.getElementById('accounts-filter');
+        const panel = await expandSource(page, 'toutiao');
+        const filter = panel.querySelector('.accounts-filter');
         inputValue(page, filter, '头条');
-        const details = page.document.querySelector('.account-add-details');
+        const details = panel.querySelector('.account-add-details');
         assert.equal(details.open, false, '「添加账号」默认折叠');
         details.open = true;
 
@@ -693,13 +709,17 @@ test('S20：启停其他来源触发重渲染后，展开区、筛选词与「�
         await waitFor(() => page.server.requests('save-sources').length === 1
             && page.server.requests('save-sources')[0].done);
         // 等重渲染完成：展开区被销毁并重建（筛选框是新的 DOM 节点）
-        await waitFor(() => page.document.getElementById('accounts-filter') !== filter);
+        await waitFor(() => {
+            const rebuilt = accountsPanel(page, 'toutiao');
+            return rebuilt && rebuilt.querySelector('.accounts-filter') !== filter;
+        });
 
         const panels = page.document.querySelectorAll('.source-accounts-panel');
         assert.equal(panels.length, 1);
         assert.equal(panels[0].dataset.accountsFor, 'toutiao');
-        assert.equal(page.document.getElementById('accounts-filter').value, '头条');
-        assert.equal(page.document.querySelector('.account-add-details').open, true);
+        const rebuiltPanel = accountsPanel(page, 'toutiao');
+        assert.equal(rebuiltPanel.querySelector('.accounts-filter').value, '头条');
+        assert.equal(rebuiltPanel.querySelector('.account-add-details').open, true);
     } finally {
         page.close();
     }
@@ -825,10 +845,10 @@ test('S22：芯片内结构为 checkbox + 名称，aria-label 带账号名；空
         await expandSource(page, 'tencent');
         await waitFor(() => page.document
             .querySelector('.source-accounts-panel[data-accounts-for="tencent"]'
-                + ' #accounts-body .settings-source-empty'));
+                + ' .accounts-chip-grid .settings-source-empty'));
         const empty = page.document
             .querySelector('.source-accounts-panel[data-accounts-for="tencent"]'
-                + ' #accounts-body .settings-source-empty');
+                + ' .accounts-chip-grid .settings-source-empty');
         assert.match(empty.textContent, /该来源还没有抓取账号/);
         assert.equal(empty.tagName, 'P');
     } finally {
@@ -909,9 +929,9 @@ test('S25：刷新账号名称按每批最多 20 个切片串行请求，按钮�
     accounts.toutiao = makeToutiaoAccounts(25);
     const page = await bootPage({ accounts });
     try {
-        await expandSource(page, 'toutiao');
+        const panel = await expandSource(page, 'toutiao');
         await waitForChip(page, 'tt-25');
-        const refreshBtn = page.document.getElementById('btn-account-refresh-names');
+        const refreshBtn = panel.querySelector('.accounts-refresh-btn');
         assert.equal(refreshBtn.textContent, '刷新账号名称');
 
         page.server.hold('refresh-names');
@@ -947,14 +967,14 @@ test('S26：返回 skipped 的账号被重新排入下一批继续刷新', async
     accounts.toutiao = makeToutiaoAccounts(2);
     const page = await bootPage({ accounts });
     try {
-        await expandSource(page, 'toutiao');
+        const panel = await expandSource(page, 'toutiao');
         await waitForChip(page, 'tt-2');
         // tt-1 第一次尝试被 skipped（预算耗尽），重试时成功
         page.server.refreshBehavior = (id, attempt) => (
             id === 'tt-1' && attempt === 1 ? 'skipped' : null
         );
 
-        page.document.getElementById('btn-account-refresh-names').click();
+        panel.querySelector('.accounts-refresh-btn').click();
         await waitFor(() => page.server.requests('refresh-names').length === 2
             && page.server.requests('refresh-names').every((entry) => entry.done));
         const second = page.server.requests('refresh-names')[1];
@@ -974,22 +994,21 @@ test('S27：某一批完全没有推进时循环停止并提示，不会无限�
     accounts.toutiao = makeToutiaoAccounts(25);
     const page = await bootPage({ accounts });
     try {
-        await expandSource(page, 'toutiao');
+        const panel = await expandSource(page, 'toutiao');
         await waitForChip(page, 'tt-25');
         // 后 5 个账号始终 skipped：第一批推进 20 个，第二批 5 个全部 skipped、零推进
         page.server.refreshBehavior = (id) => (
             Number(id.split('-')[1]) > 20 ? 'skipped' : null
         );
 
-        page.document.getElementById('btn-account-refresh-names').click();
+        panel.querySelector('.accounts-refresh-btn').click();
         await waitFor(() => page.server.requests('refresh-names').length === 2
             && page.server.requests('refresh-names').every((entry) => entry.done));
         // 兜底生效：不再发出第三次请求
         await assertNever(() => page.server.requests('refresh-names').length >= 3, 300);
-        await waitFor(() => page.document
-            .getElementById('accounts-refresh-status').textContent
+        await waitFor(() => panel.querySelector('.accounts-refresh-status').textContent
             .includes('部分账号未能刷新，请稍后重试'));
-        const refreshBtn = page.document.getElementById('btn-account-refresh-names');
+        const refreshBtn = panel.querySelector('.accounts-refresh-btn');
         assert.equal(refreshBtn.disabled, false);
         assert.equal(refreshBtn.textContent, '刷新账号名称');
     } finally {
@@ -1002,14 +1021,14 @@ test('S28：刷新逐芯片就地更新，进行中另一芯片的启用开关�
     accounts.toutiao = makeToutiaoAccounts(2);
     const page = await bootPage({ accounts });
     try {
-        await expandSource(page, 'toutiao');
+        const panel = await expandSource(page, 'toutiao');
         await waitForChip(page, 'tt-2');
         const chipBefore = accountChip(page, 'tt-1');
         const toggle = accountChip(page, 'tt-2').querySelector('.account-enabled-toggle');
         assert.equal(toggle.checked, true);
 
         page.server.hold('refresh-names');
-        page.document.getElementById('btn-account-refresh-names').click();
+        panel.querySelector('.accounts-refresh-btn').click();
         await waitFor(() => page.server.requests('refresh-names').length === 1);
 
         // 刷新请求被扣住期间，另一芯片的启停照常可用
@@ -1035,15 +1054,15 @@ test('S28：刷新逐芯片就地更新，进行中另一芯片的启用开关�
 test('S29：批量添加成功后自动只对新建账号触发名称刷新', async () => {
     const page = await bootPage();
     try {
-        await expandSource(page, 'toutiao');
-        const details = page.document.querySelector('.account-add-details');
+        const panel = await expandSource(page, 'toutiao');
+        const details = panel.querySelector('.account-add-details');
         details.open = true;
-        const textarea = page.document.getElementById('account-bulk-text');
+        const textarea = panel.querySelector('.account-bulk-text');
         inputValue(page, textarea, 'new-x\nnew-y');
-        page.document.getElementById('btn-account-bulk-preview').click();
+        panel.querySelector('.btn-account-bulk-preview').click();
         await waitFor(() => page.server.requests('preview-accounts').length === 1
             && page.server.requests('preview-accounts')[0].done);
-        const confirmBtn = page.document.getElementById('btn-account-bulk-confirm');
+        const confirmBtn = panel.querySelector('.btn-account-bulk-confirm');
         await waitFor(() => !confirmBtn.disabled);
         confirmBtn.click();
         await waitFor(() => page.server.requests('bulk-accounts').length === 1
@@ -1068,27 +1087,27 @@ test('S29：批量添加成功后自动只对新建账号触发名称刷新', as
     }
 });
 
-test('S30：刷新进行中切换到别的来源，后到的响应不写入 DOM 也不再发请求', async () => {
+test('S30：刷新进行中收起该来源面板，后到的响应不写入 DOM 也不再发请求', async () => {
     const accounts = defaultAccounts();
-    // 25 个账号：切走后若守卫缺失，串行循环会继续发第二批，可被确定地捕获
+    // 25 个账号：收起面板后若守卫缺失，串行循环会继续发第二批，可被确定地捕获
     accounts.toutiao = makeToutiaoAccounts(25);
     const page = await bootPage({ accounts });
     try {
-        await expandSource(page, 'toutiao');
+        const panel = await expandSource(page, 'toutiao');
         await waitForChip(page, 'tt-25');
 
         page.server.hold('refresh-names');
-        page.document.getElementById('btn-account-refresh-names').click();
+        panel.querySelector('.accounts-refresh-btn').click();
         await waitFor(() => page.server.requests('refresh-names').length === 1);
 
-        // 请求被扣住时切换到 tencent：toutiao 展开区被销毁
-        await expandSource(page, 'tencent');
-        await waitFor(() => page.document
-            .querySelector('.source-accounts-panel[data-accounts-for="tencent"]'));
+        // 请求被扣住时收起 toutiao 面板：多开语义下展开别的来源不再销毁本面板，
+        // 只有收起本面板才触发守卫
+        sourceRow(page, 'toutiao').querySelector('.source-expand-toggle').click();
+        await waitFor(() => accountsPanel(page, 'toutiao') === null);
 
         page.server.release('refresh-names');
         await waitFor(() => page.server.requests('refresh-names')[0].done);
-        // 响应归属守卫：循环终止不再发下一批，解析结果不写 DOM、不弹汇总 toast
+        // 面板归属守卫：循环终止不再发下一批，解析结果不写 DOM、不弹汇总 toast
         await assertNever(() => page.server.requests('refresh-names').length > 1, 200);
         await assertNever(() => page.document.body.textContent.includes('自动名称-tt-token'), 200);
         await assertNever(() => page.document.getElementById('toast').textContent
@@ -1102,12 +1121,12 @@ test('S30：刷新进行中切换到别的来源，后到的响应不写入 DOM 
 test('S31：单个新增后端已同步解析名称，前端不再额外调刷新', async () => {
     const page = await bootPage();
     try {
-        await expandSource(page, 'toutiao');
-        const details = page.document.querySelector('.account-add-details');
+        const panel = await expandSource(page, 'toutiao');
+        const details = panel.querySelector('.account-add-details');
         details.open = true;
-        const addInput = page.document.getElementById('account-add-input');
+        const addInput = panel.querySelector('.account-add-input');
         addInput.value = 'brand-new-id';
-        page.document.getElementById('btn-account-add').click();
+        panel.querySelector('.btn-account-add').click();
         await waitFor(() => page.server.requests('add-account').length === 1
             && page.server.requests('add-account')[0].done);
         // 请求体不再携带 display_name
@@ -1212,7 +1231,7 @@ test('N2：默认态芯片上不存在删除按钮与主页链接，也没有待
         assert.equal(chip.querySelector('.account-chip-open'), null);
         assert.equal(chip.querySelector('a'), null);
         assert.equal(chip.querySelector('button'), null);
-        assert.equal(deleteBar(page), null);
+        assert.equal(deleteBar(page, 'toutiao'), null);
     } finally {
         page.close();
     }
@@ -1221,14 +1240,14 @@ test('N2：默认态芯片上不存在删除按钮与主页链接，也没有待
 test('N3：管理态下芯片不可启停，↗ 是指向主页的新标签页链接，添加账号与名称刷新被锁定', async () => {
     const page = await bootPage();
     try {
-        await expandSource(page, 'toutiao');
+        const panel = await expandSource(page, 'toutiao');
         await waitForChip(page, 'acc-toutiao-1');
-        const details = page.document.querySelector('.account-add-details');
+        const details = panel.querySelector('.account-add-details');
         details.open = true;
-        const refreshBtn = page.document.getElementById('btn-account-refresh-names');
+        const refreshBtn = panel.querySelector('.accounts-refresh-btn');
         assert.equal(refreshBtn.disabled, false);
 
-        await enterManageMode(page);
+        await enterManageMode(page, 'toutiao');
         const chip = accountChip(page, 'acc-toutiao-1');
         const toggle = chip.querySelector('.account-enabled-toggle');
         assert.equal(toggle.disabled, true, '管理态应禁用芯片 checkbox');
@@ -1256,14 +1275,14 @@ test('N3：管理态下芯片不可启停，↗ 是指向主页的新标签页�
         assert.equal(refreshBtn.disabled, true);
 
         // 退出管理态后恢复进入前的开合状态与可用状态
-        manageButton(page).click();
+        manageButton(page, 'toutiao').click();
         await waitFor(() => {
             const current = accountChip(page, 'acc-toutiao-1');
             return current && !current.querySelector('.account-enabled-toggle').disabled;
         });
         assert.equal(details.open, true);
         assert.ok(!details.classList.contains('is-locked'));
-        assert.equal(page.document.getElementById('btn-account-refresh-names').disabled, false);
+        assert.equal(panel.querySelector('.accounts-refresh-btn').disabled, false);
     } finally {
         page.close();
     }
@@ -1276,8 +1295,8 @@ test('N4：标记与撤回只改前端外观，待提交条计数随标记增减
     try {
         await expandSource(page, 'toutiao');
         await waitForChip(page, 'tt-2');
-        await enterManageMode(page);
-        assert.equal(deleteBar(page), null, '没有标记时不显示待提交条');
+        await enterManageMode(page, 'toutiao');
+        assert.equal(deleteBar(page, 'toutiao'), null, '没有标记时不显示待提交条');
 
         accountChip(page, 'tt-1').querySelector('.account-chip-delete').click();
         assert.ok(accountChip(page, 'tt-1').classList.contains('is-marked'));
@@ -1285,10 +1304,10 @@ test('N4：标记与撤回只改前端外观，待提交条计数随标记增减
             accountChip(page, 'tt-1').querySelector('.account-chip-delete').textContent,
             '↩',
         );
-        assert.equal(deleteBarCount(page), '将删除 1 个账号');
+        assert.equal(deleteBarCount(page, 'toutiao'), '将删除 1 个账号');
 
         accountChip(page, 'tt-2').querySelector('.account-chip-delete').click();
-        assert.equal(deleteBarCount(page), '将删除 2 个账号');
+        assert.equal(deleteBarCount(page, 'toutiao'), '将删除 2 个账号');
 
         // 撤回一个 → 计数回落、外观还原
         accountChip(page, 'tt-1').querySelector('.account-chip-delete').click();
@@ -1297,11 +1316,11 @@ test('N4：标记与撤回只改前端外观，待提交条计数随标记增减
             accountChip(page, 'tt-1').querySelector('.account-chip-delete').textContent,
             '×',
         );
-        assert.equal(deleteBarCount(page), '将删除 1 个账号');
+        assert.equal(deleteBarCount(page, 'toutiao'), '将删除 1 个账号');
 
         // 全部撤回 → 待提交条消失；全程没有发出任何 DELETE
         accountChip(page, 'tt-2').querySelector('.account-chip-delete').click();
-        assert.equal(deleteBar(page), null, '标记全部撤回后待提交条应消失');
+        assert.equal(deleteBar(page, 'toutiao'), null, '标记全部撤回后待提交条应消失');
         await assertNever(() => page.server.requests('delete-account').length > 0, 200);
     } finally {
         page.close();
@@ -1313,20 +1332,20 @@ test('N5：被筛选隐藏的已标记芯片仍计入待提交条数量', async 
     accounts.toutiao = makeToutiaoAccounts(2);
     const page = await bootPage({ accounts });
     try {
-        await expandSource(page, 'toutiao');
+        const panel = await expandSource(page, 'toutiao');
         await waitForChip(page, 'tt-2');
-        await enterManageMode(page);
+        await enterManageMode(page, 'toutiao');
         accountChip(page, 'tt-1').querySelector('.account-chip-delete').click();
-        assert.equal(deleteBarCount(page), '将删除 1 个账号');
+        assert.equal(deleteBarCount(page, 'toutiao'), '将删除 1 个账号');
 
         // 输入筛选词把已标记芯片隐藏，待提交条数量不变
-        inputValue(page, page.document.getElementById('accounts-filter'), '不存在的名字');
+        inputValue(page, panel.querySelector('.accounts-filter'), '不存在的名字');
         await waitFor(() => accountChip(page, 'tt-1') === null);
         assert.match(
-            page.document.getElementById('accounts-body').textContent,
+            panel.querySelector('.accounts-chip-grid').textContent,
             /没有匹配的账号/,
         );
-        assert.equal(deleteBarCount(page), '将删除 1 个账号');
+        assert.equal(deleteBarCount(page, 'toutiao'), '将删除 1 个账号');
     } finally {
         page.close();
     }
@@ -1339,13 +1358,13 @@ test('N6：确认删除按标记顺序串行发出 DELETE，且只包含已标�
     try {
         await expandSource(page, 'toutiao');
         await waitForChip(page, 'tt-3');
-        await enterManageMode(page);
+        await enterManageMode(page, 'toutiao');
         // 刻意按 tt-3 → tt-1 的顺序标记，验证提交顺序跟随标记顺序
         accountChip(page, 'tt-3').querySelector('.account-chip-delete').click();
         accountChip(page, 'tt-1').querySelector('.account-chip-delete').click();
 
         page.server.hold('delete-account', 1);
-        page.document.getElementById('btn-account-delete-confirm').click();
+        accountsPanel(page, 'toutiao').querySelector('.btn-account-delete-confirm').click();
         await waitFor(() => page.server.requests('delete-account').length === 1);
         assert.equal(page.server.requests('delete-account')[0].accountId, 'tt-3');
         // 串行：第一个请求未返回前不发第二个
@@ -1377,10 +1396,10 @@ test('N7：删除返回 404 时计入成功，不产生错误提示', async () =
         );
         await expandSource(page, 'toutiao');
         await waitForChip(page, 'tt-2');
-        await enterManageMode(page);
+        await enterManageMode(page, 'toutiao');
         accountChip(page, 'tt-1').querySelector('.account-chip-delete').click();
         accountChip(page, 'tt-2').querySelector('.account-chip-delete').click();
-        page.document.getElementById('btn-account-delete-confirm').click();
+        accountsPanel(page, 'toutiao').querySelector('.btn-account-delete-confirm').click();
 
         await waitFor(() => page.server.requests('delete-account').length === 2
             && page.server.requests('delete-account').every((entry) => entry.done));
@@ -1388,9 +1407,9 @@ test('N7：删除返回 404 时计入成功，不产生错误提示', async () =
         // 404 计入成功：按全部成功收尾，无错误提示
         await waitFor(() => page.document.getElementById('toast').textContent
             .includes('已删除 2 个账号'));
-        assert.equal(accountsPanelError(page).textContent, '');
-        assert.equal(manageButton(page).getAttribute('aria-pressed'), 'false');
-        assert.equal(deleteBar(page), null);
+        assert.equal(accountsPanelError(page, 'toutiao').textContent, '');
+        assert.equal(manageButton(page, 'toutiao').getAttribute('aria-pressed'), 'false');
+        assert.equal(deleteBar(page, 'toutiao'), null);
         await waitFor(() => accountChip(page, 'tt-1') === null
             && accountChip(page, 'tt-2') === null);
     } finally {
@@ -1408,10 +1427,10 @@ test('N8：部分失败时已成功的删除不回滚，失败的保留标记并
         );
         await expandSource(page, 'toutiao');
         await waitForChip(page, 'tt-3');
-        await enterManageMode(page);
+        await enterManageMode(page, 'toutiao');
         accountChip(page, 'tt-1').querySelector('.account-chip-delete').click();
         accountChip(page, 'tt-2').querySelector('.account-chip-delete').click();
-        page.document.getElementById('btn-account-delete-confirm').click();
+        accountsPanel(page, 'toutiao').querySelector('.btn-account-delete-confirm').click();
 
         await waitFor(() => page.server.requests('delete-account').length === 2
             && page.server.requests('delete-account').every((entry) => entry.done));
@@ -1419,7 +1438,7 @@ test('N8：部分失败时已成功的删除不回滚，失败的保留标记并
         await waitFor(() => page.document.getElementById('toast').textContent
             .includes('已删除 1 个，1 个失败'));
         assert.match(page.document.getElementById('toast').textContent, /数据库繁忙/);
-        assert.match(accountsPanelError(page).textContent, /已删除 1 个，1 个失败/);
+        assert.match(accountsPanelError(page, 'toutiao').textContent, /已删除 1 个，1 个失败/);
 
         // 成功的已从列表消失；失败的仍带标记；未标记的不受影响
         await waitFor(() => accountChip(page, 'tt-1') === null);
@@ -1427,8 +1446,8 @@ test('N8：部分失败时已成功的删除不回滚，失败的保留标记并
         assert.ok(failedChip.classList.contains('is-marked'));
         assert.ok(!accountChip(page, 'tt-3').classList.contains('is-marked'));
         // 停留在管理态，待提交条按剩余标记计数
-        assert.equal(manageButton(page).getAttribute('aria-pressed'), 'true');
-        assert.equal(deleteBarCount(page), '将删除 1 个账号');
+        assert.equal(manageButton(page, 'toutiao').getAttribute('aria-pressed'), 'true');
+        assert.equal(deleteBarCount(page, 'toutiao'), '将删除 1 个账号');
     } finally {
         page.close();
     }
@@ -1441,20 +1460,24 @@ test('N9：删除提交进行中确认/取消/管理均禁用，重复点击不�
     try {
         await expandSource(page, 'toutiao');
         await waitForChip(page, 'tt-2');
-        await enterManageMode(page);
+        await enterManageMode(page, 'toutiao');
         accountChip(page, 'tt-1').querySelector('.account-chip-delete').click();
         accountChip(page, 'tt-2').querySelector('.account-chip-delete').click();
 
         page.server.hold('delete-account', 1);
-        const confirmBtn = page.document.getElementById('btn-account-delete-confirm');
+        const confirmBtn = accountsPanel(page, 'toutiao')
+            .querySelector('.btn-account-delete-confirm');
         confirmBtn.click();
         // 重复点击不应发出第二轮请求
         confirmBtn.click();
         await waitFor(() => page.server.requests('delete-account').length === 1);
         assert.equal(confirmBtn.disabled, true);
         assert.match(confirmBtn.textContent, /删除中… 1\/2/);
-        assert.equal(page.document.getElementById('btn-account-delete-cancel').disabled, true);
-        assert.equal(manageButton(page).disabled, true);
+        assert.equal(
+            accountsPanel(page, 'toutiao').querySelector('.btn-account-delete-cancel').disabled,
+            true,
+        );
+        assert.equal(manageButton(page, 'toutiao').disabled, true);
         // 芯片区不接受任何操作
         assert.equal(
             accountChip(page, 'tt-1').querySelector('.account-chip-delete').disabled,
@@ -1473,7 +1496,7 @@ test('N9：删除提交进行中确认/取消/管理均禁用，重复点击不�
     }
 });
 
-test('N10：退出管理态、收起展开区、切换到另一来源都会丢弃待删标记', async () => {
+test('N10：退出管理态、点「取消」、收起再展开同一来源都会丢弃待删标记', async () => {
     const accounts = defaultAccounts();
     accounts.toutiao = makeToutiaoAccounts(2);
     const page = await bootPage({ accounts });
@@ -1482,33 +1505,34 @@ test('N10：退出管理态、收起展开区、切换到另一来源都会丢�
         await waitForChip(page, 'tt-2');
 
         // 路径一：再点「管理」退出
-        await enterManageMode(page);
+        await enterManageMode(page, 'toutiao');
         accountChip(page, 'tt-1').querySelector('.account-chip-delete').click();
-        assert.equal(deleteBarCount(page), '将删除 1 个账号');
-        manageButton(page).click();
-        assert.equal(deleteBar(page), null);
-        await enterManageMode(page);
-        assert.equal(deleteBar(page), null, '重新进入管理态时标记应已清空');
+        assert.equal(deleteBarCount(page, 'toutiao'), '将删除 1 个账号');
+        manageButton(page, 'toutiao').click();
+        assert.equal(deleteBar(page, 'toutiao'), null);
+        await enterManageMode(page, 'toutiao');
+        assert.equal(deleteBar(page, 'toutiao'), null, '重新进入管理态时标记应已清空');
         assert.ok(!accountChip(page, 'tt-1').classList.contains('is-marked'));
-        manageButton(page).click();
+        manageButton(page, 'toutiao').click();
 
         // 路径二：点待提交条「取消」退出
-        await enterManageMode(page);
+        await enterManageMode(page, 'toutiao');
         accountChip(page, 'tt-1').querySelector('.account-chip-delete').click();
-        page.document.getElementById('btn-account-delete-cancel').click();
-        assert.equal(deleteBar(page), null);
-        await enterManageMode(page);
-        assert.equal(deleteBar(page), null, '取消后重新进入管理态时标记应已清空');
+        accountsPanel(page, 'toutiao').querySelector('.btn-account-delete-cancel').click();
+        assert.equal(deleteBar(page, 'toutiao'), null);
+        await enterManageMode(page, 'toutiao');
+        assert.equal(deleteBar(page, 'toutiao'), null, '取消后重新进入管理态时标记应已清空');
         assert.ok(!accountChip(page, 'tt-1').classList.contains('is-marked'));
 
-        // 路径三：切换到另一个来源（收起当前展开区）
+        // 路径三：收起再展开同一来源（收起即重置该来源的面板状态）
         accountChip(page, 'tt-1').querySelector('.account-chip-delete').click();
-        assert.equal(deleteBarCount(page), '将删除 1 个账号');
-        await expandSource(page, 'tencent');
+        assert.equal(deleteBarCount(page, 'toutiao'), '将删除 1 个账号');
+        sourceRow(page, 'toutiao').querySelector('.source-expand-toggle').click();
+        await waitFor(() => accountsPanel(page, 'toutiao') === null);
         await expandSource(page, 'toutiao');
         await waitForChip(page, 'tt-1');
-        await enterManageMode(page);
-        assert.equal(deleteBar(page), null, '切换来源后重新进入管理态时标记应已清空');
+        await enterManageMode(page, 'toutiao');
+        assert.equal(deleteBar(page, 'toutiao'), null, '收起再展开后重新进入管理态时标记应已清空');
         assert.ok(!accountChip(page, 'tt-1').classList.contains('is-marked'));
         await assertNever(() => page.server.requests('delete-account').length > 0, 200);
     } finally {
@@ -1521,12 +1545,12 @@ test('N11：启停另一个来源触发整块重渲染后，管理态、待删�
     accounts.toutiao = makeToutiaoAccounts(2);
     const page = await bootPage({ accounts });
     try {
-        await expandSource(page, 'toutiao');
+        const panel = await expandSource(page, 'toutiao');
         await waitForChip(page, 'tt-2');
-        await enterManageMode(page);
+        await enterManageMode(page, 'toutiao');
         accountChip(page, 'tt-1').querySelector('.account-chip-delete').click();
-        assert.equal(deleteBarCount(page), '将删除 1 个账号');
-        const filter = page.document.getElementById('accounts-filter');
+        assert.equal(deleteBarCount(page, 'toutiao'), '将删除 1 个账号');
+        const filter = panel.querySelector('.accounts-filter');
         inputValue(page, filter, 'tt');
 
         // 停用另一个来源并等待保存成功，面板整体重渲染
@@ -1534,12 +1558,16 @@ test('N11：启停另一个来源触发整块重渲染后，管理态、待删�
         await waitFor(() => page.server.requests('save-sources').length === 1
             && page.server.requests('save-sources')[0].done);
         // 等重渲染完成：展开区被销毁并重建（筛选框是新的 DOM 节点）
-        await waitFor(() => page.document.getElementById('accounts-filter') !== filter);
+        await waitFor(() => {
+            const rebuilt = accountsPanel(page, 'toutiao');
+            return rebuilt && rebuilt.querySelector('.accounts-filter') !== filter;
+        });
         await waitForChip(page, 'tt-1');
 
-        assert.equal(page.document.getElementById('accounts-filter').value, 'tt');
-        assert.equal(manageButton(page).getAttribute('aria-pressed'), 'true');
-        assert.equal(deleteBarCount(page), '将删除 1 个账号');
+        const rebuiltPanel = accountsPanel(page, 'toutiao');
+        assert.equal(rebuiltPanel.querySelector('.accounts-filter').value, 'tt');
+        assert.equal(manageButton(page, 'toutiao').getAttribute('aria-pressed'), 'true');
+        assert.equal(deleteBarCount(page, 'toutiao'), '将删除 1 个账号');
         assert.ok(accountChip(page, 'tt-1').classList.contains('is-marked'));
     } finally {
         page.close();
@@ -1616,7 +1644,7 @@ test('N13：display_name 含 HTML 时在芯片中按纯文本渲染，不生成�
             .querySelector('.source-accounts-panel').querySelectorAll('img').length, 0);
         assert.equal(page.window.__xssHit, undefined);
         // 管理态下名称同样按纯文本渲染
-        await enterManageMode(page);
+        await enterManageMode(page, 'toutiao');
         const managedChip = accountChip(page, 'acc-xss-chip');
         assert.equal(managedChip.querySelector('.account-chip-name').textContent, payload);
         assert.equal(managedChip.querySelectorAll('img').length, 0);
@@ -1640,7 +1668,7 @@ test('N14：启停失败回滚芯片视觉并写入共享错误行，下一次�
             && page.server.requests('patch-account')[0].done);
         // 芯片视觉回滚，错误显示在芯片区下方的共享错误行（芯片上没有行内错误节点）
         await waitFor(() => toggle.checked === true);
-        assert.match(accountsPanelError(page).textContent, /状态切换失败/);
+        assert.match(accountsPanelError(page, 'toutiao').textContent, /状态切换失败/);
         assert.equal(chip.querySelector('.account-row-error'), null);
 
         // 下一次操作成功时清空错误行，徽标照常同步
@@ -1648,9 +1676,55 @@ test('N14：启停失败回滚芯片视觉并写入共享错误行，下一次�
         await waitFor(() => page.server.requests('patch-account').length === 2
             && page.server.requests('patch-account')[1].done);
         await waitFor(() => toggle.checked === false);
-        assert.equal(accountsPanelError(page).textContent, '');
+        assert.equal(accountsPanelError(page, 'toutiao').textContent, '');
         const badge = sourceRow(page, 'toutiao').querySelector('.source-account-badge');
         assert.match(badge.textContent, /启用 0 \/ 共 1/);
+    } finally {
+        page.close();
+    }
+});
+
+test('N15：两个面板同时打开时，筛选词与管理态按来源隔离、互不影响', async () => {
+    const accounts = defaultAccounts();
+    accounts.tencent = [makeAccount({
+        id: 'acc-tencent-1',
+        source: 'tencent',
+        normalized_identifier: 'tencent-one',
+        enabled: true,
+    })];
+    const page = await bootPage({ accounts });
+    try {
+        const toutiaoPanel = await expandSource(page, 'toutiao');
+        const tencentPanel = await expandSource(page, 'tencent');
+        await waitForChip(page, 'acc-toutiao-1');
+        await waitForChip(page, 'acc-tencent-1');
+
+        // 在 tencent 面板进入管理态：toutiao 面板的管理按钮与芯片不受影响
+        await enterManageMode(page, 'tencent');
+        assert.equal(
+            manageButton(page, 'toutiao').getAttribute('aria-pressed'),
+            'false',
+            'toutiao 面板不应随 tencent 进入管理态',
+        );
+        const toutiaoChip = accountChip(page, 'acc-toutiao-1');
+        assert.equal(toutiaoChip.querySelector('.account-chip-delete'), null);
+        assert.equal(toutiaoChip.querySelector('.account-enabled-toggle').disabled, false);
+        // 退出 tencent 管理态，避免干扰后面的筛选手段
+        manageButton(page, 'tencent').click();
+        await waitFor(() => tencentPanel.querySelector('.account-chip-delete') === null);
+
+        // 在 tencent 面板输入筛选词：tencent 列表被过滤，toutiao 列表原样保留
+        inputValue(page, tencentPanel.querySelector('.accounts-filter'), '不存在的名字');
+        await waitFor(() => accountChip(page, 'acc-tencent-1') === null);
+        assert.match(
+            tencentPanel.querySelector('.accounts-chip-grid').textContent,
+            /没有匹配的账号/,
+        );
+        assert.ok(
+            accountChip(page, 'acc-toutiao-1'),
+            'toutiao 面板列表不应被 tencent 的筛选词影响',
+        );
+        assert.equal(toutiaoPanel.querySelector('.accounts-filter').value, '');
     } finally {
         page.close();
     }

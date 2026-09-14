@@ -57,24 +57,33 @@ function syncSourceToggles() {
         });
 }
 
-// 展开/收起账号管理区：手风琴（同时最多展开一个），切换时重置筛选词、批量粘贴状态
-// 与管理态（含待删标记），避免上一个来源的状态串到下一个。展开本身不发请求，
-// 账号已在初始化时缓存。
-function collapseSourceExpansion({ updateHash = false } = {}) {
-    const had = !!state.accountSource;
-    const panel = elements.panels.sources.querySelector('.source-accounts-panel');
+// 展开面板的作用域锚点：面板内不再使用唯一 id，所有查找都以面板为作用域
+function accountPanelEl(source) {
+    return elements.panels.sources
+        .querySelector(`.source-accounts-panel[data-accounts-for="${source}"]`);
+}
+
+// 面板是否打开以 DOM 为准：收起即移除节点；启停重建的间隙面板暂时不存在，
+// 进行中的异步流程（删除提交、名称刷新）据此终止或跳过写入
+function isAccountPanelOpen(source) {
+    return !!accountPanelEl(source);
+}
+
+// 收起指定来源的账号管理区：移除其面板、删除该来源的 panel state（收起即重置），
+// 互不影响其他打开着的面板。hash 正指着被收起的来源时，回写到剩余打开来源中
+// 最近展开的一个，没有则为 #sources。展开本身不发请求，账号已在初始化时缓存。
+function collapseSourceExpansion(key, { updateHash = false } = {}) {
+    const panel = accountPanelEl(key);
     if (panel) panel.remove();
-    elements.panels.sources
-        .querySelectorAll('.source-expand-toggle[aria-expanded="true"]')
-        .forEach((btn) => btn.setAttribute('aria-expanded', 'false'));
-    state.accountSource = null;
-    state.accountFilter = '';
-    state.accountManageMode = false;
-    state.accountDeleteMarks = [];
-    state.accountDeleteSubmitting = false;
-    resetBulkState();
-    if (updateHash && had) {
-        writeSettingsHash('sources');
+    const row = elements.panels.sources.querySelector(`li[data-source="${key}"]`);
+    const arrow = row && row.querySelector('.source-expand-toggle');
+    if (arrow) arrow.setAttribute('aria-expanded', 'false');
+    state.expandedAccountSources = state.expandedAccountSources
+        .filter((source) => source !== key);
+    delete state.accountPanels[key];
+    if (updateHash && window.location.hash === `#sources:${key}`) {
+        const rest = state.expandedAccountSources;
+        writeSettingsHash('sources', rest.length ? rest[rest.length - 1] : '');
     }
 }
 
@@ -86,24 +95,24 @@ function insertAccountsPanel(row, key) {
     renderSourceAccounts(key, panel);
     // 重渲染恢复展开区时还原「添加账号」的开合状态（renderSourcesTab 重建前从 DOM 捕获）；
     // 管理态下该折叠区被锁定收起，开合状态由退出管理态时恢复，这里不还原
+    const panelState = accountPanelState(key);
     const addDetails = panel.querySelector('.account-add-details');
-    if (addDetails && !state.accountManageMode && state.accountAddDetailsOpen) {
+    if (addDetails && !panelState.manageMode && panelState.addDetailsOpen) {
         addDetails.open = true;
     }
 }
 
 function expandSourceRow(key, { updateHash = true } = {}) {
-    collapseSourceExpansion();
-    state.accountSource = key;
-    state.accountFilter = '';
-    state.accountAddDetailsOpen = false;
-    resetBulkState();
+    // 已展开则直接成功：多开语义下再次展开同一来源是幂等的
+    if (isAccountPanelOpen(key)) return true;
     const row = elements.panels.sources
         .querySelector(`li[data-source="${key}"]`);
     if (!row || !sourceRequiresAccounts(key)) {
-        state.accountSource = null;
         return false;
     }
+    state.expandedAccountSources.push(key);
+    // 懒创建该来源的 panel state；收起时对应 key 已删除，这里拿到的总是全新状态
+    accountPanelState(key);
     insertAccountsPanel(row, key);
     if (updateHash) {
         writeSettingsHash('sources', key);
@@ -112,8 +121,8 @@ function expandSourceRow(key, { updateHash = true } = {}) {
 }
 
 function toggleSourceExpand(key) {
-    if (state.accountSource === key) {
-        collapseSourceExpansion({ updateHash: true });
+    if (isAccountPanelOpen(key)) {
+        collapseSourceExpansion(key, { updateHash: true });
     } else {
         expandSourceRow(key);
     }
@@ -281,31 +290,37 @@ function renderSourcesPanel(panel, section) {
         panel.appendChild(dailyList);
     }
 
-    // 重新渲染后恢复展开区（例如启停成功后的重建）
-    if (state.accountSource) {
-        const key = state.accountSource;
+    // 重新渲染后恢复全部打开着的展开区（例如启停成功后的重建）；
+    // 行已消失或不再需要账号的来源一并从展开记录与各面板状态中移除
+    state.expandedAccountSources = state.expandedAccountSources.filter((key) => {
         const row = panel.querySelector(`li[data-source="${key}"]`);
-        if (row && sourceRequiresAccounts(key)) {
-            insertAccountsPanel(row, key);
-        } else {
-            state.accountSource = null;
+        if (!row || !sourceRequiresAccounts(key)) {
+            delete state.accountPanels[key];
+            return false;
         }
-    }
+        insertAccountsPanel(row, key);
+        return true;
+    });
 }
 
 function renderSourcesTab() {
     const panel = elements.panels.sources;
-    // 重建面板前捕获「添加账号」<details> 的开合状态，insertAccountsPanel 恢复展开区时还原；
-    // 管理态下折叠区被锁定收起，DOM 上的 false 是被强制的外观，
-    // 真实开合状态已在进入管理态时存入 state，这里不能覆盖
-    const openDetails = panel.querySelector('.source-accounts-panel .account-add-details');
-    if (openDetails && !state.accountManageMode) {
-        state.accountAddDetailsOpen = openDetails.open;
-    }
+    // 重建面板前逐个捕获各打开面板的「添加账号」<details> 开合状态，
+    // renderSourcesPanel 恢复展开区时还原；管理态下折叠区被锁定收起，
+    // DOM 上的 false 是被强制的外观，真实开合状态已在进入管理态时存入 panel state，
+    // 这里不能覆盖
+    panel.querySelectorAll('.source-accounts-panel').forEach((accountsPanel) => {
+        const panelState = state.accountPanels[accountsPanel.dataset.accountsFor];
+        const openDetails = accountsPanel.querySelector('.account-add-details');
+        if (openDetails && panelState && !panelState.manageMode) {
+            panelState.addDetailsOpen = openDetails.open;
+        }
+    });
     clearEl(panel);
     const section = settingsSection('crawl_sources');
     if (!section) {
-        state.accountSource = null;
+        state.expandedAccountSources = [];
+        state.accountPanels = {};
         renderImportNotice(panel, '数据源配置');
         return;
     }

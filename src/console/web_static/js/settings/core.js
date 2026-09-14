@@ -8,32 +8,24 @@ const SETTINGS_TABS = ['models', 'sources'];
 const state = {
     payload: null,
     activeTab: 'models',
-    // 数据源页签当前展开管理账号的来源（手风琴，同时最多一个）
-    accountSource: null,
+    // 数据源页签当前打开的账号管理面板，按展开顺序记录来源 key（可同时展开多个；
+    // 渲染顺序由 DOM 决定，此数组只用于「哪些面板开着」与 hash 回写）
+    expandedAccountSources: [],
     accounts: {},
     // 启用数与总数成对维护：徽标文案「启用 X / 共 Y」；加载失败时两者都置 null（未知态）
     accountCounts: {},
     accountTotals: {},
-    // 展开区管理态与待删标记（按标记顺序排列，确认删除时按此顺序串行提交）：
-    // 与 accountFilter 一样放进 state，来源启停触发的整块重建后自然恢复；
-    // 收起展开区/切换来源时由 collapseSourceExpansion 一并清空
-    accountManageMode: false,
-    accountDeleteMarks: [],
-    // 批量删除提交进行中：锁定待提交条与管理态出口，防止重复提交
-    accountDeleteSubmitting: false,
+    // 各来源展开面板的 UI 状态，按来源 key 懒创建（见 source_accounts.js 的
+    // accountPanelState）：filter / manageMode / deleteMarks / deleteSubmitting /
+    // addDetailsOpen / bulk / refreshInflight。面板收起时删除对应 key（收起即重置）；
+    // 来源启停触发的整块重建不清这里，重建后各面板状态自然恢复
+    accountPanels: {},
     // 数据源页签没有草稿：来源启停即时写库，未保存守卫只服务模型页签
     dirty: { llm_models: false },
     saving: { llm_models: false },
     modelsDraft: null,
     // 进行中的来源启停请求数；非零时禁用面板内全部来源开关
     sourceToggleInflight: 0,
-    // 展开区「添加账号」<details> 的开合状态：重渲染前从 DOM 捕获，恢复时还原；
-    // 新展开一个来源时重置为折叠
-    accountAddDetailsOpen: false,
-    accountFilter: '',
-    bulk: { text: '', items: null, stale: false },
-    // 「刷新账号名称」循环是否进行中：防止按钮点击与批量添加后的自动刷新并发
-    accountRefreshInflight: false,
 };
 
 const elements = {};
@@ -260,6 +252,8 @@ function writeSettingsHash(tab, sub) {
 // 切换页签只隐藏面板，不重渲染，未保存的修改随 DOM 保留。
 // 旧 hash 兼容：#accounts[:来源key] 一律改写为 #sources[:来源key]（replaceState，不留历史）；
 // #sources:<key> 的 key 不在需要账号的来源里时降级为 #sources，不报错。
+// 账号面板可多开：合法 sub 只负责把该来源展开，不收起其他面板；
+// 无 sub 时回退到最近展开且仍打开的来源。
 function activateSettingsTab(tab, sub, { updateHash = true } = {}) {
     let normalized = tab;
     let hashSub = sub;
@@ -272,14 +266,14 @@ function activateSettingsTab(tab, sub, { updateHash = true } = {}) {
     state.activeTab = normalized;
     if (normalized === 'sources') {
         if (hashSub === undefined || hashSub === '') {
-            hashSub = state.accountSource || '';
+            const open = state.expandedAccountSources;
+            hashSub = open.length ? open[open.length - 1] : '';
         } else if (accountSources().some((item) => item.key === hashSub)) {
             if (!expandSourceRow(hashSub, { updateHash: false })) {
                 hashSub = '';
                 forceHashRewrite = true;
             }
         } else {
-            collapseSourceExpansion();
             hashSub = '';
             forceHashRewrite = true;
         }

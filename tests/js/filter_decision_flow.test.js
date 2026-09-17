@@ -7,7 +7,8 @@
 //    「当前页新闻已处理完」占位，并立即在后台补页（不阻塞提示、不经过定时器）；
 // 2. loadFilterData 最新请求获胜，先发后到的旧响应不得覆盖新列表；
 // 3. 决定操作只保存与「最近一次被服务端确认的值」不同的卡片；
-// 4. 决定前等待进行中的编辑保存完成，不得带同一版本号并发写入（否则 409）。
+// 4. 决定前等待进行中的编辑保存完成，不得带同一版本号并发写入（否则 409）；
+// 5. 整簇决定按聚类容器整体移除（不留空的 .filter-cluster 残留），本地计数按实际条数增减。
 'use strict';
 
 const test = require('node:test');
@@ -163,6 +164,50 @@ for (const mode of MODES) {
                 await waitFor(() => !page.listHtml().includes('当前页新闻已处理完')),
                 page.listHtml()
             );
+        });
+    });
+}
+
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}整簇放弃：聚类容器整体移除，无 .filter-cluster 残留，单条仍在`, async () => {
+        await withPage(mode, { articleCount: 3, clusters: [['a00', 'a01']] }, async (page) => {
+            const { document } = page;
+            page.chooseRadio(document.querySelector('#filter-list .cluster-radio input[value="discarded"]'));
+            assert.ok(
+                await waitFor(() => !page.cardIds().includes('a00') && !page.cardIds().includes('a01')),
+                page.cardIds().join(',')
+            );
+            assert.deepEqual(
+                [...document.querySelectorAll('#filter-list .filter-cluster')],
+                [],
+                '#filter-list 中残留 .filter-cluster 容器'
+            );
+            assert.deepEqual(page.cardIds(), ['a02'], '单条卡片不应被整簇决定移除');
+        });
+    });
+}
+
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}整簇放弃按条数本地调整计数，撤销后恢复`, async () => {
+        await withPage(mode, { articleCount: 3, clusters: [['a00', 'a01']] }, async (page) => {
+            const { document, server } = page;
+            const sideCount = () => {
+                const btn = page.document.querySelector('.filter-tab-btn[data-category="internal_positive"]');
+                const match = btn.textContent.match(/\((\d+)\)/);
+                return Number(match ? match[1] : NaN);
+            };
+            const pendingStat = () =>
+                page.document.getElementById('stat-pending')?.textContent.trim() ?? null;
+            assert.equal(sideCount(), 3, '启动后侧栏计数应为 3');
+            page.chooseRadio(document.querySelector('#filter-list .cluster-radio input[value="discarded"]'));
+            assert.ok(await waitFor(() => sideCount() === 1), `侧栏计数未按聚类条数减 2：${sideCount()}`);
+            assert.ok(await waitFor(() => page.toastText().includes('已放弃 2 条新闻')), page.toastText());
+            if (pendingStat() !== null) assert.equal(pendingStat(), '1', '顶部待处理数未按聚类条数减 2');
+            document.querySelector('#toast button').click();
+            assert.ok(await waitFor(() => page.toastText().includes('已撤销')), page.toastText());
+            await waitFor(() => server.inflight === 0);
+            assert.equal(sideCount(), 3, '撤销后侧栏计数未恢复');
+            if (pendingStat() !== null) assert.equal(pendingStat(), '3', '撤销后顶部待处理数未恢复');
         });
     });
 }

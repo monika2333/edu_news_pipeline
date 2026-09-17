@@ -54,27 +54,42 @@ function clearArchiveSearch() {
     syncArchiveClearButton();
 }
 
-// 关键词高亮：行为与报送存档库全库搜索的 highlight 一致（大小写不敏感的 <mark>），
-// 但用 DOM 节点拼装，保持 createEl 路径的转义安全。
+// 关键词高亮：词列表直接取响应里的 data.terms（后端实际用于匹配的词，已切词、
+// 去重），前端不再自行切词，保证「高亮的词」与「后端匹配的词」永远一致。
+// 大小写不敏感；每轮找最早命中，同一位置并列时取更长的词——terms 可能同时包含
+// 「课后」与「课后服务」，先吃短词会把长词拆成嵌套或相邻的 mark。
+// 用 DOM 节点拼装，保持 createEl 路径的转义安全。
 // 注意：content_drawer.js 有一个同名不同签名的 appendHighlightedText（terms 数组），
 // 这里必须保持不同名，否则后加载的一方会覆盖另一方。
-function appendArchiveHighlight(container, text, query) {
+function appendArchiveHighlight(container, text, terms) {
     const value = String(text || '');
-    const needle = (query || '').trim().toLowerCase();
-    if (!needle) {
+    const needles = (Array.isArray(terms) ? terms : [])
+        .map(term => String(term || '').trim().toLowerCase())
+        .filter(Boolean);
+    if (!needles.length) {
         container.appendChild(document.createTextNode(value));
         return;
     }
     const haystack = value.toLowerCase();
     let index = 0;
-    let found = haystack.indexOf(needle);
-    while (found !== -1) {
-        if (found > index) {
-            container.appendChild(document.createTextNode(value.slice(index, found)));
+    for (;;) {
+        let hitStart = -1;
+        let hitLength = 0;
+        needles.forEach(needle => {
+            const found = haystack.indexOf(needle, index);
+            if (found === -1) return;
+            if (hitStart === -1 || found < hitStart
+                || (found === hitStart && needle.length > hitLength)) {
+                hitStart = found;
+                hitLength = needle.length;
+            }
+        });
+        if (hitStart === -1) break;
+        if (hitStart > index) {
+            container.appendChild(document.createTextNode(value.slice(index, hitStart)));
         }
-        container.appendChild(createEl('mark', '', value.slice(found, found + needle.length)));
-        index = found + needle.length;
-        found = haystack.indexOf(needle, index);
+        container.appendChild(createEl('mark', '', value.slice(hitStart, hitStart + hitLength)));
+        index = hitStart + hitLength;
     }
     container.appendChild(document.createTextNode(value.slice(index)));
 }
@@ -97,17 +112,19 @@ async function performArchiveSearch() {
         const res = await searchDrawerFetch(`/api/submission-archive/search?${params.toString()}`);
         if (!res.ok) throw new Error('存档检索失败');
         const data = await res.json();
-        renderArchiveResults(data, query);
+        renderArchiveResults(data);
     } catch (e) {
         results.innerHTML = `<div class="error">存档检索失败：${e.message}</div>`;
     }
 }
 
-function renderArchiveResults(data, query) {
+function renderArchiveResults(data) {
     const results = document.getElementById('archive-search-results');
     if (!results) return;
     clearEl(results);
 
+    // 高亮词以后端响应为准（切词规则只维护一份）；响应缺 terms 时不高亮，只展示原文。
+    const terms = Array.isArray(data.terms) ? data.terms : [];
     const items = data.items || [];
     if (!items.length) {
         results.appendChild(createEl(
@@ -145,7 +162,7 @@ function renderArchiveResults(data, query) {
         ));
         head.appendChild(createEl('span', 'archive-item-date', formatSearchDate(item.report_date) || '-'));
         const titleSpan = createEl('span', 'archive-item-title');
-        appendArchiveHighlight(titleSpan, item.title || '（无标题）', query);
+        appendArchiveHighlight(titleSpan, item.title || '（无标题）', terms);
         head.appendChild(titleSpan);
         itemEl.appendChild(head);
 
@@ -153,12 +170,12 @@ function renderArchiveResults(data, query) {
         const bodyText = String(item.body || '').trim();
         if (bodyText) {
             const bodyEl = createEl('div', 'archive-item-body');
-            appendArchiveHighlight(bodyEl, bodyText, query);
+            appendArchiveHighlight(bodyEl, bodyText, terms);
             // 来源拼在正文结尾，如「（北京日报）」；与标题、正文共用同一套关键词高亮。
             const sourceText = String(item.source || '').trim();
             if (sourceText) {
                 const sourceEl = createEl('span', 'archive-item-source');
-                appendArchiveHighlight(sourceEl, `（${sourceText}）`, query);
+                appendArchiveHighlight(sourceEl, `（${sourceText}）`, terms);
                 bodyEl.appendChild(sourceEl);
             }
             itemEl.appendChild(bodyEl);

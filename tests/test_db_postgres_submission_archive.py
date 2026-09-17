@@ -1376,6 +1376,7 @@ def _seed_archive_search_items(cur: psycopg.Cursor) -> None:
             (report_id, 3, "a_c", "下划线标题", None, "a_c", "h4"),
             (report_id, 4, "数字标题", "增长1000", None, "数字标题", "h5"),
             (report_id, 5, "涨幅百分号", "利润100%", None, "涨幅百分号", "h6"),
+            (report_id, 6, "路径 a\\b 条目", "反斜杠正文", None, "路径 a\\b 条目", "h7"),
         ],
     )
 
@@ -1462,3 +1463,24 @@ def test_archive_search_matches_like_wildcards_literally_with_real_sql() -> None
             assert [
                 row["title"] for row in _search_archive_items(cur, ["a_c", "下划线"])
             ] == ["a_c"]
+
+
+def test_archive_search_matches_backslash_literally_with_real_sql() -> None:
+    settings = get_settings()
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            _archive_search_fixture(cur)
+
+            # 反斜杠是 LIKE 的默认转义符：检索 a\b 只命中字面含 a\b 的文本，
+            # 不得因转义符被吞而退化成 %ab% 之类命中 abc
+            assert [
+                row["title"] for row in _search_archive_items(cur, ["a\\b"])
+            ] == ["路径 a\\b 条目"]

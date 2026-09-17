@@ -24,6 +24,10 @@ def _ilike_all(expression: str, count: int) -> str:
     return " AND ".join([f"{expression} ILIKE %s"] * count)
 
 
+def _ilike_any(expression: str, count: int) -> str:
+    return " OR ".join([f"{expression} ILIKE %s"] * count)
+
+
 def search_article_attributions(
     cur: psycopg.Cursor,
     *,
@@ -44,14 +48,21 @@ def search_article_attributions(
     if (cursor_ingested_at is None) != (cursor_article_id is None):
         raise ValueError("Article search cursor fields must be provided together")
     like_patterns = [f"%{_escape_like(term)}%" for term in terms]
-    # summary_hits 的 llm_summary 条件是语义约束（只补充「靠摘要才命中」的文章，
-    # 每个词都要出现在 LLM 摘要里），表达式条件在语义上被它蕴含，但只有
-    # 「索引表达式 ILIKE」能让 trigram GIN 索引继续生效，因此两组都保留。
+    # summary_hits 的两组条件各管一件事：表达式条件保证「每个词都命中」（也是
+    # trigram GIN 索引能生效的唯一形态），llm_summary 的 OR 组保证「摘要对命中
+    # 有贡献」（至少一个词落在 LLM 摘要里）。摘要路径的本意是补充「靠摘要才命中」
+    # 的文章，而不是要求所有词都出现在摘要里——那会漏掉一个词在原文、
+    # 另一个词仅在摘要的跨字段命中。
     raw_term_conditions = _ilike_all(RAW_SEARCH_TEXT_EXPRESSION, len(like_patterns))
     summary_term_conditions = _ilike_all(
         SUMMARY_SEARCH_TEXT_EXPRESSION, len(like_patterns)
     )
-    llm_term_conditions = _ilike_all("COALESCE(ns.llm_summary, '')", len(like_patterns))
+    # llm_summary 可能为 NULL，ILIKE 前先 COALESCE 成空串。表达式先放进普通
+    # 变量：f-string 表达式内不允许反斜杠转义是 3.12 才放开的语法，内联字面量
+    # 会让低版本解释器在导入本模块时直接 SyntaxError
+    llm_summary_expression = "COALESCE(ns.llm_summary, '')"
+    # OR 优先级低于 AND，整组必须括起来，避免与外层 WHERE 条件意外结合
+    llm_any_condition = f"({_ilike_any(llm_summary_expression, len(like_patterns))})"
     cursor_clause = ""
     cursor_params: tuple[Any, ...] = ()
     if cursor_ingested_at is not None and cursor_article_id is not None:
@@ -84,7 +95,7 @@ def search_article_attributions(
             JOIN raw_articles ra ON ra.article_id = ns.article_id
             WHERE ra.fetched_at >= %s
               AND {summary_term_conditions}
-              AND {llm_term_conditions}
+              AND {llm_any_condition}
         ),
         matched_hits AS (
             SELECT * FROM raw_hits

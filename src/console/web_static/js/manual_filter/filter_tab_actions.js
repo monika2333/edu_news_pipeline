@@ -82,47 +82,21 @@ async function handleCardDecisionChange(input, reportType = null) {
     try {
         await persistEdits(edits);
         const mutation = await submitDecisions([articleId], status, null, reportType);
-        const decisionMessage = describeFilterDecision(status, 1, reportType);
-        if (IS_DUTY_WORKSPACE) {
-            const removal = captureDutyFilterRemoval([card]);
-            const pageEmptied = detachDutyFilterRemoval(removal);
-            updateDutyFilterDecisionCounts(status, 1, 1, reportType);
-            attachDutyUndo(
-                removal,
-                [articleId],
-                status,
-                mutation,
-                decisionMessage,
-                { reloadOnUndo: pageEmptied, reportType }
-            );
-            if (pageEmptied) {
-                // 后台补下一页，不阻塞提示；加载函数内部吞错，catch 兜底不产生未处理 rejection
-                reloadFilterPageAfterRemoval().catch(() => {});
-            }
-        } else {
-            removeCardAndMaybeCluster(card);
-            loadStats();
-        }
-
-        if (!IS_DUTY_WORKSPACE) {
-            const undoAction = buildUndoToastAction(
-                async () => {
-                    try {
-                        await submitDecisions(
-                            [articleId],
-                            'pending',
-                            mutation.versions || {},
-                            reportType
-                        );
-                        showToast('已撤销');
-                        await loadFilterData();
-                        loadStats();
-                    } catch (error) {
-                        showToast(error.message || '撤销失败', 'error');
-                    }
-                }
-            );
-            showToast(decisionMessage, 'success', undoAction);
+        const removal = captureFilterRemoval([card]);
+        const pageEmptied = detachFilterRemoval(removal);
+        updateFilterDecisionCounts(status, 1, 1, reportType);
+        attachFilterUndo(
+            removal,
+            [articleId],
+            status,
+            mutation,
+            describeFilterDecision(status, 1, reportType),
+            { reloadOnUndo: pageEmptied, reportType }
+        );
+        if (pageEmptied) {
+            // 后台补下一页，不阻塞提示；加载函数内部吞错，catch 兜底不产生未处理 rejection
+            reloadFilterPageAfterRemoval().catch(() => {});
+            showFilterEmptiedPlaceholder();
         }
     } catch (error) {
         revertRadioSelection(radios, previousStatus);
@@ -165,41 +139,20 @@ async function handleClusterDecisionChange(input, reportType = null) {
     try {
         await persistEdits(edits);
         const mutation = await submitDecisions(ids, status, null, reportType);
-        const decisionMessage = describeFilterDecision(status, ids.length, reportType);
-        if (IS_DUTY_WORKSPACE) {
-            const removal = captureDutyFilterRemoval(cards);
-            const pageEmptied = detachDutyFilterRemoval(removal);
-            updateDutyFilterDecisionCounts(status, ids.length, 1, reportType);
-            attachDutyUndo(
-                removal,
-                ids,
-                status,
-                mutation,
-                decisionMessage,
-                { reloadOnUndo: pageEmptied, reportType }
-            );
-            if (pageEmptied) {
-                reloadFilterPageAfterRemoval().catch(() => {});
-            }
-        } else {
-            cluster.remove();
-            loadStats();
-        }
-
-        if (!IS_DUTY_WORKSPACE) {
-            const undoAction = buildUndoToastAction(
-                async () => {
-                    try {
-                        await submitDecisions(ids, 'pending', mutation.versions || {}, reportType);
-                        showToast('已撤销');
-                        await loadFilterData();
-                        loadStats();
-                    } catch (error) {
-                        showToast(error.message || '撤销失败', 'error');
-                    }
-                }
-            );
-            showToast(decisionMessage, 'success', undoAction);
+        const removal = captureFilterRemoval(cards);
+        const pageEmptied = detachFilterRemoval(removal);
+        updateFilterDecisionCounts(status, ids.length, 1, reportType);
+        attachFilterUndo(
+            removal,
+            ids,
+            status,
+            mutation,
+            describeFilterDecision(status, ids.length, reportType),
+            { reloadOnUndo: pageEmptied, reportType }
+        );
+        if (pageEmptied) {
+            reloadFilterPageAfterRemoval().catch(() => {});
+            showFilterEmptiedPlaceholder();
         }
     } catch (error) {
         revertRadioSelection(radios, previousStatus);
@@ -247,7 +200,7 @@ function revertRadioSelection(radios, status) {
     });
 }
 
-function captureDutyFilterRemoval(cards) {
+function captureFilterRemoval(cards) {
     const targets = [];
     const seen = new Set();
     Array.from(cards || []).forEach(card => {
@@ -263,20 +216,22 @@ function captureDutyFilterRemoval(cards) {
     return targets;
 }
 
-function detachDutyFilterRemoval(removal) {
+function detachFilterRemoval(removal) {
     removal.forEach(entry => entry.node.remove());
-    const pageEmptied = !elements.filterList.querySelector('.article-card');
-    if (pageEmptied) {
-        elements.filterList.insertAdjacentHTML(
-            'beforeend',
-            '<div class="empty empty-state duty-local-empty">当前页新闻已处理完</div>'
-        );
-    }
-    return pageEmptied;
+    return !elements.filterList.querySelector('.article-card');
 }
 
-function restoreDutyFilterRemoval(removal, versions) {
-    elements.filterList.querySelector('.duty-local-empty')?.remove();
+// 本页清空后的过渡占位：必须在补页请求发出之后再插入，
+// 否则会被 loadFilterData 起手渲染的骨架屏立即覆盖；补页返回渲染列表时随之消失
+function showFilterEmptiedPlaceholder() {
+    elements.filterList?.insertAdjacentHTML(
+        'beforeend',
+        '<div class="empty empty-state filter-local-empty">当前页新闻已处理完</div>'
+    );
+}
+
+function restoreFilterRemoval(removal, versions) {
+    elements.filterList.querySelector('.filter-local-empty')?.remove();
     [...removal].reverse().forEach(entry => {
         if (!entry.parent) return;
         const anchor = entry.nextSibling?.parentNode === entry.parent
@@ -305,7 +260,7 @@ function adjustVisibleStat(key, delta) {
     target.textContent = String(Math.max(0, current + delta));
 }
 
-function updateDutyFilterDecisionCounts(status, itemCount, direction, reportType = null) {
+function updateFilterDecisionCounts(status, itemCount, direction, reportType = null) {
     const delta = Math.max(0, Number(itemCount) || 0) * direction;
     const { cat } = getCurrentFilterBucket();
     state.filterCounts[cat] = Math.max(
@@ -333,7 +288,7 @@ function updateDutyFilterDecisionCounts(status, itemCount, direction, reportType
     syncFilterToolbarState();
 }
 
-function attachDutyUndo(
+function attachFilterUndo(
     removal,
     ids,
     status,
@@ -354,8 +309,8 @@ function attachDutyUndo(
             if (reloadOnUndo) {
                 await Promise.all([loadFilterData(), loadStats()]);
             } else {
-                restoreDutyFilterRemoval(removal, undoMutation.versions || {});
-                updateDutyFilterDecisionCounts(status, ids.length, -1, reportType);
+                restoreFilterRemoval(removal, undoMutation.versions || {});
+                updateFilterDecisionCounts(status, ids.length, -1, reportType);
             }
             showToast('已撤销');
         } catch (error) {
@@ -363,40 +318,6 @@ function attachDutyUndo(
         }
     });
     showToast(successMessage, 'success', undoAction);
-}
-
-function removeCardAndMaybeCluster(card) {
-    const cluster = card.closest('.filter-cluster');
-    card.remove();
-    if (cluster && !cluster.querySelector('.article-card')) {
-        cluster.remove();
-    }
-    scheduleReloadIfFilterPageEmpty();
-}
-
-function removeCardsAndClusters(cards) {
-    const clusters = new Set();
-    cards.forEach((card) => {
-        const cluster = card.closest('.filter-cluster');
-        if (cluster) clusters.add(cluster);
-        card.remove();
-    });
-    clusters.forEach((cluster) => {
-        if (!cluster.querySelector('.article-card')) cluster.remove();
-    });
-    scheduleReloadIfFilterPageEmpty();
-}
-
-function scheduleReloadIfFilterPageEmpty() {
-    if (emptyFilterPageReloadTimer) clearTimeout(emptyFilterPageReloadTimer);
-    emptyFilterPageReloadTimer = setTimeout(async () => {
-        emptyFilterPageReloadTimer = null;
-        if (!elements.filterList) return;
-        const remaining = elements.filterList.querySelectorAll('.article-card');
-        if (remaining && remaining.length) return;
-
-        await reloadFilterPageAfterRemoval();
-    }, 120);
 }
 
 async function reloadFilterPageAfterRemoval() {
@@ -437,39 +358,19 @@ async function discardRemainingItems() {
     try {
         await persistEdits(edits);
         const mutation = await submitDecisions(ids, 'discarded');
-        if (IS_DUTY_WORKSPACE) {
-            const removal = captureDutyFilterRemoval(cards);
-            detachDutyFilterRemoval(removal);
-            updateDutyFilterDecisionCounts('discarded', ids.length, 1);
-            attachDutyUndo(
-                removal,
-                ids,
-                'discarded',
-                mutation,
-                `已放弃 ${ids.length} 条新闻`,
-                { reloadOnUndo: true }
-            );
-            reloadFilterPageAfterRemoval().catch(() => {});
-        } else {
-            removeCardsAndClusters(cards);
-            loadStats();
-        }
-
-        if (!IS_DUTY_WORKSPACE) {
-            const undoAction = buildUndoToastAction(
-                async () => {
-                    try {
-                        await submitDecisions(ids, 'pending', mutation.versions || {});
-                        showToast('已撤销');
-                        await loadFilterData();
-                        loadStats();
-                    } catch (error) {
-                        showToast(error.message || '撤销失败', 'error');
-                    }
-                }
-            );
-            showToast(`已放弃 ${ids.length} 条新闻`, 'success', undoAction);
-        }
+        const removal = captureFilterRemoval(cards);
+        const pageEmptied = detachFilterRemoval(removal);
+        updateFilterDecisionCounts('discarded', ids.length, 1);
+        attachFilterUndo(
+            removal,
+            ids,
+            'discarded',
+            mutation,
+            `已放弃 ${ids.length} 条新闻`,
+            { reloadOnUndo: true }
+        );
+        reloadFilterPageAfterRemoval().catch(() => {});
+        if (pageEmptied) showFilterEmptiedPlaceholder();
     } catch (error) {
         showToast(error.message || '批量放弃失败', 'error');
     }

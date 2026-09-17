@@ -501,58 +501,8 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "async function dutyStatsResponse" not in workspace_script
     assert "`${API_BASE}/stats${url.search}`" in workspace_script
     assert "if (response.ok) invalidateDutyListCache();" in workspace_script
-    assert "detachDutyFilterRemoval(removal);" in filter_actions_script
-    assert "updateDutyFilterDecisionCounts(status, 1, 1, reportType);" in filter_actions_script
-    assert "restoreDutyFilterRemoval(removal, undoMutation.versions || {});" in filter_actions_script
-    assert "撤销失败，原操作保持不变" in filter_actions_script
-    card_handler = filter_actions_script.split(
-        "async function handleCardDecisionChange",
-        maxsplit=1,
-    )[1].split(
-        "async function handleClusterDecisionChange",
-        maxsplit=1,
-    )[0]
-    assert card_handler.index("await submitDecisions") < card_handler.index(
-        "detachDutyFilterRemoval(removal);"
-    )
-    duty_card_branch = card_handler.split(
-        "if (IS_DUTY_WORKSPACE)",
-        maxsplit=1,
-    )[1].split("} else {", maxsplit=1)[0]
-    assert "loadFilterData" not in duty_card_branch
-    assert "loadStats" not in duty_card_branch
-    assert "const pageEmptied = detachDutyFilterRemoval(removal);" in duty_card_branch
-    assert "{ reloadOnUndo: pageEmptied, reportType }" in duty_card_branch
-    assert "if (card.isConnected) setInputsDisabled(radios, false);" not in card_handler
-    assert "finally {\n        setInputsDisabled(radios, false);\n    }" in card_handler
-    cluster_handler = filter_actions_script.split(
-        "async function handleClusterDecisionChange",
-        maxsplit=1,
-    )[1].split(
-        "function collectCardEdits",
-        maxsplit=1,
-    )[0]
-    duty_cluster_branch = cluster_handler.split(
-        "if (IS_DUTY_WORKSPACE)",
-        maxsplit=1,
-    )[1].split("} else {", maxsplit=1)[0]
-    assert "const pageEmptied = detachDutyFilterRemoval(removal);" in duty_cluster_branch
-    assert "{ reloadOnUndo: pageEmptied, reportType }" in duty_cluster_branch
-    assert "if (cluster.isConnected) setInputsDisabled(radios, false);" not in cluster_handler
-    assert "finally {\n        setInputsDisabled(radios, false);\n    }" in cluster_handler
-    assert "return pageEmptied;" in filter_actions_script
-    discard_handler = filter_actions_script.split(
-        "async function discardRemainingItems",
-        maxsplit=1,
-    )[1].split(
-        "async function bulkDiscard",
-        maxsplit=1,
-    )[0]
-    duty_discard_branch = discard_handler.split(
-        "if (IS_DUTY_WORKSPACE)",
-        maxsplit=1,
-    )[1].split("} else {", maxsplit=1)[0]
-    assert "{ reloadOnUndo: true }" in duty_discard_branch
+    # 决定后处理的行为约定（移除节点/立即补页/本地计数/撤销恢复）由
+    # tests/js/filter_decision_flow.test.js 在两端以行为测试覆盖，这里不再做源码字符串断言。
     assert "await Promise.all([loadFilterData(), loadStats()]);" in filter_actions_script
     assert "window.scrollTo({ top: 0, behavior: 'auto' });" in filter_actions_script
     assert "编辑保存失败，请重试" in (

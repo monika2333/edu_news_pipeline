@@ -71,7 +71,6 @@ let state = {
 };
 
 let shouldForceClusterRefresh = false;
-let emptyFilterPageReloadTimer = null;
 let reviewSortableInstances = [];
 
 // UI mode

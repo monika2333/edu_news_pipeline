@@ -3,7 +3,8 @@
 // （页面 HTML 需要 pytest 包装层经真实路由渲染后传入）。
 //
 // 覆盖的行为约定（改动这些行为时必须同步更新本文件）：
-// 1. 值班端做出决定后立即显示提示与撤销，补页重载在后台进行，不阻塞提示；
+// 1. 管理员与值班两端做出决定后执行同一套流程：立即显示提示与撤销；本页清空时插入
+//    「当前页新闻已处理完」占位，并立即在后台补页（不阻塞提示、不经过定时器）；
 // 2. loadFilterData 最新请求获胜，先发后到的旧响应不得覆盖新列表；
 // 3. 决定操作只保存与「最近一次被服务端确认的值」不同的卡片；
 // 4. 决定前等待进行中的编辑保存完成，不得带同一版本号并发写入（否则 409）。
@@ -12,6 +13,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { bootPage, waitFor, unhandledRejections } = require('./manual_filter_harness');
+
+const MODES = ['duty', 'admin'];
+const MODE_LABELS = { duty: '值班', admin: '管理员' };
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function withPage(mode, serverOptions, body) {
     const page = await bootPage(mode, serverOptions);
@@ -22,45 +28,144 @@ async function withPage(mode, serverOptions, body) {
     }
 }
 
-test('值班「放弃本页剩余内容」：补页请求未返回时提示与撤销已出现，放行后显示下一页', async () => {
-    await withPage('duty', { articleCount: 13 }, async (page) => {
-        const { window, server } = page;
-        server.hold('list');
-        const action = window.discardRemainingItems();
-        assert.ok(
-            await waitFor(() => page.toastText().includes('已放弃 10 条新闻')),
-            `提示未在补页返回前出现：${page.toastText()}`
-        );
-        assert.equal(server.heldCount('list'), 1, '补页请求应仍被扣住');
-        assert.ok(page.document.querySelector('#toast button'), '提示中应有撤销按钮');
-        server.release('list');
-        await action;
-        assert.ok(await waitFor(() => page.cardIds().length === 3), page.cardIds().join(','));
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}「放弃本页剩余内容」：补页请求未返回时提示与撤销已出现，放行后显示下一页`, async () => {
+        await withPage(mode, { articleCount: 13 }, async (page) => {
+            const { window, server } = page;
+            server.hold('list');
+            const action = window.discardRemainingItems();
+            assert.ok(
+                await waitFor(() => page.toastText().includes('已放弃 10 条新闻')),
+                `提示未在补页返回前出现：${page.toastText()}`
+            );
+            assert.equal(server.heldCount('list'), 1, '补页请求应仍被扣住');
+            assert.ok(page.document.querySelector('#toast button'), '提示中应有撤销按钮');
+            server.release('list');
+            await action;
+            assert.ok(await waitFor(() => page.cardIds().length === 3), page.cardIds().join(','));
+        });
     });
-});
+}
 
-test('值班单条决定清空本页：补页请求未返回时提示已出现', async () => {
-    await withPage('duty', { articleCount: 1 }, async (page) => {
-        const { server } = page;
-        server.hold('list');
-        page.chooseRadio(page.card('a00').querySelector('input[type="radio"][value="discarded"]'));
-        assert.ok(await waitFor(() => page.toastText().includes('已放弃')), page.toastText());
-        assert.equal(server.heldCount('list'), 1);
-        server.release('list');
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}单条决定清空本页：补页请求未返回时提示已出现`, async () => {
+        await withPage(mode, { articleCount: 1 }, async (page) => {
+            const { server } = page;
+            server.hold('list');
+            page.chooseRadio(page.card('a00').querySelector('input[type="radio"][value="discarded"]'));
+            assert.ok(await waitFor(() => page.toastText().includes('已放弃')), page.toastText());
+            assert.equal(server.heldCount('list'), 1);
+            server.release('list');
+        });
     });
-});
+}
 
-test('值班整簇决定清空本页：补页请求未返回时提示已出现，且未编辑时不发 /edit', async () => {
-    await withPage('duty', { articleCount: 2, clusters: [['a00', 'a01']] }, async (page) => {
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}整簇决定清空本页：补页请求未返回时提示已出现，且未编辑时不发 /edit`, async () => {
+        await withPage(mode, { articleCount: 2, clusters: [['a00', 'a01']] }, async (page) => {
+            const { document, server } = page;
+            server.hold('list');
+            page.chooseRadio(document.querySelector('#filter-list .cluster-radio input[value="discarded"]'));
+            assert.ok(await waitFor(() => page.toastText().includes('已放弃 2 条新闻')), page.toastText());
+            assert.equal(server.heldCount('list'), 1);
+            assert.equal(server.requests('edit').length, 0);
+            server.release('list');
+        });
+    });
+}
+
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}决定后补页：最后一个是整簇、中间有停顿，整簇决定后立即补出下一页`, async () => {
+        await withPage(mode, { articleCount: 12, clusters: [['a00', 'a01']] }, async (page) => {
+            const { server } = page;
+            // 逐条放弃本页 9 个单条；聚类还在，本页未清空，不应触发补页
+            for (const id of ['a02', 'a03', 'a04', 'a05', 'a06', 'a07', 'a08', 'a09', 'a10']) {
+                page.chooseRadio(page.card(id).querySelector('input[type="radio"][value="discarded"]'));
+                assert.ok(await waitFor(() => !page.cardIds().includes(id)), `${id} 未被移除`);
+            }
+            assert.equal(server.requests('list').length, 0, '单条决定不应触发列表请求');
+            // 停顿明显超过旧的 120ms 定时器：遗留定时器若存在，此时已触发并被本页剩余卡片跳过
+            await sleep(250);
+            server.hold('list');
+            page.chooseRadio(page.document.querySelector('#filter-list .cluster-radio input[value="discarded"]'));
+            assert.ok(
+                await waitFor(() => page.toastText().includes('已放弃 2 条新闻')),
+                page.toastText()
+            );
+            assert.equal(
+                server.heldCount('list'),
+                1,
+                '补页请求应在整簇决定成功后立即发出，而不是经定时器延迟'
+            );
+            server.release('list');
+            assert.ok(
+                await waitFor(() => page.cardIds().join(',') === 'a11'),
+                page.cardIds().join(',')
+            );
+        });
+    });
+}
+
+test('管理员撤销就地恢复：卡片回到原相邻位置，撤销过程不重载列表', async () => {
+    await withPage('admin', { articleCount: 3 }, async (page) => {
         const { document, server } = page;
-        server.hold('list');
-        page.chooseRadio(document.querySelector('#filter-list .cluster-radio input[value="discarded"]'));
-        assert.ok(await waitFor(() => page.toastText().includes('已放弃 2 条新闻')), page.toastText());
-        assert.equal(server.heldCount('list'), 1);
-        assert.equal(server.requests('edit').length, 0);
-        server.release('list');
+        page.chooseRadio(page.card('a01').querySelector('input[type="radio"][value="discarded"]'));
+        assert.ok(await waitFor(() => page.toastText().includes('已放弃')), page.toastText());
+        assert.deepEqual(page.cardIds(), ['a00', 'a02']);
+        document.querySelector('#toast button').click();
+        assert.ok(await waitFor(() => page.toastText().includes('已撤销')), page.toastText());
+        await waitFor(() => server.inflight === 0);
+        assert.deepEqual(page.cardIds(), ['a00', 'a01', 'a02'], '卡片未按原相邻顺序恢复');
+        assert.equal(server.requests('list').length, 0, '本页未清空时撤销不应重载列表');
     });
 });
+
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}单条放弃本地调整计数，撤销后恢复`, async () => {
+        await withPage(mode, { articleCount: 3 }, async (page) => {
+            const { document, server } = page;
+            const sideCount = () => {
+                const btn = page.document.querySelector('.filter-tab-btn[data-category="internal_positive"]');
+                const match = btn.textContent.match(/\((\d+)\)/);
+                return Number(match ? match[1] : NaN);
+            };
+            // 顶部待处理数只有值班工作台渲染，管理员页无该元素
+            const hasPendingStat = Boolean(page.document.getElementById('stat-pending'));
+            const pendingStat = () => page.document.getElementById('stat-pending').textContent.trim();
+            assert.equal(sideCount(), 3, '启动后侧栏计数应为 3');
+            if (hasPendingStat) assert.equal(pendingStat(), '3', '启动后顶部待处理数应为 3');
+            page.chooseRadio(page.card('a02').querySelector('input[type="radio"][value="discarded"]'));
+            assert.ok(await waitFor(() => sideCount() === 2), `侧栏计数未本地减一：${sideCount()}`);
+            if (hasPendingStat) assert.equal(pendingStat(), '2', '顶部待处理数未本地减一');
+            assert.ok(await waitFor(() => page.toastText().includes('已放弃')), page.toastText());
+            document.querySelector('#toast button').click();
+            assert.ok(await waitFor(() => page.toastText().includes('已撤销')), page.toastText());
+            await waitFor(() => server.inflight === 0);
+            assert.equal(sideCount(), 3, '撤销后侧栏计数未恢复');
+            if (hasPendingStat) assert.equal(pendingStat(), '3', '撤销后顶部待处理数未恢复');
+        });
+    });
+}
+
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}清空本页时显示占位，补页返回后占位消失`, async () => {
+        await withPage(mode, { articleCount: 1 }, async (page) => {
+            const { server } = page;
+            server.hold('list');
+            page.chooseRadio(page.card('a00').querySelector('input[type="radio"][value="discarded"]'));
+            assert.ok(
+                await waitFor(() => page.listHtml().includes('当前页新闻已处理完')),
+                page.listHtml()
+            );
+            assert.equal(server.heldCount('list'), 1, '补页请求应已发出并被扣住');
+            server.release('list');
+            assert.ok(
+                await waitFor(() => !page.listHtml().includes('当前页新闻已处理完')),
+                page.listHtml()
+            );
+        });
+    });
+}
 
 test('最新请求获胜：先发后到的旧响应不覆盖新列表，被取代的失败请求不显示错误', async () => {
     await withPage('duty', { articleCount: 5 }, async (page) => {

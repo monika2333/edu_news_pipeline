@@ -100,6 +100,15 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
         ("attr-duplicate", "Matched Duplicate Title", "sharedterm duplicateonly body", now),
         # 仅摘要路径多词场景：原文两个词都没有，llm_summary 两个词都有
         ("attr-summary-multi", "Summary Multi Title", "rawlacksboth 正文", now),
+        # ns 与原文不一致的构造：所有词都在 ns 标题/正文里，
+        # 但 llm_summary 与原文都不含任何词 → 摘要路径不得命中
+        ("attr-ns-mismatch", "原始标题原文", "原始正文内容", now),
+        # LIKE 字面匹配场景：通配符与反斜杠都按普通字符处理
+        ("attr-lit-underscore", "a_c", "下划线字面正文", now),
+        ("attr-lit-abc", "abc", "abc 普通正文", now),
+        ("attr-lit-percent", "100%", "百分号字面正文", now),
+        ("attr-lit-thousand", "1000", "千增长正文", now),
+        ("attr-lit-backslash", "路径 a\\b 标题", "反斜杠字面正文", now),
     ]
     cur.executemany(
         """
@@ -221,13 +230,16 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
             ),
         ],
     )
-    # 仅摘要路径多词场景的 news_summaries 行：llm_summary 同时含两个检索词
+    # 仅摘要路径多词场景的 news_summaries 行：真实写入路径（upsert_news_summary）
+    # 会把原文正文写进 ns.content_markdown，这里保持与 raw_articles 一致；
+    # llm_summary 里的词不会出现在原文或 ns 标题/正文的其余部分。
     cur.execute(
         """
         INSERT INTO news_summaries (
             article_id,
             title,
             llm_summary,
+            content_markdown,
             status,
             score,
             external_importance_status,
@@ -238,7 +250,39 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
         VALUES (
             'attr-summary-multi',
             'Summary Multi Title',
-            'summarizemulti 补充词',
+            'summaryalpha 补充词',
+            'rawlacksboth 正文',
+            'ready_for_export',
+            75,
+            'ready_for_export',
+            70,
+            NULL,
+            %s
+        )
+        """,
+        (now,),
+    )
+    # ns 与原文不一致的构造行：两个词只存在于 ns 标题/正文，
+    # llm_summary 与原文都不含任何词
+    cur.execute(
+        """
+        INSERT INTO news_summaries (
+            article_id,
+            title,
+            llm_summary,
+            content_markdown,
+            status,
+            score,
+            external_importance_status,
+            external_importance_score,
+            external_importance_raw,
+            created_at
+        )
+        VALUES (
+            'attr-ns-mismatch',
+            'NswordA NswordB 不一致标题',
+            '无关总结文本',
+            'NswordA NswordB 不一致正文',
             'ready_for_export',
             75,
             'ready_for_export',
@@ -791,7 +835,7 @@ def test_multi_term_summary_only_hit_returns_article_once() -> None:
             # 两个词都只在 llm_summary 里：raw_hits 不命中，摘要路径补充命中；
             # match_rank=1 的行经 DISTINCT ON 归并后该文章只出现一次，
             # 归并到自身因此不携带 matched_article_title。
-            summary_only, _ = _search(cur, ["summarizemulti", "补充词"])
+            summary_only, _ = _search(cur, ["summaryalpha", "补充词"])
             assert [
                 item["article_id"] for item in summary_only["items"]
             ] == ["attr-summary-multi"]
@@ -799,15 +843,123 @@ def test_multi_term_summary_only_hit_returns_article_once() -> None:
                 summary_only["items"][0]["attribution_matched_article_title"] is None
             )
 
-            # 摘要路径要求每个词都落在 llm_summary：一个词在原文、
-            # 另一个词仅在摘要时，两条路径都不满足 → 不命中
-            cross, _ = _search(cur, ["rawlacksboth", "补充词"])
-            assert cross["items"] == []
-
-            # 摘要路径的 AND 语义：第二个词全库不存在时，
-            # 不得只凭第一个词（summarizemulti 在 llm_summary 里）放行
-            partial, _ = _search(cur, ["summarizemulti", "nowhere-term"])
+            # 摘要路径的 AND 语义（表达式条件）：第二个词全库不存在时，
+            # 不得只凭第一个词（summaryalpha 在 llm_summary 里）放行
+            partial, _ = _search(cur, ["summaryalpha", "nowhere-term"])
             assert partial["items"] == []
+
+
+def test_summary_path_hits_when_a_term_lives_only_in_summary() -> None:
+    settings = get_settings()
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            _create_temp_search_tables(cur)
+            _seed_attribution_scenarios(cur)
+
+            # 摘要路径的本意是「摘要对命中有贡献」：一个词在原文、
+            # 另一个词仅在摘要时，原文路径不满足，但摘要路径
+            # （表达式全部命中 + 至少一个词在 llm_summary）应当命中
+            cross, _ = _search(cur, ["rawlacksboth", "补充词"])
+            assert [item["article_id"] for item in cross["items"]] == [
+                "attr-summary-multi"
+            ]
+            assert cross["items"][0]["attribution_matched_article_title"] is None
+
+            # 同理：一个词在标题、另一个词仅在摘要 → 命中
+            title_cross, _ = _search(cur, ["multi", "补充词"])
+            assert [item["article_id"] for item in title_cross["items"]] == [
+                "attr-summary-multi"
+            ]
+
+
+def test_summary_path_requires_a_term_in_llm_summary() -> None:
+    settings = get_settings()
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            _create_temp_search_tables(cur)
+            _seed_attribution_scenarios(cur)
+
+            # 所有词都在 ns 标题/正文里、但没有任何词在 llm_summary 里，
+            # 且原文不含这些词（ns 与原文不一致的构造）：
+            # 「摘要对命中有贡献」不成立 → 摘要路径不得命中
+            no_summary_contribution, _ = _search(cur, ["NswordA", "NswordB"])
+            assert no_summary_contribution["items"] == []
+
+
+def test_full_db_search_matches_like_wildcards_literally_with_real_sql() -> None:
+    settings = get_settings()
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            _create_temp_search_tables(cur)
+            _seed_attribution_scenarios(cur)
+
+            # a_c 按字面匹配，不把 _ 当「任意单字符」命中 abc
+            assert [
+                item["article_id"] for item in _search(cur, ["a_c"])[0]["items"]
+            ] == ["attr-lit-underscore"]
+            assert [
+                item["article_id"] for item in _search(cur, ["abc"])[0]["items"]
+            ] == ["attr-lit-abc"]
+
+            # 100% 按字面匹配，不命中 1000
+            assert [
+                item["article_id"] for item in _search(cur, ["100%"])[0]["items"]
+            ] == ["attr-lit-percent"]
+            assert [
+                item["article_id"] for item in _search(cur, ["1000"])[0]["items"]
+            ] == ["attr-lit-thousand"]
+
+            # 转义在多词下同样生效
+            assert [
+                item["article_id"]
+                for item in _search(cur, ["a_c", "下划线"])[0]["items"]
+            ] == ["attr-lit-underscore"]
+
+
+def test_full_db_search_matches_backslash_literally_with_real_sql() -> None:
+    settings = get_settings()
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            _create_temp_search_tables(cur)
+            _seed_attribution_scenarios(cur)
+
+            # 反斜杠是 LIKE 的默认转义符：检索 a\b 只命中字面含 a\b 的文本，
+            # 不得因转义符被吞而退化成 %ab% 之类命中 abc
+            assert [
+                item["article_id"] for item in _search(cur, ["a\\b"])[0]["items"]
+            ] == ["attr-lit-backslash"]
 
 
 def test_multi_term_cursor_pagination_is_stable_and_has_no_duplicates() -> None:

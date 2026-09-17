@@ -804,6 +804,11 @@ def test_multi_term_summary_only_hit_returns_article_once() -> None:
             cross, _ = _search(cur, ["rawlacksboth", "补充词"])
             assert cross["items"] == []
 
+            # 摘要路径的 AND 语义：第二个词全库不存在时，
+            # 不得只凭第一个词（summarizemulti 在 llm_summary 里）放行
+            partial, _ = _search(cur, ["summarizemulti", "nowhere-term"])
+            assert partial["items"] == []
+
 
 def test_multi_term_cursor_pagination_is_stable_and_has_no_duplicates() -> None:
     settings = get_settings()

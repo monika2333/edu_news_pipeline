@@ -57,10 +57,12 @@ def search_article_attributions(
     summary_term_conditions = _ilike_all(
         SUMMARY_SEARCH_TEXT_EXPRESSION, len(like_patterns)
     )
+    # llm_summary 可能为 NULL，ILIKE 前先 COALESCE 成空串。表达式先放进普通
+    # 变量：f-string 表达式内不允许反斜杠转义是 3.12 才放开的语法，内联字面量
+    # 会让低版本解释器在导入本模块时直接 SyntaxError
+    llm_summary_expression = "COALESCE(ns.llm_summary, '')"
     # OR 优先级低于 AND，整组必须括起来，避免与外层 WHERE 条件意外结合
-    llm_any_condition = (
-        f"({_ilike_any('COALESCE(ns.llm_summary, \'\')', len(like_patterns))})"
-    )
+    llm_any_condition = f"({_ilike_any(llm_summary_expression, len(like_patterns))})"
     cursor_clause = ""
     cursor_params: tuple[Any, ...] = ()
     if cursor_ingested_at is not None and cursor_article_id is not None:

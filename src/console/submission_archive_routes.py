@@ -271,7 +271,11 @@ def search_archive_api(
     q: str = "",
     limit: int = 50,
 ) -> dict[str, Any]:
-    return submission_archive_service.search_archive(query=q, limit=limit)
+    """Search archived report items; multi-term AND semantics, terms echoed back."""
+    try:
+        return submission_archive_service.search_archive(query=q, limit=limit)
+    except ValueError as exc:
+        _raise_service_error(exc)
 
 
 @router.get("/duplicates/{article_id:path}")

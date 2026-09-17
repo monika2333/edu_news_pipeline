@@ -763,3 +763,56 @@ def test_update_item_fields_maps_adapter_outcomes(
             source=None,
             urls=[],
         )
+
+
+class _SearchArchiveNamespace:
+    def __init__(self) -> None:
+        self.kwargs: dict[str, Any] = {}
+
+    def search_report_items(self, **kwargs: Any) -> list[dict[str, Any]]:
+        self.kwargs = kwargs
+        return [{"id": "item-1", "title": "双减政策落地"}]
+
+
+class _SearchArchiveAdapter:
+    def __init__(self) -> None:
+        self.submission_archive = _SearchArchiveNamespace()
+
+
+def test_search_archive_splits_terms_and_echoes_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = _SearchArchiveAdapter()
+    monkeypatch.setattr(submission_archive_service, "get_adapter", lambda: adapter)
+
+    result = submission_archive_service.search_archive(
+        query="双减　课后 双减",
+        limit=50,
+    )
+
+    assert adapter.submission_archive.kwargs["terms"] == ["双减", "课后"]
+    assert result["items"] == [{"id": "item-1", "title": "双减政策落地"}]
+    assert result["query"] == "双减　课后 双减"
+    assert result["total"] == 1
+    assert result["terms"] == ["双减", "课后"]
+
+
+def test_search_archive_blank_query_returns_empty_payload_with_empty_terms() -> None:
+    result = submission_archive_service.search_archive(query="   ", limit=50)
+
+    assert result == {"items": [], "query": "", "total": 0, "terms": []}
+
+
+def test_search_archive_rejects_more_than_ten_terms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_get_adapter() -> None:
+        raise AssertionError("over-limit searches must not reach the database adapter")
+
+    monkeypatch.setattr(submission_archive_service, "get_adapter", fail_get_adapter)
+
+    with pytest.raises(ValueError, match="检索词最多"):
+        submission_archive_service.search_archive(
+            query=" ".join(f"词{i}" for i in range(11)),
+            limit=50,
+        )

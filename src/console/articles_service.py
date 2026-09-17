@@ -8,15 +8,20 @@ import json
 from typing import Any, Dict, List, Optional
 
 from src.adapters.db_postgres_core import get_adapter
+from src.console.search_terms import normalize_search_terms
 
 
 DEFAULT_ARTICLE_SEARCH_LOOKBACK_DAYS = 30
 MAX_ARTICLE_SEARCH_LOOKBACK_DAYS = 3650
-ARTICLE_SEARCH_CURSOR_VERSION = 1
+# v2：游标指纹从「原始 query 字符串摘要」改为「规范化词列表摘要」，
+# 旧版游标无法在新语义下校验，直接按不支持的版本拒绝。
+ARTICLE_SEARCH_CURSOR_VERSION = 2
 
 
-def _query_digest(query: str) -> str:
-    return hashlib.sha256(query.encode("utf-8")).hexdigest()
+def _query_digest(terms: List[str]) -> str:
+    return hashlib.sha256(
+        json.dumps(terms, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def _encode_search_cursor(
@@ -24,7 +29,7 @@ def _encode_search_cursor(
     ingested_at: datetime,
     article_id: str,
     window_start: datetime,
-    query: str,
+    terms: List[str],
     lookback_days: int,
 ) -> str:
     payload = json.dumps(
@@ -33,7 +38,7 @@ def _encode_search_cursor(
             "t": ingested_at.isoformat(),
             "id": article_id,
             "ws": window_start.isoformat(),
-            "qh": _query_digest(query),
+            "qh": _query_digest(terms),
             "d": lookback_days,
         },
         ensure_ascii=True,
@@ -45,7 +50,7 @@ def _encode_search_cursor(
 def _decode_search_cursor(
     cursor: Optional[str],
     *,
-    query: str,
+    terms: List[str],
     lookback_days: int,
 ) -> tuple[Optional[datetime], Optional[str], Optional[datetime]]:
     normalized = str(cursor or "").strip()
@@ -63,7 +68,7 @@ def _decode_search_cursor(
         raise ValueError("Invalid article search cursor") from exc
     if ingested_at.tzinfo is None or window_start.tzinfo is None or not article_id:
         raise ValueError("Invalid article search cursor")
-    if payload.get("qh") != _query_digest(query) or payload.get("d") != lookback_days:
+    if payload.get("qh") != _query_digest(terms) or payload.get("d") != lookback_days:
         raise ValueError("Article search cursor does not match the current search")
     return ingested_at, article_id, window_start
 
@@ -156,8 +161,8 @@ def search_articles(
     lookback_days: int = DEFAULT_ARTICLE_SEARCH_LOOKBACK_DAYS,
     cursor: Optional[str] = None,
 ) -> Dict[str, Any]:
-    normalized_query = str(query or "").strip()
-    if not normalized_query:
+    terms = normalize_search_terms(query)
+    if not terms:
         raise ValueError("Article search query must not be blank")
     limit = max(1, min(int(limit or 20), 100))
     lookback_days = max(
@@ -169,7 +174,7 @@ def search_articles(
     )
     cursor_ingested_at, cursor_article_id, cursor_window_start = _decode_search_cursor(
         cursor,
-        query=normalized_query,
+        terms=terms,
         lookback_days=lookback_days,
     )
     window_start = cursor_window_start or (
@@ -184,9 +189,10 @@ def search_articles(
             "next_cursor": None,
             "lookback_days": lookback_days,
             "window_start": window_start,
+            "terms": terms,
         }
     raw = adapter.news_summaries.search_with_attribution(
-        query=normalized_query,
+        terms=terms,
         fetched_after=window_start,
         limit=limit,
         cursor_ingested_at=cursor_ingested_at,
@@ -202,7 +208,7 @@ def search_articles(
             ingested_at=next_ingested_at,
             article_id=str(next_article_id),
             window_start=window_start,
-            query=normalized_query,
+            terms=terms,
             lookback_days=lookback_days,
         )
     return {
@@ -212,6 +218,7 @@ def search_articles(
         "next_cursor": next_cursor,
         "lookback_days": lookback_days,
         "window_start": window_start,
+        "terms": terms,
     }
 
 

@@ -7,6 +7,7 @@ from uuid import UUID
 
 import psycopg
 import pytest
+from fastapi.testclient import TestClient
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
@@ -16,7 +17,10 @@ from src.adapters.db_postgres_article_attribution import (
 )
 from src.config import get_settings
 from src.console import articles_service
+from src.console.app import create_app
 from src.console.articles_schemas import NewsArticleSearchResponse
+from src.console.auth_service import ConsoleUser
+from src.console.security import require_console_user
 
 
 class _CountingCursor:
@@ -34,7 +38,7 @@ class _CountingCursor:
 
 def _search(
     cur: psycopg.Cursor,
-    query: str,
+    terms: list[str],
     *,
     limit: int = 20,
     cursor_ingested_at: datetime | None = None,
@@ -43,7 +47,7 @@ def _search(
     counting_cursor = _CountingCursor(cur)
     result = search_article_attributions(
         counting_cursor,
-        query=query,
+        terms=terms,
         fetched_after=datetime.now(timezone.utc) - timedelta(days=7),
         limit=limit,
         cursor_ingested_at=cursor_ingested_at,
@@ -94,6 +98,8 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
             now - timedelta(minutes=1),
         ),
         ("attr-duplicate", "Matched Duplicate Title", "sharedterm duplicateonly body", now),
+        # 仅摘要路径多词场景：原文两个词都没有，llm_summary 两个词都有
+        ("attr-summary-multi", "Summary Multi Title", "rawlacksboth 正文", now),
     ]
     cur.executemany(
         """
@@ -214,6 +220,34 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
                 now,
             ),
         ],
+    )
+    # 仅摘要路径多词场景的 news_summaries 行：llm_summary 同时含两个检索词
+    cur.execute(
+        """
+        INSERT INTO news_summaries (
+            article_id,
+            title,
+            llm_summary,
+            status,
+            score,
+            external_importance_status,
+            external_importance_score,
+            external_importance_raw,
+            created_at
+        )
+        VALUES (
+            'attr-summary-multi',
+            'Summary Multi Title',
+            'summarizemulti 补充词',
+            'ready_for_export',
+            75,
+            'ready_for_export',
+            70,
+            NULL,
+            %s
+        )
+        """,
+        (now,),
     )
     # 评分反馈：attr-importance 的当前评分上下文上有一条「偏低」反馈。
     cur.execute(
@@ -374,16 +408,16 @@ def test_full_pipeline_attribution_and_primary_deduplication() -> None:
             _create_temp_search_tables(cur)
             _seed_attribution_scenarios(cur)
 
-            keyword, keyword_queries = _search(cur, "keywordonly")
-            relevance, relevance_queries = _search(cur, "relevanceonly")
-            importance, importance_queries = _search(cur, "importanceonly")
-            not_reviewed, not_reviewed_queries = _search(cur, "notreviewedonly")
-            discarded, discarded_queries = _search(cur, "discardedonly")
-            selected, selected_queries = _search(cur, "selectedonly")
-            review_exported, review_exported_queries = _search(cur, "reviewexportedonly")
-            duplicate, duplicate_queries = _search(cur, "duplicateonly")
-            same_group, same_group_queries = _search(cur, "sharedterm")
-            missing, missing_queries = _search(cur, "absent-everywhere")
+            keyword, keyword_queries = _search(cur, ["keywordonly"])
+            relevance, relevance_queries = _search(cur, ["relevanceonly"])
+            importance, importance_queries = _search(cur, ["importanceonly"])
+            not_reviewed, not_reviewed_queries = _search(cur, ["notreviewedonly"])
+            discarded, discarded_queries = _search(cur, ["discardedonly"])
+            selected, selected_queries = _search(cur, ["selectedonly"])
+            review_exported, review_exported_queries = _search(cur, ["reviewexportedonly"])
+            duplicate, duplicate_queries = _search(cur, ["duplicateonly"])
+            same_group, same_group_queries = _search(cur, ["sharedterm"])
+            missing, missing_queries = _search(cur, ["absent-everywhere"])
 
     assert keyword["items"][0]["attribution_level"] == "keyword_missed"
     assert keyword["items"][0]["attribution_ingested_at_source"] == "raw_articles.fetched_at"
@@ -523,11 +557,26 @@ def test_service_preserves_missing_fields_and_zero_scores(monkeypatch) -> None:
     }
     assert response["lookback_days"] == 45
     assert response["window_start"] == adapter.news_summaries.kwargs["fetched_after"]
+    assert response["terms"] == ["raw"]
 
     default_result = articles_service.search_articles(query="raw")
 
     assert default_result["lookback_days"] == 30
     assert default_result["window_start"] == adapter.news_summaries.kwargs["fetched_after"]
+    assert default_result["terms"] == ["raw"]
+
+
+def test_service_normalizes_terms_and_rejects_too_many(monkeypatch) -> None:
+    adapter = _FakeAdapter()
+    monkeypatch.setattr(articles_service, "_get_adapter_safe", lambda: adapter)
+
+    result = articles_service.search_articles(query="  双减　课后  双减 ")
+
+    assert result["terms"] == ["双减", "课后"]
+    assert adapter.news_summaries.kwargs["terms"] == ["双减", "课后"]
+
+    with pytest.raises(ValueError, match="检索词最多"):
+        articles_service.search_articles(query=" ".join(f"词{i}" for i in range(11)))
 
 
 def test_service_rejects_blank_query_before_getting_adapter(monkeypatch) -> None:
@@ -540,13 +589,13 @@ def test_service_rejects_blank_query_before_getting_adapter(monkeypatch) -> None
         articles_service.search_articles(query="   ")
 
 
-def test_adapter_rejects_blank_query_before_executing_sql() -> None:
+def test_adapter_rejects_empty_terms_before_executing_sql() -> None:
     cursor = Mock(spec=psycopg.Cursor)
 
-    with pytest.raises(ValueError, match="must not be blank"):
+    with pytest.raises(ValueError, match="must not be empty"):
         search_article_attributions(
             cursor,
-            query="   ",
+            terms=[],
             fetched_after=datetime.now(timezone.utc),
             limit=20,
         )
@@ -567,7 +616,7 @@ def test_adapter_uses_limit_plus_one_without_count_or_offset() -> None:
 
     result = search_article_attributions(
         cursor,
-        query="education",
+        terms=["education"],
         fetched_after=datetime.now(timezone.utc),
         limit=10,
     )
@@ -595,10 +644,10 @@ def test_cursor_pagination_is_stable_and_has_no_duplicates() -> None:
             _create_temp_search_tables(cur)
             _seed_attribution_scenarios(cur)
 
-            first, _ = _search(cur, "only", limit=3)
+            first, _ = _search(cur, ["only"], limit=3)
             second, _ = _search(
                 cur,
-                "only",
+                ["only"],
                 limit=3,
                 cursor_ingested_at=first["next_ingested_at"],
                 cursor_article_id=first["next_article_id"],
@@ -645,6 +694,7 @@ def test_service_cursor_round_trip_preserves_window_and_search(monkeypatch) -> N
     assert second["window_start"] == first["window_start"]
     assert second_kwargs["cursor_ingested_at"] == ingested_at
     assert second_kwargs["cursor_article_id"] == "article-10"
+    assert second_kwargs["terms"] == ["raw"]
 
     with pytest.raises(ValueError, match="does not match"):
         articles_service.search_articles(
@@ -652,3 +702,177 @@ def test_service_cursor_round_trip_preserves_window_and_search(monkeypatch) -> N
             lookback_days=45,
             cursor=first["next_cursor"],
         )
+
+
+def test_service_cursor_digest_ignores_whitespace_variants(monkeypatch) -> None:
+    adapter = _FakeAdapter()
+    ingested_at = datetime(2026, 8, 12, 8, 30, tzinfo=timezone.utc)
+    adapter.news_summaries.search_with_attribution = Mock(
+        side_effect=[
+            {
+                "items": [],
+                "has_more": True,
+                "next_ingested_at": ingested_at,
+                "next_article_id": "article-10",
+            },
+            {
+                "items": [],
+                "has_more": False,
+                "next_ingested_at": None,
+                "next_article_id": None,
+            },
+        ]
+    )
+    monkeypatch.setattr(articles_service, "_get_adapter_safe", lambda: adapter)
+
+    # 「双减  课后」（双空格）与「双减 课后」（单空格）规范化后是同一组词
+    first = articles_service.search_articles(query="双减　课后", lookback_days=45)
+    second = articles_service.search_articles(
+        query="双减  课后",
+        lookback_days=45,
+        cursor=first["next_cursor"],
+    )
+    assert second["window_start"] == first["window_start"]
+
+    # 换成不同的词集则拒绝旧游标
+    with pytest.raises(ValueError, match="does not match"):
+        articles_service.search_articles(
+            query="双减 作业",
+            lookback_days=45,
+            cursor=first["next_cursor"],
+        )
+
+
+def test_multi_term_search_requires_all_terms_in_same_article() -> None:
+    settings = get_settings()
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            _create_temp_search_tables(cur)
+            _seed_attribution_scenarios(cur)
+
+            # 原文同时含两个词 → 命中主稿
+            both, _ = _search(cur, ["sharedterm", "primary"])
+            assert [item["article_id"] for item in both["items"]] == ["attr-dup-primary"]
+            assert both["items"][0]["attribution_matched_article_title"] is None
+
+            # 原文只含其中一个词 → 不命中
+            either, _ = _search(cur, ["sharedterm", "keywordonly"])
+            assert either["items"] == []
+
+            # 重复稿含词1、主稿含词2：两条物理文章各自都不满足 AND，
+            # 归并到主稿后也不得当作命中返回
+            split, _ = _search(cur, ["duplicateonly", "primary"])
+            assert split["items"] == []
+
+
+def test_multi_term_summary_only_hit_returns_article_once() -> None:
+    settings = get_settings()
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            _create_temp_search_tables(cur)
+            _seed_attribution_scenarios(cur)
+
+            # 两个词都只在 llm_summary 里：raw_hits 不命中，摘要路径补充命中；
+            # match_rank=1 的行经 DISTINCT ON 归并后该文章只出现一次，
+            # 归并到自身因此不携带 matched_article_title。
+            summary_only, _ = _search(cur, ["summarizemulti", "补充词"])
+            assert [
+                item["article_id"] for item in summary_only["items"]
+            ] == ["attr-summary-multi"]
+            assert (
+                summary_only["items"][0]["attribution_matched_article_title"] is None
+            )
+
+            # 摘要路径要求每个词都落在 llm_summary：一个词在原文、
+            # 另一个词仅在摘要时，两条路径都不满足 → 不命中
+            cross, _ = _search(cur, ["rawlacksboth", "补充词"])
+            assert cross["items"] == []
+
+
+def test_multi_term_cursor_pagination_is_stable_and_has_no_duplicates() -> None:
+    settings = get_settings()
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            _create_temp_search_tables(cur)
+            _seed_attribution_scenarios(cur)
+
+            first, _ = _search(cur, ["only", "body"], limit=3)
+            second, _ = _search(
+                cur,
+                ["only", "body"],
+                limit=3,
+                cursor_ingested_at=first["next_ingested_at"],
+                cursor_article_id=first["next_article_id"],
+            )
+
+    first_ids = [item["article_id"] for item in first["items"]]
+    second_ids = [item["article_id"] for item in second["items"]]
+    assert first["has_more"] is True
+    assert len(first_ids) == 3
+    assert len(second_ids) == 3
+    assert set(first_ids).isdisjoint(second_ids)
+
+
+def _console_user() -> ConsoleUser:
+    return ConsoleUser(
+        method="test",
+        user_id="admin-id",
+        username="admin",
+        display_name="管理员",
+        role="admin",
+    )
+
+
+def test_article_search_route_returns_normalized_terms(monkeypatch) -> None:
+    adapter = _FakeAdapter()
+    monkeypatch.setattr(articles_service, "_get_adapter_safe", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _console_user
+    client = TestClient(app)
+
+    response = client.get("/api/articles/search", params={"q": "双减　课后 双减"})
+
+    assert response.status_code == 200
+    assert response.json()["terms"] == ["双减", "课后"]
+
+
+def test_article_search_route_rejects_more_than_ten_terms(monkeypatch) -> None:
+    def fail_get_adapter():
+        raise AssertionError("over-limit searches must not reach the database adapter")
+
+    monkeypatch.setattr(articles_service, "_get_adapter_safe", fail_get_adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _console_user
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/articles/search",
+        params={"q": " ".join(f"词{i}" for i in range(11))},
+    )
+
+    assert response.status_code == 422
+    assert "检索词最多" in response.json()["detail"]

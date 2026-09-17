@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 import psycopg
 
@@ -15,23 +15,43 @@ SUMMARY_SEARCH_TEXT_EXPRESSION = (
 )
 
 
+def _escape_like(term: str) -> str:
+    # LIKE 的默认转义符是反斜杠，先转义它本身再转义两个通配符，保证按字面匹配
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _ilike_all(expression: str, count: int) -> str:
+    return " AND ".join([f"{expression} ILIKE %s"] * count)
+
+
 def search_article_attributions(
     cur: psycopg.Cursor,
     *,
-    query: str,
+    terms: Sequence[str],
     fetched_after: datetime,
     limit: int,
     cursor_ingested_at: Optional[datetime] = None,
     cursor_article_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Search the full article pipeline and resolve each hit to its primary article."""
+    """Search the full article pipeline and resolve each hit to its primary article.
+
+    terms 是切词、去重后的词列表，词与词之间 AND，且每个词的所有命中都必须
+    落在同一篇物理文章上（条件全部作用于同一行）。
+    """
     safe_limit = max(1, min(int(limit or 20), 100))
-    normalized_query = (query or "").strip()
-    if not normalized_query:
-        raise ValueError("Article search query must not be blank")
+    if not terms:
+        raise ValueError("Article search terms must not be empty")
     if (cursor_ingested_at is None) != (cursor_article_id is None):
         raise ValueError("Article search cursor fields must be provided together")
-    like_pattern = f"%{normalized_query}%"
+    like_patterns = [f"%{_escape_like(term)}%" for term in terms]
+    # summary_hits 的 llm_summary 条件是语义约束（只补充「靠摘要才命中」的文章，
+    # 每个词都要出现在 LLM 摘要里），表达式条件在语义上被它蕴含，但只有
+    # 「索引表达式 ILIKE」能让 trigram GIN 索引继续生效，因此两组都保留。
+    raw_term_conditions = _ilike_all(RAW_SEARCH_TEXT_EXPRESSION, len(like_patterns))
+    summary_term_conditions = _ilike_all(
+        SUMMARY_SEARCH_TEXT_EXPRESSION, len(like_patterns)
+    )
+    llm_term_conditions = _ilike_all("COALESCE(ns.llm_summary, '')", len(like_patterns))
     cursor_clause = ""
     cursor_params: tuple[Any, ...] = ()
     if cursor_ingested_at is not None and cursor_article_id is not None:
@@ -51,7 +71,7 @@ def search_article_attributions(
                 0 AS match_rank
             FROM raw_articles ra
             WHERE ra.fetched_at >= %s
-              AND {RAW_SEARCH_TEXT_EXPRESSION} ILIKE %s
+              AND {raw_term_conditions}
         ),
         -- Assumption: raw_articles is never pruned, so every news_summaries ID remains joinable.
         summary_hits AS (
@@ -63,8 +83,8 @@ def search_article_attributions(
             FROM news_summaries ns
             JOIN raw_articles ra ON ra.article_id = ns.article_id
             WHERE ra.fetched_at >= %s
-              AND {SUMMARY_SEARCH_TEXT_EXPRESSION} ILIKE %s
-              AND COALESCE(ns.llm_summary, '') ILIKE %s
+              AND {summary_term_conditions}
+              AND {llm_term_conditions}
         ),
         matched_hits AS (
             SELECT * FROM raw_hits
@@ -265,10 +285,10 @@ def search_article_attributions(
         sql,
         (
             fetched_after,
-            like_pattern,
+            *like_patterns,
             fetched_after,
-            like_pattern,
-            like_pattern,
+            *like_patterns,
+            *like_patterns,
             *cursor_params,
             safe_limit + 1,
         ),

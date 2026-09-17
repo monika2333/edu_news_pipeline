@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.db_postgres_submission_archive import PRIOR_MATCH_REPORT_TYPES
 from src.console.auth_service import ConsoleUser
+from src.console.search_terms import normalize_search_terms
 from src.console.submission_archive_export import (
     MAX_EXPORT_ROWS,
     build_content_disposition,
@@ -388,15 +389,18 @@ def update_item_fields(
 def search_archive(*, query: str, limit: int) -> dict[str, Any]:
     normalized_query = (query or "").strip()
     if not normalized_query:
-        return {"items": [], "query": "", "total": 0}
+        return {"items": [], "query": "", "total": 0, "terms": []}
+    # 超过词数上限时 normalize_search_terms 抛 ValueError，由路由转 422
+    terms = normalize_search_terms(normalized_query)
     rows = get_adapter().submission_archive.search_report_items(
-        query=normalized_query,
+        terms=terms,
         limit=limit,
     )
     return {
         "items": rows,
         "query": normalized_query,
         "total": len(rows),
+        "terms": terms,
     }
 
 

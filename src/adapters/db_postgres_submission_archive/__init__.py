@@ -248,9 +248,9 @@ class SubmissionArchiveNamespace:
                 source_message_id=source_message_id,
             )
 
-    def search_report_items(self, *, query: str, limit: int) -> list[dict[str, Any]]:
+    def search_report_items(self, *, terms: Sequence[str], limit: int) -> list[dict[str, Any]]:
         with self._adapter._cursor() as cur:
-            return search_items(cur, query=query, limit=limit)
+            return search_items(cur, terms=terms, limit=limit)
 
     def fetch_link_candidate_titles(
         self,

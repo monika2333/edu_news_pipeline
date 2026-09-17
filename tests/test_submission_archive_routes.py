@@ -793,3 +793,52 @@ def test_duty_editor_cannot_update_item() -> None:
     )
 
     assert response.status_code == 403
+
+
+class _SearchArchiveNamespace:
+    def __init__(self) -> None:
+        self.kwargs: dict[str, object] = {}
+
+    def search_report_items(self, **kwargs: object) -> list[dict[str, object]]:
+        self.kwargs = kwargs
+        return [{"id": "item-1", "title": "双减政策落地"}]
+
+
+class _SearchArchiveAdapter:
+    def __init__(self) -> None:
+        self.submission_archive = _SearchArchiveNamespace()
+
+
+def test_search_archive_route_echoes_terms_to_frontend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = _SearchArchiveAdapter()
+    monkeypatch.setattr(submission_archive_service, "get_adapter", lambda: adapter)
+
+    response = _client(_editor).get(
+        "/api/submission-archive/search",
+        params={"q": "双减　课后 双减"},
+    )
+
+    assert response.status_code == 200
+    assert adapter.submission_archive.kwargs["terms"] == ["双减", "课后"]
+    payload = response.json()
+    assert payload["terms"] == ["双减", "课后"]
+    assert payload["total"] == 1
+
+
+def test_search_archive_route_rejects_more_than_ten_terms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_get_adapter() -> None:
+        raise AssertionError("over-limit searches must not reach the database adapter")
+
+    monkeypatch.setattr(submission_archive_service, "get_adapter", fail_get_adapter)
+
+    response = _client(_editor).get(
+        "/api/submission-archive/search",
+        params={"q": " ".join(f"词{i}" for i in range(11))},
+    )
+
+    assert response.status_code == 422
+    assert "检索词最多" in response.json()["detail"]

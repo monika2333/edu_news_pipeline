@@ -130,7 +130,7 @@ class NewsSummariesNamespace:
     def search_with_attribution(
         self,
         *,
-        query: str,
+        terms: Sequence[str],
         fetched_after: datetime,
         limit: int,
         cursor_ingested_at: Optional[datetime] = None,
@@ -139,7 +139,7 @@ class NewsSummariesNamespace:
         with self._adapter._cursor() as cur:
             return search_article_attributions(
                 cur,
-                query=query,
+                terms=terms,
                 fetched_after=fetched_after,
                 limit=limit,
                 cursor_ingested_at=cursor_ingested_at,

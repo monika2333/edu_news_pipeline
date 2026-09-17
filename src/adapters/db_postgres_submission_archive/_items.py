@@ -74,15 +74,30 @@ def update_item_fields(
     return {"state": "updated", "item": dict(row)}
 
 
+def _escape_like(term: str) -> str:
+    # LIKE 的默认转义符是反斜杠，先转义它本身再转义两个通配符，保证按字面匹配
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def search_items(
     cur: psycopg.Cursor,
     *,
-    query: str,
+    terms: Sequence[str],
     limit: int,
 ) -> list[dict[str, Any]]:
-    pattern = f"%{query}%"
+    if not terms:
+        return []
+    # AND 语义：每个词一组「三字段任一命中」，词与词之间允许落在不同字段
+    term_conditions = " and ".join(
+        ["(i.title ilike %s or i.body ilike %s or i.source ilike %s)"] * len(terms)
+    )
+    params: list[Any] = []
+    for term in terms:
+        pattern = f"%{_escape_like(term)}%"
+        params.extend([pattern, pattern, pattern])
+    params.append(max(1, min(limit, 200)))
     cur.execute(
-        """
+        f"""
         select
             i.id,
             i.report_id,
@@ -99,11 +114,11 @@ def search_items(
             r.title_line as report_title_line
         from submitted_report_items i
         join submitted_reports r on r.id = i.report_id
-        where i.title ilike %s or i.body ilike %s or i.source ilike %s
+        where {term_conditions}
         order by r.report_date desc, i.order_index
         limit %s
         """,
-        (pattern, pattern, pattern, max(1, min(limit, 200))),
+        tuple(params),
     )
     return [dict(row) for row in cur.fetchall()]
 

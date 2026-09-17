@@ -4,9 +4,12 @@ import sqlite3
 from datetime import date, timedelta
 from typing import Any, Optional
 
+import psycopg
 import pytest
+from psycopg.rows import dict_row
 
 from src.adapters import db_postgres_submission_archive
+from src.config import get_settings
 from src.domain.submission_archive_config import (
     COVERAGE_EXCLUDED_REPORT_TYPE,
     COVERAGE_EXCLUDED_SECTION,
@@ -455,22 +458,53 @@ def test_mark_prior_match_completed_sets_timestamp() -> None:
     assert params == ("report-1",)
 
 
-def test_search_items_includes_source_in_keyword_scope() -> None:
+def test_search_items_builds_per_term_or_groups_joined_by_and() -> None:
     cursor = FakeCursor(
         rows=[{"id": "item-1", "source": "北京时间"}],
     )
 
     rows = db_postgres_submission_archive.search_items(
         cursor,
-        query="北京时间",
+        terms=["北京时间", "双减"],
         limit=20,
     )
 
     assert rows == [{"id": "item-1", "source": "北京时间"}]
     query, params = cursor.calls[0]
     normalized = " ".join(query.split())
-    assert "i.title ilike %s or i.body ilike %s or i.source ilike %s" in normalized
-    assert params == ("%北京时间%", "%北京时间%", "%北京时间%", 20)
+    expected_group = "(i.title ilike %s or i.body ilike %s or i.source ilike %s)"
+    assert normalized.count(expected_group) == 2
+    assert " and ".join([expected_group, expected_group]) in normalized
+    assert params == (
+        "%北京时间%", "%北京时间%", "%北京时间%",
+        "%双减%", "%双减%", "%双减%",
+        20,
+    )
+
+
+def test_search_items_escapes_like_wildcards_in_patterns() -> None:
+    cursor = FakeCursor()
+
+    db_postgres_submission_archive.search_items(
+        cursor,
+        terms=["a_c", "100%"],
+        limit=20,
+    )
+
+    _, params = cursor.calls[0]
+    assert params[:6] == (
+        "%a\\_c%", "%a\\_c%", "%a\\_c%",
+        "%100\\%%", "%100\\%%", "%100\\%%",
+    )
+
+
+def test_search_items_returns_empty_without_querying_for_no_terms() -> None:
+    cursor = FakeCursor()
+
+    rows = db_postgres_submission_archive.search_items(cursor, terms=[], limit=20)
+
+    assert rows == []
+    assert cursor.calls == []
 
 
 def test_fetch_pending_links_filters_count_and_items_by_report() -> None:
@@ -1300,3 +1334,131 @@ def test_fetch_item_duplicate_match_details_returns_report_metadata() -> None:
     assert rows[0]["issue_no"] == "第10期"
     assert rows[0]["similarity"] == 0.96
     assert rows[0]["match_method"] == "vector"
+
+
+def _create_temp_archive_search_tables(cur: psycopg.Cursor) -> None:
+    for table in ("submitted_reports", "submitted_report_items"):
+        cur.execute(
+            f"CREATE TEMP TABLE {table} "
+            f"(LIKE public.{table} INCLUDING DEFAULTS) ON COMMIT DROP"
+        )
+
+
+def _seed_archive_search_items(cur: psycopg.Cursor) -> None:
+    report_id = "11111111-1111-1111-1111-111111111111"
+    cur.execute(
+        """
+        INSERT INTO submitted_reports (
+            id, report_type, report_date, compiled_date, pasted_text
+        )
+        VALUES (%s, 'zongbao', %s, %s, 'pasted')
+        """,
+        (report_id, date(2026, 9, 1), date(2026, 9, 1)),
+    )
+    cur.executemany(
+        """
+        INSERT INTO submitted_report_items (
+            report_id,
+            order_index,
+            title,
+            body,
+            source,
+            norm_title,
+            norm_title_hash,
+            link_status
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, 'unmatched')
+        """,
+        [
+            (report_id, 0, "双减政策落地", "课后服务全面铺开", "北京日报", "双减政策落地", "h1"),
+            (report_id, 1, "校园活动合集", "义务教育阶段细则", "市教委", "校园活动合集", "h2"),
+            (report_id, 2, "abc", "普通正文", None, "abc", "h3"),
+            (report_id, 3, "a_c", "下划线标题", None, "a_c", "h4"),
+            (report_id, 4, "数字标题", "增长1000", None, "数字标题", "h5"),
+            (report_id, 5, "涨幅百分号", "利润100%", None, "涨幅百分号", "h6"),
+        ],
+    )
+
+
+def _search_archive_items(
+    cur: psycopg.Cursor,
+    terms: list[str],
+) -> list[dict[str, Any]]:
+    return db_postgres_submission_archive.search_items(cur, terms=terms, limit=50)
+
+
+def _archive_search_fixture(cur: psycopg.Cursor) -> None:
+    _create_temp_archive_search_tables(cur)
+    _seed_archive_search_items(cur)
+
+
+def test_archive_search_matches_terms_across_fields_with_real_sql() -> None:
+    settings = get_settings()
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            _archive_search_fixture(cur)
+
+            # 两个词分别在标题和正文
+            titles = [row["title"] for row in _search_archive_items(cur, ["双减", "课后"])]
+            assert titles == ["双减政策落地"]
+
+            # 一个词在正文、另一个词在来源
+            titles = [
+                row["title"] for row in _search_archive_items(cur, ["义务教育", "市教委"])
+            ]
+            assert titles == ["校园活动合集"]
+
+            # 只含其中一个词 → 不命中
+            assert _search_archive_items(cur, ["双减", "义务教育"]) == []
+
+            # 单词检索行为不变：标题/正文/来源任一命中
+            assert [
+                row["title"] for row in _search_archive_items(cur, ["双减"])
+            ] == ["双减政策落地"]
+            assert [
+                row["title"] for row in _search_archive_items(cur, ["市教委"])
+            ] == ["校园活动合集"]
+
+
+def test_archive_search_matches_like_wildcards_literally_with_real_sql() -> None:
+    settings = get_settings()
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            _archive_search_fixture(cur)
+
+            # a_c 按字面匹配，不再把 _ 当「任意单字符」命中 abc
+            assert [
+                row["title"] for row in _search_archive_items(cur, ["a_c"])
+            ] == ["a_c"]
+            assert [
+                row["title"] for row in _search_archive_items(cur, ["abc"])
+            ] == ["abc"]
+
+            # 100% 按字面匹配，不命中 1000
+            assert [
+                row["title"] for row in _search_archive_items(cur, ["100%"])
+            ] == ["涨幅百分号"]
+            assert [
+                row["title"] for row in _search_archive_items(cur, ["1000"])
+            ] == ["数字标题"]
+
+            # 转义在多词下同样生效
+            assert [
+                row["title"] for row in _search_archive_items(cur, ["a_c", "下划线"])
+            ] == ["a_c"]

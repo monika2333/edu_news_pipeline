@@ -105,6 +105,9 @@ class NewsArticleSearchResponse(BaseModel):
     next_cursor: Optional[str] = None
     lookback_days: int
     window_start: datetime
+    # 后端实际用于匹配的词列表（切词、大小写不敏感去重后，顺序与输入一致）；
+    # 前端高亮直接用它，保证「高亮的词」和「匹配的词」是同一组。
+    terms: list[str] = Field(default_factory=list)
 
 
 __all__ = [

@@ -848,6 +848,12 @@ def test_multi_term_summary_only_hit_returns_article_once() -> None:
             partial, _ = _search(cur, ["summaryalpha", "nowhere-term"])
             assert partial["items"] == []
 
+            # 反序同样必须为空：全库不存在的词在前、摘要里才有的词在后。
+            # 若 llm_any_condition 的外层括号被去掉，AND 优先级高于 OR，
+            # 最后一个词会脱离其余全部条件单独成枝，summaryalpha 将凭一己之力放行
+            reversed_order, _ = _search(cur, ["nowhere-term", "summaryalpha"])
+            assert reversed_order["items"] == []
+
 
 def test_summary_path_hits_when_a_term_lives_only_in_summary() -> None:
     settings = get_settings()

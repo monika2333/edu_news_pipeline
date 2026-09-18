@@ -532,6 +532,38 @@ def test_llm_models_save_rejects_unknown_endpoint_reference(
     assert saves == []
 
 
+def test_llm_models_save_rejects_endpoint_without_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    after = _llm_value()
+    after["steps"]["duplicate_review"] = {
+        "model": None,
+        "reasoning": True,
+        "endpoint": "deepseek",
+    }
+    saves: list[dict[str, Any]] = []
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter(
+            {
+                "llm_models": _llm_value(),
+                "llm_endpoints": _llm_endpoints_value(),
+            },
+            saves=saves,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="model 不能为空"):
+        settings_service.update_setting(
+            "llm_models",
+            value=after,
+            expected_version=4,
+            actor=_admin(),
+        )
+
+    assert saves == []
+
+
 def test_endpoint_save_rejects_deleting_referenced_or_default_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

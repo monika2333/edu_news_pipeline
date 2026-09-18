@@ -1999,6 +1999,13 @@ test('E4：步骤接入点下拉只列已保存接入点；接入点分区为脏
         assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter', 'deepseek']);
         assert.equal(page.window.eval('state.dirty.llm_endpoints'), true);
 
+        // 模型页签整体重渲染（放弃修改会重建全部 DOM）后，下拉仍只来自已保存值：
+        // 重渲染发生在接入点草稿为脏期间，绝不能把草稿里的新接入点带进选项
+        page.document.getElementById('btn-models-discard').click();
+        await waitFor(() => page.modelsRow('summary')
+            && !page.document.querySelector('.endpoints-dirty-note').hidden);
+        assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter', 'deepseek']);
+
         // 放弃接入点修改：提示消失、脏标记复位、下拉不变
         page.document.querySelector('.btn-endpoints-discard').click();
         await waitFor(() => page.document.querySelector('.endpoints-dirty-note').hidden);

@@ -75,12 +75,15 @@ function refreshEndpointsDirtyNote() {
 // 步骤表格上方的一行提示：接入点分区为脏时提醒「保存后才能在步骤里选择」。
 // 节点常驻渲染、hidden 切换，因为脏标记变化不伴随模型页签重渲染。
 function buildEndpointsDirtyNote() {
-    return createEl(
+    const note = createEl(
         'p',
         'settings-effect-note settings-endpoints-note endpoints-dirty-note',
         '接入点有未保存修改，保存后才能在步骤里选择。',
-        { hidden: !state.dirty.llm_endpoints },
     );
+    // hidden 必须走属性赋值：createEl 的 setAttribute('hidden', false) 按存在性生效，
+    // 传 false 也会把节点藏掉
+    note.hidden = !state.dirty.llm_endpoints;
+    return note;
 }
 
 // 前端预校验：地址必须 https 且主机在 allowed_hosts 内。后端仍是最终权威，

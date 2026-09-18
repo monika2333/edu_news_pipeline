@@ -150,6 +150,80 @@ def test_list_items_skips_existing_ids(monkeypatch: pytest.MonkeyPatch) -> None:
     assert SHUANGSHI_ID not in ids
 
 
+def _synthetic_list_page(rows: list[tuple[str, str, str]]) -> str:
+    """rows: (标题, 列表显示日期, href)。"""
+
+    lis = "".join(
+        f'<li><h2><a href="{href}">{title}</a></h2><span>{displayed}</span></li>'
+        for title, displayed, href in rows
+    )
+    return f'<html><body><ul class="wz-list">{lis}</ul></body></html>'
+
+
+def _slug(seed: str) -> str:
+    # seed 只能含十六进制字符，否则整条链接不会被识别为文章 URL。
+    return (seed + "0123456789abcdef" * 2)[:32]
+
+
+def test_window_keeps_item_dated_exactly_on_boundary() -> None:
+    # 窗口语义是"早于 今天-N天 的丢弃"：边界那天（=cutoff）必须保留。
+    boundary_href = f"http://bj.news.cn/20260916/{_slug('beef')}/c.html"
+    older_href = f"http://bj.news.cn/20260914/{_slug('fade')}/c.html"
+    html = _synthetic_list_page(
+        [
+            ("边界日稿件", "2026-09-15", boundary_href),  # today-3，恰好压线
+            ("超窗一天稿件", "2026-09-14", older_href),
+        ]
+    )
+
+    items, dropped = hx._parse_list_html(
+        html,
+        JJ_URL,
+        cutoff=TODAY - timedelta(days=3),
+    )
+
+    assert [item.title for item in items] == ["边界日稿件"]
+    assert items[0].raw["list_date"] == "2026-09-15"
+    assert dropped == 1
+
+
+def test_list_date_wins_over_url_date() -> None:
+    # 真实页面存在"URL 日期 0916、列表显示 09-17"的错位稿（入秋、中关村两篇），
+    # 解析必须以列表显示日期为准。
+    html = _list_page_fixture("jj")
+    items, _ = hx._parse_list_html(html, JJ_URL, cutoff=date(2026, 9, 15))
+
+    by_id = {hx.make_article_id(item.url): item for item in items}
+    item = by_id["xinhua:8620cce5cb2f488c92346c920a7289c9"]  # 北京2026年入秋…
+    assert item.raw["list_date"] == "2026-09-17"  # 不是 URL 里的 2026-09-16
+    assert item.publish_time_iso == "2026-09-17T00:00:00+08:00"
+
+    # 错位大到跨越窗口边界时，优先顺序决定稿件的存留：
+    # 列表显示 09-16（窗口内）但 URL 日期 0912（窗口外）——按列表日期应保留。
+    straddle_href = f"http://bj.news.cn/20260912/{_slug('cafe')}/c.html"
+    straddle_html = _synthetic_list_page(
+        [("跨窗错位稿件", "2026-09-16", straddle_href)],
+    )
+    straddle_items, _ = hx._parse_list_html(
+        straddle_html,
+        JJ_URL,
+        cutoff=date(2026, 9, 15),
+    )
+    assert [item.title for item in straddle_items] == ["跨窗错位稿件"]
+    assert straddle_items[0].raw["list_date"] == "2026-09-16"
+
+
+def test_list_items_truncates_to_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    _serve(monkeypatch, {JJ_URL: _list_page_fixture("jj")})
+
+    everything = hx.list_items(today=TODAY)
+    assert len(everything) == 10
+
+    assert hx.list_items(limit=5, today=TODAY) == everything[:5]
+    assert hx.list_items(limit=99, today=TODAY) == everything
+    assert hx.list_items(limit=0, today=TODAY) == []
+
+
 def test_list_items_keeps_other_columns_after_single_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

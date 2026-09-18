@@ -121,14 +121,52 @@ function endpointBaseUrlError(rawBaseUrl, allowedHosts) {
     return '';
 }
 
+// 新增接入点的 key 不让用户起名：从地址主机名派生（open.bigmodel.cn →
+// open-bigmodel-cn）。后端 key 规则是小写字母/数字开头 + [a-z0-9_-]，
+// 派生结果按构造必然合规；保存时再对已保存与同批草稿做唯一性去重。
+function endpointKeyFromBaseUrl(baseUrl) {
+    let host = '';
+    try {
+        host = new URL(String(baseUrl || '').trim()).hostname.toLowerCase();
+    } catch (error) {
+        host = '';
+    }
+    let slug = host.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!slug) slug = 'endpoint';
+    if (/^[0-9]/.test(slug)) slug = `ep-${slug}`;
+    return slug.slice(0, 32);
+}
+
 function buildEndpointsSaveValue() {
+    const saved = savedEndpointsValue();
+    const usedKeys = new Set();
+    if (saved && saved.items) {
+        saved.items.forEach((item) => usedKeys.add(item.key));
+    }
+    const keyByClientId = new Map();
+    endpointsDraft.items.forEach((item) => {
+        if (!item.isNew) {
+            keyByClientId.set(item.clientId, item.key.trim());
+            return;
+        }
+        // 同主机的新接入点依次加 -2、-3…，后缀挤占不超过 32 位上限
+        let key = endpointKeyFromBaseUrl(item.base_url);
+        let n = 2;
+        while (usedKeys.has(key)) {
+            const suffix = `-${n}`;
+            key = `${key.slice(0, 32 - suffix.length)}${suffix}`;
+            n += 1;
+        }
+        usedKeys.add(key);
+        keyByClientId.set(item.clientId, key);
+    });
     const defaultItem = endpointsDraft.items.find(
         (item) => item.clientId === endpointsDraft.default,
     ) || endpointsDraft.items[0];
     return {
-        default: defaultItem.key.trim(),
+        default: keyByClientId.get(defaultItem.clientId),
         items: endpointsDraft.items.map((item) => ({
-            key: item.key.trim(),
+            key: keyByClientId.get(item.clientId),
             label: item.label.trim(),
             base_url: item.base_url.trim().replace(/\/+$/, ''),
             api_key_env: item.api_key_env.trim(),
@@ -158,27 +196,19 @@ function buildEndpointEditRow(item, saved, rerender) {
     };
 
     // 卡片头：已保存卡片显示「标签 + key 芯片」，标签随下方输入框实时同步；
-    // 新增卡片头就是 key 输入框（key 是步骤引用的标识，保存后不可改）
+    // 新增卡片不再让用户起 key——头部放实时预览芯片，key 从地址主机名自动生成
     const head = createEl('div', 'endpoint-card-head');
     const title = createEl('div', 'endpoint-card-title');
     let cardName = null;
+    let keyPreview = null;
     if (item.isNew) {
         const keyNew = createEl('div', 'endpoint-card-keynew');
-        const keyInput = createEl('input', 'endpoint-key-input', '', {
-            type: 'text',
-            placeholder: '标识 key：小写字母开头，如 glm',
-            'aria-label': '接入点标识（key）',
-        });
-        keyInput.value = item.key;
-        keyInput.addEventListener('input', () => {
-            item.key = keyInput.value.trim();
-            markEndpointsDirty();
-        });
-        keyNew.appendChild(keyInput);
+        keyPreview = createEl('code', 'endpoint-key-static', endpointKeyFromBaseUrl(item.base_url));
+        keyNew.appendChild(keyPreview);
         keyNew.appendChild(createEl(
             'span',
             'endpoint-field-hint',
-            'key 是步骤引用的标识，保存后就地只读',
+            'key 按地址自动生成，保存后就地只读',
         ));
         title.appendChild(keyNew);
     } else {
@@ -246,6 +276,7 @@ function buildEndpointEditRow(item, saved, rerender) {
     urlInput.addEventListener('input', () => {
         item.base_url = urlInput.value;
         urlPreview.textContent = chatCompletionsUrl(urlInput.value);
+        if (keyPreview) keyPreview.textContent = endpointKeyFromBaseUrl(urlInput.value);
         markEndpointsDirty();
     });
     const urlField = buildEndpointField('地址（base_url）', urlInput, urlPreview);

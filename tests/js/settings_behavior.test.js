@@ -2,7 +2,7 @@
 // 覆盖验收场景 S1-S33 与芯片布局场景 N1-N23；其中 S7、S17 随排序模式删除，
 // S9、S16、S29、S30、N5、N16 随「全部平铺 + 页面级管理模式」重构删除
 // （批量粘贴、展开抽屉、筛选框、面板会话这些被测形态不复存在）。
-// E1-E16 覆盖接入点管理（endpoints.js）与每步骤接入点选择（models_tab.js）。
+// E1-E17 覆盖接入点管理（endpoints.js）与每步骤接入点选择（models_tab.js）。
 'use strict';
 
 const { test } = require('node:test');
@@ -1996,7 +1996,8 @@ test('E4：步骤接入点下拉只列已保存接入点；接入点分区为脏
         // 草稿里新增的接入点不出现在步骤下拉：后端校验引用查的是库里的接入点
         page.document.querySelector('.endpoint-add-btn').click();
         await waitFor(() => page.document.querySelectorAll('.endpoint-edit-row').length === 3);
-        inputValue(page, endpointEditRow(page, 'new-1').querySelector('.endpoint-key-input'), 'glm');
+        inputValue(page, endpointEditRow(page, 'new-1').querySelector('.endpoint-base-url-input'),
+            'https://open.bigmodel.cn/api/paas/v4');
         assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter', 'deepseek']);
         assert.equal(page.window.eval('state.dirty.llm_endpoints'), true);
 
@@ -2108,12 +2109,11 @@ test('E8：接入点保存成功后下拉立即包含新接入点，步骤表格
         inputValue(page, row.querySelector('.step-model-input'), 'local/unsaved-model');
         assert.equal(page.window.eval('state.dirty.llm_models'), true);
 
-        // 接入点编辑态新增 glm 并保存
+        // 接入点编辑态新增 glm 并保存：key 无需起名，按地址自动生成
         await enterEndpointsManage(page);
         page.document.querySelector('.endpoint-add-btn').click();
         await waitFor(() => endpointEditRow(page, 'new-1'));
         const newRow = endpointEditRow(page, 'new-1');
-        inputValue(page, newRow.querySelector('.endpoint-key-input'), 'glm');
         inputValue(page, newRow.querySelector('.endpoint-label-input'), '智谱 GLM');
         inputValue(page, newRow.querySelector('.endpoint-base-url-input'),
             'https://open.bigmodel.cn/api/paas/v4');
@@ -2122,9 +2122,10 @@ test('E8：接入点保存成功后下拉立即包含新接入点，步骤表格
         await waitFor(() => page.server.requests('save-endpoints').length === 1
             && page.server.requests('save-endpoints')[0].done);
 
-        // 保存成功后编辑器回到只读态，下拉立即包含新接入点
+        // 保存成功后编辑器回到只读态，下拉立即包含新接入点（key 从主机名派生）
         await waitFor(() => !page.document.querySelector('.endpoint-edit-row'));
-        assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter', 'deepseek', 'glm']);
+        assert.deepEqual(endpointOptions(page, 'summary'),
+            ['openrouter', 'deepseek', 'open-bigmodel-cn']);
 
         // 步骤表格里未保存的模型修改仍在（只重建 DOM，不重建模型草稿）
         const rowAfter = page.modelsRow('summary');
@@ -2376,6 +2377,53 @@ test('E16：「有 endpoint、无 model」的行点保存走空模型拦截，�
         assert.ok(status.classList.contains('is-error'));
         // 手改行不得在保存路径里抛未处理异常
         assert.deepEqual(unhandledRejections, []);
+    } finally {
+        page.close();
+    }
+});
+
+// ---------- 接入点 key 自动生成场景（E17） ----------
+
+test('E17：新增接入点 key 按地址自动生成，头部实时预览，重名自动加后缀', async () => {
+    const page = await bootPage();
+    try {
+        await enterEndpointsManage(page);
+        // 新增卡不再有 key 输入框，头部是预览芯片：初始无地址时给占位
+        page.document.querySelector('.endpoint-add-btn').click();
+        await waitFor(() => endpointEditRow(page, 'new-1'));
+        const newRow = endpointEditRow(page, 'new-1');
+        assert.equal(newRow.querySelector('.endpoint-key-input'), null,
+            '新增卡不应再有 key 输入框');
+        const preview = newRow.querySelector('.endpoint-key-static');
+        assert.ok(preview, '头部应有 key 预览芯片');
+        assert.equal(preview.textContent, 'endpoint', '无地址时显示占位标识');
+
+        // 输入地址后 key 实时派生：api.deepseek.com → api-deepseek-com
+        inputValue(page, newRow.querySelector('.endpoint-base-url-input'),
+            'https://api.deepseek.com');
+        await waitFor(() => preview.textContent === 'api-deepseek-com');
+
+        // 同主机再加一个：保存时 key 自动加 -2 后缀去重
+        page.document.querySelector('.endpoint-add-btn').click();
+        await waitFor(() => endpointEditRow(page, 'new-2'));
+        const row2 = endpointEditRow(page, 'new-2');
+        inputValue(page, row2.querySelector('.endpoint-base-url-input'),
+            'https://api.deepseek.com/v1');
+        inputValue(page, newRow.querySelector('.endpoint-label-input'), 'DeepSeek 主');
+        inputValue(page, row2.querySelector('.endpoint-label-input'), 'DeepSeek 备用');
+        inputValue(page, newRow.querySelector('.endpoint-key-env-input'), 'DEEPSEEK_API_KEY');
+        inputValue(page, row2.querySelector('.endpoint-key-env-input'), 'DEEPSEEK_API_KEY_2');
+        page.document.querySelector('.btn-endpoints-save').click();
+        await waitFor(() => page.server.requests('save-endpoints').length === 1
+            && page.server.requests('save-endpoints')[0].done);
+
+        const keys = page.server.sections.llm_endpoints.value.items.map((item) => item.key);
+        assert.deepEqual(keys.sort(),
+            ['api-deepseek-com', 'api-deepseek-com-2', 'deepseek', 'openrouter']);
+        // 步骤下拉立即能看到两个新接入点（下拉值是派生 key）
+        await waitFor(() => !page.document.querySelector('.endpoint-edit-row'));
+        assert.deepEqual(endpointOptions(page, 'summary'),
+            ['openrouter', 'deepseek', 'api-deepseek-com', 'api-deepseek-com-2']);
     } finally {
         page.close();
     }

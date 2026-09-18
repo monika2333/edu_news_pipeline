@@ -703,23 +703,12 @@
     font-size: 0.78rem;
 }
 
-/* 新增卡片：头就是 key 输入框（保存后不可改，提前说清） */
+/* 新增卡片：头部是 key 预览芯片 + 说明，key 从地址主机名自动生成 */
 .endpoint-card-keynew {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 4px 10px;
-}
-
-.endpoint-card-keynew .endpoint-key-input {
-    width: 280px;
-    max-width: 100%;
-    padding: 7px 10px;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    background: #fff;
-    font: inherit;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .endpoint-fields {

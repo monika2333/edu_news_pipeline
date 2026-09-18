@@ -2,7 +2,7 @@
 // 覆盖验收场景 S1-S33 与芯片布局场景 N1-N23；其中 S7、S17 随排序模式删除，
 // S9、S16、S29、S30、N5、N16 随「全部平铺 + 页面级管理模式」重构删除
 // （批量粘贴、展开抽屉、筛选框、面板会话这些被测形态不复存在）。
-// E1-E11 覆盖接入点管理（endpoints.js）与每步骤接入点选择（models_tab.js）。
+// E1-E12 覆盖接入点管理（endpoints.js）与每步骤接入点选择（models_tab.js）。
 'use strict';
 
 const { test } = require('node:test');
@@ -1854,7 +1854,7 @@ test('N23：刷新进行中启停其他来源触发整块重渲染，刷新收�
     }
 });
 
-// ---------- 接入点场景（E1-E11） ----------
+// ---------- 接入点场景（E1-E12） ----------
 
 function endpointsBlock(page) {
     return page.document.querySelector('.endpoints-block');
@@ -2216,6 +2216,21 @@ test('E11：接入点标签含 HTML 时按纯文本渲染，不生成元素', as
             payload,
         );
         assert.equal(page.window.__xssHit, undefined);
+    } finally {
+        page.close();
+    }
+});
+
+test('E12：环境块不再显示 API 地址与 API Key，改为显示允许的接入点主机', async () => {
+    const page = await bootPage();
+    try {
+        const envBlock = page.document.querySelector('.settings-env-block');
+        const text = envBlock.textContent;
+        assert.ok(!text.includes('API 地址'), '环境块不应再有 API 地址（字段已从接口移除）');
+        assert.ok(!text.includes('API Key'), '环境块不应再有 API Key（Key 归各接入点）');
+        assert.match(text, /向量模型/);
+        assert.match(text, /允许的接入点主机/);
+        assert.match(text, /openrouter\.ai, api\.deepseek\.com, open\.bigmodel\.cn/);
     } finally {
         page.close();
     }

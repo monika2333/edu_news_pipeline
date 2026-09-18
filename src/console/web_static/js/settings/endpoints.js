@@ -134,21 +134,25 @@ function buildEndpointField(nameText, control, hintEl) {
     return field;
 }
 
+// 编辑卡片布局：卡片头（标签标题 + key 身份 + 删除）在上，字段走固定四列网格，
+// 两张卡片之间同名字段垂直对齐；行内报错独占卡片底部一行。
 function buildEndpointEditRow(item, saved, rerender) {
     const row = createEl('div', 'endpoint-edit-row', '', { dataset: { clientId: item.clientId } });
-    const fields = createEl('div', 'endpoint-fields');
     const markEndpointsDirty = () => {
         markDirty('llm_endpoints');
         refreshEndpointsDirtyNote();
     };
 
-    const keyField = createEl('label', 'endpoint-field');
-    keyField.appendChild(createEl('span', 'endpoint-field-name', '标识（key）'));
+    // 卡片头：已保存卡片显示「标签 + key 芯片」，标签随下方输入框实时同步；
+    // 新增卡片头就是 key 输入框（key 是步骤引用的标识，保存后不可改）
+    const head = createEl('div', 'endpoint-card-head');
+    const title = createEl('div', 'endpoint-card-title');
+    let cardName = null;
     if (item.isNew) {
-        // key 是步骤引用的标识，只在新增时可填；保存后就地只读
+        const keyNew = createEl('div', 'endpoint-card-keynew');
         const keyInput = createEl('input', 'endpoint-key-input', '', {
             type: 'text',
-            placeholder: '小写字母开头，如 glm',
+            placeholder: '标识 key：小写字母开头，如 glm',
             'aria-label': '接入点标识（key）',
         });
         keyInput.value = item.key;
@@ -156,11 +160,51 @@ function buildEndpointEditRow(item, saved, rerender) {
             item.key = keyInput.value.trim();
             markEndpointsDirty();
         });
-        keyField.appendChild(keyInput);
+        keyNew.appendChild(keyInput);
+        keyNew.appendChild(createEl(
+            'span',
+            'endpoint-field-hint',
+            'key 是步骤引用的标识，保存后就地只读',
+        ));
+        title.appendChild(keyNew);
     } else {
-        keyField.appendChild(createEl('code', 'endpoint-key-static', item.key));
+        cardName = createEl('span', 'endpoint-card-name', item.label || item.key);
+        title.appendChild(cardName);
+        title.appendChild(createEl('code', 'endpoint-key-static', item.key));
     }
-    fields.appendChild(keyField);
+    head.appendChild(title);
+
+    const deleteBtn = createEl('button', 'btn btn-secondary endpoint-delete-btn', '删除', {
+        type: 'button',
+        'aria-label': `删除接入点 ${item.label || item.key}`,
+    });
+    const rowError = createEl('span', 'endpoint-row-error');
+    deleteBtn.addEventListener('click', () => {
+        // 删除只改草稿，真正的删除随分区保存提交；这里的拦截是为了不让
+        // 必然失败的修改进入草稿。校验顺序：保底 → 默认 → 被步骤引用。
+        const label = item.label || item.key;
+        if (endpointsDraft.items.length <= 1) {
+            rowError.textContent = '至少保留一个接入点。';
+            return;
+        }
+        if (item.clientId === endpointsDraft.default || item.key === saved.default) {
+            rowError.textContent = `「${label}」是默认接入点，请先把默认切换到其他接入点。`;
+            return;
+        }
+        const referencing = stepsReferencingEndpoint(item.key);
+        if (referencing.length) {
+            rowError.textContent = `「${label}」正被以下步骤引用：${referencing.join('、')}，`
+                + '请先把这些步骤切换到其他接入点或跟随默认。';
+            return;
+        }
+        endpointsDraft.items = endpointsDraft.items
+            .filter((entry) => entry.clientId !== item.clientId);
+        rerender();
+    });
+    head.appendChild(deleteBtn);
+    row.appendChild(head);
+
+    const fields = createEl('div', 'endpoint-fields');
 
     const labelInput = createEl('input', 'endpoint-label-input', '', {
         type: 'text',
@@ -170,6 +214,7 @@ function buildEndpointEditRow(item, saved, rerender) {
     labelInput.value = item.label;
     labelInput.addEventListener('input', () => {
         item.label = labelInput.value;
+        if (cardName) cardName.textContent = item.label || item.key;
         markEndpointsDirty();
     });
     fields.appendChild(buildEndpointField('标签', labelInput));
@@ -187,7 +232,9 @@ function buildEndpointEditRow(item, saved, rerender) {
         urlPreview.textContent = chatCompletionsUrl(urlInput.value);
         markEndpointsDirty();
     });
-    fields.appendChild(buildEndpointField('地址（base_url）', urlInput, urlPreview));
+    const urlField = buildEndpointField('地址（base_url）', urlInput, urlPreview);
+    urlField.classList.add('endpoint-field-wide');
+    fields.appendChild(urlField);
 
     const envInput = createEl('input', 'endpoint-key-env-input', '', {
         type: 'text',
@@ -261,38 +308,7 @@ function buildEndpointEditRow(item, saved, rerender) {
     fields.appendChild(defaultField);
 
     row.appendChild(fields);
-
-    const foot = createEl('div', 'endpoint-row-foot');
-    const deleteBtn = createEl('button', 'btn btn-secondary endpoint-delete-btn', '删除', {
-        type: 'button',
-        'aria-label': `删除接入点 ${item.label || item.key}`,
-    });
-    const rowError = createEl('span', 'endpoint-row-error');
-    deleteBtn.addEventListener('click', () => {
-        // 删除只改草稿，真正的删除随分区保存提交；这里的拦截是为了不让
-        // 必然失败的修改进入草稿。校验顺序：保底 → 默认 → 被步骤引用。
-        const label = item.label || item.key;
-        if (endpointsDraft.items.length <= 1) {
-            rowError.textContent = '至少保留一个接入点。';
-            return;
-        }
-        if (item.clientId === endpointsDraft.default || item.key === saved.default) {
-            rowError.textContent = `「${label}」是默认接入点，请先把默认切换到其他接入点。`;
-            return;
-        }
-        const referencing = stepsReferencingEndpoint(item.key);
-        if (referencing.length) {
-            rowError.textContent = `「${label}」正被以下步骤引用：${referencing.join('、')}，`
-                + '请先把这些步骤切换到其他接入点或跟随默认。';
-            return;
-        }
-        endpointsDraft.items = endpointsDraft.items
-            .filter((entry) => entry.clientId !== item.clientId);
-        rerender();
-    });
-    foot.appendChild(deleteBtn);
-    foot.appendChild(rowError);
-    row.appendChild(foot);
+    row.appendChild(rowError);
     return row;
 }
 
@@ -323,7 +339,7 @@ function buildEndpointsEditor(saved) {
     head.appendChild(createEl(
         'span',
         'endpoints-hint',
-        'key 是步骤引用的标识，保存后不可改；删除被步骤引用或默认的接入点会被拦截。',
+        '删除被步骤引用或默认的接入点会被拦截；修改完成后点右下角「保存接入点」提交。',
     ));
     head.appendChild(buildEndpointsManageToggle());
     wrap.appendChild(head);
@@ -334,6 +350,8 @@ function buildEndpointsEditor(saved) {
     });
     wrap.appendChild(list);
 
+    // 底部一条操作栏：新增在左，保存/放弃在右，不再各自成行
+    const footer = createEl('div', 'endpoints-footer');
     const addBtn = createEl('button', 'btn btn-secondary endpoint-add-btn', '＋ 新增接入点', {
         type: 'button',
     });
@@ -351,7 +369,7 @@ function buildEndpointsEditor(saved) {
         });
         renderEndpointsBlock();
     });
-    wrap.appendChild(addBtn);
+    footer.appendChild(addBtn);
 
     const saveBar = createEl('div', 'settings-save-bar endpoints-save-bar');
     const saveBtn = createEl('button', 'btn btn-primary btn-endpoints-save', '保存接入点', {
@@ -369,7 +387,8 @@ function buildEndpointsEditor(saved) {
     saveBar.appendChild(discardBtn);
     saveBar.appendChild(reloadBtn);
     saveBar.appendChild(status);
-    wrap.appendChild(saveBar);
+    footer.appendChild(saveBar);
+    wrap.appendChild(footer);
 
     saveBtn.addEventListener('click', async () => {
         // 行内预校验：任一行不通过就在该行报错，不发请求

@@ -650,31 +650,94 @@
     font-weight: 600;
 }
 
-/* 编辑态：每个接入点一张字段卡 */
+/* 编辑态：每个接入点一张字段卡。卡片头放身份（标签 + key 芯片）与删除按钮，
+   字段走固定四列网格——地址占两列，两张卡片之间同名字段垂直对齐 */
 .endpoints-edit-list {
     display: grid;
-    gap: 10px;
-    margin-bottom: 10px;
+    gap: 12px;
+    margin-bottom: 12px;
 }
 
 .endpoint-edit-row {
-    padding: 12px 14px;
+    padding: 14px 16px 12px;
     border: 1px solid #e7edf5;
     border-radius: 10px;
     background: #fff;
 }
 
-.endpoint-fields {
+.endpoint-card-head {
     display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eef2f7;
+}
+
+.endpoint-card-title {
+    display: flex;
+    align-items: center;
     flex-wrap: wrap;
-    gap: 10px 16px;
+    gap: 8px;
+    min-width: 0;
+}
+
+.endpoint-card-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 已保存接入点的 key 芯片：身份标识，就地只读 */
+.endpoint-key-static {
+    flex: none;
+    padding: 2px 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #f1f5f9;
+    color: #475569;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+}
+
+/* 新增卡片：头就是 key 输入框（保存后不可改，提前说清） */
+.endpoint-card-keynew {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+}
+
+.endpoint-card-keynew .endpoint-key-input {
+    width: 280px;
+    max-width: 100%;
+    padding: 7px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    font: inherit;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.endpoint-fields {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px 16px;
+}
+
+/* 地址是主字段且要容下完整 URL，占两列 */
+.endpoint-field-wide {
+    grid-column: span 2;
 }
 
 .endpoint-field {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    min-width: 180px;
+    min-width: 0;
 }
 
 .endpoint-field-name {
@@ -682,8 +745,11 @@
     font-size: 0.78rem;
 }
 
-.endpoint-field input,
+.endpoint-field input[type="text"],
+.endpoint-field input[type="number"],
 .endpoint-field select {
+    width: 100%;
+    box-sizing: border-box;
     padding: 7px 9px;
     border: 1px solid #cbd5e1;
     border-radius: 8px;
@@ -691,14 +757,10 @@
     font: inherit;
 }
 
-.endpoint-key-static {
-    align-self: flex-start;
-    padding: 7px 9px;
-    border: 1px dashed #cbd5e1;
-    border-radius: 8px;
-    background: #f8fafc;
-    color: #475569;
-    font-size: 0.84rem;
+/* 单选框不参与上面的文本输入宽度规则，否则会被拉满整列、文字挤换行 */
+.endpoint-default-label input[type="radio"] {
+    width: auto;
+    margin: 0;
 }
 
 /* 地址输入框下方实时拼好的完整请求地址：把最终 URL 摆出来，避免手滑多补一层 /v1 */
@@ -725,25 +787,51 @@
     padding: 7px 0;
 }
 
-.endpoint-row-foot {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
+/* 行内报错独占卡片底部一行：删除拦截与保存校验都写在这里 */
+.endpoint-row-error {
+    display: block;
+    min-height: 0;
     margin-top: 8px;
+    color: #b91c1c;
+    font-size: 0.8rem;
+}
+
+.endpoint-row-error:empty {
+    display: none;
 }
 
 .endpoint-delete-btn {
-    min-height: 26px;
+    flex: none;
+    min-height: 28px;
     padding: 2px 12px;
     border-radius: 6px;
     color: #b91c1c;
     font-size: 0.78rem;
+    white-space: nowrap;
 }
 
-.endpoint-row-error {
-    color: #b91c1c;
-    font-size: 0.8rem;
+/* 编辑态底部操作栏：新增在左，保存/放弃在右，不再各自成行 */
+.endpoints-footer {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.endpoints-footer .endpoints-save-bar {
+    margin-left: auto;
+    margin-top: 0;
+}
+
+/* 窄屏退化：四列网格放不下时减为两列，地址仍占满整行 */
+@media (max-width: 1100px) {
+    .endpoint-fields {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .endpoint-field-wide {
+        grid-column: span 2;
+    }
 }
 
 /* 接入点分区为脏时悬在步骤表格上方的提示：琥珀色与普通说明区分 */

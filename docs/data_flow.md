@@ -63,6 +63,12 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 `crawl_accounts` 中启用的行。流水线启动时读取一次业务配置，整轮不随控制台修改而
 变化；单次 `--sources` 仅覆盖本轮来源列表，并按命令行给定的顺序执行。
 
+**教育关键词闸门**：正文写入 `filtered_articles` 前，会对正文做大小写不敏感的
+子串匹配，词表来自 `app_settings.education_keywords`（随业务配置整轮冻结）。
+未命中任何关键词的文章不写入 `filtered_articles`，也就不进入后续所有流程；
+命中的关键词本身随行记录到 `filtered_articles.keywords`。这个词表在校验层
+禁止为空——空词表等于全部放行，且不会报错，因此被显式拒绝。
+
 各来源 adapter 抓取列表页后写入 `raw_articles`，同时做关键词初筛，命中的写入 `filtered_articles`。
 
 账号名称由控制台解析并写入 `crawl_accounts.display_name`；抓取流程本身不回写账号名。头条优先使用、腾讯在官方接口失败后使用同一账号在 `raw_articles` 中最近一条非空记录的 `token → source` 作为兜底；北京时间和北京号不使用这条兜底。`token` 还承担头条和腾讯账号首次抓取的无状态判据：本轮启动时只读取一次 `raw_articles` 中的非空 token，尚未出现的账号仅抓第一页且最多抓取 `CRAWL_FIRST_RUN_LIMIT` 条；只要列表行成功写入，后续轮次就恢复原有连续命中停止逻辑。该判据不写回 `crawl_accounts`，账号停用后重启或删除后重加也不会被误判为首次抓取。
@@ -83,7 +89,11 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 **读写**：`primary_articles`
 
-对主文打相关性分。关键词加减分先基于标题、正文和已有关键词计算；如果模型原始分即使达到上限 100，加上净关键词分后仍低于 promotion 阈值，则不调用模型，直接写为 `filtered_out`。这只省略不可能改变结果的模型调用，不改变最终筛选集合。
+对主文打相关性分。关键词加减分先基于标题、正文和已有关键词计算，词表来自
+`app_settings.score_keyword_bonuses`（有序列表，加分按配置顺序记录进
+`matched_rules`）；空列表表示不加分，代码里没有兜底词典。如果模型原始分即使
+达到上限 100，加上净关键词分后仍低于 promotion 阈值，则不调用模型，直接写为
+`filtered_out`。这只省略不可能改变结果的模型调用，不改变最终筛选集合。
 
 未经模型评分的行约定为：`raw_relevance_score = NULL`，`keyword_bonus_score` 和 `score` 都写实际净关键词分；`score_details.matched_rules` 保留完整命中规则，并以 `llm_skipped = true`、`skip_reason = "keyword_bonus_below_threshold"` 明确区别于模型实际判出的低分。其余文章仍由模型原始分加关键词分得到 `score`，`score_details` 继续保存各组成部分，便于事后追查。
 
@@ -114,7 +124,12 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 历史数据：`endpoint` 字段缺失按 `null` 处理；但 `endpoint` 非 `null` 时该步骤的
 `model` 必须显式指定——模型名与服务商绑定，不允许换接入点后继承默认模型。
 
-`llm_source` 表示模型识别出的发布/署名媒体名称。来源响应完成既有格式清洗后，只有长度不超过 64 个字符的结果才会进入来源名称归一化；归一化依次剥离一次渠道后缀、再按整串全等规则替换别名，规则来自 `config/source_aliases.json`，处理后的值才写入数据库。超过 64 个字符的内容视为模型未按格式返回，必须整体丢弃并写入 `NULL`，不得截断保存。来源为空时，导出与人工复核界面回退使用抓取来源。
+`llm_source` 表示模型识别出的发布/署名媒体名称。来源响应完成既有格式清洗后，只有长度不超过 64 个字符的结果才会进入来源名称归一化；归一化依次剥离一次渠道后缀、再按整串全等规则替换别名，规则来自 `app_settings.source_aliases` 分区（suffixes 为有序列表，剥离只发生一次；aliases 为整串映射），处理后的值才写入数据库。超过 64 个字符的内容视为模型未按格式返回，必须整体丢弃并写入 `NULL`，不得截断保存。来源为空时，导出与人工复核界面回退使用抓取来源。
+
+京内本地判定（`geo-classify` 的本地路由与 `geo-tag` 回填）使用
+`app_settings.beijing_keywords` 分区的词表，对摘要、标题、正文做小写化后的子串
+匹配；命中即进入 Beijing Gate 或直接标记京内，未命中判为京外。这个词表在校验层
+禁止为空——空词表等于把全部稿件判为京外，且不会报错，因此被显式拒绝。
 
 > ⚠️ 新增富化步骤时，应当沿用这个模式：**独立的状态字段 + 独立的失败计数**，不要复用已有步骤的状态字段。
 
@@ -295,11 +310,11 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 | 表 | 职责 |
 |---|---|
-| `app_settings` | 分区保存接入点（`llm_endpoints`）、模型（`llm_models`）和每小时来源（`crawl_sources`）配置；版本号用于控制台乐观锁。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身。`llm_endpoints` 由迁移种子创建，不经一次性导入（导入闸门按分区判定，只写 `llm_models` 与 `crawl_sources`，已存在的分区会被点名拒绝） |
+| `app_settings` | 分区保存全部业务配置：接入点（`llm_endpoints`）、模型（`llm_models`）、每小时来源（`crawl_sources`）、评分加分词表（`score_keyword_bonuses`，有序数组）、抓取教育关键词闸门（`education_keywords`）、京内本地判定词表（`beijing_keywords`）、来源归一化规则（`source_aliases`）。版本号用于控制台乐观锁。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身。`llm_endpoints` 由迁移种子创建；其余分区由 `import-settings` 一次性导入（只写数据库中尚不存在的分区，已存在的一律跳过，不覆盖） |
 | `crawl_accounts` | 四类账号型来源的账号权威清单；`display_name` 是系统解析的名称，`display_name_synced_at` / `display_name_error` 记录最近成功时间或失败原因；运行时只读取启用行 |
 | `console_users` / `console_user_sessions` | 账号与登录会话 |
 | `review_events` | 审计日志，记录谁在什么时候改了什么 |
-| `pipeline_runs` / `pipeline_run_steps` | 流水线执行记录；`config_snapshot` 保存本轮各步骤解析后的模型、reasoning 与实际使用的接入点、接入点表（key/base_url/api_style，不含任何 Key）、实际来源、启用账号和配置版本 |
+| `pipeline_runs` / `pipeline_run_steps` | 流水线执行记录；`config_snapshot` 保存本轮各步骤解析后的模型、reasoning 与实际使用的接入点、接入点表（key/base_url/api_style，不含任何 Key）、实际来源、启用账号、四张词表的完整内容（加分词表、教育关键词、京内关键词、来源归一化规则）和各分区配置版本 |
 | `score_feedbacks` | 编辑对 AI 打分的反馈（偏高/偏低），按文章当前评分上下文（prompt_key + prompt_version）关联；人工筛选/值班工作区与全库检索卡片（经 `/api/articles/score-feedback`）都写这张表 |
 | `news_title_embeddings` | 仅编码新闻标题的向量，用于人工筛选聚类；不参与报送查重 |
 | `schema_migrations` | dbmate 迁移记录，**不要手工修改** |
@@ -324,7 +339,8 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | 业务配置一轮内冻结 | 文章各步骤必须使用同一轮启动时的配置 | 中途修改会让同一轮文章无法准确归因 |
 
 `pipeline_runs.config_snapshot` 是配置历史的唯一依据，直接记录整轮实际配置（包括
-各步骤解析后的模型与 reasoning、每一步实际使用的接入点 key，以及接入点表
+各步骤解析后的模型与 reasoning、每一步实际使用的接入点 key，接入点表
 `llm_endpoints`（仅 key / base_url / api_style），**快照中没有任何 Key 或
-凭据线索**，还有 `--sources` 覆盖）。将
+凭据线索**，`--sources` 覆盖，以及加分词表、教育关键词、京内关键词、来源归一化
+规则的完整内容与各分区版本号）。将
 `news_summaries` 各步骤时间戳对应到当时的流水线轮次，即可还原文章处理时的实际配置。

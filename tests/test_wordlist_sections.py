@@ -283,7 +283,11 @@ def test_load_resolves_wordlists_and_versions() -> None:
         ScoreKeywordBonus(keyword="教育工委", bonus=100),
         ScoreKeywordBonus(keyword="高考", bonus=10),
     )
-    assert loaded.score_bonus_rules() == {"教育工委": 100, "高考": 10}
+    # M12 的读取半边：bonus 规则必须保持配置顺序，不允许读取时打乱
+    assert list(loaded.score_bonus_rules().items()) == [
+        ("教育工委", 100),
+        ("高考", 10),
+    ]
     assert loaded.education_keywords == ("教育", "学校")
     assert loaded.beijing_keywords == ("北京", "海淀")
     assert loaded.source_aliases == SourceAliasRules(

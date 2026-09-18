@@ -218,21 +218,11 @@ SUBMISSION_FEEDBACK_MATCH_THRESHOLD=0.90
 `BAAI/bge-large-zh`，不能通过环境变量更换；
 更换模型必须清空已有存档向量并完整重算。
 
-## 关键词和提示词路径
+## 提示词路径
 
-关键词加分规则使用本地配置文件，该文件不会被 Git 跟踪。首次使用时从示例复制：
-
-```powershell
-Copy-Item config/score_keyword_bonuses.example.json config/score_keyword_bonuses.json
-```
-
-默认路径及其他关键词、提示词路径如下：
+提示词路径仍由环境变量控制（通常不需要修改）：
 
 ```env
-KEYWORDS_PATH=config/education_keywords.txt
-BEIJING_KEYWORDS_PATH=config/beijing_keywords.txt
-SOURCE_ALIASES_PATH=config/source_aliases.json
-SCORE_KEYWORD_BONUSES_PATH=config/score_keyword_bonuses.json
 EXTERNAL_FILTER_PROMPT_PATH=config/prompts/external_positive_importance_prompt.md
 EXTERNAL_NEGATIVE_FILTER_PROMPT_PATH=config/prompts/external_negative_importance_prompt.md
 INTERNAL_FILTER_PROMPT_PATH=config/prompts/internal_positive_importance_prompt.md
@@ -240,11 +230,24 @@ INTERNAL_NEGATIVE_FILTER_PROMPT_PATH=config/prompts/internal_negative_importance
 BEIJING_GATE_PROMPT_PATH=config/prompts/beijing_gate_prompt.md
 ```
 
-也可以直接内联关键词加分规则：
+## 已废弃：关键词配置改由控制台设置页管理
+
+评分加分词表、抓取教育关键词、京内关键词和来源别名已迁入控制台设置页
+（`app_settings` 的 `score_keyword_bonuses` / `education_keywords` /
+`beijing_keywords` / `source_aliases` 分区），以下环境变量与本地文件**不再生效**，
+设置后启动时会逐项告警提示移除：
 
 ```env
-SCORE_KEYWORD_BONUSES={"高考":10,"中考":8}
+KEYWORDS_PATH
+BEIJING_KEYWORDS_PATH
+SOURCE_ALIASES_PATH
+SCORE_KEYWORD_BONUSES
+SCORE_KEYWORD_BONUSES_PATH
 ```
+
+对应的历史文件 `config/education_keywords.txt`、`config/beijing_keywords.txt`、
+`config/source_aliases.json`、`config/score_keyword_bonuses.json` 同样不再读取，
+仅作为 `import-settings` 的导入来源保留；导入完成后可自行删除。
 
 ## 抓取来源
 

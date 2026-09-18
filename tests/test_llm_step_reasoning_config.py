@@ -9,15 +9,17 @@ import pytest
 from src.adapters import (
     external_filter_model,
     llm_beijing_gate,
+    llm_chat,
     llm_duplicate_review,
     llm_scoring,
     llm_source,
     llm_summary,
     sentiment_classifier,
 )
-from src.adapters.llm_chat import apply_reasoning_config
 from src.business_config import LLMStepConfig
 from src.config import get_settings
+
+pytestmark = pytest.mark.usefixtures("openrouter_endpoint_env")
 
 
 class _PayloadCaptured(RuntimeError):
@@ -92,24 +94,20 @@ def test_m6_each_step_applies_its_own_reasoning_to_request_payload(
         assert requested_step == step
         return LLMStepConfig(model=f"{step}-model", reasoning=reasoning)
 
-    def capture_payload(
-        payload: dict[str, Any],
-        *,
-        settings: Any,
-        enabled: bool,
-    ) -> None:
-        apply_reasoning_config(payload, settings=settings, enabled=enabled)
-        captured.update(payload)
+    def capture_post(url, *, json=None, headers=None, **kwargs):
+        captured.update(json or {})
+        captured["__url__"] = url
         raise _PayloadCaptured
 
     monkeypatch.setattr(module, "get_settings", lambda: settings)
     monkeypatch.setattr(module, "get_llm_step_config", configured)
-    monkeypatch.setattr(module, "apply_reasoning_config", capture_payload)
+    monkeypatch.setattr(llm_chat.requests, "post", capture_post)
     if module in {external_filter_model, llm_beijing_gate}:
         monkeypatch.setattr(module, "build_prompt", lambda *_args, **_kwargs: "prompt")
 
     with pytest.raises(_PayloadCaptured):
         invoke(module)
 
+    assert captured["__url__"].endswith("/chat/completions")
     assert captured["model"] == f"{step}-model"
     assert ("reasoning" in captured) is reasoning

@@ -4,11 +4,8 @@ import json
 import time
 from typing import Any, Dict, Optional, Tuple
 
-from src.adapters.llm_chat import (
-    apply_reasoning_config,
-    build_headers,
-    post_chat_completion,
-)
+from src.adapters.llm_chat import post_chat_completion
+from src.adapters.llm_endpoint import resolve_llm_endpoint
 from src.business_config import get_llm_step_config
 from src.config import get_settings
 
@@ -67,9 +64,7 @@ def classify_sentiment(content: str, *, retries: int = 4, timeout: Optional[int]
     step_config = get_llm_step_config("sentiment")
     model = step_config.model
     deadline = started_at + settings.llm_sentiment_budget
-    api_key = settings.llm_api_key
-    if not api_key:
-        raise RuntimeError("Missing LLM API key (set LLM_API_KEY)")
+    endpoint = resolve_llm_endpoint("sentiment")
 
     message = _build_prompt(content)
     payload = {
@@ -77,16 +72,10 @@ def classify_sentiment(content: str, *, retries: int = 4, timeout: Optional[int]
         "messages": [message],
         "temperature": 0.0,
     }
-    apply_reasoning_config(
+    endpoint.finalize_payload(
         payload,
         settings=settings,
-        enabled=step_config.reasoning,
-    )
-    url = f"{settings.llm_api_base_url.rstrip('/')}/chat/completions"
-    headers = build_headers(
-        api_key=api_key,
-        referer=settings.llm_api_http_referer,
-        title=settings.llm_api_title,
+        reasoning_enabled=step_config.reasoning,
     )
 
     resolved_timeout = timeout or settings.llm_summary_timeout
@@ -96,9 +85,9 @@ def classify_sentiment(content: str, *, retries: int = 4, timeout: Optional[int]
         _parse_response(raw_text)
 
     data = post_chat_completion(
-        url,
+        endpoint.chat_url,
         payload=payload,
-        headers=headers,
+        headers=endpoint.headers(),
         timeout=resolved_timeout,
         budget=settings.llm_sentiment_budget,
         retries=retries,
@@ -107,6 +96,7 @@ def classify_sentiment(content: str, *, retries: int = 4, timeout: Optional[int]
         model=model,
         deadline=deadline,
         response_validator=validate_response,
+        endpoint_label=endpoint.label,
     )
     raw_text = (data["choices"][0]["message"]["content"] or "").strip()
     label, confidence = _parse_response(raw_text)

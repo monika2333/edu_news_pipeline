@@ -7,6 +7,7 @@ from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, MutableMapping, Optional
+from urllib.parse import urlsplit
 
 import requests
 
@@ -44,6 +45,7 @@ class LLMQuotaError(RuntimeError):
     model: str
     status_code: int
     response_text: str
+    endpoint_label: Optional[str] = None
 
     def __post_init__(self) -> None:
         RuntimeError.__init__(
@@ -51,6 +53,10 @@ class LLMQuotaError(RuntimeError):
             f"LLM quota or billing error during {self.operation} "
             f"(model={self.model}, status={self.status_code}): {self.response_text}",
         )
+
+
+class LLMEndpointBlockedError(RuntimeError):
+    """Raised when the target host is not on the LLM_ALLOWED_HOSTS allowlist."""
 
 
 class LLMWallClockTimeout(requests.Timeout):
@@ -69,6 +75,32 @@ class _StopRetry(Exception):
     def __init__(self, error: Exception) -> None:
         super().__init__(str(error))
         self.error = error
+
+
+def ensure_url_host_allowed(
+    url: str,
+    *,
+    allowed_hosts: Optional[Collection[str]] = None,
+) -> str:
+    """Block requests to hosts outside ``LLM_ALLOWED_HOSTS`` before sending.
+
+    The allowlist keeps console-editable endpoint URLs from becoming a way to
+    exfiltrate API keys to arbitrary servers or probe internal networks.
+    """
+
+    if allowed_hosts is None:
+        allowed_hosts = get_settings().llm_allowed_hosts
+    host = urlsplit(url).hostname
+    normalized_host = (host or "").strip().lower()
+    normalized_allowed = {
+        item.strip().lower() for item in allowed_hosts if item and item.strip()
+    }
+    if not normalized_host or normalized_host not in normalized_allowed:
+        raise LLMEndpointBlockedError(
+            f"接入点主机 {normalized_host or '(缺失)'} 不在 LLM_ALLOWED_HOSTS "
+            f"白名单内，已按安全策略阻止请求：{url}"
+        )
+    return normalized_host
 
 
 def post_chat_completion(
@@ -92,6 +124,8 @@ def post_chat_completion(
     non_retryable_exceptions: tuple[type[Exception], ...] = (),
     http_error_factory: Optional[Callable[[int, str], Exception]] = None,
     attempt_callback: Optional[Callable[[int], None]] = None,
+    endpoint_label: Optional[str] = None,
+    allowed_hosts: Optional[Collection[str]] = None,
 ) -> dict[str, Any]:
     """POST one chat task with retries bounded by a shared wall-clock deadline.
 
@@ -101,6 +135,7 @@ def post_chat_completion(
     to every invocation. The optional callback receives each HTTP attempt number.
     """
 
+    ensure_url_host_allowed(url, allowed_hosts=allowed_hosts)
     resolved_deadline = deadline if deadline is not None else time.monotonic() + budget
     attempts = max(1, retries)
     backoff = max(0.0, backoff_initial)
@@ -125,7 +160,15 @@ def post_chat_completion(
                 headers=headers,
                 timeout=request_timeout,
                 stream=True,
+                allow_redirects=False,
             )
+            if 300 <= response.status_code < 400:
+                raise _StopRetry(
+                    RuntimeError(
+                        "接入点返回重定向，按安全策略未跟随"
+                        f"（HTTP {response.status_code}）"
+                    )
+                )
             raw_body = _read_response_body(
                 response,
                 deadline=resolved_deadline,
@@ -156,6 +199,7 @@ def post_chat_completion(
                 response_text=response_text,
                 operation=operation,
                 model=model,
+                endpoint_label=endpoint_label,
             )
             error_factory = http_error_factory or _default_http_error
             http_error = error_factory(response.status_code, response_text)
@@ -350,6 +394,7 @@ def raise_for_llm_quota_error(
     response_text: str,
     operation: str,
     model: str,
+    endpoint_label: Optional[str] = None,
 ) -> None:
     if not is_llm_quota_response(status_code, response_text):
         return
@@ -359,6 +404,7 @@ def raise_for_llm_quota_error(
         model=model,
         status_code=status_code,
         response_text=_truncate_response(response_text, _QUOTA_TEXT_LIMIT),
+        endpoint_label=endpoint_label,
     )
     _maybe_send_quota_alert(error)
     raise error
@@ -394,7 +440,11 @@ def _maybe_send_quota_alert(error: LLMQuotaError) -> None:
             )
 
             notify_llm_quota_alert(
-                operation=error.operation,
+                operation=(
+                    f"{error.operation}（接入点：{error.endpoint_label}）"
+                    if error.endpoint_label
+                    else error.operation
+                ),
                 model=error.model,
                 status_code=error.status_code,
                 response_text=error.response_text,
@@ -441,10 +491,12 @@ def _write_quota_alert_state(state_path: Path, *, now: float) -> None:
 
 
 __all__ = [
+    "LLMEndpointBlockedError",
     "LLMQuotaError",
     "LLMWallClockTimeout",
     "apply_reasoning_config",
     "build_headers",
+    "ensure_url_host_allowed",
     "extract_message_text",
     "is_llm_quota_response",
     "post_chat_completion",

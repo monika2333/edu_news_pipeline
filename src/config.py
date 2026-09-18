@@ -15,6 +15,11 @@ _ENV_FILES = (
     _REPO_ROOT / "config" / "abstract.env",
 )
 BGE_EMBEDDING_MODEL = "BAAI/bge-large-zh"
+DEFAULT_LLM_ALLOWED_HOSTS = (
+    "openrouter.ai",
+    "api.deepseek.com",
+    "open.bigmodel.cn",
+)
 
 
 def _load_env_file(path: Path) -> None:
@@ -111,6 +116,7 @@ class Settings:
     db_schema: str
     llm_api_base_url: str
     llm_api_key: Optional[str]
+    llm_allowed_hosts: tuple[str, ...]
     llm_api_http_referer: Optional[str]
     llm_api_title: Optional[str]
     llm_reasoning_effort: Optional[str]
@@ -178,6 +184,14 @@ def get_settings() -> Settings:
 
     llm_api_base_url = os.getenv("LLM_API_BASE_URL") or "https://openrouter.ai/api/v1"
     llm_api_key = os.getenv("LLM_API_KEY")
+    raw_allowed_hosts = os.getenv("LLM_ALLOWED_HOSTS") or ""
+    llm_allowed_hosts = tuple(
+        dict.fromkeys(
+            host.strip().lower()
+            for host in raw_allowed_hosts.split(",")
+            if host.strip()
+        )
+    ) or DEFAULT_LLM_ALLOWED_HOSTS
     llm_api_http_referer = os.getenv("LLM_API_HTTP_REFERER")
     llm_api_title = os.getenv("LLM_API_TITLE")
     raw_reasoning_effort = (os.getenv("LLM_REASONING_EFFORT") or "").strip().lower()
@@ -394,6 +408,7 @@ def get_settings() -> Settings:
         db_schema=db_schema,
         llm_api_base_url=llm_api_base_url,
         llm_api_key=llm_api_key,
+        llm_allowed_hosts=llm_allowed_hosts,
         llm_api_http_referer=llm_api_http_referer,
         llm_api_title=llm_api_title,
         llm_reasoning_effort=llm_reasoning_effort,
@@ -448,4 +463,4 @@ def get_settings() -> Settings:
     )
 
 
-__all__ = ["Settings", "get_settings", "load_environment"]
+__all__ = ["DEFAULT_LLM_ALLOWED_HOSTS", "Settings", "get_settings", "load_environment"]

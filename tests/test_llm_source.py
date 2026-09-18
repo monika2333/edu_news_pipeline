@@ -8,6 +8,8 @@ import pytest
 from src.adapters import llm_source
 from src.adapters.llm_source import MAX_LLM_SOURCE_LENGTH, build_source_payload
 from src.business_config import LLMStepConfig
+pytestmark = pytest.mark.usefixtures("openrouter_endpoint_env")
+
 
 
 @pytest.fixture(autouse=True)

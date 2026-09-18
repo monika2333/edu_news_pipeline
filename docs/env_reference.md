@@ -27,11 +27,13 @@ DB_SCHEMA=public
 LLM_API_KEY=replace-with-your-llm-api-key
 ```
 
-项目默认使用 OpenRouter 兼容接口。模型名已迁入控制台设置页，环境变量只保留供应商连接信息：
+模型与接入点（endpoint）配置已迁入控制台设置页（`llm_endpoints` / `llm_models` 分区）：每个 LLM 步骤可以指定接入点，接入点保存服务地址与 Key 所在的环境变量名，API Key 本身仍只存放在 `.env`。接入点地址的主机必须在 `LLM_ALLOWED_HOSTS` 白名单内：
 
 ```env
-LLM_API_BASE_URL=https://openrouter.ai/api/v1
+LLM_ALLOWED_HOSTS=openrouter.ai,api.deepseek.com,open.bigmodel.cn
 ```
+
+未配置时使用内置默认值（即上面这一组）。精确匹配主机名、大小写不敏感、不支持通配符、只允许 443 端口；新增服务商时需要同时在该变量中加入其域名并重启。`LLM_API_BASE_URL` 已不再生效（仅单一地址、无法按步骤区分），设置后启动时会告警提示移除。
 
 ## 建议填写
 
@@ -57,11 +59,13 @@ DBMATE_SCHEMA_FILE=database/schema.sql
 ### 推荐只设置这些
 
 ```env
-LLM_API_BASE_URL=https://openrouter.ai/api/v1
 LLM_API_KEY=replace-with-your-llm-api-key
+LLM_ALLOWED_HOSTS=openrouter.ai,api.deepseek.com,open.bigmodel.cn
 ```
 
-OpenRouter 可选请求标识：
+`LLM_API_BASE_URL` 已失效：服务地址改由控制台「接入点」配置管理，不要在 `.env` 中保留。
+
+OpenRouter 可选请求标识（仅对 `api_style: openrouter` 的接入点发送）：
 
 ```env
 LLM_API_HTTP_REFERER=https://your-project.example
@@ -70,16 +74,17 @@ LLM_API_TITLE=Edu News Pipeline
 
 默认行为：
 
-- 各步骤模型、默认模型及 reasoning 开关已迁入控制台设置页。
+- 各步骤模型、默认模型、reasoning 开关及所用接入点已迁入控制台设置页。
 - reasoning 默认不传 `effort`，并设置 `exclude=true`，避免响应里返回思考内容。
+- `api_style: thinking` 的接入点（DeepSeek、GLM 官方接口）关闭思考时显式发送 `{"thinking": {"type": "disabled"}}`。
 - LLM timeout 默认 90 秒。
 
 ### 模型配置
 
-默认模型、七个步骤的模型覆盖及各步骤 reasoning 开关已迁入控制台设置页；旧的
-`LLM_MODEL`、各 `LLM_*_MODEL`、`LLM_REASONING_ENABLED`、
-`LLM_SUMMARY_REASONING_ENABLED`、`LLM_SOURCE_REASONING_ENABLED` 和
-`LLM_SENTIMENT_REASONING_ENABLED` 变量不再生效。
+默认模型、七个步骤的模型覆盖、各步骤 reasoning 开关及各步骤使用的接入点已迁入控制台
+设置页；旧的 `LLM_MODEL`、各 `LLM_*_MODEL`、`LLM_REASONING_ENABLED`、
+`LLM_SUMMARY_REASONING_ENABLED`、`LLM_SOURCE_REASONING_ENABLED`、
+`LLM_SENTIMENT_REASONING_ENABLED` 和 `LLM_API_BASE_URL` 变量不再生效。
 
 ### reasoning 的全局参数
 
@@ -362,8 +367,8 @@ DB_SCHEMA=public
 
 DATABASE_URL=postgres://postgres:replace-with-your-password@localhost:5432/edu_news_pipeline?sslmode=disable
 
-LLM_API_BASE_URL=https://openrouter.ai/api/v1
 LLM_API_KEY=replace-with-your-llm-api-key
+LLM_ALLOWED_HOSTS=openrouter.ai,api.deepseek.com,open.bigmodel.cn
 
 CONSOLE_BASIC_USERNAME=admin
 CONSOLE_BASIC_PASSWORD=replace-with-a-strong-password

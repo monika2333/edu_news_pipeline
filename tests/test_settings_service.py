@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
@@ -41,6 +42,65 @@ def _llm_value(*, summary: str | None = None) -> dict[str, Any]:
     }
 
 
+def _llm_endpoints_value() -> dict[str, Any]:
+    return {
+        "default": "openrouter",
+        "items": [
+            {
+                "key": "openrouter",
+                "label": "OpenRouter",
+                "base_url": "https://openrouter.ai/api/v1",
+                "api_key_env": "LLM_API_KEY",
+                "api_style": "openrouter",
+                "temperature_override": None,
+            },
+            {
+                "key": "deepseek",
+                "label": "DeepSeek",
+                "base_url": "https://api.deepseek.com",
+                "api_key_env": "LLM_DEEPSEEK_API_KEY",
+                "api_style": "thinking",
+                "temperature_override": None,
+            },
+        ],
+    }
+
+
+def _settings_section_adapter(
+    sections: dict[str, Any],
+    *,
+    versions: dict[str, int] | None = None,
+    saves: list[dict[str, Any]] | None = None,
+) -> SimpleNamespace:
+    version_map = versions or {section: 4 for section in sections}
+
+    def fetch_setting(section: str) -> dict[str, Any]:
+        return {
+            "section": section,
+            "value": sections[section],
+            "version": version_map.get(section, 1),
+        }
+
+    def update_app_setting_as_user(**kwargs: Any) -> dict[str, Any]:
+        if saves is not None:
+            saves.append(kwargs)
+        return kwargs
+
+    return SimpleNamespace(
+        app_config=SimpleNamespace(
+            fetch_setting=fetch_setting,
+            update_app_setting_as_user=update_app_setting_as_user,
+        ),
+    )
+
+
+def _patch_settings_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+    adapter: SimpleNamespace,
+) -> None:
+    monkeypatch.setattr(settings_service, "get_adapter", lambda: adapter)
+
+
 def test_m3_console_duplicate_review_reads_current_model_each_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -51,6 +111,7 @@ def test_m3_console_duplicate_review_reads_current_model_each_call(
     app_config = SimpleNamespace(
         fetch_settings=lambda: [
             {"section": "llm_models", "value": current_value, "version": 1},
+            {"section": "llm_endpoints", "value": _llm_endpoints_value(), "version": 1},
             {"section": "crawl_sources", "value": ["toutiao"], "version": 1},
         ],
         fetch_enabled_accounts=lambda: [],
@@ -58,6 +119,7 @@ def test_m3_console_duplicate_review_reads_current_model_each_call(
     adapter = SimpleNamespace(app_config=app_config)
     settings = replace(get_settings(), llm_api_key="test-key")
     monkeypatch.setattr(db_postgres_core, "get_adapter", lambda: adapter)
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
     monkeypatch.setattr(llm_duplicate_review, "get_settings", lambda: settings)
     monkeypatch.setattr(
         llm_duplicate_review,
@@ -130,7 +192,12 @@ def test_model_test_uses_requested_reasoning_in_payload(
 ) -> None:
     settings = replace(get_settings(), llm_api_key="test-key")
     captured: dict[str, Any] = {}
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
     monkeypatch.setattr(settings_service, "get_settings", lambda: settings)
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter({"llm_endpoints": _llm_endpoints_value()}),
+    )
     monkeypatch.setattr(
         settings_service,
         "post_chat_completion",
@@ -147,6 +214,71 @@ def test_model_test_uses_requested_reasoning_in_payload(
     assert ("reasoning" in captured) is reasoning
 
 
+def test_model_test_uses_requested_endpoint_address_and_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = replace(get_settings(), llm_api_key="test-key")
+    captured: dict[str, Any] = {}
+    monkeypatch.setenv("LLM_DEEPSEEK_API_KEY", "deepseek-key")
+    monkeypatch.setattr(settings_service, "get_settings", lambda: settings)
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter({"llm_endpoints": _llm_endpoints_value()}),
+    )
+    monkeypatch.setattr(
+        settings_service,
+        "post_chat_completion",
+        lambda url, **kwargs: captured.update(kwargs, url=url) or {},
+    )
+
+    result = settings_service.test_llm_model(
+        "duplicate_review",
+        "deepseek-chat",
+        True,
+        endpoint="deepseek",
+    )
+
+    assert result["success"] is True
+    assert captured["url"] == "https://api.deepseek.com/chat/completions"
+    assert captured["headers"]["Authorization"] == "Bearer deepseek-key"
+    assert "HTTP-Referer" not in captured["headers"]
+    assert captured["payload"]["thinking"] == {"type": "enabled"}
+    assert "reasoning" not in captured["payload"]
+
+
+def test_model_test_reports_missing_endpoint_key_without_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = replace(get_settings(), llm_api_key="test-key")
+    monkeypatch.delenv("LLM_GHOST_API_KEY", raising=False)
+    monkeypatch.setattr(settings_service, "get_settings", lambda: settings)
+    endpoints = _llm_endpoints_value()
+    endpoints["items"].append(
+        {
+            "key": "ghost",
+            "label": "Ghost",
+            "base_url": "https://api.deepseek.com",
+            "api_key_env": "LLM_GHOST_API_KEY",
+            "api_style": "thinking",
+            "temperature_override": None,
+        }
+    )
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter({"llm_endpoints": endpoints}),
+    )
+
+    result = settings_service.test_llm_model(
+        "summary",
+        "model-a",
+        False,
+        endpoint="ghost",
+    )
+
+    assert result["success"] is False
+    assert "LLM_GHOST_API_KEY" in result["error"]
+
+
 def test_f9_reasoning_model_test_has_room_beyond_reasoning_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -157,7 +289,12 @@ def test_f9_reasoning_model_test_has_room_beyond_reasoning_limit(
         llm_scoring_timeout=30,
     )
     captured: dict[str, Any] = {}
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
     monkeypatch.setattr(settings_service, "get_settings", lambda: settings)
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter({"llm_endpoints": _llm_endpoints_value()}),
+    )
     monkeypatch.setattr(
         settings_service,
         "post_chat_completion",
@@ -170,6 +307,55 @@ def test_f9_reasoning_model_test_has_room_beyond_reasoning_limit(
     assert captured["payload"]["max_tokens"] > 3072
     assert captured["timeout"] >= 120
     assert captured["budget"] > captured["timeout"]
+
+
+def test_settings_payload_exposes_endpoints_and_drops_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_DEEPSEEK_API_KEY", "deepseek-key")
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+
+    def section_row(section: str, value: Any, version: int) -> dict[str, Any]:
+        return {
+            "section": section,
+            "value": value,
+            "version": version,
+            "updated_at": None,
+            "updated_by_user_id": None,
+            "updated_by_display_name": None,
+        }
+
+    app_config = SimpleNamespace(
+        fetch_settings=lambda: [
+            section_row("llm_models", _llm_value(), 3),
+            section_row("llm_endpoints", _llm_endpoints_value(), 2),
+        ],
+    )
+    _patch_settings_adapter(
+        monkeypatch,
+        SimpleNamespace(app_config=app_config),
+    )
+
+    payload = settings_service.get_settings_payload()
+
+    assert "llm_api_base_url" not in payload["environment"]
+    endpoints = payload["endpoints"]
+    assert endpoints["default"] == "openrouter"
+    assert "openrouter.ai" in endpoints["allowed_hosts"]
+    items = {item["key"]: item for item in endpoints["items"]}
+    assert set(items["openrouter"]) == {
+        "key",
+        "label",
+        "base_url",
+        "api_key_env",
+        "api_style",
+        "temperature_override",
+        "api_key_env_configured",
+    }
+    assert items["openrouter"]["api_key_env_configured"] is False
+    assert items["deepseek"]["api_key_env_configured"] is True
+    serialized = json.dumps(endpoints)
+    assert "deepseek-key" not in serialized
 
 
 @pytest.mark.parametrize(
@@ -196,23 +382,24 @@ def test_m16_changed_model_is_tested_server_side_before_save(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[dict[str, Any]] = []
-    app_config = SimpleNamespace(
-        fetch_setting=lambda section: {
-            "section": section,
-            "value": _llm_value(),
-            "version": 4,
-        },
-        update_app_setting_as_user=lambda **kwargs: calls.append(kwargs),
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter(
+            {
+                "llm_models": _llm_value(),
+                "llm_endpoints": _llm_endpoints_value(),
+            },
+            saves=calls,
+        ),
     )
-    adapter = SimpleNamespace(app_config=app_config)
-    monkeypatch.setattr(settings_service, "get_adapter", lambda: adapter)
     monkeypatch.setattr(
         settings_service,
         "test_llm_model",
-        lambda step, model, reasoning: {
+        lambda step, model, reasoning, endpoint=None: {
             "success": False,
             "elapsed_ms": 1,
-            "error": f"{step}:{model}:{reasoning}:unavailable",
+            "error": f"{step}:{endpoint}:{model}:{reasoning}:unavailable",
         },
     )
 
@@ -238,24 +425,24 @@ def test_m16_reasoning_only_change_is_tested_before_save(
     before = _llm_value()
     after = _llm_value()
     after["steps"]["summary"]["reasoning"] = True
-    tests: list[tuple[str, str, bool]] = []
+    tests: list[tuple[str, str | None, str, bool]] = []
     saves: list[dict[str, Any]] = []
-    adapter = SimpleNamespace(
-        app_config=SimpleNamespace(
-            fetch_setting=lambda section: {
-                "section": section,
-                "value": before,
-                "version": 4,
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter(
+            {
+                "llm_models": before,
+                "llm_endpoints": _llm_endpoints_value(),
             },
-            update_app_setting_as_user=lambda **kwargs: saves.append(kwargs) or kwargs,
+            saves=saves,
         ),
     )
-    monkeypatch.setattr(settings_service, "get_adapter", lambda: adapter)
     monkeypatch.setattr(
         settings_service,
         "test_llm_model",
-        lambda step, model, reasoning: (
-            tests.append((step, model, reasoning))
+        lambda step, model, reasoning, endpoint=None: (
+            tests.append((step, endpoint, model, reasoning))
             or {"success": True, "elapsed_ms": 1, "error": None}
         ),
     )
@@ -267,7 +454,7 @@ def test_m16_reasoning_only_change_is_tested_before_save(
         actor=_admin(),
     )
 
-    assert tests == [("summary", "default-model", True)]
+    assert tests == [("summary", "openrouter", "default-model", True)]
     assert len(saves) == 1
 
 
@@ -277,24 +464,24 @@ def test_m16_default_change_tests_all_distinct_effective_combinations(
     before = _llm_value()
     after = _llm_value()
     after["default"] = "new-default-model"
-    tests: list[tuple[str, str, bool]] = []
+    tests: list[tuple[str, str | None, str, bool]] = []
     saves: list[dict[str, Any]] = []
-    adapter = SimpleNamespace(
-        app_config=SimpleNamespace(
-            fetch_setting=lambda section: {
-                "section": section,
-                "value": before,
-                "version": 4,
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter(
+            {
+                "llm_models": before,
+                "llm_endpoints": _llm_endpoints_value(),
             },
-            update_app_setting_as_user=lambda **kwargs: saves.append(kwargs) or kwargs,
+            saves=saves,
         ),
     )
-    monkeypatch.setattr(settings_service, "get_adapter", lambda: adapter)
     monkeypatch.setattr(
         settings_service,
         "test_llm_model",
-        lambda step, model, reasoning: (
-            tests.append((step, model, reasoning))
+        lambda step, model, reasoning, endpoint=None: (
+            tests.append((step, endpoint, model, reasoning))
             or {"success": True, "elapsed_ms": 1, "error": None}
         ),
     )
@@ -307,10 +494,147 @@ def test_m16_default_change_tests_all_distinct_effective_combinations(
     )
 
     assert tests == [
-        ("summary", "new-default-model", False),
-        ("source", "new-default-model", True),
+        ("summary", "openrouter", "new-default-model", False),
+        ("source", "openrouter", "new-default-model", True),
     ]
     assert len(saves) == 1
+
+
+def test_llm_models_save_rejects_unknown_endpoint_reference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    after = _llm_value()
+    after["steps"]["duplicate_review"] = {
+        "model": "duplicate-model",
+        "reasoning": True,
+        "endpoint": "ghost",
+    }
+    saves: list[dict[str, Any]] = []
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter(
+            {
+                "llm_models": _llm_value(),
+                "llm_endpoints": _llm_endpoints_value(),
+            },
+            saves=saves,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="ghost"):
+        settings_service.update_setting(
+            "llm_models",
+            value=after,
+            expected_version=4,
+            actor=_admin(),
+        )
+
+    assert saves == []
+
+
+def test_llm_models_save_rejects_endpoint_without_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    after = _llm_value()
+    after["steps"]["duplicate_review"] = {
+        "model": None,
+        "reasoning": True,
+        "endpoint": "deepseek",
+    }
+    saves: list[dict[str, Any]] = []
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter(
+            {
+                "llm_models": _llm_value(),
+                "llm_endpoints": _llm_endpoints_value(),
+            },
+            saves=saves,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="model 不能为空"):
+        settings_service.update_setting(
+            "llm_models",
+            value=after,
+            expected_version=4,
+            actor=_admin(),
+        )
+
+    assert saves == []
+
+
+def test_endpoint_save_rejects_deleting_referenced_or_default_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    endpoints = _llm_endpoints_value()
+    models = _llm_value()
+    models["steps"]["duplicate_review"] = {
+        "model": "duplicate-model",
+        "reasoning": True,
+        "endpoint": "deepseek",
+    }
+    saves: list[dict[str, Any]] = []
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter(
+            {"llm_models": models, "llm_endpoints": endpoints},
+            saves=saves,
+        ),
+    )
+
+    # 删除被步骤引用的接入点
+    dropped_deepseek = {
+        "default": "openrouter",
+        "items": [item for item in endpoints["items"] if item["key"] != "deepseek"],
+    }
+    with pytest.raises(ValueError, match="查重复核"):
+        settings_service.update_setting(
+            "llm_endpoints",
+            value=dropped_deepseek,
+            expected_version=4,
+            actor=_admin(),
+        )
+
+    # 删除默认接入点
+    dropped_openrouter = {
+        "default": "deepseek",
+        "items": [
+            item for item in endpoints["items"] if item["key"] != "openrouter"
+        ],
+    }
+    with pytest.raises(ValueError, match="默认接入点"):
+        settings_service.update_setting(
+            "llm_endpoints",
+            value=dropped_openrouter,
+            expected_version=4,
+            actor=_admin(),
+        )
+
+    assert saves == []
+
+
+def test_endpoint_save_rejects_non_whitelisted_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    endpoints = _llm_endpoints_value()
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter(
+            {"llm_models": _llm_value(), "llm_endpoints": endpoints},
+        ),
+    )
+
+    endpoints = _llm_endpoints_value()
+    endpoints["items"][1]["base_url"] = "https://evil.example.com/v1"
+
+    with pytest.raises(ValueError, match="白名单"):
+        settings_service.update_setting(
+            "llm_endpoints",
+            value=endpoints,
+            expected_version=4,
+            actor=_admin(),
+        )
 
 
 def test_legacy_import_preserves_each_reasoning_switch(

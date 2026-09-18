@@ -9,6 +9,8 @@ from src.adapters import llm_beijing_gate as gate
 from src.business_config import LLMStepConfig
 from src.config import get_settings
 from src.domain import BeijingGateCandidate
+pytestmark = pytest.mark.usefixtures("openrouter_endpoint_env")
+
 
 
 @pytest.fixture(autouse=True)
@@ -116,13 +118,15 @@ def test_call_beijing_gate_uses_json_schema_and_retries_indeterminate_output(
 
     def fake_post(
         payload: dict[str, object],
+        *,
+        endpoint: object,
         retries: int,
         timeout: int,
-        *,
         deadline: float,
     ) -> gate.BeijingGateResponse:
         assert timeout > 0
         assert deadline > 0
+        assert endpoint.chat_url.endswith("/chat/completions")
         calls.append((payload, retries, deadline))
         return next(responses)
 
@@ -153,7 +157,7 @@ def test_call_beijing_gate_preserves_final_indeterminate_response(
     monkeypatch.setattr(
         gate,
         "_post_chat_completion",
-        lambda payload, retries, timeout, *, deadline: invalid_response,
+        lambda payload, *, endpoint, retries, timeout, deadline: invalid_response,
     )
 
     with pytest.raises(gate.BeijingGateIndeterminateError) as exc_info:

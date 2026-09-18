@@ -3,11 +3,8 @@
 import time
 from typing import Any, Dict, Optional
 
-from src.adapters.llm_chat import (
-    apply_reasoning_config,
-    build_headers,
-    post_chat_completion,
-)
+from src.adapters.llm_chat import post_chat_completion
+from src.adapters.llm_endpoint import resolve_llm_endpoint
 from src.business_config import get_llm_step_config
 from src.config import get_settings
 
@@ -48,9 +45,7 @@ def summarise(
     step_config = get_llm_step_config("summary")
     model = step_config.model
     deadline = started_at + settings.llm_summary_budget
-    api_key = settings.llm_api_key
-    if not api_key:
-        raise RuntimeError("Missing LLM API key (set LLM_API_KEY)")
+    endpoint = resolve_llm_endpoint("summary")
 
     payload = build_summary_payload(article)
     payload.update(
@@ -59,25 +54,18 @@ def summarise(
             "temperature": 0.2,
         }
     )
-    apply_reasoning_config(
+    endpoint.finalize_payload(
         payload,
         settings=settings,
-        enabled=step_config.reasoning,
-    )
-
-    url = f"{settings.llm_api_base_url.rstrip('/')}/chat/completions"
-    headers = build_headers(
-        api_key=api_key,
-        referer=settings.llm_api_http_referer,
-        title=settings.llm_api_title,
+        reasoning_enabled=step_config.reasoning,
     )
 
     # Resolve timeout from settings if not explicitly provided
     resolved_timeout = timeout or settings.llm_summary_timeout
     data = post_chat_completion(
-        url,
+        endpoint.chat_url,
         payload=payload,
-        headers=headers,
+        headers=endpoint.headers(),
         timeout=resolved_timeout,
         budget=settings.llm_summary_budget,
         retries=retries,
@@ -85,6 +73,7 @@ def summarise(
         operation="summarize",
         model=model,
         deadline=deadline,
+        endpoint_label=endpoint.label,
     )
     summary = (data["choices"][0]["message"]["content"] or "").strip()
     return {

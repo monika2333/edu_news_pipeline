@@ -11,6 +11,7 @@ import src.config as config
 LLM_ENV_KEYS = (
     "LLM_API_BASE_URL",
     "LLM_API_KEY",
+    "LLM_ALLOWED_HOSTS",
     "LLM_API_HTTP_REFERER",
     "LLM_API_TITLE",
     "LLM_MODEL",
@@ -104,11 +105,13 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
     monkeypatch.setenv("LLM_QUOTA_ALERT_ENABLED", "false")
     monkeypatch.setenv("LLM_QUOTA_ALERT_COOLDOWN_SECONDS", "99")
     monkeypatch.setenv("LLM_QUOTA_ALERT_STATE_PATH", "logs/test_quota_state.json")
+    monkeypatch.setenv("LLM_ALLOWED_HOSTS", "openrouter.ai, Evil.example ,,api.deepseek.com")
 
     settings = config.get_settings()
 
     assert settings.llm_api_base_url == "https://llm.example.test/v1"
     assert settings.llm_api_key == "test-key"
+    assert settings.llm_allowed_hosts == ("openrouter.ai", "evil.example", "api.deepseek.com")
     assert settings.llm_api_http_referer == "https://console.example.test"
     assert settings.llm_api_title == "Edu News Pipeline"
     assert not hasattr(settings, "llm_summary_model")
@@ -180,6 +183,7 @@ def test_settings_ignores_removed_llm_variable_names(
 
     assert settings.llm_api_base_url == "https://openrouter.ai/api/v1"
     assert settings.llm_api_key is None
+    assert settings.llm_allowed_hosts == config.DEFAULT_LLM_ALLOWED_HOSTS
     assert not hasattr(settings, "llm_summary_model")
     assert not hasattr(settings, "llm_scoring_model")
     assert not hasattr(settings, "llm_reasoning_enabled")

@@ -14,6 +14,7 @@ class ModelTestRequest(BaseModel):
     step: str
     model: str = Field(min_length=1, max_length=300)
     reasoning: bool
+    endpoint: Optional[str] = None
 
 
 class CrawlAccountCreateRequest(BaseModel):

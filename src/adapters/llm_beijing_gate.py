@@ -6,12 +6,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional
 
-from src.adapters.llm_chat import (
-    apply_reasoning_config,
-    build_headers,
-    extract_message_text,
-    post_chat_completion,
-)
+from src.adapters.llm_chat import extract_message_text, post_chat_completion
+from src.adapters.llm_endpoint import ResolvedLLMEndpoint, resolve_llm_endpoint
 from src.business_config import get_llm_step_config
 from src.config import get_settings
 from src.domain import BeijingGateCandidate
@@ -120,30 +116,22 @@ def _resolve_timeout(settings) -> int:
 
 def _post_chat_completion(
     payload: Mapping[str, Any],
+    *,
+    endpoint: ResolvedLLMEndpoint,
     retries: int,
     timeout: int,
-    *,
     deadline: Optional[float] = None,
 ) -> BeijingGateResponse:
     settings = get_settings()
-    api_key = settings.llm_api_key
-    if not api_key:
-        raise RuntimeError("Missing LLM API key (set LLM_API_KEY)")
-    url = f"{settings.llm_api_base_url.rstrip('/')}/chat/completions"
-    headers = build_headers(
-        api_key=api_key,
-        referer=settings.llm_api_http_referer,
-        title=settings.llm_api_title,
-    )
     def validate_response(data: dict[str, Any]) -> None:
         choice = data.get("choices", [{}])[0]
         if not extract_message_text(choice):
             raise RuntimeError("Empty response from Beijing gate model")
 
     data = post_chat_completion(
-        url,
+        endpoint.chat_url,
         payload=payload,
-        headers=headers,
+        headers=endpoint.headers(),
         timeout=timeout,
         budget=settings.llm_beijing_gate_budget,
         retries=retries,
@@ -152,6 +140,7 @@ def _post_chat_completion(
         model=str(payload["model"]),
         deadline=deadline,
         response_validator=validate_response,
+        endpoint_label=endpoint.label,
     )
     choice = data.get("choices", [{}])[0]
     message = extract_message_text(choice)
@@ -170,6 +159,7 @@ def call_beijing_gate(candidate: BeijingGateCandidate, *, retries: int = 3) -> B
     step_config = get_llm_step_config("beijing_gate")
     model = step_config.model
     deadline = started_at + settings.llm_beijing_gate_budget
+    endpoint = resolve_llm_endpoint("beijing_gate")
     prompt = build_prompt(candidate)
     payload: dict[str, Any] = {
         "model": model,
@@ -177,15 +167,16 @@ def call_beijing_gate(candidate: BeijingGateCandidate, *, retries: int = 3) -> B
         "temperature": 0,
         "response_format": BEIJING_GATE_RESPONSE_FORMAT,
     }
-    apply_reasoning_config(
+    endpoint.finalize_payload(
         payload,
         settings=settings,
-        enabled=step_config.reasoning,
+        reasoning_enabled=step_config.reasoning,
     )
     timeout = _resolve_timeout(settings)
     semantic_attempts = max(1, retries)
     response = _post_chat_completion(
         payload,
+        endpoint=endpoint,
         retries=semantic_attempts,
         timeout=timeout,
         deadline=deadline,
@@ -204,6 +195,7 @@ def call_beijing_gate(candidate: BeijingGateCandidate, *, retries: int = 3) -> B
         if attempt < semantic_attempts:
             response = _post_chat_completion(
                 payload,
+                endpoint=endpoint,
                 retries=1,
                 timeout=timeout,
                 deadline=deadline,

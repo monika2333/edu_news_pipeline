@@ -58,6 +58,23 @@ def _rows(model: str = "model-a") -> list[dict[str, Any]]:
             },
             "version": 1,
         },
+        {
+            "section": "llm_endpoints",
+            "value": {
+                "default": "openrouter",
+                "items": [
+                    {
+                        "key": "openrouter",
+                        "label": "OpenRouter",
+                        "base_url": "https://openrouter.ai/api/v1",
+                        "api_key_env": "LLM_API_KEY",
+                        "api_style": "openrouter",
+                        "temperature_override": None,
+                    }
+                ],
+            },
+            "version": 1,
+        },
         {"section": "crawl_sources", "value": ["toutiao"], "version": 2},
     ]
 
@@ -144,6 +161,7 @@ def test_f1_f2_f5_summary_worker_uses_one_run_snapshot_without_leaking(
         database_changed.set()
 
     updater = threading.Thread(target=change_database_during_worker)
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
     monkeypatch.setattr(runner, "warn_legacy_config", lambda: [])
     monkeypatch.setattr(
         runner,
@@ -200,9 +218,20 @@ def test_m9_m18_source_override_is_used_and_written_to_snapshot(monkeypatch) -> 
     assert snapshot["llm_models"]["summary"] == {
         "model": "model-a",
         "reasoning": False,
+        "endpoint": "openrouter",
+    }
+    assert snapshot["llm_endpoints"] == {
+        "openrouter": {
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_style": "openrouter",
+        }
     }
     assert snapshot["crawl_sources"] == ["tencent", "toutiao"]
-    assert snapshot["versions"] == {"llm_models": 1, "crawl_sources": 2}
+    assert snapshot["versions"] == {
+        "llm_endpoints": 1,
+        "llm_models": 1,
+        "crawl_sources": 2,
+    }
 
 
 def test_m20_source_failures_are_preserved_in_run_artifacts(monkeypatch) -> None:

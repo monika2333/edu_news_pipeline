@@ -5,12 +5,8 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from src.adapters.llm_chat import (
-    apply_reasoning_config,
-    build_headers,
-    extract_message_text,
-    post_chat_completion,
-)
+from src.adapters.llm_chat import extract_message_text, post_chat_completion
+from src.adapters.llm_endpoint import resolve_llm_endpoint
 from src.adapters.llm_scoring import parse_score
 from src.business_config import get_llm_step_config
 from src.config import get_settings
@@ -141,24 +137,16 @@ def call_external_filter_model(
     step_config = get_llm_step_config("external_filter")
     model = step_config.model
     deadline = started_at + settings.llm_external_filter_budget
-    api_key = settings.llm_api_key
-    if not api_key:
-        raise RuntimeError("Missing LLM API key (set LLM_API_KEY)")
-    url = f"{settings.llm_api_base_url.rstrip('/')}/chat/completions"
+    endpoint = resolve_llm_endpoint("external_filter")
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": build_prompt(candidate, category=category)}],
         "temperature": 0.0,
     }
-    apply_reasoning_config(
+    endpoint.finalize_payload(
         payload,
         settings=settings,
-        enabled=step_config.reasoning,
-    )
-    headers = build_headers(
-        api_key=api_key,
-        referer=settings.llm_api_http_referer,
-        title=settings.llm_api_title,
+        reasoning_enabled=step_config.reasoning,
     )
     # Resolve timeout from settings if not explicitly provided
     resolved_timeout = timeout or settings.llm_external_filter_timeout
@@ -169,9 +157,9 @@ def call_external_filter_model(
             raise RuntimeError("Empty response from external filter model")
 
     data = post_chat_completion(
-        url,
+        endpoint.chat_url,
         payload=payload,
-        headers=headers,
+        headers=endpoint.headers(),
         timeout=resolved_timeout,
         budget=settings.llm_external_filter_budget,
         retries=retries,
@@ -181,6 +169,7 @@ def call_external_filter_model(
         deadline=deadline,
         advance_backoff_on_exception=False,
         response_validator=validate_response,
+        endpoint_label=endpoint.label,
     )
     choice = data.get("choices", [{}])[0]
     return extract_message_text(choice)

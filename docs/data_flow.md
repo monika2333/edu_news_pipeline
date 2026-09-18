@@ -107,6 +107,13 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 `model` 为 `null` 时只回退到该分区的 `default`，reasoning 则始终使用该步骤的
 明确布尔值，不再形成模型跨步骤回退或 reasoning 共用关系。
 
+每个 LLM 步骤还带一个 `endpoint` 字段（`null` 表示跟随默认接入点），指向
+`app_settings.llm_endpoints` 分区中的接入点：接入点保存服务地址 `base_url`、Key
+所在的**环境变量名** `api_key_env`（Key 本身不进数据库）和 `api_style`
+（`openrouter` / `thinking`，决定 reasoning 请求体写法与归属 header）。读取兼容
+历史数据：`endpoint` 字段缺失按 `null` 处理；但 `endpoint` 非 `null` 时该步骤的
+`model` 必须显式指定——模型名与服务商绑定，不允许换接入点后继承默认模型。
+
 `llm_source` 表示模型识别出的发布/署名媒体名称。来源响应完成既有格式清洗后，只有长度不超过 64 个字符的结果才会进入来源名称归一化；归一化依次剥离一次渠道后缀、再按整串全等规则替换别名，规则来自 `config/source_aliases.json`，处理后的值才写入数据库。超过 64 个字符的内容视为模型未按格式返回，必须整体丢弃并写入 `NULL`，不得截断保存。来源为空时，导出与人工复核界面回退使用抓取来源。
 
 > ⚠️ 新增富化步骤时，应当沿用这个模式：**独立的状态字段 + 独立的失败计数**，不要复用已有步骤的状态字段。
@@ -288,11 +295,11 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 | 表 | 职责 |
 |---|---|
-| `app_settings` | 分区保存模型和每小时来源配置；版本号用于控制台乐观锁 |
+| `app_settings` | 分区保存接入点（`llm_endpoints`）、模型（`llm_models`）和每小时来源（`crawl_sources`）配置；版本号用于控制台乐观锁。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身 |
 | `crawl_accounts` | 四类账号型来源的账号权威清单；`display_name` 是系统解析的名称，`display_name_synced_at` / `display_name_error` 记录最近成功时间或失败原因；运行时只读取启用行 |
 | `console_users` / `console_user_sessions` | 账号与登录会话 |
 | `review_events` | 审计日志，记录谁在什么时候改了什么 |
-| `pipeline_runs` / `pipeline_run_steps` | 流水线执行记录；`config_snapshot` 保存本轮各步骤解析后的模型与 reasoning、实际来源、启用账号和配置版本 |
+| `pipeline_runs` / `pipeline_run_steps` | 流水线执行记录；`config_snapshot` 保存本轮各步骤解析后的模型、reasoning 与实际使用的接入点、接入点表（key/base_url/api_style，不含任何 Key）、实际来源、启用账号和配置版本 |
 | `score_feedbacks` | 编辑对 AI 打分的反馈（偏高/偏低），按文章当前评分上下文（prompt_key + prompt_version）关联；人工筛选/值班工作区与全库检索卡片（经 `/api/articles/score-feedback`）都写这张表 |
 | `news_title_embeddings` | 仅编码新闻标题的向量，用于人工筛选聚类；不参与报送查重 |
 | `schema_migrations` | dbmate 迁移记录，**不要手工修改** |
@@ -317,5 +324,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | 业务配置一轮内冻结 | 文章各步骤必须使用同一轮启动时的配置 | 中途修改会让同一轮文章无法准确归因 |
 
 `pipeline_runs.config_snapshot` 是配置历史的唯一依据，直接记录整轮实际配置（包括
-各步骤解析后的模型与 reasoning，以及 `--sources` 覆盖）。将
+各步骤解析后的模型与 reasoning、每一步实际使用的接入点 key，以及接入点表
+`llm_endpoints`（仅 key / base_url / api_style），**快照中没有任何 Key 或
+凭据线索**，还有 `--sources` 覆盖）。将
 `news_summaries` 各步骤时间戳对应到当时的流水线轮次，即可还原文章处理时的实际配置。

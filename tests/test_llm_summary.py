@@ -10,6 +10,8 @@ from src.adapters.llm_chat import LLMQuotaError
 from src.adapters.llm_summary import build_summary_payload, summarise
 from src.business_config import LLMStepConfig
 from src.config import get_settings
+pytestmark = pytest.mark.usefixtures("openrouter_endpoint_env")
+
 
 
 @pytest.fixture(autouse=True)
@@ -81,7 +83,7 @@ def test_summarise_raises_quota_error_without_retry(monkeypatch, tmp_path) -> No
             summarise({"title": "测试标题", "content": "正文内容"}, retries=3)
 
     assert post.call_count == 1
-    assert calls[0]["operation"] == "summarize"
+    assert calls[0]["operation"].startswith("summarize")
 
 
 def test_summarise_preserves_complete_raw_response() -> None:

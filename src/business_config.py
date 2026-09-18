@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional, Sequence
+from urllib.parse import urlsplit
 
 
 LLM_STEPS = (
@@ -27,6 +29,21 @@ LLM_STEP_LABELS = {
     "beijing_gate": "京内判定",
     "duplicate_review": "查重复核",
 }
+API_STYLE_OPENROUTER = "openrouter"
+API_STYLE_THINKING = "thinking"
+LLM_API_STYLES = (API_STYLE_OPENROUTER, API_STYLE_THINKING)
+ENDPOINT_KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
+LLM_API_KEY_ENV_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*_API_KEY$")
+ENDPOINT_ITEM_FIELDS = frozenset(
+    {
+        "key",
+        "label",
+        "base_url",
+        "api_key_env",
+        "api_style",
+        "temperature_override",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -66,7 +83,7 @@ SOURCE_ALIASES = {
 ACCOUNT_SOURCES = tuple(
     item.key for item in SOURCE_CATALOG if item.requires_accounts
 )
-SETTING_SECTIONS = ("llm_models", "crawl_sources")
+SETTING_SECTIONS = ("llm_endpoints", "llm_models", "crawl_sources")
 
 
 class BusinessConfigError(RuntimeError):
@@ -87,6 +104,17 @@ class CrawlAccount:
 class LLMStepConfig:
     model: str
     reasoning: bool
+    endpoint: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class LLMEndpointConfig:
+    key: str
+    label: str
+    base_url: str
+    api_key_env: str
+    api_style: str
+    temperature_override: Optional[float]
 
 
 @dataclass(frozen=True)
@@ -95,6 +123,8 @@ class BusinessConfig:
     crawl_sources: tuple[str, ...]
     accounts: Mapping[str, tuple[CrawlAccount, ...]]
     versions: Mapping[str, int]
+    llm_endpoints: Mapping[str, LLMEndpointConfig] = field(default_factory=dict)
+    default_endpoint: str = ""
 
     def model_for(self, step: str) -> str:
         return self.step_config(step).model
@@ -104,6 +134,24 @@ class BusinessConfig:
             return self.llm_steps[step]
         except KeyError as exc:
             raise BusinessConfigError(f"缺少模型配置步骤：{step}") from exc
+
+    def endpoint_by_key(self, key: Optional[str]) -> LLMEndpointConfig:
+        resolved = key or self.default_endpoint
+        if not resolved:
+            raise BusinessConfigError(
+                "未配置默认接入点：数据库缺少 llm_endpoints 分区或其内容为空"
+            )
+        try:
+            return self.llm_endpoints[resolved]
+        except KeyError as exc:
+            raise BusinessConfigError(f"接入点不存在：{resolved}") from exc
+
+    def endpoint_for_step(self, step: str) -> LLMEndpointConfig:
+        return self.endpoint_by_key(self.step_config(step).endpoint)
+
+    def resolved_endpoint_key(self, step: str) -> str:
+        step_config = self.step_config(step)
+        return step_config.endpoint or self.default_endpoint
 
     def with_crawl_sources(self, sources: Sequence[str]) -> "BusinessConfig":
         normalized = normalize_source_list(sources, allow_daily=True)
@@ -115,8 +163,16 @@ class BusinessConfig:
                 step: {
                     "model": config.model,
                     "reasoning": config.reasoning,
+                    "endpoint": self.resolved_endpoint_key(step),
                 }
                 for step, config in self.llm_steps.items()
+            },
+            "llm_endpoints": {
+                item.key: {
+                    "base_url": item.base_url,
+                    "api_style": item.api_style,
+                }
+                for item in self.llm_endpoints.values()
             },
             "crawl_sources": list(self.crawl_sources),
             "crawl_accounts": {
@@ -186,7 +242,7 @@ def validate_llm_models(value: Any) -> dict[str, Any]:
         step_value = steps[step]
         if not isinstance(step_value, Mapping):
             raise ValueError(f"llm_models.steps.{step} 必须是对象")
-        unexpected_step_fields = set(step_value) - {"model", "reasoning"}
+        unexpected_step_fields = set(step_value) - {"model", "reasoning", "endpoint"}
         if unexpected_step_fields:
             fields = ", ".join(sorted(unexpected_step_fields))
             raise ValueError(f"llm_models.steps.{step} 含未知字段：{fields}")
@@ -204,11 +260,127 @@ def validate_llm_models(value: Any) -> dict[str, Any]:
         reasoning = step_value["reasoning"]
         if not isinstance(reasoning, bool):
             raise ValueError(f"llm_models.steps.{step}.reasoning 必须是布尔值")
+        raw_endpoint = step_value.get("endpoint")
+        if raw_endpoint is None:
+            endpoint: Optional[str] = None
+        elif isinstance(raw_endpoint, str) and raw_endpoint.strip():
+            endpoint = raw_endpoint.strip()
+        else:
+            raise ValueError(f"llm_models.steps.{step}.endpoint 必须是接入点 key 或 null")
+        if endpoint is not None and normalized_model is None:
+            raise ValueError(
+                f"llm_models.steps.{step} 指定了 endpoint 时 model 不能为空："
+                "模型名与接入点服务商绑定，不能继承默认模型"
+            )
         normalized_steps[step] = {
             "model": normalized_model,
             "reasoning": reasoning,
+            "endpoint": endpoint,
         }
     return {"default": default.strip(), "steps": normalized_steps}
+
+
+def validate_endpoint_base_url(value: Any, *, allowed_hosts: Sequence[str]) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("base_url 必须是非空字符串")
+    normalized = value.strip().rstrip("/")
+    if not normalized:
+        raise ValueError("base_url 必须是非空字符串")
+    parts = urlsplit(normalized)
+    if parts.scheme != "https":
+        raise ValueError("base_url 必须使用 https")
+    if parts.query or parts.fragment:
+        raise ValueError("base_url 不能携带 query 或 fragment")
+    host = (parts.hostname or "").lower()
+    if not host:
+        raise ValueError("base_url 缺少主机名")
+    try:
+        port = parts.port
+    except ValueError as exc:
+        raise ValueError("base_url 端口无效") from exc
+    if port is not None and port != 443:
+        raise ValueError("base_url 只允许省略端口或使用 443 端口")
+    allowed = {item.strip().lower() for item in allowed_hosts if item and item.strip()}
+    if host not in allowed:
+        raise ValueError(
+            f"base_url 主机 {host} 不在 LLM_ALLOWED_HOSTS 白名单内，"
+            "如需新增服务商请先在 .env 的 LLM_ALLOWED_HOSTS 中加入其域名"
+        )
+    return normalized
+
+
+def validate_llm_endpoints(value: Any) -> dict[str, Any]:
+    from src.config import get_settings
+
+    if not isinstance(value, Mapping):
+        raise ValueError("llm_endpoints 必须是对象")
+    unexpected = set(value) - {"default", "items"}
+    if unexpected:
+        raise ValueError(f"llm_endpoints 含未知字段：{', '.join(sorted(unexpected))}")
+    items = value.get("items")
+    if not isinstance(items, list):
+        raise ValueError("llm_endpoints.items 必须是数组")
+    if not 1 <= len(items) <= 10:
+        raise ValueError("llm_endpoints.items 数量必须在 1 到 10 之间")
+    allowed_hosts = get_settings().llm_allowed_hosts
+    normalized_items: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for index, item in enumerate(items):
+        prefix = f"llm_endpoints.items[{index}]"
+        if not isinstance(item, Mapping):
+            raise ValueError(f"{prefix} 必须是对象")
+        unexpected_fields = set(item) - ENDPOINT_ITEM_FIELDS
+        if unexpected_fields:
+            fields = ", ".join(sorted(unexpected_fields))
+            raise ValueError(f"{prefix} 含未知字段：{fields}")
+        key = item.get("key")
+        if not isinstance(key, str) or not ENDPOINT_KEY_PATTERN.fullmatch(key):
+            raise ValueError(
+                f"{prefix}.key 只能是小写字母开头的 1-32 位小写字母、数字、连字符或下划线"
+            )
+        if key in seen_keys:
+            raise ValueError(f"{prefix} key 重复：{key}")
+        seen_keys.add(key)
+        label = item.get("label")
+        if not isinstance(label, str) or not 1 <= len(label.strip()) <= 40:
+            raise ValueError(f"{prefix}.label 必须是 1-40 字符")
+        base_url = validate_endpoint_base_url(
+            item.get("base_url"),
+            allowed_hosts=allowed_hosts,
+        )
+        api_key_env = item.get("api_key_env")
+        if not isinstance(api_key_env, str) or not LLM_API_KEY_ENV_PATTERN.fullmatch(
+            api_key_env
+        ):
+            raise ValueError(
+                f"{prefix}.api_key_env 必须是以 _API_KEY 结尾的环境变量名，"
+                "防止误指向其他敏感变量"
+            )
+        api_style = item.get("api_style")
+        if api_style not in LLM_API_STYLES:
+            raise ValueError(f"{prefix}.api_style 必须是 openrouter 或 thinking")
+        temperature = item.get("temperature_override")
+        if temperature is not None:
+            if isinstance(temperature, bool) or not isinstance(
+                temperature, (int, float)
+            ):
+                raise ValueError(f"{prefix}.temperature_override 必须是 null 或 0-2 的数值")
+            if not 0 <= float(temperature) <= 2:
+                raise ValueError(f"{prefix}.temperature_override 取值必须在 0 到 2 之间")
+        normalized_items.append(
+            {
+                "key": key,
+                "label": label.strip(),
+                "base_url": base_url,
+                "api_key_env": api_key_env,
+                "api_style": api_style,
+                "temperature_override": temperature,
+            }
+        )
+    default = value.get("default")
+    if not isinstance(default, str) or default not in seen_keys:
+        raise ValueError("llm_endpoints.default 必须指向 items 中已存在的 key")
+    return {"default": default, "items": normalized_items}
 
 
 def validate_crawl_sources(value: Any, *, allow_daily: bool = False) -> list[str]:
@@ -226,6 +398,7 @@ def validate_crawl_sources(value: Any, *, allow_daily: bool = False) -> list[str
 
 
 SECTION_VALIDATORS = {
+    "llm_endpoints": validate_llm_endpoints,
     "llm_models": validate_llm_models,
     "crawl_sources": validate_crawl_sources,
 }
@@ -245,9 +418,28 @@ def resolve_llm_steps(value: Mapping[str, Any]) -> dict[str, LLMStepConfig]:
         step: LLMStepConfig(
             model=normalized["steps"][step]["model"] or default,
             reasoning=normalized["steps"][step]["reasoning"],
+            endpoint=normalized["steps"][step]["endpoint"],
         )
         for step in LLM_STEPS
     }
+
+
+def resolve_llm_endpoints(
+    value: Mapping[str, Any],
+) -> tuple[dict[str, LLMEndpointConfig], str]:
+    normalized = validate_llm_endpoints(value)
+    items = {
+        item["key"]: LLMEndpointConfig(
+            key=item["key"],
+            label=item["label"],
+            base_url=item["base_url"],
+            api_key_env=item["api_key_env"],
+            api_style=item["api_style"],
+            temperature_override=item["temperature_override"],
+        )
+        for item in normalized["items"]
+    }
+    return items, normalized["default"]
 
 
 def resolve_models(value: Mapping[str, Any]) -> dict[str, str]:
@@ -269,9 +461,20 @@ def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
         raise BusinessConfigError(f"数据库缺少业务配置分区：{', '.join(missing)}")
     try:
         llm_value = validate_llm_models(indexed["llm_models"]["value"])
+        endpoints_value = validate_llm_endpoints(indexed["llm_endpoints"]["value"])
         sources = validate_crawl_sources(indexed["crawl_sources"]["value"])
     except ValueError as exc:
         raise BusinessConfigError(f"数据库业务配置无效：{exc}") from exc
+    llm_endpoints, default_endpoint = resolve_llm_endpoints(
+        indexed["llm_endpoints"]["value"]
+    )
+    endpoint_keys = set(llm_endpoints)
+    for step in LLM_STEPS:
+        endpoint_ref = llm_value["steps"][step]["endpoint"]
+        if endpoint_ref is not None and endpoint_ref not in endpoint_keys:
+            raise BusinessConfigError(
+                f"数据库业务配置无效：{LLM_STEP_LABELS[step]}引用了不存在的接入点：{endpoint_ref}"
+            )
 
     account_rows = adapter.app_config.fetch_enabled_accounts()
     accounts: dict[str, list[CrawlAccount]] = {
@@ -299,6 +502,8 @@ def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
             section: int(indexed[section]["version"])
             for section in SETTING_SECTIONS
         },
+        llm_endpoints=llm_endpoints,
+        default_endpoint=default_endpoint,
     )
 
 
@@ -326,6 +531,7 @@ def business_config_context(config: BusinessConfig) -> Iterator[BusinessConfig]:
 
 LEGACY_ENV_KEYS = (
     "CRAWL_SOURCES",
+    "LLM_API_BASE_URL",
     "LLM_MODEL",
     "LLM_SUMMARY_MODEL",
     "LLM_SOURCE_MODEL",
@@ -372,12 +578,19 @@ def warn_legacy_config(*, root: Optional[Path] = None) -> list[str]:
 
 __all__ = [
     "ACCOUNT_SOURCES",
+    "API_STYLE_OPENROUTER",
+    "API_STYLE_THINKING",
     "BusinessConfig",
     "BusinessConfigError",
     "CrawlAccount",
+    "ENDPOINT_KEY_PATTERN",
+    "ENDPOINT_ITEM_FIELDS",
     "LEGACY_ACCOUNT_FILES",
     "LEGACY_ENV_KEYS",
     "LLMStepConfig",
+    "LLMEndpointConfig",
+    "LLM_API_KEY_ENV_PATTERN",
+    "LLM_API_STYLES",
     "LLM_STEPS",
     "LLM_STEP_LABELS",
     "SECTION_VALIDATORS",
@@ -392,9 +605,12 @@ __all__ = [
     "load_business_config",
     "normalize_source_key",
     "normalize_source_list",
+    "resolve_llm_endpoints",
     "resolve_models",
     "resolve_llm_steps",
     "validate_crawl_sources",
+    "validate_endpoint_base_url",
+    "validate_llm_endpoints",
     "validate_llm_models",
     "validate_section",
     "warn_legacy_config",

@@ -14,13 +14,14 @@ from src.adapters.http_beijinghao import parse_column_input
 from src.adapters.http_btime import parse_uid_input
 from src.adapters.http_tencent import parse_author_input as parse_tencent_author
 from src.adapters.http_toutiao import parse_author_input as parse_toutiao_author
-from src.adapters.llm_chat import (
-    apply_reasoning_config,
-    build_headers,
-    post_chat_completion,
+from src.adapters.llm_chat import post_chat_completion
+from src.adapters.llm_endpoint import (
+    LLMEndpointKeyMissingError,
+    resolve_endpoint,
 )
 from src.business_config import (
     ACCOUNT_SOURCES,
+    LLMEndpointConfig,
     LLM_STEPS,
     LLM_STEP_LABELS,
     SOURCE_BY_KEY,
@@ -28,7 +29,10 @@ from src.business_config import (
     normalize_source_key,
     normalize_source_list,
     resolve_llm_steps,
+    resolve_llm_endpoints,
     validate_crawl_sources,
+    validate_llm_endpoints,
+    validate_llm_models,
     validate_section,
 )
 from src.config import BGE_EMBEDDING_MODEL, get_settings, load_environment
@@ -49,6 +53,33 @@ def _modifier(row: Mapping[str, Any], prefix: str) -> dict[str, Any]:
     return {
         "user_id": str(row.get(f"{prefix}_by_user_id") or "") or None,
         "display_name": row.get(f"{prefix}_by_display_name"),
+    }
+
+
+def _endpoints_payload(settings: Any, sections: Mapping[str, Any]) -> dict[str, Any]:
+    row = sections.get("llm_endpoints")
+    if row is None:
+        return {
+            "default": None,
+            "allowed_hosts": list(settings.llm_allowed_hosts),
+            "items": [],
+        }
+    normalized = validate_llm_endpoints(row["value"])
+    return {
+        "default": normalized["default"],
+        "allowed_hosts": list(settings.llm_allowed_hosts),
+        "items": [
+            {
+                "key": item["key"],
+                "label": item["label"],
+                "base_url": item["base_url"],
+                "api_key_env": item["api_key_env"],
+                "api_style": item["api_style"],
+                "temperature_override": item["temperature_override"],
+                "api_key_env_configured": bool(os.getenv(item["api_key_env"])),
+            }
+            for item in normalized["items"]
+        ],
     }
 
 
@@ -80,23 +111,42 @@ def get_settings_payload() -> dict[str, Any]:
             {"key": step, "display_name": LLM_STEP_LABELS[step]}
             for step in LLM_STEPS
         ],
+        "endpoints": _endpoints_payload(settings, sections),
         "environment": {
             "llm_api_key_configured": bool(settings.llm_api_key),
-            "llm_api_base_url": settings.llm_api_base_url,
             "embedding_model": BGE_EMBEDDING_MODEL,
         },
     }
 
 
-def test_llm_model(step: str, model: str, reasoning: bool) -> dict[str, Any]:
+def _endpoint_definition(endpoint_key: Optional[str]) -> LLMEndpointConfig:
+    row = get_adapter().app_config.fetch_setting("llm_endpoints")
+    if row is None:
+        raise ValueError("接入点配置未初始化：数据库缺少 llm_endpoints 分区")
+    items, default_key = resolve_llm_endpoints(row["value"])
+    resolved = endpoint_key or default_key
+    definition = items.get(resolved)
+    if definition is None:
+        raise ValueError(f"接入点不存在：{resolved}")
+    return definition
+
+
+def test_llm_model(
+    step: str,
+    model: str,
+    reasoning: bool,
+    endpoint: Optional[str] = None,
+) -> dict[str, Any]:
     if step not in LLM_STEPS:
         raise ValueError(f"未知模型步骤：{step}")
     normalized_model = model.strip()
     if not normalized_model:
         raise ValueError("模型名不能为空")
     settings = get_settings()
-    if not settings.llm_api_key:
-        return {"success": False, "elapsed_ms": 0, "error": "LLM_API_KEY 未配置"}
+    try:
+        resolved = resolve_endpoint(_endpoint_definition(endpoint))
+    except LLMEndpointKeyMissingError as exc:
+        return {"success": False, "elapsed_ms": 0, "error": str(exc)}
     reasoning_limit = settings.llm_reasoning_max_tokens or 0
     max_tokens = max(2048, reasoning_limit * 2) if reasoning else 8
     request_timeout = (
@@ -111,21 +161,17 @@ def test_llm_model(step: str, model: str, reasoning: bool) -> dict[str, Any]:
         "temperature": 0,
         "max_tokens": max_tokens,
     }
-    apply_reasoning_config(
+    resolved.finalize_payload(
         payload,
         settings=settings,
-        enabled=reasoning,
+        reasoning_enabled=reasoning,
     )
     started = time.monotonic()
     try:
         post_chat_completion(
-            f"{settings.llm_api_base_url.rstrip('/')}/chat/completions",
+            resolved.chat_url,
             payload=payload,
-            headers=build_headers(
-                api_key=settings.llm_api_key,
-                referer=settings.llm_api_http_referer,
-                title=settings.llm_api_title,
-            ),
+            headers=resolved.headers(),
             timeout=request_timeout,
             budget=request_budget,
             retries=1,
@@ -133,6 +179,7 @@ def test_llm_model(step: str, model: str, reasoning: bool) -> dict[str, Any]:
             operation=f"settings_model_test:{step}",
             model=normalized_model,
             retry_non_retryable_statuses=False,
+            endpoint_label=resolved.label,
         )
     except Exception as exc:
         return {
@@ -145,6 +192,13 @@ def test_llm_model(step: str, model: str, reasoning: bool) -> dict[str, Any]:
         "elapsed_ms": round((time.monotonic() - started) * 1000),
         "error": None,
     }
+
+
+def _require_llm_endpoints(adapter: Any) -> tuple[dict[str, LLMEndpointConfig], str]:
+    row = adapter.app_config.fetch_setting("llm_endpoints")
+    if row is None:
+        raise ValueError("接入点配置未初始化：数据库缺少 llm_endpoints 分区")
+    return resolve_llm_endpoints(row["value"])
 
 
 def update_setting(
@@ -161,28 +215,77 @@ def update_setting(
     if current is None:
         raise KeyError(section)
     if section == "llm_models":
-        before_steps = resolve_llm_steps(current["value"])
+        endpoint_items, endpoint_default = _require_llm_endpoints(adapter)
         after_steps = resolve_llm_steps(normalized)
-        tested_combinations: set[tuple[str, bool]] = set()
+        for step in LLM_STEPS:
+            endpoint_ref = after_steps[step].endpoint
+            if endpoint_ref is not None and endpoint_ref not in endpoint_items:
+                raise ValueError(
+                    f"{LLM_STEP_LABELS[step]}引用了不存在的接入点：{endpoint_ref}"
+                )
+        before_steps = resolve_llm_steps(current["value"])
+        tested_combinations: set[tuple[str, str, bool]] = set()
         for step in LLM_STEPS:
             if before_steps[step] == after_steps[step]:
                 continue
             config = after_steps[step]
-            combination = (config.model, config.reasoning)
+            resolved_endpoint = config.endpoint or endpoint_default
+            combination = (resolved_endpoint, config.model, config.reasoning)
             if combination in tested_combinations:
                 continue
             tested_combinations.add(combination)
-            outcome = test_llm_model(step, config.model, config.reasoning)
+            outcome = test_llm_model(
+                step,
+                config.model,
+                config.reasoning,
+                endpoint=resolved_endpoint,
+            )
             if not outcome["success"]:
                 raise ValueError(
                     f"{LLM_STEP_LABELS[step]}模型测试失败：{outcome['error']}"
                 )
+    elif section == "llm_endpoints":
+        before_endpoints = validate_llm_endpoints(current["value"])
+        removed_keys = {
+            item["key"] for item in before_endpoints["items"]
+        } - {item["key"] for item in normalized["items"]}
+        if removed_keys:
+            reasons = _endpoint_deletion_conflicts(removed_keys, before_endpoints, adapter)
+            if reasons:
+                raise ValueError("拒绝删除接入点：" + "；".join(reasons))
     return adapter.app_config.update_app_setting_as_user(
         section=section,
         value=normalized,
         expected_version=expected_version,
         actor_user_id=actor_user_id,
     )
+
+
+def _endpoint_deletion_conflicts(
+    removed_keys: set[str],
+    before_endpoints: Mapping[str, Any],
+    adapter: Any,
+) -> list[str]:
+    reasons: list[str] = []
+    if before_endpoints["default"] in removed_keys:
+        reasons.append(
+            f"「{before_endpoints['default']}」是当前默认接入点，"
+            "请先把 default 切换到其他接入点"
+        )
+    llm_models_row = adapter.app_config.fetch_setting("llm_models")
+    if llm_models_row is not None:
+        steps = validate_llm_models(llm_models_row["value"])["steps"]
+        for removed_key in sorted(removed_keys):
+            referencing = [
+                LLM_STEP_LABELS[step]
+                for step in LLM_STEPS
+                if steps[step]["endpoint"] == removed_key
+            ]
+            if referencing:
+                reasons.append(
+                    f"「{removed_key}」正被以下步骤引用：{'、'.join(referencing)}"
+                )
+    return reasons
 
 
 def _account_parser(source: str) -> Callable[[str], dict[str, str]]:

@@ -9,6 +9,8 @@ from src.adapters import external_filter_model as model
 from src.business_config import LLMStepConfig
 from src.config import get_settings
 from src.domain.external_filter import ExternalFilterCandidate
+pytestmark = pytest.mark.usefixtures("openrouter_endpoint_env")
+
 
 
 @pytest.fixture(autouse=True)

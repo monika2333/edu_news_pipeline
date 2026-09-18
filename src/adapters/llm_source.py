@@ -3,11 +3,8 @@
 import time
 from typing import Any, Dict, Optional
 
-from src.adapters.llm_chat import (
-    apply_reasoning_config,
-    build_headers,
-    post_chat_completion,
-)
+from src.adapters.llm_chat import post_chat_completion
+from src.adapters.llm_endpoint import resolve_llm_endpoint
 from src.business_config import get_llm_step_config
 from src.config import get_settings
 
@@ -65,9 +62,7 @@ def detect_source(
     step_config = get_llm_step_config("source")
     model = step_config.model
     deadline = started_at + settings.llm_source_budget
-    api_key = settings.llm_api_key
-    if not api_key:
-        raise RuntimeError("Missing LLM API key (set LLM_API_KEY)")
+    endpoint = resolve_llm_endpoint("source")
 
     payload = build_source_payload(article)
     payload.update(
@@ -76,17 +71,10 @@ def detect_source(
             "temperature": 0,
         }
     )
-    apply_reasoning_config(
+    endpoint.finalize_payload(
         payload,
         settings=settings,
-        enabled=step_config.reasoning,
-    )
-
-    url = f"{settings.llm_api_base_url.rstrip('/')}/chat/completions"
-    headers = build_headers(
-        api_key=api_key,
-        referer=settings.llm_api_http_referer,
-        title=settings.llm_api_title,
+        reasoning_enabled=step_config.reasoning,
     )
 
     resolved_timeout = timeout or settings.llm_summary_timeout
@@ -102,9 +90,9 @@ def detect_source(
         ).strip()
 
     data = post_chat_completion(
-        url,
+        endpoint.chat_url,
         payload=payload,
-        headers=headers,
+        headers=endpoint.headers(),
         timeout=resolved_timeout,
         budget=settings.llm_source_budget,
         retries=retries,
@@ -113,6 +101,7 @@ def detect_source(
         model=model,
         deadline=deadline,
         attempt_callback=record_attempt,
+        endpoint_label=endpoint.label,
     )
     raw_text = extract_raw_text(data)
     llm_source = _normalise_response(raw_text)

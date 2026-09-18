@@ -6,6 +6,8 @@ from src.adapters import llm_duplicate_review as duplicate_review
 from src.business_config import LLMStepConfig
 from src.config import get_settings
 
+pytestmark = pytest.mark.usefixtures("openrouter_endpoint_env")
+
 
 @pytest.fixture(autouse=True)
 def _model_config(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -75,7 +77,14 @@ def test_m4_duplicate_review_uses_independent_duplicate_model(
         captured["step"] = step
         return LLMStepConfig("duplicate-review-model", True)
 
-    def fake_post(payload, *, retries: int, timeout: int, deadline: float) -> str:
+    def fake_post(
+        payload,
+        *,
+        endpoint,
+        retries: int,
+        timeout: int,
+        deadline: float,
+    ) -> str:
         captured["payload"] = payload
         captured["retries"] = retries
         captured["timeout"] = timeout

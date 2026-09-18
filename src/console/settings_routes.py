@@ -67,6 +67,7 @@ def test_model(payload: ModelTestRequest) -> dict[str, Any]:
             payload.step,
             payload.model,
             payload.reasoning,
+            endpoint=payload.endpoint,
         )
     except ValueError as exc:
         _raise_service_error(exc)

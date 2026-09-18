@@ -76,6 +76,14 @@ def test_is_llm_quota_response_detects_billing_and_balance_errors():
     assert is_llm_quota_response(403, "账户余额不足，请充值")
 
 
+def test_is_llm_quota_response_covers_deepseek_and_glm_official_shapes():
+    # DeepSeek 余额不足返回 402
+    assert is_llm_quota_response(402, "Insufficient Balance")
+    # GLM 返回 429 + 中文余额文案
+    assert is_llm_quota_response(429, "余额不足或无可用资源包，请充值后重试")
+    assert is_llm_quota_response(429, "该模型余额不足或无可用资源包")
+
+
 def test_is_llm_quota_response_ignores_plain_rate_limit():
     assert not is_llm_quota_response(429, "rate limit exceeded, retry later")
 
@@ -130,9 +138,10 @@ def test_raise_for_llm_quota_error_allows_normal_429():
 class _StreamingResponse:
     encoding = "utf-8"
 
-    def __init__(self, status_code: int, chunks) -> None:
+    def __init__(self, status_code: int, chunks, headers: dict | None = None) -> None:
         self.status_code = status_code
         self.raw = _RawStream(chunks)
+        self.headers = headers or {}
         self.closed = False
 
     def close(self) -> None:
@@ -224,6 +233,7 @@ def test_post_chat_completion_stops_keepalive_stream_at_wall_clock_budget(
                 retryable_statuses={429, 500},
                 operation="test_keepalive",
                 model="model-a",
+                allowed_hosts={"127.0.0.1"},
             )
         elapsed = time.monotonic() - started_at
 
@@ -232,6 +242,9 @@ def test_post_chat_completion_stops_keepalive_stream_at_wall_clock_budget(
 
 def test_post_chat_completion_decodes_gzip_response_body() -> None:
     with _local_llm_server() as base_url:
+        from urllib.parse import urlsplit
+
+        host = urlsplit(base_url).hostname
         result = post_chat_completion(
             f"{base_url}/gzip",
             payload={"model": "model-a", "messages": []},
@@ -242,9 +255,65 @@ def test_post_chat_completion_decodes_gzip_response_body() -> None:
             retryable_statuses=set(),
             operation="test_gzip",
             model="model-a",
+            allowed_hosts={host},
         )
 
     assert result == _GZIP_RESPONSE
+
+
+def test_post_chat_completion_blocks_hosts_outside_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_post(*args, **kwargs):
+        raise AssertionError("请求不应发出")
+
+    monkeypatch.setattr(llm_chat.requests, "post", fail_post)
+
+    with pytest.raises(llm_chat.LLMEndpointBlockedError, match="evil.example.test"):
+        post_chat_completion(
+            "https://evil.example.test/chat/completions",
+            payload={"model": "model-a"},
+            headers={},
+            timeout=1,
+            budget=1,
+            retries=3,
+            retryable_statuses={500},
+            operation="test_blocked_host",
+            model="model-a",
+        )
+
+
+def test_post_chat_completion_never_follows_redirects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict] = []
+
+    def fake_post(*args, **kwargs):
+        calls.append(kwargs)
+        return _StreamingResponse(
+            302,
+            [b""],
+            headers={"Location": "https://attacker.example.test/steal"},
+        )
+
+    monkeypatch.setattr(llm_chat.requests, "post", fake_post)
+
+    with pytest.raises(RuntimeError, match="接入点返回重定向，按安全策略未跟随"):
+        post_chat_completion(
+            "https://llm.example.test/chat/completions",
+            payload={"model": "model-a", "messages": []},
+            headers={},
+            timeout=1,
+            budget=1,
+            retries=3,
+            retryable_statuses={500},
+            operation="test_redirect",
+            model="model-a",
+            allowed_hosts={"llm.example.test"},
+        )
+
+    assert len(calls) == 1
+    assert calls[0]["allow_redirects"] is False
 
 
 def test_post_chat_completion_stops_retries_when_backoff_uses_budget(
@@ -271,6 +340,7 @@ def test_post_chat_completion_stops_retries_when_backoff_uses_budget(
             operation="test_retries",
             model="model-a",
             backoff_initial=0.03,
+            allowed_hosts={"llm.example.test"},
         )
     elapsed = time.monotonic() - started_at
 
@@ -297,6 +367,7 @@ def test_post_chat_completion_returns_complete_json_object(
         retryable_statuses=set(),
         operation="test_success",
         model="model-a",
+        allowed_hosts={"llm.example.test"},
     )
 
     assert result == expected

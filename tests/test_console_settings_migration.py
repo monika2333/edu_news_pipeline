@@ -36,6 +36,12 @@ ACCOUNT_NAMES_MIGRATION_PATH = (
     / "migrations"
     / "20260913120000_sync_crawl_account_display_names.sql"
 )
+ENDPOINTS_MIGRATION_PATH = (
+    Path(__file__).parents[1]
+    / "database"
+    / "migrations"
+    / "20260918120000_add_llm_endpoints_setting.sql"
+)
 ADMIN_ID = "00000000-0000-0000-0000-000000000201"
 
 
@@ -87,6 +93,12 @@ def _account_names_migration_parts() -> tuple[str, str]:
     return up.split("-- migrate:up", maxsplit=1)[1], down
 
 
+def _endpoints_migration_parts() -> tuple[str, str]:
+    source = ENDPOINTS_MIGRATION_PATH.read_text(encoding="utf-8")
+    up, down = source.split("-- migrate:down", maxsplit=1)
+    return up.split("-- migrate:up", maxsplit=1)[1], down
+
+
 def _create_legacy_schema(connection: psycopg.Connection) -> None:
     connection.execute(
         """
@@ -131,6 +143,19 @@ def _sections() -> dict[str, object]:
                     "duplicate_review",
                 )
             },
+        },
+        "llm_endpoints": {
+            "default": "openrouter",
+            "items": [
+                {
+                    "key": "openrouter",
+                    "label": "OpenRouter",
+                    "base_url": "https://openrouter.ai/api/v1",
+                    "api_key_env": "LLM_API_KEY",
+                    "api_style": "openrouter",
+                    "temperature_override": None,
+                }
+            ],
         },
         "crawl_sources": ["toutiao", "tencent"],
     }
@@ -220,6 +245,39 @@ def test_migration_up_and_down_create_all_configuration_storage() -> None:
 
         assert remaining_tables == []
         assert remaining_snapshot is None
+
+
+def test_llm_endpoints_migration_seeds_openrouter_and_down_removes_it() -> None:
+    base_up, _base_down = _migration_parts()
+    up_sql, down_sql = _endpoints_migration_parts()
+    with _isolated_database() as connection:
+        _create_legacy_schema(connection)
+        connection.execute(base_up)
+        connection.execute(up_sql)
+
+        row = connection.execute(
+            "SELECT value, version, updated_by_user_id FROM app_settings WHERE section = 'llm_endpoints'"
+        ).fetchone()
+        assert row["updated_by_user_id"] is None
+        assert row["version"] == 1
+        value = row["value"]
+        assert value["default"] == "openrouter"
+        assert value["items"] == [
+            {
+                "key": "openrouter",
+                "label": "OpenRouter",
+                "base_url": "https://openrouter.ai/api/v1",
+                "api_key_env": "LLM_API_KEY",
+                "api_style": "openrouter",
+                "temperature_override": None,
+            }
+        ]
+
+        connection.execute(down_sql)
+        remaining = connection.execute(
+            "SELECT 1 FROM app_settings WHERE section = 'llm_endpoints'"
+        ).fetchone()
+        assert remaining is None
 
 
 def test_account_name_columns_migration_up_and_down() -> None:

@@ -12,6 +12,8 @@ if str(REPO_ROOT) not in sys.path:
 from src.adapters import sentiment_classifier
 from src.adapters.sentiment_classifier import _build_prompt, classify_sentiment
 from src.business_config import LLMStepConfig
+pytestmark = pytest.mark.usefixtures("openrouter_endpoint_env")
+
 
 
 @pytest.fixture(autouse=True)

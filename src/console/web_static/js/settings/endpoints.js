@@ -55,16 +55,30 @@ function makeEndpointsDraft() {
     };
 }
 
-// 已保存模型配置里引用指定接入点的步骤中文名（与后端删除校验同源：查已保存值）
+// 引用指定接入点的步骤中文名（去重）。来源有两处，删之前都要看：
+// 已保存的 llm_models（与后端删除校验同源）和当前模型草稿——用户把步骤改指向
+// 某接入点还没保存时，只查已保存值会放行删除，随后保存模型配置才被 422 挡住，
+// 那时已经看不出是这两步操作在互相打架。
 function stepsReferencingEndpoint(key) {
+    const names = [];
+    const seen = new Set();
+    const collect = (steps) => {
+        stepList().forEach(({ key: stepKey, display_name }) => {
+            const step = steps && steps[stepKey];
+            if (step && step.endpoint === key && !seen.has(stepKey)) {
+                seen.add(stepKey);
+                names.push(display_name);
+            }
+        });
+    };
     const modelsSection = settingsSection('llm_models');
-    if (!modelsSection || !modelsSection.value || !modelsSection.value.steps) return [];
-    return stepList()
-        .filter(({ key: stepKey }) => {
-            const step = modelsSection.value.steps[stepKey];
-            return !!step && step.endpoint === key;
-        })
-        .map(({ display_name }) => display_name);
+    if (modelsSection && modelsSection.value) {
+        collect(modelsSection.value.steps);
+    }
+    if (state.modelsDraft) {
+        collect(state.modelsDraft.steps);
+    }
+    return names;
 }
 
 function refreshEndpointsDirtyNote() {
@@ -193,8 +207,10 @@ function buildEndpointEditRow(item, saved, rerender) {
         }
         const referencing = stepsReferencingEndpoint(item.key);
         if (referencing.length) {
+            // 已保存与草稿里的引用共用一句提示：用户要做的是同一件事——
+            // 把步骤切走并保存模型配置，不按来源拆成两套文案
             rowError.textContent = `「${label}」正被以下步骤引用：${referencing.join('、')}，`
-                + '请先把这些步骤切换到其他接入点或跟随默认。';
+                + '请先在步骤表格里把这些步骤切换到其他接入点或跟随默认，并保存模型配置。';
             return;
         }
         endpointsDraft.items = endpointsDraft.items
@@ -427,6 +443,7 @@ function buildEndpointsEditor(saved) {
     });
     reloadBtn.addEventListener('click', async () => {
         reloadBtn.disabled = true;
+        let reloaded = false;
         try {
             await reloadSettingsPayload();
             clearDirty('llm_endpoints');
@@ -434,10 +451,21 @@ function buildEndpointsEditor(saved) {
             refreshEndpointsDirtyNote();
             renderEndpointsBlock();
             showSettingsToast('已载入最新配置');
+            reloaded = true;
         } catch (error) {
+            // 失败分支不重渲染：行内报错就挂在当前编辑器的节点上，
+            // 重渲染会把报错连同节点一起换掉，用户就看不到原因了
             setSettingsStatus(status, `载入失败：${error.message}`, 'error');
         } finally {
             reloadBtn.disabled = false;
+        }
+        // 重渲染必须放在 try/finally 之后：renderModelsTab 会重建整个模型页签，
+        // reloadBtn / status 随之脱离文档；finally 已先在原节点上完成复位，
+        // 之后不再有任何代码引用这些游离节点，对它们缺席的操作全部安全。
+        // 成功分支要重渲染是因为步骤下拉读的是已保存接入点值——payload 重拉后
+        // 不重建步骤表格，下拉就还是旧选项，可能选中已不存在的 key。
+        if (reloaded) {
+            renderModelsTab({ keepDraft: true });
         }
     });
     return wrap;

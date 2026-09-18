@@ -462,13 +462,12 @@ def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
         raise BusinessConfigError(f"数据库缺少业务配置分区：{', '.join(missing)}")
     try:
         llm_value = validate_llm_models(indexed["llm_models"]["value"])
-        endpoints_value = validate_llm_endpoints(indexed["llm_endpoints"]["value"])
+        llm_endpoints, default_endpoint = resolve_llm_endpoints(
+            indexed["llm_endpoints"]["value"]
+        )
         sources = validate_crawl_sources(indexed["crawl_sources"]["value"])
     except ValueError as exc:
         raise BusinessConfigError(f"数据库业务配置无效：{exc}") from exc
-    llm_endpoints, default_endpoint = resolve_llm_endpoints(
-        indexed["llm_endpoints"]["value"]
-    )
     endpoint_keys = set(llm_endpoints)
     for step in LLM_STEPS:
         endpoint_ref = llm_value["steps"][step]["endpoint"]

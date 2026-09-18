@@ -8,6 +8,7 @@ import pytest
 from src.cli import main as cli_main
 from src.cli.main import build_parser
 from src.console import manual_filter_service, settings_service
+from tests.conftest import make_endpoint_config
 
 
 @pytest.mark.parametrize(
@@ -99,6 +100,42 @@ def test_refresh_manual_clusters_rejects_report_type() -> None:
         )
 
 
+def test_summarize_no_longer_accepts_removed_keywords_argument() -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(
+            ["summarize", "--keywords", "config/education_keywords.txt"]
+        )
+
+
+def test_geo_tag_runs_inside_frozen_business_config(monkeypatch) -> None:
+    from src.business_config import get_business_config
+
+    loaded: list[bool] = []
+    captured: dict[str, object] = {}
+
+    def fake_load() -> object:
+        loaded.append(True)
+        return make_endpoint_config(beijing_keywords=("配置京内词",))
+
+    def fake_geo_tag(*, limit, batch_size) -> None:
+        captured["limit"] = limit
+        captured["batch_size"] = batch_size
+        captured["keywords"] = get_business_config().beijing_keywords
+
+    monkeypatch.setattr(cli_main, "warn_legacy_config", lambda: [])
+    monkeypatch.setattr(cli_main, "load_business_config", fake_load)
+    monkeypatch.setattr(cli_main, "geo_tag", fake_geo_tag)
+
+    assert cli_main.main(["geo-tag", "--limit", "5", "--batch-size", "7"]) == 0
+
+    assert loaded == [True]
+    assert captured == {
+        "limit": 5,
+        "batch_size": 7,
+        "keywords": ("配置京内词",),
+    }
+
+
 @pytest.mark.parametrize(
     ("refreshed", "expected_code"),
     [(True, 0), (False, 2)],
@@ -188,15 +225,38 @@ def _import_preview(
     daily_only_sources: list[str] | None = None,
     has_parse_errors: bool = False,
 ) -> dict[str, object]:
+    sections: dict[str, object] = {
+        "llm_models": {"default": "model-a", "steps": {}},
+        "crawl_sources": daily_only_sources or ["toutiao"],
+        "score_keyword_bonuses": [{"keyword": "高考", "bonus": 10}],
+        "education_keywords": ["教育"],
+        "beijing_keywords": ["北京"],
+        "source_aliases": {"suffixes": ["客户端"], "aliases": {}},
+    }
     return {
-        "sections": {
-            "llm_models": {"default": "model-a", "steps": {}},
-            "crawl_sources": daily_only_sources or ["toutiao"],
+        "sections": sections,
+        "sections_status": {
+            section: {"status": "write", "source": f"config/{section}", "item_count": 1}
+            for section in sections
         },
         "account_summary": {},
         "accounts": [],
         "daily_only_sources": daily_only_sources or [],
         "has_parse_errors": has_parse_errors,
+        "wordlist_errors": [],
+    }
+
+
+def _import_report() -> dict[str, object]:
+    return {
+        "written_sections": [
+            "score_keyword_bonuses",
+            "education_keywords",
+            "beijing_keywords",
+            "source_aliases",
+        ],
+        "skipped_sections": ["llm_models", "crawl_sources"],
+        "accounts_written": False,
     }
 
 
@@ -225,7 +285,7 @@ def test_f6_import_settings_apply_uses_service_rejection(
         settings_service,
         "get_adapter",
         lambda: SimpleNamespace(
-            import_app_config=lambda **kwargs: writes.append(kwargs)
+            import_app_config_missing=lambda **kwargs: writes.append(kwargs)
         ),
     )
 
@@ -258,7 +318,9 @@ def test_f6_import_settings_apply_writes_through_service(
         settings_service,
         "get_adapter",
         lambda: SimpleNamespace(
-            import_app_config=lambda **kwargs: writes.append(kwargs)
+            import_app_config_missing=lambda **kwargs: (
+                writes.append(kwargs) or _import_report()
+            )
         ),
     )
 

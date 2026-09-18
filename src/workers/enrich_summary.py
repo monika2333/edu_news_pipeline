@@ -8,8 +8,9 @@ from typing import Any, Literal, Optional
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.llm_source import detect_source
 from src.adapters.sentiment_classifier import classify_sentiment
+from src.business_config import get_business_config
 from src.config import get_settings
-from src.domain import SourceAliasRules, load_source_aliases, normalize_source_name
+from src.domain import SourceAliasRules, normalize_source_name
 from src.workers import (
     ContextPropagatingThreadPoolExecutor,
     log_error,
@@ -64,7 +65,7 @@ def _classify_summary(summary_text: str) -> EnrichmentResult:
 
 def _detect_article_source(
     article: dict[str, Any],
-    source_aliases: Optional[SourceAliasRules] = None,
+    source_aliases: SourceAliasRules,
 ) -> EnrichmentResult:
     started = time.perf_counter()
     content = str(article.get("content_markdown") or "").strip()
@@ -88,8 +89,6 @@ def _detect_article_source(
     raw_source = payload.get("llm_source")
     llm_source = str(raw_source).strip() if raw_source else None
     original_llm_source = llm_source
-    if source_aliases is None:
-        source_aliases = load_source_aliases(get_settings().source_aliases_path)
     llm_source = normalize_source_name(llm_source, source_aliases)
     if llm_source != original_llm_source:
         article_id = str(article.get("article_id") or "<unknown>")
@@ -183,7 +182,7 @@ def _persist_completed(adapter: Any, results: dict[str, ArticleEnrichment]) -> t
 
 def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
     settings = get_settings()
-    source_aliases = load_source_aliases(settings.source_aliases_path)
+    source_aliases = get_business_config().source_aliases
     adapter = get_adapter()
     limit_value = limit if limit and limit > 0 else None
     if settings.process_limit is not None:

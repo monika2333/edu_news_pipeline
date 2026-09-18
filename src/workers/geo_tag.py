@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 from src.adapters.db_postgres_core import get_adapter
-from src.config import get_settings
-from src.domain import is_beijing_related, load_beijing_keywords
+from src.business_config import get_business_config
+from src.domain import is_beijing_related
 from src.workers import log_info, log_summary, worker_session
 
 WORKER = "geo-tag"
@@ -27,13 +27,8 @@ def _build_detection_payload(row: dict) -> List[str]:
 
 
 def run(*, limit: Optional[int] = None, batch_size: int = DEFAULT_BATCH_SIZE) -> None:
-    settings = get_settings()
     adapter = get_adapter()
-    keywords = load_beijing_keywords(settings.beijing_keywords_path)
-
-    if not keywords:
-        log_info(WORKER, "No Beijing keywords configured; skipped.")
-        return
+    keywords = get_business_config().beijing_keywords
 
     processed = 0
     tagged_true = 0

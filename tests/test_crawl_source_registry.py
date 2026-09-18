@@ -116,11 +116,12 @@ def run_adapter(monkeypatch: pytest.MonkeyPatch) -> object:
             "btime": (account,),
             "beijinghao": (account,),
         },
+        education_keywords=(),
     )
     monkeypatch.setattr(
         crawl_sources,
         "get_settings",
-        lambda: SimpleNamespace(process_limit=None, keywords_path=None),
+        lambda: SimpleNamespace(process_limit=None),
     )
     monkeypatch.setattr(crawl_sources, "get_adapter", lambda: adapter)
     monkeypatch.setattr(crawl_sources, "get_business_config", lambda: business_config)
@@ -301,7 +302,7 @@ def test_registry_passes_each_runner_its_current_arguments(
     assert calls == [
         {
             "adapter": run_adapter,
-            "keywords": [],
+            "keywords": (),
             "remaining_limit": 7,
             **expected_kwargs,
         }
@@ -387,7 +388,7 @@ def test_f8_default_sources_execute_in_database_order_without_sorting(
     monkeypatch.setattr(
         crawl_sources,
         "get_business_config",
-        lambda: SimpleNamespace(crawl_sources=source_order, accounts={}),
+        lambda: SimpleNamespace(crawl_sources=source_order, accounts={}, education_keywords=()),
     )
     for source in source_order:
         registration = crawl_sources._SOURCE_REGISTRY[source]

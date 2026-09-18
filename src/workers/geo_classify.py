@@ -9,12 +9,12 @@ from src.adapters.llm_beijing_gate import (
     BeijingGateIndeterminateError,
     call_beijing_gate,
 )
+from src.business_config import get_business_config
 from src.config import get_settings
 from src.domain import (
     BeijingGateCandidate,
     determine_candidate_category,
     is_beijing_related,
-    load_beijing_keywords,
 )
 from src.workers import (
     ContextPropagatingThreadPoolExecutor,
@@ -284,7 +284,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
     batch_size = max(1, settings.external_filter_batch_size)
     max_failures = max(1, settings.beijing_gate_max_retries or 1)
     llm_retries = max(1, settings.beijing_gate_max_retries or 1)
-    beijing_keywords = load_beijing_keywords(settings.beijing_keywords_path)
+    beijing_keywords = get_business_config().beijing_keywords
 
     with worker_session(WORKER, limit=limit_value):
         rows = adapter.news_summaries.fetch_pending_routes(limit_value)

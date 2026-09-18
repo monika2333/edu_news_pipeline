@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
@@ -628,6 +629,117 @@ def _legacy_bool(key: str, *, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _read_wordlist_source(path: Path, *, source_label: str) -> str:
+    if not path.exists():
+        raise ValueError(f"{source_label}：来源文件不存在（生产环境两个 gitignored 文件应当存在，请检查路径配置）")
+    try:
+        return path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(f"{source_label}：文件无法读取（{exc}）") from exc
+
+
+def _parse_bonus_rules_strict(raw_text: str, *, source_label: str) -> list[dict[str, Any]]:
+    """Parse the keyword-bonus dict without silently dropping any entry."""
+
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{source_label}：无法解析为 JSON（{exc}）") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"{source_label}：必须是 JSON 对象（关键词到分值的映射）")
+    items: list[dict[str, Any]] = []
+    for keyword, bonus in data.items():
+        if not keyword.strip():
+            raise ValueError(f"{source_label}：存在空白关键词")
+        if isinstance(bonus, bool) or not isinstance(bonus, int):
+            raise ValueError(
+                f"{source_label}：关键词「{keyword}」的分值必须是整数，当前为 {bonus!r}"
+            )
+        items.append({"keyword": keyword.strip(), "bonus": bonus})
+    return items
+
+
+def _parse_wordlist_strict(raw_text: str, *, source_label: str) -> list[str]:
+    items: list[str] = []
+    for line_number, raw in enumerate(raw_text.splitlines(), start=1):
+        token = raw.strip()
+        if not token or token.startswith("#"):
+            continue
+        items.append(token)
+    return items
+
+
+def _parse_source_aliases_strict(raw_text: str, *, source_label: str) -> dict[str, Any]:
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{source_label}：无法解析为 JSON（{exc}）") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"{source_label}：必须是 JSON 对象（suffixes + aliases）")
+    suffixes = data.get("suffixes")
+    aliases = data.get("aliases")
+    if not isinstance(suffixes, list):
+        raise ValueError(f"{source_label}：suffixes 必须是有序列表")
+    if not isinstance(aliases, dict):
+        raise ValueError(f"{source_label}：aliases 必须是对象")
+    for suffix in suffixes:
+        if not isinstance(suffix, str) or not suffix:
+            raise ValueError(f"{source_label}：suffixes 存在非字符串或空项")
+    for key, target in aliases.items():
+        if not isinstance(key, str) or not key or not isinstance(target, str) or not target:
+            raise ValueError(f"{source_label}：aliases 的键和值都必须是非空字符串")
+    return {"suffixes": suffixes, "aliases": aliases}
+
+
+def _load_bonus_rules_source(
+    root: Path,
+) -> tuple[list[dict[str, Any]], str]:
+    env_value = os.getenv("SCORE_KEYWORD_BONUSES")
+    if env_value is not None and env_value.strip():
+        source_label = "环境变量 SCORE_KEYWORD_BONUSES"
+        return (
+            _parse_bonus_rules_strict(env_value, source_label=source_label),
+            source_label,
+        )
+    path = root / "config" / "score_keyword_bonuses.json"
+    source_label = str(path)
+    return (
+        _parse_bonus_rules_strict(
+            _read_wordlist_source(path, source_label=source_label),
+            source_label=source_label,
+        ),
+        source_label,
+    )
+
+
+def _load_wordlist_source(
+    root: Path,
+    *,
+    relative_path: str,
+    source_label: str,
+) -> tuple[list[str], str]:
+    path = root / relative_path
+    return (
+        _parse_wordlist_strict(
+            _read_wordlist_source(path, source_label=source_label),
+            source_label=source_label,
+        ),
+        source_label,
+    )
+
+
+def _load_source_aliases_source(root: Path) -> tuple[dict[str, Any], str]:
+    path = root / "config" / "source_aliases.json"
+    source_label = str(path)
+    return (
+        _parse_source_aliases_strict(
+            _read_wordlist_source(path, source_label=source_label),
+            source_label=source_label,
+        ),
+        source_label,
+    )
+
+
 def _legacy_account_paths(root: Path) -> dict[str, Path]:
     tencent_default = root / "config/qq_author.txt"
     if not tencent_default.exists():
@@ -710,19 +822,74 @@ def preview_legacy_import(*, root: Optional[Path] = None) -> dict[str, Any]:
             "duplicates": duplicates,
             "errors": errors,
         }
-    sections = {
+    sections: dict[str, Any] = {
         "llm_models": validate_section("llm_models", _legacy_models()),
         "crawl_sources": validate_crawl_sources(
             normalized_sources,
             allow_daily=True,
         ),
     }
+    section_sources: dict[str, str] = {}
+    wordlist_errors: list[dict[str, Any]] = []
+    wordlist_loaders = {
+        "score_keyword_bonuses": _load_bonus_rules_source,
+        "education_keywords": lambda root_dir: _load_wordlist_source(
+            root_dir,
+            relative_path="config/education_keywords.txt",
+            source_label=str(root_dir / "config" / "education_keywords.txt"),
+        ),
+        "beijing_keywords": lambda root_dir: _load_wordlist_source(
+            root_dir,
+            relative_path="config/beijing_keywords.txt",
+            source_label=str(root_dir / "config" / "beijing_keywords.txt"),
+        ),
+        "source_aliases": _load_source_aliases_source,
+    }
+    for section, loader in wordlist_loaders.items():
+        try:
+            value, source_label = loader(repository_root)
+        except ValueError as exc:
+            wordlist_errors.append({"section": section, "detail": str(exc)})
+            continue
+        try:
+            sections[section] = validate_section(section, value)
+        except ValueError as exc:
+            wordlist_errors.append(
+                {"section": section, "detail": f"{source_label}：{exc}"}
+            )
+            continue
+        section_sources[section] = source_label
+
+    sections_status: dict[str, dict[str, Any]] = {}
+    db_state_known = not wordlist_errors and not has_parse_errors
+    existing_sections: set[str] = set()
+    if db_state_known:
+        rows = get_adapter().app_config.fetch_settings()
+        existing_sections = {str(row["section"]) for row in rows}
+    for section, value in sections.items():
+        if not db_state_known:
+            status = "unresolved"
+        elif section in existing_sections:
+            status = "exists_skip"
+        else:
+            status = "write"
+        sections_status[section] = {
+            "status": status,
+            "source": section_sources.get(section),
+            "item_count": (
+                len(value["suffixes"]) + len(value["aliases"])
+                if section == "source_aliases" and isinstance(value, Mapping)
+                else len(value)
+            ),
+        }
     return {
         "sections": sections,
+        "sections_status": sections_status,
         "account_summary": account_summary,
         "accounts": accounts,
         "daily_only_sources": daily_sources,
         "has_parse_errors": has_parse_errors,
+        "wordlist_errors": wordlist_errors,
     }
 
 
@@ -735,11 +902,14 @@ def import_legacy_config(*, apply: bool, root: Optional[Path] = None) -> dict[st
         raise ValueError(f"每小时来源含仅每日任务来源，拒绝导入：{joined}")
     if preview["has_parse_errors"]:
         raise ValueError("账号文件存在无法解析的行，拒绝导入")
-    get_adapter().import_app_config(
+    if preview["wordlist_errors"]:
+        details = "；".join(item["detail"] for item in preview["wordlist_errors"])
+        raise ValueError(f"词表配置来源无法严格解析，拒绝导入：{details}")
+    report = get_adapter().import_app_config_missing(
         sections=preview["sections"],
         accounts=preview["accounts"],
     )
-    return preview
+    return {**preview, **report}
 
 
 __all__ = [

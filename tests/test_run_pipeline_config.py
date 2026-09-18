@@ -76,6 +76,18 @@ def _rows(model: str = "model-a") -> list[dict[str, Any]]:
             "version": 1,
         },
         {"section": "crawl_sources", "value": ["toutiao"], "version": 2},
+        {
+            "section": "score_keyword_bonuses",
+            "value": [{"keyword": "教育工委", "bonus": 100}],
+            "version": 4,
+        },
+        {"section": "education_keywords", "value": ["教育"], "version": 1},
+        {"section": "beijing_keywords", "value": ["北京"], "version": 1},
+        {
+            "section": "source_aliases",
+            "value": {"suffixes": ["客户端"], "aliases": {}},
+            "version": 1,
+        },
     ]
 
 
@@ -227,10 +239,20 @@ def test_m9_m18_source_override_is_used_and_written_to_snapshot(monkeypatch) -> 
         }
     }
     assert snapshot["crawl_sources"] == ["tencent", "toutiao"]
+    assert snapshot["score_keyword_bonuses"] == [
+        {"keyword": "教育工委", "bonus": 100}
+    ]
+    assert snapshot["education_keywords"] == ["教育"]
+    assert snapshot["beijing_keywords"] == ["北京"]
+    assert snapshot["source_aliases"] == {"suffixes": ["客户端"], "aliases": {}}
     assert snapshot["versions"] == {
         "llm_endpoints": 1,
         "llm_models": 1,
         "crawl_sources": 2,
+        "score_keyword_bonuses": 4,
+        "education_keywords": 1,
+        "beijing_keywords": 1,
+        "source_aliases": 1,
     }
 
 

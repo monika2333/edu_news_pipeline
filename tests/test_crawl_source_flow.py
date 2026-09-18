@@ -121,7 +121,7 @@ def test_run_dispatches_source_alias_through_registry(monkeypatch) -> None:
     monkeypatch.setattr(
         crawl_sources,
         "get_settings",
-        lambda: SimpleNamespace(process_limit=None, keywords_path=None),
+        lambda: SimpleNamespace(process_limit=None),
     )
     monkeypatch.setattr(
         crawl_sources,
@@ -133,7 +133,7 @@ def test_run_dispatches_source_alias_through_registry(monkeypatch) -> None:
     monkeypatch.setattr(
         crawl_sources,
         "get_business_config",
-        lambda: SimpleNamespace(crawl_sources=("toutiao",), accounts={}),
+        lambda: SimpleNamespace(crawl_sources=("toutiao",), accounts={}, education_keywords=()),
     )
     monkeypatch.setattr(crawl_sources, "worker_session", worker_session)
     monkeypatch.setattr(crawl_sources, "_run_tencent_flow", run_tencent_flow)
@@ -192,7 +192,7 @@ def test_m20_run_isolates_source_exception_with_traceback_and_failure_count(
     monkeypatch.setattr(
         crawl_sources,
         "get_settings",
-        lambda: SimpleNamespace(process_limit=None, keywords_path=None),
+        lambda: SimpleNamespace(process_limit=None),
     )
     monkeypatch.setattr(
         crawl_sources,
@@ -204,7 +204,7 @@ def test_m20_run_isolates_source_exception_with_traceback_and_failure_count(
     monkeypatch.setattr(
         crawl_sources,
         "get_business_config",
-        lambda: SimpleNamespace(crawl_sources=("toutiao",), accounts={}),
+        lambda: SimpleNamespace(crawl_sources=("toutiao",), accounts={}, education_keywords=()),
     )
     monkeypatch.setattr(crawl_sources, "worker_session", worker_session)
     monkeypatch.setattr(crawl_sources, "_run_toutiao_flow", run_toutiao_flow)

@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 from concurrent.futures import FIRST_COMPLETED, Future, wait
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Optional
 
 from src.adapters.db_postgres_core import get_adapter
@@ -108,7 +107,6 @@ def run(
     limit: int = 500,
     *,
     concurrency: Optional[int] = None,
-    keywords_path: Optional[Path] = None,
 ) -> None:
     settings = get_settings()
     adapter = get_adapter()
@@ -118,9 +116,6 @@ def run(
     fetch_target = limit_value or max_workers
     fetch_limit = max(1, fetch_target) * DEFAULT_FETCH_MULTIPLIER
     session_limit = limit_value or fetch_target
-
-    # Kept only for backward-compatible CLI invocations.
-    _ = keywords_path
 
     with worker_session(WORKER, limit=session_limit):
         rows = adapter.news_summaries.fetch_pending(fetch_limit, max_attempts=MAX_RETRIES)

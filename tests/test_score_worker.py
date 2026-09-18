@@ -5,8 +5,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
 
+from src.business_config import ScoreKeywordBonus, business_config_context
 from src.domain.models import PrimaryArticleForScoring
 from src.workers import score
+from tests.conftest import make_endpoint_config
 
 
 @dataclass
@@ -40,6 +42,11 @@ class FakeNewsSummariesNamespace:
         self._adapter.promotions.extend(payloads)
 
 
+def _frozen_context(bonuses: tuple[ScoreKeywordBonus, ...]):
+    config = make_endpoint_config(score_keyword_bonuses=bonuses)
+    return business_config_context(config)
+
+
 def test_keyword_bonus_applied(monkeypatch):
     item = PrimaryArticleForScoring(
         article_id="test-article",
@@ -61,14 +68,14 @@ def test_keyword_bonus_applied(monkeypatch):
             (),
             {
                 "default_concurrency": 1,
-                "score_keyword_bonus_rules": {"target keyword": 25},
                 "score_promotion_threshold": 60,
             },
         )(),
     )
     monkeypatch.setattr(score, "_score_item", lambda _: 50)
 
-    score.run(limit=1, concurrency=1)
+    with _frozen_context((ScoreKeywordBonus(keyword="target keyword", bonus=25),)):
+        score.run(limit=1, concurrency=1)
 
     assert fake_adapter.updates, "expected update payload"
     update = fake_adapter.updates[0]
@@ -106,14 +113,16 @@ def test_promotion_uses_final_threshold(monkeypatch):
             (),
             {
                 "default_concurrency": 1,
-                "score_keyword_bonus_rules": {"Beijing Municipal Party Committee": 100},
                 "score_promotion_threshold": 60,
             },
         )(),
     )
     monkeypatch.setattr(score, "_score_item", lambda _: 60)
 
-    score.run(limit=1, concurrency=1)
+    with _frozen_context(
+        (ScoreKeywordBonus(keyword="Beijing Municipal Party Committee", bonus=100),)
+    ):
+        score.run(limit=1, concurrency=1)
 
     assert fake_adapter.promotions, "item meeting final threshold should be promoted"
     promotion = fake_adapter.promotions[0]
@@ -158,7 +167,6 @@ def test_keyword_precheck_skips_only_impossible_rows_before_thread_submission(
             (),
             {
                 "default_concurrency": 2,
-                "score_keyword_bonus_rules": {"negative rule": -100},
                 "score_promotion_threshold": 60,
             },
         )(),
@@ -185,7 +193,8 @@ def test_keyword_precheck_skips_only_impossible_rows_before_thread_submission(
         lambda worker, message: log_messages.append(message),
     )
 
-    score.run(limit=2, concurrency=2)
+    with _frozen_context((ScoreKeywordBonus(keyword="negative rule", bonus=-100),)):
+        score.run(limit=2, concurrency=2)
 
     assert calls == ["score-me"]
     assert sorted(bonus_calls) == ["score-me", "skip-me"]

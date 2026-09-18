@@ -10,8 +10,10 @@ from src.business_config import (
     LLMEndpointConfig,
     LLMStepConfig,
     LLM_STEPS,
+    ScoreKeywordBonus,
     business_config_context,
 )
+from src.domain import SourceAliasRules
 
 OPENROUTER_ENDPOINT = LLMEndpointConfig(
     key="openrouter",
@@ -36,6 +38,10 @@ def make_endpoint_config(
     endpoints: tuple[LLMEndpointConfig, ...] = (OPENROUTER_ENDPOINT,),
     default_endpoint: str = "openrouter",
     step_endpoints: dict[str, str | None] | None = None,
+    score_keyword_bonuses: tuple[ScoreKeywordBonus, ...] = (),
+    education_keywords: tuple[str, ...] = ("教育",),
+    beijing_keywords: tuple[str, ...] = ("北京",),
+    source_aliases: SourceAliasRules | None = None,
 ) -> BusinessConfig:
     step_endpoints = step_endpoints or {}
     return BusinessConfig(
@@ -52,6 +58,10 @@ def make_endpoint_config(
         versions={},
         llm_endpoints={item.key: item for item in endpoints},
         default_endpoint=default_endpoint,
+        score_keyword_bonuses=score_keyword_bonuses,
+        education_keywords=education_keywords,
+        beijing_keywords=beijing_keywords,
+        source_aliases=source_aliases or SourceAliasRules(),
     )
 
 

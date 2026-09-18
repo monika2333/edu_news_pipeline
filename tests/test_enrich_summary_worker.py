@@ -3,7 +3,10 @@ from __future__ import annotations
 from threading import Barrier
 from typing import Any, Optional
 
+from src.business_config import business_config_context
+from src.domain import SourceAliasRules
 from src.workers import enrich_summary
+from tests.conftest import make_endpoint_config
 
 
 class _NewsSummariesNamespace:
@@ -56,7 +59,8 @@ def test_sentiment_and_source_are_independent_concurrent_requests(monkeypatch) -
     monkeypatch.setattr(enrich_summary, "classify_sentiment", classify)
     monkeypatch.setattr(enrich_summary, "detect_source", detect)
 
-    enrich_summary.run(limit=1, concurrency=2)
+    with business_config_context(make_endpoint_config()):
+        enrich_summary.run(limit=1, concurrency=2)
 
     assert adapter.completed == [("article-1", "positive", 0.9, "测试媒体")]
 
@@ -75,7 +79,8 @@ def test_failed_request_keeps_entire_enrichment_pending(monkeypatch) -> None:
         lambda article: (_ for _ in ()).throw(RuntimeError("source failed")),
     )
 
-    enrich_summary.run(limit=1, concurrency=2)
+    with business_config_context(make_endpoint_config()):
+        enrich_summary.run(limit=1, concurrency=2)
 
     assert adapter.completed == []
 
@@ -97,7 +102,7 @@ def test_source_length_guard_logs_article_id_and_metadata(monkeypatch) -> None:
         lambda worker, message: messages.append((worker, message)),
     )
 
-    result = enrich_summary._detect_article_source(_row())
+    result = enrich_summary._detect_article_source(_row(), SourceAliasRules())
 
     assert result.llm_source is None
     assert messages == [

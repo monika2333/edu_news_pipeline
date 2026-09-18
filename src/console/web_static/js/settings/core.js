@@ -24,9 +24,10 @@ const state = {
     // accountPanelState）：只剩 refreshInflight（名称刷新按钮是按来源的）。
     // 账号面板始终平铺，没有收起即重置的语义
     accountPanels: {},
-    // 数据源页签没有草稿：来源启停即时写库，未保存守卫只服务模型页签
-    dirty: { llm_models: false },
-    saving: { llm_models: false },
+    // 数据源页签没有草稿：来源启停即时写库，未保存守卫只服务模型页签的
+    // 两个分区（llm_models 与 llm_endpoints 各自独立保存、独立脏标记）
+    dirty: { llm_models: false, llm_endpoints: false },
+    saving: { llm_models: false, llm_endpoints: false },
     modelsDraft: null,
     // 进行中的来源启停请求数；非零时禁用面板内全部来源开关
     sourceToggleInflight: 0,
@@ -126,6 +127,22 @@ function settingsSection(section) {
     return (state.payload && state.payload.sections)
         ? state.payload.sections[section]
         : null;
+}
+
+// 已保存的接入点分区值（{ default, items }）；未导入时为 null。
+// 步骤表格的接入点下拉等只读展示必须读这里，而不是接入点的编辑态草稿：
+// 后端校验步骤引用时查的也是库里的接入点，草稿里的新接入点存不进去。
+function savedEndpointsValue() {
+    const section = settingsSection('llm_endpoints');
+    return section ? section.value : null;
+}
+
+function endpointDisplayLabel(key) {
+    const saved = savedEndpointsValue();
+    const found = saved && saved.items
+        ? saved.items.find((item) => item.key === key)
+        : null;
+    return found ? found.label : (key || '');
 }
 
 // 分区缺失（服务器尚未运行 import-settings）时的占位提示：不渲染任何编辑控件。

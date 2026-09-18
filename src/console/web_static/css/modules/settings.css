@@ -572,3 +572,191 @@
     padding: 2px 12px;
     font-size: 0.8rem;
 }
+
+/* 接入点块：只读清单 + 「管理接入点」编辑态（endpoints.js 渲染）。
+   编辑入口默认收起——接入点一年改不了两次，常用路径是步骤表格 */
+.endpoints-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.endpoints-hint {
+    color: #64748b;
+    font-size: 0.82rem;
+}
+
+.endpoints-list {
+    display: grid;
+    gap: 6px;
+    margin: 0 0 8px;
+    padding: 0;
+    list-style: none;
+}
+
+.endpoint-item {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid #e7edf5;
+    border-radius: 10px;
+    background: #fff;
+}
+
+.endpoint-item-label {
+    font-weight: 600;
+}
+
+.endpoint-item-url {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+    color: #475569;
+    word-break: break-all;
+}
+
+.endpoint-item-style,
+.endpoint-item-key {
+    color: #64748b;
+    font-size: 0.8rem;
+}
+
+.endpoint-key-state {
+    padding: 2px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 0.74rem;
+}
+
+.endpoint-key-state.is-unset {
+    border-color: #f59e0b;
+    background: #fffbeb;
+    color: #b45309;
+}
+
+.endpoint-default-badge {
+    padding: 2px 8px;
+    border: 1px solid #2563eb;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-size: 0.74rem;
+    font-weight: 600;
+}
+
+/* 编辑态：每个接入点一张字段卡 */
+.endpoints-edit-list {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.endpoint-edit-row {
+    padding: 12px 14px;
+    border: 1px solid #e7edf5;
+    border-radius: 10px;
+    background: #fff;
+}
+
+.endpoint-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+}
+
+.endpoint-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 180px;
+}
+
+.endpoint-field-name {
+    color: #64748b;
+    font-size: 0.78rem;
+}
+
+.endpoint-field input,
+.endpoint-field select {
+    padding: 7px 9px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    font: inherit;
+}
+
+.endpoint-key-static {
+    align-self: flex-start;
+    padding: 7px 9px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 0.84rem;
+}
+
+/* 地址输入框下方实时拼好的完整请求地址：把最终 URL 摆出来，避免手滑多补一层 /v1 */
+.endpoint-url-preview {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    color: #2563eb;
+    word-break: break-all;
+}
+
+.endpoint-field-hint {
+    color: #64748b;
+    font-size: 0.76rem;
+}
+
+.endpoint-field-hint.is-warning {
+    color: #b45309;
+}
+
+.endpoint-default-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 0;
+}
+
+.endpoint-row-foot {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.endpoint-delete-btn {
+    min-height: 26px;
+    padding: 2px 12px;
+    border-radius: 6px;
+    color: #b91c1c;
+    font-size: 0.78rem;
+}
+
+.endpoint-row-error {
+    color: #b91c1c;
+    font-size: 0.8rem;
+}
+
+/* 接入点分区为脏时悬在步骤表格上方的提示：琥珀色与普通说明区分 */
+.settings-endpoints-note {
+    color: #b45309;
+}
+
+/* 步骤表格第二列的接入点下拉与模型输入框同排 */
+.step-endpoint-select {
+    margin-left: 8px;
+    padding: 7px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    font: inherit;
+}

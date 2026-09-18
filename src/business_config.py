@@ -47,6 +47,7 @@ SOURCE_CATALOG = (
     SourceDefinition("chinadaily", "中国日报"),
     SourceDefinition("gmw", "光明网"),
     SourceDefinition("qianlong", "千龙网"),
+    SourceDefinition("xinhua", "新华网"),
     SourceDefinition("btime", "北京时间", requires_accounts=True),
     SourceDefinition("beijinghao", "北京号", requires_accounts=True),
     SourceDefinition("bjrb", "北京日报", daily_only=True, aliases=("beijingdaily",)),

@@ -83,6 +83,13 @@ LINKED_SOURCES = {
         "jyb_fetch_detail",
         "jyb_build_detail_update",
     ),
+    "xinhua": (
+        "xinhua_list_items",
+        "xinhua_make_article_id",
+        "xinhua_feed_item_to_row",
+        "xinhua_fetch_detail",
+        "xinhua_build_detail_update",
+    ),
 }
 
 
@@ -196,6 +203,7 @@ def _patch_linked_callbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         ("qianlong", "qianlong", "Qianlong", {"details_in_list": True}),
         ("tencent", "tencent", "Tencent", {"count_prepare_errors": True, "missing_ids_fallback": "none", "detail_delay": 0.75, "delay_after_failure": True, "delay_after_last": True}),
         ("toutiao", "toutiao", "Toutiao", {"count_prepare_errors": True}),
+        ("xinhua", "xinhua", "Xinhua Beijing", {"count_feed_errors": False}),
         ("beijingdaily", "bjrb", "Beijing Daily", {"load_existing_ids": False, "count_prepare_errors": True, "missing_ids_fallback": "all", "detail_delay": 0.45}),
         ("laodongwubao", "ldwb", "Laodong Wubao", {"details_in_list": True, "skip_existing_ids": True, "continue_after_feed_error": True}),
         ("qq", "tencent", "Tencent", {"count_prepare_errors": True, "missing_ids_fallback": "none", "detail_delay": 0.75, "delay_after_failure": True, "delay_after_last": True}),
@@ -257,6 +265,7 @@ def test_every_dispatch_key_preserves_source_flow_strategy_and_callbacks(
         ("qianlong", "_run_qianlong_flow", {"base_urls": ("https://qianlong.test/list",), "timeout_value": 13.5, "delay_value": 0.35, "pages_hint": 3, "consecutive_stop": 7}, None),
         ("tencent", "_run_tencent_flow", {"pages": 3}, None),
         ("toutiao", "_run_toutiao_flow", {"show_browser": True, "timeout_value": 21, "lang": "zh-test"}, None),
+        ("xinhua", "_run_registered_linked_page_flow", {"pages": 3}, "xinhua"),
     ],
 )
 def test_registry_passes_each_runner_its_current_arguments(

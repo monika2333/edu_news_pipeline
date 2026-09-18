@@ -96,6 +96,13 @@ from src.adapters.http_tencent import (
     fetch_article_detail as tencent_fetch_article_detail,
     list_feed_items as tencent_list_feed_items,
 )
+from src.adapters.http_xinhua import (
+    build_detail_update as xinhua_build_detail_update,
+    feed_item_to_row as xinhua_feed_item_to_row,
+    fetch_detail as xinhua_fetch_detail,
+    list_items as xinhua_list_items,
+    make_article_id as xinhua_make_article_id,
+)
 from src.adapters.http_toutiao import (
     FeedEntry as ToutiaoFeedEntry,
     FeedItem,
@@ -1094,6 +1101,19 @@ _SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
     "toutiao": SourceRegistration(
         runner_name="_run_toutiao_flow",
         kwargs_factory=_toutiao_runner_kwargs,
+    ),
+    "xinhua": SourceRegistration(
+        runner_name="_run_registered_linked_page_flow",
+        kwargs_factory=_pages_runner_kwargs,
+        linked_page=LinkedPageConfig(
+            source="xinhua",
+            display_name="Xinhua Beijing",
+            list_items_name="xinhua_list_items",
+            make_article_id_name="xinhua_make_article_id",
+            feed_item_to_row_name="xinhua_feed_item_to_row",
+            fetch_detail_name="xinhua_fetch_detail",
+            build_detail_update_name="xinhua_build_detail_update",
+        ),
     ),
 }
 

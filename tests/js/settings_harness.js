@@ -109,19 +109,80 @@ function defaultModelsValue() {
     return {
         default: 'deepseek/default-model',
         steps: {
-            summary: { model: null, reasoning: false },
-            source: { model: null, reasoning: true },
-            sentiment: { model: null, reasoning: true },
-            scoring: { model: 'vendor/scoring-model', reasoning: true },
-            external_filter: { model: null, reasoning: false },
-            beijing_gate: { model: null, reasoning: false },
-            duplicate_review: { model: null, reasoning: false },
+            summary: { model: null, reasoning: false, endpoint: null },
+            source: { model: null, reasoning: true, endpoint: null },
+            sentiment: { model: null, reasoning: true, endpoint: null },
+            // 旧数据形态：指定了模型但 endpoint 为 null（前端归一为默认接入点）
+            scoring: { model: 'vendor/scoring-model', reasoning: true, endpoint: null },
+            external_filter: { model: null, reasoning: false, endpoint: null },
+            beijing_gate: { model: null, reasoning: false, endpoint: null },
+            duplicate_review: { model: null, reasoning: false, endpoint: null },
         },
+    };
+}
+
+// 已保存的接入点分区值（与后端 app_settings.llm_endpoints 的 value 同形，
+// 不含 api_key_env_configured——那是顶层 endpoints 负载里的展示字段）
+function defaultEndpointsValue() {
+    return {
+        default: 'openrouter',
+        items: [
+            {
+                key: 'openrouter',
+                label: 'OpenRouter',
+                base_url: 'https://openrouter.ai/api/v1',
+                api_key_env: 'LLM_API_KEY',
+                api_style: 'openrouter',
+                temperature_override: null,
+            },
+            {
+                key: 'deepseek',
+                label: 'DeepSeek',
+                base_url: 'https://api.deepseek.com',
+                api_key_env: 'DEEPSEEK_API_KEY',
+                api_style: 'thinking',
+                temperature_override: null,
+            },
+        ],
+    };
+}
+
+// GET /api/admin/settings 顶层的 endpoints 负载（与 settings_service._endpoints_payload 同形）
+function defaultEndpointsPayload() {
+    return {
+        default: 'openrouter',
+        allowed_hosts: ['openrouter.ai', 'api.deepseek.com', 'open.bigmodel.cn'],
+        items: [
+            {
+                key: 'openrouter',
+                label: 'OpenRouter',
+                base_url: 'https://openrouter.ai/api/v1',
+                api_key_env: 'LLM_API_KEY',
+                api_style: 'openrouter',
+                temperature_override: null,
+                api_key_env_configured: true,
+            },
+            {
+                key: 'deepseek',
+                label: 'DeepSeek',
+                base_url: 'https://api.deepseek.com',
+                api_key_env: 'DEEPSEEK_API_KEY',
+                api_style: 'thinking',
+                temperature_override: null,
+                api_key_env_configured: false,
+            },
+        ],
     };
 }
 
 function defaultSections() {
     return {
+        llm_endpoints: {
+            value: defaultEndpointsValue(),
+            version: 3,
+            updated_at: '2026-01-10T08:29:00Z',
+            updated_by: { user_id: 'u1', display_name: 'Wimp' },
+        },
         llm_models: {
             value: defaultModelsValue(),
             version: 7,
@@ -176,9 +237,11 @@ class FakeSettingsServer {
         this.sections = options.sections === undefined ? defaultSections() : options.sections;
         this.sources = options.sources || defaultSources();
         this.steps = options.steps || defaultSteps();
+        this.endpoints = options.endpoints === undefined
+            ? defaultEndpointsPayload()
+            : options.endpoints;
         this.environment = options.environment || {
             llm_api_key_configured: true,
-            llm_api_base_url: 'https://llm.example.com/v1',
             embedding_model: 'BAAI/bge-m3',
         };
         this.accounts = options.accounts || defaultAccounts();
@@ -214,6 +277,7 @@ class FakeSettingsServer {
         if (pathname === '/api/admin/settings') return 'get-settings';
         if (pathname === '/api/admin/settings/llm_models/test') return 'model-test';
         if (pathname === '/api/admin/settings/llm_models') return 'save-models';
+        if (pathname === '/api/admin/settings/llm_endpoints') return 'save-endpoints';
         if (pathname === '/api/admin/settings/crawl_sources') return 'save-sources';
         if (pathname === '/api/admin/crawl-accounts') {
             return method === 'POST' ? 'add-account' : 'list-accounts';
@@ -310,6 +374,7 @@ class FakeSettingsServer {
                 sources: this.sources,
                 steps: this.steps,
                 environment: this.environment,
+                endpoints: this.endpoints,
             }];
         }
         if (pathname === '/api/admin/settings/llm_models/test') {
@@ -318,9 +383,17 @@ class FakeSettingsServer {
                 this.testBehavior = null;
                 return [behavior.status, behavior.payload];
             }
-            return [200, { success: true, elapsed_ms: 120, error: null }];
+            // endpoint 回显：响应带上请求里的 endpoint，便于对照请求体断言
+            return [200, {
+                success: true,
+                elapsed_ms: 120,
+                error: null,
+                endpoint: body && body.endpoint !== undefined ? body.endpoint : null,
+            }];
         }
-        const saveMatch = pathname.match(/^\/api\/admin\/settings\/(llm_models|crawl_sources)$/);
+        const saveMatch = pathname.match(
+            /^\/api\/admin\/settings\/(llm_models|llm_endpoints|crawl_sources)$/,
+        );
         if (saveMatch && method === 'PUT') {
             const section = saveMatch[1];
             const behavior = this.saveBehavior[section];
@@ -535,5 +608,6 @@ module.exports = {
     unhandledRejections,
     defaultSections,
     defaultAccounts,
+    defaultEndpointsPayload,
     makeAccount,
 };

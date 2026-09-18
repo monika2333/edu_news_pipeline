@@ -2,6 +2,7 @@
 // 覆盖验收场景 S1-S33 与芯片布局场景 N1-N23；其中 S7、S17 随排序模式删除，
 // S9、S16、S29、S30、N5、N16 随「全部平铺 + 页面级管理模式」重构删除
 // （批量粘贴、展开抽屉、筛选框、面板会话这些被测形态不复存在）。
+// E1-E12 覆盖接入点管理（endpoints.js）与每步骤接入点选择（models_tab.js）。
 'use strict';
 
 const { test } = require('node:test');
@@ -112,10 +113,16 @@ test('S2：修改默认模型联动跟随默认提示，保存请求包含全部
         const defaultInput = page.document.getElementById('models-default-input');
         assert.equal(defaultInput.value, 'deepseek/default-model');
         const summaryHint = page.modelsRow('summary').querySelector('.step-follow-hint');
-        assert.match(summaryHint.textContent, /跟随默认（当前：deepseek\/default-model）/);
+        assert.match(
+            summaryHint.textContent,
+            /跟随默认（接入点：OpenRouter · 模型：deepseek\/default-model）/,
+        );
 
         inputValue(page, defaultInput, 'new/default-x');
-        assert.match(summaryHint.textContent, /跟随默认（当前：new\/default-x）/);
+        assert.match(
+            summaryHint.textContent,
+            /跟随默认（接入点：OpenRouter · 模型：new\/default-x）/,
+        );
         // 指定模型的步骤不显示跟随提示
         const scoringHint = page.modelsRow('scoring').querySelector('.step-follow-hint');
         assert.ok(scoringHint.hidden);
@@ -1842,6 +1849,388 @@ test('N23：刷新进行中启停其他来源触发整块重渲染，刷新收�
         // 收尾不写入已脱离文档的旧按钮（isConnected 守卫）
         assert.equal(oldBtn.textContent, '刷新中… 0/2');
         assert.deepEqual(unhandledRejections, []);
+    } finally {
+        page.close();
+    }
+});
+
+// ---------- 接入点场景（E1-E12） ----------
+
+function endpointsBlock(page) {
+    return page.document.querySelector('.endpoints-block');
+}
+
+async function enterEndpointsManage(page) {
+    page.document.querySelector('.endpoints-manage-btn').click();
+    await waitFor(() => page.document.querySelector('.endpoint-edit-row'));
+}
+
+// 已保存接入点的编辑行：clientId 与 key 相同；草稿新增行是 new-N，用 data-client-id 查
+function endpointEditRow(page, clientId) {
+    return page.document
+        .querySelector(`.endpoint-edit-row[data-client-id="${clientId}"]`);
+}
+
+function endpointOptions(page, step) {
+    return [...page.modelsRow(step).querySelector('.step-endpoint-select').options]
+        .map((option) => option.value);
+}
+
+function switchStepMode(page, row, mode) {
+    const modeSelect = row.querySelector('.step-model-mode');
+    modeSelect.value = mode;
+    modeSelect.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+}
+
+test('E1：步骤切到「指定」出现接入点下拉与空的模型输入框，切换接入点清空模型与该行测试结果', async () => {
+    const page = await bootPage();
+    try {
+        const row = page.modelsRow('summary');
+        // 跟随默认提示同时给出默认接入点与默认模型
+        const hint = row.querySelector('.step-follow-hint');
+        assert.match(
+            hint.textContent,
+            /跟随默认（接入点：OpenRouter · 模型：deepseek\/default-model）/,
+        );
+
+        // 先在跟随默认下跑一次测试，让该行有测试结果可供「被清除」断言
+        row.querySelector('.step-test-btn').click();
+        await waitFor(() => row.querySelector('.step-test-result').textContent.includes('成功'));
+
+        switchStepMode(page, row, 'custom');
+        const endpointSelect = row.querySelector('.step-endpoint-select');
+        await waitFor(() => !endpointSelect.hidden);
+        const modelInput = row.querySelector('.step-model-input');
+        assert.ok(!modelInput.hidden);
+        // 切到「指定」不预填：跨服务商预填必然是错的，留空比留错值安全
+        assert.equal(modelInput.value, '');
+        assert.equal(endpointSelect.value, 'openrouter', '首次切到指定应选中当前默认接入点');
+        assert.equal(row.querySelector('.step-test-result').textContent, '');
+
+        // 填入模型并再次产生测试结果后换接入点：模型输入与测试结果都被清空
+        inputValue(page, modelInput, 'deepseek/reasoner-v4');
+        row.querySelector('.step-test-btn').click();
+        await waitFor(() => row.querySelector('.step-test-result').textContent.includes('成功'));
+        endpointSelect.value = 'deepseek';
+        endpointSelect.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+        assert.equal(modelInput.value, '');
+        assert.equal(row.querySelector('.step-test-result').textContent, '');
+    } finally {
+        page.close();
+    }
+});
+
+test('E2：保存请求体的七个步骤都带 endpoint，跟随默认为 null，指定的为所选 key', async () => {
+    const page = await bootPage();
+    try {
+        const row = page.modelsRow('summary');
+        switchStepMode(page, row, 'custom');
+        // 先换接入点再填模型（换接入点会清空模型输入）
+        const endpointSelect = row.querySelector('.step-endpoint-select');
+        endpointSelect.value = 'deepseek';
+        endpointSelect.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+        inputValue(page, row.querySelector('.step-model-input'), 'deepseek/chat-v4');
+
+        page.document.getElementById('btn-models-save').click();
+        await waitFor(() => page.server.requests('save-models').length === 1);
+        const steps = page.server.requests('save-models')[0].body.value.steps;
+        const expectedKeys = [
+            'beijing_gate',
+            'duplicate_review',
+            'external_filter',
+            'scoring',
+            'sentiment',
+            'source',
+            'summary',
+        ];
+        assert.deepEqual(Object.keys(steps).sort(), expectedKeys);
+        expectedKeys.forEach((key) => {
+            assert.ok('endpoint' in steps[key], `${key} 必须带 endpoint 字段`);
+        });
+        assert.equal(steps.summary.endpoint, 'deepseek');
+        assert.equal(steps.summary.model, 'deepseek/chat-v4');
+        for (const key of ['source', 'sentiment', 'external_filter', 'beijing_gate', 'duplicate_review']) {
+            assert.equal(steps[key].endpoint, null, `${key} 跟随默认时 endpoint 应为 null`);
+            assert.equal(steps[key].model, null, `${key} 跟随默认时 model 应为 null`);
+        }
+        // 旧数据（指定模型但无 endpoint）归一为默认接入点：与后端 resolve 语义一致
+        assert.equal(steps.scoring.endpoint, 'openrouter');
+        assert.equal(steps.scoring.model, 'vendor/scoring-model');
+    } finally {
+        page.close();
+    }
+});
+
+test('E3：指定接入点但模型为空时保存被前端拦截，不发请求并行内报错', async () => {
+    const page = await bootPage();
+    try {
+        const row = page.modelsRow('summary');
+        switchStepMode(page, row, 'custom');
+        // 模型输入留空
+
+        page.document.getElementById('btn-models-save').click();
+        // 判别性断言最先检查：拦截意味着没有保存请求
+        await assertNever(() => page.server.requests('save-models').length > 0, 300);
+        const status = page.document.getElementById('models-save-status');
+        assert.match(status.textContent, /摘要生成/);
+        assert.match(status.textContent, /模型名为空/);
+        assert.ok(status.classList.contains('is-error'));
+    } finally {
+        page.close();
+    }
+});
+
+test('E4：步骤接入点下拉只列已保存接入点；接入点分区为脏时步骤表上方出现提示', async () => {
+    const page = await bootPage();
+    try {
+        await enterEndpointsManage(page);
+        // 制造脏标记：改已保存接入点的标签
+        inputValue(page, endpointEditRow(page, 'openrouter').querySelector('.endpoint-label-input'),
+            'OpenRouter 改');
+        const note = page.document.querySelector('.endpoints-dirty-note');
+        assert.ok(note, '步骤表上方应有脏提示节点');
+        assert.ok(!note.hidden);
+        assert.match(note.textContent, /接入点有未保存修改/);
+
+        // 草稿里新增的接入点不出现在步骤下拉：后端校验引用查的是库里的接入点
+        page.document.querySelector('.endpoint-add-btn').click();
+        await waitFor(() => page.document.querySelectorAll('.endpoint-edit-row').length === 3);
+        inputValue(page, endpointEditRow(page, 'new-1').querySelector('.endpoint-key-input'), 'glm');
+        assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter', 'deepseek']);
+        assert.equal(page.window.eval('state.dirty.llm_endpoints'), true);
+
+        // 模型页签整体重渲染（放弃修改会重建全部 DOM）后，下拉仍只来自已保存值：
+        // 重渲染发生在接入点草稿为脏期间，绝不能把草稿里的新接入点带进选项
+        page.document.getElementById('btn-models-discard').click();
+        await waitFor(() => page.modelsRow('summary')
+            && !page.document.querySelector('.endpoints-dirty-note').hidden);
+        assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter', 'deepseek']);
+
+        // 放弃接入点修改：提示消失、脏标记复位、下拉不变
+        page.document.querySelector('.btn-endpoints-discard').click();
+        await waitFor(() => page.document.querySelector('.endpoints-dirty-note').hidden);
+        assert.equal(page.window.eval('state.dirty.llm_endpoints'), false);
+        assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter', 'deepseek']);
+        assert.equal(page.window.eval('state.dirty.llm_models'), false);
+    } finally {
+        page.close();
+    }
+});
+
+test('E5：删除被步骤引用的接入点被拦截，提示包含引用步骤的中文名，不发请求', async () => {
+    const sections = defaultSections();
+    // 已保存的模型配置里，相关性评分指定了 deepseek 接入点
+    sections.llm_models.value.steps.scoring.endpoint = 'deepseek';
+    const page = await bootPage({ sections });
+    try {
+        await enterEndpointsManage(page);
+        const row = endpointEditRow(page, 'deepseek');
+        row.querySelector('.endpoint-delete-btn').click();
+        // 拦截 = 不发出保存请求，行也不从草稿中移除
+        await assertNever(() => page.server.requests('save-endpoints').length > 0, 300);
+        const error = row.querySelector('.endpoint-row-error');
+        assert.match(error.textContent, /DeepSeek/);
+        assert.match(error.textContent, /相关性评分/);
+        assert.ok(endpointEditRow(page, 'deepseek'), '被引用的接入点不应从草稿移除');
+    } finally {
+        page.close();
+    }
+});
+
+test('E6：删除默认接入点被拦截；仅剩一个接入点时删除同样被拦截', async () => {
+    const page = await bootPage();
+    try {
+        await enterEndpointsManage(page);
+        const row = endpointEditRow(page, 'openrouter');
+        row.querySelector('.endpoint-delete-btn').click();
+        await assertNever(() => page.server.requests('save-endpoints').length > 0, 300);
+        assert.match(row.querySelector('.endpoint-row-error').textContent, /默认接入点/);
+        assert.match(row.querySelector('.endpoint-row-error').textContent, /OpenRouter/);
+        assert.ok(endpointEditRow(page, 'openrouter'));
+    } finally {
+        page.close();
+    }
+
+    // 只剩一个接入点（必然是默认）时：删除被「至少保留一个」拦截
+    const sections = defaultSections();
+    sections.llm_endpoints.value.items = sections.llm_endpoints.value.items.slice(0, 1);
+    const single = await bootPage({ sections });
+    try {
+        await enterEndpointsManage(single);
+        const row = endpointEditRow(single, 'openrouter');
+        row.querySelector('.endpoint-delete-btn').click();
+        await assertNever(() => single.server.requests('save-endpoints').length > 0, 300);
+        assert.match(row.querySelector('.endpoint-row-error').textContent, /至少保留一个接入点/);
+        assert.ok(endpointEditRow(single, 'openrouter'));
+    } finally {
+        single.close();
+    }
+});
+
+test('E7：地址主机不在白名单时行内报错且不发请求；完整请求地址提示随输入实时更新', async () => {
+    const page = await bootPage();
+    try {
+        await enterEndpointsManage(page);
+        const row = endpointEditRow(page, 'deepseek');
+        const urlInput = row.querySelector('.endpoint-base-url-input');
+        const preview = row.querySelector('.endpoint-url-preview');
+        // 初始预览 = 已保存 base_url + /chat/completions；DeepSeek 没有 /v1 层
+        assert.equal(preview.textContent, 'https://api.deepseek.com/chat/completions');
+        inputValue(page, urlInput, 'https://api.deepseek.com/v1/');
+        assert.equal(preview.textContent, 'https://api.deepseek.com/v1/chat/completions');
+
+        // 白名单外主机：保存被行内报错拦下，不发请求
+        inputValue(page, urlInput, 'https://evil.example.com/v1');
+        assert.equal(preview.textContent, 'https://evil.example.com/v1/chat/completions');
+        page.document.querySelector('.btn-endpoints-save').click();
+        await assertNever(() => page.server.requests('save-endpoints').length > 0, 300);
+        const rowError = row.querySelector('.endpoint-row-error');
+        assert.match(rowError.textContent, /evil\.example\.com/);
+        assert.match(rowError.textContent, /LLM_ALLOWED_HOSTS/);
+
+        // 非 https 同样被拦
+        inputValue(page, urlInput, 'http://api.deepseek.com');
+        page.document.querySelector('.btn-endpoints-save').click();
+        await assertNever(() => page.server.requests('save-endpoints').length > 0, 300);
+        assert.match(row.querySelector('.endpoint-row-error').textContent, /https/);
+    } finally {
+        page.close();
+    }
+});
+
+test('E8：接入点保存成功后下拉立即包含新接入点，步骤表格未保存的模型修改不丢失', async () => {
+    const page = await bootPage();
+    try {
+        // 先在模型页制造未保存修改：摘要生成切「指定」并填模型
+        const row = page.modelsRow('summary');
+        switchStepMode(page, row, 'custom');
+        inputValue(page, row.querySelector('.step-model-input'), 'local/unsaved-model');
+        assert.equal(page.window.eval('state.dirty.llm_models'), true);
+
+        // 接入点编辑态新增 glm 并保存
+        await enterEndpointsManage(page);
+        page.document.querySelector('.endpoint-add-btn').click();
+        await waitFor(() => endpointEditRow(page, 'new-1'));
+        const newRow = endpointEditRow(page, 'new-1');
+        inputValue(page, newRow.querySelector('.endpoint-key-input'), 'glm');
+        inputValue(page, newRow.querySelector('.endpoint-label-input'), '智谱 GLM');
+        inputValue(page, newRow.querySelector('.endpoint-base-url-input'),
+            'https://open.bigmodel.cn/api/paas/v4');
+        inputValue(page, newRow.querySelector('.endpoint-key-env-input'), 'ZHIPU_API_KEY');
+        page.document.querySelector('.btn-endpoints-save').click();
+        await waitFor(() => page.server.requests('save-endpoints').length === 1
+            && page.server.requests('save-endpoints')[0].done);
+
+        // 保存成功后编辑器回到只读态，下拉立即包含新接入点
+        await waitFor(() => !page.document.querySelector('.endpoint-edit-row'));
+        assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter', 'deepseek', 'glm']);
+
+        // 步骤表格里未保存的模型修改仍在（只重建 DOM，不重建模型草稿）
+        const rowAfter = page.modelsRow('summary');
+        assert.equal(rowAfter.querySelector('.step-model-mode').value, 'custom');
+        assert.equal(rowAfter.querySelector('.step-model-input').value, 'local/unsaved-model');
+        assert.equal(page.window.eval('state.dirty.llm_models'), true);
+        assert.equal(page.window.eval('state.dirty.llm_endpoints'), false);
+    } finally {
+        page.close();
+    }
+});
+
+test('E9：模型分区与接入点分区的脏状态互相独立，任一为脏都触发离开确认', async () => {
+    const page = await bootPage();
+    try {
+        const guardFires = () => {
+            const event = new page.window.Event('beforeunload', { cancelable: true });
+            page.window.dispatchEvent(event);
+            return event.defaultPrevented;
+        };
+        assert.equal(guardFires(), false, '初始无修改不应拦截离开');
+
+        // 仅模型分区脏
+        inputValue(page, page.document.getElementById('models-default-input'), 'x/model-a');
+        assert.equal(page.window.eval('state.dirty.llm_models'), true);
+        assert.equal(page.window.eval('state.dirty.llm_endpoints'), false);
+        assert.equal(guardFires(), true);
+        page.document.getElementById('btn-models-discard').click();
+        assert.equal(page.window.eval('state.dirty.llm_models'), false);
+        assert.equal(guardFires(), false);
+
+        // 仅接入点分区脏
+        await enterEndpointsManage(page);
+        inputValue(page, endpointEditRow(page, 'openrouter').querySelector('.endpoint-label-input'),
+            'OpenRouter X');
+        assert.equal(page.window.eval('state.dirty.llm_endpoints'), true);
+        assert.equal(page.window.eval('state.dirty.llm_models'), false);
+        assert.equal(guardFires(), true);
+        page.document.querySelector('.btn-endpoints-discard').click();
+        await waitFor(() => page.document.querySelector('.endpoints-dirty-note').hidden);
+        assert.equal(page.window.eval('state.dirty.llm_endpoints'), false);
+        assert.equal(guardFires(), false);
+    } finally {
+        page.close();
+    }
+});
+
+test('E10：测试按钮对「指定」步骤发送 endpoint，对「跟随默认」步骤不发送该字段', async () => {
+    const page = await bootPage();
+    try {
+        const row = page.modelsRow('summary');
+        switchStepMode(page, row, 'custom');
+        inputValue(page, row.querySelector('.step-model-input'), 'm/custom');
+
+        row.querySelector('.step-test-btn').click();
+        await waitFor(() => page.server.requests('model-test').length === 1);
+        const customBody = page.server.requests('model-test')[0].body;
+        assert.equal(customBody.endpoint, 'openrouter', '指定步骤应带上所选接入点');
+        assert.equal(customBody.model, 'm/custom');
+        await waitFor(() => page.server.requests('model-test')[0].done);
+
+        // 切回跟随默认：不带 endpoint 字段，模型取默认模型输入框当前值
+        switchStepMode(page, row, 'follow');
+        row.querySelector('.step-test-btn').click();
+        await waitFor(() => page.server.requests('model-test').length === 2);
+        const followBody = page.server.requests('model-test')[1].body;
+        assert.equal('endpoint' in followBody, false, '跟随默认不应发送 endpoint 字段');
+        assert.equal(followBody.model, 'deepseek/default-model');
+    } finally {
+        page.close();
+    }
+});
+
+test('E11：接入点标签含 HTML 时按纯文本渲染，不生成元素', async () => {
+    const payload = '<img src=x onerror=window.__xssHit=1>';
+    const sections = defaultSections();
+    sections.llm_endpoints.value.items[0].label = payload;
+    const page = await bootPage({ sections });
+    try {
+        const block = endpointsBlock(page);
+        assert.equal(block.querySelectorAll('img').length, 0);
+        assert.equal(block.querySelector('.endpoint-item-label').textContent, payload);
+        assert.equal(page.window.__xssHit, undefined);
+
+        // 编辑态同样按纯文本进入输入框 value
+        await enterEndpointsManage(page);
+        assert.equal(endpointsBlock(page).querySelectorAll('img').length, 0);
+        assert.equal(
+            endpointEditRow(page, 'openrouter').querySelector('.endpoint-label-input').value,
+            payload,
+        );
+        assert.equal(page.window.__xssHit, undefined);
+    } finally {
+        page.close();
+    }
+});
+
+test('E12：环境块不再显示 API 地址与 API Key，改为显示允许的接入点主机', async () => {
+    const page = await bootPage();
+    try {
+        const envBlock = page.document.querySelector('.settings-env-block');
+        const text = envBlock.textContent;
+        assert.ok(!text.includes('API 地址'), '环境块不应再有 API 地址（字段已从接口移除）');
+        assert.ok(!text.includes('API Key'), '环境块不应再有 API Key（Key 归各接入点）');
+        assert.match(text, /向量模型/);
+        assert.match(text, /允许的接入点主机/);
+        assert.match(text, /openrouter\.ai, api\.deepseek\.com, open\.bigmodel\.cn/);
     } finally {
         page.close();
     }

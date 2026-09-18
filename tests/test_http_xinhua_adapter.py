@@ -107,7 +107,7 @@ def test_list_items_merges_same_article_across_columns(
 
     items = hx.list_items(today=TODAY)
 
-    # 每个栏目只请求 index 首屏，共 16 个栏目。
+    # 每个栏目只请求 index 首屏，共 15 个文章栏目（"专题"非文章列表，不在内）。
     assert session.requested == [url for _, url in hx.COLUMNS]
     ids = [hx.make_article_id(item.url) for item in items]
     assert len(ids) == len(set(ids)), "article ids must be unique after column merge"

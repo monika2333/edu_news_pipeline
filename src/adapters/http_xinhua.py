@@ -29,9 +29,10 @@ USER_AGENT = (
     "Chrome/129.0 Safari/537.36"
 )
 
-# 北京频道没有全站滚动页，只有按栏目划分的列表页。这里逐个列出全部栏目
+# 北京频道没有全站滚动页，只有按栏目划分的列表页。这里逐个列出文章栏目
 # （含不在导航栏里的"聚焦"），不按主题筛选：同一稿件可能只出现在其中某个
 # 栏目（教育新闻常落在"聚焦"而非"科教"），漏一个栏目就漏稿。
+# 导航里的"专题"(/zt) 不在内：它只链到 /bdzt/、/hyzt/ 等专题页，不是文章列表。
 # 每轮只请求各栏目 index 首屏，不处理"显示更多"或翻页。
 COLUMNS: tuple[tuple[str, str], ...] = (
     ("新华社记者看北京", "http://bj.news.cn/jz/index.htm"),
@@ -45,7 +46,6 @@ COLUMNS: tuple[tuple[str, str], ...] = (
     ("财经", "http://bj.news.cn/cj/index.htm"),
     ("视频", "http://bj.news.cn/sp/index.htm"),
     ("访谈", "http://bj.news.cn/ft/index.htm"),
-    ("专题", "http://bj.news.cn/zt/index.htm"),
     ("图说", "http://bj.news.cn/tj/index.htm"),
     ("视觉", "http://bj.news.cn/tp/index.htm"),
     ("资讯联播", "http://bj.news.cn/xxgj/index.html"),

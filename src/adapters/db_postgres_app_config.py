@@ -464,13 +464,33 @@ def import_config_bundle(
     sections: Mapping[str, Any],
     accounts: Sequence[Mapping[str, Any]],
 ) -> None:
+    """One-shot legacy import: write every requested section and account.
+
+    The gate is per-section instead of "whole app_settings must be empty":
+    migrations seed sections of their own (e.g. llm_endpoints), and a fresh
+    deployment runs dbmate before this import, so a blanket check would make
+    the import impossible. Sections not being imported stay untouched, and
+    re-importing an already-populated section is still refused.
+    """
+
     cur.execute("LOCK TABLE app_settings, crawl_accounts IN SHARE ROW EXCLUSIVE MODE")
-    cur.execute("SELECT EXISTS (SELECT 1 FROM app_settings) AS occupied")
-    settings_occupied = bool(cur.fetchone()["occupied"])
+    occupied_sections: list[str] = []
+    for section in sections:
+        cur.execute(
+            "SELECT EXISTS (SELECT 1 FROM app_settings WHERE section = %s) AS occupied",
+            (section,),
+        )
+        if bool(cur.fetchone()["occupied"]):
+            occupied_sections.append(section)
+    if occupied_sections:
+        raise ConfigTargetNotEmptyError(
+            f"配置分区 {'、'.join(occupied_sections)} 已存在数据，拒绝导入；"
+            "一次性导入不会覆盖已有分区"
+        )
     cur.execute("SELECT EXISTS (SELECT 1 FROM crawl_accounts) AS occupied")
     accounts_occupied = bool(cur.fetchone()["occupied"])
-    if settings_occupied or accounts_occupied:
-        raise ConfigTargetNotEmptyError("数据库配置目标已有数据，拒绝导入")
+    if accounts_occupied:
+        raise ConfigTargetNotEmptyError("数据库已存在抓取账号，拒绝导入")
 
     for section, value in sections.items():
         cur.execute(

@@ -86,7 +86,6 @@ def clean_settings_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LLM_API_BASE_URL", "https://llm.example.test/v1")
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     monkeypatch.setenv("LLM_API_HTTP_REFERER", "https://console.example.test")
     monkeypatch.setenv("LLM_API_TITLE", "Edu News Pipeline")
@@ -109,7 +108,7 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
 
     settings = config.get_settings()
 
-    assert settings.llm_api_base_url == "https://llm.example.test/v1"
+    assert not hasattr(settings, "llm_api_base_url")
     assert settings.llm_api_key == "test-key"
     assert settings.llm_allowed_hosts == ("openrouter.ai", "evil.example", "api.deepseek.com")
     assert settings.llm_api_http_referer == "https://console.example.test"
@@ -181,7 +180,7 @@ def test_settings_ignores_removed_llm_variable_names(
 
     settings = config.get_settings()
 
-    assert settings.llm_api_base_url == "https://openrouter.ai/api/v1"
+    assert not hasattr(settings, "llm_api_base_url")
     assert settings.llm_api_key is None
     assert settings.llm_allowed_hosts == config.DEFAULT_LLM_ALLOWED_HOSTS
     assert not hasattr(settings, "llm_summary_model")

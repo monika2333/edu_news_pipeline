@@ -99,6 +99,16 @@ def _endpoints_migration_parts() -> tuple[str, str]:
     return up.split("-- migrate:up", maxsplit=1)[1], down
 
 
+def _apply_managed_setting_migrations(connection: psycopg.Connection) -> None:
+    """The migrations a fresh deployment applies before the one-shot import:
+    console-managed settings, then the llm_endpoints seed."""
+
+    base_up, _base_down = _migration_parts()
+    endpoints_up, _endpoints_down = _endpoints_migration_parts()
+    connection.execute(base_up)
+    connection.execute(endpoints_up)
+
+
 def _create_legacy_schema(connection: psycopg.Connection) -> None:
     connection.execute(
         """
@@ -128,6 +138,9 @@ def _create_legacy_schema(connection: psycopg.Connection) -> None:
 
 
 def _sections() -> dict[str, object]:
+    """Exactly what ``preview_legacy_import`` produces: llm_endpoints is
+    seeded by its own migration and never part of the one-shot import."""
+
     return {
         "llm_models": {
             "default": "model-a",
@@ -143,19 +156,6 @@ def _sections() -> dict[str, object]:
                     "duplicate_review",
                 )
             },
-        },
-        "llm_endpoints": {
-            "default": "openrouter",
-            "items": [
-                {
-                    "key": "openrouter",
-                    "label": "OpenRouter",
-                    "base_url": "https://openrouter.ai/api/v1",
-                    "api_key_env": "LLM_API_KEY",
-                    "api_style": "openrouter",
-                    "temperature_override": None,
-                }
-            ],
         },
         "crawl_sources": ["toutiao", "tencent"],
     }
@@ -278,6 +278,60 @@ def test_llm_endpoints_migration_seeds_openrouter_and_down_removes_it() -> None:
             "SELECT 1 FROM app_settings WHERE section = 'llm_endpoints'"
         ).fetchone()
         assert remaining is None
+
+
+def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
+    """The real fresh-deployment order: dbmate up applies every migration
+    (seeded llm_endpoints included), then `import-settings --apply` imports
+    the legacy sections. The seed row must not block the import, and the
+    imported sections must coexist with it."""
+
+    base_up, _base_down = _migration_parts()
+    names_up, _names_down = _account_names_migration_parts()
+    endpoints_up, _endpoints_down = _endpoints_migration_parts()
+    with _isolated_database() as connection:
+        _create_legacy_schema(connection)
+        connection.execute(base_up)
+        connection.execute(names_up)
+        connection.execute(endpoints_up)
+
+        adapter = PostgresAdapter(connection)
+        adapter.import_app_config(
+            sections=_sections(),
+            accounts=[_account("account-1")],
+        )
+
+        loaded = load_business_config(adapter)
+        assert loaded.llm_steps["summary"].model == "model-a"
+        assert loaded.crawl_sources == ("toutiao", "tencent")
+        assert [
+            account.normalized_identifier for account in loaded.accounts["toutiao"]
+        ] == ["account-1"]
+        assert loaded.endpoint_for_step("summary").key == "openrouter"
+        assert loaded.endpoint_for_step("duplicate_review").key == "openrouter"
+
+        seed = connection.execute(
+            "SELECT value, version FROM app_settings WHERE section = 'llm_endpoints'"
+        ).fetchone()
+        assert seed["version"] == 1
+        assert seed["value"]["default"] == "openrouter"
+        imported_sections = connection.execute(
+            "SELECT section FROM app_settings ORDER BY section"
+        ).fetchall()
+        assert [row["section"] for row in imported_sections] == [
+            "crawl_sources",
+            "llm_endpoints",
+            "llm_models",
+        ]
+
+        # 重复导入整个 bundle 仍被拒绝，种子行保持原样
+        with pytest.raises(ConfigTargetNotEmptyError, match="llm_models、crawl_sources"):
+            adapter.import_app_config(sections=_sections(), accounts=[])
+        after = connection.execute(
+            "SELECT value, version FROM app_settings WHERE section = 'llm_endpoints'"
+        ).fetchone()
+        assert after["version"] == 1
+        assert after["value"] == seed["value"]
 
 
 def test_account_name_columns_migration_up_and_down() -> None:
@@ -407,10 +461,9 @@ def test_m13_import_refuses_when_any_target_already_has_data(
 
 
 def test_m10_runtime_query_excludes_disabled_accounts() -> None:
-    up_sql, _down_sql = _migration_parts()
     with _isolated_database() as connection:
         _create_legacy_schema(connection)
-        connection.execute(up_sql)
+        _apply_managed_setting_migrations(connection)
         adapter = PostgresAdapter(connection)
         adapter.import_app_config(
             sections=_sections(),
@@ -429,11 +482,10 @@ def test_m10_runtime_query_excludes_disabled_accounts() -> None:
 
 
 def test_single_table_config_writes_are_exposed_only_by_namespace() -> None:
-    up_sql, _down_sql = _migration_parts()
     names_up, _names_down = _account_names_migration_parts()
     with _isolated_database() as connection:
         _create_legacy_schema(connection)
-        connection.execute(up_sql)
+        _apply_managed_setting_migrations(connection)
         connection.execute(names_up)
         adapter = PostgresAdapter(connection)
         adapter.import_app_config(sections=_sections(), accounts=[])

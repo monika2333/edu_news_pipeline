@@ -117,7 +117,6 @@ def test_call_external_filter_model_sends_reasoning_payload():
     settings = replace(
         get_settings(),
         llm_api_key="test-key",
-        llm_api_base_url="https://openrouter.ai/api/v1",
         llm_reasoning_effort="high",
         llm_reasoning_max_tokens=None,
         llm_reasoning_exclude=True,

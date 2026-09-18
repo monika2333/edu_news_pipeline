@@ -114,7 +114,6 @@ class Settings:
     db_user: str
     db_password: Optional[str]
     db_schema: str
-    llm_api_base_url: str
     llm_api_key: Optional[str]
     llm_allowed_hosts: tuple[str, ...]
     llm_api_http_referer: Optional[str]
@@ -182,7 +181,6 @@ def get_settings() -> Settings:
     db_password = _get_env("DB_PASSWORD", "POSTGRES_PASSWORD")
     db_schema = _get_env("DB_SCHEMA", "POSTGRES_SCHEMA") or "public"
 
-    llm_api_base_url = os.getenv("LLM_API_BASE_URL") or "https://openrouter.ai/api/v1"
     llm_api_key = os.getenv("LLM_API_KEY")
     raw_allowed_hosts = os.getenv("LLM_ALLOWED_HOSTS") or ""
     llm_allowed_hosts = tuple(
@@ -406,7 +404,6 @@ def get_settings() -> Settings:
         db_user=db_user,
         db_password=db_password,
         db_schema=db_schema,
-        llm_api_base_url=llm_api_base_url,
         llm_api_key=llm_api_key,
         llm_allowed_hosts=llm_allowed_hosts,
         llm_api_http_referer=llm_api_http_referer,

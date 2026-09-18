@@ -71,7 +71,6 @@ def _api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
 def _console_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = replace(
         get_settings(),
-        llm_api_base_url="https://openrouter.ai/api/v1",
         llm_api_http_referer="https://console.example.test",
         llm_api_title="Edu News Pipeline",
         llm_reasoning_effort=None,

@@ -227,7 +227,9 @@ function buildModelsSaveValue() {
     stepList().forEach(({ key }) => {
         const draft = state.modelsDraft.steps[key];
         value.steps[key] = {
-            model: draft.endpoint === null ? null : draft.model.trim(),
+            // (draft.model || '') 兜底同上：手改出的「有 endpoint、无 model」行
+            // 走到这里时会被保存前的空模型拦截挡住，正常不会到这；兜底防 TypeError
+            model: draft.endpoint === null ? null : (draft.model || '').trim(),
             reasoning: !!draft.reasoning,
             endpoint: draft.endpoint,
         };
@@ -326,10 +328,12 @@ function renderModelsTab({ keepDraft = false } = {}) {
             return;
         }
         // 与后端硬规则对齐的前端拦截：指定接入点就必须指定模型——界面上
-        // 「只选接入点不填模型」这个状态不该等 422 回来才发现
+        // 「只选接入点不填模型」这个状态不该等 422 回来才发现。
+        // model 兜底为空串：库里可能存在手改出的「有 endpoint、无 model」行，
+        // 直接 .trim() 会在保存按钮里抛 TypeError，按钮点了没反应且无任何提示
         const missing = stepList().filter(({ key }) => {
             const draft = state.modelsDraft.steps[key];
-            return draft.endpoint !== null && !draft.model.trim();
+            return draft.endpoint !== null && !(draft.model || '').trim();
         });
         if (missing.length) {
             const names = missing.map(({ display_name }) => display_name).join('、');

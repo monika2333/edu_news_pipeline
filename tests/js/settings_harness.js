@@ -198,6 +198,18 @@ function defaultSections() {
     };
 }
 
+// 「有 endpoint、无 model」的步骤形态：正常界面产不出这种状态，
+// 但库里可能存在手改出来的行（页面加载后不碰该行直接保存会踩空模型拦截）
+function sectionsWithBareEndpointStep() {
+    const sections = defaultSections();
+    sections.llm_models.value.steps.scoring = {
+        model: null,
+        reasoning: true,
+        endpoint: 'deepseek',
+    };
+    return sections;
+}
+
 function makeAccount(overrides = {}) {
     return {
         id: overrides.id || `acc-${Math.random().toString(36).slice(2, 10)}`,
@@ -610,4 +622,5 @@ module.exports = {
     defaultAccounts,
     defaultEndpointsPayload,
     makeAccount,
+    sectionsWithBareEndpointStep,
 };

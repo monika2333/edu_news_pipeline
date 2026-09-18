@@ -2,7 +2,7 @@
 // 覆盖验收场景 S1-S33 与芯片布局场景 N1-N23；其中 S7、S17 随排序模式删除，
 // S9、S16、S29、S30、N5、N16 随「全部平铺 + 页面级管理模式」重构删除
 // （批量粘贴、展开抽屉、筛选框、面板会话这些被测形态不复存在）。
-// E1-E12 覆盖接入点管理（endpoints.js）与每步骤接入点选择（models_tab.js）。
+// E1-E16 覆盖接入点管理（endpoints.js）与每步骤接入点选择（models_tab.js）。
 'use strict';
 
 const { test } = require('node:test');
@@ -15,6 +15,7 @@ const {
     defaultSections,
     defaultAccounts,
     makeAccount,
+    sectionsWithBareEndpointStep,
     unhandledRejections,
 } = require('./settings_harness.js');
 
@@ -2231,6 +2232,150 @@ test('E12：环境块不再显示 API 地址与 API Key，改为显示允许的�
         assert.match(text, /向量模型/);
         assert.match(text, /允许的接入点主机/);
         assert.match(text, /openrouter\.ai, api\.deepseek\.com, open\.bigmodel\.cn/);
+    } finally {
+        page.close();
+    }
+});
+
+// ---------- 接入点补丁场景（E13-E16） ----------
+
+test('E13：接入点 409 后「载入最新配置」同步刷新步骤下拉，模型草稿保留', async () => {
+    const page = await bootPage();
+    try {
+        // 模型页先制造未保存修改：摘要生成切「指定」+ 模型名
+        const row = page.modelsRow('summary');
+        switchStepMode(page, row, 'custom');
+        inputValue(page, row.querySelector('.step-model-input'), 'local/unsaved-model');
+
+        // 接入点保存撞 409（另一处已改），保存栏出现「载入最新配置」
+        await enterEndpointsManage(page);
+        inputValue(page, endpointEditRow(page, 'openrouter').querySelector('.endpoint-label-input'),
+            'OpenRouter 409');
+        page.server.saveBehavior.llm_endpoints = {
+            status: 409,
+            payload: { detail: '配置版本已变化：当前版本为 4' },
+        };
+        page.document.querySelector('.btn-endpoints-save').click();
+        await waitFor(() => page.server.requests('save-endpoints').length === 1
+            && page.server.requests('save-endpoints')[0].done);
+        const reloadBtn = page.document.querySelector('.btn-endpoints-reload');
+        await waitFor(() => !reloadBtn.hidden);
+
+        // 另一处已删掉 deepseek：重拉后的已保存清单里只剩 openrouter
+        const sections = page.server.sections;
+        sections.llm_endpoints = {
+            ...sections.llm_endpoints,
+            value: {
+                default: 'openrouter',
+                items: [sections.llm_endpoints.value.items[0]],
+            },
+            version: 4,
+        };
+
+        reloadBtn.click();
+        // 步骤下拉与重拉后的接入点清单一致（deepseek 消失）
+        await waitFor(() => endpointOptions(page, 'summary').length === 1);
+        assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter']);
+        // 步骤表格里未保存的模型修改仍在（只重建 DOM，不重建模型草稿）
+        const rowAfter = page.modelsRow('summary');
+        assert.equal(rowAfter.querySelector('.step-model-mode').value, 'custom');
+        assert.equal(rowAfter.querySelector('.step-model-input').value, 'local/unsaved-model');
+        assert.equal(page.window.eval('state.dirty.llm_models'), true);
+        assert.equal(page.window.eval('state.dirty.llm_endpoints'), false);
+    } finally {
+        page.close();
+    }
+});
+
+test('E14：「载入最新配置」失败时不重渲染，行内错误仍可见', async () => {
+    const page = await bootPage();
+    try {
+        await enterEndpointsManage(page);
+        // 先让保存撞 409，让「载入最新配置」按钮出现
+        inputValue(page, endpointEditRow(page, 'openrouter').querySelector('.endpoint-label-input'),
+            'OpenRouter 409');
+        page.server.saveBehavior.llm_endpoints = {
+            status: 409,
+            payload: { detail: '配置版本已变化：当前版本为 4' },
+        };
+        page.document.querySelector('.btn-endpoints-save').click();
+        await waitFor(() => page.server.requests('save-endpoints').length === 1
+            && page.server.requests('save-endpoints')[0].done);
+        const reloadBtn = page.document.querySelector('.btn-endpoints-reload');
+        await waitFor(() => !reloadBtn.hidden);
+
+        // 再制造一行行内校验错误（白名单外地址，前端拦截不发请求）
+        const deepseekRow = endpointEditRow(page, 'deepseek');
+        const rowError = deepseekRow.querySelector('.endpoint-row-error');
+        inputValue(page, deepseekRow.querySelector('.endpoint-base-url-input'),
+            'https://evil.example.com/v1');
+        page.document.querySelector('.btn-endpoints-save').click();
+        await waitFor(() => rowError.textContent.includes('evil.example.com'));
+
+        // 载入失败（GET settings 注入 500）：不重渲染，行内错误与节点保持原样
+        const rowBefore = endpointEditRow(page, 'deepseek');
+        const modelsRowBefore = page.modelsRow('summary');
+        page.server.failNext['get-settings'] = 1;
+        reloadBtn.click();
+        await waitFor(() => page.server.requests('get-settings').length === 1
+            && page.server.requests('get-settings')[0].done);
+        await waitFor(() => page.document.querySelector('.endpoints-save-status').textContent
+            .includes('载入失败'));
+        assert.equal(page.document.querySelectorAll('.endpoint-edit-row').length, 2);
+        assert.equal(endpointEditRow(page, 'deepseek'), rowBefore, '失败分支不得重建编辑行');
+        assert.equal(rowError.textContent.includes('evil.example.com'), true);
+        assert.ok(rowError.isConnected);
+        assert.equal(page.modelsRow('summary'), modelsRowBefore, '失败分支不得重建步骤表格');
+        assert.equal(page.window.eval('state.dirty.llm_endpoints'), true);
+    } finally {
+        page.close();
+    }
+});
+
+test('E15：步骤草稿指向的接入点删除同样被拦截，提示含步骤中文名与保存指引', async () => {
+    const page = await bootPage();
+    try {
+        // 已保存值无人引用 deepseek；只在草稿里把摘要生成改指向它
+        const row = page.modelsRow('summary');
+        switchStepMode(page, row, 'custom');
+        const endpointSelect = row.querySelector('.step-endpoint-select');
+        endpointSelect.value = 'deepseek';
+        endpointSelect.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+        inputValue(page, row.querySelector('.step-model-input'), 'deepseek/chat-v4');
+        assert.equal(page.window.eval('state.dirty.llm_models'), true);
+
+        await enterEndpointsManage(page);
+        const deepseekRow = endpointEditRow(page, 'deepseek');
+        deepseekRow.querySelector('.endpoint-delete-btn').click();
+        // 拦截 = 不发保存请求、行不移除；提示同时给出切步骤与保存模型配置的指引
+        await assertNever(() => page.server.requests('save-endpoints').length > 0, 300);
+        const error = deepseekRow.querySelector('.endpoint-row-error');
+        assert.match(error.textContent, /DeepSeek/);
+        assert.match(error.textContent, /摘要生成/);
+        assert.match(error.textContent, /保存模型配置/);
+        assert.ok(endpointEditRow(page, 'deepseek'), '草稿引用的接入点不应从草稿移除');
+    } finally {
+        page.close();
+    }
+});
+
+test('E16：「有 endpoint、无 model」的行点保存走空模型拦截，不抛异常不发请求', async () => {
+    const page = await bootPage({ sections: sectionsWithBareEndpointStep() });
+    try {
+        // 相关性评分在库里是 endpoint=deepseek、model=null：渲染为指定 + 空输入框
+        const row = page.modelsRow('scoring');
+        assert.equal(row.querySelector('.step-model-mode').value, 'custom');
+        assert.equal(row.querySelector('.step-model-input').value, '');
+
+        page.document.getElementById('btn-models-save').click();
+        // 判别性断言最先检查：走拦截意味着没有保存请求
+        await assertNever(() => page.server.requests('save-models').length > 0, 300);
+        const status = page.document.getElementById('models-save-status');
+        assert.match(status.textContent, /相关性评分/);
+        assert.match(status.textContent, /模型名为空/);
+        assert.ok(status.classList.contains('is-error'));
+        // 手改行不得在保存路径里抛未处理异常
+        assert.deepEqual(unhandledRejections, []);
     } finally {
         page.close();
     }

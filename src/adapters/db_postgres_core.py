@@ -1183,19 +1183,6 @@ class PostgresAdapter:
                 )
             return after
 
-    def import_app_config(
-        self,
-        *,
-        sections: Mapping[str, Any],
-        accounts: Sequence[Mapping[str, Any]],
-    ) -> None:
-        with self.transaction() as cur:
-            app_config.import_config_bundle(
-                cur,
-                sections=sections,
-                accounts=accounts,
-            )
-
     def import_app_config_missing(
         self,
         *,

@@ -310,7 +310,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 | 表 | 职责 |
 |---|---|
-| `app_settings` | 分区保存全部业务配置：接入点（`llm_endpoints`）、模型（`llm_models`）、每小时来源（`crawl_sources`）、评分加分词表（`score_keyword_bonuses`，有序数组）、抓取教育关键词闸门（`education_keywords`）、京内本地判定词表（`beijing_keywords`）、来源归一化规则（`source_aliases`）。版本号用于控制台乐观锁。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身。`llm_endpoints` 由迁移种子创建；其余分区由 `import-settings` 一次性导入（只写数据库中尚不存在的分区，已存在的一律跳过，不覆盖） |
+| `app_settings` | 分区保存全部业务配置：接入点（`llm_endpoints`）、模型（`llm_models`）、每小时来源（`crawl_sources`）、评分加分词表（`score_keyword_bonuses`，有序数组）、抓取教育关键词闸门（`education_keywords`）、京内本地判定词表（`beijing_keywords`）、来源归一化规则（`source_aliases`）。版本号用于控制台乐观锁。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身。`llm_endpoints` 由迁移种子创建；其余分区由 `import-settings` 导入（只写数据库中尚不存在的分区，已存在的一律跳过，不覆盖；重复执行安全） |
 | `crawl_accounts` | 四类账号型来源的账号权威清单；`display_name` 是系统解析的名称，`display_name_synced_at` / `display_name_error` 记录最近成功时间或失败原因；运行时只读取启用行 |
 | `console_users` / `console_user_sessions` | 账号与登录会话 |
 | `review_events` | 审计日志，记录谁在什么时候改了什么 |

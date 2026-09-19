@@ -13,10 +13,6 @@ class ConfigVersionConflictError(RuntimeError):
     """Raised when an app setting was changed after a client read it."""
 
 
-class ConfigTargetNotEmptyError(RuntimeError):
-    """Raised when a one-time import would overwrite database configuration."""
-
-
 class CrawlAccountConflictError(RuntimeError):
     """Raised when a source already has the normalized account identifier."""
 
@@ -174,19 +170,6 @@ class AppConfigNamespace:
     ) -> dict[str, Any]:
         with self._adapter.transaction() as cur:
             return delete_account(cur, account_id)
-
-    def import_missing_app_sections(
-        self,
-        *,
-        sections: Mapping[str, Any],
-        accounts: Sequence[Mapping[str, Any]],
-    ) -> dict[str, Any]:
-        with self._adapter.transaction() as cur:
-            return import_missing_config_sections(
-                cur,
-                sections=sections,
-                accounts=accounts,
-            )
 
 
 def fetch_settings(cur: psycopg.Cursor) -> list[dict[str, Any]]:
@@ -470,75 +453,19 @@ def delete_account(cur: psycopg.Cursor, account_id: str) -> dict[str, Any]:
     return before
 
 
-def import_config_bundle(
-    cur: psycopg.Cursor,
-    *,
-    sections: Mapping[str, Any],
-    accounts: Sequence[Mapping[str, Any]],
-) -> None:
-    """One-shot legacy import: write every requested section and account.
-
-    The gate is per-section instead of "whole app_settings must be empty":
-    migrations seed sections of their own (e.g. llm_endpoints), and a fresh
-    deployment runs dbmate before this import, so a blanket check would make
-    the import impossible. Sections not being imported stay untouched, and
-    re-importing an already-populated section is still refused.
-    """
-
-    cur.execute("LOCK TABLE app_settings, crawl_accounts IN SHARE ROW EXCLUSIVE MODE")
-    occupied_sections: list[str] = []
-    for section in sections:
-        cur.execute(
-            "SELECT EXISTS (SELECT 1 FROM app_settings WHERE section = %s) AS occupied",
-            (section,),
-        )
-        if bool(cur.fetchone()["occupied"]):
-            occupied_sections.append(section)
-    if occupied_sections:
-        raise ConfigTargetNotEmptyError(
-            f"配置分区 {'、'.join(occupied_sections)} 已存在数据，拒绝导入；"
-            "一次性导入不会覆盖已有分区"
-        )
-    cur.execute("SELECT EXISTS (SELECT 1 FROM crawl_accounts) AS occupied")
-    accounts_occupied = bool(cur.fetchone()["occupied"])
-    if accounts_occupied:
-        raise ConfigTargetNotEmptyError("数据库已存在抓取账号，拒绝导入")
-
-    for section, value in sections.items():
-        cur.execute(
-            """
-            INSERT INTO app_settings (section, value, version)
-            VALUES (%s, %s, 1)
-            """,
-            (section, Json(value)),
-        )
-
-    for item in accounts:
-        insert_account(
-            cur,
-            source=str(item["source"]),
-            normalized_identifier=str(item["normalized_identifier"]),
-            original_input=str(item["original_input"]),
-            profile_url=str(item["profile_url"]),
-            display_name=item.get("display_name"),
-            enabled=bool(item.get("enabled", True)),
-            actor_user_id=None,
-        )
-
-
 def import_missing_config_sections(
     cur: psycopg.Cursor,
     *,
     sections: Mapping[str, Any],
     accounts: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    """Phase-2 import: write only the sections the database is missing.
+    """Import path: write only the sections the database is missing.
 
-    Unlike :func:`import_config_bundle`, already-populated sections are never
-    overwritten and ``crawl_accounts`` is left untouched when rows exist, so
-    this can run against a production database that already went through the
-    phase-1 import. On an empty database the outcome is identical to the
-    one-shot bundle import.
+    Already-populated sections are never overwritten and ``crawl_accounts``
+    is left untouched when rows exist, so this can run against a production
+    database that already went through a previous import. On an empty
+    database it writes every requested section and account, which is what a
+    fresh deployment runs after dbmate.
     """
 
     cur.execute("LOCK TABLE app_settings, crawl_accounts IN SHARE ROW EXCLUSIVE MODE")
@@ -586,7 +513,6 @@ def import_missing_config_sections(
 
 __all__ = [
     "AppConfigNamespace",
-    "ConfigTargetNotEmptyError",
     "ConfigVersionConflictError",
     "CrawlAccountConflictError",
     "delete_account",
@@ -597,7 +523,6 @@ __all__ = [
     "fetch_setting",
     "fetch_settings",
     "find_account",
-    "import_config_bundle",
     "import_missing_config_sections",
     "insert_account",
     "record_account_name_failure",

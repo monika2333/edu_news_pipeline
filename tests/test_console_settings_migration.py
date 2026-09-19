@@ -4,7 +4,7 @@ import json
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 from uuid import uuid4
 
 import psycopg
@@ -13,9 +13,6 @@ from fastapi.testclient import TestClient
 from psycopg import sql
 from psycopg.rows import dict_row
 
-from src.adapters.db_postgres_app_config import (
-    ConfigTargetNotEmptyError,
-)
 from src.adapters.db_postgres_core import PostgresAdapter
 from src.business_config import load_business_config
 from src.config import get_settings
@@ -290,9 +287,10 @@ def test_llm_endpoints_migration_seeds_openrouter_and_down_removes_it() -> None:
 
 def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
     """The real fresh-deployment order: dbmate up applies every migration
-    (seeded llm_endpoints included), then `import-settings --apply` imports
-    the legacy sections. The seed row must not block the import, and the
-    imported sections must coexist with it."""
+    (seeded llm_endpoints included), then `import-settings --apply` writes
+    everything through the incremental path. On the empty database the
+    accounts must actually be written; re-running the import must skip every
+    section without changing data or accounts."""
 
     base_up, _base_down = _migration_parts()
     names_up, _names_down = _account_names_migration_parts()
@@ -304,10 +302,14 @@ def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
         connection.execute(endpoints_up)
 
         adapter = PostgresAdapter(connection)
-        adapter.import_app_config(
+        report = adapter.import_app_config_missing(
             sections=_sections(),
             accounts=[_account("account-1")],
         )
+
+        assert sorted(report["written_sections"]) == sorted(_sections())
+        assert report["skipped_sections"] == []
+        assert report["accounts_written"] is True
 
         loaded = load_business_config(adapter)
         assert loaded.llm_steps["summary"].model == "model-a"
@@ -340,14 +342,28 @@ def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
             "source_aliases",
         ]
 
-        # 重复导入整个 bundle 仍被拒绝，种子行保持原样
-        with pytest.raises(ConfigTargetNotEmptyError, match="llm_models、crawl_sources"):
-            adapter.import_app_config(sections=_sections(), accounts=[])
-        after = connection.execute(
-            "SELECT value, version FROM app_settings WHERE section = 'llm_endpoints'"
-        ).fetchone()
-        assert after["version"] == 1
-        assert after["value"] == seed["value"]
+        # 重复导入：全部分区跳过，版本与内容一字不变，账号数不变
+        def _snapshot_rows() -> dict[str, Any]:
+            return {
+                row["section"]: (row["value"], int(row["version"]))
+                for row in connection.execute(
+                    "SELECT section, value, version FROM app_settings"
+                ).fetchall()
+            }
+
+        before_rerun = _snapshot_rows()
+        rerun = adapter.import_app_config_missing(
+            sections=_sections(),
+            accounts=[_account("account-1")],
+        )
+        assert rerun["written_sections"] == []
+        assert sorted(rerun["skipped_sections"]) == sorted(_sections())
+        assert rerun["accounts_written"] is False
+        assert _snapshot_rows() == before_rerun
+        accounts_count = connection.execute(
+            "SELECT count(*) AS n FROM crawl_accounts"
+        ).fetchone()["n"]
+        assert accounts_count == 1
 
 
 def test_phase2_import_writes_only_missing_sections_on_populated_database(
@@ -374,7 +390,7 @@ def test_phase2_import_writes_only_missing_sections_on_populated_database(
             for key, value in _sections().items()
             if key in ("llm_models", "crawl_sources")
         }
-        adapter.import_app_config(
+        adapter.import_app_config_missing(
             sections=phase1_sections,
             accounts=[_account("account-1")],
         )
@@ -405,6 +421,11 @@ def test_phase2_import_writes_only_missing_sections_on_populated_database(
             json.dumps({"教育工委": 100}, ensure_ascii=False),
             encoding="utf-8",
         )
+        # 一期遗留的旧账号文件：一个账号还在库里，另一个早已在控制台删除。
+        # 导入必须保持"表非空则不写账号"，不能把删掉的账号复活。
+        (config_dir / "toutiao_author.txt").write_text(
+            "account-1\naccount-9\n", encoding="utf-8"
+        )
 
         monkeypatch.setattr(settings_service, "get_adapter", lambda: adapter)
         monkeypatch.setattr(settings_service, "load_environment", lambda: None)
@@ -415,6 +436,7 @@ def test_phase2_import_writes_only_missing_sections_on_populated_database(
             "BEIJING_KEYWORDS_PATH",
             "SOURCE_ALIASES_PATH",
             "SCORE_KEYWORD_BONUSES_PATH",
+            "TOUTIAO_AUTHORS_PATH",
         ):
             monkeypatch.delenv(key, raising=False)
 
@@ -443,6 +465,11 @@ def test_phase2_import_writes_only_missing_sections_on_populated_database(
             """
         ).fetchone()
         assert counts == {"settings_count": 7, "accounts_count": 1}
+        # 旧账号文件里库里没有的 account-9 不得被写入
+        revived = connection.execute(
+            "SELECT 1 FROM crawl_accounts WHERE normalized_identifier = 'account-9'"
+        ).fetchone()
+        assert revived is None
 
         # 导入完成后整份配置可加载，词表内容与文件一致
         loaded = load_business_config(adapter)
@@ -506,7 +533,7 @@ def test_m5_stale_put_returns_409_and_keeps_current_value(
         _create_legacy_schema(connection)
         connection.execute(up_sql)
         adapter = PostgresAdapter(connection)
-        adapter.import_app_config(
+        adapter.import_app_config_missing(
             sections=_sections(),
             accounts=[],
         )
@@ -533,57 +560,12 @@ def test_m5_stale_put_returns_409_and_keeps_current_value(
         assert str(current["updated_by_user_id"]) == ADMIN_ID
 
 
-@pytest.mark.parametrize("occupied_target", ["settings", "accounts"])
-def test_m13_import_refuses_when_any_target_already_has_data(
-    occupied_target: str,
-) -> None:
-    up_sql, _down_sql = _migration_parts()
-    with _isolated_database() as connection:
-        _create_legacy_schema(connection)
-        connection.execute(up_sql)
-        adapter = PostgresAdapter(connection)
-        if occupied_target == "settings":
-            connection.execute(
-                """
-                INSERT INTO app_settings (section, value)
-                VALUES ('crawl_sources', '["toutiao"]'::jsonb)
-                """
-            )
-        else:
-            connection.execute(
-                """
-                INSERT INTO crawl_accounts (
-                    source, normalized_identifier, original_input, profile_url
-                )
-                VALUES ('toutiao', 'existing', 'existing', 'https://example.test')
-                """
-            )
-
-        with pytest.raises(ConfigTargetNotEmptyError):
-            adapter.import_app_config(
-                sections=_sections(),
-                accounts=[_account("account-2")],
-            )
-
-        counts = connection.execute(
-            """
-            SELECT
-                (SELECT count(*) FROM app_settings) AS settings_count,
-                (SELECT count(*) FROM crawl_accounts) AS accounts_count
-            """
-        ).fetchone()
-        assert counts == {
-            "settings_count": 1 if occupied_target == "settings" else 0,
-            "accounts_count": 1 if occupied_target == "accounts" else 0,
-        }
-
-
 def test_m10_runtime_query_excludes_disabled_accounts() -> None:
     with _isolated_database() as connection:
         _create_legacy_schema(connection)
         _apply_managed_setting_migrations(connection)
         adapter = PostgresAdapter(connection)
-        adapter.import_app_config(
+        adapter.import_app_config_missing(
             sections=_sections(),
             accounts=[
                 _account("enabled-account"),
@@ -606,7 +588,7 @@ def test_single_table_config_writes_are_exposed_only_by_namespace() -> None:
         _apply_managed_setting_migrations(connection)
         connection.execute(names_up)
         adapter = PostgresAdapter(connection)
-        adapter.import_app_config(sections=_sections(), accounts=[])
+        adapter.import_app_config_missing(sections=_sections(), accounts=[])
 
         created = adapter.app_config.create_crawl_account_as_user(
             source="toutiao",

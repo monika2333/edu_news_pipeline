@@ -30,7 +30,7 @@ from src.business_config import (
     get_business_config,
     load_business_config,
 )
-from src.domain import SourceAliasRules
+from src.domain import SourceAliasRules, normalize_source_name
 from src.workers import crawl_sources, enrich_summary, geo_classify, score
 from tests.conftest import make_endpoint_config
 
@@ -237,6 +237,44 @@ class TestSourceAliasesValidator:
         assert rules.aliases == {"北京号": "北京日报"}
 
 
+def test_source_aliases_suffix_order_is_preserved_end_to_end() -> None:
+    """T4: suffixes 的顺序有意义，校验与加载都不得排序。
+
+    顺序特意取成非字典序：sorted 会变成 ["APP", "客户端"]。
+    """
+
+    value = {"suffixes": ["客户端", "APP"], "aliases": {}}
+    assert sorted(value["suffixes"]) == ["APP", "客户端"]
+
+    assert (
+        business_config.validate_source_aliases(value)["suffixes"]
+        == ["客户端", "APP"]
+    )
+
+    rows = _settings_rows()
+    next(row for row in rows if row["section"] == "source_aliases")["value"] = value
+    loaded = load_business_config(_fake_adapter(rows))
+    assert loaded.source_aliases.suffixes == ("客户端", "APP")
+
+
+def test_suffix_order_decides_which_suffix_is_stripped() -> None:
+    """「北京晚报客户端」同时以「晚报客户端」和「客户端」结尾：
+    只剥离排在前面的「晚报客户端」。若被排序成字典序（「客户端」在前），
+    同一个名字会被剥成「北京晚报」。"""
+
+    value = {"suffixes": ["晚报客户端", "客户端"], "aliases": {}}
+    assert sorted(value["suffixes"]) == ["客户端", "晚报客户端"]
+
+    rules = business_config.resolve_source_aliases(value)
+    assert rules.suffixes == ("晚报客户端", "客户端")
+    assert normalize_source_name("北京晚报客户端", rules) == "北京"
+
+    rows = _settings_rows()
+    next(row for row in rows if row["section"] == "source_aliases")["value"] = value
+    loaded = load_business_config(_fake_adapter(rows))
+    assert normalize_source_name("北京晚报客户端", loaded.source_aliases) == "北京"
+
+
 def test_validate_section_dispatches_new_sections() -> None:
     assert business_config.validate_section(
         "score_keyword_bonuses", [{"keyword": "高考", "bonus": 10}]
@@ -268,9 +306,25 @@ def test_load_requires_each_new_section(section: str) -> None:
         load_business_config(_fake_adapter(rows))
 
 
-def test_load_rejects_invalid_stored_wordlists() -> None:
+@pytest.mark.parametrize(
+    ("section", "invalid_value"),
+    [
+        # 加分词典：分值不是整数
+        ("score_keyword_bonuses", [{"keyword": "高考", "bonus": "10"}]),
+        # 教育关键词：空列表等于抓取全部放行，加载路径必须拒绝（T3）
+        ("education_keywords", []),
+        # 京内关键词：空列表等于全部判京外，加载路径必须拒绝（T3）
+        ("beijing_keywords", []),
+        # 来源别名：别名值为空字符串
+        ("source_aliases", {"suffixes": ["客户端"], "aliases": {"北京号": ""}}),
+    ],
+)
+def test_load_rejects_invalid_stored_wordlists(
+    section: str,
+    invalid_value: Any,
+) -> None:
     rows = _settings_rows()
-    rows[3]["value"] = [{"keyword": "高考", "bonus": "10"}]
+    next(row for row in rows if row["section"] == section)["value"] = invalid_value
 
     with pytest.raises(BusinessConfigError, match="数据库业务配置无效"):
         load_business_config(_fake_adapter(rows))

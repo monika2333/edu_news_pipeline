@@ -5,7 +5,6 @@ from typing import Any, NoReturn
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from src.adapters.db_postgres_app_config import (
-    ConfigTargetNotEmptyError,
     ConfigVersionConflictError,
     CrawlAccountConflictError,
 )
@@ -28,7 +27,7 @@ router = APIRouter(prefix="/api/admin", tags=["settings"])
 def _raise_service_error(exc: Exception) -> NoReturn:
     if isinstance(exc, ConfigVersionConflictError):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if isinstance(exc, (CrawlAccountConflictError, ConfigTargetNotEmptyError)):
+    if isinstance(exc, CrawlAccountConflictError):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if isinstance(exc, KeyError):
         raise HTTPException(status_code=404, detail="配置对象不存在") from exc

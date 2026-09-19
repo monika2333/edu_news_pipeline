@@ -1196,6 +1196,19 @@ class PostgresAdapter:
                 accounts=accounts,
             )
 
+    def import_app_config_missing(
+        self,
+        *,
+        sections: Mapping[str, Any],
+        accounts: Sequence[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        with self.transaction() as cur:
+            return app_config.import_missing_config_sections(
+                cur,
+                sections=sections,
+                accounts=accounts,
+            )
+
 
 def get_adapter() -> PostgresAdapter:
     global _ADAPTER

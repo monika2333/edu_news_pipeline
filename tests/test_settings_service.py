@@ -66,6 +66,23 @@ def _llm_endpoints_value() -> dict[str, Any]:
     }
 
 
+def _wordlist_rows() -> list[dict[str, Any]]:
+    return [
+        {
+            "section": "score_keyword_bonuses",
+            "value": [{"keyword": "教育工委", "bonus": 100}],
+            "version": 1,
+        },
+        {"section": "education_keywords", "value": ["教育"], "version": 1},
+        {"section": "beijing_keywords", "value": ["北京"], "version": 1},
+        {
+            "section": "source_aliases",
+            "value": {"suffixes": [], "aliases": {}},
+            "version": 1,
+        },
+    ]
+
+
 def _settings_section_adapter(
     sections: dict[str, Any],
     *,
@@ -113,6 +130,7 @@ def test_m3_console_duplicate_review_reads_current_model_each_call(
             {"section": "llm_models", "value": current_value, "version": 1},
             {"section": "llm_endpoints", "value": _llm_endpoints_value(), "version": 1},
             {"section": "crawl_sources", "value": ["toutiao"], "version": 1},
+            *_wordlist_rows(),
         ],
         fetch_enabled_accounts=lambda: [],
     )
@@ -635,6 +653,68 @@ def test_endpoint_save_rejects_non_whitelisted_base_url(
             expected_version=4,
             actor=_admin(),
         )
+
+
+def test_update_setting_normalizes_wordlist_sections_before_save(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    saves: list[dict[str, Any]] = []
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter({"education_keywords": ["教育"]}, saves=saves),
+    )
+
+    settings_service.update_setting(
+        "education_keywords",
+        value=[" 教育 ", "教育", "", "学校"],
+        expected_version=4,
+        actor=_admin(),
+    )
+
+    assert saves[0]["section"] == "education_keywords"
+    assert saves[0]["value"] == ["教育", "学校"]
+
+
+def test_empty_wordlist_is_rejected_over_admin_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("src.console.app.warn_legacy_config", lambda: [])
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _admin
+
+    response = TestClient(app).put(
+        "/api/admin/settings/beijing_keywords",
+        json={"value": [], "expected_version": 1},
+    )
+
+    assert response.status_code == 422
+    assert "规范化后不能为空" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ([{"keyword": "高考", "bonus": 10}, {"keyword": "高考", "bonus": 20}], "关键词重复"),
+        ([{"keyword": "高考", "bonus": 1000}], "-100 到 100"),
+        ([{"keyword": "高考", "bonus": True}], "必须是整数"),
+    ],
+)
+def test_invalid_bonus_rules_are_rejected_over_admin_api(
+    monkeypatch: pytest.MonkeyPatch,
+    value: Any,
+    message: str,
+) -> None:
+    monkeypatch.setattr("src.console.app.warn_legacy_config", lambda: [])
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _admin
+
+    response = TestClient(app).put(
+        "/api/admin/settings/score_keyword_bonuses",
+        json={"value": value, "expected_version": 1},
+    )
+
+    assert response.status_code == 422
+    assert message in response.json()["detail"]
 
 
 def test_legacy_import_preserves_each_reasoning_switch(

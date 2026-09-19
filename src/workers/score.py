@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.llm_scoring import score_text
+from src.business_config import get_business_config
 from src.config import get_settings
 from src.domain import PrimaryArticleForScoring
 from src.workers import (
@@ -16,11 +17,6 @@ from src.workers import (
 )
 
 WORKER = "score"
-
-DEFAULT_KEYWORD_BONUS_RULES: Dict[str, int] = {
-    "\u5317\u4eac\u5e02\u59d4\u6559\u80b2\u5de5\u59d4": 100,
-    "\u5317\u4eac\u5e02\u6559\u80b2\u59d4\u5458\u4f1a": 100,
-}
 
 ScoreSuccess = Tuple[PrimaryArticleForScoring, Optional[int], int, Optional[int], Dict[str, Any]]
 ScoreCandidate = Tuple[PrimaryArticleForScoring, int, List[Dict[str, Any]]]
@@ -268,7 +264,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
 
         workers = concurrency or settings.default_concurrency or 5
         workers = max(1, workers)
-        bonus_rules = settings.score_keyword_bonus_rules or DEFAULT_KEYWORD_BONUS_RULES
+        bonus_rules = get_business_config().score_bonus_rules()
 
         if workers == 1:
             successes, failures, llm_skipped_count = _process_scores_single_worker(

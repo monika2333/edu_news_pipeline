@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional, Sequence
 from urllib.parse import urlsplit
 
+from src.domain.source_aliases import SourceAliasRules
+
 
 LLM_STEPS = (
     "summary",
@@ -84,7 +86,17 @@ SOURCE_ALIASES = {
 ACCOUNT_SOURCES = tuple(
     item.key for item in SOURCE_CATALOG if item.requires_accounts
 )
-SETTING_SECTIONS = ("llm_endpoints", "llm_models", "crawl_sources")
+SETTING_SECTIONS = (
+    "llm_endpoints",
+    "llm_models",
+    "crawl_sources",
+    "score_keyword_bonuses",
+    "education_keywords",
+    "beijing_keywords",
+    "source_aliases",
+)
+SCORE_BONUS_MIN = -100
+SCORE_BONUS_MAX = 100
 
 
 class BusinessConfigError(RuntimeError):
@@ -119,6 +131,12 @@ class LLMEndpointConfig:
 
 
 @dataclass(frozen=True)
+class ScoreKeywordBonus:
+    keyword: str
+    bonus: int
+
+
+@dataclass(frozen=True)
 class BusinessConfig:
     llm_steps: Mapping[str, LLMStepConfig]
     crawl_sources: tuple[str, ...]
@@ -126,6 +144,10 @@ class BusinessConfig:
     versions: Mapping[str, int]
     llm_endpoints: Mapping[str, LLMEndpointConfig] = field(default_factory=dict)
     default_endpoint: str = ""
+    score_keyword_bonuses: tuple[ScoreKeywordBonus, ...] = ()
+    education_keywords: tuple[str, ...] = ()
+    beijing_keywords: tuple[str, ...] = ()
+    source_aliases: "SourceAliasRules" = field(default_factory=lambda: SourceAliasRules())
 
     def model_for(self, step: str) -> str:
         return self.step_config(step).model
@@ -135,6 +157,11 @@ class BusinessConfig:
             return self.llm_steps[step]
         except KeyError as exc:
             raise BusinessConfigError(f"缺少模型配置步骤：{step}") from exc
+
+    def score_bonus_rules(self) -> dict[str, int]:
+        """Keyword→bonus rules in the order they were configured."""
+
+        return {item.keyword: item.bonus for item in self.score_keyword_bonuses}
 
     def endpoint_by_key(self, key: Optional[str]) -> LLMEndpointConfig:
         resolved = key or self.default_endpoint
@@ -179,6 +206,16 @@ class BusinessConfig:
             "crawl_accounts": {
                 source: [item.normalized_identifier for item in items]
                 for source, items in self.accounts.items()
+            },
+            "score_keyword_bonuses": [
+                {"keyword": item.keyword, "bonus": item.bonus}
+                for item in self.score_keyword_bonuses
+            ],
+            "education_keywords": list(self.education_keywords),
+            "beijing_keywords": list(self.beijing_keywords),
+            "source_aliases": {
+                "suffixes": list(self.source_aliases.suffixes),
+                "aliases": dict(self.source_aliases.aliases),
             },
             "versions": dict(self.versions),
         }
@@ -398,10 +435,129 @@ def validate_crawl_sources(value: Any, *, allow_daily: bool = False) -> list[str
     return sorted(normalized, key=catalog_index.__getitem__)
 
 
+def validate_score_keyword_bonuses(value: Any) -> list[dict[str, Any]]:
+    """Validate the ordered keyword-bonus list.
+
+    Stored as a list (not an object) because jsonb does not preserve object
+    key order, and both the settings page and ``matched_rules`` depend on the
+    configured order.
+    """
+
+    if not isinstance(value, list):
+        raise ValueError(
+            "score_keyword_bonuses 必须是有序数组，不能存为 JSON 对象"
+            "（jsonb 不保留对象键顺序）"
+        )
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, item in enumerate(value):
+        if not isinstance(item, Mapping):
+            raise ValueError(f"score_keyword_bonuses[{index}] 必须是对象")
+        unexpected = set(item) - {"keyword", "bonus"}
+        if unexpected:
+            fields = ", ".join(sorted(str(field) for field in unexpected))
+            raise ValueError(f"score_keyword_bonuses[{index}] 含未知字段：{fields}")
+        keyword = item.get("keyword")
+        if not isinstance(keyword, str) or not keyword.strip():
+            raise ValueError(f"score_keyword_bonuses[{index}].keyword 不能为空")
+        bonus = item.get("bonus")
+        if isinstance(bonus, bool) or not isinstance(bonus, int):
+            raise ValueError(
+                f"score_keyword_bonuses[{index}].bonus 必须是整数，布尔值不算"
+            )
+        if not SCORE_BONUS_MIN <= bonus <= SCORE_BONUS_MAX:
+            raise ValueError(
+                f"score_keyword_bonuses[{index}].bonus 取值必须在 "
+                f"{SCORE_BONUS_MIN} 到 {SCORE_BONUS_MAX} 之间"
+            )
+        keyword = keyword.strip()
+        if keyword in seen:
+            raise ValueError(f"score_keyword_bonuses 关键词重复：{keyword}")
+        seen.add(keyword)
+        normalized.append({"keyword": keyword, "bonus": bonus})
+    return normalized
+
+
+def validate_keyword_list(value: Any, *, label: str) -> list[str]:
+    """Normalize a keyword list; reject it when nothing survives.
+
+    An empty list would silently flip behavior at the consumer: education
+    keywords gate the crawl (empty = admit everything), Beijing keywords
+    drive local routing (empty = classify everything as outside Beijing).
+    """
+
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise ValueError(f"{label} 必须是字符串列表")
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for index, raw in enumerate(value):
+        if not isinstance(raw, str):
+            raise ValueError(f"{label}[{index}] 必须是字符串")
+        token = raw.strip()
+        if not token:
+            continue
+        if token in seen:
+            continue
+        seen.add(token)
+        normalized.append(token)
+    if not normalized:
+        raise ValueError(
+            f"{label} 规范化后不能为空：空词表会静默改变线上筛选行为"
+        )
+    return normalized
+
+
+def validate_education_keywords(value: Any) -> list[str]:
+    return validate_keyword_list(value, label="education_keywords")
+
+
+def validate_beijing_keywords(value: Any) -> list[str]:
+    return validate_keyword_list(value, label="beijing_keywords")
+
+
+def validate_source_aliases(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError("source_aliases 必须是对象")
+    unexpected = set(value) - {"suffixes", "aliases"}
+    if unexpected:
+        raise ValueError(f"source_aliases 含未知字段：{', '.join(sorted(unexpected))}")
+    suffixes = value.get("suffixes")
+    aliases = value.get("aliases")
+    if not isinstance(suffixes, list):
+        raise ValueError("source_aliases.suffixes 必须是有序列表（剥离顺序有意义）")
+    if not isinstance(aliases, Mapping):
+        raise ValueError("source_aliases.aliases 必须是对象")
+    normalized_suffixes: list[str] = []
+    for index, suffix in enumerate(suffixes):
+        if not isinstance(suffix, str) or not suffix:
+            raise ValueError(f"source_aliases.suffixes[{index}] 必须是非空字符串")
+        normalized_suffixes.append(suffix)
+    normalized_aliases: dict[str, str] = {}
+    for key, target in aliases.items():
+        if not isinstance(key, str) or not key:
+            raise ValueError("source_aliases.aliases 的键必须是非空字符串")
+        if not isinstance(target, str) or not target:
+            raise ValueError(f"source_aliases.aliases[{key}] 的值必须是非空字符串")
+        normalized_aliases[key] = target
+    return {"suffixes": normalized_suffixes, "aliases": normalized_aliases}
+
+
+def resolve_source_aliases(value: Any) -> SourceAliasRules:
+    normalized = validate_source_aliases(value)
+    return SourceAliasRules(
+        suffixes=tuple(normalized["suffixes"]),
+        aliases=dict(normalized["aliases"]),
+    )
+
+
 SECTION_VALIDATORS = {
     "llm_endpoints": validate_llm_endpoints,
     "llm_models": validate_llm_models,
     "crawl_sources": validate_crawl_sources,
+    "score_keyword_bonuses": validate_score_keyword_bonuses,
+    "education_keywords": validate_education_keywords,
+    "beijing_keywords": validate_beijing_keywords,
+    "source_aliases": validate_source_aliases,
 }
 
 
@@ -466,6 +622,16 @@ def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
             indexed["llm_endpoints"]["value"]
         )
         sources = validate_crawl_sources(indexed["crawl_sources"]["value"])
+        bonuses = validate_score_keyword_bonuses(
+            indexed["score_keyword_bonuses"]["value"]
+        )
+        education_keywords = validate_education_keywords(
+            indexed["education_keywords"]["value"]
+        )
+        beijing_keywords = validate_beijing_keywords(
+            indexed["beijing_keywords"]["value"]
+        )
+        source_aliases = resolve_source_aliases(indexed["source_aliases"]["value"])
     except ValueError as exc:
         raise BusinessConfigError(f"数据库业务配置无效：{exc}") from exc
     endpoint_keys = set(llm_endpoints)
@@ -504,6 +670,13 @@ def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
         },
         llm_endpoints=llm_endpoints,
         default_endpoint=default_endpoint,
+        score_keyword_bonuses=tuple(
+            ScoreKeywordBonus(keyword=item["keyword"], bonus=item["bonus"])
+            for item in bonuses
+        ),
+        education_keywords=tuple(education_keywords),
+        beijing_keywords=tuple(beijing_keywords),
+        source_aliases=source_aliases,
     )
 
 
@@ -548,13 +721,22 @@ LEGACY_ENV_KEYS = (
     "TENCENT_AUTHORS_PATH",
     "BTIME_UIDS_PATH",
     "BEIJINGHAO_COLUMNS_PATH",
+    "KEYWORDS_PATH",
+    "BEIJING_KEYWORDS_PATH",
+    "SOURCE_ALIASES_PATH",
+    "SCORE_KEYWORD_BONUSES",
+    "SCORE_KEYWORD_BONUSES_PATH",
 )
-LEGACY_ACCOUNT_FILES = (
+LEGACY_CONFIG_FILES = (
     Path("config/toutiao_author.txt"),
     Path("config/qq_author.txt"),
     Path("config/btime_author.txt"),
     Path("config/beijinghao_author.txt"),
     Path("newsqq_crawl/qq_author.txt"),
+    Path("config/education_keywords.txt"),
+    Path("config/beijing_keywords.txt"),
+    Path("config/source_aliases.json"),
+    Path("config/score_keyword_bonuses.json"),
 )
 
 
@@ -567,7 +749,7 @@ def warn_legacy_config(*, root: Optional[Path] = None) -> list[str]:
     for key in LEGACY_ENV_KEYS:
         if os.getenv(key) is not None:
             warnings.append(f"旧配置 {key} 已不再生效，请在控制台设置页修改")
-    for relative_path in LEGACY_ACCOUNT_FILES:
+    for relative_path in LEGACY_CONFIG_FILES:
         path = repository_root / relative_path
         if path.exists():
             warnings.append(f"旧配置文件 {relative_path.as_posix()} 已不再生效，请在控制台设置页修改")
@@ -585,7 +767,7 @@ __all__ = [
     "CrawlAccount",
     "ENDPOINT_KEY_PATTERN",
     "ENDPOINT_ITEM_FIELDS",
-    "LEGACY_ACCOUNT_FILES",
+    "LEGACY_CONFIG_FILES",
     "LEGACY_ENV_KEYS",
     "LLMStepConfig",
     "LLMEndpointConfig",
@@ -593,6 +775,9 @@ __all__ = [
     "LLM_API_STYLES",
     "LLM_STEPS",
     "LLM_STEP_LABELS",
+    "SCORE_BONUS_MAX",
+    "SCORE_BONUS_MIN",
+    "ScoreKeywordBonus",
     "SECTION_VALIDATORS",
     "SETTING_SECTIONS",
     "SOURCE_ALIASES",
@@ -608,10 +793,16 @@ __all__ = [
     "resolve_llm_endpoints",
     "resolve_models",
     "resolve_llm_steps",
+    "resolve_source_aliases",
+    "validate_beijing_keywords",
     "validate_crawl_sources",
+    "validate_education_keywords",
     "validate_endpoint_base_url",
+    "validate_keyword_list",
     "validate_llm_endpoints",
     "validate_llm_models",
+    "validate_score_keyword_bonuses",
     "validate_section",
+    "validate_source_aliases",
     "warn_legacy_config",
 ]

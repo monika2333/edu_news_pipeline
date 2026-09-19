@@ -265,6 +265,9 @@ class _RunAdapter:
 
 
 def test_run_combines_local_routing_and_beijing_gate(monkeypatch) -> None:
+    from src.business_config import business_config_context
+    from tests.conftest import make_endpoint_config
+
     candidate = _beijing_gate_candidate()
     adapter = _RunAdapter(candidate)
     settings = SimpleNamespace(
@@ -272,7 +275,6 @@ def test_run_combines_local_routing_and_beijing_gate(monkeypatch) -> None:
         default_concurrency=2,
         external_filter_batch_size=10,
         beijing_gate_max_retries=1,
-        beijing_keywords_path="keywords.txt",
     )
     decision = SimpleNamespace(
         is_beijing_related=True,
@@ -281,10 +283,14 @@ def test_run_combines_local_routing_and_beijing_gate(monkeypatch) -> None:
     )
     monkeypatch.setattr(geo_classify, "get_adapter", lambda: adapter)
     monkeypatch.setattr(geo_classify, "get_settings", lambda: settings)
-    monkeypatch.setattr(geo_classify, "load_beijing_keywords", lambda path: ["北京"])
     monkeypatch.setattr(geo_classify, "call_beijing_gate", lambda candidate, retries: decision)
 
-    geo_classify.run(limit=1, concurrency=2)
+    config = make_endpoint_config(
+        beijing_keywords=("北京",),
+        education_keywords=("教育",),
+    )
+    with business_config_context(config):
+        geo_classify.run(limit=1, concurrency=2)
 
     assert adapter.local_updates == [
         (candidate.article_id, True, "pending_beijing_gate")

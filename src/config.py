@@ -1,11 +1,10 @@
 ﻿from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _ENV_LOADED = False
@@ -77,35 +76,6 @@ def _bool_from_env(value: Optional[str], *, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def _parse_keyword_bonus_rules(raw: Optional[str]) -> Optional[Dict[str, int]]:
-    if not raw:
-        return None
-    try:
-        data = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    result: Dict[str, int] = {}
-    for key, value in data.items():
-        if not key:
-            continue
-        try:
-            result[str(key)] = int(value)
-        except (TypeError, ValueError):
-            continue
-    return result or None
-
-
-def _parse_keyword_bonus_rules_file(path: Path) -> Optional[Dict[str, int]]:
-    if not path.exists():
-        return None
-    try:
-        return _parse_keyword_bonus_rules(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-
-
 @dataclass(frozen=True)
 class Settings:
     db_host: str
@@ -140,7 +110,6 @@ class Settings:
     process_limit: Optional[int]
     default_concurrency: int
     summary_concurrency: int
-    keywords_path: Path
     console_basic_username: Optional[str]
     console_basic_password: Optional[str]
     console_api_token: Optional[str]
@@ -152,9 +121,6 @@ class Settings:
     feishu_receive_id: Optional[str]
     feishu_receive_id_type: str
     feishu_archive_allowed_open_ids: tuple[str, ...]
-    beijing_keywords_path: Path
-    source_aliases_path: Path
-    score_keyword_bonus_rules: Dict[str, int]
     external_filter_threshold: int
     external_filter_negative_threshold: int
     internal_filter_threshold: int
@@ -280,24 +246,6 @@ def get_settings() -> Settings:
 
     config_dir = _REPO_ROOT / "config"
 
-    raw_keywords_env = os.getenv("KEYWORDS_PATH")
-    keywords_path = _resolve_path(
-        raw_keywords_env,
-        default=config_dir / "education_keywords.txt",
-    )
-
-    raw_beijing_env = os.getenv("BEIJING_KEYWORDS_PATH")
-    beijing_keywords_path = _resolve_path(
-        raw_beijing_env,
-        default=config_dir / "beijing_keywords.txt",
-    )
-
-    raw_source_aliases_env = os.getenv("SOURCE_ALIASES_PATH")
-    source_aliases_path = _resolve_path(
-        raw_source_aliases_env,
-        default=config_dir / "source_aliases.json",
-    )
-
     prompts_dir = config_dir / "prompts"
 
     raw_external_prompt = os.getenv("EXTERNAL_FILTER_PROMPT_PATH")
@@ -335,18 +283,6 @@ def get_settings() -> Settings:
         raw_quota_alert_state_path,
         default=_REPO_ROOT / "logs" / "llm_quota_alert_state.json",
     )
-
-    keyword_bonus_rules = _parse_keyword_bonus_rules(os.getenv("SCORE_KEYWORD_BONUSES"))
-    raw_bonus_path_env = os.getenv("SCORE_KEYWORD_BONUSES_PATH")
-    keyword_bonus_rules_path = _resolve_path(
-        raw_bonus_path_env,
-        default=config_dir / "score_keyword_bonuses.json",
-    )
-    if keyword_bonus_rules is None:
-        parsed = _parse_keyword_bonus_rules_file(keyword_bonus_rules_path)
-        keyword_bonus_rules = parsed
-    if keyword_bonus_rules is None:
-        keyword_bonus_rules = {}
 
     console_basic_username = os.getenv("CONSOLE_BASIC_USERNAME")
     console_basic_password = os.getenv("CONSOLE_BASIC_PASSWORD")
@@ -387,9 +323,6 @@ def get_settings() -> Settings:
     ):
         feishu_archive_allowed_open_ids = (feishu_receive_id,)
 
-    keywords_path = keywords_path.resolve()
-    beijing_keywords_path = beijing_keywords_path.resolve()
-    source_aliases_path = source_aliases_path.resolve()
     external_filter_prompt_path = external_filter_prompt_path.resolve()
     external_negative_filter_prompt_path = external_negative_filter_prompt_path.resolve()
     internal_filter_prompt_path = internal_filter_prompt_path.resolve()
@@ -430,7 +363,6 @@ def get_settings() -> Settings:
         process_limit=process_limit,
         default_concurrency=default_concurrency,
         summary_concurrency=summary_concurrency,
-        keywords_path=keywords_path,
         console_basic_username=console_basic_username,
         console_basic_password=console_basic_password,
         console_api_token=console_api_token,
@@ -442,9 +374,6 @@ def get_settings() -> Settings:
         feishu_receive_id=feishu_receive_id,
         feishu_receive_id_type=feishu_receive_id_type,
         feishu_archive_allowed_open_ids=feishu_archive_allowed_open_ids,
-        beijing_keywords_path=beijing_keywords_path,
-        source_aliases_path=source_aliases_path,
-        score_keyword_bonus_rules=keyword_bonus_rules,
         external_filter_threshold=external_filter_threshold,
         external_filter_negative_threshold=external_filter_negative_threshold,
         internal_filter_threshold=internal_filter_threshold,

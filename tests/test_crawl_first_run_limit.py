@@ -158,7 +158,7 @@ def test_seen_token_set_is_loaded_once_per_run_for_both_account_sources(
     monkeypatch.setattr(
         crawl_sources,
         "get_settings",
-        lambda: SimpleNamespace(process_limit=None, keywords_path=None),
+        lambda: SimpleNamespace(process_limit=None),
     )
     monkeypatch.setattr(crawl_sources, "get_adapter", lambda: adapter)
     monkeypatch.setattr(
@@ -167,6 +167,7 @@ def test_seen_token_set_is_loaded_once_per_run_for_both_account_sources(
         lambda: SimpleNamespace(
             crawl_sources=("toutiao", "tencent"),
             accounts={"toutiao": (account,), "tencent": (account,)},
+            education_keywords=(),
         ),
     )
     monkeypatch.setattr(crawl_sources, "worker_session", _worker_session)
@@ -202,7 +203,7 @@ def test_zero_configured_first_run_limit_is_clamped_to_one(monkeypatch) -> None:
     monkeypatch.setattr(
         crawl_sources,
         "get_settings",
-        lambda: SimpleNamespace(process_limit=None, keywords_path=None),
+        lambda: SimpleNamespace(process_limit=None),
     )
     monkeypatch.setattr(crawl_sources, "get_adapter", lambda: adapter)
     monkeypatch.setattr(
@@ -211,6 +212,7 @@ def test_zero_configured_first_run_limit_is_clamped_to_one(monkeypatch) -> None:
         lambda: SimpleNamespace(
             crawl_sources=("toutiao",),
             accounts={"toutiao": (account,)},
+            education_keywords=(),
         ),
     )
     monkeypatch.setattr(crawl_sources, "worker_session", _worker_session)

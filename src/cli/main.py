@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import Mapping
 
 from src.business_config import (
     business_config_context,
@@ -49,7 +50,6 @@ def _add_summarize(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument("--limit", type=_positive_int, default=2500, help="Max number of pending summaries to process")
     parser.add_argument("--concurrency", type=_positive_int, default=None, help="Optional worker concurrency override")
-    parser.add_argument("--keywords", type=Path, default=None, help="(Deprecated) keywords now handled in crawl; kept for CLI compatibility")
 
 
 def _add_enrich_summary(subparsers: argparse._SubParsersAction) -> None:
@@ -246,6 +246,41 @@ def _add_import_settings(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+_STATUS_LABELS = {
+    "write": "将写入",
+    "exists_skip": "已存在、跳过",
+    "unresolved": "状态未知（来源存在解析错误）",
+}
+
+_WORDLIST_SUMMARY_SECTIONS = (
+    ("score_keyword_bonuses", "Score keyword bonuses"),
+    ("education_keywords", "Education keywords"),
+    ("beijing_keywords", "Beijing keywords"),
+    ("source_aliases", "Source aliases"),
+)
+
+
+def _print_section_status(
+    section: str,
+    preview: dict[str, object],
+) -> None:
+    sections = preview.get("sections", {})
+    status_by_section = preview.get("sections_status", {})
+    assert isinstance(sections, dict) and isinstance(status_by_section, dict)
+    status = status_by_section.get(section, {})
+    assert isinstance(status, dict)
+    status_label = _STATUS_LABELS.get(str(status.get("status")), "状态未知")
+    source = status.get("source") or "-"
+    value = sections.get(section)
+    if isinstance(value, Mapping):
+        detail = f"suffixes={len(value.get('suffixes', []))} aliases={len(value.get('aliases', {}))}"
+    elif isinstance(value, list):
+        detail = f"items={len(value)}"
+    else:
+        detail = "未加载"
+    print(f"{section}: {detail}; {status_label}; source: {source}")
+
+
 def _import_settings(args: argparse.Namespace) -> int:
     from src.console.settings_service import import_legacy_config
 
@@ -255,6 +290,11 @@ def _import_settings(args: argparse.Namespace) -> int:
     else:
         print("Models:", json.dumps(preview["sections"]["llm_models"], ensure_ascii=False))
         print("Hourly sources:", ", ".join(preview["sections"]["crawl_sources"]))
+        for section, _display in _WORDLIST_SUMMARY_SECTIONS:
+            _print_section_status(section, preview)
+        for item in preview.get("wordlist_errors", []):
+            assert isinstance(item, dict)
+            print(f"  invalid {item.get('section')}: {item.get('detail')}")
         for source, summary in preview["account_summary"].items():
             print(
                 f"{source}: parsed={summary['parsed_count']} "
@@ -278,7 +318,13 @@ def _import_settings(args: argparse.Namespace) -> int:
     if not args.apply:
         print("Preview only. Re-run with --apply to write.")
         return 0
-    import_legacy_config(apply=True)
+    report = import_legacy_config(apply=True)
+    written = report.get("written_sections", [])
+    skipped = report.get("skipped_sections", [])
+    if written:
+        print("Written sections:", ", ".join(written))
+    if skipped:
+        print("Skipped (already present):", ", ".join(skipped))
     print("Imported settings successfully.")
     return 0
 
@@ -403,7 +449,7 @@ def _run_command(args: argparse.Namespace) -> int:
     elif command == "hash-primary":
         hash_primary(limit=args.limit)
     elif command == "summarize":
-        summarize_articles(limit=args.limit, concurrency=args.concurrency, keywords_path=args.keywords)
+        summarize_articles(limit=args.limit, concurrency=args.concurrency)
     elif command == "enrich-summary":
         enrich_summaries(limit=args.limit, concurrency=args.concurrency)
     elif command == "geo-classify":
@@ -478,6 +524,7 @@ def main(argv: list[str] | None = None) -> int:
         "summarize",
         "enrich-summary",
         "geo-classify",
+        "geo-tag",
         "score",
         "external-filter",
         "submission-dedup",

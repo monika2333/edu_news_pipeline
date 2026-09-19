@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -158,6 +159,13 @@ def _sections() -> dict[str, object]:
             },
         },
         "crawl_sources": ["toutiao", "tencent"],
+        "score_keyword_bonuses": [
+            {"keyword": "教育工委", "bonus": 100},
+            {"keyword": "高考", "bonus": 10},
+        ],
+        "education_keywords": ["教育", "学校"],
+        "beijing_keywords": ["北京", "海淀"],
+        "source_aliases": {"suffixes": ["客户端"], "aliases": {"北京号": "北京日报"}},
     }
 
 
@@ -304,6 +312,10 @@ def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
         loaded = load_business_config(adapter)
         assert loaded.llm_steps["summary"].model == "model-a"
         assert loaded.crawl_sources == ("toutiao", "tencent")
+        assert loaded.score_bonus_rules() == {"教育工委": 100, "高考": 10}
+        assert loaded.education_keywords == ("教育", "学校")
+        assert loaded.beijing_keywords == ("北京", "海淀")
+        assert loaded.source_aliases.suffixes == ("客户端",)
         assert [
             account.normalized_identifier for account in loaded.accounts["toutiao"]
         ] == ["account-1"]
@@ -319,9 +331,13 @@ def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
             "SELECT section FROM app_settings ORDER BY section"
         ).fetchall()
         assert [row["section"] for row in imported_sections] == [
+            "beijing_keywords",
             "crawl_sources",
+            "education_keywords",
             "llm_endpoints",
             "llm_models",
+            "score_keyword_bonuses",
+            "source_aliases",
         ]
 
         # 重复导入整个 bundle 仍被拒绝，种子行保持原样
@@ -332,6 +348,108 @@ def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
         ).fetchone()
         assert after["version"] == 1
         assert after["value"] == seed["value"]
+
+
+def test_phase2_import_writes_only_missing_sections_on_populated_database(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """M9: the phase-2 import runs against a database that already went
+    through phase 1. Existing sections keep version and content untouched,
+    ``crawl_accounts`` keeps its row count, and only the four wordlist
+    sections are written."""
+
+    base_up, _base_down = _migration_parts()
+    names_up, _names_down = _account_names_migration_parts()
+    endpoints_up, _endpoints_down = _endpoints_migration_parts()
+    with _isolated_database() as connection:
+        _create_legacy_schema(connection)
+        connection.execute(base_up)
+        connection.execute(names_up)
+        connection.execute(endpoints_up)
+        adapter = PostgresAdapter(connection)
+
+        phase1_sections = {
+            key: value
+            for key, value in _sections().items()
+            if key in ("llm_models", "crawl_sources")
+        }
+        adapter.import_app_config(
+            sections=phase1_sections,
+            accounts=[_account("account-1")],
+        )
+        # 一期导入之后管理员又改过一次 llm_models：版本号推进到 2
+        adapter.app_config.update_app_setting_as_user(
+            section="llm_models",
+            value=phase1_sections["llm_models"],
+            expected_version=1,
+            actor_user_id=ADMIN_ID,
+        )
+        before_import = adapter.app_config.fetch_setting("llm_models")
+        assert int(before_import["version"]) == 2
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "education_keywords.txt").write_text(
+            "教育\n学校\n", encoding="utf-8"
+        )
+        (config_dir / "beijing_keywords.txt").write_text("北京\n海淀\n", encoding="utf-8")
+        (config_dir / "source_aliases.json").write_text(
+            json.dumps(
+                {"suffixes": ["客户端"], "aliases": {"北京号": "北京日报"}},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        (config_dir / "score_keyword_bonuses.json").write_text(
+            json.dumps({"教育工委": 100}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(settings_service, "get_adapter", lambda: adapter)
+        monkeypatch.setattr(settings_service, "load_environment", lambda: None)
+        for key in (
+            "CRAWL_SOURCES",
+            "SCORE_KEYWORD_BONUSES",
+            "KEYWORDS_PATH",
+            "BEIJING_KEYWORDS_PATH",
+            "SOURCE_ALIASES_PATH",
+            "SCORE_KEYWORD_BONUSES_PATH",
+        ):
+            monkeypatch.delenv(key, raising=False)
+
+        report = settings_service.import_legacy_config(apply=True, root=tmp_path)
+
+        assert report["written_sections"] == [
+            "score_keyword_bonuses",
+            "education_keywords",
+            "beijing_keywords",
+            "source_aliases",
+        ]
+        assert report["skipped_sections"] == ["llm_models", "crawl_sources"]
+        assert report["accounts_written"] is False
+
+        # M9: 已有分区的版本号和内容都不变
+        after_import = adapter.app_config.fetch_setting("llm_models")
+        assert int(after_import["version"]) == int(before_import["version"])
+        assert after_import["value"] == before_import["value"]
+        sources_after = adapter.app_config.fetch_setting("crawl_sources")
+        assert sources_after["value"] == ["toutiao", "tencent"]
+        counts = connection.execute(
+            """
+            SELECT
+                (SELECT count(*) FROM app_settings) AS settings_count,
+                (SELECT count(*) FROM crawl_accounts) AS accounts_count
+            """
+        ).fetchone()
+        assert counts == {"settings_count": 7, "accounts_count": 1}
+
+        # 导入完成后整份配置可加载，词表内容与文件一致
+        loaded = load_business_config(adapter)
+        assert loaded.education_keywords == ("教育", "学校")
+        assert loaded.beijing_keywords == ("北京", "海淀")
+        assert loaded.score_bonus_rules() == {"教育工委": 100}
+        assert loaded.source_aliases.aliases == {"北京号": "北京日报"}
 
 
 def test_account_name_columns_migration_up_and_down() -> None:

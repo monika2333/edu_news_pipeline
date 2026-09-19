@@ -20,7 +20,6 @@ class ConfigTargetNotEmptyError(RuntimeError):
 class CrawlAccountConflictError(RuntimeError):
     """Raised when a source already has the normalized account identifier."""
 
-
 class AppConfigNamespace:
     """Access to console-managed business configuration."""
 
@@ -175,6 +174,19 @@ class AppConfigNamespace:
     ) -> dict[str, Any]:
         with self._adapter.transaction() as cur:
             return delete_account(cur, account_id)
+
+    def import_missing_app_sections(
+        self,
+        *,
+        sections: Mapping[str, Any],
+        accounts: Sequence[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        with self._adapter.transaction() as cur:
+            return import_missing_config_sections(
+                cur,
+                sections=sections,
+                accounts=accounts,
+            )
 
 
 def fetch_settings(cur: psycopg.Cursor) -> list[dict[str, Any]]:
@@ -514,6 +526,64 @@ def import_config_bundle(
         )
 
 
+def import_missing_config_sections(
+    cur: psycopg.Cursor,
+    *,
+    sections: Mapping[str, Any],
+    accounts: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Phase-2 import: write only the sections the database is missing.
+
+    Unlike :func:`import_config_bundle`, already-populated sections are never
+    overwritten and ``crawl_accounts`` is left untouched when rows exist, so
+    this can run against a production database that already went through the
+    phase-1 import. On an empty database the outcome is identical to the
+    one-shot bundle import.
+    """
+
+    cur.execute("LOCK TABLE app_settings, crawl_accounts IN SHARE ROW EXCLUSIVE MODE")
+    written: list[str] = []
+    skipped: list[str] = []
+    for section, value in sections.items():
+        cur.execute(
+            "SELECT 1 FROM app_settings WHERE section = %s",
+            (section,),
+        )
+        if cur.fetchone() is not None:
+            skipped.append(section)
+            continue
+        cur.execute(
+            """
+            INSERT INTO app_settings (section, value, version)
+            VALUES (%s, %s, 1)
+            """,
+            (section, Json(value)),
+        )
+        written.append(section)
+
+    accounts_written = False
+    if accounts:
+        cur.execute("SELECT EXISTS (SELECT 1 FROM crawl_accounts) AS occupied")
+        if not bool(cur.fetchone()["occupied"]):
+            for item in accounts:
+                insert_account(
+                    cur,
+                    source=str(item["source"]),
+                    normalized_identifier=str(item["normalized_identifier"]),
+                    original_input=str(item["original_input"]),
+                    profile_url=str(item["profile_url"]),
+                    display_name=item.get("display_name"),
+                    enabled=bool(item.get("enabled", True)),
+                    actor_user_id=None,
+                )
+            accounts_written = True
+    return {
+        "written_sections": written,
+        "skipped_sections": skipped,
+        "accounts_written": accounts_written,
+    }
+
+
 __all__ = [
     "AppConfigNamespace",
     "ConfigTargetNotEmptyError",
@@ -528,6 +598,7 @@ __all__ = [
     "fetch_settings",
     "find_account",
     "import_config_bundle",
+    "import_missing_config_sections",
     "insert_account",
     "record_account_name_failure",
     "record_account_name_success",

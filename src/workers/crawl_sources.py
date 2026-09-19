@@ -6,7 +6,6 @@ import time
 import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Set, Tuple, TypedDict
 
 from src.adapters.db_postgres_core import get_adapter
@@ -242,10 +241,6 @@ def _env_str(name: str, default: str) -> str:
     return value.strip() if value and value.strip() else default
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
 def _collect_feed(
     entries: Sequence[ToutiaoFeedEntry],
     limit: Optional[int],
@@ -254,17 +249,6 @@ def _collect_feed(
     existing_ids: Optional[Set[str]],
 ):
     return asyncio.run(fetch_feed_items(list(entries), limit, show_browser, existing_ids))
-
-
-def _load_keywords(path: Path) -> List[str]:
-    if not path.exists():
-        return []
-    keywords: List[str] = []
-    for line in path.read_text(encoding='utf-8').splitlines():
-        raw = line.strip()
-        if raw and not raw.startswith('#'):
-            keywords.append(raw)
-    return keywords
 
 
 def _contains_keywords(content: str, keywords: Sequence[str]) -> Tuple[bool, List[str]]:
@@ -1152,15 +1136,8 @@ def run(
     else:
         selected_order = normalize_source_list(sources, allow_daily=True)
 
-    keywords_path_value = getattr(settings, 'keywords_path', None)
-    keywords_file: Optional[Path]
-    if keywords_path_value:
-        keywords_file = Path(keywords_path_value)
-        if not keywords_file.is_absolute():
-            keywords_file = _repo_root() / keywords_file
-    else:
-        keywords_file = None
-    keywords = _load_keywords(keywords_file) if keywords_file else []
+    # 抓取阶段的教育关键词闸门来自冻结配置；空词表会被校验拒绝，不会静默放行
+    keywords: Sequence[str] = business_config.education_keywords
 
     process_cap = settings.process_limit
     effective_limit: Optional[int]

@@ -63,6 +63,29 @@ def _settings_rows() -> list[dict[str, object]]:
             "value": ["tencent", "toutiao"],
             "version": 5,
         },
+        {
+            "section": "score_keyword_bonuses",
+            "value": [
+                {"keyword": "教育工委", "bonus": 100},
+                {"keyword": "高考", "bonus": 10},
+            ],
+            "version": 1,
+        },
+        {
+            "section": "education_keywords",
+            "value": ["教育", "学校"],
+            "version": 1,
+        },
+        {
+            "section": "beijing_keywords",
+            "value": ["北京", "海淀"],
+            "version": 1,
+        },
+        {
+            "section": "source_aliases",
+            "value": {"suffixes": ["客户端"], "aliases": {"北京号": "北京日报"}},
+            "version": 1,
+        },
     ]
 
 

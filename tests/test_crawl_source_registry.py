@@ -90,6 +90,13 @@ LINKED_SOURCES = {
         "xinhua_fetch_detail",
         "xinhua_build_detail_update",
     ),
+    "stdaily": (
+        "stdaily_list_items",
+        "stdaily_make_article_id",
+        "stdaily_feed_item_to_row",
+        "stdaily_fetch_detail",
+        "stdaily_build_detail_update",
+    ),
 }
 
 
@@ -205,6 +212,7 @@ def _patch_linked_callbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         ("tencent", "tencent", "Tencent", {"count_prepare_errors": True, "missing_ids_fallback": "none", "detail_delay": 0.75, "delay_after_failure": True, "delay_after_last": True}),
         ("toutiao", "toutiao", "Toutiao", {"count_prepare_errors": True}),
         ("xinhua", "xinhua", "Xinhua Beijing", {"count_feed_errors": False}),
+        ("stdaily", "stdaily", "Stdaily", {"count_feed_errors": False}),
         ("beijingdaily", "bjrb", "Beijing Daily", {"load_existing_ids": False, "count_prepare_errors": True, "missing_ids_fallback": "all", "detail_delay": 0.45}),
         ("laodongwubao", "ldwb", "Laodong Wubao", {"details_in_list": True, "skip_existing_ids": True, "continue_after_feed_error": True}),
         ("qq", "tencent", "Tencent", {"count_prepare_errors": True, "missing_ids_fallback": "none", "detail_delay": 0.75, "delay_after_failure": True, "delay_after_last": True}),
@@ -267,6 +275,7 @@ def test_every_dispatch_key_preserves_source_flow_strategy_and_callbacks(
         ("tencent", "_run_tencent_flow", {"pages": 3}, None),
         ("toutiao", "_run_toutiao_flow", {"show_browser": True, "timeout_value": 21, "lang": "zh-test"}, None),
         ("xinhua", "_run_registered_linked_page_flow", {"pages": 3}, "xinhua"),
+        ("stdaily", "_run_registered_linked_page_flow", {"pages": 3}, "stdaily"),
     ],
 )
 def test_registry_passes_each_runner_its_current_arguments(

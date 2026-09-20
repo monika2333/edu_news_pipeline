@@ -9,7 +9,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.adapters import db_postgres_core, llm_duplicate_review
-from src.adapters.account_profiles import AccountNameUnavailable
+from src.adapters.account_profiles import (
+    MAX_ACCOUNT_TIMEOUT_SECONDS,
+    AccountNameUnavailable,
+)
+from src.adapters.http_toutiao import PROFILE_NAME_TIMEOUT_SECONDS
 from src.config import get_settings
 from src.console import manual_filter_duplicate_service, settings_service
 from src.console.app import create_app
@@ -1040,4 +1044,54 @@ def test_m7_create_api_returns_201_and_records_resolution_failure(
     assert response.status_code == 201
     assert response.json()["item"]["display_name"] is None
     assert response.json()["item"]["display_name_error"] == "页面里没有找到账号名"
-    assert observed_timeouts == [5.0]
+    # 创建即解析：预算按头条网页解析的上限给（其他来源在 resolver 内部钳回 8 秒）
+    assert observed_timeouts == [PROFILE_NAME_TIMEOUT_SECONDS]
+
+
+def test_refresh_names_gives_toutiao_browser_budget_and_http_sources_eight_seconds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app_config = _AccountConfigFake(
+        [
+            _account_row("tt", source="toutiao"),
+            _account_row("tx", source="tencent"),
+        ]
+    )
+    adapter = SimpleNamespace(app_config=app_config)
+    monkeypatch.setattr(settings_service, "get_adapter", lambda: adapter)
+    observed: list[tuple[str, float]] = []
+
+    def resolve(source: str, **kwargs: Any) -> str:
+        observed.append((source, float(kwargs["timeout"])))
+        raise AccountNameUnavailable("HTTP 失败")
+
+    monkeypatch.setattr(settings_service, "resolve_account_name", resolve)
+
+    items = settings_service.refresh_account_names(["tt", "tx"])
+
+    assert [item["status"] for item in items] == ["failed", "failed"]
+    assert observed == [
+        ("toutiao", PROFILE_NAME_TIMEOUT_SECONDS),
+        ("tencent", MAX_ACCOUNT_TIMEOUT_SECONDS),
+    ]
+
+
+def test_toutiao_refresh_keeps_existing_name_without_browser_roundtrip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    toutiao = _account_row("tt", source="toutiao", display_name="保留名")
+    app_config = _AccountConfigFake([toutiao])
+    adapter = SimpleNamespace(app_config=app_config)
+    monkeypatch.setattr(settings_service, "get_adapter", lambda: adapter)
+
+    def must_not_resolve(*_args: Any, **_kwargs: Any) -> str:
+        raise AssertionError("已有名称的头条账号不应再走网页解析")
+
+    monkeypatch.setattr(settings_service, "resolve_account_name", must_not_resolve)
+
+    items = settings_service.refresh_account_names(["tt"])
+
+    assert items[0]["status"] == "unchanged"
+    assert items[0]["account"]["display_name"] == "保留名"
+    # 不对已有名的账号做库内反查之外的任何解析
+    assert app_config.article_name_calls == [("toutiao", "identifier-tt")]

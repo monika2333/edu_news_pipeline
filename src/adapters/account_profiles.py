@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from typing import Any, Optional
@@ -11,6 +12,7 @@ from src.adapters import (
     http_beijinghao,
     http_btime,
     http_tencent,
+    http_toutiao,
 )
 
 
@@ -141,6 +143,33 @@ def _resolve_beijinghao(profile_url: str, *, timeout: float) -> str:
     return name
 
 
+def _resolve_toutiao(
+    normalized_identifier: str,
+    profile_url: str,
+    *,
+    timeout: float,
+) -> str:
+    # 头条反爬下纯 HTTP 拿不到名称，只能走与抓取流程同款的无头浏览器路径；
+    # 每次解析都要启动浏览器，预算必须留给真正没有名称的账号（见 service 层）。
+    try:
+        name = http_toutiao.fetch_profile_display_name(
+            normalized_identifier,
+            profile_url,
+            timeout_seconds=min(
+                http_toutiao.PROFILE_NAME_TIMEOUT_SECONDS,
+                max(0.0, float(timeout)),
+            ),
+        )
+    except (asyncio.TimeoutError, TimeoutError):
+        raise AccountNameUnavailable("头条主页请求超时") from None
+    except Exception as exc:
+        raise AccountNameUnavailable(f"头条主页解析失败：{_name(exc) or '未知错误'}") from exc
+    name = _name(name)
+    if name is None:
+        raise AccountNameUnavailable("头条主页 feed 里没有可用的账号名")
+    return name
+
+
 def resolve_account_name(
     source: str,
     *,
@@ -161,7 +190,11 @@ def resolve_account_name(
         if source == "beijinghao":
             return _resolve_beijinghao(profile_url, timeout=timeout)
         if source == "toutiao":
-            raise AccountNameUnavailable("头条账号名将在下一轮抓取后自动获取")
+            return _resolve_toutiao(
+                normalized_identifier,
+                profile_url,
+                timeout=timeout,
+            )
         raise AccountNameUnavailable("不支持的账号来源")
     except AccountNameUnavailable:
         raise

@@ -737,14 +737,14 @@ test('S21：芯片名称三种状态——已解析、待获取、获取失败',
     }
 });
 
-test('S21b：头条账号带名称错误时仍显示中性待获取状态', async () => {
+test('S21b：头条账号解析失败时与其他来源一致，显示「名称获取失败」警示', async () => {
     const accounts = defaultAccounts();
     accounts.toutiao = [makeAccount({
         id: 'acc-toutiao-waiting',
         source: 'toutiao',
         normalized_identifier: 'tok-waiting',
         profile_url: 'https://example.com/toutiao-waiting',
-        display_name_error: '头条账号名将在下一轮抓取后自动获取',
+        display_name_error: '头条主页 feed 里没有可用的账号名',
     })];
     const page = await bootPage({ accounts });
     try {
@@ -752,9 +752,9 @@ test('S21b：头条账号带名称错误时仍显示中性待获取状态', asyn
         const chip = await waitForChip(page, 'acc-toutiao-waiting');
 
         const badge = chip.querySelector('.account-name-badge');
-        assert.equal(badge.textContent, '名称待获取');
-        assert.ok(!badge.classList.contains('is-error'));
-        assert.equal(badge.title, '头条账号名将在下一轮抓取后自动获取');
+        assert.match(badge.textContent, /名称获取失败/);
+        assert.ok(badge.classList.contains('is-error'));
+        assert.equal(badge.title, '头条主页 feed 里没有可用的账号名');
     } finally {
         page.close();
     }

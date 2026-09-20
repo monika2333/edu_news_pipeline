@@ -319,9 +319,8 @@ async function refreshAccountNames(source, ids, button) {
 }
 
 // 芯片名称区的三种状态：已解析显示名称；未解析显示截断标识（CSS 省略号，
-// 完整值放 title）加弱化标记；非头条来源解析失败时标记变为「名称获取失败」（警示色）。
-// 头条依赖下一轮抓取补名称，即使带错误原因也保持中性的「名称待获取」外观；
-// 只要有错误原因都放进标记的 title。
+// 完整值放 title）加弱化标记；解析失败时标记变为「名称获取失败」（警示色），
+// 失败原因放进标记的 title。
 // 名称文本一律经 textContent 写入，禁止 innerHTML。
 // 只重绘名称区（名称、标记），不动 label 里的 checkbox——刷新进行中
 // 该芯片的其他状态（标记外观、操作节点）都保持原样。
@@ -338,12 +337,10 @@ function renderChipNameContent(label, item) {
     }
     label.appendChild(nameEl);
     if (!item.display_name) {
-        const hasError = !!item.display_name_error;
-        const showError = hasError && item.source !== 'toutiao';
         const badge = createEl('span',
-            `account-name-badge${showError ? ' is-error' : ''}`,
-            showError ? '名称获取失败' : '名称待获取');
-        if (hasError) badge.title = item.display_name_error;
+            `account-name-badge${item.display_name_error ? ' is-error' : ''}`,
+            item.display_name_error ? '名称获取失败' : '名称待获取');
+        if (item.display_name_error) badge.title = item.display_name_error;
         label.appendChild(badge);
     }
 }

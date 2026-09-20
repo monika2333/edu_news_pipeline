@@ -9,13 +9,17 @@ from typing import Any, Callable, Mapping, Optional
 
 from src.adapters.account_profiles import (
     AccountNameUnavailable,
+    MAX_ACCOUNT_TIMEOUT_SECONDS,
     resolve_account_name,
 )
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.http_beijinghao import parse_column_input
 from src.adapters.http_btime import parse_uid_input
 from src.adapters.http_tencent import parse_author_input as parse_tencent_author
-from src.adapters.http_toutiao import parse_author_input as parse_toutiao_author
+from src.adapters.http_toutiao import (
+    PROFILE_NAME_TIMEOUT_SECONDS,
+    parse_author_input as parse_toutiao_author,
+)
 from src.adapters.llm_chat import post_chat_completion
 from src.adapters.llm_endpoint import (
     LLMEndpointKeyMissingError,
@@ -414,7 +418,13 @@ def create_account(
         display_name=None,
         actor_user_id=actor_user_id,
     )
-    _resolve_and_record_account_name(adapter, created, timeout=5.0)
+    # 头条要起无头浏览器解析名称，创建时的解析预算按它的上限给；
+    # 其他来源内部各自钳制在 8 秒，不受影响。
+    _resolve_and_record_account_name(
+        adapter,
+        created,
+        timeout=PROFILE_NAME_TIMEOUT_SECONDS,
+    )
     return _account_payload(adapter, str(created["id"]), str(created["source"]))
 
 
@@ -497,12 +507,16 @@ def _resolve_account_name_with_fallback(
         stored = _stored_account_name(adapter, account)
         if stored:
             return stored[:200]
+        if account.get("display_name"):
+            # 已有名称说明此前解析成功过；网页解析每次要起无头浏览器，
+            # 只为复核一个现成名不值得，视为无需变更。
+            return str(account["display_name"])
     try:
         return resolve_account_name(
             source,
             normalized_identifier=str(account["normalized_identifier"]),
             profile_url=str(account["profile_url"]),
-            timeout=min(8.0, timeout),
+            timeout=timeout,
         )
     except AccountNameUnavailable:
         if source == "tencent":
@@ -543,6 +557,17 @@ def _resolve_and_record_account_name(
     return status, None
 
 
+def _account_resolve_timeout(source: str, remaining: float) -> float:
+    """单个账号的解析预算：头条网页解析要起浏览器，按它的上限给；
+    其他来源走纯 HTTP，钳在 8 秒。都不越过本轮刷新的剩余预算。"""
+    cap = (
+        PROFILE_NAME_TIMEOUT_SECONDS
+        if normalize_source_key(source) == "toutiao"
+        else MAX_ACCOUNT_TIMEOUT_SECONDS
+    )
+    return min(cap, remaining)
+
+
 def refresh_account_names(account_ids: list[str]) -> list[dict[str, Any]]:
     adapter = get_adapter()
     deadline = time.monotonic() + 30.0
@@ -574,7 +599,10 @@ def refresh_account_names(account_ids: list[str]) -> list[dict[str, Any]]:
         status, error = _resolve_and_record_account_name(
             adapter,
             account,
-            timeout=min(8.0, remaining),
+            timeout=_account_resolve_timeout(
+                str(account["source"]),
+                remaining,
+            ),
         )
         items.append(
             {

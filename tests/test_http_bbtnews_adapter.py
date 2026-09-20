@@ -172,6 +172,18 @@ def test_default_window_drops_stale_rows_and_keeps_hot_zone(
     assert {bbt.make_article_id(item.url) for item in items} == {TARGET_ID, HOT_ID}
 
 
+def test_invalid_lookback_env_falls_back_to_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 环境变量填了非数字时按默认 3 天窗口执行，不能让抓取轮直接崩掉。
+    _serve(monkeypatch, {P1_URL: _fixture("list_jiaoyu_p1.htm")})
+
+    monkeypatch.setenv("BBTNEWS_LOOKBACK_DAYS", "abc")
+    items = bbt.list_items(today=TODAY)
+
+    assert {bbt.make_article_id(item.url) for item in items} == {TARGET_ID, HOT_ID}
+
+
 def test_window_boundary_semantics_on_synthetic_rows() -> None:
     # 窗口语义是"早于 今天-N天 的丢弃"：边界那天（=cutoff）必须保留。
     boundary_href = "https://www.bbtnews.com.cn/2026/0917/606001.shtml"

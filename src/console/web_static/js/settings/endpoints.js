@@ -116,7 +116,7 @@ function endpointBaseUrlError(rawBaseUrl, allowedHosts) {
     const allowed = allowedHosts.map((item) => String(item).trim().toLowerCase());
     if (!allowed.includes(host)) {
         return `${host} 不在允许的接入点主机列表内：新增服务商需要先在服务器 `
-            + '.env 的 LLM_ALLOWED_HOSTS 里加域名并重启服务，再回到本页保存。';
+            + '.env 的 LLM_ALLOWED_HOSTS 里加域名，点「重新加载环境变量」后再回来保存。';
     }
     return '';
 }
@@ -293,15 +293,17 @@ function buildEndpointEditRow(item, saved, rerender) {
         item.api_key_env = envInput.value;
         markEndpointsDirty();
     });
-    // Key 状态逐个接入点显示：未配置时提示需要在 .env 里添加该变量名并重启服务
+    // Key 状态逐个接入点显示：未配置时提示在 .env 里加变量后点环境块的
+    // 「重新加载环境变量」按钮生效，不必重启服务
     const configured = item.isNew ? null : endpointKeyConfigured(item.key);
     let envHint = null;
     if (configured === false) {
         envHint = createEl('span', 'endpoint-field-hint is-warning',
-            `该环境变量当前未配置：需在服务器 .env 里添加 ${item.api_key_env} 并重启服务。`);
+            `该环境变量当前未配置：需在服务器 .env 里添加 ${item.api_key_env}，`
+            + '然后点上方「重新加载环境变量」生效。');
     } else if (configured === null) {
         envHint = createEl('span', 'endpoint-field-hint',
-            '保存后需在服务器 .env 里配置该变量并重启服务。');
+            '保存后需在服务器 .env 里配置该变量，点「重新加载环境变量」生效。');
     }
     fields.appendChild(buildEndpointField('Key 环境变量', envInput, envHint));
 
@@ -525,7 +527,7 @@ function buildEndpointsReadonly(saved) {
         li.appendChild(createEl(
             'span',
             `endpoint-key-state${configured ? '' : ' is-unset'}`,
-            configured ? 'Key 已配置' : 'Key 未配置：需在 .env 里添加该变量并重启服务',
+            configured ? 'Key 已配置' : 'Key 未配置：需在 .env 里添加该变量，点「重新加载环境变量」生效',
         ));
         if (item.key === saved.default) {
             li.appendChild(createEl('span', 'endpoint-default-badge', '默认'));

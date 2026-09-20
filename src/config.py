@@ -1,13 +1,18 @@
 ﻿from __future__ import annotations
 
 import os
+import threading
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Set
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _ENV_LOADED = False
+# 本进程从 env 文件读入的变量名；显式导出的系统变量不在此列。
+# reload_environment 据此只清退文件来源的变量，不碰进程原本的环境。
+_ENV_FILE_KEYS: Set[str] = set()
+_ENV_RELOAD_LOCK = threading.Lock()
 _ENV_FILES = (
     _REPO_ROOT / ".env.local",
     _REPO_ROOT / ".env",
@@ -21,7 +26,7 @@ DEFAULT_LLM_ALLOWED_HOSTS = (
 )
 
 
-def _load_env_file(path: Path) -> None:
+def _load_env_file(path: Path, loaded_keys: Set[str]) -> None:
     """Best-effort `.env` loader that respects already-set variables."""
     if not path.exists():
         return
@@ -37,9 +42,15 @@ def _load_env_file(path: Path) -> None:
                 value = value[1:-1]
             if key and key not in os.environ:
                 os.environ[key] = value
+                loaded_keys.add(key)
     except Exception:
         # Gracefully ignore malformed env files; explicit env vars win anyway.
         pass
+
+
+def _read_env_files() -> None:
+    for candidate in _ENV_FILES:
+        _load_env_file(candidate, _ENV_FILE_KEYS)
 
 
 def load_environment() -> None:
@@ -47,9 +58,32 @@ def load_environment() -> None:
     global _ENV_LOADED
     if _ENV_LOADED:
         return
-    for candidate in _ENV_FILES:
-        _load_env_file(candidate)
-    _ENV_LOADED = True
+    with _ENV_RELOAD_LOCK:
+        if _ENV_LOADED:
+            return
+        _read_env_files()
+        _ENV_LOADED = True
+
+
+def reload_environment() -> int:
+    """Re-read the env files and invalidate the cached Settings.
+
+    Mirrors a restart's env semantics without one: keys previously sourced
+    from the env files are dropped first, so removed entries disappear and
+    changed values take effect; variables exported in the shell before the
+    process started keep winning over file values, as on initial load.
+    Returns the number of env vars now sourced from the files.
+    """
+    global _ENV_LOADED
+    with _ENV_RELOAD_LOCK:
+        for key in _ENV_FILE_KEYS:
+            os.environ.pop(key, None)
+        _ENV_FILE_KEYS.clear()
+        _ENV_LOADED = False
+        _read_env_files()
+        _ENV_LOADED = True
+    get_settings.cache_clear()
+    return len(_ENV_FILE_KEYS)
 
 
 
@@ -389,4 +423,4 @@ def get_settings() -> Settings:
     )
 
 
-__all__ = ["DEFAULT_LLM_ALLOWED_HOSTS", "Settings", "get_settings", "load_environment"]
+__all__ = ["DEFAULT_LLM_ALLOWED_HOSTS", "Settings", "get_settings", "load_environment", "reload_environment"]

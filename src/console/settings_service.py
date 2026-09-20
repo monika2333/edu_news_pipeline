@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -36,8 +37,11 @@ from src.business_config import (
     validate_llm_models,
     validate_section,
 )
-from src.config import BGE_EMBEDDING_MODEL, get_settings, load_environment
+from src.config import BGE_EMBEDDING_MODEL, get_settings, load_environment, reload_environment
 from src.console.auth_service import ConsoleUser
+
+
+logger = logging.getLogger(__name__)
 
 
 class SettingsPermissionError(PermissionError):
@@ -193,6 +197,22 @@ def test_llm_model(
         "elapsed_ms": round((time.monotonic() - started) * 1000),
         "error": None,
     }
+
+
+def reload_server_environment(actor: ConsoleUser) -> dict[str, Any]:
+    """Re-read the server env files (.env.local 等) and refresh cached settings.
+
+    Lets operators activate edited env values (LLM API keys, allowed hosts)
+    from the console instead of restarting the service. DB connection
+    settings are outside this contract: the adapter pool outlives the reload.
+    """
+    loaded = reload_environment()
+    logger.info(
+        "用户 %s 重新加载了环境变量（来自 env 文件：%d 个）",
+        actor.display_name or actor.username,
+        loaded,
+    )
+    return {"reloaded": True, "loaded_env_vars": loaded}
 
 
 def _require_llm_endpoints(adapter: Any) -> tuple[dict[str, LLMEndpointConfig], str]:

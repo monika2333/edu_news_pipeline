@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -264,3 +265,74 @@ def test_settings_defaults_feishu_archive_allowlist_to_open_id_recipient(
     settings = config.get_settings()
 
     assert settings.feishu_archive_allowed_open_ids == ("ou_owner",)
+
+
+@pytest.fixture
+def env_file_sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """把 env 文件指向临时文件并复位加载状态，供 reload 语义测试使用。"""
+    env_file = tmp_path / "sandbox.env"
+    monkeypatch.setattr(config, "_ENV_FILES", (env_file,))
+    monkeypatch.setattr(config, "_ENV_LOADED", False)
+    monkeypatch.setattr(config, "_ENV_FILE_KEYS", set())
+    config.get_settings.cache_clear()
+    yield env_file
+    config.get_settings.cache_clear()
+
+
+def test_reload_environment_picks_up_added_and_changed_values(
+    env_file_sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ENV_RELOAD_PROBE_KEY", raising=False)
+    monkeypatch.delenv("ENV_RELOAD_ADDED_KEY", raising=False)
+    env_file_sandbox.write_text("ENV_RELOAD_PROBE_KEY=old-value\n", encoding="utf-8")
+
+    config.load_environment()
+    assert os.getenv("ENV_RELOAD_PROBE_KEY") == "old-value"
+
+    env_file_sandbox.write_text(
+        "ENV_RELOAD_PROBE_KEY=new-value\nENV_RELOAD_ADDED_KEY=added\n",
+        encoding="utf-8",
+    )
+    loaded = config.reload_environment()
+
+    # 文件来源的变量按重载后的文件内容生效：改过的更新、新加的进入环境
+    assert loaded == 2
+    assert os.getenv("ENV_RELOAD_PROBE_KEY") == "new-value"
+    assert os.getenv("ENV_RELOAD_ADDED_KEY") == "added"
+
+
+def test_reload_environment_drops_removed_entries_and_keeps_exported_values(
+    env_file_sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ENV_RELOAD_FILE_ONLY", raising=False)
+    monkeypatch.delenv("ENV_RELOAD_BOTH", raising=False)
+    env_file_sandbox.write_text(
+        "ENV_RELOAD_FILE_ONLY=from-file\nENV_RELOAD_BOTH=from-file\n",
+        encoding="utf-8",
+    )
+    # 进程启动前显式导出的变量：初载和重载都必须让它赢过文件值
+    monkeypatch.setenv("ENV_RELOAD_BOTH", "from-shell")
+
+    config.load_environment()
+    assert os.getenv("ENV_RELOAD_BOTH") == "from-shell"
+
+    env_file_sandbox.write_text("ENV_RELOAD_BOTH=from-file-v2\n", encoding="utf-8")
+    config.reload_environment()
+
+    # 文件里删掉的变量随重载消失；显式导出的值不被文件覆盖
+    assert os.getenv("ENV_RELOAD_FILE_ONLY") is None
+    assert os.getenv("ENV_RELOAD_BOTH") == "from-shell"
+
+
+def test_reload_environment_invalidates_settings_cache(env_file_sandbox: Path) -> None:
+    env_file_sandbox.write_text("", encoding="utf-8")
+    config.load_environment()
+
+    first = config.get_settings()
+    config.reload_environment()
+    second = config.get_settings()
+
+    # 缓存不失效的话，重载对一切经 get_settings() 的读取都不生效
+    assert first is not second

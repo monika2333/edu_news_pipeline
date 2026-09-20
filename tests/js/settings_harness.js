@@ -257,6 +257,11 @@ class FakeSettingsServer {
             embedding_model: 'BAAI/bge-m3',
         };
         this.accounts = options.accounts || defaultAccounts();
+        // 环境变量重载的定制行为：reloadEnvBehavior() 在返回前执行，测试用它
+        // 模拟「服务器端 .env 变化后的重载结果」（如某接入点 Key 由未配置变为已配置）；
+        // envVarCount 是响应里的 loaded_env_vars 回显
+        this.reloadEnvBehavior = options.reloadEnvBehavior || null;
+        this.envVarCount = options.envVarCount === undefined ? 24 : options.envVarCount;
         // 分区保存的定制响应：{ [section]: { status, payload } }，命中一次后失效
         this.saveBehavior = {};
         this.testBehavior = null;
@@ -287,6 +292,7 @@ class FakeSettingsServer {
     classify(url, method) {
         const pathname = url.pathname;
         if (pathname === '/api/admin/settings') return 'get-settings';
+        if (pathname === '/api/admin/settings/environment/reload') return 'reload-env';
         if (pathname === '/api/admin/settings/llm_models/test') return 'model-test';
         if (pathname === '/api/admin/settings/llm_models') return 'save-models';
         if (pathname === '/api/admin/settings/llm_endpoints') return 'save-endpoints';
@@ -388,6 +394,10 @@ class FakeSettingsServer {
                 environment: this.environment,
                 endpoints: this.endpoints,
             }];
+        }
+        if (pathname === '/api/admin/settings/environment/reload' && method === 'POST') {
+            if (this.reloadEnvBehavior) this.reloadEnvBehavior();
+            return [200, { reloaded: true, loaded_env_vars: this.envVarCount }];
         }
         if (pathname === '/api/admin/settings/llm_models/test') {
             if (this.testBehavior) {

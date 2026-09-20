@@ -141,3 +141,30 @@ def test_duty_editor_cannot_refresh_account_names() -> None:
     )
 
     assert response.status_code == 403
+
+
+def test_environment_reload_reloads_and_reports_count(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "src.console.settings_service.reload_environment",
+        lambda: calls.append("called") or 7,
+    )
+    response = _build_client().post("/api/admin/settings/environment/reload")
+
+    assert response.status_code == 200
+    assert response.json() == {"reloaded": True, "loaded_env_vars": 7}
+    assert calls == ["called"]
+
+
+def test_duty_editor_cannot_reload_environment(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "src.console.settings_service.reload_environment",
+        lambda: pytest.fail("reload reached the service"),
+    )
+    response = _build_client("duty_editor").post(
+        "/api/admin/settings/environment/reload"
+    )
+
+    assert response.status_code == 403

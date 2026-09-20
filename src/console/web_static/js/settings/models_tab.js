@@ -38,8 +38,53 @@ function buildModelsEnvBlock() {
     block.appendChild(createEl(
         'p',
         'settings-env-note',
-        '超时、预算、reasoning 强度等参数在服务器环境变量中配置，修改需重启服务。',
+        '超时、预算、reasoning 强度等参数在服务器环境变量中配置。修改服务器上的'
+            + ' .env.local 后点「重新加载环境变量」即可生效，无需重启；'
+            + '数据库连接等少数配置仍需重启服务。',
     ));
+
+    // 环境变量在进程内是一次性快照（src.config 的 _ENV_LOADED）；
+    // 重载按钮让「改完 .env.local」不必再登录服务器重启进程，接入点的
+    // Key 配置状态随之刷新。失败分支不重渲染，错误就挂在当前块上。
+    const reloadRow = createEl('div', 'settings-env-reload');
+    const reloadBtn = createEl('button', 'btn btn-secondary env-reload-btn',
+        '重新加载环境变量', { type: 'button' });
+    const status = createEl('span', 'settings-save-status env-reload-status');
+    reloadRow.appendChild(reloadBtn);
+    reloadRow.appendChild(status);
+    block.appendChild(reloadRow);
+
+    reloadBtn.addEventListener('click', async () => {
+        reloadBtn.disabled = true;
+        let reloaded = false;
+        try {
+            const { response, payload } = await apiRequest(
+                '/api/admin/settings/environment/reload',
+                { method: 'POST' },
+            );
+            if (!response.ok) {
+                setSettingsStatus(
+                    status,
+                    `重载失败：${formatApiError(payload, '请稍后重试')}`,
+                    'error',
+                );
+            } else {
+                await reloadSettingsPayload();
+                showSettingsToast('环境变量已重新加载');
+                reloaded = true;
+            }
+        } catch (error) {
+            setSettingsStatus(status, `重载失败：${error.message || '网络错误'}`, 'error');
+        } finally {
+            reloadBtn.disabled = false;
+        }
+        // 重渲染放在 try/finally 之后：renderModelsTab 重建整个模型页签，
+        // 按钮 / 状态节点随之脱离文档（与接入点「载入最新配置」同一时序约定）；
+        // keepDraft 保留模型草稿与接入点编辑态，只重建 DOM。
+        if (reloaded) {
+            renderModelsTab({ keepDraft: true });
+        }
+    });
     return block;
 }
 

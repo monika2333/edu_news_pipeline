@@ -2,7 +2,8 @@
 // 覆盖验收场景 S1-S33 与芯片布局场景 N1-N23；其中 S7、S17 随排序模式删除，
 // S9、S16、S29、S30、N5、N16 随「全部平铺 + 页面级管理模式」重构删除
 // （批量粘贴、展开抽屉、筛选框、面板会话这些被测形态不复存在）。
-// E1-E17 覆盖接入点管理（endpoints.js）与每步骤接入点选择（models_tab.js）。
+// E1-E17 覆盖接入点管理（endpoints.js）与每步骤接入点选择（models_tab.js），
+// E18-E19 覆盖环境变量重载按钮。
 'use strict';
 
 const { test } = require('node:test');
@@ -2428,3 +2429,70 @@ test('E17：新增接入点 key 按地址自动生成，头部实时预览，重
         page.close();
     }
 });
+
+// ---------- 环境变量重载场景（E18-E19） ----------
+
+test('E18：「重新加载环境变量」发出 POST 并重拉设置，Key 配置状态翻转为已配置，模型草稿保留', async () => {
+    const page = await bootPage();
+    try {
+        // 只读接入点列表初始为「Key 未配置」（fixture 里 deepseek 未配置）
+        const deepseekBefore = page.document
+            .querySelector('.endpoint-item[data-endpoint-key="deepseek"]');
+        assert.match(deepseekBefore.textContent, /Key 未配置/);
+
+        // 制造未保存的模型修改，验证重载后的页签重建不丢草稿
+        inputValue(page, page.document.getElementById('models-default-input'),
+            'local/draft-model');
+
+        // 重载时模拟服务器端效果：.env 里补上 Key 后，endpoints 负载翻为已配置
+        page.server.reloadEnvBehavior = () => {
+            page.server.endpoints.items[1].api_key_env_configured = true;
+        };
+
+        page.document.querySelector('.env-reload-btn').click();
+        await waitFor(() => page.server.requests('reload-env').length === 1
+            && page.server.requests('reload-env')[0].done);
+        // 重载成功后必须重拉设置，让 api_key_env_configured 重新计算
+        await waitFor(() => page.server.requests('get-settings').length === 1
+            && page.server.requests('get-settings')[0].done);
+        await waitFor(() => page.document.getElementById('toast').textContent
+            .includes('环境变量已重新加载'));
+
+        // 重建后的只读列表状态翻为「Key 已配置」
+        await waitFor(() => {
+            const item = page.document
+                .querySelector('.endpoint-item[data-endpoint-key="deepseek"]');
+            return item && item.textContent.includes('Key 已配置');
+        });
+        // 模型草稿保留（只重建 DOM，不重建模型草稿）
+        assert.equal(page.window.eval('state.dirty.llm_models'), true);
+        assert.equal(
+            page.document.getElementById('models-default-input').value,
+            'local/draft-model',
+        );
+    } finally {
+        page.close();
+    }
+});
+
+test('E19：重载失败时不重拉设置、不重渲染，行内错误可见且按钮恢复可用', async () => {
+    const page = await bootPage();
+    try {
+        page.server.failNext['reload-env'] = 1;
+        const btn = page.document.querySelector('.env-reload-btn');
+        btn.click();
+        await waitFor(() => page.server.requests('reload-env').length === 1
+            && page.server.requests('reload-env')[0].done);
+        await waitFor(() => page.document
+            .querySelector('.env-reload-status').textContent.includes('重载失败'));
+
+        // 判别性断言：失败分支不重拉设置，也不重建环境块
+        assert.equal(page.server.requests('get-settings').length, 0);
+        await assertNever(() => page.server.requests('get-settings').length > 0, 200);
+        assert.equal(page.document.querySelector('.env-reload-btn'), btn);
+        assert.equal(btn.disabled, false);
+    } finally {
+        page.close();
+    }
+});
+

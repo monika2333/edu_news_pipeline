@@ -47,6 +47,15 @@ def test_user_list_excludes_soft_deleted_accounts() -> None:
     assert "WHERE deleted_at IS NULL" in cur.query
 
 
+def test_user_list_orders_by_last_login_descending_first() -> None:
+    cur: Any = FakeCursor()
+    cur.fetchall = lambda: []
+
+    fetch_console_users(cur)
+
+    assert "ORDER BY\n            last_login_at DESC NULLS LAST" in cur.query
+
+
 def test_soft_delete_disables_account_and_records_timestamp() -> None:
     cur: Any = FakeCursor()
     cur.fetchone = lambda: {

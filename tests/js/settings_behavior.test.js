@@ -4,6 +4,7 @@
 // （批量粘贴、展开抽屉、筛选框、面板会话这些被测形态不复存在）。
 // E1-E17 覆盖接入点管理（endpoints.js）与每步骤接入点选择（models_tab.js），
 // E18-E19 覆盖环境变量重载按钮。
+// B1-B8 覆盖加分词典页签（bonus_tab.js），A1-A7 覆盖高级页签（advanced_tab.js）。
 'use strict';
 
 const { test } = require('node:test');
@@ -2496,3 +2497,570 @@ test('E19：重载失败时不重拉设置、不重渲染，行内错误可见�
     }
 });
 
+// ---------- 加分词典页签（B1-B8） ----------
+
+function bonusRows(page) {
+    return [...page.panel('bonuses').querySelectorAll('.bonus-row')];
+}
+
+function bonusSaveStatus(page) {
+    return page.document.getElementById('bonus-save-status');
+}
+
+function advancedBlock(page, section) {
+    return page.panel('advanced').querySelector(`[data-advanced-block="${section}"]`);
+}
+
+test('B1：加分词典按库存顺序渲染，改分值、增行、删行后保存，请求体按页面顺序并带版本号', async () => {
+    const page = await bootPage();
+    try {
+        page.clickTab('bonuses');
+        let rows = bonusRows(page);
+        assert.equal(rows.length, 3);
+        // 按库里存的顺序展示，不排序
+        assert.deepEqual(
+            rows.map((row) => row.querySelector('.bonus-keyword-input').value),
+            ['教育工委', '北京市委', '书香青春 阅见未来'],
+        );
+
+        // 改第一行分值、删第二行、末尾追加一行
+        inputValue(page, rows[0].querySelector('.bonus-value-input'), '80');
+        rows[1].querySelector('.bonus-delete-btn').click();
+        assert.equal(bonusRows(page).length, 2);
+        page.document.getElementById('btn-bonus-add').click();
+        rows = bonusRows(page);
+        assert.equal(rows.length, 3);
+        inputValue(page, rows[2].querySelector('.bonus-keyword-input'), '新词甲');
+        inputValue(page, rows[2].querySelector('.bonus-value-input'), '5');
+
+        const firstRowBefore = bonusRows(page)[0];
+        page.document.getElementById('btn-bonus-save').click();
+        await waitFor(() => page.server.requests('save-bonuses').length === 1);
+        const request = page.server.requests('save-bonuses')[0];
+        assert.equal(request.body.expected_version, 6);
+        // 判别性断言：必须是页面顺序（库存顺序去掉被删行、新行在末尾），不是按关键词排序
+        assert.deepEqual(request.body.value, [
+            { keyword: '教育工委', bonus: 80 },
+            { keyword: '书香青春 阅见未来', bonus: 50 },
+            { keyword: '新词甲', bonus: 5 },
+        ]);
+        await waitFor(() => request.done);
+        // 保存成功后按服务器返回值重渲染（行节点被重建），脏标记清除
+        await waitFor(() => bonusRows(page)[0] !== firstRowBefore);
+        assert.equal(page.window.eval('state.dirty.score_keyword_bonuses'), false);
+        assert.deepEqual(
+            bonusRows(page).map((row) => row.querySelector('.bonus-keyword-input').value),
+            ['教育工委', '书香青春 阅见未来', '新词甲'],
+        );
+    } finally {
+        page.close();
+    }
+});
+
+test('B2：去掉首尾空白后与其他行重复的关键词被前端拦截，行标红且不发请求', async () => {
+    const page = await bootPage();
+    try {
+        // 刻意带首尾空白：去重比较必须作用在去空白后的值上
+        inputValue(
+            page,
+            bonusRows(page)[1].querySelector('.bonus-keyword-input'),
+            '  教育工委  ',
+        );
+        page.document.getElementById('btn-bonus-save').click();
+        // 判别性断言最先检查：拦截意味着没有保存请求
+        await assertNever(() => page.server.requests('save-bonuses').length > 0, 300);
+        const row = bonusRows(page)[1];
+        assert.ok(row.classList.contains('is-invalid'));
+        assert.match(row.querySelector('.bonus-row-error').textContent, /重复/);
+        const status = bonusSaveStatus(page);
+        assert.ok(status.classList.contains('is-error'));
+        assert.match(status.textContent, /第 2 行/);
+        assert.match(status.textContent, /重复/);
+    } finally {
+        page.close();
+    }
+});
+
+test('B3：分值校验拒绝小数、超范围与空值，全部不发请求', async () => {
+    const page = await bootPage();
+    try {
+        const bonusInput = () => bonusRows(page)[0].querySelector('.bonus-value-input');
+        const save = () => page.document.getElementById('btn-bonus-save').click();
+
+        // 小数
+        inputValue(page, bonusInput(), '5.5');
+        save();
+        await assertNever(() => page.server.requests('save-bonuses').length > 0, 300);
+        assert.ok(bonusRows(page)[0].classList.contains('is-invalid'));
+        assert.match(
+            bonusRows(page)[0].querySelector('.bonus-row-error').textContent,
+            /整数/,
+        );
+
+        // 超出上限（-100 ~ 100）
+        inputValue(page, bonusInput(), '101');
+        save();
+        await assertNever(() => page.server.requests('save-bonuses').length > 0, 300);
+        assert.match(
+            bonusRows(page)[0].querySelector('.bonus-row-error').textContent,
+            /-100 到 100/,
+        );
+
+        // 超出下限
+        inputValue(page, bonusInput(), '-101');
+        save();
+        await assertNever(() => page.server.requests('save-bonuses').length > 0, 300);
+        assert.match(
+            bonusRows(page)[0].querySelector('.bonus-row-error').textContent,
+            /-100 到 100/,
+        );
+
+        // 空值
+        inputValue(page, bonusInput(), '');
+        save();
+        await assertNever(() => page.server.requests('save-bonuses').length > 0, 300);
+        assert.match(
+            bonusRows(page)[0].querySelector('.bonus-row-error').textContent,
+            /不能为空/,
+        );
+    } finally {
+        page.close();
+    }
+});
+
+test('B4：空白关键词被拦截；保存成功后按服务器返回的规范化值重渲染', async () => {
+    const page = await bootPage();
+    try {
+        // 添加一行，关键词全是空白 → 拦截
+        page.document.getElementById('btn-bonus-add').click();
+        const rows = bonusRows(page);
+        inputValue(page, rows[3].querySelector('.bonus-keyword-input'), '   ');
+        inputValue(page, rows[3].querySelector('.bonus-value-input'), '10');
+        page.document.getElementById('btn-bonus-save').click();
+        await assertNever(() => page.server.requests('save-bonuses').length > 0, 300);
+        assert.ok(bonusRows(page)[3].classList.contains('is-invalid'));
+        assert.match(bonusSaveStatus(page).textContent, /关键词不能为空/);
+
+        // 修正后保存：后端会再做一次规范化（去首尾空白、去重），界面按返回值重渲染
+        page.server.saveBehavior.score_keyword_bonuses = {
+            status: 200,
+            payload: {
+                item: {
+                    value: [{ keyword: '服务端规范词', bonus: 7 }],
+                    version: 7,
+                    updated_at: '2026-01-11T00:00:00Z',
+                },
+            },
+        };
+        inputValue(page, bonusRows(page)[3].querySelector('.bonus-keyword-input'), '正常词');
+        page.document.getElementById('btn-bonus-save').click();
+        await waitFor(() => page.server.requests('save-bonuses').length === 1
+            && page.server.requests('save-bonuses')[0].done);
+        await waitFor(() => {
+            const inputs = bonusRows(page)
+                .map((row) => row.querySelector('.bonus-keyword-input').value);
+            return inputs.length === 1 && inputs[0] === '服务端规范词';
+        });
+    } finally {
+        page.close();
+    }
+});
+
+test('B5：删光全部行后保存需先确认，取消不发请求，确认后提交空数组', async () => {
+    const page = await bootPage();
+    try {
+        const confirmCalls = [];
+        page.window.__confirmAnswer = false;
+        page.window.confirm = (message) => {
+            confirmCalls.push(message);
+            return page.window.__confirmAnswer;
+        };
+        bonusRows(page).forEach((row) => row.querySelector('.bonus-delete-btn').click());
+        assert.equal(bonusRows(page).length, 0);
+
+        // 取消：弹了确认但不发请求
+        page.document.getElementById('btn-bonus-save').click();
+        await assertNever(() => page.server.requests('save-bonuses').length > 0, 300);
+        assert.equal(confirmCalls.length, 1);
+        assert.match(confirmCalls[0], /不再有关键词加分/);
+
+        // 确认：提交空数组（表示不再加分，是合法状态）
+        page.window.__confirmAnswer = true;
+        page.document.getElementById('btn-bonus-save').click();
+        await waitFor(() => page.server.requests('save-bonuses').length === 1);
+        assert.deepEqual(page.server.requests('save-bonuses')[0].body.value, []);
+        assert.equal(confirmCalls.length, 2);
+    } finally {
+        page.close();
+    }
+});
+
+test('B6：加分词典 409 保留修改，「载入最新配置」后按服务器值重渲染', async () => {
+    const page = await bootPage();
+    try {
+        page.server.saveBehavior.score_keyword_bonuses = {
+            status: 409,
+            payload: { detail: '配置版本已变化：当前版本为 8' },
+        };
+        page.server.sections.score_keyword_bonuses = {
+            ...page.server.sections.score_keyword_bonuses,
+            value: [{ keyword: '服务端词', bonus: 9 }],
+            version: 8,
+        };
+        inputValue(page, bonusRows(page)[0].querySelector('.bonus-value-input'), '33');
+
+        page.document.getElementById('btn-bonus-save').click();
+        await waitFor(() => page.server.requests('save-bonuses').length === 1
+            && page.server.requests('save-bonuses')[0].done);
+        await waitFor(() => bonusSaveStatus(page).textContent.startsWith('保存冲突：'));
+        // 本地修改保留，没有自动重拉
+        assert.equal(bonusRows(page)[0].querySelector('.bonus-value-input').value, '33');
+        assert.equal(page.server.requests('get-settings').length, 0);
+        const reloadBtn = page.document.getElementById('btn-bonus-reload');
+        assert.equal(reloadBtn.hidden, false);
+
+        reloadBtn.click();
+        await waitFor(() => page.server.requests('get-settings').length === 1);
+        await waitFor(() => {
+            const rows = bonusRows(page);
+            return rows.length === 1
+                && rows[0].querySelector('.bonus-keyword-input').value === '服务端词'
+                && rows[0].querySelector('.bonus-value-input').value === '9';
+        });
+        assert.equal(page.document.getElementById('btn-bonus-reload').hidden, true);
+        assert.equal(page.window.eval('state.dirty.score_keyword_bonuses'), false);
+    } finally {
+        page.close();
+    }
+});
+
+test('B7：#bonuses 与 #advanced 能正确恢复对应页签，「高级」是弱化的次要入口', async () => {
+    const bonusPage = await bootPage({ hash: '#bonuses' });
+    try {
+        assert.equal(bonusPage.panel('bonuses').hidden, false);
+        assert.equal(bonusPage.panel('models').hidden, true);
+        const tab = bonusPage.document.querySelector('[data-settings-tab="bonuses"]');
+        assert.ok(tab.classList.contains('is-active'));
+        assert.equal(tab.getAttribute('aria-selected'), 'true');
+    } finally {
+        bonusPage.close();
+    }
+
+    const advancedPage = await bootPage({ hash: '#advanced' });
+    try {
+        assert.equal(advancedPage.panel('advanced').hidden, false);
+        assert.equal(advancedPage.panel('sources').hidden, true);
+        const tab = advancedPage.document.querySelector('[data-settings-tab="advanced"]');
+        assert.ok(tab.classList.contains('is-active'));
+        // 视觉上弱化：带次要入口样式类
+        assert.ok(tab.classList.contains('settings-tab-minor'));
+        // 主页签不带弱化样式
+        assert.ok(!advancedPage.document
+            .querySelector('[data-settings-tab="bonuses"]')
+            .classList.contains('settings-tab-minor'));
+    } finally {
+        advancedPage.close();
+    }
+});
+
+test('B8：任一新分区缺失时只有该分区显示导入提示，其他分区照常渲染', async () => {
+    const noBonuses = defaultSections();
+    delete noBonuses.score_keyword_bonuses;
+    const page = await bootPage({ sections: noBonuses });
+    try {
+        assert.ok(page.panel('bonuses').querySelector('.settings-import-notice'));
+        assert.equal(page.panel('bonuses').querySelector('.bonus-row'), null);
+        // 其他分区照常
+        assert.ok(page.document.getElementById('models-default-input'));
+        assert.ok(advancedBlock(page, 'education_keywords').querySelector('.advanced-textarea'));
+    } finally {
+        page.close();
+    }
+
+    const noEducation = defaultSections();
+    delete noEducation.education_keywords;
+    const advanced = await bootPage({ sections: noEducation });
+    try {
+        // 高级页签按块降级：只有缺失的那块显示导入提示
+        const eduBlock = advancedBlock(advanced, 'education_keywords');
+        assert.ok(eduBlock.querySelector('.settings-import-notice'));
+        assert.equal(eduBlock.querySelector('.advanced-textarea'), null);
+        assert.ok(advancedBlock(advanced, 'beijing_keywords')
+            .querySelector('.advanced-textarea'));
+        assert.ok(advancedBlock(advanced, 'source_aliases')
+            .querySelector('.alias-mappings-input'));
+        // 加分词典页签不受影响
+        assert.ok(bonusRows(advanced).length > 0);
+    } finally {
+        advanced.close();
+    }
+});
+
+// ---------- 高级页签（A1-A7） ----------
+
+test('A1：高级页签三块各自独立保存，只发自己分区的请求并带各自版本号；词数随输入更新', async () => {
+    const page = await bootPage();
+    try {
+        page.clickTab('advanced');
+        const eduBlock = advancedBlock(page, 'education_keywords');
+        const eduTextarea = eduBlock.querySelector('.advanced-textarea');
+        assert.equal(eduTextarea.value, '教育\n招生\n高考');
+        const eduCount = eduBlock.querySelector('.advanced-count');
+        assert.equal(eduCount.textContent, '当前词数：3');
+
+        inputValue(page, eduTextarea, '教育\n招生\n高考\n\n  新课程  \n');
+        assert.equal(eduCount.textContent, '当前词数：4');
+
+        eduBlock.querySelector('.advanced-save-btn').click();
+        await waitFor(() => page.server.requests('save-education-keywords').length === 1);
+        const eduRequest = page.server.requests('save-education-keywords')[0];
+        // 判别性断言：路径与版本号都属于教育关键词分区（各自 version 刻意不同）
+        assert.equal(eduRequest.body.expected_version, 2);
+        // 按行拆分、去首尾空白、丢弃空行；重复词交给后端静默去重
+        assert.deepEqual(eduRequest.body.value, ['教育', '招生', '高考', '新课程']);
+        await waitFor(() => eduRequest.done);
+        // 保存成功后按服务器返回的规范化列表回填
+        await waitFor(() => advancedBlock(page, 'education_keywords')
+            .querySelector('.advanced-textarea').value === '教育\n招生\n高考\n新课程');
+        // 没有触碰其他分区
+        await assertNever(
+            () => page.server.requests('save-beijing-keywords').length > 0
+                || page.server.requests('save-source-aliases').length > 0
+                || page.server.requests('save-bonuses').length > 0,
+            200,
+        );
+
+        const bjBlock = advancedBlock(page, 'beijing_keywords');
+        inputValue(page, bjBlock.querySelector('.advanced-textarea'), '北京\n海淀');
+        bjBlock.querySelector('.advanced-save-btn').click();
+        await waitFor(() => page.server.requests('save-beijing-keywords').length === 1);
+        const bjRequest = page.server.requests('save-beijing-keywords')[0];
+        assert.equal(bjRequest.body.expected_version, 5);
+        assert.deepEqual(bjRequest.body.value, ['北京', '海淀']);
+        await waitFor(() => bjRequest.done);
+        // 教育关键词仍只保存过一次
+        assert.equal(page.server.requests('save-education-keywords').length, 1);
+    } finally {
+        page.close();
+    }
+});
+
+test('A2：教育/京内关键词拆分后为空时前端拦截不发请求，并说明后果', async () => {
+    const page = await bootPage();
+    try {
+        const eduBlock = advancedBlock(page, 'education_keywords');
+        inputValue(page, eduBlock.querySelector('.advanced-textarea'), '\n   \n');
+        eduBlock.querySelector('.advanced-save-btn').click();
+        // 判别性断言最先检查：拦截意味着没有保存请求
+        await assertNever(
+            () => page.server.requests('save-education-keywords').length > 0,
+            300,
+        );
+        const eduStatus = eduBlock.querySelector('.advanced-save-status');
+        assert.ok(eduStatus.classList.contains('is-error'));
+        assert.match(eduStatus.textContent, /所有文章直接放行/);
+
+        const bjBlock = advancedBlock(page, 'beijing_keywords');
+        inputValue(page, bjBlock.querySelector('.advanced-textarea'), '');
+        bjBlock.querySelector('.advanced-save-btn').click();
+        await assertNever(
+            () => page.server.requests('save-beijing-keywords').length > 0,
+            300,
+        );
+        const bjStatus = bjBlock.querySelector('.advanced-save-status');
+        assert.ok(bjStatus.classList.contains('is-error'));
+        assert.match(bjStatus.textContent, /判为京外/);
+    } finally {
+        page.close();
+    }
+});
+
+test('A3：来源别名接受全角等号并按第一个等号拆分，后缀按文本框行序保存', async () => {
+    const page = await bootPage();
+    try {
+        const block = advancedBlock(page, 'source_aliases');
+        const suffixTextarea = block.querySelector('.alias-suffixes-input');
+        const aliasTextarea = block.querySelector('.alias-mappings-input');
+        // 初始回填：后缀按库存顺序，别名按 原名称=标准名称（半角等号）
+        assert.equal(suffixTextarea.value, '客户端\n官方账号\n日报');
+        assert.equal(aliasTextarea.value, '新京报客户端=新京报\n北京日报APP=北京日报');
+
+        // 全角等号、等号出现在标准名称里（按第一个等号拆分）
+        inputValue(
+            page,
+            aliasTextarea,
+            '新京报客户端=新京报\n北青报＝北京青年报\n中国＝北京=中国网北京频道',
+        );
+        block.querySelector('.advanced-save-btn').click();
+        await waitFor(() => page.server.requests('save-source-aliases').length === 1);
+        const request = page.server.requests('save-source-aliases')[0];
+        assert.equal(request.body.expected_version, 3);
+        assert.deepEqual(request.body.value, {
+            // 判别性断言：后缀顺序必须按文本框行序，不得排序
+            suffixes: ['客户端', '官方账号', '日报'],
+            aliases: {
+                新京报客户端: '新京报',
+                北青报: '北京青年报',
+                中国: '北京=中国网北京频道',
+            },
+        });
+    } finally {
+        page.close();
+    }
+});
+
+test('A4：别名行缺等号、等号任一侧为空、原名称重复均被前端拦截，不发请求', async () => {
+    const page = await bootPage();
+    try {
+        const block = advancedBlock(page, 'source_aliases');
+        const aliasTextarea = block.querySelector('.alias-mappings-input');
+        const status = block.querySelector('.advanced-save-status');
+        const save = () => block.querySelector('.advanced-save-btn').click();
+
+        // 某行没有等号
+        inputValue(page, aliasTextarea, '新京报客户端=新京报\n没有等号的行');
+        save();
+        await assertNever(() => page.server.requests('save-source-aliases').length > 0, 300);
+        assert.match(status.textContent, /第 2 行缺少等号/);
+        assert.ok(aliasTextarea.classList.contains('is-invalid'));
+
+        // 等号一侧为空
+        inputValue(page, aliasTextarea, '=新京报');
+        save();
+        await assertNever(() => page.server.requests('save-source-aliases').length > 0, 300);
+        assert.match(status.textContent, /等号两侧都不能为空/);
+
+        // 同一个原名称出现两次（JSON 对象会静默吞掉一个，必须前端拦）
+        inputValue(page, aliasTextarea, '新京报客户端=新京报\n新京报客户端=新京报旧版');
+        save();
+        await assertNever(() => page.server.requests('save-source-aliases').length > 0, 300);
+        assert.match(status.textContent, /第 2 行原名称「新京报客户端」重复/);
+    } finally {
+        page.close();
+    }
+});
+
+test('A5：某一块 409 后「载入最新配置」只重置该块，其他块未保存的修改原样保留', async () => {
+    const page = await bootPage();
+    try {
+        const eduBlock = advancedBlock(page, 'education_keywords');
+        const bjBlock = advancedBlock(page, 'beijing_keywords');
+        const eduTextarea = eduBlock.querySelector('.advanced-textarea');
+        const bjTextarea = bjBlock.querySelector('.advanced-textarea');
+        inputValue(page, eduTextarea, '教育\n招生\n本地新增词');
+        inputValue(page, bjTextarea, '北京\n本地京内修改');
+
+        page.server.saveBehavior.beijing_keywords = {
+            status: 409,
+            payload: { detail: '配置版本已变化：当前版本为 9' },
+        };
+        page.server.sections.beijing_keywords = {
+            ...page.server.sections.beijing_keywords,
+            value: ['服务端京内词'],
+            version: 9,
+        };
+
+        bjBlock.querySelector('.advanced-save-btn').click();
+        await waitFor(() => page.server.requests('save-beijing-keywords').length === 1
+            && page.server.requests('save-beijing-keywords')[0].done);
+        const bjStatus = bjBlock.querySelector('.advanced-save-status');
+        await waitFor(() => bjStatus.textContent.startsWith('保存冲突：'));
+        // 本地修改保留，没有自动重拉
+        assert.equal(bjTextarea.value, '北京\n本地京内修改');
+        assert.equal(page.server.requests('get-settings').length, 0);
+        const reloadBtn = bjBlock.querySelector('.advanced-reload-btn');
+        assert.equal(reloadBtn.hidden, false);
+
+        reloadBtn.click();
+        await waitFor(() => page.server.requests('get-settings').length === 1);
+        // 只重置京内这一块：文本框按服务器值回填，节点被重建
+        await waitFor(() => advancedBlock(page, 'beijing_keywords')
+            .querySelector('.advanced-textarea').value === '服务端京内词');
+        // 判别性断言：教育块未保存的文本原样保留（连节点都没换）
+        assert.equal(
+            advancedBlock(page, 'education_keywords').querySelector('.advanced-textarea'),
+            eduTextarea,
+        );
+        assert.equal(eduTextarea.value, '教育\n招生\n本地新增词');
+        assert.equal(page.window.eval('state.dirty.education_keywords'), true);
+        assert.equal(page.window.eval('state.dirty.beijing_keywords'), false);
+        assert.equal(
+            advancedBlock(page, 'beijing_keywords')
+                .querySelector('.advanced-reload-btn').hidden,
+            true,
+        );
+    } finally {
+        page.close();
+    }
+});
+
+test('A6：新分区的脏标记都接入离开页面守卫', async () => {
+    const page = await bootPage();
+    try {
+        const guardFires = () => {
+            const event = new page.window.Event('beforeunload', { cancelable: true });
+            page.window.dispatchEvent(event);
+            return event.defaultPrevented;
+        };
+        assert.equal(guardFires(), false, '初始无修改不应拦截离开');
+
+        // 加分词典
+        inputValue(page, bonusRows(page)[0].querySelector('.bonus-value-input'), '66');
+        assert.equal(page.window.eval('state.dirty.score_keyword_bonuses'), true);
+        assert.equal(guardFires(), true);
+        // 放弃修改后恢复
+        page.document.getElementById('btn-bonus-discard').click();
+        assert.equal(guardFires(), false);
+
+        // 高级页签三块
+        inputValue(
+            page,
+            advancedBlock(page, 'education_keywords').querySelector('.advanced-textarea'),
+            '教育\n招生',
+        );
+        assert.equal(page.window.eval('state.dirty.education_keywords'), true);
+        assert.equal(guardFires(), true);
+
+        inputValue(
+            page,
+            advancedBlock(page, 'beijing_keywords').querySelector('.advanced-textarea'),
+            '北京',
+        );
+        assert.equal(page.window.eval('state.dirty.beijing_keywords'), true);
+
+        inputValue(
+            page,
+            advancedBlock(page, 'source_aliases').querySelector('.alias-suffixes-input'),
+            '客户端',
+        );
+        assert.equal(page.window.eval('state.dirty.source_aliases'), true);
+        assert.equal(guardFires(), true);
+    } finally {
+        page.close();
+    }
+});
+
+test('A7：高级页签保存返回 422 时显示服务端原因并保留文本框内容', async () => {
+    const page = await bootPage();
+    try {
+        page.server.saveBehavior.source_aliases = {
+            status: 422,
+            payload: { detail: 'source_aliases.suffixes[0] 必须是非空字符串' },
+        };
+        const block = advancedBlock(page, 'source_aliases');
+        const suffixTextarea = block.querySelector('.alias-suffixes-input');
+        inputValue(page, suffixTextarea, '客户端\n日报');
+        block.querySelector('.advanced-save-btn').click();
+        await waitFor(() => page.server.requests('save-source-aliases').length === 1
+            && page.server.requests('save-source-aliases')[0].done);
+        const status = block.querySelector('.advanced-save-status');
+        await waitFor(() => status.textContent.includes('source_aliases.suffixes[0]'));
+        // 文本框内容保留，保存按钮恢复可用，不出现「载入最新配置」
+        assert.equal(suffixTextarea.value, '客户端\n日报');
+        assert.equal(block.querySelector('.advanced-save-btn').disabled, false);
+        assert.equal(block.querySelector('.advanced-reload-btn').hidden, true);
+        assert.equal(page.window.eval('state.dirty.source_aliases'), true);
+    } finally {
+        page.close();
+    }
+});

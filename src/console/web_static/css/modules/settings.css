@@ -22,6 +22,23 @@
     color: #fff;
 }
 
+/* 「高级」是次要入口：推到页签栏最右侧，弱化成一个链接样式的入口，
+   不与主页签并列抢视线；激活态也只是淡灰底，不用主色 */
+.settings-tab-minor {
+    margin-left: auto;
+    padding: 6px 12px;
+    border-color: transparent;
+    background: transparent;
+    color: #94a3b8;
+    font-size: 0.84rem;
+}
+
+.settings-tab-minor.is-active {
+    border-color: #cbd5e1;
+    background: #f1f5f9;
+    color: #475569;
+}
+
 .settings-effect-note,
 .settings-updated,
 .settings-env-note {
@@ -843,4 +860,104 @@
     border-radius: 8px;
     background: #fff;
     font: inherit;
+}
+
+/* 加分词典页签：每条规则一行（关键词 + 分值 + 删除），校验失败的行标红 */
+.bonus-rows {
+    display: grid;
+    gap: 6px;
+    margin: 10px 0;
+}
+
+.bonus-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.bonus-keyword-input,
+.bonus-value-input {
+    padding: 7px 9px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    font: inherit;
+}
+
+.bonus-keyword-input {
+    width: min(340px, 55%);
+}
+
+.bonus-value-input {
+    width: 100px;
+}
+
+.bonus-row.is-invalid .bonus-keyword-input,
+.bonus-row.is-invalid .bonus-value-input {
+    border-color: #b91c1c;
+}
+
+.bonus-delete-btn {
+    min-height: 30px;
+    padding: 2px 12px;
+    border-radius: 6px;
+    color: #b91c1c;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.bonus-row-error {
+    flex-basis: 100%;
+    color: #b91c1c;
+    font-size: 0.78rem;
+}
+
+.bonus-row-error:empty {
+    display: none;
+}
+
+.bonus-add-btn {
+    margin-top: 4px;
+}
+
+/* 高级页签：三块独立保存的朴素文本框编辑 */
+.advanced-block {
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #e7edf5;
+}
+
+.advanced-block:last-child {
+    border-bottom: 0;
+}
+
+.advanced-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 6px;
+    padding: 8px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    font: inherit;
+    font-size: 0.86rem;
+    line-height: 1.5;
+    resize: vertical;
+}
+
+.advanced-textarea.is-invalid {
+    border-color: #b91c1c;
+}
+
+.advanced-count {
+    margin: 4px 0;
+    color: #64748b;
+    font-size: 0.8rem;
+}
+
+.advanced-field-label {
+    margin: 12px 0 2px;
+    font-size: 0.88rem;
+    font-weight: 600;
 }

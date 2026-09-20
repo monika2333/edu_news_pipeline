@@ -1,9 +1,10 @@
 // 系统设置页 - core：共享状态、DOM 引用、请求封装、页签与未保存守卫。
-// 加载顺序最前；页签逻辑见 models_tab.js / sources_tab.js / source_accounts.js，
-// 启动逻辑在 init.js。用户输入一律经 createEl/textContent 渲染，禁止拼接 innerHTML。
+// 加载顺序最前；页签逻辑见 models_tab.js / sources_tab.js / source_accounts.js /
+// bonus_tab.js / advanced_tab.js，启动逻辑在 init.js。
+// 用户输入一律经 createEl/textContent 渲染，禁止拼接 innerHTML。
 'use strict';
 
-const SETTINGS_TABS = ['models', 'sources'];
+const SETTINGS_TABS = ['models', 'sources', 'bonuses', 'advanced'];
 
 const state = {
     payload: null,
@@ -24,10 +25,26 @@ const state = {
     // accountPanelState）：只剩 refreshInflight（名称刷新按钮是按来源的）。
     // 账号面板始终平铺，没有收起即重置的语义
     accountPanels: {},
-    // 数据源页签没有草稿：来源启停即时写库，未保存守卫只服务模型页签的
-    // 两个分区（llm_models 与 llm_endpoints 各自独立保存、独立脏标记）
-    dirty: { llm_models: false, llm_endpoints: false },
-    saving: { llm_models: false, llm_endpoints: false },
+    // 数据源页签没有草稿：来源启停即时写库。未保存守卫服务其余六个分区：
+    // 模型页签的 llm_models 与 llm_endpoints、加分词典页签的 score_keyword_bonuses、
+    // 高级页签的 education_keywords / beijing_keywords / source_aliases，
+    // 各自独立保存、独立脏标记
+    dirty: {
+        llm_models: false,
+        llm_endpoints: false,
+        score_keyword_bonuses: false,
+        education_keywords: false,
+        beijing_keywords: false,
+        source_aliases: false,
+    },
+    saving: {
+        llm_models: false,
+        llm_endpoints: false,
+        score_keyword_bonuses: false,
+        education_keywords: false,
+        beijing_keywords: false,
+        source_aliases: false,
+    },
     modelsDraft: null,
     // 进行中的来源启停请求数；非零时禁用面板内全部来源开关
     sourceToggleInflight: 0,
@@ -42,6 +59,8 @@ function cacheSettingsElements() {
     elements.panels = {
         models: document.getElementById('settings-panel-models'),
         sources: document.getElementById('settings-panel-sources'),
+        bonuses: document.getElementById('settings-panel-bonuses'),
+        advanced: document.getElementById('settings-panel-advanced'),
     };
     state.currentUserName = document.body.dataset.currentUserName || '';
 }
@@ -188,7 +207,8 @@ async function reloadSettingsPayload() {
 }
 
 // 分区保存的通用流程：版本乐观锁、409 保留修改 + 手动载入最新、
-// 422 展示服务端原因、进行中防重复提交。当前由模型页签使用。
+// 422 展示服务端原因、进行中防重复提交。模型、加分词典、高级页签的
+// 各分区保存都走这里。
 async function saveSettingsSection(section, value, controls) {
     if (state.saving[section]) return;
     const current = settingsSection(section);
@@ -271,8 +291,8 @@ function writeSettingsHash(tab) {
 }
 
 // 切换页签只隐藏面板，不重渲染，未保存的修改随 DOM 保留。
-// hash 收敛到页签级：只写 #models / #sources，解析出的 sub 一律忽略
-// （#sources:<来源key> 这类子锚点已随展开抽屉取消而失效）。
+// hash 收敛到页签级：只写 #models / #sources / #bonuses / #advanced，
+// 解析出的 sub 一律忽略（#sources:<来源key> 这类子锚点已随展开抽屉取消而失效）。
 // 旧 hash 兼容：#accounts[:任意] 一律 replaceState 改写为 #sources，不报错、不留历史。
 function activateSettingsTab(tab, { updateHash = true } = {}) {
     let normalized = tab;

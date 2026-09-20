@@ -195,6 +195,39 @@ function defaultSections() {
             updated_at: '2026-01-10T08:31:00Z',
             updated_by: { user_id: 'u1', display_name: 'Wimp' },
         },
+        // 加分词典：刻意不按关键词排序，保证「保存顺序 = 页面顺序」的断言有区分度
+        score_keyword_bonuses: {
+            value: [
+                { keyword: '教育工委', bonus: 100 },
+                { keyword: '北京市委', bonus: 90 },
+                { keyword: '书香青春 阅见未来', bonus: 50 },
+            ],
+            version: 6,
+            updated_at: '2026-01-10T08:32:00Z',
+            updated_by: { user_id: 'u1', display_name: 'Wimp' },
+        },
+        education_keywords: {
+            value: ['教育', '招生', '高考'],
+            version: 2,
+            updated_at: '2026-01-10T08:33:00Z',
+            updated_by: { user_id: 'u1', display_name: 'Wimp' },
+        },
+        beijing_keywords: {
+            value: ['北京', '海淀', '朝阳'],
+            version: 5,
+            updated_at: '2026-01-10T08:34:00Z',
+            updated_by: { user_id: 'u1', display_name: 'Wimp' },
+        },
+        // 后缀顺序同样刻意非字典序：剥离顺序有意义，保存不得打乱
+        source_aliases: {
+            value: {
+                suffixes: ['客户端', '官方账号', '日报'],
+                aliases: { 新京报客户端: '新京报', 北京日报APP: '北京日报' },
+            },
+            version: 3,
+            updated_at: '2026-01-10T08:35:00Z',
+            updated_by: { user_id: 'u1', display_name: 'Wimp' },
+        },
     };
 }
 
@@ -297,6 +330,10 @@ class FakeSettingsServer {
         if (pathname === '/api/admin/settings/llm_models') return 'save-models';
         if (pathname === '/api/admin/settings/llm_endpoints') return 'save-endpoints';
         if (pathname === '/api/admin/settings/crawl_sources') return 'save-sources';
+        if (pathname === '/api/admin/settings/score_keyword_bonuses') return 'save-bonuses';
+        if (pathname === '/api/admin/settings/education_keywords') return 'save-education-keywords';
+        if (pathname === '/api/admin/settings/beijing_keywords') return 'save-beijing-keywords';
+        if (pathname === '/api/admin/settings/source_aliases') return 'save-source-aliases';
         if (pathname === '/api/admin/crawl-accounts') {
             return method === 'POST' ? 'add-account' : 'list-accounts';
         }
@@ -414,7 +451,7 @@ class FakeSettingsServer {
             }];
         }
         const saveMatch = pathname.match(
-            /^\/api\/admin\/settings\/(llm_models|llm_endpoints|crawl_sources)$/,
+            /^\/api\/admin\/settings\/(llm_models|llm_endpoints|crawl_sources|score_keyword_bonuses|education_keywords|beijing_keywords|source_aliases)$/,
         );
         if (saveMatch && method === 'PUT') {
             const section = saveMatch[1];
@@ -614,7 +651,9 @@ async function bootPage(serverOptions = {}) {
     const booted = await waitFor(
         () => server.inflight === 0
             && page.panel('models').children.length > 0
-            && page.panel('sources').children.length > 0,
+            && page.panel('sources').children.length > 0
+            && page.panel('bonuses').children.length > 0
+            && page.panel('advanced').children.length > 0,
     );
     if (!booted || scriptErrors.length) {
         throw new Error(`页面启动失败：${scriptErrors.join(' | ') || '面板未渲染'}`);

@@ -39,10 +39,16 @@ def test_admin_settings_page_structure() -> None:
     assert "<h1>系统设置</h1>" in html
     assert 'data-settings-tab="models">模型</button>' in html
     assert 'data-settings-tab="sources">数据源</button>' in html
+    assert 'data-settings-tab="bonuses">加分词典</button>' in html
+    assert 'data-settings-tab="advanced">高级</button>' in html
+    # 「高级」是弱化入口，样式上不与主页签并列
+    assert 'class="settings-tab settings-tab-minor"' in html
     # 抓取账号页签已并入数据源页签，不再存在独立页签与面板
     assert 'data-settings-tab="accounts"' not in html
     assert 'id="settings-panel-models"' in html
     assert 'id="settings-panel-sources"' in html
+    assert 'id="settings-panel-bonuses"' in html
+    assert 'id="settings-panel-advanced"' in html
     assert 'id="settings-panel-accounts"' not in html
     # 脚本顺序：core 最先，endpoints 在 models_tab 之前，init 最后
     assert html.index("/static/js/settings/core.js") < html.index(
@@ -58,6 +64,12 @@ def test_admin_settings_page_structure() -> None:
         "/static/js/settings/source_accounts.js"
     )
     assert html.index("/static/js/settings/source_accounts.js") < html.index(
+        "/static/js/settings/bonus_tab.js"
+    )
+    assert html.index("/static/js/settings/bonus_tab.js") < html.index(
+        "/static/js/settings/advanced_tab.js"
+    )
+    assert html.index("/static/js/settings/advanced_tab.js") < html.index(
         "/static/js/settings/init.js"
     )
     assert 'href="/static/css/modules/settings.css' in html

@@ -6,7 +6,13 @@ from typing import Any, Optional
 import pytest
 import requests
 
-from src.adapters import account_profiles, http_beijinghao, http_btime, http_tencent
+from src.adapters import (
+    account_profiles,
+    http_beijinghao,
+    http_btime,
+    http_tencent,
+    http_toutiao,
+)
 
 
 class _Response:
@@ -154,18 +160,51 @@ def test_beijinghao_name_uses_column_page_title_transport(
     assert name == "现代教育报"
 
 
-def test_toutiao_declines_http_after_real_homepage_proved_unusable(
+def test_toutiao_resolves_via_browser_feed_transport(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        account_profiles.requests,
-        "Session",
-        lambda: pytest.fail("toutiao must rely on the database fallback"),
+    observed: dict[str, Any] = {}
+
+    def fake_fetch(
+        token: str,
+        profile_url: str,
+        *,
+        timeout_seconds: float,
+    ) -> Optional[str]:
+        observed["token"] = token
+        observed["profile_url"] = profile_url
+        observed["timeout_seconds"] = timeout_seconds
+        return " 京报网 "
+
+    monkeypatch.setattr(http_toutiao, "fetch_profile_display_name", fake_fetch)
+
+    name = account_profiles.resolve_account_name(
+        "toutiao",
+        normalized_identifier="token-1",
+        profile_url="https://www.toutiao.com/c/user/token/token-1/",
+        timeout=30,
     )
 
+    assert name == "京报网"
+    assert observed["token"] == "token-1"
+    assert observed["profile_url"] == "https://www.toutiao.com/c/user/token/token-1/"
+    # 预算钳制在头条网页解析的上限，不透传更大的值
+    assert observed["timeout_seconds"] == http_toutiao.PROFILE_NAME_TIMEOUT_SECONDS
+
+
+def test_toutiao_maps_empty_feed_and_timeout_to_readable_reasons(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def no_name(*_args: Any, **_kwargs: Any) -> Optional[str]:
+        return None
+
+    def timeout(*_args: Any, **_kwargs: Any) -> Optional[str]:
+        raise TimeoutError("budget exhausted")
+
+    monkeypatch.setattr(http_toutiao, "fetch_profile_display_name", no_name)
     with pytest.raises(
         account_profiles.AccountNameUnavailable,
-        match="头条账号名将在下一轮抓取后自动获取",
+        match="没有可用的账号名",
     ):
         account_profiles.resolve_account_name(
             "toutiao",
@@ -173,6 +212,29 @@ def test_toutiao_declines_http_after_real_homepage_proved_unusable(
             profile_url="https://www.toutiao.com/c/user/token/token-1/",
             timeout=8,
         )
+
+    monkeypatch.setattr(http_toutiao, "fetch_profile_display_name", timeout)
+    with pytest.raises(
+        account_profiles.AccountNameUnavailable,
+        match="头条主页请求超时",
+    ):
+        account_profiles.resolve_account_name(
+            "toutiao",
+            normalized_identifier="token-1",
+            profile_url="https://www.toutiao.com/c/user/token/token-1/",
+            timeout=8,
+        )
+
+
+def test_toutiao_profile_name_extraction_prefers_source_over_media_name() -> None:
+    assert http_toutiao._profile_display_name_from_feed(
+        {"data": [{"source": " 人民网 ", "media_name": "忽略我"}]}
+    ) == "人民网"
+    assert http_toutiao._profile_display_name_from_feed(
+        {"data": [{"title": "无来源行"}, {"media_name": " 备用名 "}]}
+    ) == "备用名"
+    assert http_toutiao._profile_display_name_from_feed({"data": []}) is None
+    assert http_toutiao._profile_display_name_from_feed({}) is None
 
 
 def test_m6_single_account_timeout_is_capped_at_eight_seconds(

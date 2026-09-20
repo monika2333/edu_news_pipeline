@@ -1319,6 +1319,13 @@ CREATE INDEX raw_articles_fetched_at_idx ON public.raw_articles USING btree (fet
 
 
 --
+-- Name: raw_articles_token_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX raw_articles_token_idx ON public.raw_articles USING btree (token);
+
+
+--
 -- Name: raw_articles_search_expr_trgm; Type: INDEX; Schema: public; Owner: -
 --
 

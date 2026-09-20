@@ -71,7 +71,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 各来源 adapter 抓取列表页后写入 `raw_articles`，同时做关键词初筛，命中的写入 `filtered_articles`。
 
-账号名称由控制台解析并写入 `crawl_accounts.display_name`；抓取流程本身不回写账号名。头条优先使用、腾讯在官方接口失败后使用同一账号在 `raw_articles` 中最近一条非空记录的 `token → source` 作为兜底；北京时间和北京号不使用这条兜底。`token` 还承担头条和腾讯账号首次抓取的无状态判据：本轮启动时只读取一次 `raw_articles` 中的非空 token，尚未出现的账号仅抓第一页且最多抓取 `CRAWL_FIRST_RUN_LIMIT` 条；只要列表行成功写入，后续轮次就恢复原有连续命中停止逻辑。该判据不写回 `crawl_accounts`，账号停用后重启或删除后重加也不会被误判为首次抓取。
+账号名称由控制台解析并写入 `crawl_accounts.display_name`；抓取流程本身不回写账号名。头条优先使用、腾讯在官方接口失败后使用同一账号在 `raw_articles` 中最近一条非空记录的 `token → source` 作为兜底（该反查依赖 `raw_articles_token_idx`，token 无索引时每查一个账号都在数百万行上顺序扫描）；北京时间和北京号不使用这条兜底。库内兜底给不出名称时，头条用与抓取流程同款的无头浏览器打开主页取首页 feed 的来源名（纯 HTTP 拿到的主页是空壳、feed 接口返回非 JSON，这条路不能省）；头条已有名称时不再为复核现成名起浏览器。`token` 还承担头条和腾讯账号首次抓取的无状态判据：本轮启动时只读取一次 `raw_articles` 中的非空 token，尚未出现的账号仅抓第一页且最多抓取 `CRAWL_FIRST_RUN_LIMIT` 条；只要列表行成功写入，后续轮次就恢复原有连续命中停止逻辑。该判据不写回 `crawl_accounts`，账号停用后重启或删除后重加也不会被误判为首次抓取。
 
 `raw_articles` 的抓取分两步：先写列表信息（`upsert_raw_feed_rows`），再补正文（`update_raw_article_details`，同时写 `detail_fetched_at`）。
 

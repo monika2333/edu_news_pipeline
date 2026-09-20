@@ -23,6 +23,10 @@ from playwright.async_api import async_playwright
 INFO_ENDPOINT = "https://m.toutiao.com/i{article_id}/info/"
 PROFILE_URL_TEMPLATE = "https://www.toutiao.com/c/user/token/{token}/"
 DEFAULT_LIMIT = 100
+# 主页名称解析的整段预算（浏览器启动 + 打开主页 + 首页 feed）。
+# 头条反爬要求真实浏览器上下文，纯 HTTP 主页是空壳、feed 接口返回非 JSON，
+# 只有这条与抓取流程同款的 Playwright 路径可用。
+PROFILE_NAME_TIMEOUT_SECONDS = 20.0
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -392,6 +396,64 @@ async def fetch_feed_items(
         return all_items[:limit]
     return all_items
 
+def _profile_display_name_from_feed(payload: Dict[str, Any]) -> Optional[str]:
+    for raw in (payload or {}).get("data") or []:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("source") or raw.get("media_name") or "").strip()
+        if name:
+            return name
+    return None
+
+
+async def _fetch_profile_display_name(
+    token: str,
+    profile_url: str,
+    *,
+    timeout_seconds: float,
+) -> Optional[str]:
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(headless=True)
+        try:
+            context = await browser.new_context(
+                user_agent=USER_AGENT,
+                locale="zh-CN",
+                ignore_https_errors=True,
+            )
+            page = await context.new_page()
+            await page.goto(profile_url, timeout=timeout_seconds * 1000)
+            await page.wait_for_selector("body")
+            payload = await _fetch_feed_page_payload(page, token, "0")
+        finally:
+            await browser.close()
+    return _profile_display_name_from_feed(payload)
+
+
+def fetch_profile_display_name(
+    token: str,
+    profile_url: str,
+    *,
+    timeout_seconds: float = PROFILE_NAME_TIMEOUT_SECONDS,
+) -> Optional[str]:
+    """Fetch the author display name from the profile's first feed page.
+
+    Reuses the crawl flow's in-page feed transport (headless browser) because
+    plain HTTP gets an empty shell page from the profile and a non-JSON
+    anti-bot response from the feed API. Returns None when the feed carries
+    no usable name; raises TimeoutError on budget exhaustion.
+    """
+    return asyncio.run(
+        asyncio.wait_for(
+            _fetch_profile_display_name(
+                token,
+                profile_url,
+                timeout_seconds=timeout_seconds,
+            ),
+            timeout=timeout_seconds,
+        )
+    )
+
+
 def try_resolve_article_id_from_feed(item: FeedItem) -> Optional[str]:
     candidates = [item.article_url, str(item.raw.get("group_id") or ""), str(item.raw.get("item_id") or "")]
     for candidate in candidates:
@@ -462,4 +524,14 @@ def build_detail_update(
     }
 
 
-__all__ = ["FeedItem", "parse_author_input", "fetch_feed_items", "DEFAULT_LIMIT", "feed_item_to_row", "build_detail_update", "resolve_article_id_from_feed"]
+__all__ = [
+    "FeedItem",
+    "PROFILE_NAME_TIMEOUT_SECONDS",
+    "parse_author_input",
+    "fetch_feed_items",
+    "fetch_profile_display_name",
+    "DEFAULT_LIMIT",
+    "feed_item_to_row",
+    "build_detail_update",
+    "resolve_article_id_from_feed",
+]

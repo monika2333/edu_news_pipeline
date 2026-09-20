@@ -1008,11 +1008,13 @@ test('S28：刷新逐芯片就地更新，不替换芯片节点，共存的管�
     }
 });
 
-test('S31：单个新增后端已同步解析名称，前端不再额外调刷新', async () => {
+test('S31：添加即时成功并显示「名称解析中」，随后自动补一次解析就地落名称', async () => {
     const page = await bootPage();
     try {
         await expandSource(page, 'toutiao');
         await enterManageMode(page);
+        // 挂起 refresh-names 的响应，锁住「解析中」这一中间态
+        page.server.hold('refresh-names');
         // 新的就地输入流程：点网格末尾的虚线芯片，输入后点「添加」
         const grid = accountsPanel(page, 'toutiao').querySelector('.accounts-chip-grid');
         grid.querySelector('.account-add-chip').click();
@@ -1026,15 +1028,57 @@ test('S31：单个新增后端已同步解析名称，前端不再额外调刷�
 
         const created = page.server.accounts.toutiao
             .find((item) => item.normalized_identifier === 'brand-new-id');
+        // 芯片在添加请求返回后立即出现，不等名称解析
         const chip = await waitForChip(page, created.id);
-        // 直接用响应里的行渲染：名称已解析，不显示「待获取」
-        assert.equal(
-            chip.querySelector('.account-chip-name').textContent,
-            '名称-brand-new-id',
+        assert.equal(chip.querySelector('.account-chip-name').textContent, 'brand-new-id');
+        const resolvingBadge = chip.querySelector('.account-name-badge');
+        assert.match(resolvingBadge.textContent, /名称解析中/);
+        assert.ok(!resolvingBadge.classList.contains('is-error'));
+        // 前端自动对这一条补发 refresh-names（响应仍挂着）
+        await waitFor(() => page.server.requests('refresh-names').length === 1);
+        assert.deepEqual(
+            page.server.requests('refresh-names')[0].body.account_ids,
+            [created.id],
         );
-        assert.equal(chip.querySelector('.account-name-badge'), null);
-        // 没有发出任何 refresh-names 请求
-        await assertNever(() => page.server.requests('refresh-names').length > 0, 300);
+
+        // 放行解析响应：名称就地补上，解析中徽章消失
+        page.server.release('refresh-names');
+        await waitFor(() => accountChip(page, created.id)
+            .querySelector('.account-chip-name').textContent === '自动名称-brand-new-id');
+        const doneChip = accountChip(page, created.id);
+        assert.ok(!doneChip.classList.contains('is-unresolved'));
+        assert.equal(doneChip.querySelector('.account-name-badge'), null);
+    } finally {
+        page.close();
+    }
+});
+
+test('S31b：新增后的名称解析失败时，徽章变「名称获取失败」并写面板错误行', async () => {
+    const page = await bootPage();
+    try {
+        page.server.refreshBehavior = () => ({ status: 'failed', error: '头条主页请求超时' });
+        await expandSource(page, 'toutiao');
+        await enterManageMode(page);
+        const grid = accountsPanel(page, 'toutiao').querySelector('.accounts-chip-grid');
+        grid.querySelector('.account-add-chip').click();
+        const addInput = grid.querySelector('.account-add-input');
+        addInput.value = 'doomed-id';
+        grid.querySelector('.btn-account-add').click();
+        await waitFor(() => page.server.requests('add-account').length === 1
+            && page.server.requests('add-account')[0].done);
+        const created = page.server.accounts.toutiao
+            .find((item) => item.normalized_identifier === 'doomed-id');
+        await waitForChip(page, created.id);
+
+        await waitFor(() => {
+            const badge = accountChip(page, created.id).querySelector('.account-name-badge');
+            return badge !== null && /名称获取失败/.test(badge.textContent);
+        });
+        const failedChip = accountChip(page, created.id);
+        const failedBadge = failedChip.querySelector('.account-name-badge');
+        assert.ok(failedBadge.classList.contains('is-error'));
+        assert.equal(failedBadge.title, '头条主页请求超时');
+        assert.match(accountsPanelError(page, 'toutiao').textContent, /名称解析失败/);
     } finally {
         page.close();
     }

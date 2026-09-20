@@ -1019,19 +1019,17 @@ def test_btime_and_beijinghao_never_use_article_fallback(
     assert app_config.article_name_calls == []
 
 
-def test_m7_create_api_returns_201_and_records_resolution_failure(
+def test_m7_create_api_returns_201_without_blocking_on_name_resolution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app_config = _AccountConfigFake([])
     adapter = SimpleNamespace(app_config=app_config)
-    observed_timeouts: list[float] = []
     monkeypatch.setattr(settings_service, "get_adapter", lambda: adapter)
 
-    def fail_resolution(source: str, **kwargs: Any) -> str:
-        observed_timeouts.append(float(kwargs["timeout"]))
-        raise AccountNameUnavailable("页面里没有找到账号名")
+    def must_not_resolve(*_args: Any, **_kwargs: Any) -> str:
+        raise AssertionError("创建请求不应同步解析名称（头条解析要起无头浏览器）")
 
-    monkeypatch.setattr(settings_service, "resolve_account_name", fail_resolution)
+    monkeypatch.setattr(settings_service, "resolve_account_name", must_not_resolve)
     monkeypatch.setattr("src.console.app.warn_legacy_config", lambda: [])
     app = create_app()
     app.dependency_overrides[require_console_user] = _admin
@@ -1041,11 +1039,11 @@ def test_m7_create_api_returns_201_and_records_resolution_failure(
         json={"source": "toutiao", "text": "token-1"},
     )
 
+    # 201 即回、无名称无错误：前端随后对该条调 refresh-names 补解析
     assert response.status_code == 201
     assert response.json()["item"]["display_name"] is None
-    assert response.json()["item"]["display_name_error"] == "页面里没有找到账号名"
-    # 创建即解析：预算按头条网页解析的上限给（其他来源在 resolver 内部钳回 8 秒）
-    assert observed_timeouts == [PROFILE_NAME_TIMEOUT_SECONDS]
+    assert response.json()["item"]["display_name_error"] is None
+    assert app_config.article_name_calls == []
 
 
 def test_refresh_names_gives_toutiao_browser_budget_and_http_sources_eight_seconds(

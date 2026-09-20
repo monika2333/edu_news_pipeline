@@ -481,8 +481,7 @@ class FakeSettingsServer {
             if (existing) return [409, { detail: '账号已存在' }];
             const account = makeAccount({
                 id: `acc-new-${this.accountSeq += 1}`,
-                // 后端在单个新增时同步解析名称
-                display_name: `名称-${parsed.normalized_identifier}`,
+                // 对齐后端：创建即时返回、不带名称，随后由前端对这一条调 refresh-names
                 ...parsed,
             });
             this.accounts[body.source] = [...(this.accounts[body.source] || []), account];

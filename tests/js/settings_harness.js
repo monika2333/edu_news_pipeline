@@ -189,6 +189,22 @@ function defaultSections() {
             updated_at: '2026-01-10T08:30:00Z',
             updated_by: { user_id: 'u1', display_name: 'Wimp' },
         },
+        score_keyword_bonuses: {
+            value: [{ keyword: '专题Z', bonus: 10 }, { keyword: '专题A', bonus: 20 }],
+            version: 11, updated_at: '2026-09-18T08:00:00Z', updated_by: { display_name: '编辑甲' },
+        },
+        education_keywords: {
+            value: ['教育', '学校'], version: 12,
+            updated_at: '2026-09-18T08:00:00Z', updated_by: { display_name: '编辑乙' },
+        },
+        beijing_keywords: {
+            value: ['北京', '海淀'], version: 13,
+            updated_at: '2026-09-18T08:00:00Z', updated_by: { display_name: '编辑丙' },
+        },
+        source_aliases: {
+            value: { suffixes: ['客户端', '网'], aliases: { '北青': '北京青年报' } }, version: 14,
+            updated_at: '2026-09-18T08:00:00Z', updated_by: { display_name: '编辑丁' },
+        },
         crawl_sources: {
             value: ['toutiao', 'chinanews'],
             version: 4,
@@ -297,6 +313,8 @@ class FakeSettingsServer {
         if (pathname === '/api/admin/settings/llm_models') return 'save-models';
         if (pathname === '/api/admin/settings/llm_endpoints') return 'save-endpoints';
         if (pathname === '/api/admin/settings/crawl_sources') return 'save-sources';
+        const dictionaryMatch = pathname.match(/^\/api\/admin\/settings\/(score_keyword_bonuses|education_keywords|beijing_keywords|source_aliases)$/);
+        if (dictionaryMatch) return `save-${dictionaryMatch[1]}`;
         if (pathname === '/api/admin/crawl-accounts') {
             return method === 'POST' ? 'add-account' : 'list-accounts';
         }
@@ -414,7 +432,7 @@ class FakeSettingsServer {
             }];
         }
         const saveMatch = pathname.match(
-            /^\/api\/admin\/settings\/(llm_models|llm_endpoints|crawl_sources)$/,
+            /^\/api\/admin\/settings\/(llm_models|llm_endpoints|crawl_sources|score_keyword_bonuses|education_keywords|beijing_keywords|source_aliases)$/,
         );
         if (saveMatch && method === 'PUT') {
             const section = saveMatch[1];
@@ -428,8 +446,14 @@ class FakeSettingsServer {
             if (body.expected_version !== current.version) {
                 return [409, { detail: `配置版本冲突：当前版本为 ${current.version}` }];
             }
+            let value = body.value;
+            if (section === 'score_keyword_bonuses') {
+                value = value.map((item) => ({ keyword: item.keyword.trim(), bonus: item.bonus }));
+            } else if (['education_keywords', 'beijing_keywords'].includes(section)) {
+                value = [...new Set(value.map((item) => item.trim()).filter(Boolean))];
+            }
             const updated = {
-                value: body.value,
+                value,
                 version: current.version + 1,
                 updated_at: '2026-01-11T00:00:00Z',
             };

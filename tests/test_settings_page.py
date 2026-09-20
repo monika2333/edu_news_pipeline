@@ -39,6 +39,15 @@ def test_admin_settings_page_structure() -> None:
     assert "<h1>系统设置</h1>" in html
     assert 'data-settings-tab="models">模型</button>' in html
     assert 'data-settings-tab="sources">数据源</button>' in html
+    for tab, label in [("bonuses", "加分词典"), ("advanced", "高级")]:
+        assert f'data-settings-tab="{tab}">{label}</button>' in html
+        assert f'aria-controls="settings-panel-{tab}"' in html
+        assert f'id="settings-panel-{tab}"' in html
+    assert 'class="settings-tab settings-tab-advanced"' in html
+    for script in ["section_editor", "bonus_tab", "advanced_tab"]:
+        assert html.index("/static/js/settings/core.js") < html.index(
+            f"/static/js/settings/{script}.js"
+        ) < html.index("/static/js/settings/init.js")
     # 抓取账号页签已并入数据源页签，不再存在独立页签与面板
     assert 'data-settings-tab="accounts"' not in html
     assert 'id="settings-panel-models"' in html

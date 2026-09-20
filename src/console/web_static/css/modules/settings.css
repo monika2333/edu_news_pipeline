@@ -844,3 +844,43 @@
     background: #fff;
     font: inherit;
 }
+
+/* 二期词典编辑：沿用设置页控件与保存栏，次要入口退到右侧。 */
+.settings-tab.settings-tab-advanced {
+    margin-left: auto;
+    padding: 6px 10px;
+    border-color: transparent;
+    background: transparent;
+    color: #64748b;
+    font-size: 0.82rem;
+}
+.settings-tab.settings-tab-advanced.is-active { color: #1d4ed8; text-decoration: underline; }
+.bonus-heading { color: #64748b; font-size: 0.82rem; margin-top: 18px; }
+.bonus-row { display: grid; grid-template-columns: minmax(120px, 1fr) 160px 64px; gap: 8px 14px; align-items: center; padding: 5px 0; }
+.bonus-list { margin-bottom: 12px; }
+.bonus-delete { padding: 8px; white-space: nowrap; }
+.bonus-row input, .settings-textarea {
+    box-sizing: border-box; width: 100%; min-width: 0; padding: 8px 10px;
+    border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; font: inherit;
+}
+.bonus-row-error { grid-column: 1 / -1; color: #b91c1c; font-size: 0.82rem; }
+.bonus-row-error:empty { display: none; }
+.bonus-row.is-error { background: #fff7f7; }
+.settings-panel [aria-invalid="true"] { border-color: #b91c1c; }
+.bonus-row input:focus-visible, .settings-textarea:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+#settings-panel-bonuses > .settings-save-bar { position: sticky; bottom: 0; padding: 12px 0; background: #fff; border-top: 1px solid #e2e8f0; }
+.advanced-warning { padding-bottom: 12px; }
+.advanced-section + .advanced-section { border-top: 1px solid #e2e8f0; margin-top: 22px; padding-top: 10px; }
+.advanced-field { display: block; margin-top: 14px; }
+.advanced-field-label { display: block; margin-bottom: 8px; font-size: 0.86rem; color: #475569; }
+.settings-textarea { display: block; resize: vertical; line-height: 1.65; }
+.settings-word-count { display: block; text-align: right; margin-top: 5px; color: #64748b; font-size: 0.82rem; }
+.advanced-alias-fields { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }
+.advanced-section > .settings-updated, #settings-panel-bonuses > .settings-updated { margin-top: 12px; }
+@media (max-width: 600px) {
+    .settings-tabs { gap: 4px; }
+    .settings-tab { padding: 8px 10px; }
+    .bonus-row { grid-template-columns: minmax(100px, 1fr) 96px 54px; gap: 6px; }
+    .bonus-heading { font-size: 0.74rem; }
+    .advanced-alias-fields { grid-template-columns: 1fr; gap: 0; }
+}

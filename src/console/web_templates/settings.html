@@ -26,15 +26,23 @@
 
             <div class="settings-tabs" role="tablist" aria-label="系统设置分区">
                 <button class="settings-tab" id="settings-tab-models" type="button"
-                    role="tab" data-settings-tab="models">模型</button>
+                    role="tab" aria-controls="settings-panel-models" data-settings-tab="models">模型</button>
                 <button class="settings-tab" id="settings-tab-sources" type="button"
-                    role="tab" data-settings-tab="sources">数据源</button>
+                    role="tab" aria-controls="settings-panel-sources" data-settings-tab="sources">数据源</button>
+                <button class="settings-tab" id="settings-tab-bonuses" type="button"
+                    role="tab" aria-controls="settings-panel-bonuses" data-settings-tab="bonuses">加分词典</button>
+                <button class="settings-tab settings-tab-advanced" id="settings-tab-advanced" type="button"
+                    role="tab" aria-controls="settings-panel-advanced" data-settings-tab="advanced">高级</button>
             </div>
 
             <section class="admin-panel settings-panel" id="settings-panel-models"
                 role="tabpanel" aria-labelledby="settings-tab-models"></section>
             <section class="admin-panel settings-panel" id="settings-panel-sources"
                 role="tabpanel" aria-labelledby="settings-tab-sources"></section>
+            <section class="admin-panel settings-panel" id="settings-panel-bonuses"
+                role="tabpanel" aria-labelledby="settings-tab-bonuses" hidden></section>
+            <section class="admin-panel settings-panel" id="settings-panel-advanced"
+                role="tabpanel" aria-labelledby="settings-tab-advanced" hidden></section>
         </main>
     </div>
 
@@ -47,6 +55,9 @@
     <script src="/static/js/settings/models_tab.js?v={{ version }}"></script>
     <script src="/static/js/settings/sources_tab.js?v={{ version }}"></script>
     <script src="/static/js/settings/source_accounts.js?v={{ version }}"></script>
+    <script src="/static/js/settings/section_editor.js?v={{ version }}"></script>
+    <script src="/static/js/settings/bonus_tab.js?v={{ version }}"></script>
+    <script src="/static/js/settings/advanced_tab.js?v={{ version }}"></script>
     <script src="/static/js/settings/init.js?v={{ version }}"></script>
 </body>
 

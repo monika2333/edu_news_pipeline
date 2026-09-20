@@ -2496,3 +2496,320 @@ test('E19：重载失败时不重拉设置、不重渲染，行内错误可见�
     }
 });
 
+
+// 二期设置：F1-F12 用真实 DOM 交互和请求日志锁定行为。
+function dictionaryBlock(page, section) {
+    return section === 'score_keyword_bonuses' ? page.panel('bonuses')
+        : page.document.querySelector(`[data-section="${section}"]`);
+}
+function dictionaryPuts(page) { return page.server.log.filter((entry) => entry.method === 'PUT'); }
+async function saveDictionary(page, section) {
+    dictionaryBlock(page, section).querySelector('.section-save').click();
+    await waitFor(() => page.server.inflight === 0);
+}
+function unloadBlocked(page) {
+    const event = new page.window.Event('beforeunload', { cancelable: true });
+    page.window.dispatchEvent(event);
+    return event.defaultPrevented;
+}
+
+test('F1：改分值增行删行后按页面顺序携带词典版本保存', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        const panel = page.panel('bonuses');
+        inputValue(page, panel.querySelector('.bonus-value'), '-100');
+        panel.querySelector('.bonus-add').click();
+        let rows = panel.querySelectorAll('.bonus-row:not(.bonus-heading)');
+        inputValue(page, rows[2].querySelector('.bonus-keyword'), '  专题B  ');
+        inputValue(page, rows[2].querySelector('.bonus-value'), '100');
+        rows[1].querySelector('.bonus-delete').click();
+        await saveDictionary(page, 'score_keyword_bonuses');
+        assert.deepEqual(dictionaryPuts(page).map(({ path, body }) => ({ path, body })), [{
+            path: '/api/admin/settings/score_keyword_bonuses',
+            body: { expected_version: 11, value: [{ keyword: '专题Z', bonus: -100 }, { keyword: '专题B', bonus: 100 }] },
+        }]);
+        assert.deepEqual([...panel.querySelectorAll('.bonus-keyword')].map((el) => el.value), ['专题Z', '专题B']);
+        assert.match(panel.querySelector('.settings-save-status').textContent, /保存成功/);
+        assert.equal(unloadBlocked(page), false);
+    } finally { page.close(); }
+});
+
+for (const [name, selector, value] of [
+    ['F2 重复词', '.bonus-keyword', ' 专题A '],
+    ['空关键词', '.bonus-keyword', '  '],
+    ['F3 小数', '.bonus-value', '1.5'],
+    ['F3 超上限', '.bonus-value', '101'],
+    ['F3 超下限', '.bonus-value', '-101'],
+    ['F3 空分值', '.bonus-value', ''],
+]) {
+    test(`${name}：词典逐行标红且零请求`, async () => {
+        const page = await bootPage();
+        try {
+            const panel = page.panel('bonuses');
+            inputValue(page, panel.querySelector(selector), value);
+            panel.querySelector('.section-save').click();
+            await assertNever(() => dictionaryPuts(page).length > 0);
+            assert.ok(panel.querySelector('.bonus-row.is-error'));
+            assert.equal(panel.querySelector(selector).getAttribute('aria-invalid'), 'true');
+            assert.match(panel.querySelector('.settings-save-status').textContent, /保存已取消/);
+        } finally { page.close(); }
+    });
+}
+
+for (const [section, name, consequence] of [
+    ['education_keywords', 'F4', '所有文章直接放行'],
+    ['beijing_keywords', 'F5', '所有稿件判为京外'],
+]) {
+    test(`${name}：空词表拦截并说明后果`, async () => {
+        const page = await bootPage();
+        try {
+            const block = dictionaryBlock(page, section);
+            inputValue(page, block.querySelector('textarea'), ' \n\t\n');
+            block.querySelector('.section-save').click();
+            await assertNever(() => dictionaryPuts(page).length > 0);
+            assert.ok(block.querySelector('.settings-save-status').textContent.includes(consequence));
+            assert.match(block.querySelector('.settings-word-count').textContent, /0 个词/);
+        } finally { page.close(); }
+    });
+}
+
+test('F6 F12：全角等号按首个拆分且后缀顺序不变', async () => {
+    const page = await bootPage();
+    try {
+        const block = dictionaryBlock(page, 'source_aliases');
+        inputValue(page, block.querySelector('.alias-suffixes'), ' 网 \n 客户端\n报');
+        inputValue(page, block.querySelector('.alias-mappings'), ' 北青 ＝ 北京青年报=新版\n __proto__=标准来源\nA=B＝C');
+        await saveDictionary(page, 'source_aliases');
+        assert.deepEqual(dictionaryPuts(page)[0].body, {
+            expected_version: 14,
+            value: { suffixes: ['网', '客户端', '报'], aliases: JSON.parse('{"北青":"北京青年报=新版","__proto__":"标准来源","A":"B＝C"}') },
+        });
+        assert.equal(block.querySelector('.alias-mappings').value, '北青=北京青年报=新版\n__proto__=标准来源\nA=B＝C');
+    } finally { page.close(); }
+});
+
+for (const [name, value, message] of [
+    ['F7', ' 北青 =甲\n北青＝乙', /原名称重复/],
+    ['缺等号', '北青', /缺少等号/],
+    ['空原名', '=标准', /两侧不能为空/],
+    ['空目标', '原名＝ ', /两侧不能为空/],
+]) {
+    test(`${name}：别名格式错误不发送请求`, async () => {
+        const page = await bootPage();
+        try {
+            const block = dictionaryBlock(page, 'source_aliases');
+            inputValue(page, block.querySelector('.alias-mappings'), value);
+            block.querySelector('.section-save').click();
+            await assertNever(() => dictionaryPuts(page).length > 0);
+            assert.match(block.querySelector('.settings-save-status').textContent, message);
+        } finally { page.close(); }
+    });
+}
+
+const DICTIONARY_SECTIONS = ['score_keyword_bonuses', 'education_keywords', 'beijing_keywords', 'source_aliases'];
+for (const section of DICTIONARY_SECTIONS) {
+    test(`F9 F10：${section} 独立版本请求与未保存守卫`, async () => {
+        const page = await bootPage();
+        try {
+            const block = dictionaryBlock(page, section);
+            const field = block.querySelector('input, textarea');
+            const original = field.value;
+            assert.equal(unloadBlocked(page), false);
+            inputValue(page, field, original + '新词');
+            assert.equal(unloadBlocked(page), true);
+            page.clickTab('sources');
+            page.clickTab(section === 'score_keyword_bonuses' ? 'bonuses' : 'advanced');
+            assert.equal(block.querySelector('input, textarea'), field);
+            assert.equal(field.value, original + '新词');
+            await saveDictionary(page, section);
+            assert.equal(dictionaryPuts(page).length, 1);
+            assert.equal(dictionaryPuts(page)[0].path, `/api/admin/settings/${section}`);
+            assert.equal(dictionaryPuts(page)[0].body.expected_version, defaultSections()[section].version);
+            assert.equal(unloadBlocked(page), false);
+            inputValue(page, block.querySelector('input, textarea'), '草稿');
+            block.querySelector('.section-discard').click();
+            assert.equal(unloadBlocked(page), false);
+        } finally { page.close(); }
+    });
+    for (const status of [409, 422]) {
+        test(`分区错误：${section} ${status} 保留草稿可重试`, async () => {
+            const page = await bootPage();
+            try {
+                const block = dictionaryBlock(page, section);
+                const field = block.querySelector('input, textarea');
+                inputValue(page, field, field.value + '草稿');
+                const draft = field.value;
+                page.server.saveBehavior[section] = { status, payload: { detail: '服务端说明' } };
+                await saveDictionary(page, section);
+                assert.equal(dictionaryPuts(page)[0].status, status);
+                assert.equal(field.value, draft);
+                assert.equal(unloadBlocked(page), true);
+                assert.match(block.querySelector('.settings-save-status').textContent, /服务端说明/);
+                assert.equal(block.querySelector('.section-reload').hidden, status !== 409);
+                assert.equal(block.querySelector('.section-save').disabled, false);
+            } finally { page.close(); }
+        });
+    }
+    test(`分区缺失：仅 ${section} 显示导入提示`, async () => {
+        const sections = defaultSections();
+        delete sections[section];
+        const page = await bootPage({ sections });
+        try {
+            for (const key of DICTIONARY_SECTIONS) {
+                const block = dictionaryBlock(page, key);
+                assert.equal(!!block.querySelector('.settings-import-notice'), key === section);
+                assert.equal(!!block.querySelector('.section-save'), key !== section);
+            }
+        } finally { page.close(); }
+    });
+}
+
+for (const target of DICTIONARY_SECTIONS.slice(1)) {
+    test(`F8：${target} 冲突载入仅重置自身并保留其他版本`, async () => {
+        const page = await bootPage();
+        try {
+            const drafts = new Map();
+            for (const section of DICTIONARY_SECTIONS) {
+                const field = dictionaryBlock(page, section).querySelector('input, textarea');
+                inputValue(page, field, field.value + '草稿');
+                drafts.set(section, [field, field.value]);
+                page.server.sections[section].version += 20;
+            }
+            await saveDictionary(page, target);
+            const block = dictionaryBlock(page, target);
+            assert.equal(dictionaryPuts(page)[0].status, 409);
+            block.querySelector('.section-reload').click();
+            await waitFor(() => block.querySelector('.section-reload').hidden && page.server.inflight === 0);
+            assert.equal(block.querySelector('textarea').value, target === 'source_aliases' ? '客户端\n网' : defaultSections()[target].value.join('\n'));
+            for (const section of DICTIONARY_SECTIONS.filter((key) => key !== target)) {
+                const [field, draft] = drafts.get(section);
+                assert.equal(dictionaryBlock(page, section).querySelector('input, textarea'), field);
+                assert.equal(field.value, draft);
+                assert.equal(unloadBlocked(page), true);
+                await saveDictionary(page, section);
+                const request = dictionaryPuts(page).at(-1);
+                assert.equal(request.path, `/api/admin/settings/${section}`);
+                assert.equal(request.body.expected_version, defaultSections()[section].version);
+                assert.equal(request.status, 409);
+            }
+        } finally { page.close(); }
+    });
+}
+
+test('F11：清空词典保存必须确认，取消零请求，确认提交空数组', async () => {
+    const page = await bootPage();
+    try {
+        const panel = page.panel('bonuses');
+        panel.querySelectorAll('.bonus-delete').forEach((button) => button.click());
+        const prompts = [];
+        page.window.confirm = (message) => { prompts.push(message); return false; };
+        panel.querySelector('.section-save').click();
+        await assertNever(() => dictionaryPuts(page).length > 0);
+        assert.equal(prompts.length, 1);
+        assert.match(prompts[0], /保存后所有文章都不再有关键词加分/);
+        assert.equal(unloadBlocked(page), true);
+        page.window.confirm = () => true;
+        await saveDictionary(page, 'score_keyword_bonuses');
+        assert.deepEqual(dictionaryPuts(page)[0].body.value, []);
+        assert.equal(panel.querySelectorAll('.bonus-keyword').length, 0);
+    } finally { page.close(); }
+});
+
+for (const tab of ['bonuses', 'advanced']) {
+    test(`恢复 #${tab} hash 与 aria 页签语义`, async () => {
+        const page = await bootPage({ hash: `#${tab}` });
+        try {
+            assert.equal(page.panel(tab).hidden, false);
+            for (const button of page.document.querySelectorAll('[data-settings-tab]')) {
+                const active = button.dataset.settingsTab === tab;
+                assert.equal(button.getAttribute('aria-selected'), String(active));
+                assert.equal(page.document.getElementById(button.getAttribute('aria-controls')).hidden, !active);
+            }
+        } finally { page.close(); }
+    });
+}
+
+test('空别名和后缀无需确认；关键词服务端去重后回填', async () => {
+    const page = await bootPage();
+    try {
+        page.window.confirm = () => assert.fail('别名不应确认');
+        const aliases = dictionaryBlock(page, 'source_aliases');
+        inputValue(page, aliases.querySelector('.alias-suffixes'), '');
+        inputValue(page, aliases.querySelector('.alias-mappings'), '');
+        await saveDictionary(page, 'source_aliases');
+        assert.deepEqual(dictionaryPuts(page)[0].body.value, { suffixes: [], aliases: {} });
+        const education = dictionaryBlock(page, 'education_keywords');
+        inputValue(page, education.querySelector('textarea'), ' 学校 \n学校\n\n教育');
+        await saveDictionary(page, 'education_keywords');
+        assert.equal(education.querySelector('textarea').value, '学校\n教育');
+        assert.match(education.querySelector('.settings-word-count').textContent, /2 个词/);
+    } finally { page.close(); }
+});
+
+for (const section of DICTIONARY_SECTIONS) {
+    test(`保存锁定：${section} 只锁当前块且不重复提交`, async () => {
+        const page = await bootPage();
+        try {
+            const block = dictionaryBlock(page, section);
+            const field = block.querySelector('input, textarea');
+            inputValue(page, field, field.value + '草稿');
+            page.server.hold(`save-${section}`);
+            const save = block.querySelector('.section-save');
+            save.click();
+            await waitFor(() => page.server.held.length === 1);
+            assert.equal(field.disabled, true);
+            assert.equal(block.querySelector('.section-discard').disabled, true);
+            save.click();
+            await assertNever(() => dictionaryPuts(page).length > 1);
+            const other = section === 'education_keywords' ? 'beijing_keywords' : 'education_keywords';
+            const otherField = dictionaryBlock(page, other).querySelector('textarea');
+            assert.equal(otherField.disabled, false);
+            inputValue(page, otherField, '其他块未保存');
+            page.server.release(`save-${section}`);
+            await waitFor(() => !block.querySelector('.section-save').disabled);
+            assert.equal(otherField.value, '其他块未保存');
+            assert.equal(unloadBlocked(page), true);
+        } finally { page.close(); }
+    });
+}
+
+test('整体 payload 重载后四个草稿继续使用编辑开始时的版本', async () => {
+    const page = await bootPage();
+    try {
+        for (const section of DICTIONARY_SECTIONS) {
+            const field = dictionaryBlock(page, section).querySelector('input, textarea');
+            inputValue(page, field, field.value + '本地');
+            page.server.sections[section].version += 10;
+        }
+        page.document.querySelector('.env-reload-btn').click();
+        await waitFor(() => page.server.requests('get-settings').length === 1 && page.server.inflight === 0);
+        for (const section of DICTIONARY_SECTIONS) {
+            await saveDictionary(page, section);
+            assert.equal(dictionaryPuts(page).at(-1).body.expected_version, defaultSections()[section].version);
+            assert.equal(dictionaryPuts(page).at(-1).status, 409);
+        }
+    } finally { page.close(); }
+});
+
+test('高级载入失败保留文本和脏标记，重试可载入最新版本再保存', async () => {
+    const page = await bootPage();
+    try {
+        const block = dictionaryBlock(page, 'education_keywords');
+        inputValue(page, block.querySelector('textarea'), '本地草稿');
+        page.server.sections.education_keywords.version = 88;
+        page.server.sections.education_keywords.value = ['远端新词'];
+        await saveDictionary(page, 'education_keywords');
+        page.server.failNext['get-settings'] = 1;
+        block.querySelector('.section-reload').click();
+        await waitFor(() => block.querySelector('.settings-save-status').textContent.includes('载入失败'));
+        assert.equal(block.querySelector('textarea').value, '本地草稿');
+        assert.equal(unloadBlocked(page), true);
+        block.querySelector('.section-reload').click();
+        await waitFor(() => block.querySelector('textarea').value === '远端新词');
+        assert.equal(unloadBlocked(page), false);
+        inputValue(page, block.querySelector('textarea'), '确认后的新词');
+        await saveDictionary(page, 'education_keywords');
+        assert.equal(dictionaryPuts(page).at(-1).body.expected_version, 88);
+        assert.equal(dictionaryPuts(page).at(-1).status, 200);
+    } finally { page.close(); }
+});

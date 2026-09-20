@@ -254,7 +254,7 @@ SCORE_KEYWORD_BONUSES_PATH
 每小时抓取来源及其顺序已迁入控制台设置页。一次性流水线需要覆盖来源时，使用
 `python -m scripts.run_pipeline_once --sources ...` 或 `python -m src.cli.main crawl --sources ...`。
 
-当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`chinanews_xj`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`xinhua`、`stdaily`、`laodongwubao`/`ldwb`、`bjrb`/`beijingdaily`、`btime`、`beijinghao`。
+当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`chinanews_xj`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`xinhua`、`stdaily`、`bbtnews`、`laodongwubao`/`ldwb`、`bjrb`/`beijingdaily`、`btime`、`beijinghao`。
 
 北京日报和劳动午报不能加入每小时来源列表。服务器每日定时抓取时，分别调用
 `scripts/run_bjrb_daily.ps1` 和 `scripts/run_ldwb_daily.ps1`，脚本通过单次
@@ -319,6 +319,11 @@ XINHUA_LOOKBACK_DAYS=3
 # 翻页深度由 crawl 的 pages 参数控制（每页约 16 条）；此窗口按列表行
 # 发布时间过滤，防止补历史稿（大 pages）时把窗口外的旧稿灌进库里。
 STDAILY_LOOKBACK_DAYS=3
+
+# Bbtnews / 北京商报（教育频道）
+# 翻页深度由 crawl 的 pages 参数控制（每页约 30 条）；此窗口按列表行/
+# URL 日期过滤，防止补历史稿（大 pages）时把窗口外的旧稿灌进库里。
+BBTNEWS_LOOKBACK_DAYS=3
 
 # Laodongwubao
 LDWB_TIMEOUT=20

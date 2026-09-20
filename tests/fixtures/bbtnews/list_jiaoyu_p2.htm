@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>教育频道_北京商报网</title>
+    <meta name="keywords" content="教育新闻,中国教育,国际教育,前沿信息,即时讯息,最新" />
+    <meta name="description" content="" />
+    <link rel="stylesheet" href="https://img.bbtnews.com.cn/templates/bbtnews/css/xinmem/base.css">
+    <link rel="stylesheet" href="https://img.bbtnews.com.cn/templates/bbtnews/css/xinmem/list.css">
+    <link rel="stylesheet" href="https://img.bbtnews.com.cn/templates/bbtnews/2018/css/public.css">
+    <script type="text/javascript" src="https://img.bbtnews.com.cn/templates/bbtnews/js/jquery/jq172.js"></script>
+</head>
+<body>
+    <style>
+        .wrap {
+            margin-top: 0px !important;
+        }
+        .J-side-bar{display:none !important;}
+        .global_nav{
+            background:rgba(0,123,200,1);
+            height: 100%;
+            width: 100%;
+        }
+        .global_nav_top{
+            height: 50px;
+            width: 1000px;
+            margin: 0 auto;
+            position: relative;
+        }
+        .global_nav_top img{
+            margin-top: 14px;
+        }
+        .global_nav_top .bar_search {
+            position: absolute;
+            right: 0;
+            top: 0;
+        }
+        .global_nav_top .bar_search #head_wd {
+            width: 203px;
+            height: 32px;
+            background: rgba(255,255,255,1);
+            border-radius: 2px;
+            border: 1px solid rgba(195,195,195,1);
+            margin-top: 23px;
+            font-size: 14px;
+            padding-left: 3px;
+            padding-right: 30px;
+        }
+        .global_nav_top .bar_search .search-button {
+            background: url(https://upload.bbtnews.com.cn/2019/0507/1557214562716.png) no-repeat;
+            background-size: 100% 100%;
+            width: 20px;
+            height: 20px;
+            border: none;
+            outline: none;
+            margin-left: -30px;
+            line-height: 32px;
+            vertical-align: middle;
+            position: absolute;top: 30px;right: 10px
+        }
+        .news_nav{
+            width: 100%;
+            height:80px;
+            padding: 10px 0;
+        }
+        .news_nav .nav_list{
+            height: 100%;
+            line-height: 40px;
+        }
+        .news_nav .nav_list>li{
+            padding: 0 6.7px;
+            letter-spacing: 1px;
+        }
+        .news_nav .nav_list>li:hover{
+            background-color:#0091ec;
+        }
+        .news_nav .nav_list a{
+            color:#daf1ff ;
+        }
+        .news_nav .nav_list #weeklyNav i{
+            color: #ccc;
+        }
+        .wrap_cont{
+            margin-top: 0 !important;
+        }
+        .nav_list_two li{
+            padding: 0 9px !important;
+        }
+    </style>
+<div class="global_nav">
+    <div class="global_nav_top">
+        <div class="nav_logo">
+            <a href="https://www.bbtnews.com.cn/">
+                <img src="https://img.bbtnews.com.cn/templates/bbtnews/2018/img/loginNew.png" alt="">
+            </a>
+        </div>
+        <div class="bar_search flex">
+            <div class="search_frame" style="position: relative">
+                    <input class="search-input fl-l" id="head_wd" placeholder="搜索" name="q" />
+                    <button type="submit" onClick="bt_submit_onclick()" class="search-button"></button>
+            </div>
+        </div>
+    </div>
+    <div class="news_nav">
+        <div class="wrap wrap_cont" style="width: 1001px;">
+            <ul class="nav_list flex">
+                <li><a  href="https://www.bbtnews.com.cn/news/Recommend/" target="_blank"> 推荐</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/yaowenzx/zhengjingpd/" target="_blank"> 政经</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/yaowenzx/guojipd/" target="_blank"> 国际</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/yaowenzx/culture/" target="_blank"> 文化</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/shangyexinwenzhongxi/shangyepd/" target="_blank"> 商业</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/shangyexinwenzhongxi/Wine/" target="_blank"> 酒业</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/shangyexinwenzhongxi/dianshangpd/" target="_blank"> 电商</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/shangyexinwenzhongxi/canyinpd/" target="_blank"> 餐饮</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/shangyexinwenzhongxi/shishangpd/" target="_blank"> 时尚</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/chanjingzx/qichepd/" target="_blank"> 汽车</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/chanjingzx/jiankangpd/" target="_blank"> 健康</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/chanjingzx/yanglaopd/" target="_blank"> 养老</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/chanjingzx/jiaoyupd/" target="_blank"> 教育</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/Company%20Research%20New/KJPD/" target="_blank"> 科技</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/Company%20Research%20New/Fast%20moving%20consumer/" target="_blank"> 快消</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/Company%20Research%20New/rypd/" target="_blank"> 乳饮</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/Company%20Research%20New/Medical%20Channel/" target="_blank"> 医药</a></li>
+                <li><a href="https://www.bbtnews.com.cn/xmtcp/lanshipin/diyishijian/" target="_blank"> 视频</a></li>
+                <li><a href="https://www.bbtnews.com.cn/zhongwaiqiye/" target="_blank"> 中外</a></li>
+                <li><a href="https://www.bbtnews.com.cn/zhiku/" target="_blank"> 智库</a></li>
+                <li><a href="https://www.bbtnews.com.cn/magazine/" target="_blank"> 特刊</a></li>
+            </ul>
+            <ul class="nav_list flex nav_list_two">
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/Company%20Research%20New/shangshigongsipd/" target="_blank"> 上市公司</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/caijingxinwenzx/yinxinglicaipd/" target="_blank"> 银行理财</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/caijingxinwenzx/jinrongkejipd/" target="_blank"> 金融科技</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/caijingxinwenzx/Fund%20securities%20firm/" target="_blank"> 基金券商</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/caijingxinwenzx/baoxianpd/" target="_blank"> 保险</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/yaowenzx/Innovation%20Beijing/" target="_blank"> 创新北京</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/chanjingzx/lvyoupd/" target="_blank"> 高端旅游</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/shangyexinwenzhongxi/Home%20furnishing%20indu/" target="_blank"> 家居产业</a></li>
+                <li><a href="https://www.bbtnews.com.cn/chuizhipd/chanjingzx/xinbeijingloushi/" target="_blank"> 新北京楼市</a></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+
+    <div class="wrap">
+        <div class="list-con clearfix" id="J_offsetFlag">
+			<div class="fL c-l-wrap">
+                                                                <div class="news-head clearfix">
+                                    <a class="fL" href="http://www.bbtnews.com.cn/2026/0910/605471.shtml" target="_blank"><img src="https://upload.bbtnews.com.cn/2026/0910/thumb_360_240_1789048984423.png" alt="服贸观澜｜多项教育成果落地、AI教育持续加码，2026年服贸会教育服务专题开幕"/></a>
+                                    <div class="fR info">
+                                        <p class="tit"><a href="http://www.bbtnews.com.cn/2026/0910/605471.shtml">服贸观澜｜多项教育成果落地、AI教育持续加码，2026年服贸会教育服务专题开幕</a></p>
+                                        <p class="words">9月10日，在2026年服贸会教育服务专题开幕式上，中国—上海合作组织基础教育合作中心正式揭牌，未来将重点围绕青少年人文交流、人工智能赋能基础教育等方面开展工作。<a href="http://www.bbtnews.com.cn/2026/0910/605471.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+                                    </div>
+                                </div>
+                                <div class="hot-list-news">
+    <span>热点推荐<em>|</em></span>
+    <a href="http://www.bbtnews.com.cn/2026/0918/606280.shtml">美联储加息落地 我国货币政策定力不减</a>
+</div>
+
+				<div class="news-feed">
+					<ul class="clearfix">
+						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0826/603508.shtml" target="_blank">BOSS直聘第二季度营收23.99亿元，蓝领与低线级城市市场驱动岗位增长</a></h4>
+								<p class="words">8月25日，BOSS直聘发布2026年第二季度财报与中期业绩公告。数据显示，第二季度，BOSS直聘实现营收23.99亿元，同比增长14.1%，相较上一季度明显加速。2026年上半年，BOSS直聘营收44.7亿元，同比增长11.0%。 <a href="http://www.bbtnews.com.cn/2026/0826/603508.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：</span><span>作者：</span><span>网编：刘浩天</span><span>2026-08-26</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0825/603419.shtml" target="_blank">凯文教育2026年上半年净利润99.93万元，同比增长35.95%</a></h4>
+								<p class="words">8月25日，凯文教育发布2026年半年度报告，报告期内，凯文教育实现营业收入1.84亿元，同比增长7.19%；归属于上市公司股东的净利润99.93万元，同比增长35.95%。<a href="http://www.bbtnews.com.cn/2026/0825/603419.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经新闻中心</span><span>2026-08-25</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0824/603294.shtml" target="_blank">教育部发布问答：小学一年级不布置书面家庭作业</a></h4>
+								<p class="words">8月24日，据教育部官方微信公众号“微言教育”发布的消息，今年9月，一批学龄前儿童将升入小学，正式开启学校生活；一批小学生将迈入初中校园，迎接更加丰富多彩的中学生活。<a href="http://www.bbtnews.com.cn/2026/0824/603294.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经新闻中心</span><span>2026-08-24</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<span href="http://www.bbtnews.com.cn/2026/0824/603260.shtml" target="_blank" class="img fL">
+								<a href="http://www.bbtnews.com.cn/2026/0824/603260.shtml" target="_blank">
+									<img src="https://upload.bbtnews.com.cn/2026/0824/thumb_210_140_1787574460814.jpg" class="scale" alt="“中小学课本学习智能体”上线小猿AI学习机" width="210" height="140">
+								</a>
+							</span>
+							<div class="info" >
+								<h4><a href="http://www.bbtnews.com.cn/2026/0824/603260.shtml" target="_blank">“中小学课本学习智能体”上线小猿AI学习机</a></h4>
+								<p class="words">近日，人民教育音像数字出版社与小猿正式签署合作协议，并宣布“中小学课本学习智能体”在小猿AI学习机正式上线。<a href="http://www.bbtnews.com.cn/2026/0824/603260.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经新闻中心</span><span>2026-08-24</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0824/603195.shtml" target="_blank">51Talk发布全球品牌焕新与《Global Communicator》课程双核升级，全球化征程从探索迈向领先</a></h4>
+								<p class="words">故宫门前，不同肤色的全球青少年并肩欢笑；折扇之上，多国语言的“你好”跃然纸上，一座跨越国界的文化互鉴之桥在此刻具象化。8月21日，由51Talk主办的“手拉手，瞰中国”全球青少年文化交流活动在北京国家会议中...<a href="http://www.bbtnews.com.cn/2026/0824/603195.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：</span><span>作者：</span><span>网编：刘浩天</span><span>2026-08-24</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0822/603087.shtml" target="_blank">北京科技职业大学迎来第二届职业本科新生</a></h4>
+								<p class="words">8月22日，北京首所市属公办职业本科大学——北京科技职业大学2026级新生正式入学报到，开启本科层次技术技能人才的全新求学旅程。经过首届职业本科一年的办学实践，学校进一步扩容升级专业布局、迭代优化人才培养...<a href="http://www.bbtnews.com.cn/2026/0822/603087.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：方彬楠</span><span>2026-08-22</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0821/602979.shtml" target="_blank">2026 AI+柔性制造产教融合研讨会在北京科技职业大学举办，多项战略合作协议签约</a></h4>
+								<p class="words">8月20日下午，在2026世界机器人大会同期活动“具身智能机器人精密零部件柔性敏捷制造”期间，“2026AI+柔性制造产教融合研讨会”在北京科技职业大学成功举办。会议由全国工业零件共享柔性制造产教融合共同体主办，...<a href="http://www.bbtnews.com.cn/2026/0821/602979.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：方彬楠</span><span>2026-08-21</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0820/602882.shtml" target="_blank">网易有道2026年上半年净收入28.1亿元</a></h4>
+								<p class="words">8月20日，网易有道发布2026年第二季度未经审计的财务业绩。<a href="http://www.bbtnews.com.cn/2026/0820/602882.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经新闻中心</span><span>2026-08-20</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0820/602814.shtml" target="_blank">2026年上半年全国大学英语四、六级考试成绩查询服务将于8月24日开通</a></h4>
+								<p class="words">8月20日，记者从教育部教育考试院获悉，2026年上半年全国大学英语四、六级考试（CET）成绩查询服务将于2026年8月24日（周一）开通。<a href="http://www.bbtnews.com.cn/2026/0820/602814.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经新闻中心</span><span>2026-08-20</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0818/602558.shtml" target="_blank">AI重构大消费｜AI教育，学而思学习机的突围</a></h4>
+								<p class="words">学而思选择以“AI家教”破题，试图跳出硬件堆砌与内容数量的传统竞争逻辑。<a href="http://www.bbtnews.com.cn/2026/0818/602558.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经中心</span><span>2026-08-18</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0817/602506.shtml" target="_blank">学大教育2026年上半年净利润3.01亿元</a></h4>
+								<p class="words">8月17日，学大教育发布2026年半年度报告，报告期内，学大教育实现营业收入21.63亿元，同比增长12.87%；归属于上市公司股东的净利润3.01亿元，同比增长30.85%。<a href="http://www.bbtnews.com.cn/2026/0817/602506.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经新闻中心</span><span>2026-08-17</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0817/602412.shtml" target="_blank">作业帮学习机AI超级老师能力媲美真人，连发两大新品进军高端市场</a></h4>
+								<p class="words"><a href="http://www.bbtnews.com.cn/2026/0817/602412.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：</span><span>作者：</span><span>网编：王巍</span><span>2026-08-17</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0817/602376.shtml" target="_blank">作业帮加码高端学习机赛道</a></h4>
+								<p class="words">8月17日，作业帮发布“真人级”AI超级老师以及Z100、X70 Ultra两大高端新品学习机。<a href="http://www.bbtnews.com.cn/2026/0817/602376.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者： 吴其芸</span><span>网编：产经新闻中心</span><span>2026-08-17</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0814/602253.shtml" target="_blank">昂立教育2026年上半年净利润3111.57万元</a></h4>
+								<p class="words"><a href="http://www.bbtnews.com.cn/2026/0814/602253.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经中心</span><span>2026-08-14</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0814/602247.shtml" target="_blank">2026乐高教育FLL亚锦赛吸引近3000名青少年选手参与</a></h4>
+								<p class="words"><a href="http://www.bbtnews.com.cn/2026/0814/602247.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经中心</span><span>2026-08-14</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0807/601631.shtml" target="_blank">粉笔回应“名师出走”：为客观事实，目前整体队伍已稳定</a></h4>
+								<p class="words">根据粉笔方面的回顾，粉笔曾经是一家科技教育公司，以线上为主。后来随着业务的发展，拓展了线下业务。再后来因为公司上市，盯着财务数据，想如何节省成本，增加收入降低利润。因为公司最重的成本就是人力成本，尤...<a href="http://www.bbtnews.com.cn/2026/0807/601631.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：方彬楠</span><span>2026-08-07</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<span href="http://www.bbtnews.com.cn/2026/0805/601424.shtml" target="_blank" class="img fL">
+								<a href="http://www.bbtnews.com.cn/2026/0805/601424.shtml" target="_blank">
+									<img src="https://upload.bbtnews.com.cn/2026/0805/thumb_210_140_1785938581170.jpg" class="scale" alt="实现8天8板、业绩预计扭亏，传智教育押注“AI具身智能”新学科" width="210" height="140">
+								</a>
+							</span>
+							<div class="info" >
+								<h4><a href="http://www.bbtnews.com.cn/2026/0805/601424.shtml" target="_blank">实现8天8板、业绩预计扭亏，传智教育押注“AI具身智能”新学科</a></h4>
+								<p class="words">8天8连板、股价翻倍、业绩预告扭亏为盈——传智教育近日在资本市场的惊艳表现，将一家IT职业教育机构的战略转型推至聚光灯下。<a href="http://www.bbtnews.com.cn/2026/0805/601424.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者： 吴其芸</span><span>网编：产经新闻中心</span><span>2026-08-05</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0804/601269.shtml" target="_blank">教育部发布指南，开展义务教育阶段科学教育“做中学”领航行动</a></h4>
+								<p class="words">8月4日，教育部印发《义务教育阶段科学教育“做中学”领航行动指南》（以下简称《指南》），部署开展科学教育“做中学”领航行动（以下简称“领航行动”）。《指南》指出，领航行动以学生为主体，以兴趣为导向，以...<a href="http://www.bbtnews.com.cn/2026/0804/601269.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者： 吴其芸</span><span>网编：产经新闻中心</span><span>2026-08-04</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0730/600893.shtml" target="_blank">好未来2027财年一季度净利润4.08亿美元</a></h4>
+								<p class="words">7月30日，好未来公布截至2026年5月31日的2027财年第一季度未经审计财务报告，报告期内，好未来实现净收入7.58亿美元，同比增长31.9%；归属于好未来的净利润为4.08亿美元，上年同期为3128.2万美元，同比增长1204.3%...<a href="http://www.bbtnews.com.cn/2026/0730/600893.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经新闻中心</span><span>2026-07-30</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0730/600863.shtml" target="_blank">梅兵任天津大学党委书记</a></h4>
+								<p class="words">7月30日，据教育部消息，日前，中央批准：梅兵任天津大学党委书记（副部长级）；杨贤金不再担任天津大学党委书记职务。<a href="http://www.bbtnews.com.cn/2026/0730/600863.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经新闻中心</span><span>2026-07-30</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<span href="http://www.bbtnews.com.cn/2026/0729/600831.shtml" target="_blank" class="img fL">
+								<a href="http://www.bbtnews.com.cn/2026/0729/600831.shtml" target="_blank">
+									<img src="https://upload.bbtnews.com.cn/2026/0729/thumb_210_140_1785336331510.jpg" class="scale" alt="出国业务增速放缓、新教育板块高速增长，新东方2026财年的冷与热" width="210" height="140">
+								</a>
+							</span>
+							<div class="info" >
+								<h4><a href="http://www.bbtnews.com.cn/2026/0729/600831.shtml" target="_blank">出国业务增速放缓、新教育板块高速增长，新东方2026财年的冷与热</a></h4>
+								<p class="words">7月29日，新东方发布2026财年业绩公告，报告期内，新东方实现净营收56.61亿美元，同比增长15.5%；股东应占净利润4.75亿美元，同比增长27.8%。<a href="http://www.bbtnews.com.cn/2026/0729/600831.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经新闻中心</span><span>2026-07-29</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0729/600796.shtml" target="_blank">新东方2026 财年股东应占净利润4.75亿美元，同比增长27.8%</a></h4>
+								<p class="words">7月29日，新东方发布2026财年业绩公告，报告期内，新东方实现净营收56.61亿美元，同比增长15.5%；新东方股东应占净利润4.75亿美元，同比增长27.8%。<a href="http://www.bbtnews.com.cn/2026/0729/600796.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经新闻中心</span><span>2026-07-29</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<span href="http://www.bbtnews.com.cn/2026/0729/600763.shtml" target="_blank" class="img fL">
+								<a href="http://www.bbtnews.com.cn/2026/0729/600763.shtml" target="_blank">
+									<img src="https://upload.bbtnews.com.cn/2026/0729/thumb_210_140_1785318098916.png" class="scale" alt="出版巨头进场、单科挑战全科：外研社入局学习机突围战" width="210" height="140">
+								</a>
+							</span>
+							<div class="info" >
+								<h4><a href="http://www.bbtnews.com.cn/2026/0729/600763.shtml" target="_blank">出版巨头进场、单科挑战全科：外研社入局学习机突围战</a></h4>
+								<p class="words">教育科技企业巨头激战正酣之时，专业外语出版机构外研社悄然入局学习机赛道。<a href="http://www.bbtnews.com.cn/2026/0729/600763.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经新闻中心</span><span>2026-07-29</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0728/600687.shtml" target="_blank">ST豆神拟进行债务重组，预计收益约5670.21万元</a></h4>
+								<p class="words">7月28日，ST豆神发布公告称，为妥善处理历史问题，加快应收款项收回，减少因回款不确定性可能导致的坏账损失，ST豆神拟进行债务重组、与北京立思辰计算机技术有限公司、北京辰光融信技术有限公司、北京辰光融信企...<a href="http://www.bbtnews.com.cn/2026/0728/600687.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经新闻中心</span><span>2026-07-28</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0728/600666.shtml" target="_blank">全国高校绿色能源区域技术转移转化中心（北京）已建成11个专业转化平台</a></h4>
+								<p class="words">近日，全国高校绿色能源技术转移转化工作推进会在北京房山召开。<a href="http://www.bbtnews.com.cn/2026/0728/600666.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经新闻中心</span><span>2026-07-28</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0728/600649.shtml" target="_blank">国家助学贷款累计发放6958亿元，教育部将完善覆盖全学段学生资助体系</a></h4>
+								<p class="words">7月28日，教育部召开新闻发布会，介绍国家助学贷款等学生资助工作情况。会上，教育部财务司司长刘玉光介绍，教育部会同财政部等有关部门，不断完善学生资助政策。2025年，全国累计资助学生近1.6亿人次，较2024年增...<a href="http://www.bbtnews.com.cn/2026/0728/600649.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经新闻中心</span><span>2026-07-28</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0728/600616.shtml" target="_blank">2025年全国累计资助学生近1.6亿人次</a></h4>
+								<p class="words">7月28日，在教育部召开的新闻发布会上，教育部财务司司长刘玉光介绍，2025年，全国累计资助学生近1.6亿人次，较2024年增长超过5%。其中，学前教育阶段，学前一年免除保育教育费政策惠及超过1400万名在园儿童。义务...<a href="http://www.bbtnews.com.cn/2026/0728/600616.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者：吴其芸</span><span>网编：产经新闻中心</span><span>2026-07-28</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0728/600614.shtml" target="_blank">2025年全国学生资助资金投入超过3900亿元</a></h4>
+								<p class="words">7月28日，在教育部召开的新闻发布会上，教育部财务司司长刘玉光介绍，2025年，全国学生资助资金投入超过3900亿元，比上年增长超过14%。财政投入约2400亿元，占资助资金总额的六成，是资助资金的主要来源。2025年，...<a href="http://www.bbtnews.com.cn/2026/0728/600614.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者： 吴其芸</span><span>网编：产经新闻中心</span><span>2026-07-28</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0728/600610.shtml" target="_blank">河北衡水通报“多名公职人员被举报侵吞学校资产”：全面深入开展调查核查</a></h4>
+								<p class="words">7月27日夜间，衡水市联合调查组发布情况通报称，针对网上反映的安平志臻中学相关情况，衡水市高度重视，第一时间成立联合调查组，全面深入开展调查核查。对调查发现的违纪违法行为，将依规依纪依法严肃处理。<a href="http://www.bbtnews.com.cn/2026/0728/600610.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：北京商报</span><span>作者： 吴其芸</span><span>网编：产经新闻中心</span><span>2026-07-28</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            						<li>
+							<div class="info" style="margin-left:0;">
+								<h4><a href="http://www.bbtnews.com.cn/2026/0727/600571.shtml" target="_blank">粉笔发布2026年上半年业绩预告，预计收入不少于12.2亿元</a></h4>
+								<p class="words">7月27日，综合性就业服务平台粉笔（02469.HK）发布2026年上半年业绩预告。<a href="http://www.bbtnews.com.cn/2026/0727/600571.shtml" target="_blank" class="more">查看详情<span>>></span></a></p>
+								<p class="others"><span>出处：</span><span>作者：</span><span>网编：武杉</span><span>2026-07-27</span></p>
+								<!--<a href="#" class="share">分享</a>-->
+							</div>
+						</li>
+                                            					</ul>
+				</div>
+               			<div class="pagination">
+                        <a href="http://www.bbtnews.com.cn/chuizhipd/chanjingzx/jiaoyupd/1.shtml" class="prev">&lt;</a><a href="http://www.bbtnews.com.cn/chuizhipd/chanjingzx/jiaoyupd/1.shtml">1</a><a href="javascript:void(0);" class="on">2</a><a href="http://www.bbtnews.com.cn/chuizhipd/chanjingzx/jiaoyupd/3.shtml">3</a><a href="http://www.bbtnews.com.cn/chuizhipd/chanjingzx/jiaoyupd/4.shtml">4</a><a href="http://www.bbtnews.com.cn/chuizhipd/chanjingzx/jiaoyupd/5.shtml">5</a><a href="http://www.bbtnews.com.cn/chuizhipd/chanjingzx/jiaoyupd/6.shtml">6</a><a href="http://www.bbtnews.com.cn/chuizhipd/chanjingzx/jiaoyupd/20.shtml">... 20</a><a href="http://www.bbtnews.com.cn/chuizhipd/chanjingzx/jiaoyupd/3.shtml" class="next">&gt;</a>                        	</div>
+			</div>
+			<div class="fR c-r-wrap">
+					        <a style="pointer-events: none;" href="#" target="_blank"><img width="318px" height="213px" src="https://upload.bbtnews.com.cn/2024/1017/1729148964402.png" alt="右侧广告"></a>
+        
+                                        <div class="c-r-box source-box">
+    <div class="c-r-con clearfix">
+                <a class="pink fL clearfix darkblue" href="https://xinwen.bjd.com.cn/shenlanzhiku/slzk?appStoryId=s663c419ae4b0ff2202faedfb"><i class="icon fL"><img src="https://upload.bbtnews.com.cn/2024/1015/thumb_68_70_1728958034621.png" alt=""/></i><span style="font-size:10px;">深蓝智库</span></a>
+                <a class="pink fL clearfix green" href="https://special.bbtnews.com.cn/200204-1/"><i class="icon fL"><img src="https://upload.bbtnews.com.cn/2024/1015/thumb_68_70_1728958026406.png" alt=""/></i><span style="font-size:10px;">企业社会责任峰会</span></a>
+                <a class="pink fL clearfix blue" href=""><i class="icon fL"><img src="https://upload.bbtnews.com.cn/2024/1015/thumb_68_70_1728958031451.png" alt=""/></i><span style="font-size:10px;">智慧康养论坛</span></a>
+                <a class="pink fL clearfix purple" href="https://special.bbtnews.com.cn/241114/index.shtml"><i class="icon fL"><img src="https://upload.bbtnews.com.cn/new_img/0124/1485247040318.png" alt=""/></i><span style="font-size:10px;">十大商业品牌</span></a>
+                <a class="pink fL clearfix orange" href="https://www.bbtnews.com.cn/2020/1208/378799.shtml"><i class="icon fL"><img src="https://upload.bbtnews.com.cn/new_img/0121/1484985997161.png" alt=""/></i><span style="font-size:10px;">商业高峰论坛</span></a>
+                <a class="pink fL clearfix yellow" href=""><i class="icon fL"><img src="https://upload.bbtnews.com.cn/new_img/0121/1484985996675.png" alt=""/></i><span style="font-size:10px;">金融业十大品牌</span></a>
+                <a class="pink fL clearfix red" href="http://fcdc.net.cn/"><i class="icon fL"><img src="https://upload.bbtnews.com.cn/new_img/0905/1504580637145.jpg" alt=""/></i><span style="font-size:10px;">酒业价值榜</span></a>
+                <a class="pink fL clearfix sky" href="http://special.bbtnews.com.cn/210816/index.shtml"><i class="icon fL"><img src="https://upload.bbtnews.com.cn/new_img/0121/1484985996879.png" alt=""/></i><span style="font-size:10px;">餐饮十大品牌</span></a>
+            </div>
+</div>
+<div class="c-r-box weibo-goto">
+    <div class="c-r-con">
+        <a class="link clearfix" href="http://weibo.com/bjshangbao?is_all=1"><i class="icon fL"></i>@北京商报</a>
+    </div>
+</div>
+
+
+				<div class="c-r-box news-rank-list">
+					<div class="c-r-title">
+						<span>新闻排行</span>
+					</div>
+					<div class="c-r-con">
+    						<ul>
+
+
+    <li class=" on hot">
+        <span class="num">01</span>
+        <div class="hd clearfix">
+            <a href="http://www.bbtnews.com.cn/2026/0916/606042.shtml" class="img fL"><img src="https://upload.bbtnews.com.cn/2026/0916/thumb_93_62_1789488358825.jpg" alt="" width="93" height="62"></a>
+            <div class="info">
+                <p class="tit"><a title="湖南三湘银行另类揽储藏“水分”" href="http://www.bbtnews.com.cn/2026/0916/606042.shtml">湖南三湘银行另类揽储</a></p>
+                <p><a href="http://www.bbtnews.com.cn/2026/0916/606042.shtml">当存款利率进入持续下行通道，民营银行曾经...</a></p>
+            </div>
+        </div>
+        <div class="bd">
+            <a href="http://www.bbtnews.com.cn/2026/0916/606042.shtml">湖南三湘银行另类揽储藏“水分</a>
+        </div>
+    </li>
+
+    
+
+    <li class=" hot">
+        <span class="num">02</span>
+        <div class="hd clearfix">
+            <a href="http://www.bbtnews.com.cn/2026/0916/606040.shtml" class="img fL"><img src="https://upload.bbtnews.com.cn/2026/0916/thumb_93_62_1789488318852.jpg" alt="" width="93" height="62"></a>
+            <div class="info">
+                <p class="tit"><a title="谷子经济“算细账”" href="http://www.bbtnews.com.cn/2026/0916/606040.shtml">谷子经济“算细账”</a></p>
+                <p><a href="http://www.bbtnews.com.cn/2026/0916/606040.shtml">不到十天两轮公告，知名连锁谷店品牌GOODSL...</a></p>
+            </div>
+        </div>
+        <div class="bd">
+            <a href="http://www.bbtnews.com.cn/2026/0916/606040.shtml">谷子经济“算细账”</a>
+        </div>
+    </li>
+
+    
+
+    <li class=" hot">
+        <span class="num">03</span>
+        <div class="hd clearfix">
+            <a href="http://www.bbtnews.com.cn/2026/0917/606171.shtml" class="img fL"><img src="https://upload.bbtnews.com.cn/2026/0917/thumb_93_62_1789575379468.jpg" alt="" width="93" height="62"></a>
+            <div class="info">
+                <p class="tit"><a title="平台支付实测：月付仍在，页面分家" href="http://www.bbtnews.com.cn/2026/0917/606171.shtml">平台支付实测：月付仍</a></p>
+                <p><a href="http://www.bbtnews.com.cn/2026/0917/606171.shtml">继9月15日“平台月付将退出支付选项”冲上...</a></p>
+            </div>
+        </div>
+        <div class="bd">
+            <a href="http://www.bbtnews.com.cn/2026/0917/606171.shtml">平台支付实测：月付仍在，页面</a>
+        </div>
+    </li>
+
+    
+
+    <li class="">
+        <span class="num">04</span>
+        <div class="hd clearfix">
+            <a href="http://www.bbtnews.com.cn/2026/0916/606041.shtml" class="img fL"><img src="https://upload.bbtnews.com.cn/2026/0916/thumb_93_62_1789488351129.jpg" alt="" width="93" height="62"></a>
+            <div class="info">
+                <p class="tit"><a title="一汽拟成广汽第二大股东 央地车企整合提速" href="http://www.bbtnews.com.cn/2026/0916/606041.shtml">一汽拟成广汽第二大股</a></p>
+                <p><a href="http://www.bbtnews.com.cn/2026/0916/606041.shtml">9月14日晚间，广汽集团宣布，与中国第一汽...</a></p>
+            </div>
+        </div>
+        <div class="bd">
+            <a href="http://www.bbtnews.com.cn/2026/0916/606041.shtml">一汽拟成广汽第二大股东 央地</a>
+        </div>
+    </li>
+
+    
+
+    <li class="">
+        <span class="num">05</span>
+        <div class="hd clearfix">
+            <a href="http://www.bbtnews.com.cn/2026/0918/606270.shtml" class="img fL"><img src="https://upload.bbtnews.com.cn/2026/0918/thumb_93_62_1789661404578.jpg" alt="" width="93" height="62"></a>
+            <div class="info">
+                <p class="tit"><a title="iPhone 18的分期大战" href="http://www.bbtnews.com.cn/2026/0918/606270.shtml">iPhone 18的分期大战</a></p>
+                <p><a href="http://www.bbtnews.com.cn/2026/0918/606270.shtml">每年秋季的iPhone新品发布会，向来是数码圈...</a></p>
+            </div>
+        </div>
+        <div class="bd">
+            <a href="http://www.bbtnews.com.cn/2026/0918/606270.shtml">iPhone 18的分期大战</a>
+        </div>
+    </li>
+
+    
+
+    <li class="">
+        <span class="num">06</span>
+        <div class="hd clearfix">
+            <a href="http://www.bbtnews.com.cn/2026/0918/606272.shtml" class="img fL"><img src="https://upload.bbtnews.com.cn/2026/0918/thumb_93_62_1789661455926.jpg" alt="" width="93" height="62"></a>
+            <div class="info">
+                <p class="tit"><a title="AI时代券业人才的机与危" href="http://www.bbtnews.com.cn/2026/0918/606272.shtml">AI时代券业人才的机与</a></p>
+                <p><a href="http://www.bbtnews.com.cn/2026/0918/606272.shtml">“金融科技的纪元已经来临。我们以AI（人工...</a></p>
+            </div>
+        </div>
+        <div class="bd">
+            <a href="http://www.bbtnews.com.cn/2026/0918/606272.shtml">AI时代券业人才的机与危</a>
+        </div>
+    </li>
+
+    
+
+    <li class="">
+        <span class="num">07</span>
+        <div class="hd clearfix">
+            <a href="http://www.bbtnews.com.cn/2026/0918/606280.shtml" class="img fL"><img src="https://upload.bbtnews.com.cn/2026/0918/thumb_93_62_1789661715589.jpg" alt="" width="93" height="62"></a>
+            <div class="info">
+                <p class="tit"><a title="美联储加息落地 我国货币政策定力不减" href="http://www.bbtnews.com.cn/2026/0918/606280.shtml">美联储加息落地 我国</a></p>
+                <p><a href="http://www.bbtnews.com.cn/2026/0918/606280.shtml">美国加息靴子终于落地。</a></p>
+            </div>
+        </div>
+        <div class="bd">
+            <a href="http://www.bbtnews.com.cn/2026/0918/606280.shtml">美联储加息落地 我国货币政策</a>
+        </div>
+    </li>
+
+    
+
+    <li class="">
+        <span class="num">08</span>
+        <div class="hd clearfix">
+            <a href="http://www.bbtnews.com.cn/2026/0916/606037.shtml" class="img fL"><img src="https://upload.bbtnews.com.cn/2026/0916/thumb_93_62_1789488217357.jpg" alt="" width="93" height="62"></a>
+            <div class="info">
+                <p class="tit"><a title="新兴产业与外贸领跑 8月经济向新向优" href="http://www.bbtnews.com.cn/2026/0916/606037.shtml">新兴产业与外贸领跑 8</a></p>
+                <p><a href="http://www.bbtnews.com.cn/2026/0916/606037.shtml">9月15日，国家统计局发布数据显示，今年8月...</a></p>
+            </div>
+        </div>
+        <div class="bd">
+            <a href="http://www.bbtnews.com.cn/2026/0916/606037.shtml">新兴产业与外贸领跑 8月经济向</a>
+        </div>
+    </li>
+
+    
+
+    <li class="">
+        <span class="num">09</span>
+        <div class="hd clearfix">
+            <a href="http://www.bbtnews.com.cn/2026/0916/606049.shtml" class="img fL"><img src="https://upload.bbtnews.com.cn/2026/0916/thumb_93_62_1789488546800.jpg" alt="" width="93" height="62"></a>
+            <div class="info">
+                <p class="tit"><a title="14只医药股负债率超80%" href="http://www.bbtnews.com.cn/2026/0916/606049.shtml">14只医药股负债率超80</a></p>
+                <p><a href="http://www.bbtnews.com.cn/2026/0916/606049.shtml">随着2026年中报披露收官，医药生物板块部分...</a></p>
+            </div>
+        </div>
+        <div class="bd">
+            <a href="http://www.bbtnews.com.cn/2026/0916/606049.shtml">14只医药股负债率超80%</a>
+        </div>
+    </li>
+
+    
+
+    <li class="">
+        <span class="num">10</span>
+        <div class="hd clearfix">
+            <a href="http://www.bbtnews.com.cn/2026/0917/606164.shtml" class="img fL"><img src="https://upload.bbtnews.com.cn/2026/0917/thumb_93_62_1789575152463.jpg" alt="" width="93" height="62"></a>
+            <div class="info">
+                <p class="tit"><a title="北京推2000余场双节文旅“大餐”" href="http://www.bbtnews.com.cn/2026/0917/606164.shtml">北京推2000余场双节文</a></p>
+                <p><a href="http://www.bbtnews.com.cn/2026/0917/606164.shtml">9月16日，北京商报记者在2026年中秋、国庆...</a></p>
+            </div>
+        </div>
+        <div class="bd">
+            <a href="http://www.bbtnews.com.cn/2026/0917/606164.shtml">北京推2000余场双节文旅“大餐</a>
+        </div>
+    </li>
+
+    </ul>
+
+					</div>
+				</div>
+			</div>
+		</div>
+    </div>
+    <!--相关连接-->
+    <div class="relatedConnection">
+        <div class="related_cont">
+            <div class="related_title">
+                <div class="related_title_cont">
+                    <div class="FriendshipBtn">
+                        <p class="titleTar">友情链接</p>
+                        <p class="transverseLine "></p>
+                    </div>
+                    <div class="related_line">|</div>
+                    <div class="CooperativeBtn">
+                        <p class="titleTar">合作伙伴</p>
+                        <p class="transverseLine nowHide"></p>
+                    </div>
+                </div>
+            </div>
+            <div class="Friendship" >
+    <ul class="related_two">
+        <li><a href="https://bjrbdzb.bjd.com.cn/bjrb/mobile/2022/20220817/20220817_m.html?v=1660719342801#page0" target="_blank">北京日报 </a></li>
+        <li><a href="https://bjrbdzb.bjd.com.cn/bjwb/mobile/2022/20220817/20220817_m.html?v=1660719356187#page0" target="_blank">北京晚报</a></li>
+        <li><a href="http://www.bjd.com.cn/" target="_blank">京报网</a></li>
+        <li><a href="http://www.eeo.com.cn/" target="_blank">经济观察报</a></li>
+        <li><a href="http://www.eastmoney.com/" target="_blank">东方财富</a></li>
+        <li><a href="http://www.caijing.com.cn/" target="_blank">财经网</a></li>
+        <li><a href="https://www.yicai.com/" target="_blank">第一财经</a></li>
+        <li><a href="http://www.china.com.cn/" target="_blank">中国网</a></li>
+        <li><a href="https://www.china.com/" target="_blank">中华网</a></li>
+        <li><a href="http://www.chinanews.com/" target="_blank">中国新闻网</a></li>
+        <li><a href="http://www.jwview.com/" target="_blank">中新经纬</a></li>
+        <li><a href="https://www.cls.cn/" target="_blank">财联社</a></li>
+        <li><a href="http://www.cnki.net/" target="_blank">中国知网</a></li>
+    </ul>
+    <ul class="related_two">
+        <li><a href="http://www.cyol.net/" target="_blank">中国青年报</a></li>
+        <li><a href="http://www.21jingji.com/" target="_blank">21世纪经济报道</a></li>
+        <li><a href="http://www.zqrb.cn/" target="_blank">证券日报</a></li>
+        <li><a href="http://www.investorchina.cn/" target="_blank">思维财经</a></li>
+        <li><a href="https://www.nbd.com.cn/" target="_blank">每日经济新闻</a></li>   
+        <li><a href="http://www.ynet.com/index.html" target="_blank">北京青年报</a></li> 
+        <li><a href="http://www.eastday.com/" target="_blank">东方网</a></li>
+        <li><a href="https://www.cnfin.com/" target="_blank">新华财经</a></li>
+        <li><a href="http://www.hbjjrb.com/index.shtml" target="_blank">河北经济网</a></li>
+    </ul>
+</div>
+<div class="Cooperative">
+    <ul class="Cooperative_cont" >
+        <li><a href="http://www.ciftis.org" target="_blank">中国(北京)国际服务贸易交易会</a></li>
+        <li><a href="https://www.toutiao.com/" target="_blank">今日头条</a></li>
+        <li><a href="https://www.baidu.com/" target="_blank">百度</a></li>
+        <li><a href="https://www.sina.com.cn/" target="_blank">新浪</a></li>
+        <li><a href="https://www.qq.com/" target="_blank">腾讯</a></li>
+        <li><a href="https://www.163.com/" target="_blank">网易</a></li>
+        <li><a href="http://business.sohu.com/" target="_blank">搜狐财经</a></li>
+        <li><a href="http://www.yidianzixun.com/" target="_blank">一点资讯</a></li>
+        <li><a href="https://www.huawei.com/cn/" target="_blank">华为</a></li>
+        <li><a href="https://www.360.cn/" target="_blank">360</a></li>
+        <li><a href="https://www.iqiyi.com/" target="_blank">爱奇艺</a></li>
+        <li><a href="https://www.ximalaya.com/" target="_blank">喜马拉雅</a></li>
+    </ul>
+    <ul class="Cooperative_cont" >
+        <li><a href="https://www.bilibili.com/" target="_blank">哔哩哔哩</a></li>
+        <li><a href="https://www.douyin.com/" target="_blank">抖音</a></li>
+        <li><a href="https://www.kuaishou.com/" target="_blank">快手</a></li>
+        <li><a href="http://mp.yangshipin.cn/" target="_blank">央视频</a></li>
+        <li><a href="https://xueqiu.com/" target="_blank">雪球</a></li>
+        <li><a href="https://www.zhihu.com/" target="_blank">知乎</a></li> 
+    </ul>
+</div>
+        </div>
+    </div>
+    <!--底部导航-->
+    <div class="item_bottom_nav">
+        <div class="item_bottom_cont">
+            <div class="item_bottom_img">
+                <img src="https://img.bbtnews.com.cn/templates/bbtnews/2018/img/bottom_login.png" alt="">
+            </div>
+            <div class="item_bottom_detail">
+    <div class="link">
+        <a href="http://special.bbtnews.com.cn/170424-1/" target="_blank">商报简介</a><span>|</span>
+        <a href="http://www.bbtnews.com.cn/about/copyright.shtml" target="_blank">版权声明</a><span>|</span>
+        <a href="http://www.bbtnews.com.cn/" target="_blank">在线反馈</a><span>|</span>
+        <a href="http://www.bbtnews.com.cn/about/contact.shtml" target="_blank">联系我们</a><span>|</span>
+        <a href="http://www.bbtnews.com.cn/guanggao/" target="_blank">广告</a>
+    </div>
+    <p>本网站所有内容属北京商报社有限公司，未经许可不得转载。 商报总机：010-64101978 版权合作：010-64101871</p>
+    <p>商报地址：北京市朝阳区和平里西街21号 邮编：100013 法律顾问：北京市中同律师事务所（010-82011988） </p>
+    <p style="position: relative;"><a target="_blank" href="https://xyt.xinchacha.com/getpcInfo?sn=1534741770015838208&certType=8&url=*.bbtnews.com.cn"><img style="width:33px;height:15px;" src="https://xyt.xinchacha.com/img/icon/icon8.png"></a><img style="width:33px;height:15px;" src="https://upload.bbtnews.com.cn/2021/1221/1640063174488.png"><a target="_blank" style="color:#777" href="https://www.12377.cn/">网上有害信息举报</a>&nbsp;&nbsp;违法和不良信息举报电话：010-84276691 举报邮箱：bjsb@bbtnews.com.cn</p>
+    <p><a style="color:#777" href="https://beian.miit.gov.cn">ICP备案编号：京ICP备08003726号-1</a>&nbsp;&nbsp;<img src="https://upload.bbtnews.com.cn/2021/0826/1629956823826.png" style="height:13px;"/><a style="color:#777" target="_blank" href="https://www.beian.gov.cn/portal/index.do">京公网安备11010502045556号</a>&nbsp;&nbsp;<a style="color:#777" target="_blank" href="https://upload.bbtnews.com.cn/2022/0214/certificate.png">互联网新闻信息服务许可证11120220001号</a></p>
+</div>
+<script>
+
+</script>
+        </div>
+    </div>
+    <!-- 左侧边栏 start -->
+<div class="side-bar J-side-bar" >
+        <ul>
+                    <li><a href=""><i class="icon-s1"></i>活动论坛</a></li>
+                    <li><a href="http://www.bbtnews.com.cn/review/"><i class="icon-s2"></i>今日评</a></li>
+                    <li><a href="http://www.bbtnews.com.cn/news/Observe/Lao%20zhou%20kan%20stock/"><i class="icon-s3"></i>老周侃股</a></li>
+                    <li><a href="http://www.bbtnews.com.cn/New%20media%20products/News%20picture%20books/"><i class="icon-s4"></i>新闻绘本</a></li>
+                    <li><a href="http://bbri.bjbusiness.com.cn/"><i class="icon-s5"></i>研究院</a></li>
+                    <li><a href="http://epaper.bjbusiness.com.cn/site1/bjsb/html/2017-12/20/node_141.htm"><i class="icon-s6"></i>蓝皮书</a></li>
+                    <li><a href="http://www.bbtnews.com.cn/Brandactivities/"><i class="icon-s7"></i>品牌廊</a></li>
+                    <li><a href="http://baike.baidu.com/link?url=twSw1Dt-Q3_eVHGYFmuKx5dQ6zcQrSx7iiFKypl-_uINHXNDKAgZ6IRhtOT_RcOjPyHtXpxyRRsJOddyWY18PyD6509dm2aWeUDGyjEStRQXppjWvT4TSttUdOArOPdqowo0BSgiIGhKfxeR_kOuwbrLXjfw7v0CZKvyEpZ9F6q93mEgzoM3anj1v1o2dFhJT9LfbtfM8GAgqG_77GyYL7jUHRu4rjb9vEacqLP_tri"><i class="icon-s8"></i>新艺馆</a></li>
+                    <li><a href="http://biztop10.bjbusiness.com.cn/"><i class="icon-s9"></i>十大品牌</a></li>
+                    <li><a href="http://special.bbtnews.com.cn/170424-1/"><i class="icon-s10"></i>产品超市</a></li>
+                    <li><a href="http://www.cece.org.cn"><i class="icon-s12"></i>电商大会</a></li>
+                    <li><a href="http://special.bbtnews.com.cn/171219-1/"><i class="icon-s13"></i>SCPR</a></li>
+                    <li><a href="http://www.bbtnews.com.cn/other/jinshequ/"><i class="icon-s14"></i>品牌进社区</a></li>
+                    <li><a href="http://www.bbtnews.com.cn/2016/0821/158551.shtml"><i class="icon-s15"></i>书画名人堂</a></li>
+                    <li><a href="http://others.bjbusiness.com.cn/juzhen/index.html"><i class="icon-s16"></i>微信矩阵</a></li>
+                    <li><a href="http://www.bbtnews.com.cn/magazine/"><i class="icon-s17"></i>精彩特刊</a></li>
+                </ul>
+    </div>
+    <!-- 左侧边栏 end -->
+    <!-- 右侧分享 start -->
+    <div class="share-bar share-wrap J-share-bar" >
+        <a href="http://weibo.com/bjshangbao?is_all=1" target="_blank" class="icon-sinaminiblog"><i class="ico-sp ico-wb"></i><em></em></a>
+        <a href="http://others.bjbusiness.com.cn/juzhen/index.html" target="_blank" class="icon-wechat">
+            <i class="ico-sp ico-wx"></i><em></em>
+        </a>
+        <a href="mailto:1794039972@qq.com" class="icon-fankui"><i class="ico-sp ico-fankui"></i><em></em></a>
+        <a href="javascript:void(0)" class="icon-top J-gotop"><i class="ico-sp ico-top"></i><em></em></a>
+    </div>
+    <!-- 右侧分享 end -->
+   
+    <!-- 导航浮层 start -->
+        
+
+    <!-- 导航浮层 end -->
+    <script type="text/javascript" src="https://img.bbtnews.com.cn/templates/bbtnews/js/xinmem/common.js?v=20190517"></script>
+</body>
+</html>
+

@@ -9,6 +9,13 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Set, Tuple, TypedDict
 
 from src.adapters.db_postgres_core import get_adapter
+from src.adapters.http_bbtnews import (
+    build_detail_update as bbtnews_build_detail_update,
+    feed_item_to_row as bbtnews_feed_item_to_row,
+    fetch_detail as bbtnews_fetch_detail,
+    list_items as bbtnews_list_items,
+    make_article_id as bbtnews_make_article_id,
+)
 from src.adapters.http_beijinghao import (
     ColumnEntry,
     build_detail_update as beijinghao_build_detail_update,
@@ -1117,6 +1124,19 @@ _SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
             feed_item_to_row_name="stdaily_feed_item_to_row",
             fetch_detail_name="stdaily_fetch_detail",
             build_detail_update_name="stdaily_build_detail_update",
+        ),
+    ),
+    "bbtnews": SourceRegistration(
+        runner_name="_run_registered_linked_page_flow",
+        kwargs_factory=_pages_runner_kwargs,
+        linked_page=LinkedPageConfig(
+            source="bbtnews",
+            display_name="Bbtnews",
+            list_items_name="bbtnews_list_items",
+            make_article_id_name="bbtnews_make_article_id",
+            feed_item_to_row_name="bbtnews_feed_item_to_row",
+            fetch_detail_name="bbtnews_fetch_detail",
+            build_detail_update_name="bbtnews_build_detail_update",
         ),
     ),
 }

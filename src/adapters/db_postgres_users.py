@@ -160,7 +160,7 @@ def fetch_console_users(cur: psycopg.Cursor) -> list[dict[str, Any]]:
         FROM console_users
         WHERE deleted_at IS NULL
         ORDER BY
-            CASE role WHEN 'admin' THEN 0 ELSE 1 END,
+            last_login_at DESC NULLS LAST,
             display_name,
             username
         """

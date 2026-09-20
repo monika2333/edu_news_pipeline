@@ -24,6 +24,9 @@ const state = {
     // accountPanelState）：只剩 refreshInflight（名称刷新按钮是按来源的）。
     // 账号面板始终平铺，没有收起即重置的语义
     accountPanels: {},
+    // 新增账号的后台名称解析中（含排队）的账号 id：纯前端瞬态，不落库；
+    // 页面刷新即丢，重新加载后未解析账号回到「名称待获取」中性外观
+    accountNameResolving: new Set(),
     // 数据源即时保存；其余分区各自维护未保存标记。
     dirty: { llm_models: false, llm_endpoints: false, score_keyword_bonuses: false,
         education_keywords: false, beijing_keywords: false, source_aliases: false },

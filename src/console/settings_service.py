@@ -418,13 +418,8 @@ def create_account(
         display_name=None,
         actor_user_id=actor_user_id,
     )
-    # 头条要起无头浏览器解析名称，创建时的解析预算按它的上限给；
-    # 其他来源内部各自钳制在 8 秒，不受影响。
-    _resolve_and_record_account_name(
-        adapter,
-        created,
-        timeout=PROFILE_NAME_TIMEOUT_SECONDS,
-    )
+    # 创建请求不做名称解析（头条要起无头浏览器，同步解析会把添加卡住十几秒）：
+    # 前端收到 201 后立即对这一条调 refresh-names，芯片先以「解析中」示人。
     return _account_payload(adapter, str(created["id"]), str(created["source"]))
 
 

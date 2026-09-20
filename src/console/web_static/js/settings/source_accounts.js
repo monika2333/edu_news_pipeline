@@ -2,6 +2,9 @@
 // 页面级管理模式下芯片提供打开主页与标记删除，删除为「标记 + 串行批量提交」，
 // 标记跨来源共存、一次确认全部处理），芯片网格末尾的虚线「＋ 添加账号」就地输入，
 // 以及「刷新账号名称」（来源行内小按钮，仅管理模式出现）的分批串行刷新。
+// 添加请求本身不解析名称（头条解析要起无头浏览器，不能让添加卡着等）：
+// 成功后芯片先带「名称解析中」出现，前端按来源串行补发 refresh-names，
+// 结果就地落回芯片（见 queueNewAccountNameResolution）。
 // 账号名称由后端解析，前端不提供名称输入；所有用户输入经 textContent 渲染。
 // 账号面板始终平铺，没有展开/收起；面板内 DOM 不发唯一 id，一律 class +
 // 面板作用域查询（锚点是面板根的 data-accounts-for）。
@@ -318,9 +321,10 @@ async function refreshAccountNames(source, ids, button) {
     }
 }
 
-// 芯片名称区的三种状态：已解析显示名称；未解析显示截断标识（CSS 省略号，
-// 完整值放 title）加弱化标记；解析失败时标记变为「名称获取失败」（警示色），
-// 失败原因放进标记的 title。
+// 芯片名称区的四种状态：已解析显示名称；新增后解析进行中显示「名称解析中」
+// （纯前端瞬态，见 core.js 的 accountNameResolving）；其余未解析显示截断标识
+// （CSS 省略号，完整值放 title）加弱化标记「名称待获取」；解析失败时标记变为
+// 「名称获取失败」（警示色），失败原因放进标记的 title。
 // 名称文本一律经 textContent 写入，禁止 innerHTML。
 // 只重绘名称区（名称、标记），不动 label 里的 checkbox——刷新进行中
 // 该芯片的其他状态（标记外观、操作节点）都保持原样。
@@ -337,10 +341,18 @@ function renderChipNameContent(label, item) {
     }
     label.appendChild(nameEl);
     if (!item.display_name) {
+        let badgeText = '名称待获取';
+        let badgeTitle = '';
+        if (state.accountNameResolving.has(item.id)) {
+            badgeText = '名称解析中';
+        } else if (item.display_name_error) {
+            badgeText = '名称获取失败';
+            badgeTitle = item.display_name_error;
+        }
         const badge = createEl('span',
-            `account-name-badge${item.display_name_error ? ' is-error' : ''}`,
-            item.display_name_error ? '名称获取失败' : '名称待获取');
-        if (item.display_name_error) badge.title = item.display_name_error;
+            `account-name-badge${badgeTitle ? ' is-error' : ''}`,
+            badgeText);
+        if (badgeTitle) badge.title = badgeTitle;
         label.appendChild(badge);
     }
 }
@@ -443,6 +455,53 @@ function buildAccountAddForm(source) {
     return form;
 }
 
+// 新增账号的名称解析：按来源串行排队，每个新账号单独发一次 refresh-names，
+// 结果经 applyRefreshedAccount 就地落到芯片。串行是有意的：头条解析每次要在
+// 后端起一个无头浏览器，连续添加时不能并发起一堆；排队期间芯片一直显示
+// 「名称解析中」。与来源行的「刷新账号名称」互不互斥，重复解析一次无害。
+function queueNewAccountNameResolution(source, accountId) {
+    const panelState = accountPanelState(source);
+    panelState.resolveChain = (panelState.resolveChain || Promise.resolve())
+        .then(() => resolveNewAccountName(source, accountId))
+        .catch(() => {}); // 任何意外异常都不能断掉后续排队
+}
+
+async function resolveNewAccountName(source, accountId) {
+    let failureMessage = null;
+    try {
+        const { response, payload } = await apiRequest(
+            '/api/admin/crawl-accounts/refresh-names',
+            { method: 'POST', body: { account_ids: [accountId] } },
+        );
+        if (!response.ok) {
+            failureMessage = formatApiError(payload, '请重试');
+        } else {
+            // 先摘掉解析中标记再落结果，徽章才不会被打回「名称解析中」
+            state.accountNameResolving.delete(accountId);
+            const results = payload.items || [];
+            results.forEach((result) => applyRefreshedAccount(source, result));
+            const failed = results.find((result) => result.status === 'failed' && result.error);
+            if (failed) {
+                accountPanelError(source, `名称解析失败：${failed.error}`);
+            }
+            return;
+        }
+    } catch (error) {
+        failureMessage = error.message || '网络错误';
+    }
+    state.accountNameResolving.delete(accountId);
+    accountPanelError(source, `名称解析失败：${failureMessage}`);
+    // 没有可用的刷新结果时也要把芯片徽章从「名称解析中」恢复成中性待获取
+    const item = currentAccountItems(source)
+        .find((account) => account.id === accountId);
+    const panel = accountPanelEl(source);
+    const chip = panel
+        && panel.querySelector(`.account-chip[data-account-id="${accountId}"]`);
+    if (item && chip) {
+        renderChipNameContent(chip.querySelector('.account-chip-label'), item);
+    }
+}
+
 async function submitAccountAdd(source, input, addBtn) {
     accountPanelError(source, '');
     const text = input.value.trim();
@@ -452,7 +511,6 @@ async function submitAccountAdd(source, input, addBtn) {
     }
     addBtn.disabled = true;
     try {
-        // 名称由后端同步解析，响应里的账号行直接可用，不再额外刷新
         const { response, payload } = await apiRequest('/api/admin/crawl-accounts', {
             method: 'POST',
             body: { source, text },
@@ -460,6 +518,13 @@ async function submitAccountAdd(source, input, addBtn) {
         if (!response.ok) {
             accountPanelError(source, formatApiError(payload, '添加失败，请重试'));
             return;
+        }
+        // 创建请求即时返回（不含名称）：芯片先以「名称解析中」出现，
+        // 随后排队补一次解析，完成后名称就地补上，添加过程不再阻塞
+        const created = payload.item;
+        if (created && created.id && !created.display_name) {
+            state.accountNameResolving.add(created.id);
+            queueNewAccountNameResolution(source, created.id);
         }
         input.value = '';
         showSettingsToast('账号已添加');

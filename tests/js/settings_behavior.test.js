@@ -2791,6 +2791,136 @@ test('整体 payload 重载后四个草稿继续使用编辑开始时的版本',
     } finally { page.close(); }
 });
 
+// 「放弃修改」按钮（section_editor.js buildSectionSaveBar 的 discard 分支）的行为锁定：
+// 界面回到该块最后见到的快照、脏标记清除、再次保存发回原始值，且只影响当前块。
+function bonusRows(page) {
+    return [...page.panel('bonuses').querySelectorAll('.bonus-row:not(.bonus-heading)')];
+}
+function bonusGrid(page) {
+    return bonusRows(page).map((row) => [
+        row.querySelector('.bonus-keyword').value,
+        Number(row.querySelector('.bonus-value').value),
+    ]);
+}
+
+test('放弃修改（加分词典）：改分值增行删行后放弃，行数顺序与每行值复原', async () => {
+    const page = await bootPage();
+    try {
+        const panel = page.panel('bonuses');
+        inputValue(page, bonusRows(page)[0].querySelector('.bonus-value'), '-100');
+        panel.querySelector('.bonus-add').click();
+        inputValue(page, bonusRows(page)[2].querySelector('.bonus-keyword'), '临时B');
+        inputValue(page, bonusRows(page)[2].querySelector('.bonus-value'), '100');
+        bonusRows(page)[1].querySelector('.bonus-delete').click();
+        assert.deepEqual(bonusGrid(page), [['专题Z', -100], ['临时B', 100]]);
+        assert.equal(unloadBlocked(page), true);
+
+        panel.querySelector('.section-discard').click();
+        // 放弃会重渲染，行节点全部重建，必须重查 DOM 后断言回到库里保存的两行
+        assert.deepEqual(bonusGrid(page), [['专题Z', 10], ['专题A', 20]]);
+        assert.equal(unloadBlocked(page), false);
+        assert.equal(page.window.eval('state.dirty.score_keyword_bonuses'), false);
+
+        await saveDictionary(page, 'score_keyword_bonuses');
+        assert.deepEqual(dictionaryPuts(page).map(({ path, body }) => ({ path, body })), [{
+            path: '/api/admin/settings/score_keyword_bonuses',
+            body: {
+                expected_version: 11,
+                value: [{ keyword: '专题Z', bonus: 10 }, { keyword: '专题A', bonus: 20 }],
+            },
+        }]);
+    } finally { page.close(); }
+});
+
+for (const [section, draft] of [
+    ['education_keywords', '教育\n学校\n课堂'],
+    ['beijing_keywords', '北京\n海淀\n朝阳'],
+]) {
+    test(`放弃修改（${section}）：文本复原、脏标记清除、再保存发回原始词表`, async () => {
+        const page = await bootPage();
+        try {
+            const block = dictionaryBlock(page, section);
+            inputValue(page, block.querySelector('textarea'), draft);
+            assert.equal(unloadBlocked(page), true);
+            block.querySelector('.section-discard').click();
+            const restored = block.querySelector('textarea');
+            assert.equal(restored.value, defaultSections()[section].value.join('\n'));
+            assert.equal(unloadBlocked(page), false);
+            assert.equal(page.window.eval(`state.dirty.${section}`), false);
+
+            await saveDictionary(page, section);
+            assert.deepEqual(dictionaryPuts(page).map(({ path, body }) => ({ path, body })), [{
+                path: `/api/admin/settings/${section}`,
+                body: {
+                    expected_version: defaultSections()[section].version,
+                    value: defaultSections()[section].value,
+                },
+            }]);
+        } finally { page.close(); }
+    });
+}
+
+test('放弃修改（source_aliases）：两个文本框复原、脏标记清除、再保存发回原始别名表', async () => {
+    const page = await bootPage();
+    try {
+        const block = dictionaryBlock(page, 'source_aliases');
+        inputValue(page, block.querySelector('.alias-suffixes'), '客户端\n网\n日报');
+        inputValue(page, block.querySelector('.alias-mappings'), '北青=北京青年报\n晚报=北京晚报');
+        assert.equal(unloadBlocked(page), true);
+        block.querySelector('.section-discard').click();
+        assert.equal(block.querySelector('.alias-suffixes').value, '客户端\n网');
+        assert.equal(block.querySelector('.alias-mappings').value, '北青=北京青年报');
+        assert.equal(unloadBlocked(page), false);
+        assert.equal(page.window.eval('state.dirty.source_aliases'), false);
+
+        await saveDictionary(page, 'source_aliases');
+        assert.deepEqual(dictionaryPuts(page).map(({ path, body }) => ({ path, body })), [{
+            path: '/api/admin/settings/source_aliases',
+            body: {
+                expected_version: 14,
+                value: { suffixes: ['客户端', '网'], aliases: { 北青: '北京青年报' } },
+            },
+        }]);
+    } finally { page.close(); }
+});
+
+test('放弃修改只影响当前块：另一块的草稿与未保存标记原样保留并可独立保存', async () => {
+    const page = await bootPage();
+    try {
+        const education = dictionaryBlock(page, 'education_keywords');
+        const beijing = dictionaryBlock(page, 'beijing_keywords');
+        const beijingField = beijing.querySelector('textarea');
+        inputValue(page, education.querySelector('textarea'), '教育\n学校\n课堂');
+        inputValue(page, beijingField, '北京\n海淀\n朝阳');
+        assert.equal(unloadBlocked(page), true);
+
+        education.querySelector('.section-discard').click();
+        // 放弃只重渲染当前块：beijing 的草稿节点必须原样保留，未被重建
+        assert.equal(education.querySelector('textarea').value, '教育\n学校');
+        assert.equal(beijing.querySelector('textarea'), beijingField);
+        assert.equal(beijingField.value, '北京\n海淀\n朝阳');
+        assert.equal(page.window.eval('state.dirty.education_keywords'), false);
+        assert.equal(page.window.eval('state.dirty.beijing_keywords'), true);
+        assert.equal(unloadBlocked(page), true);
+
+        await saveDictionary(page, 'beijing_keywords');
+        assert.deepEqual(dictionaryPuts(page).map(({ path, body }) => ({ path, body })), [{
+            path: '/api/admin/settings/beijing_keywords',
+            body: { expected_version: 13, value: ['北京', '海淀', '朝阳'] },
+        }]);
+    } finally { page.close(); }
+});
+
+test('仅点「添加一行」未输入任何内容也算未保存修改，离开页面触发确认', async () => {
+    const page = await bootPage();
+    try {
+        assert.equal(unloadBlocked(page), false);
+        page.panel('bonuses').querySelector('.bonus-add').click();
+        assert.equal(page.window.eval('state.dirty.score_keyword_bonuses'), true);
+        assert.equal(unloadBlocked(page), true);
+    } finally { page.close(); }
+});
+
 test('高级载入失败保留文本和脏标记，重试可载入最新版本再保存', async () => {
     const page = await bootPage();
     try {

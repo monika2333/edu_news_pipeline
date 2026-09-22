@@ -9,7 +9,7 @@
 
 const PROTO_FILTER_STORAGE_KEY = 'proto_filter_state_v1';
 const PROTO_VARIANT_STORAGE_KEY = 'proto_filter_variant';
-const PROTO_FILTER_VARIANTS = ['a', 'b', 'c'];
+const PROTO_FILTER_VARIANTS = ['a', 'b', 'c', 'd'];
 
 const protoFilterState = {
     variant: 'a',
@@ -178,13 +178,17 @@ function protoFilterSyncInputs() {
 }
 
 function protoFilterUpdateBadge() {
-    const badge = document.getElementById('proto-filter-count-badge');
-    if (!badge) return;
     const count = protoFilterActiveCount();
-    badge.textContent = count ? String(count) : '';
-    badge.hidden = !count;
-    const toggle = document.getElementById('proto-filter-toggle');
-    if (toggle) toggle.classList.toggle('has-active', count > 0);
+    [document.getElementById('proto-filter-count-badge'),
+        document.getElementById('proto-filter-count-badge-d')].forEach(badge => {
+        if (!badge) return;
+        badge.textContent = count ? String(count) : '';
+        badge.hidden = !count;
+    });
+    [document.getElementById('proto-filter-toggle'),
+        document.getElementById('proto-filter-toggle-d')].forEach(toggle => {
+        if (toggle) toggle.classList.toggle('has-active', count > 0);
+    });
 }
 
 function protoFilterSetVariant(variant) {
@@ -207,6 +211,20 @@ function protoFilterMountPanel() {
     const mount = document.getElementById(`proto-filter-mount-${protoFilterState.variant}`);
     if (mount && panel.parentElement !== mount) mount.appendChild(panel);
     protoFilterSyncInputs();
+}
+
+// D 方案：工具栏第二行折叠/展开（Google「工具」式）。折叠时筛选仍然生效，
+// 靠按钮徽标与 meta 行摘要传达；展开状态不持久化，初始化时有筛选则自动展开。
+function protoFilterToggleRow(forceOpen) {
+    const shouldOpen = typeof forceOpen === 'boolean'
+        ? forceOpen
+        : !document.body.classList.contains('proto-filter-row-open');
+    document.body.classList.toggle('proto-filter-row-open', shouldOpen);
+    const toggle = document.getElementById('proto-filter-toggle-d');
+    if (toggle) {
+        toggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+        toggle.classList.toggle('is-open', shouldOpen);
+    }
 }
 
 function protoFilterOpenPopover() {
@@ -245,12 +263,6 @@ function protoFilterBuildPanel() {
     const panel = document.createElement('div');
     panel.id = 'proto-filter-panel';
     panel.innerHTML = `
-        <div class="proto-filter-group" title="${hourHint}">
-            <span class="proto-filter-group-label">收录时段</span>
-            ${protoFilterBuildHourSelect('hourFrom', '从')}
-            <span class="proto-filter-range-sep">–</span>
-            ${protoFilterBuildHourSelect('hourTo', '到')}
-        </div>
         <div class="proto-filter-group" title="开启后隐藏带「已报送/疑似已报送」徽章的条目">
             <span class="proto-filter-group-label">报送标签</span>
             <label class="proto-switch-control">
@@ -260,6 +272,12 @@ function protoFilterBuildPanel() {
                 </span>
                 <span class="proto-switch-text">隐藏已报送</span>
             </label>
+        </div>
+        <div class="proto-filter-group" title="${hourHint}">
+            <span class="proto-filter-group-label">收录时段</span>
+            ${protoFilterBuildHourSelect('hourFrom', '从')}
+            <span class="proto-filter-range-sep">–</span>
+            ${protoFilterBuildHourSelect('hourTo', '到')}
         </div>
         <div class="proto-filter-group">
             <span class="proto-filter-group-label">分数</span>
@@ -306,6 +324,11 @@ function protoFilterWireGlobalEvents() {
             }
         });
     }
+    // D 方案：工具栏行折叠开关
+    const rowToggle = document.getElementById('proto-filter-toggle-d');
+    if (rowToggle) {
+        rowToggle.addEventListener('click', () => protoFilterToggleRow());
+    }
     // meta 行的「重置筛选」链接（由 innerHTML 重渲染，用委托）
     document.addEventListener('click', event => {
         if (event.target.closest('.proto-filter-reset-link')) {
@@ -338,6 +361,8 @@ function protoFilterInit() {
         || document.getElementById('proto-filter-mount-a');
     if (mount) mount.appendChild(panel);
     protoFilterSetVariant(protoFilterState.variant);
+    protoFilterUpdateBadge();
+    if (protoFilterState.variant === 'd' && protoFilterActive()) protoFilterToggleRow(true);
 }
 
 if (document.readyState === 'loading') {

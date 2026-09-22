@@ -289,6 +289,51 @@ body[data-proto-variant="b"] .proto-filter-reset {
     text-decoration: none;
 }
 
+/* ── 方案 D：工具栏内折叠行（Google「工具」式） ───────────────────────── */
+#proto-filter-toggle-d {
+    display: none;
+}
+
+body[data-proto-variant="d"] #proto-filter-toggle-d {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* 工具栏默认 3 列网格，D 方案多一个折叠按钮，补一列避免「放弃全部」被换行拉伸 */
+body[data-proto-variant="d"] .filter-toolbar-main {
+    grid-template-columns: minmax(220px, 1fr) auto auto auto;
+}
+
+#proto-filter-toggle-d.has-active {
+    border-color: var(--primary-color, #2563eb);
+    color: var(--primary-color, #2563eb);
+}
+
+#proto-filter-toggle-d.is-open {
+    background: #eef2ff;
+}
+
+.proto-filter-row-caret {
+    font-size: 10px;
+    line-height: 1;
+    transition: transform 0.15s ease;
+}
+
+#proto-filter-toggle-d.is-open .proto-filter-row-caret {
+    transform: rotate(180deg);
+}
+
+.proto-collapsible-row {
+    display: none;
+}
+
+body[data-proto-variant="d"].proto-filter-row-open .proto-collapsible-row {
+    display: block;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-color, #e2e8f0);
+}
+
 /* ── 方案 C：左侧栏分组 ──────────────────────────────────────────────── */
 .proto-sidebar-mount {
     display: none;

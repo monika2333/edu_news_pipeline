@@ -187,12 +187,20 @@
                                     </svg>
                                 </button>
                             </div>
+                            {# 原型：D 方案的「筛选」折叠开关，仅 D 方案可见 #}
+                            <button type="button" id="proto-filter-toggle-d"
+                                class="btn btn-secondary proto-filter-row-toggle"
+                                aria-expanded="false" aria-controls="proto-filter-panel">筛选<span
+                                class="proto-filter-row-caret" aria-hidden="true">▾</span><span
+                                class="proto-filter-count-badge"
+                                id="proto-filter-count-badge-d" hidden></span></button>
                             <button class="btn btn-secondary" id="btn-filter-search">检索</button>
                             <button class="btn btn-primary filter-discard-action"
                                 id="btn-filter-bulk-discard">全部放弃</button>
                         </div>
-                        {# 原型：A=工具栏第二行 / B=弹出面板（面板挂右上角按钮，JS 按方案搬动） #}
+                        {# 原型：A=工具栏常驻行 / B=右上角弹出面板 / D=工具栏折叠行（面板 JS 按方案搬动） #}
                         <div id="proto-filter-mount-a" class="proto-toolbar-row"></div>
+                        <div id="proto-filter-mount-d" class="proto-collapsible-row"></div>
                         <div class="filter-toolbar-meta" id="filter-search-meta"></div>
                     </div>
                     <div id="filter-list">
@@ -514,6 +522,7 @@
         <button type="button" data-proto-variant="a" aria-pressed="false">A 工具栏</button>
         <button type="button" data-proto-variant="b" aria-pressed="false">B 弹层</button>
         <button type="button" data-proto-variant="c" aria-pressed="false">C 侧栏</button>
+        <button type="button" data-proto-variant="d" aria-pressed="false">D 折叠</button>
     </div>
     {% endif %}
 

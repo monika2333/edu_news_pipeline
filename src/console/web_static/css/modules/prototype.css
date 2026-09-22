@@ -19,11 +19,6 @@
     color: var(--primary-color, #2563eb);
 }
 
-.proto-filter-row-caret {
-    font-size: 10px;
-    line-height: 1;
-}
-
 .proto-filter-count-badge {
     display: inline-flex;
     align-items: center;
@@ -214,21 +209,27 @@ body.proto-filter-row-open .proto-collapsible-row {
     line-height: 1;
 }
 
-/* 重置按钮：行尾文字按钮，垂直居中 */
+/* 「清空筛选」：行尾次级小按钮，与控件同高，垂直居中 */
 .proto-filter-reset {
     align-self: center;
     margin-left: auto;
-    border: none;
-    background: transparent;
-    color: var(--primary-color, #2563eb);
-    cursor: pointer;
+    height: 32px;
+    padding: 0 14px;
+    border: 1px solid var(--border-color, #d9d9d9);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text-secondary, #475569);
+    font: inherit;
     font-size: 13px;
-    padding: 6px 10px;
+    cursor: pointer;
     white-space: nowrap;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
 .proto-filter-reset:hover {
-    text-decoration: underline;
+    border-color: var(--primary-color, #2563eb);
+    color: var(--primary-color, #2563eb);
+    background: #eef2ff;
 }
 
 .proto-filter-reset[hidden] {

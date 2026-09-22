@@ -123,7 +123,7 @@ function protoFilterMetaSuffixHtml() {
     if (!protoFilterActive()) return '';
     const summary = protoFilterDescribe() || '筛选中';
     return `<span class="proto-filter-meta-suffix">筛选中：${summary}`
-        + ` <button type="button" class="proto-filter-reset-link">重置筛选</button></span>`;
+        + ` <button type="button" class="proto-filter-reset-link">清空筛选</button></span>`;
 }
 
 function protoFilterReset() {
@@ -174,8 +174,7 @@ function protoFilterUpdateBadge() {
     if (toggle) toggle.classList.toggle('has-active', count > 0);
 }
 
-// 展开/收起工具栏第二行。收起后筛选仍然生效，caret 方向随状态切换：
-// 收起 ▾（点开向下展开）、展开 ▴（点收向上折叠）。
+// 展开/收起工具栏第二行。收起后筛选仍然生效，靠按钮徽标与 meta 行摘要传达。
 function protoFilterToggleRow(forceOpen) {
     const shouldOpen = typeof forceOpen === 'boolean'
         ? forceOpen
@@ -186,8 +185,6 @@ function protoFilterToggleRow(forceOpen) {
         toggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
         toggle.classList.toggle('is-open', shouldOpen);
     }
-    const caret = document.querySelector('#proto-filter-toggle .proto-filter-row-caret');
-    if (caret) caret.textContent = shouldOpen ? '▴' : '▾';
 }
 
 function protoFilterBuildHourSelect(field, label) {
@@ -242,7 +239,7 @@ function protoFilterBuildPanel() {
                 ${protoFilterBuildScoreInput('maxScore', '最高')}
             </div>
         </div>
-        <button type="button" class="proto-filter-reset" hidden>重置筛选</button>
+        <button type="button" class="proto-filter-reset" hidden>清空筛选</button>
     `;
     return panel;
 }
@@ -268,7 +265,7 @@ function protoFilterWireGlobalEvents() {
     if (toggle) {
         toggle.addEventListener('click', () => protoFilterToggleRow());
     }
-    // meta 行的「重置筛选」链接（由 innerHTML 重渲染，用委托）
+    // meta 行的「清空筛选」链接（由 innerHTML 重渲染，用委托）
     document.addEventListener('click', event => {
         if (event.target.closest('.proto-filter-reset-link')) {
             event.preventDefault();

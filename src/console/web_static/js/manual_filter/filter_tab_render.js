@@ -34,7 +34,7 @@ function syncFilterToolbarState() {
     const ingestSuffix = state.latestIngestedAt
         ? `最新收录 ${formatLocalDateTime(state.latestIngestedAt)}`
         : '';
-    // 原型：细化筛选启用时在 meta 行追加摘要与「重置筛选」入口（本模块生成的固定 markup，不含用户数据）
+    // 原型：细化筛选启用时在 meta 行追加摘要与「清空筛选」入口（本模块生成的固定 markup，不含用户数据）
     const protoSuffixHtml = typeof protoFilterMetaSuffixHtml === 'function'
         ? protoFilterMetaSuffixHtml()
         : '';

@@ -16,7 +16,9 @@
 ## 爬虫重构规则
 
 - `src/workers/crawl_sources.py` 是当前爬虫编排入口。source adapter 默认不应直接写数据库，除非现有行为已经如此且本次重构明确要兼容。
-- 删除或替换某个爬虫实现前，必须检查 `src/workers`、`src/cli`、`scripts` 和 `tests` 中的引用。
+- 各来源共用的抓取与正文转换 helper 统一在 `http_common.py`（`build_session` / `decode_response` / `html_to_markdown` / `strip_site_suffix`）。新增或修改来源时优先复用，不要在 adapter 里再复制一份私有实现；来源专属的请求头、代理策略（`trust_env`）和站点噪声选择器通过参数传回，不进 `http_common`。目前已知的合法例外：千龙的重试+超时包装、头条的 JSON 转文本路径（`html.unescape` 语义不同）、btime 的结尾锚定式后缀剥离、各来源的发布时间解析（站点日期格式互不相同）。
+- 流水线只处理文字：`html_to_markdown` 剥离图片，不转 markdown 图片语法。9 个来源的正文转换输出由 `tests/adapters/test_http_common_golden.py` 黄金快照逐字锁定——改共享实现必须先看快照差异，出现预期外的差异说明破坏了行为，不许改快照迁就实现。
+- 删除或替换某个爬虫实现前，必须检查 `src/workers`、`src/cli`、`scripts` 和 `tests` 中的引用（`account_profiles.py` 就借调过 beijinghao 的私有解码函数，这类跨模块引用 grep 时容易漏）。
 - 替换重复解析或抓取逻辑前，先为对应 source adapter 添加或更新测试。
 - 保持各来源的 `article_id` 稳定。已有 ID 可能已经进入数据库，并被后续流水线步骤引用。
 - 如果某个来源现有逻辑区分 feed/detail 两阶段，应保留这个语义：feed rows 写入原始文章元数据，detail rows 补齐正文内容。

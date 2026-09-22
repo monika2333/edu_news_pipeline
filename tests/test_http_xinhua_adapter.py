@@ -278,7 +278,7 @@ def test_fetch_detail_target_article_extracts_clean_content() -> None:
     assert "9月16日拍摄的研讨会现场。" in markdown
 
 
-def test_fetch_detail_pic_column_article_keeps_images_and_captions() -> None:
+def test_fetch_detail_pic_column_article_strips_images_keeps_captions() -> None:
     html = _fixture("article_9e5711c6.html")
     url = "http://bj.news.cn/20260917/9e5711c63cf94f48b2c2e24cfadc2524/c.html"
 
@@ -287,9 +287,10 @@ def test_fetch_detail_pic_column_article_keeps_images_and_captions() -> None:
     assert data["title"] == "2026“我与地坛”北京书市开幕"
     assert data["publish_time_iso"] == "2026-09-17T17:39:12+08:00"
     markdown = data["content_markdown"]
-    assert markdown.count("![") >= 8
+    # 流水线纯文字：图片整体剥离，但图说文字保留
+    assert markdown.count("![") == 0
     assert "读者在地坛书市上挑选书籍。" in markdown
-    assert "http://bj.news.cn/20260917/9e5711c63cf94f48b2c2e24cfadc2524/202609179e5711c63cf94f48b2c2e24cfadc2524_" in markdown
+    assert "http://bj.news.cn/20260917/9e5711c63cf94f48b2c2e24cfadc2524/202609179e5711c63cf94f48b2c2e24cfadc2524_" not in markdown
     for junk in ("责任编辑", "分享到", "纠错"):
         assert junk not in markdown
 

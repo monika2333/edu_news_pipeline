@@ -11,6 +11,7 @@ from urllib.parse import urldefrag, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup, Tag  # type: ignore
+from src.adapters.http_common import build_session
 
 LOGGER = logging.getLogger(__name__)
 
@@ -107,9 +108,7 @@ def _period_url(issue_date: str, *, base_url: Optional[str] = None) -> str:
 
 
 def _create_session() -> requests.Session:
-    session = requests.Session()
-    session.headers.update(DEFAULT_HEADERS)
-    return session
+    return build_session(DEFAULT_HEADERS)
 
 
 def _decode_html(content: bytes) -> str:

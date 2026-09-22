@@ -264,8 +264,9 @@ def test_fetch_detail_target_article_extracts_clean_content() -> None:
         "https://www.stdaily.com/web/gdxw/pic/2026-09/19/"
         "584227_980f5153-b0f9-4a66-a5be-f42cf197ff83copy.jpg"
     ) in data["content"]
-    # 图片说明来自 topic 属性（alt 为空时的回退）。
-    assert "![微信图片_20260919170210_9_911](" in markdown
+    # 流水线纯文字：图片（含 topic 属性图说）整体剥离，不再转 markdown
+    assert "![微信图片_20260919170210_9_911](" not in markdown
+    assert "![" not in markdown
 
 
 def test_fetch_detail_raises_without_content_container() -> None:

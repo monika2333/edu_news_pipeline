@@ -126,7 +126,7 @@ def test_detail_payload_uses_json_content_and_removes_noise() -> None:
     assert data["publish_time_iso"] == "2026-08-30T14:27:13.505000+00:00"
     assert "这是正文第一段" in data["content_markdown"]
     assert "这是正文第二段" in data["content_markdown"]
-    assert "https://static.bjd.com.cn/image.jpg" in data["content_markdown"]
+    assert "https://static.bjd.com.cn/image.jpg" not in data["content_markdown"]
     assert "分享" not in data["content_markdown"]
     assert "相关推荐" not in data["content_markdown"]
 

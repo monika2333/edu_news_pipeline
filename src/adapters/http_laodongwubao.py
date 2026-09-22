@@ -12,6 +12,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 import urllib3
 from bs4 import BeautifulSoup, Comment, Tag
+from src.adapters.http_common import build_session
 
 
 BASE_URL = "https://ldwb.workerbj.cn/"
@@ -76,10 +77,7 @@ def _resolve_verify_tls(override: Optional[bool]) -> bool:
 
 
 def _session() -> requests.Session:
-    sess = requests.Session()
-    sess.headers.update(DEFAULT_HEADERS)
-    sess.trust_env = False
-    return sess
+    return build_session(DEFAULT_HEADERS, trust_env=False)
 
 
 def _fetch_text(session: requests.Session, url: str, *, timeout: float, verify: bool) -> str:

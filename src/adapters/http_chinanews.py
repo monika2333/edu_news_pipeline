@@ -10,6 +10,7 @@ import os
 import requests
 from bs4 import BeautifulSoup
 
+from src.adapters.http_common import build_session, decode_response, html_to_markdown, strip_site_suffix
 from src.adapters.http_linked_page_rows import build_detail_update as build_linked_detail_update
 from src.adapters.http_linked_page_rows import feed_item_to_row as linked_feed_item_to_row
 
@@ -34,27 +35,10 @@ class FeedItemLike:
 
 
 def _session() -> requests.Session:
-    s = requests.Session()
-    s.headers.update({
+    return build_session({
         "User-Agent": USER_AGENT,
         "Accept-Language": "zh-CN,zh;q=0.9",
     })
-    return s
-
-
-def _response_text(resp: requests.Response) -> str:
-    # Prefer server-declared encoding; if missing or iso-8859-1, use apparent_encoding
-    try:
-        enc = (resp.encoding or "").lower()
-    except Exception:
-        enc = ""
-    if not enc or enc == "iso-8859-1":
-        try:
-            apparent = resp.apparent_encoding or "utf-8"
-            resp.encoding = apparent
-        except Exception:
-            resp.encoding = "utf-8"
-    return resp.text or ""
 
 
 def normalize_url(url: str) -> str:
@@ -76,14 +60,6 @@ def make_article_id(url: str) -> str:
     if not path:
         path = "/"
     return f"chinanews:{path}"
-
-
-def html_to_markdown(html_str: str) -> str:
-    text = re.sub(r"<(?:/)?p[^>]*>", "\n\n", html_str or "", flags=re.I)
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.I)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = re.sub(r"\n{3,}", "\n\n", text).strip()
-    return text
 
 
 def _first(soup: BeautifulSoup, selectors: Sequence[str]) -> Optional[Any]:
@@ -137,10 +113,7 @@ def _parse_datetime_str(value: Optional[str]) -> Optional[datetime]:
 
 
 def _strip_site_suffix(title: str) -> str:
-    s = title.strip()
-    s = re.sub(r"[-|_]\s*中国新闻网.*$", "", s)
-    s = re.sub(r"[-|_]\s*中新网.*$", "", s)
-    return s.strip()
+    return strip_site_suffix(title, "中国新闻网", "中新网")
 
 
 def _date_from_url(url: str) -> Optional[datetime]:
@@ -169,7 +142,7 @@ def _fetch_page_html(page: int, sess: requests.Session) -> str:
     url = f"https://www.chinanews.com.cn/scroll-news/news{page}.html"
     resp = sess.get(url, timeout=15)
     resp.raise_for_status()
-    return _response_text(resp)
+    return decode_response(resp)
 
 
 def _extract_max_page(soup: BeautifulSoup) -> int:
@@ -294,7 +267,7 @@ def _fetch_detail_html(url: str) -> str:
     sess = _session()
     resp = sess.get(normalize_url(url), timeout=15)
     resp.raise_for_status()
-    return _response_text(resp)
+    return decode_response(resp)
 
 
 def _parse_detail_html(html_text: str, url: str) -> Dict[str, Any]:

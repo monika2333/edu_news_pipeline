@@ -12,6 +12,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from src.adapters.http_common import build_session, decode_response, html_to_markdown
 from src.adapters.http_linked_page_rows import build_detail_update as build_linked_detail_update
 from src.adapters.http_linked_page_rows import feed_item_to_row as linked_feed_item_to_row
 
@@ -38,33 +39,16 @@ class FeedItemLike:
 
 
 def _session() -> requests.Session:
-    s = requests.Session()
-    s.trust_env = False
-    s.headers.update(
+    return build_session(
         {
             "User-Agent": USER_AGENT,
             "Referer": BASE_URL,
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Connection": "keep-alive",
-        }
+        },
+        trust_env=False,
     )
-    return s
-
-
-def _response_text(resp: requests.Response) -> str:
-    # Prefer apparent encoding to handle GBK-based pages
-    try:
-        enc = (resp.encoding or "").lower()
-    except Exception:
-        enc = ""
-    if not enc or enc == "iso-8859-1":
-        try:
-            apparent = resp.apparent_encoding or "utf-8"
-            resp.encoding = apparent
-        except Exception:
-            resp.encoding = "utf-8"
-    return resp.text or ""
 
 
 def normalize_url(url: str) -> str:
@@ -213,7 +197,7 @@ def list_items(limit: Optional[int] = None, pages: Optional[int] = None, *, exis
             if not items:
                 try:
                     resp = _request(sess, start_url, params={"topsearch": kw, "page": page}, timeout=timeout)
-                    html = _response_text(resp)
+                    html = decode_response(resp)
                     items = _parse_listing_html(html, start_url)
                 except Exception:
                     items = []
@@ -271,15 +255,6 @@ def _find_content_container(soup: BeautifulSoup) -> Optional[Any]:
     return best
 
 
-def html_to_markdown(html_str: str) -> str:
-    # Lightweight conversion similar to other adapters
-    text = re.sub(r"<(?:/)?p[^>]*>", "\n\n", html_str or "", flags=re.I)
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.I)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = re.sub(r"\n{3,}", "\n\n", text).strip()
-    return text
-
-
 def _extract_detail_title(soup: BeautifulSoup) -> Optional[str]:
     h1 = soup.find("h1")
     h1_text = h1.get_text(strip=True) if h1 else ""
@@ -316,7 +291,7 @@ def fetch_detail(url: str) -> Dict[str, Any]:
     for attempt in range(3):
         try:
             resp = _request(sess, normalize_url(url), timeout=timeout)
-            html_text = _response_text(resp)
+            html_text = decode_response(resp)
             break
         except Exception as exc:
             last_exc = exc

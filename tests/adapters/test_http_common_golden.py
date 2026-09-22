@@ -1,12 +1,15 @@
-"""黄金快照：逐字锁定各来源 html_to_markdown 的现行输出，作为抽共享 helper 的行为基准。
+"""黄金快照：锁定各来源 html_to_markdown 的输出，作为共享 helper 的行为契约。
 
-生成方式：用各 adapter 抽取前的现行实现，对本文件的 fixture 输出逐字记录。
-抽取共享 helper 后本文件预期出现两类差异，且仅限两类：
-1. 图片段（`![...](...)`）消失——流水线纯文字，剥图是既定决策；
-2. 裸正则家族（http_chinadaily / http_chinaeducationdaily / http_chinanews）
-   收敛到 BeautifulSoup 统一版：实体被解码、script/style 文本不再泄漏、
-   块级结构加空行。
-出现任何其他差异，说明收敛破坏了现有行为，必须查明而不是改快照迁就。
+历史：本文件最初在抽取共享 helper 之前生成，逐字记录了 9 个来源的现行
+输出（BeautifulSoup 族与裸正则族并存、图片转 markdown 语法）。2026-09
+收敛到 `http_common.html_to_markdown` 后更新为统一值，差异仅两类（均有
+既定决策背书）：图片段消失（流水线纯文字，剥图）；裸正则家族
+（http_chinadaily / http_chinaeducationdaily / http_chinanews）实体解码、
+script/style 文本不再泄漏、块级结构加空行。
+
+维护规则：9 个来源在本文件的 CONTENT 快照必须始终相同——出现分叉说明
+有人又在某个 adapter 里改了本地行为而不是改共享实现；NOISE/TOPIC 快照
+记录的是各站 extra_unwanted 与站点特性，允许不同。
 """
 
 from __future__ import annotations
@@ -40,40 +43,35 @@ TOPIC_IMG_FIXTURE = (
     '<p>图说在前。</p><img src="http://example.com/std.jpg" topic="科技图片说明">'
 )
 
-_GOLDEN_B = (
+_CONTENT_GOLDEN = (
     "第一段，含 & 符号与\xa0不间断空格。\n\n"
     "第二段\n\n折行后是 加粗词。\n\n"
-    "![配图](http://example.com/pic.jpg)\n\n"
     "引用内容\n\n列表项一\n\n列表项二"
-)
-_GOLDEN_R = (
-    "第一段，含 &amp; 符号与&nbsp;不间断空格。\n\n"
-    "第二段\n折行后是 加粗词。\n\n"
-    "var tracking = 1;.x { color: red; }引用内容列表项一列表项二"
 )
 
 CONTENT_GOLDENS = {
-    "http_bbtnews": _GOLDEN_B,
-    "http_beijinghao": _GOLDEN_B,
-    "http_btime": _GOLDEN_B,
-    "http_chinadaily": _GOLDEN_R,
-    "http_chinaeducationdaily": _GOLDEN_R,
-    "http_chinanews": _GOLDEN_R,
-    "http_chinanews_xj": _GOLDEN_B,
-    "http_stdaily": _GOLDEN_B,
-    "http_xinhua": _GOLDEN_B,
+    "http_bbtnews": _CONTENT_GOLDEN,
+    "http_beijinghao": _CONTENT_GOLDEN,
+    "http_btime": _CONTENT_GOLDEN,
+    "http_chinadaily": _CONTENT_GOLDEN,
+    "http_chinaeducationdaily": _CONTENT_GOLDEN,
+    "http_chinanews": _CONTENT_GOLDEN,
+    "http_chinanews_xj": _CONTENT_GOLDEN,
+    "http_stdaily": _CONTENT_GOLDEN,
+    "http_xinhua": _CONTENT_GOLDEN,
 }
 
 NOISE_GOLDENS = {
-    # 北京号剥离站点噪声区（分享/推荐/编辑等），北京时间只剥 iframe，
-    # 所以同一段输入下两者可见文本不同是各自现行行为
+    # 北京号剥离站点噪声区（分享/推荐/编辑等）；北京时间只剥 iframe，
+    # share/related 等区文本保留——差异来自各自的 extra_unwanted 配置
     "http_beijinghao": "正文保留。",
     "http_btime": "正文保留。\n\n分享组件\n\n相关阅读\n\n编辑：某人",
 }
 
 TOPIC_GOLDENS = {
-    # 科技日报图片说明取自 topic 属性；剥图决策后该行应整体消失
-    "http_stdaily": "图说在前。\n\n![科技图片说明](http://example.com/std.jpg)",
+    # 科技日报的图片说明原本取自 topic 属性转 markdown；剥图决策后图片
+    # 整体消失，该属性不再参与任何转换
+    "http_stdaily": "图说在前。",
 }
 
 

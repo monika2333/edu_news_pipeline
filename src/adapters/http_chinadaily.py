@@ -12,6 +12,7 @@ import time
 import requests
 from bs4 import BeautifulSoup
 
+from src.adapters.http_common import build_session, decode_response, html_to_markdown
 from src.adapters.http_linked_page_rows import build_detail_update as build_linked_detail_update
 from src.adapters.http_linked_page_rows import feed_item_to_row as linked_feed_item_to_row
 
@@ -39,28 +40,12 @@ class FeedItemLike:
 
 
 def _session() -> requests.Session:
-    s = requests.Session()
-    s.headers.update({
+    return build_session({
         "User-Agent": USER_AGENT,
         "Accept-Language": "zh-CN,zh;q=0.9",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Referer": "https://cn.chinadaily.com.cn/",
     })
-    return s
-
-
-def _response_text(resp: requests.Response) -> str:
-    try:
-        enc = (resp.encoding or "").lower()
-    except Exception:
-        enc = ""
-    if not enc or enc == "iso-8859-1":
-        try:
-            apparent = resp.apparent_encoding or "utf-8"
-            resp.encoding = apparent
-        except Exception:
-            resp.encoding = "utf-8"
-    return resp.text or ""
 
 
 def absolute_url(base_url: str, link: Optional[str]) -> Optional[str]:
@@ -84,15 +69,6 @@ def make_article_id(url: str) -> str:
     if not path:
         path = "/"
     return f"chinadaily:{path}"
-
-
-def html_to_markdown(html_str: str) -> str:
-    # A simple and robust conversion similar to ChinaNews adapter
-    text = re.sub(r"<(?:/)?p[^>]*>", "\n\n", html_str or "", flags=re.I)
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.I)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = re.sub(r"\n{3,}", "\n\n", text).strip()
-    return text
 
 
 # --- Listing page parsing ---
@@ -120,7 +96,7 @@ def _fetch_listing_html(session: requests.Session, page_url: str, timeout: float
         try:
             resp = session.get(page_url, timeout=timeout)
             resp.raise_for_status()
-            return _response_text(resp)
+            return decode_response(resp)
         except Exception as exc:
             last_exc = exc
             time.sleep(0.5 * (2 ** attempt))
@@ -255,7 +231,7 @@ def _fetch_detail_html(session: requests.Session, url: str, timeout: float) -> s
         try:
             resp = session.get(normalize_url(url), timeout=timeout)
             resp.raise_for_status()
-            return _response_text(resp)
+            return decode_response(resp)
         except Exception as exc:
             last_exc = exc
             time.sleep(0.5 * (2 ** attempt))

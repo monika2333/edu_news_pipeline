@@ -1,13 +1,13 @@
 // Submission Archive JS - Prior Matches Modal (反馈条目已报送命中明细)
 //
-// 反馈条目卡片上的「已报送 / 疑似已报送 / 未报送(dismissed)」标签点开本弹窗，展示
-// 该条目命中的全部更早综报/晚报条目（GET /items/{id}/prior-matches）。「未报送」
-// 有两种：dismissed（人工判定不是同一条）可点击、有明细可看；无命中的是纯展示
-// span、不可点击（委托只匹配 button），也没有明细可看。标签只在反馈报告上渲染，
+// 反馈条目卡片上的「已报送 / 疑似已报送 / 未报送」标签点开本弹窗，展示该条目命中的
+// 全部更早综报/晚报条目（GET /items/{id}/prior-matches）。「未报送」有两种：
+// dismissed（人工判定不是同一条）有明细可看；无命中（自动匹配可能因标题正文被改
+// 而漏判）没有明细可看，但可在弹窗底部「标记为已报送」。标签只在反馈报告上渲染，
 // 其他报别不会触发本弹窗。弹窗底部是人工判定入口：decidable 的条目未判时给
-// 「不是同一条 / 确认已报送」，已判时给说明文字 +「撤销判断」
-// （POST /items/{id}/prior-match-decision）；成功后不关闭弹窗，就地重渲染底部，
-// 并经 browser.js 的 applyPriorMatchDecisionResult 局部更新背后的卡片。
+// 「不是同一条 / 确认已报送」，无命中条目给「标记为已报送」，已判时给说明文字
+// +「撤销判断」（POST /items/{id}/prior-match-decision）；成功后不关闭弹窗，
+// 就地重渲染底部，并经 browser.js 的 applyPriorMatchDecisionResult 局部更新背后的卡片。
 // 本脚本必须先于 content_drawer.js 加载：原文抽屉盖在弹窗上时 Escape 先关抽屉，
 // 依赖这里的 keydown 处理器先注册并主动跳过。
 
@@ -52,12 +52,25 @@ function priorMatchEntryHtml(entry) {
 
 // 弹窗底部按 prior_match 渲染判定入口：decidable === false（确定性命中）整个隐藏，
 // 后端也会拒绝（422）；未判给「不是同一条 / 确认已报送」（沿用回链队列的叫法），
-// 已判给说明文字 +「撤销判断」
+// 已判给说明文字 +「撤销判断」。无命中条目（prior_match 为 null）只给
+// 「标记为已报送」：这类条目只有标记与撤销两种动作，「不是同一条」无从谈起。
+// 弹窗只能从条目标签进入，而「未报送」标签仅在反馈报告判定结束后可点，
+// 这里复读 activeReportType / activeReportPriorMatchPending 只是兜底防御
 function renderPriorMatchesFooter(item) {
     const { footer } = getPriorMatchesEls();
     if (!footer) return;
     const priorMatch = item ? item.prior_match : null;
-    if (!priorMatch || priorMatch.decidable === false) {
+    if (!priorMatch) {
+        if (!item || activeReportType !== 'feedback' || activeReportPriorMatchPending) {
+            footer.hidden = true;
+            footer.innerHTML = '';
+            return;
+        }
+        footer.hidden = false;
+        footer.innerHTML = '<button class="btn btn-primary" id="archive-prior-matches-confirm" type="button">标记为已报送</button>';
+        return;
+    }
+    if (priorMatch.decidable === false) {
         footer.hidden = true;
         footer.innerHTML = '';
         return;
@@ -105,7 +118,7 @@ async function submitPriorMatchDecision(decision) {
 async function openPriorMatchesModal(itemId) {
     const els = getPriorMatchesEls();
     const item = activeReportItems.find(entry => String(entry.id) === String(itemId));
-    // 兜底：标签只出现在反馈报告上（已报送/疑似/dismissed 三种可点击），其他报别不渲染也就点不到
+    // 兜底：标签只出现在反馈报告上（四种标签均可点击），其他报别不渲染也就点不到
     if (!els.modal || !item) return;
     priorMatchesState.open = true;
     priorMatchesState.itemId = item.id;
@@ -165,7 +178,8 @@ function setupPriorMatchesModal() {
             submitPriorMatchDecision(null);
         }
     });
-    // 标签会被轮询的局部更新替换，必须用事件委托；无命中的「未报送」是 span，天然点不进这里
+    // 标签会被轮询的局部更新替换，必须用事件委托；四种已报送标签（含无命中的
+    // 「未报送」）都是 button，统一从这里进入弹窗
     document.getElementById('archive-detail')?.addEventListener('click', event => {
         const pill = event.target.closest('button.archive-prior-match-pill');
         if (pill) openPriorMatchesModal(pill.dataset.itemId);

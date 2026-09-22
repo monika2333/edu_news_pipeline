@@ -237,15 +237,23 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 人工判定属于反馈条目自身的权威属性，由人工判定接口写入
 `submitted_report_items.prior_match_decision`（`submitted` / `not_submitted`）、
-`prior_match_decided_by` 和 `prior_match_decided_at`。撤销时三列同时置空。判定只在
-条目“仅有向量命中”时被采信：无匹配时没有可判对象，存在 `article` 或
-`title_hash` 确定性命中时则始终以确定性结果为准。
+`prior_match_decided_by` 和 `prior_match_decided_at`。撤销时三列同时置空。判定接口只
+对“已报送判定已结束的反馈报告”的条目开放：综报/晚报条目本身就是报送物、没有已报送
+概念；判定进行中时命中结果尚未落库，放行的人工结论会与随后的真实命中混在一起。
+条目可判定的范围按命中情况分两档：仅有向量命中时三种判定都可做（确认已报送 /
+判为未报送 / 撤销）；无任何命中时只允许「确认已报送」与撤销——这类条目默认就是
+未报送，没有可否定的对象，但它覆盖了标题正文被改动导致自动匹配三层全落空、
+实际却已报送过的场景。存在 `article` 或 `title_hash` 确定性命中时始终以确定性
+结果为准，不接受人工判定。
 
 条目级 `prior_match.status` 四态为：确定性命中或向量命中被人判为已报送时是
 `submitted`；未人工判定的纯向量命中是 `suspected`；纯向量命中被人判为未报送时是
-`dismissed`；无任何命中时 `prior_match` 为空，页面在报告级判定结束后展示“未报送”。
-`decidable` 明确表示当前命中是否可由人判定，仅纯向量命中为 `true`；`decision` 只在
-这种情况下返回已保存的人工结论。因此即使后续重算匹配明细，已保存的人工结论也不会丢失。
+`dismissed`；无任何命中时 `prior_match` 为空，页面在报告级判定结束后展示可点击的
+“未报送”，是人工标记为已报送的入口；无命中但被人工确认为已报送时摘要返回
+`submitted`（`top_similarity` 为空、`count` 为 0），撤销确认后摘要随之消失、
+`prior_match` 回到空。`decidable` 明确表示当前命中是否可由人判定，纯向量命中与
+无命中条目均为 `true`；`decision` 只在 `decidable` 为真时返回已保存的人工结论。
+因此即使后续重算匹配明细，已保存的人工结论也不会丢失。
 
 `submitted_reports.prior_match_completed_at` 是报告级的判定终止信号。仅需执行上述判定
 的报别在判定流程终止时写入当前时间，正常完成、提前返回与异常退出都必须写入；历史

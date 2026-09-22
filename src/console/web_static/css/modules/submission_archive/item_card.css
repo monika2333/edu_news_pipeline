@@ -306,19 +306,14 @@
     color: #15803d;
 }
 
-/* 未报送才是真正需要编辑注意的，用偏红色调，比前两种更醒目；纯展示不可点击 */
+/* 未报送才是真正需要编辑注意的，用偏红色调，比前两种更醒目；
+   无命中的「未报送」也可点击（人工标记为已报送的入口），保持指针与 hover */
 .archive-prior-match-pill.is-unmatched {
     background: #fee2e2;
     color: #b91c1c;
-    cursor: default;
 }
 
-.archive-prior-match-pill.is-unmatched:hover {
-    filter: none;
-}
-
-/* 人工判定为未报送（dismissed）：配色同 is-unmatched，但背后有明细可查、判定可撤销，
-   保持指针与 hover，与纯展示的无命中「未报送」区分，两者不要合并 */
+/* 人工判定为未报送（dismissed）：配色同 is-unmatched，背后有明细可查、判定可撤销 */
 .archive-prior-match-pill.is-dismissed {
     background: #fee2e2;
     color: #b91c1c;

@@ -6,6 +6,7 @@ from typing import Any, Mapping, Optional, Sequence
 import psycopg
 
 from src.adapters.db_postgres_submission_archive._base import (
+    PRIOR_MATCH_REPORT_TYPES,
     PriorMatchDecisionMutationResult,
 )
 from src.domain.report_type import NEWS_REPORT_TYPES
@@ -109,9 +110,12 @@ def fetch_item_duplicate_match_summaries(
     cur.execute(
         """
         select
-            m.item_id,
+            i.id as item_id,
             case
-                when bool_or(m.match_method in ('article', 'title_hash'))
+                when coalesce(
+                    bool_or(m.match_method in ('article', 'title_hash')),
+                    false
+                )
                 then 'submitted'
                 when i.prior_match_decision = 'submitted'
                 then 'submitted'
@@ -119,8 +123,9 @@ def fetch_item_duplicate_match_summaries(
                 then 'dismissed'
                 else 'suspected'
             end as status,
-            not bool_or(
-                m.match_method in ('article', 'title_hash')
+            not coalesce(
+                bool_or(m.match_method in ('article', 'title_hash')),
+                false
             ) as decidable,
             case
                 when bool_or(m.match_method in ('article', 'title_hash'))
@@ -128,11 +133,12 @@ def fetch_item_duplicate_match_summaries(
                 else i.prior_match_decision
             end as decision,
             max(m.similarity) as top_similarity,
-            count(*) as match_count
-        from submission_item_duplicate_matches m
-        join submitted_report_items i on i.id = m.item_id
-        where m.item_id = any(%s::uuid[])
-        group by m.item_id, i.prior_match_decision
+            count(m.id) as match_count
+        from submitted_report_items i
+        left join submission_item_duplicate_matches m on m.item_id = i.id
+        where i.id = any(%s::uuid[])
+        group by i.id, i.prior_match_decision
+        having count(m.id) > 0 or i.prior_match_decision is not null
         """,
         (normalized_ids,),
     )
@@ -141,7 +147,11 @@ def fetch_item_duplicate_match_summaries(
             "status": row["status"],
             "decidable": bool(row["decidable"]),
             "decision": row["decision"],
-            "top_similarity": float(row["top_similarity"]),
+            "top_similarity": (
+                float(row["top_similarity"])
+                if row["top_similarity"] is not None
+                else None
+            ),
             "count": int(row["match_count"]),
         }
         for row in cur.fetchall()
@@ -168,9 +178,33 @@ def set_item_prior_match_decision(
     if not cur.fetchone():
         return {"state": "not_found", "prior_match": None}
 
+    # 人工判定只对「已报送判定已结束」的反馈报告开放：综报/晚报条目本身就是
+    # 报送物、没有已报送概念；判定进行中时命中结果尚未落库，此时放行的人工
+    # 结论会在判定完成后与真实命中混在一起。
+    cur.execute(
+        """
+        select r.report_type, r.prior_match_completed_at
+        from submitted_report_items i
+        join submitted_reports r on r.id = i.report_id
+        where i.id = %s
+        """,
+        (item_id,),
+    )
+    report_row = cur.fetchone()
+    if report_row is None:
+        return {"state": "not_found", "prior_match": None}
+    if (
+        report_row["report_type"] not in PRIOR_MATCH_REPORT_TYPES
+        or report_row["prior_match_completed_at"] is None
+    ):
+        return {"state": "not_decidable", "prior_match": None}
+
     current = fetch_item_duplicate_match_summaries(cur, [item_id]).get(item_id)
-    if not current or not current["decidable"]:
+    if current is not None and not current["decidable"]:
         return {"state": "not_decidable", "prior_match": current}
+    if current is None and decision == "not_submitted":
+        # 无命中条目没有可否定的对象：只允许人工确认已报送或撤销确认
+        return {"state": "not_decidable", "prior_match": None}
 
     cur.execute(
         """
@@ -190,8 +224,9 @@ def set_item_prior_match_decision(
         (decision, decision, actor_user_id, decision, item_id),
     )
     refreshed = fetch_item_duplicate_match_summaries(cur, [item_id]).get(item_id)
-    if not refreshed:
+    if refreshed is None and decision is not None:
         raise RuntimeError("Prior-match summary disappeared during update")
+    # 撤销无命中条目的确认后摘要合法地消失（无命中且无判定 → 无 prior_match）
     return {"state": "updated", "prior_match": refreshed}
 
 

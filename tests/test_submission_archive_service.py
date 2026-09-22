@@ -497,6 +497,32 @@ def test_decide_prior_match_maps_adapter_outcomes(
         )
 
 
+def test_decide_prior_match_passes_through_empty_summary_on_revocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 撤销无命中条目的人工确认后摘要合法为空（无命中且无判定 → 无 prior_match）
+    class DecisionNamespace:
+        def set_item_prior_match_decision(
+            self,
+            **_kwargs: Any,
+        ) -> dict[str, Any]:
+            return {"state": "updated", "prior_match": None}
+
+    class DecisionAdapter:
+        def __init__(self) -> None:
+            self.submission_archive = DecisionNamespace()
+
+    monkeypatch.setattr(submission_archive_service, "get_adapter", DecisionAdapter)
+
+    result = submission_archive_service.decide_prior_match(
+        item_id="item-1",
+        decision=None,
+        user=_editor(),
+    )
+
+    assert result == {"item_id": "item-1", "prior_match": None}
+
+
 def test_decide_prior_match_rejects_unknown_decision() -> None:
     with pytest.raises(ValueError, match="不支持"):
         submission_archive_service.decide_prior_match(

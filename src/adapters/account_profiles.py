@@ -14,6 +14,7 @@ from src.adapters import (
     http_tencent,
     http_toutiao,
 )
+from src.adapters.http_common import decode_response
 
 
 MAX_ACCOUNT_NAME_LENGTH = 200
@@ -136,7 +137,7 @@ def _resolve_beijinghao(profile_url: str, *, timeout: float) -> str:
         headers={"Referer": profile_url},
         timeout=timeout,
     )
-    soup = BeautifulSoup(http_beijinghao._response_text(response), "html.parser")
+    soup = BeautifulSoup(decode_response(response), "html.parser")
     name = _name(soup.title.get_text(" ", strip=True) if soup.title else "")
     if name is None:
         raise AccountNameUnavailable("页面里没有找到账号名")

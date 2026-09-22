@@ -12,6 +12,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 import requests
 from bs4 import BeautifulSoup, Tag
 
+from src.adapters.http_common import build_session, decode_response, html_to_markdown
 from src.adapters.http_linked_page_rows import build_detail_update as build_linked_detail_update
 from src.adapters.http_linked_page_rows import feed_item_to_row as linked_feed_item_to_row
 
@@ -56,21 +57,12 @@ class FeedItemLike:
 
 
 def _session() -> requests.Session:
-    session = requests.Session()
-    session.headers.update(
+    return build_session(
         {
             "Accept-Language": "zh-CN,zh;q=0.9",
             "User-Agent": USER_AGENT,
         }
     )
-    return session
-
-
-def _response_text(response: requests.Response) -> str:
-    encoding = (response.encoding or "").lower()
-    if not encoding or encoding == "iso-8859-1":
-        response.encoding = response.apparent_encoding or "utf-8"
-    return response.text or ""
 
 
 def normalize_url(url: str) -> str:
@@ -245,7 +237,7 @@ def list_items(
             try:
                 response = session.get(page_url, timeout=DEFAULT_TIMEOUT)
                 response.raise_for_status()
-                items = _parse_list_html(_response_text(response), page_url, cutoff=cutoff)
+                items = _parse_list_html(decode_response(response), page_url, cutoff=cutoff)
             except Exception as exc:
                 LOGGER.warning("stdaily list page fetch failed: %s p%s (%s)", name, page, exc)
                 break
@@ -283,26 +275,6 @@ def list_items(
         file=sys.stderr,
     )
     return results
-
-
-def html_to_markdown(html_str: str) -> str:
-    soup = BeautifulSoup(html_str or "", "html.parser")
-    for unwanted in soup.select("script, style, noscript"):
-        unwanted.decompose()
-    for image in soup.find_all("img"):
-        src = str(image.get("src") or "").strip()
-        # 科技日报的图片说明放在 topic 属性，alt 常为空。
-        alt = str(image.get("alt") or "").strip() or str(image.get("topic") or "").strip()
-        image.replace_with(f"\n\n![{alt}]({src})\n\n" if src else "")
-    for line_break in soup.find_all("br"):
-        line_break.replace_with("\n")
-    for block in soup.find_all(["p", "div", "h1", "h2", "h3", "li", "blockquote"]):
-        block.insert_before("\n\n")
-        block.insert_after("\n\n")
-
-    lines = [re.sub(r"[ \t\r\f\v]+", " ", line).strip() for line in soup.get_text().splitlines()]
-    paragraphs = [line for line in lines if line]
-    return "\n\n".join(paragraphs)
 
 
 def _extract_title(soup: BeautifulSoup) -> str:
@@ -358,7 +330,7 @@ def fetch_detail(url: str) -> dict[str, Any]:
     session = _session()
     response = session.get(normalize_url(url), timeout=DEFAULT_TIMEOUT)
     response.raise_for_status()
-    return _parse_detail_html(_response_text(response), url)
+    return _parse_detail_html(decode_response(response), url)
 
 
 def feed_item_to_row(

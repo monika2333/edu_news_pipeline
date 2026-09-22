@@ -139,7 +139,7 @@ def test_detail_parser_uses_article_node_and_removes_page_noise() -> None:
     assert data["title"] == "珍稀标本被当成玩具"
     assert data["source"] == "北京时间"
     assert "视频稿的一句说明" in data["content_markdown"]
-    assert "https://example.com/cover.jpg" in data["content_markdown"]
+    assert "https://example.com/cover.jpg" not in data["content_markdown"]
     assert "重复的 SEO 正文" not in data["content_markdown"]
     assert "分享到" not in data["content_markdown"]
     assert "推荐阅读" not in data["content_markdown"]

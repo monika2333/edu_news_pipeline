@@ -10,6 +10,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 import requests
 from bs4 import BeautifulSoup, Tag
 
+from src.adapters.http_common import build_session, decode_response, html_to_markdown, strip_site_suffix
 from src.adapters.http_linked_page_rows import build_detail_update as build_linked_detail_update
 from src.adapters.http_linked_page_rows import feed_item_to_row as linked_feed_item_to_row
 
@@ -42,21 +43,12 @@ class FeedItemLike:
 
 
 def _session() -> requests.Session:
-    session = requests.Session()
-    session.headers.update(
+    return build_session(
         {
             "Accept-Language": "zh-CN,zh;q=0.9",
             "User-Agent": USER_AGENT,
         }
     )
-    return session
-
-
-def _response_text(response: requests.Response) -> str:
-    encoding = (response.encoding or "").lower()
-    if not encoding or encoding == "iso-8859-1":
-        response.encoding = response.apparent_encoding or "utf-8"
-    return response.text or ""
 
 
 def normalize_url(url: str) -> str:
@@ -161,33 +153,11 @@ def list_items(
         consecutive_stop = 5
     consecutive_stop = max(0, consecutive_stop)
     items = _parse_list_html(
-        _response_text(response),
+        decode_response(response),
         existing_ids=existing_ids,
         existing_consecutive_stop=consecutive_stop,
     )
     return items[:limit] if limit is not None else items
-
-
-def html_to_markdown(html_str: str) -> str:
-    soup = BeautifulSoup(html_str or "", "html.parser")
-    for unwanted in soup.select("script, style, noscript"):
-        unwanted.decompose()
-    for image in soup.find_all("img"):
-        src = str(image.get("src") or "").strip()
-        alt = str(image.get("alt") or "").strip()
-        image.replace_with(f"\n\n![{alt}]({src})\n\n" if src else "")
-    for line_break in soup.find_all("br"):
-        line_break.replace_with("\n")
-    for block in soup.find_all(["p", "div", "h1", "h2", "h3", "li", "blockquote"]):
-        block.insert_before("\n\n")
-        block.insert_after("\n\n")
-
-    lines = [re.sub(r"[ \t\r\f\v]+", " ", line).strip() for line in soup.get_text().splitlines()]
-    paragraphs: list[str] = []
-    for line in lines:
-        if line:
-            paragraphs.append(line)
-    return "\n\n".join(paragraphs)
 
 
 def _clean_content_node(content_node: Tag) -> Tag:
@@ -210,7 +180,7 @@ def _clean_content_node(content_node: Tag) -> Tag:
 
 
 def _strip_site_suffix(title: str) -> str:
-    return re.sub(r"[-_|]\s*中新网(?:·新疆|新疆)?.*$", "", title or "").strip()
+    return strip_site_suffix(title, "中新网")
 
 
 def _parse_detail_html(html_text: str, url: str) -> dict[str, Any]:
@@ -252,7 +222,7 @@ def fetch_detail(url: str) -> dict[str, Any]:
     session = _session()
     response = session.get(normalize_url(url), timeout=15)
     response.raise_for_status()
-    return _parse_detail_html(_response_text(response), url)
+    return _parse_detail_html(decode_response(response), url)
 
 
 def feed_item_to_row(

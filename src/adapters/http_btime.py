@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 import requests
 from bs4 import BeautifulSoup, Tag
 
+from src.adapters.http_common import build_session, decode_response, html_to_markdown as common_html_to_markdown
 from src.adapters.http_linked_page_rows import build_detail_update as build_linked_detail_update
 from src.adapters.http_linked_page_rows import feed_item_to_row as linked_feed_item_to_row
 
@@ -43,22 +44,13 @@ class FeedItemLike:
 
 
 def _session() -> requests.Session:
-    session = requests.Session()
-    session.headers.update(
+    return build_session(
         {
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "zh-CN,zh;q=0.9",
             "User-Agent": USER_AGENT,
         }
     )
-    return session
-
-
-def _response_text(response: requests.Response) -> str:
-    encoding = (response.encoding or "").lower()
-    if not encoding or encoding == "iso-8859-1":
-        response.encoding = response.apparent_encoding or "utf-8"
-    return response.text or ""
 
 
 def profile_url(uid: str) -> str:
@@ -212,20 +204,7 @@ def list_items(
 
 
 def html_to_markdown(html_str: str) -> str:
-    soup = BeautifulSoup(html_str or "", "html.parser")
-    for unwanted in soup.select("script, style, noscript, iframe"):
-        unwanted.decompose()
-    for image in soup.find_all("img"):
-        src = str(image.get("src") or image.get("data-src") or "").strip()
-        alt = str(image.get("alt") or "").strip()
-        image.replace_with(f"\n\n![{alt}]({src})\n\n" if src else "")
-    for line_break in soup.find_all("br"):
-        line_break.replace_with("\n")
-    for block in soup.find_all(["p", "div", "figure", "h1", "h2", "h3", "li", "blockquote"]):
-        block.insert_before("\n\n")
-        block.insert_after("\n\n")
-    lines = [re.sub(r"[ \t\r\f\v]+", " ", line).strip() for line in soup.get_text().splitlines()]
-    return "\n\n".join(line for line in lines if line)
+    return common_html_to_markdown(html_str, extra_unwanted="iframe")
 
 
 def _clean_content_node(content_node: Tag) -> Tag:
@@ -286,7 +265,7 @@ def fetch_detail(url: str) -> dict[str, Any]:
     session = _session()
     response = session.get(normalize_url(url), timeout=15)
     response.raise_for_status()
-    return _parse_detail_html(_response_text(response), url)
+    return _parse_detail_html(decode_response(response), url)
 
 
 def feed_item_to_row(

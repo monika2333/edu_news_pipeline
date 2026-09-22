@@ -13,6 +13,7 @@ from urllib.parse import urlparse, unquote
 import requests
 from bs4 import BeautifulSoup
 from bs4.element import Comment
+from src.adapters.http_common import build_session
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -91,8 +92,7 @@ class ArticleDetail:
 
 
 def _session() -> requests.Session:
-    sess = requests.Session()
-    sess.headers.update(
+    return build_session(
         {
             "User-Agent": USER_AGENT,
             "Accept-Language": DEFAULT_LOCALE,
@@ -103,7 +103,6 @@ def _session() -> requests.Session:
             "Connection": "keep-alive",
         }
     )
-    return sess
 
 
 def parse_author_id(raw: str) -> str:

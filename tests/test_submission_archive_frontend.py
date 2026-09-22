@@ -1181,8 +1181,14 @@ def test_bulk_discard_carries_duty_scope_in_preview_and_apply() -> None:
     assert "duty_unprocessed_only: dutyUnprocessedOnly" in apply_body
     # 确认弹窗文案在过滤开启时必须体现收窄后的范围
     assert "const scopeSuffix = dutyUnprocessedOnly ? '值班编辑未处理的' : '';" in body
-    assert "`检索到的 ${preview.matched} 条${scopeSuffix}`" in body
-    assert "`全部 ${preview.matched} 条${scopeSuffix}`" in body
+    # 细化筛选启用时文案要带上筛选描述，且批量放弃请求与列表同口径
+    assert (
+        "const refineBody = typeof protoFilterRequestBody === 'function' "
+        "? protoFilterRequestBody() : {};" in body
+    )
+    assert body.count("...refineBody") == 2
+    assert "`检索到的 ${preview.matched} 条${refineSuffix}${scopeSuffix}`" in body
+    assert "`符合条件 ${preview.matched} 条${refineSuffix}${scopeSuffix}`" in body
 
     # 「清理旧新闻」模态框按 created_before 跨分类清理，与当前筛选视图无关，不带该参数
     cleanup_source = source.split("let cleanupPreviewSeq", maxsplit=1)[1]

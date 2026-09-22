@@ -1008,6 +1008,11 @@ class PostgresAdapter:
         actor_user_id: str,
         duty_unprocessed_only: bool = False,
         request_id: Optional[str] = None,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> List[Dict[str, Any]]:
         with self.transaction() as cur:
             targets = (
@@ -1020,6 +1025,11 @@ class PostgresAdapter:
                     created_before=created_before,
                     report_type=report_type,
                     duty_unprocessed_only=duty_unprocessed_only,
+                    hour_from=hour_from,
+                    hour_to=hour_to,
+                    duplicate_state=duplicate_state,
+                    min_score=min_score,
+                    max_score=max_score,
                 )
             )
             updates = [

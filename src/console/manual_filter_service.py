@@ -33,6 +33,11 @@ def list_candidates(
     view_mode: Optional[str] = None,
     report_type: str = DEFAULT_REPORT_TYPE,
     duty_unprocessed_only: bool = False,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> Dict[str, Any]:
     return _list_candidates(
         owner_user_id=owner_user_id,
@@ -47,6 +52,11 @@ def list_candidates(
         view_mode=view_mode,
         report_type=report_type,
         duty_unprocessed_only=duty_unprocessed_only,
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
     )
 
 def list_review(

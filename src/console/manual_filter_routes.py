@@ -22,6 +22,7 @@ from src.console.score_feedback_schemas import (
     ScoreFeedbackRequest,
     ScoreFeedbackResponse,
 )
+from src.console.manual_filter_helpers import normalize_candidate_refine_filters
 from src.console.security import ConsoleUser, require_admin_workspace_user
 from src.domain.report_type import NewsReportType
 
@@ -77,6 +78,11 @@ class BulkDiscardRequest(BaseModel):
     created_before: Optional[date] = None
     dry_run: bool = True
     duty_unprocessed_only: bool = False
+    hour_from: Optional[int] = None
+    hour_to: Optional[int] = None
+    duplicate_state: Optional[str] = None
+    min_score: Optional[float] = None
+    max_score: Optional[float] = None
 
 
 class ClearReviewBucketsRequest(BaseModel):
@@ -117,8 +123,23 @@ def list_candidates_api(
     view_mode: Optional[str] = None,
     report_type: str = "zongbao",
     duty_unprocessed_only: bool = False,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
     user: ConsoleUser = Depends(require_admin_workspace_user),
 ) -> Dict[str, Any]:
+    try:
+        refine_filters = normalize_candidate_refine_filters(
+            hour_from=hour_from,
+            hour_to=hour_to,
+            duplicate_state=duplicate_state,
+            min_score=min_score,
+            max_score=max_score,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return manual_filter_service.list_candidates(
         owner_user_id=str(user.user_id),
         limit=limit,
@@ -132,6 +153,7 @@ def list_candidates_api(
         view_mode=view_mode,
         report_type=report_type,
         duty_unprocessed_only=duty_unprocessed_only,
+        **refine_filters,
     )
 
 
@@ -318,6 +340,16 @@ def bulk_discard_api(
     request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ) -> Dict[str, int]:
     try:
+        refine_filters = normalize_candidate_refine_filters(
+            hour_from=req.hour_from,
+            hour_to=req.hour_to,
+            duplicate_state=req.duplicate_state,
+            min_score=req.min_score,
+            max_score=req.max_score,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
         return manual_filter_admin_service.bulk_discard_candidates(
             region=req.region,
             sentiment=req.sentiment,
@@ -327,6 +359,7 @@ def bulk_discard_api(
             duty_unprocessed_only=req.duty_unprocessed_only,
             actor=user,
             request_id=request_id,
+            **refine_filters,
         )
     except (ValueError, RuntimeError) as exc:
         _raise_manual_write_http_error(exc)

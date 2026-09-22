@@ -138,6 +138,11 @@ def fetch_manual_reviews(
     order_by_decided_at: bool = False,
     query: Optional[str] = None,
     duty_unprocessed_only: bool = False,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> Tuple[List[Dict[str, Any]], int]:
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
@@ -151,6 +156,11 @@ def fetch_manual_reviews(
         report_type=report_type,
         query=query,
         duty_unprocessed_only=duty_unprocessed_only,
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
     )
     where_sql = " AND ".join(clauses)
     order_by_sql = _manual_review_order_by(status=status, order_by_decided_at=order_by_decided_at)

@@ -116,6 +116,11 @@ class FakeDutyReviewAdapter:
         created_before: object = None,
         article_ids: Optional[Sequence[str]] = None,
         exclude_finalized: bool = False,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> tuple[list[dict[str, Any]], int]:
         del shift_id, limit, offset
         self.fetch_scopes.append((decision, exclude_finalized))
@@ -131,6 +136,11 @@ class FakeDutyReviewAdapter:
                 "sentiment": sentiment,
                 "query": query,
                 "created_before": created_before,
+                "hour_from": hour_from,
+                "hour_to": hour_to,
+                "duplicate_state": duplicate_state,
+                "min_score": min_score,
+                "max_score": max_score,
             }
         )
         row_ids = normalized_article_ids or [f"{decision}-1"]
@@ -599,6 +609,11 @@ def test_candidate_search_filters_are_forwarded_to_database(
             "sentiment": "positive",
             "query": "教育政策",
             "created_before": None,
+            "hour_from": None,
+            "hour_to": None,
+            "duplicate_state": None,
+            "min_score": None,
+            "max_score": None,
         }
     ]
 

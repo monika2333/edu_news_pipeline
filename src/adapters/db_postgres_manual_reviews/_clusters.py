@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import psycopg
 
 from src.adapters.db_postgres_manual_reviews._base import DUTY_UNPROCESSED_SQL
+from src.adapters.sql_candidate_filters import candidate_extra_filter_clauses
 
 
 def delete_manual_clusters(cur: psycopg.Cursor) -> int:
@@ -42,11 +43,26 @@ def fetch_manual_clusters(
     owner_user_id: str,
     bucket_key: Optional[str] = None,
     duty_unprocessed_only: bool = False,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
     duty_filter_sql = (
         f"AND {DUTY_UNPROCESSED_SQL}"
         if duty_unprocessed_only
         else ""
+    )
+    extra_clauses, extra_params = candidate_extra_filter_clauses(
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
+    )
+    extra_filter_sql = "".join(
+        f" AND {clause}" for clause in extra_clauses
     )
     query = f"""
         WITH cluster_base AS (
@@ -80,6 +96,7 @@ def fetch_manual_clusters(
                 ns.is_beijing_related,
                 ns.publish_time_iso,
                 ns.publish_time,
+                ns.created_at,
                 ns.score_details,
                 sf.feedback_type AS score_feedback_type,
                 sf.score_value AS score_feedback_score_value,
@@ -107,6 +124,7 @@ def fetch_manual_clusters(
               AND mr.status = 'pending'
               AND ns.status = 'ready_for_export'
               {duty_filter_sql}
+              {extra_filter_sql}
         ),
         clustered AS (
             SELECT
@@ -148,6 +166,7 @@ def fetch_manual_clusters(
             is_beijing_related,
             publish_time_iso,
             publish_time,
+            created_at,
             score_details,
             score_feedback_type,
             score_feedback_score_value,
@@ -169,7 +188,11 @@ def fetch_manual_clusters(
     """
     cur.execute(
         query,
-        (bucket_key, bucket_key, owner_user_id, bucket_key, bucket_key),
+        tuple(
+            [bucket_key, bucket_key, owner_user_id]
+            + extra_params
+            + [bucket_key, bucket_key]
+        ),
     )
     rows = cur.fetchall()
     return [dict(row) for row in rows]

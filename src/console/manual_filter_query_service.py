@@ -12,7 +12,11 @@ from typing import Any, Dict, List, Optional
 from src.adapters.db_postgres_core import get_adapter
 
 from .manual_filter_cluster import cluster_pending, refresh_clusters
-from .manual_filter_helpers import DEFAULT_REPORT_TYPE, _normalize_report_type
+from .manual_filter_helpers import (
+    DEFAULT_REPORT_TYPE,
+    _normalize_report_type,
+    normalize_candidate_refine_filters,
+)
 from .manual_filter_serializers import serialize_manual_filter_item
 from .submission_archive_service import attach_duplicate_badges
 
@@ -32,6 +36,7 @@ def _paginate_by_status(
     order_by_decided_at: bool = False,
     query: Optional[str] = None,
     duty_unprocessed_only: bool = False,
+    refine_filters: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     adapter = get_adapter()
     limit = max(1, min(int(limit or 30), 200))
@@ -53,6 +58,7 @@ def _paginate_by_status(
         "order_by_decided_at": order_by_decided_at,
         "query": (query or "").strip() or None,
         "duty_unprocessed_only": duty_unprocessed_only,
+        **(refine_filters or {}),
     }
     rows, total = adapter.manual_reviews.fetch(  # type: ignore[attr-defined]
         **fetch_kwargs,
@@ -81,6 +87,7 @@ def _list_candidate_search(
     created_before: Optional[date],
     report_type: Optional[str],
     duty_unprocessed_only: bool,
+    refine_filters: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     adapter = get_adapter()
     fetch_kwargs = {
@@ -93,6 +100,7 @@ def _list_candidate_search(
         "sentiment": sentiment,
         "report_type": report_type,
         "duty_unprocessed_only": duty_unprocessed_only,
+        **(refine_filters or {}),
     }
     rows, total = adapter.manual_reviews.search_candidates(  # type: ignore[attr-defined]
         **fetch_kwargs,
@@ -126,6 +134,7 @@ def _list_candidate_browse(
     cluster_threshold: Optional[float],
     report_type: Optional[str],
     duty_unprocessed_only: bool,
+    refine_filters: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     if cluster:
         result = cluster_pending(
@@ -137,6 +146,7 @@ def _list_candidate_browse(
             cluster_threshold=cluster_threshold,
             report_type=report_type,
             duty_unprocessed_only=duty_unprocessed_only,
+            **(refine_filters or {}),
         )
         cluster_items = [
             item
@@ -155,6 +165,7 @@ def _list_candidate_browse(
         sentiment=sentiment,
         report_type=report_type,
         duty_unprocessed_only=duty_unprocessed_only,
+        refine_filters=refine_filters,
     )
     result["view_mode"] = "browse"
     return result
@@ -174,11 +185,23 @@ def list_candidates(
     view_mode: Optional[str] = None,
     report_type: str = DEFAULT_REPORT_TYPE,
     duty_unprocessed_only: bool = False,
+    hour_from: Any = None,
+    hour_to: Any = None,
+    duplicate_state: Any = None,
+    min_score: Any = None,
+    max_score: Any = None,
 ) -> Dict[str, Any]:
     region = region if region in ("internal", "external") else None
     sentiment = sentiment if sentiment in ("positive", "negative") else None
     del report_type
     target_report_type = None
+    refine_filters = normalize_candidate_refine_filters(
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
+    )
     normalized_query = (q or "").strip() or None
     search_mode = (
         (view_mode or "").strip().lower() == "search"
@@ -205,6 +228,7 @@ def list_candidates(
             created_before=created_before,
             report_type=target_report_type,
             duty_unprocessed_only=duty_unprocessed_only,
+            refine_filters=refine_filters,
         )
     return _list_candidate_browse(
         owner_user_id=owner_user_id,
@@ -216,6 +240,7 @@ def list_candidates(
         cluster_threshold=cluster_threshold,
         report_type=target_report_type,
         duty_unprocessed_only=duty_unprocessed_only,
+        refine_filters=refine_filters,
     )
 
 

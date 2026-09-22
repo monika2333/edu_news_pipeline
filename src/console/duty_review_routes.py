@@ -18,6 +18,7 @@ from src.console.duty_review_schemas import (
     DutyReviewUpdateRequest,
     ReportType,
 )
+from src.console.manual_filter_helpers import normalize_candidate_refine_filters
 from src.console.manual_filter_duplicate_service import (
     DuplicateReviewInvalidResponseError,
     DuplicateReviewLimitError,
@@ -109,8 +110,23 @@ def list_candidates(
     sentiment: Optional[str] = None,
     q: Optional[str] = None,
     created_before: Optional[date] = None,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
     user: ConsoleUser = Depends(require_role("duty_editor")),
 ) -> dict[str, Any]:
+    try:
+        refine_filters = normalize_candidate_refine_filters(
+            hour_from=hour_from,
+            hour_to=hour_to,
+            duplicate_state=duplicate_state,
+            min_score=min_score,
+            max_score=max_score,
+        )
+    except ValueError as exc:
+        _raise_review_error(exc)
     try:
         return duty_review_service.list_items(
             shift_id=shift_id,
@@ -123,6 +139,7 @@ def list_candidates(
             sentiment=sentiment,
             query=q,
             created_before=created_before,
+            **refine_filters,
         )
     except (ValueError, PermissionError) as exc:
         _raise_review_error(exc)

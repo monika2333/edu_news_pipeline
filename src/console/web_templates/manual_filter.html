@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="/static/css/components.css">
     <!-- CSS Modules -->
     <link rel="stylesheet" href="/static/css/modules/filter.css">
+    <link rel="stylesheet" href="/static/css/modules/prototype.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/review.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/search.css">
     <link rel="stylesheet" href="/static/css/modules/content_drawer.css?v={{ version }}">
@@ -48,7 +49,8 @@
 </head>
 
 <body data-workspace-mode="{{ workspace_mode|default('admin') }}"
-    data-initial-tab="{{ 'review' if is_admin_review else 'filter' }}">
+    data-initial-tab="{{ 'review' if is_admin_review else 'filter' }}"
+    data-proto-variant="a">
     <div class="container">
         <header>
             <div class="header-left">
@@ -148,6 +150,7 @@
                     <button class="filter-tab-btn" data-category="internal_negative">京内负面</button>
                     <button class="filter-tab-btn" data-category="external_positive">京外正面</button>
                     <button class="filter-tab-btn" data-category="external_negative">京外负面</button>
+                    <div id="proto-filter-mount-c" class="proto-sidebar-mount"></div>
                 </div>
                 <div class="filter-content">
                     <div class="filter-toolbar">
@@ -164,10 +167,20 @@
                                     </svg>
                                 </button>
                             </div>
+                            <div class="proto-filter-toggle-wrap">
+                                <button type="button" id="proto-filter-toggle"
+                                    class="btn btn-secondary" aria-expanded="false"
+                                    aria-controls="proto-filter-panel">筛选<span
+                                    class="proto-filter-count-badge"
+                                    id="proto-filter-count-badge" hidden></span></button>
+                            </div>
                             <button class="btn btn-secondary" id="btn-filter-search">检索</button>
                             <button class="btn btn-primary filter-discard-action"
                                 id="btn-filter-bulk-discard">全部放弃</button>
                         </div>
+                        {# 原型：A=工具栏第二行 / B=弹出面板（均挂 #proto-filter-panel，JS 按方案搬动） #}
+                        <div id="proto-filter-mount-a" class="proto-toolbar-row"></div>
+                        <div id="proto-filter-mount-b" class="proto-popover-mount"></div>
                         <div class="filter-toolbar-meta" id="filter-search-meta"></div>
                     </div>
                     <div id="filter-list">
@@ -482,6 +495,16 @@
         </div>
     </div>
 
+    {% if is_duty_workspace or not is_admin_review %}
+    {# 原型专用脚手架：三种筛选摆放方案切换器，定稿后随原型文件一起移除 #}
+    <div class="proto-variant-switcher" role="group" aria-label="原型：筛选位置方案切换">
+        <span class="proto-variant-switcher-label">原型·筛选位置</span>
+        <button type="button" data-proto-variant="a" aria-pressed="false">A 工具栏</button>
+        <button type="button" data-proto-variant="b" aria-pressed="false">B 弹层</button>
+        <button type="button" data-proto-variant="c" aria-pressed="false">C 侧栏</button>
+    </div>
+    {% endif %}
+
     <!-- Toast -->
     <div class="toast" id="toast">操作成功</div>
 
@@ -497,6 +520,7 @@
     <script src="/static/js/manual_filter/core.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/workspace.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/utils.js?v={{ version }}"></script>
+    <script src="/static/js/manual_filter/prototype_filters.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/copy_article.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/source_autofill.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/score_feedback.js?v={{ version }}"></script>

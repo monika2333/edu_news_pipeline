@@ -261,8 +261,9 @@ def test_prior_match_pill_rendered_only_when_present() -> None:
     assert "if (!showUnmatched) return '';" in core
     assert "未报送" in core
     assert "is-unmatched" in core
-    # 「未报送」是纯展示的 span，不可点击；弹窗委托只匹配 button
-    assert ">未报送</span>" in core
+    # 无命中的「未报送」也是可点击 button：人工标记为已报送的入口；
+    # 弹窗委托只匹配 button
+    assert ">未报送</button>" in core
     assert "button.archive-prior-match-pill" in Path(
         "src/console/web_static/js/submission_archive/prior_matches.js"
     ).read_text(encoding="utf-8")
@@ -374,7 +375,7 @@ def test_prior_matches_modal_escapes_and_labels() -> None:
     assert "escapeHtml(entry.source)" in modal
 
 
-def test_prior_match_pill_dismissed_is_button_but_no_match_stays_span() -> None:
+def test_prior_match_pill_no_match_is_button_with_marking_hint() -> None:
     core = _strip_js_comments(Path(CORE_JS).read_text(encoding="utf-8"))
     pill_body = core.split(
         "const priorMatchPill = (item, { showUnmatched = false } = {}) => {",
@@ -384,9 +385,15 @@ def test_prior_match_pill_dismissed_is_button_but_no_match_stays_span() -> None:
     # dismissed（人工判定未报送）有独立状态项，走可点 button 分支（有明细可查、判定可撤销）
     assert "dismissed: { label: '未报送', className: 'is-dismissed' }" in core
     assert '<button type="button" class="archive-prior-match-pill' in pill_body
-    # 无命中的「未报送」仍是纯展示 span，两个分支不得合并
-    assert "'<span class=\"archive-prior-match-pill is-unmatched\"'" in pill_body
-    assert ">未报送</span>" in pill_body
+    # 无命中的「未报送」也是 button：进入弹窗人工标记为已报送，
+    # 但与 dismissed 分支保持独立（无明细、只有标记动作）
+    assert ">未报送</span>" not in pill_body
+    unmatched_branch = pill_body.split("if (!priorMatch) {", maxsplit=1)[1].split(
+        "const meta =", maxsplit=1
+    )[0]
+    assert "archive-prior-match-pill is-unmatched" in unmatched_branch
+    assert "data-item-id" in unmatched_branch
+    assert "标记为已报送" in unmatched_branch
 
 
 def test_report_status_signature_includes_prior_match_decision() -> None:
@@ -461,6 +468,36 @@ def test_prior_match_decision_updates_card_locally_without_report_reload() -> No
     )
     assert "updateReportStatusComponents(activeReportId, activeReportItems)" in decision_body
     assert "activeReportStatusSignature = reportStatusSignature(" in decision_body
+
+
+def test_prior_match_footer_offers_marking_for_unmatched_items() -> None:
+    modal = _strip_js_comments(Path(PRIOR_MATCHES_JS).read_text(encoding="utf-8"))
+
+    # 无命中条目（prior_match 为 null）的底部只给「标记为已报送」，
+    # 并复用 confirm 按钮的委托路径；「不是同一条」对无命中条目没有意义
+    unmatched_branch = modal.split("if (!priorMatch) {", maxsplit=1)[1].split(
+        "if (priorMatch.decidable === false) {", maxsplit=1
+    )[0]
+    assert "标记为已报送" in unmatched_branch
+    assert "archive-prior-matches-confirm" in unmatched_branch
+    assert "activeReportType !== 'feedback'" in unmatched_branch
+    assert "activeReportPriorMatchPending" in unmatched_branch
+    assert "archive-prior-matches-reject" not in unmatched_branch
+
+
+def test_unmatched_pill_css_keeps_pointer_after_becoming_clickable() -> None:
+    css = Path(
+        "src/console/web_static/css/modules/submission_archive/item_card.css"
+    ).read_text(encoding="utf-8")
+
+    # 无命中的「未报送」现在是人工标记入口：不得再禁用指针/hover，
+    # 与 dismissed 一样只声明配色
+    unmatched_block = css.split(
+        ".archive-prior-match-pill.is-unmatched", maxsplit=1
+    )[1].split("}")[0]
+    assert "#fee2e2" in unmatched_block
+    assert "cursor" not in unmatched_block
+    assert ".archive-prior-match-pill.is-unmatched:hover" not in css
 
 
 def test_dismissed_pill_css_keeps_pointer_and_footer_hidden_works() -> None:

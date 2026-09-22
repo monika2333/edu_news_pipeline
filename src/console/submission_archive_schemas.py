@@ -75,13 +75,15 @@ class PriorMatchSummary(BaseModel):
     status: Literal["submitted", "suspected", "dismissed"]
     decidable: bool
     decision: Optional[Literal["submitted", "not_submitted"]] = None
-    top_similarity: float
+    # 无命中条目被人工确认为已报送时没有相似度可言
+    top_similarity: Optional[float] = None
     count: int
 
 
 class PriorMatchDecisionResponse(BaseModel):
     item_id: str
-    prior_match: PriorMatchSummary
+    # 撤销无命中条目的确认后摘要消失，此时返回 null
+    prior_match: Optional[PriorMatchSummary] = None
 
 
 __all__ = [

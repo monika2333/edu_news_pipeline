@@ -991,11 +991,20 @@ def test_item_duplicate_summaries_derive_all_match_states() -> None:
     assert summaries[deterministic_id]["decidable"] is False
     assert summaries[deterministic_id]["decision"] is None
     normalized_query = " ".join(cursor.calls[0][0].split())
-    assert "join submitted_report_items i on i.id = m.item_id" in normalized_query
+    # 从条目表出发 LEFT JOIN：无命中但已人工确认的条目也要能返回摘要，
+    # 由 having 过滤「无命中且无判定」的条目
+    assert (
+        "from submitted_report_items i "
+        "left join submission_item_duplicate_matches m on m.item_id = i.id"
+    ) in normalized_query
+    assert (
+        "having count(m.id) > 0 or i.prior_match_decision is not null"
+    ) in normalized_query
+    assert "count(m.id) as match_count" in normalized_query
     assert "i.prior_match_decision = 'submitted'" in normalized_query
     assert "i.prior_match_decision = 'not_submitted'" in normalized_query
     assert normalized_query.index(
-        "bool_or(m.match_method in ('article', 'title_hash')) then 'submitted'"
+        "then 'submitted'"
     ) < normalized_query.index("i.prior_match_decision")
     assert "then 'dismissed'" in normalized_query
     assert "as decidable" in normalized_query
@@ -1005,7 +1014,10 @@ def test_item_duplicate_summaries_derive_all_match_states() -> None:
 def test_set_item_prior_match_decision_writes_and_returns_refreshed_state() -> None:
     item_id = "11111111-1111-1111-1111-111111111111"
     cursor = FakeCursor(
-        fetchone_rows=[{"id": item_id}],
+        fetchone_rows=[
+            {"id": item_id},
+            {"report_type": "feedback", "prior_match_completed_at": "now"},
+        ],
         fetchall_rows=[
             [
                 {
@@ -1040,7 +1052,7 @@ def test_set_item_prior_match_decision_writes_and_returns_refreshed_state() -> N
     assert result["state"] == "updated"
     assert result["prior_match"] is not None
     assert result["prior_match"]["status"] == "submitted"
-    update_query, params = cursor.calls[2]
+    update_query, params = cursor.calls[3]
     assert "prior_match_decision = %s" in update_query
     assert "prior_match_decided_by = case" in update_query
     assert "prior_match_decided_at = case" in update_query
@@ -1057,7 +1069,10 @@ def test_set_item_prior_match_decision_can_dismiss_and_revoke() -> None:
     item_id = "11111111-1111-1111-1111-111111111111"
     actor_id = "55555555-5555-5555-5555-555555555555"
     dismissed_cursor = FakeCursor(
-        fetchone_rows=[{"id": item_id}],
+        fetchone_rows=[
+            {"id": item_id},
+            {"report_type": "feedback", "prior_match_completed_at": "now"},
+        ],
         fetchall_rows=[
             [
                 {
@@ -1082,7 +1097,10 @@ def test_set_item_prior_match_decision_can_dismiss_and_revoke() -> None:
         ],
     )
     revoked_cursor = FakeCursor(
-        fetchone_rows=[{"id": item_id}],
+        fetchone_rows=[
+            {"id": item_id},
+            {"report_type": "feedback", "prior_match_completed_at": "now"},
+        ],
         fetchall_rows=[
             [
                 {
@@ -1124,18 +1142,17 @@ def test_set_item_prior_match_decision_can_dismiss_and_revoke() -> None:
     assert dismissed["prior_match"]["status"] == "dismissed"
     assert revoked["prior_match"] is not None
     assert revoked["prior_match"]["status"] == "suspected"
-    assert revoked_cursor.calls[2][1] == (None, None, actor_id, None, item_id)
+    assert revoked_cursor.calls[3][1] == (None, None, actor_id, None, item_id)
 
 
 def test_set_item_prior_match_decision_rejects_missing_or_not_decidable() -> None:
     item_id = "11111111-1111-1111-1111-111111111111"
     missing_cursor = FakeCursor(fetchone_rows=[None])
-    no_matches_cursor = FakeCursor(
-        fetchone_rows=[{"id": item_id}],
-        fetchall_rows=[[]],
-    )
     deterministic_cursor = FakeCursor(
-        fetchone_rows=[{"id": item_id}],
+        fetchone_rows=[
+            {"id": item_id},
+            {"report_type": "feedback", "prior_match_completed_at": "now"},
+        ],
         fetchall_rows=[
             [
                 {
@@ -1156,12 +1173,6 @@ def test_set_item_prior_match_decision_rejects_missing_or_not_decidable() -> Non
         decision="submitted",
         actor_user_id="actor-id",
     )
-    no_matches = db_postgres_submission_archive.set_item_prior_match_decision(
-        no_matches_cursor,
-        item_id=item_id,
-        decision="submitted",
-        actor_user_id="actor-id",
-    )
     deterministic = db_postgres_submission_archive.set_item_prior_match_decision(
         deterministic_cursor,
         item_id=item_id,
@@ -1170,10 +1181,145 @@ def test_set_item_prior_match_decision_rejects_missing_or_not_decidable() -> Non
     )
 
     assert missing == {"state": "not_found", "prior_match": None}
-    assert no_matches == {"state": "not_decidable", "prior_match": None}
     assert deterministic["state"] == "not_decidable"
-    assert len(no_matches_cursor.calls) == 2
-    assert len(deterministic_cursor.calls) == 2
+    assert deterministic["prior_match"]["decidable"] is False
+    assert len(missing_cursor.calls) == 1
+    assert len(deterministic_cursor.calls) == 3
+
+
+def test_set_item_prior_match_decision_rejects_non_feedback_or_pending_report() -> None:
+    item_id = "11111111-1111-1111-1111-111111111111"
+    completed_summary = [
+        {
+            "item_id": item_id,
+            "status": "suspected",
+            "decidable": True,
+            "decision": None,
+            "top_similarity": 0.8,
+            "match_count": 1,
+        }
+    ]
+    zongbao_cursor = FakeCursor(
+        fetchone_rows=[
+            {"id": item_id},
+            {"report_type": "zongbao", "prior_match_completed_at": "now"},
+        ],
+        fetchall_rows=[completed_summary],
+    )
+    pending_cursor = FakeCursor(
+        fetchone_rows=[
+            {"id": item_id},
+            {"report_type": "feedback", "prior_match_completed_at": None},
+        ],
+        fetchall_rows=[completed_summary],
+    )
+
+    zongbao = db_postgres_submission_archive.set_item_prior_match_decision(
+        zongbao_cursor,
+        item_id=item_id,
+        decision="submitted",
+        actor_user_id="actor-id",
+    )
+    pending = db_postgres_submission_archive.set_item_prior_match_decision(
+        pending_cursor,
+        item_id=item_id,
+        decision="submitted",
+        actor_user_id="actor-id",
+    )
+
+    # 综报/晚报条目本身就是报送物；判定进行中时命中尚未落库，两者都不可判
+    assert zongbao == {"state": "not_decidable", "prior_match": None}
+    assert pending == {"state": "not_decidable", "prior_match": None}
+    # 报告校验不过就不该继续查摘要、更不该执行 update
+    assert len(zongbao_cursor.calls) == 2
+    assert len(pending_cursor.calls) == 2
+
+
+def test_set_item_prior_match_decision_marks_unmatched_item_as_submitted() -> None:
+    item_id = "11111111-1111-1111-1111-111111111111"
+    actor_id = "55555555-5555-5555-5555-555555555555"
+    cursor = FakeCursor(
+        fetchone_rows=[
+            {"id": item_id},
+            {"report_type": "feedback", "prior_match_completed_at": "now"},
+        ],
+        fetchall_rows=[
+            [],
+            [
+                {
+                    "item_id": item_id,
+                    "status": "submitted",
+                    "decidable": True,
+                    "decision": "submitted",
+                    "top_similarity": None,
+                    "match_count": 0,
+                }
+            ],
+        ],
+    )
+
+    result = db_postgres_submission_archive.set_item_prior_match_decision(
+        cursor,
+        item_id=item_id,
+        decision="submitted",
+        actor_user_id=actor_id,
+    )
+
+    # 无命中条目允许人工确认已报送（自动匹配因标题正文被改而漏判的兜底）
+    assert result["state"] == "updated"
+    assert result["prior_match"] == {
+        "status": "submitted",
+        "decidable": True,
+        "decision": "submitted",
+        "top_similarity": None,
+        "count": 0,
+    }
+    assert "update submitted_report_items" in cursor.calls[3][0]
+    assert cursor.calls[3][1] == ("submitted", "submitted", actor_id, "submitted", item_id)
+
+
+def test_set_item_prior_match_decision_rejects_dismissal_without_matches() -> None:
+    item_id = "11111111-1111-1111-1111-111111111111"
+    cursor = FakeCursor(
+        fetchone_rows=[
+            {"id": item_id},
+            {"report_type": "feedback", "prior_match_completed_at": "now"},
+        ],
+        fetchall_rows=[[]],
+    )
+
+    result = db_postgres_submission_archive.set_item_prior_match_decision(
+        cursor,
+        item_id=item_id,
+        decision="not_submitted",
+        actor_user_id="actor-id",
+    )
+
+    # 无命中条目默认就是未报送，「不是同一条」无从谈起
+    assert result == {"state": "not_decidable", "prior_match": None}
+    assert len(cursor.calls) == 3
+
+
+def test_set_item_prior_match_decision_revokes_unmatched_confirmation() -> None:
+    item_id = "11111111-1111-1111-1111-111111111111"
+    cursor = FakeCursor(
+        fetchone_rows=[
+            {"id": item_id},
+            {"report_type": "feedback", "prior_match_completed_at": "now"},
+        ],
+        fetchall_rows=[[], []],
+    )
+
+    result = db_postgres_submission_archive.set_item_prior_match_decision(
+        cursor,
+        item_id=item_id,
+        decision=None,
+        actor_user_id="actor-id",
+    )
+
+    # 撤销无命中条目的确认后摘要合法地消失：无命中且无判定 → 无 prior_match
+    assert result == {"state": "updated", "prior_match": None}
+    assert len(cursor.calls) == 5
 
 
 def test_replace_item_duplicate_matches_deletes_then_inserts() -> None:
@@ -1223,7 +1369,13 @@ def test_replacing_vector_matches_preserves_not_submitted_decision() -> None:
             if normalized.startswith("select id from submitted_report_items"):
                 self.fetchone_value = {"id": item_id}
                 return
-            if "from submission_item_duplicate_matches m" in normalized:
+            if "join submitted_reports r on r.id = i.report_id" in normalized:
+                self.fetchone_value = {
+                    "report_type": "feedback",
+                    "prior_match_completed_at": "now",
+                }
+                return
+            if "submission_item_duplicate_matches m" in normalized:
                 if not self.matches:
                     self.fetchall_value = []
                     return

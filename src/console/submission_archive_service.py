@@ -254,8 +254,11 @@ def decide_prior_match(
         raise SubmissionReportNotFoundError("未找到这个存档条目")
     if state == "not_decidable":
         raise ValueError("该条目当前不可进行已报送人工判定")
+    if state != "updated":
+        raise RuntimeError("已报送人工判定未返回结果")
     prior_match = result.get("prior_match")
-    if state != "updated" or not isinstance(prior_match, dict):
+    # 撤销无命中条目的人工确认后摘要合法为空（无命中且无判定 → 无 prior_match）
+    if prior_match is not None and not isinstance(prior_match, dict):
         raise RuntimeError("已报送人工判定未返回结果")
     return {"item_id": normalized_item_id, "prior_match": prior_match}
 

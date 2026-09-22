@@ -87,11 +87,21 @@ def make_article_id(url: str) -> str:
     return f"jyb:{path}"
 
 
-def _extract_iso_from_text(text: str) -> Optional[str]:
+_DATE_PATTERNS = (
     # Matches: YYYY-MM-DD or with time HH:MM[:SS]
-    m = re.search(r"(20\d{2})-(\d{2})-(\d{2})(?:[\sT](\d{2}):(\d{2})(?::(\d{2}))?)?", text)
-    if not m:
+    re.compile(r"(20\d{2})-(\d{2})-(\d{2})(?:[\sT](\d{2}):(\d{2})(?::(\d{2}))?)?"),
+    # Matches: YYYY年M月D日 or with time HH:MM[:SS]；神州学人模板的发布时间
+    # 藏在 var customtime = '2026年01月13日' 这类 JS 变量里
+    re.compile(r"(20\d{2})年(\d{1,2})月(\d{1,2})日(?:\s*(\d{1,2}):(\d{2})(?::(\d{2}))?)?"),
+)
+
+
+def _extract_iso_from_text(text: str) -> Optional[str]:
+    # 两种格式混排时取文档位置最靠前的日期（发布时间总在版权页/版次日期之前）
+    matches = [m for m in (pattern.search(text) for pattern in _DATE_PATTERNS) if m]
+    if not matches:
         return None
+    m = min(matches, key=lambda match: match.start())
     y, M, d, hh, mm, ss = m.groups()
     try:
         hh_i = int(hh) if hh else 0
@@ -278,6 +288,12 @@ def _extract_detail_title(soup: BeautifulSoup) -> Optional[str]:
         if alt_title:
             alt_text = alt_title.get_text(strip=True)
             if alt_text:
+                # 神州学人模板：副题是 .title 之后的 .subtitle（其文本自带"——"）；
+                # .title 之前的同名 div 是引题位，常为空，不拼入标题
+                for sub in alt_title.find_next_siblings("div", class_="subtitle"):
+                    sub_text = sub.get_text(strip=True)
+                    if sub_text:
+                        return f"{alt_text}{sub_text}"
                 return alt_text
         return None
     parent = h1.parent
@@ -319,6 +335,14 @@ def fetch_detail(url: str) -> Dict[str, Any]:
         title = detail_title
 
     publish_iso = _extract_iso_from_text(soup.get_text(" ", strip=True))
+    # 神州学人模板的发布时间由 document.write 写出（var customtime = '2026年01月13日'），
+    # 而 bs4 的 get_text 不含 script 内容，可见文本里只剩报纸版次日期；
+    # 因此 script 里带日期时优先于可见文本
+    for script in soup.find_all("script"):
+        script_date = _extract_iso_from_text(script.string or "")
+        if script_date:
+            publish_iso = script_date
+            break
     content_node = _find_content_container(soup)
     if content_node is None:
         content_html = html_text

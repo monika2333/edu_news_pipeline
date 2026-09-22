@@ -7,8 +7,9 @@
 
 from __future__ import annotations
 
+import codecs
 import re
-from typing import Mapping
+from typing import Mapping, Optional
 
 import requests
 from bs4 import BeautifulSoup
@@ -34,19 +35,32 @@ def build_session(headers: Mapping[str, str], *, trust_env: bool = True) -> requ
 
 
 def decode_response(resp: requests.Response) -> str:
-    """响应解码：服务端声明编码可直接使用；缺失或误标为 iso-8859-1 时
-    用 apparent_encoding 猜测（GBK 站点常见）。"""
+    """响应解码：优先服务端声明的 charset；缺失或误标为 iso-8859-1 时，
+    先取 HTML meta 里的 charset 声明，最后才用 apparent_encoding 统计猜测。
+
+    chardet 对无 charset 头的中文页面可能误判为西里尔系编码（如 ptcp154，
+    中新网视频页曾因此整页乱码），meta 声明比统计猜测可靠。
+    """
     try:
         enc = (resp.encoding or "").lower()
     except Exception:
         enc = ""
     if not enc or enc == "iso-8859-1":
-        try:
-            apparent = resp.apparent_encoding or "utf-8"
-            resp.encoding = apparent
-        except Exception:
-            resp.encoding = "utf-8"
+        resp.encoding = _sniff_meta_charset(resp.content) or resp.apparent_encoding or "utf-8"
     return resp.text or ""
+
+
+def _sniff_meta_charset(content: bytes) -> Optional[str]:
+    """从 HTML 头部字节里读 meta 声明的 charset；不是合法编码名时返回 None。"""
+    match = re.search(rb"""charset\s*=\s*["']?\s*([A-Za-z][\w-]*)""", content[:2048], re.I)
+    if not match:
+        return None
+    candidate = match.group(1).decode("ascii", errors="ignore")
+    try:
+        codecs.lookup(candidate)
+    except LookupError:
+        return None
+    return candidate
 
 
 def html_to_markdown(html_str: str, *, extra_unwanted: str = "") -> str:

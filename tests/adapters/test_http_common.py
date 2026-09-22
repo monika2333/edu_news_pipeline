@@ -59,6 +59,7 @@ def test_html_to_markdown_strips_images_and_scripts() -> None:
     html = (
         '<div><p>第一段。</p><img src="http://x/a.jpg" alt="配图">'
         "<script>var t = 1;</script><style>.a{}</style>"
+        "<noscript><p>无脚本降级文本</p></noscript>"
         "<p>末段<br>折行。</p></div>"
     )
 

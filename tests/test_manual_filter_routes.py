@@ -695,6 +695,31 @@ def test_candidates_api_returns_search_mode_items(monkeypatch) -> None:
     assert [item["article_id"] for item in payload["items"]] == ["a1"]
 
 
+def test_candidates_api_does_not_forward_force_refresh(monkeypatch) -> None:
+    adapter = FakeManualFilterAdapter(_build_rows())
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
+    captured: dict[str, Any] = {}
+
+    def cluster_pending(**kwargs: Any) -> Dict[str, Any]:
+        captured.update(kwargs)
+        return {"clusters": [], "total": 0, "item_total": 0}
+
+    monkeypatch.setattr(manual_filter_query_service, "cluster_pending", cluster_pending)
+
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/manual_filter/candidates",
+        params={"cluster": "true", "force_refresh": "true"},
+    )
+
+    assert response.status_code == 200
+    assert "owner_user_id" in captured
+    assert "force_refresh" not in captured
+
+
 def test_discarded_api_searches_and_treats_blank_query_as_absent(monkeypatch) -> None:
     rows = _build_rows()
     for row in rows:

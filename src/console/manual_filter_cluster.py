@@ -256,7 +256,6 @@ def cluster_pending(
     limit: int = 10,
     offset: int = 0,
     cluster_threshold: Optional[float] = None,
-    force_refresh: bool = False,
     report_type: str = DEFAULT_REPORT_TYPE,
     duty_unprocessed_only: bool = False,
 ) -> Dict[str, Any]:
@@ -267,9 +266,6 @@ def cluster_pending(
     except Exception:
         threshold_val = DEFAULT_CLUSTER_THRESHOLD
     threshold_val = max(0.0, min(threshold_val, 1.0))
-
-    if force_refresh:
-        refresh_clusters(cluster_threshold=threshold_val)
 
     bucket_key = _bucket_key_from_filters(region, sentiment)
     rows = adapter.manual_reviews.fetch_clusters(  # type: ignore[attr-defined]

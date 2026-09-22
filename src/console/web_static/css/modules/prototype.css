@@ -48,16 +48,18 @@
 }
 
 body.proto-filter-row-open .proto-collapsible-row {
-    display: block;
-    padding-top: 12px;
-    border-top: 1px solid var(--border-color, #e2e8f0);
-}
-
-#proto-filter-panel {
     display: flex;
     align-items: stretch;
     flex-wrap: wrap;
     gap: 10px 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color, #e2e8f0);
+}
+
+/* 挂载点与面板都是透明包裹：三张条件卡与「处理状态」卡在行容器里平级排列 */
+#proto-filter-mount,
+#proto-filter-panel {
+    display: contents;
 }
 
 /* 每个条件一张浅底卡片：顶部小标签 + 控件行，界限清晰、高度一致 */
@@ -207,6 +209,21 @@ body.proto-filter-row-open .proto-collapsible-row {
     font-size: 12px;
     color: #b45309;
     line-height: 1;
+}
+
+/* 管理员专属「处理状态」卡：复用 .duty-scope-switch 分段控件，尺寸对齐卡片内控件 */
+.proto-duty-group .duty-scope-switch {
+    background: #e2e8f0;
+}
+
+.proto-duty-group .duty-scope-btn {
+    padding: 5px 12px;
+    font-size: 13px;
+}
+
+.proto-duty-group .duty-scope-btn.is-active {
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
 }
 
 /* ── meta 行筛选摘要 ─────────────────────────────────────────────────── */

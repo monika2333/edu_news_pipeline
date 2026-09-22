@@ -106,8 +106,8 @@
     color: var(--text-secondary);
 }
 
-/* 「只看值班未处理」开关（管理员筛选 tab，清理旧新闻左侧）：
-   视觉对齐 layout.css 的 .tabs/.tab-btn 分段控件，高度对齐相邻 .btn（40px）。 */
+/* 「只看值班未处理」开关（管理员筛选页，位于筛选工具条的折叠筛选行内；
+   原型阶段尺寸由 prototype.css 的 .proto-duty-group 覆写对齐卡片内控件）。 */
 .duty-scope-switch {
     display: inline-flex;
     align-items: center;

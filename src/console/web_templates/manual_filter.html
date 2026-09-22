@@ -114,15 +114,8 @@
                 <button class="tab-btn" data-tab="discard">放弃</button>
             </div>
             <div class="workspace-tab-actions">
-                {# 「只看值班未处理」开关与清理旧新闻同属筛选 tab 的操作区，
-                   data-workspace-action-tab 保证切到「放弃」tab 时一并隐藏。 #}
-                <div class="duty-scope-switch workspace-tab-action" role="group" aria-label="值班编辑处理状态"
-                    data-workspace-action-tab="filter">
-                    <button class="duty-scope-btn is-active" type="button"
-                        aria-pressed="true" data-duty-process-scope="all">全部</button>
-                    <button class="duty-scope-btn" type="button"
-                        aria-pressed="false" data-duty-process-scope="unprocessed">值班未处理</button>
-                </div>
+                {# 「只看值班未处理」开关已挪入筛选工具条的折叠行（管理员专属），
+                   见下方 proto-collapsible-row；data-workspace-action-tab 机制仍由清理旧新闻沿用。 #}
                 <button class="btn btn-secondary workspace-tab-action" id="btn-open-cleanup" type="button"
                     data-workspace-action-tab="filter">清理旧新闻</button>
             </div>
@@ -175,8 +168,23 @@
                             <button class="btn btn-primary filter-discard-action"
                                 id="btn-filter-bulk-discard">全部放弃</button>
                         </div>
-                        {# 原型：「筛选」折叠行（「筛选 ▾」按钮展开/收起），定稿后转正式实现 #}
-                        <div id="proto-filter-mount" class="proto-collapsible-row"></div>
+                        {# 原型：「筛选」折叠行（「筛选」按钮展开/收起），定稿后转正式实现 #}
+                        <div class="proto-collapsible-row">
+                            <div id="proto-filter-mount"></div>
+                            {% if not is_duty_workspace %}
+                            {# 管理员专属：「只看值班未处理」开关并入折叠筛选行；按钮绑定依赖 data-duty-process-scope，与位置无关 #}
+                            <div class="proto-filter-group proto-duty-group"
+                                title="切换后只看值班编辑尚未处理的新闻">
+                                <span class="proto-filter-group-label">处理状态</span>
+                                <div class="duty-scope-switch" role="group" aria-label="值班编辑处理状态">
+                                    <button class="duty-scope-btn is-active" type="button"
+                                        aria-pressed="true" data-duty-process-scope="all">全部</button>
+                                    <button class="duty-scope-btn" type="button"
+                                        aria-pressed="false" data-duty-process-scope="unprocessed">值班未处理</button>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
                         <div class="filter-toolbar-meta" id="filter-search-meta"></div>
                     </div>
                     <div id="filter-list">

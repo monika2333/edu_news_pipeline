@@ -49,8 +49,7 @@
 </head>
 
 <body data-workspace-mode="{{ workspace_mode|default('admin') }}"
-    data-initial-tab="{{ 'review' if is_admin_review else 'filter' }}"
-    data-proto-variant="a">
+    data-initial-tab="{{ 'review' if is_admin_review else 'filter' }}">
     <div class="container">
         <header>
             <div class="header-left">
@@ -94,16 +93,6 @@
                 <button class="tab-btn" data-tab="discard">放弃</button>
             </div>
             <div class="workspace-tab-actions">
-                {# 原型：B 方案的「筛选」入口挂在工作区右上角；弹层面板锚定按钮下方 #}
-                <div class="proto-filter-toggle-wrap workspace-tab-action"
-                    data-workspace-action-tab="filter">
-                    <button type="button" id="proto-filter-toggle"
-                        class="btn btn-secondary" aria-expanded="false"
-                        aria-controls="proto-filter-panel">筛选<span
-                        class="proto-filter-count-badge"
-                        id="proto-filter-count-badge" hidden></span></button>
-                    <div id="proto-filter-mount-b" class="proto-popover-mount"></div>
-                </div>
                 <div class="duty-finalization-status duty-finalization-action workspace-tab-action"
                     id="duty-finalization-status" data-workspace-action-tab="review"
                     data-state="loading" aria-live="polite" hidden>
@@ -134,16 +123,6 @@
                     <button class="duty-scope-btn" type="button"
                         aria-pressed="false" data-duty-process-scope="unprocessed">值班未处理</button>
                 </div>
-                {# 原型：B 方案的「筛选」入口放在「清理旧新闻」旁，随筛选 tab 显隐 #}
-                <div class="proto-filter-toggle-wrap workspace-tab-action"
-                    data-workspace-action-tab="filter">
-                    <button type="button" id="proto-filter-toggle"
-                        class="btn btn-secondary" aria-expanded="false"
-                        aria-controls="proto-filter-panel">筛选<span
-                        class="proto-filter-count-badge"
-                        id="proto-filter-count-badge" hidden></span></button>
-                    <div id="proto-filter-mount-b" class="proto-popover-mount"></div>
-                </div>
                 <button class="btn btn-secondary workspace-tab-action" id="btn-open-cleanup" type="button"
                     data-workspace-action-tab="filter">清理旧新闻</button>
             </div>
@@ -170,7 +149,6 @@
                     <button class="filter-tab-btn" data-category="internal_negative">京内负面</button>
                     <button class="filter-tab-btn" data-category="external_positive">京外正面</button>
                     <button class="filter-tab-btn" data-category="external_negative">京外负面</button>
-                    <div id="proto-filter-mount-c" class="proto-sidebar-mount"></div>
                 </div>
                 <div class="filter-content">
                     <div class="filter-toolbar">
@@ -187,20 +165,19 @@
                                     </svg>
                                 </button>
                             </div>
-                            {# 原型：D 方案的「筛选」折叠开关，仅 D 方案可见 #}
-                            <button type="button" id="proto-filter-toggle-d"
-                                class="btn btn-secondary proto-filter-row-toggle"
-                                aria-expanded="false" aria-controls="proto-filter-panel">筛选<span
+                            <button class="btn btn-secondary" id="btn-filter-search">检索</button>
+                            {# 原型：「筛选」折叠开关（展开工具栏第二行），定稿后转正式实现 #}
+                            <button type="button" id="proto-filter-toggle"
+                                class="btn btn-secondary" aria-expanded="false"
+                                aria-controls="proto-filter-panel">筛选<span
                                 class="proto-filter-row-caret" aria-hidden="true">▾</span><span
                                 class="proto-filter-count-badge"
-                                id="proto-filter-count-badge-d" hidden></span></button>
-                            <button class="btn btn-secondary" id="btn-filter-search">检索</button>
+                                id="proto-filter-count-badge" hidden></span></button>
                             <button class="btn btn-primary filter-discard-action"
                                 id="btn-filter-bulk-discard">全部放弃</button>
                         </div>
-                        {# 原型：A=工具栏常驻行 / B=右上角弹出面板 / D=工具栏折叠行（面板 JS 按方案搬动） #}
-                        <div id="proto-filter-mount-a" class="proto-toolbar-row"></div>
-                        <div id="proto-filter-mount-d" class="proto-collapsible-row"></div>
+                        {# 原型：「筛选」折叠行（「筛选 ▾」按钮展开/收起），定稿后转正式实现 #}
+                        <div id="proto-filter-mount" class="proto-collapsible-row"></div>
                         <div class="filter-toolbar-meta" id="filter-search-meta"></div>
                     </div>
                     <div id="filter-list">
@@ -514,17 +491,6 @@
             </div>
         </div>
     </div>
-
-    {% if is_duty_workspace or not is_admin_review %}
-    {# 原型专用脚手架：三种筛选摆放方案切换器，定稿后随原型文件一起移除 #}
-    <div class="proto-variant-switcher" role="group" aria-label="原型：筛选位置方案切换">
-        <span class="proto-variant-switcher-label">原型·筛选位置</span>
-        <button type="button" data-proto-variant="a" aria-pressed="false">A 工具栏</button>
-        <button type="button" data-proto-variant="b" aria-pressed="false">B 弹层</button>
-        <button type="button" data-proto-variant="c" aria-pressed="false">C 侧栏</button>
-        <button type="button" data-proto-variant="d" aria-pressed="false">D 折叠</button>
-    </div>
-    {% endif %}
 
     <!-- Toast -->
     <div class="toast" id="toast">操作成功</div>

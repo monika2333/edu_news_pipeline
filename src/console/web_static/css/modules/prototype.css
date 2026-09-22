@@ -1,73 +1,110 @@
-/* Prototype-only：人工筛选页「细化筛选」三方案对比原型样式。
-   方案定稿后本文件整体移除，胜出方案的段落并入 filter.css。 */
+/* Prototype-only：人工筛选页「细化筛选」折叠工具栏原型样式（定稿方向）。
+   定稿后本文件的内容并入 filter.css，proto- 前缀随之去掉。 */
 
-/* ── 方案切换器（右下角浮动，原型专用脚手架） ─────────────────────────── */
-.proto-variant-switcher {
-    position: fixed;
-    right: 16px;
-    bottom: 16px;
-    z-index: 900;
+/* ── 「筛选」折叠开关（检索行内，检索按钮右侧） ──────────────────────── */
+#proto-filter-toggle {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 6px 8px;
-    border: 1px dashed #d97706;
+    gap: 5px;
+}
+
+#proto-filter-toggle.has-active {
+    border-color: var(--primary-color, #2563eb);
+    color: var(--primary-color, #2563eb);
+}
+
+#proto-filter-toggle.is-open {
+    background: #eef2ff;
+    border-color: var(--primary-color, #2563eb);
+    color: var(--primary-color, #2563eb);
+}
+
+.proto-filter-row-caret {
+    font-size: 10px;
+    line-height: 1;
+}
+
+.proto-filter-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
     border-radius: 999px;
-    background: rgba(255, 251, 235, 0.95);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-    font-size: 12px;
-    color: #92400e;
-}
-
-.proto-variant-switcher .proto-variant-switcher-label {
-    padding-right: 2px;
-    font-weight: 600;
-}
-
-.proto-variant-switcher button {
-    border: 1px solid #fcd34d;
-    background: #fff;
-    color: #92400e;
-    border-radius: 999px;
-    padding: 3px 10px;
-    font-size: 12px;
-    cursor: pointer;
-}
-
-.proto-variant-switcher button.is-active {
-    background: #d97706;
-    border-color: #d97706;
+    background: var(--primary-color, #2563eb);
     color: #fff;
+    font-size: 11px;
     font-weight: 600;
 }
 
-/* ── 控件面板本体（三方案共用，随挂载点改变布局） ─────────────────────── */
+.proto-filter-count-badge[hidden] {
+    display: none;
+}
+
+/* 工具栏默认 3 列网格，加折叠按钮后扩为 4 列，避免「放弃全部」被换行拉伸 */
+.filter-toolbar-main {
+    grid-template-columns: minmax(220px, 1fr) auto auto auto;
+}
+
+/* ── 折叠行：默认收起，proto-filter-row-open 时展开 ──────────────────── */
+.proto-collapsible-row {
+    display: none;
+}
+
+body.proto-filter-row-open .proto-collapsible-row {
+    display: block;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color, #e2e8f0);
+}
+
 #proto-filter-panel {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     flex-wrap: wrap;
-    gap: 10px 18px;
+    gap: 10px 12px;
 }
 
+/* 每个条件一张浅底卡片：顶部小标签 + 控件行，界限清晰、高度一致 */
 .proto-filter-group {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 7px;
+    padding: 9px 14px 10px;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 10px;
+    background: #f8fafc;
+    min-width: 0;
 }
 
 .proto-filter-group-label {
-    font-size: 13px;
+    font-size: 12px;
+    line-height: 1;
     font-weight: 600;
-    color: var(--text-secondary, #475569);
-    white-space: nowrap;
+    color: var(--text-secondary, #64748b);
+}
+
+.proto-filter-pair {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.proto-filter-range-sep {
+    color: var(--text-secondary, #64748b);
 }
 
 .proto-filter-control-label {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    font-size: 12px;
-    color: var(--text-secondary, #475569);
+    gap: 5px;
+    font-size: 13px;
+    color: var(--text-secondary, #64748b);
+}
+
+.proto-filter-control-label > span {
+    flex: 0 0 auto;
 }
 
 .proto-filter-control-label select,
@@ -78,9 +115,13 @@
     color: var(--text-primary, #0f172a);
     font: inherit;
     font-size: 13px;
-    padding: 6px 8px;
-    min-height: 34px;
+    padding: 5px 8px;
+    height: 32px;
     box-sizing: border-box;
+}
+
+.proto-filter-control-label select {
+    min-width: 88px;
 }
 
 .proto-filter-control-label select:focus,
@@ -91,7 +132,7 @@
 }
 
 .proto-filter-control-label input {
-    width: 72px;
+    width: 76px;
 }
 
 .proto-filter-control-label input::-webkit-outer-spin-button,
@@ -103,10 +144,6 @@
 .proto-filter-control-label input[type="number"] {
     -moz-appearance: textfield;
     appearance: textfield;
-}
-
-.proto-filter-range-sep {
-    color: var(--text-secondary, #475569);
 }
 
 /* 「隐藏已报送」滑动开关 */
@@ -174,213 +211,28 @@
 .proto-filter-wrap-note {
     font-size: 12px;
     color: #b45309;
+    line-height: 1;
 }
 
-.proto-filter-reset,
-.proto-filter-reset-link {
+/* 重置按钮：行尾文字按钮，垂直居中 */
+.proto-filter-reset {
+    align-self: center;
+    margin-left: auto;
     border: none;
     background: transparent;
     color: var(--primary-color, #2563eb);
     cursor: pointer;
     font-size: 13px;
-    text-decoration: underline;
-    padding: 4px 6px;
-}
-
-/* ── 方案 A：工具栏第二行（常驻） ────────────────────────────────────── */
-.proto-toolbar-row {
-    display: none;
-}
-
-body[data-proto-variant="a"] .proto-toolbar-row {
-    display: block;
-    padding-top: 10px;
-    border-top: 1px solid var(--border-color, #e2e8f0);
-}
-
-/* 工具栏行内隐藏「从/到」「最低/最高」小前缀，保持一行紧凑 */
-body[data-proto-variant="a"] .proto-filter-control-label > span {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
+    padding: 6px 10px;
     white-space: nowrap;
 }
 
-/* select 本身带「N 时」文案，无前缀时补个占位避免与分隔符粘连 */
-body[data-proto-variant="a"] .proto-filter-group {
-    gap: 6px;
+.proto-filter-reset:hover {
+    text-decoration: underline;
 }
 
-/* ── 方案 B：「筛选」按钮挂工作区右上角 + 弹出面板 ───────────────────── */
-.proto-filter-toggle-wrap {
+.proto-filter-reset[hidden] {
     display: none;
-    position: relative;
-}
-
-body[data-proto-variant="b"] .proto-filter-toggle-wrap {
-    display: inline-flex;
-}
-
-/* 切到「放弃」等 tab 时由 data-workspace-action-tab 的 hidden 隐藏，
-   display 规则会盖过 [hidden]，这里显式压回 */
-.proto-filter-toggle-wrap[hidden] {
-    display: none !important;
-}
-
-#proto-filter-toggle.has-active {
-    border-color: var(--primary-color, #2563eb);
-    color: var(--primary-color, #2563eb);
-}
-
-.proto-filter-count-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    margin-left: 6px;
-    padding: 0 5px;
-    border-radius: 999px;
-    background: var(--primary-color, #2563eb);
-    color: #fff;
-    font-size: 11px;
-    font-weight: 600;
-}
-
-.proto-filter-count-badge[hidden] {
-    display: none;
-}
-
-.proto-popover-mount {
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
-    z-index: 60;
-}
-
-body[data-proto-variant="b"] #proto-filter-panel {
-    display: none;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-    min-width: 320px;
-    padding: 14px 16px;
-    background: #fff;
-    border: 1px solid var(--border-color, #e2e8f0);
-    border-radius: 12px;
-    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
-}
-
-body[data-proto-variant="b"].proto-filter-popover-open #proto-filter-panel {
-    display: flex;
-}
-
-body[data-proto-variant="b"] .proto-filter-group {
-    justify-content: space-between;
-}
-
-body[data-proto-variant="b"] .proto-filter-reset {
-    align-self: flex-end;
-    padding: 6px 10px;
-    border: 1px solid var(--border-color, #e2e8f0);
-    border-radius: 8px;
-    text-decoration: none;
-}
-
-/* ── 方案 D：工具栏内折叠行（Google「工具」式） ───────────────────────── */
-#proto-filter-toggle-d {
-    display: none;
-}
-
-body[data-proto-variant="d"] #proto-filter-toggle-d {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-}
-
-/* 工具栏默认 3 列网格，D 方案多一个折叠按钮，补一列避免「放弃全部」被换行拉伸 */
-body[data-proto-variant="d"] .filter-toolbar-main {
-    grid-template-columns: minmax(220px, 1fr) auto auto auto;
-}
-
-#proto-filter-toggle-d.has-active {
-    border-color: var(--primary-color, #2563eb);
-    color: var(--primary-color, #2563eb);
-}
-
-#proto-filter-toggle-d.is-open {
-    background: #eef2ff;
-}
-
-.proto-filter-row-caret {
-    font-size: 10px;
-    line-height: 1;
-    transition: transform 0.15s ease;
-}
-
-#proto-filter-toggle-d.is-open .proto-filter-row-caret {
-    transform: rotate(180deg);
-}
-
-.proto-collapsible-row {
-    display: none;
-}
-
-body[data-proto-variant="d"].proto-filter-row-open .proto-collapsible-row {
-    display: block;
-    padding-top: 10px;
-    border-top: 1px solid var(--border-color, #e2e8f0);
-}
-
-/* ── 方案 C：左侧栏分组 ──────────────────────────────────────────────── */
-.proto-sidebar-mount {
-    display: none;
-}
-
-body[data-proto-variant="c"] .proto-sidebar-mount {
-    display: block;
-    margin-top: 8px;
-    padding: 12px;
-    border: 1px solid var(--border-color, #e2e8f0);
-    border-radius: 12px;
-    background: #fff;
-}
-
-/* 窄侧栏（200px）内改为纵向分组：组名一行、控件全宽，从/到 上下堆叠 */
-body[data-proto-variant="c"] #proto-filter-panel {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 14px;
-}
-
-body[data-proto-variant="c"] .proto-filter-group {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-}
-
-body[data-proto-variant="c"] .proto-filter-range-sep {
-    display: none;
-}
-
-body[data-proto-variant="c"] .proto-filter-control-label {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 3px;
-}
-
-body[data-proto-variant="c"] .proto-filter-control-label select,
-body[data-proto-variant="c"] .proto-filter-control-label input {
-    width: 100%;
-}
-
-body[data-proto-variant="c"] .proto-filter-reset {
-    padding: 6px 10px;
-    border: 1px solid var(--border-color, #e2e8f0);
-    border-radius: 8px;
-    text-decoration: none;
 }
 
 /* ── meta 行筛选摘要 ─────────────────────────────────────────────────── */
@@ -389,5 +241,11 @@ body[data-proto-variant="c"] .proto-filter-reset {
 }
 
 .proto-filter-meta-suffix .proto-filter-reset-link {
+    border: none;
+    background: transparent;
+    color: var(--primary-color, #2563eb);
+    cursor: pointer;
     font-size: inherit;
+    text-decoration: underline;
+    padding: 0 2px;
 }

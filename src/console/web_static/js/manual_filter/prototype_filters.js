@@ -1,18 +1,15 @@
-// Prototype-only module：人工筛选页「细化筛选」三方案对比原型。
-// 全部内容（本文件、prototype.css、模板中的 proto-* 挂载点与切换器）在方案定稿后整体移除，
-// 届时把胜出方案的挂载点改为正式 markup、本模块逻辑并入 manual_filter 现有模块即可。
+// Prototype-only module：人工筛选页「细化筛选」折叠工具栏原型（定稿方向）。
+// 本文件、prototype.css、模板中的 proto-* 挂载点在定稿后转为正式实现并清理。
 //
-// 三方案共用同一套控件（#proto-filter-panel），按 variant 移动到不同挂载点：
-//   a = 工具栏第二行（常驻）  b = 「筛选」按钮 + 弹出面板  c = 左侧栏分组
+// 交互：检索行内的「筛选 ▾」按钮展开/收起工具栏第二行（Google「工具」式）。
+// 折叠时筛选仍然生效，靠按钮徽标（激活维数）与 meta 行摘要传达；
+// 载入时若有激活筛选则自动展开。
 // 后端参数：hour_from / hour_to（收录时间小时，0-23，跨零点回绕）、
-//          duplicate_state（all / untagged / tagged）、min_score / max_score。
+//          duplicate_state=untagged（隐藏已报送开关）、min_score / max_score。
 
 const PROTO_FILTER_STORAGE_KEY = 'proto_filter_state_v1';
-const PROTO_VARIANT_STORAGE_KEY = 'proto_filter_variant';
-const PROTO_FILTER_VARIANTS = ['a', 'b', 'c', 'd'];
 
 const protoFilterState = {
-    variant: 'a',
     hourFrom: '',
     hourTo: '',
     hideTagged: '',
@@ -20,17 +17,16 @@ const protoFilterState = {
     maxScore: ''
 };
 
+const PROTO_FILTER_FIELDS = ['hourFrom', 'hourTo', 'hideTagged', 'minScore', 'maxScore'];
+
 function protoFilterReadStorage() {
     try {
         const rawState = localStorage.getItem(PROTO_FILTER_STORAGE_KEY);
-        if (rawState) {
-            const saved = JSON.parse(rawState);
-            ['hourFrom', 'hourTo', 'hideTagged', 'minScore', 'maxScore'].forEach(key => {
-                if (saved && typeof saved[key] === 'string') protoFilterState[key] = saved[key];
-            });
-        }
-        const savedVariant = localStorage.getItem(PROTO_VARIANT_STORAGE_KEY);
-        if (PROTO_FILTER_VARIANTS.includes(savedVariant)) protoFilterState.variant = savedVariant;
+        if (!rawState) return;
+        const saved = JSON.parse(rawState);
+        PROTO_FILTER_FIELDS.forEach(key => {
+            if (saved && typeof saved[key] === 'string') protoFilterState[key] = saved[key];
+        });
     } catch (error) {
         // 存储不可用时按默认值处理
     }
@@ -38,14 +34,9 @@ function protoFilterReadStorage() {
 
 function protoFilterWriteStorage() {
     try {
-        localStorage.setItem(PROTO_FILTER_STORAGE_KEY, JSON.stringify({
-            hourFrom: protoFilterState.hourFrom,
-            hourTo: protoFilterState.hourTo,
-            hideTagged: protoFilterState.hideTagged,
-            minScore: protoFilterState.minScore,
-            maxScore: protoFilterState.maxScore
-        }));
-        localStorage.setItem(PROTO_VARIANT_STORAGE_KEY, protoFilterState.variant);
+        const payload = {};
+        PROTO_FILTER_FIELDS.forEach(key => { payload[key] = protoFilterState[key]; });
+        localStorage.setItem(PROTO_FILTER_STORAGE_KEY, JSON.stringify(payload));
     } catch (error) {
         // 写入失败仅影响持久化
     }
@@ -58,12 +49,12 @@ function protoFilterNormalizeHour(value) {
 }
 
 function protoFilterNormalizeScore(value) {
-    if (value === null || value === undefined || value === '') return null;
+    if (value === '' || value === null || value === undefined) return null;
     const score = Number(value);
     return Number.isFinite(score) ? score : null;
 }
 
-// 「筛选中」的维度数（B 方案按钮徽标、重置按钮显隐共用）
+// 「筛选中」的维度数（按钮徽标、重置按钮显隐共用）
 function protoFilterActiveCount() {
     let count = 0;
     if (protoFilterNormalizeHour(protoFilterState.hourFrom) !== null) count += 1;
@@ -136,11 +127,7 @@ function protoFilterMetaSuffixHtml() {
 }
 
 function protoFilterReset() {
-    protoFilterState.hourFrom = '';
-    protoFilterState.hourTo = '';
-    protoFilterState.hideTagged = '';
-    protoFilterState.minScore = '';
-    protoFilterState.maxScore = '';
+    PROTO_FILTER_FIELDS.forEach(key => { protoFilterState[key] = ''; });
     protoFilterWriteStorage();
     protoFilterSyncInputs();
     protoFilterAfterChange();
@@ -178,65 +165,29 @@ function protoFilterSyncInputs() {
 }
 
 function protoFilterUpdateBadge() {
+    const badge = document.getElementById('proto-filter-count-badge');
+    if (!badge) return;
     const count = protoFilterActiveCount();
-    [document.getElementById('proto-filter-count-badge'),
-        document.getElementById('proto-filter-count-badge-d')].forEach(badge => {
-        if (!badge) return;
-        badge.textContent = count ? String(count) : '';
-        badge.hidden = !count;
-    });
-    [document.getElementById('proto-filter-toggle'),
-        document.getElementById('proto-filter-toggle-d')].forEach(toggle => {
-        if (toggle) toggle.classList.toggle('has-active', count > 0);
-    });
+    badge.textContent = count ? String(count) : '';
+    badge.hidden = !count;
+    const toggle = document.getElementById('proto-filter-toggle');
+    if (toggle) toggle.classList.toggle('has-active', count > 0);
 }
 
-function protoFilterSetVariant(variant) {
-    const normalized = PROTO_FILTER_VARIANTS.includes(variant) ? variant : 'a';
-    protoFilterState.variant = normalized;
-    protoFilterWriteStorage();
-    document.body.dataset.protoVariant = normalized;
-    protoFilterMountPanel();
-    document.querySelectorAll('.proto-variant-switcher button').forEach(btn => {
-        const isActive = btn.dataset.protoVariant === normalized;
-        btn.classList.toggle('is-active', isActive);
-        btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-    });
-    if (normalized !== 'b') protoFilterClosePopover();
-}
-
-function protoFilterMountPanel() {
-    const panel = document.getElementById('proto-filter-panel');
-    if (!panel) return;
-    const mount = document.getElementById(`proto-filter-mount-${protoFilterState.variant}`);
-    if (mount && panel.parentElement !== mount) mount.appendChild(panel);
-    protoFilterSyncInputs();
-}
-
-// D 方案：工具栏第二行折叠/展开（Google「工具」式）。折叠时筛选仍然生效，
-// 靠按钮徽标与 meta 行摘要传达；展开状态不持久化，初始化时有筛选则自动展开。
+// 展开/收起工具栏第二行。收起后筛选仍然生效，caret 方向随状态切换：
+// 收起 ▾（点开向下展开）、展开 ▴（点收向上折叠）。
 function protoFilterToggleRow(forceOpen) {
     const shouldOpen = typeof forceOpen === 'boolean'
         ? forceOpen
         : !document.body.classList.contains('proto-filter-row-open');
     document.body.classList.toggle('proto-filter-row-open', shouldOpen);
-    const toggle = document.getElementById('proto-filter-toggle-d');
+    const toggle = document.getElementById('proto-filter-toggle');
     if (toggle) {
         toggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
         toggle.classList.toggle('is-open', shouldOpen);
     }
-}
-
-function protoFilterOpenPopover() {
-    document.body.classList.add('proto-filter-popover-open');
-    const toggle = document.getElementById('proto-filter-toggle');
-    if (toggle) toggle.setAttribute('aria-expanded', 'true');
-}
-
-function protoFilterClosePopover() {
-    document.body.classList.remove('proto-filter-popover-open');
-    const toggle = document.getElementById('proto-filter-toggle');
-    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    const caret = document.querySelector('#proto-filter-toggle .proto-filter-row-caret');
+    if (caret) caret.textContent = shouldOpen ? '▴' : '▾';
 }
 
 function protoFilterBuildHourSelect(field, label) {
@@ -258,6 +209,7 @@ function protoFilterBuildScoreInput(field, label) {
         + `</label>`;
 }
 
+// 三个条件各自成卡片：顶部小标签 + 控件，界限清晰、高度一致
 function protoFilterBuildPanel() {
     const hourHint = '按收录时间的小时筛选（上海时区）。从 &gt; 到 视为跨零点区间，如 22 时–6 时。';
     const panel = document.createElement('div');
@@ -275,18 +227,22 @@ function protoFilterBuildPanel() {
         </div>
         <div class="proto-filter-group" title="${hourHint}">
             <span class="proto-filter-group-label">收录时段</span>
-            ${protoFilterBuildHourSelect('hourFrom', '从')}
-            <span class="proto-filter-range-sep">–</span>
-            ${protoFilterBuildHourSelect('hourTo', '到')}
+            <div class="proto-filter-pair">
+                ${protoFilterBuildHourSelect('hourFrom', '从')}
+                <span class="proto-filter-range-sep">–</span>
+                ${protoFilterBuildHourSelect('hourTo', '到')}
+            </div>
+            <span class="proto-filter-wrap-note" hidden>跨零点区间：从晚上段连到次日凌晨段</span>
         </div>
         <div class="proto-filter-group">
             <span class="proto-filter-group-label">分数</span>
-            ${protoFilterBuildScoreInput('minScore', '最低')}
-            <span class="proto-filter-range-sep">–</span>
-            ${protoFilterBuildScoreInput('maxScore', '最高')}
+            <div class="proto-filter-pair">
+                ${protoFilterBuildScoreInput('minScore', '最低')}
+                <span class="proto-filter-range-sep">–</span>
+                ${protoFilterBuildScoreInput('maxScore', '最高')}
+            </div>
         </div>
-        <span class="proto-filter-wrap-note" hidden>跨零点区间：从晚上段连到次日凌晨段</span>
-        <button type="button" class="btn btn-secondary proto-filter-reset" hidden>重置筛选</button>
+        <button type="button" class="proto-filter-reset" hidden>重置筛选</button>
     `;
     return panel;
 }
@@ -308,26 +264,9 @@ function protoFilterWireEvents(panel) {
 }
 
 function protoFilterWireGlobalEvents() {
-    // 方案切换器
-    document.querySelectorAll('.proto-variant-switcher button').forEach(btn => {
-        btn.addEventListener('click', () => protoFilterSetVariant(btn.dataset.protoVariant));
-    });
-    // B 方案：弹出面板开关
     const toggle = document.getElementById('proto-filter-toggle');
     if (toggle) {
-        toggle.addEventListener('click', event => {
-            event.stopPropagation();
-            if (document.body.classList.contains('proto-filter-popover-open')) {
-                protoFilterClosePopover();
-            } else {
-                protoFilterOpenPopover();
-            }
-        });
-    }
-    // D 方案：工具栏行折叠开关
-    const rowToggle = document.getElementById('proto-filter-toggle-d');
-    if (rowToggle) {
-        rowToggle.addEventListener('click', () => protoFilterToggleRow());
+        toggle.addEventListener('click', () => protoFilterToggleRow());
     }
     // meta 行的「重置筛选」链接（由 innerHTML 重渲染，用委托）
     document.addEventListener('click', event => {
@@ -335,20 +274,6 @@ function protoFilterWireGlobalEvents() {
             event.preventDefault();
             protoFilterReset();
         }
-        // B 方案点外部关闭：命中面板或开关内部时不处理
-        if (document.body.classList.contains('proto-filter-popover-open')
-            && !event.target.closest('#proto-filter-panel')
-            && !event.target.closest('#proto-filter-toggle')) {
-            protoFilterClosePopover();
-        }
-    });
-    // Escape：让位给检索抽屉与原文抽屉，它们开着时不处理
-    document.addEventListener('keydown', event => {
-        if (event.key !== 'Escape') return;
-        if (!document.body.classList.contains('proto-filter-popover-open')) return;
-        if (document.body.classList.contains('search-drawer-open')) return;
-        if (document.body.classList.contains('content-drawer-open')) return;
-        protoFilterClosePopover();
     });
 }
 
@@ -357,12 +282,11 @@ function protoFilterInit() {
     const panel = protoFilterBuildPanel();
     protoFilterWireEvents(panel);
     protoFilterWireGlobalEvents();
-    const mount = document.getElementById(`proto-filter-mount-${protoFilterState.variant}`)
-        || document.getElementById('proto-filter-mount-a');
+    const mount = document.getElementById('proto-filter-mount');
     if (mount) mount.appendChild(panel);
-    protoFilterSetVariant(protoFilterState.variant);
+    protoFilterSyncInputs();
     protoFilterUpdateBadge();
-    if (protoFilterState.variant === 'd' && protoFilterActive()) protoFilterToggleRow(true);
+    if (protoFilterActive()) protoFilterToggleRow(true);
 }
 
 if (document.readyState === 'loading') {

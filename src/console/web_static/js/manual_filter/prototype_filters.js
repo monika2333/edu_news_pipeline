@@ -117,8 +117,9 @@ function protoFilterDescribe() {
     return parts.join(' · ');
 }
 
-// meta 行后缀（含「重置」入口）。基础文案由 syncFilterToolbarState 以文本形式写入，
-// 这里返回的 HTML 只包含本模块生成的固定文案与一个按钮，不含用户数据。
+// meta 行后缀：唯一的「清空筛选」入口（筛选行内不重复放置）。基础文案由
+// syncFilterToolbarState 以文本形式写入，这里返回的 HTML 只包含本模块生成的
+// 固定文案与一个按钮，不含用户数据。
 function protoFilterMetaSuffixHtml() {
     if (!protoFilterActive()) return '';
     const summary = protoFilterDescribe() || '筛选中';
@@ -154,8 +155,6 @@ function protoFilterSyncInputs() {
     panel.querySelectorAll('input[type="checkbox"][data-proto-field]').forEach(checkbox => {
         checkbox.checked = protoFilterState[checkbox.dataset.protoField] === '1';
     });
-    const resetBtn = panel.querySelector('.proto-filter-reset');
-    if (resetBtn) resetBtn.hidden = !protoFilterActive();
     const wrapNote = panel.querySelector('.proto-filter-wrap-note');
     if (wrapNote) {
         const from = protoFilterNormalizeHour(protoFilterState.hourFrom);
@@ -239,7 +238,6 @@ function protoFilterBuildPanel() {
                 ${protoFilterBuildScoreInput('maxScore', '最高')}
             </div>
         </div>
-        <button type="button" class="proto-filter-reset" hidden>清空筛选</button>
     `;
     return panel;
 }
@@ -254,9 +252,6 @@ function protoFilterWireEvents(panel) {
         protoFilterWriteStorage();
         protoFilterSyncInputs();
         protoFilterAfterChange();
-    });
-    panel.addEventListener('click', event => {
-        if (event.target.closest('.proto-filter-reset')) protoFilterReset();
     });
 }
 

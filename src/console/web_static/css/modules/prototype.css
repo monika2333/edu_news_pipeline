@@ -209,12 +209,19 @@ body.proto-filter-row-open .proto-collapsible-row {
     line-height: 1;
 }
 
-/* 「清空筛选」：行尾次级小按钮，与控件同高，垂直居中 */
-.proto-filter-reset {
-    align-self: center;
-    margin-left: auto;
-    height: 32px;
-    padding: 0 14px;
+/* ── meta 行筛选摘要 ─────────────────────────────────────────────────── */
+.proto-filter-meta-suffix {
+    color: var(--primary-color, #2563eb);
+}
+
+/* 「清空筛选」：meta 行内唯一的清空入口，样式与筛选行控件同款描边按钮 */
+.proto-filter-meta-suffix .proto-filter-reset-link {
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 6px;
+    height: 26px;
+    padding: 0 12px;
+    line-height: 24px;
     border: 1px solid var(--border-color, #d9d9d9);
     border-radius: 8px;
     background: #fff;
@@ -222,31 +229,14 @@ body.proto-filter-row-open .proto-collapsible-row {
     font: inherit;
     font-size: 13px;
     cursor: pointer;
+    text-decoration: none;
     white-space: nowrap;
     transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
-.proto-filter-reset:hover {
+.proto-filter-meta-suffix .proto-filter-reset-link:hover {
     border-color: var(--primary-color, #2563eb);
     color: var(--primary-color, #2563eb);
     background: #eef2ff;
-}
-
-.proto-filter-reset[hidden] {
-    display: none;
-}
-
-/* ── meta 行筛选摘要 ─────────────────────────────────────────────────── */
-.proto-filter-meta-suffix {
-    color: var(--primary-color, #2563eb);
-}
-
-.proto-filter-meta-suffix .proto-filter-reset-link {
-    border: none;
-    background: transparent;
-    color: var(--primary-color, #2563eb);
-    cursor: pointer;
-    font-size: inherit;
-    text-decoration: underline;
-    padding: 0 2px;
+    text-decoration: none;
 }

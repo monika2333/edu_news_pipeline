@@ -15,7 +15,7 @@ const protoFilterState = {
     variant: 'a',
     hourFrom: '',
     hourTo: '',
-    duplicateState: 'all',
+    hideTagged: '',
     minScore: '',
     maxScore: ''
 };
@@ -25,7 +25,7 @@ function protoFilterReadStorage() {
         const rawState = localStorage.getItem(PROTO_FILTER_STORAGE_KEY);
         if (rawState) {
             const saved = JSON.parse(rawState);
-            ['hourFrom', 'hourTo', 'duplicateState', 'minScore', 'maxScore'].forEach(key => {
+            ['hourFrom', 'hourTo', 'hideTagged', 'minScore', 'maxScore'].forEach(key => {
                 if (saved && typeof saved[key] === 'string') protoFilterState[key] = saved[key];
             });
         }
@@ -41,7 +41,7 @@ function protoFilterWriteStorage() {
         localStorage.setItem(PROTO_FILTER_STORAGE_KEY, JSON.stringify({
             hourFrom: protoFilterState.hourFrom,
             hourTo: protoFilterState.hourTo,
-            duplicateState: protoFilterState.duplicateState,
+            hideTagged: protoFilterState.hideTagged,
             minScore: protoFilterState.minScore,
             maxScore: protoFilterState.maxScore
         }));
@@ -68,7 +68,7 @@ function protoFilterActiveCount() {
     let count = 0;
     if (protoFilterNormalizeHour(protoFilterState.hourFrom) !== null) count += 1;
     if (protoFilterNormalizeHour(protoFilterState.hourTo) !== null) count += 1;
-    if (protoFilterState.duplicateState !== 'all') count += 1;
+    if (protoFilterState.hideTagged === '1') count += 1;
     if (protoFilterNormalizeScore(protoFilterState.minScore) !== null) count += 1;
     if (protoFilterNormalizeScore(protoFilterState.maxScore) !== null) count += 1;
     return count;
@@ -85,8 +85,8 @@ function protoFilterQueryParams() {
     const hourTo = protoFilterNormalizeHour(protoFilterState.hourTo);
     if (hourFrom !== null) pairs.push(['hour_from', String(hourFrom)]);
     if (hourTo !== null) pairs.push(['hour_to', String(hourTo)]);
-    if (protoFilterState.duplicateState === 'untagged' || protoFilterState.duplicateState === 'tagged') {
-        pairs.push(['duplicate_state', protoFilterState.duplicateState]);
+    if (protoFilterState.hideTagged === '1') {
+        pairs.push(['duplicate_state', 'untagged']);
     }
     const minScore = protoFilterNormalizeScore(protoFilterState.minScore);
     const maxScore = protoFilterNormalizeScore(protoFilterState.maxScore);
@@ -117,8 +117,7 @@ function protoFilterDescribe() {
             parts.push(`${hourTo} 时前`);
         }
     }
-    if (protoFilterState.duplicateState === 'untagged') parts.push('未报送');
-    if (protoFilterState.duplicateState === 'tagged') parts.push('已报送');
+    if (protoFilterState.hideTagged === '1') parts.push('隐藏已报送');
     const minScore = protoFilterNormalizeScore(protoFilterState.minScore);
     const maxScore = protoFilterNormalizeScore(protoFilterState.maxScore);
     if (minScore !== null && maxScore !== null) parts.push(`分数 ${minScore}–${maxScore}`);
@@ -139,7 +138,7 @@ function protoFilterMetaSuffixHtml() {
 function protoFilterReset() {
     protoFilterState.hourFrom = '';
     protoFilterState.hourTo = '';
-    protoFilterState.duplicateState = 'all';
+    protoFilterState.hideTagged = '';
     protoFilterState.minScore = '';
     protoFilterState.maxScore = '';
     protoFilterWriteStorage();
@@ -162,13 +161,11 @@ function protoFilterSyncInputs() {
     panel.querySelectorAll('select[data-proto-field]').forEach(select => {
         select.value = protoFilterState[select.dataset.protoField] || '';
     });
-    panel.querySelectorAll('input[data-proto-field]').forEach(input => {
+    panel.querySelectorAll('input[type="number"][data-proto-field]').forEach(input => {
         input.value = protoFilterState[input.dataset.protoField] || '';
     });
-    panel.querySelectorAll('[data-proto-duplicate]').forEach(btn => {
-        const isActive = btn.dataset.protoDuplicate === protoFilterState.duplicateState;
-        btn.classList.toggle('is-active', isActive);
-        btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    panel.querySelectorAll('input[type="checkbox"][data-proto-field]').forEach(checkbox => {
+        checkbox.checked = protoFilterState[checkbox.dataset.protoField] === '1';
     });
     const resetBtn = panel.querySelector('.proto-filter-reset');
     if (resetBtn) resetBtn.hidden = !protoFilterActive();
@@ -254,13 +251,15 @@ function protoFilterBuildPanel() {
             <span class="proto-filter-range-sep">–</span>
             ${protoFilterBuildHourSelect('hourTo', '到')}
         </div>
-        <div class="proto-filter-group" title="按报送查重徽章筛选：「未报送」只看无标签条目，「已报送」只看带已报送/疑似已报送标签的条目">
+        <div class="proto-filter-group" title="开启后隐藏带「已报送/疑似已报送」徽章的条目">
             <span class="proto-filter-group-label">报送标签</span>
-            <div class="proto-filter-segmented" role="group" aria-label="报送标签筛选">
-                <button type="button" data-proto-duplicate="all" aria-pressed="true">全部</button>
-                <button type="button" data-proto-duplicate="untagged" aria-pressed="false">未报送</button>
-                <button type="button" data-proto-duplicate="tagged" aria-pressed="false">已报送</button>
-            </div>
+            <label class="proto-switch-control">
+                <span class="proto-switch">
+                    <input type="checkbox" data-proto-field="hideTagged" aria-label="隐藏已报送">
+                    <span class="proto-switch-slider" aria-hidden="true"></span>
+                </span>
+                <span class="proto-switch-text">隐藏已报送</span>
+            </label>
         </div>
         <div class="proto-filter-group">
             <span class="proto-filter-group-label">分数</span>
@@ -278,20 +277,14 @@ function protoFilterWireEvents(panel) {
     panel.addEventListener('change', event => {
         const target = event.target.closest('[data-proto-field]');
         if (!target) return;
-        protoFilterState[target.dataset.protoField] = target.value.trim();
+        protoFilterState[target.dataset.protoField] = target.type === 'checkbox'
+            ? (target.checked ? '1' : '')
+            : target.value.trim();
         protoFilterWriteStorage();
         protoFilterSyncInputs();
         protoFilterAfterChange();
     });
     panel.addEventListener('click', event => {
-        const segmentBtn = event.target.closest('[data-proto-duplicate]');
-        if (segmentBtn) {
-            protoFilterState.duplicateState = segmentBtn.dataset.protoDuplicate;
-            protoFilterWriteStorage();
-            protoFilterSyncInputs();
-            protoFilterAfterChange();
-            return;
-        }
         if (event.target.closest('.proto-filter-reset')) protoFilterReset();
     });
 }

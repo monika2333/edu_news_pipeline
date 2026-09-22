@@ -109,30 +109,66 @@
     color: var(--text-secondary, #475569);
 }
 
-.proto-filter-segmented {
+/* 「隐藏已报送」滑动开关 */
+.proto-switch-control {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
-    padding: 3px;
-    background: #e2e8f0;
-    border-radius: 8px;
-}
-
-.proto-filter-segmented button {
-    border: none;
-    background: transparent;
-    border-radius: 6px;
-    padding: 5px 12px;
-    font-size: 13px;
-    color: var(--text-secondary, #475569);
+    gap: 8px;
     cursor: pointer;
+    user-select: none;
 }
 
-.proto-filter-segmented button.is-active {
+.proto-switch-text {
+    font-size: 13px;
+    color: var(--text-primary, #0f172a);
+}
+
+.proto-switch {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+    flex: 0 0 auto;
+}
+
+.proto-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+}
+
+.proto-switch-slider {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: #cbd5e1;
+    transition: background 0.15s ease;
+}
+
+.proto-switch-slider::before {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    left: 2px;
+    top: 2px;
+    border-radius: 50%;
     background: #fff;
-    color: var(--primary-color, #2563eb);
-    font-weight: 600;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
+    transition: transform 0.15s ease;
+}
+
+.proto-switch input:checked + .proto-switch-slider {
+    background: var(--primary-color, #2563eb);
+}
+
+.proto-switch input:checked + .proto-switch-slider::before {
+    transform: translateX(16px);
+}
+
+.proto-switch input:focus-visible + .proto-switch-slider {
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
 }
 
 .proto-filter-wrap-note {
@@ -177,28 +213,20 @@ body[data-proto-variant="a"] .proto-filter-group {
     gap: 6px;
 }
 
-/* ── 方案 B：「筛选」按钮 + 弹出面板 ─────────────────────────────────── */
-/* 模板里按钮包一层 display:contents，使按钮直接成为工具栏 grid 的 item；
-   非 B 方案时按钮 display:none，grid 回到原有三列，不占任何空间。 */
-.filter-toolbar {
-    position: relative;
-}
-
+/* ── 方案 B：「筛选」按钮挂工作区右上角 + 弹出面板 ───────────────────── */
 .proto-filter-toggle-wrap {
-    display: contents;
-}
-
-#proto-filter-toggle {
     display: none;
-}
-
-body[data-proto-variant="b"] #proto-filter-toggle {
-    display: inline-flex;
-    align-items: center;
-}
-
-#proto-filter-toggle {
     position: relative;
+}
+
+body[data-proto-variant="b"] .proto-filter-toggle-wrap {
+    display: inline-flex;
+}
+
+/* 切到「放弃」等 tab 时由 data-workspace-action-tab 的 hidden 隐藏，
+   display 规则会盖过 [hidden]，这里显式压回 */
+.proto-filter-toggle-wrap[hidden] {
+    display: none !important;
 }
 
 #proto-filter-toggle.has-active {
@@ -226,15 +254,10 @@ body[data-proto-variant="b"] #proto-filter-toggle {
 }
 
 .proto-popover-mount {
-    display: none;
     position: absolute;
     top: calc(100% + 8px);
-    left: 0;
+    right: 0;
     z-index: 60;
-}
-
-body[data-proto-variant="b"] .proto-popover-mount {
-    display: block;
 }
 
 body[data-proto-variant="b"] #proto-filter-panel {
@@ -306,17 +329,6 @@ body[data-proto-variant="c"] .proto-filter-control-label {
 body[data-proto-variant="c"] .proto-filter-control-label select,
 body[data-proto-variant="c"] .proto-filter-control-label input {
     width: 100%;
-}
-
-body[data-proto-variant="c"] .proto-filter-segmented {
-    display: flex;
-}
-
-body[data-proto-variant="c"] .proto-filter-segmented button {
-    flex: 1;
-    padding: 6px 4px;
-    font-size: 12px;
-    white-space: nowrap;
 }
 
 body[data-proto-variant="c"] .proto-filter-reset {

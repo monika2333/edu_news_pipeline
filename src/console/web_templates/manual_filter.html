@@ -94,6 +94,16 @@
                 <button class="tab-btn" data-tab="discard">放弃</button>
             </div>
             <div class="workspace-tab-actions">
+                {# 原型：B 方案的「筛选」入口挂在工作区右上角；弹层面板锚定按钮下方 #}
+                <div class="proto-filter-toggle-wrap workspace-tab-action"
+                    data-workspace-action-tab="filter">
+                    <button type="button" id="proto-filter-toggle"
+                        class="btn btn-secondary" aria-expanded="false"
+                        aria-controls="proto-filter-panel">筛选<span
+                        class="proto-filter-count-badge"
+                        id="proto-filter-count-badge" hidden></span></button>
+                    <div id="proto-filter-mount-b" class="proto-popover-mount"></div>
+                </div>
                 <div class="duty-finalization-status duty-finalization-action workspace-tab-action"
                     id="duty-finalization-status" data-workspace-action-tab="review"
                     data-state="loading" aria-live="polite" hidden>
@@ -123,6 +133,16 @@
                         aria-pressed="true" data-duty-process-scope="all">全部</button>
                     <button class="duty-scope-btn" type="button"
                         aria-pressed="false" data-duty-process-scope="unprocessed">值班未处理</button>
+                </div>
+                {# 原型：B 方案的「筛选」入口放在「清理旧新闻」旁，随筛选 tab 显隐 #}
+                <div class="proto-filter-toggle-wrap workspace-tab-action"
+                    data-workspace-action-tab="filter">
+                    <button type="button" id="proto-filter-toggle"
+                        class="btn btn-secondary" aria-expanded="false"
+                        aria-controls="proto-filter-panel">筛选<span
+                        class="proto-filter-count-badge"
+                        id="proto-filter-count-badge" hidden></span></button>
+                    <div id="proto-filter-mount-b" class="proto-popover-mount"></div>
                 </div>
                 <button class="btn btn-secondary workspace-tab-action" id="btn-open-cleanup" type="button"
                     data-workspace-action-tab="filter">清理旧新闻</button>
@@ -167,20 +187,12 @@
                                     </svg>
                                 </button>
                             </div>
-                            <div class="proto-filter-toggle-wrap">
-                                <button type="button" id="proto-filter-toggle"
-                                    class="btn btn-secondary" aria-expanded="false"
-                                    aria-controls="proto-filter-panel">筛选<span
-                                    class="proto-filter-count-badge"
-                                    id="proto-filter-count-badge" hidden></span></button>
-                            </div>
                             <button class="btn btn-secondary" id="btn-filter-search">检索</button>
                             <button class="btn btn-primary filter-discard-action"
                                 id="btn-filter-bulk-discard">全部放弃</button>
                         </div>
-                        {# 原型：A=工具栏第二行 / B=弹出面板（均挂 #proto-filter-panel，JS 按方案搬动） #}
+                        {# 原型：A=工具栏第二行 / B=弹出面板（面板挂右上角按钮，JS 按方案搬动） #}
                         <div id="proto-filter-mount-a" class="proto-toolbar-row"></div>
-                        <div id="proto-filter-mount-b" class="proto-popover-mount"></div>
                         <div class="filter-toolbar-meta" id="filter-search-meta"></div>
                     </div>
                     <div id="filter-list">

@@ -424,7 +424,11 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'data-tab="discard">放弃</button>' in html
     assert 'class="workspace-tabs-row"' in html
     assert 'class="workspace-tab-actions"' in html
-    assert 'data-workspace-action-tab="filter"' not in html
+    # 值班页不得出现管理员专属的筛选作用域控件（值班未处理开关 / 清理旧新闻）；
+    # 右上角共享的「筛选」原型入口随筛选 tab 显隐，属于两页共用的合法元素。
+    assert 'id="btn-open-cleanup"' not in html
+    assert 'data-duty-process-scope' not in html
+    assert 'id="proto-filter-toggle"' in html
     assert 'data-workspace-action-tab="review"' in html
     assert 'id="duty-finalization-status"' in html
     assert html.index('id="duty-finalization-status"') < html.index('id="review-tab"')

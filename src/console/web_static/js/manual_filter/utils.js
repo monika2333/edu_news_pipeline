@@ -198,8 +198,8 @@ function setupTabs() {
     });
 }
 
-function reloadCurrentTab(options = {}) {
-    if (state.currentTab === 'filter') loadFilterData(options);
+function reloadCurrentTab() {
+    if (state.currentTab === 'filter') loadFilterData();
     else if (state.currentTab === 'review') {
         loadReviewData();
         if (IS_DUTY_WORKSPACE) loadDutyFinalizationStatus();

@@ -66,16 +66,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupReportTypeTab();
 
     // Global event listeners
-    const btnRefresh = document.getElementById('btn-refresh');
-    if (btnRefresh) {
-        btnRefresh.addEventListener('click', () => {
-            loadStats();
-            const forceClusterRefresh = state.currentTab === 'filter';
-            shouldForceClusterRefresh = forceClusterRefresh;
-            reloadCurrentTab({ forceClusterRefresh });
-        });
-    }
-
     const btnSubmitFilter = document.getElementById('btn-submit-filter');
     if (btnSubmitFilter) {
         btnSubmitFilter.addEventListener('click', discardRemainingItems);

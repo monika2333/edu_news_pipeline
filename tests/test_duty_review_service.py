@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from datetime import datetime, timezone
 from typing import Any, Mapping, Optional, Sequence
 
@@ -662,31 +663,30 @@ def test_order_rejects_grouped_article_missing_from_review_order(
     assert fake_adapter.ordered == {}
 
 
+def test_list_clusters_does_not_rebuild_cluster_cache() -> None:
+    # 聚类缓存只由计划任务（refresh-manual-clusters）重建；
+    # 值班审查读路径曾支持 force_refresh，已整体移除，不得回潮。
+    source = inspect.getsource(duty_review_service)
+    assert "refresh_clusters" not in source
+
+
 def test_clusters_are_scoped_by_owned_shift_and_report_type(monkeypatch) -> None:
     adapter = FakeDutyReviewAdapter()
     ownership_checks: list[str] = []
-    refreshes: list[dict[str, Any]] = []
     monkeypatch.setattr(duty_review_service, "get_adapter", lambda: adapter)
     monkeypatch.setattr(
         duty_review_service,
         "require_owned_shift",
         lambda shift_id, user: ownership_checks.append(f"{shift_id}:{user.user_id}"),
     )
-    monkeypatch.setattr(
-        duty_review_service.manual_filter_cluster,
-        "refresh_clusters",
-        lambda **kwargs: refreshes.append(dict(kwargs)) or True,
-    )
 
     result = duty_review_service.list_clusters(
         shift_id="shift-id",
         user=_editor(),
         report_type="wanbao",
-        force_refresh=True,
     )
 
     assert ownership_checks == ["shift-id:editor-id"]
-    assert refreshes == [{}]
     assert result["clusters"][0]["item_ids"] == ["article-1", "article-2"]
     assert result["item_total"] == 2
 

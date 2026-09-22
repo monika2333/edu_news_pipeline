@@ -124,7 +124,6 @@ def _list_candidate_browse(
     sentiment: Optional[str],
     cluster: bool,
     cluster_threshold: Optional[float],
-    force_refresh: bool,
     report_type: Optional[str],
     duty_unprocessed_only: bool,
 ) -> Dict[str, Any]:
@@ -136,7 +135,6 @@ def _list_candidate_browse(
             limit=limit,
             offset=offset,
             cluster_threshold=cluster_threshold,
-            force_refresh=force_refresh,
             report_type=report_type,
             duty_unprocessed_only=duty_unprocessed_only,
         )
@@ -171,7 +169,6 @@ def list_candidates(
     sentiment: Optional[str] = None,
     cluster: bool = False,
     cluster_threshold: Optional[float] = None,
-    force_refresh: bool = False,
     q: Optional[str] = None,
     created_before: Optional[date] = None,
     view_mode: Optional[str] = None,
@@ -217,7 +214,6 @@ def list_candidates(
         sentiment=sentiment,
         cluster=cluster,
         cluster_threshold=cluster_threshold,
-        force_refresh=force_refresh,
         report_type=target_report_type,
         duty_unprocessed_only=duty_unprocessed_only,
     )

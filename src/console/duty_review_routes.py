@@ -132,7 +132,6 @@ def list_candidates(
 def list_clusters(
     shift_id: str,
     report_type: ReportType = "zongbao",
-    force_refresh: bool = False,
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
     limit: Optional[int] = None,
@@ -145,7 +144,6 @@ def list_clusters(
             shift_id=shift_id,
             user=user,
             report_type=report_type,
-            force_refresh=force_refresh,
             region=region,
             sentiment=sentiment,
             limit=limit,

@@ -70,7 +70,6 @@ let state = {
     }
 };
 
-let shouldForceClusterRefresh = false;
 let reviewSortableInstances = [];
 
 // UI mode

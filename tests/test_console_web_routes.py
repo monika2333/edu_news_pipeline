@@ -401,6 +401,7 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     ).read_text(encoding="utf-8")
     init_script = (scripts_dir / "init.js").read_text(encoding="utf-8")
     utils_script = (scripts_dir / "utils.js").read_text(encoding="utf-8")
+    core_script = (scripts_dir / "core.js").read_text(encoding="utf-8")
     finalization_script = (
         scripts_dir / "review_tab_finalization.js"
     ).read_text(encoding="utf-8")
@@ -412,8 +413,8 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'data-workspace-mode="duty"' in html
     assert "/static/js/admin_last_view.js" not in html
     assert 'class="stats"' in html
-    assert 'id="btn-refresh"' in html
-    assert 'aria-describedby="refresh-cluster-hint"' in html
+    assert 'id="btn-refresh"' not in html
+    assert 'aria-describedby="refresh-cluster-hint"' not in html
     assert 'aria-label="管理员主视图"' not in html
     assert 'aria-label="值班编辑主视图"' not in html
     assert 'href="/submission-archive"' not in html
@@ -423,11 +424,9 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'data-tab="discard">放弃</button>' in html
     assert 'class="workspace-tabs-row"' in html
     assert 'class="workspace-tab-actions"' in html
-    assert 'data-workspace-action-tab="filter"' in html
+    assert 'data-workspace-action-tab="filter"' not in html
     assert 'data-workspace-action-tab="review"' in html
     assert 'id="duty-finalization-status"' in html
-    assert html.index('data-tab="discard"') < html.index('id="btn-refresh"')
-    assert html.index('id="btn-refresh"') < html.index('id="filter-tab"')
     assert html.index('id="duty-finalization-status"') < html.index('id="review-tab"')
     assert '/static/js/manual_filter/workspace.js?v=' in html
     assert '/static/js/shift_date.js?v=' in html
@@ -471,7 +470,7 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "action.hidden = action.dataset.workspaceActionTab !== currentTab;" in utils_script
     assert "async function loadDutyClusters" not in workspace_script
     assert "include_items: 'true'" in workspace_script
-    assert "['region', 'sentiment', 'force_refresh']" in workspace_script
+    assert "['region', 'sentiment']" in workspace_script
     assert "`${API_BASE}/clusters?${clusterParams.toString()}`" in workspace_script
     assert "cluster: searchMode ? 'false' : 'true'" in filter_data_script
     assert "searchMode || state.hideSubmitted" not in filter_data_script
@@ -496,6 +495,10 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
         scripts_dir / "filter_tab_data.js"
     ).read_text(encoding="utf-8")
     assert "loadFilterData({ forceClusterRefresh: true })" not in filter_actions_script
+    assert "force_refresh" not in filter_data_script
+    assert "shouldForceClusterRefresh" not in filter_data_script
+    assert "shouldForceClusterRefresh" not in core_script
+    assert "btn-refresh" not in init_script
     assert "item.content_markdown" not in workspace_script
     assert "function loadDutyFinalizationStatus()" in finalization_script
     assert "function renderDutyFinalizationStatus(finalization)" in finalization_script
@@ -557,6 +560,9 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     components_stylesheet = (
         root / "src/console/web_static/css/components.css"
     ).read_text(encoding="utf-8")
+    layout_stylesheet = (
+        root / "src/console/web_static/css/layout.css"
+    ).read_text(encoding="utf-8")
 
     assert response.status_code == 200
     html = response.text
@@ -591,13 +597,11 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert "function syncFilterSearchClearButton()" in filter_render_script
     assert "elements.filterSearchClear.addEventListener('click', async () => {" in filter_init_script
     assert 'id="search-drawer-toggle"' in html
-    assert 'id="btn-refresh"' in html
-    assert 'aria-describedby="refresh-cluster-hint"' in html
-    assert "刷新会重新聚类，可能需要等待约 1 分钟" in html
+    assert 'id="btn-refresh"' not in html
+    assert 'aria-describedby="refresh-cluster-hint"' not in html
+    assert "刷新会重新聚类" not in html
     assert 'class="workspace-tabs-row"' in html
     assert 'class="workspace-tab-actions"' in html
-    assert html.index('data-tab="discard"') < html.index('id="btn-refresh"')
-    assert html.index('id="btn-refresh"') < html.index('id="filter-tab"')
     assert '<details class="account-menu">' in html
     assert '<summary class="account-menu-trigger current-user" id="current-user">' in html
     assert 'class="btn btn-secondary" href="/admin">用户与排班</a>' not in html
@@ -609,6 +613,7 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert 'class="empty empty-state"' in filter_render_script
     assert ".empty-state {" in components_stylesheet
     assert "border: 1px dashed #cbd5e1;" in components_stylesheet
+    assert "refresh-action" not in layout_stylesheet
 
 
 def test_admin_review_is_an_independent_workspace() -> None:

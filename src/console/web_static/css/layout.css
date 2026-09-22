@@ -39,50 +39,6 @@ h1 {
     gap: 8px;
 }
 
-.refresh-action {
-    position: relative;
-    display: inline-flex;
-}
-
-.refresh-action-tooltip {
-    position: absolute;
-    top: calc(100% + 8px);
-    left: 0;
-    z-index: 30;
-    width: 260px;
-    max-width: calc(100vw - 48px);
-    box-sizing: border-box;
-    padding: 8px 10px;
-    border-radius: 7px;
-    background: #172033;
-    color: #fff;
-    font-size: 0.78rem;
-    font-weight: 500;
-    line-height: 1.5;
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-4px);
-    transition: opacity 140ms ease, transform 140ms ease, visibility 140ms ease;
-    visibility: hidden;
-}
-
-.refresh-action-tooltip::before {
-    position: absolute;
-    bottom: 100%;
-    left: 22px;
-    border-right: 5px solid transparent;
-    border-bottom: 5px solid #172033;
-    border-left: 5px solid transparent;
-    content: "";
-}
-
-.refresh-action:hover .refresh-action-tooltip,
-.refresh-action:focus-within .refresh-action-tooltip {
-    opacity: 1;
-    transform: translateY(0);
-    visibility: visible;
-}
-
 .workspace-coverage {
     margin: 0;
     color: var(--text-secondary);
@@ -158,20 +114,6 @@ h1 {
 
 .workspace-tab-action[hidden] {
     display: none;
-}
-
-.workspace-tabs-refresh {
-    flex: 0 0 auto;
-}
-
-.workspace-tabs-refresh .refresh-action-tooltip {
-    right: 0;
-    left: auto;
-}
-
-.workspace-tabs-refresh .refresh-action-tooltip::before {
-    right: 22px;
-    left: auto;
 }
 
 .tab-btn {
@@ -299,11 +241,5 @@ h1 {
 
     .container {
         padding-bottom: 20px;
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .refresh-action-tooltip {
-        transition: none;
     }
 }

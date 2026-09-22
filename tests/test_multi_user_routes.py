@@ -120,7 +120,7 @@ def test_m15_duty_editor_cannot_access_any_settings_route(
     assert response.status_code == 403
 
 
-def test_editor_can_refresh_shift_clusters(monkeypatch) -> None:
+def test_editor_cluster_route_ignores_force_refresh(monkeypatch) -> None:
     editor = _user("duty_editor")
     captured: dict[str, Any] = {}
 
@@ -138,7 +138,7 @@ def test_editor_can_refresh_shift_clusters(monkeypatch) -> None:
     assert response.status_code == 200
     assert captured["shift_id"] == "shift-id"
     assert captured["report_type"] == "zongbao"
-    assert captured["force_refresh"] is True
+    assert "force_refresh" not in captured
     assert captured["region"] is None
     assert captured["sentiment"] is None
     assert captured["limit"] is None

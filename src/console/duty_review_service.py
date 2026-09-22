@@ -12,7 +12,6 @@ from src.adapters.db_postgres_shift_reviews import (
 from src.console import (
     articles_service,
     manual_filter_admin_service,
-    manual_filter_cluster,
     manual_filter_duplicate_service,
     score_feedback_service,
 )
@@ -276,7 +275,6 @@ def list_clusters(
     shift_id: str,
     user: ConsoleUser,
     report_type: str,
-    force_refresh: bool = False,
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
     limit: Optional[int] = None,
@@ -289,8 +287,6 @@ def list_clusters(
         raise ValueError(f"Invalid review region: {region}")
     if sentiment is not None and sentiment not in {"positive", "negative"}:
         raise ValueError(f"Invalid review sentiment: {sentiment}")
-    if force_refresh:
-        manual_filter_cluster.refresh_clusters()
     rows = get_adapter().shift_reviews.fetch_clusters(
         shift_id=shift_id,
         report_type=report_type,

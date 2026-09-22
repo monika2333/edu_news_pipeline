@@ -92,15 +92,6 @@
                 <button class="tab-btn" data-tab="discard">放弃</button>
             </div>
             <div class="workspace-tab-actions">
-                <span class="refresh-action workspace-tabs-refresh workspace-tab-action"
-                    data-workspace-action-tab="filter">
-                    <button class="btn btn-secondary" id="btn-refresh" aria-describedby="refresh-cluster-hint">
-                        刷新
-                    </button>
-                    <span class="refresh-action-tooltip" id="refresh-cluster-hint" role="tooltip">
-                        刷新会重新聚类，可能需要等待约 1 分钟
-                    </span>
-                </span>
                 <div class="duty-finalization-status duty-finalization-action workspace-tab-action"
                     id="duty-finalization-status" data-workspace-action-tab="review"
                     data-state="loading" aria-live="polite" hidden>
@@ -133,14 +124,6 @@
                 </div>
                 <button class="btn btn-secondary workspace-tab-action" id="btn-open-cleanup" type="button"
                     data-workspace-action-tab="filter">清理旧新闻</button>
-                <span class="refresh-action workspace-tabs-refresh">
-                    <button class="btn btn-secondary" id="btn-refresh" aria-describedby="refresh-cluster-hint">
-                        刷新
-                    </button>
-                    <span class="refresh-action-tooltip" id="refresh-cluster-hint" role="tooltip">
-                        刷新会重新聚类，可能需要等待约 1 分钟
-                    </span>
-                </span>
             </div>
         </div>
         {% else %}

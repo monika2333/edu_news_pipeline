@@ -24,10 +24,8 @@ function isLatestFilterLoad(seq) {
     return seq === filterLoadSeq;
 }
 
-async function loadFilterData(options = {}) {
+async function loadFilterData() {
     const seq = ++filterLoadSeq;
-    const forceClusterRefresh = Boolean(options.forceClusterRefresh) || shouldForceClusterRefresh;
-    shouldForceClusterRefresh = false;
     syncFilterToolbarState();
     elements.filterList.innerHTML = renderSkeleton(3);
     loadLatestIngestStatus();
@@ -46,7 +44,6 @@ async function loadFilterData(options = {}) {
             params.set('view_mode', 'search');
             if (state.filterQuery) params.set('q', state.filterQuery);
         }
-        if (forceClusterRefresh) params.set('force_refresh', 'true');
         if (state.filterDutyScope === 'unprocessed') {
             params.set('duty_unprocessed_only', 'true');
         }

@@ -145,12 +145,22 @@ class ShiftReviewsNamespace:
         *,
         shift_id: str,
         report_type: str,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> list[dict[str, Any]]:
         with self._adapter._cluster_transaction() as cur:
             return fetch_shift_clusters(
                 cur,
                 shift_id=shift_id,
                 report_type=report_type,
+                hour_from=hour_from,
+                hour_to=hour_to,
+                duplicate_state=duplicate_state,
+                min_score=min_score,
+                max_score=max_score,
             )
 
     def fetch_finalization_status(
@@ -525,7 +535,22 @@ def fetch_shift_clusters(
     *,
     shift_id: str,
     report_type: str,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> list[dict[str, Any]]:
+    extra_clauses, extra_params = candidate_extra_filter_clauses(
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
+    )
+    extra_filter_sql = "".join(
+        f" AND {clause}" for clause in extra_clauses
+    )
     cur.execute(
         """
         WITH shift_pending AS MATERIALIZED (
@@ -555,6 +580,7 @@ def fetch_shift_clusters(
               AND ns.status = 'ready_for_export'
               AND COALESCE(sr.decision, 'pending') = 'pending'
               AND COALESCE(sr.report_type, 'zongbao') = %s
+              {extra_filter_sql}
         ),
         cluster_items AS MATERIALIZED (
             SELECT
@@ -642,10 +668,7 @@ def fetch_shift_clusters(
             representative_publish_time DESC NULLS LAST,
             cluster_id
         """,
-        (
-            shift_id,
-            report_type,
-        ),
+        tuple([shift_id, report_type] + extra_params),
     )
     return [dict(row) for row in cur.fetchall()]
 

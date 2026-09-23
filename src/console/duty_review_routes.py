@@ -154,8 +154,23 @@ def list_clusters(
     limit: Optional[int] = None,
     offset: int = 0,
     include_items: bool = False,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
     user: ConsoleUser = Depends(require_role("duty_editor")),
 ) -> dict[str, Any]:
+    try:
+        refine_filters = normalize_candidate_refine_filters(
+            hour_from=hour_from,
+            hour_to=hour_to,
+            duplicate_state=duplicate_state,
+            min_score=min_score,
+            max_score=max_score,
+        )
+    except ValueError as exc:
+        _raise_review_error(exc)
     try:
         return duty_review_service.list_clusters(
             shift_id=shift_id,
@@ -166,6 +181,7 @@ def list_clusters(
             limit=limit,
             offset=offset,
             include_items=include_items,
+            **refine_filters,
         )
     except (ValueError, PermissionError) as exc:
         _raise_review_error(exc)

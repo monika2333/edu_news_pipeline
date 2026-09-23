@@ -172,18 +172,14 @@ function dutyCandidateBackendParams(params, limit, offset) {
     return backendParams;
 }
 
-// 值班聚类接口尚未支持细化筛选；启用筛选时回退为平铺列表，保证筛选语义正确
-function dutyHasRefineFilters(params) {
-    return ['hour_from', 'hour_to', 'duplicate_state', 'min_score', 'max_score']
-        .some(key => Boolean(params.get(key)));
-}
+
 
 async function dutyCandidatesResponse(params) {
     const limit = Math.max(1, Math.min(Number(params.get('limit')) || 10, 200));
     const offset = Math.max(0, Number(params.get('offset')) || 0);
     const searchMode = params.get('view_mode') === 'search'
         || Boolean(params.get('q'));
-    if (searchMode || params.get('cluster') !== 'true' || dutyHasRefineFilters(params)) {
+    if (searchMode || params.get('cluster') !== 'true') {
         const backendParams = dutyCandidateBackendParams(params, limit, offset);
         return window.fetch(`${API_BASE}/candidates?${backendParams.toString()}`);
     }
@@ -194,7 +190,8 @@ async function dutyCandidatesResponse(params) {
         offset: String(offset),
         include_items: 'true'
     });
-    ['region', 'sentiment'].forEach(key => {
+    ['region', 'sentiment',
+        'hour_from', 'hour_to', 'duplicate_state', 'min_score', 'max_score'].forEach(key => {
         const value = params.get(key);
         if (value) clusterParams.set(key, value);
     });

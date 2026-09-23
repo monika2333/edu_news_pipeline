@@ -125,7 +125,7 @@ test('meta 行「清空筛选」是唯一清空入口：点击后徽标隐藏、
     });
 });
 
-test('值班工作区启用细化筛选时回退平铺列表接口并透传参数', async () => {
+test('值班工作区启用细化筛选时请求值班聚类接口并透传参数', async () => {
     await withPage('duty', { articleCount: 3 }, async (page) => {
         const { document } = page;
         document.getElementById('filter-refine-toggle').click();
@@ -135,14 +135,18 @@ test('值班工作区启用细化筛选时回退平铺列表接口并透传参�
 
         await waitFor(() => {
             const entries = page.server.log.filter(
-                (entry) => entry.kind === 'counts' && entry.search.hour_from === '8'
+                (entry) => entry.kind === 'list' && entry.search.hour_from === '8'
             );
-            return entries.length > 0 && entries[entries.length - 1].path.endsWith('/candidates');
+            return entries.length > 0 && entries[entries.length - 1].path.endsWith('/clusters');
         });
-        const forwarded = page.server.log.filter((entry) => entry.search.hour_from === '8');
+        // 列表请求（聚类）必须带细化参数走值班 /clusters（服务端筛选后保留聚类）；
+        // 侧栏计数走平铺 /candidates 属预期——该接口支持这三个筛选
+        const listForwarded = page.server.log.filter(
+            (entry) => entry.kind === 'list' && entry.search.hour_from === '8'
+        );
         assert.ok(
-            forwarded.every((entry) => entry.path.endsWith('/candidates')),
-            '启用细化筛选时不得请求值班 /clusters 接口'
+            listForwarded.every((entry) => entry.path.endsWith('/clusters')),
+            '细化筛选的列表请求应透传给值班 /clusters，而不是回退 /candidates'
         );
     });
 });

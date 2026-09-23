@@ -309,16 +309,17 @@ def _parse_detail_html(html_text: str, url: str) -> Dict[str, Any]:
                 if dt:
                     publish_iso = dt.isoformat()
 
-    # Content with multiple fallbacks
+    # Content with multiple fallbacks. Video pages (/shipin/) keep their body in
+    # .content_desc instead of .left_zw; their meta description is just the title.
     content_node = None
-    for selector in ("#p-detail", ".left_zw", "#content", "article", ".content"):
+    for selector in ("#p-detail", ".left_zw", "#content", "article", ".content", ".content_desc"):
         content_node = soup.select_one(selector)
         if content_node and len(content_node.get_text(strip=True)) > 40:
             break
         content_node = None
     if content_node:
-        # Remove scripts/styles/ads inside content
-        for bad in content_node.select("script, style, .ad, .adEditor, .adInContent"):
+        # Remove scripts/styles/ads and the editor sign-off inside content
+        for bad in content_node.select("script, style, .ad, .adEditor, .adInContent, .content_editor"):
             bad.decompose()
         content_html = content_node.decode_contents()
     else:

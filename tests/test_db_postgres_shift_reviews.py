@@ -416,6 +416,56 @@ def test_selected_queries_can_hide_finalized_items_and_sort_admin_results() -> N
     assert "sr.finalized_rank" in admin_cursor.queries[-1]
 
 
+def test_shift_clusters_apply_refine_filters_to_pending_cte() -> None:
+    cursor = ShiftReviewListCursor()
+
+    db_postgres_shift_reviews.fetch_shift_clusters(
+        cursor,
+        shift_id="shift-1",
+        report_type="zongbao",
+        hour_from=22,
+        hour_to=6,
+        duplicate_state="untagged",
+        min_score=60,
+        max_score=95,
+    )
+
+    query = cursor.queries[0]
+    assert "EXTRACT(HOUR FROM ns.created_at AT TIME ZONE 'Asia/Shanghai') >= %s" in query
+    assert "EXTRACT(HOUR FROM ns.created_at AT TIME ZONE 'Asia/Shanghai') <= %s" in query
+    assert "NOT EXISTS (" in query
+    assert "sdm.state <> 'dismissed'" in query
+    assert "ns.external_importance_score >= %s" in query
+    assert "ns.external_importance_score <= %s" in query
+    # 细化子句参数追加在 (shift_id, report_type) 之后
+    assert cursor.params[0] == ("shift-1", "zongbao", 22, 6, 60, 95)
+
+
+def test_shift_review_items_apply_refine_filters_with_param_order() -> None:
+    cursor = ShiftReviewListCursor()
+
+    db_postgres_shift_reviews.fetch_shift_review_items(
+        cursor,
+        shift_id="shift-1",
+        decision="pending",
+        report_type="zongbao",
+        limit=50,
+        offset=0,
+        hour_from=8,
+        duplicate_state="untagged",
+        min_score=60,
+    )
+
+    query = cursor.queries[0]
+    assert "EXTRACT(HOUR FROM ns.created_at AT TIME ZONE 'Asia/Shanghai') >= %s" in query
+    assert "NOT EXISTS (" in query
+    assert "ns.external_importance_score >= %s" in query
+    # 细化子句参数在基础筛选之后、limit/offset 之前（join 参数由执行处前置）
+    assert "hour" not in cursor.params[0]
+    flat_params = [p for p in cursor.params[0] if p is not None]
+    assert 8 in flat_params and 60 in flat_params
+
+
 def test_shift_clusters_follow_current_representative_score_order() -> None:
     cursor = ShiftReviewListCursor()
 

@@ -164,12 +164,15 @@ function dutyCandidateBackendParams(params, limit, offset) {
         offset: String(offset),
         report_type: 'zongbao'
     });
-    ['region', 'sentiment', 'q', 'created_before'].forEach(key => {
+    ['region', 'sentiment', 'q', 'created_before',
+        'hour_from', 'hour_to', 'duplicate_state', 'min_score', 'max_score'].forEach(key => {
         const value = params.get(key);
         if (value) backendParams.set(key, value);
     });
     return backendParams;
 }
+
+
 
 async function dutyCandidatesResponse(params) {
     const limit = Math.max(1, Math.min(Number(params.get('limit')) || 10, 200));
@@ -187,7 +190,8 @@ async function dutyCandidatesResponse(params) {
         offset: String(offset),
         include_items: 'true'
     });
-    ['region', 'sentiment'].forEach(key => {
+    ['region', 'sentiment',
+        'hour_from', 'hour_to', 'duplicate_state', 'min_score', 'max_score'].forEach(key => {
         const value = params.get(key);
         if (value) clusterParams.set(key, value);
     });

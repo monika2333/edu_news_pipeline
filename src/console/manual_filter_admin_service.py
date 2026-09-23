@@ -300,10 +300,22 @@ def bulk_discard_candidates(
     actor: ConsoleUser,
     duty_unprocessed_only: bool = False,
     request_id: Optional[str] = None,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> dict[str, int]:
     owner_user_id = _workspace_user_id(actor)
     validate_bulk_discard_bucket(region=region, sentiment=sentiment)
     normalized_query = (query or "").strip() or None
+    refine_filters = {
+        "hour_from": hour_from,
+        "hour_to": hour_to,
+        "duplicate_state": duplicate_state,
+        "min_score": min_score,
+        "max_score": max_score,
+    }
     adapter = get_adapter()
     matched = adapter.manual_reviews.count_candidates_before_date(
         owner_user_id=owner_user_id,
@@ -313,6 +325,7 @@ def bulk_discard_candidates(
         created_before=created_before,
         report_type=None,
         duty_unprocessed_only=duty_unprocessed_only,
+        **refine_filters,
     )
     if dry_run or matched <= 0:
         return {"matched": matched, "updated": 0, "skipped_finalized": 0}
@@ -326,6 +339,7 @@ def bulk_discard_candidates(
         actor_user_id=owner_user_id,
         duty_unprocessed_only=duty_unprocessed_only,
         request_id=request_id,
+        **refine_filters,
     )
     return {
         "matched": matched,

@@ -231,6 +231,11 @@ def list_items(
     sentiment: Optional[str] = None,
     query: Optional[str] = None,
     created_before: Optional[date] = None,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
     if decision and decision not in VALID_DECISIONS:
@@ -252,6 +257,11 @@ def list_items(
         "query": (query or "").strip() or None,
         "created_before": created_before,
         "exclude_finalized": decision == "selected",
+        "hour_from": hour_from,
+        "hour_to": hour_to,
+        "duplicate_state": duplicate_state,
+        "min_score": min_score,
+        "max_score": max_score,
     }
     rows, total = adapter.shift_reviews.fetch_items(**fetch_kwargs)
     items = [
@@ -280,6 +290,11 @@ def list_clusters(
     limit: Optional[int] = None,
     offset: int = 0,
     include_items: bool = False,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
     _validate_report_type(report_type)
@@ -290,6 +305,11 @@ def list_clusters(
     rows = get_adapter().shift_reviews.fetch_clusters(
         shift_id=shift_id,
         report_type=report_type,
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
     )
     bucket_key = (
         f"{region}_{sentiment}"

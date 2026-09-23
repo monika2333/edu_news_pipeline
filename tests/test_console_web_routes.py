@@ -424,7 +424,11 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'data-tab="discard">放弃</button>' in html
     assert 'class="workspace-tabs-row"' in html
     assert 'class="workspace-tab-actions"' in html
-    assert 'data-workspace-action-tab="filter"' not in html
+    # 值班页不得出现管理员专属的筛选作用域控件（值班未处理开关 / 清理旧新闻）；
+    # 右上角共享的「筛选」原型入口随筛选 tab 显隐，属于两页共用的合法元素。
+    assert 'id="btn-open-cleanup"' not in html
+    assert 'data-duty-process-scope' not in html
+    assert 'id="filter-refine-toggle"' in html
     assert 'data-workspace-action-tab="review"' in html
     assert 'id="duty-finalization-status"' in html
     assert html.index('id="duty-finalization-status"') < html.index('id="review-tab"')
@@ -470,7 +474,7 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert "action.hidden = action.dataset.workspaceActionTab !== currentTab;" in utils_script
     assert "async function loadDutyClusters" not in workspace_script
     assert "include_items: 'true'" in workspace_script
-    assert "['region', 'sentiment']" in workspace_script
+    assert "['region', 'sentiment',\n        'hour_from', 'hour_to', 'duplicate_state', 'min_score', 'max_score']" in workspace_script
     assert "`${API_BASE}/clusters?${clusterParams.toString()}`" in workspace_script
     assert "cluster: searchMode ? 'false' : 'true'" in filter_data_script
     assert "searchMode || state.hideSubmitted" not in filter_data_script
@@ -755,7 +759,7 @@ def test_duty_summary_collapses_shift_panel_by_default(
     )
     assert 'class="account-menu-item" href="/admin">用户与排班</a>' in response.text
     assert 'href="/static/css/layout.css"' in response.text
-    assert 'href="/static/css/modules/filter.css"' in response.text
+    assert 'href="/static/css/modules/filter.css?v=' in response.text
     assert 'href="/static/css/modules/review.css?v=' in response.text
     assert 'href="/static/css/modules/search.css"' in response.text
 
@@ -1212,20 +1216,16 @@ def test_manual_filter_duty_scope_switch_admin_only() -> None:
     assert 'aria-pressed="false" data-duty-process-scope="unprocessed">值班未处理</button>' in html
     # 默认选中「全部」，与值班侧默认「未处理」相反
     assert 'class="duty-scope-btn is-active" type="button"' in html
-    # 位置：顶部操作区「清理旧新闻」左侧，随筛选 tab 显隐（与清理旧新闻同一机制）
-    assert 'class="duty-scope-switch workspace-tab-action"' in html
+    # 位置：筛选工具条的折叠筛选行内（原型卡片），不再挂顶部操作区
+    assert 'class="duty-scope-switch workspace-tab-action"' not in html
     assert 'data-workspace-action-tab="filter"' in html
-    assert html.index('class="workspace-tab-actions"') < html.index(
-        'data-duty-process-scope="all"'
-    )
-    assert html.index('data-duty-process-scope="unprocessed"') < html.index(
-        'id="btn-open-cleanup"'
-    )
-    # 筛选工具条（检索/全部放弃）恢复原有布局，开关不在其中
     toolbar = html.split('class="filter-toolbar"', maxsplit=1)[1].split(
         'id="filter-list"', maxsplit=1
     )[0]
-    assert "data-duty-process-scope" not in toolbar
+    assert "data-duty-process-scope" in toolbar
+    assert html.index('class="filter-refine-row"') < html.index(
+        'data-duty-process-scope="all"'
+    )
 
     # 开关样式对齐页面 .tabs/.tab-btn 分段控件，定义在 filter.css
     filter_css = (

@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="/static/css/layout.css">
     <link rel="stylesheet" href="/static/css/components.css">
     <!-- CSS Modules -->
-    <link rel="stylesheet" href="/static/css/modules/filter.css">
+    <link rel="stylesheet" href="/static/css/modules/filter.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/review.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/search.css">
     <link rel="stylesheet" href="/static/css/modules/content_drawer.css?v={{ version }}">
@@ -113,15 +113,8 @@
                 <button class="tab-btn" data-tab="discard">放弃</button>
             </div>
             <div class="workspace-tab-actions">
-                {# 「只看值班未处理」开关与清理旧新闻同属筛选 tab 的操作区，
-                   data-workspace-action-tab 保证切到「放弃」tab 时一并隐藏。 #}
-                <div class="duty-scope-switch workspace-tab-action" role="group" aria-label="值班编辑处理状态"
-                    data-workspace-action-tab="filter">
-                    <button class="duty-scope-btn is-active" type="button"
-                        aria-pressed="true" data-duty-process-scope="all">全部</button>
-                    <button class="duty-scope-btn" type="button"
-                        aria-pressed="false" data-duty-process-scope="unprocessed">值班未处理</button>
-                </div>
+                {# 「只看值班未处理」开关已挪入筛选工具条的折叠行（管理员专属），
+                   见下方 filter-refine-row；data-workspace-action-tab 机制仍由清理旧新闻沿用。 #}
                 <button class="btn btn-secondary workspace-tab-action" id="btn-open-cleanup" type="button"
                     data-workspace-action-tab="filter">清理旧新闻</button>
             </div>
@@ -165,8 +158,78 @@
                                 </button>
                             </div>
                             <button class="btn btn-secondary" id="btn-filter-search">检索</button>
+                            {# 「筛选」折叠开关：展开/收起下方细化筛选行 #}
+                            <button type="button" id="filter-refine-toggle"
+                                class="btn btn-secondary" aria-expanded="false"
+                                aria-controls="filter-refine-row">筛选<span
+                                class="filter-refine-count-badge"
+                                id="filter-refine-count-badge" hidden></span></button>
                             <button class="btn btn-primary filter-discard-action"
                                 id="btn-filter-bulk-discard">全部放弃</button>
+                        </div>
+                        {# 细化筛选折叠行：「筛选」按钮展开/收起；清空筛选唯一入口在 meta 行（filter_refine.js 接管交互） #}
+                        <div class="filter-refine-row">
+                            {% if not is_duty_workspace %}
+                            {# 管理员专属：「只看值班未处理」开关（放最前，先圈范围再筛细节）；按钮绑定依赖 data-duty-process-scope，与位置无关 #}
+                            <div class="filter-refine-group filter-refine-duty-group"
+                                title="切换后只看值班编辑尚未处理的新闻">
+                                <span class="filter-refine-group-label">处理状态</span>
+                                <div class="duty-scope-switch" role="group" aria-label="值班编辑处理状态">
+                                    <button class="duty-scope-btn is-active" type="button"
+                                        aria-pressed="true" data-duty-process-scope="all">全部</button>
+                                    <button class="duty-scope-btn" type="button"
+                                        aria-pressed="false" data-duty-process-scope="unprocessed">值班未处理</button>
+                                </div>
+                            </div>
+                            {% endif %}
+                            <div class="filter-refine-group" title="开启后隐藏带「已报送/疑似已报送」徽章的条目">
+                                <span class="filter-refine-group-label">报送标签</span>
+                                <label class="filter-refine-switch-control">
+                                    <span class="filter-refine-switch">
+                                        <input type="checkbox" data-refine-field="hideTagged" aria-label="隐藏已报送">
+                                        <span class="filter-refine-switch-slider" aria-hidden="true"></span>
+                                    </span>
+                                    <span class="filter-refine-switch-text">隐藏已报送</span>
+                                </label>
+                            </div>
+                            <div class="filter-refine-group"
+                                title="按收录时间的小时筛选（上海时区）。从 > 到 视为跨零点区间，如 22 时–6 时。">
+                                <span class="filter-refine-group-label">收录时段</span>
+                                <div class="filter-refine-pair">
+                                    <label class="filter-refine-control-label">
+                                        <span>从</span>
+                                        <select data-refine-field="hourFrom" aria-label="从">
+                                            <option value="">不限</option>
+                                            {% for hour in range(24) %}<option value="{{ hour }}">{{ hour }} 时</option>{% endfor %}
+                                        </select>
+                                    </label>
+                                    <span class="filter-refine-sep">–</span>
+                                    <label class="filter-refine-control-label">
+                                        <span>到</span>
+                                        <select data-refine-field="hourTo" aria-label="到">
+                                            <option value="">不限</option>
+                                            {% for hour in range(24) %}<option value="{{ hour }}">{{ hour }} 时</option>{% endfor %}
+                                        </select>
+                                    </label>
+                                </div>
+                                <span class="filter-refine-wrap-note" hidden>跨零点区间：从晚上段连到次日凌晨段</span>
+                            </div>
+                            <div class="filter-refine-group">
+                                <span class="filter-refine-group-label">分数</span>
+                                <div class="filter-refine-pair">
+                                    <label class="filter-refine-control-label">
+                                        <span>最低</span>
+                                        <input type="number" data-refine-field="minScore" aria-label="最低"
+                                            placeholder="不限" min="0" max="100" step="1" inputmode="numeric">
+                                    </label>
+                                    <span class="filter-refine-sep">–</span>
+                                    <label class="filter-refine-control-label">
+                                        <span>最高</span>
+                                        <input type="number" data-refine-field="maxScore" aria-label="最高"
+                                            placeholder="不限" min="0" max="100" step="1" inputmode="numeric">
+                                    </label>
+                                </div>
+                            </div>
                         </div>
                         <div class="filter-toolbar-meta" id="filter-search-meta"></div>
                     </div>
@@ -497,6 +560,7 @@
     <script src="/static/js/manual_filter/core.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/workspace.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/utils.js?v={{ version }}"></script>
+    <script src="/static/js/manual_filter/filter_refine.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/copy_article.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/source_autofill.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/score_feedback.js?v={{ version }}"></script>

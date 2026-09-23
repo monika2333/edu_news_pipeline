@@ -51,8 +51,7 @@ def _node_or_skip() -> str:
     pytest.skip(reason)
 
 
-def test_filter_decision_flow_behaviour(tmp_path: Path) -> None:
-    node = _node_or_skip()
+def _run_node_behavior_test(node: str, tmp_path: Path, test_filename: str) -> None:
     duty_html = tmp_path / "duty.html"
     admin_html = tmp_path / "admin.html"
     duty_html.write_text(_render_page("/duty", "duty_editor"), encoding="utf-8")
@@ -69,7 +68,7 @@ def test_filter_decision_flow_behaviour(tmp_path: Path) -> None:
             node,
             "--test",
             "--test-reporter=spec",
-            str(JS_TEST_DIR / "filter_decision_flow.test.js"),
+            str(JS_TEST_DIR / test_filename),
         ],
         cwd=JS_TEST_DIR,
         env=env,
@@ -80,3 +79,13 @@ def test_filter_decision_flow_behaviour(tmp_path: Path) -> None:
         timeout=300,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_filter_decision_flow_behaviour(tmp_path: Path) -> None:
+    node = _node_or_skip()
+    _run_node_behavior_test(node, tmp_path, "filter_decision_flow.test.js")
+
+
+def test_refine_filter_flow_behaviour(tmp_path: Path) -> None:
+    node = _node_or_skip()
+    _run_node_behavior_test(node, tmp_path, "refine_filter_flow.test.js")

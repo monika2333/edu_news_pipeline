@@ -33,7 +33,19 @@ class FakeShiftReviewsNamespace:
         *,
         shift_id: str,
         report_type: str,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> list[dict[str, Any]]:
+        self._adapter.fetch_clusters_kwargs.append({
+            'hour_from': hour_from,
+            'hour_to': hour_to,
+            'duplicate_state': duplicate_state,
+            'min_score': min_score,
+            'max_score': max_score,
+        })
         return self._adapter._fetch_clusters(
             shift_id=shift_id,
             report_type=report_type,
@@ -60,6 +72,7 @@ class FakeDutyReviewAdapter:
         self.ordered: dict[str, Any] = {}
         self.fetch_scopes: list[tuple[Optional[str], bool]] = []
         self.fetch_kwargs: list[dict[str, Any]] = []
+        self.fetch_clusters_kwargs: list[dict[str, Any]] = []
         self.fetch_article_ids: list[Optional[list[str]]] = []
         self.finalized: dict[str, Any] = {}
         self.restored: dict[str, Any] = {}
@@ -116,6 +129,11 @@ class FakeDutyReviewAdapter:
         created_before: object = None,
         article_ids: Optional[Sequence[str]] = None,
         exclude_finalized: bool = False,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> tuple[list[dict[str, Any]], int]:
         del shift_id, limit, offset
         self.fetch_scopes.append((decision, exclude_finalized))
@@ -131,6 +149,11 @@ class FakeDutyReviewAdapter:
                 "sentiment": sentiment,
                 "query": query,
                 "created_before": created_before,
+                "hour_from": hour_from,
+                "hour_to": hour_to,
+                "duplicate_state": duplicate_state,
+                "min_score": min_score,
+                "max_score": max_score,
             }
         )
         row_ids = normalized_article_ids or [f"{decision}-1"]
@@ -215,6 +238,11 @@ class FakeDutyReviewAdapter:
         *,
         shift_id: str,
         report_type: str,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> list[dict[str, Any]]:
         item_ids = ["article-1", "article-2"]
         return [
@@ -599,6 +627,11 @@ def test_candidate_search_filters_are_forwarded_to_database(
             "sentiment": "positive",
             "query": "教育政策",
             "created_before": None,
+            "hour_from": None,
+            "hour_to": None,
+            "duplicate_state": None,
+            "min_score": None,
+            "max_score": None,
         }
     ]
 
@@ -689,6 +722,37 @@ def test_clusters_are_scoped_by_owned_shift_and_report_type(monkeypatch) -> None
     assert ownership_checks == ["shift-id:editor-id"]
     assert result["clusters"][0]["item_ids"] == ["article-1", "article-2"]
     assert result["item_total"] == 2
+
+
+def test_list_clusters_forwards_refine_filters_to_database(monkeypatch) -> None:
+    adapter = FakeDutyReviewAdapter()
+    monkeypatch.setattr(duty_review_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(
+        duty_review_service,
+        "require_owned_shift",
+        lambda shift_id, user: None,
+    )
+
+    duty_review_service.list_clusters(
+        shift_id="shift-id",
+        user=_editor(),
+        report_type="zongbao",
+        hour_from=8,
+        hour_to=12,
+        duplicate_state="untagged",
+        min_score=60,
+        max_score=95,
+    )
+
+    assert adapter.fetch_clusters_kwargs == [
+        {
+            "hour_from": 8,
+            "hour_to": 12,
+            "duplicate_state": "untagged",
+            "min_score": 60,
+            "max_score": 95,
+        }
+    ]
 
 
 def test_cluster_page_loads_only_current_bucket_items(

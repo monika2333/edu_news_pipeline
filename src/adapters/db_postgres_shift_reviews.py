@@ -13,6 +13,7 @@ from src.adapters.db_postgres_manual_reviews import (
     SCORE_FEEDBACK_JOIN,
     SEARCH_TEXT_EXPRESSION,
 )
+from src.adapters.sql_candidate_filters import candidate_extra_filter_clauses
 from src.domain.report_type import NEWS_REPORT_TYPES as VALID_REPORT_TYPES
 
 VALID_DECISIONS = frozenset({"pending", "selected", "backup", "discarded"})
@@ -107,6 +108,11 @@ class ShiftReviewsNamespace:
         exclude_admin_discarded: bool = False,
         admin_unprocessed_only: bool = False,
         exclude_finalized: bool = False,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> tuple[list[dict[str, Any]], int]:
         with self._adapter._cursor() as cur:
             return fetch_shift_review_items(
@@ -127,6 +133,11 @@ class ShiftReviewsNamespace:
                 exclude_admin_discarded=exclude_admin_discarded,
                 admin_unprocessed_only=admin_unprocessed_only,
                 exclude_finalized=exclude_finalized,
+                hour_from=hour_from,
+                hour_to=hour_to,
+                duplicate_state=duplicate_state,
+                min_score=min_score,
+                max_score=max_score,
             )
 
     def fetch_clusters(
@@ -134,12 +145,22 @@ class ShiftReviewsNamespace:
         *,
         shift_id: str,
         report_type: str,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> list[dict[str, Any]]:
         with self._adapter._cluster_transaction() as cur:
             return fetch_shift_clusters(
                 cur,
                 shift_id=shift_id,
                 report_type=report_type,
+                hour_from=hour_from,
+                hour_to=hour_to,
+                duplicate_state=duplicate_state,
+                min_score=min_score,
+                max_score=max_score,
             )
 
     def fetch_finalization_status(
@@ -197,6 +218,11 @@ def fetch_shift_review_items(
     exclude_admin_discarded: bool = False,
     admin_unprocessed_only: bool = False,
     exclude_finalized: bool = False,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> tuple[list[dict[str, Any]], int]:
     bounded_limit = max(1, min(limit, 200))
     bounded_offset = max(0, offset)
@@ -239,6 +265,15 @@ def fetch_shift_review_items(
         params.append(normalized_article_ids)
     if exclude_finalized:
         clauses.append("sr.finalized_batch_id IS NULL")
+    extra_clauses, extra_params = candidate_extra_filter_clauses(
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
+    )
+    clauses.extend(extra_clauses)
+    params.extend(extra_params)
     uses_admin_workspace = (
         include_admin_state
         or admin_discarded_only
@@ -500,9 +535,24 @@ def fetch_shift_clusters(
     *,
     shift_id: str,
     report_type: str,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> list[dict[str, Any]]:
+    extra_clauses, extra_params = candidate_extra_filter_clauses(
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
+    )
+    extra_filter_sql = "".join(
+        f" AND {clause}" for clause in extra_clauses
+    )
     cur.execute(
-        """
+        f"""
         WITH shift_pending AS MATERIALIZED (
             SELECT
                 ns.article_id,
@@ -530,6 +580,7 @@ def fetch_shift_clusters(
               AND ns.status = 'ready_for_export'
               AND COALESCE(sr.decision, 'pending') = 'pending'
               AND COALESCE(sr.report_type, 'zongbao') = %s
+              {extra_filter_sql}
         ),
         cluster_items AS MATERIALIZED (
             SELECT
@@ -617,10 +668,7 @@ def fetch_shift_clusters(
             representative_publish_time DESC NULLS LAST,
             cluster_id
         """,
-        (
-            shift_id,
-            report_type,
-        ),
+        tuple([shift_id, report_type] + extra_params),
     )
     return [dict(row) for row in cur.fetchall()]
 

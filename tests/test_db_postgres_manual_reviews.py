@@ -700,3 +700,59 @@ def test_version_check_rejects_row_changed_by_concurrent_writer() -> None:
     assert len(update_params) == 1
     assert update_params[0][-1] == 5
 
+
+
+def test_fetch_manual_reviews_applies_refine_filters_with_param_order() -> None:
+    cur = FakeFetchCursor()
+
+    db_postgres_manual_reviews.fetch_manual_reviews(
+        cur,
+        owner_user_id="admin-1",
+        status="pending",
+        limit=10,
+        offset=0,
+        hour_from=8,
+        hour_to=12,
+        duplicate_state="untagged",
+        min_score=60,
+        max_score=95,
+    )
+
+    hour_expr = "EXTRACT(HOUR FROM ns.created_at AT TIME ZONE 'Asia/Shanghai')"
+    assert len(cur.queries) == 2
+    assert all(f"{hour_expr} >= %s" in query for query in cur.queries)
+    assert all(f"{hour_expr} <= %s" in query for query in cur.queries)
+    assert all("NOT EXISTS (" in query for query in cur.queries)
+    assert all("sdm.state <> 'dismissed'" in query for query in cur.queries)
+    assert all("ns.external_importance_score >= %s" in query for query in cur.queries)
+    assert all("ns.external_importance_score <= %s" in query for query in cur.queries)
+    # 子句参数在 owner/status 之后；limit/offset 只追加在列表查询末尾
+    assert cur.params[0] == ("admin-1", "pending", 8, 12, 60, 95)
+    assert cur.params[1] == ("admin-1", "pending", 8, 12, 60, 95, 10, 0)
+
+
+def test_fetch_manual_clusters_applies_refine_filters_inside_pending_cte() -> None:
+    cur = FakeFetchCursor()
+
+    rows = db_postgres_manual_reviews.fetch_manual_clusters(
+        cur,
+        owner_user_id="admin-1",
+        bucket_key="internal_positive",
+        hour_from=22,
+        hour_to=6,
+        duplicate_state="untagged",
+        min_score=60,
+    )
+
+    assert rows == []
+    query = cur.queries[0]
+    assert "EXTRACT(HOUR FROM ns.created_at AT TIME ZONE 'Asia/Shanghai') >= %s" in query
+    assert "EXTRACT(HOUR FROM ns.created_at AT TIME ZONE 'Asia/Shanghai') <= %s" in query
+    assert "NOT EXISTS (" in query
+    assert "ns.external_importance_score >= %s" in query
+    # 子句参数插在 owner 与 singleton bucket 参数之间：
+    # (bucket, bucket, owner, *细化参数, bucket, bucket)
+    assert cur.params[0] == (
+        "internal_positive", "internal_positive", "admin-1", 22, 6, 60,
+        "internal_positive", "internal_positive",
+    )

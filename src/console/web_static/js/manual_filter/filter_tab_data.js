@@ -47,6 +47,7 @@ async function loadFilterData() {
         if (state.filterDutyScope === 'unprocessed') {
             params.set('duty_unprocessed_only', 'true');
         }
+        refineFilterQueryParams().forEach(([key, value]) => params.set(key, value));
 
         const res = await workspaceFetch(`${API_BASE}/candidates?${params.toString()}`);
         if (!res.ok) throw new Error('failed to load candidates');
@@ -90,6 +91,7 @@ async function loadFilterCounts() {
                 if (state.filterDutyScope === 'unprocessed') {
                     params.set('duty_unprocessed_only', 'true');
                 }
+                refineFilterQueryParams().forEach(([key, value]) => params.set(key, value));
 
                 const res = await workspaceFetch(`${API_BASE}/candidates?${params.toString()}`);
                 if (!res.ok) throw new Error('failed to load counts');

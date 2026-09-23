@@ -380,6 +380,8 @@ async function bulkDiscard() {
     const { region, sentiment } = getCurrentFilterBucket();
     const query = state.filterQuery || (elements.filterSearchInput ? elements.filterSearchInput.value.trim() : '');
     const dutyUnprocessedOnly = state.filterDutyScope === 'unprocessed';
+    // 细化筛选与批量放弃同口径，确认文案的 N 与实际放弃范围保持一致
+    const refineBody = refineFilterRequestBody();
     try {
         const previewRes = await workspaceFetch(`${API_BASE}/bulk-discard`, {
             method: 'POST',
@@ -390,7 +392,8 @@ async function bulkDiscard() {
                 q: query || null,
                 created_before: null,
                 dry_run: true,
-                duty_unprocessed_only: dutyUnprocessedOnly
+                duty_unprocessed_only: dutyUnprocessedOnly,
+                ...refineBody
             })
         });
         if (!previewRes.ok) throw new Error('failed preview');
@@ -401,9 +404,10 @@ async function bulkDiscard() {
         }
 
         const scopeSuffix = dutyUnprocessedOnly ? '值班编辑未处理的' : '';
+        const refineSuffix = refineFilterActive() ? `「${refineFilterDescribe()}」的` : '';
         const scopeText = query
-            ? `检索到的 ${preview.matched} 条${scopeSuffix}`
-            : `全部 ${preview.matched} 条${scopeSuffix}`;
+            ? `检索到的 ${preview.matched} 条${refineSuffix}${scopeSuffix}`
+            : `符合条件 ${preview.matched} 条${refineSuffix}${scopeSuffix}`;
         const confirmed = window.confirm(`确定放弃${scopeText}待处理新闻吗？`);
         if (!confirmed) return;
 
@@ -416,7 +420,8 @@ async function bulkDiscard() {
                 q: query || null,
                 created_before: null,
                 dry_run: false,
-                duty_unprocessed_only: dutyUnprocessedOnly
+                duty_unprocessed_only: dutyUnprocessedOnly,
+                ...refineBody
             })
         });
         if (!applyRes.ok) throw new Error('failed apply');

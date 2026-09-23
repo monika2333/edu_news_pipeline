@@ -49,7 +49,7 @@
 
 .filter-toolbar-main {
     display: grid;
-    grid-template-columns: minmax(220px, 1fr) repeat(2, auto);
+    grid-template-columns: minmax(220px, 1fr) repeat(3, auto);
     gap: 8px;
     align-items: center;
 }
@@ -106,8 +106,8 @@
     color: var(--text-secondary);
 }
 
-/* 「只看值班未处理」开关（管理员筛选 tab，清理旧新闻左侧）：
-   视觉对齐 layout.css 的 .tabs/.tab-btn 分段控件，高度对齐相邻 .btn（40px）。 */
+/* 「只看值班未处理」开关（管理员筛选页，位于筛选工具条的折叠筛选行内，
+   尺寸由下方「细化筛选」段的 .filter-refine-duty-group 覆写对齐卡片内控件）。 */
 .duty-scope-switch {
     display: inline-flex;
     align-items: center;
@@ -585,4 +585,245 @@
         bottom: calc(138px + env(safe-area-inset-bottom));
         transform: none;
     }
+}
+
+/* ── 细化筛选（折叠工具栏）───────────────────────────────────────────── */
+/* 「筛选」按钮展开/收起 .filter-refine-row；折叠时筛选仍生效，
+   靠按钮徽标与 meta 行「筛选中：…」摘要传达。 */
+
+#filter-refine-toggle.has-active {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+#filter-refine-toggle.is-open {
+    background: #eef2ff;
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+.filter-refine-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--primary-color);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.filter-refine-count-badge[hidden] {
+    display: none;
+}
+
+.filter-refine-row {
+    display: none;
+}
+
+body.filter-refine-row-open .filter-refine-row {
+    display: flex;
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 10px 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* 每个条件一张浅底卡片：顶部小标签 + 控件行，界限清晰、高度一致 */
+.filter-refine-group {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 7px;
+    padding: 9px 14px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: #f8fafc;
+    min-width: 0;
+}
+
+.filter-refine-group-label {
+    font-size: 12px;
+    line-height: 1;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.filter-refine-pair {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.filter-refine-sep {
+    color: var(--text-secondary);
+}
+
+.filter-refine-control-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.filter-refine-control-label > span {
+    flex: 0 0 auto;
+}
+
+.filter-refine-control-label select,
+.filter-refine-control-label input {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 13px;
+    padding: 5px 8px;
+    height: 32px;
+    box-sizing: border-box;
+}
+
+.filter-refine-control-label select {
+    min-width: 88px;
+}
+
+.filter-refine-control-label select:focus,
+.filter-refine-control-label input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.filter-refine-control-label input {
+    width: 76px;
+}
+
+.filter-refine-control-label input::-webkit-outer-spin-button,
+.filter-refine-control-label input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.filter-refine-control-label input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+/* 「隐藏已报送」滑动开关 */
+.filter-refine-switch-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.filter-refine-switch-text {
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.filter-refine-switch {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+    flex: 0 0 auto;
+}
+
+.filter-refine-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+}
+
+.filter-refine-switch-slider {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: #cbd5e1;
+    transition: background 0.15s ease;
+}
+
+.filter-refine-switch-slider::before {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    left: 2px;
+    top: 2px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
+    transition: transform 0.15s ease;
+}
+
+.filter-refine-switch input:checked + .filter-refine-switch-slider {
+    background: var(--primary-color);
+}
+
+.filter-refine-switch input:checked + .filter-refine-switch-slider::before {
+    transform: translateX(16px);
+}
+
+.filter-refine-switch input:focus-visible + .filter-refine-switch-slider {
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.filter-refine-wrap-note {
+    font-size: 12px;
+    color: #b45309;
+    line-height: 1;
+}
+
+/* 管理员专属「处理状态」卡：复用 .duty-scope-switch 分段控件，尺寸对齐卡片内控件 */
+.filter-refine-duty-group .duty-scope-switch {
+    background: #e2e8f0;
+}
+
+.filter-refine-duty-group .duty-scope-btn {
+    padding: 5px 12px;
+    font-size: 13px;
+}
+
+.filter-refine-duty-group .duty-scope-btn.is-active {
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+/* meta 行摘要与「清空筛选」（唯一清空入口） */
+.filter-refine-meta-suffix {
+    color: var(--primary-color);
+}
+
+.filter-refine-meta-suffix .filter-refine-clear-link {
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 6px;
+    height: 26px;
+    padding: 0 12px;
+    line-height: 24px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.filter-refine-meta-suffix .filter-refine-clear-link:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    background: #eef2ff;
+    text-decoration: none;
 }

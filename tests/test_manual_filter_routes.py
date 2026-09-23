@@ -80,6 +80,11 @@ class FakeManualFilterAdapter:
         order_by_decided_at: bool = False,
         query: Optional[str] = None,
         duty_unprocessed_only: bool = False,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> Tuple[list[Dict[str, Any]], int]:
         target_type = (
             self._normalized_report_type(report_type)
@@ -105,6 +110,14 @@ class FakeManualFilterAdapter:
             filtered = [row for row in filtered if (row.get("sentiment_label") or "").lower() == sentiment]
         if duty_unprocessed_only:
             filtered = [row for row in filtered if not row.get("duty_processed")]
+        filtered = self._apply_refine_filters(
+            filtered,
+            hour_from=hour_from,
+            hour_to=hour_to,
+            duplicate_state=duplicate_state,
+            min_score=min_score,
+            max_score=max_score,
+        )
         normalized_query = (query or "").strip().lower()
         if normalized_query:
             filtered = [
@@ -131,6 +144,56 @@ class FakeManualFilterAdapter:
         total = len(filtered)
         return filtered[offset : offset + limit], total
 
+    @staticmethod
+    def _created_local_hour(row: Mapping[str, Any]) -> Optional[int]:
+        created_at = row.get("created_at")
+        if created_at is None:
+            return None
+        try:
+            value = str(created_at).replace("Z", "+00:00")
+            return datetime.fromisoformat(value).astimezone(ZoneInfo("Asia/Shanghai")).hour
+        except ValueError:
+            return None
+
+    def _apply_refine_filters(
+        self,
+        rows: list[Dict[str, Any]],
+        *,
+        hour_from: Optional[int],
+        hour_to: Optional[int],
+        duplicate_state: Optional[str],
+        min_score: Optional[float],
+        max_score: Optional[float],
+    ) -> list[Dict[str, Any]]:
+        filtered = rows
+        if hour_from is not None:
+            filtered = [
+                row for row in filtered
+                if (hour := self._created_local_hour(row)) is not None and hour >= hour_from
+            ]
+        if hour_to is not None:
+            filtered = [
+                row for row in filtered
+                if (hour := self._created_local_hour(row)) is not None and hour <= hour_to
+            ]
+        if duplicate_state == "untagged":
+            filtered = [row for row in filtered if not row.get("duplicate_tagged")]
+        elif duplicate_state == "tagged":
+            filtered = [row for row in filtered if row.get("duplicate_tagged")]
+        if min_score is not None:
+            filtered = [
+                row for row in filtered
+                if (score := row.get("external_importance_score")) is not None
+                and float(score) >= min_score
+            ]
+        if max_score is not None:
+            filtered = [
+                row for row in filtered
+                if (score := row.get("external_importance_score")) is not None
+                and float(score) <= max_score
+            ]
+        return filtered
+
     def _search_candidates(
         self,
         *,
@@ -142,6 +205,11 @@ class FakeManualFilterAdapter:
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
         duty_unprocessed_only: bool = False,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> Tuple[list[Dict[str, Any]], int]:
         rows, _ = self._fetch(
             status="pending",
@@ -152,6 +220,11 @@ class FakeManualFilterAdapter:
             sentiment=sentiment,
             report_type=report_type,
             duty_unprocessed_only=duty_unprocessed_only,
+            hour_from=hour_from,
+            hour_to=hour_to,
+            duplicate_state=duplicate_state,
+            min_score=min_score,
+            max_score=max_score,
         )
         normalized_query = (query or "").strip().lower()
         filtered = list(rows)
@@ -185,6 +258,11 @@ class FakeManualFilterAdapter:
         created_before: Optional[date] = None,
         report_type: Optional[str] = None,
         duty_unprocessed_only: bool = False,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> int:
         _, total = self._search_candidates(
             query=query,
@@ -195,6 +273,11 @@ class FakeManualFilterAdapter:
             sentiment=sentiment,
             report_type=report_type,
             duty_unprocessed_only=duty_unprocessed_only,
+            hour_from=hour_from,
+            hour_to=hour_to,
+            duplicate_state=duplicate_state,
+            min_score=min_score,
+            max_score=max_score,
         )
         return total
 
@@ -209,6 +292,11 @@ class FakeManualFilterAdapter:
         decided_at: Optional[Any] = None,
         report_type: Optional[str] = None,
         duty_unprocessed_only: bool = False,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> int:
         rows, _ = self._search_candidates(
             query=query,
@@ -219,6 +307,11 @@ class FakeManualFilterAdapter:
             sentiment=sentiment,
             report_type=report_type,
             duty_unprocessed_only=duty_unprocessed_only,
+            hour_from=hour_from,
+            hour_to=hour_to,
+            duplicate_state=duplicate_state,
+            min_score=min_score,
+            max_score=max_score,
         )
         updated = 0
         for item in rows:
@@ -244,6 +337,11 @@ class FakeManualFilterAdapter:
         actor_user_id: Optional[str],
         duty_unprocessed_only: bool = False,
         request_id: Optional[str] = None,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> list[Dict[str, Any]]:
         del actor_user_id, request_id
         rows, _ = self._search_candidates(
@@ -255,6 +353,11 @@ class FakeManualFilterAdapter:
             sentiment=sentiment,
             report_type=report_type,
             duty_unprocessed_only=duty_unprocessed_only,
+            hour_from=hour_from,
+            hour_to=hour_to,
+            duplicate_state=duplicate_state,
+            min_score=min_score,
+            max_score=max_score,
         )
         for row in rows:
             row["status"] = "discarded"

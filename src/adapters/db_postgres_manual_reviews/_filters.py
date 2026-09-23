@@ -27,6 +27,11 @@ def search_manual_candidates(
     sentiment: Optional[str] = None,
     report_type: Optional[str] = None,
     duty_unprocessed_only: bool = False,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> Tuple[List[Dict[str, Any]], int]:
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
@@ -39,6 +44,11 @@ def search_manual_candidates(
         sentiment=sentiment,
         report_type=report_type,
         duty_unprocessed_only=duty_unprocessed_only,
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
     )
     normalized_query = (query or "").strip()
     if normalized_query:
@@ -86,6 +96,11 @@ def _build_manual_candidate_filters(
     created_before: Optional[date] = None,
     report_type: Optional[str] = None,
     duty_unprocessed_only: bool = False,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> Tuple[List[str], List[Any]]:
     clauses, params = _build_manual_review_filters(
         owner_user_id=owner_user_id,
@@ -95,6 +110,11 @@ def _build_manual_candidate_filters(
         sentiment=sentiment,
         report_type=report_type,
         duty_unprocessed_only=duty_unprocessed_only,
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
     )
     normalized_query = (query or "").strip()
     if normalized_query:
@@ -116,6 +136,11 @@ def count_manual_candidates_before_date(
     created_before: Optional[date] = None,
     report_type: Optional[str] = None,
     duty_unprocessed_only: bool = False,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> int:
     clauses, params = _build_manual_candidate_filters(
         owner_user_id=owner_user_id,
@@ -125,6 +150,11 @@ def count_manual_candidates_before_date(
         created_before=created_before,
         report_type=report_type,
         duty_unprocessed_only=duty_unprocessed_only,
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
     )
     where_sql = " AND ".join(clauses)
     query = f"""
@@ -151,6 +181,11 @@ def fetch_manual_candidates_before_date_for_update(
     created_before: Optional[date] = None,
     report_type: Optional[str] = None,
     duty_unprocessed_only: bool = False,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> list[dict[str, Any]]:
     clauses, params = _build_manual_candidate_filters(
         owner_user_id=owner_user_id,
@@ -160,6 +195,11 @@ def fetch_manual_candidates_before_date_for_update(
         created_before=created_before,
         report_type=report_type,
         duty_unprocessed_only=duty_unprocessed_only,
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
     )
     where_sql = " AND ".join(clauses)
     cur.execute(

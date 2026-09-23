@@ -79,6 +79,11 @@ class ManualReviewsNamespace:
         order_by_decided_at: bool = False,
         query: Optional[str] = None,
         duty_unprocessed_only: bool = False,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
         with self._adapter._cursor() as cur:
             return fetch_manual_reviews(
@@ -94,6 +99,11 @@ class ManualReviewsNamespace:
                 order_by_decided_at=order_by_decided_at,
                 query=query,
                 duty_unprocessed_only=duty_unprocessed_only,
+                hour_from=hour_from,
+                hour_to=hour_to,
+                duplicate_state=duplicate_state,
+                min_score=min_score,
+                max_score=max_score,
             )
 
     def fetch_cluster_sources(
@@ -119,6 +129,11 @@ class ManualReviewsNamespace:
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
         duty_unprocessed_only: bool = False,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
         with self._adapter._cursor() as cur:
             return search_manual_candidates(
@@ -132,6 +147,11 @@ class ManualReviewsNamespace:
                 sentiment=sentiment,
                 report_type=report_type,
                 duty_unprocessed_only=duty_unprocessed_only,
+                hour_from=hour_from,
+                hour_to=hour_to,
+                duplicate_state=duplicate_state,
+                min_score=min_score,
+                max_score=max_score,
             )
 
     def count_candidates_before_date(
@@ -144,6 +164,11 @@ class ManualReviewsNamespace:
         created_before: Optional[date] = None,
         report_type: Optional[str] = None,
         duty_unprocessed_only: bool = False,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> int:
         with self._adapter._cursor() as cur:
             return count_manual_candidates_before_date(
@@ -155,6 +180,11 @@ class ManualReviewsNamespace:
                 created_before=created_before,
                 report_type=report_type,
                 duty_unprocessed_only=duty_unprocessed_only,
+                hour_from=hour_from,
+                hour_to=hour_to,
+                duplicate_state=duplicate_state,
+                min_score=min_score,
+                max_score=max_score,
             )
 
     def replace_clusters(self, clusters: Sequence[Mapping[str, Any]]) -> int:
@@ -168,6 +198,11 @@ class ManualReviewsNamespace:
         owner_user_id: str,
         bucket_key: Optional[str] = None,
         duty_unprocessed_only: bool = False,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> List[Dict[str, Any]]:
         with self._adapter._cluster_transaction() as cur:
             return fetch_manual_clusters(
@@ -175,6 +210,11 @@ class ManualReviewsNamespace:
                 owner_user_id=owner_user_id,
                 bucket_key=bucket_key,
                 duty_unprocessed_only=duty_unprocessed_only,
+                hour_from=hour_from,
+                hour_to=hour_to,
+                duplicate_state=duplicate_state,
+                min_score=min_score,
+                max_score=max_score,
             )
 
     def status_counts(

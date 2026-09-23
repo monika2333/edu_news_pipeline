@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg
 
+from src.adapters.sql_candidate_filters import candidate_extra_filter_clauses
 from src.domain.report_type import normalize_report_type as normalize_report_type_value
 
 
@@ -92,6 +93,11 @@ def _build_manual_review_filters(
     report_type: Optional[str] = None,
     query: Optional[str] = None,
     duty_unprocessed_only: bool = False,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> Tuple[List[str], List[Any]]:
     clauses: List[str] = ["mr.owner_user_id = %s"]
     params: List[Any] = [owner_user_id]
@@ -117,6 +123,15 @@ def _build_manual_review_filters(
         params.append(f"%{normalized_query}%")
     if duty_unprocessed_only:
         clauses.append(DUTY_UNPROCESSED_SQL)
+    extra_clauses, extra_params = candidate_extra_filter_clauses(
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
+    )
+    clauses.extend(extra_clauses)
+    params.extend(extra_params)
     return clauses, params
 
 

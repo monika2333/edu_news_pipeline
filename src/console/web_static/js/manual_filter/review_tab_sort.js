@@ -1,50 +1,31 @@
 // Manual Filter JS - Review Tab
 
 // --- Review Tab Sorting ---
+// 分类词表来自服务端嵌入的 #review-sort-rules（设置页「高级 · 自动排序关键词」
+// 维护），本文件不再内置词表；嵌入缺失或损坏时所有条目落入「其他」桶，
+// 自动排序退化为保持原顺序。
 
-const CATEGORY_RULES = {
-    '市教委': [
-        '市教委',
-        '市教委教育工委',
-        '市教委',
-        '教工委',
-        '教育工委',
-        '教育委员',
-        '首都教育两委',
-        '教育两委'
-    ],
-    '中小学': [
-        '中小学',
-        '小学',
-        '初中',
-        '高中',
-        '义务教育',
-        '基础教育',
-        '幼儿园',
-        '幼儿',
-        '托育',
-        'k12',
-        '班主任',
-        '青少年',
-        '少儿',
-        '少年'
-    ],
-    '高校': [
-        '高校',
-        '大学',
-        '学院',
-        '本科',
-        '研究生',
-        '硕士',
-        '博士'
-    ]
-};
 const CATEGORY_ORDER = ['市教委', '中小学', '高校', '其他'];
+
+const REVIEW_SORT_RULES = (() => {
+    const node = document.getElementById('review-sort-rules');
+    if (!node) return {};
+    try {
+        const parsed = JSON.parse(node.textContent);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+        return {};
+    }
+})();
+
 const CATEGORY_RULES_LOWER = Object.fromEntries(
-    Object.entries(CATEGORY_RULES).map(([category, keywords]) => [
-        category,
-        keywords.map(keyword => keyword.toLowerCase())
-    ])
+    CATEGORY_ORDER
+        .filter((category) => category !== '其他')
+        .map((category) => {
+            const keywords = REVIEW_SORT_RULES[category];
+            const list = Array.isArray(keywords) ? keywords : [];
+            return [category, list.map((keyword) => String(keyword).toLowerCase())];
+        })
 );
 
 function applySortModeState() {

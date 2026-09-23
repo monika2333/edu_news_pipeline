@@ -88,6 +88,11 @@ def _rows(model: str = "model-a") -> list[dict[str, Any]]:
             "value": {"suffixes": ["客户端"], "aliases": {}},
             "version": 1,
         },
+        {
+            "section": "review_sort_keywords",
+            "value": {"市教委": ["市教委"], "中小学": ["小学"], "高校": ["大学"]},
+            "version": 1,
+        },
     ]
 
 
@@ -245,6 +250,11 @@ def test_m9_m18_source_override_is_used_and_written_to_snapshot(monkeypatch) -> 
     assert snapshot["education_keywords"] == ["教育"]
     assert snapshot["beijing_keywords"] == ["北京"]
     assert snapshot["source_aliases"] == {"suffixes": ["客户端"], "aliases": {}}
+    assert snapshot["review_sort_keywords"] == {
+        "市教委": ["市教委"],
+        "中小学": ["小学"],
+        "高校": ["大学"],
+    }
     assert snapshot["versions"] == {
         "llm_endpoints": 1,
         "llm_models": 1,
@@ -253,6 +263,7 @@ def test_m9_m18_source_override_is_used_and_written_to_snapshot(monkeypatch) -> 
         "education_keywords": 1,
         "beijing_keywords": 1,
         "source_aliases": 1,
+        "review_sort_keywords": 1,
     }
 
 

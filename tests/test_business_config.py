@@ -86,6 +86,11 @@ def _settings_rows() -> list[dict[str, object]]:
             "value": {"suffixes": ["客户端"], "aliases": {"北京号": "北京日报"}},
             "version": 1,
         },
+        {
+            "section": "review_sort_keywords",
+            "value": {"市教委": ["市教委"], "中小学": ["小学"], "高校": ["大学"]},
+            "version": 1,
+        },
     ]
 
 

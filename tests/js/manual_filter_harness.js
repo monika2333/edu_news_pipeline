@@ -57,7 +57,7 @@ function inlineScripts(html) {
 }
 
 class FakeWorkspaceServer {
-    constructor({ articleCount = 0, clusters = null } = {}) {
+    constructor({ articleCount = 0, clusters = null, reviewItems = null } = {}) {
         this.articles = new Map();
         for (let index = 0; index < articleCount; index += 1) {
             const id = `a${String(index).padStart(2, '0')}`;
@@ -74,6 +74,8 @@ class FakeWorkspaceServer {
         }
         // clusters：二维数组，每组是一个聚类的文章 id；未列出的文章各自成为单条聚类
         this.clusterGroups = clusters || [];
+        // 审阅页数据：GET /api/manual_filter/review 按 decision 返回（backup 恒为空）
+        this.reviewItems = reviewItems || [];
         this.log = [];
         this.inflight = 0;
         this.holds = {};
@@ -140,6 +142,8 @@ class FakeWorkspaceServer {
         }
         if (pathname.endsWith('/edit')) return 'edit';
         if (pathname.endsWith('/decide')) return 'decide';
+        if (pathname.endsWith('/review')) return 'review-list';
+        if (pathname.endsWith('/order')) return 'review-order';
         return 'other';
     }
 
@@ -159,6 +163,13 @@ class FakeWorkspaceServer {
             return [200, { pending: this.pendingArticles().length, selected: 0, backup: 0, discarded: 0 }];
         }
         if (pathname.endsWith('/clusters')) return [200, this.clusterPage(url.searchParams)];
+        if (pathname.endsWith('/review')) {
+            const decision = url.searchParams.get('decision');
+            return [200, { items: decision === 'selected' ? this.reviewItems : [] }];
+        }
+        if (pathname.endsWith('/order')) {
+            return [200, { success: true }];
+        }
         if (pathname.endsWith('/candidates')) {
             if (url.searchParams.get('cluster') === 'true') return [200, this.clusterPage(url.searchParams)];
             const items = this.pendingArticles().map((article) => this.serializeItem(article));

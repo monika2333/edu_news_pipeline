@@ -153,6 +153,8 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 这是本系统最需要理解的部分。管理员和值班编辑用**两张不同的表**，互不干扰。
 
+审阅页的「自动排序」是**纯展示层**功能：按 市教委 → 中小学 → 高校 的固定优先级对条目标题+摘要+来源做小写子串匹配，未命中落「其他」，只在报送桶内部调整顺序，不写任何业务字段（保存的顺序值除外）。词表来自 `app_settings.review_sort_keywords`（键固定为三个类别，允许留空；查重对大小写不敏感，跨类别重复被显式拒绝——低优先级类别里的重复词永远不生效），由设置页「高级 · 自动排序关键词」维护。审阅页渲染时嵌入该分区值，分区行缺失或损坏时回退代码默认词表（与迁移种子一致），排序功能不因配置问题阻断页面。修改保存后下次点击「自动排序」立即生效，不需要重算任何数据。
+
 ### `manual_reviews` —— 管理员工作区
 
 - 每位管理员对每篇文章各有一行，归属由 `owner_user_id` 标识；唯一约束为 `owner_user_id + article_id`
@@ -318,11 +320,11 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 | 表 | 职责 |
 |---|---|
-| `app_settings` | 分区保存全部业务配置：接入点（`llm_endpoints`）、模型（`llm_models`）、每小时来源（`crawl_sources`）、评分加分词表（`score_keyword_bonuses`，有序数组）、抓取教育关键词闸门（`education_keywords`）、京内本地判定词表（`beijing_keywords`）、来源归一化规则（`source_aliases`）。版本号用于控制台乐观锁。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身。`llm_endpoints` 由迁移种子创建；其余分区由 `import-settings` 导入（只写数据库中尚不存在的分区，已存在的一律跳过，不覆盖；重复执行安全） |
+| `app_settings` | 分区保存全部业务配置：接入点（`llm_endpoints`）、模型（`llm_models`）、每小时来源（`crawl_sources`）、评分加分词表（`score_keyword_bonuses`，有序数组）、抓取教育关键词闸门（`education_keywords`）、京内本地判定词表（`beijing_keywords`）、来源归一化规则（`source_aliases`）、审阅页自动排序词表（`review_sort_keywords`，键固定为市教委/中小学/高校三个类别）。版本号用于控制台乐观锁。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身。`llm_endpoints`、`review_sort_keywords` 由迁移种子创建（没有旧配置文件，不进一次性导入）；其余分区由 `import-settings` 导入（只写数据库中尚不存在的分区，已存在的一律跳过，不覆盖；重复执行安全） |
 | `crawl_accounts` | 四类账号型来源的账号权威清单；`display_name` 是系统解析的名称，`display_name_synced_at` / `display_name_error` 记录最近成功时间或失败原因；运行时只读取启用行 |
 | `console_users` / `console_user_sessions` | 账号与登录会话 |
 | `review_events` | 审计日志，记录谁在什么时候改了什么 |
-| `pipeline_runs` / `pipeline_run_steps` | 流水线执行记录；`config_snapshot` 保存本轮各步骤解析后的模型、reasoning 与实际使用的接入点、接入点表（key/base_url/api_style，不含任何 Key）、实际来源、启用账号、四张词表的完整内容（加分词表、教育关键词、京内关键词、来源归一化规则）和各分区配置版本 |
+| `pipeline_runs` / `pipeline_run_steps` | 流水线执行记录；`config_snapshot` 保存本轮各步骤解析后的模型、reasoning 与实际使用的接入点、接入点表（key/base_url/api_style，不含任何 Key）、实际来源、启用账号、各词表配置的完整内容（加分词表、教育关键词、京内关键词、来源归一化规则、自动排序关键词）和各分区配置版本 |
 | `score_feedbacks` | 编辑对 AI 打分的反馈（偏高/偏低），按文章当前评分上下文（prompt_key + prompt_version）关联；人工筛选/值班工作区与全库检索卡片（经 `/api/articles/score-feedback`）都写这张表 |
 | `news_title_embeddings` | 仅编码新闻标题的向量，用于人工筛选聚类；不参与报送查重 |
 | `schema_migrations` | dbmate 迁移记录，**不要手工修改** |

@@ -552,7 +552,7 @@ def fetch_shift_clusters(
         f" AND {clause}" for clause in extra_clauses
     )
     cur.execute(
-        """
+        f"""
         WITH shift_pending AS MATERIALIZED (
             SELECT
                 ns.article_id,

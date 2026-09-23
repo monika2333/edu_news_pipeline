@@ -170,9 +170,8 @@
                         </div>
                         {# 原型：「筛选」折叠行（「筛选」按钮展开/收起），定稿后转正式实现 #}
                         <div class="proto-collapsible-row">
-                            <div id="proto-filter-mount"></div>
                             {% if not is_duty_workspace %}
-                            {# 管理员专属：「只看值班未处理」开关并入折叠筛选行；按钮绑定依赖 data-duty-process-scope，与位置无关 #}
+                            {# 管理员专属：「只看值班未处理」开关并入折叠筛选行（放最前，先圈范围再筛细节）；按钮绑定依赖 data-duty-process-scope，与位置无关 #}
                             <div class="proto-filter-group proto-duty-group"
                                 title="切换后只看值班编辑尚未处理的新闻">
                                 <span class="proto-filter-group-label">处理状态</span>
@@ -184,6 +183,7 @@
                                 </div>
                             </div>
                             {% endif %}
+                            <div id="proto-filter-mount"></div>
                         </div>
                         <div class="filter-toolbar-meta" id="filter-search-meta"></div>
                     </div>

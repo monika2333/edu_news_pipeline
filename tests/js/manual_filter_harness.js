@@ -213,7 +213,14 @@ class FakeWorkspaceServer {
         const url = new URL(String(input), 'http://localhost/');
         const kind = this.classify(url);
         const body = options.body ? JSON.parse(options.body) : null;
-        const entry = { kind, path: url.pathname, body, status: null, done: false };
+        const entry = {
+            kind,
+            path: url.pathname,
+            search: Object.fromEntries(url.searchParams.entries()),
+            body,
+            status: null,
+            done: false,
+        };
         this.log.push(entry);
         this.inflight += 1;
         const willFail = (this.failNext[kind] || 0) > 0;

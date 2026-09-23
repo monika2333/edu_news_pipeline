@@ -22,6 +22,8 @@
 - 聚类和序列化逻辑应与 route handler 分离。route handler 不应直接构造复杂的聚类响应。
 - 不要单独重命名 `web_static/js/manual_filter/*` 依赖的 DOM id、`data-*` 属性、CSS class 或 API path；如需修改，必须同步更新模板、JavaScript 和测试。
 - 尽量沿用现有 JS 模块边界，分别处理 filter、review、discard、search drawer、export/archive 等行为。原文抽屉（`content_drawer.js` + `css/modules/content_drawer.css`）是无遮罩的右侧抽屉，正文经 `/api/articles/content` 按需单篇获取并做页面会话内内存缓存；抽屉 markup 抽在 `_content_drawer.html`，被 `manual_filter.html`、`submission_archive.html` 与 `duty_summary.html` 共用。筛选页与已选结果页共用 `manual_filter/content_drawer.js`，入口按钮在 `renderArticleCard` 与 `renderReviewCard` 中渲染；存档库页与值班汇总页用独立的 `submission_archive/content_drawer.js`（无侧栏折叠与列表锚定逻辑），入口是 `matched` 条目标题后的「原文」标签和检索卡片的「原文」按钮（统一为 `.content-drawer-trigger`，委托只匹配该 class）。列表宽度变化后的锚定与摘要框重算抽在 `layout_anchor.js`，抽屉开合与侧栏折叠（`sidebar_collapse.js`）共用；筛选页摘要框是固定高度，任何路径都不得对其调用 resize。手动折叠状态存 `localStorage.sidebar_collapsed`；打开抽屉会自动折叠侧栏（`persist: false`，不写 localStorage），关闭抽屉不恢复。
+- 细化筛选（报送标签 / 收录时段 / 分数）是筛选工具条里由「筛选」按钮展开的折叠行（`filter_refine.js` + `filter.css` 的「细化筛选」段；markup 静态在 `manual_filter.html`）。语义：时段=收录时间（`created_at` 上海时区）小时 0-23、从>到按跨零点回绕；标签开关=隐藏带已报送/疑似已报送徽章的条目（`duplicate_state=untagged`，口径与徽章一致：`submission_duplicate_matches` 非 dismissed 即带标签）；分数=`external_importance_score` 闭区间。
+- 细化筛选不变量：列表、侧栏计数（`loadFilterCounts`）、meta 行「当前共 N 条」与 `/bulk-discard`（「放弃全部 N 条」）必须同口径，参数只能经 `refineFilterQueryParams` / `refineFilterRequestBody` 取自 `filter_refine.js` 的状态；SQL 子句只有一份——`src/adapters/sql_candidate_filters.py`，manual_reviews 与 shift_reviews 两个 adapter 共用，入参归一化在 `manual_filter_helpers.normalize_candidate_refine_filters`；新增筛选维度时先改子句构造器与其单测（`tests/test_sql_candidate_filters.py`），再贯通链路。值班聚类接口（`/clusters`）不支持这三个筛选：`workspace.js` 在细化筛选启用时回退平铺列表，不要在值班聚类接口上另写一份筛选实现。折叠行里的「处理状态」卡（全部/值班未处理）仅管理员筛选页渲染，绑定依赖 `data-duty-process-scope`；按钮徽标与 meta 摘要只统计三个细化条件，不含值班范围。「清空筛选」唯一入口在 meta 行摘要之后，折叠行内不得重复放置。
 - 修改用户可见的工作流时，同时检查 API service 路径和浏览器端路径。
 
 ## 报送存档覆盖率口径
@@ -76,4 +78,6 @@
 - export、run 或 article service 变更：运行最接近的 `tests/test_*` 文件；如果影响 CLI 触发行为，再运行 `python -m pytest tests/test_cli_parser.py`
 - 较大的人工筛选控制台重构：`python -m pytest tests/test_manual_filter_service.py tests/test_manual_filter_admin_service.py tests/test_manual_filter_routes.py`
 - 设置页行为测试（`tests/test_settings_js_behavior.py`，夹具 `tests/js/settings_harness.js`）的等待辅助函数分两种语义：**`waitFor(predicate)` 是「等待条件成立」，超时即抛错使测试失败**（失败信息带条件源码），不允许依赖它的返回值做否定断言；**「某事在一段时间内不应发生」的否定断言必须用 `assertNever(predicate, windowMs)`**，它等满整个窗口、条件一旦成立即抛错。新增 harness 照抄等待辅助函数时必须保持这个约定——超时静默返回 `false` 的写法会让未检查返回值的调用点变成空断言。
+- 细化筛选 SQL 子句与参数归一化变更：`python -m pytest tests/test_sql_candidate_filters.py`。
 - 筛选页决定流程（单条/整簇决定、放弃本页剩余内容、摘要与来源编辑保存、列表加载）变更：`python -m pytest tests/test_manual_filter_js_behavior.py`。这组 jsdom 行为测试（`tests/js/filter_decision_flow.test.js`）锁定四项约定：值班端决定后先提示后补页、`loadFilterData` 最新请求获胜、只保存改过的卡片、决定前等待进行中的编辑保存。改动这些行为时同步更新该测试；不要用源码字符串断言代替行为测试，字符串断言锁不住逻辑。夹具 `tests/js/manual_filter_harness.js` 以真实路由渲染的页面启动，后端由其中的假服务模拟，接口字段变化时需同步更新假服务。
+- 细化筛选折叠行行为（展开/收起、条件随请求下发并回第 1 页、清空筛选唯一入口、值班端回退平铺、跨零点提示）变更：同步更新 `tests/js/refine_filter_flow.test.js`（同由 `tests/test_manual_filter_js_behavior.py` 触发）。

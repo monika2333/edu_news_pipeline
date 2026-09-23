@@ -172,7 +172,7 @@ function dutyCandidateBackendParams(params, limit, offset) {
     return backendParams;
 }
 
-// 原型：值班聚类接口尚未支持细化筛选；启用筛选时回退为平铺列表，保证筛选语义正确
+// 值班聚类接口尚未支持细化筛选；启用筛选时回退为平铺列表，保证筛选语义正确
 function dutyHasRefineFilters(params) {
     return ['hour_from', 'hour_to', 'duplicate_state', 'min_score', 'max_score']
         .some(key => Boolean(params.get(key)));

@@ -34,18 +34,16 @@ function syncFilterToolbarState() {
     const ingestSuffix = state.latestIngestedAt
         ? `最新收录 ${formatLocalDateTime(state.latestIngestedAt)}`
         : '';
-    // 原型：细化筛选启用时在 meta 行追加摘要与「清空筛选」入口（本模块生成的固定 markup，不含用户数据）
-    const protoSuffixHtml = typeof protoFilterMetaSuffixHtml === 'function'
-        ? protoFilterMetaSuffixHtml()
-        : '';
+    // 细化筛选启用时在 meta 行追加摘要与「清空筛选」入口（本模块生成的固定 markup，不含用户数据）
+    const refineSuffixHtml = refineFilterMetaSuffixHtml();
     let metaText;
     if (isFilterSearchMode()) {
         metaText = `检索到 ${state.filterSearchTotal} 条，共 ${bucketTotal} 条。${ingestSuffix}`;
     } else {
         metaText = `当前共 ${bucketTotal} 条。${ingestSuffix}`;
     }
-    if (protoSuffixHtml) {
-        elements.filterSearchMeta.innerHTML = `${safeHtml(metaText)} ${protoSuffixHtml}`;
+    if (refineSuffixHtml) {
+        elements.filterSearchMeta.innerHTML = `${safeHtml(metaText)} ${refineSuffixHtml}`;
     } else {
         elements.filterSearchMeta.textContent = metaText;
     }
@@ -66,10 +64,9 @@ function renderFilterList(data) {
         return;
     }
     if (!items.length) {
-        const refineActive = typeof protoFilterActive === 'function' && protoFilterActive();
         const message = isFilterSearchMode()
             ? '没有匹配到新闻'
-            : (refineActive ? '没有符合筛选条件的新闻' : '当前没有待处理新闻');
+            : (refineFilterActive() ? '没有符合筛选条件的新闻' : '当前没有待处理新闻');
         elements.filterList.innerHTML = `<div class="empty empty-state">${message}</div>`;
         return;
     }
@@ -81,8 +78,7 @@ function renderFilterList(data) {
 
 function renderClusteredList(clusters) {
     if (!clusters.length) {
-        const refineActive = typeof protoFilterActive === 'function' && protoFilterActive();
-        const message = refineActive ? '没有符合筛选条件的新闻' : '当前没有待处理新闻';
+        const message = refineFilterActive() ? '没有符合筛选条件的新闻' : '当前没有待处理新闻';
         elements.filterList.innerHTML = `<div class="empty empty-state">${message}</div>`;
         return;
     }

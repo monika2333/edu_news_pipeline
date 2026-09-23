@@ -428,7 +428,7 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     # 右上角共享的「筛选」原型入口随筛选 tab 显隐，属于两页共用的合法元素。
     assert 'id="btn-open-cleanup"' not in html
     assert 'data-duty-process-scope' not in html
-    assert 'id="proto-filter-toggle"' in html
+    assert 'id="filter-refine-toggle"' in html
     assert 'data-workspace-action-tab="review"' in html
     assert 'id="duty-finalization-status"' in html
     assert html.index('id="duty-finalization-status"') < html.index('id="review-tab"')
@@ -759,7 +759,7 @@ def test_duty_summary_collapses_shift_panel_by_default(
     )
     assert 'class="account-menu-item" href="/admin">用户与排班</a>' in response.text
     assert 'href="/static/css/layout.css"' in response.text
-    assert 'href="/static/css/modules/filter.css"' in response.text
+    assert 'href="/static/css/modules/filter.css?v=' in response.text
     assert 'href="/static/css/modules/review.css?v=' in response.text
     assert 'href="/static/css/modules/search.css"' in response.text
 
@@ -1223,7 +1223,7 @@ def test_manual_filter_duty_scope_switch_admin_only() -> None:
         'id="filter-list"', maxsplit=1
     )[0]
     assert "data-duty-process-scope" in toolbar
-    assert html.index('class="proto-collapsible-row"') < html.index(
+    assert html.index('class="filter-refine-row"') < html.index(
         'data-duty-process-scope="all"'
     )
 

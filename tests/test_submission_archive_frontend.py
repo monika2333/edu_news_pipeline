@@ -1182,10 +1182,7 @@ def test_bulk_discard_carries_duty_scope_in_preview_and_apply() -> None:
     # 确认弹窗文案在过滤开启时必须体现收窄后的范围
     assert "const scopeSuffix = dutyUnprocessedOnly ? '值班编辑未处理的' : '';" in body
     # 细化筛选启用时文案要带上筛选描述，且批量放弃请求与列表同口径
-    assert (
-        "const refineBody = typeof protoFilterRequestBody === 'function' "
-        "? protoFilterRequestBody() : {};" in body
-    )
+    assert "const refineBody = refineFilterRequestBody();" in body
     assert body.count("...refineBody") == 2
     assert "`检索到的 ${preview.matched} 条${refineSuffix}${scopeSuffix}`" in body
     assert "`符合条件 ${preview.matched} 条${refineSuffix}${scopeSuffix}`" in body

@@ -380,8 +380,8 @@ async function bulkDiscard() {
     const { region, sentiment } = getCurrentFilterBucket();
     const query = state.filterQuery || (elements.filterSearchInput ? elements.filterSearchInput.value.trim() : '');
     const dutyUnprocessedOnly = state.filterDutyScope === 'unprocessed';
-    // 原型：细化筛选与批量放弃同口径，确认文案的 N 与实际放弃范围保持一致
-    const refineBody = typeof protoFilterRequestBody === 'function' ? protoFilterRequestBody() : {};
+    // 细化筛选与批量放弃同口径，确认文案的 N 与实际放弃范围保持一致
+    const refineBody = refineFilterRequestBody();
     try {
         const previewRes = await workspaceFetch(`${API_BASE}/bulk-discard`, {
             method: 'POST',
@@ -404,9 +404,7 @@ async function bulkDiscard() {
         }
 
         const scopeSuffix = dutyUnprocessedOnly ? '值班编辑未处理的' : '';
-        const refineSuffix = typeof protoFilterDescribe === 'function' && protoFilterActive()
-            ? `「${protoFilterDescribe()}」的`
-            : '';
+        const refineSuffix = refineFilterActive() ? `「${refineFilterDescribe()}」的` : '';
         const scopeText = query
             ? `检索到的 ${preview.matched} 条${refineSuffix}${scopeSuffix}`
             : `符合条件 ${preview.matched} 条${refineSuffix}${scopeSuffix}`;

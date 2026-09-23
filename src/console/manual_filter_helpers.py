@@ -23,6 +23,9 @@ def _optional_int_in_range(value: Any, *, low: int, high: int, field: str) -> Op
         return None
     try:
         parsed = int(value)
+        # 拒绝 7.5 这类小数：int() 会静默截断，筛选语义会悄悄漂移
+        if float(value) != parsed:
+            raise ValueError
     except (TypeError, ValueError):
         raise ValueError(f"{field} 必须是整数") from None
     if parsed < low or parsed > high:

@@ -96,9 +96,51 @@ SETTING_SECTIONS = (
     "education_keywords",
     "beijing_keywords",
     "source_aliases",
+    "review_sort_keywords",
 )
 SCORE_BONUS_MIN = -100
 SCORE_BONUS_MAX = 100
+# 审阅页「自动排序」的固定分类桶。键同时是设置页与嵌入前端词表的类别名；
+# 「其他」是兜底桶，不是可配置类别。
+REVIEW_SORT_CATEGORIES = ("市教委", "中小学", "高校")
+# 初始词表，源自原 review_tab_sort.js 的 CATEGORY_RULES（去掉其中重复的
+# 「市教委」）。只用于迁移播种和页面回退值，日常修改走控制台设置页。
+REVIEW_SORT_KEYWORD_DEFAULTS: dict[str, tuple[str, ...]] = {
+    "市教委": (
+        "市教委",
+        "市教委教育工委",
+        "教工委",
+        "教育工委",
+        "教育委员",
+        "首都教育两委",
+        "教育两委",
+    ),
+    "中小学": (
+        "中小学",
+        "小学",
+        "初中",
+        "高中",
+        "义务教育",
+        "基础教育",
+        "幼儿园",
+        "幼儿",
+        "托育",
+        "k12",
+        "班主任",
+        "青少年",
+        "少儿",
+        "少年",
+    ),
+    "高校": (
+        "高校",
+        "大学",
+        "学院",
+        "本科",
+        "研究生",
+        "硕士",
+        "博士",
+    ),
+}
 
 
 class BusinessConfigError(RuntimeError):
@@ -150,6 +192,7 @@ class BusinessConfig:
     education_keywords: tuple[str, ...] = ()
     beijing_keywords: tuple[str, ...] = ()
     source_aliases: "SourceAliasRules" = field(default_factory=lambda: SourceAliasRules())
+    review_sort_keywords: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
     def model_for(self, step: str) -> str:
         return self.step_config(step).model
@@ -218,6 +261,10 @@ class BusinessConfig:
             "source_aliases": {
                 "suffixes": list(self.source_aliases.suffixes),
                 "aliases": dict(self.source_aliases.aliases),
+            },
+            "review_sort_keywords": {
+                category: list(rules)
+                for category, rules in self.review_sort_keywords.items()
             },
             "versions": dict(self.versions),
         }
@@ -552,6 +599,74 @@ def resolve_source_aliases(value: Any) -> SourceAliasRules:
     )
 
 
+def validate_review_sort_keywords(value: Any) -> dict[str, list[str]]:
+    """Validate the review-page auto-sort category keyword rules.
+
+    键固定为三个展示类别（「其他」是兜底桶，不配置）；值是关键词列表，
+    允许留空——某类留空只意味着该类什么都匹配不到。查重按 toLowerCase 后的
+    词进行：前端匹配对大小写不敏感，"K12" 与 "k12" 语义相同。跨类别重复
+    直接拒绝：分类按固定优先级首个命中即归类，低优先级类别里的重复词
+    永远不生效，属于死配置。
+    """
+
+    if not isinstance(value, Mapping):
+        raise ValueError("review_sort_keywords 必须是对象")
+    unexpected = sorted(str(key) for key in value if key not in REVIEW_SORT_CATEGORIES)
+    if unexpected:
+        raise ValueError(
+            f"review_sort_keywords 含未知类别：{', '.join(unexpected)}"
+        )
+    missing = [category for category in REVIEW_SORT_CATEGORIES if category not in value]
+    if missing:
+        raise ValueError(f"review_sort_keywords 缺少类别：{'、'.join(missing)}")
+    owner: dict[str, str] = {}
+    normalized: dict[str, list[str]] = {}
+    for category in REVIEW_SORT_CATEGORIES:
+        items = value[category]
+        if not isinstance(items, list):
+            raise ValueError(f"review_sort_keywords.{category} 必须是有序数组")
+        words: list[str] = []
+        for index, item in enumerate(items):
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError(
+                    f"review_sort_keywords.{category}[{index}] 不能为空"
+                )
+            word = item.strip()
+            lowered = word.lower()
+            if lowered in {candidate.lower() for candidate in words}:
+                raise ValueError(f"review_sort_keywords.{category} 关键词重复：{word}")
+            previous = owner.get(lowered)
+            if previous is not None:
+                raise ValueError(
+                    f"关键词「{word}」同时出现在 {previous} 和 {category}："
+                    "分类按优先级首个命中，低优先级里的重复词不会生效，请只保留一处"
+                )
+            owner[lowered] = category
+            words.append(word)
+        normalized[category] = words
+    return normalized
+
+
+def resolve_review_sort_keywords(value: Any | None) -> dict[str, list[str]]:
+    """Validated rules for the review page, falling back to seeded defaults.
+
+    供审阅页渲染路径使用：分区行缺失（迁移未执行）或内容损坏时回退默认
+    词表。排序只是展示层功能，不能因它阻断整个页面。
+    """
+
+    if value is not None:
+        try:
+            return validate_review_sort_keywords(value)
+        except ValueError as exc:
+            logging.getLogger(__name__).warning(
+                "review_sort_keywords 分区无效，审阅页回退默认词表：%s", exc
+            )
+    return {
+        category: list(rules)
+        for category, rules in REVIEW_SORT_KEYWORD_DEFAULTS.items()
+    }
+
+
 SECTION_VALIDATORS = {
     "llm_endpoints": validate_llm_endpoints,
     "llm_models": validate_llm_models,
@@ -560,6 +675,7 @@ SECTION_VALIDATORS = {
     "education_keywords": validate_education_keywords,
     "beijing_keywords": validate_beijing_keywords,
     "source_aliases": validate_source_aliases,
+    "review_sort_keywords": validate_review_sort_keywords,
 }
 
 
@@ -634,6 +750,9 @@ def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
             indexed["beijing_keywords"]["value"]
         )
         source_aliases = resolve_source_aliases(indexed["source_aliases"]["value"])
+        review_sort_keywords = validate_review_sort_keywords(
+            indexed["review_sort_keywords"]["value"]
+        )
     except ValueError as exc:
         raise BusinessConfigError(f"数据库业务配置无效：{exc}") from exc
     endpoint_keys = set(llm_endpoints)
@@ -679,6 +798,10 @@ def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
         education_keywords=tuple(education_keywords),
         beijing_keywords=tuple(beijing_keywords),
         source_aliases=source_aliases,
+        review_sort_keywords={
+            category: tuple(words)
+            for category, words in review_sort_keywords.items()
+        },
     )
 
 
@@ -777,6 +900,8 @@ __all__ = [
     "LLM_API_STYLES",
     "LLM_STEPS",
     "LLM_STEP_LABELS",
+    "REVIEW_SORT_CATEGORIES",
+    "REVIEW_SORT_KEYWORD_DEFAULTS",
     "SCORE_BONUS_MAX",
     "SCORE_BONUS_MIN",
     "ScoreKeywordBonus",
@@ -795,6 +920,7 @@ __all__ = [
     "resolve_llm_endpoints",
     "resolve_models",
     "resolve_llm_steps",
+    "resolve_review_sort_keywords",
     "resolve_source_aliases",
     "validate_beijing_keywords",
     "validate_crawl_sources",
@@ -803,6 +929,7 @@ __all__ = [
     "validate_keyword_list",
     "validate_llm_endpoints",
     "validate_llm_models",
+    "validate_review_sort_keywords",
     "validate_score_keyword_bonuses",
     "validate_section",
     "validate_source_aliases",

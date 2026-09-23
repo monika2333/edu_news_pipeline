@@ -84,6 +84,11 @@ def _wordlist_rows() -> list[dict[str, Any]]:
             "value": {"suffixes": [], "aliases": {}},
             "version": 1,
         },
+        {
+            "section": "review_sort_keywords",
+            "value": {"市教委": ["市教委"], "中小学": ["小学"], "高校": ["大学"]},
+            "version": 1,
+        },
     ]
 
 

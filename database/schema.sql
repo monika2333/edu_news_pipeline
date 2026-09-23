@@ -1,4 +1,4 @@
-\restrict zp16mbgApUZeT0dzcxcfV8Xeu7xn3sd4GJa3YcUw0nvD2CUKXI6W0DsC9hQWakx
+\restrict wcwuvmODHTr1Wi1KTA3scNBTKpMBVmZEYa7wr6qquiwBXkJgR61bmHuXqw8MfYB
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
@@ -14,13 +14,6 @@ SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
-
---
--- Name: public; Type: SCHEMA; Schema: -; Owner: -
---
-
--- *not* creating schema, since initdb creates it
-
 
 --
 -- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
@@ -534,7 +527,7 @@ ALTER SEQUENCE public.review_events_id_seq OWNED BY public.review_events.id;
 --
 
 CREATE TABLE public.schema_migrations (
-    version character varying NOT NULL
+    version character varying(128) NOT NULL
 );
 
 
@@ -1319,17 +1312,17 @@ CREATE INDEX raw_articles_fetched_at_idx ON public.raw_articles USING btree (fet
 
 
 --
--- Name: raw_articles_token_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX raw_articles_token_idx ON public.raw_articles USING btree (token);
-
-
---
 -- Name: raw_articles_search_expr_trgm; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX raw_articles_search_expr_trgm ON public.raw_articles USING gin ((((COALESCE(title, ''::text) || ' '::text) || COALESCE(content_markdown, ''::text))) public.gin_trgm_ops);
+
+
+--
+-- Name: raw_articles_token_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX raw_articles_token_idx ON public.raw_articles USING btree (token);
 
 
 --
@@ -1826,7 +1819,7 @@ ALTER TABLE ONLY public.submitted_report_items
 -- PostgreSQL database dump complete
 --
 
-\unrestrict zp16mbgApUZeT0dzcxcfV8Xeu7xn3sd4GJa3YcUw0nvD2CUKXI6W0DsC9hQWakx
+\unrestrict wcwuvmODHTr1Wi1KTA3scNBTKpMBVmZEYa7wr6qquiwBXkJgR61bmHuXqw8MfYB
 
 
 --
@@ -1887,4 +1880,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260910120000'),
     ('20260911100000'),
     ('20260913120000'),
-    ('20260918120000');
+    ('20260918120000'),
+    ('20260920120000'),
+    ('20260923120000');

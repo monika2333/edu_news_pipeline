@@ -14,7 +14,10 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 from src.adapters.db_postgres_core import PostgresAdapter
-from src.business_config import load_business_config
+from src.business_config import (
+    REVIEW_SORT_KEYWORD_DEFAULTS,
+    load_business_config,
+)
 from src.config import get_settings
 from src.console import settings_service
 from src.console.app import create_app
@@ -39,6 +42,12 @@ ENDPOINTS_MIGRATION_PATH = (
     / "database"
     / "migrations"
     / "20260918120000_add_llm_endpoints_setting.sql"
+)
+SORT_KEYWORDS_MIGRATION_PATH = (
+    Path(__file__).parents[1]
+    / "database"
+    / "migrations"
+    / "20260923120000_add_review_sort_keywords_setting.sql"
 )
 ADMIN_ID = "00000000-0000-0000-0000-000000000201"
 
@@ -97,14 +106,23 @@ def _endpoints_migration_parts() -> tuple[str, str]:
     return up.split("-- migrate:up", maxsplit=1)[1], down
 
 
+def _sort_keywords_migration_parts() -> tuple[str, str]:
+    source = SORT_KEYWORDS_MIGRATION_PATH.read_text(encoding="utf-8")
+    up, down = source.split("-- migrate:down", maxsplit=1)
+    return up.split("-- migrate:up", maxsplit=1)[1], down
+
+
 def _apply_managed_setting_migrations(connection: psycopg.Connection) -> None:
     """The migrations a fresh deployment applies before the one-shot import:
-    console-managed settings, then the llm_endpoints seed."""
+    console-managed settings, then the migration-seeded rows (llm_endpoints、
+    review_sort_keywords——两者都没有旧配置文件，不进一次性导入)。"""
 
     base_up, _base_down = _migration_parts()
     endpoints_up, _endpoints_down = _endpoints_migration_parts()
+    sort_keywords_up, _sort_keywords_down = _sort_keywords_migration_parts()
     connection.execute(base_up)
     connection.execute(endpoints_up)
+    connection.execute(sort_keywords_up)
 
 
 def _create_legacy_schema(connection: psycopg.Connection) -> None:
@@ -136,8 +154,9 @@ def _create_legacy_schema(connection: psycopg.Connection) -> None:
 
 
 def _sections() -> dict[str, object]:
-    """Exactly what ``preview_legacy_import`` produces: llm_endpoints is
-    seeded by its own migration and never part of the one-shot import."""
+    """Exactly what ``preview_legacy_import`` produces: llm_endpoints and
+    review_sort_keywords are seeded by their own migrations and never part
+    of the one-shot import."""
 
     return {
         "llm_models": {
@@ -285,6 +304,33 @@ def test_llm_endpoints_migration_seeds_openrouter_and_down_removes_it() -> None:
         assert remaining is None
 
 
+def test_review_sort_keywords_migration_seeds_defaults_and_down_removes_it() -> None:
+    base_up, _base_down = _migration_parts()
+    up_sql, down_sql = _sort_keywords_migration_parts()
+    with _isolated_database() as connection:
+        _create_legacy_schema(connection)
+        connection.execute(base_up)
+        connection.execute(up_sql)
+
+        row = connection.execute(
+            "SELECT value, version, updated_by_user_id FROM app_settings"
+            " WHERE section = 'review_sort_keywords'"
+        ).fetchone()
+        assert row["updated_by_user_id"] is None
+        assert row["version"] == 1
+        # 播种内容必须与代码默认词表一致：迁移是初始值的唯一权威来源
+        assert row["value"] == {
+            category: list(words)
+            for category, words in REVIEW_SORT_KEYWORD_DEFAULTS.items()
+        }
+
+        connection.execute(down_sql)
+        remaining = connection.execute(
+            "SELECT 1 FROM app_settings WHERE section = 'review_sort_keywords'"
+        ).fetchone()
+        assert remaining is None
+
+
 def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
     """The real fresh-deployment order: dbmate up applies every migration
     (seeded llm_endpoints included), then `import-settings --apply` writes
@@ -295,11 +341,13 @@ def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
     base_up, _base_down = _migration_parts()
     names_up, _names_down = _account_names_migration_parts()
     endpoints_up, _endpoints_down = _endpoints_migration_parts()
+    sort_keywords_up, _sort_keywords_down = _sort_keywords_migration_parts()
     with _isolated_database() as connection:
         _create_legacy_schema(connection)
         connection.execute(base_up)
         connection.execute(names_up)
         connection.execute(endpoints_up)
+        connection.execute(sort_keywords_up)
 
         adapter = PostgresAdapter(connection)
         report = adapter.import_app_config_missing(
@@ -318,6 +366,10 @@ def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
         assert loaded.education_keywords == ("教育", "学校")
         assert loaded.beijing_keywords == ("北京", "海淀")
         assert loaded.source_aliases.suffixes == ("客户端",)
+        assert loaded.review_sort_keywords == {
+            category: tuple(words)
+            for category, words in REVIEW_SORT_KEYWORD_DEFAULTS.items()
+        }
         assert [
             account.normalized_identifier for account in loaded.accounts["toutiao"]
         ] == ["account-1"]
@@ -338,6 +390,7 @@ def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
             "education_keywords",
             "llm_endpoints",
             "llm_models",
+            "review_sort_keywords",
             "score_keyword_bonuses",
             "source_aliases",
         ]
@@ -371,18 +424,21 @@ def test_phase2_import_writes_only_missing_sections_on_populated_database(
     tmp_path,
 ) -> None:
     """M9: the phase-2 import runs against a database that already went
-    through phase 1. Existing sections keep version and content untouched,
-    ``crawl_accounts`` keeps its row count, and only the four wordlist
-    sections are written."""
+    through phase 1 (plus the migration-seeded rows that a deployment of
+    this era always has). Existing sections keep version and content
+    untouched, ``crawl_accounts`` keeps its row count, and only the four
+    wordlist sections are written."""
 
     base_up, _base_down = _migration_parts()
     names_up, _names_down = _account_names_migration_parts()
     endpoints_up, _endpoints_down = _endpoints_migration_parts()
+    sort_keywords_up, _sort_keywords_down = _sort_keywords_migration_parts()
     with _isolated_database() as connection:
         _create_legacy_schema(connection)
         connection.execute(base_up)
         connection.execute(names_up)
         connection.execute(endpoints_up)
+        connection.execute(sort_keywords_up)
         adapter = PostgresAdapter(connection)
 
         phase1_sections = {
@@ -464,7 +520,7 @@ def test_phase2_import_writes_only_missing_sections_on_populated_database(
                 (SELECT count(*) FROM crawl_accounts) AS accounts_count
             """
         ).fetchone()
-        assert counts == {"settings_count": 7, "accounts_count": 1}
+        assert counts == {"settings_count": 8, "accounts_count": 1}
         # 旧账号文件里库里没有的 account-9 不得被写入
         revived = connection.execute(
             "SELECT 1 FROM crawl_accounts WHERE normalized_identifier = 'account-9'"

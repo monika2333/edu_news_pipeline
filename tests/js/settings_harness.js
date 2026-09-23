@@ -205,6 +205,15 @@ function defaultSections() {
             value: { suffixes: ['客户端', '网'], aliases: { '北青': '北京青年报' } }, version: 14,
             updated_at: '2026-09-18T08:00:00Z', updated_by: { display_name: '编辑丁' },
         },
+        review_sort_keywords: {
+            value: {
+                '市教委': ['市教委', '教工委'],
+                '中小学': ['中小学', '小学'],
+                '高校': ['高校', '大学'],
+            },
+            version: 15,
+            updated_at: '2026-09-18T08:00:00Z', updated_by: { display_name: '编辑戊' },
+        },
         crawl_sources: {
             value: ['toutiao', 'chinanews'],
             version: 4,
@@ -313,7 +322,7 @@ class FakeSettingsServer {
         if (pathname === '/api/admin/settings/llm_models') return 'save-models';
         if (pathname === '/api/admin/settings/llm_endpoints') return 'save-endpoints';
         if (pathname === '/api/admin/settings/crawl_sources') return 'save-sources';
-        const dictionaryMatch = pathname.match(/^\/api\/admin\/settings\/(score_keyword_bonuses|education_keywords|beijing_keywords|source_aliases)$/);
+        const dictionaryMatch = pathname.match(/^\/api\/admin\/settings\/(score_keyword_bonuses|education_keywords|beijing_keywords|source_aliases|review_sort_keywords)$/);
         if (dictionaryMatch) return `save-${dictionaryMatch[1]}`;
         if (pathname === '/api/admin/crawl-accounts') {
             return method === 'POST' ? 'add-account' : 'list-accounts';
@@ -432,7 +441,7 @@ class FakeSettingsServer {
             }];
         }
         const saveMatch = pathname.match(
-            /^\/api\/admin\/settings\/(llm_models|llm_endpoints|crawl_sources|score_keyword_bonuses|education_keywords|beijing_keywords|source_aliases)$/,
+            /^\/api\/admin\/settings\/(llm_models|llm_endpoints|crawl_sources|score_keyword_bonuses|education_keywords|beijing_keywords|source_aliases|review_sort_keywords)$/,
         );
         if (saveMatch && method === 'PUT') {
             const section = saveMatch[1];

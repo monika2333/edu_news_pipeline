@@ -96,6 +96,11 @@ def _settings_rows() -> list[dict[str, Any]]:
             "value": {"suffixes": ["客户端"], "aliases": {"北京号": "北京日报"}},
             "version": 2,
         },
+        {
+            "section": "review_sort_keywords",
+            "value": {"市教委": ["市教委"], "中小学": ["小学"], "高校": ["大学"]},
+            "version": 1,
+        },
     ]
 
 
@@ -356,6 +361,7 @@ def test_load_resolves_wordlists_and_versions() -> None:
         "education_keywords": 1,
         "beijing_keywords": 4,
         "source_aliases": 2,
+        "review_sort_keywords": 1,
     }
 
 
@@ -375,6 +381,11 @@ def test_snapshot_records_full_wordlist_content_and_versions() -> None:
     assert snapshot["source_aliases"] == {
         "suffixes": ["客户端"],
         "aliases": {"北京号": "北京日报"},
+    }
+    assert snapshot["review_sort_keywords"] == {
+        "市教委": ["市教委"],
+        "中小学": ["小学"],
+        "高校": ["大学"],
     }
     assert set(snapshot["versions"]) == set(business_config.SETTING_SECTIONS)
 

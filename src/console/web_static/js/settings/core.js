@@ -29,9 +29,11 @@ const state = {
     accountNameResolving: new Set(),
     // 数据源即时保存；其余分区各自维护未保存标记。
     dirty: { llm_models: false, llm_endpoints: false, score_keyword_bonuses: false,
-        education_keywords: false, beijing_keywords: false, source_aliases: false },
+        education_keywords: false, beijing_keywords: false, source_aliases: false,
+        review_sort_keywords: false },
     saving: { llm_models: false, llm_endpoints: false, score_keyword_bonuses: false,
-        education_keywords: false, beijing_keywords: false, source_aliases: false },
+        education_keywords: false, beijing_keywords: false, source_aliases: false,
+        review_sort_keywords: false },
     modelsDraft: null,
     // 进行中的来源启停请求数；非零时禁用面板内全部来源开关
     sourceToggleInflight: 0,

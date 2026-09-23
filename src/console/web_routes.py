@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from src.adapters.db_postgres_core import get_adapter
+from src.business_config import resolve_review_sort_keywords
 from src.console.auth_service import ConsoleUser
 from src.console.security import require_console_user, require_role
 from src.console.shifts_service import (
@@ -16,8 +20,24 @@ from src.console.shifts_service import (
 
 router = APIRouter(tags=["console"], include_in_schema=False)
 
+logger = logging.getLogger(__name__)
+
 _TEMPLATE_DIR = Path(__file__).resolve().parent / "web_templates"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
+
+
+def _review_sort_rules() -> dict[str, list[str]]:
+    """审阅页「自动排序」词表：读分区行，缺失或读库失败时回退默认值。
+
+    排序只是展示层功能，不能因它阻断页面渲染——数据加载的真实错误
+    会由页面内的 API 调用暴露，这里刻意收窄故障面。
+    """
+    try:
+        row = get_adapter().app_config.fetch_setting("review_sort_keywords")
+    except Exception as exc:  # 渲染路径的降级处理，见 docstring
+        logger.warning("读取 review_sort_keywords 失败，审阅页回退默认词表：%s", exc)
+        return resolve_review_sort_keywords(None)
+    return resolve_review_sort_keywords(row["value"] if row else None)
 
 
 @router.get("/manual_filter", response_class=HTMLResponse)
@@ -35,6 +55,7 @@ async def manual_filter_page(
             "current_user": user,
             "workspace_mode": "admin",
             "admin_view": "filter",
+            "review_sort_rules": _review_sort_rules(),
         },
     )
 
@@ -53,6 +74,7 @@ async def admin_review_page(
             "current_user": user,
             "workspace_mode": "admin",
             "admin_view": "review",
+            "review_sort_rules": _review_sort_rules(),
         },
     )
 
@@ -86,6 +108,7 @@ async def duty_page(
             "current_user": user,
             "workspace_mode": "duty",
             "admin_view": "filter",
+            "review_sort_rules": _review_sort_rules(),
         },
     )
 

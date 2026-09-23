@@ -2759,6 +2759,90 @@ test('F11：清空词典保存必须确认，取消零请求，确认提交空�
     } finally { page.close(); }
 });
 
+// F13-F17：高级页签「自动排序关键词」——三类别文本域、查重、全空确认、立即生效语义。
+const SORT_CATEGORY_NAMES = ['市教委', '中小学', '高校'];
+
+function sortCategoryInputs(page) {
+    const block = dictionaryBlock(page, 'review_sort_keywords');
+    const inputs = {};
+    block.querySelectorAll('.advanced-field').forEach((field) => {
+        const labelText = field.querySelector('.advanced-field-label').textContent;
+        const category = SORT_CATEGORY_NAMES.find((name) => labelText.startsWith(name));
+        inputs[category] = field.querySelector('textarea');
+    });
+    return inputs;
+}
+
+test('F13：自动排序关键词渲染三个类别文本域并显示词数', async () => {
+    const page = await bootPage({ hash: '#advanced' });
+    try {
+        const inputs = sortCategoryInputs(page);
+        assert.deepEqual(Object.keys(inputs), SORT_CATEGORY_NAMES);
+        assert.equal(inputs['市教委'].value, '市教委\n教工委');
+        assert.equal(inputs['中小学'].value, '中小学\n小学');
+        assert.equal(inputs['高校'].value, '高校\n大学');
+        assert.match(inputs['高校'].parentElement.querySelector('.settings-word-count').textContent, /2 个词/);
+        const block = dictionaryBlock(page, 'review_sort_keywords');
+        assert.match(block.querySelector('.settings-effect-note').textContent, /立即生效/);
+        assert.match(block.querySelector('.settings-effect-note').textContent, /市教委 → 中小学 → 高校/);
+    } finally { page.close(); }
+});
+
+test('F14：自动排序关键词按三类对象保存，留空类别提交空数组', async () => {
+    const page = await bootPage({ hash: '#advanced' });
+    try {
+        const inputs = sortCategoryInputs(page);
+        inputValue(page, inputs['市教委'], '市教委\n教工委\n首都教育两委');
+        inputValue(page, inputs['中小学'], '');
+        inputValue(page, inputs['高校'], ' 高校 \n大学\n');
+        await saveDictionary(page, 'review_sort_keywords');
+        assert.deepEqual(dictionaryPuts(page)[0].body, {
+            expected_version: 15,
+            value: {
+                '市教委': ['市教委', '教工委', '首都教育两委'],
+                '中小学': [],
+                '高校': ['高校', '大学'],
+            },
+        });
+        assert.match(dictionaryBlock(page, 'review_sort_keywords').querySelector('.settings-save-status').textContent, /保存成功/);
+    } finally { page.close(); }
+});
+
+for (const [name, target, lines, message] of [
+    ['F15 同类重复', '中小学', '中小学\n小学\n小学', /中小学第 3 行：关键词重复/],
+    ['F16 跨类重复', '中小学', '中小学\n市教委', /同时出现在 市教委 和 中小学/],
+]) {
+    test(`${name}：零请求标红并说明优先级语义`, async () => {
+        const page = await bootPage({ hash: '#advanced' });
+        try {
+            const inputs = sortCategoryInputs(page);
+            inputValue(page, inputs[target], lines);
+            dictionaryBlock(page, 'review_sort_keywords').querySelector('.section-save').click();
+            await assertNever(() => dictionaryPuts(page).length > 0);
+            assert.equal(inputs[target].getAttribute('aria-invalid'), 'true');
+            assert.match(dictionaryBlock(page, 'review_sort_keywords').querySelector('.settings-save-status').textContent, message);
+        } finally { page.close(); }
+    });
+}
+
+test('F17：三类全空保存先确认，取消零请求，确认提交三个空数组', async () => {
+    const page = await bootPage({ hash: '#advanced' });
+    try {
+        const inputs = sortCategoryInputs(page);
+        Object.values(inputs).forEach((input) => inputValue(page, input, ''));
+        const prompts = [];
+        page.window.confirm = (message) => { prompts.push(message); return false; };
+        dictionaryBlock(page, 'review_sort_keywords').querySelector('.section-save').click();
+        await assertNever(() => dictionaryPuts(page).length > 0);
+        assert.equal(prompts.length, 1);
+        assert.match(prompts[0], /自动排序将不会调整条目顺序/);
+        assert.equal(unloadBlocked(page), true);
+        page.window.confirm = () => true;
+        await saveDictionary(page, 'review_sort_keywords');
+        assert.deepEqual(dictionaryPuts(page)[0].body.value, { '市教委': [], '中小学': [], '高校': [] });
+    } finally { page.close(); }
+});
+
 for (const tab of ['bonuses', 'advanced']) {
     test(`恢复 #${tab} hash 与 aria 页签语义`, async () => {
         const page = await bootPage({ hash: `#${tab}` });

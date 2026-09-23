@@ -166,7 +166,7 @@ def _replay_migrations(database_name: str) -> None:
         connection.execute(
             """
             CREATE TABLE public.schema_migrations (
-                version varchar PRIMARY KEY
+                version varchar(128) PRIMARY KEY
             )
             """
         )

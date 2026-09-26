@@ -58,6 +58,28 @@ DETAIL_HTML = """
 </html>
 """
 
+VIDEO_DETAIL_HTML = """
+<html>
+  <head><title>中秋嘉年华_北京时间</title></head>
+  <body>
+    <div class="seo_aritcle_content">
+      <div class="article_content">
+        <h1>中秋嘉年华_北京时间</h1>
+        <article>
+          <p>中秋嘉年华</p>
+          <p>中秋嘉年华</p>
+        </article>
+      </div>
+    </div>
+    <script>
+      App.data = extend(App.data, {
+        topic_data: {"moduleIds":["m1"],"modules":[{"modules":[[{"template":"article_video","data":{"gid":"40kud0l2r4r8b5q870cf6p21lvv","title":"中秋嘉年华","news_type":3,"content":[{"type":"txt","value":"第一段正文，含 & 符号。"},{"type":"img","value":"https://example.com/cover.jpg","title":"封面图说"},{"type":"txt","value":"第二段正文。"}]}}]]}],"resolution":null}
+      });
+    </script>
+  </body>
+</html>
+"""
+
 
 class FakeResponse:
     def __init__(self, payload: dict[str, Any]) -> None:
@@ -146,6 +168,85 @@ def test_detail_parser_uses_article_node_and_removes_page_noise() -> None:
     assert "责任编辑" not in data["content_markdown"]
     assert "频道导航" not in data["content_markdown"]
     assert "站点页脚" not in data["content_markdown"]
+
+
+def test_video_detail_body_comes_from_embedded_topic_data() -> None:
+    data = http_btime._parse_detail_html(
+        VIDEO_DETAIL_HTML,
+        "https://item.btime.com/40kud0l2r4r8b5q870cf6p21lvv",
+    )
+
+    assert data["title"] == "中秋嘉年华"
+    # 可见 article 节点只有「标题复读」样板，正文必须来自内嵌 topic_data
+    assert data["content_markdown"] == "第一段正文，含 & 符号。\n\n第二段正文。"
+    assert "中秋嘉年华" not in data["content_markdown"]
+    assert "封面图说" not in data["content_markdown"]
+    assert "<p>第一段正文，含 &amp; 符号。</p>" in data["content"]
+    assert "cover.jpg" not in data["content"]
+
+
+def test_embedded_content_prefers_longest_txt_block() -> None:
+    # 页面结构里可能混入其他带小 content 数组的节点（如推荐卡片），
+    # 必须选中正文所在的那个，而不是遍历顺序里先遇到的那个
+    html_text = DETAIL_HTML.replace(
+        "</body>",
+        '<script>var cfg = { topic_data: {"modules":['
+        '{"data":{"title":"本篇正文","content":[{"type":"txt","value":"这是完整的正文段落，比推荐卡片长得多。"}]}},'
+        '{"data":{"title":"推荐卡片","content":[{"type":"txt","value":"猜你喜欢"}]}}'
+        ']} };</script></body>',
+    )
+
+    data = http_btime._parse_detail_html(
+        html_text,
+        "http://item.btime.com/43r9knd9fc388q9qfgtr1q0k5i0",
+    )
+
+    assert "这是完整的正文段落" in data["content_markdown"]
+    assert "猜你喜欢" not in data["content_markdown"]
+
+
+def test_empty_topic_data_content_falls_back_to_article_node() -> None:
+    html_text = DETAIL_HTML.replace(
+        "</body>",
+        '<script>var cfg = { topic_data: {"moduleIds":[],"modules":[]} };</script></body>',
+    )
+
+    data = http_btime._parse_detail_html(
+        html_text,
+        "http://item.btime.com/43r9knd9fc388q9qfgtr1q0k5i0",
+    )
+
+    assert "视频稿的一句说明" in data["content_markdown"]
+
+
+def test_broken_topic_data_json_falls_back_to_article_node() -> None:
+    # 花括号能配平但不是合法 JSON（JS 对象字面量，键名无引号）
+    html_text = DETAIL_HTML.replace(
+        "</body>",
+        '<script>var cfg = { topic_data: {modules: [1, 2]} };</script></body>',
+    )
+
+    data = http_btime._parse_detail_html(
+        html_text,
+        "http://item.btime.com/43r9knd9fc388q9qfgtr1q0k5i0",
+    )
+
+    assert "视频稿的一句说明" in data["content_markdown"]
+
+
+def test_unterminated_topic_data_json_falls_back_to_article_node() -> None:
+    # 花括号配不平：定位器必须放弃而不是吞掉后半页
+    html_text = DETAIL_HTML.replace(
+        "</body>",
+        '<script>var cfg = { topic_data: {"modules": [oops </script></body>',
+    )
+
+    data = http_btime._parse_detail_html(
+        html_text,
+        "http://item.btime.com/43r9knd9fc388q9qfgtr1q0k5i0",
+    )
+
+    assert "视频稿的一句说明" in data["content_markdown"]
 
 
 def test_empty_video_body_is_valid_and_feed_summary_stays_none() -> None:

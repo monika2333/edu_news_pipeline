@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -225,6 +227,82 @@ def _strip_title_suffix(title: str) -> str:
     return re.sub(r"\s*[_|\-]\s*北京时间\s*$", "", title or "").strip()
 
 
+# 视频稿（news_type=3）的可见 article 节点只含「标题复读」的 SEO 样板，
+# 真正文只存在于页面内嵌的 topic_data JSON 里；图文稿（news_type=1）
+# 两者都有正文。因此提取顺序固定为：topic_data 优先，HTML 节点兜底。
+_TOPIC_DATA_PATTERN = re.compile(r"(?<![A-Za-z0-9_])topic_data\s*:\s*\{")
+
+
+def _match_braced_json_object(html_text: str, open_brace_index: int) -> Optional[str]:
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(open_brace_index, len(html_text)):
+        char = html_text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return html_text[open_brace_index : index + 1]
+    return None
+
+
+def _parse_topic_data(html_text: str) -> Optional[dict[str, Any]]:
+    for match in _TOPIC_DATA_PATTERN.finditer(html_text):
+        blob = _match_braced_json_object(html_text, match.end() - 1)
+        if blob is None:
+            continue
+        try:
+            payload = json.loads(blob)
+        except ValueError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _longest_embedded_txt(payload: dict[str, Any]) -> str:
+    best = ""
+    stack: list[Any] = [payload]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            parts = node.get("content")
+            if isinstance(parts, list):
+                paragraphs = [
+                    str(part.get("value") or "").strip()
+                    for part in parts
+                    if isinstance(part, dict) and part.get("type") == "txt"
+                ]
+                joined = "\n".join(paragraph for paragraph in paragraphs if paragraph)
+                if len(joined) > len(best):
+                    best = joined
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    return best
+
+
+def _embedded_content_html(html_text: str) -> str:
+    payload = _parse_topic_data(html_text)
+    if payload is None:
+        return ""
+    plain = _longest_embedded_txt(payload)
+    if not plain:
+        return ""
+    return "".join(f"<p>{html.escape(paragraph)}</p>" for paragraph in plain.split("\n"))
+
+
 def _parse_detail_html(html_text: str, url: str) -> dict[str, Any]:
     soup = BeautifulSoup(html_text or "", "html.parser")
     title_node = soup.select_one(".article_content > h1, h1")
@@ -232,22 +310,21 @@ def _parse_detail_html(html_text: str, url: str) -> dict[str, Any]:
     if not title and soup.title:
         title = soup.title.get_text(" ", strip=True)
 
-    content_node = None
-    for selector in (
-        ".seo_aritcle_content .article_content > article",
-        ".article_content > article",
-        ".article_content > .aritcle.content",
-        "article",
-    ):
-        content_node = soup.select_one(selector)
-        if content_node is not None:
-            break
-    content_html = ""
-    content_markdown = ""
-    if isinstance(content_node, Tag):
-        cleaned = _clean_content_node(content_node)
-        content_html = cleaned.decode_contents()
-        content_markdown = html_to_markdown(content_html)
+    content_html = _embedded_content_html(html_text or "")
+    if not content_html:
+        content_node = None
+        for selector in (
+            ".seo_aritcle_content .article_content > article",
+            ".article_content > article",
+            ".article_content > .aritcle.content",
+            "article",
+        ):
+            content_node = soup.select_one(selector)
+            if content_node is not None:
+                break
+        if isinstance(content_node, Tag):
+            cleaned = _clean_content_node(content_node)
+            content_html = cleaned.decode_contents()
 
     # Short or empty bodies are valid for video posts and must not be reported as crawl failures.
     return {
@@ -257,7 +334,7 @@ def _parse_detail_html(html_text: str, url: str) -> dict[str, Any]:
         "publish_time_iso": None,
         "url": normalize_url(url),
         "content": content_html,
-        "content_markdown": content_markdown,
+        "content_markdown": html_to_markdown(content_html) if content_html else "",
     }
 
 

@@ -99,12 +99,94 @@ def test_parse_article_extracts_metadata_and_markdown() -> None:
 
     article = parse_article(ARTICLE_HTML, item)
 
-    assert article.title == "研究“幼有所育”工作推进情况等事项"
+    assert article.title == "研究“幼有所育”工作推进情况等事项——市长殷勇主持会议"
     assert article.guide == "市政府召开常务会议"
     assert article.subtitle == "市长殷勇主持会议"
     assert article.publish_date == "20260618"
     assert "第一段教育内容。" in article.content_markdown
     assert "![配图](https://bjrbdzb.bjd.com.cn/bjrb/mobile/2026/20260618/20260618_001/image.jpg)" in article.content_markdown
+
+
+def test_parse_article_merges_dash_prefixed_subtitle_without_doubling() -> None:
+    html = ARTICLE_HTML.replace(
+        '<font id="sub-title">市长殷勇主持会议</font>',
+        '<font id="sub-title">——习近平主席贺信激励青年走技能成才之路并为世界技能运动发展指明方向</font>',
+    )
+    item = BjrbIssueItem(
+        article_id="bjrb:bjrb2026092400201",
+        title="技能逐梦 共创未来",
+        url="https://bjrbdzb.bjd.com.cn/bjrb/mobile/2026/20260924/20260924_002/content_20260924_002_1.htm",
+        publish_date="20260924",
+        page_name="第002版：要闻时政",
+        newid="bjrb2026092400201",
+    )
+
+    article = parse_article(html, item)
+
+    assert article.subtitle == "——习近平主席贺信激励青年走技能成才之路并为世界技能运动发展指明方向"
+    assert article.title == (
+        "研究“幼有所育”工作推进情况等事项"
+        "——习近平主席贺信激励青年走技能成才之路并为世界技能运动发展指明方向"
+    )
+
+
+def test_parse_article_joins_colon_prefixed_subtitle_with_colon() -> None:
+    item = BjrbIssueItem(
+        article_id="bjrb:bjrb2026061800106",
+        title="目录标题",
+        url="https://bjrbdzb.bjd.com.cn/bjrb/mobile/2026/20260618/20260618_001/content_20260618_001_6.htm",
+        publish_date="20260618",
+        page_name="第1版 头版",
+        newid="bjrb2026061800106",
+    )
+
+    fullwidth = parse_article(
+        ARTICLE_HTML.replace(
+            '<font id="sub-title">市长殷勇主持会议</font>',
+            '<font id="sub-title">：市长殷勇主持会议</font>',
+        ),
+        item,
+    )
+    halfwidth = parse_article(
+        ARTICLE_HTML.replace(
+            '<font id="sub-title">市长殷勇主持会议</font>',
+            '<font id="sub-title">: 市长殷勇主持会议</font>',
+        ),
+        item,
+    )
+
+    assert fullwidth.title == "研究“幼有所育”工作推进情况等事项：市长殷勇主持会议"
+    assert halfwidth.title == "研究“幼有所育”工作推进情况等事项：市长殷勇主持会议"
+
+    # 副标题只是正文里带冒号、前缀并非冒号时，仍按副题规范用「——」连接
+    internal = parse_article(
+        ARTICLE_HTML.replace("市长殷勇主持会议", "会议部署：部署2026年重点工作"),
+        item,
+    )
+    assert internal.title == "研究“幼有所育”工作推进情况等事项——会议部署：部署2026年重点工作"
+
+
+def test_parse_article_keeps_title_when_subtitle_missing_or_only_dashes() -> None:
+    item = BjrbIssueItem(
+        article_id="bjrb:bjrb2026061800106",
+        title="目录标题",
+        url="https://bjrbdzb.bjd.com.cn/bjrb/mobile/2026/20260618/20260618_001/content_20260618_001_6.htm",
+        publish_date="20260618",
+        page_name="第1版 头版",
+        newid="bjrb2026061800106",
+    )
+
+    without_subtitle = parse_article(
+        ARTICLE_HTML.replace('<font id="sub-title">市长殷勇主持会议</font>', ""), item
+    )
+    dashes_only = parse_article(
+        ARTICLE_HTML.replace("市长殷勇主持会议", "——"), item
+    )
+
+    assert without_subtitle.title == "研究“幼有所育”工作推进情况等事项"
+    assert without_subtitle.subtitle is None
+    assert dashes_only.title == "研究“幼有所育”工作推进情况等事项"
+    assert dashes_only.subtitle == "——"
 
 
 def test_decode_html_prefers_utf8_bom_over_meta_charset() -> None:

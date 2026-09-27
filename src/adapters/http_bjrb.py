@@ -271,11 +271,31 @@ def _date_from_display(value: Optional[str], fallback: str) -> str:
     return f"{int(year):04d}{int(month):02d}{int(day):02d}"
 
 
+SUBTITLE_DASH_PREFIX = re.compile(r"^[—–－―─-]+")
+SUBTITLE_COLON_PREFIX = re.compile(r"^[：:]")
+
+
+def _merge_title_subtitle(title: str, subtitle: Optional[str]) -> str:
+    """报纸版面上主标题与副标题分列两行；入库标题按副标题原有连接符合并为「主标题——副标题」或「主标题：副标题」。"""
+    if not title or not subtitle:
+        return title
+    if SUBTITLE_COLON_PREFIX.match(subtitle):
+        joiner = "："
+        body = SUBTITLE_COLON_PREFIX.sub("", subtitle).strip()
+    else:
+        joiner = "——"
+        body = SUBTITLE_DASH_PREFIX.sub("", subtitle).strip()
+    if not body:
+        return title
+    return f"{title}{joiner}{body}"
+
+
 def parse_article(html_text: str, item: BjrbIssueItem) -> BjrbArticle:
     soup = BeautifulSoup(html_text, "html.parser")
     guide = _extract_optional_text(soup, "#guide")
-    title = _extract_optional_text(soup, "#main-title") or item.title
+    main_title = _extract_optional_text(soup, "#main-title") or item.title
     subtitle = _extract_optional_text(soup, "#sub-title")
+    title = _merge_title_subtitle(main_title, subtitle)
     date_text = _extract_optional_text(soup, "#date")
     publish_date = _date_from_display(date_text, item.publish_date)
     content = soup.select_one("#content")

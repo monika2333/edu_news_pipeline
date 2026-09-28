@@ -10,6 +10,7 @@ from src.adapters import (
     account_profiles,
     http_beijinghao,
     http_btime,
+    http_chinadaily,
     http_tencent,
     http_toutiao,
 )
@@ -158,6 +159,22 @@ def test_beijinghao_name_uses_column_page_title_transport(
     )
 
     assert name == "现代教育报"
+
+
+def test_chinadaily_name_uses_channel_page_title_without_site_suffix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _Session(_Response(text="<html><title>地方资讯 - 中国日报网</title></html>"))
+    monkeypatch.setattr(http_chinadaily, "_session", lambda: session)
+
+    name = account_profiles.resolve_account_name(
+        "chinadaily",
+        normalized_identifier="https://cn.chinadaily.com.cn/6597728fa310af3247ffaeae",
+        profile_url="https://cn.chinadaily.com.cn/6597728fa310af3247ffaeae",
+        timeout=8,
+    )
+
+    assert name == "地方资讯"
 
 
 def test_toutiao_resolves_via_browser_feed_transport(

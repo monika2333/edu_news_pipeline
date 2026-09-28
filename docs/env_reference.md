@@ -286,7 +286,9 @@ JYB_EXISTING_CONSECUTIVE_STOP=5
 
 # China Daily
 CHINADAILY_TIMEOUT=20
-# 可填多个栏目列表页 URL（逗号或空白分隔）；留空时默认抓「中国日报专稿」+「地方资讯」两个栏目
+# 栏目现由控制台「设置 → 数据源」里中国日报的账号面板管理（一行一个栏目 URL）。
+# 此变量仅在直连调用（测试、补录脚本）没有下发栏目清单时作回退：
+# 可填多个栏目列表页 URL（逗号或空白分隔），留空用内置默认（专稿+地方资讯）
 CHINADAILY_START_URL=
 CHINADAILY_EXISTING_CONSECUTIVE_STOP=5
 

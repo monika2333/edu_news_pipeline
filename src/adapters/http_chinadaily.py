@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 import os
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, urlunsplit
 import time
 
 import requests
@@ -32,6 +32,41 @@ DEFAULT_START_URL = (
 # 专稿频道列表里不会出现，漏一个就漏一类，必须与专稿一起监控。
 LOCAL_NEWS_START_URL = "https://cn.chinadaily.com.cn/6597728fa310af3247ffaeae"
 DEFAULT_START_URLS = (DEFAULT_START_URL, LOCAL_NEWS_START_URL)
+CHANNEL_HOST = "cn.chinadaily.com.cn"
+
+
+@dataclass(frozen=True)
+class ChannelEntry:
+    """控制台「账号=栏目」模型里的一条中国日报栏目（栏目列表页 URL）。"""
+
+    url: str
+    raw_source: str = ""
+
+
+def parse_channel_input(raw: str) -> ChannelEntry:
+    """把管理员输入的栏目地址规整为 https + 站内栏目路径的规范 URL。
+
+    接受完整 URL、协议相对地址（//host/...）或纯栏目路径（/6597.../）；
+    拒绝非 cn.chinadaily.com.cn 域名，列表解析器只适配这个站点的版式。
+    """
+    cleaned = (raw or "").strip().lstrip("\ufeff")
+    if not cleaned:
+        raise ValueError("Empty China Daily channel URL")
+    candidate = cleaned
+    if candidate.startswith("//"):
+        candidate = f"https:{candidate}"
+    if not re.match(r"^https?://", candidate, re.IGNORECASE):
+        candidate = f"https://{CHANNEL_HOST}/{candidate.lstrip('/')}"
+    parsed = urlsplit(candidate)
+    if (parsed.hostname or "").lower() != CHANNEL_HOST:
+        raise ValueError(f"中国日报栏目地址必须是 {CHANNEL_HOST} 域名：{cleaned}")
+    path = parsed.path.rstrip("/")
+    if not path:
+        raise ValueError(f"中国日报栏目地址缺少栏目路径：{cleaned}")
+    if path.startswith("/a/") or path.lower().endswith((".html", ".htm")):
+        raise ValueError(f"请填栏目列表页地址，不要填文章页：{cleaned}")
+    normalized = urlunsplit(("https", parsed.netloc.lower(), path, "", ""))
+    return ChannelEntry(url=normalized, raw_source=cleaned)
 
 
 @dataclass
@@ -184,9 +219,26 @@ def _resolve_start_urls() -> List[str]:
     return resolved or list(DEFAULT_START_URLS)
 
 
-def list_items(limit: Optional[int] = None, pages: Optional[int] = None, *, existing_ids: Optional[Set[str]] = None) -> List[FeedItemLike]:
+def list_items(
+    limit: Optional[int] = None,
+    pages: Optional[int] = None,
+    *,
+    existing_ids: Optional[Set[str]] = None,
+    entries: Optional[Sequence[ChannelEntry]] = None,
+) -> List[FeedItemLike]:
     sess = _session()
-    start_urls = _resolve_start_urls()
+    # 栏目清单以控制台 crawl_accounts 下发的 entries 为准；未提供时（直连调用、
+    # 测试、补录脚本）回退到默认栏目/CHINADAILY_START_URL。
+    if entries is None:
+        start_urls = _resolve_start_urls()
+    else:
+        start_urls = []
+        seen_entries: Set[str] = set()
+        for entry in entries:
+            if entry.url in seen_entries:
+                continue
+            seen_entries.add(entry.url)
+            start_urls.append(entry.url)
     try:
         consecutive_stop = int(os.getenv("CHINADAILY_EXISTING_CONSECUTIVE_STOP", "5"))
     except Exception:
@@ -346,9 +398,11 @@ def build_detail_update(item: FeedItemLike, article_id: str, data: Dict[str, Any
 
 
 __all__ = [
+    'ChannelEntry',
     'FeedItemLike',
     'normalize_url',
     'make_article_id',
+    'parse_channel_input',
     'list_items',
     'fetch_detail',
     'html_to_markdown',

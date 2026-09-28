@@ -42,6 +42,7 @@ from src.adapters.http_btime import (
     make_article_id as btime_make_article_id,
 )
 from src.adapters.http_chinadaily import (
+    ChannelEntry,
     build_detail_update as cd_build_detail_update,
     feed_item_to_row as cd_feed_item_to_row,
     fetch_detail as cd_fetch_detail,
@@ -739,6 +740,14 @@ def _run_registered_linked_page_flow(
             )
             for account in accounts
         ]
+    elif config.account_source == "chinadaily":
+        list_kwargs["entries"] = [
+            ChannelEntry(
+                url=account.profile_url,
+                raw_source=account.original_input,
+            )
+            for account in accounts
+        ]
 
     if config.account_source and not list_kwargs["entries"]:
         log_info(
@@ -1028,7 +1037,7 @@ _SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
     ),
     "chinadaily": SourceRegistration(
         runner_name="_run_registered_linked_page_flow",
-        kwargs_factory=_pages_runner_kwargs,
+        kwargs_factory=_account_pages_runner_kwargs("chinadaily"),
         linked_page=LinkedPageConfig(
             source="chinadaily",
             display_name="China Daily",
@@ -1037,6 +1046,7 @@ _SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
             feed_item_to_row_name="cd_feed_item_to_row",
             fetch_detail_name="cd_fetch_detail",
             build_detail_update_name="cd_build_detail_update",
+            account_source="chinadaily",
         ),
     ),
     "chinanews": SourceRegistration(

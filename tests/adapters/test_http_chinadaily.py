@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+import pytest
+
 from src.adapters import http_chinadaily
 
 
@@ -240,3 +242,79 @@ def test_resolve_start_urls_deduplicates_and_falls_back_to_defaults(monkeypatch:
 
     monkeypatch.setenv("CHINADAILY_START_URL", " , ")
     assert http_chinadaily._resolve_start_urls() == list(http_chinadaily.DEFAULT_START_URLS)
+
+
+def test_parse_channel_input_normalizes_to_https_site_url() -> None:
+    full = "https://cn.chinadaily.com.cn/6597728fa310af3247ffaeae"
+    for raw in (
+        full,
+        "https://cn.chinadaily.com.cn/6597728fa310af3247ffaeae/",
+        "//cn.chinadaily.com.cn/6597728fa310af3247ffaeae",
+        "/6597728fa310af3247ffaeae",
+        " 6597728fa310af3247ffaeae ",
+    ):
+        entry = http_chinadaily.parse_channel_input(raw)
+        assert entry.url == full
+        assert entry.raw_source == raw.strip().lstrip("\ufeff")
+
+    nested = http_chinadaily.parse_channel_input(
+        "http://cn.chinadaily.com.cn/5b753f9fa310030f813cf408"
+        "/5bd54dd6a3101a87ca8ff5f8/5bd54e59a3101a87ca8ff606"
+    )
+    assert nested.url == (
+        "https://cn.chinadaily.com.cn/5b753f9fa310030f813cf408"
+        "/5bd54dd6a3101a87ca8ff5f8/5bd54e59a3101a87ca8ff606"
+    )
+
+
+def test_parse_channel_input_rejects_blank_and_foreign_hosts() -> None:
+    with pytest.raises(ValueError):
+        http_chinadaily.parse_channel_input("   ")
+    for raw in (
+        "https://www.chinadaily.com.cn/a/202609/24/WS6ab4bacde4b09a165c78c73e.html",
+        "https://example.com/6597728fa310af3247ffaeae",
+        "https://cn.chinadaily.com.cn/",
+    ):
+        with pytest.raises(ValueError):
+            http_chinadaily.parse_channel_input(raw)
+
+
+def test_list_items_uses_account_entries_when_provided(monkeypatch: Any) -> None:
+    monkeypatch.setenv(
+        "CHINADAILY_START_URL",
+        "https://cn.chinadaily.com.cn/env-fallback-channel",
+    )
+    entries = [
+        http_chinadaily.ChannelEntry(url=http_chinadaily.LOCAL_NEWS_START_URL),
+        http_chinadaily.ChannelEntry(url=http_chinadaily.LOCAL_NEWS_START_URL),
+        http_chinadaily.parse_channel_input(http_chinadaily.DEFAULT_START_URL),
+    ]
+    pages_by_url = {
+        http_chinadaily.LOCAL_NEWS_START_URL: _listing_html(LOCAL_ITEMS),
+        http_chinadaily.DEFAULT_START_URL: _listing_html(SPECIAL_ITEMS),
+    }
+    session = _install_fake_session(monkeypatch, pages_by_url)
+
+    items = http_chinadaily.list_items(pages=1, entries=entries)
+
+    assert [it.title for it in items] == [
+        "第五届中国食育大会在北京举行",
+        "地方频道新文章一",
+        "专稿频道新文章一",
+        "专稿频道新文章二",
+    ]
+    assert session.visited == [
+        http_chinadaily.LOCAL_NEWS_START_URL,
+        http_chinadaily.DEFAULT_START_URL,
+    ]
+
+
+def test_list_items_empty_entries_uses_no_channels(monkeypatch: Any) -> None:
+    pages_by_url = {
+        http_chinadaily.DEFAULT_START_URL: _listing_html(SPECIAL_ITEMS),
+        http_chinadaily.LOCAL_NEWS_START_URL: _listing_html(LOCAL_ITEMS),
+    }
+    session = _install_fake_session(monkeypatch, pages_by_url)
+
+    assert http_chinadaily.list_items(pages=1, entries=[]) == []
+    assert session.visited == []

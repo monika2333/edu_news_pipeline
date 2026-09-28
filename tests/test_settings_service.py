@@ -405,6 +405,30 @@ def test_m7_daily_only_sources_and_aliases_return_422(
     assert response.status_code == 422
 
 
+def test_chinadaily_account_parse_normalizes_channel_url() -> None:
+    parsed = settings_service.parse_account(
+        "chinadaily",
+        "//cn.chinadaily.com.cn/6597728fa310af3247ffaeae",
+    )
+
+    assert parsed == {
+        "source": "chinadaily",
+        "normalized_identifier": "https://cn.chinadaily.com.cn/6597728fa310af3247ffaeae",
+        "original_input": "//cn.chinadaily.com.cn/6597728fa310af3247ffaeae",
+        "profile_url": "https://cn.chinadaily.com.cn/6597728fa310af3247ffaeae",
+    }
+
+
+def test_chinadaily_account_parse_rejects_article_and_foreign_urls() -> None:
+    with pytest.raises(ValueError):
+        settings_service.parse_account(
+            "chinadaily",
+            "https://cn.chinadaily.com.cn/a/202609/24/WS6ab4bacde4b09a165c78c73e.html",
+        )
+    with pytest.raises(ValueError):
+        settings_service.parse_account("chinadaily", "https://example.com/6597728fa310af3247ffaeae")
+
+
 def test_m16_changed_model_is_tested_server_side_before_save(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

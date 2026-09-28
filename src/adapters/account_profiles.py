@@ -11,10 +11,11 @@ from bs4 import BeautifulSoup
 from src.adapters import (
     http_beijinghao,
     http_btime,
+    http_chinadaily,
     http_tencent,
     http_toutiao,
 )
-from src.adapters.http_common import decode_response
+from src.adapters.http_common import decode_response, strip_site_suffix
 
 
 MAX_ACCOUNT_NAME_LENGTH = 200
@@ -144,6 +145,23 @@ def _resolve_beijinghao(profile_url: str, *, timeout: float) -> str:
     return name
 
 
+def _resolve_chinadaily(profile_url: str, *, timeout: float) -> str:
+    session = http_chinadaily._session()
+    response = _request(
+        session,
+        profile_url,
+        headers={"Referer": "https://cn.chinadaily.com.cn/"},
+        timeout=timeout,
+    )
+    soup = BeautifulSoup(decode_response(response), "html.parser")
+    title = soup.title.get_text(" ", strip=True) if soup.title else ""
+    # 栏目页标题形如「地方资讯 - 中国日报网」，站点后缀不进账号名
+    name = _name(strip_site_suffix(title, "中国日报网", "chinadaily"))
+    if name is None:
+        raise AccountNameUnavailable("页面里没有找到栏目名")
+    return name
+
+
 def _resolve_toutiao(
     normalized_identifier: str,
     profile_url: str,
@@ -190,6 +208,8 @@ def resolve_account_name(
             )
         if source == "beijinghao":
             return _resolve_beijinghao(profile_url, timeout=timeout)
+        if source == "chinadaily":
+            return _resolve_chinadaily(profile_url, timeout=timeout)
         if source == "toutiao":
             return _resolve_toutiao(
                 normalized_identifier,

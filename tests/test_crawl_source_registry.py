@@ -122,6 +122,7 @@ def run_adapter(monkeypatch: pytest.MonkeyPatch) -> object:
             "tencent": (account,),
             "btime": (account,),
             "beijinghao": (account,),
+            "chinadaily": (account,),
         },
         education_keywords=(),
     )
@@ -289,7 +290,7 @@ def test_registry_passes_each_runner_its_current_arguments(
     calls: list[dict[str, Any]] = []
 
     expected_kwargs = dict(extra_kwargs)
-    if source in {"toutiao", "tencent", "btime", "beijinghao"}:
+    if source in {"toutiao", "tencent", "btime", "beijinghao", "chinadaily"}:
         expected_kwargs["accounts"] = crawl_sources.get_business_config().accounts[source]
     if source in {"toutiao", "tencent"}:
         expected_kwargs.update(

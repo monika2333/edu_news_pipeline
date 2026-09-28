@@ -59,7 +59,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 **写入**：`raw_articles`、`filtered_articles`
 
 每小时来源集合来自 `app_settings.crawl_sources`，抓取顺序固定为 `SOURCE_CATALOG`
-的目录顺序；设置写入与运行时读取都会规范化为该顺序。四类账号型来源只读取
+的目录顺序；设置写入与运行时读取都会规范化为该顺序。五类账号型来源只读取
 `crawl_accounts` 中启用的行。流水线启动时读取一次业务配置，整轮不随控制台修改而
 变化；单次 `--sources` 仅覆盖本轮来源列表，并按命令行给定的顺序执行。
 
@@ -71,7 +71,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 各来源 adapter 抓取列表页后写入 `raw_articles`，同时做关键词初筛，命中的写入 `filtered_articles`。
 
-账号名称由控制台解析并写入 `crawl_accounts.display_name`；抓取流程本身不回写账号名。头条优先使用、腾讯在官方接口失败后使用同一账号在 `raw_articles` 中最近一条非空记录的 `token → source` 作为兜底（该反查依赖 `raw_articles_token_idx`，token 无索引时每查一个账号都在数百万行上顺序扫描）；北京时间和北京号不使用这条兜底。库内兜底给不出名称时，头条用与抓取流程同款的无头浏览器打开主页取首页 feed 的来源名（纯 HTTP 拿到的主页是空壳、feed 接口返回非 JSON，这条路不能省）；头条已有名称时不再为复核现成名起浏览器。`token` 还承担头条和腾讯账号首次抓取的无状态判据：本轮启动时只读取一次 `raw_articles` 中的非空 token，尚未出现的账号仅抓第一页且最多抓取 `CRAWL_FIRST_RUN_LIMIT` 条；只要列表行成功写入，后续轮次就恢复原有连续命中停止逻辑。该判据不写回 `crawl_accounts`，账号停用后重启或删除后重加也不会被误判为首次抓取。
+账号名称由控制台解析并写入 `crawl_accounts.display_name`；抓取流程本身不回写账号名。头条优先使用、腾讯在官方接口失败后使用同一账号在 `raw_articles` 中最近一条非空记录的 `token → source` 作为兜底（该反查依赖 `raw_articles_token_idx`，token 无索引时每查一个账号都在数百万行上顺序扫描）；北京时间、北京号和中国日报不使用这条兜底。库内兜底给不出名称时，头条用与抓取流程同款的无头浏览器打开主页取首页 feed 的来源名（纯 HTTP 拿到的主页是空壳、feed 接口返回非 JSON，这条路不能省）；头条已有名称时不再为复核现成名起浏览器。中国日报的"账号"是栏目列表页 URL（`normalized_identifier` 与 `profile_url` 是同一个规范 URL），名称取栏目页标题并剥掉站点后缀（如「地方资讯 - 中国日报网」→「地方资讯」）。`token` 还承担头条和腾讯账号首次抓取的无状态判据：本轮启动时只读取一次 `raw_articles` 中的非空 token，尚未出现的账号仅抓第一页且最多抓取 `CRAWL_FIRST_RUN_LIMIT` 条；只要列表行成功写入，后续轮次就恢复原有连续命中停止逻辑。该判据不写回 `crawl_accounts`，账号停用后重启或删除后重加也不会被误判为首次抓取。
 
 `raw_articles` 的抓取分两步：先写列表信息（`upsert_raw_feed_rows`），再补正文（`update_raw_article_details`，同时写 `detail_fetched_at`）。
 
@@ -321,7 +321,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | 表 | 职责 |
 |---|---|
 | `app_settings` | 分区保存全部业务配置：接入点（`llm_endpoints`）、模型（`llm_models`）、每小时来源（`crawl_sources`）、评分加分词表（`score_keyword_bonuses`，有序数组）、抓取教育关键词闸门（`education_keywords`）、京内本地判定词表（`beijing_keywords`）、来源归一化规则（`source_aliases`）、审阅页自动排序词表（`review_sort_keywords`，键固定为市教委/中小学/高校三个类别）。版本号用于控制台乐观锁。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身。`llm_endpoints`、`review_sort_keywords` 由迁移种子创建（没有旧配置文件，不进一次性导入）；其余分区由 `import-settings` 导入（只写数据库中尚不存在的分区，已存在的一律跳过，不覆盖；重复执行安全） |
-| `crawl_accounts` | 四类账号型来源的账号权威清单；`display_name` 是系统解析的名称，`display_name_synced_at` / `display_name_error` 记录最近成功时间或失败原因；运行时只读取启用行 |
+| `crawl_accounts` | 五类账号型来源的账号权威清单（中国日报的行是栏目列表页 URL，不是社交账号）；`display_name` 是系统解析的名称，`display_name_synced_at` / `display_name_error` 记录最近成功时间或失败原因；运行时只读取启用行 |
 | `console_users` / `console_user_sessions` | 账号与登录会话 |
 | `review_events` | 审计日志，记录谁在什么时候改了什么 |
 | `pipeline_runs` / `pipeline_run_steps` | 流水线执行记录；`config_snapshot` 保存本轮各步骤解析后的模型、reasoning 与实际使用的接入点、接入点表（key/base_url/api_style，不含任何 Key）、实际来源、启用账号、各词表配置的完整内容（加分词表、教育关键词、京内关键词、来源归一化规则、自动排序关键词）和各分区配置版本 |

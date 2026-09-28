@@ -86,10 +86,10 @@ from src.adapters.http_laodongwubao import (
     crawl_latest_issue as ldwb_crawl_latest_issue,
 )
 from src.adapters.http_qianlong import (
-    DEFAULT_BASE_URLS as QIANLONG_DEFAULT_BASE_URLS,
     DEFAULT_DELAY as QIANLONG_DEFAULT_DELAY,
     DEFAULT_MAX_PAGES as QIANLONG_DEFAULT_MAX_PAGES,
     DEFAULT_TIMEOUT as QIANLONG_DEFAULT_TIMEOUT,
+    ChannelEntry as QianlongChannelEntry,
     article_to_detail_row as qianlong_article_to_detail_row,
     article_to_feed_row as qianlong_article_to_feed_row,
     fetch_articles as qianlong_fetch_articles,
@@ -893,12 +893,26 @@ def _run_qianlong_flow(
     adapter: Any,
     keywords: Sequence[str],
     remaining_limit: Optional[int],
-    base_urls: Sequence[str],
     timeout_value: float,
     delay_value: float,
     pages_hint: Optional[int],
     consecutive_stop: Optional[int],
+    accounts: Sequence[CrawlAccount] = (),
 ) -> CrawlStats:
+    if not accounts:
+        log_info(
+            WORKER,
+            "Qianlong has no enabled accounts; skipped.",
+        )
+        return _empty_stats()
+    channel_entries = [
+        QianlongChannelEntry(
+            url=account.profile_url,
+            raw_source=account.original_input,
+        )
+        for account in accounts
+    ]
+
     def prepare_feed(item: Any, fetched_at: datetime) -> Tuple[str, Dict[str, Any]]:
         article_id = qianlong_make_article_id(item.url)
         return article_id, qianlong_article_to_feed_row(item, article_id, fetched_at=fetched_at)
@@ -910,7 +924,7 @@ def _run_qianlong_flow(
             display_name="Qianlong",
             list_items=lambda limit, existing: qianlong_fetch_articles(
                 limit=limit,
-                base_urls=base_urls,
+                entries=channel_entries,
                 pages=pages_hint,
                 timeout=timeout_value,
                 delay=delay_value,
@@ -973,7 +987,6 @@ def _gmw_runner_kwargs(_context: SourceRunContext) -> Dict[str, Any]:
 
 
 def _qianlong_runner_kwargs(context: SourceRunContext) -> Dict[str, Any]:
-    base_url = _env_str("QIANLONG_BASE_URL", "")
     pages_value = os.getenv("QIANLONG_PAGES") or os.getenv("QIANLONG_MAX_PAGES")
     try:
         configured_pages = int(pages_value) if pages_value is not None else None
@@ -983,7 +996,7 @@ def _qianlong_runner_kwargs(context: SourceRunContext) -> Dict[str, Any]:
         configured_pages = QIANLONG_DEFAULT_MAX_PAGES
 
     return {
-        "base_urls": (base_url,) if base_url else QIANLONG_DEFAULT_BASE_URLS,
+        "accounts": context.accounts.get("qianlong", ()),
         "timeout_value": _env_float("QIANLONG_TIMEOUT", QIANLONG_DEFAULT_TIMEOUT),
         "delay_value": _env_float("QIANLONG_DELAY", QIANLONG_DEFAULT_DELAY),
         "pages_hint": context.pages if context.pages is not None else configured_pages,

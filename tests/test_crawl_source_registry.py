@@ -123,6 +123,7 @@ def run_adapter(monkeypatch: pytest.MonkeyPatch) -> object:
             "btime": (account,),
             "beijinghao": (account,),
             "chinadaily": (account,),
+            "qianlong": (account,),
         },
         education_keywords=(),
     )
@@ -272,7 +273,7 @@ def test_every_dispatch_key_preserves_source_flow_strategy_and_callbacks(
         ("gmw", "_run_gmw_flow", {"base_url": "https://gmw.test/list", "timeout_value": 12.5}, None),
         ("jyb", "_run_registered_linked_page_flow", {"pages": 3}, "jyb"),
         ("ldwb", "_run_ldwb_flow", {}, None),
-        ("qianlong", "_run_qianlong_flow", {"base_urls": ("https://qianlong.test/list",), "timeout_value": 13.5, "delay_value": 0.35, "pages_hint": 3, "consecutive_stop": 7}, None),
+        ("qianlong", "_run_qianlong_flow", {"timeout_value": 13.5, "delay_value": 0.35, "pages_hint": 3, "consecutive_stop": 7}, None),
         ("tencent", "_run_tencent_flow", {"pages": 3}, None),
         ("toutiao", "_run_toutiao_flow", {"show_browser": True, "timeout_value": 21, "lang": "zh-test"}, None),
         ("xinhua", "_run_registered_linked_page_flow", {"pages": 3}, "xinhua"),
@@ -290,7 +291,7 @@ def test_registry_passes_each_runner_its_current_arguments(
     calls: list[dict[str, Any]] = []
 
     expected_kwargs = dict(extra_kwargs)
-    if source in {"toutiao", "tencent", "btime", "beijinghao", "chinadaily"}:
+    if source in {"toutiao", "tencent", "btime", "beijinghao", "chinadaily", "qianlong"}:
         expected_kwargs["accounts"] = crawl_sources.get_business_config().accounts[source]
     if source in {"toutiao", "tencent"}:
         expected_kwargs.update(

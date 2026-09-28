@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, List, Optional, Sequence, Set, Tuple
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunsplit
 
 import requests
 from bs4 import BeautifulSoup, NavigableString, Tag  # type: ignore
@@ -29,6 +29,38 @@ USER_AGENT = (
 PUBLISH_TIME_PATTERN = re.compile(r"20\d{2}-\d{1,2}-\d{1,2}\s+\d{2}:\d{2}")
 CHINA_TZ = timezone(timedelta(hours=8))
 SOURCE_NAME = "千龙网"
+CHANNEL_HOST_SUFFIX = "qianlong.com"
+
+
+@dataclass(frozen=True)
+class ChannelEntry:
+    """控制台「账号=栏目」模型里的一条千龙网栏目（栏目列表页 URL）。"""
+
+    url: str
+    raw_source: str = ""
+
+
+def parse_channel_input(raw: str) -> ChannelEntry:
+    """把管理员输入的栏目地址规整为 https 的规范 URL。
+
+    千龙网各频道分散在子域名下（beijing / edu 等），只要 host 是
+    qianlong.com 或其子域名即可；根路径栏目（如 beijing.qianlong.com）
+    合法，这点与 chinadaily 的目录型栏目不同。
+    """
+    cleaned = (raw or "").strip().lstrip("\ufeff")
+    if not cleaned:
+        raise ValueError("Empty Qianlong channel URL")
+    candidate = cleaned
+    if candidate.startswith("//"):
+        candidate = f"https:{candidate}"
+    if not re.match(r"^https?://", candidate, re.IGNORECASE):
+        candidate = f"https://{cleaned}"
+    parsed = urlparse(candidate)
+    host = (parsed.hostname or "").lower()
+    if host != CHANNEL_HOST_SUFFIX and not host.endswith("." + CHANNEL_HOST_SUFFIX):
+        raise ValueError(f"千龙网栏目地址必须是 {CHANNEL_HOST_SUFFIX} 域名：{cleaned}")
+    normalized = urlunsplit(("https", parsed.netloc.lower(), parsed.path.rstrip("/"), "", ""))
+    return ChannelEntry(url=normalized, raw_source=cleaned)
 
 
 @dataclass
@@ -349,6 +381,7 @@ def fetch_articles(
     delay: float = DEFAULT_DELAY,
     existing_ids: Optional[Set[str]] = None,
     consecutive_stop: Optional[int] = None,
+    entries: Optional[Sequence[ChannelEntry]] = None,
 ) -> List[QianlongArticle]:
     """Crawl configured 千龙网 channels following the shared adapter contract."""
     max_pages = None
@@ -363,6 +396,18 @@ def fetch_articles(
         max_pages = DEFAULT_MAX_PAGES
     session = _create_session(timeout)
     try:
+        # 栏目清单以控制台 crawl_accounts 下发的 entries 为准；未提供时
+        # （直连调用、测试、补录脚本）回退到 base_urls/环境变量/内置默认。
+        if entries is None:
+            listing_urls: List[str] = _resolve_base_urls(base_url, base_urls)
+        else:
+            listing_urls = []
+            seen_entries: Set[str] = set()
+            for entry in entries:
+                if entry.url in seen_entries:
+                    continue
+                seen_entries.add(entry.url)
+                listing_urls.append(entry.url)
         url_groups = (
             _collect_article_urls(
                 session,
@@ -372,7 +417,7 @@ def fetch_articles(
                 existing_ids=existing_ids,
                 consecutive_stop=consecutive_stop,
             )
-            for listing_base_url in _resolve_base_urls(base_url, base_urls)
+            for listing_base_url in listing_urls
         )
         urls = _merge_article_url_groups(list(url_groups), limit)
     finally:
@@ -446,9 +491,11 @@ def article_to_detail_row(article: QianlongArticle, article_id: str, *, detail_f
 
 __all__ = [
     "QianlongArticle",
+    "ChannelEntry",
     "fetch_article",
     "fetch_articles",
     "make_article_id",
+    "parse_channel_input",
     "article_to_feed_row",
     "article_to_detail_row",
     "SOURCE_NAME",

@@ -15,7 +15,8 @@ from src.adapters.account_profiles import (
 from src.adapters.db_postgres_core import get_adapter
 from src.adapters.http_beijinghao import parse_column_input
 from src.adapters.http_btime import parse_uid_input
-from src.adapters.http_chinadaily import parse_channel_input
+from src.adapters.http_chinadaily import parse_channel_input as parse_chinadaily_channel
+from src.adapters.http_qianlong import parse_channel_input as parse_qianlong_channel
 from src.adapters.http_tencent import parse_author_input as parse_tencent_author
 from src.adapters.http_toutiao import (
     PROFILE_NAME_TIMEOUT_SECONDS,
@@ -351,7 +352,16 @@ def _account_parser(source: str) -> Callable[[str], dict[str, str]]:
         return parse
     if normalized_source == "chinadaily":
         def parse(raw: str) -> dict[str, str]:
-            item = parse_channel_input(raw)
+            item = parse_chinadaily_channel(raw)
+            return {
+                "normalized_identifier": item.url,
+                "profile_url": item.url,
+            }
+
+        return parse
+    if normalized_source == "qianlong":
+        def parse(raw: str) -> dict[str, str]:
+            item = parse_qianlong_channel(raw)
             return {
                 "normalized_identifier": item.url,
                 "profile_url": item.url,

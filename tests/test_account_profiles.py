@@ -11,6 +11,7 @@ from src.adapters import (
     http_beijinghao,
     http_btime,
     http_chinadaily,
+    http_qianlong,
     http_tencent,
     http_toutiao,
 )
@@ -175,6 +176,26 @@ def test_chinadaily_name_uses_channel_page_title_without_site_suffix(
     )
 
     assert name == "地方资讯"
+
+
+def test_qianlong_name_uses_channel_page_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _ClosableSession(_Session):
+        def close(self) -> None:
+            return None
+
+    session = _ClosableSession(_Response(text="<html><title>千龙网-教育</title></html>"))
+    monkeypatch.setattr(http_qianlong, "_create_session", lambda _timeout: session)
+
+    name = account_profiles.resolve_account_name(
+        "qianlong",
+        normalized_identifier="https://edu.qianlong.com",
+        profile_url="https://edu.qianlong.com",
+        timeout=8,
+    )
+
+    assert name == "千龙网-教育"
 
 
 def test_toutiao_resolves_via_browser_feed_transport(

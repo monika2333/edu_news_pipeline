@@ -304,8 +304,9 @@ GMW_TIMEOUT=15
 GMW_EXISTING_CONSECUTIVE_STOP=5
 
 # Qianlong
-# 默认同时抓取 https://beijing.qianlong.com/ 与 https://edu.qianlong.com/。
-# 设置 QIANLONG_BASE_URL 后改为只抓取该入口。
+# 栏目现由控制台「设置 → 数据源」里千龙网的账号面板管理（默认 北京 + 教育两个栏目）。
+# QIANLONG_BASE_URL 仅在直连调用（测试、脚本）未下发栏目清单时作为回退，
+# 定时抓取不再读取它。
 QIANLONG_BASE_URL=
 QIANLONG_TIMEOUT=15
 QIANLONG_DELAY=0.5

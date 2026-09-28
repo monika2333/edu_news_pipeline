@@ -28,6 +28,10 @@ DEFAULT_START_URL = (
     "https://cn.chinadaily.com.cn/5b753f9fa310030f813cf408/"
     "5bd54dd6a3101a87ca8ff5f8/5bd54e59a3101a87ca8ff606"
 )
+# 地方资讯频道：地方主办的教卫体活动（如食育大会）只发在这个频道，
+# 专稿频道列表里不会出现，漏一个就漏一类，必须与专稿一起监控。
+LOCAL_NEWS_START_URL = "https://cn.chinadaily.com.cn/6597728fa310af3247ffaeae"
+DEFAULT_START_URLS = (DEFAULT_START_URL, LOCAL_NEWS_START_URL)
 
 
 @dataclass
@@ -163,12 +167,26 @@ def _parse_listing_page(
     return items, next_page_url, consecutive_hits
 
 
+def _resolve_start_urls() -> List[str]:
+    raw = (os.getenv("CHINADAILY_START_URL") or "").strip()
+    candidates = (
+        [part.strip() for part in re.split(r"[\s,]+", raw) if part.strip()]
+        if raw
+        else list(DEFAULT_START_URLS)
+    )
+    resolved: List[str] = []
+    seen: Set[str] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        resolved.append(candidate)
+    return resolved or list(DEFAULT_START_URLS)
+
+
 def list_items(limit: Optional[int] = None, pages: Optional[int] = None, *, existing_ids: Optional[Set[str]] = None) -> List[FeedItemLike]:
     sess = _session()
-    try:
-        start_url = os.getenv("CHINADAILY_START_URL") or DEFAULT_START_URL
-    except Exception:
-        start_url = DEFAULT_START_URL
+    start_urls = _resolve_start_urls()
     try:
         consecutive_stop = int(os.getenv("CHINADAILY_EXISTING_CONSECUTIVE_STOP", "5"))
     except Exception:
@@ -180,36 +198,48 @@ def list_items(limit: Optional[int] = None, pages: Optional[int] = None, *, exis
     except Exception:
         timeout = 20.0
 
-    collected: List[FeedItemLike] = []
-    page_url: Optional[str] = start_url
-    page_idx = 0
-    consecutive_hits = 0
-
     max_pages = max(1, int(pages or 1))
+    collected: List[FeedItemLike] = []
+    seen_ids: Set[str] = set()
 
-    while page_url and page_idx < max_pages:
-        page_idx += 1
-        
-        try:
-            html = _fetch_listing_html(sess, page_url, timeout)
-        except Exception:
-             # simple retry or break handled inside _fetch or here
-             break
-        
-        items, next_page, consecutive_hits = _parse_listing_page(
-            html, page_url, existing_ids, consecutive_stop, consecutive_hits
-        )
-        
-        collected.extend(items)
+    # 每个栏目独立翻页、独立做 existing 早停，limit 是所有栏目共享的总预算
+    for start_url in start_urls:
         if limit is not None and len(collected) >= limit:
-            collected = collected[:limit]
             break
-            
-        if consecutive_stop > 0 and consecutive_hits >= consecutive_stop:
-            break
-            
-        page_url = next_page
-        
+        page_url: Optional[str] = start_url
+        page_idx = 0
+        consecutive_hits = 0
+
+        while page_url and page_idx < max_pages:
+            page_idx += 1
+
+            try:
+                html = _fetch_listing_html(sess, page_url, timeout)
+            except Exception:
+                 # simple retry or break handled inside _fetch or here
+                 break
+
+            items, next_page, consecutive_hits = _parse_listing_page(
+                html, page_url, existing_ids, consecutive_stop, consecutive_hits
+            )
+
+            for it in items:
+                aid = make_article_id(it.url)
+                if aid in seen_ids:
+                    continue
+                seen_ids.add(aid)
+                collected.append(it)
+                if limit is not None and len(collected) >= limit:
+                    break
+
+            if limit is not None and len(collected) >= limit:
+                break
+
+            if consecutive_stop > 0 and consecutive_hits >= consecutive_stop:
+                break
+
+            page_url = next_page
+
     return collected
 
 

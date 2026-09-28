@@ -12,6 +12,7 @@ from src.adapters import (
     http_beijinghao,
     http_btime,
     http_chinadaily,
+    http_qianlong,
     http_tencent,
     http_toutiao,
 )
@@ -162,6 +163,25 @@ def _resolve_chinadaily(profile_url: str, *, timeout: float) -> str:
     return name
 
 
+def _resolve_qianlong(profile_url: str, *, timeout: float) -> str:
+    session = http_qianlong._create_session(timeout)
+    try:
+        response = _request(
+            session,
+            profile_url,
+            headers={"Referer": "https://www.qianlong.com/"},
+            timeout=timeout,
+        )
+    finally:
+        session.close()
+    soup = BeautifulSoup(decode_response(response), "html.parser")
+    # 千龙栏目页标题本身就是完整名称（如「千龙网-北京」「千龙网-教育」），直接使用
+    name = _name(soup.title.get_text(" ", strip=True) if soup.title else "")
+    if name is None:
+        raise AccountNameUnavailable("页面里没有找到栏目名")
+    return name
+
+
 def _resolve_toutiao(
     normalized_identifier: str,
     profile_url: str,
@@ -210,6 +230,8 @@ def resolve_account_name(
             return _resolve_beijinghao(profile_url, timeout=timeout)
         if source == "chinadaily":
             return _resolve_chinadaily(profile_url, timeout=timeout)
+        if source == "qianlong":
+            return _resolve_qianlong(profile_url, timeout=timeout)
         if source == "toutiao":
             return _resolve_toutiao(
                 normalized_identifier,

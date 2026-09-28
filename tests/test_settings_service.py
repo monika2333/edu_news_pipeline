@@ -429,6 +429,24 @@ def test_chinadaily_account_parse_rejects_article_and_foreign_urls() -> None:
         settings_service.parse_account("chinadaily", "https://example.com/6597728fa310af3247ffaeae")
 
 
+def test_qianlong_account_parse_normalizes_channel_url() -> None:
+    parsed = settings_service.parse_account("qianlong", "https://edu.qianlong.com/")
+
+    assert parsed == {
+        "source": "qianlong",
+        "normalized_identifier": "https://edu.qianlong.com",
+        "original_input": "https://edu.qianlong.com/",
+        "profile_url": "https://edu.qianlong.com",
+    }
+
+
+def test_qianlong_account_parse_rejects_foreign_hosts() -> None:
+    with pytest.raises(ValueError):
+        settings_service.parse_account("qianlong", "https://example.com/")
+    with pytest.raises(ValueError):
+        settings_service.parse_account("qianlong", "https://qianlong.com.evil.com/")
+
+
 def test_m16_changed_model_is_tested_server_side_before_save(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

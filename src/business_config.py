@@ -65,7 +65,7 @@ SOURCE_CATALOG = (
     SourceDefinition("jyb", "中国教育报"),
     SourceDefinition("chinadaily", "中国日报", requires_accounts=True),
     SourceDefinition("gmw", "光明网"),
-    SourceDefinition("qianlong", "千龙网"),
+    SourceDefinition("qianlong", "千龙网", requires_accounts=True),
     SourceDefinition("xinhua", "新华网"),
     SourceDefinition("stdaily", "科技日报"),
     SourceDefinition("bbtnews", "北京商报"),

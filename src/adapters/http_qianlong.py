@@ -18,7 +18,10 @@ LOGGER = logging.getLogger(__name__)
 DEFAULT_BASE_URL = "https://beijing.qianlong.com/"
 DEFAULT_EDU_BASE_URL = "https://edu.qianlong.com/"
 DEFAULT_BASE_URLS: Tuple[str, ...] = (DEFAULT_BASE_URL, DEFAULT_EDU_BASE_URL)
-DEFAULT_MAX_PAGES: Optional[int] = None
+# 每栏目每轮默认只抓列表第 1 页：新栏目没有任何已入库条目，existing 截停
+# 无法触发，必须靠硬页数上限防止把栏目历史存档整库翻完。QIANLONG_PAGES
+# 仅作为上调覆盖手段。
+DEFAULT_MAX_PAGES: int = 1
 DEFAULT_TIMEOUT = 20.0
 DEFAULT_DELAY = 0.0
 USER_AGENT = (
@@ -384,7 +387,7 @@ def fetch_articles(
     entries: Optional[Sequence[ChannelEntry]] = None,
 ) -> List[QianlongArticle]:
     """Crawl configured 千龙网 channels following the shared adapter contract."""
-    max_pages = None
+    max_pages = DEFAULT_MAX_PAGES
     if pages is not None:
         try:
             candidate = int(pages)
@@ -392,8 +395,6 @@ def fetch_articles(
             candidate = None
         if candidate is not None and candidate > 0:
             max_pages = candidate
-    elif DEFAULT_MAX_PAGES is not None:
-        max_pages = DEFAULT_MAX_PAGES
     session = _create_session(timeout)
     try:
         # 栏目清单以控制台 crawl_accounts 下发的 entries 为准；未提供时

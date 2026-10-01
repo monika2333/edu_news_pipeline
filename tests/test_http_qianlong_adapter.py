@@ -132,6 +132,34 @@ def test_fetch_articles_empty_entries_crawls_nothing(monkeypatch) -> None:
     assert http_qianlong.fetch_articles(limit=5, pages=1, entries=[]) == []
 
 
+def test_default_page_limit_caps_pagination_to_first_page(monkeypatch) -> None:
+    page1_url = "https://edu.qianlong.com/2026/0825/8717001.shtml"
+    page2_url = "https://edu.qianlong.com/2026/0825/8717002.shtml"
+    listings = {
+        "https://edu.qianlong.com": f'<a href="{page1_url}">新稿</a>'.encode(),
+        "https://edu.qianlong.com/2.shtml": f'<a href="{page2_url}">旧稿</a>'.encode(),
+    }
+    requested: list[str] = []
+
+    class _RecordingSession(_FakeSession):
+        def get(self, url: str) -> _FakeResponse:
+            requested.append(url)
+            return super().get(url)
+
+    session = _RecordingSession(listings)
+    monkeypatch.setattr(http_qianlong, "_create_session", lambda _timeout: session)
+    monkeypatch.setattr(http_qianlong, "_extract_article", lambda _s, url: _fake_extract(url))
+
+    articles = http_qianlong.fetch_articles(
+        limit=10,
+        entries=[http_qianlong.ChannelEntry(url="https://edu.qianlong.com")],
+    )
+
+    assert http_qianlong.DEFAULT_MAX_PAGES == 1
+    assert [article.url for article in articles] == [page1_url]
+    assert "https://edu.qianlong.com/2.shtml" not in requested
+
+
 def test_parse_channel_input_normalizes_qianlong_urls() -> None:
     for raw, expected in (
         ("https://beijing.qianlong.com/", "https://beijing.qianlong.com"),

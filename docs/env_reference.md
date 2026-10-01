@@ -310,7 +310,9 @@ GMW_EXISTING_CONSECUTIVE_STOP=5
 QIANLONG_BASE_URL=
 QIANLONG_TIMEOUT=15
 QIANLONG_DELAY=0.5
-QIANLONG_PAGES=3
+# 每栏目每轮抓取的列表页数上限，可选；代码默认 1 页（新栏目没有已入库条目，
+# existing 截停无法触发，硬页数上限防止把栏目历史存档整库翻完）。
+# 旧部署若还配着 QIANLONG_PAGES=3，请删除该行以回落到代码默认。
 # QIANLONG_MAX_PAGES is an older alias; prefer QIANLONG_PAGES.
 QIANLONG_EXISTING_CONSECUTIVE_STOP=5
 

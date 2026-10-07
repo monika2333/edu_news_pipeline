@@ -320,6 +320,56 @@ def test_shift_candidate_search_uses_body_without_selecting_it() -> None:
     )
 
 
+def _assert_terms_joined_with_and(query: str, params: tuple) -> None:
+    """逐词 ILIKE 必须以 AND 连接：两个词各占一条子句，中间不得出现 OR。"""
+    first = query.find("ILIKE %s")
+    second = query.find("ILIKE %s", first + 1)
+    assert first != -1 and second != -1, query
+    middle = query[first:second]
+    assert " AND " in middle, middle
+    assert " OR " not in middle, middle
+    assert "%教育%" in params and "%政策%" in params, params
+
+
+def test_shift_candidate_search_multi_term_joins_terms_with_and() -> None:
+    cursor = ShiftReviewListCursor()
+
+    db_postgres_shift_reviews.fetch_shift_review_items(
+        cursor,
+        shift_id="shift-1",
+        decision="pending",
+        report_type="zongbao",
+        limit=10,
+        offset=0,
+        region="internal",
+        sentiment="positive",
+        terms=["教育", "政策"],
+        created_before=date(2026, 7, 27),
+    )
+
+    _assert_terms_joined_with_and(
+        cursor.queries[-1], cursor.params[-1]
+    )
+
+
+def test_bulk_discard_multi_term_joins_terms_with_and() -> None:
+    cursor = BulkDiscardCursor({"matched": 2, "updated": 0, "skipped_finalized": 1})
+
+    db_postgres_shift_reviews.bulk_discard_shift_candidates(
+        cursor,
+        shift_id="shift-1",
+        actor_user_id="editor-1",
+        region="internal",
+        sentiment="negative",
+        terms=["教育", "政策"],
+        created_before=date(2026, 7, 27),
+        report_type="zongbao",
+        dry_run=True,
+    )
+
+    _assert_terms_joined_with_and(cursor.queries[0], cursor.params[0])
+
+
 def test_discarded_reviews_sort_by_latest_decision_with_updated_fallback() -> None:
     cursor = ShiftReviewListCursor()
 

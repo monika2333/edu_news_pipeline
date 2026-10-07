@@ -12,6 +12,7 @@ from src.console.manual_filter_helpers import (
     _normalize_report_type,
 )
 from src.console.search_terms import normalize_search_terms
+from src.domain.report_type import NEWS_REPORT_TYPES
 
 
 def _require_client_versions(user: ConsoleUser) -> bool:
@@ -356,6 +357,54 @@ def bulk_discard_candidates(
     }
 
 
+def cleanup_review_buckets(
+    *,
+    report_type: str,
+    status: str,
+    created_before: date,
+    dry_run: bool,
+    actor: ConsoleUser,
+    request_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """汇总审阅页「清理旧新闻」：把指定桶中入库日期早于 created_before 的条目置为放弃。
+
+    与 bulk_discard_candidates 同构：dry_run 只返回计数；
+    实际执行按桶圈选（报别 × 采纳/备选），「旧」的判据是新闻入库时间，
+    与全量筛选页一致。不校验检索词与细化筛选——该页面没有这些输入。
+    """
+    owner_user_id = _workspace_user_id(actor)
+    # coerce 语义会把无法识别的报别静默归到综报，这里必须先做显式校验，
+    # 否则误传的报别会清掉综报桶
+    if report_type not in NEWS_REPORT_TYPES:
+        raise ValueError("cleanup-review-buckets requires an explicit report_type")
+    if status not in {"selected", "backup"}:
+        raise ValueError("cleanup-review-buckets requires an explicit review bucket")
+    adapter = get_adapter()
+    matched = adapter.manual_reviews.count_review_bucket_before_date(
+        owner_user_id=owner_user_id,
+        status=status,
+        report_type=report_type,
+        created_before=created_before,
+    )
+    if dry_run or matched <= 0:
+        return {"matched": matched, "updated": 0, "discarded": []}
+    after = adapter.discard_review_buckets_before_date_as_user(
+        owner_user_id=owner_user_id,
+        status=status,
+        report_type=report_type,
+        created_before=created_before,
+        actor_username=actor.username,
+        actor_user_id=owner_user_id,
+        request_id=request_id,
+    )
+    # 撤回需要逐条的乐观锁版本号：清理只放弃桶内条目，按桶回退原状态是安全的
+    discarded = [
+        {"article_id": str(row["article_id"]), "version": int(row["version"])}
+        for row in after
+    ]
+    return {"matched": matched, "updated": len(discarded), "discarded": discarded}
+
+
 def clear_review_buckets(
     *,
     owner_user_id: str,
@@ -414,6 +463,7 @@ __all__ = [
     "archive_items",
     "bulk_decide",
     "bulk_discard_candidates",
+    "cleanup_review_buckets",
     "clear_review_buckets",
     "clear_all_review_buckets",
     "save_edits",

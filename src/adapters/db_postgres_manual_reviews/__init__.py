@@ -32,7 +32,9 @@ from src.adapters.db_postgres_manual_reviews._counts import manual_review_status
 from src.adapters.db_postgres_manual_reviews._filters import (
     _build_manual_candidate_filters,
     count_manual_candidates_before_date,
+    count_review_bucket_before_date,
     fetch_manual_candidates_before_date_for_update,
+    fetch_review_bucket_before_date_for_update,
     search_manual_candidates,
 )
 from src.adapters.db_postgres_manual_reviews._imports import (
@@ -187,6 +189,40 @@ class ManualReviewsNamespace:
                 max_score=max_score,
             )
 
+    def count_review_bucket_before_date(
+        self,
+        *,
+        owner_user_id: str,
+        status: str,
+        report_type: str,
+        created_before: date,
+    ) -> int:
+        with self._adapter._cursor() as cur:
+            return count_review_bucket_before_date(
+                cur,
+                owner_user_id=owner_user_id,
+                status=status,
+                report_type=report_type,
+                created_before=created_before,
+            )
+
+    def fetch_review_bucket_before_date_for_update(
+        self,
+        *,
+        owner_user_id: str,
+        status: str,
+        report_type: str,
+        created_before: date,
+    ) -> List[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_review_bucket_before_date_for_update(
+                cur,
+                owner_user_id=owner_user_id,
+                status=status,
+                report_type=report_type,
+                created_before=created_before,
+            )
+
     def replace_clusters(self, clusters: Sequence[Mapping[str, Any]]) -> int:
         with self._adapter._cluster_transaction() as cur:
             delete_manual_clusters(cur)
@@ -266,10 +302,12 @@ __all__ = [
     "ManualReviewConflictError",
     "allocate_manual_review_decision_ranks",
     "clear_all_review_buckets",
+    "count_review_bucket_before_date",
     "delete_manual_clusters",
     "enqueue_manual_review",
     "fetch_manual_clusters",
     "fetch_manual_candidates_before_date_for_update",
+    "fetch_review_bucket_before_date_for_update",
     "fetch_review_buckets_for_update",
     "fetch_manual_cluster_sources",
     "fetch_manual_reviews",

@@ -38,6 +38,10 @@ class FakeManualReviewsNamespace:
         kwargs.pop("owner_user_id")
         return self._adapter._count_candidates_before_date(**kwargs)
 
+    def count_review_bucket_before_date(self, **kwargs: Any) -> int:
+        kwargs.pop("owner_user_id")
+        return len(self._adapter._search_review_bucket(**kwargs))
+
     def bulk_discard_candidates(self, **kwargs: Any) -> int:
         return self._adapter._bulk_discard_candidates(**kwargs)
 
@@ -370,6 +374,46 @@ class FakeManualFilterAdapter:
             row["version"] = int(row.get("version") or 1) + 1
         return rows
 
+    def _search_review_bucket(
+        self,
+        *,
+        status: str,
+        report_type: str,
+        created_before: date,
+    ) -> list[Dict[str, Any]]:
+        target_type = self._normalized_report_type(report_type)
+        return [
+            row
+            for row in self.rows
+            if row.get("status") == status
+            and self._normalized_report_type(row.get("report_type")) == target_type
+            and self._created_local_date(row) is not None
+            and self._created_local_date(row) < created_before
+        ]
+
+    def discard_review_buckets_before_date_as_user(
+        self,
+        *,
+        owner_user_id: str,
+        status: str,
+        report_type: str,
+        created_before: date,
+        actor_username: str,
+        actor_user_id: Optional[str],
+        request_id: Optional[str] = None,
+    ) -> list[Dict[str, Any]]:
+        del owner_user_id, actor_user_id, request_id
+        rows = self._search_review_bucket(
+            status=status,
+            report_type=report_type,
+            created_before=created_before,
+        )
+        for row in rows:
+            row["status"] = "discarded"
+            row["decided_by"] = actor_username
+            row["version"] = int(row.get("version") or 1) + 1
+        return rows
+
 
 def _build_rows() -> list[Dict[str, Any]]:
     return [
@@ -426,6 +470,31 @@ def _build_rows() -> list[Dict[str, Any]]:
     ]
 
 
+def _build_review_bucket_rows() -> list[Dict[str, Any]]:
+    # a1/a2 综报采纳（旧）、a3 综报采纳（新入库）、a4 晚报备选（旧）
+    rows = _build_rows()
+    for row in rows:
+        row["status"] = "selected"
+    rows.append(
+        {
+            **rows[0],
+            "article_id": "a3",
+            "title": "最近入库的综报采纳新闻",
+            "created_at": "2025-06-01T00:00:00Z",
+        }
+    )
+    rows.append(
+        {
+            **rows[0],
+            "article_id": "a4",
+            "title": "晚报备选旧新闻",
+            "status": "backup",
+            "report_type": "wanbao",
+        }
+    )
+    return rows
+
+
 def _anonymous_console_user() -> ConsoleUser:
     return ConsoleUser(
         method="test",
@@ -457,6 +526,15 @@ def _duty_editor_user() -> ConsoleUser:
             {
                 "region": "internal",
                 "sentiment": "positive",
+                "dry_run": True,
+            },
+        ),
+        (
+            "/api/manual_filter/cleanup-review-buckets",
+            {
+                "report_type": "zongbao",
+                "status": "selected",
+                "created_before": "2025-06-01",
                 "dry_run": True,
             },
         ),
@@ -1065,6 +1143,93 @@ def test_bulk_discard_api_supports_keyword_only_preview_and_apply(monkeypatch) -
         "discarded": [{"article_id": "a1", "version": 2}],
     }
     assert next(row for row in adapter.rows if row["article_id"] == "a1")["status"] == "discarded"
+
+
+def test_cleanup_review_buckets_preview_counts_only_target_bucket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.console import manual_filter_admin_service
+
+    adapter = FakeManualFilterAdapter(_build_review_bucket_rows())
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/manual_filter/cleanup-review-buckets",
+        json={
+            "report_type": "zongbao",
+            "status": "selected",
+            "created_before": "2025-06-01",
+            "dry_run": True,
+        },
+    )
+
+    assert response.status_code == 200
+    # 只圈选综报采纳桶中入库日期早于 2025-06-01 的条目：a1、a2；
+    # a3 当天入库不含、a4 是晚报备选桶
+    assert response.json() == {"matched": 2, "updated": 0, "discarded": []}
+    statuses = {row["article_id"]: row["status"] for row in adapter.rows}
+    assert statuses == {"a1": "selected", "a2": "selected", "a3": "selected", "a4": "backup"}
+
+
+def test_cleanup_review_buckets_apply_discards_only_target_bucket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.console import manual_filter_admin_service
+
+    adapter = FakeManualFilterAdapter(_build_review_bucket_rows())
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/manual_filter/cleanup-review-buckets",
+        json={
+            "report_type": "zongbao",
+            "status": "selected",
+            "created_before": "2025-06-01",
+            "dry_run": False,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["matched"] == 2
+    assert body["updated"] == 2
+    assert sorted(body["discarded"], key=lambda item: item["article_id"]) == [
+        {"article_id": "a1", "version": 2},
+        {"article_id": "a2", "version": 2},
+    ]
+    statuses = {row["article_id"]: row["status"] for row in adapter.rows}
+    assert statuses == {"a1": "discarded", "a2": "discarded", "a3": "selected", "a4": "backup"}
+
+
+def test_cleanup_review_buckets_rejects_unknown_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.console import manual_filter_admin_service
+
+    adapter = FakeManualFilterAdapter(_build_review_bucket_rows())
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/manual_filter/cleanup-review-buckets",
+        json={
+            "report_type": "zongbao",
+            "status": "pending",
+            "created_before": "2025-06-01",
+            "dry_run": False,
+        },
+    )
+
+    # 请求模型把 status 收敛为 selected/backup，pending 在校验层就被拒绝
+    assert response.status_code == 422
 
 
 def test_bulk_discard_api_supports_empty_optional_filters(monkeypatch) -> None:

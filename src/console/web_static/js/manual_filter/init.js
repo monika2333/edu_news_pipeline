@@ -120,6 +120,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         elements.clearReviewBucketsCancelBtn?.addEventListener('click', closeClearReviewBucketsModal);
         elements.clearReviewBucketsConfirmBtn?.addEventListener('click', confirmClearReviewBuckets);
     }
+    if (elements.reviewCleanupModal) {
+        document.getElementById('btn-open-review-cleanup')?.addEventListener('click', openReviewCleanupModal);
+        elements.reviewCleanupCancelBtn?.addEventListener('click', closeReviewCleanupModal);
+        elements.reviewCleanupDateInput?.addEventListener('change', handleReviewCleanupDateChange);
+        elements.reviewCleanupConfirmBtn?.addEventListener('click', confirmReviewCleanup);
+        elements.reviewCleanupBucketList?.addEventListener('change', (event) => {
+            if (event.target instanceof HTMLInputElement
+                && event.target.classList.contains('cleanup-category-check')) {
+                updateReviewCleanupTotal();
+            }
+        });
+    }
     document.getElementById('btn-finalize-review')
         ?.addEventListener('click', finalizeCurrentDutyReview);
     document.getElementById('btn-restore-finalization')

@@ -1131,6 +1131,66 @@ class PostgresAdapter:
                 for row in after
             ]
 
+    def discard_review_buckets_before_date_as_user(
+        self,
+        *,
+        owner_user_id: str,
+        status: str,
+        report_type: str,
+        created_before: date,
+        actor_username: str,
+        actor_user_id: str,
+        request_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        with self.transaction() as cur:
+            targets = manual_reviews.fetch_review_bucket_before_date_for_update(
+                cur,
+                owner_user_id=owner_user_id,
+                status=status,
+                report_type=report_type,
+                created_before=created_before,
+            )
+            updates = [
+                {
+                    "article_id": str(row["article_id"]),
+                    "status": "discarded",
+                    "rank": None,
+                    "report_type": None,
+                }
+                for row in targets
+            ]
+            expected_versions = {
+                str(row["article_id"]): int(row["version"])
+                for row in targets
+            }
+            before, after = (
+                manual_reviews.update_manual_review_statuses_with_versions(
+                    cur,
+                    updates,
+                    owner_user_id=owner_user_id,
+                    actor_username=actor_username,
+                    actor_user_id=actor_user_id,
+                    expected_versions=expected_versions,
+                    require_versions=True,
+                    report_type=None,
+                )
+            )
+            if after:
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action="manual_review.cleanup_review_buckets",
+                    target_type="manual_review_batch",
+                    target_id=owner_user_id,
+                    before_data={"items": before},
+                    after_data={
+                        "items": after,
+                        "created_before": created_before.isoformat(),
+                    },
+                    request_id=request_id,
+                )
+            return after
+
     def clear_all_review_buckets_as_system(
         self,
         *,

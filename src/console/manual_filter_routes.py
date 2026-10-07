@@ -91,6 +91,15 @@ class ClearReviewBucketsRequest(BaseModel):
     scope: Literal["all"]
 
 
+class CleanupReviewBucketsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report_type: NewsReportType
+    status: Literal["selected", "backup"]
+    created_before: date
+    dry_run: bool = True
+
+
 class DuplicateCheckRequest(BaseModel):
     report_type: NewsReportType
     decision: Literal["selected", "backup"]
@@ -379,6 +388,25 @@ def clear_review_buckets_api(
             actor_username=user.username,
             actor_user_id=str(user.user_id),
             trigger="manual",
+            request_id=request_id,
+        )
+    except (ValueError, RuntimeError) as exc:
+        _raise_manual_write_http_error(exc)
+
+
+@router.post("/cleanup-review-buckets")
+def cleanup_review_buckets_api(
+    req: CleanupReviewBucketsRequest,
+    user: ConsoleUser = Depends(require_admin_workspace_user),
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
+) -> Dict[str, Any]:
+    try:
+        return manual_filter_admin_service.cleanup_review_buckets(
+            report_type=req.report_type,
+            status=req.status,
+            created_before=req.created_before,
+            dry_run=req.dry_run,
+            actor=user,
             request_id=request_id,
         )
     except (ValueError, RuntimeError) as exc:

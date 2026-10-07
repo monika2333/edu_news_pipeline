@@ -168,15 +168,31 @@ body.discard-refine-row-open .discard-filter-row {
     min-width: 0;
 }
 
+/* 「清空筛选」：复用筛选页 meta 行「清空筛选」按钮（filter-refine-clear-link）
+   的视觉；类名不能共用——filter_refine.js 对该类有 document 级委托，
+   放弃页点击会被劫持到筛选页的清空逻辑 */
 .discard-filter-clear-link {
-    border: none;
-    background: none;
-    padding: 0;
-    color: var(--primary-color);
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 6px;
+    height: 26px;
+    padding: 0 12px;
+    line-height: 24px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text-secondary);
     font: inherit;
-    font-size: 0.85rem;
+    font-size: 13px;
     cursor: pointer;
-    text-decoration: underline;
+    text-decoration: none;
+}
+
+.discard-filter-clear-link:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    background: #eef2ff;
+    text-decoration: none;
 }
 
 /* 批量恢复栏：全选本页 + 已选计数 + 目标位置 */

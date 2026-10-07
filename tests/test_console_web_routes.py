@@ -676,6 +676,39 @@ def test_clear_review_buckets_button_only_on_admin_review() -> None:
     assert "handleClearReviewBuckets" in init_script
 
 
+def test_review_cleanup_button_only_on_admin_review() -> None:
+    admin_review = _build_client().get("/admin/review")
+
+    assert admin_review.status_code == 200
+    assert 'id="btn-open-review-cleanup"' in admin_review.text
+    assert 'id="review-cleanup-modal"' in admin_review.text
+    assert 'id="review-cleanup-date-input"' in admin_review.text
+    assert 'id="review-cleanup-bucket-list"' in admin_review.text
+    assert 'id="btn-review-cleanup-cancel"' in admin_review.text
+    assert 'id="btn-review-cleanup-confirm"' in admin_review.text
+    assert 'data-bucket="zongbao:selected"' in admin_review.text
+    assert 'data-bucket="zongbao:backup"' in admin_review.text
+    assert 'data-bucket="wanbao:selected"' in admin_review.text
+    assert 'data-bucket="wanbao:backup"' in admin_review.text
+
+    filter_page = _build_client().get("/manual_filter")
+    assert filter_page.status_code == 200
+    assert 'id="btn-open-review-cleanup"' not in filter_page.text
+    assert 'id="review-cleanup-modal"' not in filter_page.text
+
+    duty_page = _build_editor_client().get("/duty")
+    assert duty_page.status_code == 200
+    assert 'id="btn-open-review-cleanup"' not in duty_page.text
+    assert 'id="review-cleanup-modal"' not in duty_page.text
+
+    scripts_dir = Path(__file__).parents[1] / "src/console/web_static/js/manual_filter"
+    review_data_script = (scripts_dir / "review_tab_data.js").read_text(encoding="utf-8")
+    init_script = (scripts_dir / "init.js").read_text(encoding="utf-8")
+    assert "cleanup-review-buckets" in review_data_script
+    assert "handleReviewCleanupDateChange" in review_data_script
+    assert "confirmReviewCleanup" in init_script
+
+
 def test_clear_review_buckets_button_state_stays_fresh() -> None:
     """一键清空按钮的状态同步：断言全部落在剥离注释后的函数体切片上。"""
     scripts_dir = Path(__file__).parents[1] / "src/console/web_static/js/manual_filter"

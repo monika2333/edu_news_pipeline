@@ -597,3 +597,265 @@ async function confirmClearReviewBuckets() {
         updateClearReviewBucketsButton();
     }
 }
+
+// --- Cleanup Old News (admin review) ---
+// 与全量筛选页的清理旧新闻同构：按收录日期（早于所选日期，不含当天）逐桶预览与清理，
+// 「旧」的判据同样是新闻入库时间（news_summaries.created_at 上海时区日期）。
+// 区别只在圈选维度：这里是报别 × 采纳/备选四个桶，不是京内外 × 正负面。
+
+const REVIEW_CLEANUP_BUCKETS = [
+    { key: 'zongbao:selected', report_type: 'zongbao', status: 'selected', label: '综报采纳' },
+    { key: 'zongbao:backup', report_type: 'zongbao', status: 'backup', label: '综报备选' },
+    { key: 'wanbao:selected', report_type: 'wanbao', status: 'selected', label: '晚报采纳' },
+    { key: 'wanbao:backup', report_type: 'wanbao', status: 'backup', label: '晚报备选' }
+];
+
+const REVIEW_CLEANUP_BUCKET_LABELS = REVIEW_CLEANUP_BUCKETS.reduce((labels, bucket) => {
+    labels[bucket.key] = bucket.label;
+    return labels;
+}, {});
+
+let reviewCleanupPreviewSeq = 0;
+let isCleaningUpReview = false;
+
+function getReviewCleanupRows() {
+    if (!elements.reviewCleanupBucketList) return [];
+    return Array.from(elements.reviewCleanupBucketList.querySelectorAll('.cleanup-category-row'));
+}
+
+function reviewCleanupBucket(bucketKey) {
+    return REVIEW_CLEANUP_BUCKETS.find((bucket) => bucket.key === bucketKey) || null;
+}
+
+function setReviewCleanupConfirmState(enabled, label) {
+    if (!elements.reviewCleanupConfirmBtn) return;
+    elements.reviewCleanupConfirmBtn.disabled = !enabled;
+    elements.reviewCleanupConfirmBtn.textContent = label;
+}
+
+function setReviewCleanupStats(message, isError = false) {
+    if (!elements.reviewCleanupStats) return;
+    elements.reviewCleanupStats.textContent = message;
+    elements.reviewCleanupStats.classList.toggle('is-error', Boolean(isError));
+}
+
+function resetReviewCleanupRows() {
+    getReviewCleanupRows().forEach((row) => {
+        const checkbox = row.querySelector('.cleanup-category-check');
+        const countEl = row.querySelector('.cleanup-category-count');
+        row.classList.remove('is-empty');
+        delete row.dataset.count;
+        if (checkbox) {
+            checkbox.checked = true;
+            checkbox.disabled = true;
+        }
+        if (countEl) countEl.textContent = '';
+    });
+}
+
+function openReviewCleanupModal() {
+    if (!elements.reviewCleanupModal) return;
+    reviewCleanupPreviewSeq += 1;
+    if (elements.reviewCleanupDateInput) elements.reviewCleanupDateInput.value = '';
+    resetReviewCleanupRows();
+    setReviewCleanupStats('');
+    setReviewCleanupConfirmState(false, '确认清理');
+    if (elements.reviewCleanupCancelBtn) elements.reviewCleanupCancelBtn.disabled = false;
+    elements.reviewCleanupModal.classList.add('active');
+    elements.reviewCleanupModal.setAttribute('aria-hidden', 'false');
+}
+
+function closeReviewCleanupModal() {
+    if (!elements.reviewCleanupModal) return;
+    reviewCleanupPreviewSeq += 1;
+    elements.reviewCleanupModal.classList.remove('active');
+    elements.reviewCleanupModal.setAttribute('aria-hidden', 'true');
+}
+
+function updateReviewCleanupTotal() {
+    let total = 0;
+    getReviewCleanupRows().forEach((row) => {
+        const checkbox = row.querySelector('.cleanup-category-check');
+        if (checkbox && checkbox.checked && !checkbox.disabled) {
+            total += Number(row.dataset.count) || 0;
+        }
+    });
+    setReviewCleanupStats(`将清理 ${total} 条`);
+    if (total > 0) {
+        setReviewCleanupConfirmState(true, `清理这 ${total} 条`);
+    } else {
+        setReviewCleanupConfirmState(false, '确认清理');
+    }
+}
+
+async function handleReviewCleanupDateChange() {
+    const createdBefore = elements.reviewCleanupDateInput
+        ? elements.reviewCleanupDateInput.value
+        : '';
+    if (!createdBefore) {
+        reviewCleanupPreviewSeq += 1;
+        resetReviewCleanupRows();
+        setReviewCleanupStats('');
+        setReviewCleanupConfirmState(false, '确认清理');
+        return;
+    }
+    const seq = ++reviewCleanupPreviewSeq;
+    setReviewCleanupStats('正在统计…');
+    setReviewCleanupConfirmState(false, '确认清理');
+    try {
+        const results = await Promise.all(REVIEW_CLEANUP_BUCKETS.map(async (bucket) => {
+            const res = await workspaceFetch(`${API_BASE}/cleanup-review-buckets`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    report_type: bucket.report_type,
+                    status: bucket.status,
+                    created_before: createdBefore,
+                    dry_run: true
+                })
+            });
+            if (!res.ok) throw new Error('failed preview');
+            return { bucket, result: await res.json() };
+        }));
+        if (seq !== reviewCleanupPreviewSeq) return;
+        const counts = {};
+        results.forEach(({ bucket, result }) => {
+            counts[bucket.key] = Number(result.matched) || 0;
+        });
+        getReviewCleanupRows().forEach((row) => {
+            const count = counts[row.dataset.bucket] || 0;
+            const checkbox = row.querySelector('.cleanup-category-check');
+            const countEl = row.querySelector('.cleanup-category-count');
+            row.dataset.count = String(count);
+            row.classList.toggle('is-empty', count === 0);
+            if (countEl) countEl.textContent = `${count} 条`;
+            if (checkbox) {
+                checkbox.disabled = count === 0;
+                checkbox.checked = count > 0;
+            }
+        });
+        updateReviewCleanupTotal();
+    } catch (error) {
+        if (seq !== reviewCleanupPreviewSeq) return;
+        setReviewCleanupStats('统计失败，请重试', true);
+        setReviewCleanupConfirmState(false, '确认清理');
+    }
+}
+
+// 撤销按桶回退：/decide 一次只接受一个 report_type，每个成功清理的桶
+// 用各自返回的版本号整体恢复原状态，版本不符的条目由服务端 409 拒绝
+function buildReviewCleanupUndoAction(undoBuckets) {
+    return buildUndoToastAction(async () => {
+        try {
+            const settled = await Promise.allSettled(undoBuckets.map(async (bucket) => {
+                const response = await workspaceFetch(`${API_BASE}/decide`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        selected_ids: bucket.status === 'selected' ? bucket.ids : [],
+                        backup_ids: bucket.status === 'backup' ? bucket.ids : [],
+                        discarded_ids: [],
+                        pending_ids: [],
+                        versions: bucket.versions,
+                        report_type: bucket.report_type
+                    })
+                });
+                return requireManualMutationSuccess(response, '撤销失败');
+            }));
+            const failed = settled.find((entry) => entry.status === 'rejected');
+            if (failed) throw failed.reason;
+            showToast('已撤销');
+            await loadReviewData();
+            loadStats();
+        } catch (error) {
+            showToast(error.message || '撤销失败，原操作保持不变', 'error');
+        }
+    });
+}
+
+function collectReviewCleanupUndo(succeeded) {
+    return succeeded
+        .map((item) => {
+            const bucket = reviewCleanupBucket(item.bucketKey);
+            const ids = [];
+            const versions = {};
+            ((item.result && item.result.discarded) || []).forEach((entry) => {
+                if (!entry || !entry.article_id) return;
+                const articleId = String(entry.article_id);
+                ids.push(articleId);
+                versions[articleId] = Number(entry.version);
+            });
+            return bucket && ids.length ? { ...bucket, ids, versions } : null;
+        })
+        .filter(Boolean);
+}
+
+async function confirmReviewCleanup() {
+    const createdBefore = elements.reviewCleanupDateInput
+        ? elements.reviewCleanupDateInput.value
+        : '';
+    const confirmBtn = elements.reviewCleanupConfirmBtn;
+    if (!createdBefore || !confirmBtn || confirmBtn.disabled || isCleaningUpReview) return;
+    const selectedRows = getReviewCleanupRows().filter((row) => {
+        const checkbox = row.querySelector('.cleanup-category-check');
+        return checkbox && checkbox.checked && !checkbox.disabled;
+    });
+    const targets = selectedRows.map((row) => row.dataset.bucket).filter(Boolean);
+    if (!targets.length) return;
+    const totalTargets = selectedRows.reduce(
+        (sum, row) => sum + (Number(row.dataset.count) || 0), 0
+    );
+    if (!window.confirm(`确定清理这 ${totalTargets} 条旧新闻吗？`)) return;
+    isCleaningUpReview = true;
+    setReviewCleanupConfirmState(false, '正在清理…');
+    if (elements.reviewCleanupCancelBtn) elements.reviewCleanupCancelBtn.disabled = true;
+    try {
+        const settled = await Promise.allSettled(targets.map(async (bucketKey) => {
+            const bucket = reviewCleanupBucket(bucketKey);
+            const res = await workspaceFetch(`${API_BASE}/cleanup-review-buckets`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    report_type: bucket.report_type,
+                    status: bucket.status,
+                    created_before: createdBefore,
+                    dry_run: false
+                })
+            });
+            if (!res.ok) throw new Error('failed apply');
+            return { bucketKey, result: await res.json() };
+        }));
+        const succeeded = [];
+        const failedKeys = [];
+        settled.forEach((entry, index) => {
+            if (entry.status === 'fulfilled') {
+                succeeded.push(entry.value);
+            } else {
+                failedKeys.push(targets[index]);
+            }
+        });
+        const updatedTotal = succeeded.reduce(
+            (sum, item) => sum + (Number(item.result.updated) || 0), 0
+        );
+        closeReviewCleanupModal();
+        await Promise.all([loadReviewData(), loadStats()]);
+        const undoBuckets = collectReviewCleanupUndo(succeeded);
+        const undoAction = undoBuckets.length ? buildReviewCleanupUndoAction(undoBuckets) : null;
+        if (!failedKeys.length) {
+            showToast(`已清理 ${updatedTotal} 条旧新闻`, 'success', undoAction);
+        } else {
+            const failedNames = failedKeys
+                .map((key) => REVIEW_CLEANUP_BUCKET_LABELS[key] || key)
+                .join('、');
+            let message = `${failedNames} 清理失败，请重试`;
+            if (updatedTotal > 0) message += `；其余桶已清理 ${updatedTotal} 条`;
+            showToast(message, 'error', undoAction);
+        }
+    } catch (error) {
+        setReviewCleanupStats('清理失败，请重试', true);
+    } finally {
+        isCleaningUpReview = false;
+        if (elements.reviewCleanupCancelBtn) elements.reviewCleanupCancelBtn.disabled = false;
+        setReviewCleanupConfirmState(false, '确认清理');
+    }
+}

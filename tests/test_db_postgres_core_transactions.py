@@ -591,6 +591,197 @@ def test_discard_manual_candidates_does_not_audit_empty_match(
     assert audit_calls == []
 
 
+def test_discard_review_buckets_before_date_uses_versioned_updates_and_one_audit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = object.__new__(db_postgres_core.PostgresAdapter)
+    cursor = object()
+    events: list[str] = []
+    targets = [
+        {"article_id": "article-1", "version": 3},
+        {"article_id": "article-2", "version": 7},
+    ]
+    before = [
+        {"article_id": "article-1", "status": "selected", "version": 3},
+        {"article_id": "article-2", "status": "backup", "version": 7},
+    ]
+    after = [
+        {
+            "article_id": "article-1",
+            "status": "discarded",
+            "rank": None,
+            "report_type": "zongbao",
+            "version": 4,
+        },
+        {
+            "article_id": "article-2",
+            "status": "discarded",
+            "rank": None,
+            "report_type": "wanbao",
+            "version": 8,
+        },
+    ]
+    audit_calls: list[dict[str, Any]] = []
+
+    @contextmanager
+    def fake_transaction() -> Iterator[object]:
+        events.append("begin")
+        yield cursor
+        events.append("commit")
+
+    def fake_fetch(cur: object, **kwargs: Any) -> list[dict[str, Any]]:
+        assert cur is cursor
+        assert kwargs == {
+            "owner_user_id": "admin-1",
+            "status": "selected",
+            "report_type": "zongbao",
+            "created_before": datetime(2026, 9, 1, tzinfo=timezone.utc).date(),
+        }
+        events.append("fetch")
+        return targets
+
+    def fake_update(
+        cur: object,
+        updates: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        assert cur is cursor
+        assert updates == [
+            {
+                "article_id": "article-1",
+                "status": "discarded",
+                "rank": None,
+                "report_type": None,
+            },
+            {
+                "article_id": "article-2",
+                "status": "discarded",
+                "rank": None,
+                "report_type": None,
+            },
+        ]
+        assert kwargs == {
+            "owner_user_id": "admin-1",
+            "actor_username": "admin-user",
+            "actor_user_id": "admin-1",
+            "expected_versions": {"article-1": 3, "article-2": 7},
+            "require_versions": True,
+            "report_type": None,
+        }
+        events.append("update")
+        return before, after
+
+    def fake_audit(cur: object, **kwargs: Any) -> None:
+        assert cur is cursor
+        events.append("audit")
+        audit_calls.append(kwargs)
+
+    adapter.transaction = fake_transaction
+    monkeypatch.setattr(
+        db_postgres_core.manual_reviews,
+        "fetch_review_bucket_before_date_for_update",
+        fake_fetch,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.manual_reviews,
+        "update_manual_review_statuses_with_versions",
+        fake_update,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        fake_audit,
+    )
+
+    result = adapter.discard_review_buckets_before_date_as_user(
+        owner_user_id="admin-1",
+        status="selected",
+        report_type="zongbao",
+        created_before=datetime(2026, 9, 1, tzinfo=timezone.utc).date(),
+        actor_username="admin-user",
+        actor_user_id="admin-1",
+        request_id="request-1",
+    )
+
+    assert result == after
+    assert events == ["begin", "fetch", "update", "audit", "commit"]
+    assert audit_calls == [
+        {
+            "actor_user_id": "admin-1",
+            "action": "manual_review.cleanup_review_buckets",
+            "target_type": "manual_review_batch",
+            "target_id": "admin-1",
+            "before_data": {"items": before},
+            "after_data": {
+                "items": after,
+                "created_before": "2026-09-01",
+            },
+            "request_id": "request-1",
+        }
+    ]
+
+
+def test_discard_review_buckets_before_date_does_not_audit_empty_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = object.__new__(db_postgres_core.PostgresAdapter)
+    cursor = object()
+    events: list[str] = []
+    audit_calls: list[dict[str, Any]] = []
+
+    @contextmanager
+    def fake_transaction() -> Iterator[object]:
+        events.append("begin")
+        yield cursor
+        events.append("commit")
+
+    def fake_fetch(cur: object, **kwargs: Any) -> list[dict[str, Any]]:
+        assert cur is cursor
+        events.append("fetch")
+        return []
+
+    def fake_update(
+        cur: object,
+        updates: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        assert cur is cursor
+        assert updates == []
+        assert kwargs["expected_versions"] == {}
+        events.append("update")
+        return [], []
+
+    adapter.transaction = fake_transaction
+    monkeypatch.setattr(
+        db_postgres_core.manual_reviews,
+        "fetch_review_bucket_before_date_for_update",
+        fake_fetch,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.manual_reviews,
+        "update_manual_review_statuses_with_versions",
+        fake_update,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        lambda cur, **kwargs: audit_calls.append(kwargs),
+    )
+
+    result = adapter.discard_review_buckets_before_date_as_user(
+        owner_user_id="admin-1",
+        status="backup",
+        report_type="wanbao",
+        created_before=datetime(2026, 9, 1, tzinfo=timezone.utc).date(),
+        actor_username="admin-user",
+        actor_user_id="admin-1",
+    )
+
+    assert result == []
+    assert events == ["begin", "fetch", "update", "commit"]
+    assert audit_calls == []
+
+
 def test_clear_review_buckets_for_owner_does_not_audit_empty_match(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

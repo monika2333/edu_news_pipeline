@@ -120,12 +120,14 @@
             </div>
         </div>
         {% else %}
-        {# 汇总审阅（is_admin_review）：无 tab 切换，操作区只放跨桶的一键清空，
-           与底部工具条上的排序/预览/归档保持物理距离。 #}
+        {# 汇总审阅（is_admin_review）：无 tab 切换，操作区放跨桶的一键清空
+           与按收录日期的清理旧新闻，与底部工具条上的排序/预览/归档保持物理距离。 #}
         <div class="workspace-tabs-row">
             <div class="workspace-tab-actions">
                 <button class="btn btn-secondary btn-clear-review-buckets" id="btn-clear-review-buckets"
                     type="button">一键清空</button>
+                <button class="btn btn-secondary workspace-tab-action" id="btn-open-review-cleanup"
+                    type="button">清理旧新闻</button>
             </div>
         </div>
         {% endif %}
@@ -521,6 +523,61 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" id="btn-clear-review-cancel">取消</button>
                 <button type="button" class="btn btn-primary" id="btn-clear-review-confirm">确认清空</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Review Cleanup Old News Modal -->
+    {# 与全量筛选页的清理弹窗同构，分类行换成四个桶；复用 .cleanup-* 样式，
+       两类弹窗分别由 is_admin_review 分支渲染、不会同时出现在同一页面。 #}
+    <div class="modal" id="review-cleanup-modal" role="dialog" aria-modal="true"
+        aria-labelledby="review-cleanup-modal-title" aria-hidden="true">
+        <div class="modal-content cleanup-modal-content">
+            <div class="modal-header">
+                <h3 id="review-cleanup-modal-title">清理旧新闻</h3>
+            </div>
+            <div class="modal-body">
+                <p class="cleanup-modal-desc">
+                    按收录日期清理四个桶的条目：清理收录日期早于所选日期（不含当天）的新闻。
+                    统计与执行不受关键词检索影响。
+                </p>
+                <input type="date" id="review-cleanup-date-input" class="cleanup-date-input" autocomplete="off"
+                    aria-label="收录日期早于，不含当天" title="收录日期早于，不含当天">
+                <ul class="cleanup-category-list" id="review-cleanup-bucket-list">
+                    <li class="cleanup-category-row" data-bucket="zongbao:selected">
+                        <label class="cleanup-category-label">
+                            <input type="checkbox" class="cleanup-category-check" checked disabled>
+                            <span class="cleanup-category-name">综报采纳</span>
+                        </label>
+                        <span class="cleanup-category-count"></span>
+                    </li>
+                    <li class="cleanup-category-row" data-bucket="zongbao:backup">
+                        <label class="cleanup-category-label">
+                            <input type="checkbox" class="cleanup-category-check" checked disabled>
+                            <span class="cleanup-category-name">综报备选</span>
+                        </label>
+                        <span class="cleanup-category-count"></span>
+                    </li>
+                    <li class="cleanup-category-row" data-bucket="wanbao:selected">
+                        <label class="cleanup-category-label">
+                            <input type="checkbox" class="cleanup-category-check" checked disabled>
+                            <span class="cleanup-category-name">晚报采纳</span>
+                        </label>
+                        <span class="cleanup-category-count"></span>
+                    </li>
+                    <li class="cleanup-category-row" data-bucket="wanbao:backup">
+                        <label class="cleanup-category-label">
+                            <input type="checkbox" class="cleanup-category-check" checked disabled>
+                            <span class="cleanup-category-name">晚报备选</span>
+                        </label>
+                        <span class="cleanup-category-count"></span>
+                    </li>
+                </ul>
+                <p class="cleanup-modal-stats" id="review-cleanup-modal-stats" aria-live="polite"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="btn-review-cleanup-cancel">取消</button>
+                <button type="button" class="btn btn-primary" id="btn-review-cleanup-confirm" disabled>确认清理</button>
             </div>
         </div>
     </div>

@@ -198,6 +198,57 @@ def test_fetch_review_buckets_for_update_locks_all_review_rows() -> None:
     assert cur.params[0] == ("admin-1", "selected", "backup")
 
 
+def test_fetch_review_bucket_before_date_scopes_owner_bucket_and_local_date() -> None:
+    cur = FakeFetchCursor()
+
+    rows = db_postgres_manual_reviews.fetch_review_bucket_before_date_for_update(
+        cur,
+        owner_user_id="admin-1",
+        status="selected",
+        report_type="wanbao",
+        created_before=date(2025, 6, 1),
+    )
+
+    assert rows == []
+    assert len(cur.queries) == 1
+    query = cur.queries[0]
+    assert "JOIN news_summaries ns ON ns.article_id = mr.article_id" in query
+    assert "mr.owner_user_id = %s" in query
+    assert "mr.status = %s" in query
+    assert "COALESCE(mr.report_type, 'zongbao') = %s" in query
+    assert "(ns.created_at AT TIME ZONE 'Asia/Shanghai')::date < %s" in query
+    assert "FOR UPDATE OF mr" in query
+    assert cur.params[0] == ("admin-1", "selected", "wanbao", date(2025, 6, 1))
+
+
+def test_count_review_bucket_before_date_counts_scoped_rows() -> None:
+    class CountCursor:
+        def __init__(self) -> None:
+            self.query: Optional[str] = None
+            self.params: Optional[tuple[Any, ...]] = None
+
+        def execute(self, query: str, params: tuple[Any, ...]) -> None:
+            self.query = query
+            self.params = params
+
+        def fetchone(self) -> dict[str, int]:
+            return {"total": 4}
+
+    cur = CountCursor()
+
+    total = db_postgres_manual_reviews.count_review_bucket_before_date(
+        cur,
+        owner_user_id="admin-1",
+        status="backup",
+        report_type="zongbao",
+        created_before=date(2025, 6, 1),
+    )
+
+    assert total == 4
+    assert cur.params == ("admin-1", "backup", "zongbao", date(2025, 6, 1))
+    assert cur.query is not None and "COUNT(*)" in cur.query
+
+
 def test_fetch_manual_reviews_orders_selected_items_by_manual_rank_first() -> None:
     cur = FakeFetchCursor()
 

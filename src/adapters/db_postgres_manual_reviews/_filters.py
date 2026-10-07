@@ -11,6 +11,7 @@ from src.adapters.db_postgres_manual_reviews._base import (
     SCORE_FEEDBACK_JOIN,
     SEARCH_TEXT_EXPRESSION,
     _build_manual_review_filters,
+    normalize_report_type_value,
     report_type_expr,
 )
 from src.adapters.sql_search import ilike_all_clauses
@@ -218,9 +219,94 @@ def fetch_manual_candidates_before_date_for_update(
     return [dict(row) for row in cur.fetchall()]
 
 
+def _build_review_bucket_filters(
+    *,
+    owner_user_id: str,
+    status: str,
+    report_type: str,
+    created_before: date,
+) -> Tuple[List[str], List[Any]]:
+    # 汇总审阅页「清理旧新闻」的圈选条件：指定桶（报别 × 采纳/备选）中
+    # 新闻入库日期早于 created_before（上海时区，不含当天）的条目。
+    clauses: List[str] = [
+        "mr.owner_user_id = %s",
+        "mr.status = %s",
+        f"{report_type_expr('mr')} = %s",
+    ]
+    params: List[Any] = [
+        owner_user_id,
+        status,
+        normalize_report_type_value(report_type),
+    ]
+    clauses.append(f"{CREATED_LOCAL_DATE_EXPRESSION} < %s")
+    params.append(created_before)
+    return clauses, params
+
+
+def count_review_bucket_before_date(
+    cur: psycopg.Cursor,
+    *,
+    owner_user_id: str,
+    status: str,
+    report_type: str,
+    created_before: date,
+) -> int:
+    clauses, params = _build_review_bucket_filters(
+        owner_user_id=owner_user_id,
+        status=status,
+        report_type=report_type,
+        created_before=created_before,
+    )
+    where_sql = " AND ".join(clauses)
+    query = f"""
+        SELECT COUNT(*) AS total
+        FROM manual_reviews mr
+        JOIN news_summaries ns ON ns.article_id = mr.article_id
+        WHERE {where_sql}
+    """
+    cur.execute(query, tuple(params))
+    row = cur.fetchone() or {}
+    try:
+        return int(row.get("total") or 0)
+    except Exception:
+        return 0
+
+
+def fetch_review_bucket_before_date_for_update(
+    cur: psycopg.Cursor,
+    *,
+    owner_user_id: str,
+    status: str,
+    report_type: str,
+    created_before: date,
+) -> list[dict[str, Any]]:
+    clauses, params = _build_review_bucket_filters(
+        owner_user_id=owner_user_id,
+        status=status,
+        report_type=report_type,
+        created_before=created_before,
+    )
+    where_sql = " AND ".join(clauses)
+    cur.execute(
+        f"""
+        SELECT mr.article_id, mr.version
+        FROM manual_reviews mr
+        JOIN news_summaries ns ON ns.article_id = mr.article_id
+        WHERE {where_sql}
+        ORDER BY mr.article_id
+        FOR UPDATE OF mr
+        """,
+        tuple(params),
+    )
+    return [dict(row) for row in cur.fetchall()]
+
+
 __all__ = [
     "_build_manual_candidate_filters",
+    "_build_review_bucket_filters",
     "count_manual_candidates_before_date",
+    "count_review_bucket_before_date",
     "fetch_manual_candidates_before_date_for_update",
+    "fetch_review_bucket_before_date_for_update",
     "search_manual_candidates",
 ]

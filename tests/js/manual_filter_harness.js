@@ -74,13 +74,29 @@ class FakeWorkspaceServer {
         }
         // clusters：二维数组，每组是一个聚类的文章 id；未列出的文章各自成为单条聚类
         this.clusterGroups = clusters || [];
-        // 审阅页数据：GET /api/manual_filter/review 按 decision 返回（backup 恒为空）
-        this.reviewItems = reviewItems || [];
+        // 审阅页数据：GET /api/manual_filter/review 按条目自身的 status 过滤返回。
+        // 兼容两种入参：数组（全部视为 selected，需自带 status 字段）或
+        // { selected: [...], backup: [...] } 对象。
+        if (Array.isArray(reviewItems)) {
+            this.reviewItems = reviewItems;
+        } else {
+            this.reviewItems = [
+                ...((reviewItems && reviewItems.selected) || []),
+                ...((reviewItems && reviewItems.backup) || []),
+            ];
+        }
         this.log = [];
         this.inflight = 0;
         this.holds = {};
         this.held = [];
         this.failNext = {};
+    }
+
+    // /decide 同时服务候选列表与审阅页：候选在 articles，审阅条目在 reviewItems
+    reviewRecord(id) {
+        return this.articles.get(id)
+            || this.reviewItems.find((item) => item.article_id === id)
+            || null;
     }
 
     pendingArticles() {
@@ -143,6 +159,7 @@ class FakeWorkspaceServer {
         if (pathname.endsWith('/edit')) return 'edit';
         if (pathname.endsWith('/decide')) return 'decide';
         if (pathname.endsWith('/bulk-discard')) return 'bulk-discard';
+        if (pathname.endsWith('/cleanup-review-buckets')) return 'cleanup-review-buckets';
         if (pathname.endsWith('/review')) return 'review-list';
         if (pathname.endsWith('/order')) return 'review-order';
         return 'other';
@@ -166,7 +183,12 @@ class FakeWorkspaceServer {
         if (pathname.endsWith('/clusters')) return [200, this.clusterPage(url.searchParams)];
         if (pathname.endsWith('/review')) {
             const decision = url.searchParams.get('decision');
-            return [200, { items: decision === 'selected' ? this.reviewItems : [] }];
+            const reportType = url.searchParams.get('report_type') || 'zongbao';
+            const items = this.reviewItems.filter(
+                (item) => (item.status || 'selected') === decision
+                    && (item.report_type || 'zongbao') === reportType
+            );
+            return [200, { items }];
         }
         if (pathname.endsWith('/order')) {
             return [200, { success: true }];
@@ -202,7 +224,8 @@ class FakeWorkspaceServer {
             };
             for (const ids of Object.values(groups)) {
                 for (const id of ids) {
-                    if ((body.versions || {})[id] !== this.articles.get(id).version) {
+                    const record = this.reviewRecord(id);
+                    if (!record || (body.versions || {})[id] !== record.version) {
                         return [409, { detail: 'Review version is stale' }];
                     }
                 }
@@ -210,10 +233,16 @@ class FakeWorkspaceServer {
             const versions = {};
             for (const [decision, ids] of Object.entries(groups)) {
                 for (const id of ids) {
-                    const article = this.articles.get(id);
-                    article.decision = decision;
-                    article.version += 1;
-                    versions[id] = article.version;
+                    const record = this.reviewRecord(id);
+                    record.decision = decision;
+                    if (this.reviewItems.includes(record)) {
+                        record.status = decision;
+                        if ((decision === 'selected' || decision === 'backup') && body.report_type) {
+                            record.report_type = body.report_type;
+                        }
+                    }
+                    record.version += 1;
+                    versions[id] = record.version;
                 }
             }
             return [200, { versions }];
@@ -235,6 +264,28 @@ class FakeWorkspaceServer {
                 matched: discarded.length,
                 updated: discarded.length,
                 skipped_finalized: 0,
+                discarded,
+            }];
+        }
+        if (pathname.endsWith('/cleanup-review-buckets')) {
+            // 汇总审阅页清理旧新闻：按报别 × 状态圈选审阅条目，
+            // apply 按清理时的最新版本返回明细供撤销
+            const targets = this.reviewItems.filter((item) => (
+                item.status !== 'discarded'
+                && (item.report_type || 'zongbao') === body.report_type
+                && item.status === body.status
+            ));
+            if (body.dry_run) {
+                return [200, { matched: targets.length, updated: 0, discarded: [] }];
+            }
+            const discarded = targets.map((item) => {
+                item.status = 'discarded';
+                item.version += 1;
+                return { article_id: item.article_id, version: item.version };
+            });
+            return [200, {
+                matched: discarded.length,
+                updated: discarded.length,
                 discarded,
             }];
         }

@@ -339,7 +339,7 @@ def bulk_discard_api(
     req: BulkDiscardRequest,
     user: ConsoleUser = Depends(require_admin_workspace_user),
     request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
-) -> Dict[str, int]:
+) -> Dict[str, Any]:
     try:
         refine_filters = normalize_candidate_refine_filters(
             hour_from=req.hour_from,

@@ -5,7 +5,7 @@ Read-only query entry point for manual filter operations.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, Optional
 
 from .manual_filter_cluster import DEFAULT_CLUSTER_THRESHOLD
@@ -83,6 +83,12 @@ def list_discarded(
     offset: int = 0,
     report_type: str = DEFAULT_REPORT_TYPE,
     q: Optional[str] = None,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     return _list_discarded(
         owner_user_id=owner_user_id,
@@ -90,6 +96,12 @@ def list_discarded(
         offset=offset,
         report_type=report_type,
         q=q,
+        region=region,
+        sentiment=sentiment,
+        min_score=min_score,
+        max_score=max_score,
+        decided_since=decided_since,
+        batch_decided_at=batch_decided_at,
     )
 
 

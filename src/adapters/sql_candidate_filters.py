@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any, List, Optional, Tuple
 
 # 与 fetch_duplicate_badges 的徽章口径一致：非 dismissed 的命中即视为带标签，
@@ -62,8 +63,34 @@ def candidate_extra_filter_clauses(
     return clauses, params
 
 
+def decided_at_filter_clauses(
+    *,
+    column: str,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
+) -> Tuple[List[str], List[Any]]:
+    """放弃时间（decided_at）筛选子句，管理员与值班两条查询链共用。
+
+    ``column`` 是调用方提供的固定 SQL 片段（如 ``mr.decided_at`` /
+    ``sr.decided_at``），绝不来自用户输入。口径与「收录时间」一致：换算成
+    Asia/Shanghai 本地日期后比较。``decided_at`` 为空的行在两种条件下都不命中
+    （与 NULL 比较结果为 NULL，不满足 WHERE）。
+    """
+    clauses: List[str] = []
+    params: List[Any] = []
+    if decided_since is not None:
+        clauses.append(f"({column} AT TIME ZONE 'Asia/Shanghai')::date >= %s")
+        params.append(decided_since)
+    if batch_decided_at is not None:
+        # 「同一批」定位依赖：同一次批量操作写入的 decided_at 精确相等
+        clauses.append(f"{column} = %s")
+        params.append(batch_decided_at)
+    return clauses, params
+
+
 __all__ = [
     "candidate_created_hour_expr",
     "candidate_extra_filter_clauses",
+    "decided_at_filter_clauses",
     "DUPLICATE_TAGGED_SQL",
 ]

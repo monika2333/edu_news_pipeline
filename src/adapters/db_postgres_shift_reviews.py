@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
 
 import psycopg
@@ -13,7 +13,10 @@ from src.adapters.db_postgres_manual_reviews import (
     SCORE_FEEDBACK_JOIN,
     SEARCH_TEXT_EXPRESSION,
 )
-from src.adapters.sql_candidate_filters import candidate_extra_filter_clauses
+from src.adapters.sql_candidate_filters import (
+    candidate_extra_filter_clauses,
+    decided_at_filter_clauses,
+)
 from src.domain.report_type import NEWS_REPORT_TYPES as VALID_REPORT_TYPES
 
 VALID_DECISIONS = frozenset({"pending", "selected", "backup", "discarded"})
@@ -113,6 +116,8 @@ class ShiftReviewsNamespace:
         duplicate_state: Optional[str] = None,
         min_score: Optional[float] = None,
         max_score: Optional[float] = None,
+        decided_since: Optional[date] = None,
+        batch_decided_at: Optional[datetime] = None,
     ) -> tuple[list[dict[str, Any]], int]:
         with self._adapter._cursor() as cur:
             return fetch_shift_review_items(
@@ -138,6 +143,8 @@ class ShiftReviewsNamespace:
                 duplicate_state=duplicate_state,
                 min_score=min_score,
                 max_score=max_score,
+                decided_since=decided_since,
+                batch_decided_at=batch_decided_at,
             )
 
     def fetch_clusters(
@@ -199,33 +206,28 @@ class ShiftReviewsNamespace:
             )
 
 
-def fetch_shift_review_items(
-    cur: psycopg.Cursor,
+def _shift_review_base_filter_clauses(
     *,
     shift_id: str,
     decision: Optional[str],
-    report_type: Optional[str],
-    limit: int,
-    offset: int,
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
     query: Optional[str] = None,
-    created_before: Optional[date] = None,
-    article_ids: Optional[Sequence[str]] = None,
-    viewer_user_id: Optional[str] = None,
-    include_admin_state: bool = False,
-    admin_discarded_only: bool = False,
-    exclude_admin_discarded: bool = False,
-    admin_unprocessed_only: bool = False,
-    exclude_finalized: bool = False,
     hour_from: Optional[int] = None,
     hour_to: Optional[int] = None,
     duplicate_state: Optional[str] = None,
     min_score: Optional[float] = None,
     max_score: Optional[float] = None,
-) -> tuple[list[dict[str, Any]], int]:
-    bounded_limit = max(1, min(limit, 200))
-    bounded_offset = max(0, offset)
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
+    report_type: Optional[str] = None,
+) -> tuple[list[str], list[Any]]:
+    """值班审阅列表与按条件恢复共用的基础筛选子句（唯一 where 构造）。
+
+    只含与数据匹配相关的条件：班次窗口、未取消、ready_for_export、decision、
+    分类、关键词、细化筛选与放弃时间；管理员视角参数（admin_*）不在此处。
+    ``report_type`` 只有值班列表使用，恢复路径不区分报别。
+    """
     clauses = [
         "s.id = %s",
         "s.cancelled_at IS NULL",
@@ -250,6 +252,69 @@ def fetch_shift_review_items(
     if normalized_query:
         clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
         params.append(f"%{normalized_query}%")
+    extra_clauses, extra_params = candidate_extra_filter_clauses(
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
+    )
+    clauses.extend(extra_clauses)
+    params.extend(extra_params)
+    decided_clauses, decided_params = decided_at_filter_clauses(
+        column="sr.decided_at",
+        decided_since=decided_since,
+        batch_decided_at=batch_decided_at,
+    )
+    clauses.extend(decided_clauses)
+    params.extend(decided_params)
+    return clauses, params
+
+
+def fetch_shift_review_items(
+    cur: psycopg.Cursor,
+    *,
+    shift_id: str,
+    decision: Optional[str],
+    report_type: Optional[str],
+    limit: int,
+    offset: int,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    query: Optional[str] = None,
+    created_before: Optional[date] = None,
+    article_ids: Optional[Sequence[str]] = None,
+    viewer_user_id: Optional[str] = None,
+    include_admin_state: bool = False,
+    admin_discarded_only: bool = False,
+    exclude_admin_discarded: bool = False,
+    admin_unprocessed_only: bool = False,
+    exclude_finalized: bool = False,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
+) -> tuple[list[dict[str, Any]], int]:
+    bounded_limit = max(1, min(limit, 200))
+    bounded_offset = max(0, offset)
+    clauses, params = _shift_review_base_filter_clauses(
+        shift_id=shift_id,
+        decision=decision,
+        report_type=report_type,
+        region=region,
+        sentiment=sentiment,
+        query=query,
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
+        decided_since=decided_since,
+        batch_decided_at=batch_decided_at,
+    )
     if created_before is not None:
         clauses.append(f"{CREATED_LOCAL_DATE_EXPRESSION} < %s")
         params.append(created_before)
@@ -265,15 +330,6 @@ def fetch_shift_review_items(
         params.append(normalized_article_ids)
     if exclude_finalized:
         clauses.append("sr.finalized_batch_id IS NULL")
-    extra_clauses, extra_params = candidate_extra_filter_clauses(
-        hour_from=hour_from,
-        hour_to=hour_to,
-        duplicate_state=duplicate_state,
-        min_score=min_score,
-        max_score=max_score,
-    )
-    clauses.extend(extra_clauses)
-    params.extend(extra_params)
     uses_admin_workspace = (
         include_admin_state
         or admin_discarded_only
@@ -416,6 +472,11 @@ def bulk_discard_shift_candidates(
     created_before: Optional[date] = None,
     report_type: str = "zongbao",
     dry_run: bool = True,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> dict[str, int]:
     """Discard pending candidates in one shift without per-row versions."""
     clauses = ["mr.status = %s", "ns.status = 'ready_for_export'"]
@@ -433,6 +494,15 @@ def bulk_discard_shift_candidates(
     if created_before is not None:
         clauses.append(f"{CREATED_LOCAL_DATE_EXPRESSION} < %s")
         filter_params.append(created_before)
+    extra_clauses, extra_params = candidate_extra_filter_clauses(
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
+    )
+    clauses.extend(extra_clauses)
+    filter_params.extend(extra_params)
     where_sql = " AND ".join(clauses)
     matched_sql = f"""
         SELECT
@@ -527,6 +597,100 @@ def bulk_discard_shift_candidates(
         "matched": int(row.get("matched") or 0),
         "updated": int(row.get("updated") or 0),
         "skipped_finalized": int(row.get("skipped_finalized") or 0),
+    }
+
+
+def bulk_restore_shift_reviews(
+    cur: psycopg.Cursor,
+    *,
+    shift_id: str,
+    actor_user_id: str,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    query: Optional[str] = None,
+    dry_run: bool = True,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
+) -> dict[str, int]:
+    """Restore discarded shift reviews matching one filter back to pending.
+
+    匹配集与 fetch_shift_review_items 共用同一个 where 构造；只更新
+    decision = 'discarded' 且未定稿的行，恢复目标固定为待处理：
+    decision = 'pending'、rank 与 decided_at 置空（与 upsert_shift_review
+    中待处理的语义一致），report_type 保持不变。
+    """
+    clauses, filter_params = _shift_review_base_filter_clauses(
+        shift_id=shift_id,
+        decision="discarded",
+        region=region,
+        sentiment=sentiment,
+        query=query,
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
+        decided_since=decided_since,
+        batch_decided_at=batch_decided_at,
+    )
+    where_sql = " AND ".join(clauses)
+    join_sql = """
+        FROM duty_shifts s
+        JOIN news_summaries ns
+          ON ns.created_at >= s.starts_at
+         AND ns.created_at < s.ends_at
+        JOIN shift_reviews sr
+          ON sr.shift_id = s.id
+         AND sr.article_id = ns.article_id
+    """
+    if dry_run:
+        cur.execute(
+            f"""
+            SELECT count(*) AS matched
+            {join_sql}
+            WHERE {where_sql}
+              AND sr.finalized_batch_id IS NULL
+            """,
+            tuple(filter_params),
+        )
+        row = cur.fetchone() or {}
+        return {
+            "matched": int(row.get("matched") or 0),
+            "updated": 0,
+        }
+    # UPDATE 的 FROM 里不能再次出现目标表 shift_reviews，因此 sr 与
+    # 班次/新闻的连接条件写进 WHERE；匹配子句本身与列表查询完全一致。
+    cur.execute(
+        f"""
+        UPDATE shift_reviews AS sr
+        SET decision = 'pending',
+            rank = NULL,
+            decided_at = NULL,
+            updated_by_user_id = %s,
+            version = sr.version + 1,
+            updated_at = now()
+        FROM duty_shifts s
+        JOIN news_summaries ns
+          ON ns.created_at >= s.starts_at
+         AND ns.created_at < s.ends_at
+        WHERE sr.shift_id = s.id
+          AND sr.article_id = ns.article_id
+          AND {where_sql}
+          AND sr.finalized_batch_id IS NULL
+        RETURNING sr.article_id
+        """,
+        # SET 子句占位符在 WHERE 之前，actor 参数必须排在最前
+        tuple([actor_user_id, *filter_params]),
+    )
+    updated = len(cur.fetchall())
+    return {
+        "matched": updated,
+        "updated": updated,
     }
 
 
@@ -1460,6 +1624,7 @@ __all__ = [
     "VALID_DECISIONS",
     "VALID_REPORT_TYPES",
     "bulk_discard_shift_candidates",
+    "bulk_restore_shift_reviews",
     "fetch_shift_article_ids",
     "fetch_shift_finalized_items",
     "fetch_admin_shift_summaries",

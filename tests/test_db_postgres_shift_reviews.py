@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
+
+_AWARE_BATCH_TS = datetime(2026, 10, 7, 6, 32, 5, 123456, tzinfo=timezone.utc)
 from typing import Any, Optional
 
 import pytest
@@ -653,3 +655,309 @@ def test_batch_review_lock_uses_deterministic_order_and_for_update() -> None:
     assert "ORDER BY article_id" in query
     assert "FOR UPDATE" in query
     assert query.index("ORDER BY article_id") < query.index("FOR UPDATE")
+
+
+def test_bulk_discard_appends_refine_filter_clauses() -> None:
+    cursor = BulkDiscardCursor(
+        {"matched": 2, "updated": 0, "skipped_finalized": 0}
+    )
+
+    db_postgres_shift_reviews.bulk_discard_shift_candidates(
+        cursor,
+        shift_id="shift-1",
+        actor_user_id="editor-1",
+        region="internal",
+        sentiment="negative",
+        query="教育政策",
+        report_type="zongbao",
+        dry_run=True,
+        hour_from=8,
+        hour_to=10,
+        duplicate_state="untagged",
+        min_score=5.5,
+        max_score=30,
+    )
+
+    query = cursor.queries[0]
+    assert "EXTRACT(HOUR FROM ns.created_at AT TIME ZONE 'Asia/Shanghai') >= %s" in query
+    assert "EXTRACT(HOUR FROM ns.created_at AT TIME ZONE 'Asia/Shanghai') <= %s" in query
+    assert "NOT EXISTS" in query
+    assert "ns.external_importance_score >= %s" in query
+    assert "ns.external_importance_score <= %s" in query
+    # 细化子句参数紧跟在既有过滤参数之后
+    assert cursor.params[0] == (
+        "shift-1",
+        "pending",
+        True,
+        "negative",
+        "%教育政策%",
+        8,
+        10,
+        5.5,
+        30,
+    )
+
+
+def test_bulk_restore_dry_run_counts_without_write() -> None:
+    cursor = BulkDiscardCursor({"matched": 3})
+
+    result = db_postgres_shift_reviews.bulk_restore_shift_reviews(
+        cursor,
+        shift_id="shift-1",
+        actor_user_id="editor-1",
+        region="internal",
+        sentiment="negative",
+        query="教育政策",
+        dry_run=True,
+        min_score=5.5,
+        max_score=30,
+        decided_since=date(2026, 10, 1),
+    )
+
+    query = cursor.queries[0]
+    assert result == {"matched": 3, "updated": 0}
+    assert "UPDATE shift_reviews" not in query
+    assert "sr.finalized_batch_id IS NULL" in query
+    assert "COALESCE(sr.decision, 'pending') = %s" in query
+    assert "ns.is_beijing_related = %s" in query
+    assert "ns.sentiment_label = %s" in query
+    assert "ILIKE %s" in query
+    assert "ns.external_importance_score >= %s" in query
+    assert "ns.external_importance_score <= %s" in query
+    assert "(sr.decided_at AT TIME ZONE 'Asia/Shanghai')::date >= %s" in query
+
+
+class _RestoreReturningCursor:
+    def __init__(self, result: dict[str, int]) -> None:
+        self.result = result
+        self.queries: list[str] = []
+        self.params: list[tuple[Any, ...]] = []
+
+    def execute(self, query: str, params: tuple[Any, ...]) -> None:
+        self.queries.append(query)
+        self.params.append(params)
+
+    def fetchone(self) -> dict[str, int]:
+        return self.result
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return [{"article_id": "a1"}, {"article_id": "a2"}, {"article_id": "a3"}]
+
+
+def test_bulk_restore_resets_to_pending_without_touching_finalized() -> None:
+    cursor = _RestoreReturningCursor({"matched": 3})
+
+    result = db_postgres_shift_reviews.bulk_restore_shift_reviews(
+        cursor,
+        shift_id="shift-1",
+        actor_user_id="editor-1",
+        dry_run=False,
+        batch_decided_at=_AWARE_BATCH_TS,
+    )
+
+    query = cursor.queries[0]
+    assert result == {"matched": 3, "updated": 3}
+    assert "UPDATE shift_reviews AS sr" in query
+    assert "decision = 'pending'" in query
+    assert "rank = NULL" in query
+    assert "decided_at = NULL" in query
+    assert "sr.version + 1" in query
+    assert "updated_by_user_id = %s" in query
+    assert "sr.finalized_batch_id IS NULL" in query
+    # 目标表的连接条件写在 WHERE，而不是 UPDATE 的 FROM
+    assert "sr.shift_id = s.id" in query
+    assert "sr.article_id = ns.article_id" in query
+    assert cursor.params[0][0] == "editor-1"
+    assert _AWARE_BATCH_TS in cursor.params[0]
+
+
+def test_bulk_restore_matches_list_where_construction() -> None:
+    """T6（值班）：同一组条件下，列表与恢复的 where 子句和参数一致。"""
+    list_cursor = ShiftReviewListCursor()
+    restore_cursor = BulkDiscardCursor({"matched": 3})
+    filters = {
+        "region": "internal",
+        "sentiment": "negative",
+        "query": "教育政策",
+        "hour_from": 8,
+        "duplicate_state": "untagged",
+        "min_score": 5.5,
+        "max_score": 30,
+        "decided_since": date(2026, 10, 1),
+        "batch_decided_at": _AWARE_BATCH_TS,
+    }
+
+    db_postgres_shift_reviews.fetch_shift_review_items(
+        list_cursor,
+        shift_id="shift-1",
+        decision="discarded",
+        report_type=None,
+        limit=10,
+        offset=0,
+        **filters,
+    )
+    db_postgres_shift_reviews.bulk_restore_shift_reviews(
+        restore_cursor,
+        shift_id="shift-1",
+        actor_user_id="editor-1",
+        dry_run=True,
+        **filters,
+    )
+
+    list_sql = list_cursor.queries[-1]
+    restore_sql = restore_cursor.queries[0]
+    expected_clauses = [
+        "s.id = %s",
+        "s.cancelled_at IS NULL",
+        "ns.status = 'ready_for_export'",
+        "COALESCE(sr.decision, 'pending') = %s",
+        "ns.is_beijing_related = %s",
+        "ns.sentiment_label = %s",
+        "ILIKE %s",
+        "EXTRACT(HOUR FROM ns.created_at AT TIME ZONE 'Asia/Shanghai') >= %s",
+        "NOT EXISTS",
+        "ns.external_importance_score >= %s",
+        "ns.external_importance_score <= %s",
+        "(sr.decided_at AT TIME ZONE 'Asia/Shanghai')::date >= %s",
+        "sr.decided_at = %s",
+    ]
+    for clause in expected_clauses:
+        assert clause in list_sql, f"列表 SQL 缺少子句：{clause}"
+        assert clause in restore_sql, f"恢复 SQL 缺少子句：{clause}"
+    # 列表与恢复的筛选参数序列一致（恢复不含 limit/offset/actor）
+    list_params = list(list_cursor.params[-1])
+    restore_params = list(restore_cursor.params[0])
+    filter_params = [
+        True,
+        "negative",
+        "%教育政策%",
+        8,
+        5.5,
+        30,
+        date(2026, 10, 1),
+        _AWARE_BATCH_TS,
+    ]
+    assert _contains_subsequence(list_params, filter_params)
+    assert _contains_subsequence(restore_params, filter_params)
+
+
+def _contains_subsequence(haystack: list, needle: list) -> bool:
+    """按值比较的连续子序列判断（用于过滤参数顺序一致性断言）。"""
+    for start in range(len(haystack) - len(needle) + 1):
+        if all(
+            haystack[start + offset] == needle[offset]
+            for offset in range(len(needle))
+        ):
+            return True
+    return False
+
+
+def test_bulk_restore_shift_reviews_sql_semantics() -> None:
+    """真实 SQL 语义：已定稿行不动，恢复行 decision=pending 且 decided_at 置空。"""
+    psycopg = pytest.importorskip("psycopg")
+    from psycopg.rows import dict_row
+    from uuid import uuid4
+
+    from src.config import get_settings
+
+    settings = get_settings()
+    shift_id = uuid4()
+    editor_id = "33333333-3333-3333-3333-333333333333"
+    finalized_batch = uuid4()
+
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            for table in ("duty_shifts", "news_summaries", "shift_reviews"):
+                cur.execute(
+                    f"CREATE TEMP TABLE {table} "
+                    f"(LIKE public.{table} INCLUDING DEFAULTS) ON COMMIT DROP"
+                )
+            cur.execute(
+                """
+                INSERT INTO duty_shifts (id, user_id, starts_at, ends_at)
+                VALUES (%s, %s, '2026-10-06T22:00:00+08:00',
+                        '2026-10-07T22:00:00+08:00')
+                """,
+                (shift_id, editor_id),
+            )
+            for article_id in ("n1", "n2", "n3"):
+                cur.execute(
+                    """
+                    INSERT INTO news_summaries
+                        (article_id, title, status, created_at)
+                    VALUES (%s, %s, 'ready_for_export',
+                            '2026-10-07T08:00:00+08:00')
+                    """,
+                    (article_id, f"标题{article_id}"),
+                )
+            cur.execute(
+                """
+                INSERT INTO shift_reviews
+                    (shift_id, article_id, created_by_user_id,
+                     updated_by_user_id, report_type, decision, rank,
+                     version, decided_at, finalized_batch_id, finalized_rank)
+                VALUES
+                    (%s, 'n1', %s, %s, 'wanbao', 'discarded', 1, 2,
+                     '2026-10-07T09:30:00+08:00', NULL, NULL),
+                    (%s, 'n2', %s, %s, 'wanbao', 'discarded', 2, 1,
+                     '2026-10-07T09:31:00+08:00', %s, 1),
+                    (%s, 'n3', %s, %s, NULL, 'pending', NULL, 1,
+                     NULL, NULL, NULL)
+                """,
+                (
+                    shift_id, editor_id, editor_id,
+                    shift_id, editor_id, editor_id, finalized_batch,
+                    shift_id, editor_id, editor_id,
+                ),
+            )
+
+            def fetch_row(article_id: str) -> dict[str, Any]:
+                cur.execute(
+                    "SELECT decision, rank, decided_at, version, "
+                    "updated_by_user_id, report_type, finalized_batch_id "
+                    "FROM shift_reviews WHERE article_id = %s",
+                    (article_id,),
+                )
+                return dict(cur.fetchone())
+
+            # dry_run：已定稿的 n2 与 pending 的 n3 都不算命中
+            result = db_postgres_shift_reviews.bulk_restore_shift_reviews(
+                cur,
+                shift_id=shift_id,
+                actor_user_id=editor_id,
+                dry_run=True,
+            )
+            assert result == {"matched": 1, "updated": 0}
+            assert fetch_row("n1")["decision"] == "discarded"
+
+            result = db_postgres_shift_reviews.bulk_restore_shift_reviews(
+                cur,
+                shift_id=shift_id,
+                actor_user_id=editor_id,
+                dry_run=False,
+            )
+            assert result == {"matched": 1, "updated": 1}
+
+            n1 = fetch_row("n1")
+            assert n1["decision"] == "pending"
+            assert n1["decided_at"] is None
+            assert n1["rank"] is None
+            assert n1["version"] == 3
+            assert str(n1["updated_by_user_id"]) == editor_id
+            # report_type 保持不变
+            assert n1["report_type"] == "wanbao"
+
+            # 已定稿行与 pending 行都不受影响
+            n2 = fetch_row("n2")
+            assert n2["decision"] == "discarded"
+            assert n2["version"] == 1
+            assert str(n2["finalized_batch_id"]) == str(finalized_batch)
+            assert fetch_row("n3")["decision"] == "pending"

@@ -252,19 +252,25 @@ async function workspaceFetch(input, options = {}) {
         return dutyListResponse(url.searchParams.get('decision') || 'selected', url.searchParams);
     }
     if (action === '/discarded') {
-        const query = (url.searchParams.get('q') || '').trim();
-        if (query) {
-            const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit')) || 30, 200));
-            const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
-            const backendParams = new URLSearchParams({
-                decision: 'discarded',
-                limit: String(limit),
-                offset: String(offset),
-                q: query
-            });
-            return window.fetch(`${API_BASE}/reviews?${backendParams.toString()}`);
-        }
-        return dutyListResponse('discarded', url.searchParams);
+        // 放弃列表一律服务端分页/筛选；条件参数与列表查询串同源透传
+        const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit')) || 30, 200));
+        const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
+        const backendParams = new URLSearchParams({
+            decision: 'discarded',
+            limit: String(limit),
+            offset: String(offset)
+        });
+        ['q', 'region', 'sentiment', 'min_score', 'max_score',
+            'decided_since', 'batch_decided_at'].forEach(key => {
+            const value = url.searchParams.get(key);
+            if (value) backendParams.set(key, value);
+        });
+        return window.fetch(`${API_BASE}/reviews?${backendParams.toString()}`);
+    }
+    if (action === '/bulk-restore') {
+        const response = await window.fetch(`${API_BASE}/bulk-restore`, options);
+        if (response.ok) invalidateDutyListCache();
+        return response;
     }
     if (action === '/stats') return window.fetch(`${API_BASE}/stats${url.search}`, options);
     if (action === '/score-feedback' || action === '/score-feedback/clear') {

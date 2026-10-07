@@ -615,6 +615,11 @@ class PostgresAdapter:
         report_type: str,
         dry_run: bool,
         request_id: Optional[str] = None,
+        hour_from: Optional[int] = None,
+        hour_to: Optional[int] = None,
+        duplicate_state: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
     ) -> Dict[str, int]:
         with self.transaction() as cur:
             result = shift_reviews.bulk_discard_shift_candidates(
@@ -627,6 +632,11 @@ class PostgresAdapter:
                 created_before=created_before,
                 report_type=report_type,
                 dry_run=dry_run,
+                hour_from=hour_from,
+                hour_to=hour_to,
+                duplicate_state=duplicate_state,
+                min_score=min_score,
+                max_score=max_score,
             )
             if not dry_run and result["updated"]:
                 audit.insert_review_event(
@@ -646,7 +656,71 @@ class PostgresAdapter:
                             if created_before is not None
                             else None
                         ),
+                        "hour_from": hour_from,
+                        "hour_to": hour_to,
+                        "duplicate_state": duplicate_state,
+                        "min_score": min_score,
+                        "max_score": max_score,
                         "report_type": report_type,
+                    },
+                    request_id=request_id,
+                )
+            return result
+
+    def restore_shift_reviews_by_filter_as_user(
+        self,
+        *,
+        shift_id: str,
+        actor_user_id: str,
+        region: Optional[str] = None,
+        sentiment: Optional[str] = None,
+        query: Optional[str] = None,
+        dry_run: bool = True,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
+        decided_since: Optional[date] = None,
+        batch_decided_at: Optional[datetime] = None,
+        request_id: Optional[str] = None,
+    ) -> Dict[str, int]:
+        with self.transaction() as cur:
+            result = shift_reviews.bulk_restore_shift_reviews(
+                cur,
+                shift_id=shift_id,
+                actor_user_id=actor_user_id,
+                region=region,
+                sentiment=sentiment,
+                query=query,
+                dry_run=dry_run,
+                min_score=min_score,
+                max_score=max_score,
+                decided_since=decided_since,
+                batch_decided_at=batch_decided_at,
+            )
+            if not dry_run and result["updated"]:
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action="shift_review.bulk_restore",
+                    target_type="shift_review_batch",
+                    target_id=shift_id,
+                    before_data=None,
+                    after_data={
+                        **result,
+                        "region": region,
+                        "sentiment": sentiment,
+                        "query": query,
+                        "min_score": min_score,
+                        "max_score": max_score,
+                        "decided_since": (
+                            decided_since.isoformat()
+                            if decided_since is not None
+                            else None
+                        ),
+                        "batch_decided_at": (
+                            batch_decided_at.isoformat()
+                            if batch_decided_at is not None
+                            else None
+                        ),
                     },
                     request_id=request_id,
                 )
@@ -1069,6 +1143,72 @@ class PostgresAdapter:
                     request_id=request_id,
                 )
             return after
+
+    def restore_discarded_manual_reviews_as_user(
+        self,
+        *,
+        actor_username: str,
+        actor_user_id: str,
+        region: Optional[str] = None,
+        sentiment: Optional[str] = None,
+        query: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
+        decided_since: Optional[date] = None,
+        batch_decided_at: Optional[datetime] = None,
+        dry_run: bool = True,
+        request_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """把当前管理员符合条件的已放弃行恢复到待处理，写审计事件。"""
+        with self.transaction() as cur:
+            result = manual_reviews.restore_discarded_manual_reviews_by_filter(
+                cur,
+                owner_user_id=actor_user_id,
+                actor_username=actor_username,
+                actor_user_id=actor_user_id,
+                region=region,
+                sentiment=sentiment,
+                query=query,
+                min_score=min_score,
+                max_score=max_score,
+                decided_since=decided_since,
+                batch_decided_at=batch_decided_at,
+                dry_run=dry_run,
+            )
+            if not dry_run and result["updated"]:
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action="manual_review.bulk_restore",
+                    target_type="manual_review_batch",
+                    target_id=actor_user_id,
+                    before_data={"items": result["before"]},
+                    after_data={
+                        "items": result["after"],
+                        "filters": {
+                            "region": region,
+                            "sentiment": sentiment,
+                            "query": query,
+                            "min_score": min_score,
+                            "max_score": max_score,
+                            "decided_since": (
+                                decided_since.isoformat()
+                                if decided_since is not None
+                                else None
+                            ),
+                            "batch_decided_at": (
+                                batch_decided_at.isoformat()
+                                if batch_decided_at is not None
+                                else None
+                            ),
+                        },
+                    },
+                    request_id=request_id,
+                )
+            return {
+                "matched": result["matched"],
+                "updated": result["updated"],
+            }
 
     def clear_review_buckets_for_owner_as_user(
         self,

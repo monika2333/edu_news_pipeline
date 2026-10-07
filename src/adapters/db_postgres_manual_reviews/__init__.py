@@ -7,7 +7,7 @@ owns each active query or write path.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from src.adapters.db_postgres_manual_reviews._base import (
@@ -32,7 +32,9 @@ from src.adapters.db_postgres_manual_reviews._counts import manual_review_status
 from src.adapters.db_postgres_manual_reviews._filters import (
     _build_manual_candidate_filters,
     count_manual_candidates_before_date,
+    fetch_discarded_manual_reviews_for_update,
     fetch_manual_candidates_before_date_for_update,
+    restore_discarded_manual_reviews_by_filter,
     search_manual_candidates,
 )
 from src.adapters.db_postgres_manual_reviews._imports import (
@@ -84,6 +86,8 @@ class ManualReviewsNamespace:
         duplicate_state: Optional[str] = None,
         min_score: Optional[float] = None,
         max_score: Optional[float] = None,
+        decided_since: Optional[date] = None,
+        batch_decided_at: Optional[datetime] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
         with self._adapter._cursor() as cur:
             return fetch_manual_reviews(
@@ -104,6 +108,8 @@ class ManualReviewsNamespace:
                 duplicate_state=duplicate_state,
                 min_score=min_score,
                 max_score=max_score,
+                decided_since=decided_since,
+                batch_decided_at=batch_decided_at,
             )
 
     def fetch_cluster_sources(
@@ -187,6 +193,37 @@ class ManualReviewsNamespace:
                 max_score=max_score,
             )
 
+    def restore_discarded_by_filter(
+        self,
+        *,
+        owner_user_id: str,
+        actor_username: str,
+        actor_user_id: str,
+        region: Optional[str] = None,
+        sentiment: Optional[str] = None,
+        query: Optional[str] = None,
+        min_score: Optional[float] = None,
+        max_score: Optional[float] = None,
+        decided_since: Optional[date] = None,
+        batch_decided_at: Optional[datetime] = None,
+        dry_run: bool = True,
+    ) -> Dict[str, Any]:
+        with self._adapter.transaction() as cur:
+            return restore_discarded_manual_reviews_by_filter(
+                cur,
+                owner_user_id=owner_user_id,
+                actor_username=actor_username,
+                actor_user_id=actor_user_id,
+                region=region,
+                sentiment=sentiment,
+                query=query,
+                min_score=min_score,
+                max_score=max_score,
+                decided_since=decided_since,
+                batch_decided_at=batch_decided_at,
+                dry_run=dry_run,
+            )
+
     def replace_clusters(self, clusters: Sequence[Mapping[str, Any]]) -> int:
         with self._adapter._cluster_transaction() as cur:
             delete_manual_clusters(cur)
@@ -268,6 +305,7 @@ __all__ = [
     "clear_all_review_buckets",
     "delete_manual_clusters",
     "enqueue_manual_review",
+    "fetch_discarded_manual_reviews_for_update",
     "fetch_manual_clusters",
     "fetch_manual_candidates_before_date_for_update",
     "fetch_review_buckets_for_update",
@@ -282,6 +320,7 @@ __all__ = [
     "preview_shift_reviews_for_manual",
     "report_type_expr",
     "release_advisory_lock",
+    "restore_discarded_manual_reviews_by_filter",
     "try_advisory_lock",
     "update_manual_review_statuses",
     "update_manual_review_statuses_with_versions",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Mapping, Optional, Sequence
 
 import pytest
@@ -134,6 +134,8 @@ class FakeDutyReviewAdapter:
         duplicate_state: Optional[str] = None,
         min_score: Optional[float] = None,
         max_score: Optional[float] = None,
+        decided_since: Optional[object] = None,
+        batch_decided_at: Optional[object] = None,
     ) -> tuple[list[dict[str, Any]], int]:
         del shift_id, limit, offset
         self.fetch_scopes.append((decision, exclude_finalized))
@@ -154,6 +156,8 @@ class FakeDutyReviewAdapter:
                 "duplicate_state": duplicate_state,
                 "min_score": min_score,
                 "max_score": max_score,
+                "decided_since": decided_since,
+                "batch_decided_at": batch_decided_at,
             }
         )
         row_ids = normalized_article_ids or [f"{decision}-1"]
@@ -384,6 +388,11 @@ def test_bulk_discard_uses_owned_shift_and_server_side_filter(
         "report_type": "zongbao",
         "dry_run": False,
         "request_id": "request-1",
+        "hour_from": None,
+        "hour_to": None,
+        "duplicate_state": None,
+        "min_score": None,
+        "max_score": None,
     }
     assert fake_adapter.saved_batch == {}
 
@@ -632,6 +641,8 @@ def test_candidate_search_filters_are_forwarded_to_database(
             "duplicate_state": None,
             "min_score": None,
             "max_score": None,
+            "decided_since": None,
+            "batch_decided_at": None,
         }
     ]
 
@@ -943,3 +954,94 @@ def test_restore_finalized_batch_returns_all_items_to_current_batch(
     }
     assert result["restored"] == 2
     assert result["article_ids"] == ["article-1", "article-2"]
+
+
+def test_bulk_discard_forwards_refine_filters_to_adapter(
+    fake_adapter: FakeDutyReviewAdapter,
+) -> None:
+    duty_review_service.bulk_discard_candidates(
+        shift_id="shift-id",
+        user=_editor(),
+        region="internal",
+        sentiment="negative",
+        query="教育政策",
+        created_before=None,
+        dry_run=True,
+        hour_from=8,
+        hour_to=10,
+        duplicate_state="untagged",
+        min_score=5.5,
+        max_score=30,
+    )
+
+    captured = fake_adapter.bulk_discarded
+    assert captured["hour_from"] == 8
+    assert captured["hour_to"] == 10
+    assert captured["duplicate_state"] == "untagged"
+    assert captured["min_score"] == 5.5
+    assert captured["max_score"] == 30
+
+
+def test_bulk_restore_forwards_filters_to_adapter(
+    monkeypatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    class RestoreAdapter(FakeDutyReviewAdapter):
+        def restore_shift_reviews_by_filter_as_user(self, **kwargs: Any):
+            calls.append(dict(kwargs))
+            return {"matched": 3, "updated": 3}
+
+    adapter = RestoreAdapter()
+    monkeypatch.setattr(duty_review_service, "require_owned_shift",
+                        lambda *args, **kwargs: {"id": "shift-id"})
+    monkeypatch.setattr(duty_review_service, "get_adapter", lambda: adapter)
+
+    result = duty_review_service.bulk_restore_discarded(
+        shift_id="shift-id",
+        user=_editor(),
+        query="教育政策",
+        region="internal",
+        sentiment="negative",
+        min_score=5.5,
+        max_score=30,
+        decided_since=date(2026, 10, 1),
+        batch_decided_at=datetime(2026, 10, 7, 6, 32, 5, 123456, tzinfo=timezone.utc),
+        dry_run=True,
+        request_id="request-1",
+    )
+
+    assert result == {"matched": 3, "updated": 3}
+    captured = calls[-1]
+    assert captured["shift_id"] == "shift-id"
+    assert captured["actor_user_id"] == "editor-id"
+    assert captured["query"] == "教育政策"
+    assert captured["region"] == "internal"
+    assert captured["sentiment"] == "negative"
+    assert captured["min_score"] == 5.5
+    assert captured["max_score"] == 30
+    assert captured["decided_since"] == date(2026, 10, 1)
+    assert captured["batch_decided_at"] == datetime(
+        2026, 10, 7, 6, 32, 5, 123456, tzinfo=timezone.utc
+    )
+    assert captured["dry_run"] is True
+    assert captured["request_id"] == "request-1"
+
+
+def test_bulk_restore_requires_owned_shift(monkeypatch) -> None:
+    def reject_shift(*args: Any, **kwargs: Any) -> None:
+        raise PermissionError("not your shift")
+
+    monkeypatch.setattr(duty_review_service, "require_owned_shift", reject_shift)
+    monkeypatch.setattr(
+        duty_review_service,
+        "get_adapter",
+        lambda: (_ for _ in ()).throw(AssertionError("write must not run")),
+    )
+
+    with pytest.raises(PermissionError):
+        duty_review_service.bulk_restore_discarded(
+            shift_id="shift-id",
+            user=_editor(),
+            query="教育政策",
+        )

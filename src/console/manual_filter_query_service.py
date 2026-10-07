@@ -16,6 +16,7 @@ from .manual_filter_helpers import (
     DEFAULT_REPORT_TYPE,
     _normalize_report_type,
     normalize_candidate_refine_filters,
+    normalize_discard_filters,
 )
 from .manual_filter_serializers import serialize_manual_filter_item
 from .submission_archive_service import attach_duplicate_badges
@@ -37,6 +38,7 @@ def _paginate_by_status(
     query: Optional[str] = None,
     duty_unprocessed_only: bool = False,
     refine_filters: Optional[Dict[str, Any]] = None,
+    discard_filters: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     adapter = get_adapter()
     limit = max(1, min(int(limit or 30), 200))
@@ -59,6 +61,7 @@ def _paginate_by_status(
         "query": (query or "").strip() or None,
         "duty_unprocessed_only": duty_unprocessed_only,
         **(refine_filters or {}),
+        **(discard_filters or {}),
     }
     rows, total = adapter.manual_reviews.fetch(  # type: ignore[attr-defined]
         **fetch_kwargs,
@@ -272,14 +275,36 @@ def list_discarded(
     offset: int = 0,
     report_type: str = DEFAULT_REPORT_TYPE,
     q: Optional[str] = None,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    min_score: Any = None,
+    max_score: Any = None,
+    decided_since: Any = None,
+    batch_decided_at: Any = None,
 ) -> Dict[str, Any]:
     del report_type
-    normalized_query = (q or "").strip() or None
+    # 放弃页条件与两端路由共用同一份归一化（列表与按条件恢复同口径）
+    discard_filters = normalize_discard_filters(
+        region=region,
+        sentiment=sentiment,
+        q=q,
+        min_score=min_score,
+        max_score=max_score,
+        decided_since=decided_since,
+        batch_decided_at=batch_decided_at,
+    )
     logger.info(
-        "Listing discarded items: limit=%s offset=%s report_scope=all query=%s",
+        "Listing discarded items: limit=%s offset=%s report_scope=all region=%s "
+        "sentiment=%s min_score=%s max_score=%s decided_since=%s batch=%s query=%s",
         limit,
         offset,
-        normalized_query,
+        discard_filters["region"],
+        discard_filters["sentiment"],
+        discard_filters["min_score"],
+        discard_filters["max_score"],
+        discard_filters["decided_since"],
+        discard_filters["batch_decided_at"] is not None,
+        discard_filters["q"],
     )
     return _paginate_by_status(
         "discarded",
@@ -289,7 +314,11 @@ def list_discarded(
         only_ready=False,
         report_type=None,
         order_by_decided_at=True,
-        query=normalized_query,
+        query=discard_filters["q"],
+        # q 单独走 query 参数，其余条件原样并入 fetch kwargs
+        discard_filters={
+            key: value for key, value in discard_filters.items() if key != "q"
+        },
     )
 
 

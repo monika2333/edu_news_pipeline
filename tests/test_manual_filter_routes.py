@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
-from src.console import manual_filter_query_service
+from src.console import manual_filter_admin_service, manual_filter_query_service
 from src.console.app import create_app
 from src.console.security import ConsoleUser, require_console_user
 
@@ -47,9 +47,19 @@ class FakeManualFilterAdapter:
         self.rows = rows
         self.manual_reviews = FakeManualReviewsNamespace(self)
         self.submission_archive = FakeSubmissionArchiveNamespace()
+        self.fetch_calls: list[Dict[str, Any]] = []
+        self.restore_calls: list[Dict[str, Any]] = []
         for row in self.rows:
             if not row.get("report_type"):
                 row["report_type"] = "zongbao"
+
+    def restore_discarded_manual_reviews_as_user(
+        self, **kwargs: Any
+    ) -> Dict[str, int]:
+        self.restore_calls.append(dict(kwargs))
+        if kwargs.get("dry_run"):
+            return {"matched": 3, "updated": 0}
+        return {"matched": 3, "updated": 3}
 
     @staticmethod
     def _normalized_report_type(value: Optional[str]) -> str:
@@ -85,7 +95,25 @@ class FakeManualFilterAdapter:
         duplicate_state: Optional[str] = None,
         min_score: Optional[float] = None,
         max_score: Optional[float] = None,
+        decided_since: Optional[date] = None,
+        batch_decided_at: Optional[datetime] = None,
     ) -> Tuple[list[Dict[str, Any]], int]:
+        self.fetch_calls.append(
+            {
+                key: value
+                for key, value in {
+                    "status": status,
+                    "region": region,
+                    "sentiment": sentiment,
+                    "query": query,
+                    "min_score": min_score,
+                    "max_score": max_score,
+                    "decided_since": decided_since,
+                    "batch_decided_at": batch_decided_at,
+                }.items()
+                if value is not None
+            }
+        )
         target_type = (
             self._normalized_report_type(report_type)
             if report_type is not None
@@ -1291,3 +1319,159 @@ def test_duplicate_check_api_maps_errors(
 
     assert response.status_code == status_code
     assert response.json() == {"detail": "duplicate check failed"}
+
+
+def test_discarded_api_forwards_discard_filters_to_adapter(monkeypatch) -> None:
+    rows = _build_rows()
+    for row in rows:
+        row["status"] = "discarded"
+    adapter = FakeManualFilterAdapter(rows)
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/manual_filter/discarded",
+        params={
+            "region": "internal",
+            "sentiment": "negative",
+            "min_score": 10.5,
+            "max_score": 90,
+            "decided_since": "2026-10-01",
+            "batch_decided_at": "2026-10-07T06:32:05.123456Z",
+            "q": "  学科建设  ",
+        },
+    )
+
+    assert response.status_code == 200
+    captured = adapter.fetch_calls[-1]
+    assert captured["region"] == "internal"
+    assert captured["sentiment"] == "negative"
+    assert captured["min_score"] == 10.5
+    assert captured["max_score"] == 90.0
+    assert str(captured["decided_since"]) == "2026-10-01"
+    assert captured["batch_decided_at"] == datetime.fromisoformat(
+        "2026-10-07T06:32:05.123456+00:00"
+    )
+    assert captured["query"] == "学科建设"
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"region": "beijing"},
+        {"sentiment": "neutral"},
+        {"min_score": 80, "max_score": 60},
+        {"batch_decided_at": "2026-10-07T14:32:05"},
+    ],
+)
+def test_discarded_api_rejects_invalid_discard_filters(
+    monkeypatch, params: Dict[str, str]
+) -> None:
+    rows = _build_rows()
+    for row in rows:
+        row["status"] = "discarded"
+    adapter = FakeManualFilterAdapter(rows)
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.get("/api/manual_filter/discarded", params=params)
+
+    assert response.status_code == 422
+
+
+def test_bulk_restore_requires_at_least_one_condition(monkeypatch) -> None:
+    adapter = FakeManualFilterAdapter([])
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post("/api/manual_filter/bulk-restore", json={})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "按条件恢复至少需要一个筛选条件"
+    assert adapter.restore_calls == []
+
+
+def test_bulk_restore_dry_run_counts_without_write(monkeypatch) -> None:
+    adapter = FakeManualFilterAdapter([])
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/manual_filter/bulk-restore",
+        json={
+            "region": "internal",
+            "sentiment": "negative",
+            "min_score": 10.5,
+            "decided_since": "2026-10-01",
+            "batch_decided_at": "2026-10-07T06:32:05.123456Z",
+            "q": "教育政策",
+            "dry_run": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"matched": 3, "updated": 0}
+    captured = adapter.restore_calls[-1]
+    assert captured["region"] == "internal"
+    assert captured["sentiment"] == "negative"
+    assert captured["query"] == "教育政策"
+    assert captured["min_score"] == 10.5
+    assert captured["decided_since"] == date(2026, 10, 1)
+    assert captured["batch_decided_at"] == datetime.fromisoformat(
+        "2026-10-07T06:32:05.123456+00:00"
+    )
+    assert captured["dry_run"] is True
+    assert captured["actor_user_id"] == "admin-1"
+
+
+def test_bulk_restore_apply_restores_matching_discarded_rows(monkeypatch) -> None:
+    adapter = FakeManualFilterAdapter([])
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/manual_filter/bulk-restore",
+        json={
+            "region": "internal",
+            "sentiment": "negative",
+            "dry_run": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"matched": 3, "updated": 3}
+    captured = adapter.restore_calls[-1]
+    assert captured["dry_run"] is False
+    assert captured["actor_username"] == "tester"
+    assert captured["actor_user_id"] == "admin-1"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"region": "beijing", "min_score": 10},
+        {"min_score": 80, "max_score": 60},
+        {"batch_decided_at": "2026-10-07T14:32:05"},
+    ],
+)
+def test_bulk_restore_rejects_invalid_filters(monkeypatch, payload: Dict[str, Any]) -> None:
+    adapter = FakeManualFilterAdapter([])
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post("/api/manual_filter/bulk-restore", json=payload)
+
+    assert response.status_code == 422
+    assert adapter.restore_calls == []

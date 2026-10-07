@@ -340,7 +340,57 @@
                     </div>
                     <button class="btn btn-secondary" id="btn-discard-search">检索</button>
                 </div>
-                <div class="discard-toolbar-meta" id="discard-search-meta"></div>
+                {# 放弃页条件区：分类分段按钮 + 放弃时间 + 分数。与筛选页细化筛选
+                   完全独立（状态在 discard_tab.js，不写 localStorage），不得复用
+                   .filter-refine-row / [data-refine-field] 命名，见 console AGENTS.md。 #}
+                <div class="discard-filter-row" id="discard-filter-row">
+                    <div class="discard-filter-buckets" role="group" aria-label="分类筛选">
+                        <button type="button" class="discard-filter-bucket active"
+                            data-discard-bucket="all">全部</button>
+                        <button type="button" class="discard-filter-bucket"
+                            data-discard-bucket="internal_positive">京内正面</button>
+                        <button type="button" class="discard-filter-bucket"
+                            data-discard-bucket="internal_negative">京内负面</button>
+                        <button type="button" class="discard-filter-bucket"
+                            data-discard-bucket="external_positive">京外正面</button>
+                        <button type="button" class="discard-filter-bucket"
+                            data-discard-bucket="external_negative">京外负面</button>
+                    </div>
+                    <select id="discard-since-select" class="discard-filter-since"
+                        data-discard-since aria-label="放弃时间">
+                        <option value="">放弃时间：全部</option>
+                        <option value="today">今天</option>
+                        <option value="3d">近 3 天</option>
+                        <option value="7d">近 7 天</option>
+                    </select>
+                    <div class="discard-filter-scores">
+                        <input type="number" id="discard-min-score" class="discard-filter-score"
+                            data-discard-score="min" placeholder="最低分" aria-label="最低分数">
+                        <span class="discard-filter-score-sep">–</span>
+                        <input type="number" id="discard-max-score" class="discard-filter-score"
+                            data-discard-score="max" placeholder="最高分" aria-label="最高分数">
+                    </div>
+                </div>
+                <div class="discard-toolbar-meta-row">
+                    <div class="discard-toolbar-meta" id="discard-search-meta"></div>
+                    <button type="button" class="btn btn-secondary" id="btn-discard-bulk-restore"
+                        hidden>全部恢复到待处理</button>
+                </div>
+                <div class="discard-bulk-bar" id="discard-bulk-bar" hidden>
+                    <label class="discard-bulk-select-all">
+                        <input type="checkbox" id="discard-select-all"> 全选本页
+                    </label>
+                    <span id="discard-selected-count"></span>
+                    <select id="discard-bulk-target" class="discard-restore-select"
+                        aria-label="批量恢复位置">
+                        <option value="">恢复到</option>
+                        <option value="zongbao:selected">综报采纳</option>
+                        <option value="zongbao:backup">综报备选</option>
+                        <option value="wanbao:selected">晚报采纳</option>
+                        <option value="wanbao:backup">晚报备选</option>
+                        <option value="pending">待处理</option>
+                    </select>
+                </div>
             </div>
             <div id="discard-list">
                 <!-- Items will be injected here -->

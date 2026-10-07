@@ -84,7 +84,10 @@ class FakeAdapter:
         duplicate_state: Optional[str] = None,
         min_score: Optional[float] = None,
         max_score: Optional[float] = None,
+        decided_since: Optional[date] = None,
+        batch_decided_at: Optional[datetime] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
+        del decided_since, batch_decided_at
         target_type = (
             self._normalized_report_type(report_type)
             if report_type is not None

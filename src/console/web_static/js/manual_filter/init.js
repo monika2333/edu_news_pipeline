@@ -249,6 +249,56 @@ document.addEventListener('DOMContentLoaded', async () => {
             elements.discardSearchInput?.focus();
         });
     }
+    // 放弃页条件区与批量恢复（状态与绑定都在 discard_tab.js，这里只接线）
+    document.querySelectorAll('[data-discard-bucket]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            discardFilterState.bucket = btn.dataset.discardBucket || 'all';
+            applyDiscardFilterChange();
+        });
+    });
+    if (elements.discardSinceSelect) {
+        elements.discardSinceSelect.addEventListener('change', () => {
+            discardFilterState.since = elements.discardSinceSelect.value || '';
+            applyDiscardFilterChange();
+        });
+    }
+    [elements.discardMinScore, elements.discardMaxScore].forEach(input => {
+        input?.addEventListener('change', () => {
+            discardFilterState.minScore = elements.discardMinScore?.value ?? '';
+            discardFilterState.maxScore = elements.discardMaxScore?.value ?? '';
+            applyDiscardFilterChange();
+        });
+    });
+    // 「只看这一批」与行复选框都随列表 innerHTML 重渲染，用委托
+    if (elements.discardList) {
+        elements.discardList.addEventListener('click', event => {
+            const batchBtn = event.target.closest('.discard-batch-btn');
+            if (!batchBtn) return;
+            filterDiscardBatch(batchBtn.dataset.decidedAt || '');
+        });
+        elements.discardList.addEventListener('change', handleDiscardRowCheckChange);
+    }
+    // meta 行的「清空筛选」与批次 chip ✕ 由 innerHTML 重渲染，用委托
+    document.addEventListener('click', event => {
+        if (event.target.closest('.discard-filter-clear-link')) {
+            event.preventDefault();
+            clearDiscardFilters();
+        }
+        if (event.target.closest('.discard-batch-clear')) {
+            event.preventDefault();
+            discardFilterState.batchDecidedAt = '';
+            applyDiscardFilterChange();
+        }
+    });
+    if (elements.discardSelectAll) {
+        elements.discardSelectAll.addEventListener('change', handleDiscardSelectAllChange);
+    }
+    if (elements.discardBulkTarget) {
+        elements.discardBulkTarget.addEventListener('change', handleDiscardBulkTargetChange);
+    }
+    if (elements.discardBulkRestoreBtn) {
+        elements.discardBulkRestoreBtn.addEventListener('click', handleDiscardBulkRestore);
+    }
 
     // Pagination listeners (delegated or specific)
     setupPagination();

@@ -550,3 +550,61 @@ def test_clear_review_buckets_counts_successful_rows_and_preserves_fields(
     assert all(row["status"] == "discarded" for row in rows)
     assert all(row["rank"] is None for row in rows)
     assert all(row["decided_by_user_id"] is None for row in rows)
+
+
+class _RestoreRecordingAdapter:
+    def __init__(self) -> None:
+        self.restore_calls: list[dict[str, Any]] = []
+
+    def restore_discarded_manual_reviews_as_user(self, **kwargs: Any) -> dict[str, int]:
+        self.restore_calls.append(dict(kwargs))
+        if kwargs.get("dry_run"):
+            return {"matched": 4, "updated": 0}
+        return {"matched": 4, "updated": 4}
+
+
+def test_bulk_restore_candidates_forwards_filters_and_owner(monkeypatch) -> None:
+    adapter = _RestoreRecordingAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+
+    result = manual_filter_admin_service.bulk_restore_candidates(
+        actor=_session_admin(),
+        query="  教育政策  ",
+        region="internal",
+        sentiment="negative",
+        min_score=12.5,
+        max_score=90,
+        dry_run=False,
+        request_id="request-1",
+    )
+
+    assert result == {"matched": 4, "updated": 4}
+    captured = adapter.restore_calls[-1]
+    assert captured["actor_user_id"] == "admin-user-id"
+    assert captured["actor_username"] == "admin-a"
+    assert captured["query"] == "教育政策"
+    assert captured["region"] == "internal"
+    assert captured["sentiment"] == "negative"
+    assert captured["min_score"] == 12.5
+    assert captured["max_score"] == 90
+    assert captured["dry_run"] is False
+    assert captured["request_id"] == "request-1"
+
+
+def test_bulk_restore_candidates_rejects_non_admin(monkeypatch) -> None:
+    adapter = _RestoreRecordingAdapter()
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+    duty_user = ConsoleUser(
+        method="test",
+        user_id="editor-id",
+        username="editor",
+        role="duty_editor",
+    )
+
+    with pytest.raises(PermissionError):
+        manual_filter_admin_service.bulk_restore_candidates(
+            actor=duty_user,
+            query="教育政策",
+        )
+
+    assert adapter.restore_calls == []

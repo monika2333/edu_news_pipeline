@@ -57,7 +57,7 @@ function inlineScripts(html) {
 }
 
 class FakeWorkspaceServer {
-    constructor({ articleCount = 0, clusters = null, reviewItems = null } = {}) {
+    constructor({ articleCount = 0, clusters = null, reviewItems = null, discardedItems = null } = {}) {
         this.articles = new Map();
         for (let index = 0; index < articleCount; index += 1) {
             const id = `a${String(index).padStart(2, '0')}`;
@@ -76,11 +76,15 @@ class FakeWorkspaceServer {
         this.clusterGroups = clusters || [];
         // 审阅页数据：GET /api/manual_filter/review 按 decision 返回（backup 恒为空）
         this.reviewItems = reviewItems || [];
+        // 放弃页数据：/discarded（管理员）与 /reviews?decision=discarded（值班）共用，
+        // 条件参数（q / 分类 / 分数 / decided_since / batch_decided_at）在此模拟
+        this.discardedItems = discardedItems || [];
         this.log = [];
         this.inflight = 0;
         this.holds = {};
         this.held = [];
         this.failNext = {};
+        this.failNextStatus = {};
     }
 
     pendingArticles() {
@@ -143,8 +147,54 @@ class FakeWorkspaceServer {
         if (pathname.endsWith('/edit')) return 'edit';
         if (pathname.endsWith('/decide')) return 'decide';
         if (pathname.endsWith('/review')) return 'review-list';
+        if (pathname.endsWith('/reviews')) {
+            return url.searchParams.get('decision') === 'discarded' ? 'discard-list' : 'review-list';
+        }
+        if (pathname.endsWith('/discarded')) return 'discard-list';
+        if (pathname.endsWith('/bulk-restore')) return 'bulk-restore';
         if (pathname.endsWith('/order')) return 'review-order';
         return 'other';
+    }
+
+    // 与后端口径一致：decided_at 按 Asia/Shanghai 本地日期比较
+    shanghaiLocalDate(value) {
+        return new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Shanghai',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).format(new Date(value));
+    }
+
+    filterDiscarded(params) {
+        let items = this.discardedItems.slice();
+        const q = (params.get('q') || '').trim().toLowerCase();
+        if (q) items = items.filter((item) => (item.title || '').toLowerCase().includes(q));
+        const region = params.get('region');
+        if (region) items = items.filter((item) => (region === 'internal') === Boolean(item.is_beijing_related));
+        const sentiment = params.get('sentiment');
+        if (sentiment) items = items.filter((item) => (item.sentiment_label || '').toLowerCase() === sentiment);
+        const minScore = params.get('min_score');
+        if (minScore) items = items.filter((item) => Number(item.external_importance_score) >= Number(minScore));
+        const maxScore = params.get('max_score');
+        if (maxScore) items = items.filter((item) => Number(item.external_importance_score) <= Number(maxScore));
+        const since = params.get('decided_since');
+        if (since) items = items.filter((item) => item.decided_at && this.shanghaiLocalDate(item.decided_at) >= since);
+        const batch = params.get('batch_decided_at');
+        if (batch) items = items.filter((item) => item.decided_at === batch);
+        return items;
+    }
+
+    discardedPage(params) {
+        const limit = Number(params.get('limit') || 30);
+        const offset = Number(params.get('offset') || 0);
+        const items = this.filterDiscarded(params);
+        return {
+            items: items.slice(offset, offset + limit),
+            total: items.length,
+            limit,
+            offset,
+        };
     }
 
     respond(url, body) {
@@ -158,6 +208,24 @@ class FakeWorkspaceServer {
                     ends_at: '2026-09-12T00:00:00Z',
                 }],
             }];
+        }
+        if (pathname.endsWith('/bulk-restore')) {
+            const params = new URLSearchParams();
+            Object.entries(body || {}).forEach(([key, value]) => {
+                if (value !== null && value !== undefined && value !== '') params.set(key, String(value));
+            });
+            const dryRun = !body || body.dry_run !== false;
+            const matched = this.filterDiscarded(params);
+            if (dryRun) return [200, { matched: matched.length, updated: 0 }];
+            const matchedIds = new Set(matched.map((item) => item.article_id));
+            this.discardedItems = this.discardedItems.filter(
+                (item) => !matchedIds.has(item.article_id)
+            );
+            return [200, { matched: matched.length, updated: matched.length }];
+        }
+        if (pathname.endsWith('/discarded')
+            || (pathname.endsWith('/reviews') && url.searchParams.get('decision') === 'discarded')) {
+            return [200, this.discardedPage(url.searchParams)];
         }
         if (pathname.endsWith('/stats')) {
             return [200, { pending: this.pendingArticles().length, selected: 0, backup: 0, discarded: 0 }];
@@ -201,7 +269,9 @@ class FakeWorkspaceServer {
             };
             for (const ids of Object.values(groups)) {
                 for (const id of ids) {
-                    if ((body.versions || {})[id] !== this.articles.get(id).version) {
+                    const article = this.articles.get(id);
+                    if (!article) continue; // 放弃页条目不在候选池里，版本以请求为准
+                    if ((body.versions || {})[id] !== article.version) {
                         return [409, { detail: 'Review version is stale' }];
                     }
                 }
@@ -210,6 +280,10 @@ class FakeWorkspaceServer {
             for (const [decision, ids] of Object.entries(groups)) {
                 for (const id of ids) {
                     const article = this.articles.get(id);
+                    if (!article) {
+                        versions[id] = Number((body.versions || {})[id] || 1) + 1;
+                        continue;
+                    }
                     article.decision = decision;
                     article.version += 1;
                     versions[id] = article.version;
@@ -236,6 +310,7 @@ class FakeWorkspaceServer {
         this.inflight += 1;
         const willFail = (this.failNext[kind] || 0) > 0;
         if (willFail) this.failNext[kind] -= 1;
+        const failStatus = this.failNextStatus[kind] || 500;
         // 列表在请求发出时取快照，模拟「先发出的请求带旧数据、后返回」
         const snapshot = kind === 'list' ? this.respond(url, body) : null;
         try {
@@ -246,7 +321,7 @@ class FakeWorkspaceServer {
                 await nextTick();
             }
             const [status, payload] = willFail
-                ? [500, { detail: 'injected failure' }]
+                ? [failStatus, { detail: 'injected failure' }]
                 : (snapshot || this.respond(url, body));
             entry.status = status;
             return new Response(JSON.stringify(payload), {
@@ -262,6 +337,12 @@ class FakeWorkspaceServer {
     // 扣住接下来 count 个指定类型的请求，直到 release(kind)
     hold(kind, count = 1) {
         this.holds[kind] = (this.holds[kind] || 0) + count;
+    }
+
+    // 让接下来 count 个指定类型的请求失败（默认 500，可指定如 409）
+    fail(kind, count = 1, status = 500) {
+        this.failNext[kind] = (this.failNext[kind] || 0) + count;
+        this.failNextStatus[kind] = status;
     }
 
     heldCount(kind) {

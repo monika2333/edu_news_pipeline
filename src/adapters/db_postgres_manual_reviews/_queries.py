@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg
@@ -143,6 +143,8 @@ def fetch_manual_reviews(
     duplicate_state: Optional[str] = None,
     min_score: Optional[float] = None,
     max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
 ) -> Tuple[List[Dict[str, Any]], int]:
     limit = max(1, min(int(limit or 30), 200))
     offset = max(0, int(offset or 0))
@@ -161,6 +163,8 @@ def fetch_manual_reviews(
         duplicate_state=duplicate_state,
         min_score=min_score,
         max_score=max_score,
+        decided_since=decided_since,
+        batch_decided_at=batch_decided_at,
     )
     where_sql = " AND ".join(clauses)
     order_by_sql = _manual_review_order_by(status=status, order_by_decided_at=order_by_decided_at)

@@ -6,7 +6,8 @@ These utilities depend only on src.domain, not other src.console modules.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional
+from datetime import date, datetime
+from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from src.domain.report_type import (
     DEFAULT_REPORT_TYPE,
@@ -77,6 +78,105 @@ def normalize_candidate_refine_filters(
         "min_score": min_score_val,
         "max_score": max_score_val,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Discard page filters（放弃页：分类 / 放弃时间 / 分数 / 关键词）
+# ─────────────────────────────────────────────────────────────────────────────
+DISCARD_FILTER_KEYS = (
+    "q",
+    "region",
+    "sentiment",
+    "min_score",
+    "max_score",
+    "decided_since",
+    "batch_decided_at",
+)
+
+
+def _optional_date(value: Any, field: str) -> Optional[date]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        raise ValueError(f"{field} 必须是日期（YYYY-MM-DD）") from None
+
+
+def _optional_aware_datetime(value: Any, field: str) -> Optional[datetime]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            raise ValueError(f"{field} 必须是带时区的时间") from None
+    # 不带时区的时间在「同一批」精确比较中产生歧义，直接拒绝
+    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+        raise ValueError(f"{field} 必须带时区")
+    return parsed
+
+
+def normalize_discard_filters(
+    *,
+    region: Any = None,
+    sentiment: Any = None,
+    q: Any = None,
+    min_score: Any = None,
+    max_score: Any = None,
+    decided_since: Any = None,
+    batch_decided_at: Any = None,
+) -> Dict[str, Any]:
+    """归一化放弃页筛选条件；非法值抛 ValueError（路由层转 422）。
+
+    管理员 `/discarded`、`/bulk-restore` 与值班 `/reviews`、`/bulk-restore`
+    四个入口共用，保证两端条件的合法性判定只有一份。
+    """
+    normalized_region = (str(region) if region is not None else "") or ""
+    if normalized_region not in ("", "internal", "external"):
+        raise ValueError("region 只支持 internal / external")
+    normalized_sentiment = (str(sentiment) if sentiment is not None else "") or ""
+    if normalized_sentiment not in ("", "positive", "negative"):
+        raise ValueError("sentiment 只支持 positive / negative")
+    min_score_val = _optional_float(min_score, "min_score")
+    max_score_val = _optional_float(max_score, "max_score")
+    if (
+        min_score_val is not None
+        and max_score_val is not None
+        and min_score_val > max_score_val
+    ):
+        raise ValueError("min_score 不能大于 max_score")
+    return {
+        "q": (str(q) if q is not None else "").strip() or None,
+        "region": normalized_region or None,
+        "sentiment": normalized_sentiment or None,
+        "min_score": min_score_val,
+        "max_score": max_score_val,
+        "decided_since": _optional_date(decided_since, "decided_since"),
+        "batch_decided_at": _optional_aware_datetime(
+            batch_decided_at, "batch_decided_at"
+        ),
+    }
+
+
+def has_discard_filters(filters: Mapping[str, Any]) -> bool:
+    """判定放弃页筛选条件是否至少启用了一个（按条件恢复的前置校验）。"""
+    return any(filters.get(key) not in (None, "") for key in DISCARD_FILTER_KEYS)
+
+
+BULK_RESTORE_CONDITION_MESSAGE = "按条件恢复至少需要一个筛选条件"
+
+
+def ensure_bulk_restore_has_condition(filters: Mapping[str, Any]) -> None:
+    """无条件时拒绝按条件恢复，否则等于把全部放弃历史倒回待处理池。"""
+    if not has_discard_filters(filters):
+        raise ValueError(BULK_RESTORE_CONDITION_MESSAGE)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

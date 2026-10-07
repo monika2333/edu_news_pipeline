@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg
 
-from src.adapters.sql_candidate_filters import candidate_extra_filter_clauses
+from src.adapters.sql_candidate_filters import (
+    candidate_extra_filter_clauses,
+    decided_at_filter_clauses,
+)
 from src.domain.report_type import normalize_report_type as normalize_report_type_value
 
 
@@ -98,6 +102,8 @@ def _build_manual_review_filters(
     duplicate_state: Optional[str] = None,
     min_score: Optional[float] = None,
     max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
 ) -> Tuple[List[str], List[Any]]:
     clauses: List[str] = ["mr.owner_user_id = %s"]
     params: List[Any] = [owner_user_id]
@@ -132,6 +138,13 @@ def _build_manual_review_filters(
     )
     clauses.extend(extra_clauses)
     params.extend(extra_params)
+    decided_clauses, decided_params = decided_at_filter_clauses(
+        column="mr.decided_at",
+        decided_since=decided_since,
+        batch_decided_at=batch_decided_at,
+    )
+    clauses.extend(decided_clauses)
+    params.extend(decided_params)
     return clauses, params
 
 

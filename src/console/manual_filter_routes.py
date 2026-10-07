@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, List, Literal, NoReturn, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -22,7 +22,11 @@ from src.console.score_feedback_schemas import (
     ScoreFeedbackRequest,
     ScoreFeedbackResponse,
 )
-from src.console.manual_filter_helpers import normalize_candidate_refine_filters
+from src.console.manual_filter_helpers import (
+    ensure_bulk_restore_has_condition,
+    normalize_candidate_refine_filters,
+    normalize_discard_filters,
+)
 from src.console.security import ConsoleUser, require_admin_workspace_user
 from src.domain.report_type import NewsReportType
 
@@ -83,6 +87,21 @@ class BulkDiscardRequest(BaseModel):
     duplicate_state: Optional[str] = None
     min_score: Optional[float] = None
     max_score: Optional[float] = None
+
+
+class BulkRestoreRequest(BaseModel):
+    """按条件恢复放弃条目（管理员与值班共用；恢复目标固定为待处理）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    q: Optional[str] = None
+    region: Optional[str] = None
+    sentiment: Optional[str] = None
+    min_score: Optional[float] = None
+    max_score: Optional[float] = None
+    decided_since: Optional[date] = None
+    batch_decided_at: Optional[datetime] = None
+    dry_run: bool = True
 
 
 class ClearReviewBucketsRequest(BaseModel):
@@ -256,14 +275,32 @@ def list_discarded_api(
     offset: int = 0,
     report_type: str = "zongbao",
     q: Optional[str] = None,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
     user: ConsoleUser = Depends(require_admin_workspace_user),
 ) -> Dict[str, Any]:
+    try:
+        discard_filters = normalize_discard_filters(
+            region=region,
+            sentiment=sentiment,
+            q=q,
+            min_score=min_score,
+            max_score=max_score,
+            decided_since=decided_since,
+            batch_decided_at=batch_decided_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return manual_filter_service.list_discarded(
         owner_user_id=str(user.user_id),
         limit=limit,
         offset=offset,
         report_type=report_type,
-        q=(q or "").strip() or None,
+        **discard_filters,
     )
 
 
@@ -360,6 +397,38 @@ def bulk_discard_api(
             actor=user,
             request_id=request_id,
             **refine_filters,
+        )
+    except (ValueError, RuntimeError) as exc:
+        _raise_manual_write_http_error(exc)
+
+
+@router.post("/bulk-restore")
+def bulk_restore_api(
+    req: BulkRestoreRequest,
+    user: ConsoleUser = Depends(require_admin_workspace_user),
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
+) -> Dict[str, int]:
+    """Restore discarded items matching one filter back to pending."""
+    try:
+        discard_filters = normalize_discard_filters(
+            region=req.region,
+            sentiment=req.sentiment,
+            q=req.q,
+            min_score=req.min_score,
+            max_score=req.max_score,
+            decided_since=req.decided_since,
+            batch_decided_at=req.batch_decided_at,
+        )
+        ensure_bulk_restore_has_condition(discard_filters)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        return manual_filter_admin_service.bulk_restore_candidates(
+            actor=user,
+            query=discard_filters.pop("q"),
+            dry_run=req.dry_run,
+            request_id=request_id,
+            **discard_filters,
         )
     except (ValueError, RuntimeError) as exc:
         _raise_manual_write_http_error(exc)

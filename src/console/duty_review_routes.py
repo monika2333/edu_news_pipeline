@@ -30,7 +30,6 @@ from src.console.manual_filter_duplicate_service import (
     DuplicateReviewTimeoutError,
     DuplicateReviewUnavailableError,
 )
-from src.console.manual_filter_routes import BulkDiscardRequest
 from src.console.score_feedback_schemas import (
     ClearScoreFeedbackRequest,
     ScoreFeedbackRequest,

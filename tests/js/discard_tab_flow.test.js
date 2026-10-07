@@ -295,9 +295,16 @@ for (const mode of MODES) {
                 '无筛选条件时不得出现「选择全部」'
             );
 
-            // 设置条件（分类）：总数 31 > 本页 30 行
-            page.document.querySelector('[data-discard-bucket="internal_negative"]').click();
-            assert.ok(await waitFor(() => lastDiscardRequest(server).search.region === 'internal'));
+            // 设置批次条件（经「放弃时间」下拉）：总数 31 > 本页 30 行；
+            // 恢复 body 与列表参数的同源性必须覆盖 batch_decided_at（M8 的目标）
+            await waitForBatchOption(page);
+            const since = page.document.getElementById('discard-since-select');
+            since.value = BATCH_DECIDED_AT;
+            fireChange(page, since);
+            assert.ok(
+                await waitFor(() => lastDiscardRequest(server).search.batch_decided_at === BATCH_DECIDED_AT),
+                '批次条件未生效'
+            );
             await waitFor(() => server.inflight === 0);
             // 条件变化会清空选择，重新全选本页
             selectAll.checked = true;
@@ -336,8 +343,10 @@ for (const mode of MODES) {
             );
             const preview = server.requests('bulk-restore')[0];
             assert.equal(preview.body.dry_run, true);
-            assert.equal(preview.body.region, listRequest.search.region);
-            assert.equal(preview.body.sentiment, listRequest.search.sentiment);
+            // body 条件与当时列表请求的查询参数一致（同一份 pairs 生成），
+            // 批次参数必须逐字一致（不经 Date 转换）
+            assert.equal(preview.body.batch_decided_at, listRequest.search.batch_decided_at);
+            assert.equal(preview.body.batch_decided_at, BATCH_DECIDED_AT);
             await sleep(300);
             assert.equal(server.requests('bulk-restore').length, 1, 'confirm 取消后不得发执行请求');
 
@@ -351,8 +360,7 @@ for (const mode of MODES) {
             );
             const execute = server.requests('bulk-restore')[2];
             assert.equal(execute.body.dry_run, false);
-            assert.equal(execute.body.region, listRequest.search.region);
-            assert.equal(execute.body.sentiment, listRequest.search.sentiment);
+            assert.equal(execute.body.batch_decided_at, BATCH_DECIDED_AT);
 
             assert.ok(
                 await waitFor(() => page.toastText().includes(`已恢复 ${DISCARD_PAGE_SIZE + 1} 条到待处理`)),
@@ -410,8 +418,14 @@ for (const mode of MODES) {
             await openDiscardTab(page);
 
             const enterAllMode = async () => {
-                page.document.querySelector('[data-discard-bucket="internal_negative"]').click();
-                assert.ok(await waitFor(() => lastDiscardRequest(server).search.region === 'internal'));
+                await waitForBatchOption(page);
+                const since = page.document.getElementById('discard-since-select');
+                since.value = BATCH_DECIDED_AT;
+                fireChange(page, since);
+                assert.ok(
+                    await waitFor(() => lastDiscardRequest(server).search.batch_decided_at === BATCH_DECIDED_AT),
+                    '批次条件未生效'
+                );
                 await waitFor(() => server.inflight === 0);
                 const selectAll = page.document.getElementById('discard-select-all');
                 selectAll.checked = true;
@@ -424,15 +438,17 @@ for (const mode of MODES) {
                 assert.equal(page.window.eval('discardSelectionMode'), 'all');
             };
 
-            // ① 改条件退出
+            // ① 改条件退出（切回预设「今天」）
             await enterAllMode();
-            page.document.querySelector('[data-discard-bucket="internal_positive"]').click();
+            const sinceSelect = page.document.getElementById('discard-since-select');
+            sinceSelect.value = 'today';
+            fireChange(page, sinceSelect);
             assert.ok(
                 await waitFor(() => page.window.eval('discardSelectionMode') === 'page'),
                 '改条件后应退出全部模式'
             );
             assert.ok(
-                await waitFor(() => lastDiscardRequest(server).search.sentiment === 'positive'),
+                await waitFor(() => lastDiscardRequest(server).search.decided_since !== undefined),
                 '条件请求应照常发出'
             );
 

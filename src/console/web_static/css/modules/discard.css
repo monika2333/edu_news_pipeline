@@ -13,7 +13,7 @@
 
 .discard-toolbar-main {
     display: grid;
-    grid-template-columns: minmax(180px, 1fr) auto auto;
+    grid-template-columns: minmax(220px, 1fr) auto;
     gap: 8px;
     align-items: center;
 }
@@ -53,49 +53,14 @@
     color: var(--text-secondary);
 }
 
-/* 放弃页条件区：与筛选页细化筛选视觉相近但完全独立，命名不得共用。
-   默认折叠（display:none），由「筛选」开关展开；收起时筛选仍生效，
-   靠开关徽标与 meta 行「筛选中：…」摘要传达。 */
+/* 放弃页条件区常驻，按「范围 → 收窄」分组；命名与筛选页细化筛选完全独立 */
 .discard-filter-row {
-    display: none;
-}
-
-body.discard-refine-row-open .discard-filter-row {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 10px;
     padding-top: 12px;
     border-top: 1px solid var(--border-color);
-}
-
-#discard-refine-toggle.has-active {
-    border-color: var(--primary-color);
-    color: var(--primary-color);
-}
-
-#discard-refine-toggle.is-open {
-    background: #eef2ff;
-    border-color: var(--primary-color);
-    color: var(--primary-color);
-}
-
-.discard-refine-count-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
-    border-radius: 999px;
-    background: var(--primary-color);
-    color: #fff;
-    font-size: 11px;
-    font-weight: 600;
-}
-
-.discard-refine-count-badge[hidden] {
-    display: none;
 }
 
 /* 条件行按「范围 → 收窄」分组：时间/批次二选一定范围（「或」连接），
@@ -323,7 +288,7 @@ body.discard-refine-row-open .discard-filter-row {
     }
 
     .discard-toolbar-main {
-        grid-template-columns: minmax(0, 1fr) auto auto;
+        grid-template-columns: minmax(0, 1fr) auto;
     }
 
     /* 条件区与批量栏允许换行，不出现横向滚动；

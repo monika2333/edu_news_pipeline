@@ -9,7 +9,8 @@
 // 3. 选择范围与操作只有一套控件：本页勾选 → /decide；可扩展到「全部匹配」，
 //    此时只能恢复到待处理，走 /bulk-restore 的 dry_run 预览 + confirm 执行；
 // 4. 翻页、改条件、列表重新加载都会退出全部匹配模式并清空选择；
-// 5. 值班端放弃列表一律走服务端 /reviews?decision=discarded 分页。
+// 5. 值班端放弃列表一律走服务端 /reviews?decision=discarded 分页；
+// 6. 条件行常驻显示，无折叠开关。
 'use strict';
 
 const test = require('node:test');
@@ -1015,6 +1016,38 @@ for (const mode of MODES) {
                     () => page.document.getElementById('discard-select-all-label').textContent === '全选本页'
                 ),
                 '退出后文案应恢复「全选本页」'
+            );
+        });
+    });
+}
+
+// 条件行常驻（无折叠开关）：不依赖任何展开动作即可操作条件
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}条件行常驻：无折叠开关，控件直接可用`, async () => {
+        const items = makeDiscardedItems(2);
+        await withPage(mode, { discardedItems: items }, async (page) => {
+            const { server } = page;
+            await openDiscardTab(page);
+
+            assert.equal(
+                page.document.getElementById('discard-refine-toggle'),
+                null,
+                '「筛选」折叠开关应已删除'
+            );
+            const row = page.document.getElementById('discard-refine-row');
+            assert.ok(row, '条件行应存在');
+            // 夹具不加载样式表，常驻显示由 CSS 评审保证；这里断言结构上
+            // 不再依赖折叠开关（无 body 状态类控制显示）
+            assert.equal(
+                page.document.body.className.includes('discard-refine-row-open'),
+                false
+            );
+
+            // 条件控件无需展开即可直接设置并生效
+            selectBucket(page, 'internal_negative');
+            assert.ok(
+                await waitFor(() => lastDiscardRequest(server).search.region === 'internal'),
+                '常驻条件行应直接生效'
             );
         });
     });

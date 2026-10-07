@@ -249,12 +249,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             elements.discardSearchInput?.focus();
         });
     }
-    // 放弃页条件区与批量恢复（状态与绑定都在 discard_tab.js，这里只接线）
-    // 载入时条件区里有激活条件则自动展开折叠行
-    discardRefineInit();
-    if (elements.discardRefineToggle) {
-        elements.discardRefineToggle.addEventListener('click', () => discardRefineToggleRow());
-    }
+    // 放弃页条件区与批量恢复（状态与绑定都在 discard_tab.js，这里只接线；
+    // 条件行常驻，无折叠开关）
     document.querySelectorAll('[data-discard-bucket]').forEach(btn => {
         btn.addEventListener('click', () => {
             discardFilterState.bucket = btn.dataset.discardBucket || 'all';

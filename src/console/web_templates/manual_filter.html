@@ -339,18 +339,11 @@
                         </button>
                     </div>
                     <button class="btn btn-secondary" id="btn-discard-search">检索</button>
-                    {# 「筛选」折叠开关：展开/收起下方放弃页条件区（交互与筛选页细化筛选一致） #}
-                    <button type="button" id="discard-refine-toggle"
-                        class="btn btn-secondary" aria-expanded="false"
-                        aria-controls="discard-refine-row">筛选<span
-                        class="discard-refine-count-badge"
-                        id="discard-refine-count-badge" hidden></span></button>
                 </div>
-                {# 放弃页条件行按「范围 → 收窄」分组：时间与批次二选一定范围，
+                {# 放弃页条件行常驻，按「范围 → 收窄」分组：时间与批次二选一定范围，
                    分类与分数在范围内收窄；组间竖线、组内 gap 都在 discard.css。
                    与筛选页细化筛选完全独立（状态在 discard_tab.js，不写 localStorage），
-                   不得复用 .filter-refine-row / [data-refine-field] 命名。
-                   默认折叠，靠「筛选」按钮展开；收起时筛选仍生效。 #}
+                   不得复用 .filter-refine-row / [data-refine-field] 命名。 #}
                 <div class="discard-filter-row" id="discard-refine-row">
                     <div class="discard-filter-scope">
                         <select id="discard-since-select" class="discard-filter-select"

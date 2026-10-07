@@ -232,43 +232,6 @@ function syncDiscardFilterControls() {
     if (elements.discardMaxScore) {
         elements.discardMaxScore.value = discardFilterState.maxScore;
     }
-    discardRefineUpdateBadge();
-}
-
-// --- 「筛选」折叠开关（交互与筛选页细化筛选一致） ---
-
-// 开关徽标只统计条件区里的维数（分类 / 放弃时间 / 分数）；
-// 关键词有自己的清除按钮，批次在 meta 摘要里，都不计入
-function discardRefineActiveCount() {
-    let count = 0;
-    if (discardFilterState.bucket !== 'all') count += 1;
-    if (discardFilterState.since || discardFilterState.batchDecidedAt) count += 1;
-    if (discardFilterState.minScore !== '') count += 1;
-    if (discardFilterState.maxScore !== '') count += 1;
-    return count;
-}
-
-function discardRefineUpdateBadge() {
-    if (!elements.discardRefineBadge) return;
-    const count = discardRefineActiveCount();
-    elements.discardRefineBadge.textContent = count ? String(count) : '';
-    elements.discardRefineBadge.hidden = !count;
-    elements.discardRefineToggle?.classList.toggle('has-active', count > 0);
-}
-
-// 展开/收起条件区。收起后筛选仍然生效。
-function discardRefineToggleRow(forceOpen) {
-    const shouldOpen = typeof forceOpen === 'boolean'
-        ? forceOpen
-        : !document.body.classList.contains('discard-refine-row-open');
-    document.body.classList.toggle('discard-refine-row-open', shouldOpen);
-    elements.discardRefineToggle?.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
-    elements.discardRefineToggle?.classList.toggle('is-open', shouldOpen);
-}
-
-function discardRefineInit() {
-    // 载入时条件区里有激活条件（如刷新前收着筛选）则自动展开
-    if (discardRefineActiveCount() > 0) discardRefineToggleRow(true);
 }
 
 async function applyDiscardSearch() {

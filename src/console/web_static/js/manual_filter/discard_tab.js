@@ -35,6 +35,11 @@ const DISCARD_BUCKET_KEYS = {
 const DISCARD_SINCE_DAYS = { today: 0, '3d': 2, '7d': 6 };
 const DISCARD_SINCE_PRESETS = ['', 'today', '3d', '7d'];
 
+// 「分类」「放弃批次」下拉的元素引用与绑定收敛在本文件（本轮不改动 core.js/init.js）；
+// 「放弃时间」下拉的 change 绑定仍在 init.js，调 handleDiscardSinceChange。
+const discardBucketSelect = document.getElementById('discard-bucket-select');
+const discardBatchSelect = document.getElementById('discard-batch-select');
+
 // 用 Intl 按 Asia/Shanghai 计算自然日，不依赖浏览器本地时区
 function discardShanghaiToday() {
     const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -167,33 +172,39 @@ async function refreshDiscardBatches() {
     rebuildDiscardBatchOptions();
 }
 
-// 用最近批次重建下拉的 optgroup；当前生效的批次不在最新列表里时，
-// 在组首插入对应选项，保证控件如实显示当前条件，绝不显示成「全部」。
+// 用最近批次重建「放弃批次」下拉：平铺批次项，不用 optgroup；没有任何
+// 批次时只剩「放弃批次：全部」一项，保持可见不隐藏。当前生效的批次不在
+// 最新列表里时，插入对应选项，保证控件如实显示当前条件，绝不显示成「全部」。
 function rebuildDiscardBatchOptions() {
-    const group = document.getElementById('discard-batch-group');
-    if (!group) return;
+    if (!discardBatchSelect) return;
     const current = discardFilterState.batchDecidedAt;
     const known = discardBatches.some(batch => String(batch.decided_at) === current);
-    group.innerHTML = discardBatches.map(batch => {
-        const raw = String(batch.decided_at);
-        return `<option value="${escapeDiscardAttr(raw)}">${escapeDiscardHtml(
-            `${formatDiscardTime(raw)} · ${batch.count} 条`
-        )}</option>`;
-    }).join('')
+    discardBatchSelect.innerHTML = `<option value="">放弃批次：全部</option>`
+        + discardBatches.map(batch => {
+            const raw = String(batch.decided_at);
+            return `<option value="${escapeDiscardAttr(raw)}">${escapeDiscardHtml(
+                `${formatDiscardTime(raw)} · ${batch.count} 条`
+            )}</option>`;
+        }).join('')
         + (current && !known
             ? `<option value="${escapeDiscardAttr(current)}">${escapeDiscardHtml(
                 `${formatDiscardTime(current)} 这一批`
             )}</option>`
             : '');
-    group.hidden = !group.children.length;
-    syncDiscardSinceValue();
+    syncDiscardFilterValues();
 }
 
-// 下拉当前值由状态驱动：批次优先（互斥状态下两者不会同时设置）
-function syncDiscardSinceValue() {
-    if (!elements.discardSinceSelect) return;
-    elements.discardSinceSelect.value =
-        discardFilterState.batchDecidedAt || discardFilterState.since || '';
+// 各下拉的当前值都由状态驱动：批次与时间预设互斥，不会同时设置
+function syncDiscardFilterValues() {
+    if (elements.discardSinceSelect) {
+        elements.discardSinceSelect.value = discardFilterState.since || '';
+    }
+    if (discardBatchSelect) {
+        discardBatchSelect.value = discardFilterState.batchDecidedAt || '';
+    }
+    if (discardBucketSelect) {
+        discardBucketSelect.value = discardFilterState.bucket || 'all';
+    }
 }
 
 function syncDiscardToolbar() {
@@ -214,10 +225,7 @@ function syncDiscardSearchClearButton() {
 }
 
 function syncDiscardFilterControls() {
-    document.querySelectorAll('[data-discard-bucket]').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.discardBucket === discardFilterState.bucket);
-    });
-    syncDiscardSinceValue();
+    syncDiscardFilterValues();
     if (elements.discardMinScore) {
         elements.discardMinScore.value = discardFilterState.minScore;
     }
@@ -289,18 +297,28 @@ async function clearDiscardFilters() {
     await loadDiscardData();
 }
 
-// 「放弃时间」下拉变化：预设与批次互斥；选中批次时清掉其他全部条件（含关键词）
+// 「放弃时间」下拉只含时间预设：清除批次条件，分类/分数/关键词保持不变
 async function handleDiscardSinceChange(value) {
     if (DISCARD_SINCE_PRESETS.includes(value)) {
         discardFilterState.since = value;
         discardFilterState.batchDecidedAt = '';
-    } else if (value) {
+    }
+    state.discardPage = 1;
+    await loadDiscardData();
+}
+
+// 「放弃批次」下拉：选中某一批时清掉其他全部条件（含时间预设）；
+// 选回「全部」只清除批次。批次生效时改分类/分数/关键词允许叠加。
+async function handleDiscardBatchChange(value) {
+    if (value) {
         state.discardQuery = '';
         discardFilterState.bucket = 'all';
         discardFilterState.since = '';
         discardFilterState.minScore = '';
         discardFilterState.maxScore = '';
         discardFilterState.batchDecidedAt = value;
+    } else {
+        discardFilterState.batchDecidedAt = '';
     }
     state.discardPage = 1;
     await loadDiscardData();
@@ -324,12 +342,34 @@ function updateDiscardSearchMeta(total) {
     }
 }
 
+// 统一的放弃时间显示：与当前日期（Asia/Shanghai）同年显示 MM-DD HH:mm，
+// 跨年显示 YYYY-MM-DD HH:mm。下拉选项、行内时间、meta「这一批」三处共用。
 function formatDiscardTime(value) {
     if (!value) return '';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '';
-    const pad = n => String(n).padStart(2, '0');
-    return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23'
+    }).formatToParts(date);
+    const get = (type) => (parts.find(part => part.type === type) || {}).value || '';
+    const currentYear = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric'
+    }).format(new Date());
+    const year = get('year');
+    const month = get('month');
+    const day = get('day');
+    const hour = get('hour');
+    const minute = get('minute');
+    return year === currentYear
+        ? `${month}-${day} ${hour}:${minute}`
+        : `${year}-${month}-${day} ${hour}:${minute}`;
 }
 
 function renderDiscardList(items) {
@@ -664,6 +704,28 @@ async function handleDiscardBulkTargetChange(event) {
         discardSelection.clear();
         loadDiscardData();
     }
+}
+
+// 「分类」「放弃批次」下拉的 change 绑定（本文件自初始化，init.js 本轮不动；
+// 分段按钮的 init.js 绑定随按钮删除自然空转）
+function discardFilterWireControls() {
+    if (discardBucketSelect) {
+        discardBucketSelect.addEventListener('change', () => {
+            discardFilterState.bucket = discardBucketSelect.value || 'all';
+            applyDiscardFilterChange();
+        });
+    }
+    if (discardBatchSelect) {
+        discardBatchSelect.addEventListener('change', () => {
+            handleDiscardBatchChange(discardBatchSelect.value || '');
+        });
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', discardFilterWireControls);
+} else {
+    discardFilterWireControls();
 }
 
 // 全部匹配模式：只恢复到待处理，先 dry_run 预览再 confirm 执行

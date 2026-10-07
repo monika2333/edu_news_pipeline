@@ -4,8 +4,8 @@
 //
 // 覆盖的行为约定（改动这些行为时必须同步更新本文件）：
 // 1. 条件（分类/放弃时间/分数）变化后立即回第 1 页重新加载，请求携带对应参数；
-// 2. 「最近批次」在放弃时间下拉里：选中后 batch_decided_at 原样回传并清掉其他条件；
-//    当前批次不在最新批次列表里时，下拉仍如实显示该批次；
+// 2. 「放弃批次」是独立下拉（与「放弃时间」分离）：选中后 batch_decided_at 原样
+//    回传并清掉其他条件；当前批次不在最新批次列表里时，下拉仍如实显示该批次；
 // 3. 选择范围与操作只有一套控件：本页勾选 → /decide；可扩展到「全部匹配」，
 //    此时只能恢复到待处理，走 /bulk-restore 的 dry_run 预览 + confirm 执行；
 // 4. 翻页、改条件、列表重新加载都会退出全部匹配模式并清空选择；
@@ -20,7 +20,24 @@ const MODES = ['duty', 'admin'];
 const MODE_LABELS = { duty: '值班', admin: '管理员' };
 
 const BATCH_DECIDED_AT = '2026-10-05T06:32:05.123456Z';
+// 往年批次（按 Asia/Shanghai 与当前年不同年，下拉与行内时间都要带年份）
+const LAST_YEAR_BATCH_DECIDED_AT = '2025-11-03T01:05:00.000001Z';
 const DISCARD_PAGE_SIZE = 30;
+
+// 生成指定批次的条目；idPrefix 避免不同批次撞 id
+function makeBatchItems(prefix, count, decidedAt, overrides = {}) {
+    return Array.from({ length: count }, (_, index) => ({
+        article_id: `${prefix}${String(index).padStart(2, '0')}`,
+        title: `已放弃${prefix}${index}`,
+        source: `来源${index}`,
+        version: 2,
+        decided_at: decidedAt,
+        is_beijing_related: true,
+        sentiment_label: 'negative',
+        external_importance_score: 40 - index,
+        ...overrides,
+    }));
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -86,27 +103,71 @@ function fireChange(page, element) {
 async function waitForBatchOption(page) {
     assert.ok(
         await waitFor(
-            () => page.document.querySelectorAll('#discard-batch-group option').length > 0
+            () => page.document.querySelectorAll('#discard-batch-select option[value]').length > 0
         ),
-        '最近批次下拉未加载'
+        '「放弃批次」下拉未加载批次项'
     );
 }
 
-// J1：条件变化后回第 1 页并携带参数（管理员与值班）
+// 选中「放弃批次」下拉中的某一批
+function selectBatch(page, decidedAt) {
+    const select = page.document.getElementById('discard-batch-select');
+    select.value = decidedAt;
+    fireChange(page, select);
+}
+
+// 选中「分类」下拉中的某一类
+function selectBucket(page, bucketKey) {
+    const select = page.document.getElementById('discard-bucket-select');
+    select.value = bucketKey;
+    fireChange(page, select);
+}
+
+// J1（改写）：分类下拉携带 region/sentiment，选回「全部」后不再携带；
+// 页面上已没有分类分段按钮
 for (const mode of MODES) {
-    test(`${MODE_LABELS[mode]}放弃页条件变化：请求携带分类/时间/分数参数且 offset=0`, async () => {
+    test(`${MODE_LABELS[mode]}分类下拉：请求携带 region/sentiment，选回全部后移除`, async () => {
         await withPage(mode, { discardedItems: makeDiscardedItems(3) }, async (page) => {
             const { server } = page;
             await openDiscardTab(page);
             const baseline = discardRequests(server).length;
 
-            page.document.querySelector('[data-discard-bucket="internal_negative"]').click();
+            assert.equal(
+                page.document.querySelectorAll('.discard-filter-bucket').length,
+                0,
+                '分类分段按钮应已删除'
+            );
+            assert.ok(
+                page.document.getElementById('discard-bucket-select'),
+                '分类下拉应存在'
+            );
+
+            selectBucket(page, 'internal_negative');
             assert.ok(await waitFor(() => discardRequests(server).length > baseline), '分类请求未发出');
             let request = lastDiscardRequest(server);
             assert.equal(request.search.region, 'internal');
             assert.equal(request.search.sentiment, 'negative');
             assert.equal(request.search.offset, '0');
 
+            selectBucket(page, 'external_positive');
+            assert.ok(
+                await waitFor(() => {
+                    const search = lastDiscardRequest(server).search;
+                    return search.region === 'external' && search.sentiment === 'positive';
+                }),
+                '切换分类后参数应跟随'
+            );
+
+            selectBucket(page, 'all');
+            assert.ok(
+                await waitFor(() => {
+                    const search = lastDiscardRequest(server).search;
+                    return search.region === undefined && search.sentiment === undefined;
+                }),
+                '选回全部后不得再携带分类参数'
+            );
+
+            // 其余两个条件控件的参数行为保持不变
             const since = page.document.getElementById('discard-since-select');
             since.value = 'today';
             fireChange(page, since);
@@ -114,10 +175,7 @@ for (const mode of MODES) {
                 timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
             }).format(new Date());
             assert.ok(
-                await waitFor(() => {
-                    const search = lastDiscardRequest(server).search;
-                    return search.decided_since === sinceExpected;
-                }),
+                await waitFor(() => lastDiscardRequest(server).search.decided_since === sinceExpected),
                 `decided_since 未携带：${JSON.stringify(lastDiscardRequest(server).search)}`
             );
             assert.equal(lastDiscardRequest(server).search.offset, '0');
@@ -140,25 +198,34 @@ for (const mode of MODES) {
     });
 }
 
-// J2（改写）：在「放弃时间」下拉里选中某一批
+// J2（改写）：选中「放弃批次」下拉中的某一批
 for (const mode of MODES) {
-    test(`${MODE_LABELS[mode]}选中最近批次：batch_decided_at 逐字回传且其他条件被清空`, async () => {
+    test(`${MODE_LABELS[mode]}选中放弃批次：batch_decided_at 逐字回传且其他条件被清空`, async () => {
         await withPage(mode, { discardedItems: makeDiscardedItems(3) }, async (page) => {
             const { server } = page;
             await openDiscardTab(page);
             await waitForBatchOption(page);
 
-            // 先叠加其他条件
-            page.document.querySelector('[data-discard-bucket="internal_negative"]').click();
+            // 先叠加其他条件（分类 + 分数 + 关键词 + 时间预设）
+            selectBucket(page, 'internal_negative');
             assert.ok(await waitFor(() => lastDiscardRequest(server).search.region === 'internal'));
-
+            const minScore = page.document.getElementById('discard-min-score');
+            minScore.value = '5';
+            fireChange(page, minScore);
+            const searchInput = page.document.getElementById('discard-search-input');
+            searchInput.value = '已放弃';
+            page.document.getElementById('btn-discard-search').click();
+            assert.ok(await waitFor(() => lastDiscardRequest(server).search.q === '已放弃'));
             const since = page.document.getElementById('discard-since-select');
-            const batchOption = page.document.querySelector(
-                `#discard-batch-group option[value="${BATCH_DECIDED_AT}"]`
-            );
-            assert.ok(batchOption, '批次列表里应有当前批次选项');
-            since.value = BATCH_DECIDED_AT;
+            since.value = '3d';
             fireChange(page, since);
+            assert.ok(await waitFor(() => lastDiscardRequest(server).search.decided_since !== undefined));
+
+            const batchOption = page.document.querySelector(
+                `#discard-batch-select option[value="${BATCH_DECIDED_AT}"]`
+            );
+            assert.ok(batchOption, '「放弃批次」下拉里应有批次选项');
+            selectBatch(page, BATCH_DECIDED_AT);
 
             assert.ok(
                 await waitFor(() => lastDiscardRequest(server).search.batch_decided_at !== undefined),
@@ -168,11 +235,24 @@ for (const mode of MODES) {
             assert.equal(search.batch_decided_at, BATCH_DECIDED_AT, '批次参数必须与原始字符串逐字相同');
             assert.equal(search.region, undefined, '选中批次后其他条件应被清空');
             assert.equal(search.sentiment, undefined, '选中批次后其他条件应被清空');
+            assert.equal(search.min_score, undefined, '选中批次后其他条件应被清空');
+            assert.equal(search.q, undefined, '选中批次后其他条件应被清空');
             assert.equal(search.offset, '0');
+            // 「放弃时间」被重置为「全部」，且该下拉里不再有任何批次选项
+            assert.equal(since.value, '', '「放弃时间」应显示为全部');
+            assert.equal(
+                page.document.querySelectorAll('#discard-since-select option').length,
+                4,
+                '「放弃时间」下拉应只有全部+三个预设'
+            );
+            assert.equal(
+                page.document.querySelector('#discard-since-select optgroup'),
+                null,
+                '「放弃时间」下拉不得再有批次分组'
+            );
 
             // 选回「全部」后，请求不再带批次参数
-            since.value = '';
-            fireChange(page, since);
+            selectBatch(page, '');
             assert.ok(
                 await waitFor(() => lastDiscardRequest(server).search.batch_decided_at === undefined),
                 '选回全部后批次参数应被移除'
@@ -181,7 +261,7 @@ for (const mode of MODES) {
     });
 }
 
-// J9：当前生效的批次不在最新批次列表里时，下拉仍显示该批次
+// J9（改写）：当前生效的批次不在最新批次列表里时，「放弃批次」下拉仍显示该批次
 for (const mode of MODES) {
     test(`${MODE_LABELS[mode]}批次被挤出列表：下拉仍如实显示当前批次`, async () => {
         await withPage(mode, { discardedItems: makeDiscardedItems(3) }, async (page) => {
@@ -189,9 +269,7 @@ for (const mode of MODES) {
             await openDiscardTab(page);
             await waitForBatchOption(page);
 
-            const since = page.document.getElementById('discard-since-select');
-            since.value = BATCH_DECIDED_AT;
-            fireChange(page, since);
+            selectBatch(page, BATCH_DECIDED_AT);
             assert.ok(
                 await waitFor(() => lastDiscardRequest(server).search.batch_decided_at === BATCH_DECIDED_AT),
                 '批次条件未生效'
@@ -205,9 +283,9 @@ for (const mode of MODES) {
                 '批次应已从最近批次列表中掉出'
             );
             assert.equal(
-                page.document.getElementById('discard-since-select').value,
+                page.document.getElementById('discard-batch-select').value,
                 BATCH_DECIDED_AT,
-                '下拉必须仍显示当前生效批次，绝不能显示成「全部」'
+                '「放弃批次」下拉必须仍显示当前生效批次，绝不能显示成「全部」'
             );
         });
     });
@@ -295,12 +373,10 @@ for (const mode of MODES) {
                 '无筛选条件时不得出现「选择全部」'
             );
 
-            // 设置批次条件（经「放弃时间」下拉）：总数 31 > 本页 30 行；
+            // 设置批次条件（经「放弃批次」下拉）：总数 31 > 本页 30 行；
             // 恢复 body 与列表参数的同源性必须覆盖 batch_decided_at（M8 的目标）
             await waitForBatchOption(page);
-            const since = page.document.getElementById('discard-since-select');
-            since.value = BATCH_DECIDED_AT;
-            fireChange(page, since);
+            selectBatch(page, BATCH_DECIDED_AT);
             assert.ok(
                 await waitFor(() => lastDiscardRequest(server).search.batch_decided_at === BATCH_DECIDED_AT),
                 '批次条件未生效'
@@ -419,9 +495,7 @@ for (const mode of MODES) {
 
             const enterAllMode = async () => {
                 await waitForBatchOption(page);
-                const since = page.document.getElementById('discard-since-select');
-                since.value = BATCH_DECIDED_AT;
-                fireChange(page, since);
+                selectBatch(page, BATCH_DECIDED_AT);
                 assert.ok(
                     await waitFor(() => lastDiscardRequest(server).search.batch_decided_at === BATCH_DECIDED_AT),
                     '批次条件未生效'
@@ -622,8 +696,8 @@ for (const mode of MODES) {
             const { server, window } = page;
             await openDiscardTab(page);
 
-            // 分类
-            page.document.querySelector('[data-discard-bucket="internal_negative"]').click();
+            // 分类（下拉）
+            selectBucket(page, 'internal_negative');
             assert.ok(await waitFor(() => lastDiscardRequest(server).search.region === 'internal'));
             // 分数
             const minScore = page.document.getElementById('discard-min-score');
@@ -693,6 +767,135 @@ for (const mode of MODES) {
             assert.ok(
                 await waitFor(() => page.toastText().includes(`已恢复 ${DISCARD_PAGE_SIZE + 1} 条到待处理`)),
                 page.toastText()
+            );
+        });
+    });
+}
+
+// J13：批次生效时选「今天」→ 带 decided_since、不带批次；之前设的分类保留
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}批次与时间预设互斥：选今天清批次但保留分类`, async () => {
+        await withPage(mode, { discardedItems: makeDiscardedItems(3) }, async (page) => {
+            const { server } = page;
+            await openDiscardTab(page);
+            await waitForBatchOption(page);
+
+            // 先选分类（要验证它在选「今天」后保留）
+            selectBucket(page, 'internal_negative');
+            assert.ok(await waitFor(() => lastDiscardRequest(server).search.region === 'internal'));
+
+            // 再选批次（会清掉分类——这是批次自己的规则）
+            selectBatch(page, BATCH_DECIDED_AT);
+            assert.ok(
+                await waitFor(() => lastDiscardRequest(server).search.batch_decided_at === BATCH_DECIDED_AT),
+                '批次条件未生效'
+            );
+
+            // 批次生效时改分类：允许叠加，批次保持
+            selectBucket(page, 'internal_negative');
+            assert.ok(
+                await waitFor(() => {
+                    const search = lastDiscardRequest(server).search;
+                    return search.region === 'internal'
+                        && search.batch_decided_at === BATCH_DECIDED_AT;
+                }),
+                '批次生效时修改分类应叠加且保持批次'
+            );
+
+            // 选「今天」：带 decided_since、不带批次，「放弃批次」显示「全部」，
+            // 且之前设置的分类保留
+            const since = page.document.getElementById('discard-since-select');
+            since.value = 'today';
+            fireChange(page, since);
+
+            const sinceExpected = new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+            }).format(new Date());
+            assert.ok(
+                await waitFor(() => {
+                    const search = lastDiscardRequest(server).search;
+                    return search.decided_since === sinceExpected
+                        && search.batch_decided_at === undefined;
+                }),
+                `选今天后应带 decided_since 且不带批次：${JSON.stringify(lastDiscardRequest(server).search)}`
+            );
+            assert.equal(
+                lastDiscardRequest(server).search.region,
+                'internal',
+                '选今天不得清掉之前设置的分类'
+            );
+            assert.equal(
+                page.document.getElementById('discard-batch-select').value,
+                '',
+                '「放弃批次」下拉应显示为「全部」'
+            );
+        });
+    });
+}
+
+// J14：日期格式——今年批次 MM-DD HH:mm，往年批次 YYYY-MM-DD HH:mm（下拉+行内）
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}跨年批次：下拉选项与行内时间按年决定格式`, async () => {
+        const items = [
+            ...makeBatchItems('c', 2, BATCH_DECIDED_AT),
+            ...makeBatchItems('o', 2, LAST_YEAR_BATCH_DECIDED_AT),
+        ];
+        await withPage(mode, { discardedItems: items }, async (page) => {
+            const { server } = page;
+            await openDiscardTab(page);
+            await waitForBatchOption(page);
+
+            // 上海时区显示：今年批次 06:32Z → 14:32；往年批次 01:05Z → 09:05
+            const thisYearOption = page.document.querySelector(
+                `#discard-batch-select option[value="${BATCH_DECIDED_AT}"]`
+            );
+            const lastYearOption = page.document.querySelector(
+                `#discard-batch-select option[value="${LAST_YEAR_BATCH_DECIDED_AT}"]`
+            );
+            assert.ok(thisYearOption && lastYearOption, '两个批次的选项都应存在');
+            assert.equal(thisYearOption.textContent, '10-05 14:32 · 2 条',
+                '今年批次选项不得带年份');
+            assert.equal(lastYearOption.textContent, '2025-11-03 09:05 · 2 条',
+                '往年批次选项必须带年份');
+
+            // 行内时间：两个批次的行格式一致
+            const thisYearRowTime = page.document.querySelector(
+                '#discard-list .article-card[data-id="c00"] .discard-item-time'
+            );
+            const lastYearRowTime = page.document.querySelector(
+                '#discard-list .article-card[data-id="o00"] .discard-item-time'
+            );
+            assert.ok(thisYearRowTime && lastYearRowTime, '两批的行都应渲染');
+            assert.equal(thisYearRowTime.textContent, '10-05 14:32',
+                '今年批次的行内时间不得带年份');
+            assert.equal(lastYearRowTime.textContent, '2025-11-03 09:05',
+                '往年批次的行内时间必须带年份');
+        });
+    });
+}
+
+// J15：批次列表为空时，「放弃批次」下拉存在且可用，只有「全部」一项
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}无批次时：放弃批次下拉保持可见且可用`, async () => {
+        const items = makeDiscardedItems(3).map((item, index) => ({
+            ...item,
+            // 各不相同 → 不成批次
+            decided_at: `2026-10-0${index + 1}T06:00:00.000000Z`,
+        }));
+        await withPage(mode, { discardedItems: items }, async (page) => {
+            const { server } = page;
+            await openDiscardTab(page);
+            await waitFor(() => server.inflight === 0);
+
+            const batchSelect = page.document.getElementById('discard-batch-select');
+            assert.ok(batchSelect, '「放弃批次」下拉应存在');
+            assert.equal(batchSelect.hidden, false, '无批次时不得隐藏');
+            assert.equal(batchSelect.disabled, false, '无批次时不得禁用');
+            assert.equal(batchSelect.value, '');
+            assert.deepEqual(
+                [...batchSelect.querySelectorAll('option')].map((option) => option.value),
+                [''],
+                '无批次时只有「放弃批次：全部」一项'
             );
         });
     });

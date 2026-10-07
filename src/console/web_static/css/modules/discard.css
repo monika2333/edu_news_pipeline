@@ -189,33 +189,6 @@ body.discard-refine-row-open .discard-filter-row {
     text-decoration: underline;
 }
 
-.discard-batch-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-left: 8px;
-    padding: 2px 8px;
-    border: 1px solid var(--border-color);
-    border-radius: 999px;
-    background: #f8fafc;
-    font-size: 0.82rem;
-}
-
-.discard-batch-clear {
-    border: none;
-    background: none;
-    padding: 0 2px;
-    font: inherit;
-    font-size: 0.82rem;
-    line-height: 1;
-    color: var(--text-secondary);
-    cursor: pointer;
-}
-
-.discard-batch-clear:hover {
-    color: var(--text-primary);
-}
-
 /* 批量恢复栏：全选本页 + 已选计数 + 目标位置 */
 .discard-bulk-bar {
     display: flex;
@@ -236,7 +209,7 @@ body.discard-refine-row-open .discard-filter-row {
     cursor: pointer;
 }
 
-/* 行首复选框与可点击的「放弃时间」按钮 */
+/* 行首复选框；放弃时间为普通文本（批次入口在「放弃时间」下拉里） */
 .discard-item .discard-row-check {
     flex-shrink: 0;
     width: 16px;
@@ -244,26 +217,22 @@ body.discard-refine-row-open .discard-filter-row {
     cursor: pointer;
 }
 
-button.discard-item-time {
+/* 批量栏的「选择全部 M 条 / 取消选择」扩展链接 */
+.discard-select-all-link {
     border: none;
     background: none;
     padding: 0;
-    font: inherit;
-    color: inherit;
-    cursor: pointer;
-    text-decoration: underline dotted;
-    text-underline-offset: 3px;
-    font-variant-numeric: tabular-nums;
-}
-
-button.discard-item-time:hover {
     color: var(--primary-color);
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    text-decoration: underline;
 }
 
-.discard-item-time:disabled {
+.discard-select-all-link:disabled {
+    color: var(--text-secondary);
     cursor: default;
     text-decoration: none;
-    color: var(--text-secondary);
 }
 
 /* Compact list rows. The .article-card / .discard-restore-select hooks are kept

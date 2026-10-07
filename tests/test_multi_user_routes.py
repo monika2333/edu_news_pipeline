@@ -1090,3 +1090,74 @@ def test_admin_cannot_use_duty_bulk_restore() -> None:
     )
 
     assert response.status_code == 403
+
+
+def test_admin_discarded_batches_is_forwarded_to_owner_service(monkeypatch) -> None:
+    from src.console import manual_filter_service
+
+    captured: dict[str, Any] = {}
+
+    def list_discarded_batches(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {
+            "items": [
+                {"decided_at": "2026-10-07T01:30:00.123456+00:00", "count": 3},
+            ]
+        }
+
+    monkeypatch.setattr(
+        manual_filter_service, "list_discarded_batches", list_discarded_batches
+    )
+
+    response = _client_for(_user("admin")).get(
+        "/api/manual_filter/discarded-batches"
+    )
+
+    assert response.status_code == 200
+    assert captured == {"owner_user_id": "admin-id"}
+    assert response.json()["items"][0]["count"] == 3
+
+
+def test_editor_discarded_batches_is_forwarded_to_owned_shift(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def get_discarded_batches(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {
+            "items": [
+                {"decided_at": "2026-10-07T01:30:00.123456+00:00", "count": 2},
+            ]
+        }
+
+    monkeypatch.setattr(
+        duty_review_service, "get_discarded_batches", get_discarded_batches
+    )
+
+    response = _client_for(_user("duty_editor")).get(
+        "/api/duty/shifts/shift-id/discarded-batches"
+    )
+
+    assert response.status_code == 200
+    assert captured == {"shift_id": "shift-id", "user": captured["user"]}
+    assert captured["user"].user_id == "editor-id"
+    assert response.json()["items"][0]["count"] == 2
+
+
+def test_editor_discarded_batches_rejects_another_editors_shift(monkeypatch) -> None:
+    def reject_shift(*args: Any, **kwargs: Any) -> None:
+        raise shifts_service.ShiftPermissionError(
+            "Duty editors can only access their own shifts"
+        )
+
+    monkeypatch.setattr(duty_review_service, "require_owned_shift", reject_shift)
+    monkeypatch.setattr(
+        duty_review_service,
+        "get_adapter",
+        lambda: (_ for _ in ()).throw(AssertionError("query must not run")),
+    )
+
+    response = _client_for(_user("duty_editor")).get(
+        "/api/duty/shifts/another-shift/discarded-batches"
+    )
+
+    assert response.status_code == 403

@@ -11,6 +11,10 @@ from src.adapters.db_postgres_manual_reviews._base import (
     _build_manual_review_filters,
     report_type_expr,
 )
+from src.adapters.sql_candidate_filters import (
+    DISCARDED_BATCH_LIMIT,
+    DISCARDED_BATCH_MIN_SIZE,
+)
 from src.domain.report_type import normalize_report_type as normalize_report_type_value
 
 
@@ -223,6 +227,37 @@ def fetch_manual_cluster_sources(
     cur.execute(query, (max(1, int(fetch_limit)),))
     rows = cur.fetchall()
     return [dict(row) for row in rows]
+
+
+def fetch_discarded_batches(
+    cur: psycopg.Cursor,
+    *,
+    owner_user_id: str,
+) -> List[Dict[str, Any]]:
+    """当前管理员的「最近批次」：按 decided_at 分组的已放弃行计数。
+
+    只受工作区约束（owner + status='discarded'），不受关键词、分类、分数等
+    列表条件影响——批次是一个整体，条数就是整批的条数。decided_at 为空的
+    行不参与分组；序列化沿用原始 datetime，与放弃列表行保持逐字一致。
+    """
+    cur.execute(
+        """
+        SELECT mr.decided_at, count(*) AS count
+        FROM manual_reviews mr
+        WHERE mr.owner_user_id = %s
+          AND mr.status = 'discarded'
+          AND mr.decided_at IS NOT NULL
+        GROUP BY mr.decided_at
+        HAVING count(*) >= %s
+        ORDER BY mr.decided_at DESC
+        LIMIT %s
+        """,
+        (owner_user_id, DISCARDED_BATCH_MIN_SIZE, DISCARDED_BATCH_LIMIT),
+    )
+    return [
+        {"decided_at": row["decided_at"], "count": int(row["count"])}
+        for row in cur.fetchall()
+    ]
 
 
 def fetch_review_buckets_for_update(

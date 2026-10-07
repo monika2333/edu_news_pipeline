@@ -369,6 +369,7 @@
                         <option value="today">今天</option>
                         <option value="3d">近 3 天</option>
                         <option value="7d">近 7 天</option>
+                        <optgroup label="最近批次" id="discard-batch-group"></optgroup>
                     </select>
                     <div class="discard-filter-scores">
                         <input type="number" id="discard-min-score" class="discard-filter-score"
@@ -380,22 +381,26 @@
                 </div>
                 <div class="discard-toolbar-meta-row">
                     <div class="discard-toolbar-meta" id="discard-search-meta"></div>
-                    <button type="button" class="btn btn-secondary" id="btn-discard-bulk-restore"
-                        hidden>全部恢复到待处理</button>
                 </div>
-                <div class="discard-bulk-bar" id="discard-bulk-bar" hidden>
+                {# 批量栏常驻：范围由选择决定（本页勾选，可扩展到全部匹配），操作只有
+                   一个「恢复到」；全部匹配模式下只允许恢复到待处理。 #}
+                <div class="discard-bulk-bar" id="discard-bulk-bar">
                     <label class="discard-bulk-select-all">
-                        <input type="checkbox" id="discard-select-all"> 全选本页
+                        <input type="checkbox" id="discard-select-all">
+                        <span id="discard-select-all-label">全选本页</span>
                     </label>
-                    <span id="discard-selected-count"></span>
-                    <select id="discard-bulk-target" class="discard-restore-select"
-                        aria-label="批量恢复位置">
+                    <button type="button" class="discard-select-all-link"
+                        id="btn-discard-select-all-matched" hidden></button>
+                    <button type="button" class="discard-select-all-link"
+                        id="btn-discard-exit-all" hidden>取消选择</button>
+                    <select id="discard-bulk-target" class="status-select discard-restore-select"
+                        aria-label="批量恢复位置" disabled>
                         <option value="">恢复到</option>
-                        <option value="zongbao:selected">综报采纳</option>
-                        <option value="zongbao:backup">综报备选</option>
-                        <option value="wanbao:selected">晚报采纳</option>
-                        <option value="wanbao:backup">晚报备选</option>
-                        <option value="pending">待处理</option>
+                        <option value="zongbao:selected" data-bulk-target>综报采纳</option>
+                        <option value="zongbao:backup" data-bulk-target>综报备选</option>
+                        <option value="wanbao:selected" data-bulk-target>晚报采纳</option>
+                        <option value="wanbao:backup" data-bulk-target>晚报备选</option>
+                        <option value="pending" data-bulk-target>待处理</option>
                     </select>
                 </div>
             </div>

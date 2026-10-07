@@ -322,6 +322,17 @@ def list_discarded(
     )
 
 
+def list_discarded_batches(
+    *,
+    owner_user_id: str,
+) -> Dict[str, Any]:
+    """放弃页「最近批次」下拉：当前管理员按 decided_at 分组的已放弃计数。"""
+    items = get_adapter().manual_reviews.fetch_discarded_batches(
+        owner_user_id=owner_user_id,
+    )
+    return {"items": items}
+
+
 def status_counts(
     report_type: str = DEFAULT_REPORT_TYPE,
     *,
@@ -344,6 +355,7 @@ __all__ = [
     "list_candidates",
     "list_review",
     "list_discarded",
+    "list_discarded_batches",
     "status_counts",
     "trigger_clustering",
 ]

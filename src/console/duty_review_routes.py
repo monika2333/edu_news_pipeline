@@ -378,6 +378,21 @@ def bulk_discard(
         _raise_review_error(exc)
 
 
+@router.get("/discarded-batches")
+def list_discarded_batches(
+    shift_id: str,
+    user: ConsoleUser = Depends(require_role("duty_editor")),
+) -> dict[str, Any]:
+    """List recent discard batches (grouped by decided_at) in the owned shift."""
+    try:
+        return duty_review_service.get_discarded_batches(
+            shift_id=shift_id,
+            user=user,
+        )
+    except (ValueError, PermissionError) as exc:
+        _raise_review_error(exc)
+
+
 @router.post("/bulk-restore")
 def bulk_restore(
     shift_id: str,

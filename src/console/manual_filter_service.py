@@ -14,6 +14,7 @@ from .manual_filter_helpers import DEFAULT_REPORT_TYPE, VALID_REPORT_TYPES
 from .manual_filter_query_service import (
     list_candidates as _list_candidates,
     list_discarded as _list_discarded,
+    list_discarded_batches as _list_discarded_batches,
     list_review as _list_review,
     status_counts as _status_counts,
     trigger_clustering as _trigger_clustering,
@@ -105,6 +106,15 @@ def list_discarded(
     )
 
 
+def list_discarded_batches(
+    *,
+    owner_user_id: str,
+) -> Dict[str, Any]:
+    return _list_discarded_batches(
+        owner_user_id=owner_user_id,
+    )
+
+
 def status_counts(
     report_type: str = DEFAULT_REPORT_TYPE,
     *,
@@ -137,6 +147,7 @@ __all__ = [
     "list_candidates",
     "list_review",
     "list_discarded",
+    "list_discarded_batches",
     "status_counts",
     "trigger_clustering",
     "check_duplicates",

@@ -966,3 +966,115 @@ def test_bulk_restore_shift_reviews_sql_semantics() -> None:
             assert n2["version"] == 1
             assert str(n2["finalized_batch_id"]) == str(finalized_batch)
             assert fetch_row("n3")["decision"] == "pending"
+
+
+def test_fetch_discarded_shift_batches_scopes_shift_and_roundtrips() -> None:
+    """T8：班次收口、>=2、倒序；T9：批次 decided_at 原样查列表 total == count。"""
+    psycopg = pytest.importorskip("psycopg")
+    from psycopg.rows import dict_row
+    from uuid import uuid4
+
+    from src.config import get_settings
+
+    settings = get_settings()
+    shift_id = uuid4()
+    other_shift_id = uuid4()
+    editor_id = "66666666-6666-6666-6666-666666666666"
+    batch_x = "2026-10-07T09:30:00.123456+08:00"
+    batch_y = "2026-10-06T08:00:00+08:00"
+
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            for table in ("duty_shifts", "news_summaries", "shift_reviews"):
+                cur.execute(
+                    f"CREATE TEMP TABLE {table} "
+                    f"(LIKE public.{table} INCLUDING DEFAULTS) ON COMMIT DROP"
+                )
+            for shift in (shift_id, other_shift_id):
+                cur.execute(
+                    """
+                    INSERT INTO duty_shifts (id, user_id, starts_at, ends_at)
+                    VALUES (%s, %s, '2026-10-06T22:00:00+08:00',
+                            '2026-10-07T22:00:00+08:00')
+                    """,
+                    (shift, editor_id),
+                )
+
+            def insert_article(article_id: str, shift: object) -> None:
+                cur.execute(
+                    """
+                    INSERT INTO news_summaries (article_id, title, status, created_at)
+                    VALUES (%s, %s, 'ready_for_export',
+                            '2026-10-07T08:00:00+08:00')
+                    """,
+                    (article_id, f"标题{article_id}"),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO shift_reviews
+                        (shift_id, article_id, created_by_user_id,
+                         updated_by_user_id, decision, version, decided_at)
+                    VALUES (%s, %s, %s, %s, 'discarded', 1, NULL)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (shift, article_id, editor_id, editor_id),
+                )
+
+            def set_batch(article_ids: list[str], decided_at: object) -> None:
+                cur.execute(
+                    """
+                    UPDATE shift_reviews
+                    SET decided_at = %s
+                    WHERE article_id = ANY(%s)
+                    """,
+                    (decided_at, article_ids),
+                )
+
+            # 本班次：批次 X（3 条，带非零微秒）、批次 Y（2 条）、单条 1 组
+            for index in range(3):
+                insert_article(f"x{index}", shift_id)
+            set_batch(["x0", "x1", "x2"], batch_x)
+            for index in range(2):
+                insert_article(f"y{index}", shift_id)
+            set_batch(["y0", "y1"], batch_y)
+            insert_article("s0", shift_id)
+
+            # 其他班次：3 条同批，不得计入
+            for index in range(3):
+                insert_article(f"o{index}", other_shift_id)
+            set_batch(["o0", "o1", "o2"], batch_x)
+            cur.execute(
+                "UPDATE shift_reviews SET shift_id = %s "
+                "WHERE article_id = ANY(%s)",
+                (other_shift_id, ["o0", "o1", "o2"]),
+            )
+
+            batches = db_postgres_shift_reviews.fetch_discarded_shift_batches(
+                cur,
+                shift_id=shift_id,
+            )
+
+            assert [batch["count"] for batch in batches] == [3, 2]
+            assert batches[0]["decided_at"] == datetime.fromisoformat(batch_x)
+            assert batches[0]["decided_at"].microsecond == 123456
+
+            # T9：把接口返回的 decided_at 原样作为 batch_decided_at 查放弃列表
+            rows, total = db_postgres_shift_reviews.fetch_shift_review_items(
+                cur,
+                shift_id=shift_id,
+                decision="discarded",
+                report_type=None,
+                limit=200,
+                offset=0,
+                batch_decided_at=batches[0]["decided_at"],
+            )
+            assert total == 3
+            assert {row["article_id"] for row in rows} == {"x0", "x1", "x2"}

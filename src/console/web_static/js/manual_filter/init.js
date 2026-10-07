@@ -262,9 +262,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
     if (elements.discardSinceSelect) {
+        // 预设与「最近批次」同属一个下拉，互斥逻辑在 handleDiscardSinceChange
         elements.discardSinceSelect.addEventListener('change', () => {
-            discardFilterState.since = elements.discardSinceSelect.value || '';
-            applyDiscardFilterChange();
+            handleDiscardSinceChange(elements.discardSinceSelect.value || '');
         });
     }
     [elements.discardMinScore, elements.discardMaxScore].forEach(input => {
@@ -274,35 +274,28 @@ document.addEventListener('DOMContentLoaded', async () => {
             applyDiscardFilterChange();
         });
     });
-    // 「只看这一批」与行复选框都随列表 innerHTML 重渲染，用委托
+    // 行复选框随列表 innerHTML 重渲染，用委托
     if (elements.discardList) {
-        elements.discardList.addEventListener('click', event => {
-            const batchBtn = event.target.closest('.discard-batch-btn');
-            if (!batchBtn) return;
-            filterDiscardBatch(batchBtn.dataset.decidedAt || '');
-        });
         elements.discardList.addEventListener('change', handleDiscardRowCheckChange);
     }
-    // meta 行的「清空筛选」与批次 chip ✕ 由 innerHTML 重渲染，用委托
+    // meta 行的「清空筛选」按钮由 innerHTML 重渲染，用委托
     document.addEventListener('click', event => {
         if (event.target.closest('.discard-filter-clear-link')) {
             event.preventDefault();
             clearDiscardFilters();
         }
-        if (event.target.closest('.discard-batch-clear')) {
-            event.preventDefault();
-            discardFilterState.batchDecidedAt = '';
-            applyDiscardFilterChange();
-        }
     });
     if (elements.discardSelectAll) {
         elements.discardSelectAll.addEventListener('change', handleDiscardSelectAllChange);
     }
+    if (elements.discardSelectAllMatchedBtn) {
+        elements.discardSelectAllMatchedBtn.addEventListener('click', handleDiscardSelectAllMatchedClick);
+    }
+    if (elements.discardExitAllBtn) {
+        elements.discardExitAllBtn.addEventListener('click', handleDiscardExitAllClick);
+    }
     if (elements.discardBulkTarget) {
         elements.discardBulkTarget.addEventListener('change', handleDiscardBulkTargetChange);
-    }
-    if (elements.discardBulkRestoreBtn) {
-        elements.discardBulkRestoreBtn.addEventListener('click', handleDiscardBulkRestore);
     }
 
     // Pagination listeners (delegated or specific)

@@ -18,6 +18,11 @@ DUPLICATE_TAGGED_SQL = (
     "WHERE sdm.article_id = ns.article_id AND sdm.state <> 'dismissed')"
 )
 
+# 「最近批次」下拉：只保留条数不少于 MIN_SIZE 的组，按 decided_at 倒序取前 LIMIT 个。
+# 管理员与值班两条批次查询共用，保证两端下拉口径一致。
+DISCARDED_BATCH_MIN_SIZE = 2
+DISCARDED_BATCH_LIMIT = 10
+
 
 def candidate_created_hour_expr() -> str:
     """收录时间的小时（0-23），与 CREATED_LOCAL_DATE_EXPRESSION 同用上海时区。"""

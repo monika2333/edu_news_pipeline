@@ -607,6 +607,20 @@ def bulk_restore_discarded(
     )
 
 
+def get_discarded_batches(
+    *,
+    shift_id: str,
+    user: ConsoleUser,
+) -> dict[str, Any]:
+    """值班放弃页「最近批次」下拉：本班次按 sr.decided_at 分组的已放弃计数。"""
+    require_owned_shift(shift_id, user)
+    return {
+        "items": get_adapter().shift_reviews.fetch_discarded_batches(
+            shift_id=shift_id,
+        )
+    }
+
+
 def update_order(
     *,
     shift_id: str,
@@ -798,6 +812,7 @@ __all__ = [
     "check_duplicates",
     "clear_score_feedback",
     "finalize_selected_batch",
+    "get_discarded_batches",
     "get_finalization_status",
     "get_ingest_status",
     "get_stats",

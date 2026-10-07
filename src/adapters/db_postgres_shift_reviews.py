@@ -14,6 +14,8 @@ from src.adapters.db_postgres_manual_reviews import (
     SEARCH_TEXT_EXPRESSION,
 )
 from src.adapters.sql_candidate_filters import (
+    DISCARDED_BATCH_LIMIT,
+    DISCARDED_BATCH_MIN_SIZE,
     candidate_extra_filter_clauses,
     decided_at_filter_clauses,
 )
@@ -181,6 +183,17 @@ class ShiftReviewsNamespace:
                 cur,
                 shift_id=shift_id,
                 report_type=report_type,
+            )
+
+    def fetch_discarded_batches(
+        self,
+        *,
+        shift_id: str,
+    ) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_discarded_shift_batches(
+                cur,
+                shift_id=shift_id,
             )
 
     def fetch_stats(
@@ -598,6 +611,47 @@ def bulk_discard_shift_candidates(
         "updated": int(row.get("updated") or 0),
         "skipped_finalized": int(row.get("skipped_finalized") or 0),
     }
+
+
+def fetch_discarded_shift_batches(
+    cur: psycopg.Cursor,
+    *,
+    shift_id: str,
+) -> list[dict[str, Any]]:
+    """当前班次的「最近批次」：按 sr.decided_at 分组的已放弃行计数。
+
+    基础条件（班次窗口、未取消、ready_for_export、decision='discarded'）复用
+    _shift_review_base_filter_clauses；不受关键词、分类、分数等列表条件影响。
+    decided_at 为空的行不参与分组。
+    """
+    clauses, params = _shift_review_base_filter_clauses(
+        shift_id=shift_id,
+        decision="discarded",
+    )
+    clauses.append("sr.decided_at IS NOT NULL")
+    where_sql = " AND ".join(clauses)
+    cur.execute(
+        f"""
+        SELECT sr.decided_at, count(*) AS count
+        FROM duty_shifts s
+        JOIN news_summaries ns
+          ON ns.created_at >= s.starts_at
+         AND ns.created_at < s.ends_at
+        JOIN shift_reviews sr
+          ON sr.shift_id = s.id
+         AND sr.article_id = ns.article_id
+        WHERE {where_sql}
+        GROUP BY sr.decided_at
+        HAVING count(*) >= %s
+        ORDER BY sr.decided_at DESC
+        LIMIT %s
+        """,
+        tuple([*params, DISCARDED_BATCH_MIN_SIZE, DISCARDED_BATCH_LIMIT]),
+    )
+    return [
+        {"decided_at": row["decided_at"], "count": int(row["count"])}
+        for row in cur.fetchall()
+    ]
 
 
 def bulk_restore_shift_reviews(
@@ -1634,6 +1688,7 @@ __all__ = [
     "VALID_REPORT_TYPES",
     "bulk_discard_shift_candidates",
     "bulk_restore_shift_reviews",
+    "fetch_discarded_shift_batches",
     "fetch_shift_article_ids",
     "fetch_shift_finalized_items",
     "fetch_admin_shift_summaries",

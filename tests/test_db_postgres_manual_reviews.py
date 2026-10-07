@@ -963,3 +963,102 @@ def test_restore_filter_matches_discarded_list_where_construction() -> None:
         assert clause in restore_sql, f"恢复 SQL 缺少子句：{clause}"
     # 恢复的锁定查询与列表 count 查询的参数完全一致（owner + status + 过滤参数）
     assert restore_cursor.params[0] == list_cursor.params[0]
+
+
+def test_fetch_discarded_batches_scopes_owner_and_roundtrips() -> None:
+    """T8：只返回 >=2 的组、倒序取 10、owner/status 收口；
+    T9：批次 decided_at 原样作为 batch_decided_at 查列表，total == count。"""
+    psycopg = pytest.importorskip("psycopg")
+    from psycopg.rows import dict_row
+
+    from src.config import get_settings
+
+    settings = get_settings()
+    owner_a = "44444444-4444-4444-4444-444444444444"
+    owner_b = "55555555-5555-5555-5555-555555555555"
+    batch_x = "2026-10-07T09:30:00.123456+08:00"
+    batch_y = "2026-10-06T08:00:00+08:00"
+    batch_z = "2026-10-05T08:00:00+08:00"
+
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            for table in ("manual_reviews", "news_summaries"):
+                cur.execute(
+                    f"CREATE TEMP TABLE {table} "
+                    f"(LIKE public.{table} INCLUDING DEFAULTS) ON COMMIT DROP"
+                )
+            cur.execute(
+                """
+                INSERT INTO manual_reviews
+                    (owner_user_id, article_id, status, version, decided_at)
+                VALUES
+                    -- 批次 X：3 条，带非零微秒
+                    (%s, 'x1', 'discarded', 1, %s),
+                    (%s, 'x2', 'discarded', 1, %s),
+                    (%s, 'x3', 'discarded', 1, %s),
+                    -- 批次 Y / Z：各 2 条
+                    (%s, 'y1', 'discarded', 1, %s),
+                    (%s, 'y2', 'discarded', 1, %s),
+                    (%s, 'z1', 'discarded', 1, %s),
+                    (%s, 'z2', 'discarded', 1, %s),
+                    -- 单条批次：不满足 >= 2
+                    (%s, 's1', 'discarded', 1, '2026-10-07T10:00:00+08:00'),
+                    -- decided_at 为空：不参与分组
+                    (%s, 'n1', 'discarded', 1, NULL),
+                    (%s, 'n2', 'discarded', 1, NULL),
+                    -- 非 discarded 状态：即使同 decided_at 也不计
+                    (%s, 'p1', 'pending', 1, %s),
+                    (%s, 'p2', 'pending', 1, %s),
+                    -- 其他管理员：不属于当前工作区
+                    (%s, 'b1', 'discarded', 1, '2026-10-07T11:00:00+08:00'),
+                    (%s, 'b2', 'discarded', 1, '2026-10-07T11:00:00+08:00'),
+                    (%s, 'b3', 'discarded', 1, '2026-10-07T11:00:00+08:00')
+                """,
+                (
+                    owner_a, batch_x, owner_a, batch_x, owner_a, batch_x,
+                    owner_a, batch_y, owner_a, batch_y,
+                    owner_a, batch_z, owner_a, batch_z,
+                    owner_a,
+                    owner_a, owner_a,
+                    owner_a, batch_x, owner_a, batch_x,
+                    owner_b, owner_b, owner_b,
+                ),
+            )
+
+            # 放弃列表 INNER JOIN news_summaries，为每条 manual_review 补齐新闻行
+            cur.execute(
+                """
+                INSERT INTO news_summaries (article_id, title, status)
+                SELECT mr.article_id, '标题' || mr.article_id, 'ready_for_export'
+                FROM manual_reviews mr
+                """
+            )
+
+            batches = db_postgres_manual_reviews.fetch_discarded_batches(
+                cur,
+                owner_user_id=owner_a,
+            )
+
+            assert [batch["count"] for batch in batches] == [3, 2, 2]
+            assert batches[0]["decided_at"] == datetime.fromisoformat(batch_x)
+            # 微秒精度必须原样保留（往返一致的前提）
+            assert batches[0]["decided_at"].microsecond == 123456
+
+            # T9：把接口返回的 decided_at 原样作为 batch_decided_at 查放弃列表
+            _, total = db_postgres_manual_reviews.fetch_manual_reviews(
+                cur,
+                owner_user_id=owner_a,
+                status="discarded",
+                limit=200,
+                offset=0,
+                batch_decided_at=batches[0]["decided_at"],
+            )
+            assert total == 3

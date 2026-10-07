@@ -151,6 +151,7 @@ class FakeWorkspaceServer {
             return url.searchParams.get('decision') === 'discarded' ? 'discard-list' : 'review-list';
         }
         if (pathname.endsWith('/discarded')) return 'discard-list';
+        if (pathname.endsWith('/discarded-batches')) return 'discard-batches';
         if (pathname.endsWith('/bulk-restore')) return 'bulk-restore';
         if (pathname.endsWith('/order')) return 'review-order';
         return 'other';
@@ -226,6 +227,20 @@ class FakeWorkspaceServer {
         if (pathname.endsWith('/discarded')
             || (pathname.endsWith('/reviews') && url.searchParams.get('decision') === 'discarded')) {
             return [200, this.discardedPage(url.searchParams)];
+        }
+        if (pathname.endsWith('/discarded-batches')) {
+            // 与后端口径一致：按 decided_at 分组、条数 >= 2、倒序取最近 10 个
+            const groups = new Map();
+            for (const item of this.discardedItems) {
+                if (!item.decided_at) continue;
+                groups.set(item.decided_at, (groups.get(item.decided_at) || 0) + 1);
+            }
+            const items = [...groups.entries()]
+                .filter(([, count]) => count >= 2)
+                .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+                .slice(0, 10)
+                .map(([decided_at, count]) => ({ decided_at, count }));
+            return [200, { items }];
         }
         if (pathname.endsWith('/stats')) {
             return [200, { pending: this.pendingArticles().length, selected: 0, backup: 0, discarded: 0 }];

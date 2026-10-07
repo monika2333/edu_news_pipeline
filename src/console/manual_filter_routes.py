@@ -402,6 +402,16 @@ def bulk_discard_api(
         _raise_manual_write_http_error(exc)
 
 
+@router.get("/discarded-batches")
+def list_discarded_batches_api(
+    user: ConsoleUser = Depends(require_admin_workspace_user),
+) -> Dict[str, Any]:
+    """List recent discard batches (grouped by decided_at) for the owner."""
+    return manual_filter_service.list_discarded_batches(
+        owner_user_id=str(user.user_id),
+    )
+
+
 @router.post("/bulk-restore")
 def bulk_restore_api(
     req: BulkRestoreRequest,

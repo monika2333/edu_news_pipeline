@@ -43,6 +43,7 @@ from src.adapters.db_postgres_manual_reviews._imports import (
 )
 from src.adapters.db_postgres_manual_reviews._queries import (
     enqueue_manual_review,
+    fetch_discarded_batches,
     fetch_manual_cluster_sources,
     fetch_manual_reviews,
     fetch_review_buckets_for_update,
@@ -193,6 +194,17 @@ class ManualReviewsNamespace:
                 max_score=max_score,
             )
 
+    def fetch_discarded_batches(
+        self,
+        *,
+        owner_user_id: str,
+    ) -> List[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_discarded_batches(
+                cur,
+                owner_user_id=owner_user_id,
+            )
+
     def restore_discarded_by_filter(
         self,
         *,
@@ -305,6 +317,7 @@ __all__ = [
     "clear_all_review_buckets",
     "delete_manual_clusters",
     "enqueue_manual_review",
+    "fetch_discarded_batches",
     "fetch_discarded_manual_reviews_for_update",
     "fetch_manual_clusters",
     "fetch_manual_candidates_before_date_for_update",

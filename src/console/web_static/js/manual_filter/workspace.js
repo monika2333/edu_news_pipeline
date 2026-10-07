@@ -272,6 +272,9 @@ async function workspaceFetch(input, options = {}) {
         if (response.ok) invalidateDutyListCache();
         return response;
     }
+    if (action === '/discarded-batches') {
+        return window.fetch(`${API_BASE}/discarded-batches`, options);
+    }
     if (action === '/stats') return window.fetch(`${API_BASE}/stats${url.search}`, options);
     if (action === '/score-feedback' || action === '/score-feedback/clear') {
         return window.fetch(`${API_BASE}${action}`, options);

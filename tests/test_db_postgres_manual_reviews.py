@@ -793,7 +793,7 @@ def test_restore_discarded_by_filter_scopes_owner_status_and_time() -> None:
                 "ALTER TABLE manual_reviews "
                 "ADD COLUMN IF NOT EXISTS owner_user_id uuid NOT NULL"
             )
-            for article_id, score in (("a1", 80), ("a2", 90)):
+            for article_id, score in (("a1", 80), ("a2", 90), ("a3", 70), ("b1", 95)):
                 cur.execute(
                     """
                     INSERT INTO news_summaries

@@ -106,6 +106,8 @@ const elements = {
     discardSearchInput: document.getElementById('discard-search-input'),
     discardSearchClear: document.getElementById('discard-search-clear'),
     discardSearchMeta: document.getElementById('discard-search-meta'),
+    discardRefineToggle: document.getElementById('discard-refine-toggle'),
+    discardRefineBadge: document.getElementById('discard-refine-count-badge'),
     discardSinceSelect: document.getElementById('discard-since-select'),
     discardMinScore: document.getElementById('discard-min-score'),
     discardMaxScore: document.getElementById('discard-max-score'),

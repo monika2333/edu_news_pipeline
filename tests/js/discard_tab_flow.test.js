@@ -401,6 +401,39 @@ for (const mode of MODES) {
     });
 }
 
+// 折叠开关（管理员与值班）：默认收起、点开/收起、收起时设置条件出徽标
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}筛选开关：默认折叠，展开/收起，收起时条件出徽标`, async () => {
+        const items = makeDiscardedItems(2);
+        await withPage(mode, { discardedItems: items }, async (page) => {
+            const { server } = page;
+            await openDiscardTab(page);
+
+            assert.equal(
+                page.document.body.classList.contains('discard-refine-row-open'),
+                false,
+                '条件区默认应折叠'
+            );
+            const badge = page.document.getElementById('discard-refine-count-badge');
+            assert.ok(badge.hidden, '无条件时徽标应隐藏');
+
+            const toggle = page.document.getElementById('discard-refine-toggle');
+            toggle.click();
+            assert.ok(page.document.body.classList.contains('discard-refine-row-open'));
+            assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+            toggle.click();
+            assert.ok(!page.document.body.classList.contains('discard-refine-row-open'));
+
+            // 收起状态下设置条件：筛选仍生效（请求照发），徽标显示维数
+            page.document.querySelector('[data-discard-bucket="internal_negative"]').click();
+            assert.ok(await waitFor(() => lastDiscardRequest(server).search.region === 'internal'));
+            assert.ok(!badge.hidden, '有条件时徽标应显示');
+            assert.equal(badge.textContent, '1');
+            assert.ok(toggle.classList.contains('has-active'));
+        });
+    });
+}
+
 test('结束后不应有未处理的脚本异常', async () => {
     assert.deepEqual(unhandledRejections, []);
 });

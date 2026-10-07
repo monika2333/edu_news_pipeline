@@ -339,11 +339,18 @@
                         </button>
                     </div>
                     <button class="btn btn-secondary" id="btn-discard-search">检索</button>
+                    {# 「筛选」折叠开关：展开/收起下方放弃页条件区（交互与筛选页细化筛选一致） #}
+                    <button type="button" id="discard-refine-toggle"
+                        class="btn btn-secondary" aria-expanded="false"
+                        aria-controls="discard-refine-row">筛选<span
+                        class="discard-refine-count-badge"
+                        id="discard-refine-count-badge" hidden></span></button>
                 </div>
                 {# 放弃页条件区：分类分段按钮 + 放弃时间 + 分数。与筛选页细化筛选
                    完全独立（状态在 discard_tab.js，不写 localStorage），不得复用
-                   .filter-refine-row / [data-refine-field] 命名，见 console AGENTS.md。 #}
-                <div class="discard-filter-row" id="discard-filter-row">
+                   .filter-refine-row / [data-refine-field] 命名，见 console AGENTS.md。
+                   默认折叠，靠「筛选」按钮展开；收起时筛选仍生效。 #}
+                <div class="discard-filter-row" id="discard-refine-row">
                     <div class="discard-filter-buckets" role="group" aria-label="分类筛选">
                         <button type="button" class="discard-filter-bucket active"
                             data-discard-bucket="all">全部</button>

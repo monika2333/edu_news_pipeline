@@ -375,7 +375,7 @@ def _build_rows() -> list[Dict[str, Any]]:
     return [
         {
             "article_id": "a1",
-            "title": "学科建设大会举行",
+            "title": "学科建设大会暨工作会议举行",
             "llm_summary": "大会总结",
             "manual_summary": None,
             "manual_llm_source": None,

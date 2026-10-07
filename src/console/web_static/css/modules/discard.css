@@ -207,10 +207,12 @@ body.discard-refine-row-open .discard-filter-row {
     cursor: pointer;
 }
 
-/* 范围切换按钮（选择全部 / 取消选择）：次要按钮样式，与「恢复到」下拉同高 */
+/* 范围切换按钮（选择全部 / 取消选择）：次要按钮样式，与「恢复到」下拉同高；
+   字号与批量栏文案（已选本页 N 条）一致 */
 .discard-bulk-bar .btn {
     min-height: 32px;
     padding-block: 4px;
+    font-size: inherit;
 }
 
 /* 全部匹配模式：批量栏整体换浅色强调底色与主色浅边框 */

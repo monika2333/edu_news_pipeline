@@ -622,7 +622,9 @@ def bulk_restore_shift_reviews(
     匹配集与 fetch_shift_review_items 共用同一个 where 构造；只更新
     decision = 'discarded' 且未定稿的行，恢复目标固定为待处理：
     decision = 'pending'、rank 与 decided_at 置空（与 upsert_shift_review
-    中待处理的语义一致），report_type 保持不变。
+    中待处理的语义一致），report_type 保持不变。matched 为按条件匹配到的
+    已放弃条目数（含被跳过的已定稿行，与 bulk_discard 口径一致），
+    updated 为实际恢复数。
     """
     clauses, filter_params = _shift_review_base_filter_clauses(
         shift_id=shift_id,
@@ -654,7 +656,6 @@ def bulk_restore_shift_reviews(
             SELECT count(*) AS matched
             {join_sql}
             WHERE {where_sql}
-              AND sr.finalized_batch_id IS NULL
             """,
             tuple(filter_params),
         )
@@ -663,34 +664,42 @@ def bulk_restore_shift_reviews(
             "matched": int(row.get("matched") or 0),
             "updated": 0,
         }
-    # UPDATE 的 FROM 里不能再次出现目标表 shift_reviews，因此 sr 与
-    # 班次/新闻的连接条件写进 WHERE；匹配子句本身与列表查询完全一致。
+    # matched 与 updated 在同一条语句里计算（写法与 bulk_discard_shift_candidates
+    # 一致）：CTE 先物化按条件匹配到的已放弃行，UPDATE 只恢复其中未定稿的行；
+    # 已定稿行被跳过，计入 matched 但不计入 updated。
     cur.execute(
         f"""
-        UPDATE shift_reviews AS sr
-        SET decision = 'pending',
-            rank = NULL,
-            decided_at = NULL,
-            updated_by_user_id = %s,
-            version = sr.version + 1,
-            updated_at = now()
-        FROM duty_shifts s
-        JOIN news_summaries ns
-          ON ns.created_at >= s.starts_at
-         AND ns.created_at < s.ends_at
-        WHERE sr.shift_id = s.id
-          AND sr.article_id = ns.article_id
-          AND {where_sql}
-          AND sr.finalized_batch_id IS NULL
-        RETURNING sr.article_id
+        WITH matched_candidates AS MATERIALIZED (
+            SELECT
+                sr.id,
+                sr.finalized_batch_id
+            {join_sql}
+            WHERE {where_sql}
+        ),
+        upserted AS (
+            UPDATE shift_reviews AS sr
+            SET decision = 'pending',
+                rank = NULL,
+                decided_at = NULL,
+                updated_by_user_id = %s,
+                version = sr.version + 1,
+                updated_at = now()
+            FROM matched_candidates mc
+            WHERE sr.id = mc.id
+              AND mc.finalized_batch_id IS NULL
+            RETURNING sr.article_id
+        )
+        SELECT
+            (SELECT count(*) FROM matched_candidates) AS matched,
+            (SELECT count(*) FROM upserted) AS updated
         """,
-        # SET 子句占位符在 WHERE 之前，actor 参数必须排在最前
-        tuple([actor_user_id, *filter_params]),
+        # CTE 的 WHERE 占位符在 UPDATE 的 SET 之前，actor 参数排在最后
+        tuple([*filter_params, actor_user_id]),
     )
-    updated = len(cur.fetchall())
+    row = cur.fetchone() or {}
     return {
-        "matched": updated,
-        "updated": updated,
+        "matched": int(row.get("matched") or 0),
+        "updated": int(row.get("updated") or 0),
     }
 
 

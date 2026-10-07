@@ -175,7 +175,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 - `finalized_batch_id` / `finalized_rank` 表示已定稿，两者必须同时有值或同时为空（有 CHECK 约束保证）
 - 批量编辑采用部分更新：请求中未提交的摘要或人工来源字段保持原值；显式提交空字符串时仍按空字符串写入
 - 值班编辑按筛选条件批量放弃时，服务端直接用 `INSERT ... SELECT ... ON CONFLICT DO UPDATE` 写入本表；匹配条件复用管理员候选池的统一筛选器（细化筛选五参数经 `normalize_candidate_refine_filters` 归一化后逐层透传到 `bulk_discard_shift_candidates`），但额外受班次归属约束。预览计数与实际写入走同一段匹配 SQL，保证「全部放弃」确认框里的数字与实际放弃范围同口径。该路径不读取或写入 `manual_reviews`，不覆盖已有决定或已定稿条目，也不做逐行版本校验。
-- **按条件恢复**（`POST /api/duty/shifts/{shift_id}/bulk-restore`）：把当前班次内匹配筛选条件的 `decision = 'discarded'` 行改回 `pending`，同时 `rank = NULL`、`decided_at = NULL`（与 `upsert_shift_review` 中待处理的语义一致）、`version + 1` 并写 `updated_by_user_id` / `updated_at`；`report_type` 保持不变。只更新 `finalized_batch_id IS NULL` 的行，已定稿条目不受影响。匹配子句与值班放弃列表（`fetch_shift_review_items`）共用同一基础筛选构造，无任何条件时接口直接拒绝；写入后记审计事件 `shift_review.bulk_restore`。
+- **按条件恢复**（`POST /api/duty/shifts/{shift_id}/bulk-restore`）：把当前班次内匹配筛选条件的 `decision = 'discarded'` 行改回 `pending`，同时 `rank = NULL`、`decided_at = NULL`（与 `upsert_shift_review` 中待处理的语义一致）、`version + 1` 并写 `updated_by_user_id` / `updated_at`；`report_type` 保持不变。只更新 `finalized_batch_id IS NULL` 的行，已定稿条目不受影响。返回的 `matched` 是按条件匹配到的已放弃条目数（含被跳过的已定稿行，与批量放弃的口径一致），`updated` 是实际恢复数——两者在同一条 MATERIALIZED CTE 语句里计算。匹配子句与值班放弃列表（`fetch_shift_review_items`）共用同一基础筛选构造，无任何条件时接口直接拒绝；写入后记审计事件 `shift_review.bulk_restore`。
 - 同样依赖上文的「同一批」事实：值班侧「全部放弃」在同一事务内用 `now()` 写 `decided_at`，同批条目精确相等；按条件恢复后这些行的 `decided_at` 置空，自然退出批次筛选。
 - 人工摘要/来源（`edited_summary` / `manual_llm_source`）只在用户实际编辑时写入：前端以「最近一次被服务端确认的值」为基准做改动判定，决定操作不再顺带把界面显示值整份写成人工值；历史数据中已有的此类副本不做清理
 

@@ -717,7 +717,7 @@ def test_bulk_restore_dry_run_counts_without_write() -> None:
     query = cursor.queries[0]
     assert result == {"matched": 3, "updated": 0}
     assert "UPDATE shift_reviews" not in query
-    assert "sr.finalized_batch_id IS NULL" in query
+    assert "finalized_batch_id" not in query
     assert "COALESCE(sr.decision, 'pending') = %s" in query
     assert "ns.is_beijing_related = %s" in query
     assert "ns.sentiment_label = %s" in query
@@ -728,6 +728,7 @@ def test_bulk_restore_dry_run_counts_without_write() -> None:
 
 
 class _RestoreReturningCursor:
+    """执行分支用：同一条 CTE 语句经 fetchone 返回 {matched, updated}。"""
     def __init__(self, result: dict[str, int]) -> None:
         self.result = result
         self.queries: list[str] = []
@@ -745,7 +746,7 @@ class _RestoreReturningCursor:
 
 
 def test_bulk_restore_resets_to_pending_without_touching_finalized() -> None:
-    cursor = _RestoreReturningCursor({"matched": 3})
+    cursor = _RestoreReturningCursor({"matched": 3, "updated": 3})
 
     result = db_postgres_shift_reviews.bulk_restore_shift_reviews(
         cursor,
@@ -757,17 +758,18 @@ def test_bulk_restore_resets_to_pending_without_touching_finalized() -> None:
 
     query = cursor.queries[0]
     assert result == {"matched": 3, "updated": 3}
+    assert "WITH matched_candidates AS MATERIALIZED" in query
     assert "UPDATE shift_reviews AS sr" in query
     assert "decision = 'pending'" in query
     assert "rank = NULL" in query
     assert "decided_at = NULL" in query
     assert "sr.version + 1" in query
     assert "updated_by_user_id = %s" in query
-    assert "sr.finalized_batch_id IS NULL" in query
-    # 目标表的连接条件写在 WHERE，而不是 UPDATE 的 FROM
+    assert "mc.finalized_batch_id IS NULL" in query
+    # 目标表通过 matched_candidates 的 id 关联，CTE 内完成与班次/新闻的连接
     assert "sr.shift_id = s.id" in query
     assert "sr.article_id = ns.article_id" in query
-    assert cursor.params[0][0] == "editor-1"
+    assert cursor.params[0][-1] == "editor-1"
     assert _AWARE_BATCH_TS in cursor.params[0]
 
 
@@ -928,14 +930,15 @@ def test_bulk_restore_shift_reviews_sql_semantics() -> None:
                 )
                 return dict(cur.fetchone())
 
-            # dry_run：已定稿的 n2 与 pending 的 n3 都不算命中
+            # dry_run：pending 的 n3 不命中；已定稿的 n2 计入 matched
+            # （与批量放弃口径一致），执行时才会被跳过
             result = db_postgres_shift_reviews.bulk_restore_shift_reviews(
                 cur,
                 shift_id=shift_id,
                 actor_user_id=editor_id,
                 dry_run=True,
             )
-            assert result == {"matched": 1, "updated": 0}
+            assert result == {"matched": 2, "updated": 0}
             assert fetch_row("n1")["decision"] == "discarded"
 
             result = db_postgres_shift_reviews.bulk_restore_shift_reviews(
@@ -944,7 +947,9 @@ def test_bulk_restore_shift_reviews_sql_semantics() -> None:
                 actor_user_id=editor_id,
                 dry_run=False,
             )
-            assert result == {"matched": 1, "updated": 1}
+            # 一条匹配行（已定稿的 n2）被跳过：matched 必须大于 updated
+            assert result == {"matched": 2, "updated": 1}
+            assert result["matched"] > result["updated"]
 
             n1 = fetch_row("n1")
             assert n1["decision"] == "pending"

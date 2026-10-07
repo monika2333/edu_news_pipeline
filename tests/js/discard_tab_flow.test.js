@@ -275,9 +275,12 @@ for (const mode of MODES) {
             const bulkBtn = page.document.getElementById('btn-discard-bulk-restore');
             assert.ok(bulkBtn.hidden || bulkBtn.disabled, '无条件时应禁用');
 
-            // 启用一个条件（分类）
-            page.document.querySelector('[data-discard-bucket="internal_negative"]').click();
-            assert.ok(await waitFor(() => lastDiscardRequest(server).search.region === 'internal'));
+            // 启用批次条件（点击行上的「只看这一批」）
+            page.document.querySelector('#discard-list .discard-batch-btn').click();
+            assert.ok(
+                await waitFor(() => lastDiscardRequest(server).search.batch_decided_at === BATCH_DECIDED_AT),
+                '批次条件未生效'
+            );
             assert.ok(
                 await waitFor(() => !bulkBtn.hidden && !bulkBtn.disabled),
                 '有条件且命中时应可用'
@@ -293,9 +296,10 @@ for (const mode of MODES) {
             );
             const preview = server.requests('bulk-restore')[0];
             assert.equal(preview.body.dry_run, true);
-            // body 条件与当时列表请求的查询参数一致（同一份 pairs 生成）
-            assert.equal(preview.body.region, listRequest.search.region);
-            assert.equal(preview.body.sentiment, listRequest.search.sentiment);
+            // body 条件与当时列表请求的查询参数一致（同一份 pairs 生成），
+            // 批次参数必须逐字一致（不经 Date 转换）
+            assert.equal(preview.body.batch_decided_at, listRequest.search.batch_decided_at);
+            assert.equal(preview.body.batch_decided_at, BATCH_DECIDED_AT);
             await sleep(300);
             assert.equal(server.requests('bulk-restore').length, 1, 'confirm 取消后不得发执行请求');
 
@@ -308,7 +312,7 @@ for (const mode of MODES) {
             );
             const execute = server.requests('bulk-restore')[2];
             assert.equal(execute.body.dry_run, false);
-            assert.equal(execute.body.region, listRequest.search.region);
+            assert.equal(execute.body.batch_decided_at, BATCH_DECIDED_AT);
 
             assert.ok(
                 await waitFor(() => page.toastText().includes('已恢复 2 条到待处理')),

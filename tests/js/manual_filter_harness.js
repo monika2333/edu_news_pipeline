@@ -142,6 +142,7 @@ class FakeWorkspaceServer {
         }
         if (pathname.endsWith('/edit')) return 'edit';
         if (pathname.endsWith('/decide')) return 'decide';
+        if (pathname.endsWith('/bulk-discard')) return 'bulk-discard';
         if (pathname.endsWith('/review')) return 'review-list';
         if (pathname.endsWith('/order')) return 'review-order';
         return 'other';
@@ -216,6 +217,26 @@ class FakeWorkspaceServer {
                 }
             }
             return [200, { versions }];
+        }
+        if (pathname.endsWith('/bulk-discard')) {
+            // 夹具数据都是京内正面，其余桶一律空；apply 按放弃时的最新版本返回明细供撤销
+            const targets = (body.region === 'internal' && body.sentiment === 'positive')
+                ? this.pendingArticles()
+                : [];
+            if (body.dry_run) {
+                return [200, { matched: targets.length, updated: 0, skipped_finalized: 0, discarded: [] }];
+            }
+            const discarded = targets.map((article) => {
+                article.decision = 'discarded';
+                article.version += 1;
+                return { article_id: article.article_id, version: article.version };
+            });
+            return [200, {
+                matched: discarded.length,
+                updated: discarded.length,
+                skipped_finalized: 0,
+                discarded,
+            }];
         }
         return [200, {}];
     }

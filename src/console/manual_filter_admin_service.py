@@ -305,7 +305,7 @@ def bulk_discard_candidates(
     duplicate_state: Optional[str] = None,
     min_score: Optional[float] = None,
     max_score: Optional[float] = None,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     owner_user_id = _workspace_user_id(actor)
     validate_bulk_discard_bucket(region=region, sentiment=sentiment)
     normalized_query = (query or "").strip() or None
@@ -328,7 +328,7 @@ def bulk_discard_candidates(
         **refine_filters,
     )
     if dry_run or matched <= 0:
-        return {"matched": matched, "updated": 0, "skipped_finalized": 0}
+        return {"matched": matched, "updated": 0, "skipped_finalized": 0, "discarded": []}
     after = adapter.discard_manual_candidates_before_date_as_user(
         region=region,
         sentiment=sentiment,
@@ -341,10 +341,17 @@ def bulk_discard_candidates(
         request_id=request_id,
         **refine_filters,
     )
+    # 撤回需要逐条的乐观锁版本号：清理只放弃未定稿条目，整体回退 pending 是安全的
+    discarded = [
+        {"article_id": str(row["article_id"]), "version": int(row["version"])}
+        for row in after
+    ]
+
     return {
         "matched": matched,
-        "updated": len(after),
+        "updated": len(discarded),
         "skipped_finalized": 0,
+        "discarded": discarded,
     }
 
 

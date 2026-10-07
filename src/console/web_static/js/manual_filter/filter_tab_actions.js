@@ -376,6 +376,35 @@ async function discardRemainingItems() {
     }
 }
 
+// bulk-discard 的撤回与单条撤回同路径：带放弃时返回的新版本号整体回退 pending，
+// 版本乐观锁保证期间被人动过的条目不会被误回退
+function buildBulkDiscardUndoAction(ids, versions) {
+    return buildUndoToastAction(async () => {
+        try {
+            await submitDecisions(ids, 'pending', versions);
+            await Promise.all([loadFilterData(), loadStats(), loadFilterCounts()]);
+            showToast('已撤销');
+        } catch (error) {
+            showToast(error.message || '撤销失败，原操作保持不变', 'error');
+        }
+    });
+}
+
+function collectBulkDiscardUndo(responses) {
+    const ids = [];
+    const versions = {};
+    (responses || []).forEach((result) => {
+        ((result && result.discarded) || []).forEach((item) => {
+            if (!item || !item.article_id) return;
+            const articleId = String(item.article_id);
+            if (Object.prototype.hasOwnProperty.call(versions, articleId)) return;
+            ids.push(articleId);
+            versions[articleId] = Number(item.version);
+        });
+    });
+    return { ids, versions };
+}
+
 async function bulkDiscard() {
     const { region, sentiment } = getCurrentFilterBucket();
     const query = state.filterQuery || (elements.filterSearchInput ? elements.filterSearchInput.value.trim() : '');
@@ -426,7 +455,12 @@ async function bulkDiscard() {
         });
         if (!applyRes.ok) throw new Error('failed apply');
         const result = await applyRes.json();
-        showToast(`已放弃 ${result.updated} 条新闻`);
+        const { ids, versions } = collectBulkDiscardUndo([result]);
+        showToast(
+            `已放弃 ${result.updated} 条新闻`,
+            'success',
+            ids.length ? buildBulkDiscardUndoAction(ids, versions) : null
+        );
         state.filterPage = 1;
         await Promise.all([loadFilterData(), loadStats()]);
     } catch (error) {
@@ -584,13 +618,16 @@ async function handleCleanupDateChange() {
 async function confirmCleanupDiscard() {
     const createdBefore = elements.cleanupDateInput ? elements.cleanupDateInput.value : '';
     if (!createdBefore || !elements.cleanupConfirmBtn || elements.cleanupConfirmBtn.disabled) return;
-    const targets = getCleanupRows()
-        .filter((row) => {
-            const checkbox = row.querySelector('.cleanup-category-check');
-            return checkbox && checkbox.checked && !checkbox.disabled;
-        })
-        .map((row) => row.dataset.category);
+    const selectedRows = getCleanupRows().filter((row) => {
+        const checkbox = row.querySelector('.cleanup-category-check');
+        return checkbox && checkbox.checked && !checkbox.disabled;
+    });
+    const targets = selectedRows.map((row) => row.dataset.category);
     if (!targets.length) return;
+    const totalTargets = selectedRows.reduce(
+        (sum, row) => sum + (Number(row.dataset.count) || 0), 0
+    );
+    if (!window.confirm(`确定放弃这 ${totalTargets} 条旧新闻吗？`)) return;
     setCleanupConfirmState(false, '正在放弃…');
     if (elements.cleanupCancelBtn) elements.cleanupCancelBtn.disabled = true;
     try {
@@ -628,17 +665,19 @@ async function confirmCleanupDiscard() {
         closeCleanupModal();
         state.filterPage = 1;
         await Promise.all([loadFilterData(), loadStats(), loadFilterCounts()]);
+        const { ids, versions } = collectBulkDiscardUndo(succeeded.map((entry) => entry.result));
+        const undoAction = ids.length ? buildBulkDiscardUndoAction(ids, versions) : null;
         if (!failedCats.length) {
             let message = `已放弃 ${updatedTotal} 条新闻`;
             if (skippedTotal > 0) message += `，另有 ${skippedTotal} 条已定稿未清理`;
-            showToast(message);
+            showToast(message, 'success', undoAction);
         } else {
             const failedNames = failedCats
                 .map((cat) => CLEANUP_CATEGORY_LABELS[cat] || cat)
                 .join('、');
             let message = `${failedNames} 放弃失败，请重跑清理`;
             if (succeeded.length) message += `；其余分类已放弃 ${updatedTotal} 条`;
-            showToast(message, 'error');
+            showToast(message, 'error', undoAction);
         }
     } catch (error) {
         setCleanupStats('放弃失败，请重试', true);

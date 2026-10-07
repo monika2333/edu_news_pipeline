@@ -967,6 +967,7 @@ def test_bulk_discard_preview_uses_duty_unprocessed_scope(monkeypatch) -> None:
         "matched": 1,
         "updated": 0,
         "skipped_finalized": 0,
+        "discarded": [],
     }
 
 
@@ -1005,6 +1006,7 @@ def test_bulk_discard_apply_uses_duty_unprocessed_scope(monkeypatch) -> None:
         "matched": 1,
         "updated": 1,
         "skipped_finalized": 0,
+        "discarded": [{"article_id": "a3", "version": 2}],
     }
     statuses = {row["article_id"]: row["status"] for row in adapter.rows}
     assert statuses["a1"] == "pending"
@@ -1037,6 +1039,7 @@ def test_bulk_discard_api_supports_keyword_only_preview_and_apply(monkeypatch) -
         "matched": 1,
         "updated": 0,
         "skipped_finalized": 0,
+        "discarded": [],
     }
 
     apply = client.post(
@@ -1054,6 +1057,7 @@ def test_bulk_discard_api_supports_keyword_only_preview_and_apply(monkeypatch) -
         "matched": 1,
         "updated": 1,
         "skipped_finalized": 0,
+        "discarded": [{"article_id": "a1", "version": 2}],
     }
     assert next(row for row in adapter.rows if row["article_id"] == "a1")["status"] == "discarded"
 
@@ -1085,6 +1089,7 @@ def test_bulk_discard_api_supports_empty_optional_filters(monkeypatch) -> None:
         "matched": 2,
         "updated": 0,
         "skipped_finalized": 0,
+        "discarded": [],
     }
 
 

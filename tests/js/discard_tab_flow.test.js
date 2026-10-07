@@ -901,6 +901,60 @@ for (const mode of MODES) {
     });
 }
 
+// J16：条件行分组——控件 DOM 顺序为时间、批次、分类、最低分、最高分；
+// 「或」位于时间与批次之间；范围组与收窄组分属两个容器
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}条件行分组：顺序、「或」位置、两组容器`, async () => {
+        await withPage(mode, { discardedItems: makeDiscardedItems(2) }, async (page) => {
+            await openDiscardTab(page);
+            const row = page.document.getElementById('discard-refine-row');
+            assert.ok(row, '条件行应存在');
+
+            // 控件 DOM 顺序（不含「或」等非控件）
+            const controlIds = [...row.querySelectorAll('select, input')]
+                .map((el) => el.id);
+            assert.deepEqual(
+                controlIds,
+                [
+                    'discard-since-select',
+                    'discard-batch-select',
+                    'discard-bucket-select',
+                    'discard-min-score',
+                    'discard-max-score',
+                ],
+                `控件顺序不符：${controlIds.join(', ')}`
+            );
+
+            // 两组分属两个容器
+            const scope = row.querySelector('.discard-filter-scope');
+            const narrow = row.querySelector('.discard-filter-narrow');
+            assert.ok(scope, '范围组容器应存在');
+            assert.ok(narrow, '收窄组容器应存在');
+            assert.equal(scope.parentElement, row);
+            assert.equal(narrow.parentElement, row);
+
+            // 「或」位于时间与批次之间，且都在范围组内
+            const scopeSequence = [...scope.children].map(
+                (el) => el.id || el.textContent.trim()
+            );
+            assert.deepEqual(
+                scopeSequence,
+                ['discard-since-select', '或', 'discard-batch-select'],
+                `范围组内顺序不符：${scopeSequence.join(', ')}`
+            );
+
+            // 收窄组只含分类与分数
+            const narrowIds = [...narrow.querySelectorAll('select, input')]
+                .map((el) => el.id);
+            assert.deepEqual(
+                narrowIds,
+                ['discard-bucket-select', 'discard-min-score', 'discard-max-score'],
+                `收窄组控件不符：${narrowIds.join(', ')}`
+            );
+        });
+    });
+}
+
 test('结束后不应有未处理的脚本异常', async () => {
     assert.deepEqual(unhandledRejections, []);
 });

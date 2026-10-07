@@ -98,6 +98,28 @@ body.discard-refine-row-open .discard-filter-row {
     display: none;
 }
 
+/* 条件行按「范围 → 收窄」分组：时间/批次二选一定范围（「或」连接），
+   分类/分数在范围内收窄；组间细竖线，两侧间距（16px）大于组内 gap（10px） */
+.discard-filter-scope,
+.discard-filter-narrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.discard-filter-scope {
+    padding-right: 6px;
+}
+
+.discard-filter-or {
+    color: var(--text-secondary);
+}
+
+.discard-filter-narrow {
+    border-left: 1px solid var(--border-color);
+    padding-left: 16px;
+}
+
 /* 三个维度下拉（分类 / 放弃时间 / 放弃批次）外观统一 */
 .discard-filter-select {
     min-height: 32px;
@@ -292,11 +314,21 @@ body.discard-refine-row-open .discard-filter-row {
         grid-template-columns: minmax(0, 1fr) auto auto;
     }
 
-    /* 条件区与批量栏允许换行，不出现横向滚动 */
+    /* 条件区与批量栏允许换行，不出现横向滚动；
+       条件组各自占一行（范围组 / 收窄组），不显示组间竖线，
+       「或」留在范围组内部，不会被换行拆开 */
     .discard-filter-row,
     .discard-toolbar-meta-row,
     .discard-bulk-bar {
         flex-wrap: wrap;
+    }
+
+    .discard-filter-scope,
+    .discard-filter-narrow {
+        flex: 1 1 100%;
+        padding-left: 0;
+        padding-right: 0;
+        border-left: none;
     }
 
     .discard-item.article-card {

@@ -346,36 +346,42 @@
                         class="discard-refine-count-badge"
                         id="discard-refine-count-badge" hidden></span></button>
                 </div>
-                {# 放弃页条件区：三个维度下拉 + 分数区间，控件名直接说明维度。
+                {# 放弃页条件行按「范围 → 收窄」分组：时间与批次二选一定范围，
+                   分类与分数在范围内收窄；组间竖线、组内 gap 都在 discard.css。
                    与筛选页细化筛选完全独立（状态在 discard_tab.js，不写 localStorage），
-                   不得复用 .filter-refine-row / [data-refine-field] 命名，见 console AGENTS.md。
+                   不得复用 .filter-refine-row / [data-refine-field] 命名。
                    默认折叠，靠「筛选」按钮展开；收起时筛选仍生效。 #}
                 <div class="discard-filter-row" id="discard-refine-row">
-                    <select id="discard-bucket-select" class="discard-filter-select"
-                        data-discard-bucket-select aria-label="分类">
-                        <option value="all">分类：全部</option>
-                        <option value="internal_positive">京内正面</option>
-                        <option value="internal_negative">京内负面</option>
-                        <option value="external_positive">京外正面</option>
-                        <option value="external_negative">京外负面</option>
-                    </select>
-                    <select id="discard-since-select" class="discard-filter-select"
-                        data-discard-since aria-label="放弃时间">
-                        <option value="">放弃时间：全部</option>
-                        <option value="today">今天</option>
-                        <option value="3d">近 3 天</option>
-                        <option value="7d">近 7 天</option>
-                    </select>
-                    <select id="discard-batch-select" class="discard-filter-select"
-                        data-discard-batch aria-label="放弃批次">
-                        <option value="">放弃批次：全部</option>
-                    </select>
-                    <div class="discard-filter-scores">
-                        <input type="number" id="discard-min-score" class="discard-filter-score"
-                            data-discard-score="min" placeholder="最低分" aria-label="最低分数">
-                        <span class="discard-filter-score-sep">–</span>
-                        <input type="number" id="discard-max-score" class="discard-filter-score"
-                            data-discard-score="max" placeholder="最高分" aria-label="最高分数">
+                    <div class="discard-filter-scope">
+                        <select id="discard-since-select" class="discard-filter-select"
+                            data-discard-since aria-label="放弃时间">
+                            <option value="">放弃时间：全部</option>
+                            <option value="today">今天</option>
+                            <option value="3d">近 3 天</option>
+                            <option value="7d">近 7 天</option>
+                        </select>
+                        <span class="discard-filter-or" aria-hidden="true">或</span>
+                        <select id="discard-batch-select" class="discard-filter-select"
+                            data-discard-batch aria-label="放弃批次">
+                            <option value="">放弃批次：全部</option>
+                        </select>
+                    </div>
+                    <div class="discard-filter-narrow">
+                        <select id="discard-bucket-select" class="discard-filter-select"
+                            data-discard-bucket-select aria-label="分类">
+                            <option value="all">分类：全部</option>
+                            <option value="internal_positive">京内正面</option>
+                            <option value="internal_negative">京内负面</option>
+                            <option value="external_positive">京外正面</option>
+                            <option value="external_negative">京外负面</option>
+                        </select>
+                        <div class="discard-filter-scores">
+                            <input type="number" id="discard-min-score" class="discard-filter-score"
+                                data-discard-score="min" placeholder="最低分" aria-label="最低分数">
+                            <span class="discard-filter-score-sep">–</span>
+                            <input type="number" id="discard-max-score" class="discard-filter-score"
+                                data-discard-score="max" placeholder="最高分" aria-label="最高分数">
+                        </div>
                     </div>
                 </div>
                 <div class="discard-toolbar-meta-row">

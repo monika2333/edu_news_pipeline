@@ -207,22 +207,16 @@ body.discard-refine-row-open .discard-filter-row {
     cursor: pointer;
 }
 
-/* 批量栏的「选择全部 M 条 / 取消选择」扩展链接 */
-.discard-select-all-link {
-    border: none;
-    background: none;
-    padding: 0;
-    color: var(--primary-color);
-    font: inherit;
-    font-size: 0.85rem;
-    cursor: pointer;
-    text-decoration: underline;
+/* 范围切换按钮（选择全部 / 取消选择）：次要按钮样式，与「恢复到」下拉同高 */
+.discard-bulk-bar .btn {
+    min-height: 32px;
+    padding-block: 4px;
 }
 
-.discard-select-all-link:disabled {
-    color: var(--text-secondary);
-    cursor: default;
-    text-decoration: none;
+/* 全部匹配模式：批量栏整体换浅色强调底色与主色浅边框 */
+.discard-bulk-bar.is-all-mode {
+    background: rgba(37, 99, 235, 0.06);
+    border-color: rgba(37, 99, 235, 0.35);
 }
 
 /* Compact list rows. The .article-card / .discard-restore-select hooks are kept

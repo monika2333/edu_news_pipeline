@@ -955,6 +955,71 @@ for (const mode of MODES) {
     });
 }
 
+// J17：范围切换是 button 元素；本页全选文案「已选本页」；
+// 进入全部模式批量栏带强调状态 class，退出后移除
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}范围切换按钮与全部模式状态提示`, async () => {
+        const items = makeDiscardedItems(DISCARD_PAGE_SIZE + 1);
+        await withPage(mode, { discardedItems: items }, async (page) => {
+            const { server, window } = page;
+            await openDiscardTab(page);
+            await waitForBatchOption(page);
+
+            const bulkBar = page.document.getElementById('discard-bulk-bar');
+            const matchedBtn = page.document.getElementById('btn-discard-select-all-matched');
+            const exitBtn = page.document.getElementById('btn-discard-exit-all');
+
+            // 两个范围切换入口都是 button 元素
+            assert.equal(matchedBtn.tagName, 'BUTTON');
+            assert.equal(exitBtn.tagName, 'BUTTON');
+
+            // 批次条件 → 本页全选：文案为「已选本页 N 条」，出现「选择全部」
+            selectBatch(page, BATCH_DECIDED_AT);
+            assert.ok(
+                await waitFor(() => lastDiscardRequest(server).search.batch_decided_at === BATCH_DECIDED_AT),
+                '批次条件未生效'
+            );
+            await waitFor(() => server.inflight === 0);
+            const selectAll = page.document.getElementById('discard-select-all');
+            selectAll.checked = true;
+            fireChange(page, selectAll);
+            assert.ok(
+                await waitFor(
+                    () => page.document.getElementById('discard-select-all-label').textContent.includes('已选本页')
+                ),
+                `本页全选文案应含「已选本页」：${page.document.getElementById('discard-select-all-label').textContent}`
+            );
+            assert.ok(
+                await waitFor(() => !matchedBtn.hidden),
+                '本页全选 + 总数超一页 + 有条件时应出现「选择全部」'
+            );
+
+            // 进入全部模式：批量栏带强调状态 class
+            matchedBtn.click();
+            assert.equal(page.window.eval('discardSelectionMode'), 'all');
+            assert.ok(
+                bulkBar.classList.contains('is-all-mode'),
+                '全部模式应给批量栏加强调状态 class'
+            );
+
+            // 退出全部模式：class 移除，文案回「全选本页」
+            assert.ok(!exitBtn.hidden, '全部模式下「取消选择」应可见');
+            exitBtn.click();
+            assert.equal(page.window.eval('discardSelectionMode'), 'page');
+            assert.ok(
+                !bulkBar.classList.contains('is-all-mode'),
+                '退出全部模式后应移除强调状态 class'
+            );
+            assert.ok(
+                await waitFor(
+                    () => page.document.getElementById('discard-select-all-label').textContent === '全选本页'
+                ),
+                '退出后文案应恢复「全选本页」'
+            );
+        });
+    });
+}
+
 test('结束后不应有未处理的脚本异常', async () => {
     assert.deepEqual(unhandledRejections, []);
 });

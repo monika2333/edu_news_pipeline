@@ -568,10 +568,13 @@ function syncDiscardBulkBar() {
     }
     if (elements.discardSelectAllLabel) {
         if (discardSelectionMode === 'all') {
-            elements.discardSelectAllLabel.textContent =
-                `已选全部 ${discardLastTotal} 条（按当前筛选）`;
+            // 「全部 M 条」加粗强调当前作用范围
+            elements.discardSelectAllLabel.innerHTML =
+                `已选<strong>全部 ${discardLastTotal} 条</strong>（按当前筛选）`;
         } else if (discardSelection.size > 0) {
-            elements.discardSelectAllLabel.textContent = `已选 ${discardSelection.size} 条`;
+            elements.discardSelectAllLabel.textContent = allPageChecked
+                ? `已选本页 ${discardSelection.size} 条`
+                : `已选 ${discardSelection.size} 条`;
         } else {
             elements.discardSelectAllLabel.textContent = '全选本页';
         }
@@ -582,13 +585,18 @@ function syncDiscardBulkBar() {
         && allPageChecked
         && discardLastTotal > rows
         && discardFilterActive();
+    // 范围切换是按钮（次要按钮样式），不是下划线链接；与「恢复到」下拉同高
     if (elements.discardSelectAllMatchedBtn) {
+        elements.discardSelectAllMatchedBtn.className = 'btn btn-secondary';
         elements.discardSelectAllMatchedBtn.textContent = `选择全部 ${discardLastTotal} 条`;
         elements.discardSelectAllMatchedBtn.hidden = !canExtend;
     }
     if (elements.discardExitAllBtn) {
+        elements.discardExitAllBtn.className = 'btn btn-secondary';
         elements.discardExitAllBtn.hidden = discardSelectionMode !== 'all';
     }
+    // 全部匹配模式给批量栏整体加强调状态，退出即移除
+    elements.discardBulkBar?.classList.toggle('is-all-mode', discardSelectionMode === 'all');
     const targets = elements.discardBulkTarget
         ? elements.discardBulkTarget.querySelectorAll('option[data-bulk-target]')
         : [];

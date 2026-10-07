@@ -5,7 +5,7 @@ Read-only query entry point for manual filter operations.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, Optional
 
 from .manual_filter_cluster import DEFAULT_CLUSTER_THRESHOLD
@@ -14,6 +14,7 @@ from .manual_filter_helpers import DEFAULT_REPORT_TYPE, VALID_REPORT_TYPES
 from .manual_filter_query_service import (
     list_candidates as _list_candidates,
     list_discarded as _list_discarded,
+    list_discarded_batches as _list_discarded_batches,
     list_review as _list_review,
     status_counts as _status_counts,
     trigger_clustering as _trigger_clustering,
@@ -83,6 +84,12 @@ def list_discarded(
     offset: int = 0,
     report_type: str = DEFAULT_REPORT_TYPE,
     q: Optional[str] = None,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     return _list_discarded(
         owner_user_id=owner_user_id,
@@ -90,6 +97,21 @@ def list_discarded(
         offset=offset,
         report_type=report_type,
         q=q,
+        region=region,
+        sentiment=sentiment,
+        min_score=min_score,
+        max_score=max_score,
+        decided_since=decided_since,
+        batch_decided_at=batch_decided_at,
+    )
+
+
+def list_discarded_batches(
+    *,
+    owner_user_id: str,
+) -> Dict[str, Any]:
+    return _list_discarded_batches(
+        owner_user_id=owner_user_id,
     )
 
 
@@ -125,6 +147,7 @@ __all__ = [
     "list_candidates",
     "list_review",
     "list_discarded",
+    "list_discarded_batches",
     "status_counts",
     "trigger_clustering",
     "check_duplicates",

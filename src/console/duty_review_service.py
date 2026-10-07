@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Mapping, Optional, Sequence
 
 from src.adapters.db_postgres_core import get_adapter
@@ -237,6 +237,8 @@ def list_items(
     duplicate_state: Optional[str] = None,
     min_score: Optional[float] = None,
     max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
 ) -> dict[str, Any]:
     require_owned_shift(shift_id, user)
     if decision and decision not in VALID_DECISIONS:
@@ -263,6 +265,8 @@ def list_items(
         "duplicate_state": duplicate_state,
         "min_score": min_score,
         "max_score": max_score,
+        "decided_since": decided_since,
+        "batch_decided_at": batch_decided_at,
     }
     rows, total = adapter.shift_reviews.fetch_items(**fetch_kwargs)
     items = [
@@ -540,6 +544,11 @@ def bulk_discard_candidates(
     dry_run: bool,
     report_type: str = "zongbao",
     request_id: Optional[str] = None,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> dict[str, int]:
     """Discard all pending candidates matching one explicit shift bucket."""
     require_owned_shift(shift_id, user)
@@ -559,7 +568,58 @@ def bulk_discard_candidates(
         report_type=report_type,
         dry_run=dry_run,
         request_id=request_id,
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
     )
+
+
+def bulk_restore_discarded(
+    *,
+    shift_id: str,
+    user: ConsoleUser,
+    query: Optional[str] = None,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
+    dry_run: bool = True,
+    request_id: Optional[str] = None,
+) -> dict[str, int]:
+    """Restore discarded shift reviews matching one filter back to pending."""
+    require_owned_shift(shift_id, user)
+    actor_user_id = _require_actor_id(user)
+    return get_adapter().restore_shift_reviews_by_filter_as_user(
+        shift_id=shift_id,
+        actor_user_id=actor_user_id,
+        region=region,
+        sentiment=sentiment,
+        terms=normalize_search_terms(query) or None,
+        dry_run=dry_run,
+        min_score=min_score,
+        max_score=max_score,
+        decided_since=decided_since,
+        batch_decided_at=batch_decided_at,
+        request_id=request_id,
+    )
+
+
+def get_discarded_batches(
+    *,
+    shift_id: str,
+    user: ConsoleUser,
+) -> dict[str, Any]:
+    """值班放弃页「最近批次」下拉：本班次按 sr.decided_at 分组的已放弃计数。"""
+    require_owned_shift(shift_id, user)
+    return {
+        "items": get_adapter().shift_reviews.fetch_discarded_batches(
+            shift_id=shift_id,
+        )
+    }
 
 
 def update_order(
@@ -748,10 +808,12 @@ __all__ = [
     "ShiftReviewArticleNotFoundError",
     "ShiftReviewConflictError",
     "bulk_decide",
+    "bulk_restore_discarded",
     "build_preview",
     "check_duplicates",
     "clear_score_feedback",
     "finalize_selected_batch",
+    "get_discarded_batches",
     "get_finalization_status",
     "get_ingest_status",
     "get_stats",

@@ -53,6 +53,155 @@
     color: var(--text-secondary);
 }
 
+/* 放弃页条件区常驻，按「范围 → 收窄」分组；命名与筛选页细化筛选完全独立 */
+.discard-filter-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* 条件行按「范围 → 收窄」分组：时间/批次二选一定范围（「或」连接），
+   分类/分数在范围内收窄；组间细竖线，两侧间距（16px）大于组内 gap（10px） */
+.discard-filter-scope,
+.discard-filter-narrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.discard-filter-scope {
+    padding-right: 6px;
+}
+
+.discard-filter-or {
+    color: var(--text-secondary);
+}
+
+.discard-filter-narrow {
+    border-left: 1px solid var(--border-color);
+    padding-left: 16px;
+}
+
+/* 三个维度下拉（分类 / 放弃时间 / 放弃批次）外观统一 */
+.discard-filter-select {
+    min-height: 32px;
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.85rem;
+}
+
+.discard-filter-scores {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.discard-filter-score {
+    width: 84px;
+    min-height: 32px;
+    padding: 4px 8px;
+    box-sizing: border-box;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.85rem;
+}
+
+.discard-filter-score-sep {
+    color: var(--text-secondary);
+}
+
+.discard-toolbar-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.discard-toolbar-meta-row .discard-toolbar-meta {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* 「清空筛选」：复用筛选页 meta 行「清空筛选」按钮（filter-refine-clear-link）
+   的视觉；类名不能共用——filter_refine.js 对该类有 document 级委托，
+   放弃页点击会被劫持到筛选页的清空逻辑 */
+.discard-filter-clear-link {
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 6px;
+    height: 26px;
+    padding: 0 12px;
+    line-height: 24px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.discard-filter-clear-link:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    background: #eef2ff;
+    text-decoration: none;
+}
+
+/* 批量恢复栏：全选本页 + 已选计数 + 目标位置 */
+.discard-bulk-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: #f8fafc;
+    font-size: 0.88rem;
+}
+
+.discard-bulk-select-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+/* 行首复选框；放弃时间为普通文本（批次入口在「放弃时间」下拉里） */
+.discard-item .discard-row-check {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+/* 范围切换按钮（选择全部 / 取消选择）：次要按钮样式，与「恢复到」下拉同高；
+   字号与批量栏文案（已选本页 N 条）一致 */
+.discard-bulk-bar .btn {
+    min-height: 32px;
+    padding-block: 4px;
+    font-size: inherit;
+}
+
+/* 全部匹配模式：批量栏整体换浅色强调底色与主色浅边框 */
+.discard-bulk-bar.is-all-mode {
+    background: rgba(37, 99, 235, 0.06);
+    border-color: rgba(37, 99, 235, 0.35);
+}
+
 /* Compact list rows. The .article-card / .discard-restore-select hooks are kept
    for version collection and restore bindings; only visual density changes. */
 .discard-item.article-card {
@@ -140,6 +289,23 @@
 
     .discard-toolbar-main {
         grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    /* 条件区与批量栏允许换行，不出现横向滚动；
+       条件组各自占一行（范围组 / 收窄组），不显示组间竖线，
+       「或」留在范围组内部，不会被换行拆开 */
+    .discard-filter-row,
+    .discard-toolbar-meta-row,
+    .discard-bulk-bar {
+        flex-wrap: wrap;
+    }
+
+    .discard-filter-scope,
+    .discard-filter-narrow {
+        flex: 1 1 100%;
+        padding-left: 0;
+        padding-right: 0;
+        border-left: none;
     }
 
     .discard-item.article-card {

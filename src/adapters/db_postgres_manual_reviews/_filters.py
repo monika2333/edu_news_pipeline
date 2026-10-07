@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import psycopg
@@ -13,6 +13,9 @@ from src.adapters.db_postgres_manual_reviews._base import (
     _build_manual_review_filters,
     normalize_report_type_value,
     report_type_expr,
+)
+from src.adapters.db_postgres_manual_reviews._versions import (
+    update_manual_review_statuses_with_versions,
 )
 from src.adapters.sql_search import ilike_all_clauses
 
@@ -301,12 +304,124 @@ def fetch_review_bucket_before_date_for_update(
     return [dict(row) for row in cur.fetchall()]
 
 
+def fetch_discarded_manual_reviews_for_update(
+    cur: psycopg.Cursor,
+    *,
+    owner_user_id: str,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    terms: Optional[Sequence[str]] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
+) -> list[dict[str, Any]]:
+    """锁定当前管理员的已放弃行，筛选子句与放弃列表完全同口径。"""
+    clauses, params = _build_manual_review_filters(
+        owner_user_id=owner_user_id,
+        status="discarded",
+        only_ready=False,
+        region=region,
+        sentiment=sentiment,
+        report_type=None,
+        terms=terms,
+        duty_unprocessed_only=False,
+        min_score=min_score,
+        max_score=max_score,
+        decided_since=decided_since,
+        batch_decided_at=batch_decided_at,
+    )
+    where_sql = " AND ".join(clauses)
+    cur.execute(
+        f"""
+        SELECT mr.article_id, mr.version
+        FROM manual_reviews mr
+        JOIN news_summaries ns ON ns.article_id = mr.article_id
+        WHERE {where_sql}
+        ORDER BY mr.article_id
+        FOR UPDATE OF mr
+        """,
+        tuple(params),
+    )
+    return [dict(row) for row in cur.fetchall()]
+
+
+
+def restore_discarded_manual_reviews_by_filter(
+    cur: psycopg.Cursor,
+    *,
+    owner_user_id: str,
+    actor_username: str,
+    actor_user_id: str,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    terms: Optional[Sequence[str]] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
+    dry_run: bool = True,
+) -> Dict[str, Any]:
+    """把当前管理员符合条件的已放弃行恢复到待处理（dry_run 只计数）。
+
+    匹配范围 = status = 'discarded' 的行 + 与放弃列表相同的筛选子句；
+    写法与 `/decide` 恢复到待处理一致（rank 置空、report_type 不改写）。
+    """
+    targets = fetch_discarded_manual_reviews_for_update(
+        cur,
+        owner_user_id=owner_user_id,
+        region=region,
+        sentiment=sentiment,
+        terms=terms,
+        min_score=min_score,
+        max_score=max_score,
+        decided_since=decided_since,
+        batch_decided_at=batch_decided_at,
+    )
+    matched = len(targets)
+    if dry_run or not targets:
+        return {"matched": matched, "updated": 0, "before": [], "after": []}
+    updates = [
+        {
+            "article_id": str(row["article_id"]),
+            "status": "pending",
+            "rank": None,
+            "report_type": None,
+        }
+        for row in targets
+    ]
+    expected_versions = {
+        str(row["article_id"]): int(row["version"])
+        for row in targets
+    }
+    before, after = update_manual_review_statuses_with_versions(
+        cur,
+        updates,
+        owner_user_id=owner_user_id,
+        actor_username=actor_username,
+        actor_user_id=actor_user_id,
+        expected_versions=expected_versions,
+        require_versions=True,
+        report_type=None,
+    )
+    return {
+        "matched": matched,
+        "updated": len(after),
+        "before": before,
+        "after": after,
+    }
+
+
+
+
 __all__ = [
     "_build_manual_candidate_filters",
     "_build_review_bucket_filters",
     "count_manual_candidates_before_date",
     "count_review_bucket_before_date",
+    "fetch_discarded_manual_reviews_for_update",
     "fetch_manual_candidates_before_date_for_update",
     "fetch_review_bucket_before_date_for_update",
+    "restore_discarded_manual_reviews_by_filter",
     "search_manual_candidates",
 ]

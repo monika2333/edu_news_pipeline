@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
 
 import psycopg
@@ -13,7 +13,12 @@ from src.adapters.db_postgres_manual_reviews import (
     SCORE_FEEDBACK_JOIN,
     SEARCH_TEXT_EXPRESSION,
 )
-from src.adapters.sql_candidate_filters import candidate_extra_filter_clauses
+from src.adapters.sql_candidate_filters import (
+    DISCARDED_BATCH_LIMIT,
+    DISCARDED_BATCH_MIN_SIZE,
+    candidate_extra_filter_clauses,
+    decided_at_filter_clauses,
+)
 from src.adapters.sql_search import ilike_all_clauses
 from src.domain.report_type import NEWS_REPORT_TYPES as VALID_REPORT_TYPES
 
@@ -114,6 +119,8 @@ class ShiftReviewsNamespace:
         duplicate_state: Optional[str] = None,
         min_score: Optional[float] = None,
         max_score: Optional[float] = None,
+        decided_since: Optional[date] = None,
+        batch_decided_at: Optional[datetime] = None,
     ) -> tuple[list[dict[str, Any]], int]:
         with self._adapter._cursor() as cur:
             return fetch_shift_review_items(
@@ -139,6 +146,8 @@ class ShiftReviewsNamespace:
                 duplicate_state=duplicate_state,
                 min_score=min_score,
                 max_score=max_score,
+                decided_since=decided_since,
+                batch_decided_at=batch_decided_at,
             )
 
     def fetch_clusters(
@@ -177,6 +186,17 @@ class ShiftReviewsNamespace:
                 report_type=report_type,
             )
 
+    def fetch_discarded_batches(
+        self,
+        *,
+        shift_id: str,
+    ) -> list[dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_discarded_shift_batches(
+                cur,
+                shift_id=shift_id,
+            )
+
     def fetch_stats(
         self,
         shift_id: str,
@@ -198,6 +218,72 @@ class ShiftReviewsNamespace:
                 viewer_user_id=viewer_user_id,
                 limit=limit,
             )
+
+
+def _shift_review_base_filter_clauses(
+    *,
+    shift_id: str,
+    decision: Optional[str],
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    terms: Optional[Sequence[str]] = None,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
+    report_type: Optional[str] = None,
+) -> tuple[list[str], list[Any]]:
+    """值班审阅列表与按条件恢复共用的基础筛选子句（唯一 where 构造）。
+
+    只含与数据匹配相关的条件：班次窗口、未取消、ready_for_export、decision、
+    分类、关键词、细化筛选与放弃时间；管理员视角参数（admin_*）不在此处。
+    ``report_type`` 只有值班列表使用，恢复路径不区分报别。
+    """
+    clauses = [
+        "s.id = %s",
+        "s.cancelled_at IS NULL",
+        "ns.status = 'ready_for_export'",
+        "ns.created_at >= s.starts_at",
+        "ns.created_at < s.ends_at",
+    ]
+    params: list[Any] = [shift_id]
+    if decision:
+        clauses.append("COALESCE(sr.decision, 'pending') = %s")
+        params.append(decision)
+    if report_type:
+        clauses.append("COALESCE(sr.report_type, 'zongbao') = %s")
+        params.append(report_type)
+    if region in {"internal", "external"}:
+        clauses.append("ns.is_beijing_related = %s")
+        params.append(region == "internal")
+    if sentiment in {"positive", "negative"}:
+        clauses.append("ns.sentiment_label = %s")
+        params.append(sentiment)
+    # terms 已由 service 层切词去重；逐词一条 ILIKE（AND），按字面转义
+    if terms:
+        term_clauses, term_params = ilike_all_clauses(SEARCH_TEXT_EXPRESSION, terms)
+        clauses.extend(term_clauses)
+        params.extend(term_params)
+    extra_clauses, extra_params = candidate_extra_filter_clauses(
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
+    )
+    clauses.extend(extra_clauses)
+    params.extend(extra_params)
+    decided_clauses, decided_params = decided_at_filter_clauses(
+        column="sr.decided_at",
+        decided_since=decided_since,
+        batch_decided_at=batch_decided_at,
+    )
+    clauses.extend(decided_clauses)
+    params.extend(decided_params)
+    return clauses, params
 
 
 def fetch_shift_review_items(
@@ -224,33 +310,26 @@ def fetch_shift_review_items(
     duplicate_state: Optional[str] = None,
     min_score: Optional[float] = None,
     max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
 ) -> tuple[list[dict[str, Any]], int]:
     bounded_limit = max(1, min(limit, 200))
     bounded_offset = max(0, offset)
-    clauses = [
-        "s.id = %s",
-        "s.cancelled_at IS NULL",
-        "ns.status = 'ready_for_export'",
-        "ns.created_at >= s.starts_at",
-        "ns.created_at < s.ends_at",
-    ]
-    params: list[Any] = [shift_id]
-    if decision:
-        clauses.append("COALESCE(sr.decision, 'pending') = %s")
-        params.append(decision)
-    if report_type:
-        clauses.append("COALESCE(sr.report_type, 'zongbao') = %s")
-        params.append(report_type)
-    if region in {"internal", "external"}:
-        clauses.append("ns.is_beijing_related = %s")
-        params.append(region == "internal")
-    if sentiment in {"positive", "negative"}:
-        clauses.append("ns.sentiment_label = %s")
-        params.append(sentiment)
-    if terms:
-        term_clauses, term_params = ilike_all_clauses(SEARCH_TEXT_EXPRESSION, terms)
-        clauses.extend(term_clauses)
-        params.extend(term_params)
+    clauses, params = _shift_review_base_filter_clauses(
+        shift_id=shift_id,
+        decision=decision,
+        report_type=report_type,
+        region=region,
+        sentiment=sentiment,
+        terms=terms,
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
+        decided_since=decided_since,
+        batch_decided_at=batch_decided_at,
+    )
     if created_before is not None:
         clauses.append(f"{CREATED_LOCAL_DATE_EXPRESSION} < %s")
         params.append(created_before)
@@ -266,15 +345,6 @@ def fetch_shift_review_items(
         params.append(normalized_article_ids)
     if exclude_finalized:
         clauses.append("sr.finalized_batch_id IS NULL")
-    extra_clauses, extra_params = candidate_extra_filter_clauses(
-        hour_from=hour_from,
-        hour_to=hour_to,
-        duplicate_state=duplicate_state,
-        min_score=min_score,
-        max_score=max_score,
-    )
-    clauses.extend(extra_clauses)
-    params.extend(extra_params)
     uses_admin_workspace = (
         include_admin_state
         or admin_discarded_only
@@ -417,6 +487,11 @@ def bulk_discard_shift_candidates(
     created_before: Optional[date] = None,
     report_type: str = "zongbao",
     dry_run: bool = True,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
 ) -> dict[str, int]:
     """Discard pending candidates in one shift without per-row versions."""
     clauses = ["mr.status = %s", "ns.status = 'ready_for_export'"]
@@ -434,6 +509,15 @@ def bulk_discard_shift_candidates(
     if created_before is not None:
         clauses.append(f"{CREATED_LOCAL_DATE_EXPRESSION} < %s")
         filter_params.append(created_before)
+    extra_clauses, extra_params = candidate_extra_filter_clauses(
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
+    )
+    clauses.extend(extra_clauses)
+    filter_params.extend(extra_params)
     where_sql = " AND ".join(clauses)
     matched_sql = f"""
         SELECT
@@ -528,6 +612,150 @@ def bulk_discard_shift_candidates(
         "matched": int(row.get("matched") or 0),
         "updated": int(row.get("updated") or 0),
         "skipped_finalized": int(row.get("skipped_finalized") or 0),
+    }
+
+
+def fetch_discarded_shift_batches(
+    cur: psycopg.Cursor,
+    *,
+    shift_id: str,
+) -> list[dict[str, Any]]:
+    """当前班次的「最近批次」：按 sr.decided_at 分组的已放弃行计数。
+
+    基础条件（班次窗口、未取消、ready_for_export、decision='discarded'）复用
+    _shift_review_base_filter_clauses；不受关键词、分类、分数等列表条件影响。
+    decided_at 为空的行不参与分组。
+    """
+    clauses, params = _shift_review_base_filter_clauses(
+        shift_id=shift_id,
+        decision="discarded",
+    )
+    clauses.append("sr.decided_at IS NOT NULL")
+    where_sql = " AND ".join(clauses)
+    cur.execute(
+        f"""
+        SELECT sr.decided_at, count(*) AS count
+        FROM duty_shifts s
+        JOIN news_summaries ns
+          ON ns.created_at >= s.starts_at
+         AND ns.created_at < s.ends_at
+        JOIN shift_reviews sr
+          ON sr.shift_id = s.id
+         AND sr.article_id = ns.article_id
+        WHERE {where_sql}
+        GROUP BY sr.decided_at
+        HAVING count(*) >= %s
+        ORDER BY sr.decided_at DESC
+        LIMIT %s
+        """,
+        tuple([*params, DISCARDED_BATCH_MIN_SIZE, DISCARDED_BATCH_LIMIT]),
+    )
+    return [
+        {"decided_at": row["decided_at"], "count": int(row["count"])}
+        for row in cur.fetchall()
+    ]
+
+
+def bulk_restore_shift_reviews(
+    cur: psycopg.Cursor,
+    *,
+    shift_id: str,
+    actor_user_id: str,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    terms: Optional[Sequence[str]] = None,
+    dry_run: bool = True,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    duplicate_state: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
+) -> dict[str, int]:
+    """Restore discarded shift reviews matching one filter back to pending.
+
+    匹配集与 fetch_shift_review_items 共用同一个 where 构造；只更新
+    decision = 'discarded' 且未定稿的行，恢复目标固定为待处理：
+    decision = 'pending'、rank 与 decided_at 置空（与 upsert_shift_review
+    中待处理的语义一致），report_type 保持不变。matched 为按条件匹配到的
+    已放弃条目数（含被跳过的已定稿行，与 bulk_discard 口径一致），
+    updated 为实际恢复数。
+    """
+    clauses, filter_params = _shift_review_base_filter_clauses(
+        shift_id=shift_id,
+        decision="discarded",
+        region=region,
+        sentiment=sentiment,
+        terms=terms,
+        hour_from=hour_from,
+        hour_to=hour_to,
+        duplicate_state=duplicate_state,
+        min_score=min_score,
+        max_score=max_score,
+        decided_since=decided_since,
+        batch_decided_at=batch_decided_at,
+    )
+    where_sql = " AND ".join(clauses)
+    join_sql = """
+        FROM duty_shifts s
+        JOIN news_summaries ns
+          ON ns.created_at >= s.starts_at
+         AND ns.created_at < s.ends_at
+        JOIN shift_reviews sr
+          ON sr.shift_id = s.id
+         AND sr.article_id = ns.article_id
+    """
+    if dry_run:
+        cur.execute(
+            f"""
+            SELECT count(*) AS matched
+            {join_sql}
+            WHERE {where_sql}
+            """,
+            tuple(filter_params),
+        )
+        row = cur.fetchone() or {}
+        return {
+            "matched": int(row.get("matched") or 0),
+            "updated": 0,
+        }
+    # matched 与 updated 在同一条语句里计算（写法与 bulk_discard_shift_candidates
+    # 一致）：CTE 先物化按条件匹配到的已放弃行，UPDATE 只恢复其中未定稿的行；
+    # 已定稿行被跳过，计入 matched 但不计入 updated。
+    cur.execute(
+        f"""
+        WITH matched_candidates AS MATERIALIZED (
+            SELECT
+                sr.id,
+                sr.finalized_batch_id
+            {join_sql}
+            WHERE {where_sql}
+        ),
+        upserted AS (
+            UPDATE shift_reviews AS sr
+            SET decision = 'pending',
+                rank = NULL,
+                decided_at = NULL,
+                updated_by_user_id = %s,
+                version = sr.version + 1,
+                updated_at = now()
+            FROM matched_candidates mc
+            WHERE sr.id = mc.id
+              AND mc.finalized_batch_id IS NULL
+            RETURNING sr.article_id
+        )
+        SELECT
+            (SELECT count(*) FROM matched_candidates) AS matched,
+            (SELECT count(*) FROM upserted) AS updated
+        """,
+        # CTE 的 WHERE 占位符在 UPDATE 的 SET 之前，actor 参数排在最后
+        tuple([*filter_params, actor_user_id]),
+    )
+    row = cur.fetchone() or {}
+    return {
+        "matched": int(row.get("matched") or 0),
+        "updated": int(row.get("updated") or 0),
     }
 
 
@@ -1461,6 +1689,8 @@ __all__ = [
     "VALID_DECISIONS",
     "VALID_REPORT_TYPES",
     "bulk_discard_shift_candidates",
+    "bulk_restore_shift_reviews",
+    "fetch_discarded_shift_batches",
     "fetch_shift_article_ids",
     "fetch_shift_finalized_items",
     "fetch_admin_shift_summaries",

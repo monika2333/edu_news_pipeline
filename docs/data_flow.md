@@ -164,6 +164,8 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 - `version` 用于乐观锁，防止同一管理员的并发请求覆盖自己的新决定
 - 人工摘要/来源（`summary` / `manual_llm_source`）只在用户实际编辑时写入：前端以「最近一次被服务端确认的值」为基准做改动判定，决定操作不再顺带把界面显示值整份写成人工值；历史数据中已有的此类副本不做清理
 - 汇总审阅的「一键清空」只把当前管理员自己的 `selected` / `backup` 行置为 `discarded`；`clear-review-buckets` 命令显式清空所有管理员。两条路径都清空排序值但保留摘要、来源、笔记、评分和原报别；命令行路径使用 `decided_by = 'system:scheduled_clear'` 标记系统操作，`decided_by_user_id` 保持为空
+- **按条件恢复**（`POST /api/manual_filter/bulk-restore`）：把当前管理员（`owner_user_id`）符合条件的 `status = 'discarded'` 行改回 `pending`。在一个事务里先 `SELECT ... FOR UPDATE` 锁定匹配行，再经 `update_manual_review_statuses_with_versions` 写入：`rank` 置空、`report_type` 走 `COALESCE`（与 `/decide` 恢复到待处理的写法一致，不真正清空该列）、`version + 1`、`decided_at` 写恢复发生时间。筛选子句与放弃列表接口共用同一构造（`_build_manual_review_filters`），保证列表、预览计数与实际恢复范围同口径；无任何条件时接口直接拒绝
+- **「同一批」依赖 `decided_at` 精确相等**：放弃页可按 `batch_decided_at` 定位「同一批放弃」的条目，其依据是——同一次操作放弃的条目共享同一个 `decided_at`（带版本的更新在一条 SQL 里取同一个 `COALESCE(%s, now())`/事务时间戳，`/decide` 每个请求只生成一个时间戳）。今后新增任何批量写入路径都必须保持「一次操作一个时间戳」，否则「同一批」定位会漏条目。放弃页「最近批次」下拉（`/discarded-batches`，管理员与值班各一个端点）直接按 `decided_at` 分组返回，依赖的正是这一性质；序列化沿用原始 datetime，与放弃列表行的 `decided_at` 逐字一致，前端原样作为 `batch_decided_at` 传回。
 
 ### `shift_reviews` —— 值班编辑工作区
 
@@ -172,7 +174,9 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 - 值班编辑只能读写**自己班次**的行
 - `finalized_batch_id` / `finalized_rank` 表示已定稿，两者必须同时有值或同时为空（有 CHECK 约束保证）
 - 批量编辑采用部分更新：请求中未提交的摘要或人工来源字段保持原值；显式提交空字符串时仍按空字符串写入
-- 值班编辑按筛选条件批量放弃时，服务端直接用 `INSERT ... SELECT ... ON CONFLICT DO UPDATE` 写入本表；匹配条件复用管理员候选池的统一筛选器，但额外受班次归属约束。该路径不读取或写入 `manual_reviews`，不覆盖已有决定或已定稿条目，也不做逐行版本校验。
+- 值班编辑按筛选条件批量放弃时，服务端直接用 `INSERT ... SELECT ... ON CONFLICT DO UPDATE` 写入本表；匹配条件复用管理员候选池的统一筛选器（细化筛选五参数经 `normalize_candidate_refine_filters` 归一化后逐层透传到 `bulk_discard_shift_candidates`），但额外受班次归属约束。预览计数与实际写入走同一段匹配 SQL，保证「全部放弃」确认框里的数字与实际放弃范围同口径。该路径不读取或写入 `manual_reviews`，不覆盖已有决定或已定稿条目，也不做逐行版本校验。
+- **按条件恢复**（`POST /api/duty/shifts/{shift_id}/bulk-restore`）：把当前班次内匹配筛选条件的 `decision = 'discarded'` 行改回 `pending`，同时 `rank = NULL`、`decided_at = NULL`（与 `upsert_shift_review` 中待处理的语义一致）、`version + 1` 并写 `updated_by_user_id` / `updated_at`；`report_type` 保持不变。只更新 `finalized_batch_id IS NULL` 的行，已定稿条目不受影响。返回的 `matched` 是按条件匹配到的已放弃条目数（含被跳过的已定稿行，与批量放弃的口径一致），`updated` 是实际恢复数——两者在同一条 MATERIALIZED CTE 语句里计算。匹配子句与值班放弃列表（`fetch_shift_review_items`）共用同一基础筛选构造，无任何条件时接口直接拒绝；写入后记审计事件 `shift_review.bulk_restore`。
+- 同样依赖上文的「同一批」事实：值班侧「全部放弃」在同一事务内用 `now()` 写 `decided_at`，同批条目精确相等；按条件恢复后这些行的 `decided_at` 置空，自然退出批次筛选。
 - 人工摘要/来源（`edited_summary` / `manual_llm_source`）只在用户实际编辑时写入：前端以「最近一次被服务端确认的值」为基准做改动判定，决定操作不再顺带把界面显示值整份写成人工值；历史数据中已有的此类副本不做清理
 
 ### 两者的关系

@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
-from src.console import manual_filter_query_service
+from src.console import manual_filter_admin_service, manual_filter_query_service
 from src.console.app import create_app
 from src.console.security import ConsoleUser, require_console_user
 
@@ -38,10 +38,6 @@ class FakeManualReviewsNamespace:
         kwargs.pop("owner_user_id")
         return self._adapter._count_candidates_before_date(**kwargs)
 
-    def count_review_bucket_before_date(self, **kwargs: Any) -> int:
-        kwargs.pop("owner_user_id")
-        return len(self._adapter._search_review_bucket(**kwargs))
-
     def bulk_discard_candidates(self, **kwargs: Any) -> int:
         return self._adapter._bulk_discard_candidates(**kwargs)
 
@@ -51,9 +47,19 @@ class FakeManualFilterAdapter:
         self.rows = rows
         self.manual_reviews = FakeManualReviewsNamespace(self)
         self.submission_archive = FakeSubmissionArchiveNamespace()
+        self.fetch_calls: list[Dict[str, Any]] = []
+        self.restore_calls: list[Dict[str, Any]] = []
         for row in self.rows:
             if not row.get("report_type"):
                 row["report_type"] = "zongbao"
+
+    def restore_discarded_manual_reviews_as_user(
+        self, **kwargs: Any
+    ) -> Dict[str, int]:
+        self.restore_calls.append(dict(kwargs))
+        if kwargs.get("dry_run"):
+            return {"matched": 3, "updated": 0}
+        return {"matched": 3, "updated": 3}
 
     @staticmethod
     def _normalized_report_type(value: Optional[str]) -> str:
@@ -89,7 +95,25 @@ class FakeManualFilterAdapter:
         duplicate_state: Optional[str] = None,
         min_score: Optional[float] = None,
         max_score: Optional[float] = None,
+        decided_since: Optional[date] = None,
+        batch_decided_at: Optional[datetime] = None,
     ) -> Tuple[list[Dict[str, Any]], int]:
+        self.fetch_calls.append(
+            {
+                key: value
+                for key, value in {
+                    "status": status,
+                    "region": region,
+                    "sentiment": sentiment,
+                    "terms": terms,
+                    "min_score": min_score,
+                    "max_score": max_score,
+                    "decided_since": decided_since,
+                    "batch_decided_at": batch_decided_at,
+                }.items()
+                if value is not None
+            }
+        )
         target_type = (
             self._normalized_report_type(report_type)
             if report_type is not None
@@ -226,6 +250,7 @@ class FakeManualFilterAdapter:
             sentiment=sentiment,
             report_type=report_type,
             duty_unprocessed_only=duty_unprocessed_only,
+            terms=terms,
             hour_from=hour_from,
             hour_to=hour_to,
             duplicate_state=duplicate_state,
@@ -233,22 +258,6 @@ class FakeManualFilterAdapter:
             max_score=max_score,
         )
         filtered = list(rows)
-        if terms:
-            filtered = [
-                row
-                for row in filtered
-                if all(
-                    term.casefold()
-                    in " ".join(
-                        [
-                            str(row.get("title") or ""),
-                            str(row.get("llm_summary") or ""),
-                            str(row.get("content_markdown") or ""),
-                        ]
-                    ).casefold()
-                    for term in terms
-                )
-            ]
         if created_before:
             filtered = [
                 row
@@ -374,52 +383,12 @@ class FakeManualFilterAdapter:
             row["version"] = int(row.get("version") or 1) + 1
         return rows
 
-    def _search_review_bucket(
-        self,
-        *,
-        status: str,
-        report_type: str,
-        created_before: date,
-    ) -> list[Dict[str, Any]]:
-        target_type = self._normalized_report_type(report_type)
-        return [
-            row
-            for row in self.rows
-            if row.get("status") == status
-            and self._normalized_report_type(row.get("report_type")) == target_type
-            and self._created_local_date(row) is not None
-            and self._created_local_date(row) < created_before
-        ]
-
-    def discard_review_buckets_before_date_as_user(
-        self,
-        *,
-        owner_user_id: str,
-        status: str,
-        report_type: str,
-        created_before: date,
-        actor_username: str,
-        actor_user_id: Optional[str],
-        request_id: Optional[str] = None,
-    ) -> list[Dict[str, Any]]:
-        del owner_user_id, actor_user_id, request_id
-        rows = self._search_review_bucket(
-            status=status,
-            report_type=report_type,
-            created_before=created_before,
-        )
-        for row in rows:
-            row["status"] = "discarded"
-            row["decided_by"] = actor_username
-            row["version"] = int(row.get("version") or 1) + 1
-        return rows
-
 
 def _build_rows() -> list[Dict[str, Any]]:
     return [
         {
             "article_id": "a1",
-            "title": "学科建设大会暨工作会议举行",
+            "title": "学科建设大会举行",
             "llm_summary": "大会总结",
             "manual_summary": None,
             "manual_llm_source": None,
@@ -470,31 +439,6 @@ def _build_rows() -> list[Dict[str, Any]]:
     ]
 
 
-def _build_review_bucket_rows() -> list[Dict[str, Any]]:
-    # a1/a2 综报采纳（旧）、a3 综报采纳（新入库）、a4 晚报备选（旧）
-    rows = _build_rows()
-    for row in rows:
-        row["status"] = "selected"
-    rows.append(
-        {
-            **rows[0],
-            "article_id": "a3",
-            "title": "最近入库的综报采纳新闻",
-            "created_at": "2025-06-01T00:00:00Z",
-        }
-    )
-    rows.append(
-        {
-            **rows[0],
-            "article_id": "a4",
-            "title": "晚报备选旧新闻",
-            "status": "backup",
-            "report_type": "wanbao",
-        }
-    )
-    return rows
-
-
 def _anonymous_console_user() -> ConsoleUser:
     return ConsoleUser(
         method="test",
@@ -526,15 +470,6 @@ def _duty_editor_user() -> ConsoleUser:
             {
                 "region": "internal",
                 "sentiment": "positive",
-                "dry_run": True,
-            },
-        ),
-        (
-            "/api/manual_filter/cleanup-review-buckets",
-            {
-                "report_type": "zongbao",
-                "status": "selected",
-                "created_before": "2025-06-01",
                 "dry_run": True,
             },
         ),
@@ -1054,6 +989,7 @@ def test_bulk_discard_preview_uses_duty_unprocessed_scope(monkeypatch) -> None:
     }
 
 
+
 def test_bulk_discard_apply_uses_duty_unprocessed_scope(monkeypatch) -> None:
     from src.console import manual_filter_admin_service
 
@@ -1094,6 +1030,7 @@ def test_bulk_discard_apply_uses_duty_unprocessed_scope(monkeypatch) -> None:
     statuses = {row["article_id"]: row["status"] for row in adapter.rows}
     assert statuses["a1"] == "pending"
     assert statuses["a3"] == "discarded"
+
 
 
 def test_bulk_discard_api_supports_keyword_only_preview_and_apply(monkeypatch) -> None:
@@ -1145,92 +1082,6 @@ def test_bulk_discard_api_supports_keyword_only_preview_and_apply(monkeypatch) -
     assert next(row for row in adapter.rows if row["article_id"] == "a1")["status"] == "discarded"
 
 
-def test_cleanup_review_buckets_preview_counts_only_target_bucket(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.console import manual_filter_admin_service
-
-    adapter = FakeManualFilterAdapter(_build_review_bucket_rows())
-    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
-    app = create_app()
-    app.dependency_overrides[require_console_user] = _anonymous_console_user
-    client = TestClient(app)
-
-    response = client.post(
-        "/api/manual_filter/cleanup-review-buckets",
-        json={
-            "report_type": "zongbao",
-            "status": "selected",
-            "created_before": "2025-06-01",
-            "dry_run": True,
-        },
-    )
-
-    assert response.status_code == 200
-    # 只圈选综报采纳桶中入库日期早于 2025-06-01 的条目：a1、a2；
-    # a3 当天入库不含、a4 是晚报备选桶
-    assert response.json() == {"matched": 2, "updated": 0, "discarded": []}
-    statuses = {row["article_id"]: row["status"] for row in adapter.rows}
-    assert statuses == {"a1": "selected", "a2": "selected", "a3": "selected", "a4": "backup"}
-
-
-def test_cleanup_review_buckets_apply_discards_only_target_bucket(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.console import manual_filter_admin_service
-
-    adapter = FakeManualFilterAdapter(_build_review_bucket_rows())
-    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
-    app = create_app()
-    app.dependency_overrides[require_console_user] = _anonymous_console_user
-    client = TestClient(app)
-
-    response = client.post(
-        "/api/manual_filter/cleanup-review-buckets",
-        json={
-            "report_type": "zongbao",
-            "status": "selected",
-            "created_before": "2025-06-01",
-            "dry_run": False,
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["matched"] == 2
-    assert body["updated"] == 2
-    assert sorted(body["discarded"], key=lambda item: item["article_id"]) == [
-        {"article_id": "a1", "version": 2},
-        {"article_id": "a2", "version": 2},
-    ]
-    statuses = {row["article_id"]: row["status"] for row in adapter.rows}
-    assert statuses == {"a1": "discarded", "a2": "discarded", "a3": "selected", "a4": "backup"}
-
-
-def test_cleanup_review_buckets_rejects_unknown_status(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.console import manual_filter_admin_service
-
-    adapter = FakeManualFilterAdapter(_build_review_bucket_rows())
-    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
-    app = create_app()
-    app.dependency_overrides[require_console_user] = _anonymous_console_user
-    client = TestClient(app)
-
-    response = client.post(
-        "/api/manual_filter/cleanup-review-buckets",
-        json={
-            "report_type": "zongbao",
-            "status": "pending",
-            "created_before": "2025-06-01",
-            "dry_run": False,
-        },
-    )
-
-    # 请求模型把 status 收敛为 selected/backup，pending 在校验层就被拒绝
-    assert response.status_code == 422
-
 
 def test_bulk_discard_api_supports_empty_optional_filters(monkeypatch) -> None:
     from src.console import manual_filter_admin_service
@@ -1261,6 +1112,7 @@ def test_bulk_discard_api_supports_empty_optional_filters(monkeypatch) -> None:
         "skipped_finalized": 0,
         "discarded": [],
     }
+
 
 
 def test_bulk_discard_api_uses_created_before_and_ignores_old_field(monkeypatch) -> None:
@@ -1468,114 +1320,209 @@ def test_duplicate_check_api_maps_errors(
     assert response.json() == {"detail": "duplicate check failed"}
 
 
-def test_candidates_api_splits_whitespace_query_into_terms(monkeypatch) -> None:
-    adapter = FakeManualFilterAdapter(_build_rows())
-    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
-    captured: dict[str, Any] = {}
-
-    original = adapter._search_candidates
-
-    def spy(**kwargs: Any) -> Tuple[list[Dict[str, Any]], int]:
-        captured.update(kwargs)
-        return original(**kwargs)
-
-    adapter._search_candidates = spy
-
-    app = create_app()
-    app.dependency_overrides[require_console_user] = _anonymous_console_user
-    client = TestClient(app)
-
-    response = client.get(
-        "/api/manual_filter/candidates",
-        params={"view_mode": "search", "q": "  学科　建设  "},
-    )
-
-    assert response.status_code == 200
-    # 全角空格同样切词；service 层把整串 q 切成词列表后下传
-    assert captured["terms"] == ["学科", "建设"]
-
-
-def test_candidates_api_multi_term_query_requires_all_terms(monkeypatch) -> None:
+def test_discarded_api_forwards_discard_filters_to_adapter(monkeypatch) -> None:
     rows = _build_rows()
-    rows.append(
-        {
-            **next(row for row in rows if row["article_id"] == "a1"),
-            "article_id": "a1-partial",
-            "title": "学科建设大会之外只有单词 学科",
-        }
-    )
+    for row in rows:
+        row["status"] = "discarded"
     adapter = FakeManualFilterAdapter(rows)
     monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
-
     app = create_app()
     app.dependency_overrides[require_console_user] = _anonymous_console_user
     client = TestClient(app)
 
     response = client.get(
-        "/api/manual_filter/candidates",
-        params={"view_mode": "search", "q": "学科 会议"},
+        "/api/manual_filter/discarded",
+        params={
+            "region": "internal",
+            "sentiment": "negative",
+            "min_score": 10.5,
+            "max_score": 90,
+            "decided_since": "2026-10-01",
+            "batch_decided_at": "2026-10-07T06:32:05.123456Z",
+            "q": "  学科建设  ",
+        },
     )
 
     assert response.status_code == 200
-    payload = response.json()
-    # 两词 AND：只命中同时含「学科」「会议」的原条目，不含只有「学科」的新条目
-    assert [item["article_id"] for item in payload["items"]] == ["a1"]
+    captured = adapter.fetch_calls[-1]
+    assert captured["region"] == "internal"
+    assert captured["sentiment"] == "negative"
+    assert captured["min_score"] == 10.5
+    assert captured["max_score"] == 90.0
+    assert str(captured["decided_since"]) == "2026-10-01"
+    assert captured["batch_decided_at"] == datetime.fromisoformat(
+        "2026-10-07T06:32:05.123456+00:00"
+    )
+    # 多词检索同口径：adapter 收到的是切词后的 terms
+    assert captured["terms"] == ["学科建设"]
 
 
-def test_candidates_api_rejects_more_than_ten_terms(monkeypatch) -> None:
-    adapter = FakeManualFilterAdapter(_build_rows())
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"region": "beijing"},
+        {"sentiment": "neutral"},
+        {"min_score": 80, "max_score": 60},
+        {"batch_decided_at": "2026-10-07T14:32:05"},
+    ],
+)
+def test_discarded_api_rejects_invalid_discard_filters(
+    monkeypatch, params: Dict[str, str]
+) -> None:
+    rows = _build_rows()
+    for row in rows:
+        row["status"] = "discarded"
+    adapter = FakeManualFilterAdapter(rows)
     monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
-
     app = create_app()
     app.dependency_overrides[require_console_user] = _anonymous_console_user
     client = TestClient(app)
 
-    response = client.get(
-        "/api/manual_filter/candidates",
-        params={"q": "w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11"},
-    )
+    response = client.get("/api/manual_filter/discarded", params=params)
 
     assert response.status_code == 422
 
 
-def test_bulk_discard_uses_same_terms_for_count_and_apply(monkeypatch) -> None:
-    from src.console import manual_filter_admin_service
-
-    adapter = FakeManualFilterAdapter(_build_rows())
-    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
+def test_bulk_restore_requires_at_least_one_condition(monkeypatch) -> None:
+    adapter = FakeManualFilterAdapter([])
     monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
-    count_terms: list[Any] = []
-    discard_terms: list[Any] = []
-
-    original_count = adapter._count_candidates_before_date
-
-    def spy_count(**kwargs: Any) -> int:
-        count_terms.append(kwargs.get("terms"))
-        return original_count(**kwargs)
-
-    original_discard = adapter.discard_manual_candidates_before_date_as_user
-
-    def spy_discard(**kwargs: Any) -> list[Dict[str, Any]]:
-        discard_terms.append(kwargs.get("terms"))
-        return original_discard(**kwargs)
-
-    adapter._count_candidates_before_date = spy_count
-    adapter.discard_manual_candidates_before_date_as_user = spy_discard
-
     app = create_app()
     app.dependency_overrides[require_console_user] = _anonymous_console_user
     client = TestClient(app)
 
-    apply = client.post(
-        "/api/manual_filter/bulk-discard",
+    response = client.post("/api/manual_filter/bulk-restore", json={})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "按条件恢复至少需要一个筛选条件"
+    assert adapter.restore_calls == []
+
+
+def test_bulk_restore_dry_run_counts_without_write(monkeypatch) -> None:
+    adapter = FakeManualFilterAdapter([])
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/manual_filter/bulk-restore",
         json={
             "region": "internal",
-            "sentiment": "positive",
-            "q": "学科 建设",
+            "sentiment": "negative",
+            "min_score": 10.5,
+            "decided_since": "2026-10-01",
+            "batch_decided_at": "2026-10-07T06:32:05.123456Z",
+            "q": "教育政策",
+            "dry_run": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"matched": 3, "updated": 0}
+    captured = adapter.restore_calls[-1]
+    assert captured["region"] == "internal"
+    assert captured["sentiment"] == "negative"
+    assert captured["terms"] == ["教育政策"]
+    assert captured["min_score"] == 10.5
+    assert captured["decided_since"] == date(2026, 10, 1)
+    assert captured["batch_decided_at"] == datetime.fromisoformat(
+        "2026-10-07T06:32:05.123456+00:00"
+    )
+    assert captured["dry_run"] is True
+    assert captured["actor_user_id"] == "admin-1"
+
+
+def test_bulk_restore_apply_restores_matching_discarded_rows(monkeypatch) -> None:
+    adapter = FakeManualFilterAdapter([])
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/manual_filter/bulk-restore",
+        json={
+            "region": "internal",
+            "sentiment": "negative",
             "dry_run": False,
         },
     )
-    assert apply.status_code == 200
-    # 预览计数与实际清空必须拿到同一组词，否则页面看到的命中和被清空的条目会分叉
-    assert count_terms == [["学科", "建设"]]
-    assert discard_terms == [["学科", "建设"]]
+
+    assert response.status_code == 200
+    assert response.json() == {"matched": 3, "updated": 3}
+    captured = adapter.restore_calls[-1]
+    assert captured["dry_run"] is False
+    assert captured["actor_username"] == "tester"
+    assert captured["actor_user_id"] == "admin-1"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"region": "beijing", "min_score": 10},
+        {"min_score": 80, "max_score": 60},
+        {"batch_decided_at": "2026-10-07T14:32:05"},
+    ],
+)
+def test_bulk_restore_rejects_invalid_filters(monkeypatch, payload: Dict[str, Any]) -> None:
+    adapter = FakeManualFilterAdapter([])
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.post("/api/manual_filter/bulk-restore", json=payload)
+
+    assert response.status_code == 422
+    assert adapter.restore_calls == []
+
+
+def test_candidates_api_splits_whitespace_query_into_terms(monkeypatch) -> None:
+
+    adapter = FakeManualFilterAdapter(_build_rows())
+
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
+
+    captured: dict[str, Any] = {}
+
+
+
+    original = adapter._search_candidates
+
+
+
+    def spy(**kwargs: Any) -> Tuple[list[Dict[str, Any]], int]:
+
+        captured.update(kwargs)
+
+        return original(**kwargs)
+
+
+
+    adapter._search_candidates = spy
+
+
+
+    app = create_app()
+
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+
+    client = TestClient(app)
+
+
+
+    response = client.get(
+
+        "/api/manual_filter/candidates",
+
+        params={"view_mode": "search", "q": "  学科　建设  "},
+
+    )
+
+
+
+    assert response.status_code == 200
+
+    # 全角空格同样切词；service 层把整串 q 切成词列表后下传
+
+    assert captured["terms"] == ["学科", "建设"]

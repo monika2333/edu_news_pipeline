@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -888,3 +888,352 @@ def test_single_review_route_accepts_encoded_slash_id(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert captured["article_id"] == "chinanews:/sh/2026/07-27/10666981"
+
+
+def test_editor_bulk_discard_forwards_refine_filters(monkeypatch) -> None:
+    editor = _user("duty_editor")
+    captured: dict[str, Any] = {}
+
+    def bulk_discard_candidates(**kwargs: Any) -> dict[str, int]:
+        captured.update(kwargs)
+        return {"matched": 2, "updated": 2, "skipped_finalized": 0}
+
+    monkeypatch.setattr(
+        duty_review_service, "bulk_discard_candidates", bulk_discard_candidates
+    )
+
+    response = _client_for(editor).post(
+        "/api/duty/shifts/shift-id/bulk-discard",
+        json={
+            "region": "internal",
+            "sentiment": "negative",
+            "dry_run": True,
+            "hour_from": 8,
+            "hour_to": 22,
+            "duplicate_state": "untagged",
+            "min_score": 10.5,
+            "max_score": 40,
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["hour_from"] == 8
+    assert captured["hour_to"] == 22
+    assert captured["duplicate_state"] == "untagged"
+    assert captured["min_score"] == 10.5
+    assert captured["max_score"] == 40
+
+
+def test_editor_bulk_discard_rejects_invalid_refine_filters(monkeypatch) -> None:
+    editor = _user("duty_editor")
+
+    def fail_write(**kwargs: Any) -> dict[str, int]:
+        raise AssertionError("adapter must not be called")
+
+    monkeypatch.setattr(
+        duty_review_service, "bulk_discard_candidates", fail_write
+    )
+
+    response = _client_for(editor).post(
+        "/api/duty/shifts/shift-id/bulk-discard",
+        json={
+            "region": "internal",
+            "sentiment": "negative",
+            "min_score": 10,
+            "max_score": 5,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_editor_reviews_forwards_discard_filters(monkeypatch) -> None:
+    editor = _user("duty_editor")
+    calls: list[dict[str, Any]] = []
+
+    def list_items(**kwargs: Any) -> dict[str, Any]:
+        calls.append(kwargs)
+        return {"items": [], "total": 0, "limit": 10, "offset": 0}
+
+    monkeypatch.setattr(duty_review_service, "list_items", list_items)
+
+    response = _client_for(editor).get(
+        "/api/duty/shifts/shift-id/reviews",
+        params={
+            "decision": "discarded",
+            "region": "external",
+            "sentiment": "negative",
+            "min_score": 5,
+            "max_score": 60,
+            "decided_since": "2026-10-01",
+            "batch_decided_at": "2026-10-07T06:32:05.123456Z",
+        },
+    )
+
+    assert response.status_code == 200
+    captured = calls[0]
+    assert captured["decision"] == "discarded"
+    assert captured["region"] == "external"
+    assert captured["sentiment"] == "negative"
+    assert captured["min_score"] == 5.0
+    assert captured["max_score"] == 60.0
+    assert str(captured["decided_since"]) == "2026-10-01"
+    assert captured["batch_decided_at"].isoformat() == (
+        "2026-10-07T06:32:05.123456+00:00"
+    )
+
+
+def test_editor_reviews_rejects_invalid_discard_filters(monkeypatch) -> None:
+    editor = _user("duty_editor")
+
+    def fail_list(**kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("service must not be called")
+
+    monkeypatch.setattr(duty_review_service, "list_items", fail_list)
+
+    response = _client_for(editor).get(
+        "/api/duty/shifts/shift-id/reviews",
+        params={"decision": "discarded", "region": "beijing"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_editor_bulk_restore_is_forwarded_to_owned_shift_service(
+    monkeypatch,
+) -> None:
+    editor = _user("duty_editor")
+    captured: dict[str, Any] = {}
+
+    def bulk_restore_discarded(**kwargs: Any) -> dict[str, int]:
+        captured.update(kwargs)
+        return {"matched": 4, "updated": 4}
+
+    monkeypatch.setattr(
+        duty_review_service, "bulk_restore_discarded", bulk_restore_discarded
+    )
+
+    response = _client_for(editor).post(
+        "/api/duty/shifts/shift-id/bulk-restore",
+        json={
+            "q": "教育政策",
+            "region": "internal",
+            "sentiment": "negative",
+            "min_score": 10.5,
+            "max_score": 40,
+            "decided_since": "2026-10-01",
+            "batch_decided_at": "2026-10-07T06:32:05.123456Z",
+            "dry_run": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"matched": 4, "updated": 4}
+    assert captured["shift_id"] == "shift-id"
+    assert captured["user"].user_id == "editor-id"
+    assert captured["query"] == "教育政策"
+    assert captured["region"] == "internal"
+    assert captured["sentiment"] == "negative"
+    assert captured["min_score"] == 10.5
+    assert captured["max_score"] == 40
+    assert str(captured["decided_since"]) == "2026-10-01"
+    assert captured["batch_decided_at"].isoformat() == (
+        "2026-10-07T06:32:05.123456+00:00"
+    )
+    assert captured["dry_run"] is False
+
+
+def test_editor_bulk_restore_requires_condition(monkeypatch) -> None:
+    editor = _user("duty_editor")
+
+    def fail_restore(**kwargs: Any) -> dict[str, int]:
+        raise AssertionError("service must not be called")
+
+    monkeypatch.setattr(duty_review_service, "bulk_restore_discarded", fail_restore)
+
+    response = _client_for(editor).post(
+        "/api/duty/shifts/shift-id/bulk-restore",
+        json={},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "按条件恢复至少需要一个筛选条件"
+
+
+def test_editor_bulk_restore_rejects_another_editors_shift(monkeypatch) -> None:
+    editor = _user("duty_editor")
+
+    def reject_shift(*args: Any, **kwargs: Any) -> None:
+        raise shifts_service.ShiftPermissionError(
+            "Duty editors can only access their own shifts"
+        )
+
+    monkeypatch.setattr(duty_review_service, "require_owned_shift", reject_shift)
+    monkeypatch.setattr(
+        duty_review_service,
+        "get_adapter",
+        lambda: (_ for _ in ()).throw(AssertionError("write must not run")),
+    )
+
+    response = _client_for(editor).post(
+        "/api/duty/shifts/another-shift/bulk-restore",
+        json={"region": "internal", "sentiment": "positive"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_admin_cannot_use_duty_bulk_restore() -> None:
+    response = _client_for(_user("admin")).post(
+        "/api/duty/shifts/shift-id/bulk-restore",
+        json={"region": "internal", "sentiment": "positive"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_admin_discarded_batches_is_forwarded_to_owner_service(monkeypatch) -> None:
+    from src.console import manual_filter_service
+
+    captured: dict[str, Any] = {}
+
+    def list_discarded_batches(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {
+            "items": [
+                {"decided_at": "2026-10-07T01:30:00.123456+00:00", "count": 3},
+            ]
+        }
+
+    monkeypatch.setattr(
+        manual_filter_service, "list_discarded_batches", list_discarded_batches
+    )
+
+    response = _client_for(_user("admin")).get(
+        "/api/manual_filter/discarded-batches"
+    )
+
+    assert response.status_code == 200
+    assert captured == {"owner_user_id": "admin-id"}
+    assert response.json()["items"][0]["count"] == 3
+
+
+def test_editor_discarded_batches_is_forwarded_to_owned_shift(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def get_discarded_batches(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {
+            "items": [
+                {"decided_at": "2026-10-07T01:30:00.123456+00:00", "count": 2},
+            ]
+        }
+
+    monkeypatch.setattr(
+        duty_review_service, "get_discarded_batches", get_discarded_batches
+    )
+
+    response = _client_for(_user("duty_editor")).get(
+        "/api/duty/shifts/shift-id/discarded-batches"
+    )
+
+    assert response.status_code == 200
+    assert captured == {"shift_id": "shift-id", "user": captured["user"]}
+    assert captured["user"].user_id == "editor-id"
+    assert response.json()["items"][0]["count"] == 2
+
+
+def test_editor_discarded_batches_rejects_another_editors_shift(monkeypatch) -> None:
+    def reject_shift(*args: Any, **kwargs: Any) -> None:
+        raise shifts_service.ShiftPermissionError(
+            "Duty editors can only access their own shifts"
+        )
+
+    monkeypatch.setattr(duty_review_service, "require_owned_shift", reject_shift)
+    monkeypatch.setattr(
+        duty_review_service,
+        "get_adapter",
+        lambda: (_ for _ in ()).throw(AssertionError("query must not run")),
+    )
+
+    response = _client_for(_user("duty_editor")).get(
+        "/api/duty/shifts/another-shift/discarded-batches"
+    )
+
+    assert response.status_code == 403
+
+
+def test_admin_batch_decided_at_roundtrips_through_query_params(monkeypatch) -> None:
+    """批次序列化 → 查询参数 → 解析的全程往返（不连数据库）。
+
+    取批次接口实际返回的 decided_at 字符串原样作为 batch_decided_at 请求
+    列表路由，断言 service 收到的 datetime 与原值完全相等（微秒 + +08:00）。
+    """
+    from src.console import manual_filter_service
+
+    batch_dt = datetime.fromisoformat("2026-10-07T09:30:00.123456+08:00")
+
+    def list_discarded_batches(**kwargs: Any) -> dict[str, Any]:
+        return {"items": [{"decided_at": batch_dt, "count": 3}]}
+
+    list_calls: list[dict[str, Any]] = []
+
+    def list_discarded(**kwargs: Any) -> dict[str, Any]:
+        list_calls.append(kwargs)
+        return {"items": [], "total": 0, "limit": 30, "offset": 0}
+
+    monkeypatch.setattr(
+        manual_filter_service, "list_discarded_batches", list_discarded_batches
+    )
+    monkeypatch.setattr(manual_filter_service, "list_discarded", list_discarded)
+
+    client = _client_for(_user("admin"))
+    batches = client.get("/api/manual_filter/discarded-batches")
+    assert batches.status_code == 200
+    raw = batches.json()["items"][0]["decided_at"]
+    assert raw == "2026-10-07T09:30:00.123456+08:00"
+
+    # 前端用 URLSearchParams 原样携带该字符串（params 编码与之等价）
+    listed = client.get(
+        "/api/manual_filter/discarded", params={"batch_decided_at": raw}
+    )
+    assert listed.status_code == 200
+    received = list_calls[0]["batch_decided_at"]
+    assert received == batch_dt
+    assert received.microsecond == 123456
+    assert received.utcoffset() == timedelta(hours=8)
+
+
+def test_editor_batch_decided_at_roundtrips_through_query_params(monkeypatch) -> None:
+    """值班侧同程往返：批次字符串经 /reviews 查询参数还原为同一 datetime。"""
+    batch_dt = datetime.fromisoformat("2026-10-07T09:30:00.123456+08:00")
+
+    def get_discarded_batches(**kwargs: Any) -> dict[str, Any]:
+        return {"items": [{"decided_at": batch_dt, "count": 2}]}
+
+    list_calls: list[dict[str, Any]] = []
+
+    def list_items(**kwargs: Any) -> dict[str, Any]:
+        list_calls.append(kwargs)
+        return {"items": [], "total": 0, "limit": 30, "offset": 0}
+
+    monkeypatch.setattr(
+        duty_review_service, "get_discarded_batches", get_discarded_batches
+    )
+    monkeypatch.setattr(duty_review_service, "list_items", list_items)
+
+    client = _client_for(_user("duty_editor"))
+    batches = client.get("/api/duty/shifts/shift-id/discarded-batches")
+    assert batches.status_code == 200
+    raw = batches.json()["items"][0]["decided_at"]
+    assert raw == "2026-10-07T09:30:00.123456+08:00"
+
+    listed = client.get(
+        "/api/duty/shifts/shift-id/reviews",
+        params={"decision": "discarded", "batch_decided_at": raw},
+    )
+    assert listed.status_code == 200
+    received = list_calls[0]["batch_decided_at"]
+    assert received == batch_dt
+    assert received.microsecond == 123456
+    assert received.utcoffset() == timedelta(hours=8)

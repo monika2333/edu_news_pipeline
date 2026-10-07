@@ -342,7 +342,67 @@
                     </div>
                     <button class="btn btn-secondary" id="btn-discard-search">检索</button>
                 </div>
-                <div class="discard-toolbar-meta" id="discard-search-meta"></div>
+                {# 放弃页条件行常驻，按「范围 → 收窄」分组：时间与批次二选一定范围，
+                   分类与分数在范围内收窄；组间竖线、组内 gap 都在 discard.css。
+                   与筛选页细化筛选完全独立（状态在 discard_tab.js，不写 localStorage），
+                   不得复用 .filter-refine-row / [data-refine-field] 命名。 #}
+                <div class="discard-filter-row" id="discard-refine-row">
+                    <div class="discard-filter-scope">
+                        <select id="discard-since-select" class="discard-filter-select"
+                            data-discard-since aria-label="放弃时间">
+                            <option value="">放弃时间：全部</option>
+                            <option value="today">今天</option>
+                            <option value="3d">近 3 天</option>
+                            <option value="7d">近 7 天</option>
+                        </select>
+                        <span class="discard-filter-or" aria-hidden="true">或</span>
+                        <select id="discard-batch-select" class="discard-filter-select"
+                            data-discard-batch aria-label="放弃批次">
+                            <option value="">放弃批次：全部</option>
+                        </select>
+                    </div>
+                    <div class="discard-filter-narrow">
+                        <select id="discard-bucket-select" class="discard-filter-select"
+                            data-discard-bucket-select aria-label="分类">
+                            <option value="all">分类：全部</option>
+                            <option value="internal_positive">京内正面</option>
+                            <option value="internal_negative">京内负面</option>
+                            <option value="external_positive">京外正面</option>
+                            <option value="external_negative">京外负面</option>
+                        </select>
+                        <div class="discard-filter-scores">
+                            <input type="number" id="discard-min-score" class="discard-filter-score"
+                                data-discard-score="min" placeholder="最低分" aria-label="最低分数">
+                            <span class="discard-filter-score-sep">–</span>
+                            <input type="number" id="discard-max-score" class="discard-filter-score"
+                                data-discard-score="max" placeholder="最高分" aria-label="最高分数">
+                        </div>
+                    </div>
+                </div>
+                <div class="discard-toolbar-meta-row">
+                    <div class="discard-toolbar-meta" id="discard-search-meta"></div>
+                </div>
+                {# 批量栏常驻：范围由选择决定（本页勾选，可扩展到全部匹配），操作只有
+                   一个「恢复到」；全部匹配模式下只允许恢复到待处理。 #}
+                <div class="discard-bulk-bar" id="discard-bulk-bar">
+                    <label class="discard-bulk-select-all">
+                        <input type="checkbox" id="discard-select-all">
+                        <span id="discard-select-all-label">全选本页</span>
+                    </label>
+                    <button type="button" class="discard-select-all-link"
+                        id="btn-discard-select-all-matched" hidden></button>
+                    <button type="button" class="discard-select-all-link"
+                        id="btn-discard-exit-all" hidden>取消选择</button>
+                    <select id="discard-bulk-target" class="status-select discard-restore-select"
+                        aria-label="批量恢复位置" disabled>
+                        <option value="">恢复到</option>
+                        <option value="zongbao:selected" data-bulk-target>综报采纳</option>
+                        <option value="zongbao:backup" data-bulk-target>综报备选</option>
+                        <option value="wanbao:selected" data-bulk-target>晚报采纳</option>
+                        <option value="wanbao:backup" data-bulk-target>晚报备选</option>
+                        <option value="pending" data-bulk-target>待处理</option>
+                    </select>
+                </div>
             </div>
             <div id="discard-list">
                 <!-- Items will be injected here -->

@@ -261,6 +261,50 @@ document.addEventListener('DOMContentLoaded', async () => {
             elements.discardSearchInput?.focus();
         });
     }
+    // 放弃页条件区与批量恢复（状态与绑定都在 discard_tab.js，这里只接线；
+    // 条件行常驻，无折叠开关）
+    document.querySelectorAll('[data-discard-bucket]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            discardFilterState.bucket = btn.dataset.discardBucket || 'all';
+            applyDiscardFilterChange();
+        });
+    });
+    if (elements.discardSinceSelect) {
+        // 预设与「最近批次」同属一个下拉，互斥逻辑在 handleDiscardSinceChange
+        elements.discardSinceSelect.addEventListener('change', () => {
+            handleDiscardSinceChange(elements.discardSinceSelect.value || '');
+        });
+    }
+    [elements.discardMinScore, elements.discardMaxScore].forEach(input => {
+        input?.addEventListener('change', () => {
+            discardFilterState.minScore = elements.discardMinScore?.value ?? '';
+            discardFilterState.maxScore = elements.discardMaxScore?.value ?? '';
+            applyDiscardFilterChange();
+        });
+    });
+    // 行复选框随列表 innerHTML 重渲染，用委托
+    if (elements.discardList) {
+        elements.discardList.addEventListener('change', handleDiscardRowCheckChange);
+    }
+    // meta 行的「清空筛选」按钮由 innerHTML 重渲染，用委托
+    document.addEventListener('click', event => {
+        if (event.target.closest('.discard-filter-clear-link')) {
+            event.preventDefault();
+            clearDiscardFilters();
+        }
+    });
+    if (elements.discardSelectAll) {
+        elements.discardSelectAll.addEventListener('change', handleDiscardSelectAllChange);
+    }
+    if (elements.discardSelectAllMatchedBtn) {
+        elements.discardSelectAllMatchedBtn.addEventListener('click', handleDiscardSelectAllMatchedClick);
+    }
+    if (elements.discardExitAllBtn) {
+        elements.discardExitAllBtn.addEventListener('click', handleDiscardExitAllClick);
+    }
+    if (elements.discardBulkTarget) {
+        elements.discardBulkTarget.addEventListener('change', handleDiscardBulkTargetChange);
+    }
 
     // Pagination listeners (delegated or specific)
     setupPagination();

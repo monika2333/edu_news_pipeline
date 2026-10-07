@@ -807,3 +807,322 @@ def test_fetch_manual_clusters_applies_refine_filters_inside_pending_cte() -> No
         "internal_positive", "internal_positive", "admin-1", 22, 6, 60,
         "internal_positive", "internal_positive",
     )
+
+
+def test_restore_discarded_by_filter_scopes_owner_status_and_time() -> None:
+    """真实 SQL 语义：owner/status 收口、上海日期边界、微秒批次相等。
+
+    夹具含一条其他管理员的已放弃行与一条同一管理员的 pending 行，
+    两者在按条件恢复中都必须原样保留。
+    """
+    psycopg = pytest.importorskip("psycopg")
+    from psycopg.rows import dict_row
+
+    from src.config import get_settings
+
+    settings = get_settings()
+    owner_a = "11111111-1111-1111-1111-111111111111"
+    owner_b = "22222222-2222-2222-2222-222222222222"
+    a2_batch_ts = "2026-10-06T23:59:00.123456+08:00"
+
+    try:
+        conn = psycopg.connect(
+            host=settings.db_host,
+            port=settings.db_port,
+            user=settings.db_user,
+            password=settings.db_password,
+            dbname=settings.db_name,
+            autocommit=False,
+            row_factory=dict_row,
+            connect_timeout=5,
+        )
+    except psycopg.OperationalError as exc:
+        # 数据库不可用时跳过（而不是报错），与 importorskip 的语义一致
+        pytest.skip(f"Postgres 不可用，跳过真实 SQL 测试：{exc}")
+    with conn:
+        with conn.cursor() as cur:
+            for table in ("manual_reviews", "news_summaries"):
+                cur.execute(
+                    f"CREATE TEMP TABLE {table} "
+                    f"(LIKE public.{table} INCLUDING DEFAULTS) ON COMMIT DROP"
+                )
+            cur.execute(
+                "ALTER TABLE manual_reviews "
+                "ADD COLUMN IF NOT EXISTS owner_user_id uuid NOT NULL"
+            )
+            for article_id, score in (("a1", 80), ("a2", 90), ("a3", 70), ("b1", 95)):
+                cur.execute(
+                    """
+                    INSERT INTO news_summaries
+                        (article_id, title, status, external_importance_score)
+                    VALUES (%s, %s, 'ready_for_export', %s)
+                    """,
+                    (article_id, f"标题{article_id}", score),
+                )
+
+            cur.execute(
+                """
+                INSERT INTO manual_reviews
+                    (owner_user_id, article_id, status, version, rank,
+                     decided_at, report_type)
+                VALUES
+                    (%s, 'a1', 'discarded', 3, 2.0,
+                     '2026-10-07T00:15:00+08:00', 'zongbao'),
+                    (%s, 'a2', 'discarded', 2, NULL,
+                     %s, 'zongbao'),
+                    (%s, 'a3', 'pending', 1, NULL, NULL, NULL),
+                    (%s, 'b1', 'discarded', 5, NULL,
+                     '2026-10-07T08:00:00+08:00', 'zongbao')
+                """,
+                (owner_a, owner_a, a2_batch_ts, owner_a, owner_b),
+            )
+
+            def fetch_row(article_id: str) -> dict[str, Any]:
+                cur.execute(
+                    "SELECT status, version, rank, decided_at, report_type "
+                    "FROM manual_reviews WHERE article_id = %s",
+                    (article_id,),
+                )
+                return dict(cur.fetchone())
+
+            # dry_run：只计数（owner_a 有 a1/a2 两条已放弃），不写入
+            result = db_postgres_manual_reviews.restore_discarded_manual_reviews_by_filter(
+                cur,
+                owner_user_id=owner_a,
+                actor_username="admin-a",
+                actor_user_id=owner_a,
+                dry_run=True,
+            )
+            assert result["matched"] == 2
+            assert result["updated"] == 0
+            assert fetch_row("a1")["status"] == "discarded"
+
+            # 上海本地日期边界：a1 本地日期 10-07 命中，a2 本地日期 10-06 不命中
+            result = db_postgres_manual_reviews.restore_discarded_manual_reviews_by_filter(
+                cur,
+                owner_user_id=owner_a,
+                actor_username="admin-a",
+                actor_user_id=owner_a,
+                decided_since=date(2026, 10, 7),
+                dry_run=False,
+            )
+            assert result["matched"] == 1
+            assert result["updated"] == 1
+
+            a1 = fetch_row("a1")
+            assert a1["status"] == "pending"
+            assert a1["version"] == 4
+            assert a1["rank"] is None
+            assert a1["decided_at"] is not None
+            # report_type 与 /decide 恢复到待处理一致：COALESCE 保留原值
+            assert a1["report_type"] == "zongbao"
+
+            a2 = fetch_row("a2")
+            assert a2["status"] == "discarded"
+            assert a2["version"] == 2
+            assert str(a2["decided_at"]) .startswith("2026-10-06")
+
+            # 其他管理员的行与自己的 pending 行都不受影响
+            assert fetch_row("b1")["status"] == "discarded"
+            assert fetch_row("b1")["version"] == 5
+            assert fetch_row("a3")["status"] == "pending"
+
+            # 微秒批次：精确相等才命中，差一微秒不命中
+            batch = datetime.fromisoformat(a2_batch_ts)
+            result = db_postgres_manual_reviews.restore_discarded_manual_reviews_by_filter(
+                cur,
+                owner_user_id=owner_a,
+                actor_username="admin-a",
+                actor_user_id=owner_a,
+                batch_decided_at=batch,
+                dry_run=True,
+            )
+            assert result["matched"] == 1
+            result = db_postgres_manual_reviews.restore_discarded_manual_reviews_by_filter(
+                cur,
+                owner_user_id=owner_a,
+                actor_username="admin-a",
+                actor_user_id=owner_a,
+                batch_decided_at=batch,
+                dry_run=False,
+            )
+            assert result["updated"] == 1
+            assert fetch_row("a2")["status"] == "pending"
+
+
+class _CaptureCursor:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+        self.params: list[tuple[Any, ...]] = []
+        self.rows: list[dict[str, Any]] = []
+
+    def execute(self, query: str, params: tuple[Any, ...]) -> None:
+        self.queries.append(query)
+        self.params.append(params)
+
+    def fetchone(self) -> dict[str, Any]:
+        return {"total": 0}
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return self.rows
+
+
+def test_restore_filter_matches_discarded_list_where_construction() -> None:
+    """T6（管理员）：同一组条件下，放弃列表与按条件恢复的子句与参数一致。"""
+    filters = {
+        "region": "internal",
+        "sentiment": "negative",
+        "terms": ["教育政策"],
+        "min_score": 5.5,
+        "max_score": 30,
+        "decided_since": date(2026, 10, 1),
+        "batch_decided_at": datetime(
+            2026, 10, 7, 6, 32, 5, 123456, tzinfo=timezone.utc
+        ),
+    }
+
+    list_cursor = _CaptureCursor()
+    db_postgres_manual_reviews.fetch_manual_reviews(
+        list_cursor,
+        owner_user_id="owner-1",
+        status="discarded",
+        limit=30,
+        offset=0,
+        order_by_decided_at=True,
+        **filters,
+    )
+
+    restore_cursor = _CaptureCursor()
+    db_postgres_manual_reviews.restore_discarded_manual_reviews_by_filter(
+        restore_cursor,
+        owner_user_id="owner-1",
+        actor_username="admin-a",
+        actor_user_id="owner-1",
+        dry_run=True,
+        **filters,
+    )
+
+    list_sql = list_cursor.queries[0]
+    restore_sql = restore_cursor.queries[0]
+    expected_clauses = [
+        "ns.is_beijing_related = %s",
+        "ns.sentiment_label = %s",
+        "ILIKE %s",
+        "ILIKE %s",
+        "ns.external_importance_score >= %s",
+        "ns.external_importance_score <= %s",
+        "(mr.decided_at AT TIME ZONE 'Asia/Shanghai')::date >= %s",
+        "mr.decided_at = %s",
+        "mr.owner_user_id = %s",
+        "mr.status = %s",
+    ]
+    for clause in expected_clauses:
+        assert clause in list_sql, f"列表 SQL 缺少子句：{clause}"
+        assert clause in restore_sql, f"恢复 SQL 缺少子句：{clause}"
+    # 恢复的锁定查询与列表 count 查询的参数完全一致（owner + status + 过滤参数）
+    assert restore_cursor.params[0] == list_cursor.params[0]
+
+
+def test_fetch_discarded_batches_scopes_owner_and_roundtrips() -> None:
+    """T8：只返回 >=2 的组、倒序取 10、owner/status 收口；
+    T9：批次 decided_at 原样作为 batch_decided_at 查列表，total == count。"""
+    psycopg = pytest.importorskip("psycopg")
+    from psycopg.rows import dict_row
+
+    from src.config import get_settings
+
+    settings = get_settings()
+    owner_a = "44444444-4444-4444-4444-444444444444"
+    owner_b = "55555555-5555-5555-5555-555555555555"
+    batch_x = "2026-10-07T09:30:00.123456+08:00"
+    batch_y = "2026-10-06T08:00:00+08:00"
+    batch_z = "2026-10-05T08:00:00+08:00"
+
+    try:
+        conn = psycopg.connect(
+            host=settings.db_host,
+            port=settings.db_port,
+            user=settings.db_user,
+            password=settings.db_password,
+            dbname=settings.db_name,
+            autocommit=False,
+            row_factory=dict_row,
+            connect_timeout=5,
+        )
+    except psycopg.OperationalError as exc:
+        # 数据库不可用时跳过（而不是报错），与 importorskip 的语义一致
+        pytest.skip(f"Postgres 不可用，跳过真实 SQL 测试：{exc}")
+    with conn:
+        with conn.cursor() as cur:
+            for table in ("manual_reviews", "news_summaries"):
+                cur.execute(
+                    f"CREATE TEMP TABLE {table} "
+                    f"(LIKE public.{table} INCLUDING DEFAULTS) ON COMMIT DROP"
+                )
+            cur.execute(
+                """
+                INSERT INTO manual_reviews
+                    (owner_user_id, article_id, status, version, decided_at)
+                VALUES
+                    -- 批次 X：3 条，带非零微秒
+                    (%s, 'x1', 'discarded', 1, %s),
+                    (%s, 'x2', 'discarded', 1, %s),
+                    (%s, 'x3', 'discarded', 1, %s),
+                    -- 批次 Y / Z：各 2 条
+                    (%s, 'y1', 'discarded', 1, %s),
+                    (%s, 'y2', 'discarded', 1, %s),
+                    (%s, 'z1', 'discarded', 1, %s),
+                    (%s, 'z2', 'discarded', 1, %s),
+                    -- 单条批次：不满足 >= 2
+                    (%s, 's1', 'discarded', 1, '2026-10-07T10:00:00+08:00'),
+                    -- decided_at 为空：不参与分组
+                    (%s, 'n1', 'discarded', 1, NULL),
+                    (%s, 'n2', 'discarded', 1, NULL),
+                    -- 非 discarded 状态：即使同 decided_at 也不计
+                    (%s, 'p1', 'pending', 1, %s),
+                    (%s, 'p2', 'pending', 1, %s),
+                    -- 其他管理员：不属于当前工作区
+                    (%s, 'b1', 'discarded', 1, '2026-10-07T11:00:00+08:00'),
+                    (%s, 'b2', 'discarded', 1, '2026-10-07T11:00:00+08:00'),
+                    (%s, 'b3', 'discarded', 1, '2026-10-07T11:00:00+08:00')
+                """,
+                (
+                    owner_a, batch_x, owner_a, batch_x, owner_a, batch_x,
+                    owner_a, batch_y, owner_a, batch_y,
+                    owner_a, batch_z, owner_a, batch_z,
+                    owner_a,
+                    owner_a, owner_a,
+                    owner_a, batch_x, owner_a, batch_x,
+                    owner_b, owner_b, owner_b,
+                ),
+            )
+
+            # 放弃列表 INNER JOIN news_summaries，为每条 manual_review 补齐新闻行
+            cur.execute(
+                """
+                INSERT INTO news_summaries (article_id, title, status)
+                SELECT mr.article_id, '标题' || mr.article_id, 'ready_for_export'
+                FROM manual_reviews mr
+                """
+            )
+
+            batches = db_postgres_manual_reviews.fetch_discarded_batches(
+                cur,
+                owner_user_id=owner_a,
+            )
+
+            assert [batch["count"] for batch in batches] == [3, 2, 2]
+            assert batches[0]["decided_at"] == datetime.fromisoformat(batch_x)
+            # 微秒精度必须原样保留（往返一致的前提）
+            assert batches[0]["decided_at"].microsecond == 123456
+
+            # T9：把接口返回的 decided_at 原样作为 batch_decided_at 查放弃列表
+            _, total = db_postgres_manual_reviews.fetch_manual_reviews(
+                cur,
+                owner_user_id=owner_a,
+                status="discarded",
+                limit=200,
+                offset=0,
+                batch_decided_at=batches[0]["decided_at"],
+            )
+            assert total == 3

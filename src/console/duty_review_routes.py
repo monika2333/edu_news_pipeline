@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import date
-from typing import Any, NoReturn, Optional
+from datetime import date, datetime
+from typing import Any, Dict, NoReturn, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
@@ -18,7 +18,12 @@ from src.console.duty_review_schemas import (
     DutyReviewUpdateRequest,
     ReportType,
 )
-from src.console.manual_filter_helpers import normalize_candidate_refine_filters
+from src.console.manual_filter_helpers import (
+    ensure_bulk_restore_has_condition,
+    normalize_candidate_refine_filters,
+    normalize_discard_filters,
+)
+from src.console.manual_filter_routes import BulkDiscardRequest, BulkRestoreRequest
 from src.console.manual_filter_duplicate_service import (
     DuplicateReviewInvalidResponseError,
     DuplicateReviewLimitError,
@@ -195,8 +200,26 @@ def list_reviews(
     offset: int = 0,
     report_type: Optional[ReportType] = None,
     q: Optional[str] = None,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
     user: ConsoleUser = Depends(require_role("duty_editor")),
 ) -> dict[str, Any]:
+    try:
+        discard_filters = normalize_discard_filters(
+            region=region,
+            sentiment=sentiment,
+            q=q,
+            min_score=min_score,
+            max_score=max_score,
+            decided_since=decided_since,
+            batch_decided_at=batch_decided_at,
+        )
+    except ValueError as exc:
+        _raise_review_error(exc)
     try:
         return duty_review_service.list_items(
             shift_id=shift_id,
@@ -205,7 +228,8 @@ def list_reviews(
             report_type=report_type,
             limit=limit,
             offset=offset,
-            query=(q or "").strip() or None,
+            query=discard_filters.pop("q"),
+            **discard_filters,
         )
     except (ValueError, PermissionError) as exc:
         _raise_review_error(exc)
@@ -328,6 +352,16 @@ def bulk_discard(
 ) -> dict[str, int]:
     """Discard pending candidates matching a filter in the owned shift."""
     try:
+        refine_filters = normalize_candidate_refine_filters(
+            hour_from=payload.hour_from,
+            hour_to=payload.hour_to,
+            duplicate_state=payload.duplicate_state,
+            min_score=payload.min_score,
+            max_score=payload.max_score,
+        )
+    except ValueError as exc:
+        _raise_review_error(exc)
+    try:
         return duty_review_service.bulk_discard_candidates(
             shift_id=shift_id,
             user=user,
@@ -338,6 +372,56 @@ def bulk_discard(
             dry_run=payload.dry_run,
             report_type="zongbao",
             request_id=request_id,
+            **refine_filters,
+        )
+    except (ValueError, PermissionError, RuntimeError) as exc:
+        _raise_review_error(exc)
+
+
+@router.get("/discarded-batches")
+def list_discarded_batches(
+    shift_id: str,
+    user: ConsoleUser = Depends(require_role("duty_editor")),
+) -> dict[str, Any]:
+    """List recent discard batches (grouped by decided_at) in the owned shift."""
+    try:
+        return duty_review_service.get_discarded_batches(
+            shift_id=shift_id,
+            user=user,
+        )
+    except (ValueError, PermissionError) as exc:
+        _raise_review_error(exc)
+
+
+@router.post("/bulk-restore")
+def bulk_restore(
+    shift_id: str,
+    payload: BulkRestoreRequest,
+    user: ConsoleUser = Depends(require_role("duty_editor")),
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
+) -> dict[str, int]:
+    """Restore discarded reviews matching a filter back to pending."""
+    try:
+        discard_filters = normalize_discard_filters(
+            region=payload.region,
+            sentiment=payload.sentiment,
+            q=payload.q,
+            min_score=payload.min_score,
+            max_score=payload.max_score,
+            decided_since=payload.decided_since,
+            batch_decided_at=payload.batch_decided_at,
+        )
+        ensure_bulk_restore_has_condition(discard_filters)
+    except ValueError as exc:
+        _raise_review_error(exc)
+    try:
+        return duty_review_service.bulk_restore_discarded(
+            shift_id=shift_id,
+            user=user,
+            dry_run=payload.dry_run,
+            request_id=request_id,
+            query=discard_filters.pop("q"),
+            **discard_filters,
         )
     except (ValueError, PermissionError, RuntimeError) as exc:
         _raise_review_error(exc)

@@ -405,6 +405,40 @@ def cleanup_review_buckets(
     return {"matched": matched, "updated": len(discarded), "discarded": discarded}
 
 
+def bulk_restore_candidates(
+    *,
+    actor: ConsoleUser,
+    query: Optional[str] = None,
+    region: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
+    decided_since: Optional[date] = None,
+    batch_decided_at: Optional[datetime] = None,
+    dry_run: bool = True,
+    request_id: Optional[str] = None,
+) -> dict[str, int]:
+    """把当前管理员符合条件的已放弃行恢复到待处理（dry_run 只计数）。
+
+    与多词检索同口径：service 层切词去重，adapter 收 terms 逐词 AND。
+    """
+    owner_user_id = _workspace_user_id(actor)
+    terms = normalize_search_terms(query) or None
+    return get_adapter().restore_discarded_manual_reviews_as_user(
+        actor_username=actor.username,
+        actor_user_id=owner_user_id,
+        region=region,
+        sentiment=sentiment,
+        terms=terms,
+        min_score=min_score,
+        max_score=max_score,
+        decided_since=decided_since,
+        batch_decided_at=batch_decided_at,
+        dry_run=dry_run,
+        request_id=request_id,
+    )
+
+
 def clear_review_buckets(
     *,
     owner_user_id: str,
@@ -463,6 +497,7 @@ __all__ = [
     "archive_items",
     "bulk_decide",
     "bulk_discard_candidates",
+    "bulk_restore_candidates",
     "cleanup_review_buckets",
     "clear_review_buckets",
     "clear_all_review_buckets",

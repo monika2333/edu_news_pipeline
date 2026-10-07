@@ -867,15 +867,21 @@ def test_bulk_restore_shift_reviews_sql_semantics() -> None:
     editor_id = "33333333-3333-3333-3333-333333333333"
     finalized_batch = uuid4()
 
-    with psycopg.connect(
-        host=settings.db_host,
-        port=settings.db_port,
-        user=settings.db_user,
-        password=settings.db_password,
-        dbname=settings.db_name,
-        autocommit=False,
-        row_factory=dict_row,
-    ) as conn:
+    try:
+        conn = psycopg.connect(
+            host=settings.db_host,
+            port=settings.db_port,
+            user=settings.db_user,
+            password=settings.db_password,
+            dbname=settings.db_name,
+            autocommit=False,
+            row_factory=dict_row,
+            connect_timeout=5,
+        )
+    except psycopg.OperationalError as exc:
+        # 数据库不可用时跳过（而不是报错），与 importorskip 的语义一致
+        pytest.skip(f"Postgres 不可用，跳过真实 SQL 测试：{exc}")
+    with conn:
         with conn.cursor() as cur:
             for table in ("duty_shifts", "news_summaries", "shift_reviews"):
                 cur.execute(
@@ -983,15 +989,21 @@ def test_fetch_discarded_shift_batches_scopes_shift_and_roundtrips() -> None:
     batch_x = "2026-10-07T09:30:00.123456+08:00"
     batch_y = "2026-10-06T08:00:00+08:00"
 
-    with psycopg.connect(
-        host=settings.db_host,
-        port=settings.db_port,
-        user=settings.db_user,
-        password=settings.db_password,
-        dbname=settings.db_name,
-        autocommit=False,
-        row_factory=dict_row,
-    ) as conn:
+    try:
+        conn = psycopg.connect(
+            host=settings.db_host,
+            port=settings.db_port,
+            user=settings.db_user,
+            password=settings.db_password,
+            dbname=settings.db_name,
+            autocommit=False,
+            row_factory=dict_row,
+            connect_timeout=5,
+        )
+    except psycopg.OperationalError as exc:
+        # 数据库不可用时跳过（而不是报错），与 importorskip 的语义一致
+        pytest.skip(f"Postgres 不可用，跳过真实 SQL 测试：{exc}")
+    with conn:
         with conn.cursor() as cur:
             for table in ("duty_shifts", "news_summaries", "shift_reviews"):
                 cur.execute(

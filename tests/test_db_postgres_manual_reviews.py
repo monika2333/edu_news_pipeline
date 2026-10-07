@@ -774,15 +774,21 @@ def test_restore_discarded_by_filter_scopes_owner_status_and_time() -> None:
     owner_b = "22222222-2222-2222-2222-222222222222"
     a2_batch_ts = "2026-10-06T23:59:00.123456+08:00"
 
-    with psycopg.connect(
-        host=settings.db_host,
-        port=settings.db_port,
-        user=settings.db_user,
-        password=settings.db_password,
-        dbname=settings.db_name,
-        autocommit=False,
-        row_factory=dict_row,
-    ) as conn:
+    try:
+        conn = psycopg.connect(
+            host=settings.db_host,
+            port=settings.db_port,
+            user=settings.db_user,
+            password=settings.db_password,
+            dbname=settings.db_name,
+            autocommit=False,
+            row_factory=dict_row,
+            connect_timeout=5,
+        )
+    except psycopg.OperationalError as exc:
+        # 数据库不可用时跳过（而不是报错），与 importorskip 的语义一致
+        pytest.skip(f"Postgres 不可用，跳过真实 SQL 测试：{exc}")
+    with conn:
         with conn.cursor() as cur:
             for table in ("manual_reviews", "news_summaries"):
                 cur.execute(
@@ -980,15 +986,21 @@ def test_fetch_discarded_batches_scopes_owner_and_roundtrips() -> None:
     batch_y = "2026-10-06T08:00:00+08:00"
     batch_z = "2026-10-05T08:00:00+08:00"
 
-    with psycopg.connect(
-        host=settings.db_host,
-        port=settings.db_port,
-        user=settings.db_user,
-        password=settings.db_password,
-        dbname=settings.db_name,
-        autocommit=False,
-        row_factory=dict_row,
-    ) as conn:
+    try:
+        conn = psycopg.connect(
+            host=settings.db_host,
+            port=settings.db_port,
+            user=settings.db_user,
+            password=settings.db_password,
+            dbname=settings.db_name,
+            autocommit=False,
+            row_factory=dict_row,
+            connect_timeout=5,
+        )
+    except psycopg.OperationalError as exc:
+        # 数据库不可用时跳过（而不是报错），与 importorskip 的语义一致
+        pytest.skip(f"Postgres 不可用，跳过真实 SQL 测试：{exc}")
+    with conn:
         with conn.cursor() as cur:
             for table in ("manual_reviews", "news_summaries"):
                 cur.execute(

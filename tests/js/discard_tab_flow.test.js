@@ -613,6 +613,91 @@ for (const mode of MODES) {
     });
 }
 
+// J4（分类+分数+关键词驱动）：扩展选择全部恢复，预览与执行 body 与列表参数一致。
+// 与批次驱动的用例并存：body 同源性必须覆盖 q / min_score（M19 的目标）。
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}扩展选择全部恢复（分类+分数+关键词）：body 与列表同源`, async () => {
+        const items = makeDiscardedItems(DISCARD_PAGE_SIZE + 1);
+        await withPage(mode, { discardedItems: items }, async (page) => {
+            const { server, window } = page;
+            await openDiscardTab(page);
+
+            // 分类
+            page.document.querySelector('[data-discard-bucket="internal_negative"]').click();
+            assert.ok(await waitFor(() => lastDiscardRequest(server).search.region === 'internal'));
+            // 分数
+            const minScore = page.document.getElementById('discard-min-score');
+            minScore.value = '5';
+            fireChange(page, minScore);
+            assert.ok(
+                await waitFor(() => lastDiscardRequest(server).search.min_score === '5'),
+                'min_score 条件未生效'
+            );
+            // 关键词（走「检索」按钮，与用户操作一致）
+            const searchInput = page.document.getElementById('discard-search-input');
+            searchInput.value = '已放弃';
+            page.document.getElementById('btn-discard-search').click();
+            assert.ok(
+                await waitFor(() => lastDiscardRequest(server).search.q === '已放弃'),
+                '关键词条件未生效'
+            );
+            await waitFor(() => server.inflight === 0);
+
+            const listRequest = lastDiscardRequest(server);
+
+            // 本页全选 → 扩展到全部匹配
+            const selectAll = page.document.getElementById('discard-select-all');
+            selectAll.checked = true;
+            fireChange(page, selectAll);
+            assert.ok(
+                await waitFor(() => !page.document.getElementById('btn-discard-select-all-matched').hidden),
+                '本页全选 + 总数超一页 + 有条件时应出现「选择全部」'
+            );
+            page.document.getElementById('btn-discard-select-all-matched').click();
+            assert.equal(page.window.eval('discardSelectionMode'), 'all');
+
+            const target = page.document.getElementById('discard-bulk-target');
+            window.confirm = () => false;
+            target.value = 'pending';
+            fireChange(page, target);
+            assert.ok(
+                await waitFor(() => server.requests('bulk-restore').length === 1),
+                '预览请求未发出'
+            );
+            const preview = server.requests('bulk-restore')[0];
+            assert.equal(preview.body.dry_run, true);
+            // body 条件与列表查询参数一致（同一份状态生成），关键词也不例外
+            assert.equal(preview.body.region, listRequest.search.region);
+            assert.equal(preview.body.sentiment, listRequest.search.sentiment);
+            // body 中分数是 Number、查询参数是字符串，按数值比较
+            assert.equal(preview.body.min_score, Number(listRequest.search.min_score));
+            assert.equal(preview.body.q, listRequest.search.q);
+            assert.equal(preview.body.q, '已放弃');
+            await sleep(300);
+            assert.equal(server.requests('bulk-restore').length, 1, 'confirm 取消后不得发执行请求');
+
+            window.confirm = () => true;
+            target.value = 'pending';
+            fireChange(page, target);
+            // 每次点击都会先发 dry_run 预览：预览×2 + 执行×1
+            assert.ok(
+                await waitFor(() => server.requests('bulk-restore').length === 3),
+                '确认后未发执行请求'
+            );
+            const execute = server.requests('bulk-restore')[2];
+            assert.equal(execute.body.dry_run, false);
+            assert.equal(execute.body.region, listRequest.search.region);
+            assert.equal(execute.body.min_score, Number(listRequest.search.min_score));
+            assert.equal(execute.body.q, '已放弃');
+
+            assert.ok(
+                await waitFor(() => page.toastText().includes(`已恢复 ${DISCARD_PAGE_SIZE + 1} 条到待处理`)),
+                page.toastText()
+            );
+        });
+    });
+}
+
 test('结束后不应有未处理的脚本异常', async () => {
     assert.deepEqual(unhandledRejections, []);
 });

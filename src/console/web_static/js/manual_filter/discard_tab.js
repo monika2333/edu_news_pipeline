@@ -84,9 +84,10 @@ function discardFilterActive() {
     return Boolean(state.discardQuery) || discardFilterPairs().length > 0;
 }
 
-// 恢复 body：与列表查询同一份 pairs（同口径约束）
+// 恢复 body：与列表查询同一份条件状态（pairs + 关键词），dry_run 之外逐字同源
 function discardFilterRequestBody(dryRun) {
     const body = { dry_run: dryRun };
+    if (state.discardQuery) body.q = state.discardQuery;
     discardFilterPairs().forEach(([key, value]) => {
         body[key] = key === 'min_score' || key === 'max_score'
             ? Number(value)

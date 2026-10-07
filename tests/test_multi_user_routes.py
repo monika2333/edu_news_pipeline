@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -1161,3 +1161,79 @@ def test_editor_discarded_batches_rejects_another_editors_shift(monkeypatch) -> 
     )
 
     assert response.status_code == 403
+
+
+def test_admin_batch_decided_at_roundtrips_through_query_params(monkeypatch) -> None:
+    """批次序列化 → 查询参数 → 解析的全程往返（不连数据库）。
+
+    取批次接口实际返回的 decided_at 字符串原样作为 batch_decided_at 请求
+    列表路由，断言 service 收到的 datetime 与原值完全相等（微秒 + +08:00）。
+    """
+    from src.console import manual_filter_service
+
+    batch_dt = datetime.fromisoformat("2026-10-07T09:30:00.123456+08:00")
+
+    def list_discarded_batches(**kwargs: Any) -> dict[str, Any]:
+        return {"items": [{"decided_at": batch_dt, "count": 3}]}
+
+    list_calls: list[dict[str, Any]] = []
+
+    def list_discarded(**kwargs: Any) -> dict[str, Any]:
+        list_calls.append(kwargs)
+        return {"items": [], "total": 0, "limit": 30, "offset": 0}
+
+    monkeypatch.setattr(
+        manual_filter_service, "list_discarded_batches", list_discarded_batches
+    )
+    monkeypatch.setattr(manual_filter_service, "list_discarded", list_discarded)
+
+    client = _client_for(_user("admin"))
+    batches = client.get("/api/manual_filter/discarded-batches")
+    assert batches.status_code == 200
+    raw = batches.json()["items"][0]["decided_at"]
+    assert raw == "2026-10-07T09:30:00.123456+08:00"
+
+    # 前端用 URLSearchParams 原样携带该字符串（params 编码与之等价）
+    listed = client.get(
+        "/api/manual_filter/discarded", params={"batch_decided_at": raw}
+    )
+    assert listed.status_code == 200
+    received = list_calls[0]["batch_decided_at"]
+    assert received == batch_dt
+    assert received.microsecond == 123456
+    assert received.utcoffset() == timedelta(hours=8)
+
+
+def test_editor_batch_decided_at_roundtrips_through_query_params(monkeypatch) -> None:
+    """值班侧同程往返：批次字符串经 /reviews 查询参数还原为同一 datetime。"""
+    batch_dt = datetime.fromisoformat("2026-10-07T09:30:00.123456+08:00")
+
+    def get_discarded_batches(**kwargs: Any) -> dict[str, Any]:
+        return {"items": [{"decided_at": batch_dt, "count": 2}]}
+
+    list_calls: list[dict[str, Any]] = []
+
+    def list_items(**kwargs: Any) -> dict[str, Any]:
+        list_calls.append(kwargs)
+        return {"items": [], "total": 0, "limit": 30, "offset": 0}
+
+    monkeypatch.setattr(
+        duty_review_service, "get_discarded_batches", get_discarded_batches
+    )
+    monkeypatch.setattr(duty_review_service, "list_items", list_items)
+
+    client = _client_for(_user("duty_editor"))
+    batches = client.get("/api/duty/shifts/shift-id/discarded-batches")
+    assert batches.status_code == 200
+    raw = batches.json()["items"][0]["decided_at"]
+    assert raw == "2026-10-07T09:30:00.123456+08:00"
+
+    listed = client.get(
+        "/api/duty/shifts/shift-id/reviews",
+        params={"decision": "discarded", "batch_decided_at": raw},
+    )
+    assert listed.status_code == 200
+    received = list_calls[0]["batch_decided_at"]
+    assert received == batch_dt
+    assert received.microsecond == 123456
+    assert received.utcoffset() == timedelta(hours=8)

@@ -78,7 +78,7 @@ class FakeManualFilterAdapter:
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
         order_by_decided_at: bool = False,
-        query: Optional[str] = None,
+        terms: Optional[Sequence[str]] = None,
         duty_unprocessed_only: bool = False,
         hour_from: Optional[int] = None,
         hour_to: Optional[int] = None,
@@ -118,18 +118,20 @@ class FakeManualFilterAdapter:
             min_score=min_score,
             max_score=max_score,
         )
-        normalized_query = (query or "").strip().lower()
-        if normalized_query:
+        if terms:
             filtered = [
                 row
                 for row in filtered
-                if normalized_query
-                in " ".join(
-                    [
-                        str(row.get("title") or "").lower(),
-                        str(row.get("llm_summary") or "").lower(),
-                        str(row.get("content_markdown") or "").lower(),
-                    ]
+                if all(
+                    term.casefold()
+                    in " ".join(
+                        [
+                            str(row.get("title") or ""),
+                            str(row.get("llm_summary") or ""),
+                            str(row.get("content_markdown") or ""),
+                        ]
+                    ).casefold()
+                    for term in terms
                 )
             ]
         filtered.sort(
@@ -197,7 +199,7 @@ class FakeManualFilterAdapter:
     def _search_candidates(
         self,
         *,
-        query: Optional[str] = None,
+        terms: Optional[Sequence[str]] = None,
         created_before: Optional[date] = None,
         limit: int,
         offset: int,
@@ -226,18 +228,21 @@ class FakeManualFilterAdapter:
             min_score=min_score,
             max_score=max_score,
         )
-        normalized_query = (query or "").strip().lower()
         filtered = list(rows)
-        if normalized_query:
+        if terms:
             filtered = [
                 row
                 for row in filtered
-                if normalized_query in " ".join(
-                    [
-                        str(row.get("title") or "").lower(),
-                        str(row.get("llm_summary") or "").lower(),
-                        str(row.get("content_markdown") or "").lower(),
-                    ]
+                if all(
+                    term.casefold()
+                    in " ".join(
+                        [
+                            str(row.get("title") or ""),
+                            str(row.get("llm_summary") or ""),
+                            str(row.get("content_markdown") or ""),
+                        ]
+                    ).casefold()
+                    for term in terms
                 )
             ]
         if created_before:
@@ -254,7 +259,7 @@ class FakeManualFilterAdapter:
         *,
         region: str,
         sentiment: str,
-        query: Optional[str] = None,
+        terms: Optional[Sequence[str]] = None,
         created_before: Optional[date] = None,
         report_type: Optional[str] = None,
         duty_unprocessed_only: bool = False,
@@ -265,7 +270,7 @@ class FakeManualFilterAdapter:
         max_score: Optional[float] = None,
     ) -> int:
         _, total = self._search_candidates(
-            query=query,
+            terms=terms,
             created_before=created_before,
             limit=10_000,
             offset=0,
@@ -286,7 +291,7 @@ class FakeManualFilterAdapter:
         *,
         region: str,
         sentiment: str,
-        query: Optional[str] = None,
+        terms: Optional[Sequence[str]] = None,
         created_before: Optional[date] = None,
         actor: Optional[str] = None,
         decided_at: Optional[Any] = None,
@@ -299,7 +304,7 @@ class FakeManualFilterAdapter:
         max_score: Optional[float] = None,
     ) -> int:
         rows, _ = self._search_candidates(
-            query=query,
+            terms=terms,
             created_before=created_before,
             limit=10_000,
             offset=0,
@@ -330,7 +335,7 @@ class FakeManualFilterAdapter:
         *,
         region: str,
         sentiment: str,
-        query: Optional[str],
+        terms: Optional[Sequence[str]],
         created_before: Optional[date],
         report_type: str,
         actor_username: str,
@@ -345,7 +350,7 @@ class FakeManualFilterAdapter:
     ) -> list[Dict[str, Any]]:
         del actor_user_id, request_id
         rows, _ = self._search_candidates(
-            query=query,
+            terms=terms,
             created_before=created_before,
             limit=10_000,
             offset=0,
@@ -1291,3 +1296,116 @@ def test_duplicate_check_api_maps_errors(
 
     assert response.status_code == status_code
     assert response.json() == {"detail": "duplicate check failed"}
+
+
+def test_candidates_api_splits_whitespace_query_into_terms(monkeypatch) -> None:
+    adapter = FakeManualFilterAdapter(_build_rows())
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
+    captured: dict[str, Any] = {}
+
+    original = adapter._search_candidates
+
+    def spy(**kwargs: Any) -> Tuple[list[Dict[str, Any]], int]:
+        captured.update(kwargs)
+        return original(**kwargs)
+
+    adapter._search_candidates = spy
+
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/manual_filter/candidates",
+        params={"view_mode": "search", "q": "  学科　建设  "},
+    )
+
+    assert response.status_code == 200
+    # 全角空格同样切词；service 层把整串 q 切成词列表后下传
+    assert captured["terms"] == ["学科", "建设"]
+
+
+def test_candidates_api_multi_term_query_requires_all_terms(monkeypatch) -> None:
+    rows = _build_rows()
+    rows.append(
+        {
+            **next(row for row in rows if row["article_id"] == "a1"),
+            "article_id": "a1-partial",
+            "title": "学科建设大会之外只有单词 学科",
+        }
+    )
+    adapter = FakeManualFilterAdapter(rows)
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
+
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/manual_filter/candidates",
+        params={"view_mode": "search", "q": "学科 会议"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    # 两词 AND：只命中同时含「学科」「会议」的原条目，不含只有「学科」的新条目
+    assert [item["article_id"] for item in payload["items"]] == ["a1"]
+
+
+def test_candidates_api_rejects_more_than_ten_terms(monkeypatch) -> None:
+    adapter = FakeManualFilterAdapter(_build_rows())
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
+
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/manual_filter/candidates",
+        params={"q": "w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_bulk_discard_uses_same_terms_for_count_and_apply(monkeypatch) -> None:
+    from src.console import manual_filter_admin_service
+
+    adapter = FakeManualFilterAdapter(_build_rows())
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
+    count_terms: list[Any] = []
+    discard_terms: list[Any] = []
+
+    original_count = adapter._count_candidates_before_date
+
+    def spy_count(**kwargs: Any) -> int:
+        count_terms.append(kwargs.get("terms"))
+        return original_count(**kwargs)
+
+    original_discard = adapter.discard_manual_candidates_before_date_as_user
+
+    def spy_discard(**kwargs: Any) -> list[Dict[str, Any]]:
+        discard_terms.append(kwargs.get("terms"))
+        return original_discard(**kwargs)
+
+    adapter._count_candidates_before_date = spy_count
+    adapter.discard_manual_candidates_before_date_as_user = spy_discard
+
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    apply = client.post(
+        "/api/manual_filter/bulk-discard",
+        json={
+            "region": "internal",
+            "sentiment": "positive",
+            "q": "学科 建设",
+            "dry_run": False,
+        },
+    )
+    assert apply.status_code == 200
+    # 预览计数与实际清空必须拿到同一组词，否则页面看到的命中和被清空的条目会分叉
+    assert count_terms == [["学科", "建设"]]
+    assert discard_terms == [["学科", "建设"]]

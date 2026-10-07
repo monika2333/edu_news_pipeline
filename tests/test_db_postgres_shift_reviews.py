@@ -141,7 +141,7 @@ def test_bulk_discard_reuses_manual_candidate_filters_for_preview() -> None:
         actor_user_id="editor-1",
         region="internal",
         sentiment="negative",
-        query="教育政策",
+        terms=["教育政策"],
         created_before=date(2026, 7, 27),
         report_type="zongbao",
         dry_run=True,
@@ -299,7 +299,7 @@ def test_shift_candidate_search_uses_body_without_selecting_it() -> None:
         offset=0,
         region="internal",
         sentiment="positive",
-        query="教育政策",
+        terms=["教育政策"],
         created_before=date(2026, 7, 27),
     )
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import psycopg
 
@@ -13,13 +13,14 @@ from src.adapters.db_postgres_manual_reviews._base import (
     _build_manual_review_filters,
     report_type_expr,
 )
+from src.adapters.sql_search import ilike_all_clauses
 
 
 def search_manual_candidates(
     cur: psycopg.Cursor,
     *,
     owner_user_id: str,
-    query: Optional[str] = None,
+    terms: Optional[Sequence[str]] = None,
     created_before: Optional[date] = None,
     limit: int,
     offset: int,
@@ -50,10 +51,11 @@ def search_manual_candidates(
         min_score=min_score,
         max_score=max_score,
     )
-    normalized_query = (query or "").strip()
-    if normalized_query:
-        clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
-        params.append(f"%{normalized_query}%")
+    # terms 已由 service 层切词去重；逐词一条 ILIKE（AND），按字面转义
+    if terms:
+        term_clauses, term_params = ilike_all_clauses(SEARCH_TEXT_EXPRESSION, terms)
+        clauses.extend(term_clauses)
+        params.extend(term_params)
     if created_before:
         clauses.append(f"{CREATED_LOCAL_DATE_EXPRESSION} < %s")
         params.append(created_before)
@@ -92,7 +94,7 @@ def _build_manual_candidate_filters(
     owner_user_id: str,
     region: str,
     sentiment: str,
-    query: Optional[str] = None,
+    terms: Optional[Sequence[str]] = None,
     created_before: Optional[date] = None,
     report_type: Optional[str] = None,
     duty_unprocessed_only: bool = False,
@@ -116,10 +118,10 @@ def _build_manual_candidate_filters(
         min_score=min_score,
         max_score=max_score,
     )
-    normalized_query = (query or "").strip()
-    if normalized_query:
-        clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
-        params.append(f"%{normalized_query}%")
+    if terms:
+        term_clauses, term_params = ilike_all_clauses(SEARCH_TEXT_EXPRESSION, terms)
+        clauses.extend(term_clauses)
+        params.extend(term_params)
     if created_before:
         clauses.append(f"{CREATED_LOCAL_DATE_EXPRESSION} < %s")
         params.append(created_before)
@@ -132,7 +134,7 @@ def count_manual_candidates_before_date(
     owner_user_id: str,
     region: str,
     sentiment: str,
-    query: Optional[str] = None,
+    terms: Optional[Sequence[str]] = None,
     created_before: Optional[date] = None,
     report_type: Optional[str] = None,
     duty_unprocessed_only: bool = False,
@@ -146,7 +148,7 @@ def count_manual_candidates_before_date(
         owner_user_id=owner_user_id,
         region=region,
         sentiment=sentiment,
-        query=query,
+        terms=terms,
         created_before=created_before,
         report_type=report_type,
         duty_unprocessed_only=duty_unprocessed_only,
@@ -177,7 +179,7 @@ def fetch_manual_candidates_before_date_for_update(
     owner_user_id: str,
     region: str,
     sentiment: str,
-    query: Optional[str] = None,
+    terms: Optional[Sequence[str]] = None,
     created_before: Optional[date] = None,
     report_type: Optional[str] = None,
     duty_unprocessed_only: bool = False,
@@ -191,7 +193,7 @@ def fetch_manual_candidates_before_date_for_update(
         owner_user_id=owner_user_id,
         region=region,
         sentiment=sentiment,
-        query=query,
+        terms=terms,
         created_before=created_before,
         report_type=report_type,
         duty_unprocessed_only=duty_unprocessed_only,

@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional
 
 from src.adapters.db_postgres_core import get_adapter
 
+from .search_terms import normalize_search_terms
+
 from .manual_filter_cluster import cluster_pending, refresh_clusters
 from .manual_filter_helpers import (
     DEFAULT_REPORT_TYPE,
@@ -34,7 +36,7 @@ def _paginate_by_status(
     sentiment: Optional[str] = None,
     report_type: Optional[str] = DEFAULT_REPORT_TYPE,
     order_by_decided_at: bool = False,
-    query: Optional[str] = None,
+    terms: Optional[List[str]] = None,
     duty_unprocessed_only: bool = False,
     refine_filters: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
@@ -56,7 +58,7 @@ def _paginate_by_status(
         "sentiment": sentiment,
         "report_type": target_report_type,
         "order_by_decided_at": order_by_decided_at,
-        "query": (query or "").strip() or None,
+        "terms": terms,
         "duty_unprocessed_only": duty_unprocessed_only,
         **(refine_filters or {}),
     }
@@ -83,7 +85,7 @@ def _list_candidate_search(
     offset: int,
     region: Optional[str],
     sentiment: Optional[str],
-    query: Optional[str],
+    terms: Optional[List[str]],
     created_before: Optional[date],
     report_type: Optional[str],
     duty_unprocessed_only: bool,
@@ -92,7 +94,7 @@ def _list_candidate_search(
     adapter = get_adapter()
     fetch_kwargs = {
         "owner_user_id": owner_user_id,
-        "query": query,
+        "terms": terms,
         "created_before": created_before,
         "limit": limit,
         "offset": offset,
@@ -202,10 +204,10 @@ def list_candidates(
         min_score=min_score,
         max_score=max_score,
     )
-    normalized_query = (q or "").strip() or None
+    terms = normalize_search_terms(q) or None
     search_mode = (
         (view_mode or "").strip().lower() == "search"
-        or normalized_query is not None
+        or terms is not None
         or created_before is not None
     )
     logger.info(
@@ -224,7 +226,7 @@ def list_candidates(
             sentiment=sentiment,
             limit=limit,
             offset=offset,
-            query=normalized_query,
+            terms=terms,
             created_before=created_before,
             report_type=target_report_type,
             duty_unprocessed_only=duty_unprocessed_only,
@@ -274,12 +276,12 @@ def list_discarded(
     q: Optional[str] = None,
 ) -> Dict[str, Any]:
     del report_type
-    normalized_query = (q or "").strip() or None
+    terms = normalize_search_terms(q) or None
     logger.info(
-        "Listing discarded items: limit=%s offset=%s report_scope=all query=%s",
+        "Listing discarded items: limit=%s offset=%s report_scope=all terms=%s",
         limit,
         offset,
-        normalized_query,
+        terms,
     )
     return _paginate_by_status(
         "discarded",
@@ -289,7 +291,7 @@ def list_discarded(
         only_ready=False,
         report_type=None,
         order_by_decided_at=True,
-        query=normalized_query,
+        terms=terms,
     )
 
 

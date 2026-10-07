@@ -8,6 +8,7 @@ import psycopg
 from psycopg.types.json import Json
 
 from src.adapters.db_postgres_article_attribution import search_article_attributions
+from src.adapters.sql_search import ilike_all_clauses
 
 if TYPE_CHECKING:
     from src.adapters.db_postgres_core import PostgresAdapter
@@ -105,7 +106,7 @@ class NewsSummariesNamespace:
     def search(
         self,
         *,
-        query: Optional[str] = None,
+        terms: Optional[Sequence[str]] = None,
         sources: Optional[Sequence[str]] = None,
         sentiments: Optional[Sequence[str]] = None,
         statuses: Optional[Sequence[str]] = None,
@@ -117,7 +118,7 @@ class NewsSummariesNamespace:
         with self._adapter._cursor() as cur:
             return search_news_summaries(
                 cur,
-                query=query,
+                terms=terms,
                 sources=sources,
                 sentiments=sentiments,
                 statuses=statuses,
@@ -493,7 +494,7 @@ def mark_summary_failed(cur: psycopg.Cursor, article_id: str, *, message: Option
 def search_news_summaries(
     cur: psycopg.Cursor,
     *,
-    query: Optional[str] = None,
+    terms: Optional[Sequence[str]] = None,
     sources: Optional[Sequence[str]] = None,
     sentiments: Optional[Sequence[str]] = None,
     statuses: Optional[Sequence[str]] = None,
@@ -504,13 +505,12 @@ def search_news_summaries(
 ) -> Dict[str, Any]:
     limit = max(1, min(int(limit or 50), 200))
     offset = max(0, int(offset or 0))
-    normalized_query = (query or "").strip()
     clauses: List[str] = []
     params: List[Any] = []
-    if normalized_query:
-        like_pattern = f"%{normalized_query}%"
-        clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
-        params.append(like_pattern)
+    if terms:
+        term_clauses, term_params = ilike_all_clauses(SEARCH_TEXT_EXPRESSION, terms)
+        clauses.extend(term_clauses)
+        params.extend(term_params)
 
     normalized_sources = [item.strip() for item in (sources or []) if item and item.strip()]
     if normalized_sources:

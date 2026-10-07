@@ -77,7 +77,7 @@ class FakeAdapter:
         sentiment: Optional[str] = None,
         report_type: Optional[str] = None,
         order_by_decided_at: bool = False,
-        query: Optional[str] = None,
+        terms: Optional[Sequence[str]] = None,
         duty_unprocessed_only: bool = False,
         hour_from: Optional[int] = None,
         hour_to: Optional[int] = None,
@@ -117,18 +117,20 @@ class FakeAdapter:
             min_score=min_score,
             max_score=max_score,
         )
-        normalized_query = (query or "").strip().lower()
-        if normalized_query:
+        if terms:
             filtered = [
                 row
                 for row in filtered
-                if normalized_query
-                in " ".join(
-                    [
-                        str(row.get("title") or "").lower(),
-                        str(row.get("llm_summary") or "").lower(),
-                        str(row.get("content_markdown") or "").lower(),
-                    ]
+                if all(
+                    term.casefold()
+                    in " ".join(
+                        [
+                            str(row.get("title") or ""),
+                            str(row.get("llm_summary") or ""),
+                            str(row.get("content_markdown") or ""),
+                        ]
+                    ).casefold()
+                    for term in terms
                 )
             ]
         filtered.sort(
@@ -260,7 +262,7 @@ class FakeAdapter:
     def _search_candidates(
         self,
         *,
-        query: Optional[str] = None,
+        terms: Optional[Sequence[str]] = None,
         created_before: Optional[date] = None,
         limit: int,
         offset: int,
@@ -283,24 +285,28 @@ class FakeAdapter:
             sentiment=sentiment,
             report_type=report_type,
             duty_unprocessed_only=duty_unprocessed_only,
+            terms=terms,
             hour_from=hour_from,
             hour_to=hour_to,
             duplicate_state=duplicate_state,
             min_score=min_score,
             max_score=max_score,
         )
-        normalized_query = (query or "").strip().lower()
         filtered = list(rows)
-        if normalized_query:
+        if terms:
             filtered = [
                 row
                 for row in filtered
-                if normalized_query in " ".join(
-                    [
-                        str(row.get("title") or "").lower(),
-                        str(row.get("llm_summary") or "").lower(),
-                        str(row.get("content_markdown") or "").lower(),
-                    ]
+                if all(
+                    term.casefold()
+                    in " ".join(
+                        [
+                            str(row.get("title") or ""),
+                            str(row.get("llm_summary") or ""),
+                            str(row.get("content_markdown") or ""),
+                        ]
+                    ).casefold()
+                    for term in terms
                 )
             ]
         if created_before:

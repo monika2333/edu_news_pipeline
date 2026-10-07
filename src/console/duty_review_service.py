@@ -17,6 +17,7 @@ from src.console import (
 )
 from src.console.auth_service import ConsoleUser
 from src.console.manual_filter_serializers import serialize_manual_filter_item
+from src.console.search_terms import normalize_search_terms
 from src.console.shifts_service import require_owned_shift
 from src.console.submission_archive_service import attach_duplicate_badges
 
@@ -254,7 +255,7 @@ def list_items(
         "offset": offset,
         "region": region,
         "sentiment": sentiment,
-        "query": (query or "").strip() or None,
+        "terms": normalize_search_terms(query) or None,
         "created_before": created_before,
         "exclude_finalized": decision == "selected",
         "hour_from": hour_from,
@@ -553,7 +554,7 @@ def bulk_discard_candidates(
         actor_user_id=actor_user_id,
         region=region,
         sentiment=sentiment,
-        query=(query or "").strip() or None,
+        terms=normalize_search_terms(query) or None,
         created_before=created_before,
         report_type=report_type,
         dry_run=dry_run,

@@ -11,6 +11,7 @@ from src.console.manual_filter_helpers import (
     _normalize_ids,
     _normalize_report_type,
 )
+from src.console.search_terms import normalize_search_terms
 
 
 def _require_client_versions(user: ConsoleUser) -> bool:
@@ -308,7 +309,7 @@ def bulk_discard_candidates(
 ) -> dict[str, int]:
     owner_user_id = _workspace_user_id(actor)
     validate_bulk_discard_bucket(region=region, sentiment=sentiment)
-    normalized_query = (query or "").strip() or None
+    terms = normalize_search_terms(query) or None
     refine_filters = {
         "hour_from": hour_from,
         "hour_to": hour_to,
@@ -321,7 +322,7 @@ def bulk_discard_candidates(
         owner_user_id=owner_user_id,
         region=region,
         sentiment=sentiment,
-        query=normalized_query,
+        terms=terms,
         created_before=created_before,
         report_type=None,
         duty_unprocessed_only=duty_unprocessed_only,
@@ -332,7 +333,7 @@ def bulk_discard_candidates(
     after = adapter.discard_manual_candidates_before_date_as_user(
         region=region,
         sentiment=sentiment,
-        query=normalized_query,
+        terms=terms,
         created_before=created_before,
         report_type=None,
         actor_username=actor.username,

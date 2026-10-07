@@ -5,6 +5,8 @@ from typing import Any, Dict, Optional, Sequence
 
 import psycopg
 
+from src.adapters.sql_search import ilike_all_clauses, ilike_any_clause
+
 
 RAW_SEARCH_TEXT_EXPRESSION = (
     "(coalesce(ra.title, '') || ' ' || coalesce(ra.content_markdown, ''))"
@@ -13,19 +15,6 @@ SUMMARY_SEARCH_TEXT_EXPRESSION = (
     "(coalesce(ns.title, '') || ' ' || coalesce(ns.llm_summary, '') || ' ' || "
     "coalesce(ns.content_markdown, ''))"
 )
-
-
-def _escape_like(term: str) -> str:
-    # LIKE 的默认转义符是反斜杠，先转义它本身再转义两个通配符，保证按字面匹配
-    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
-def _ilike_all(expression: str, count: int) -> str:
-    return " AND ".join([f"{expression} ILIKE %s"] * count)
-
-
-def _ilike_any(expression: str, count: int) -> str:
-    return " OR ".join([f"{expression} ILIKE %s"] * count)
 
 
 def search_article_attributions(
@@ -47,22 +36,20 @@ def search_article_attributions(
         raise ValueError("Article search terms must not be empty")
     if (cursor_ingested_at is None) != (cursor_article_id is None):
         raise ValueError("Article search cursor fields must be provided together")
-    like_patterns = [f"%{_escape_like(term)}%" for term in terms]
     # summary_hits 的两组条件各管一件事：表达式条件保证「每个词都命中」（也是
     # trigram GIN 索引能生效的唯一形态），llm_summary 的 OR 组保证「摘要对命中
     # 有贡献」（至少一个词落在 LLM 摘要里）。摘要路径的本意是补充「靠摘要才命中」
     # 的文章，而不是要求所有词都出现在摘要里——那会漏掉一个词在原文、
     # 另一个词仅在摘要的跨字段命中。
-    raw_term_conditions = _ilike_all(RAW_SEARCH_TEXT_EXPRESSION, len(like_patterns))
-    summary_term_conditions = _ilike_all(
-        SUMMARY_SEARCH_TEXT_EXPRESSION, len(like_patterns)
+    raw_term_clauses, like_patterns = ilike_all_clauses(
+        RAW_SEARCH_TEXT_EXPRESSION, terms
     )
-    # llm_summary 可能为 NULL，ILIKE 前先 COALESCE 成空串。表达式先放进普通
-    # 变量：f-string 表达式内不允许反斜杠转义是 3.12 才放开的语法，内联字面量
-    # 会让低版本解释器在导入本模块时直接 SyntaxError
+    summary_term_clauses, _ = ilike_all_clauses(SUMMARY_SEARCH_TEXT_EXPRESSION, terms)
+    raw_term_conditions = " AND ".join(raw_term_clauses)
+    summary_term_conditions = " AND ".join(summary_term_clauses)
+    # llm_summary 可能为 NULL，ILIKE 前先 COALESCE 成空串
     llm_summary_expression = "COALESCE(ns.llm_summary, '')"
-    # OR 优先级低于 AND，整组必须括起来，避免与外层 WHERE 条件意外结合
-    llm_any_condition = f"({_ilike_any(llm_summary_expression, len(like_patterns))})"
+    llm_any_condition, _ = ilike_any_clause(llm_summary_expression, terms)
     cursor_clause = ""
     cursor_params: tuple[Any, ...] = ()
     if cursor_ingested_at is not None and cursor_article_id is not None:

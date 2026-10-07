@@ -138,23 +138,24 @@ def list_candidates_api(
             min_score=min_score,
             max_score=max_score,
         )
+        # q 超过检索词上限时 normalize 抛 TooManySearchTermsError，同样按 422 处理
+        return manual_filter_service.list_candidates(
+            owner_user_id=str(user.user_id),
+            limit=limit,
+            offset=offset,
+            region=region,
+            sentiment=sentiment,
+            cluster=cluster,
+            cluster_threshold=cluster_threshold,
+            q=q,
+            created_before=created_before,
+            view_mode=view_mode,
+            report_type=report_type,
+            duty_unprocessed_only=duty_unprocessed_only,
+            **refine_filters,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return manual_filter_service.list_candidates(
-        owner_user_id=str(user.user_id),
-        limit=limit,
-        offset=offset,
-        region=region,
-        sentiment=sentiment,
-        cluster=cluster,
-        cluster_threshold=cluster_threshold,
-        q=q,
-        created_before=created_before,
-        view_mode=view_mode,
-        report_type=report_type,
-        duty_unprocessed_only=duty_unprocessed_only,
-        **refine_filters,
-    )
 
 
 @router.post("/trigger_clustering")

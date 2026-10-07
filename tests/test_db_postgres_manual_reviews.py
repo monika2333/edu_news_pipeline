@@ -231,7 +231,7 @@ def test_fetch_manual_reviews_applies_search_to_count_and_page_queries() -> None
         status="discarded",
         limit=10,
         offset=5,
-        query="  教育政策  ",
+        terms=["教育政策"],
         order_by_decided_at=True,
     )
 

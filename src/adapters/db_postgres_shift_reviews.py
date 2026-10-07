@@ -14,6 +14,7 @@ from src.adapters.db_postgres_manual_reviews import (
     SEARCH_TEXT_EXPRESSION,
 )
 from src.adapters.sql_candidate_filters import candidate_extra_filter_clauses
+from src.adapters.sql_search import ilike_all_clauses
 from src.domain.report_type import NEWS_REPORT_TYPES as VALID_REPORT_TYPES
 
 VALID_DECISIONS = frozenset({"pending", "selected", "backup", "discarded"})
@@ -99,7 +100,7 @@ class ShiftReviewsNamespace:
         offset: int,
         region: Optional[str] = None,
         sentiment: Optional[str] = None,
-        query: Optional[str] = None,
+        terms: Optional[Sequence[str]] = None,
         created_before: Optional[date] = None,
         article_ids: Optional[Sequence[str]] = None,
         viewer_user_id: Optional[str] = None,
@@ -124,7 +125,7 @@ class ShiftReviewsNamespace:
                 offset=offset,
                 region=region,
                 sentiment=sentiment,
-                query=query,
+                terms=terms,
                 created_before=created_before,
                 article_ids=article_ids,
                 viewer_user_id=viewer_user_id,
@@ -209,7 +210,7 @@ def fetch_shift_review_items(
     offset: int,
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
-    query: Optional[str] = None,
+    terms: Optional[Sequence[str]] = None,
     created_before: Optional[date] = None,
     article_ids: Optional[Sequence[str]] = None,
     viewer_user_id: Optional[str] = None,
@@ -246,10 +247,10 @@ def fetch_shift_review_items(
     if sentiment in {"positive", "negative"}:
         clauses.append("ns.sentiment_label = %s")
         params.append(sentiment)
-    normalized_query = (query or "").strip()
-    if normalized_query:
-        clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
-        params.append(f"%{normalized_query}%")
+    if terms:
+        term_clauses, term_params = ilike_all_clauses(SEARCH_TEXT_EXPRESSION, terms)
+        clauses.extend(term_clauses)
+        params.extend(term_params)
     if created_before is not None:
         clauses.append(f"{CREATED_LOCAL_DATE_EXPRESSION} < %s")
         params.append(created_before)
@@ -412,7 +413,7 @@ def bulk_discard_shift_candidates(
     actor_user_id: str,
     region: str,
     sentiment: str,
-    query: Optional[str] = None,
+    terms: Optional[Sequence[str]] = None,
     created_before: Optional[date] = None,
     report_type: str = "zongbao",
     dry_run: bool = True,
@@ -426,10 +427,10 @@ def bulk_discard_shift_candidates(
     if sentiment in {"positive", "negative"}:
         clauses.append("ns.sentiment_label = %s")
         filter_params.append(sentiment)
-    normalized_query = (query or "").strip()
-    if normalized_query:
-        clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
-        filter_params.append(f"%{normalized_query}%")
+    if terms:
+        term_clauses, term_params = ilike_all_clauses(SEARCH_TEXT_EXPRESSION, terms)
+        clauses.extend(term_clauses)
+        filter_params.extend(term_params)
     if created_before is not None:
         clauses.append(f"{CREATED_LOCAL_DATE_EXPRESSION} < %s")
         filter_params.append(created_before)

@@ -567,7 +567,7 @@ def test_duty_filter_applies_to_search_and_cluster_reads(
 ) -> None:
     search_rows, search_total = duty_filter_adapter.manual_reviews.search_candidates(
         owner_user_id=OWNER_USER_ID,
-        query="Needle",
+        terms=["Needle"],
         limit=20,
         offset=0,
         duty_unprocessed_only=True,
@@ -624,7 +624,7 @@ def test_core_bulk_discard_updates_only_duty_unprocessed_targets(
     updated = duty_filter_adapter.discard_manual_candidates_before_date_as_user(
         region="internal",
         sentiment="positive",
-        query=None,
+        terms=None,
         created_before=date(2026, 1, 1),
         report_type="zongbao",
         actor_username="admin",
@@ -1463,7 +1463,7 @@ def test_other_owner_reads_do_not_change_after_first_owner_decisions(
     )
     before_search = duty_filter_adapter.manual_reviews.search_candidates(
         owner_user_id=SECOND_OWNER_USER_ID,
-        query="Needle",
+        terms=["Needle"],
         limit=20,
         offset=0,
     )
@@ -1504,7 +1504,7 @@ def test_other_owner_reads_do_not_change_after_first_owner_decisions(
     )
     after_search = duty_filter_adapter.manual_reviews.search_candidates(
         owner_user_id=SECOND_OWNER_USER_ID,
-        query="Needle",
+        terms=["Needle"],
         limit=20,
         offset=0,
     )

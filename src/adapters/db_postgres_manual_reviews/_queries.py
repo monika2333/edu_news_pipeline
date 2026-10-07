@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import psycopg
 
@@ -136,7 +136,7 @@ def fetch_manual_reviews(
     sentiment: Optional[str] = None,
     report_type: Optional[str] = None,
     order_by_decided_at: bool = False,
-    query: Optional[str] = None,
+    terms: Optional[Sequence[str]] = None,
     duty_unprocessed_only: bool = False,
     hour_from: Optional[int] = None,
     hour_to: Optional[int] = None,
@@ -154,7 +154,7 @@ def fetch_manual_reviews(
         region=region,
         sentiment=sentiment,
         report_type=report_type,
-        query=query,
+        terms=terms,
         duty_unprocessed_only=duty_unprocessed_only,
         hour_from=hour_from,
         hour_to=hour_to,

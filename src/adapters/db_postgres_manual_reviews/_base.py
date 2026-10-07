@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import psycopg
 
 from src.adapters.sql_candidate_filters import candidate_extra_filter_clauses
+from src.adapters.sql_search import ilike_all_clauses
 from src.domain.report_type import normalize_report_type as normalize_report_type_value
 
 
@@ -91,7 +92,7 @@ def _build_manual_review_filters(
     region: Optional[str] = None,
     sentiment: Optional[str] = None,
     report_type: Optional[str] = None,
-    query: Optional[str] = None,
+    terms: Optional[Sequence[str]] = None,
     duty_unprocessed_only: bool = False,
     hour_from: Optional[int] = None,
     hour_to: Optional[int] = None,
@@ -117,10 +118,11 @@ def _build_manual_review_filters(
     if sentiment in ("positive", "negative"):
         clauses.append("ns.sentiment_label = %s")
         params.append(sentiment)
-    normalized_query = (query or "").strip()
-    if normalized_query:
-        clauses.append(f"{SEARCH_TEXT_EXPRESSION} ILIKE %s")
-        params.append(f"%{normalized_query}%")
+    # terms 已由 service 层切词去重；逐词一条 ILIKE（AND），按字面转义
+    if terms:
+        term_clauses, term_params = ilike_all_clauses(SEARCH_TEXT_EXPRESSION, terms)
+        clauses.extend(term_clauses)
+        params.extend(term_params)
     if duty_unprocessed_only:
         clauses.append(DUTY_UNPROCESSED_SQL)
     extra_clauses, extra_params = candidate_extra_filter_clauses(

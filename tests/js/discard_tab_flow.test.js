@@ -193,11 +193,30 @@ for (const mode of MODES) {
 
             const target = page.document.getElementById('discard-bulk-target');
             target.value = 'pending';
+            // 挂 toast 钩子：toast 在「清空选择」之后发出，可确定性地捕获
+            // 清空时刻的选择数（不依赖列表重载的清除副作用）
+            window.eval(`
+                const __origShowToast = showToast;
+                window.__selectionSizeAtToast = null;
+                showToast = function (...args) {
+                    window.__selectionSizeAtToast = discardSelection.size;
+                    return __origShowToast.apply(this, args);
+                };
+            `);
             fireChange(page, target);
 
             assert.ok(
                 await waitFor(() => server.requests('decide').length > 0),
                 '批量 /decide 未发出'
+            );
+            assert.ok(
+                await waitFor(() => window.eval('window.__selectionSizeAtToast') !== null),
+                '成功提示未出现'
+            );
+            assert.equal(
+                window.eval('window.__selectionSizeAtToast'),
+                0,
+                '恢复成功后应立即清空选择（不依赖列表重载）'
             );
             const decideRequests = server.requests('decide');
             assert.equal(decideRequests.length, 1, '应只发一次 /decide');

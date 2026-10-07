@@ -502,8 +502,9 @@ async function handleDiscardBulkTargetChange(event) {
         });
         await requireManualMutationSuccess(res, 'failed to restore discarded items');
 
-        showToast(`已恢复 ${ids.length} 条到${getDiscardRestoreLabel(rawValue)}`);
+        // 先清空选择再提示，保证提示出现时批量栏状态已同步
         discardSelection.clear();
+        showToast(`已恢复 ${ids.length} 条到${getDiscardRestoreLabel(rawValue)}`);
         loadStats();
         clampDiscardPageAfterRestore(ids.length);
         loadDiscardData();

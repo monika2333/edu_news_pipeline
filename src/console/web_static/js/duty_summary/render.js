@@ -30,11 +30,14 @@ function renderShifts() {
         renderColumnCounts();
         return;
     }
-    elements.shiftList.innerHTML = state.shifts.map(shift => `
+    elements.shiftList.innerHTML = state.shifts.map(shift => {
+        const owner = shift.display_name || '';
+        return `
         <button class="filter-tab-btn summary-shift-card ${state.shiftId === shift.shift_id ? 'active' : ''}" data-shift-id="${escapeHtml(shift.shift_id)}">
-            <span class="summary-shift-date">${escapeHtml(window.formatDutyShiftDate(shift.ends_at))}</span>
+            <span class="summary-shift-date">${escapeHtml(window.formatDutyShiftDate(shift.ends_at))}</span>${owner ? `<span class="summary-shift-owner">· ${escapeHtml(owner)}</span>` : ''}
         </button>
-    `).join('');
+    `;
+    }).join('');
     elements.shiftList.querySelectorAll('[data-shift-id]').forEach(button => {
         button.addEventListener('click', () => {
             state.shiftId = button.dataset.shiftId;

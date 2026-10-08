@@ -808,7 +808,7 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert "#summary-shift-list" in stylesheet
     assert ".summary-shift-card {" in stylesheet
     assert "width: 100%;" in stylesheet
-    assert ".summary-shift-owner" not in stylesheet
+    assert ".summary-shift-owner {" in stylesheet
     assert ".summary-shift-counts" not in stylesheet
     assert ".uncovered-button" not in stylesheet
     assert ".summary-shifts:not([hidden])" in stylesheet
@@ -874,7 +874,7 @@ def test_duty_summary_exposes_column_tabs_search_and_select_all(
     assert "shiftsClose: document.getElementById('summary-shifts-close')" in script
     assert "elements.shiftsClose.addEventListener('click'" in script
     assert 'class="summary-shift-date"' in script
-    assert 'class="summary-shift-owner"' not in script
+    assert 'class="summary-shift-owner"' in script
     assert 'class="summary-shift-counts"' not in script
     assert 'class="tabs summary-workspace-tabs"' in html
     assert 'class="workspace-tabs-row summary-workspace-row"' in html

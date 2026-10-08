@@ -87,12 +87,27 @@
 }
 
 .summary-shift-card {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    min-width: 0;
     width: 100%;
 }
 
 .summary-shift-date {
+    flex-shrink: 0;
     color: #172033;
     font-size: 0.94rem;
+    white-space: nowrap;
+}
+
+.summary-shift-owner {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: #64748b;
+    font-size: 0.85rem;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
 

@@ -4,9 +4,12 @@
     white-space: nowrap;
 }
 
+/* 展开的菜单面板会伸进页面内容区：层级须压过页面内吸顶工具条
+   （全站最高的是 .review-toolbar，z-index:100），同时低于模态、
+   抽屉、检索层等浮层（1000+），否则面板末项会被工具条盖住点不到。 */
 .account-menu {
     position: relative;
-    z-index: 20;
+    z-index: 150;
 }
 
 .account-menu-trigger {

@@ -460,8 +460,11 @@ class FakeWorkspaceServer {
         const willFail = (this.failNext[kind] || 0) > 0;
         if (willFail) this.failNext[kind] -= 1;
         const failStatus = this.failNextStatus[kind] || 500;
-        // 列表在请求发出时取快照，模拟「先发出的请求带旧数据、后返回」
-        const snapshot = kind === 'list' ? this.respond(url, body) : null;
+        // 列表在请求发出时取快照，模拟「先发出的请求带旧数据、后返回」；
+        // 放弃列表同样处理——被扣住时若放行才生成响应，数据已变，新旧响应无差别
+        const snapshot = kind === 'list' || kind === 'discard-list'
+            ? this.respond(url, body)
+            : null;
         try {
             if ((this.holds[kind] || 0) > 0) {
                 this.holds[kind] -= 1;

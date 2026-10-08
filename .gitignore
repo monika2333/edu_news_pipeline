@@ -68,3 +68,4 @@ locks/
 tests/js/node_modules/
 
 .scratch/
+.zcodeignore

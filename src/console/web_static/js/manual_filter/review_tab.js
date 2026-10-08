@@ -84,9 +84,10 @@ function refreshReviewSummaryBox(box) {
 
 function filterReviewItems(term) {
     if (!elements.reviewList) return;
+    const terms = term.split(/\s+/).filter(Boolean);
     const cards = elements.reviewList.querySelectorAll('.article-card');
     cards.forEach(card => {
-        if (!term) {
+        if (!terms.length) {
             card.style.display = '';
             return;
         }
@@ -100,7 +101,7 @@ function filterReviewItems(term) {
             summary
         ].join(' ').toLowerCase();
 
-        if (searchText.includes(term)) {
+        if (terms.every(t => searchText.includes(t))) {
             card.style.display = '';
         } else {
             card.style.display = 'none';

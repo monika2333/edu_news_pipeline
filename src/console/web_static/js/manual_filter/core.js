@@ -91,7 +91,6 @@ const elements = {
     cleanupDateInput: document.getElementById('cleanup-date-input'),
     cleanupCategoryList: document.getElementById('cleanup-category-list'),
     cleanupStats: document.getElementById('cleanup-modal-stats'),
-    cleanupFinalizedNote: document.getElementById('cleanup-finalized-note'),
     cleanupCancelBtn: document.getElementById('btn-cleanup-cancel'),
     cleanupConfirmBtn: document.getElementById('btn-cleanup-confirm'),
     reviewList: document.getElementById('review-list'),

@@ -1843,11 +1843,169 @@ def test_cleanup_review_buckets_real_db_one_batch_and_one_audit() -> None:
         conn.close()
 
 
-def test_cleanup_review_buckets_real_db_rolls_back_all_buckets_on_failure(
+def test_cleanup_review_buckets_real_db_rolls_back_after_writes_on_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """T3（真实库）：第二个桶的写入阶段失败时整个事务回滚，
-    第一个桶的行保持原状态，审计也不落任何事件。"""
+    """T3（真实库）：写入全部执行之后（审计阶段）才注入失败，整个事务回滚。
+
+    审计桩先在同一事务内确认两个桶的 UPDATE 都已执行（discarded 计数为 2）
+    再抛异常——保证失败发生在「第一个桶已写入之后」，回滚必须撤销已执行
+    的写入：两个桶的行都保持原状态，审计也不落任何事件。
+    """
+    conn = _connect_real_postgres()
+    owner = "44444444-4444-4444-4444-444444444444"
+
+    def failing_audit(cur: Any, **kwargs: Any) -> int:
+        cur.execute(
+            "SELECT count(*) AS n FROM manual_reviews WHERE status = 'discarded'"
+        )
+        written = int(cur.fetchone()["n"])
+        assert written == 2, f"注入时应有 2 行已写入，实际 {written}"
+        raise RuntimeError("injected failure after writes")
+
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        failing_audit,
+    )
+    try:
+        with conn.cursor() as cur:
+            _seed_manual_reviews_tables(cur)
+            for article_id, status, report_type in (
+                ("r1", "selected", "zongbao"),
+                ("r2", "selected", "wanbao"),
+            ):
+                cur.execute(
+                    """
+                    INSERT INTO news_summaries
+                        (article_id, title, status, created_at)
+                    VALUES (%s, %s, 'ready_for_export',
+                            '2026-09-01T08:00:00+08:00')
+                    """,
+                    (article_id, f"标题{article_id}"),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO manual_reviews
+                        (owner_user_id, article_id, status, version,
+                         report_type)
+                    VALUES (%s, %s, %s, 1, %s)
+                    """,
+                    (owner, article_id, status, report_type),
+                )
+        conn.commit()
+
+        adapter = db_postgres_core.PostgresAdapter(connection=conn)
+        with pytest.raises(RuntimeError, match="injected failure after writes"):
+            adapter.cleanup_review_buckets_before_date_as_user(
+                owner_user_id=owner,
+                buckets=[
+                    {"report_type": "zongbao", "status": "selected"},
+                    {"report_type": "wanbao", "status": "selected"},
+                ],
+                created_before=date(2026, 10, 1),
+                actor_username="admin-a",
+                actor_user_id=owner,
+            )
+
+        with conn.cursor() as cur:
+            # 已执行的写入必须被回滚：两个桶的行都保持原状态
+            for article_id in ("r1", "r2"):
+                cur.execute(
+                    "SELECT status, version FROM manual_reviews "
+                    "WHERE article_id = %s",
+                    (article_id,),
+                )
+                row = cur.fetchone()
+                assert row["status"] == "selected", article_id
+                assert row["version"] == 1, article_id
+            cur.execute("SELECT count(*) AS total FROM review_events")
+            assert int(cur.fetchone()["total"]) == 0
+    finally:
+        conn.close()
+
+
+def test_cleanup_candidates_real_db_rolls_back_after_writes_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T3（真实库，分类路径）：写入全部执行之后（审计阶段）才注入失败，
+    整个事务回滚，第一个分类的行同样保持原状态。"""
+    conn = _connect_real_postgres()
+    owner = "55555555-5555-5555-5555-555555555555"
+
+    def failing_audit(cur: Any, **kwargs: Any) -> int:
+        cur.execute(
+            "SELECT count(*) AS n FROM manual_reviews WHERE status = 'discarded'"
+        )
+        written = int(cur.fetchone()["n"])
+        assert written == 2, f"注入时应有 2 行已写入，实际 {written}"
+        raise RuntimeError("injected failure after writes")
+
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        failing_audit,
+    )
+    try:
+        with conn.cursor() as cur:
+            _seed_manual_reviews_tables(cur)
+            articles = [
+                ("c1", True, "positive"),
+                ("c2", False, "negative"),
+            ]
+            for article_id, beijing, sentiment in articles:
+                cur.execute(
+                    """
+                    INSERT INTO news_summaries
+                        (article_id, title, status, created_at,
+                         is_beijing_related, sentiment_label)
+                    VALUES (%s, %s, 'ready_for_export',
+                            '2026-09-01T08:00:00+08:00', %s, %s)
+                    """,
+                    (article_id, f"标题{article_id}", beijing, sentiment),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO manual_reviews
+                        (owner_user_id, article_id, status, version)
+                    VALUES (%s, %s, 'pending', 1)
+                    """,
+                    (owner, article_id),
+                )
+        conn.commit()
+
+        adapter = db_postgres_core.PostgresAdapter(connection=conn)
+        with pytest.raises(RuntimeError, match="injected failure after writes"):
+            adapter.cleanup_manual_candidates_before_date_as_user(
+                buckets=[
+                    {"region": "internal", "sentiment": "positive"},
+                    {"region": "external", "sentiment": "negative"},
+                ],
+                created_before=date(2026, 10, 1),
+                actor_username="admin-a",
+                actor_user_id=owner,
+            )
+
+        with conn.cursor() as cur:
+            for article_id in ("c1", "c2"):
+                cur.execute(
+                    "SELECT status, version FROM manual_reviews "
+                    "WHERE article_id = %s",
+                    (article_id,),
+                )
+                row = cur.fetchone()
+                assert row["status"] == "pending", article_id
+                assert row["version"] == 1, article_id
+            cur.execute("SELECT count(*) AS total FROM review_events")
+            assert int(cur.fetchone()["total"]) == 0
+    finally:
+        conn.close()
+
+
+def test_cleanup_review_buckets_real_db_fetch_failure_propagates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """锁定阶段失败必须向外抛出（不得吞掉继续），事务回滚、不写审计。"""
     conn = _connect_real_postgres()
     owner = "44444444-4444-4444-4444-444444444444"
     real_fetch = db_postgres_manual_reviews.fetch_review_bucket_before_date_for_update
@@ -1893,7 +2051,7 @@ def test_cleanup_review_buckets_real_db_rolls_back_all_buckets_on_failure(
         conn.commit()
 
         adapter = db_postgres_core.PostgresAdapter(connection=conn)
-        with pytest.raises(RuntimeError, match="injected failure"):
+        with pytest.raises(RuntimeError, match="injected failure on second bucket"):
             adapter.cleanup_review_buckets_before_date_as_user(
                 owner_user_id=owner,
                 buckets=[
@@ -1907,21 +2065,15 @@ def test_cleanup_review_buckets_real_db_rolls_back_all_buckets_on_failure(
 
         assert fetch_calls["count"] == 2
         with conn.cursor() as cur:
-            # 第一个桶的行必须保持原状态
-            cur.execute(
-                "SELECT status, version FROM manual_reviews "
-                "WHERE article_id = 'r1'",
-            )
-            row = cur.fetchone()
-            assert row["status"] == "selected"
-            assert row["version"] == 1
-            cur.execute(
-                "SELECT status, version FROM manual_reviews "
-                "WHERE article_id = 'r2'",
-            )
-            row = cur.fetchone()
-            assert row["status"] == "selected"
-            assert row["version"] == 1
+            for article_id in ("r1", "r2"):
+                cur.execute(
+                    "SELECT status, version FROM manual_reviews "
+                    "WHERE article_id = %s",
+                    (article_id,),
+                )
+                row = cur.fetchone()
+                assert row["status"] == "selected", article_id
+                assert row["version"] == 1, article_id
             cur.execute("SELECT count(*) AS total FROM review_events")
             assert int(cur.fetchone()["total"]) == 0
     finally:

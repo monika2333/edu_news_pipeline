@@ -127,7 +127,15 @@ function discardFilterDescribe() {
     return parts.join(' · ');
 }
 
+// loadDiscardData 请求序号：只有最新一次请求允许渲染列表，被取代的请求
+// 无论成败都静默丢弃（与筛选页 loadFilterData 的做法一致）
+let discardLoadSeq = 0;
+function isLatestDiscardLoad(seq) {
+    return seq === discardLoadSeq;
+}
+
 async function loadDiscardData() {
+    const seq = ++discardLoadSeq;
     syncDiscardToolbar();
     clearDiscardSelection();
     setDiscardControlsDisabled(false);
@@ -143,6 +151,7 @@ async function loadDiscardData() {
         discardFilterPairs().forEach(([key, value]) => params.set(key, value));
         const res = await workspaceFetch(`${API_BASE}/discarded?${params.toString()}`);
         const data = await res.json();
+        if (!isLatestDiscardLoad(seq)) return false;
         discardLastTotal = data.total || 0;
         renderDiscardList(data.items);
         if (!(data.items || []).length && state.discardPage > 1) {
@@ -152,10 +161,13 @@ async function loadDiscardData() {
         }
         updatePagination('discard', data.total || 0, state.discardPage, data.limit);
         updateDiscardSearchMeta(data.total || 0);
+        return true;
     } catch (e) {
+        if (!isLatestDiscardLoad(seq)) return false;
         elements.discardList.innerHTML = '<div class="error">加载数据失败</div>';
         discardLastTotal = 0;
         updateDiscardSearchMeta(null);
+        return false;
     }
 }
 

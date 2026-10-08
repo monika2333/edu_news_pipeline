@@ -868,6 +868,28 @@ def test_discarded_api_searches_and_treats_blank_query_as_absent(monkeypatch) ->
     assert blank.json() == absent.json()
 
 
+def test_discarded_api_returns_422_when_search_terms_exceed_limit(
+    monkeypatch,
+) -> None:
+    """11 个关键词：service 层抛 TooManySearchTermsError，路由统一转 422。"""
+    rows = _build_rows()
+    for row in rows:
+        row["status"] = "discarded"
+    adapter = FakeManualFilterAdapter(rows)
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
+
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/manual_filter/discarded",
+        params={"q": " 词一 词二 词三 词四 词五 词六 词七 词八 词九 词十 词十一 "},
+    )
+    assert response.status_code == 422
+    assert "检索词最多" in response.json()["detail"]
+
+
 def test_candidates_api_uses_created_before_and_ignores_old_query_name(monkeypatch) -> None:
     adapter = FakeManualFilterAdapter(_build_rows())
     monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)

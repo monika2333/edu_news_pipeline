@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import threading
+import time
 from datetime import date, datetime, timezone
-
-_AWARE_BATCH_TS = datetime(2026, 10, 7, 6, 32, 5, 123456, tzinfo=timezone.utc)
 from typing import Any, Optional
 
 import pytest
 
 from src.adapters import db_postgres_shift_reviews
+
+_AWARE_BATCH_TS = datetime(2026, 10, 7, 6, 32, 5, 123456, tzinfo=timezone.utc)
 
 
 class ShiftReviewListCursor:
@@ -1038,6 +1040,9 @@ def test_fetch_discarded_shift_batches_scopes_shift_and_roundtrips() -> None:
     editor_id = "66666666-6666-6666-6666-666666666666"
     batch_x = "2026-10-07T09:30:00.123456+08:00"
     batch_y = "2026-10-06T08:00:00+08:00"
+    # 单条组的独立时间戳：decided_at 非空才会真正落到 HAVING count(*) >= 2
+    # 的判定上（为空会被 decided_at IS NOT NULL 先排除，测不到门槛）
+    batch_s0 = "2026-10-05T07:30:00+08:00"
 
     try:
         conn = psycopg.connect(
@@ -1101,6 +1106,7 @@ def test_fetch_discarded_shift_batches_scopes_shift_and_roundtrips() -> None:
                 )
 
             # 本班次：批次 X（3 条，带非零微秒）、批次 Y（2 条）、单条 1 组
+            # （s0 时间戳非空，只有条数门槛能把它排掉）
             for index in range(3):
                 insert_article(f"x{index}", shift_id)
             set_batch(["x0", "x1", "x2"], batch_x)
@@ -1108,6 +1114,7 @@ def test_fetch_discarded_shift_batches_scopes_shift_and_roundtrips() -> None:
                 insert_article(f"y{index}", shift_id)
             set_batch(["y0", "y1"], batch_y)
             insert_article("s0", shift_id)
+            set_batch(["s0"], batch_s0)
 
             # 其他班次：3 条同批，不得计入
             for index in range(3):
@@ -1140,3 +1147,168 @@ def test_fetch_discarded_shift_batches_scopes_shift_and_roundtrips() -> None:
             )
             assert total == 3
             assert {row["article_id"] for row in rows} == {"x0", "x1", "x2"}
+
+def test_bulk_restore_skips_row_concurrently_moved_off_discarded() -> None:
+    """并发护栏：CTE 圈定后、UPDATE 执行前被改成 selected 的行不被覆盖回待处理。
+
+    连接 B 以未提交事务把行改成 selected 并持有行锁；连接 A 的恢复语句先
+    物化 CTE（看到的是已放弃版本，故 matched = 1），随后 UPDATE 在该行锁上
+    阻塞；等 A 真正阻塞后再让 B 提交，READ COMMITTED 会以最新版本重查
+    WHERE，`sr.decision = 'discarded'` 条件把该行排除（updated = 0）。
+    该场景需要两个连接看到同一份数据，只能写真实表，结束按唯一 shift 清理。
+    """
+    psycopg = pytest.importorskip("psycopg")
+    from uuid import uuid4
+
+    from psycopg.rows import dict_row
+
+    from src.config import get_settings
+
+    settings = get_settings()
+    shift_id = uuid4()
+    article_id = f"restore-race-{uuid4().hex[:12]}"
+
+    def connect(**kwargs: Any) -> Any:
+        return psycopg.connect(
+            host=settings.db_host,
+            port=settings.db_port,
+            user=settings.db_user,
+            password=settings.db_password,
+            dbname=settings.db_name,
+            row_factory=dict_row,
+            connect_timeout=5,
+            **kwargs,
+        )
+
+    try:
+        conn_a = connect(autocommit=True, options="-c statement_timeout=15000")
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres 不可用，跳过真实 SQL 测试：{exc}")
+    conn_b: Any = None
+    worker: Any = None
+    try:
+        with conn_a.cursor() as cur:
+            user_row = cur.execute(
+                "SELECT id FROM public.console_users ORDER BY id LIMIT 1"
+            ).fetchone()
+            if not user_row:
+                pytest.skip("console_users 为空，跳过写真实表的并发测试")
+            user_id = str(user_row["id"])
+            # starts_at 全表唯一，取一个不会与真实班次相撞的历史时间
+            cur.execute(
+                """
+                INSERT INTO public.duty_shifts (id, user_id, starts_at, ends_at)
+                VALUES (%s, %s, '2019-06-15T04:00:00+08:00',
+                        '2019-06-16T04:00:00+08:00')
+                """,
+                (shift_id, user_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO public.news_summaries
+                    (article_id, title, status, created_at)
+                VALUES (%s, %s, 'ready_for_export',
+                        '2019-06-15T12:00:00+08:00')
+                """,
+                (article_id, f"标题{article_id}"),
+            )
+            cur.execute(
+                """
+                INSERT INTO public.shift_reviews
+                    (shift_id, article_id, created_by_user_id,
+                     updated_by_user_id, decision, version, decided_at)
+                VALUES (%s, %s, %s, %s, 'discarded', 1,
+                        '2019-06-15T13:00:00+08:00')
+                """,
+                (shift_id, article_id, user_id, user_id),
+            )
+
+        # B：未提交地把行改成 selected，持有该行的行锁
+        conn_b = connect(autocommit=False)
+        with conn_b.cursor() as cur_b:
+            cur_b.execute(
+                """
+                UPDATE public.shift_reviews
+                SET decision = 'selected',
+                    version = version + 1,
+                    updated_at = now()
+                WHERE shift_id = %s AND article_id = %s
+                """,
+                (shift_id, article_id),
+            )
+
+        result_box: dict[str, Any] = {}
+
+        def run_restore() -> None:
+            try:
+                with conn_a.cursor() as cur_a:
+                    result_box["result"] = (
+                        db_postgres_shift_reviews.bulk_restore_shift_reviews(
+                            cur_a,
+                            shift_id=shift_id,
+                            actor_user_id=user_id,
+                            dry_run=False,
+                        )
+                    )
+            except Exception as exc:  # pragma: no cover - 交错失败路径
+                result_box["error"] = exc
+
+        worker = threading.Thread(target=run_restore, daemon=True)
+        worker.start()
+        # 等 A 的 UPDATE 真正阻塞在行锁上再提交 B，保证「CTE 圈定后、
+        # UPDATE 执行前」的交错；否则 B 先提交会让 CTE 直接看不到该行
+        deadline = time.monotonic() + 10
+        blocked = False
+        while time.monotonic() < deadline:
+            with conn_b.cursor() as cur_b:
+                row = cur_b.execute(
+                    "SELECT 1 AS blocked FROM pg_stat_activity "
+                    "WHERE pid = %s AND wait_event_type = 'Lock'",
+                    (conn_a.info.backend_pid,),
+                ).fetchone()
+            if row:
+                blocked = True
+                break
+            time.sleep(0.02)
+        assert blocked, "恢复语句没有如期阻塞在并发行锁上，交错未构造成功"
+        conn_b.commit()
+        worker.join(timeout=20)
+        assert not worker.is_alive(), "恢复语句没有在超时内完成"
+        assert "error" not in result_box, str(result_box.get("error"))
+        # matched = 1 证明 CTE 圈到的是已放弃版本；updated = 0 证明
+        # 重查 WHERE 时把已改成 selected 的行排除了
+        assert result_box["result"] == {"matched": 1, "updated": 0}
+        with conn_a.cursor() as cur:
+            row = cur.execute(
+                "SELECT decision, version FROM public.shift_reviews "
+                "WHERE shift_id = %s AND article_id = %s",
+                (shift_id, article_id),
+            ).fetchone()
+        assert row is not None
+        assert row["decision"] == "selected"
+        assert row["version"] == 2
+    finally:
+        if conn_b is not None:
+            try:
+                conn_b.rollback()
+            except Exception:
+                pass
+            conn_b.close()
+        if worker is not None:
+            worker.join(timeout=5)
+        try:
+            with conn_a.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM public.shift_reviews WHERE shift_id = %s",
+                    (shift_id,),
+                )
+                cur.execute(
+                    "DELETE FROM public.duty_shifts WHERE id = %s",
+                    (shift_id,),
+                )
+                cur.execute(
+                    "DELETE FROM public.news_summaries WHERE article_id = %s",
+                    (article_id,),
+                )
+        finally:
+            conn_a.close()

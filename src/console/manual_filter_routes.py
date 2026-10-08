@@ -303,15 +303,16 @@ def list_discarded_api(
             decided_since=decided_since,
             batch_decided_at=batch_decided_at,
         )
+        # q 超过检索词上限时 service 层抛 TooManySearchTermsError，同样按 422 处理
+        return manual_filter_service.list_discarded(
+            owner_user_id=str(user.user_id),
+            limit=limit,
+            offset=offset,
+            report_type=report_type,
+            **discard_filters,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return manual_filter_service.list_discarded(
-        owner_user_id=str(user.user_id),
-        limit=limit,
-        offset=offset,
-        report_type=report_type,
-        **discard_filters,
-    )
 
 
 @router.post("/edit")

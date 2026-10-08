@@ -3,9 +3,13 @@
 // 卡片按四桶分类分组展示（京内/京外 × 正面/负面），分组顺序固定。
 const SUMMARY_CATEGORY_ORDER = ['京内正面', '京内负面', '京外正面', '京外负面'];
 function getVisibleItems() {
-    const query = state.searchQuery.trim().toLocaleLowerCase('zh-CN');
-    if (!query) return state.items;
-    return state.items.filter(item => [
+    const terms = state.searchQuery
+        .trim()
+        .toLocaleLowerCase('zh-CN')
+        .split(/\s+/)
+        .filter(Boolean);
+    if (!terms.length) return state.items;
+    return state.items.filter(item => terms.every(term => [
         item.title,
         item.edited_summary,
         item.summary,
@@ -14,7 +18,7 @@ function getVisibleItems() {
         item.llm_source,
         item.decision,
         item.admin_discarded_by_display_name
-    ].some(value => String(value ?? '').toLocaleLowerCase('zh-CN').includes(query)));
+    ].some(value => String(value ?? '').toLocaleLowerCase('zh-CN').includes(term))));
 }
 
 async function request(path, options) {

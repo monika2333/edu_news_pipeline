@@ -599,8 +599,9 @@ async function confirmClearReviewBuckets() {
 }
 
 // --- Cleanup Old News (admin review) ---
-// 与全量筛选页的清理旧新闻同构：按收录日期（早于所选日期，不含当天）逐桶预览与清理，
-// 「旧」的判据同样是新闻入库时间（news_summaries.created_at 上海时区日期）。
+// 与全量筛选页的清理旧新闻同构：按收录日期（早于所选日期，不含当天）一次请求
+// 预览与清理（多桶合并在一个事务里），「旧」的判据同样是新闻入库时间
+// （news_summaries.created_at 上海时区日期）。
 // 区别只在圈选维度：这里是报别 × 采纳/备选四个桶，不是京内外 × 正负面。
 
 const REVIEW_CLEANUP_BUCKETS = [
@@ -609,11 +610,6 @@ const REVIEW_CLEANUP_BUCKETS = [
     { key: 'wanbao:selected', report_type: 'wanbao', status: 'selected', label: '晚报采纳' },
     { key: 'wanbao:backup', report_type: 'wanbao', status: 'backup', label: '晚报备选' }
 ];
-
-const REVIEW_CLEANUP_BUCKET_LABELS = REVIEW_CLEANUP_BUCKETS.reduce((labels, bucket) => {
-    labels[bucket.key] = bucket.label;
-    return labels;
-}, {});
 
 let reviewCleanupPreviewSeq = 0;
 let isCleaningUpReview = false;
@@ -703,24 +699,29 @@ async function handleReviewCleanupDateChange() {
     setReviewCleanupStats('正在统计…');
     setReviewCleanupConfirmState(false, '确认清理');
     try {
-        const results = await Promise.all(REVIEW_CLEANUP_BUCKETS.map(async (bucket) => {
-            const res = await workspaceFetch(`${API_BASE}/cleanup-review-buckets`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+        // 一次预览请求带全部 4 个桶，后端逐桶返回 matched
+        const res = await workspaceFetch(`${API_BASE}/cleanup-review-buckets`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                created_before: createdBefore,
+                buckets: REVIEW_CLEANUP_BUCKETS.map((bucket) => ({
                     report_type: bucket.report_type,
-                    status: bucket.status,
-                    created_before: createdBefore,
-                    dry_run: true
-                })
-            });
-            if (!res.ok) throw new Error('failed preview');
-            return { bucket, result: await res.json() };
-        }));
+                    status: bucket.status
+                })),
+                dry_run: true
+            })
+        });
+        if (!res.ok) throw new Error('failed preview');
+        const result = await res.json();
         if (seq !== reviewCleanupPreviewSeq) return;
         const counts = {};
-        results.forEach(({ bucket, result }) => {
-            counts[bucket.key] = Number(result.matched) || 0;
+        (result.buckets || []).forEach((bucketResult) => {
+            const bucket = REVIEW_CLEANUP_BUCKETS.find((candidate) => (
+                candidate.report_type === bucketResult.report_type
+                && candidate.status === bucketResult.status
+            ));
+            if (bucket) counts[bucket.key] = Number(bucketResult.matched) || 0;
         });
         getReviewCleanupRows().forEach((row) => {
             const count = counts[row.dataset.bucket] || 0;
@@ -773,13 +774,18 @@ function buildReviewCleanupUndoAction(undoBuckets) {
     });
 }
 
-function collectReviewCleanupUndo(succeeded) {
-    return succeeded
-        .map((item) => {
-            const bucket = reviewCleanupBucket(item.bucketKey);
+// 从多桶清理的返回结构收集撤销数据：按返回的 buckets 逐桶读取
+// discarded（article_id + 放弃时的新版本号），映射回页面的桶定义
+function collectReviewCleanupUndo(result) {
+    return ((result && result.buckets) || [])
+        .map((bucketResult) => {
+            const bucket = REVIEW_CLEANUP_BUCKETS.find((candidate) => (
+                candidate.report_type === bucketResult.report_type
+                && candidate.status === bucketResult.status
+            ));
             const ids = [];
             const versions = {};
-            ((item.result && item.result.discarded) || []).forEach((entry) => {
+            (bucketResult.discarded || []).forEach((entry) => {
                 if (!entry || !entry.article_id) return;
                 const articleId = String(entry.article_id);
                 ids.push(articleId);
@@ -800,8 +806,7 @@ async function confirmReviewCleanup() {
         const checkbox = row.querySelector('.cleanup-category-check');
         return checkbox && checkbox.checked && !checkbox.disabled;
     });
-    const targets = selectedRows.map((row) => row.dataset.bucket).filter(Boolean);
-    if (!targets.length) return;
+    if (!selectedRows.length) return;
     const totalTargets = selectedRows.reduce(
         (sum, row) => sum + (Number(row.dataset.count) || 0), 0
     );
@@ -810,52 +815,33 @@ async function confirmReviewCleanup() {
     setReviewCleanupConfirmState(false, '正在清理…');
     if (elements.reviewCleanupCancelBtn) elements.reviewCleanupCancelBtn.disabled = true;
     try {
-        const settled = await Promise.allSettled(targets.map(async (bucketKey) => {
-            const bucket = reviewCleanupBucket(bucketKey);
-            const res = await workspaceFetch(`${API_BASE}/cleanup-review-buckets`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    report_type: bucket.report_type,
-                    status: bucket.status,
-                    created_before: createdBefore,
-                    dry_run: false
-                })
-            });
-            if (!res.ok) throw new Error('failed apply');
-            return { bucketKey, result: await res.json() };
-        }));
-        const succeeded = [];
-        const failedKeys = [];
-        settled.forEach((entry, index) => {
-            if (entry.status === 'fulfilled') {
-                succeeded.push(entry.value);
-            } else {
-                failedKeys.push(targets[index]);
-            }
+        // 一次执行请求带勾选的桶：全部成功或全部失败，没有部分完成状态
+        const res = await workspaceFetch(`${API_BASE}/cleanup-review-buckets`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                created_before: createdBefore,
+                buckets: selectedRows.map((row) => {
+                    const bucket = reviewCleanupBucket(row.dataset.bucket);
+                    return { report_type: bucket.report_type, status: bucket.status };
+                }),
+                dry_run: false
+            })
         });
-        const updatedTotal = succeeded.reduce(
-            (sum, item) => sum + (Number(item.result.updated) || 0), 0
-        );
+        if (!res.ok) throw new Error('failed apply');
+        const result = await res.json();
         closeReviewCleanupModal();
         await Promise.all([loadReviewData(), loadStats()]);
-        const undoBuckets = collectReviewCleanupUndo(succeeded);
+        const undoBuckets = collectReviewCleanupUndo(result);
         const undoAction = undoBuckets.length ? buildReviewCleanupUndoAction(undoBuckets) : null;
-        if (!failedKeys.length) {
-            showToast(`已清理 ${updatedTotal} 条旧新闻`, 'success', undoAction);
-        } else {
-            const failedNames = failedKeys
-                .map((key) => REVIEW_CLEANUP_BUCKET_LABELS[key] || key)
-                .join('、');
-            let message = `${failedNames} 清理失败，请重试`;
-            if (updatedTotal > 0) message += `；其余桶已清理 ${updatedTotal} 条`;
-            showToast(message, 'error', undoAction);
-        }
+        showToast(`已清理 ${Number(result.updated) || 0} 条旧新闻`, 'success', undoAction);
     } catch (error) {
-        setReviewCleanupStats('清理失败，请重试', true);
+        // 整次操作没有生效：弹窗保持打开，恢复确认按钮可重试
+        showToast('清理失败，未做任何改动', 'error');
+        setReviewCleanupStats('清理失败，未做任何改动', true);
+        setReviewCleanupConfirmState(true, `清理这 ${totalTargets} 条`);
     } finally {
         isCleaningUpReview = false;
         if (elements.reviewCleanupCancelBtn) elements.reviewCleanupCancelBtn.disabled = false;
-        setReviewCleanupConfirmState(false, '确认清理');
     }
 }

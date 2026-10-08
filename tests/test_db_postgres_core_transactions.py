@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from typing import Any, Iterator, Optional
 
 import pytest
 
-from src.adapters import db_postgres_core
+from src.adapters import db_postgres_core, db_postgres_manual_reviews
 
 
 def test_connection_uses_bounded_connect_and_keepalive_settings(
@@ -591,16 +591,20 @@ def test_discard_manual_candidates_does_not_audit_empty_match(
     assert audit_calls == []
 
 
-def test_discard_review_buckets_before_date_uses_versioned_updates_and_one_audit(
+def test_cleanup_review_buckets_before_date_uses_versioned_updates_and_one_audit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter = object.__new__(db_postgres_core.PostgresAdapter)
     cursor = object()
     events: list[str] = []
-    targets = [
-        {"article_id": "article-1", "version": 3},
-        {"article_id": "article-2", "version": 7},
+    buckets = [
+        {"report_type": "zongbao", "status": "selected"},
+        {"report_type": "wanbao", "status": "backup"},
     ]
+    fetch_targets = {
+        ("zongbao", "selected"): [{"article_id": "article-1", "version": 3}],
+        ("wanbao", "backup"): [{"article_id": "article-2", "version": 7}],
+    }
     before = [
         {"article_id": "article-1", "status": "selected", "version": 3},
         {"article_id": "article-2", "status": "backup", "version": 7},
@@ -631,14 +635,10 @@ def test_discard_review_buckets_before_date_uses_versioned_updates_and_one_audit
 
     def fake_fetch(cur: object, **kwargs: Any) -> list[dict[str, Any]]:
         assert cur is cursor
-        assert kwargs == {
-            "owner_user_id": "admin-1",
-            "status": "selected",
-            "report_type": "zongbao",
-            "created_before": datetime(2026, 9, 1, tzinfo=timezone.utc).date(),
-        }
+        assert kwargs["owner_user_id"] == "admin-1"
+        assert kwargs["created_before"] == datetime(2026, 9, 1, tzinfo=timezone.utc).date()
         events.append("fetch")
-        return targets
+        return fetch_targets[(kwargs["report_type"], kwargs["status"])]
 
     def fake_update(
         cur: object,
@@ -693,18 +693,37 @@ def test_discard_review_buckets_before_date_uses_versioned_updates_and_one_audit
         fake_audit,
     )
 
-    result = adapter.discard_review_buckets_before_date_as_user(
+    result = adapter.cleanup_review_buckets_before_date_as_user(
         owner_user_id="admin-1",
-        status="selected",
-        report_type="zongbao",
+        buckets=buckets,
         created_before=datetime(2026, 9, 1, tzinfo=timezone.utc).date(),
         actor_username="admin-user",
         actor_user_id="admin-1",
         request_id="request-1",
     )
 
-    assert result == after
-    assert events == ["begin", "fetch", "update", "audit", "commit"]
+    # 两个桶在同一次事务里先后锁定，返回值按桶拆分明细
+    assert result == {
+        "buckets": [
+            {
+                "report_type": "zongbao",
+                "status": "selected",
+                "matched": 1,
+                "updated": 1,
+                "discarded": [{"article_id": "article-1", "version": 4}],
+            },
+            {
+                "report_type": "wanbao",
+                "status": "backup",
+                "matched": 1,
+                "updated": 1,
+                "discarded": [{"article_id": "article-2", "version": 8}],
+            },
+        ],
+        "matched": 2,
+        "updated": 2,
+    }
+    assert events == ["begin", "fetch", "fetch", "update", "audit", "commit"]
     assert audit_calls == [
         {
             "actor_user_id": "admin-1",
@@ -715,13 +734,14 @@ def test_discard_review_buckets_before_date_uses_versioned_updates_and_one_audit
             "after_data": {
                 "items": after,
                 "created_before": "2026-09-01",
+                "buckets": buckets,
             },
             "request_id": "request-1",
         }
     ]
 
 
-def test_discard_review_buckets_before_date_does_not_audit_empty_match(
+def test_cleanup_review_buckets_before_date_does_not_audit_empty_match(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter = object.__new__(db_postgres_core.PostgresAdapter)
@@ -768,18 +788,161 @@ def test_discard_review_buckets_before_date_does_not_audit_empty_match(
         lambda cur, **kwargs: audit_calls.append(kwargs),
     )
 
-    result = adapter.discard_review_buckets_before_date_as_user(
+    result = adapter.cleanup_review_buckets_before_date_as_user(
         owner_user_id="admin-1",
-        status="backup",
-        report_type="wanbao",
+        buckets=[{"report_type": "wanbao", "status": "backup"}],
         created_before=datetime(2026, 9, 1, tzinfo=timezone.utc).date(),
         actor_username="admin-user",
         actor_user_id="admin-1",
     )
 
-    assert result == []
+    assert result == {
+        "buckets": [
+            {
+                "report_type": "wanbao",
+                "status": "backup",
+                "matched": 0,
+                "updated": 0,
+                "discarded": [],
+            }
+        ],
+        "matched": 0,
+        "updated": 0,
+    }
     assert events == ["begin", "fetch", "update", "commit"]
     assert audit_calls == []
+
+
+def test_cleanup_manual_candidates_uses_versioned_updates_and_one_audit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = object.__new__(db_postgres_core.PostgresAdapter)
+    cursor = object()
+    events: list[str] = []
+    buckets = [
+        {"region": "internal", "sentiment": "positive"},
+        {"region": "external", "sentiment": "negative"},
+    ]
+    fetch_targets = {
+        ("internal", "positive"): [{"article_id": "article-1", "version": 3}],
+        ("external", "negative"): [{"article_id": "article-2", "version": 7}],
+    }
+    before = [
+        {"article_id": "article-1", "status": "pending", "version": 3},
+        {"article_id": "article-2", "status": "pending", "version": 7},
+    ]
+    after = [
+        {
+            "article_id": "article-1",
+            "status": "discarded",
+            "rank": None,
+            "report_type": None,
+            "version": 4,
+        },
+        {
+            "article_id": "article-2",
+            "status": "discarded",
+            "rank": None,
+            "report_type": None,
+            "version": 8,
+        },
+    ]
+    audit_calls: list[dict[str, Any]] = []
+
+    @contextmanager
+    def fake_transaction() -> Iterator[object]:
+        events.append("begin")
+        yield cursor
+        events.append("commit")
+
+    def fake_fetch(cur: object, **kwargs: Any) -> list[dict[str, Any]]:
+        assert cur is cursor
+        assert kwargs["owner_user_id"] == "admin-1"
+        assert kwargs["terms"] is None
+        assert kwargs["report_type"] is None
+        assert kwargs["duty_unprocessed_only"] is False
+        assert kwargs["created_before"] == datetime(2026, 9, 1, tzinfo=timezone.utc).date()
+        events.append("fetch")
+        return fetch_targets[(kwargs["region"], kwargs["sentiment"])]
+
+    def fake_update(
+        cur: object,
+        updates: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        assert cur is cursor
+        assert updates == [
+            {
+                "article_id": "article-1",
+                "status": "discarded",
+                "rank": None,
+                "report_type": None,
+            },
+            {
+                "article_id": "article-2",
+                "status": "discarded",
+                "rank": None,
+                "report_type": None,
+            },
+        ]
+        assert kwargs["expected_versions"] == {"article-1": 3, "article-2": 7}
+        events.append("update")
+        return before, after
+
+    adapter.transaction = fake_transaction
+    monkeypatch.setattr(
+        db_postgres_core.manual_reviews,
+        "fetch_manual_candidates_before_date_for_update",
+        fake_fetch,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.manual_reviews,
+        "update_manual_review_statuses_with_versions",
+        fake_update,
+    )
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        lambda cur, **kwargs: audit_calls.append(kwargs),
+    )
+
+    result = adapter.cleanup_manual_candidates_before_date_as_user(
+        buckets=buckets,
+        created_before=datetime(2026, 9, 1, tzinfo=timezone.utc).date(),
+        actor_username="admin-user",
+        actor_user_id="admin-1",
+        request_id="request-1",
+    )
+
+    assert result == {
+        "buckets": [
+            {
+                "region": "internal",
+                "sentiment": "positive",
+                "matched": 1,
+                "updated": 1,
+            },
+            {
+                "region": "external",
+                "sentiment": "negative",
+                "matched": 1,
+                "updated": 1,
+            },
+        ],
+        "matched": 2,
+        "updated": 2,
+        "discarded": [
+            {"article_id": "article-1", "version": 4},
+            {"article_id": "article-2", "version": 8},
+        ],
+    }
+    assert events == ["begin", "fetch", "fetch", "update", "commit"]
+    # 整次清理只写一条审计事件
+    assert len(audit_calls) == 1
+    assert audit_calls[0]["action"] == "manual_review.cleanup_candidates"
+    assert audit_calls[0]["after_data"]["buckets"] == buckets
+    assert audit_calls[0]["after_data"]["created_before"] == "2026-09-01"
+    assert audit_calls[0]["request_id"] == "request-1"
 
 
 def test_clear_review_buckets_for_owner_does_not_audit_empty_match(
@@ -1424,3 +1587,494 @@ def test_shift_review_order_and_categories_share_one_transaction(
         "shift_review.reorder",
         "commit",
     ]
+
+
+
+
+def _connect_real_postgres() -> Any:
+    """真实库连接（dict_row）；数据库不可用时跳过测试。"""
+    psycopg = pytest.importorskip("psycopg")
+    from psycopg.rows import dict_row
+
+    from src.config import get_settings
+
+    settings = get_settings()
+    try:
+        return psycopg.connect(
+            host=settings.db_host,
+            port=settings.db_port,
+            user=settings.db_user,
+            password=settings.db_password,
+            dbname=settings.db_name,
+            autocommit=False,
+            row_factory=dict_row,
+            connect_timeout=5,
+        )
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres 不可用，跳过真实 SQL 测试：{exc}")
+
+
+def _seed_manual_reviews_tables(cur: Any) -> None:
+    for table in ("manual_reviews", "news_summaries", "review_events"):
+        cur.execute(
+            f"CREATE TEMP TABLE {table} "
+            f"(LIKE public.{table} INCLUDING DEFAULTS)"
+        )
+    # 兼容缺少 owner_user_id 列的旧库（与 test_db_postgres_manual_reviews 一致）
+    cur.execute(
+        "ALTER TABLE manual_reviews "
+        "ADD COLUMN IF NOT EXISTS owner_user_id uuid NOT NULL"
+    )
+
+
+def test_cleanup_candidates_real_db_one_batch_and_one_audit() -> None:
+    """T1/T6（真实库）：多分类一次事务放弃——decided_at 全等、
+    fetch_discarded_batches 只返回一个批次且条数等于放弃总数、审计只一条。"""
+    conn = _connect_real_postgres()
+    owner = "11111111-1111-1111-1111-111111111111"
+    other_owner = "22222222-2222-2222-2222-222222222222"
+    try:
+        with conn.cursor() as cur:
+            _seed_manual_reviews_tables(cur)
+            articles = [
+                # (article_id, is_beijing_related, sentiment_label, created_at)
+                ("a1", True, "positive", "2026-09-01T08:00:00+08:00"),
+                ("a2", True, "positive", "2026-09-02T08:00:00+08:00"),
+                ("b1", False, "negative", "2026-09-03T08:00:00+08:00"),
+                # 晚于 created_before，不得命中
+                ("n1", True, "positive", "2026-10-07T08:00:00+08:00"),
+            ]
+            for article_id, beijing, sentiment, created_at in articles:
+                cur.execute(
+                    """
+                    INSERT INTO news_summaries
+                        (article_id, title, status, created_at,
+                         is_beijing_related, sentiment_label)
+                    VALUES (%s, %s, 'ready_for_export', %s, %s, %s)
+                    """,
+                    (article_id, f"标题{article_id}", created_at, beijing, sentiment),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO manual_reviews
+                        (owner_user_id, article_id, status, version)
+                    VALUES (%s, %s, 'pending', 1)
+                    """,
+                    (owner, article_id),
+                )
+            # 其他管理员的 a1 不得被卷入
+            cur.execute(
+                """
+                INSERT INTO manual_reviews
+                    (owner_user_id, article_id, status, version)
+                VALUES (%s, 'a1', 'pending', 1)
+                """,
+                (other_owner,),
+            )
+        conn.commit()
+
+        adapter = db_postgres_core.PostgresAdapter(connection=conn)
+        result = adapter.cleanup_manual_candidates_before_date_as_user(
+            buckets=[
+                {"region": "internal", "sentiment": "positive"},
+                {"region": "external", "sentiment": "negative"},
+                {"region": "internal", "sentiment": "negative"},
+            ],
+            created_before=date(2026, 10, 1),
+            actor_username="admin-a",
+            actor_user_id=owner,
+            request_id="req-t1",
+        )
+
+        assert result["matched"] == 3
+        assert result["updated"] == 3
+        assert sorted(
+            (bucket["region"], bucket["sentiment"], bucket["matched"], bucket["updated"])
+            for bucket in result["buckets"]
+        ) == [
+            ("external", "negative", 1, 1),
+            ("internal", "negative", 0, 0),
+            ("internal", "positive", 2, 2),
+        ]
+        assert sorted(
+            entry["article_id"] for entry in result["discarded"]
+        ) == ["a1", "a2", "b1"]
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT article_id, decided_at FROM manual_reviews "
+                "WHERE owner_user_id = %s AND status = 'discarded'",
+                (owner,),
+            )
+            rows = cur.fetchall()
+            assert {row["article_id"] for row in rows} == {"a1", "a2", "b1"}
+            decided_ats = {row["decided_at"] for row in rows}
+            # 同一事务里的 now() 是事务时间戳：所有被放弃行完全相等
+            assert len(decided_ats) == 1
+            decided_at = next(iter(decided_ats))
+
+            # 放弃页批次视角：只返回一个批次，条数等于本次放弃总数
+            batches = db_postgres_manual_reviews.fetch_discarded_batches(
+                cur,
+                owner_user_id=owner,
+            )
+            assert batches == [{"decided_at": decided_at, "count": 3}]
+
+            # 未命中的行与其他管理员的工作区不受影响
+            cur.execute(
+                "SELECT status FROM manual_reviews "
+                "WHERE article_id = 'n1' AND owner_user_id = %s",
+                (owner,),
+            )
+            assert cur.fetchone()["status"] == "pending"
+            cur.execute(
+                "SELECT status FROM manual_reviews "
+                "WHERE article_id = 'a1' AND owner_user_id = %s",
+                (other_owner,),
+            )
+            assert cur.fetchone()["status"] == "pending"
+
+            # 整次清理只写一条审计事件
+            cur.execute("SELECT count(*) AS total FROM review_events")
+            assert int(cur.fetchone()["total"]) == 1
+    finally:
+        conn.close()
+
+
+def test_cleanup_review_buckets_real_db_one_batch_and_one_audit() -> None:
+    """T2/T6（真实库）：多桶一次事务放弃——decided_at 全等、
+    只返回一个批次、审计只一条；逐桶明细按报别×状态拆分。"""
+    conn = _connect_real_postgres()
+    owner = "33333333-3333-3333-3333-333333333333"
+    try:
+        with conn.cursor() as cur:
+            _seed_manual_reviews_tables(cur)
+            rows = [
+                # (article_id, status, report_type, created_at)
+                ("r1", "selected", "zongbao", "2026-09-01T08:00:00+08:00"),
+                ("r2", "selected", "zongbao", "2026-09-02T08:00:00+08:00"),
+                ("r3", "backup", "wanbao", "2026-09-03T08:00:00+08:00"),
+                # 晚于 created_before，不得命中
+                ("r4", "selected", "zongbao", "2026-10-07T08:00:00+08:00"),
+            ]
+            for article_id, status, report_type, created_at in rows:
+                cur.execute(
+                    """
+                    INSERT INTO news_summaries
+                        (article_id, title, status, created_at)
+                    VALUES (%s, %s, 'ready_for_export', %s)
+                    """,
+                    (article_id, f"标题{article_id}", created_at),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO manual_reviews
+                        (owner_user_id, article_id, status, version,
+                         report_type, rank)
+                    VALUES (%s, %s, %s, 1, %s, NULL)
+                    """,
+                    (owner, article_id, status, report_type),
+                )
+        conn.commit()
+
+        adapter = db_postgres_core.PostgresAdapter(connection=conn)
+        result = adapter.cleanup_review_buckets_before_date_as_user(
+            owner_user_id=owner,
+            buckets=[
+                {"report_type": "zongbao", "status": "selected"},
+                {"report_type": "wanbao", "status": "backup"},
+                {"report_type": "wanbao", "status": "selected"},
+            ],
+            created_before=date(2026, 10, 1),
+            actor_username="admin-a",
+            actor_user_id=owner,
+            request_id="req-t2",
+        )
+
+        assert result["matched"] == 3
+        assert result["updated"] == 3
+        by_key = {
+            (bucket["report_type"], bucket["status"]): bucket
+            for bucket in result["buckets"]
+        }
+        assert by_key[("zongbao", "selected")]["matched"] == 2
+        assert by_key[("zongbao", "selected")]["updated"] == 2
+        assert sorted(
+            entry["article_id"]
+            for entry in by_key[("zongbao", "selected")]["discarded"]
+        ) == ["r1", "r2"]
+        assert by_key[("wanbao", "backup")]["matched"] == 1
+        assert by_key[("wanbao", "backup")]["updated"] == 1
+        assert [
+            entry["article_id"]
+            for entry in by_key[("wanbao", "backup")]["discarded"]
+        ] == ["r3"]
+        assert by_key[("wanbao", "selected")]["matched"] == 0
+        assert by_key[("wanbao", "selected")]["discarded"] == []
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT article_id, decided_at, report_type FROM manual_reviews "
+                "WHERE owner_user_id = %s AND status = 'discarded'",
+                (owner,),
+            )
+            rows = cur.fetchall()
+            assert {row["article_id"] for row in rows} == {"r1", "r2", "r3"}
+            decided_ats = {row["decided_at"] for row in rows}
+            assert len(decided_ats) == 1
+            decided_at = next(iter(decided_ats))
+            # 放弃时保留原报别（report_type 走 COALESCE）
+            assert all(row["report_type"] in ("zongbao", "wanbao") for row in rows)
+
+            batches = db_postgres_manual_reviews.fetch_discarded_batches(
+                cur,
+                owner_user_id=owner,
+            )
+            assert batches == [{"decided_at": decided_at, "count": 3}]
+
+            cur.execute(
+                "SELECT status FROM manual_reviews WHERE article_id = 'r4'",
+            )
+            assert cur.fetchone()["status"] == "selected"
+
+            cur.execute("SELECT count(*) AS total FROM review_events")
+            assert int(cur.fetchone()["total"]) == 1
+    finally:
+        conn.close()
+
+
+def test_cleanup_review_buckets_real_db_rolls_back_after_writes_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T3（真实库）：写入全部执行之后（审计阶段）才注入失败，整个事务回滚。
+
+    审计桩先在同一事务内确认两个桶的 UPDATE 都已执行（discarded 计数为 2）
+    再抛异常——保证失败发生在「第一个桶已写入之后」，回滚必须撤销已执行
+    的写入：两个桶的行都保持原状态，审计也不落任何事件。
+    """
+    conn = _connect_real_postgres()
+    owner = "44444444-4444-4444-4444-444444444444"
+
+    def failing_audit(cur: Any, **kwargs: Any) -> int:
+        cur.execute(
+            "SELECT count(*) AS n FROM manual_reviews WHERE status = 'discarded'"
+        )
+        written = int(cur.fetchone()["n"])
+        assert written == 2, f"注入时应有 2 行已写入，实际 {written}"
+        raise RuntimeError("injected failure after writes")
+
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        failing_audit,
+    )
+    try:
+        with conn.cursor() as cur:
+            _seed_manual_reviews_tables(cur)
+            for article_id, status, report_type in (
+                ("r1", "selected", "zongbao"),
+                ("r2", "selected", "wanbao"),
+            ):
+                cur.execute(
+                    """
+                    INSERT INTO news_summaries
+                        (article_id, title, status, created_at)
+                    VALUES (%s, %s, 'ready_for_export',
+                            '2026-09-01T08:00:00+08:00')
+                    """,
+                    (article_id, f"标题{article_id}"),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO manual_reviews
+                        (owner_user_id, article_id, status, version,
+                         report_type)
+                    VALUES (%s, %s, %s, 1, %s)
+                    """,
+                    (owner, article_id, status, report_type),
+                )
+        conn.commit()
+
+        adapter = db_postgres_core.PostgresAdapter(connection=conn)
+        with pytest.raises(RuntimeError, match="injected failure after writes"):
+            adapter.cleanup_review_buckets_before_date_as_user(
+                owner_user_id=owner,
+                buckets=[
+                    {"report_type": "zongbao", "status": "selected"},
+                    {"report_type": "wanbao", "status": "selected"},
+                ],
+                created_before=date(2026, 10, 1),
+                actor_username="admin-a",
+                actor_user_id=owner,
+            )
+
+        with conn.cursor() as cur:
+            # 已执行的写入必须被回滚：两个桶的行都保持原状态
+            for article_id in ("r1", "r2"):
+                cur.execute(
+                    "SELECT status, version FROM manual_reviews "
+                    "WHERE article_id = %s",
+                    (article_id,),
+                )
+                row = cur.fetchone()
+                assert row["status"] == "selected", article_id
+                assert row["version"] == 1, article_id
+            cur.execute("SELECT count(*) AS total FROM review_events")
+            assert int(cur.fetchone()["total"]) == 0
+    finally:
+        conn.close()
+
+
+def test_cleanup_candidates_real_db_rolls_back_after_writes_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T3（真实库，分类路径）：写入全部执行之后（审计阶段）才注入失败，
+    整个事务回滚，第一个分类的行同样保持原状态。"""
+    conn = _connect_real_postgres()
+    owner = "55555555-5555-5555-5555-555555555555"
+
+    def failing_audit(cur: Any, **kwargs: Any) -> int:
+        cur.execute(
+            "SELECT count(*) AS n FROM manual_reviews WHERE status = 'discarded'"
+        )
+        written = int(cur.fetchone()["n"])
+        assert written == 2, f"注入时应有 2 行已写入，实际 {written}"
+        raise RuntimeError("injected failure after writes")
+
+    monkeypatch.setattr(
+        db_postgres_core.audit,
+        "insert_review_event",
+        failing_audit,
+    )
+    try:
+        with conn.cursor() as cur:
+            _seed_manual_reviews_tables(cur)
+            articles = [
+                ("c1", True, "positive"),
+                ("c2", False, "negative"),
+            ]
+            for article_id, beijing, sentiment in articles:
+                cur.execute(
+                    """
+                    INSERT INTO news_summaries
+                        (article_id, title, status, created_at,
+                         is_beijing_related, sentiment_label)
+                    VALUES (%s, %s, 'ready_for_export',
+                            '2026-09-01T08:00:00+08:00', %s, %s)
+                    """,
+                    (article_id, f"标题{article_id}", beijing, sentiment),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO manual_reviews
+                        (owner_user_id, article_id, status, version)
+                    VALUES (%s, %s, 'pending', 1)
+                    """,
+                    (owner, article_id),
+                )
+        conn.commit()
+
+        adapter = db_postgres_core.PostgresAdapter(connection=conn)
+        with pytest.raises(RuntimeError, match="injected failure after writes"):
+            adapter.cleanup_manual_candidates_before_date_as_user(
+                buckets=[
+                    {"region": "internal", "sentiment": "positive"},
+                    {"region": "external", "sentiment": "negative"},
+                ],
+                created_before=date(2026, 10, 1),
+                actor_username="admin-a",
+                actor_user_id=owner,
+            )
+
+        with conn.cursor() as cur:
+            for article_id in ("c1", "c2"):
+                cur.execute(
+                    "SELECT status, version FROM manual_reviews "
+                    "WHERE article_id = %s",
+                    (article_id,),
+                )
+                row = cur.fetchone()
+                assert row["status"] == "pending", article_id
+                assert row["version"] == 1, article_id
+            cur.execute("SELECT count(*) AS total FROM review_events")
+            assert int(cur.fetchone()["total"]) == 0
+    finally:
+        conn.close()
+
+
+def test_cleanup_review_buckets_real_db_fetch_failure_propagates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """锁定阶段失败必须向外抛出（不得吞掉继续），事务回滚、不写审计。"""
+    conn = _connect_real_postgres()
+    owner = "44444444-4444-4444-4444-444444444444"
+    real_fetch = db_postgres_manual_reviews.fetch_review_bucket_before_date_for_update
+    fetch_calls = {"count": 0}
+
+    def failing_fetch(cur: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        fetch_calls["count"] += 1
+        rows = real_fetch(cur, **kwargs)
+        if fetch_calls["count"] == 2:
+            raise RuntimeError("injected failure on second bucket")
+        return rows
+
+    monkeypatch.setattr(
+        db_postgres_core.manual_reviews,
+        "fetch_review_bucket_before_date_for_update",
+        failing_fetch,
+    )
+    try:
+        with conn.cursor() as cur:
+            _seed_manual_reviews_tables(cur)
+            for article_id, status, report_type in (
+                ("r1", "selected", "zongbao"),
+                ("r2", "selected", "wanbao"),
+            ):
+                cur.execute(
+                    """
+                    INSERT INTO news_summaries
+                        (article_id, title, status, created_at)
+                    VALUES (%s, %s, 'ready_for_export',
+                            '2026-09-01T08:00:00+08:00')
+                    """,
+                    (article_id, f"标题{article_id}"),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO manual_reviews
+                        (owner_user_id, article_id, status, version,
+                         report_type)
+                    VALUES (%s, %s, %s, 1, %s)
+                    """,
+                    (owner, article_id, status, report_type),
+                )
+        conn.commit()
+
+        adapter = db_postgres_core.PostgresAdapter(connection=conn)
+        with pytest.raises(RuntimeError, match="injected failure on second bucket"):
+            adapter.cleanup_review_buckets_before_date_as_user(
+                owner_user_id=owner,
+                buckets=[
+                    {"report_type": "zongbao", "status": "selected"},
+                    {"report_type": "wanbao", "status": "selected"},
+                ],
+                created_before=date(2026, 10, 1),
+                actor_username="admin-a",
+                actor_user_id=owner,
+            )
+
+        assert fetch_calls["count"] == 2
+        with conn.cursor() as cur:
+            for article_id in ("r1", "r2"):
+                cur.execute(
+                    "SELECT status, version FROM manual_reviews "
+                    "WHERE article_id = %s",
+                    (article_id,),
+                )
+                row = cur.fetchone()
+                assert row["status"] == "selected", article_id
+                assert row["version"] == 1, article_id
+            cur.execute("SELECT count(*) AS total FROM review_events")
+            assert int(cur.fetchone()["total"]) == 0
+    finally:
+        conn.close()

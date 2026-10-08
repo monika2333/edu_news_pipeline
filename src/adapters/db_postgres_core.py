@@ -1144,6 +1144,102 @@ class PostgresAdapter:
                 )
             return after
 
+    def cleanup_manual_candidates_before_date_as_user(
+        self,
+        *,
+        buckets: Sequence[Mapping[str, str]],
+        created_before: date,
+        actor_username: str,
+        actor_user_id: str,
+        request_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """全量筛选页「清理旧新闻」：多个分类在同一个事务里放弃。
+
+        依次锁定各分类的匹配行（复用 _build_manual_candidate_filters 的
+        锁定函数），再一次经 update_manual_review_statuses_with_versions
+        写入——该函数在同一事务内取同一个 now()，所有被放弃行共享同一个
+        decided_at，在放弃页显示为一个批次。任一分类失败，整个事务回滚。
+        整次操作只写一条审计事件。
+        """
+        with self.transaction() as cur:
+            bucket_rows: list[dict[str, Any]] = []
+            article_bucket: dict[str, tuple[str, str]] = {}
+            updates: list[dict[str, Any]] = []
+            expected_versions: dict[str, int] = {}
+            for bucket in buckets:
+                region = str(bucket["region"])
+                sentiment = str(bucket["sentiment"])
+                targets = manual_reviews.fetch_manual_candidates_before_date_for_update(
+                    cur,
+                    owner_user_id=actor_user_id,
+                    region=region,
+                    sentiment=sentiment,
+                    terms=None,
+                    created_before=created_before,
+                    report_type=None,
+                    duty_unprocessed_only=False,
+                )
+                bucket_rows.append({
+                    "region": region,
+                    "sentiment": sentiment,
+                    "matched": len(targets),
+                    "updated": 0,
+                })
+                for row in targets:
+                    article_id = str(row["article_id"])
+                    article_bucket[article_id] = (region, sentiment)
+                    updates.append({
+                        "article_id": article_id,
+                        "status": "discarded",
+                        "rank": None,
+                        "report_type": None,
+                    })
+                    expected_versions[article_id] = int(row["version"])
+            before, after = manual_reviews.update_manual_review_statuses_with_versions(
+                cur,
+                updates,
+                owner_user_id=actor_user_id,
+                actor_username=actor_username,
+                actor_user_id=actor_user_id,
+                expected_versions=expected_versions,
+                require_versions=True,
+                report_type=None,
+            )
+            if after:
+                audit.insert_review_event(
+                    cur,
+                    actor_user_id=actor_user_id,
+                    action="manual_review.cleanup_candidates",
+                    target_type="manual_review_batch",
+                    target_id=actor_user_id,
+                    before_data={"items": before},
+                    after_data={
+                        "items": after,
+                        "created_before": created_before.isoformat(),
+                        "buckets": [dict(bucket) for bucket in buckets],
+                    },
+                    request_id=request_id,
+                )
+            discarded: list[dict[str, Any]] = []
+            bucket_index = {
+                (bucket["region"], bucket["sentiment"]): bucket
+                for bucket in bucket_rows
+            }
+            for row in after:
+                article_id = str(row["article_id"])
+                region, sentiment = article_bucket[article_id]
+                discarded.append({
+                    "article_id": article_id,
+                    "version": int(row["version"]),
+                })
+                bucket_index[(region, sentiment)]["updated"] += 1
+            return {
+                "buckets": bucket_rows,
+                "matched": sum(bucket["matched"] for bucket in bucket_rows),
+                "updated": len(discarded),
+                "discarded": discarded,
+            }
+
     def restore_discarded_manual_reviews_as_user(
         self,
         *,
@@ -1271,49 +1367,63 @@ class PostgresAdapter:
                 for row in after
             ]
 
-    def discard_review_buckets_before_date_as_user(
+    def cleanup_review_buckets_before_date_as_user(
         self,
         *,
         owner_user_id: str,
-        status: str,
-        report_type: str,
+        buckets: Sequence[Mapping[str, str]],
         created_before: date,
         actor_username: str,
         actor_user_id: str,
         request_id: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
+        """汇总审阅页「清理旧新闻」：多个桶在同一个事务里放弃。
+
+        依次锁定各桶（报别 × 采纳/备选）的匹配行，再一次经
+        update_manual_review_statuses_with_versions 写入——同一事务取同一个
+        now()，所有被放弃行共享同一个 decided_at，在放弃页显示为一个批次。
+        任一桶失败，整个事务回滚。整次操作只写一条审计事件。
+        """
         with self.transaction() as cur:
-            targets = manual_reviews.fetch_review_bucket_before_date_for_update(
-                cur,
-                owner_user_id=owner_user_id,
-                status=status,
-                report_type=report_type,
-                created_before=created_before,
-            )
-            updates = [
-                {
-                    "article_id": str(row["article_id"]),
-                    "status": "discarded",
-                    "rank": None,
-                    "report_type": None,
-                }
-                for row in targets
-            ]
-            expected_versions = {
-                str(row["article_id"]): int(row["version"])
-                for row in targets
-            }
-            before, after = (
-                manual_reviews.update_manual_review_statuses_with_versions(
+            bucket_rows: list[dict[str, Any]] = []
+            article_bucket: dict[str, tuple[str, str]] = {}
+            updates: list[dict[str, Any]] = []
+            expected_versions: dict[str, int] = {}
+            for bucket in buckets:
+                report_type = str(bucket["report_type"])
+                status = str(bucket["status"])
+                targets = manual_reviews.fetch_review_bucket_before_date_for_update(
                     cur,
-                    updates,
                     owner_user_id=owner_user_id,
-                    actor_username=actor_username,
-                    actor_user_id=actor_user_id,
-                    expected_versions=expected_versions,
-                    require_versions=True,
-                    report_type=None,
+                    status=status,
+                    report_type=report_type,
+                    created_before=created_before,
                 )
+                bucket_rows.append({
+                    "report_type": report_type,
+                    "status": status,
+                    "matched": len(targets),
+                    "updated": 0,
+                })
+                for row in targets:
+                    article_id = str(row["article_id"])
+                    article_bucket[article_id] = (report_type, status)
+                    updates.append({
+                        "article_id": article_id,
+                        "status": "discarded",
+                        "rank": None,
+                        "report_type": None,
+                    })
+                    expected_versions[article_id] = int(row["version"])
+            before, after = manual_reviews.update_manual_review_statuses_with_versions(
+                cur,
+                updates,
+                owner_user_id=owner_user_id,
+                actor_username=actor_username,
+                actor_user_id=actor_user_id,
+                expected_versions=expected_versions,
+                require_versions=True,
+                report_type=None,
             )
             if after:
                 audit.insert_review_event(
@@ -1326,10 +1436,31 @@ class PostgresAdapter:
                     after_data={
                         "items": after,
                         "created_before": created_before.isoformat(),
+                        "buckets": [dict(bucket) for bucket in buckets],
                     },
                     request_id=request_id,
                 )
-            return after
+            bucket_index = {
+                (bucket["report_type"], bucket["status"]): bucket
+                for bucket in bucket_rows
+            }
+            for row in after:
+                article_id = str(row["article_id"])
+                report_type, status = article_bucket[article_id]
+                bucket_index[(report_type, status)].setdefault(
+                    "discarded", []
+                ).append({
+                    "article_id": article_id,
+                    "version": int(row["version"]),
+                })
+                bucket_index[(report_type, status)]["updated"] += 1
+            for bucket in bucket_rows:
+                bucket.setdefault("discarded", [])
+            return {
+                "buckets": bucket_rows,
+                "matched": sum(bucket["matched"] for bucket in bucket_rows),
+                "updated": sum(bucket["updated"] for bucket in bucket_rows),
+            }
 
     def clear_all_review_buckets_as_system(
         self,

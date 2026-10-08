@@ -723,6 +723,9 @@ def bulk_restore_shift_reviews(
     # matched 与 updated 在同一条语句里计算（写法与 bulk_discard_shift_candidates
     # 一致）：CTE 先物化按条件匹配到的已放弃行，UPDATE 只恢复其中未定稿的行；
     # 已定稿行被跳过，计入 matched 但不计入 updated。
+    # UPDATE 里的 sr.decision = 'discarded' 是并发护栏：READ COMMITTED 下另一
+    # 事务可能在 CTE 圈定之后、UPDATE 等到行锁时已把行改成其他状态，等待结束
+    # 后会以最新版本重查 WHERE，该条件保证这些行不会被覆盖回待处理。
     cur.execute(
         f"""
         WITH matched_candidates AS MATERIALIZED (
@@ -743,6 +746,7 @@ def bulk_restore_shift_reviews(
             FROM matched_candidates mc
             WHERE sr.id = mc.id
               AND mc.finalized_batch_id IS NULL
+              AND sr.decision = 'discarded'
             RETURNING sr.article_id
         )
         SELECT

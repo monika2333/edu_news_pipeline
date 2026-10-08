@@ -214,12 +214,6 @@
     cursor: not-allowed;
 }
 
-.cleanup-finalized-note {
-    margin: 0;
-    font-size: 0.86rem;
-    color: var(--text-secondary);
-}
-
 /* Filter Cluster */
 .filter-cluster {
     border: 1px solid var(--border-color);

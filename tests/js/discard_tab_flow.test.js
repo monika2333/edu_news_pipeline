@@ -1053,6 +1053,51 @@ for (const mode of MODES) {
     });
 }
 
+// A4：loadDiscardData 请求序号——被取代的旧响应不得渲染列表
+test('放弃列表旧响应不渲染：只渲染最新一次请求的响应', async () => {
+    await withPage('admin', { discardedItems: makeDiscardedItems(3) }, async (page) => {
+        const { server } = page;
+        await openDiscardTab(page);
+
+        // 扣住旧条件的列表请求，让新请求先完成
+        server.hold('discard-list', 1);
+        selectBucket(page, 'internal_negative');
+        assert.ok(
+            await waitFor(() => server.heldCount('discard-list') === 1),
+            '旧条件的列表请求未被扣住'
+        );
+
+        // 数据清空后再触发新请求：新响应应把列表渲染为空
+        server.discardedItems = [];
+        selectBucket(page, 'external_positive');
+        assert.ok(
+            await waitFor(() => {
+                const requests = discardRequests(server);
+                return requests.length >= 3 && requests[requests.length - 1].done;
+            }),
+            '新条件的列表响应未返回'
+        );
+        assert.equal(
+            page.document.querySelectorAll('#discard-list .article-card').length,
+            0,
+            '清空后的新响应应把列表渲染为空'
+        );
+
+        // 放开旧请求：其响应（3 条的旧快照）不得覆盖列表
+        server.release('discard-list');
+        await sleep(100);
+        assert.equal(
+            page.document.querySelectorAll('#discard-list .article-card').length,
+            0,
+            '被取代的旧响应不得渲染列表'
+        );
+        assert.ok(
+            await waitFor(() => server.inflight === 0),
+            '旧请求应已结束'
+        );
+    });
+});
+
 test('结束后不应有未处理的脚本异常', async () => {
     assert.deepEqual(unhandledRejections, []);
 });

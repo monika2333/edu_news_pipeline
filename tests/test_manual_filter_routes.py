@@ -868,6 +868,28 @@ def test_discarded_api_searches_and_treats_blank_query_as_absent(monkeypatch) ->
     assert blank.json() == absent.json()
 
 
+def test_discarded_api_returns_422_when_search_terms_exceed_limit(
+    monkeypatch,
+) -> None:
+    """11 个关键词：service 层抛 TooManySearchTermsError，路由统一转 422。"""
+    rows = _build_rows()
+    for row in rows:
+        row["status"] = "discarded"
+    adapter = FakeManualFilterAdapter(rows)
+    monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
+
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/manual_filter/discarded",
+        params={"q": " 词一 词二 词三 词四 词五 词六 词七 词八 词九 词十 词十一 "},
+    )
+    assert response.status_code == 422
+    assert "检索词最多" in response.json()["detail"]
+
+
 def test_candidates_api_uses_created_before_and_ignores_old_query_name(monkeypatch) -> None:
     adapter = FakeManualFilterAdapter(_build_rows())
     monkeypatch.setattr(manual_filter_query_service, "get_adapter", lambda: adapter)
@@ -1526,3 +1548,84 @@ def test_candidates_api_splits_whitespace_query_into_terms(monkeypatch) -> None:
     # 全角空格同样切词；service 层把整串 q 切成词列表后下传
 
     assert captured["terms"] == ["学科", "建设"]
+
+def test_cleanup_candidates_api_rejects_invalid_buckets() -> None:
+    """T4：空桶、超 4 桶、重复组合、值不合法、缺日期、多余字段都返回 422。"""
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+    url = "/api/manual_filter/cleanup-candidates"
+    valid_bucket = {"region": "internal", "sentiment": "positive"}
+
+    assert client.post(
+        url, json={"created_before": "2025-06-01", "buckets": []}
+    ).status_code == 422
+    assert client.post(
+        url,
+        json={"created_before": "2025-06-01", "buckets": [valid_bucket] * 5},
+    ).status_code == 422
+    # 重复组合由 service 校验兜底，同样是 422
+    assert client.post(
+        url,
+        json={"created_before": "2025-06-01", "buckets": [valid_bucket, dict(valid_bucket)]},
+    ).status_code == 422
+    assert client.post(
+        url,
+        json={
+            "created_before": "2025-06-01",
+            "buckets": [{"region": "north", "sentiment": "positive"}],
+        },
+    ).status_code == 422
+    assert client.post(
+        url,
+        json={
+            "created_before": "2025-06-01",
+            "buckets": [{"region": "internal", "sentiment": "neutral"}],
+        },
+    ).status_code == 422
+    assert client.post(url, json={"buckets": [valid_bucket]}).status_code == 422
+    # extra="forbid"：桶内多余字段拒绝
+    assert client.post(
+        url,
+        json={
+            "created_before": "2025-06-01",
+            "buckets": [{**valid_bucket, "q": "x"}],
+        },
+    ).status_code == 422
+
+
+def test_cleanup_review_buckets_api_rejects_invalid_buckets() -> None:
+    """T4：空桶、超 4 桶、重复组合、报别/状态不合法、缺日期都返回 422。"""
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+    url = "/api/manual_filter/cleanup-review-buckets"
+    valid_bucket = {"report_type": "zongbao", "status": "selected"}
+
+    assert client.post(
+        url, json={"created_before": "2025-06-01", "buckets": []}
+    ).status_code == 422
+    assert client.post(
+        url,
+        json={"created_before": "2025-06-01", "buckets": [valid_bucket] * 5},
+    ).status_code == 422
+    assert client.post(
+        url,
+        json={"created_before": "2025-06-01", "buckets": [valid_bucket, dict(valid_bucket)]},
+    ).status_code == 422
+    # feedback 是报送稿类型，不是新闻报别
+    assert client.post(
+        url,
+        json={
+            "created_before": "2025-06-01",
+            "buckets": [{"report_type": "feedback", "status": "selected"}],
+        },
+    ).status_code == 422
+    assert client.post(
+        url,
+        json={
+            "created_before": "2025-06-01",
+            "buckets": [{"report_type": "zongbao", "status": "pending"}],
+        },
+    ).status_code == 422
+    assert client.post(url, json={"buckets": [valid_bucket]}).status_code == 422

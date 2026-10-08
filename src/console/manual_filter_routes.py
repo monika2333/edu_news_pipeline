@@ -110,12 +110,37 @@ class ClearReviewBucketsRequest(BaseModel):
     scope: Literal["all"]
 
 
-class CleanupReviewBucketsRequest(BaseModel):
+class CleanupCandidatesBucket(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    region: Literal["internal", "external"]
+    sentiment: Literal["positive", "negative"]
+
+
+class CleanupCandidatesRequest(BaseModel):
+    """全量筛选页「清理旧新闻」：一次请求、一个事务放弃多个分类。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    created_before: date
+    buckets: List[CleanupCandidatesBucket] = Field(min_length=1, max_length=4)
+    dry_run: bool = True
+
+
+class CleanupReviewBucket(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     report_type: NewsReportType
     status: Literal["selected", "backup"]
+
+
+class CleanupReviewBucketsRequest(BaseModel):
+    """汇总审阅页「清理旧新闻」：一次请求、一个事务放弃多个桶。"""
+
+    model_config = ConfigDict(extra="forbid")
+
     created_before: date
+    buckets: List[CleanupReviewBucket] = Field(min_length=1, max_length=4)
     dry_run: bool = True
 
 
@@ -303,15 +328,16 @@ def list_discarded_api(
             decided_since=decided_since,
             batch_decided_at=batch_decided_at,
         )
+        # q 超过检索词上限时 service 层抛 TooManySearchTermsError，同样按 422 处理
+        return manual_filter_service.list_discarded(
+            owner_user_id=str(user.user_id),
+            limit=limit,
+            offset=offset,
+            report_type=report_type,
+            **discard_filters,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return manual_filter_service.list_discarded(
-        owner_user_id=str(user.user_id),
-        limit=limit,
-        offset=offset,
-        report_type=report_type,
-        **discard_filters,
-    )
 
 
 @router.post("/edit")
@@ -473,17 +499,36 @@ def clear_review_buckets_api(
         _raise_manual_write_http_error(exc)
 
 
+@router.post("/cleanup-candidates")
+def cleanup_candidates_api(
+    req: CleanupCandidatesRequest,
+    user: ConsoleUser = Depends(require_admin_workspace_user),
+    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
+) -> Dict[str, Any]:
+    """Clean up old pending candidates across several buckets in one transaction."""
+    try:
+        return manual_filter_admin_service.cleanup_candidates(
+            created_before=req.created_before,
+            buckets=[bucket.model_dump() for bucket in req.buckets],
+            dry_run=req.dry_run,
+            actor=user,
+            request_id=request_id,
+        )
+    except (ValueError, RuntimeError) as exc:
+        _raise_manual_write_http_error(exc)
+
+
 @router.post("/cleanup-review-buckets")
 def cleanup_review_buckets_api(
     req: CleanupReviewBucketsRequest,
     user: ConsoleUser = Depends(require_admin_workspace_user),
     request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
 ) -> Dict[str, Any]:
+    """Clean up old review buckets in one transaction (multi-bucket request)."""
     try:
         return manual_filter_admin_service.cleanup_review_buckets(
-            report_type=req.report_type,
-            status=req.status,
             created_before=req.created_before,
+            buckets=[bucket.model_dump() for bucket in req.buckets],
             dry_run=req.dry_run,
             actor=user,
             request_id=request_id,

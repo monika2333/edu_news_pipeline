@@ -470,13 +470,6 @@ async function bulkDiscard() {
 
 let cleanupPreviewSeq = 0;
 
-const CLEANUP_CATEGORY_LABELS = {
-    internal_positive: '京内正面',
-    internal_negative: '京内负面',
-    external_positive: '京外正面',
-    external_negative: '京外负面'
-};
-
 function getCleanupRows() {
     if (!elements.cleanupCategoryList) return [];
     return Array.from(elements.cleanupCategoryList.querySelectorAll('.cleanup-category-row'));
@@ -492,17 +485,6 @@ function setCleanupStats(message, isError = false) {
     if (!elements.cleanupStats) return;
     elements.cleanupStats.textContent = message;
     elements.cleanupStats.classList.toggle('is-error', Boolean(isError));
-}
-
-function setCleanupFinalizedNote(count) {
-    if (!elements.cleanupFinalizedNote) return;
-    if (count > 0) {
-        elements.cleanupFinalizedNote.textContent = `其中有 ${count} 条已定稿，不会被清理`;
-        elements.cleanupFinalizedNote.hidden = false;
-    } else {
-        elements.cleanupFinalizedNote.textContent = '';
-        elements.cleanupFinalizedNote.hidden = true;
-    }
 }
 
 function resetCleanupCategories() {
@@ -541,7 +523,6 @@ function openCleanupModal() {
     if (elements.cleanupDateInput) elements.cleanupDateInput.value = '';
     resetCleanupCategories();
     setCleanupStats('');
-    setCleanupFinalizedNote(0);
     setCleanupConfirmState(false, '确认放弃');
     if (elements.cleanupCancelBtn) elements.cleanupCancelBtn.disabled = false;
     elements.cleanupModal.classList.add('active');
@@ -561,7 +542,6 @@ async function handleCleanupDateChange() {
         cleanupPreviewSeq += 1;
         resetCleanupCategories();
         setCleanupStats('');
-        setCleanupFinalizedNote(0);
         setCleanupConfirmState(false, '确认放弃');
         return;
     }
@@ -569,30 +549,26 @@ async function handleCleanupDateChange() {
     setCleanupStats('正在统计…');
     setCleanupConfirmState(false, '确认放弃');
     try {
-        const results = await Promise.all(FILTER_CATEGORIES.map(async (cat) => {
-            const { region, sentiment } = filterCategoryToBucket(cat);
-            const res = await workspaceFetch(`${API_BASE}/bulk-discard`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    region,
-                    sentiment,
-                    q: null,
-                    created_before: createdBefore,
-                    dry_run: true
-                })
-            });
-            if (!res.ok) throw new Error('failed preview');
-            return { cat, result: await res.json() };
-        }));
+        // 一次预览请求带全部 4 个分类，后端逐分类返回 matched
+        const res = await workspaceFetch(`${API_BASE}/cleanup-candidates`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                created_before: createdBefore,
+                buckets: FILTER_CATEGORIES.map((cat) => filterCategoryToBucket(cat)),
+                dry_run: true
+            })
+        });
+        if (!res.ok) throw new Error('failed preview');
+        const result = await res.json();
         if (seq !== cleanupPreviewSeq) return;
-        let skippedTotal = 0;
         const counts = {};
-        results.forEach(({ cat, result }) => {
-            const matched = Number(result.matched) || 0;
-            const skipped = Number(result.skipped_finalized) || 0;
-            counts[cat] = Math.max(0, matched - skipped);
-            skippedTotal += skipped;
+        (result.buckets || []).forEach((bucket) => {
+            const cat = FILTER_CATEGORIES.find((candidate) => {
+                const { region, sentiment } = filterCategoryToBucket(candidate);
+                return region === bucket.region && sentiment === bucket.sentiment;
+            });
+            if (cat) counts[cat] = Number(bucket.matched) || 0;
         });
         getCleanupRows().forEach((row) => {
             const count = counts[row.dataset.category] || 0;
@@ -606,7 +582,6 @@ async function handleCleanupDateChange() {
                 checkbox.checked = count > 0;
             }
         });
-        setCleanupFinalizedNote(skippedTotal);
         updateCleanupTotal();
     } catch (error) {
         if (seq !== cleanupPreviewSeq) return;
@@ -622,8 +597,7 @@ async function confirmCleanupDiscard() {
         const checkbox = row.querySelector('.cleanup-category-check');
         return checkbox && checkbox.checked && !checkbox.disabled;
     });
-    const targets = selectedRows.map((row) => row.dataset.category);
-    if (!targets.length) return;
+    if (!selectedRows.length) return;
     const totalTargets = selectedRows.reduce(
         (sum, row) => sum + (Number(row.dataset.count) || 0), 0
     );
@@ -631,56 +605,29 @@ async function confirmCleanupDiscard() {
     setCleanupConfirmState(false, '正在放弃…');
     if (elements.cleanupCancelBtn) elements.cleanupCancelBtn.disabled = true;
     try {
-        const settled = await Promise.allSettled(targets.map(async (cat) => {
-            const { region, sentiment } = filterCategoryToBucket(cat);
-            const res = await workspaceFetch(`${API_BASE}/bulk-discard`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    region,
-                    sentiment,
-                    q: null,
-                    created_before: createdBefore,
-                    dry_run: false
-                })
-            });
-            if (!res.ok) throw new Error('failed apply');
-            return { cat, result: await res.json() };
-        }));
-        const succeeded = [];
-        const failedCats = [];
-        settled.forEach((entry, index) => {
-            if (entry.status === 'fulfilled') {
-                succeeded.push(entry.value);
-            } else {
-                failedCats.push(targets[index]);
-            }
+        // 一次执行请求带勾选的分类：全部成功或全部失败，没有部分完成状态
+        const res = await workspaceFetch(`${API_BASE}/cleanup-candidates`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                created_before: createdBefore,
+                buckets: selectedRows.map((row) => filterCategoryToBucket(row.dataset.category)),
+                dry_run: false
+            })
         });
-        const updatedTotal = succeeded.reduce(
-            (sum, item) => sum + (Number(item.result.updated) || 0), 0
-        );
-        const skippedTotal = succeeded.reduce(
-            (sum, item) => sum + (Number(item.result.skipped_finalized) || 0), 0
-        );
+        if (!res.ok) throw new Error('failed apply');
+        const result = await res.json();
         closeCleanupModal();
         state.filterPage = 1;
         await Promise.all([loadFilterData(), loadStats(), loadFilterCounts()]);
-        const { ids, versions } = collectBulkDiscardUndo(succeeded.map((entry) => entry.result));
+        const { ids, versions } = collectBulkDiscardUndo([result]);
         const undoAction = ids.length ? buildBulkDiscardUndoAction(ids, versions) : null;
-        if (!failedCats.length) {
-            let message = `已放弃 ${updatedTotal} 条新闻`;
-            if (skippedTotal > 0) message += `，另有 ${skippedTotal} 条已定稿未清理`;
-            showToast(message, 'success', undoAction);
-        } else {
-            const failedNames = failedCats
-                .map((cat) => CLEANUP_CATEGORY_LABELS[cat] || cat)
-                .join('、');
-            let message = `${failedNames} 放弃失败，请重跑清理`;
-            if (succeeded.length) message += `；其余分类已放弃 ${updatedTotal} 条`;
-            showToast(message, 'error', undoAction);
-        }
+        showToast(`已放弃 ${Number(result.updated) || 0} 条新闻`, 'success', undoAction);
     } catch (error) {
-        setCleanupStats('放弃失败，请重试', true);
+        // 整次操作没有生效：弹窗保持打开，恢复确认按钮可重试
+        showToast('清理失败，未做任何改动', 'error');
+        setCleanupStats('清理失败，未做任何改动', true);
+        setCleanupConfirmState(true, `放弃这 ${totalTargets} 条`);
     } finally {
         if (elements.cleanupCancelBtn) elements.cleanupCancelBtn.disabled = false;
     }

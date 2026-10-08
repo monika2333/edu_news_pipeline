@@ -1548,3 +1548,84 @@ def test_candidates_api_splits_whitespace_query_into_terms(monkeypatch) -> None:
     # 全角空格同样切词；service 层把整串 q 切成词列表后下传
 
     assert captured["terms"] == ["学科", "建设"]
+
+def test_cleanup_candidates_api_rejects_invalid_buckets() -> None:
+    """T4：空桶、超 4 桶、重复组合、值不合法、缺日期、多余字段都返回 422。"""
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+    url = "/api/manual_filter/cleanup-candidates"
+    valid_bucket = {"region": "internal", "sentiment": "positive"}
+
+    assert client.post(
+        url, json={"created_before": "2025-06-01", "buckets": []}
+    ).status_code == 422
+    assert client.post(
+        url,
+        json={"created_before": "2025-06-01", "buckets": [valid_bucket] * 5},
+    ).status_code == 422
+    # 重复组合由 service 校验兜底，同样是 422
+    assert client.post(
+        url,
+        json={"created_before": "2025-06-01", "buckets": [valid_bucket, dict(valid_bucket)]},
+    ).status_code == 422
+    assert client.post(
+        url,
+        json={
+            "created_before": "2025-06-01",
+            "buckets": [{"region": "north", "sentiment": "positive"}],
+        },
+    ).status_code == 422
+    assert client.post(
+        url,
+        json={
+            "created_before": "2025-06-01",
+            "buckets": [{"region": "internal", "sentiment": "neutral"}],
+        },
+    ).status_code == 422
+    assert client.post(url, json={"buckets": [valid_bucket]}).status_code == 422
+    # extra="forbid"：桶内多余字段拒绝
+    assert client.post(
+        url,
+        json={
+            "created_before": "2025-06-01",
+            "buckets": [{**valid_bucket, "q": "x"}],
+        },
+    ).status_code == 422
+
+
+def test_cleanup_review_buckets_api_rejects_invalid_buckets() -> None:
+    """T4：空桶、超 4 桶、重复组合、报别/状态不合法、缺日期都返回 422。"""
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+    client = TestClient(app)
+    url = "/api/manual_filter/cleanup-review-buckets"
+    valid_bucket = {"report_type": "zongbao", "status": "selected"}
+
+    assert client.post(
+        url, json={"created_before": "2025-06-01", "buckets": []}
+    ).status_code == 422
+    assert client.post(
+        url,
+        json={"created_before": "2025-06-01", "buckets": [valid_bucket] * 5},
+    ).status_code == 422
+    assert client.post(
+        url,
+        json={"created_before": "2025-06-01", "buckets": [valid_bucket, dict(valid_bucket)]},
+    ).status_code == 422
+    # feedback 是报送稿类型，不是新闻报别
+    assert client.post(
+        url,
+        json={
+            "created_before": "2025-06-01",
+            "buckets": [{"report_type": "feedback", "status": "selected"}],
+        },
+    ).status_code == 422
+    assert client.post(
+        url,
+        json={
+            "created_before": "2025-06-01",
+            "buckets": [{"report_type": "zongbao", "status": "pending"}],
+        },
+    ).status_code == 422
+    assert client.post(url, json={"buckets": [valid_bucket]}).status_code == 422

@@ -553,39 +553,50 @@ def test_clear_review_buckets_counts_successful_rows_and_preserves_fields(
     assert all(row["decided_by_user_id"] is None for row in rows)
 
 
-class _FakeCleanupNamespace:
+class _FakeCleanupReviewNamespace:
     def __init__(self, adapter: "FakeCleanupReviewAdapter") -> None:
         self._adapter = adapter
 
     def count_review_bucket_before_date(self, **kwargs: Any) -> int:
-        self._adapter.count_kwargs = kwargs
-        return self._adapter.matched
+        self._adapter.count_calls.append(dict(kwargs))
+        return self._adapter.counts.get(
+            (kwargs["report_type"], kwargs["status"]),
+            self._adapter.matched,
+        )
 
 
 class FakeCleanupReviewAdapter:
+    """多桶清理的假 adapter：按桶计数，执行调用原样记录并返回固定结果。"""
+
     def __init__(
         self,
-        matched: int,
-        rows: list[dict[str, Any]],
+        result: dict[str, Any],
+        counts: dict[tuple[str, str], int] | None = None,
     ) -> None:
-        self.matched = matched
-        self.rows = rows
-        self.count_kwargs: dict[str, Any] = {}
-        self.discard_kwargs: dict[str, Any] = {}
-        self.manual_reviews = _FakeCleanupNamespace(self)
+        self.result = result
+        self.counts = counts or {}
+        self.matched = 0
+        self.count_calls: list[dict[str, Any]] = []
+        self.cleanup_kwargs: dict[str, Any] = {}
+        self.manual_reviews = _FakeCleanupReviewNamespace(self)
 
-    def discard_review_buckets_before_date_as_user(
+    def cleanup_review_buckets_before_date_as_user(
         self,
         **kwargs: Any,
-    ) -> list[dict[str, Any]]:
-        self.discard_kwargs = kwargs
-        return self.rows
+    ) -> dict[str, Any]:
+        self.cleanup_kwargs = kwargs
+        return self.result
 
 
 def test_cleanup_review_buckets_dry_run_only_counts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    adapter = FakeCleanupReviewAdapter(matched=5, rows=[])
+    """T5（审阅桶）：dry_run 只计数，返回的各桶 matched 与单独计数一致。"""
+    counts = {
+        ("zongbao", "selected"): 5,
+        ("wanbao", "backup"): 2,
+    }
+    adapter = FakeCleanupReviewAdapter(result={}, counts=counts)
     monkeypatch.setattr(
         manual_filter_admin_service,
         "get_adapter",
@@ -593,31 +604,62 @@ def test_cleanup_review_buckets_dry_run_only_counts(
     )
 
     result = manual_filter_admin_service.cleanup_review_buckets(
-        report_type="zongbao",
-        status="selected",
         created_before=date(2025, 6, 1),
+        buckets=[
+            {"report_type": "zongbao", "status": "selected"},
+            {"report_type": "wanbao", "status": "backup"},
+        ],
         dry_run=True,
         actor=_session_admin(),
     )
 
-    assert result == {"matched": 5, "updated": 0, "discarded": []}
-    assert adapter.count_kwargs == {
-        "owner_user_id": "admin-user-id",
-        "status": "selected",
-        "report_type": "zongbao",
-        "created_before": date(2025, 6, 1),
+    assert result == {
+        "buckets": [
+            {"report_type": "zongbao", "status": "selected", "matched": 5, "updated": 0, "discarded": []},
+            {"report_type": "wanbao", "status": "backup", "matched": 2, "updated": 0, "discarded": []},
+        ],
+        "matched": 7,
+        "updated": 0,
     }
-    assert adapter.discard_kwargs == {}
+    assert adapter.count_calls == [
+        {
+            "owner_user_id": "admin-user-id",
+            "status": "selected",
+            "report_type": "zongbao",
+            "created_before": date(2025, 6, 1),
+        },
+        {
+            "owner_user_id": "admin-user-id",
+            "status": "backup",
+            "report_type": "wanbao",
+            "created_before": date(2025, 6, 1),
+        },
+    ]
+    assert adapter.cleanup_kwargs == {}
 
 
-def test_cleanup_review_buckets_apply_discards_with_owner_and_versions(
+def test_cleanup_review_buckets_apply_discards_in_one_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    rows = [
-        {"article_id": "r1", "version": 4},
-        {"article_id": "r2", "version": 9},
-    ]
-    adapter = FakeCleanupReviewAdapter(matched=2, rows=rows)
+    adapter = FakeCleanupReviewAdapter(
+        result={
+            "buckets": [
+                {
+                    "report_type": "wanbao",
+                    "status": "backup",
+                    "matched": 2,
+                    "updated": 2,
+                    "discarded": [
+                        {"article_id": "r1", "version": 4},
+                        {"article_id": "r2", "version": 9},
+                    ],
+                }
+            ],
+            "matched": 2,
+            "updated": 2,
+        },
+        counts={("wanbao", "backup"): 2},
+    )
     monkeypatch.setattr(
         manual_filter_admin_service,
         "get_adapter",
@@ -625,26 +667,32 @@ def test_cleanup_review_buckets_apply_discards_with_owner_and_versions(
     )
 
     result = manual_filter_admin_service.cleanup_review_buckets(
-        report_type="wanbao",
-        status="backup",
         created_before=date(2025, 6, 1),
+        buckets=[{"report_type": "wanbao", "status": "backup"}],
         dry_run=False,
         actor=_session_admin(),
         request_id="request-1",
     )
 
     assert result == {
+        "buckets": [
+            {
+                "report_type": "wanbao",
+                "status": "backup",
+                "matched": 2,
+                "updated": 2,
+                "discarded": [
+                    {"article_id": "r1", "version": 4},
+                    {"article_id": "r2", "version": 9},
+                ],
+            }
+        ],
         "matched": 2,
         "updated": 2,
-        "discarded": [
-            {"article_id": "r1", "version": 4},
-            {"article_id": "r2", "version": 9},
-        ],
     }
-    assert adapter.discard_kwargs == {
+    assert adapter.cleanup_kwargs == {
         "owner_user_id": "admin-user-id",
-        "status": "backup",
-        "report_type": "wanbao",
+        "buckets": [{"report_type": "wanbao", "status": "backup"}],
         "created_before": date(2025, 6, 1),
         "actor_username": "admin-a",
         "actor_user_id": "admin-user-id",
@@ -655,7 +703,7 @@ def test_cleanup_review_buckets_apply_discards_with_owner_and_versions(
 def test_cleanup_review_buckets_skips_discard_when_nothing_matched(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    adapter = FakeCleanupReviewAdapter(matched=0, rows=[])
+    adapter = FakeCleanupReviewAdapter(result={}, counts={})
     monkeypatch.setattr(
         manual_filter_admin_service,
         "get_adapter",
@@ -663,32 +711,36 @@ def test_cleanup_review_buckets_skips_discard_when_nothing_matched(
     )
 
     result = manual_filter_admin_service.cleanup_review_buckets(
-        report_type="zongbao",
-        status="selected",
         created_before=date(2025, 6, 1),
+        buckets=[{"report_type": "zongbao", "status": "selected"}],
         dry_run=False,
         actor=_session_admin(),
     )
 
-    assert result == {"matched": 0, "updated": 0, "discarded": []}
-    assert adapter.discard_kwargs == {}
+    assert result == {
+        "buckets": [
+            {"report_type": "zongbao", "status": "selected", "matched": 0, "updated": 0, "discarded": []}
+        ],
+        "matched": 0,
+        "updated": 0,
+    }
+    assert adapter.cleanup_kwargs == {}
 
 
 @pytest.mark.parametrize(
-    ("report_type", "status"),
+    "buckets",
     [
-        ("wanbao", "pending"),
-        ("wanbao", "discarded"),
-        ("feedback", "selected"),
-        ("", "selected"),
+        [("wanbao", "pending")],
+        [("wanbao", "discarded")],
+        [("feedback", "selected")],
+        [("", "selected")],
     ],
 )
 def test_cleanup_review_buckets_rejects_unknown_bucket(
     monkeypatch: pytest.MonkeyPatch,
-    report_type: str,
-    status: str,
+    buckets: list[tuple[str, str]],
 ) -> None:
-    adapter = FakeCleanupReviewAdapter(matched=3, rows=[])
+    adapter = FakeCleanupReviewAdapter(result={})
     monkeypatch.setattr(
         manual_filter_admin_service,
         "get_adapter",
@@ -697,18 +749,268 @@ def test_cleanup_review_buckets_rejects_unknown_bucket(
 
     with pytest.raises(ValueError):
         manual_filter_admin_service.cleanup_review_buckets(
-            report_type=report_type,
-            status=status,
             created_before=date(2025, 6, 1),
+            buckets=[
+                {"report_type": report_type, "status": status}
+                for report_type, status in buckets
+            ],
             dry_run=False,
             actor=_session_admin(),
         )
 
-    assert adapter.count_kwargs == {}
-    assert adapter.discard_kwargs == {}
+    assert adapter.count_calls == []
+    assert adapter.cleanup_kwargs == {}
 
 
+@pytest.mark.parametrize(
+    "buckets",
+    [
+        [],
+        [
+            {"report_type": "zongbao", "status": "selected"},
+            {"report_type": "wanbao", "status": "selected"},
+            {"report_type": "zongbao", "status": "backup"},
+            {"report_type": "wanbao", "status": "backup"},
+            {"report_type": "zongbao", "status": "selected"},
+        ],
+        [
+            {"report_type": "zongbao", "status": "selected"},
+            {"report_type": "zongbao", "status": "selected"},
+        ],
+    ],
+)
+def test_cleanup_review_buckets_rejects_bad_bucket_lists(
+    monkeypatch: pytest.MonkeyPatch,
+    buckets: list[dict[str, str]],
+) -> None:
+    """空列表、超过 4 桶、重复组合都必须被拒绝（重复由 service 校验兜底）。"""
+    adapter = FakeCleanupReviewAdapter(result={})
+    monkeypatch.setattr(
+        manual_filter_admin_service,
+        "get_adapter",
+        lambda: adapter,
+    )
 
+    with pytest.raises(ValueError):
+        manual_filter_admin_service.cleanup_review_buckets(
+            created_before=date(2025, 6, 1),
+            buckets=buckets,
+            dry_run=False,
+            actor=_session_admin(),
+        )
+
+    assert adapter.count_calls == []
+    assert adapter.cleanup_kwargs == {}
+
+
+class _FakeCleanupCandidatesNamespace:
+    def __init__(self, adapter: "FakeCleanupCandidatesAdapter") -> None:
+        self._adapter = adapter
+
+    def count_candidates_before_date(self, **kwargs: Any) -> int:
+        self._adapter.count_calls.append(dict(kwargs))
+        return self._adapter.counts.get(
+            (kwargs["region"], kwargs["sentiment"]),
+            0,
+        )
+
+
+class FakeCleanupCandidatesAdapter:
+    """分类清理的假 adapter：按分类计数，执行调用原样记录并返回固定结果。"""
+
+    def __init__(
+        self,
+        result: dict[str, Any],
+        counts: dict[tuple[str, str], int] | None = None,
+    ) -> None:
+        self.result = result
+        self.counts = counts or {}
+        self.count_calls: list[dict[str, Any]] = []
+        self.cleanup_kwargs: dict[str, Any] = {}
+        self.manual_reviews = _FakeCleanupCandidatesNamespace(self)
+
+    def cleanup_manual_candidates_before_date_as_user(
+        self,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        self.cleanup_kwargs = kwargs
+        return self.result
+
+
+def test_cleanup_candidates_dry_run_only_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T5（分类）：dry_run 只计数，返回的各分类 matched 与单独计数一致。"""
+    counts = {
+        ("internal", "positive"): 3,
+        ("external", "negative"): 4,
+    }
+    adapter = FakeCleanupCandidatesAdapter(result={}, counts=counts)
+    monkeypatch.setattr(
+        manual_filter_admin_service,
+        "get_adapter",
+        lambda: adapter,
+    )
+
+    result = manual_filter_admin_service.cleanup_candidates(
+        created_before=date(2025, 6, 1),
+        buckets=[
+            {"region": "internal", "sentiment": "positive"},
+            {"region": "external", "sentiment": "negative"},
+        ],
+        dry_run=True,
+        actor=_session_admin(),
+    )
+
+    assert result == {
+        "buckets": [
+            {"region": "internal", "sentiment": "positive", "matched": 3, "updated": 0},
+            {"region": "external", "sentiment": "negative", "matched": 4, "updated": 0},
+        ],
+        "matched": 7,
+        "updated": 0,
+        "discarded": [],
+    }
+    assert adapter.count_calls == [
+        {
+            "owner_user_id": "admin-user-id",
+            "region": "internal",
+            "sentiment": "positive",
+            "terms": None,
+            "created_before": date(2025, 6, 1),
+            "report_type": None,
+        },
+        {
+            "owner_user_id": "admin-user-id",
+            "region": "external",
+            "sentiment": "negative",
+            "terms": None,
+            "created_before": date(2025, 6, 1),
+            "report_type": None,
+        },
+    ]
+    assert adapter.cleanup_kwargs == {}
+
+
+def test_cleanup_candidates_apply_forwards_buckets_in_one_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    counts = {
+        ("internal", "positive"): 3,
+        ("external", "negative"): 4,
+    }
+    adapter = FakeCleanupCandidatesAdapter(
+        result={
+            "buckets": [
+                {"region": "internal", "sentiment": "positive", "matched": 3, "updated": 3},
+                {"region": "external", "sentiment": "negative", "matched": 4, "updated": 4},
+            ],
+            "matched": 7,
+            "updated": 7,
+            "discarded": [{"article_id": "a1", "version": 2}],
+        },
+        counts=counts,
+    )
+    monkeypatch.setattr(
+        manual_filter_admin_service,
+        "get_adapter",
+        lambda: adapter,
+    )
+
+    result = manual_filter_admin_service.cleanup_candidates(
+        created_before=date(2025, 6, 1),
+        buckets=[
+            {"region": "internal", "sentiment": "positive"},
+            {"region": "external", "sentiment": "negative"},
+        ],
+        dry_run=False,
+        actor=_session_admin(),
+        request_id="request-1",
+    )
+
+    assert result["updated"] == 7
+    assert result["matched"] == 7
+    assert adapter.cleanup_kwargs == {
+        "buckets": [
+            {"region": "internal", "sentiment": "positive"},
+            {"region": "external", "sentiment": "negative"},
+        ],
+        "created_before": date(2025, 6, 1),
+        "actor_username": "admin-a",
+        "actor_user_id": "admin-user-id",
+        "request_id": "request-1",
+    }
+
+
+def test_cleanup_candidates_skips_discard_when_nothing_matched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = FakeCleanupCandidatesAdapter(result={}, counts={})
+    monkeypatch.setattr(
+        manual_filter_admin_service,
+        "get_adapter",
+        lambda: adapter,
+    )
+
+    result = manual_filter_admin_service.cleanup_candidates(
+        created_before=date(2025, 6, 1),
+        buckets=[{"region": "internal", "sentiment": "positive"}],
+        dry_run=False,
+        actor=_session_admin(),
+    )
+
+    assert result == {
+        "buckets": [
+            {"region": "internal", "sentiment": "positive", "matched": 0, "updated": 0}
+        ],
+        "matched": 0,
+        "updated": 0,
+        "discarded": [],
+    }
+    assert adapter.cleanup_kwargs == {}
+
+
+@pytest.mark.parametrize(
+    "buckets",
+    [
+        [],
+        [{"region": "north", "sentiment": "positive"}],
+        [{"region": "internal", "sentiment": "neutral"}],
+        [{"region": "", "sentiment": "positive"}],
+        [
+            {"region": "internal", "sentiment": "positive"},
+            {"region": "internal", "sentiment": "positive"},
+        ],
+        [
+            {"region": "internal", "sentiment": "positive"},
+            {"region": "internal", "sentiment": "negative"},
+            {"region": "external", "sentiment": "positive"},
+            {"region": "external", "sentiment": "negative"},
+            {"region": "internal", "sentiment": "positive"},
+        ],
+    ],
+)
+def test_cleanup_candidates_rejects_bad_bucket_lists(
+    monkeypatch: pytest.MonkeyPatch,
+    buckets: list[dict[str, str]],
+) -> None:
+    adapter = FakeCleanupCandidatesAdapter(result={})
+    monkeypatch.setattr(
+        manual_filter_admin_service,
+        "get_adapter",
+        lambda: adapter,
+    )
+
+    with pytest.raises(ValueError):
+        manual_filter_admin_service.cleanup_candidates(
+            created_before=date(2025, 6, 1),
+            buckets=buckets,
+            dry_run=False,
+            actor=_session_admin(),
+        )
+
+    assert adapter.count_calls == []
+    assert adapter.cleanup_kwargs == {}
 class _RestoreRecordingAdapter:
     def __init__(self) -> None:
         self.restore_calls: list[dict[str, Any]] = []

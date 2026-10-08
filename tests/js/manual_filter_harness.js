@@ -156,6 +156,8 @@ class FakeWorkspaceServer {
     classify(url) {
         const pathname = url.pathname;
         if (pathname.endsWith('/clusters')) return 'list';
+        // cleanup-candidates 必须在 candidates 之前判断（endsWith 会误匹配）
+        if (pathname.endsWith('/cleanup-candidates')) return 'cleanup-candidates';
         if (pathname.endsWith('/candidates')) {
             // 管理员列表走 candidates?cluster=true；侧栏计数走 cluster=false，单独归类，避免占用列表扣押
             return url.searchParams.get('cluster') === 'true' ? 'list' : 'counts';
@@ -356,27 +358,87 @@ class FakeWorkspaceServer {
                 discarded,
             }];
         }
-        if (pathname.endsWith('/cleanup-review-buckets')) {
-            // 汇总审阅页清理旧新闻：按报别 × 状态圈选审阅条目，
-            // apply 按清理时的最新版本返回明细供撤销
-            const targets = this.reviewItems.filter((item) => (
-                item.status !== 'discarded'
-                && (item.report_type || 'zongbao') === body.report_type
-                && item.status === body.status
-            ));
-            if (body.dry_run) {
-                return [200, { matched: targets.length, updated: 0, discarded: [] }];
+        if (pathname.endsWith('/cleanup-candidates')) {
+            // 全量筛选页清理旧新闻：多分类一次请求；夹具数据都是京内正面
+            // pending，其余桶一律空；apply 按放弃时的最新版本返回明细供撤销
+            const bucketResults = [];
+            const discarded = [];
+            let matchedTotal = 0;
+            for (const bucket of (body.buckets || [])) {
+                const targets = (bucket.region === 'internal' && bucket.sentiment === 'positive')
+                    ? this.pendingArticles()
+                    : [];
+                matchedTotal += targets.length;
+                if (body.dry_run) {
+                    bucketResults.push({
+                        region: bucket.region,
+                        sentiment: bucket.sentiment,
+                        matched: targets.length,
+                        updated: 0,
+                    });
+                    continue;
+                }
+                const bucketDiscarded = targets.map((article) => {
+                    article.decision = 'discarded';
+                    article.version += 1;
+                    return { article_id: article.article_id, version: article.version };
+                });
+                discarded.push(...bucketDiscarded);
+                bucketResults.push({
+                    region: bucket.region,
+                    sentiment: bucket.sentiment,
+                    matched: targets.length,
+                    updated: bucketDiscarded.length,
+                });
             }
-            const discarded = targets.map((item) => {
-                item.status = 'discarded';
-                item.version += 1;
-                return { article_id: item.article_id, version: item.version };
-            });
+            if (body.dry_run) {
+                return [200, { buckets: bucketResults, matched: matchedTotal, updated: 0, discarded: [] }];
+            }
             return [200, {
-                matched: discarded.length,
+                buckets: bucketResults,
+                matched: matchedTotal,
                 updated: discarded.length,
                 discarded,
             }];
+        }
+        if (pathname.endsWith('/cleanup-review-buckets')) {
+            // 汇总审阅页清理旧新闻：多桶一次请求，
+            // apply 逐桶按清理时的最新版本返回明细供撤销
+            const bucketResults = [];
+            let matchedTotal = 0;
+            let updatedTotal = 0;
+            for (const bucket of (body.buckets || [])) {
+                const targets = this.reviewItems.filter((item) => (
+                    item.status !== 'discarded'
+                    && (item.report_type || 'zongbao') === bucket.report_type
+                    && item.status === bucket.status
+                ));
+                matchedTotal += targets.length;
+                if (body.dry_run) {
+                    bucketResults.push({
+                        report_type: bucket.report_type,
+                        status: bucket.status,
+                        matched: targets.length,
+                        updated: 0,
+                        discarded: [],
+                    });
+                    continue;
+                }
+                const bucketDiscarded = targets.map((item) => {
+                    item.status = 'discarded';
+                    item.version += 1;
+                    return { article_id: item.article_id, version: item.version };
+                });
+                updatedTotal += bucketDiscarded.length;
+                bucketResults.push({
+                    report_type: bucket.report_type,
+                    status: bucket.status,
+                    matched: targets.length,
+                    updated: bucketDiscarded.length,
+                    discarded: bucketDiscarded,
+                });
+            }
+            return [200, { buckets: bucketResults, matched: matchedTotal, updated: updatedTotal }];
         }
         return [200, {}];
     }

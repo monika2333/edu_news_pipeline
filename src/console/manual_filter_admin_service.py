@@ -357,52 +357,148 @@ def bulk_discard_candidates(
     }
 
 
-def cleanup_review_buckets(
+def _validate_cleanup_buckets(
+    buckets: Sequence[Mapping[str, Any]],
     *,
-    report_type: str,
-    status: str,
+    keys: tuple[str, str],
+    allowed: tuple[frozenset[str], frozenset[str]],
+    label: str,
+) -> list[dict[str, str]]:
+    """清理旧新闻的桶列表校验：1–4 项、值显式且合法、组合不重复。
+
+    前端一次「清理」对应一次请求、一个事务；重复组合会让按桶拆分返回值
+    的逻辑产生歧义，直接拒绝。
+    """
+    items = [dict(bucket) for bucket in buckets]
+    if not items:
+        raise ValueError(f"{label} requires at least one bucket")
+    if len(items) > 4:
+        raise ValueError(f"{label} accepts at most four buckets")
+    seen: set[tuple[str, str]] = set()
+    normalized: list[dict[str, str]] = []
+    for item in items:
+        first = str(item.get(keys[0]) or "").strip()
+        second = str(item.get(keys[1]) or "").strip()
+        if first not in allowed[0]:
+            raise ValueError(f"{label} requires an explicit {keys[0]}")
+        if second not in allowed[1]:
+            raise ValueError(f"{label} requires an explicit {keys[1]}")
+        pair = (first, second)
+        if pair in seen:
+            raise ValueError(f"{label} contains a duplicate bucket: {pair}")
+        seen.add(pair)
+        normalized.append({keys[0]: first, keys[1]: second})
+    return normalized
+
+
+def cleanup_candidates(
+    *,
     created_before: date,
+    buckets: Sequence[Mapping[str, Any]],
     dry_run: bool,
     actor: ConsoleUser,
     request_id: Optional[str] = None,
 ) -> dict[str, Any]:
-    """汇总审阅页「清理旧新闻」：把指定桶中入库日期早于 created_before 的条目置为放弃。
+    """全量筛选页「清理旧新闻」：按多个分类一次请求、一个事务放弃。
 
-    与 bulk_discard_candidates 同构：dry_run 只返回计数；
-    实际执行按桶圈选（报别 × 采纳/备选），「旧」的判据是新闻入库时间，
-    与全量筛选页一致。不校验检索词与细化筛选——该页面没有这些输入。
+    每个分类的匹配条件与 /bulk-discard 带 created_before、不带关键词和
+    细化筛选时完全相同（dry_run 只计数）；执行走
+    cleanup_manual_candidates_before_date_as_user，所有分类共享同一个
+    decided_at，在放弃页显示为一个批次。
     """
     owner_user_id = _workspace_user_id(actor)
-    # coerce 语义会把无法识别的报别静默归到综报，这里必须先做显式校验，
-    # 否则误传的报别会清掉综报桶
-    if report_type not in NEWS_REPORT_TYPES:
-        raise ValueError("cleanup-review-buckets requires an explicit report_type")
-    if status not in {"selected", "backup"}:
-        raise ValueError("cleanup-review-buckets requires an explicit review bucket")
-    adapter = get_adapter()
-    matched = adapter.manual_reviews.count_review_bucket_before_date(
-        owner_user_id=owner_user_id,
-        status=status,
-        report_type=report_type,
-        created_before=created_before,
+    normalized = _validate_cleanup_buckets(
+        buckets,
+        keys=("region", "sentiment"),
+        allowed=(frozenset({"internal", "external"}), frozenset({"positive", "negative"})),
+        label="cleanup-candidates",
     )
-    if dry_run or matched <= 0:
-        return {"matched": matched, "updated": 0, "discarded": []}
-    after = adapter.discard_review_buckets_before_date_as_user(
-        owner_user_id=owner_user_id,
-        status=status,
-        report_type=report_type,
+    adapter = get_adapter()
+    matched_by_bucket = [
+        (
+            bucket,
+            adapter.manual_reviews.count_candidates_before_date(
+                owner_user_id=owner_user_id,
+                region=bucket["region"],
+                sentiment=bucket["sentiment"],
+                terms=None,
+                created_before=created_before,
+                report_type=None,
+            ),
+        )
+        for bucket in normalized
+    ]
+    total_matched = sum(count for _, count in matched_by_bucket)
+    if dry_run or total_matched <= 0:
+        return {
+            "buckets": [
+                {**bucket, "matched": count, "updated": 0}
+                for bucket, count in matched_by_bucket
+            ],
+            "matched": total_matched,
+            "updated": 0,
+            "discarded": [],
+        }
+    return adapter.cleanup_manual_candidates_before_date_as_user(
+        buckets=normalized,
         created_before=created_before,
         actor_username=actor.username,
         actor_user_id=owner_user_id,
         request_id=request_id,
     )
-    # 撤回需要逐条的乐观锁版本号：清理只放弃桶内条目，按桶回退原状态是安全的
-    discarded = [
-        {"article_id": str(row["article_id"]), "version": int(row["version"])}
-        for row in after
+
+
+def cleanup_review_buckets(
+    *,
+    created_before: date,
+    buckets: Sequence[Mapping[str, Any]],
+    dry_run: bool,
+    actor: ConsoleUser,
+    request_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """汇总审阅页「清理旧新闻」：多个桶一次请求、一个事务放弃。
+
+    与 cleanup_candidates 同构，圈选维度是报别 × 采纳/备选；「旧」的判据
+    是新闻入库时间。不校验检索词与细化筛选——该页面没有这些输入。
+    """
+    owner_user_id = _workspace_user_id(actor)
+    normalized = _validate_cleanup_buckets(
+        buckets,
+        keys=("report_type", "status"),
+        allowed=(NEWS_REPORT_TYPES, frozenset({"selected", "backup"})),
+        label="cleanup-review-buckets",
+    )
+    adapter = get_adapter()
+    matched_by_bucket = [
+        (
+            bucket,
+            adapter.manual_reviews.count_review_bucket_before_date(
+                owner_user_id=owner_user_id,
+                status=bucket["status"],
+                report_type=bucket["report_type"],
+                created_before=created_before,
+            ),
+        )
+        for bucket in normalized
     ]
-    return {"matched": matched, "updated": len(discarded), "discarded": discarded}
+    total_matched = sum(count for _, count in matched_by_bucket)
+    if dry_run or total_matched <= 0:
+        return {
+            "buckets": [
+                {**bucket, "matched": count, "updated": 0, "discarded": []}
+                for bucket, count in matched_by_bucket
+            ],
+            "matched": total_matched,
+            "updated": 0,
+        }
+    return adapter.cleanup_review_buckets_before_date_as_user(
+        owner_user_id=owner_user_id,
+        buckets=normalized,
+        created_before=created_before,
+        actor_username=actor.username,
+        actor_user_id=owner_user_id,
+        request_id=request_id,
+    )
 
 
 def bulk_restore_candidates(
@@ -498,6 +594,7 @@ __all__ = [
     "bulk_decide",
     "bulk_discard_candidates",
     "bulk_restore_candidates",
+    "cleanup_candidates",
     "cleanup_review_buckets",
     "clear_review_buckets",
     "clear_all_review_buckets",

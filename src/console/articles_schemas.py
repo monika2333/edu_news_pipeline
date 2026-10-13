@@ -90,6 +90,11 @@ class NewsArticleContentResponse(BaseModel):
     url: Optional[str] = None
     created_at: Optional[datetime] = None
     content_markdown: Optional[str] = None
+    # 分类（京内/京外 × 正/负）与重要性分：未进摘要环节的文章为 None，
+    # 前端据此不渲染抽屉头部的分类徽章。
+    is_beijing_related: Optional[bool] = None
+    sentiment_label: Optional[str] = None
+    external_importance_score: Optional[float] = None
 
 
 class NewsArticleIngestStatusResponse(BaseModel):

@@ -57,7 +57,15 @@ function inlineScripts(html) {
 }
 
 class FakeWorkspaceServer {
-    constructor({ articleCount = 0, clusters = null, reviewItems = null, discardedItems = null } = {}) {
+    constructor({
+        articleCount = 0,
+        clusters = null,
+        reviewItems = null,
+        discardedItems = null,
+        // article_id -> /api/articles/content 响应体（可只给差异字段，其余自动补全）；
+        // 未播种的 id 返回与后端一致的全 null 兜底响应
+        articleContents = null,
+    } = {}) {
         this.articles = new Map();
         for (let index = 0; index < articleCount; index += 1) {
             const id = `a${String(index).padStart(2, '0')}`;
@@ -88,6 +96,7 @@ class FakeWorkspaceServer {
         // 放弃页数据：/discarded（管理员）与 /reviews?decision=discarded（值班）共用，
         // 条件参数（q / 分类 / 分数 / decided_since / batch_decided_at）在此模拟
         this.discardedItems = discardedItems || [];
+        this.articleContents = articleContents || {};
         this.log = [];
         this.inflight = 0;
         this.holds = {};
@@ -155,6 +164,7 @@ class FakeWorkspaceServer {
 
     classify(url) {
         const pathname = url.pathname;
+        if (pathname === '/api/articles/content') return 'article-content';
         if (pathname.endsWith('/clusters')) return 'list';
         // cleanup-candidates 必须在 candidates 之前判断（endsWith 会误匹配）
         if (pathname.endsWith('/cleanup-candidates')) return 'cleanup-candidates';
@@ -220,6 +230,23 @@ class FakeWorkspaceServer {
 
     respond(url, body) {
         const pathname = url.pathname;
+        if (pathname === '/api/articles/content') {
+            // 响应体与后端 NewsArticleContentResponse 同构；播种对象只写差异字段
+            const id = url.searchParams.get('article_id') || '';
+            const seeded = this.articleContents[id];
+            if (seeded) return [200, { article_id: id, ...seeded }];
+            return [200, {
+                article_id: id,
+                title: null,
+                source: null,
+                url: null,
+                created_at: null,
+                content_markdown: null,
+                is_beijing_related: null,
+                sentiment_label: null,
+                external_importance_score: null,
+            }];
+        }
         if (pathname === '/api/duty/shifts') {
             return [200, {
                 items: [{

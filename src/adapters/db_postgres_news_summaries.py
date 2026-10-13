@@ -590,6 +590,8 @@ def fetch_news_summary_content(cur: psycopg.Cursor, article_id: str) -> Optional
         return None
     # 以 raw_articles 为基表：全库检索会命中只抓了原文、未进摘要环节的文章，
     # 内容接口必须也能给出它们的正文；news_summaries 的字段优先（收录时间口径与归因一致）。
+    # 末尾三个分类/评分字段只存在于 news_summaries：未入库的文章为 NULL，
+    # 抽屉头部据此不渲染分类徽章（与检索卡片「判定未就绪不归类」口径一致）。
     query = """
         SELECT
             ra.article_id,
@@ -597,7 +599,10 @@ def fetch_news_summary_content(cur: psycopg.Cursor, article_id: str) -> Optional
             COALESCE(ns.source, ra.source) AS source,
             COALESCE(ns.url, ra.url) AS url,
             COALESCE(ns.created_at, ra.fetched_at) AS created_at,
-            COALESCE(NULLIF(ns.content_markdown, ''), ra.content_markdown) AS content_markdown
+            COALESCE(NULLIF(ns.content_markdown, ''), ra.content_markdown) AS content_markdown,
+            ns.is_beijing_related,
+            ns.sentiment_label,
+            ns.external_importance_score
         FROM raw_articles ra
         LEFT JOIN news_summaries ns ON ns.article_id = ra.article_id
         WHERE ra.article_id = %s

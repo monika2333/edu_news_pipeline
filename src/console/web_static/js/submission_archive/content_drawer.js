@@ -103,6 +103,22 @@ function renderArchiveDrawerHeader(data, charCount) {
     const { title, meta, sourceLink } = getArchiveDrawerEls();
     title.textContent = data.title || '(无标题)';
     meta.textContent = '';
+    // 分类徽章 + 该分类下的重要性分放在元信息行最前面。
+    // contentDrawerCategoryBadge 由 manual_filter/utils.js 提供（本页先于本脚本加载），
+    // 判定未就绪（未入库/未走到分类环节）的文章两项都不显示。
+    const category = contentDrawerCategoryBadge(data);
+    if (category) {
+        meta.appendChild(drawerCreateEl(
+            'span',
+            `badge search-category-badge ${category.sentimentClass}`,
+            category.label
+        ));
+        if (category.score !== null) {
+            const scoreEl = drawerCreateEl('span', 'content-drawer-score', `${category.score} 分`);
+            scoreEl.title = `重要性分：${category.score}`;
+            meta.appendChild(scoreEl);
+        }
+    }
     const items = [
         `来源: ${data.source || '-'}`,
         `收录时间: ${formatDrawerDateTime(data.created_at)}`

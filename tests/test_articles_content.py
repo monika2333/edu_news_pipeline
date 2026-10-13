@@ -82,6 +82,9 @@ def test_article_content_endpoints_return_identical_complete_contract(monkeypatc
         "url": "https://example.com/article-1",
         "created_at": datetime(2026, 8, 6, 10, 0, tzinfo=timezone.utc),
         "content_markdown": long_content,
+        "is_beijing_related": True,
+        "sentiment_label": "positive",
+        "external_importance_score": 58.0,
     }
     client = _client(monkeypatch, FakeAdapter(row))
 
@@ -100,8 +103,50 @@ def test_article_content_endpoints_return_identical_complete_contract(monkeypatc
         "url": "https://example.com/article-1",
         "created_at": "2026-08-06T10:00:00Z",
         "content_markdown": long_content,
+        "is_beijing_related": True,
+        "sentiment_label": "positive",
+        "external_importance_score": 58.0,
     }
     assert query_response.json()["content_markdown"] == long_content
+
+
+def test_article_content_category_fields_coerced_and_null_safe(monkeypatch) -> None:
+    # 分数可能是数据库直出的 Decimal/str，统一转 float；分类缺失时逐字段为 None，
+    # 不能因为一条缺分类就丢掉正文或整段兜底。
+    row = {
+        "article_id": "article-2",
+        "title": "未分类文章",
+        "source": "测试来源",
+        "url": None,
+        "created_at": None,
+        "content_markdown": "正文",
+        "is_beijing_related": False,
+        "sentiment_label": "negative",
+        "external_importance_score": "61.4",
+    }
+    client = _client(monkeypatch, FakeAdapter(row))
+
+    response = client.get("/api/articles/content", params={"article_id": "article-2"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_beijing_related"] is False
+    assert data["sentiment_label"] == "negative"
+    assert data["external_importance_score"] == 61.4
+
+    partial = dict(row, is_beijing_related=None, sentiment_label=None, external_importance_score=None)
+    client = _client(monkeypatch, FakeAdapter(partial))
+    response = client.get("/api/articles/content", params={"article_id": "article-2"})
+    assert response.json()["external_importance_score"] is None
+    assert response.json()["is_beijing_related"] is None
+    assert response.json()["sentiment_label"] is None
+
+    # 非法数值必须走 _to_float 兜底为 None（200），不能让 Pydantic 校验炸成 500
+    invalid = dict(row, external_importance_score="n/a")
+    client = _client(monkeypatch, FakeAdapter(invalid))
+    response = client.get("/api/articles/content", params={"article_id": "article-2"})
+    assert response.status_code == 200
+    assert response.json()["external_importance_score"] is None
 
 
 def test_article_content_missing_record_returns_null_fields(monkeypatch) -> None:
@@ -120,6 +165,9 @@ def test_article_content_missing_record_returns_null_fields(monkeypatch) -> None
         "url": None,
         "created_at": None,
         "content_markdown": None,
+        "is_beijing_related": None,
+        "sentiment_label": None,
+        "external_importance_score": None,
     }
 
 
@@ -139,6 +187,9 @@ def test_article_content_database_error_uses_null_fallback(monkeypatch) -> None:
         "url": None,
         "created_at": None,
         "content_markdown": None,
+        "is_beijing_related": None,
+        "sentiment_label": None,
+        "external_importance_score": None,
     }
 
 

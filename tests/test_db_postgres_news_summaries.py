@@ -60,6 +60,9 @@ def test_fetch_news_summary_content_selects_drawer_metadata() -> None:
         "url": "https://example.com/article-1",
         "created_at": "2026-08-06T10:00:00+00:00",
         "content_markdown": "First paragraph.\n\nSecond paragraph.",
+        "is_beijing_related": True,
+        "sentiment_label": "positive",
+        "external_importance_score": 58.0,
     }
     cursor = FakeCursor(expected)
 
@@ -74,6 +77,10 @@ def test_fetch_news_summary_content_selects_drawer_metadata() -> None:
         "url",
         "created_at",
         "content_markdown",
+        # 分类/评分字段供抽屉头部渲染分类徽章；未入库文章三列均为 NULL
+        "is_beijing_related",
+        "sentiment_label",
+        "external_importance_score",
     ):
         assert column in query
     assert "publish_time_iso" not in query

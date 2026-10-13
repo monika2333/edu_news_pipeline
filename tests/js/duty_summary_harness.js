@@ -123,15 +123,34 @@ function shiftRow({
 }
 
 class FakeSummaryServer {
-    constructor({ shifts = [], reviewItems = [] } = {}) {
+    constructor({ shifts = [], reviewItems = [], articleContents = {} } = {}) {
         this.shifts = shifts;
         this.reviewItems = reviewItems;
+        // article_id -> /api/articles/content 响应体（可只给差异字段）；
+        // 供原文抽屉（本页共用 submission_archive/content_drawer.js）的头部渲染测试播种
+        this.articleContents = articleContents;
         this.log = [];
         this.inflight = 0;
     }
 
     respond(url) {
         const pathname = url.pathname;
+        if (pathname === '/api/articles/content') {
+            const id = url.searchParams.get('article_id') || '';
+            const seeded = this.articleContents[id];
+            if (seeded) return [200, { article_id: id, ...seeded }];
+            return [200, {
+                article_id: id,
+                title: null,
+                source: null,
+                url: null,
+                created_at: null,
+                content_markdown: null,
+                is_beijing_related: null,
+                sentiment_label: null,
+                external_importance_score: null,
+            }];
+        }
         if (pathname === '/api/admin/duty-summary') {
             return [200, { items: this.shifts }];
         }

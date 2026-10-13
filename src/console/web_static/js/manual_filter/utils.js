@@ -368,6 +368,25 @@ function getSentimentClass(label) {
     return 'neutral';
 }
 
+// 原文抽屉头部的「分类 + 该分类下的重要性分」徽章数据。
+// 分类判定口径与 search_drawer.js 的 searchCategoryLabel 一致：
+// 地域（geo-classify）或情感（summarize）任一未就绪时不归类，返回 null；
+// 未归类时分数也不单独展示——分数只在分类语境下有意义。
+// 筛选页与存档/值班页的两套抽屉脚本都从 /api/articles/content 拿数据，共用此入口。
+function contentDrawerCategoryBadge(data) {
+    if (!data) return null;
+    if (data.is_beijing_related === null || data.is_beijing_related === undefined) return null;
+    if (!data.sentiment_label) return null;
+    const region = data.is_beijing_related ? '京内' : '京外';
+    const sentiment = String(data.sentiment_label).toLowerCase() === 'negative' ? '负面' : '正面';
+    const score = data.external_importance_score;
+    return {
+        label: `${region}${sentiment}`,
+        sentimentClass: getSentimentClass(data.sentiment_label),
+        score: (score === null || score === undefined) ? null : formatScore(score)
+    };
+}
+
 // Global timeout variable to clear previous timeouts
 let toastTimeout;
 

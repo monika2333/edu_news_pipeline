@@ -123,6 +123,19 @@ body.content-drawer-open .search-drawer-toggle {
     color: var(--text-secondary);
 }
 
+/* 分类徽章沿用全局 .badge 正/负配色；上面的 meta 行通配规则优先级更高，
+   字号要在这里压回徽章默认值（颜色由 .badge.positive/.negative 胜出，无需处理） */
+.content-drawer-meta > span.badge {
+    font-size: 0.75rem;
+}
+
+/* 该分类下的重要性分：跟在徽章后面的小字强调，悬浮可见「重要性分」全称 */
+.content-drawer-meta > .content-drawer-score {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
 .content-drawer-source-link {
     font-size: 0.8rem;
     color: var(--text-secondary);

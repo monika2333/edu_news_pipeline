@@ -232,6 +232,9 @@ def get_article_content(*, article_id: str) -> Dict[str, Any]:
         "url": None,
         "created_at": None,
         "content_markdown": None,
+        "is_beijing_related": None,
+        "sentiment_label": None,
+        "external_importance_score": None,
     }
     if adapter is None:
         return unavailable
@@ -248,6 +251,9 @@ def get_article_content(*, article_id: str) -> Dict[str, Any]:
         "url": row.get("url"),
         "created_at": row.get("created_at"),
         "content_markdown": row.get("content_markdown"),
+        "is_beijing_related": row.get("is_beijing_related"),
+        "sentiment_label": row.get("sentiment_label"),
+        "external_importance_score": _to_float(row.get("external_importance_score")),
     }
 
 

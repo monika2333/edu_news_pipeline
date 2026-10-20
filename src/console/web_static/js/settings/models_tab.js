@@ -25,8 +25,13 @@ function modelsDraftFromSection(section) {
 function buildModelsEnvBlock() {
     const env = (state.payload && state.payload.environment) || {};
     const endpoints = (state.payload && state.payload.endpoints) || {};
+    const card = buildSettingsCard(
+        '环境（只读）',
+        '超时、预算、reasoning 强度等参数在服务器环境变量中配置。修改服务器上的'
+            + ' .env.local 后点「重新加载环境变量」即可生效，无需重启；'
+            + '数据库连接等少数配置仍需重启服务。',
+    );
     const block = createEl('div', 'settings-env-block');
-    block.appendChild(createEl('h3', 'settings-env-heading', '环境（只读）'));
     const list = createEl('dl', 'settings-env-list');
     const addItem = (term, value) => {
         list.appendChild(createEl('dt', '', term));
@@ -35,13 +40,6 @@ function buildModelsEnvBlock() {
     addItem('向量模型', env.embedding_model || '-');
     addItem('允许的接入点主机', (endpoints.allowed_hosts || []).join(', ') || '-');
     block.appendChild(list);
-    block.appendChild(createEl(
-        'p',
-        'settings-env-note',
-        '超时、预算、reasoning 强度等参数在服务器环境变量中配置。修改服务器上的'
-            + ' .env.local 后点「重新加载环境变量」即可生效，无需重启；'
-            + '数据库连接等少数配置仍需重启服务。',
-    ));
 
     // 环境变量在进程内是一次性快照（src.config 的 _ENV_LOADED）；
     // 重载按钮让「改完 .env.local」不必再登录服务器重启进程，接入点的
@@ -85,7 +83,8 @@ function buildModelsEnvBlock() {
             renderModelsTab({ keepDraft: true });
         }
     });
-    return block;
+    card.appendChild(block);
+    return card;
 }
 
 function modelsFollowHintText() {
@@ -296,14 +295,10 @@ function renderModelsTab({ keepDraft = false } = {}) {
         state.modelsDraft = modelsDraftFromSection(section);
     }
 
-    panel.appendChild(buildModelsEnvBlock());
-    panel.appendChild(buildEndpointsBlock());
-    panel.appendChild(createEl(
-        'p',
-        'settings-effect-note',
-        '生效时间：流水线下一轮生效；查重复核立即生效。',
-    ));
-    panel.appendChild(buildLastModifiedLine(section));
+    const mainCard = buildSettingsCard(
+        '默认模型与流水线步骤',
+        '未单独指定的步骤跟随默认模型；保存后下一轮流水线生效，查重复核立即生效。',
+    );
 
     const defaultRow = createEl('div', 'settings-default-row');
     const defaultLabel = createEl('label', 'settings-default-label', '默认模型', {
@@ -323,10 +318,10 @@ function renderModelsTab({ keepDraft = false } = {}) {
     });
     defaultRow.appendChild(defaultLabel);
     defaultRow.appendChild(defaultInput);
-    panel.appendChild(defaultRow);
+    mainCard.appendChild(defaultRow);
 
     // 接入点分区为脏时的提示（节点常驻、hidden 切换，见 endpoints.js）
-    panel.appendChild(buildEndpointsDirtyNote());
+    mainCard.appendChild(buildEndpointsDirtyNote());
 
     const tableWrap = createEl('div', 'admin-table-wrap');
     const table = createEl('table', 'admin-table settings-steps-table');
@@ -343,7 +338,7 @@ function renderModelsTab({ keepDraft = false } = {}) {
     });
     table.appendChild(tbody);
     tableWrap.appendChild(table);
-    panel.appendChild(tableWrap);
+    mainCard.appendChild(tableWrap);
     updateModelsFollowHints();
 
     const saveBar = createEl('div', 'settings-save-bar');
@@ -365,7 +360,15 @@ function renderModelsTab({ keepDraft = false } = {}) {
     saveBar.appendChild(discardBtn);
     saveBar.appendChild(reloadBtn);
     saveBar.appendChild(status);
-    panel.appendChild(saveBar);
+    mainCard.appendChild(buildLastModifiedLine(section));
+    mainCard.appendChild(saveBar);
+    panel.appendChild(mainCard);
+
+    const endpointsCard = buildSettingsCard('接入点');
+    endpointsCard.appendChild(buildEndpointsBlock());
+    panel.appendChild(endpointsCard);
+
+    panel.appendChild(buildModelsEnvBlock());
 
     saveBtn.addEventListener('click', async () => {
         if (!state.modelsDraft.default.trim()) {

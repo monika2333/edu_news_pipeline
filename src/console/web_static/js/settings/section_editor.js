@@ -11,7 +11,7 @@ function buildSectionSaveBar(panel, section, label, readValue, render) {
     const statusEl = createEl('span', 'settings-save-status', '', { role: 'status', 'aria-live': 'polite' });
     reloadBtn.hidden = true;
     bar.append(saveBtn, discardBtn, reloadBtn, statusEl);
-    panel.append(bar, buildLastModifiedLine(sectionSnapshot));
+    panel.append(buildLastModifiedLine(sectionSnapshot), bar);
     const lock = (busy) => panel.querySelectorAll('input, textarea, button')
         .forEach((control) => { control.disabled = busy; });
     saveBtn.addEventListener('click', async () => {

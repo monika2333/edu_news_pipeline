@@ -97,20 +97,13 @@ function renderBonusesTab() {
         return;
     }
 
-    const head = createEl('div', 'bonus-head');
-    const headText = createEl('div', 'bonus-head-text');
-    headText.appendChild(createEl('h2', 'bonus-title', '关键词加减分'));
-    const legend = createEl('div', 'bonus-legend');
-    legend.append(bonusLegendItem('positive', '加分'), bonusLegendItem('negative', '减分'));
-    head.append(headText, legend);
-
     const dictionaryMount = createEl('div', 'bonus-dictionary');
     const exclusionMount = createEl('div', 'bonus-exclusion');
     const main = createEl('div', 'bonus-main');
     main.append(dictionaryMount, exclusionMount);
     const layout = createEl('div', 'bonus-layout');
     layout.append(main, createBonusGuide());
-    panel.append(head, layout);
+    panel.append(layout);
     renderBonusDictionary(dictionaryMount);
     renderExclusionCard(exclusionMount);
 }
@@ -135,6 +128,15 @@ function renderBonusDictionary(mount) {
     clearEl(mount);
     const saved = settingsSection(section);
     if (!saved) return;
+
+    const card = buildSettingsCard();
+    const head = createEl('div', 'bonus-head');
+    const headText = createEl('div', 'bonus-head-text');
+    headText.appendChild(createEl('h2', 'bonus-title', '关键词加减分'));
+    const legend = createEl('div', 'bonus-legend');
+    legend.append(bonusLegendItem('positive', '加分'), bonusLegendItem('negative', '减分'));
+    head.append(headText, legend);
+    card.appendChild(head);
 
     // 状态行：自动保存结果 + 最后修改人；冲突时出现「载入最新配置」
     const status = createEl('span', 'bonus-save-status', '', {
@@ -482,7 +484,8 @@ function renderBonusDictionary(mount) {
         }
     });
 
-    mount.append(statusRow, stats, table);
+    card.append(statusRow, stats, table);
+    mount.append(card);
     refreshStats();
     refreshUpdatedLine();
 }

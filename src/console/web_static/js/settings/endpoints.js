@@ -548,7 +548,6 @@ function renderEndpointsBlock(container) {
     if (!target) return;
     clearEl(target);
     const saved = savedEndpointsValue();
-    target.appendChild(createEl('h3', 'settings-env-heading', '接入点'));
     if (!saved) {
         target.appendChild(createEl(
             'p',
@@ -565,7 +564,7 @@ function renderEndpointsBlock(container) {
 }
 
 function buildEndpointsBlock() {
-    const block = createEl('div', 'settings-env-block endpoints-block');
+    const block = createEl('div', 'endpoints-block');
     renderEndpointsBlock(block);
     return block;
 }

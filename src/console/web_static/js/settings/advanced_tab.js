@@ -40,8 +40,12 @@ function renderAdvancedSection(section, panel) {
         renderImportNotice(panel, label);
         return;
     }
-    panel.appendChild(createEl('h3', 'settings-group-heading', label));
-    panel.appendChild(createEl('p', 'settings-effect-note', description));
+    const head = createEl('div', 'settings-card-head');
+    const heading = createEl('div', 'settings-card-heading');
+    heading.appendChild(createEl('h3', 'settings-card-title', label));
+    heading.appendChild(createEl('p', 'settings-card-desc settings-effect-note', description));
+    head.appendChild(heading);
+    panel.appendChild(head);
     let readValue;
     if (section === 'source_aliases') {
         const fields = createEl('div', 'advanced-alias-fields');
@@ -147,10 +151,8 @@ function renderAdvancedSection(section, panel) {
 function renderAdvancedTab() {
     const panel = elements.panels.advanced;
     clearEl(panel);
-    panel.appendChild(createEl('p', 'settings-effect-note advanced-warning',
-        '这些配置很少需要修改；除「自动排序关键词」只影响展示顺序外，其余改错会影响抓取和筛选的整体结果。'));
     Object.keys(ADVANCED_SECTIONS).forEach((section) => {
-        const block = createEl('section', 'advanced-section', '', { dataset: { section } });
+        const block = createEl('section', 'settings-card advanced-section', '', { dataset: { section } });
         panel.appendChild(block);
         renderAdvancedSection(section, block);
     });

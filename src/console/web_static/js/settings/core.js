@@ -5,6 +5,27 @@
 
 const SETTINGS_TABS = ['models', 'sources', 'bonuses', 'advanced'];
 
+// 页签短标签用于导航，页头标题与一句话说明用于内容区。两者分开：
+// 导航要短（将来加页签也放得下），页头负责解释当前分区在管什么。
+const SETTINGS_TAB_META = {
+    models: {
+        title: '模型与接入点',
+        description: '设置默认模型、流水线各步骤使用的模型，以及外部模型服务的接入点。',
+    },
+    sources: {
+        title: '数据源',
+        description: '管理每小时抓取的来源与其抓取账号；开关即时生效，下一轮抓取按新配置执行。',
+    },
+    bonuses: {
+        title: '加分词典',
+        description: '命中关键词即加减分；排除名单命中的文章直接淘汰，不进入评分。',
+    },
+    advanced: {
+        title: '高级',
+        description: '低频配置：抓取关键词、来源别名与审阅自动排序。改动影响全局，请谨慎修改。',
+    },
+};
+
 const state = {
     payload: null,
     activeTab: 'models',
@@ -53,7 +74,32 @@ function cacheSettingsElements() {
         bonuses: document.getElementById('settings-panel-bonuses'),
         advanced: document.getElementById('settings-panel-advanced'),
     };
+    elements.pageTitle = document.getElementById('settings-page-title');
+    elements.pageDesc = document.getElementById('settings-page-desc');
     state.currentUserName = document.body.dataset.currentUserName || '';
+}
+
+function renderSettingsPageHead(tab) {
+    const meta = SETTINGS_TAB_META[tab];
+    if (!meta) return;
+    elements.pageTitle.textContent = meta.title;
+    elements.pageDesc.textContent = meta.description;
+}
+
+// 设置内容统一放在卡片里：标题 + 一句话说明 + 内容，卡片之间留白。
+// 页签负责「去哪」，卡片负责「这一块是什么」，避免一整个大白面板里
+// 平铺表格、清单和表单而看不出分组。
+function buildSettingsCard(title, description) {
+    const card = createEl('section', 'settings-card');
+    if (title || description) {
+        const head = createEl('div', 'settings-card-head');
+        const heading = createEl('div', 'settings-card-heading');
+        if (title) heading.appendChild(createEl('h3', 'settings-card-title', title));
+        if (description) heading.appendChild(createEl('p', 'settings-card-desc', description));
+        head.appendChild(heading);
+        card.appendChild(head);
+    }
+    return card;
 }
 
 async function apiRequest(path, { method = 'GET', body } = {}) {
@@ -293,6 +339,7 @@ function activateSettingsTab(tab, { updateHash = true } = {}) {
     }
     if (!SETTINGS_TABS.includes(normalized)) normalized = 'models';
     state.activeTab = normalized;
+    renderSettingsPageHead(normalized);
     elements.tabButtons.forEach((btn) => {
         const active = btn.dataset.settingsTab === normalized;
         btn.classList.toggle('is-active', active);

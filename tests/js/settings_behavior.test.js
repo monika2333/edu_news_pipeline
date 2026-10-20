@@ -3065,6 +3065,22 @@ for (const tab of ['bonuses', 'advanced']) {
     });
 }
 
+test('设置页头随页签切换更新标题与说明', async () => {
+    const page = await bootPage();
+    const title = () => page.document.getElementById('settings-page-title').textContent;
+    const desc = () => page.document.getElementById('settings-page-desc').textContent;
+    try {
+        assert.equal(title(), '模型与接入点');
+        assert.match(desc(), /默认模型/);
+        page.clickTab('sources');
+        assert.equal(title(), '数据源');
+        assert.match(desc(), /每小时抓取/);
+        page.clickTab('advanced');
+        assert.equal(title(), '高级');
+        assert.match(desc(), /低频配置/);
+    } finally { page.close(); }
+});
+
 test('空别名和后缀无需确认；关键词服务端去重后回填', async () => {
     const page = await bootPage();
     try {

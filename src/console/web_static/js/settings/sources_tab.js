@@ -184,12 +184,13 @@ function buildSourceRow(key, { enabled }) {
     return item;
 }
 
-// 页面级操作条：吸顶固定在数据源面板顶部（平铺后页面变长，开关必须始终够得着），
-// 左侧「数据源」，右侧「管理模式」开关；待删除提交条出现在其下方，跟着一起固定
+// 卡片内的操作条：吸顶固定在「每小时来源」卡片顶部（平铺后页面变长，
+// 管理模式开关必须始终够得着）；待删除提交条出现在其下方，跟着一起固定。
+// 卡片标题在操作条上方，这里只放即时保存提示与页面级管理模式开关。
 function buildSourcesActionBar() {
     const bar = createEl('div', 'sources-action-bar');
     const head = createEl('div', 'sources-action-head');
-    head.appendChild(createEl('span', 'sources-action-title', '数据源'));
+    head.appendChild(createEl('span', 'sources-action-hint', '启停即时保存'));
     const manageBtn = createEl('button', 'btn btn-secondary accounts-manage-btn', '管理模式', {
         type: 'button',
         'aria-pressed': state.manageMode ? 'true' : 'false',
@@ -202,16 +203,16 @@ function buildSourcesActionBar() {
 }
 
 function renderSourcesPanel(panel, section) {
-    panel.appendChild(buildSourcesActionBar());
-    syncManageBar();
-
-    panel.appendChild(createEl('p', 'settings-effect-note', '生效时间：下一轮抓取生效。'));
-    panel.appendChild(buildLastModifiedLine(section));
-
     // 单一来源列表：全部非每日来源按 payload 目录序渲染（后端返回的启用列表也是目录序，
     // 前端不再排序），开关状态即启停状态，启停不改变行位置。
     // 需要账号的来源，其账号面板作为紧随的兄弟 <li> 始终平铺渲染
-    panel.appendChild(createEl('h3', 'settings-group-heading', '每小时来源'));
+    const hourlyCard = buildSettingsCard(
+        '每小时来源',
+        '开关即启停，立即写入；下一轮抓取按新配置执行。',
+    );
+    hourlyCard.appendChild(buildSourcesActionBar());
+    hourlyCard.appendChild(buildLastModifiedLine(section));
+
     const list = createEl('ul', 'settings-source-list', '', { id: 'sources-list' });
     sourceCatalog()
         .filter((item) => !item.daily_only)
@@ -224,12 +225,19 @@ function renderSourcesPanel(panel, section) {
                 insertAccountsPanel(row, source.key);
             }
         });
-    panel.appendChild(list);
+    hourlyCard.appendChild(list);
+    panel.appendChild(hourlyCard);
+    // 操作条必须在卡片进入文档后再同步：syncManageBar 从面板作用域里找
+    // .accounts-manage-btn / .accounts-delete-bar-wrap
+    syncManageBar();
 
     // 每日任务独立分组：只读行，由服务器计划任务调度，不在页面上启停
     const dailySources = sourceCatalog().filter((item) => item.daily_only);
     if (dailySources.length) {
-        panel.appendChild(createEl('h3', 'settings-group-heading', '每日任务'));
+        const dailyCard = buildSettingsCard(
+            '每日任务',
+            '由服务器计划任务独立调度，不参与每小时抓取，也不在页面上启停。',
+        );
         const dailyList = createEl('ul', 'settings-source-list settings-daily-list', '', {
             id: 'sources-daily-list',
         });
@@ -247,7 +255,8 @@ function renderSourcesPanel(panel, section) {
             ));
             dailyList.appendChild(item);
         });
-        panel.appendChild(dailyList);
+        dailyCard.appendChild(dailyList);
+        panel.appendChild(dailyCard);
     }
 }
 

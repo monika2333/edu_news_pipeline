@@ -1,25 +1,127 @@
 /* 系统设置页（/admin/settings）样式；面板、表格、按钮等通用样式复用 admin.css 与 components.css。 */
 
+/* 页签是一条完整的导航条，不是几个独立的胶囊按钮：
+   浅灰轨道 + 选中项白底，和页头的视图切换（.admin-view-switch）同一套语言。
+   四项等宽并在整行铺开，将来增加到 5～6 项也不会挤成一小撮。
+   「高级」用一条细分隔线与前三项分开，表示它是系统类配置，
+   但仍是同样的页签，不再做右对齐的小字链接。 */
 .settings-tabs {
     display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
+    gap: 4px;
+    margin-bottom: 20px;
+    padding: 5px;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    background: #eef2f7;
 }
 
 .settings-tab {
-    padding: 9px 18px;
-    border: 1px solid #cbd5e1;
-    border-radius: 999px;
-    background: #fff;
+    position: relative;
+    flex: 1 1 0;
+    min-height: 42px;
+    padding: 8px 16px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
     color: #475569;
     font: inherit;
+    font-size: 0.92rem;
+    font-weight: 600;
     cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.settings-tab:hover {
+    background: rgb(255 255 255 / 55%);
+    color: #1d4ed8;
 }
 
 .settings-tab.is-active {
-    border-color: #2563eb;
-    background: #2563eb;
-    color: #fff;
+    background: #fff;
+    color: #1d4ed8;
+    box-shadow: 0 1px 3px rgb(15 23 42 / 10%);
+}
+
+.settings-tab:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.settings-tab.settings-tab-advanced::before {
+    position: absolute;
+    top: 10px;
+    bottom: 10px;
+    left: -3px;
+    width: 1px;
+    background: #cbd5e1;
+    content: "";
+}
+
+/* 页头说明当前分区在管什么。页签只给短标签，长标题和解释放这里，
+   将来加页签不必把标签越写越长。 */
+.settings-page-head {
+    margin: 0 2px 18px;
+}
+
+.settings-page-title {
+    margin: 0;
+    color: #172033;
+    font-size: 1.32rem;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.settings-page-desc {
+    max-width: 78ch;
+    margin: 6px 0 0;
+    color: #64748b;
+    font-size: 0.9rem;
+    line-height: 1.65;
+}
+
+/* 设置内容不再塞进一个大白面板：一个分区由若干张卡片组成，
+   每张卡片自带标题与说明，列表和表单的归属一眼可见。 */
+.settings-panel {
+    margin: 0;
+}
+
+.settings-card {
+    margin-bottom: 16px;
+    padding: 20px 22px;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+}
+
+.settings-panel > .settings-card:last-child {
+    margin-bottom: 0;
+}
+
+.settings-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+}
+
+.settings-card-heading {
+    min-width: 0;
+}
+
+.settings-card-title {
+    margin: 0;
+    color: #172033;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.settings-card-desc {
+    margin: 5px 0 0;
+    color: #64748b;
+    font-size: 0.84rem;
+    line-height: 1.65;
 }
 
 .settings-effect-note,
@@ -51,17 +153,13 @@
     font-weight: 600;
 }
 
+/* 环境内容已经放在 .settings-card 里，这里不再重复画一层灰盒子 */
 .settings-env-block {
-    margin-bottom: 14px;
-    padding: 14px 16px;
-    border: 1px solid #e7edf5;
-    border-radius: 12px;
-    background: #f8fafc;
-}
-
-.settings-env-heading {
-    margin: 0 0 8px;
-    font-size: 0.95rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
 }
 
 .settings-env-list {
@@ -152,6 +250,13 @@
     margin-top: 16px;
 }
 
+/* 卡片底部的保存区与表单内容之间加一条分隔线，滚到卡片末尾时动作区清楚可见 */
+.settings-card > .settings-save-bar {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid #eef2f7;
+}
+
 .settings-save-status {
     color: #475569;
     font-size: 0.86rem;
@@ -163,11 +268,6 @@
 
 .settings-save-status.is-error {
     color: #b91c1c;
-}
-
-.settings-group-heading {
-    margin: 18px 0 8px;
-    font-size: 0.95rem;
 }
 
 /* 每小时来源列表是三列网格：需要账号的来源行与其账号面板占满整行，
@@ -192,14 +292,13 @@
     display: block;
 }
 
-/* 页面级操作条：吸顶固定在数据源面板顶部。平铺后页面变长，管理模式开关
-   必须始终够得着；z-index 高于滚过的芯片网格（网格内芯片不建层叠上下文，
-   10 足够压住），面板内没有其他吸顶元素，不存在偏移冲突 */
+/* 卡片内的操作条：吸顶固定，平铺后页面变长，管理模式开关必须始终够得着；
+   z-index 高于滚过的芯片网格（网格内芯片不建层叠上下文，10 足够压住） */
 .sources-action-bar {
     position: sticky;
     top: 0;
     z-index: 10;
-    margin: -4px 0 8px;
+    margin: 0 0 8px;
     padding: 8px 0;
     background: var(--card-bg, #fff);
     border-bottom: 1px solid #e7edf5;
@@ -212,8 +311,9 @@
     gap: 10px;
 }
 
-.sources-action-title {
-    font-weight: 600;
+.sources-action-hint {
+    color: #94a3b8;
+    font-size: 0.8rem;
 }
 
 .settings-source-item {
@@ -845,16 +945,6 @@
     font: inherit;
 }
 
-/* 二期词典编辑：沿用设置页控件与保存栏，次要入口退到右侧。 */
-.settings-tab.settings-tab-advanced {
-    margin-left: auto;
-    padding: 6px 10px;
-    border-color: transparent;
-    background: transparent;
-    color: #64748b;
-    font-size: 0.82rem;
-}
-.settings-tab.settings-tab-advanced.is-active { color: #1d4ed8; text-decoration: underline; }
 /* 加分词典页签：左编辑器 + 右侧生效说明。
    行只按分值正负着色（正＝加分、负＝减分），不重排——保存仍按 DOM 顺序
    回传词典顺序；行状态类由 bonus_tab.js 的 syncBonusRowState 维护。 */
@@ -863,12 +953,14 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
-    margin-bottom: 16px;
+    margin-bottom: 14px;
 }
 
 .bonus-title {
-    margin: 0 0 4px;
-    font-size: 1.12rem;
+    margin: 0;
+    color: #172033;
+    font-size: 1rem;
+    font-weight: 700;
 }
 
 .bonus-legend {
@@ -1210,10 +1302,11 @@
 .bonus-guide {
     position: sticky;
     top: 16px;
-    padding: 16px 18px;
-    border: 1px solid #e7edf5;
-    border-radius: 12px;
-    background: linear-gradient(180deg, #f8fbff, #fff 65%);
+    padding: 20px 22px;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
 }
 
 .bonus-guide-title { margin: 0 0 10px; font-size: 0.9rem; }
@@ -1235,13 +1328,15 @@
 }
 
 /* 排除名单卡片：加分/减分表格下方的独立分区，命中即淘汰。
-   与加分词典共用页签，但有自己的版本、保存状态与「载入最新配置」。 */
+   与加分词典共用页签，但有自己的版本、保存状态与「载入最新配置」。
+   视觉与 .settings-card 保持一致。 */
 .bonus-exclusion-card {
-    margin-top: 16px;
-    padding: 16px 18px;
-    border: 1px solid #e7edf5;
-    border-radius: 12px;
+    margin-top: 0;
+    padding: 20px 22px;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
     background: #fff;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
 }
 
 .bonus-exclusion-head {
@@ -1307,8 +1402,6 @@
     .bonus-layout { grid-template-columns: minmax(0, 1fr); }
     .bonus-guide { position: static; }
 }
-.advanced-warning { padding-bottom: 12px; }
-.advanced-section + .advanced-section { border-top: 1px solid #e2e8f0; margin-top: 22px; padding-top: 10px; }
 .advanced-field { display: block; margin-top: 14px; }
 .advanced-field-label { display: block; margin-bottom: 8px; font-size: 0.86rem; color: #475569; }
 .settings-textarea { display: block; resize: vertical; line-height: 1.65; }
@@ -1316,8 +1409,12 @@
 .advanced-alias-fields { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }
 .advanced-section > .settings-updated { margin-top: 12px; }
 @media (max-width: 600px) {
-    .settings-tabs { gap: 4px; }
-    .settings-tab { padding: 8px 10px; }
+    .settings-tabs { flex-wrap: wrap; }
+    .settings-tab { flex: 1 1 calc(50% - 4px); padding: 8px 10px; }
+    .settings-tab.settings-tab-advanced::before { display: none; }
+    .settings-page-title { font-size: 1.18rem; }
+    .settings-card { padding: 16px; }
+    .bonus-exclusion-card { padding: 16px; }
     .bonus-head { flex-direction: column; gap: 8px; }
     .bonus-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .bonus-stat:last-child { grid-column: 1 / -1; }

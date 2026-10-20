@@ -2790,21 +2790,21 @@ for (const section of DRAFT_DICTIONARY_SECTIONS) {
         const page = await bootPage();
         try {
             const block = dictionaryBlock(page, section);
-            const field = block.querySelector('input, textarea');
+            const field = block.querySelector('.settings-textarea');
             const original = field.value;
             assert.equal(unloadBlocked(page), false);
             inputValue(page, field, original + '新词');
             assert.equal(unloadBlocked(page), true);
             page.clickTab('sources');
             page.clickTab('advanced');
-            assert.equal(block.querySelector('input, textarea'), field);
+            assert.equal(block.querySelector('.settings-textarea'), field);
             assert.equal(field.value, original + '新词');
             await saveDictionary(page, section);
             assert.equal(dictionaryPuts(page).length, 1);
             assert.equal(dictionaryPuts(page)[0].path, `/api/admin/settings/${section}`);
             assert.equal(dictionaryPuts(page)[0].body.expected_version, defaultSections()[section].version);
             assert.equal(unloadBlocked(page), false);
-            inputValue(page, block.querySelector('input, textarea'), '草稿');
+            inputValue(page, block.querySelector('.settings-textarea'), '草稿');
             block.querySelector('.section-discard').click();
             assert.equal(unloadBlocked(page), false);
         } finally { page.close(); }
@@ -2814,7 +2814,7 @@ for (const section of DRAFT_DICTIONARY_SECTIONS) {
             const page = await bootPage();
             try {
                 const block = dictionaryBlock(page, section);
-                const field = block.querySelector('input, textarea');
+                const field = block.querySelector('.settings-textarea');
                 inputValue(page, field, field.value + '草稿');
                 const draft = field.value;
                 page.server.saveBehavior[section] = { status, payload: { detail: '服务端说明' } };
@@ -2913,7 +2913,7 @@ for (const target of DRAFT_DICTIONARY_SECTIONS) {
         try {
             const drafts = new Map();
             for (const section of DRAFT_DICTIONARY_SECTIONS) {
-                const field = dictionaryBlock(page, section).querySelector('input, textarea');
+                const field = dictionaryBlock(page, section).querySelector('.settings-textarea');
                 inputValue(page, field, field.value + '草稿');
                 drafts.set(section, [field, field.value]);
                 page.server.sections[section].version += 20;
@@ -2926,7 +2926,7 @@ for (const target of DRAFT_DICTIONARY_SECTIONS) {
             assert.equal(block.querySelector('textarea').value, target === 'source_aliases' ? '客户端\n网' : defaultSections()[target].value.join('\n'));
             for (const section of DRAFT_DICTIONARY_SECTIONS.filter((key) => key !== target)) {
                 const [field, draft] = drafts.get(section);
-                assert.equal(dictionaryBlock(page, section).querySelector('input, textarea'), field);
+                assert.equal(dictionaryBlock(page, section).querySelector('.settings-textarea'), field);
                 assert.equal(field.value, draft);
                 assert.equal(unloadBlocked(page), true);
                 await saveDictionary(page, section);
@@ -2993,6 +2993,69 @@ test('F13：自动排序关键词渲染三个类别文本域并显示词数', as
         const block = dictionaryBlock(page, 'review_sort_keywords');
         assert.match(block.querySelector('.settings-effect-note').textContent, /立即生效/);
         assert.match(block.querySelector('.settings-effect-note').textContent, /市教委 → 中小学 → 高校/);
+    } finally { page.close(); }
+});
+
+test('高级关键词：芯片逐条删除并同步 textarea 与词数', async () => {
+    const page = await bootPage({ hash: '#advanced' });
+    try {
+        const block = dictionaryBlock(page, 'education_keywords');
+        const textarea = block.querySelector('.settings-textarea');
+        assert.equal(block.querySelectorAll('.keyword-chip').length, 2);
+        assert.match(block.querySelector('.settings-word-count').textContent, /2 个词/);
+
+        block.querySelectorAll('.keyword-chip')[0].querySelector('.keyword-chip-remove').click();
+        assert.equal(textarea.value, '学校');
+        assert.equal(block.querySelectorAll('.keyword-chip').length, 1);
+        assert.match(block.querySelector('.settings-word-count').textContent, /1 个词/);
+        assert.equal(unloadBlocked(page), true);
+    } finally { page.close(); }
+});
+
+test('高级关键词：内联输入回车添加，批量编辑展开原生 textarea', async () => {
+    const page = await bootPage({ hash: '#advanced' });
+    try {
+        const block = dictionaryBlock(page, 'education_keywords');
+        const textarea = block.querySelector('.settings-textarea');
+        const addInput = block.querySelector('.keyword-add-input');
+        addInput.value = '考试';
+        addInput.dispatchEvent(new page.window.Event('input', { bubbles: true }));
+        addInput.dispatchEvent(new page.window.KeyboardEvent('keydown', {
+            key: 'Enter', bubbles: true, cancelable: true,
+        }));
+        assert.equal(textarea.value, '教育\n学校\n考试');
+        assert.equal(block.querySelectorAll('.keyword-chip').length, 3);
+        assert.equal(addInput.value, '');
+        assert.match(block.querySelector('.settings-word-count').textContent, /3 个词/);
+
+        const toggle = block.querySelector('.keyword-batch-toggle');
+        assert.equal(textarea.hidden, true);
+        assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+        toggle.click();
+        assert.equal(textarea.hidden, false);
+        assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+        assert.equal(toggle.textContent, '收起批量');
+        toggle.click();
+        assert.equal(textarea.hidden, true);
+    } finally { page.close(); }
+});
+
+test('高级别名：添加输入按「原名称=标准名称」拆成芯片', async () => {
+    const page = await bootPage({ hash: '#advanced' });
+    try {
+        const block = dictionaryBlock(page, 'source_aliases');
+        const aliasField = [...block.querySelectorAll('.advanced-field')]
+            .find((field) => field.querySelector('.alias-mappings'));
+        const addInput = aliasField.querySelector('.keyword-add-input');
+        addInput.value = '中考=中考改革';
+        addInput.dispatchEvent(new page.window.Event('input', { bubbles: true }));
+        addInput.dispatchEvent(new page.window.KeyboardEvent('keydown', {
+            key: 'Enter', bubbles: true, cancelable: true,
+        }));
+        assert.match(aliasField.querySelector('.alias-mappings').value, /中考=中考改革/);
+        const chipTexts = [...aliasField.querySelectorAll('.keyword-chip-text')]
+            .map((el) => el.textContent);
+        assert.ok(chipTexts.includes('中考 → 中考改革'));
     } finally { page.close(); }
 });
 
@@ -3103,7 +3166,7 @@ for (const section of DRAFT_DICTIONARY_SECTIONS) {
         const page = await bootPage();
         try {
             const block = dictionaryBlock(page, section);
-            const field = block.querySelector('input, textarea');
+            const field = block.querySelector('.settings-textarea');
             inputValue(page, field, field.value + '草稿');
             page.server.hold(`save-${section}`);
             const save = block.querySelector('.section-save');
@@ -3148,7 +3211,7 @@ test('整体 payload 重载后其余词表草稿继续使用编辑开始时的�
     const page = await bootPage();
     try {
         for (const section of DRAFT_DICTIONARY_SECTIONS) {
-            const field = dictionaryBlock(page, section).querySelector('input, textarea');
+            const field = dictionaryBlock(page, section).querySelector('.settings-textarea');
             inputValue(page, field, field.value + '本地');
             page.server.sections[section].version += 10;
         }

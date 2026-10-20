@@ -1471,10 +1471,144 @@
     .bonus-layout { grid-template-columns: minmax(0, 1fr); }
     .bonus-guide { position: static; }
 }
-.advanced-field { display: block; margin-top: 14px; }
-.advanced-field-label { display: block; margin-bottom: 8px; font-size: 0.86rem; color: #475569; }
 .settings-textarea { display: block; resize: vertical; line-height: 1.65; }
-.settings-word-count { display: block; text-align: right; margin-top: 5px; color: #64748b; font-size: 0.82rem; }
+.settings-word-count { display: block; margin-top: 5px; color: #64748b; font-size: 0.82rem; text-align: right; }
+
+.advanced-field { display: block; margin-top: 16px; }
+.advanced-field-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    margin-bottom: 7px;
+}
+.advanced-field-label {
+    display: block;
+    margin: 0;
+    color: #475569;
+    font-size: 0.86rem;
+    font-weight: 600;
+}
+.advanced-field .settings-word-count {
+    display: inline;
+    margin: 0 0 0 auto;
+    color: #94a3b8;
+    font-size: 0.78rem;
+    text-align: left;
+}
+
+/* 「批量编辑」：默认收起原生 textarea，芯片是主视图；整段粘贴时才展开 */
+.keyword-batch-toggle {
+    flex: none;
+    padding: 3px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #fff;
+    color: #475569;
+    font: inherit;
+    font-size: 0.76rem;
+    line-height: 1.4;
+    cursor: pointer;
+}
+.keyword-batch-toggle:hover {
+    border-color: #93c5fd;
+    color: #1d4ed8;
+}
+.keyword-batch-toggle[aria-expanded="true"] {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+/* 芯片容器同时是「添加关键词」的输入区：整块即输入框，点击任意空白处聚焦 */
+.keyword-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-height: 42px;
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 6px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    background: #fff;
+    cursor: text;
+}
+.keyword-chips:focus-within {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgb(37 99 235 / 12%);
+}
+.advanced-field:has(textarea[aria-invalid="true"]) .keyword-chips {
+    border-color: #fca5a5;
+    background: #fff7f7;
+}
+.keyword-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    padding: 3px 4px 3px 9px;
+    border: 1px solid #dbe3ee;
+    border-radius: 999px;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+.keyword-chip.is-invalid {
+    border-color: #fca5a5;
+    background: #fef2f2;
+    color: #b91c1c;
+}
+.keyword-chip-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 260px;
+}
+.keyword-chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #94a3b8;
+    font: inherit;
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+}
+.keyword-chip-remove:hover {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+.keyword-add-input {
+    flex: 1 1 170px;
+    min-width: 140px;
+    padding: 4px 2px;
+    border: 0;
+    background: transparent;
+    color: #172033;
+    font: inherit;
+    font-size: 0.84rem;
+    outline: none;
+}
+.keyword-add-input::placeholder { color: #94a3b8; }
+.keyword-add-input[aria-invalid="true"] { color: #b91c1c; }
+.keyword-field-hint {
+    margin: 6px 0 0;
+    color: #94a3b8;
+    font-size: 0.78rem;
+    line-height: 1.55;
+}
+.advanced-field textarea.settings-textarea { margin-top: 10px; }
+/* .settings-textarea 的 display:block 会压过浏览器默认的 [hidden]{display:none} */
+.advanced-field textarea[hidden] { display: none; }
 .advanced-alias-fields { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }
 .advanced-section > .settings-updated { margin-top: 12px; }
 @media (max-width: 600px) {

@@ -16,7 +16,7 @@ const SETTINGS_TAB_META = {
     sources: {
         nav: '来源与账号',
         title: '数据源',
-        description: '管理每小时抓取的来源与其抓取账号；开关即时生效，下一轮抓取按新配置执行。',
+        description: '管理每小时抓取的来源与其抓取账号',
     },
     bonuses: {
         nav: '关键词与排除',

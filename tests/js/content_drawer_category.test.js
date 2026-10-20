@@ -8,12 +8,14 @@
 //
 // 行为约定（改动这些行为时必须同步更新本文件）：
 // 1. 徽章渲染在抽屉头部元信息行最前面：分类在前、分数「N 分」紧随，无悬浮提示；
-// 2. 元信息行不展示正文字数（对值班无参考价值，2026-10-20 用户拍板删除）；
-// 3. 分类口径与检索卡片一致：京内/京外 × 正/负，情感非 negative 一律按正面；
-// 4. 分数经 formatScore 四舍五入取整展示；
-// 5. 地域或情感任一未就绪（null/undefined/空）：徽章与分数都不渲染，
+// 2. 有分类时其后补一条竖线（.content-drawer-meta-divider）与来源等事实信息隔开，
+//    无分类时整组（含竖线）都不渲染；
+// 3. 元信息行不展示正文字数（对值班无参考价值，2026-10-20 用户拍板删除）；
+// 4. 分类口径与检索卡片一致：京内/京外 × 正/负，情感非 negative 一律按正面；
+// 5. 分数经 formatScore 四舍五入取整展示；
+// 6. 地域或情感任一未就绪（null/undefined/空）：徽章与分数都不渲染，
 //    分数不脱离分类单独出现；
-// 6. 已归类但分数缺失：只渲染徽章，不渲染分数。
+// 7. 已归类但分数缺失：只渲染徽章，不渲染分数。
 'use strict';
 
 const test = require('node:test');
@@ -65,6 +67,11 @@ test('F1 京内正面 + 重要性分：徽章在元信息行最前、分数紧�
         assert.equal(score.textContent, '58 分');
         assert.equal(score.getAttribute('title'), null, '分数不挂悬浮提示');
         assert.equal(drawerMeta(page).textContent.includes('正文'), false, '不展示正文字数');
+
+        const divider = drawerMeta(page).querySelector('.content-drawer-meta-divider');
+        assert.ok(divider, '有分类时应渲染分隔竖线');
+        assert.equal(score.nextElementSibling, divider, '竖线应紧跟分数');
+        assert.ok(divider.nextElementSibling.textContent.startsWith('来源:'), '竖线后是来源等事实信息');
         assert.deepEqual(unhandledRejections, []);
     });
 });
@@ -90,6 +97,7 @@ test('F3 分类字段未就绪：徽章与分数都不渲染，元信息其余�
         const meta = drawerMeta(page);
         assert.equal(meta.querySelector('.search-category-badge'), null);
         assert.equal(meta.querySelector('.content-drawer-score'), null);
+        assert.equal(meta.querySelector('.content-drawer-meta-divider'), null, '无分类时不渲染分隔竖线');
         assert.ok(meta.textContent.includes('来源: 测试来源'), '来源等其余元信息不受影响');
     });
 });
@@ -103,6 +111,8 @@ test('F4 已归类但分数缺失：只渲染徽章', async () => {
         const badge = meta.querySelector('.search-category-badge');
         assert.equal(badge.textContent, '京内负面');
         assert.equal(meta.querySelector('.content-drawer-score'), null);
+        // 竖线跟分类组走，不依赖分数是否存在
+        assert.ok(meta.querySelector('.content-drawer-meta-divider'), '只有徽章时也应有分隔竖线');
     });
 });
 
@@ -149,6 +159,7 @@ test('D1 汇总/存档版抽屉同样渲染分类徽章与分数', async () => {
         const score = drawerMeta(page).querySelector('.content-drawer-score');
         assert.equal(score.textContent, '61 分');
         assert.equal(score.getAttribute('title'), null);
+        assert.ok(drawerMeta(page).querySelector('.content-drawer-meta-divider'), '汇总页同样渲染分隔竖线');
         assert.deepEqual(summaryRejections, []);
     } finally {
         page.close();

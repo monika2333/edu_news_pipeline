@@ -105,7 +105,8 @@ function renderArchiveDrawerHeader(data) {
     meta.textContent = '';
     // 分类徽章 + 该分类下的重要性分放在元信息行最前面。
     // contentDrawerCategoryBadge 由 manual_filter/utils.js 提供（本页先于本脚本加载），
-    // 判定未就绪（未入库/未走到分类环节）的文章两项都不显示。
+    // 判定未就绪（未入库/未走到分类环节）的文章两项都不显示；
+    // 有分类时在其后补一条竖线，与来源等事实信息隔开。
     const category = contentDrawerCategoryBadge(data);
     if (category) {
         meta.appendChild(drawerCreateEl(
@@ -116,6 +117,7 @@ function renderArchiveDrawerHeader(data) {
         if (category.score !== null) {
             meta.appendChild(drawerCreateEl('span', 'content-drawer-score', `${category.score} 分`));
         }
+        meta.appendChild(drawerCreateEl('span', 'content-drawer-meta-divider', '|'));
     }
     const items = [
         `来源: ${data.source || '-'}`,

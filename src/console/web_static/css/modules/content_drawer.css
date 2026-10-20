@@ -136,6 +136,11 @@ body.content-drawer-open .search-drawer-toggle {
     color: var(--text-primary);
 }
 
+/* 分类/评分组与来源等事实信息之间的分隔竖线：弱化成边框色，只做视觉隔离 */
+.content-drawer-meta > .content-drawer-meta-divider {
+    color: var(--border-color);
+}
+
 .content-drawer-source-link {
     font-size: 0.8rem;
     color: var(--text-secondary);

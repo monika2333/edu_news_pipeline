@@ -47,6 +47,7 @@
 - 变异逃逸②（节点引用）：断言「重载只重置某块」必须重新 querySelector——重渲染后旧引用的 `.value` 不变，会放过整面板重渲染类变异；容器身份不变（只 clearEl 子节点），别拿容器比对。
 - 伪元素 `::before` 的 content 不进 `textContent`，jsdom 断言不到——分隔符要写在标记里。
 - grid/flex 溢出：卡片（grid item）与内部 span（flex item）**两处都要 `min-width: 0`**，缺一个就撑破面板。
+- 设置页高级关键词芯片化后，`block.querySelector('input, textarea')` 会命中内联「添加关键词」input，而不是隐藏的批量 textarea；测试要显式用 `.settings-textarea`，否则改的是添加框、脏标记也不会动。
 - 值班汇总页是「渲染即过滤」：搜掉的条目不进 DOM，断言用渲染出的卡片集合而非 display；jsdom 夹具 `bootPage` **必须至少给一个 shiftRow**（ends_at 取边界时刻如 05:00+08:00 而非午夜，否则日期键滚到下一天 chooseInitialShift 选不中）。
 - 审阅页初始视图只渲染「综报×采纳」桶，fake `/review` 要按 decision+report_type 双过滤，卡片数按桶算。
 - 页面 `loadStats()` 常是 fire-and-forget：用例 close 前要 `waitFor(server.inflight === 0)`，否则 showToast 撞已销毁 document 变 unhandled rejection；夹具原地改数据的必须是工厂函数逐用例新建。

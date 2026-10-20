@@ -4,7 +4,7 @@
 
 ## 进行中
 
-（暂无）
+- **评分排除名单（黑名单）**：2026-10-20 用户拍板要做，委托书已移到桌面 `委托书-评分排除名单.md`（未入库），交由另一窗口/会话按委托书执行。契约：新增 `app_settings.score_exclusion_keywords`；排除优先于加分词典，命中不调用模型、`status=filtered_out`、`score=NULL`、`score_details.skip_reason=keyword_excluded`；UI 放在「加分词典」页签表格下方的独立卡片（不新增页签，即时保存，两个分区版本独立）。完成并合并后把本项移入交付流水。
 
 ## 部署侧待办（代码已就位，生产环境要手工配合）
 

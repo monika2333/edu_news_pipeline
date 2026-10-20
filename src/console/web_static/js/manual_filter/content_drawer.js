@@ -130,7 +130,7 @@ function renderContentDrawerBody(content, bonusKeywords, searchTerm) {
     body.scrollTop = 0;
 }
 
-function renderContentDrawerHeader(data, charCount) {
+function renderContentDrawerHeader(data) {
     const { title, meta, sourceLink } = getContentDrawerEls();
     title.textContent = data.title || '(无标题)';
     clearEl(meta);
@@ -144,16 +144,13 @@ function renderContentDrawerHeader(data, charCount) {
             category.label
         ));
         if (category.score !== null) {
-            meta.appendChild(createEl('span', 'content-drawer-score', `${category.score} 分`, {
-                title: `重要性分：${category.score}`
-            }));
+            meta.appendChild(createEl('span', 'content-drawer-score', `${category.score} 分`));
         }
     }
     const items = [
         `来源: ${data.source || '-'}`,
         `收录时间: ${formatLocalDateTime(data.created_at)}`
     ];
-    if (charCount !== null) items.push(`正文 ${charCount.toLocaleString('zh-CN')} 字`);
     items.forEach(text => meta.appendChild(createEl('span', '', text)));
     if (data.url) {
         sourceLink.href = data.url;
@@ -197,10 +194,9 @@ function renderContentDrawerError(articleId, bonusKeywords) {
 
 function renderContentDrawerArticle(data, bonusKeywords) {
     const content = String(data.content_markdown || '').trim();
-    const charCount = content ? Array.from(content.replace(/\s+/g, '')).length : null;
     contentDrawerState.currentData = data;
     contentDrawerState.currentBonusKeywords = bonusKeywords || [];
-    renderContentDrawerHeader(data, charCount);
+    renderContentDrawerHeader(data);
     if (!content) {
         renderContentDrawerFallback(data);
         return;

@@ -129,7 +129,7 @@ body.content-drawer-open .search-drawer-toggle {
     font-size: 0.75rem;
 }
 
-/* 该分类下的重要性分：跟在徽章后面的小字强调，悬浮可见「重要性分」全称 */
+/* 该分类下的重要性分：跟在徽章后面的小字强调 */
 .content-drawer-meta > .content-drawer-score {
     font-size: 0.8rem;
     font-weight: 600;

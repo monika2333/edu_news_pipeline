@@ -30,7 +30,7 @@
 新建 worktree 后的三件套：
 1. **复制 `.env.local`**（DB 密码），否则所有连 DB 的测试 `fe_sendauth: no password supplied`。
 2. `tests/js/node_modules` 建目录联接复用主仓：`powershell -NoProfile -Command "New-Item -ItemType Junction -Path '<worktree绝对路径>\tests\js\node_modules' -Target '<主仓库绝对路径>\tests\js\node_modules'"`（或 `cmd //c mklink /J`，联接名用相对名 `node_modules`、目标用绝对路径；失败就退回 PowerShell 方案）。主仓 node_modules 可能被并行会话清空，保险起见 worktree 里直接 `npm ci --prefix tests/js`。
-3. `git config core.autocrlf false && git rm --cached -r . && git reset --hard` 规范化回 LF，否则 `test_migration_replay` 因 schema.sql 函数体 CRLF/LN 差异失败。
+3. 行尾不用再手工规范化：`.gitattributes`（`* text=auto eol=lf`）在检出/提交时自动归一。在此之前需要 `git config core.autocrlf false && git rm --cached -r . && git reset --hard` 把 CRLF 洗成 LF，否则 `test_migration_replay` 会因 schema.sql 的 CRLF/LF 差异失败。
 
 **拆 worktree 前必须先用 `cmd /c rmdir "tests\js\node_modules"` 摘掉联接**——`git worktree remove` 会穿透 junction 把主仓 node_modules 内容删光（2026-10-07 实际发生，靠 `npm ci --prefix tests/js` 恢复）。worktree 根的自建未跟踪临时脚本会挡住 remove（「工作区有未提交改动」），用完先 `rm`；截图 PNG 等产物目录也要先删。`wt.mjs exit` 报「没有活动 worktree」属正常，跳过直接合并。
 
@@ -56,7 +56,7 @@
 ## 6. 提交卫生
 
 - **Edit 工具可能把被编辑文件整个写回成 CRLF**（仓库标准 LF；改 README/Markdown 时实际发生过，`git diff --check` 会逐行报 trailing whitespace），`git add -u` 会把全仓库行尾改写吞进提交（实际发生过 amend 卷进 443 个文件）。规矩：`git add` 只加显式路径；Edit 过的文件（src、Markdown、配置都算）提交前 `sed -i 's/\r$//'` 转回 LF；提交后 `git show --stat` 核对文件数与增删行数符合预期。
-- **`git status` 干净 ≠ 磁盘是 LF**：`git ls-files --eol` 显示 264 个已跟踪文件是 `i/lf w/crlf`（2026-10-20 核对，含 `config/prompts/`、`database/migrations/`、多个 `scripts/*.ps1`）——索引记的是 add 时的 worktree 尺寸，stat 没变就不比内容，所以它们一直「干净」；一旦被编辑就会冒出整文件假 diff。改这类文件前先按字节转 LF（`read_bytes().replace(b"\r\n", b"\n")` 后 `write_bytes`），再 `git add` 刷新 stat。
+- **行尾已统一（2026-10-20，27f9c9e）**：`.gitattributes` 用 `* text=auto eol=lf` 在提交与比较时归一，`*.cmd` / `*.bat` 检出时保留 CRLF（入库仍是 LF）。Windows 编辑器写出 CRLF 不会再产生整文件假 diff——实测把文件转成 CRLF 后 `git diff` 为空、`git add -A` 不暂存任何东西。核对用 `git ls-files --eol`，不要信 `git status`：它显示的干净可能是索引里 add 时的 worktree 尺寸没变，此前就有 264 个文件 `i/lf w/crlf` 一直「干净」，一编辑就冒整文件假 diff。同理 `write_text` 在 Windows 会 LF→CRLF，但现在已被属性兜住，只有改「必须逐字节精确」的文件（如导出快照）才需要 `write_bytes`。
 - Python 脚本改文档同理：`write_text` 文本模式产生 775 行假 diff 的事故发生过，行尾敏感文件用 `write_bytes`。
 - ZCode 的 Bash 在多次调用间 cwd 可能重置，跨仓库操作每条命令显式 `cd` 绝对路径。
 - `grep` 找「外部调用方」的两个坑：`head -N` 截断输出会漏看后面的匹配就下结论；Git Bash 的 grep 输出反斜杠路径，`grep -v "src/adapters/"` 过滤不掉。正确姿势：先按目录圈定 `grep -rn ... 目录清单`，不截断。

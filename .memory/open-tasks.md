@@ -19,9 +19,10 @@
 - 爬虫 adapter 整理后续（需先补黄金快照）：统一各站标题提取（现 9 处实现）、btime 结尾锚定后缀收编进 `strip_site_suffix`、发布时间解析共享化。
 - `raw_articles` 中 stdaily 存量 10/16 篇 content_markdown 仍含 `![](https://www.stdaily.com/...)` 图片语法（代码已翻转剥图，只影响此后抓取）——是否 UPDATE 清洗待用户决定；bbtnews 库内无存量。
 
-## 臧宝的文件管理建议（配置文件部分未实施）
+## 臧宝的文件管理建议（配置部分：① .gitignore ② .editorconfig 待办）
 
 `臧宝的文件管理建议/` 目录（未跟踪）已评审完毕，2026-10-20 用户拍板：
 - `.audit/`、`.discussion/`、`.incidents/` 三个过程文档目录**不需要**；`.memory/` 已按本目录的形态引入（thematic 平铺 + archive，未照搬其模块 README 三层强制归档规则）。
 - `.dockerignore` 放弃（项目无 Dockerfile）。
-- 尚未实施的配置方案：① `.gitignore` 增量合并（可显式补上 `.pytest_cache/`、`.ruff_cache/`；两者目前靠各自目录内的 `.gitignore` 自我忽略，并非漏掉）；② `.editorconfig` 裁剪后只留 `[*]` 段（UTF-8 + LF），删掉 C#/.NET 噪音；③ `.gitattributes`（`* text=auto eol=lf`）启用前须评估存量 CRLF 并 renormalize，否则全仓假 diff。
+- 尚未实施的配置方案：① `.gitignore` 增量合并（可显式补上 `.pytest_cache/`、`.ruff_cache/`；两者目前靠各自目录内的 `.gitignore` 自我忽略，并非漏掉）；② `.editorconfig` 裁剪后只留 `[*]` 段（UTF-8 + LF），删掉 C#/.NET 噪音。
+- ③ 已实施（2026-10-20，27f9c9e）：`.gitattributes` 启用 `* text=auto eol=lf`，`*.cmd`/`*.bat` 检出保留 CRLF；存量 5 个 CRLF/mixed 文件已归一，工作区整体重写为 LF（541 个文件 `w/lf`，`.cmd` 为唯一 `w/crlf`）。

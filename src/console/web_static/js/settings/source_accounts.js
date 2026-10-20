@@ -1,13 +1,14 @@
-﻿// 系统设置页 - 来源账号管理：数据源页签平铺的账号芯片网格（默认态芯片即启用开关；
-// 页面级管理模式下芯片提供打开主页与标记删除，删除为「标记 + 串行批量提交」，
-// 标记跨来源共存、一次确认全部处理），芯片网格末尾的虚线「＋ 添加账号」就地输入，
-// 以及「刷新账号名称」（来源行内小按钮，仅管理模式出现）的分批串行刷新。
+// 系统设置页 - 来源账号管理：数据源页签展开面板里的账号芯片网格。
+// 芯片本身就是启用开关，同时常驻「打开主页」↗ 与「标记删除」×；没有页面级
+// 管理模式——展开某个来源即进入该来源的编辑面。删除为「面板内标记 + 确认条」，
+// 确认条只处理本来源的标记。芯片网格末尾的虚线「＋ 添加账号」就地输入，
+// 「刷新账号名称」是来源行内小按钮，仅账号面板展开时可见。
 // 添加请求本身不解析名称（头条解析要起无头浏览器，不能让添加卡着等）：
 // 成功后芯片先带「名称解析中」出现，前端按来源串行补发 refresh-names，
 // 结果就地落回芯片（见 queueNewAccountNameResolution）。
 // 账号名称由后端解析，前端不提供名称输入；所有用户输入经 textContent 渲染。
-// 账号面板始终平铺，没有展开/收起；面板内 DOM 不发唯一 id，一律 class +
-// 面板作用域查询（锚点是面板根的 data-accounts-for）。
+// 面板内 DOM 不发唯一 id，一律 class + 面板作用域查询（锚点是面板根的
+// data-accounts-for）。
 'use strict';
 
 // 后端 refresh-names 接口单批上限 20（Pydantic max_length），前端切片必须与之对齐
@@ -69,18 +70,12 @@ function isAccountMarked(source, id) {
     return state.deleteMarks.some((mark) => mark.source === source && mark.id === id);
 }
 
-// 页面级管理模式进出。退出时丢弃全部待删标记（撤销必须零成本，不弹确认）；
-// 删除提交进行中锁死出口。DOM 一律由 renderSourcesTab 按 state 重建，
-// 保证页面级状态落回每一个来源行与芯片网格。
-function setManageMode(on) {
-    if (state.deleteSubmitting) return;
-    if (state.manageMode === on) return;
-    state.manageMode = on;
-    if (!on) state.deleteMarks = [];
-    renderSourcesTab();
+function panelDeleteMarks(source) {
+    return state.deleteMarks.filter((mark) => mark.source === source);
 }
 
-// 标记/撤回都只动 state 与前端外观，不发请求；撤销必须是零成本的
+// 标记/撤回都只动 state 与前端外观，不发请求；撤销必须是零成本的。
+// 重绘芯片网格 + 本面板的确认条，其他来源的标记不受影响
 function toggleAccountDeleteMark(item) {
     if (state.deleteSubmitting) return;
     const index = state.deleteMarks
@@ -91,36 +86,34 @@ function toggleAccountDeleteMark(item) {
         state.deleteMarks.push({ id: item.id, source: item.source });
     }
     renderAccountList(item.source);
-    syncManageBar();
+    syncPanelDeleteBar(item.source);
 }
 
-// 页面级操作条的统一同步：管理模式开关按下态与锁定、待提交条。
-// 待提交条计数取全页所有标记的总数（跨来源汇总），有标记时出现在吸顶条下方。
-function syncManageBar() {
-    const panel = elements.panels.sources;
-    if (!panel) return;
-    const manageBtn = panel.querySelector('.accounts-manage-btn');
-    if (manageBtn) {
-        manageBtn.setAttribute('aria-pressed', state.manageMode ? 'true' : 'false');
-        manageBtn.classList.toggle('is-active', state.manageMode);
-        manageBtn.disabled = state.deleteSubmitting;
-    }
-    const wrap = panel.querySelector('.accounts-delete-bar-wrap');
+// 账号面板底部的确认条：只统计本来源的标记，取消/确认都只作用于本面板。
+// 没有标记时不渲染任何东西，展开面板保持安静
+function syncPanelDeleteBar(source) {
+    const panel = accountPanelEl(source);
+    const wrap = panel && panel.querySelector('.accounts-delete-bar-wrap');
     if (!wrap) return;
     clearEl(wrap);
-    if (!state.manageMode || state.deleteMarks.length === 0) return;
+    const marks = panelDeleteMarks(source);
+    if (!marks.length) return;
     const bar = createEl('div', 'accounts-delete-bar');
     bar.appendChild(createEl('span', 'accounts-delete-count',
-        `将删除 ${state.deleteMarks.length} 个账号`));
+        `将删除 ${marks.length} 个账号`));
     const cancelBtn = createEl('button', 'btn btn-secondary btn-account-delete-cancel', '取消', {
         type: 'button',
     });
     cancelBtn.disabled = state.deleteSubmitting;
-    cancelBtn.addEventListener('click', () => setManageMode(false));
+    cancelBtn.addEventListener('click', () => {
+        state.deleteMarks = state.deleteMarks.filter((mark) => mark.source !== source);
+        renderAccountList(source);
+        syncPanelDeleteBar(source);
+    });
     const confirmBtn = createEl('button', 'btn admin-confirm-delete btn-account-delete-confirm',
         '确认删除', { type: 'button' });
     confirmBtn.disabled = state.deleteSubmitting;
-    confirmBtn.addEventListener('click', () => submitAccountDeletions());
+    confirmBtn.addEventListener('click', () => submitAccountDeletions(source));
     bar.appendChild(cancelBtn);
     bar.appendChild(confirmBtn);
     wrap.appendChild(bar);
@@ -138,26 +131,30 @@ function syncRefreshButtons() {
         });
 }
 
-// 确认删除：跨来源按标记顺序串行发 DELETE——串行而非并发，保证请求顺序确定、
-// 失败归属清晰。404 视为成功：前端标记与库中实际状态可能不同步（另一处已删除），
-// 此时目的已经达成。部分失败不回滚已成功的删除：失败的标记保留并停留在管理模式；
-// 全部成功后自动退出管理模式。
-async function submitAccountDeletions() {
-    if (state.deleteSubmitting) return;
-    const marks = [...state.deleteMarks];
-    if (!marks.length) return;
+// 删除/新增按钮的全局锁定：删除提交进行中，所有面板的删除与添加都不可点
+function setAccountDeleteControlsDisabled(disabled) {
     const panel = elements.panels.sources;
-    const confirmBtn = panel.querySelector('.btn-account-delete-confirm');
-    const cancelBtn = panel.querySelector('.btn-account-delete-cancel');
-    const manageBtn = panel.querySelector('.accounts-manage-btn');
+    if (!panel) return;
+    panel.querySelectorAll('.account-chip-delete, .account-add-chip')
+        .forEach((btn) => { btn.disabled = disabled; });
+}
+
+// 确认删除：只处理本来源的标记，按标记顺序串行发 DELETE——串行而非并发，
+// 保证请求顺序确定、失败归属清晰。404 视为成功：前端标记与库中实际状态可能
+// 不同步（另一处已删除），此时目的已经达成。部分失败不回滚已成功的删除：
+// 失败的标记保留，面板确认条继续显示剩余数量，可重试。
+async function submitAccountDeletions(source) {
+    if (state.deleteSubmitting) return;
+    const marks = panelDeleteMarks(source);
+    if (!marks.length) return;
+    const panel = accountPanelEl(source);
+    const confirmBtn = panel && panel.querySelector('.btn-account-delete-confirm');
+    const cancelBtn = panel && panel.querySelector('.btn-account-delete-cancel');
     state.deleteSubmitting = true;
     if (confirmBtn) confirmBtn.disabled = true;
     if (cancelBtn) cancelBtn.disabled = true;
-    if (manageBtn) manageBtn.disabled = true;
     syncRefreshButtons();
-    // 提交进行中芯片区不接受任何操作（checkbox 在管理模式本已禁用）
-    panel.querySelectorAll('.account-chip-delete')
-        .forEach((btn) => { btn.disabled = true; });
+    setAccountDeleteControlsDisabled(true);
     let succeeded = 0;
     const failures = [];
     let processed = 0;
@@ -186,22 +183,20 @@ async function submitAccountDeletions() {
         }
     } finally {
         state.deleteSubmitting = false;
+        syncRefreshButtons();
+        setAccountDeleteControlsDisabled(false);
     }
-    // 无论成功与否，涉及的来源都要重新拉取账号并同步来源行徽标
-    const affected = [...new Set(marks.map((mark) => mark.source))];
-    for (const source of affected) {
-        await refreshAccountsAndList(source);
-    }
+    // 重新拉取账号并同步来源行徽标；renderAccountList 会一并刷新本面板确认条
+    await refreshAccountsAndList(source);
     if (!failures.length) {
-        state.manageMode = false;
-        state.deleteMarks = [];
-        renderSourcesTab();
+        state.deleteMarks = state.deleteMarks.filter((mark) => mark.source !== source);
+        renderAccountList(source);
         showSettingsToast(`已删除 ${succeeded} 个账号`);
         return;
     }
     const message = `已删除 ${succeeded} 个，${failures.length} 个失败：${failures[0].message}`;
-    renderSourcesTab();
-    accountPanelError(failures[0].source, message);
+    renderAccountList(source);
+    accountPanelError(source, message);
     // toast 是全局的，不受面板重建影响
     showSettingsToast(message, 'error');
 }
@@ -361,12 +356,8 @@ function accountToggleLabel(item) {
     return `启用 ${accountDisplayName(item)}`;
 }
 
-// 芯片的两种模式共用完全相同的子节点结构（label + ↗ + ×），切换模式网格不重排：
-// - 默认态：芯片 = 启用开关（label 包裹视觉隐藏的 checkbox，整个芯片即点击区），
-//   操作节点由 CSS visibility 隐藏、位置照常占用，JS 侧同步做成不可达——
-//   删除按钮 disabled，主页链接移出 Tab 序并对读屏隐藏、点击拦截；
-// - 管理模式：checkbox 置 disabled（label 点击自然失效——管理模式确实不能启停），
-//   右侧的「打开主页」↗ 与「标记删除」×（已标记为 ↩ 撤回）可用。
+// 芯片 = 启用开关 + 打开主页 + 标记删除，三者同时可用；展开面板就是编辑面，
+// 没有第二种模式。删除提交进行中临时禁用相关控件，结束后恢复。
 function buildAccountChip(item) {
     const marked = isAccountMarked(item.source, item.id);
     const chip = createEl('span',
@@ -379,7 +370,7 @@ function buildAccountChip(item) {
         'aria-label': accountToggleLabel(item),
     });
     toggle.checked = !!item.enabled;
-    toggle.disabled = state.manageMode;
+    toggle.disabled = state.deleteSubmitting;
     toggle.addEventListener('change', () => toggleAccountEnabled(item, toggle));
     label.appendChild(toggle);
     renderChipNameContent(label, item);
@@ -391,12 +382,8 @@ function buildAccountChip(item) {
         rel: 'noopener noreferrer',
         'aria-label': `打开 ${accountDisplayName(item)} 的主页`,
     });
-    if (!state.manageMode) {
-        openLink.setAttribute('tabindex', '-1');
-        openLink.setAttribute('aria-hidden', 'true');
-    }
     openLink.addEventListener('click', (event) => {
-        if (!state.manageMode || state.deleteSubmitting) event.preventDefault();
+        if (state.deleteSubmitting) event.preventDefault();
     });
     chip.appendChild(openLink);
     const deleteBtn = createEl('button', 'account-chip-delete', marked ? '↩' : '×', {
@@ -405,17 +392,18 @@ function buildAccountChip(item) {
             ? `撤回删除 ${accountDisplayName(item)}`
             : `删除 ${accountDisplayName(item)}`,
     });
-    deleteBtn.disabled = !state.manageMode || state.deleteSubmitting;
+    deleteBtn.disabled = state.deleteSubmitting;
     deleteBtn.addEventListener('click', () => toggleAccountDeleteMark(item));
     chip.appendChild(deleteBtn);
     return chip;
 }
 
-// 管理模式下图标网格末尾的虚线「＋ 添加账号」芯片；默认态不渲染
+// 账号网格末尾常驻的虚线「＋ 添加账号」芯片
 function buildAccountAddChip(source) {
     const chip = createEl('button', 'account-chip account-add-chip', '＋ 添加账号', {
         type: 'button',
     });
+    chip.disabled = state.deleteSubmitting;
     chip.addEventListener('click', () => {
         const form = buildAccountAddForm(source);
         chip.replaceWith(form);
@@ -547,20 +535,18 @@ function renderAccountList(source) {
     const addHadFocus = addInput && addInput === panel.ownerDocument.activeElement;
     if (addForm) addForm.remove();
     clearEl(grid);
-    grid.classList.toggle('is-manage', state.manageMode);
     const items = currentAccountItems(source);
     if (!items.length) {
         grid.appendChild(createEl('p', 'settings-source-empty', '该来源还没有抓取账号。'));
     }
     items.forEach((item) => grid.appendChild(buildAccountChip(item)));
-    if (state.manageMode) {
-        if (addForm) {
-            grid.appendChild(addForm);
-            if (addHadFocus) addInput.focus();
-        } else {
-            grid.appendChild(buildAccountAddChip(source));
-        }
+    if (addForm) {
+        grid.appendChild(addForm);
+        if (addHadFocus) addInput.focus();
+    } else {
+        grid.appendChild(buildAccountAddChip(source));
     }
+    syncPanelDeleteBar(source);
 }
 
 // 渲染某个来源的账号面板。账号列表在页面初始化时已全量缓存，渲染本身不发新请求；
@@ -572,6 +558,7 @@ function renderSourceAccounts(sourceKey, containerEl) {
     accountPanelState(sourceKey);
 
     containerEl.appendChild(createEl('div', 'accounts-chip-grid'));
+    containerEl.appendChild(createEl('div', 'accounts-delete-bar-wrap'));
     containerEl.appendChild(createEl('p', 'accounts-panel-error'));
 
     loadAccountsForSource(sourceKey)

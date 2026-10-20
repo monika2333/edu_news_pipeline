@@ -328,25 +328,6 @@
     padding-left: 0;
 }
 
-/* 卡片内的操作条：吸顶固定，平铺后页面变长，管理模式开关必须始终够得着；
-   z-index 高于滚过的芯片网格（网格内芯片不建层叠上下文，10 足够压住） */
-.sources-action-bar {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    margin: 0 0 8px;
-    padding: 8px 0;
-    background: var(--card-bg, #fff);
-    border-bottom: 1px solid #e7edf5;
-}
-
-.sources-action-head {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 10px;
-}
-
 .settings-source-item {
     display: flex;
     align-items: center;
@@ -687,11 +668,6 @@
     cursor: pointer;
 }
 
-.accounts-chip-grid:not(.is-manage) .account-chip-open,
-.accounts-chip-grid:not(.is-manage) .account-chip-delete {
-    visibility: hidden;
-}
-
 .account-chip-delete {
     color: #b91c1c;
 }
@@ -731,7 +707,7 @@
     margin: 0;
 }
 
-/* 页面级待提交条：有标记时出现在吸顶操作条下方，跟着一起固定 */
+/* 面板内待提交条：有标记时出现在芯片网格下方 */
 .accounts-delete-bar {
     display: flex;
     align-items: center;
@@ -750,13 +726,7 @@
     font-weight: 600;
 }
 
-/* 管理模式开关按下态 */
-.accounts-manage-btn.is-active {
-    border-color: #2563eb;
-    color: #2563eb;
-}
-
-/* 管理模式下图标网格末尾的虚线「＋ 添加账号」芯片 */
+/* 账号网格末尾的虚线「＋ 添加账号」芯片 */
 .account-add-chip {
     border-style: dashed;
     background: transparent;

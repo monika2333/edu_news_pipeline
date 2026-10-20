@@ -193,19 +193,19 @@ function buildSourceRow(key, { enabled }) {
         const badge = createEl('span', 'source-account-badge');
         applyAccountBadge(item, badge, key);
         item.appendChild(badge);
-        if (state.manageMode) {
-            const panelState = state.accountPanels[key];
-            const refreshBtn = createEl('button', 'btn btn-secondary accounts-refresh-btn',
-                '刷新账号名称', { type: 'button' });
-            refreshBtn.disabled = state.deleteSubmitting
-                || !!(panelState && panelState.refreshInflight);
-            refreshBtn.hidden = state.expandedSource !== key;
-            refreshBtn.addEventListener('click', () => {
-                const ids = currentAccountItems(key).map((account) => account.id);
-                refreshAccountNames(key, ids, refreshBtn);
-            });
-            item.appendChild(refreshBtn);
-        }
+        // 「刷新账号名称」常驻 DOM、只在账号面板展开时可见：折叠态列表不出现
+        // 账号管理按钮，展开后它就是当前来源的账号操作入口
+        const panelState = state.accountPanels[key];
+        const refreshBtn = createEl('button', 'btn btn-secondary accounts-refresh-btn',
+            '刷新账号名称', { type: 'button' });
+        refreshBtn.disabled = state.deleteSubmitting
+            || !!(panelState && panelState.refreshInflight);
+        refreshBtn.hidden = state.expandedSource !== key;
+        refreshBtn.addEventListener('click', () => {
+            const ids = currentAccountItems(key).map((account) => account.id);
+            refreshAccountNames(key, ids, refreshBtn);
+        });
+        item.appendChild(refreshBtn);
         // 手风琴开关排在徽标/刷新按钮之后；徽标仍是纯展示，展开入口只有这个按钮
         const expandBtn = createEl('button', 'source-accounts-toggle', '', {
             type: 'button',
@@ -228,23 +228,6 @@ function buildSourceRow(key, { enabled }) {
     return item;
 }
 
-// 卡片内的操作条：吸顶固定在「每小时来源」卡片顶部（平铺后页面变长，
-// 管理模式开关必须始终够得着）；待删除提交条出现在其下方，跟着一起固定。
-// 操作条右侧只放页面级管理模式开关。
-function buildSourcesActionBar() {
-    const bar = createEl('div', 'sources-action-bar');
-    const head = createEl('div', 'sources-action-head');
-    const manageBtn = createEl('button', 'btn btn-secondary accounts-manage-btn', '管理模式', {
-        type: 'button',
-        'aria-pressed': state.manageMode ? 'true' : 'false',
-    });
-    manageBtn.addEventListener('click', () => setManageMode(!state.manageMode));
-    head.appendChild(manageBtn);
-    bar.appendChild(head);
-    bar.appendChild(createEl('div', 'accounts-delete-bar-wrap'));
-    return bar;
-}
-
 function renderSourcesPanel(panel, section) {
     // 单一来源列表：全部非每日来源按 payload 目录序渲染（后端返回的启用列表也是目录序，
     // 前端不再排序），开关状态即启停状态，启停不改变行位置。
@@ -253,7 +236,6 @@ function renderSourcesPanel(panel, section) {
         '每小时来源',
         '开关即启停，下一轮抓取按新配置执行',
     );
-    hourlyCard.appendChild(buildSourcesActionBar());
     hourlyCard.appendChild(buildLastModifiedLine(section));
 
     const list = createEl('ul', 'settings-source-list', '', { id: 'sources-list' });
@@ -270,10 +252,8 @@ function renderSourcesPanel(panel, section) {
         });
     hourlyCard.appendChild(list);
     panel.appendChild(hourlyCard);
-    // 操作条必须在卡片进入文档后再同步：syncManageBar 从面板作用域里找
-    // .accounts-manage-btn / .accounts-delete-bar-wrap
+    // 来源列表建立后再统一同步手风琴的展开态（hidden / aria-expanded / 刷新按钮）
     syncSourcePanels();
-    syncManageBar();
 
     // 每日任务独立分组：只读行，由服务器计划任务调度，不在页面上启停
     const dailySources = sourceCatalog().filter((item) => item.daily_only);

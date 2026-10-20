@@ -2,6 +2,8 @@
 
 本文件是「在这仓库里怎么干活」的操作手册：协作方式、测试、worktree、变异测试、合并推送。全部来自实际踩坑后的沉淀，按流程照做可以绕开绝大部分环境坑。
 
+> **本机工具说明**：文中 `wt.mjs`、`worktree-guard`（`authorize-main` / `revoke-main`）以及部分 Bash 行为说明来自本机的 ZCode 环境（前两者由 worktree 插件提供），不在仓库里，也不保证其他 AI 工具具备。换工具时用原生 `git worktree` / `git push` 等替代，不要到仓库里找这些脚本。
+
 ## 1. 协作方式：委托书式任务
 
 用户以结构化「委托书」分派功能任务，固定包含：背景、目标语义、**按文件的允许改动/禁止改动清单**、行为测试验收标准、逐条编号的变异测试（M1…Mn）、交付说明必含章节（设计取舍与理由、版本决策、API 变化、变异逐条结果、全量 pytest 结果）。
@@ -16,14 +18,14 @@
 - **必须用仓库根 venv**：Git Bash 下 `./venv/Scripts/python.exe -m pytest`。系统默认 python（3.14）缺 psycopg 等依赖，裸 `python -m pytest` 会在收集阶段 ModuleNotFoundError。worktree 里要用主仓库 venv 的绝对路径。
 - DB 行为测试**直连真实 Postgres**（`get_settings()` 的 db_* 配置），无 embedded/testcontainers。模式：给涉及的每张表建 `CREATE TEMP TABLE {t} (LIKE public.{t} INCLUDING DEFAULTS) ON COMMIT DROP` 再 seed，几分钟跑完。新写 DB 行为测试照抄 `tests/test_article_attribution_search.py` 这类现成模式。
 - 新增 UPDATE/写路径 SQL 时**必须配真实 DB 测试**：fake-cursor 测试抓不到占位符顺序类 bug（实际发生过：`SET ... = %s` 参数排在 WHERE 参数之后导致运行错位）。
-- jsdom 测试（`tests/js/`，pytest 包装在 `test_*_js_behavior.py`）需要 Node 20+ 和 `npm ci --prefix tests/js`。**全量报告出现 "3 skipped" = jsdom 依赖又没了**（3 个 jsdom 测试文件静默跳过；CI 缺依赖会直接失败）。
+- jsdom 测试（`tests/js/`，pytest 包装在 `test_*_js_behavior.py`）需要 Node 20+ 和 `npm ci --prefix tests/js`。**全量报告出现带 Node/jsdom 原因的 skipped = jsdom 依赖又没了**（用例数量会随测试增减，不要按固定 skipped 数字判断；CI 缺依赖会直接失败）。
 - 变异测试时直接跑 node 套件更快：用主仓 venv 执行 `from tests.test_settings_js_behavior import _render_settings_page` 渲染出临时 HTML，然后 `cd tests/js && CONSOLE_STATIC_DIR=<静态目录> SETTINGS_PAGE_HTML=<临时HTML> node --test --test-reporter=spec xxx.test.js`（两个环境变量缺一不可，名字是 CONSOLE_STATIC_DIR）。
 - psql 18 已在用户 PATH；但 ZCode 的 Bash 是非交互 shell，重启前可能要 `export PATH="/c/Program Files/PostgreSQL/18/bin:$PATH"`。`test_migration_replay` 报错先看是 psql 缺失还是 CRLF，再下结论。
 - 真实库测试无库可连时应 skip（connect_timeout=5），不要硬炸。
 
 ## 3. worktree 操作规程
 
-日常任务在 `.worktrees/<name>` 里做（脚本 `wt.mjs`，参数走 **stdin JSON**，不是 argv；路径一律**正斜杠 + 仓库相对路径**——echo 管道里 Windows 反斜杠会被 Git Bash 折叠导致 JSON.parse 失败）。
+日常任务在 `.worktrees/<name>` 里做（ZCode 的 worktree 插件脚本 `wt.mjs`，参数走 **stdin JSON**，不是 argv；路径一律**正斜杠 + 仓库相对路径**——echo 管道里 Windows 反斜杠会被 Git Bash 折叠导致 JSON.parse 失败）。该脚本不在仓库、也不在 PATH，本机位于 ZCode 插件目录（`~/.zcode/cli/plugins/.../zcode-worktree-guard/scripts/wt.mjs`，版本目录会变）；非 ZCode 环境直接用原生 `git worktree` 命令。
 
 新建 worktree 后的三件套：
 1. **复制 `.env.local`**（DB 密码），否则所有连 DB 的测试 `fe_sendauth: no password supplied`。
@@ -34,11 +36,12 @@
 
 ## 4. 合并与推送
 
-收尾顺序：worktree 内全量 pytest → `wt.mjs exit` → 主仓库合并 → 主仓库全量 pytest → `wt.mjs remove`（`{"path":"...","confirm_remove":true,"delete_branch":true}`，未跟踪的 .env.local/node_modules 会被一并删）。
+收尾顺序：worktree 内全量 pytest → `wt.mjs exit` → 主仓库合并 → 主仓库全量 pytest → 在 main 更新 `.memory/` 并单独提交 → `wt.mjs remove`（`{"path":"...","confirm_remove":true,"delete_branch":true}`，未跟踪的 .env.local/node_modules 会被一并删）。
 
 - **能快进就快进（用户 2026-10-08 明确要求）**：main 未被并行推进时一律 `git merge --ff-only`，不产生 "Merge branch ..." 提交（单点小改动套 merge 节点，用户嫌历史噪音大）。合并前判断分叉：`git log --oneline main..<branch>` 与 `<branch>..main`，后者为空即快进场景。只有真分叉时才 `--no-ff`，并在交付说明里说明原因。
 - 合并后必须跑**主仓库全量 pytest** 验证语义合并，不能只看「Auto-merging 无冲突」（实际发生过与并行会话的提交都改了 `business_config.py` + `env_reference.md`，自动融合后靠全量确认）。
-- **推送 main 被 worktree-guard 拦截**，按提示三步**独立命令**执行：① `wt.mjs authorize-main`（带 reason 的 JSON 管道）；② 单独 `git push`；③ `wt.mjs revoke-main`。三条写进同一条复合命令会被 PreToolUse hook 整体拦截。
+- **记忆更新放在 main 合并后**：worktree 内 `.memory/` 只读；合并完成、主仓库全量 pytest 通过后，在 main 更新并**单独提交**（只暂存 `.memory/`），再 remove worktree。完整规则见 [README.md](README.md) 维护规则第 2 条。
+- **推送 main 被 ZCode 的 worktree-guard 拦截**（非 ZCode 环境没有这条限制），ZCode 下按提示三步**独立命令**执行：① `wt.mjs authorize-main`（带 reason 的 JSON 管道）；② 单独 `git push`；③ `wt.mjs revoke-main`。三条写进同一条复合命令会被 PreToolUse hook 整体拦截。
 - 本地分支删除要先删远端分支，否则 remove 的 delete_branch 会以「未合并到 upstream」拒绝（`git branch -D` 兜底）。
 
 ## 5. 变异测试规程
@@ -52,7 +55,7 @@
 
 ## 6. 提交卫生
 
-- **Edit 工具会把被编辑文件整个写回成 CRLF**（仓库标准 LF），`git add -u` 会把全仓库行尾改写吞进提交（实际发生过 amend 卷进 443 个文件）。规矩：`git add` 只加显式路径；Edit 过的 src 文件提交前 `sed -i 's/\r$//'` 转回 LF；提交后 `git show --stat` 核对文件数与增删行数符合预期。
+- **Edit 工具可能把被编辑文件整个写回成 CRLF**（仓库标准 LF；改 README/Markdown 时实际发生过，`git diff --check` 会逐行报 trailing whitespace），`git add -u` 会把全仓库行尾改写吞进提交（实际发生过 amend 卷进 443 个文件）。规矩：`git add` 只加显式路径；Edit 过的文件（src、Markdown、配置都算）提交前 `sed -i 's/\r$//'` 转回 LF；提交后 `git show --stat` 核对文件数与增删行数符合预期。
 - Python 脚本改文档同理：`write_text` 文本模式产生 775 行假 diff 的事故发生过，行尾敏感文件用 `write_bytes`。
 - ZCode 的 Bash 在多次调用间 cwd 可能重置，跨仓库操作每条命令显式 `cd` 绝对路径。
 - `grep` 找「外部调用方」的两个坑：`head -N` 截断输出会漏看后面的匹配就下结论；Git Bash 的 grep 输出反斜杠路径，`grep -v "src/adapters/"` 过滤不掉。正确姿势：先按目录圈定 `grep -rn ... 目录清单`，不截断。

@@ -147,6 +147,7 @@ dbmate down
 | 文档 | 内容 |
 | --- | --- |
 | [AGENTS.md](AGENTS.md) | 开发约束、目录结构、依赖方向、数据库访问约定 |
+| [.memory/README.md](.memory/README.md) | 跨会话协作记忆：决策、踩坑、操作规程与交付流水 |
 | [docs/data_flow.md](docs/data_flow.md) | 数据表职责、流转路径、契约级约束 |
 | [docs/env_reference.md](docs/env_reference.md) | 全部环境变量说明与示例模板 |
 | [docs/console_auth.md](docs/console_auth.md) | 控制台认证机制 |

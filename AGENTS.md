@@ -7,7 +7,7 @@ IMPORTANT: Read and write this file as UTF-8. In Windows PowerShell, use `Get-Co
 ## 跨会话协作记忆（.memory/）
 
 - **任何任务开始前，先读 `.memory/README.md` 和 `.memory/global.md`**：那里记录着代码和 git 历史看不出来的东西——用户拍板的约束（含「不要做」清单，见 `.memory/decisions.md`）、踩坑经验与站点知识（`.memory/pitfalls.md`）、测试/worktree/合并的操作规程（`.memory/workflow.md`）、进行中事项（`.memory/open-tasks.md`）。
-- **任务完成后更新 `.memory/`**：交付进 `.memory/delivery-log.md`（细节写 `archive/`）、新踩坑进 `pitfalls.md`、新拍板进 `decisions.md`、待办变化进 `open-tasks.md`。维护规则见 `.memory/README.md`。
+- **任务完成后更新 `.memory/`（只在 main 上写；功能分支合并后单独提交；worktree 内只读）**：交付进 `.memory/delivery-log.md`（细节写 `archive/`）、新踩坑进 `pitfalls.md`、新拍板进 `decisions.md`、待办变化进 `open-tasks.md`。维护规则见 `.memory/README.md`。
 - 分工：本文件及局部 AGENTS.md = 怎么写代码的规范；`docs/` = 表契约与环境变量；`.memory/` = 经验、决策与状态。同一事实只记一处，发现重复时收敛到权威位置。
 
 ## 局部 Agent 指南
@@ -19,55 +19,62 @@ IMPORTANT: Read and write this file as UTF-8. In Windows PowerShell, use `Get-Co
 
 ## 构建与开发命令
 
+> **以下 Python 命令都在仓库根目录执行，并使用仓库根 venv 的解释器。** 系统默认 `python` 缺 psycopg / fastapi 等依赖，裸 `python -m pytest` 会在收集阶段直接 `ModuleNotFoundError`。
+>
+> - PowerShell：`.\venv\Scripts\python.exe ...`；或先执行 `.\venv\Scripts\Activate.ps1`，之后直接用 `python`
+> - Git Bash：`./venv/Scripts/python.exe ...`；或先 `source venv/Scripts/activate`
+>
+> 下面示例统一写 PowerShell 形式；Git Bash 把 `.\venv\Scripts\python.exe` 换成 `./venv/Scripts/python.exe` 即可。
+
 ### 运行应用
 
-```bash
+```powershell
 # 启动 Web 控制台（FastAPI + uvicorn，默认端口 8000）
-python run_console.py
+.\venv\Scripts\python.exe run_console.py
 
-# 也可以直接使用 uvicorn
-uvicorn src.console.app:app --host 0.0.0.0 --port 8000
+# 也可以直接用 uvicorn 模块启动
+.\venv\Scripts\python.exe -m uvicorn src.console.app:app --host 0.0.0.0 --port 8000
 ```
 
 ### 流水线命令
 
-```bash
+```powershell
 # 运行单个流水线步骤
-python -m src.cli.main crawl --sources toutiao,tencent --limit 5000
-python -m src.cli.main hash-primary --limit 5000
-python -m src.cli.main score --limit 2500
-python -m src.cli.main summarize --limit 2500
-python -m src.cli.main enrich-summary --limit 2500
-python -m src.cli.main geo-classify --limit 2500
-python -m src.cli.main external-filter --limit 2000
-python -m src.cli.main export --min-score 60
+.\venv\Scripts\python.exe -m src.cli.main crawl --sources toutiao,tencent --limit 5000
+.\venv\Scripts\python.exe -m src.cli.main hash-primary --limit 5000
+.\venv\Scripts\python.exe -m src.cli.main score --limit 2500
+.\venv\Scripts\python.exe -m src.cli.main summarize --limit 2500
+.\venv\Scripts\python.exe -m src.cli.main enrich-summary --limit 2500
+.\venv\Scripts\python.exe -m src.cli.main geo-classify --limit 2500
+.\venv\Scripts\python.exe -m src.cli.main external-filter --limit 2000
+.\venv\Scripts\python.exe -m src.cli.main export --min-score 60
 
 # 查看任意命令帮助
-python -m src.cli.main [command] --help
+.\venv\Scripts\python.exe -m src.cli.main [command] --help
 ```
 
 ### 测试命令
 
-```bash
+```powershell
 # 运行全部测试
-python -m pytest
+.\venv\Scripts\python.exe -m pytest
 
 # 运行单个测试文件
-python -m pytest tests/test_score_worker.py
+.\venv\Scripts\python.exe -m pytest tests/test_score_worker.py
 
 # 运行覆盖率
-python -m pytest --cov=src --cov-report=html
+.\venv\Scripts\python.exe -m pytest --cov=src --cov-report=html
 
 # 详细输出
-python -m pytest -v
+.\venv\Scripts\python.exe -m pytest -v
 
 # 运行指定测试类或测试方法
-python -m pytest tests/test_score_worker.py::TestScoreWorker::test_scoring_logic -v
+.\venv\Scripts\python.exe -m pytest tests/test_score_worker.py::TestScoreWorker::test_scoring_logic -v
 ```
 
-人工筛选页有一组浏览器端行为测试（jsdom，位于 `tests/js/`），同样由 `python -m pytest` 触发。需要本机安装 Node 20+，并先执行一次：
+人工筛选页有一组浏览器端行为测试（jsdom，位于 `tests/js/`），同样由 `.\venv\Scripts\python.exe -m pytest` 触发。需要本机安装 Node 20+，并先执行一次：
 
-```bash
+```powershell
 npm ci --prefix tests/js
 ```
 
@@ -75,15 +82,15 @@ npm ci --prefix tests/js
 
 ### 开发环境
 
-```bash
+```powershell
 # 安装依赖
-pip install -r requirements.txt
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
 
 # 如果存在 setup.py，可安装为开发模式
-pip install -e .
+.\venv\Scripts\python.exe -m pip install -e .
 
 # 开发时使用自动重载
-uvicorn src.console.app:app --reload --host 0.0.0.0 --port 8000
+.\venv\Scripts\python.exe -m uvicorn src.console.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ## 代码风格
@@ -205,7 +212,7 @@ async def get_articles() -> list[ArticleResponse]:
 - 测试文件命名为 `test_*.py`。
 - 测试名应描述行为，例如 `test_scoring_with_valid_content`。
 - 公共 setup/teardown 使用 fixture。
-- 外部依赖必须 mock，包括数据库、HTTP 调用和 LLM API。
+- 外部依赖必须 mock：HTTP 调用和 LLM API 一律不真实调用。**数据库行为测试是例外**——DB 行为测试直连真实 Postgres（临时表模式，见 `.memory/workflow.md`；新增 UPDATE/写路径 SQL 必须配真实 DB 测试），纯单元测试仍用 fake cursor/mock。
 
 ```python
 from unittest.mock import Mock
@@ -269,7 +276,7 @@ db_config = {
 
 ## 代码质量标准
 
-以下是期望而非强制——项目当前没有配置 lint 工具，这些条款靠人和 AI 自觉遵守。现有代码中存在个别有意为之的例外（例如降级处理中的宽泛异常捕获），遇到时请先理解原因再决定是否修改。
+以下是期望而非强制——项目只配置了最小集的 ruff（`ruff.toml`，CI 跑 `ruff check .`），其余条款靠人和 AI 自觉遵守。现有代码中存在个别有意为之的例外（例如降级处理中的宽泛异常捕获），遇到时请先理解原因再决定是否修改。
 
 - 避免新增 `type: ignore`。确需使用时限定具体错误码并说明原因，例如 `# type: ignore[attr-defined]`。
 - 不要使用 bare `except`，不要保留未使用导入，不要使用可变默认参数。

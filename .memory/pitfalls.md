@@ -27,7 +27,7 @@
 - **剥图是用户拍板的决策**：流水线纯文字，图片一律剥离；xinhua 图说文字保留（在 alt/正文中）。
 - `decode_response` 分级：服务端头 > HTML meta 声明 > chardet > utf-8（中新网服务器不带 charset 时 chardet 误判 pt154 致整页乱码的存量 bug）。
 - trust_env 参数化有实测意义：jyb/劳动午报关代理，其余信任系统代理（本机挂死代理时表现不同）。
-- 账号型来源（beijinghao/btime/tencent 走 crawl_accounts）与列表型来源行为不同；worker 每轮先加载 existing_ids 去重。防灌档靠静态上限 + existing 截停 + lookback 窗口（15 源审计结论见 archive/2026-10-01-千龙默认页数.md）。
+- 账号型来源（beijinghao/btime/tencent 走 crawl_accounts）与列表型来源行为不同；worker 每轮先加载 existing_ids 去重。防灌档靠静态上限 + existing 截停 + lookback 窗口（15 源审计结论见 archive/2026-10-01-千龙默认页数1页.md）。
 
 各站特记：
 - **btime（北京时间）**：`refresh` 必须固定 1——refresh=0 接口会静默返回 2020 年存档；`pageRow:10` 单包、`list_items` 显式 `del pages` 不翻页。视频稿（news_type=3）正文只在页面内嵌 `topic_data` JSON（`modules[*].modules[*][*].data.content` 取 `type=="txt"`），可见 article 节点是标题复读 SEO 样板；实现为 topic_data 优先、HTML 兜底。

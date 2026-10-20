@@ -18,6 +18,9 @@
 
 1. **任务开始前**：读 global.md + open-tasks.md；任务涉及某模块时，读 pitfalls.md 对应节和 delivery-log.md 里的相关条目（进而按需看 archive 细节）。
 2. **任务完成后**：只更新概述层（global/open-tasks/workflow/pitfalls/decisions/delivery-log），把该次任务的详细经验写成 `archive/YYYY-MM-DD-主题.md`，delivery-log 加一行指向它。已闭环的内容不要留在概述层——概述层只保持「当前状态」，过期即删。
+   - **记忆只在 main 上写；有功能分支时，等分支合并完成后再写**：worktree/功能分支内的 `.memory/` 只读，不要修改。worktree 最终会被 `remove`，未提交的记忆会跟着丢；`delivery-log.md` 最新行在表格最上面，并行 worktree 同时改必冲突。
+   - 合并进 main、主仓库全量 pytest 通过后，在 main 更新 `.memory/`，**单独提交**（只暂存 `.memory/` 下的文件，不混进功能提交）。没有 worktree 的小改动同理。
+   - 任务作废/放弃时也在 main 上更新 `open-tasks.md`，不写 worktree。
 3. **只记代码看不出来的**：决策原因、拍板约束、环境坑、验证方法论。机械性的事实（代码结构、git log 能查到的提交）不记。
 4. **同一事实只记一处**：分工是——根 `AGENTS.md` 及局部 AGENTS.md = 怎么写代码的规范约束；`docs/data_flow.md` = 表结构与契约；`docs/env_reference.md` = 环境变量；本目录 = 经验、决策与状态。发现重复时收敛到权威位置。
 5. 记忆起点是 2026-09-17；更早的历史只有 git log。

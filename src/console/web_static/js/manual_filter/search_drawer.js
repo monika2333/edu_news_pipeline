@@ -231,16 +231,8 @@ function expandSearchWindow() {
     performDrawerSearch();
 }
 
-// 全库检索卡片的分类徽章：京内/京外 × 正面/负面。
-// 判定口径与 duty_summary/utils.js 的 articleCategoryLabel 相同（那边字段必然齐全，无需守卫）；
-// 地域（geo-classify）或情感（summarize）任一判定未就绪时不归类，返回空串。
-function searchCategoryLabel(item) {
-    if (item.is_beijing_related === null || item.is_beijing_related === undefined) return '';
-    if (!item.sentiment_label) return '';
-    const region = item.is_beijing_related ? '京内' : '京外';
-    const sentiment = String(item.sentiment_label).toLowerCase() === 'negative' ? '负面' : '正面';
-    return `${region}${sentiment}`;
-}
+// 全库检索卡片的分类徽章（京内/京外 × 正面/负面）与筛选页卡片、两套原文抽屉共用
+// manual_filter/utils.js 的 articleCategoryBadge，不要在本文件另写一份判定。
 
 // 报送存档匹配状态的中文文案；是否命中由后端统一判定，前端不重算。
 const ARCHIVE_LINK_STATUS_LABELS = {
@@ -359,12 +351,12 @@ function buildSearchResultItem(item, summaryToggles) {
     meta.appendChild(ingestedSpan);
     // 分类徽章取代原 sentiment 徽章：京内/京外 × 正面/负面。
     // 两个判定（地域、情感）都就绪才显示，没走到分类环节的文章不显示。
-    const categoryText = searchCategoryLabel(item);
-    if (categoryText) {
+    const category = articleCategoryBadge(item);
+    if (category) {
         meta.appendChild(createEl(
             'span',
-            `badge search-category-badge ${getSentimentClass(item.sentiment_label)}`,
-            categoryText
+            `badge search-category-badge ${category.sentimentClass}`,
+            category.label
         ));
     }
     // 评分反馈入口：复用筛选页的 ⓘ 控件（score_feedback.js 的委托处理交互），

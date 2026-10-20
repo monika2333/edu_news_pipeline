@@ -99,3 +99,8 @@ def test_cleanup_discard_flow_behaviour(tmp_path: Path) -> None:
 def test_discard_tab_flow_behaviour(tmp_path: Path) -> None:
     node = _node_or_skip()
     _run_node_behavior_test(node, tmp_path, "discard_tab_flow.test.js")
+
+
+def test_card_category_badge_behaviour(tmp_path: Path) -> None:
+    node = _node_or_skip()
+    _run_node_behavior_test(node, tmp_path, "card_category_badge.test.js")

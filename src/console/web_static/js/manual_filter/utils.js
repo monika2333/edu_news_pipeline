@@ -126,6 +126,9 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
     const sourcePlaceholder = safe.llm_source_raw ? `(LLM: ${safe.llm_source_raw})` : '留空则回退抓取来源';
     const bonusClass = safe.bonus_keywords && safe.bonus_keywords.length ? ' has-bonus' : '';
     const duplicateBadge = renderSubmissionDuplicateBadge(safe);
+    // 地域与情感合并成一个分类标签（京内正面/京内负面/京外正面/京外负面），
+    // 不再分别展示 sentiment 原文和「京内: 是/否」两处；未归类时留中性占位。
+    const category = articleCategoryBadge(safe);
     const statusGroup = showStatus ? `
         <div class="radio-group" role="radiogroup">
             <div class="radio-option">
@@ -164,10 +167,8 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
                 <div class="meta-item meta-item-source" data-source-fill="${escapeAttr(safe.source || '')}" title="双击填入人工来源">来源: ${safe.source || '-'}</div>
                 ${renderScoreFeedbackControl(safe)}
                 <div class="meta-item">
-                    <span class="badge ${getSentimentClass(safe.sentiment_label)}">${safe.sentiment_label || '-'}</span>
+                    <span class="badge search-category-badge ${category ? category.sentimentClass : 'neutral'}">${category ? category.label : '-'}</span>
                 </div>
-                <div class="meta-item">京内: ${safe.is_beijing_related ? '是' : '否'
-        }</div>
     ${safe.bonus_keywords && safe.bonus_keywords.length ?
             `<div class="meta-item">Bonus: ${safe.bonus_keywords.join(', ')}</div>` : ''
         }
@@ -385,21 +386,31 @@ function getSentimentClass(label) {
     return 'neutral';
 }
 
-// 原文抽屉头部的「分类 + 该分类下的重要性分」徽章数据。
-// 分类判定口径与 search_drawer.js 的 searchCategoryLabel 一致：
-// 地域（geo-classify）或情感（summarize）任一未就绪时不归类，返回 null；
-// 未归类时分数也不单独展示——分数只在分类语境下有意义。
-// 筛选页与存档/值班页的两套抽屉脚本都从 /api/articles/content 拿数据，共用此入口。
-function contentDrawerCategoryBadge(data) {
-    if (!data) return null;
-    if (data.is_beijing_related === null || data.is_beijing_related === undefined) return null;
-    if (!data.sentiment_label) return null;
-    const region = data.is_beijing_related ? '京内' : '京外';
-    const sentiment = String(data.sentiment_label).toLowerCase() === 'negative' ? '负面' : '正面';
-    const score = data.external_importance_score;
+// 分类标签（京内/京外 × 正面/负面）口径的唯一实现：筛选页卡片、全库检索卡片与两套原文抽屉共用。
+// 地域（geo-classify）或情感（summarize）任一判定未就绪时视为未归类，返回 null；
+// 未归类的兜底展示由调用方决定（筛选页卡片留「-」占位，检索卡片与抽屉不渲染徽章）。
+function articleCategoryBadge(item) {
+    if (!item) return null;
+    if (item.is_beijing_related === null || item.is_beijing_related === undefined) return null;
+    if (!item.sentiment_label) return null;
+    const region = item.is_beijing_related ? '京内' : '京外';
+    const sentiment = String(item.sentiment_label).toLowerCase() === 'negative' ? '负面' : '正面';
     return {
         label: `${region}${sentiment}`,
-        sentimentClass: getSentimentClass(data.sentiment_label),
+        sentimentClass: getSentimentClass(item.sentiment_label)
+    };
+}
+
+// 原文抽屉头部的「分类 + 该分类下的重要性分」徽章数据。
+// 分类口径见 articleCategoryBadge；未归类时分数也不单独展示——分数只在分类语境下有意义。
+// 筛选页与存档/值班页的两套抽屉脚本都从 /api/articles/content 拿数据，共用此入口。
+function contentDrawerCategoryBadge(data) {
+    const category = articleCategoryBadge(data);
+    if (!category) return null;
+    const score = data.external_importance_score;
+    return {
+        label: category.label,
+        sentimentClass: category.sentimentClass,
         score: (score === null || score === undefined) ? null : formatScore(score)
     };
 }

@@ -62,6 +62,9 @@ class FakeWorkspaceServer {
         clusters = null,
         reviewItems = null,
         discardedItems = null,
+        // article_id -> { is_beijing_related, sentiment_label }，用于覆盖卡片分类标签；
+        // 未指定的文章沿用默认的「京内 + positive」（筛选页候选列表本身按分类桶查询）
+        articleCategories = null,
         // article_id -> /api/articles/content 响应体（可只给差异字段，其余自动补全）；
         // 未播种的 id 返回与后端一致的全 null 兜底响应
         articleContents = null,
@@ -78,6 +81,7 @@ class FakeWorkspaceServer {
                 manual_source: null,
                 version: 1,
                 decision: 'pending',
+                ...((articleCategories && articleCategories[id]) || {}),
             });
         }
         // clusters：二维数组，每组是一个聚类的文章 id；未列出的文章各自成为单条聚类
@@ -124,8 +128,8 @@ class FakeWorkspaceServer {
             llm_source_display: article.manual_source ?? article.llm_source_display,
             version: article.version,
             status: 'pending',
-            is_beijing_related: true,
-            sentiment_label: 'positive',
+            is_beijing_related: article.is_beijing_related === undefined ? true : article.is_beijing_related,
+            sentiment_label: article.sentiment_label === undefined ? 'positive' : article.sentiment_label,
         };
     }
 

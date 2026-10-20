@@ -28,7 +28,7 @@
 
 ## 流程与工程
 
-- **合并能快进就 ff-only**，不产生 merge commit（用户 2026-10-08 明确要求，见 workflow.md）。
+- **合并优先 ff-only；不能快进时直接普通 merge**（2026-10-20 修订，取代 2026-10-08 的强制 ff-only）：能快进就 `git merge --ff-only`；真分叉时普通 `git merge`、产生 merge commit 可以接受，**不要为了 ff-only 额外 rebase 分支**。合并后仍必须跑主仓库全量 pytest（见 workflow.md）。
 - **委托书式任务流程**：文件范围硬约束 + 必做变异测试（见 workflow.md）。
 - **记忆只在 main 合并后更新并单独提交**：worktree 内 `.memory/` 只读；完整规则见 `.memory/README.md`「维护规则」第 2 条（2026-10-20 拍板）。
 - **部署侧待办不进 `.memory/`**（2026-10-20 拍板）：生产/部署侧手工动作由用户自行跟踪；`open-tasks.md` 只记开发进行中事项与未排期候选。

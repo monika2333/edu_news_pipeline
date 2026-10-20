@@ -38,7 +38,7 @@
 
 收尾顺序：worktree 内全量 pytest → `wt.mjs exit` → 主仓库合并 → 主仓库全量 pytest → 在 main 更新 `.memory/` 并单独提交 → `wt.mjs remove`（`{"path":"...","confirm_remove":true,"delete_branch":true}`，未跟踪的 .env.local/node_modules 会被一并删）。
 
-- **能快进就快进（用户 2026-10-08 明确要求）**：main 未被并行推进时一律 `git merge --ff-only`，不产生 "Merge branch ..." 提交（单点小改动套 merge 节点，用户嫌历史噪音大）。合并前判断分叉：`git log --oneline main..<branch>` 与 `<branch>..main`，后者为空即快进场景。只有真分叉时才 `--no-ff`，并在交付说明里说明原因。
+- **合并优先 ff-only，不能快进时普通 merge（用户 2026-10-20 修订）**：main 未被并行推进时用 `git merge --ff-only`；真分叉时直接普通 `git merge`，产生 merge commit 可以接受，**不要为了 ff-only 额外 rebase 分支**。合并前仍建议看一眼双方提交，确认没有把无关改动合进来。
 - 合并后必须跑**主仓库全量 pytest** 验证语义合并，不能只看「Auto-merging 无冲突」（实际发生过与并行会话的提交都改了 `business_config.py` + `env_reference.md`，自动融合后靠全量确认）。
 - **记忆更新放在 main 合并后**：worktree 内 `.memory/` 只读；合并完成、主仓库全量 pytest 通过后，在 main 更新并**单独提交**（只暂存 `.memory/`），再 remove worktree。完整规则见 [README.md](README.md) 维护规则第 2 条。
 - **推送 main 被 ZCode 的 worktree-guard 拦截**（非 ZCode 环境没有这条限制），ZCode 下按提示三步**独立命令**执行：① `wt.mjs authorize-main`（带 reason 的 JSON 管道）；② 单独 `git push`；③ `wt.mjs revoke-main`。三条写进同一条复合命令会被 PreToolUse hook 整体拦截。

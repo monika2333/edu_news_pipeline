@@ -193,6 +193,10 @@ function defaultSections() {
             value: [{ keyword: '专题Z', bonus: 10 }, { keyword: '专题A', bonus: 20 }],
             version: 11, updated_at: '2026-09-18T08:00:00Z', updated_by: { display_name: '编辑甲' },
         },
+        score_exclusion_keywords: {
+            value: [], version: 16,
+            updated_at: '2026-09-18T08:00:00Z', updated_by: { display_name: '编辑己' },
+        },
         education_keywords: {
             value: ['教育', '学校'], version: 12,
             updated_at: '2026-09-18T08:00:00Z', updated_by: { display_name: '编辑乙' },
@@ -322,7 +326,7 @@ class FakeSettingsServer {
         if (pathname === '/api/admin/settings/llm_models') return 'save-models';
         if (pathname === '/api/admin/settings/llm_endpoints') return 'save-endpoints';
         if (pathname === '/api/admin/settings/crawl_sources') return 'save-sources';
-        const dictionaryMatch = pathname.match(/^\/api\/admin\/settings\/(score_keyword_bonuses|education_keywords|beijing_keywords|source_aliases|review_sort_keywords)$/);
+        const dictionaryMatch = pathname.match(/^\/api\/admin\/settings\/(score_keyword_bonuses|score_exclusion_keywords|education_keywords|beijing_keywords|source_aliases|review_sort_keywords)$/);
         if (dictionaryMatch) return `save-${dictionaryMatch[1]}`;
         if (pathname === '/api/admin/crawl-accounts') {
             return method === 'POST' ? 'add-account' : 'list-accounts';
@@ -441,7 +445,7 @@ class FakeSettingsServer {
             }];
         }
         const saveMatch = pathname.match(
-            /^\/api\/admin\/settings\/(llm_models|llm_endpoints|crawl_sources|score_keyword_bonuses|education_keywords|beijing_keywords|source_aliases|review_sort_keywords)$/,
+            /^\/api\/admin\/settings\/(llm_models|llm_endpoints|crawl_sources|score_keyword_bonuses|score_exclusion_keywords|education_keywords|beijing_keywords|source_aliases|review_sort_keywords)$/,
         );
         if (saveMatch && method === 'PUT') {
             const section = saveMatch[1];
@@ -458,6 +462,8 @@ class FakeSettingsServer {
             let value = body.value;
             if (section === 'score_keyword_bonuses') {
                 value = value.map((item) => ({ keyword: item.keyword.trim(), bonus: item.bonus }));
+            } else if (section === 'score_exclusion_keywords') {
+                value = value.map((item) => item.trim());
             } else if (['education_keywords', 'beijing_keywords'].includes(section)) {
                 value = [...new Set(value.map((item) => item.trim()).filter(Boolean))];
             }

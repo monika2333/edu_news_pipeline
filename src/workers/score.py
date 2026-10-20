@@ -21,6 +21,7 @@ WORKER = "score"
 ScoreSuccess = Tuple[PrimaryArticleForScoring, Optional[int], int, Optional[int], Dict[str, Any]]
 ScoreCandidate = Tuple[PrimaryArticleForScoring, int, List[Dict[str, Any]]]
 KEYWORD_SKIP_REASON = "keyword_bonus_below_threshold"
+KEYWORD_EXCLUDED_REASON = "keyword_excluded"
 
 
 def _score_item(item: PrimaryArticleForScoring) -> Optional[int]:
@@ -40,6 +41,32 @@ def _collect_text_sources(item: PrimaryArticleForScoring) -> List[str]:
         if keyword:
             sources.append(str(keyword))
     return sources
+
+
+def _match_excluded_keywords(
+    item: PrimaryArticleForScoring, rules: List[str]
+) -> List[Dict[str, Any]]:
+    """Return the exclusion rules hit by title, content or recorded keywords.
+
+    Matching semantics are identical to ``_calculate_keyword_bonus``: plain
+    case-sensitive substring against the same three text sources.
+    """
+
+    if not rules:
+        return []
+    haystacks = _collect_text_sources(item)
+    excluded_rules: List[Dict[str, Any]] = []
+    for keyword in rules:
+        if not keyword:
+            continue
+        if any(keyword in text for text in haystacks):
+            excluded_rules.append(
+                {
+                    "rule_id": f"exclude:{keyword}",
+                    "label": keyword,
+                }
+            )
+    return excluded_rules
 
 
 def _calculate_keyword_bonus(
@@ -82,13 +109,29 @@ def _compose_score_details(
 def _partition_scoring_rows(
     rows: List[PrimaryArticleForScoring],
     bonus_rules: Dict[str, int],
+    exclusion_keywords: List[str],
     threshold: int,
-) -> Tuple[List[ScoreSuccess], List[ScoreCandidate], List[str]]:
+) -> Tuple[List[ScoreSuccess], List[ScoreCandidate], List[str], int]:
     skipped: List[ScoreSuccess] = []
     candidates: List[ScoreCandidate] = []
     failures: List[str] = []
+    excluded_count = 0
     for item in rows:
         try:
+            # 排除名单先于加分计算：命中即淘汰，连加分都不算
+            excluded_rules = _match_excluded_keywords(item, exclusion_keywords)
+            if excluded_rules:
+                score_details = _compose_score_details(None, 0, None, [])
+                score_details.update(
+                    {
+                        "excluded_rules": excluded_rules,
+                        "llm_skipped": True,
+                        "skip_reason": KEYWORD_EXCLUDED_REASON,
+                    }
+                )
+                skipped.append((item, None, 0, None, score_details))
+                excluded_count += 1
+                continue
             bonus_score, matched_rules = _calculate_keyword_bonus(item, bonus_rules)
         except Exception as exc:
             failures.append(item.article_id)
@@ -118,20 +161,22 @@ def _partition_scoring_rows(
             )
             continue
         candidates.append((item, bonus_score, matched_rules))
-    return skipped, candidates, failures
+    return skipped, candidates, failures, excluded_count
 
 
 def _process_scores_single_worker(
     rows: List[PrimaryArticleForScoring],
     bonus_rules: Dict[str, int],
+    exclusion_keywords: List[str],
     threshold: int,
-) -> Tuple[List[ScoreSuccess], List[str], int]:
-    successes, candidates, failures = _partition_scoring_rows(
+) -> Tuple[List[ScoreSuccess], List[str], int, int]:
+    successes, candidates, failures, excluded_count = _partition_scoring_rows(
         rows,
         bonus_rules,
+        exclusion_keywords,
         threshold,
     )
-    skipped_count = len(successes)
+    bonus_skipped_count = len(successes) - excluded_count
 
     for row, bonus_score, matched_rules in candidates:
         try:
@@ -150,24 +195,26 @@ def _process_scores_single_worker(
             failures.append(row.article_id)
             log_error(WORKER, row.article_id, exc)
 
-    return successes, failures, skipped_count
+    return successes, failures, excluded_count, bonus_skipped_count
 
 
 def _process_scores_multi_worker(
     rows: List[PrimaryArticleForScoring],
     workers: int,
     bonus_rules: Dict[str, int],
+    exclusion_keywords: List[str],
     threshold: int,
-) -> Tuple[List[ScoreSuccess], List[str], int]:
-    successes, candidates, failures = _partition_scoring_rows(
+) -> Tuple[List[ScoreSuccess], List[str], int, int]:
+    successes, candidates, failures, excluded_count = _partition_scoring_rows(
         rows,
         bonus_rules,
+        exclusion_keywords,
         threshold,
     )
-    skipped_count = len(successes)
+    bonus_skipped_count = len(successes) - excluded_count
 
     if not candidates:
-        return successes, failures, skipped_count
+        return successes, failures, excluded_count, bonus_skipped_count
 
     with ContextPropagatingThreadPoolExecutor(max_workers=workers) as pool:
         future_map = {
@@ -193,7 +240,7 @@ def _process_scores_multi_worker(
                 failures.append(article_id)
                 log_error(WORKER, article_id, exc)
 
-    return successes, failures, skipped_count
+    return successes, failures, excluded_count, bonus_skipped_count
 
 
 def _prepare_updates(
@@ -264,26 +311,35 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
 
         workers = concurrency or settings.default_concurrency or 5
         workers = max(1, workers)
-        bonus_rules = get_business_config().score_bonus_rules()
+        config = get_business_config()
+        bonus_rules = config.score_bonus_rules()
+        exclusion_keywords = list(config.score_exclusion_keywords)
 
         if workers == 1:
-            successes, failures, llm_skipped_count = _process_scores_single_worker(
-                rows,
-                bonus_rules,
-                threshold,
+            successes, failures, excluded_count, bonus_skipped_count = (
+                _process_scores_single_worker(
+                    rows,
+                    bonus_rules,
+                    exclusion_keywords,
+                    threshold,
+                )
             )
         else:
-            successes, failures, llm_skipped_count = _process_scores_multi_worker(
-                rows,
-                workers,
-                bonus_rules,
-                threshold,
+            successes, failures, excluded_count, bonus_skipped_count = (
+                _process_scores_multi_worker(
+                    rows,
+                    workers,
+                    bonus_rules,
+                    exclusion_keywords,
+                    threshold,
+                )
             )
 
         log_info(
             WORKER,
-            f"Skipped {llm_skipped_count} LLM calls because keyword bonuses "
-            "could not reach the promotion threshold.",
+            f"Skipped {excluded_count + bonus_skipped_count} LLM calls: "
+            f"{excluded_count} keyword exclusions, "
+            f"{bonus_skipped_count} bonus below threshold.",
         )
 
         updates, promotion_payloads = _prepare_updates(successes, failures, threshold)

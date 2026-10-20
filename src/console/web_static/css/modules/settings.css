@@ -1234,6 +1234,61 @@
     font-size: 0.78rem;
 }
 
+/* 排除名单卡片：加分/减分表格下方的独立分区，命中即淘汰。
+   与加分词典共用页签，但有自己的版本、保存状态与「载入最新配置」。 */
+.bonus-exclusion-card {
+    margin-top: 16px;
+    padding: 16px 18px;
+    border: 1px solid #e7edf5;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.bonus-exclusion-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.bonus-exclusion-title {
+    margin: 0;
+    color: #1e293b;
+    font-size: 0.95rem;
+}
+
+.bonus-exclusion-count {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #fef2f2;
+    color: #b91c1c;
+    font-size: 0.74rem;
+}
+
+.bonus-exclusion-card > .settings-effect-note {
+    margin: 0 0 10px;
+    color: #64748b;
+    font-size: 0.8rem;
+    line-height: 1.6;
+}
+
+.exclusion-keywords { min-height: 88px; }
+
+.bonus-exclusion-status-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    min-height: 22px;
+    margin-top: 6px;
+}
+
+.bonus-exclusion-missing {
+    margin: 0;
+    color: #b45309;
+    font-size: 0.82rem;
+}
+
 .settings-textarea {
     box-sizing: border-box;
     width: 100%;

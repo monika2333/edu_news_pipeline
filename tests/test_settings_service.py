@@ -77,6 +77,7 @@ def _wordlist_rows() -> list[dict[str, Any]]:
             "value": [{"keyword": "教育工委", "bonus": 100}],
             "version": 1,
         },
+        {"section": "score_exclusion_keywords", "value": [], "version": 1},
         {"section": "education_keywords", "value": ["教育"], "version": 1},
         {"section": "beijing_keywords", "value": ["北京"], "version": 1},
         {
@@ -724,6 +725,52 @@ def test_update_setting_normalizes_wordlist_sections_before_save(
 
     assert saves[0]["section"] == "education_keywords"
     assert saves[0]["value"] == ["教育", "学校"]
+
+
+def test_update_setting_normalizes_score_exclusion_keywords(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    saves: list[dict[str, Any]] = []
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter({"score_exclusion_keywords": []}, saves=saves),
+    )
+
+    settings_service.update_setting(
+        "score_exclusion_keywords",
+        value=[" 考试 ", "培训"],
+        expected_version=4,
+        actor=_admin(),
+    )
+
+    assert saves[0]["section"] == "score_exclusion_keywords"
+    assert saves[0]["value"] == ["考试", "培训"]
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        (["考试", " 考试 "], "关键词重复"),
+        ([1], "必须是字符串"),
+        ("考试", "必须是有序数组"),
+    ],
+)
+def test_invalid_score_exclusion_keywords_are_rejected_over_admin_api(
+    monkeypatch: pytest.MonkeyPatch,
+    value: Any,
+    message: str,
+) -> None:
+    monkeypatch.setattr("src.console.app.warn_legacy_config", lambda: [])
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _admin
+
+    response = TestClient(app).put(
+        "/api/admin/settings/score_exclusion_keywords",
+        json={"value": value, "expected_version": 1},
+    )
+
+    assert response.status_code == 422
+    assert message in response.json()["detail"]
 
 
 def test_empty_wordlist_is_rejected_over_admin_api(

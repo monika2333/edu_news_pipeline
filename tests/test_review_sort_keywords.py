@@ -245,6 +245,7 @@ class TestLoadAndSnapshot:
             },
             {"section": "crawl_sources", "value": ["toutiao"], "version": 1},
             {"section": "score_keyword_bonuses", "value": [], "version": 1},
+            {"section": "score_exclusion_keywords", "value": [], "version": 1},
             {"section": "education_keywords", "value": ["教育"], "version": 1},
             {"section": "beijing_keywords", "value": ["北京"], "version": 1},
             {

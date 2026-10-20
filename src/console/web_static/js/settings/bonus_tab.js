@@ -85,11 +85,13 @@ function createBonusGroup(key, title, hint, emptyText) {
     return { group, list, count, empty };
 }
 
+// 加分词典页签 = 加分词典分区 + 排除名单分区。两个分区各自是一块可独立
+// 重绘的挂载点：任一分区 409 后「载入最新配置」只重绘自己的挂载点，
+// 不会清掉另一个分区正在输入的草稿。
 function renderBonusesTab() {
     const panel = elements.panels.bonuses;
-    const section = 'score_keyword_bonuses';
     clearEl(panel);
-    const saved = settingsSection(section);
+    const saved = settingsSection('score_keyword_bonuses');
     if (!saved) {
         renderImportNotice(panel, '加分词典');
         return;
@@ -101,6 +103,38 @@ function renderBonusesTab() {
     const legend = createEl('div', 'bonus-legend');
     legend.append(bonusLegendItem('positive', '加分'), bonusLegendItem('negative', '减分'));
     head.append(headText, legend);
+
+    const dictionaryMount = createEl('div', 'bonus-dictionary');
+    const exclusionMount = createEl('div', 'bonus-exclusion');
+    const main = createEl('div', 'bonus-main');
+    main.append(dictionaryMount, exclusionMount);
+    const layout = createEl('div', 'bonus-layout');
+    layout.append(main, createBonusGuide());
+    panel.append(head, layout);
+    renderBonusDictionary(dictionaryMount);
+    renderExclusionCard(exclusionMount);
+}
+
+function createBonusGuide() {
+    const guide = createEl('aside', 'bonus-guide');
+    const guideList = createEl('ul', 'bonus-guide-list');
+    [
+        '关键词命中标题、正文或已记录的关键词即计分，多个命中累加。',
+        '填完一行、焦点离开该行即自动保存；保存只影响此后打分的文章，已经打过分的不会重算。',
+    ].forEach((text) => guideList.appendChild(createEl('li', '', text)));
+    guide.append(
+        createEl('h3', 'bonus-guide-title', '生效说明'),
+        guideList,
+        createEl('p', 'bonus-guide-foot', '分值必须是 −100～100 的整数；0 只登记、不影响得分。'),
+    );
+    return guide;
+}
+
+function renderBonusDictionary(mount) {
+    const section = 'score_keyword_bonuses';
+    clearEl(mount);
+    const saved = settingsSection(section);
+    if (!saved) return;
 
     // 状态行：自动保存结果 + 最后修改人；冲突时出现「载入最新配置」
     const status = createEl('span', 'bonus-save-status', '', {
@@ -440,7 +474,7 @@ function renderBonusesTab() {
             if (!response.ok) throw new Error(formatApiError(payload, '加载设置失败'));
             state.payload.sections[section] = payload.sections[section];
             clearDirty(section);
-            renderBonusesTab();
+            renderBonusDictionary(mount);
             showSettingsToast('已载入最新配置');
         } catch (error) {
             setStatus(`载入失败：${error.message}`, 'error');
@@ -448,23 +482,197 @@ function renderBonusesTab() {
         }
     });
 
-    const guide = createEl('aside', 'bonus-guide');
-    const guideList = createEl('ul', 'bonus-guide-list');
-    [
-        '关键词命中标题、正文或已记录的关键词即计分，多个命中累加。',
-        '填完一行、焦点离开该行即自动保存；保存只影响此后打分的文章，已经打过分的不会重算。',
-    ].forEach((text) => guideList.appendChild(createEl('li', '', text)));
-    guide.append(
-        createEl('h3', 'bonus-guide-title', '生效说明'),
-        guideList,
-        createEl('p', 'bonus-guide-foot', '分值必须是 −100～100 的整数；0 只登记、不影响得分。'),
-    );
-
-    const main = createEl('div', 'bonus-main');
-    main.append(stats, table);
-    const layout = createEl('div', 'bonus-layout');
-    layout.append(main, guide);
-    panel.append(head, statusRow, layout);
+    mount.append(statusRow, stats, table);
     refreshStats();
     refreshUpdatedLine();
+}
+
+// 排除名单：全局一份，命中即淘汰。与加分词典完全独立的版本号与保存状态，
+// 在「加分词典」页签表格下方以卡片呈现；行解析只在本文件实现（本脚本先于
+// advanced_tab.js 加载，不能依赖它的 settingsTextLines）。
+function renderExclusionCard(mount) {
+    const section = 'score_exclusion_keywords';
+    clearEl(mount);
+    const saved = settingsSection(section);
+
+    const card = createEl('section', 'bonus-exclusion-card');
+    const head = createEl('div', 'bonus-exclusion-head');
+    head.append(
+        createEl('h3', 'bonus-exclusion-title', '排除名单'),
+        createEl('span', 'bonus-exclusion-count', '全局生效'),
+    );
+    card.append(
+        head,
+        createEl(
+            'p',
+            'settings-effect-note',
+            '命中即淘汰：不参与加分计算，也不会调用模型评分，只对保存后打分的文章生效。'
+                + '排除优先于加分词典，命中排除词的文章即使同时命中加分词也会被淘汰。',
+        ),
+    );
+
+    if (!saved) {
+        card.append(createEl(
+            'p',
+            'bonus-exclusion-missing',
+            '排除名单尚未导入数据库：请先运行 import-settings 或执行对应迁移。',
+        ));
+        mount.append(card);
+        return;
+    }
+
+    const textarea = createEl('textarea', 'settings-textarea exclusion-keywords', '', {
+        rows: '4',
+        spellcheck: 'false',
+        'aria-label': '排除名单关键词，一行一个',
+        placeholder: '一行一个关键词，例如：招聘',
+    });
+    const savedValue = Array.isArray(saved.value) ? saved.value : [];
+    textarea.value = savedValue.join('\n');
+    const count = createEl('span', 'settings-word-count', '', { 'aria-live': 'polite' });
+    const status = createEl('span', 'bonus-save-status exclusion-save-status', '', {
+        role: 'status', 'aria-live': 'polite',
+    });
+    const reloadBtn = createEl('button', 'btn btn-secondary bonus-reload exclusion-reload',
+        '载入最新配置', { type: 'button' });
+    reloadBtn.hidden = true;
+    const statusRow = createEl('div', 'bonus-exclusion-status-row');
+    statusRow.append(status, reloadBtn);
+    card.append(textarea, count, statusRow);
+
+    const parseEntries = () => {
+        const entries = [];
+        textarea.value.split(/\r?\n/).forEach((raw, index) => {
+            const word = raw.trim();
+            if (!word) return;
+            entries.push({ line: index + 1, word });
+        });
+        return entries;
+    };
+
+    const updateCount = () => {
+        count.textContent = `当前 ${parseEntries().length} 个词`;
+    };
+
+    const setStatus = (message, kind = '') => {
+        setSettingsStatus(status, message, kind);
+    };
+
+    const currentSaved = () => {
+        const current = settingsSection(section);
+        return current && Array.isArray(current.value)
+            ? current.value.map((item) => String(item))
+            : [];
+    };
+
+    // 本地解析/校验：trim、丢空行、重复词带行号报错；空名单合法
+    const readValue = () => {
+        const entries = parseEntries();
+        const seen = new Set();
+        for (const entry of entries) {
+            if (seen.has(entry.word)) {
+                textarea.setAttribute('aria-invalid', 'true');
+                setStatus(`第 ${entry.line} 行重复：${entry.word}`, 'error');
+                return null;
+            }
+            seen.add(entry.word);
+        }
+        textarea.setAttribute('aria-invalid', 'false');
+        return entries.map((entry) => entry.word);
+    };
+
+    const sameAsSaved = (value) => (
+        JSON.stringify(value) === JSON.stringify(currentSaved())
+    );
+
+    let saveQueued = false;
+    const flush = async () => {
+        if (state.saving[section]) {
+            saveQueued = true;
+            return;
+        }
+        const value = readValue();
+        if (value === null) {
+            state.dirty[section] = true;
+            return;
+        }
+        const current = settingsSection(section);
+        if (!current) return;
+        if (sameAsSaved(value)) {
+            state.dirty[section] = false;
+            reloadBtn.hidden = true;
+            setStatus('已自动保存。', 'ok');
+            return;
+        }
+        state.saving[section] = true;
+        setStatus('保存中…');
+        let savedOk = false;
+        try {
+            const { response, payload } = await apiRequest(`/api/admin/settings/${section}`, {
+                method: 'PUT',
+                body: { value, expected_version: current.version },
+            });
+            if (response.ok) {
+                applySectionItem(section, payload.item);
+                // 保存期间可能又有输入：按当前文本与已保存值再判一次脏标记
+                const pendingWords = parseEntries().map((entry) => entry.word);
+                state.dirty[section] = JSON.stringify(pendingWords) !== JSON.stringify(value);
+                reloadBtn.hidden = true;
+                setStatus(
+                    state.dirty[section]
+                        ? '已自动保存；输入框里还有未保存的修改。'
+                        : '已自动保存。',
+                    'ok',
+                );
+                savedOk = true;
+            } else if (response.status === 409) {
+                state.dirty[section] = true;
+                reloadBtn.hidden = false;
+                setStatus(
+                    `保存冲突：${formatApiError(payload, '配置已在别处被修改')}。`
+                        + '本地修改仍保留，可载入最新配置后重试。',
+                    'error',
+                );
+            } else {
+                state.dirty[section] = true;
+                setStatus(`保存失败：${formatApiError(payload, '请检查填写内容')}`, 'error');
+            }
+        } catch (error) {
+            state.dirty[section] = true;
+            setStatus(`保存失败：${error.message || '网络错误'}`, 'error');
+        } finally {
+            state.saving[section] = false;
+        }
+        if (savedOk && saveQueued) {
+            saveQueued = false;
+            await flush();
+            return;
+        }
+        saveQueued = false;
+    };
+
+    textarea.addEventListener('input', () => {
+        state.dirty[section] = true;
+        updateCount();
+    });
+    textarea.addEventListener('change', () => { flush(); });
+
+    // 409 后的重载只重建本卡片挂载点，绝不整页重绘：加分词典的草稿原样保留
+    reloadBtn.addEventListener('click', async () => {
+        reloadBtn.disabled = true;
+        try {
+            const { response, payload } = await apiRequest('/api/admin/settings');
+            if (!response.ok) throw new Error(formatApiError(payload, '加载设置失败'));
+            state.payload.sections[section] = payload.sections[section];
+            clearDirty(section);
+            renderExclusionCard(mount);
+            showSettingsToast('已载入最新配置');
+        } catch (error) {
+            setStatus(`载入失败：${error.message}`, 'error');
+            reloadBtn.disabled = false;
+        }
+    });
+
+    updateCount();
+    mount.append(card);
 }

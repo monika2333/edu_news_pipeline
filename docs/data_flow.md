@@ -89,13 +89,34 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 **读写**：`primary_articles`
 
-对主文打相关性分。关键词加减分先基于标题、正文和已有关键词计算，词表来自
+对主文打相关性分。评分前的第一道检查是**全局排除名单**：词表来自
+`app_settings.score_exclusion_keywords`（有序数组，元素为非空字符串，空数组
+表示不排除任何文章）。标题、正文、已有关键词三个文本源中任意一个包含排除词
+即命中——子串、大小写敏感，与加分词典的匹配语义完全一致。命中即淘汰：不计算
+关键词加分、不调用模型评分、`status` 写为 `filtered_out`，也不进入
+`news_summaries`。优先级从高到低为 **排除名单 > 加分词典 > 阈值跳过 > 模型
+评分**：同时命中排除词与加分词时以排除为准，同一篇文章不会因为加分足够而
+逃过淘汰。
+
+排除检查通过后，关键词加减分基于同样的三个文本源计算，词表来自
 `app_settings.score_keyword_bonuses`（有序列表，加分按配置顺序记录进
 `matched_rules`）；空列表表示不加分，代码里没有兜底词典。如果模型原始分即使
 达到上限 100，加上净关键词分后仍低于 promotion 阈值，则不调用模型，直接写为
 `filtered_out`。这只省略不可能改变结果的模型调用，不改变最终筛选集合。
 
-未经模型评分的行约定为：`raw_relevance_score = NULL`，`keyword_bonus_score` 和 `score` 都写实际净关键词分；`score_details.matched_rules` 保留完整命中规则，并以 `llm_skipped = true`、`skip_reason = "keyword_bonus_below_threshold"` 明确区别于模型实际判出的低分。其余文章仍由模型原始分加关键词分得到 `score`，`score_details` 继续保存各组成部分，便于事后追查。
+被排除的文章约定为：`score = NULL`、`raw_relevance_score = NULL`（没有参与
+打分，区别于阈值跳过写实际净分），`keyword_bonus_score = 0`、
+`matched_rules = []`（排除发生在加分计算之前，省掉一次匹配）。
+`score_details.excluded_rules` 按名单顺序记录命中项（`rule_id =
+"exclude:<关键词>"`、`label` 为关键词），并以 `llm_skipped = true`、
+`skip_reason = "keyword_excluded"` 标记；不写 `news_summaries`。
+
+其余未经模型评分的行（加分不足阈值）约定为：`raw_relevance_score = NULL`，
+`keyword_bonus_score` 和 `score` 都写实际净关键词分；`score_details.matched_rules`
+保留完整命中规则，并以 `llm_skipped = true`、`skip_reason =
+"keyword_bonus_below_threshold"` 明确区别于模型实际判出的低分。其余文章仍由
+模型原始分加关键词分得到 `score`，`score_details` 继续保存各组成部分，便于事后
+追查。
 
 ### 阶段 4：摘要与富化（`summarize`、`enrich-summary`、`geo-classify`、`external-filter`）
 
@@ -325,11 +346,11 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 | 表 | 职责 |
 |---|---|
-| `app_settings` | 分区保存全部业务配置：接入点（`llm_endpoints`）、模型（`llm_models`）、每小时来源（`crawl_sources`）、评分加分词表（`score_keyword_bonuses`，有序数组）、抓取教育关键词闸门（`education_keywords`）、京内本地判定词表（`beijing_keywords`）、来源归一化规则（`source_aliases`）、审阅页自动排序词表（`review_sort_keywords`，键固定为市教委/中小学/高校三个类别）。版本号用于控制台乐观锁。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身。`llm_endpoints`、`review_sort_keywords` 由迁移种子创建（没有旧配置文件，不进一次性导入）；其余分区由 `import-settings` 导入（只写数据库中尚不存在的分区，已存在的一律跳过，不覆盖；重复执行安全） |
+| `app_settings` | 分区保存全部业务配置：接入点（`llm_endpoints`）、模型（`llm_models`）、每小时来源（`crawl_sources`）、评分加分词表（`score_keyword_bonuses`，有序数组）、评分排除名单（`score_exclusion_keywords`，有序字符串数组，空数组表示不排除任何文章）、抓取教育关键词闸门（`education_keywords`）、京内本地判定词表（`beijing_keywords`）、来源归一化规则（`source_aliases`）、审阅页自动排序词表（`review_sort_keywords`，键固定为市教委/中小学/高校三个类别）。版本号用于控制台乐观锁。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身。`llm_endpoints`、`review_sort_keywords`、`score_exclusion_keywords` 由迁移种子创建（没有旧配置文件，不进一次性导入）；其余分区由 `import-settings` 导入（只写数据库中尚不存在的分区，已存在的一律跳过，不覆盖；重复执行安全） |
 | `crawl_accounts` | 六类账号型来源的账号权威清单（中国日报、千龙网的行是栏目列表页 URL，不是社交账号）；`display_name` 是系统解析的名称，`display_name_synced_at` / `display_name_error` 记录最近成功时间或失败原因；运行时只读取启用行 |
 | `console_users` / `console_user_sessions` | 账号与登录会话 |
 | `review_events` | 审计日志，记录谁在什么时候改了什么 |
-| `pipeline_runs` / `pipeline_run_steps` | 流水线执行记录；`config_snapshot` 保存本轮各步骤解析后的模型、reasoning 与实际使用的接入点、接入点表（key/base_url/api_style，不含任何 Key）、实际来源、启用账号、各词表配置的完整内容（加分词表、教育关键词、京内关键词、来源归一化规则、自动排序关键词）和各分区配置版本 |
+| `pipeline_runs` / `pipeline_run_steps` | 流水线执行记录；`config_snapshot` 保存本轮各步骤解析后的模型、reasoning 与实际使用的接入点、接入点表（key/base_url/api_style，不含任何 Key）、实际来源、启用账号、各词表配置的完整内容（加分词表、排除名单、教育关键词、京内关键词、来源归一化规则、自动排序关键词）和各分区配置版本 |
 | `score_feedbacks` | 编辑对 AI 打分的反馈（偏高/偏低），按文章当前评分上下文（prompt_key + prompt_version）关联；人工筛选/值班工作区与全库检索卡片（经 `/api/articles/score-feedback`）都写这张表 |
 | `news_title_embeddings` | 仅编码新闻标题的向量，用于人工筛选聚类；不参与报送查重 |
 | `schema_migrations` | dbmate 迁移记录，**不要手工修改** |

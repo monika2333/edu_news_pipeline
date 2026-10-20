@@ -3275,3 +3275,218 @@ test('高级载入失败保留文本和脏标记，重试可载入最新版本�
         assert.equal(dictionaryPuts(page).at(-1).status, 200);
     } finally { page.close(); }
 });
+
+// ---------------------------------------------------------------------------
+// 排除名单：加分词典页签表格下方的独立卡片，独立版本与即时保存
+const EXCLUSION_PATH = '/api/admin/settings/score_exclusion_keywords';
+
+function exclusionCard(page) {
+    return page.panel('bonuses').querySelector('.bonus-exclusion-card');
+}
+function exclusionTextarea(page) {
+    return exclusionCard(page).querySelector('.exclusion-keywords');
+}
+function exclusionStatus(page) {
+    return exclusionCard(page).querySelector('.exclusion-save-status');
+}
+function commitExclusion(page, value) {
+    const textarea = exclusionTextarea(page);
+    inputValue(page, textarea, value);
+    textarea.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+}
+function exclusionPuts(page) {
+    return page.server.log.filter((entry) => entry.path === EXCLUSION_PATH);
+}
+
+test('排除名单：加分表格下方渲染独立卡片，默认空数组且不新增页签', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        const panel = page.panel('bonuses');
+        const card = exclusionCard(page);
+        assert.ok(card, '未渲染排除名单卡片');
+        assert.equal(card.querySelector('.bonus-exclusion-title').textContent, '排除名单');
+        assert.match(card.querySelector('.settings-effect-note').textContent, /命中即淘汰/);
+        assert.match(card.querySelector('.settings-effect-note').textContent, /排除优先/);
+        assert.equal(exclusionTextarea(page).value, '');
+        assert.match(card.querySelector('.settings-word-count').textContent, /当前 0 个词/);
+        assert.equal(exclusionStatus(page).textContent, '');
+        // 卡片在加分表格之后、仍在加分词典页签内；页签集合不变
+        const main = panel.querySelector('.bonus-main');
+        assert.ok(main.querySelector('.bonus-table'));
+        assert.ok(main.querySelector('.bonus-exclusion-card'));
+        assert.equal(page.window.eval('state.activeTab'), 'bonuses');
+        assert.equal(page.document.querySelectorAll('[data-settings-tab]').length, 4);
+        assert.equal(
+            page.document.querySelector('[data-settings-tab="score_exclusion_keywords"]'),
+            null,
+        );
+        assert.ok(page.document.querySelector('[data-settings-tab="advanced"]'));
+    } finally { page.close(); }
+});
+
+test('排除名单：输入两行后失焦即时保存，只写该分区且不影响加分词典版本', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        const bonusVersionBefore = page.window.eval(
+            'state.payload.sections.score_keyword_bonuses.version',
+        );
+        commitExclusion(page, ' 词1 \n词2\n');
+        await waitFor(() => exclusionPuts(page).length === 1 && page.server.inflight === 0);
+
+        assert.deepEqual(exclusionPuts(page)[0].body, {
+            expected_version: 16,
+            value: ['词1', '词2'],
+        });
+        assert.match(exclusionStatus(page).textContent, /已自动保存/);
+        assert.equal(page.window.eval('state.payload.sections.score_keyword_bonuses.version'),
+            bonusVersionBefore);
+        assert.equal(page.window.eval('state.dirty.score_exclusion_keywords'), false);
+        assert.equal(unloadBlocked(page), false);
+    } finally { page.close(); }
+});
+
+test('排除名单：重复词带行号报错且零请求', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        commitExclusion(page, '考试\n 考试 ');
+        await assertNever(() => exclusionPuts(page).length > 0);
+        assert.equal(exclusionTextarea(page).getAttribute('aria-invalid'), 'true');
+        assert.match(exclusionStatus(page).textContent, /第 2 行重复/);
+        assert.equal(page.window.eval('state.dirty.score_exclusion_keywords'), true);
+        assert.equal(unloadBlocked(page), true);
+    } finally { page.close(); }
+});
+
+test('排除名单：清空文本域后失焦提交空数组，不弹确认', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        commitExclusion(page, '词1\n词2');
+        await waitFor(() => exclusionPuts(page).length === 1 && page.server.inflight === 0);
+
+        page.window.confirm = () => assert.fail('空名单是合法配置，不应弹确认');
+        commitExclusion(page, ' \n\n');
+        await waitFor(() => exclusionPuts(page).length === 2 && page.server.inflight === 0);
+        assert.deepEqual(exclusionPuts(page)[1].body, {
+            expected_version: 17,
+            value: [],
+        });
+        assert.match(exclusionStatus(page).textContent, /已自动保存/);
+        assert.equal(exclusionTextarea(page).getAttribute('aria-invalid'), 'false');
+    } finally { page.close(); }
+});
+
+test('排除名单：409 后载入最新配置只重载本卡片，不清加分词典草稿', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        const panel = page.panel('bonuses');
+        const bonusInput = panel.querySelector('.bonus-keyword');
+        inputValue(page, bonusInput, '未保存加分词');
+        assert.equal(page.window.eval('state.dirty.score_keyword_bonuses'), true);
+
+        page.server.saveBehavior.score_exclusion_keywords = {
+            status: 409,
+            payload: { detail: '服务端说明' },
+        };
+        commitExclusion(page, '排除词');
+        await waitFor(() => exclusionPuts(page).length === 1 && page.server.inflight === 0);
+        assert.equal(exclusionPuts(page)[0].status, 409);
+        assert.equal(exclusionTextarea(page).value, '排除词');
+        assert.match(exclusionStatus(page).textContent, /服务端说明/);
+        assert.equal(exclusionCard(page).querySelector('.exclusion-reload').hidden, false);
+        assert.equal(unloadBlocked(page), true);
+
+        exclusionCard(page).querySelector('.exclusion-reload').click();
+        await waitFor(() => exclusionCard(page).querySelector('.exclusion-reload').hidden
+            && page.server.inflight === 0);
+        // 只重载了排除分区：服务端空名单回来，加分词典的草稿节点原样保留
+        assert.equal(exclusionTextarea(page).value, '');
+        assert.equal(page.window.eval('state.dirty.score_exclusion_keywords'), false);
+        assert.equal(panel.querySelector('.bonus-keyword'), bonusInput);
+        assert.equal(bonusInput.value, '未保存加分词');
+        assert.equal(page.window.eval('state.dirty.score_keyword_bonuses'), true);
+    } finally { page.close(); }
+});
+
+test('排除名单：加分词典 409 载入只重绘加分表格，不清排除卡片草稿', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        const panel = page.panel('bonuses');
+        const textarea = exclusionTextarea(page);
+        inputValue(page, textarea, '未保存排除词');
+        assert.equal(page.window.eval('state.dirty.score_exclusion_keywords'), true);
+
+        page.server.saveBehavior.score_keyword_bonuses = {
+            status: 409,
+            payload: { detail: '服务端说明' },
+        };
+        commitBonusValue(page, panel.querySelector('.bonus-value'), '-40');
+        await waitFor(() => dictionaryPuts(page).length === 1 && page.server.inflight === 0);
+        assert.equal(dictionaryPuts(page)[0].status, 409);
+
+        panel.querySelector('.bonus-reload').click();
+        await waitFor(() => panel.querySelector('.bonus-reload').hidden
+            && page.server.inflight === 0);
+        // 加分词典回到服务端值（专题Z=10），排除卡片的草稿节点与内容都没被动过
+        assert.equal(panel.querySelector('.bonus-value').value, '10');
+        assert.equal(exclusionTextarea(page), textarea);
+        assert.equal(textarea.value, '未保存排除词');
+        assert.equal(page.window.eval('state.dirty.score_exclusion_keywords'), true);
+        assert.equal(unloadBlocked(page), true);
+    } finally { page.close(); }
+});
+
+test('排除名单：两个分区各发各的 PUT，脏标记互相独立', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        const panel = page.panel('bonuses');
+        commitBonusValue(page, panel.querySelector('.bonus-value'), '-40');
+        await waitFor(() => dictionaryPuts(page).length === 1 && page.server.inflight === 0);
+        assert.equal(dictionaryPuts(page)[0].path, '/api/admin/settings/score_keyword_bonuses');
+        assert.equal(exclusionPuts(page).length, 0);
+        assert.equal(page.window.eval('state.dirty.score_keyword_bonuses'), false);
+
+        inputValue(page, exclusionTextarea(page), '未保存排除词');
+        assert.equal(page.window.eval('state.dirty.score_exclusion_keywords'), true);
+        assert.equal(page.window.eval('state.dirty.score_keyword_bonuses'), false);
+        assert.equal(unloadBlocked(page), true);
+
+        commitExclusion(page, '保存后排除词');
+        await waitFor(() => exclusionPuts(page).length === 1 && page.server.inflight === 0);
+        assert.equal(exclusionPuts(page)[0].path, EXCLUSION_PATH);
+        assert.equal(dictionaryPuts(page).length, 2);
+        assert.equal(page.window.eval('state.dirty.score_exclusion_keywords'), false);
+        assert.equal(unloadBlocked(page), false);
+    } finally { page.close(); }
+});
+
+test('排除名单：保存失败保留输入并保持未保存标记', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        page.server.saveBehavior.score_exclusion_keywords = {
+            status: 422,
+            payload: { detail: '服务端说明' },
+        };
+        commitExclusion(page, '排除词');
+        await waitFor(() => exclusionPuts(page).length === 1 && page.server.inflight === 0);
+        assert.equal(exclusionPuts(page)[0].status, 422);
+        assert.equal(exclusionTextarea(page).value, '排除词');
+        assert.match(exclusionStatus(page).textContent, /服务端说明/);
+        assert.equal(page.window.eval('state.dirty.score_exclusion_keywords'), true);
+        assert.equal(unloadBlocked(page), true);
+    } finally { page.close(); }
+});
+
+test('排除名单：其他页签渲染与切换不受影响', async () => {
+    const page = await bootPage({ hash: '#models' });
+    try {
+        assert.equal(page.panel('bonuses').hidden, true);
+        page.clickTab('bonuses');
+        assert.equal(page.panel('bonuses').hidden, false);
+        assert.ok(exclusionCard(page));
+        page.clickTab('advanced');
+        assert.equal(page.panel('advanced').hidden, false);
+        assert.ok(page.panel('advanced').querySelector('.advanced-section'));
+        page.clickTab('sources');
+        assert.equal(page.panel('sources').hidden, false);
+    } finally { page.close(); }
+});

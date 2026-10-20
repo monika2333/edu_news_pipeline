@@ -49,6 +49,12 @@ SORT_KEYWORDS_MIGRATION_PATH = (
     / "migrations"
     / "20260923120000_add_review_sort_keywords_setting.sql"
 )
+EXCLUSION_KEYWORDS_MIGRATION_PATH = (
+    Path(__file__).parents[1]
+    / "database"
+    / "migrations"
+    / "20261020150000_add_score_exclusion_keywords_setting.sql"
+)
 ADMIN_ID = "00000000-0000-0000-0000-000000000201"
 
 
@@ -112,17 +118,26 @@ def _sort_keywords_migration_parts() -> tuple[str, str]:
     return up.split("-- migrate:up", maxsplit=1)[1], down
 
 
+def _exclusion_keywords_migration_parts() -> tuple[str, str]:
+    source = EXCLUSION_KEYWORDS_MIGRATION_PATH.read_text(encoding="utf-8")
+    up, down = source.split("-- migrate:down", maxsplit=1)
+    return up.split("-- migrate:up", maxsplit=1)[1], down
+
+
 def _apply_managed_setting_migrations(connection: psycopg.Connection) -> None:
     """The migrations a fresh deployment applies before the one-shot import:
     console-managed settings, then the migration-seeded rows (llm_endpoints、
-    review_sort_keywords——两者都没有旧配置文件，不进一次性导入)。"""
+    review_sort_keywords、score_exclusion_keywords——都没有旧配置文件，
+    不进一次性导入)。"""
 
     base_up, _base_down = _migration_parts()
     endpoints_up, _endpoints_down = _endpoints_migration_parts()
     sort_keywords_up, _sort_keywords_down = _sort_keywords_migration_parts()
+    exclusion_up, _exclusion_down = _exclusion_keywords_migration_parts()
     connection.execute(base_up)
     connection.execute(endpoints_up)
     connection.execute(sort_keywords_up)
+    connection.execute(exclusion_up)
 
 
 def _create_legacy_schema(connection: psycopg.Connection) -> None:
@@ -154,9 +169,9 @@ def _create_legacy_schema(connection: psycopg.Connection) -> None:
 
 
 def _sections() -> dict[str, object]:
-    """Exactly what ``preview_legacy_import`` produces: llm_endpoints and
-    review_sort_keywords are seeded by their own migrations and never part
-    of the one-shot import."""
+    """Exactly what ``preview_legacy_import`` produces: llm_endpoints,
+    review_sort_keywords and score_exclusion_keywords are seeded by their own
+    migrations and never part of the one-shot import."""
 
     return {
         "llm_models": {
@@ -331,6 +346,30 @@ def test_review_sort_keywords_migration_seeds_defaults_and_down_removes_it() -> 
         assert remaining is None
 
 
+def test_score_exclusion_keywords_migration_seeds_empty_array_and_down_removes_it() -> None:
+    base_up, _base_down = _migration_parts()
+    up_sql, down_sql = _exclusion_keywords_migration_parts()
+    with _isolated_database() as connection:
+        _create_legacy_schema(connection)
+        connection.execute(base_up)
+        connection.execute(up_sql)
+
+        row = connection.execute(
+            "SELECT value, version, updated_by_user_id FROM app_settings"
+            " WHERE section = 'score_exclusion_keywords'"
+        ).fetchone()
+        assert row["updated_by_user_id"] is None
+        assert row["version"] == 1
+        # 空数组是合法初始值：默认不排除任何文章
+        assert row["value"] == []
+
+        connection.execute(down_sql)
+        remaining = connection.execute(
+            "SELECT 1 FROM app_settings WHERE section = 'score_exclusion_keywords'"
+        ).fetchone()
+        assert remaining is None
+
+
 def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
     """The real fresh-deployment order: dbmate up applies every migration
     (seeded llm_endpoints included), then `import-settings --apply` writes
@@ -342,12 +381,14 @@ def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
     names_up, _names_down = _account_names_migration_parts()
     endpoints_up, _endpoints_down = _endpoints_migration_parts()
     sort_keywords_up, _sort_keywords_down = _sort_keywords_migration_parts()
+    exclusion_up, _exclusion_down = _exclusion_keywords_migration_parts()
     with _isolated_database() as connection:
         _create_legacy_schema(connection)
         connection.execute(base_up)
         connection.execute(names_up)
         connection.execute(endpoints_up)
         connection.execute(sort_keywords_up)
+        connection.execute(exclusion_up)
 
         adapter = PostgresAdapter(connection)
         report = adapter.import_app_config_missing(
@@ -370,6 +411,7 @@ def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
             category: tuple(words)
             for category, words in REVIEW_SORT_KEYWORD_DEFAULTS.items()
         }
+        assert loaded.score_exclusion_keywords == ()
         assert [
             account.normalized_identifier for account in loaded.accounts["toutiao"]
         ] == ["account-1"]
@@ -391,6 +433,7 @@ def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
             "llm_endpoints",
             "llm_models",
             "review_sort_keywords",
+            "score_exclusion_keywords",
             "score_keyword_bonuses",
             "source_aliases",
         ]
@@ -433,12 +476,14 @@ def test_phase2_import_writes_only_missing_sections_on_populated_database(
     names_up, _names_down = _account_names_migration_parts()
     endpoints_up, _endpoints_down = _endpoints_migration_parts()
     sort_keywords_up, _sort_keywords_down = _sort_keywords_migration_parts()
+    exclusion_up, _exclusion_down = _exclusion_keywords_migration_parts()
     with _isolated_database() as connection:
         _create_legacy_schema(connection)
         connection.execute(base_up)
         connection.execute(names_up)
         connection.execute(endpoints_up)
         connection.execute(sort_keywords_up)
+        connection.execute(exclusion_up)
         adapter = PostgresAdapter(connection)
 
         phase1_sections = {
@@ -520,7 +565,7 @@ def test_phase2_import_writes_only_missing_sections_on_populated_database(
                 (SELECT count(*) FROM crawl_accounts) AS accounts_count
             """
         ).fetchone()
-        assert counts == {"settings_count": 8, "accounts_count": 1}
+        assert counts == {"settings_count": 9, "accounts_count": 1}
         # 旧账号文件里库里没有的 account-9 不得被写入
         revived = connection.execute(
             "SELECT 1 FROM crawl_accounts WHERE normalized_identifier = 'account-9'"

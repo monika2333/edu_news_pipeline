@@ -72,6 +72,11 @@ def _settings_rows() -> list[dict[str, object]]:
             "version": 1,
         },
         {
+            "section": "score_exclusion_keywords",
+            "value": [],
+            "version": 1,
+        },
+        {
             "section": "education_keywords",
             "value": ["教育", "学校"],
             "version": 1,

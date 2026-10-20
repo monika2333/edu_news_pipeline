@@ -93,6 +93,7 @@ SETTING_SECTIONS = (
     "llm_models",
     "crawl_sources",
     "score_keyword_bonuses",
+    "score_exclusion_keywords",
     "education_keywords",
     "beijing_keywords",
     "source_aliases",
@@ -189,6 +190,7 @@ class BusinessConfig:
     llm_endpoints: Mapping[str, LLMEndpointConfig] = field(default_factory=dict)
     default_endpoint: str = ""
     score_keyword_bonuses: tuple[ScoreKeywordBonus, ...] = ()
+    score_exclusion_keywords: tuple[str, ...] = ()
     education_keywords: tuple[str, ...] = ()
     beijing_keywords: tuple[str, ...] = ()
     source_aliases: "SourceAliasRules" = field(default_factory=lambda: SourceAliasRules())
@@ -256,6 +258,7 @@ class BusinessConfig:
                 {"keyword": item.keyword, "bonus": item.bonus}
                 for item in self.score_keyword_bonuses
             ],
+            "score_exclusion_keywords": list(self.score_exclusion_keywords),
             "education_keywords": list(self.education_keywords),
             "beijing_keywords": list(self.beijing_keywords),
             "source_aliases": {
@@ -527,6 +530,35 @@ def validate_score_keyword_bonuses(value: Any) -> list[dict[str, Any]]:
     return normalized
 
 
+def validate_score_exclusion_keywords(value: Any) -> list[str]:
+    """Validate the ordered keyword exclusion list.
+
+    An empty list is legal (exclude nothing); the order is preserved because
+    it decides which exclusion rule is recorded first in ``excluded_rules``.
+    Duplicates are rejected after trimming so the same substring is not
+    configured twice.
+    """
+
+    if not isinstance(value, list):
+        raise ValueError(
+            "score_exclusion_keywords 必须是有序数组，不能存为 JSON 对象"
+            "（jsonb 不保留对象键顺序）"
+        )
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for index, item in enumerate(value):
+        if not isinstance(item, str):
+            raise ValueError(f"score_exclusion_keywords[{index}] 必须是字符串")
+        keyword = item.strip()
+        if not keyword:
+            raise ValueError(f"score_exclusion_keywords[{index}] 不能为空")
+        if keyword in seen:
+            raise ValueError(f"score_exclusion_keywords 关键词重复：{keyword}")
+        seen.add(keyword)
+        normalized.append(keyword)
+    return normalized
+
+
 def validate_keyword_list(value: Any, *, label: str) -> list[str]:
     """Normalize a keyword list; reject it when nothing survives.
 
@@ -672,6 +704,7 @@ SECTION_VALIDATORS = {
     "llm_models": validate_llm_models,
     "crawl_sources": validate_crawl_sources,
     "score_keyword_bonuses": validate_score_keyword_bonuses,
+    "score_exclusion_keywords": validate_score_exclusion_keywords,
     "education_keywords": validate_education_keywords,
     "beijing_keywords": validate_beijing_keywords,
     "source_aliases": validate_source_aliases,
@@ -743,6 +776,9 @@ def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
         bonuses = validate_score_keyword_bonuses(
             indexed["score_keyword_bonuses"]["value"]
         )
+        exclusion_keywords = validate_score_exclusion_keywords(
+            indexed["score_exclusion_keywords"]["value"]
+        )
         education_keywords = validate_education_keywords(
             indexed["education_keywords"]["value"]
         )
@@ -795,6 +831,7 @@ def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
             ScoreKeywordBonus(keyword=item["keyword"], bonus=item["bonus"])
             for item in bonuses
         ),
+        score_exclusion_keywords=tuple(exclusion_keywords),
         education_keywords=tuple(education_keywords),
         beijing_keywords=tuple(beijing_keywords),
         source_aliases=source_aliases,
@@ -930,6 +967,7 @@ __all__ = [
     "validate_llm_endpoints",
     "validate_llm_models",
     "validate_review_sort_keywords",
+    "validate_score_exclusion_keywords",
     "validate_score_keyword_bonuses",
     "validate_section",
     "validate_source_aliases",

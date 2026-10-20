@@ -89,6 +89,7 @@ def _settings_rows() -> list[dict[str, Any]]:
             ],
             "version": 7,
         },
+        {"section": "score_exclusion_keywords", "value": [], "version": 1},
         {"section": "education_keywords", "value": ["教育", "学校"], "version": 1},
         {"section": "beijing_keywords", "value": ["北京", "海淀"], "version": 4},
         {
@@ -299,6 +300,7 @@ def test_validate_section_dispatches_new_sections() -> None:
     "section",
     [
         "score_keyword_bonuses",
+        "score_exclusion_keywords",
         "education_keywords",
         "beijing_keywords",
         "source_aliases",
@@ -358,6 +360,7 @@ def test_load_resolves_wordlists_and_versions() -> None:
         "llm_models": 3,
         "crawl_sources": 5,
         "score_keyword_bonuses": 7,
+        "score_exclusion_keywords": 1,
         "education_keywords": 1,
         "beijing_keywords": 4,
         "source_aliases": 2,
@@ -376,6 +379,8 @@ def test_snapshot_records_full_wordlist_content_and_versions() -> None:
         {"keyword": "教育工委", "bonus": 100},
         {"keyword": "高考", "bonus": 10},
     ]
+    assert loaded.score_exclusion_keywords == ()
+    assert snapshot["score_exclusion_keywords"] == []
     assert snapshot["education_keywords"] == ["教育", "学校"]
     assert snapshot["beijing_keywords"] == ["北京", "海淀"]
     assert snapshot["source_aliases"] == {

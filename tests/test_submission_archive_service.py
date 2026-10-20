@@ -591,10 +591,61 @@ def test_search_link_candidates_normalizes_query_and_returns_window(
         offset=0,
     )
 
-    assert captured["query"] == "招生"
+    assert captured["terms"] == ["招生"]
+    assert result["terms"] == ["招生"]
     assert result["window_days"] == 15
     assert result["window_start"] == date(2026, 7, 25)
     assert "total" not in result
+
+
+def test_search_link_candidates_splits_whitespace_and_dedupes_terms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class CandidateNamespace:
+        def fetch_manual_link_candidates(self, **kwargs: Any) -> dict[str, Any]:
+            captured.update(kwargs)
+            return {
+                "item": {"id": "item-1"},
+                "items": [],
+                "window_start": date(2026, 7, 25),
+                "window_end": date(2026, 8, 24),
+                "has_more": False,
+            }
+
+    class CandidateAdapter:
+        def __init__(self) -> None:
+            self.submission_archive = CandidateNamespace()
+
+    monkeypatch.setattr(
+        submission_archive_service,
+        "get_adapter",
+        CandidateAdapter,
+    )
+
+    # 半角/全角空格都是分隔符；大小写不敏感去重保留首次写法与顺序
+    result = submission_archive_service.search_link_candidates(
+        item_id="item-1",
+        query="  Alpha　教育 alpha  ",
+        window_days=15,
+        limit=20,
+        offset=0,
+    )
+
+    assert captured["terms"] == ["Alpha", "教育"]
+    assert result["terms"] == ["Alpha", "教育"]
+
+
+def test_search_link_candidates_rejects_more_than_ten_terms() -> None:
+    with pytest.raises(ValueError, match="10"):
+        submission_archive_service.search_link_candidates(
+            item_id="item-1",
+            query=" ".join(f"term{index}" for index in range(11)),
+            window_days=15,
+            limit=20,
+            offset=0,
+        )
 
 
 def test_search_link_candidates_rejects_blank_query() -> None:

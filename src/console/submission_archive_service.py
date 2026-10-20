@@ -280,10 +280,12 @@ def search_link_candidates(
         raise ValueError("limit 必须在 1 到 50 之间")
     if offset < 0:
         raise ValueError("offset 不能小于 0")
+    # 空格分词逐词 AND；超过上限时抛 ValueError，由路由转 422
+    terms = normalize_search_terms(normalized_query)
 
     result = get_adapter().submission_archive.fetch_manual_link_candidates(
         item_id=item_id,
-        query=normalized_query,
+        terms=terms,
         window_days=window_days,
         limit=limit,
         offset=offset,
@@ -293,6 +295,7 @@ def search_link_candidates(
     return {
         **result,
         "window_days": window_days,
+        "terms": terms,
     }
 
 

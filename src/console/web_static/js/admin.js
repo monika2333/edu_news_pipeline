@@ -166,23 +166,20 @@
     }
 
     function renderUsers() {
-        const query = elements.userSearch.value
-            .trim()
-            .toLocaleLowerCase('zh-CN');
-        const visibleUsers = query
-            ? state.users.filter(user => [
-                user.display_name,
-                user.username
-            ].some(value => (
-                String(value ?? '')
-                    .toLocaleLowerCase('zh-CN')
-                    .includes(query)
-            )))
+        // 空格分隔多词：逐词 AND，每个词可落在姓名或用户名任一字段（与全站检索语义一致）
+        const terms = splitSearchTerms(elements.userSearch.value)
+            .map(term => term.toLocaleLowerCase('zh-CN'));
+        const visibleUsers = terms.length
+            ? state.users.filter(user => {
+                const haystacks = [user.display_name, user.username]
+                    .map(value => String(value ?? '').toLocaleLowerCase('zh-CN'));
+                return terms.every(term => haystacks.some(text => text.includes(term)));
+            })
             : state.users;
         if (!visibleUsers.length) {
             elements.usersBody.innerHTML = `
                 <tr><td class="admin-empty-row" colspan="7">
-                    ${query ? '没有找到匹配的用户。' : '暂无控制台用户。'}
+                    ${terms.length ? '没有找到匹配的用户。' : '暂无控制台用户。'}
                 </td></tr>
             `;
             return;

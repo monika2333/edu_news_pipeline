@@ -311,7 +311,7 @@ class SubmissionArchiveNamespace:
         self,
         *,
         item_id: str,
-        query: str,
+        terms: Sequence[str],
         window_days: int,
         limit: int,
         offset: int,
@@ -320,7 +320,7 @@ class SubmissionArchiveNamespace:
             return fetch_manual_link_candidates(
                 cur,
                 item_id=item_id,
-                query=query,
+                terms=terms,
                 window_days=window_days,
                 limit=limit,
                 offset=offset,

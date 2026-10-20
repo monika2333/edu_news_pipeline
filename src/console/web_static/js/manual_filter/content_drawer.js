@@ -105,10 +105,13 @@ function buildHighlightTerms(bonusKeywords, searchTerm) {
         seen.add(key);
         terms.push({ term, className: 'content-hl-bonus' });
     });
-    const keyword = String(searchTerm || '').trim();
-    if (keyword && !seen.has(keyword.toLowerCase())) {
-        terms.push({ term: keyword, className: 'content-hl-search' });
-    }
+    // 检索框按空格分隔多词：逐词高亮，全部命中都进入上一个/下一个的序列
+    splitSearchTerms(searchTerm).forEach(term => {
+        const key = term.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        terms.push({ term, className: 'content-hl-search' });
+    });
     return terms;
 }
 

@@ -9,6 +9,7 @@ from src.adapters.db_postgres_submission_archive._base import (
     ManualLinkMutationResult,
     _ITEM_PUBLIC_COLUMNS,
 )
+from src.adapters.sql_search import escape_like
 
 
 def fetch_link_candidate_titles(
@@ -228,7 +229,7 @@ def fetch_manual_link_candidates(
     cur: psycopg.Cursor,
     *,
     item_id: str,
-    query: str,
+    terms: Sequence[str],
     window_days: int,
     limit: int,
     offset: int,
@@ -258,9 +259,27 @@ def fetch_manual_link_candidates(
     compiled_date = item["compiled_date"]
     window_start = compiled_date - timedelta(days=window_days)
     window_end = compiled_date + timedelta(days=window_days)
-    pattern = f"%{query}%"
+    if not terms:
+        # service 层已拒绝空检索串；这里防御的是「空词列表 → 无 WHERE 条件命中全部」
+        return {
+            "item": item,
+            "items": [],
+            "window_start": window_start,
+            "window_end": window_end,
+            "has_more": False,
+        }
+    # 逐词 AND：每个词一组「标题或摘要命中」，词与词之间允许落在不同字段。
+    # 每个词一条独立 ILIKE，与存档库/候选检索的术语语义保持一致。
+    term_conditions = " and ".join(
+        ["(coalesce(ns.title, '') ilike %s or coalesce(ns.llm_summary, '') ilike %s)"]
+        * len(terms)
+    )
+    term_params: list[Any] = []
+    for term in terms:
+        pattern = f"%{escape_like(term)}%"
+        term_params.extend([pattern, pattern])
     cur.execute(
-        """
+        f"""
         select
             ns.article_id,
             coalesce(ns.title, '') as title,
@@ -292,14 +311,11 @@ def fetch_manual_link_candidates(
         from news_summaries ns
         where ns.created_at >= %s::date
           and ns.created_at < %s::date + interval '1 day'
-          and (
-              coalesce(ns.title, '') ilike %s
-              or coalesce(ns.llm_summary, '') ilike %s
-          )
+          and {term_conditions}
         order by ns.created_at desc, ns.article_id
         limit %s offset %s
         """,
-        (window_start, window_end, pattern, pattern, limit + 1, offset),
+        (window_start, window_end, *term_params, limit + 1, offset),
     )
     rows = [dict(row) for row in cur.fetchall()]
     return {

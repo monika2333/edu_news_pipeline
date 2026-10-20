@@ -62,23 +62,37 @@ function closeArchiveDrawer() {
     setArchiveDrawerOpen(false);
 }
 
-function appendArchiveDrawerText(parent, text, term) {
+// 逐词高亮：同一位置优先更长的词，避免「教育政策」被更短的「教育」截断。
+function appendArchiveDrawerText(parent, text, terms) {
     let rest = String(text);
-    const needle = String(term || '').toLowerCase();
+    const needles = (terms || [])
+        .map(term => String(term || '').toLowerCase())
+        .filter(Boolean);
     while (rest) {
-        const idx = needle ? rest.toLowerCase().indexOf(needle) : -1;
-        if (idx === -1) {
+        const lowerRest = rest.toLowerCase();
+        let earliestIndex = -1;
+        let matchedLength = 0;
+        needles.forEach(needle => {
+            const idx = lowerRest.indexOf(needle);
+            if (idx === -1) return;
+            if (earliestIndex === -1 || idx < earliestIndex
+                || (idx === earliestIndex && needle.length > matchedLength)) {
+                earliestIndex = idx;
+                matchedLength = needle.length;
+            }
+        });
+        if (earliestIndex === -1) {
             parent.appendChild(document.createTextNode(rest));
             return;
         }
-        if (idx > 0) {
-            parent.appendChild(document.createTextNode(rest.slice(0, idx)));
+        if (earliestIndex > 0) {
+            parent.appendChild(document.createTextNode(rest.slice(0, earliestIndex)));
         }
         const mark = document.createElement('mark');
         mark.className = 'content-hl-search';
-        mark.textContent = rest.slice(idx, idx + needle.length);
+        mark.textContent = rest.slice(earliestIndex, earliestIndex + matchedLength);
         parent.appendChild(mark);
-        rest = rest.slice(idx + needle.length);
+        rest = rest.slice(earliestIndex + matchedLength);
     }
 }
 
@@ -86,6 +100,7 @@ function appendArchiveDrawerText(parent, text, term) {
 function renderArchiveDrawerBody(content, searchTerm) {
     const { body } = getArchiveDrawerEls();
     body.textContent = '';
+    const terms = splitSearchTerms(searchTerm);
     const paragraphs = String(content)
         .replace(/\r\n/g, '\n')
         .split(/\n\s*\n/)
@@ -93,7 +108,7 @@ function renderArchiveDrawerBody(content, searchTerm) {
         .filter(Boolean);
     paragraphs.forEach(paragraphText => {
         const p = document.createElement('p');
-        appendArchiveDrawerText(p, paragraphText, searchTerm);
+        appendArchiveDrawerText(p, paragraphText, terms);
         body.appendChild(p);
     });
     body.scrollTop = 0;

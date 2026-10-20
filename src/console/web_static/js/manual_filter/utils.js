@@ -18,6 +18,23 @@ function formatLocalDateTime(iso) {
         + `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+// 空格分隔的多词检索：按 Unicode 空白切分、大小写不敏感去重（保留首次写法与顺序）。
+// 与后端 search_terms.normalize_search_terms 的切词/去重语义一致；10 词上限只在后端校验。
+// 纯函数，被 admin.js 与两套原文抽屉共用，不依赖 state/elements。
+function splitSearchTerms(value) {
+    const terms = [];
+    const seen = new Set();
+    String(value ?? '').split(/\s+/).forEach(raw => {
+        const term = raw.trim();
+        if (!term) return;
+        const key = term.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        terms.push(term);
+    });
+    return terms;
+}
+
 function getManualReviewVersion(articleId) {
     const card = Array.from(document.querySelectorAll('.article-card[data-id]'))
         .find(candidate => candidate.dataset.id === articleId);

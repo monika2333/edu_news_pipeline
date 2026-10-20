@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 import psycopg
@@ -684,7 +684,7 @@ def test_fetch_manual_link_candidates_uses_inclusive_date_boundaries() -> None:
     result = db_postgres_submission_archive.fetch_manual_link_candidates(
         cursor,
         item_id="item-1",
-        query=" 招生 ",
+        terms=["招生"],
         window_days=15,
         limit=2,
         offset=4,
@@ -709,11 +709,91 @@ def test_fetch_manual_link_candidates_uses_inclusive_date_boundaries() -> None:
     assert params == (
         date(2026, 7, 25),
         date(2026, 8, 24),
-        "% 招生 %",
-        "% 招生 %",
+        "%招生%",
+        "%招生%",
         3,
         4,
     )
+
+
+def test_fetch_manual_link_candidates_ands_every_term_across_fields() -> None:
+    cursor = FakeCursor(
+        rows=[],
+        fetchone_rows=[
+            {
+                "id": "item-1",
+                "title": "存档标题",
+                "body": "存档正文",
+                "report_type": "zongbao",
+                "report_date": date(2026, 8, 10),
+                "compiled_date": date(2026, 8, 9),
+                "link_status": "unmatched",
+                "article_id": None,
+            }
+        ],
+    )
+
+    result = db_postgres_submission_archive.fetch_manual_link_candidates(
+        cursor,
+        item_id="item-1",
+        terms=["教育", "a%b_c"],
+        window_days=15,
+        limit=20,
+        offset=0,
+    )
+
+    assert result is not None
+    assert result["items"] == []
+    query, params = cursor.calls[1]
+    normalized = " ".join(query.split())
+    # 每个词一组「标题或摘要任一命中」，组间 AND
+    assert normalized.count(
+        "(coalesce(ns.title, '') ilike %s or coalesce(ns.llm_summary, '') ilike %s)"
+    ) == 2
+    assert " and (coalesce(ns.title" in normalized
+    # 通配符按字面匹配：% 与 _ 都被转义
+    assert params == (
+        date(2026, 7, 25),
+        date(2026, 8, 24),
+        "%教育%",
+        "%教育%",
+        "%a\\%b\\_c%",
+        "%a\\%b\\_c%",
+        21,
+        0,
+    )
+
+
+def test_fetch_manual_link_candidates_without_terms_returns_empty_page() -> None:
+    cursor = FakeCursor(
+        fetchone_rows=[
+            {
+                "id": "item-1",
+                "title": "存档标题",
+                "body": "存档正文",
+                "report_type": "zongbao",
+                "report_date": date(2026, 8, 10),
+                "compiled_date": date(2026, 8, 9),
+                "link_status": "unmatched",
+                "article_id": None,
+            }
+        ],
+    )
+
+    result = db_postgres_submission_archive.fetch_manual_link_candidates(
+        cursor,
+        item_id="item-1",
+        terms=[],
+        window_days=15,
+        limit=20,
+        offset=0,
+    )
+
+    assert result is not None
+    assert result["items"] == []
+    assert result["has_more"] is False
+    # 只有取条目那一次查询，不做无条件候选检索
+    assert len(cursor.calls) == 1
 
 
 def test_manual_link_sets_matched_without_overwriting_automatic_evidence() -> None:
@@ -1636,3 +1716,96 @@ def test_archive_search_matches_backslash_literally_with_real_sql() -> None:
             assert [
                 row["title"] for row in _search_archive_items(cur, ["a\\b"])
             ] == ["路径 a\\b 条目"]
+
+
+def test_manual_link_candidates_require_every_term_with_real_sql() -> None:
+    settings = get_settings()
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            for table in (
+                "submitted_reports",
+                "submitted_report_items",
+                "news_summaries",
+            ):
+                cur.execute(
+                    f"CREATE TEMP TABLE {table} "
+                    f"(LIKE public.{table} INCLUDING DEFAULTS) ON COMMIT DROP"
+                )
+            report_id = "11111111-1111-1111-1111-111111111111"
+            item_id = "22222222-2222-2222-2222-222222222222"
+            created_at = datetime(2026, 9, 1, tzinfo=timezone.utc)
+            cur.execute(
+                """
+                INSERT INTO submitted_reports (
+                    id, report_type, report_date, compiled_date, pasted_text
+                )
+                VALUES (%s, 'zongbao', %s, %s, 'pasted')
+                """,
+                (report_id, date(2026, 9, 1), date(2026, 9, 1)),
+            )
+            cur.execute(
+                """
+                INSERT INTO submitted_report_items (
+                    id, report_id, order_index, title, body,
+                    norm_title, norm_title_hash, link_status
+                )
+                VALUES (%s, %s, 0, '存档条目', '存档正文', '存档条目', 'hash-1', 'unmatched')
+                """,
+                (item_id, report_id),
+            )
+            cur.executemany(
+                """
+                INSERT INTO news_summaries (article_id, title, llm_summary, created_at)
+                VALUES (%s, %s, %s, %s)
+                """,
+                [
+                    ("n1", "教育政策发布会", "本市教育政策解读", created_at),
+                    ("n2", "教育动态", None, created_at),
+                    ("n3", "其他新闻", "政策解读", created_at),
+                    ("n4", "a%b", None, created_at),
+                    ("n5", "aXb", None, created_at),
+                ],
+            )
+
+            result = db_postgres_submission_archive.fetch_manual_link_candidates(
+                cur,
+                item_id=item_id,
+                terms=["教育", "政策"],
+                window_days=15,
+                limit=20,
+                offset=0,
+            )
+            assert result is not None
+            assert [row["article_id"] for row in result["items"]] == ["n1"]
+
+            # 单词检索行为不变：标题或摘要任一命中
+            result = db_postgres_submission_archive.fetch_manual_link_candidates(
+                cur,
+                item_id=item_id,
+                terms=["政策"],
+                window_days=15,
+                limit=20,
+                offset=0,
+            )
+            assert result is not None
+            assert {row["article_id"] for row in result["items"]} == {"n1", "n3"}
+
+            # 通配符按字面匹配：% 不当通配符用
+            result = db_postgres_submission_archive.fetch_manual_link_candidates(
+                cur,
+                item_id=item_id,
+                terms=["a%b"],
+                window_days=15,
+                limit=20,
+                offset=0,
+            )
+            assert result is not None
+            assert [row["article_id"] for row in result["items"]] == ["n4"]

@@ -306,7 +306,7 @@ def test_admin_page_separates_user_search_from_account_creation(
     assert 'src="/static/js/manual_filter/utils.js?v=' in html
     assert "editor.preferred_weekday" in admin_script
     assert "首选${preference}" in admin_script
-    assert "const query = elements.userSearch.value" in admin_script
+    assert "splitSearchTerms(elements.userSearch.value)" in admin_script
     assert "window.addEventListener('pageshow', renderUsers)" in admin_script
     assert "没有找到匹配的用户。" in admin_script
     assert 'data-user-action="delete">删除</button>' in admin_script

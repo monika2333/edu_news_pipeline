@@ -490,6 +490,17 @@ def test_link_candidates_api_rejects_blank_query(
     assert response.status_code == 422
 
 
+def test_link_candidates_api_rejects_more_than_ten_terms() -> None:
+    # 走真实 service：切词在调用 adapter 之前完成，超限直接 422（不触库）
+    response = _client(_editor).get(
+        "/api/submission-archive/items/item-1/link-candidates",
+        params={"q": " ".join(f"term{index}" for index in range(11))},
+    )
+
+    assert response.status_code == 422
+    assert "10" in response.json()["detail"]
+
+
 def test_manual_link_and_unlink_routes_return_updated_item(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

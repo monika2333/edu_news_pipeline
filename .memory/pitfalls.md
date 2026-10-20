@@ -38,6 +38,7 @@
 - **qianlong（千龙）**：`DEFAULT_MAX_PAGES = 1`，`QIANLONG_PAGES` 仅作上调覆盖（防环境变量漏配整档灌入；existing 截停对新栏目永不触发）。注意变异验证时「默认改回 None」会让测试**无限挂起**（404 不计空页 → `_iter_listing_urls` 死循环），做此变异须带超时。
 - **bjrb（北京日报数字版）**：副标题在 `#sub-title`，按原连接符合并进标题（冒号前缀→「主：副」，破折号/无前缀→「主——副」）；只爬当天刊期（`BJRB_DATE` 可指定）。
 - **jyb（中国教育报/神州学人）**：文章经 jyb 搜索 API 入库（`jyb:` 前缀）；副题是 `.title` **后面**的 `.subtitle`（同名 div 是引题位）；发布时间在 `var customtime` JS 变量里（bs4 `get_text()` 默认排除 script）。
+- **21jingji（21经济网）**：频道页第一页 20 条，主列表是 `div.col-l div.news`（侧栏「热文排行」「智库」同页，全页抓会混入）；「查看更多」的前端接口 `m.21jingji.com/channel/politics?page=..&type=json` 现已 404，**没有服务端翻页**。文章在 `m.21jingji.com/article/<日期>/herald/<hash>.html`，正文 `.txtContent .main_content`，发布时间在 `.newsAuthor .author-infos span`。账号名取频道导航 `#navWrap a.cur`——`navWrap` 是 **id 不是 class**，`.navWrap` 选不中，会跌到标题兜底拿到「宏观财经新闻」。列表只有相对时间：feed 行 publish_time 为空、由详情补；`list_items` 必须跳过 existing_ids，否则 feed upsert 的 `EXCLUDED.publish_time=NULL` 会把详情精确时间冲掉。
 
 ## 前端 / jsdom 测试
 

@@ -1,6 +1,7 @@
 // 系统设置页 - 数据源页签：顶部吸顶操作条（页面级管理模式开关 + 跨来源待删除提交条）、
-// 每小时来源三列网格（需要账号的来源行与其账号面板占满整行，无子账号的来源各占一列）、
-// 开关即写库的即时启停（行位置不随启停变化）与每日任务只读分组。
+// 单列来源列表（开关即写库的即时启停，行位置不随启停变化）、
+// 点来源行右侧「展开」在原位展开该来源的账号面板（手风琴，同时只开一个），
+// 以及每日任务只读分组。
 'use strict';
 
 function sourceRequiresAccounts(key) {
@@ -51,15 +52,43 @@ function accountPanelEl(source) {
         .querySelector(`.source-accounts-panel[data-accounts-for="${source}"]`);
 }
 
-// 面板是否存在于 DOM：账号面板随来源行始终渲染（没有展开/收起），但来源启停成功后的
+// 账号面板节点是否还在 DOM：面板始终渲染，折叠只切 hidden；启停成功后的
 // 整块重建会暂时移除面板节点，进行中的异步流程据此跳过写入已销毁的节点
-function isAccountPanelOpen(source) {
+function hasAccountPanel(source) {
     return !!accountPanelEl(source);
 }
 
-// 账号面板作为来源行之后的兄弟 <li> 紧随插入，随来源行始终存在
+// 账号面板手风琴：同时只展开一个来源。不重建列表，只切 hidden 与按钮状态，
+// 这样展开/收起不会打断面板里正在进行的账号操作
+function syncSourcePanels() {
+    const panel = elements.panels.sources;
+    if (!panel) return;
+    panel.querySelectorAll('.source-accounts-panel').forEach((accountsPanel) => {
+        accountsPanel.hidden = accountsPanel.dataset.accountsFor !== state.expandedSource;
+    });
+    panel.querySelectorAll('.source-accounts-toggle').forEach((btn) => {
+        const row = btn.closest('li[data-source]');
+        const open = !!row && row.dataset.source === state.expandedSource;
+        btn.setAttribute('aria-expanded', String(open));
+        btn.classList.toggle('is-open', open);
+        const label = btn.querySelector('.source-accounts-toggle-label');
+        if (label) label.textContent = open ? '收起' : '展开';
+        // 「刷新账号名称」只在账号面板展开时出现，折叠态的来源列表保持干净
+        const refreshBtn = row && row.querySelector('.accounts-refresh-btn');
+        if (refreshBtn) refreshBtn.hidden = !open;
+    });
+}
+
+function setExpandedSource(key) {
+    state.expandedSource = state.expandedSource === key ? null : key;
+    syncSourcePanels();
+}
+
+// 账号面板作为来源行之后的兄弟 <li> 始终渲染，折叠状态由 state.expandedSource 决定
 function insertAccountsPanel(row, key) {
     const panel = createEl('li', 'source-accounts-panel', '', { dataset: { accountsFor: key } });
+    panel.id = `settings-accounts-${key}`;
+    panel.hidden = state.expandedSource !== key;
     row.after(panel);
     renderSourceAccounts(key, panel);
 }
@@ -160,8 +189,6 @@ function buildSourceRow(key, { enabled }) {
     item.appendChild(createEl('span', 'settings-source-name', sourceDisplayName(key)));
 
     if (sourceRequiresAccounts(key)) {
-        // 需要账号的来源行与其账号面板在三列网格中占满整行；无子账号的来源行各占一列。
-        // 判定依据是 requires_accounts，不按具体来源硬编码
         item.classList.add('has-accounts');
         const badge = createEl('span', 'source-account-badge');
         applyAccountBadge(item, badge, key);
@@ -172,12 +199,29 @@ function buildSourceRow(key, { enabled }) {
                 '刷新账号名称', { type: 'button' });
             refreshBtn.disabled = state.deleteSubmitting
                 || !!(panelState && panelState.refreshInflight);
+            refreshBtn.hidden = state.expandedSource !== key;
             refreshBtn.addEventListener('click', () => {
                 const ids = currentAccountItems(key).map((account) => account.id);
                 refreshAccountNames(key, ids, refreshBtn);
             });
             item.appendChild(refreshBtn);
         }
+        // 手风琴开关排在徽标/刷新按钮之后；徽标仍是纯展示，展开入口只有这个按钮
+        const expandBtn = createEl('button', 'source-accounts-toggle', '', {
+            type: 'button',
+            'aria-expanded': String(state.expandedSource === key),
+            'aria-controls': `settings-accounts-${key}`,
+            'aria-label': `展开或收起 ${sourceDisplayName(key)} 的抓取账号`,
+        });
+        expandBtn.appendChild(createEl('span', 'source-accounts-toggle-label', '展开'));
+        expandBtn.appendChild(createEl('span', 'source-accounts-caret', '▾', {
+            'aria-hidden': 'true',
+        }));
+        expandBtn.classList.toggle('is-open', state.expandedSource === key);
+        expandBtn.addEventListener('click', () => setExpandedSource(key));
+        item.appendChild(expandBtn);
+    } else {
+        item.appendChild(createEl('span', 'source-no-accounts', '无需账号'));
     }
 
     item.appendChild(errorEl);
@@ -208,7 +252,7 @@ function renderSourcesPanel(panel, section) {
     // 需要账号的来源，其账号面板作为紧随的兄弟 <li> 始终平铺渲染
     const hourlyCard = buildSettingsCard(
         '每小时来源',
-        '开关即启停，立即写入；下一轮抓取按新配置执行。',
+        '开关即启停，立即写入；下一轮抓取按新配置执行。点来源右侧「展开」查看或管理抓取账号。',
     );
     hourlyCard.appendChild(buildSourcesActionBar());
     hourlyCard.appendChild(buildLastModifiedLine(section));
@@ -229,6 +273,7 @@ function renderSourcesPanel(panel, section) {
     panel.appendChild(hourlyCard);
     // 操作条必须在卡片进入文档后再同步：syncManageBar 从面板作用域里找
     // .accounts-manage-btn / .accounts-delete-bar-wrap
+    syncSourcePanels();
     syncManageBar();
 
     // 每日任务独立分组：只读行，由服务器计划任务调度，不在页面上启停

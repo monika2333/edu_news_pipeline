@@ -871,9 +871,59 @@ test('S24：来源行内顺序为开关 → 名称 → 账号数徽标 →（管
         assert.ok(managedRow.children[1].classList.contains('settings-source-name'));
         assert.ok(managedRow.children[2].classList.contains('source-account-badge'));
         assert.ok(managedRow.children[3].classList.contains('accounts-refresh-btn'));
+        // 「刷新账号名称」只在账号面板展开时可见，折叠的来源列表保持干净
+        assert.equal(managedRow.children[3].hidden, true);
+        managedRow.querySelector('.source-accounts-toggle').click();
+        assert.equal(managedRow.children[3].hidden, false);
     } finally {
         page.close();
     }
+});
+
+test('S24b：账号面板默认折叠，展开一个来源会收起其他来源', async () => {
+    const page = await bootPage();
+    try {
+        assert.equal(accountsPanel(page, 'toutiao').hidden, true);
+        assert.equal(accountsPanel(page, 'tencent').hidden, true);
+
+        sourceRow(page, 'toutiao').querySelector('.source-accounts-toggle').click();
+        assert.equal(accountsPanel(page, 'toutiao').hidden, false);
+        assert.equal(accountsPanel(page, 'tencent').hidden, true);
+        const toutiaoToggle = sourceRow(page, 'toutiao').querySelector('.source-accounts-toggle');
+        assert.equal(toutiaoToggle.getAttribute('aria-expanded'), 'true');
+        assert.equal(
+            toutiaoToggle.querySelector('.source-accounts-toggle-label').textContent,
+            '收起',
+        );
+
+        sourceRow(page, 'tencent').querySelector('.source-accounts-toggle').click();
+        assert.equal(accountsPanel(page, 'toutiao').hidden, true);
+        assert.equal(accountsPanel(page, 'tencent').hidden, false);
+
+        sourceRow(page, 'tencent').querySelector('.source-accounts-toggle').click();
+        assert.equal(accountsPanel(page, 'tencent').hidden, true);
+    } finally { page.close(); }
+});
+
+test('S24c：启停来源触发的整块重渲染保留已展开的账号面板', async () => {
+    const page = await bootPage();
+    try {
+        sourceRow(page, 'toutiao').querySelector('.source-accounts-toggle').click();
+        const oldPanel = accountsPanel(page, 'toutiao');
+        assert.equal(oldPanel.hidden, false);
+
+        sourceRow(page, 'chinanews').querySelector('.source-enabled-toggle').click();
+        await waitFor(() => page.server.inflight === 0
+            && accountsPanel(page, 'toutiao') !== oldPanel);
+
+        assert.equal(page.window.eval('state.expandedSource'), 'toutiao');
+        assert.equal(accountsPanel(page, 'toutiao').hidden, false);
+        assert.equal(
+            sourceRow(page, 'toutiao').querySelector('.source-accounts-toggle')
+                .getAttribute('aria-expanded'),
+            'true',
+        );
+    } finally { page.close(); }
 });
 
 test('S25：刷新账号名称按每批最多 20 个切片串行请求，按钮显示进度', async () => {

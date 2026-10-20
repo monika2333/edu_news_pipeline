@@ -1,4 +1,4 @@
-// 系统设置页 - 来源账号管理：数据源页签平铺的账号芯片网格（默认态芯片即启用开关；
+﻿// 系统设置页 - 来源账号管理：数据源页签平铺的账号芯片网格（默认态芯片即启用开关；
 // 页面级管理模式下芯片提供打开主页与标记删除，删除为「标记 + 串行批量提交」，
 // 标记跨来源共存、一次确认全部处理），芯片网格末尾的虚线「＋ 添加账号」就地输入，
 // 以及「刷新账号名称」（来源行内小按钮，仅管理模式出现）的分批串行刷新。
@@ -214,7 +214,7 @@ async function refreshAccountsAndList(source) {
         return;
     }
     await loadAccountsForSource(source, { force: true });
-    if (isAccountPanelOpen(source)) renderAccountList(source);
+    if (hasAccountPanel(source)) renderAccountList(source);
     refreshSourcesAccountBadges();
 }
 
@@ -577,12 +577,12 @@ function renderSourceAccounts(sourceKey, containerEl) {
     loadAccountsForSource(sourceKey)
         .then(() => {
             // 缓存命中也会异步返回；面板若已随整块重建移除则放弃渲染
-            if (!isAccountPanelOpen(sourceKey)) return;
+            if (!hasAccountPanel(sourceKey)) return;
             renderAccountList(sourceKey);
             refreshSourcesAccountBadges();
         })
         .catch((error) => {
-            if (!isAccountPanelOpen(sourceKey)) return;
+            if (!hasAccountPanel(sourceKey)) return;
             const panel = accountPanelEl(sourceKey);
             const grid = panel && panel.querySelector('.accounts-chip-grid');
             if (!grid) return;

@@ -307,24 +307,17 @@
     color: #b91c1c;
 }
 
-/* 每小时来源列表是三列网格：需要账号的来源行与其账号面板占满整行，
-   无子账号的来源行各占一列自然并排（判定依据 requires_accounts 带出的
-   has-accounts 类，不按具体来源硬编码） */
+/* 每小时来源是单列列表：所有来源行同宽，账号面板折叠在各自行下方。
+   原来的三列网格会让无账号来源单独占 1/3 行，旁边留出大片空白 */
 .settings-source-list {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    column-gap: 24px;
+    display: flex;
+    flex-direction: column;
     margin: 0;
-    padding-left: 22px;
+    padding: 0;
+    list-style: none;
 }
 
-.settings-source-list > li.has-accounts,
-.settings-source-list > li.source-accounts-panel {
-    grid-column: 1 / -1;
-}
-
-/* 每日任务分组复用 settings-source-list 的类但不应继承三列网格：
-   每日行没有 has-accounts，继承网格会被压成三分之一列、说明文字折行 */
+/* 每日任务分组继续用 block，行样式与来源行一致但只读 */
 .settings-source-list.settings-daily-list {
     display: block;
 }
@@ -357,8 +350,11 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 10px;
-    padding: 8px 0;
+    gap: 8px 12px;
+    min-height: 50px;
+    box-sizing: border-box;
+    padding: 11px 2px;
+    border-bottom: 1px solid #eef2f7;
 }
 
 .settings-source-item.is-readonly {
@@ -366,7 +362,12 @@
 }
 
 .settings-source-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
     font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* 停用来源的视觉弱化：只把名称降一档灰度，不改行高、内边距与控件位置，
@@ -385,6 +386,7 @@
 }
 
 .source-account-badge {
+    flex: none;
     padding: 3px 10px;
     border: 1px solid #cbd5e1;
     border-radius: 999px;
@@ -397,6 +399,56 @@
     border-color: #f59e0b;
     background: #fffbeb;
     color: #b45309;
+}
+
+/* 来源行右侧的账号展开按钮：轻量文字按钮，不跟来源开关抢注意力 */
+.source-accounts-toggle {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    gap: 4px;
+    padding: 4px 8px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+    color: #64748b;
+    font: inherit;
+    font-size: 0.78rem;
+    line-height: 1.3;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.source-accounts-toggle:hover,
+.source-accounts-toggle:focus-visible {
+    border-color: #dbeafe;
+    background: #eff6ff;
+    color: #1d4ed8;
+    outline: none;
+}
+
+.source-accounts-toggle.is-open {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.source-accounts-caret {
+    display: inline-block;
+    font-size: 0.7rem;
+    line-height: 1;
+    transition: transform 0.15s ease;
+}
+
+.source-accounts-toggle.is-open .source-accounts-caret {
+    transform: rotate(180deg);
+}
+
+/* 无需账号的来源：用一个灰色说明补位，避免行右侧空着像少了个控件 */
+.source-no-accounts {
+    flex: none;
+    color: #94a3b8;
+    font-size: 0.78rem;
 }
 
 /* 胶囊滑块开关：账号行 .account-enabled-toggle 与来源行 .source-enabled-toggle 共用。
@@ -459,9 +511,14 @@
 .source-row-error {
     display: inline-flex;
     align-items: center;
+    flex-basis: 100%;
     gap: 8px;
     color: #b91c1c;
     font-size: 0.8rem;
+}
+
+.source-row-error:empty {
+    display: none;
 }
 
 /* 409 时嵌在 .source-row-error 里的「载入最新配置」按钮：
@@ -475,13 +532,35 @@
     white-space: nowrap;
 }
 
+/* 展开后的账号面板：挂在来源行下方、左侧内缩到名称位置，
+   浅底 + 左侧色条表明它从属于上面的来源行，而不是一张独立卡片 */
 .source-accounts-panel {
-    margin: 4px 0 12px;
-    padding: 14px 16px;
-    border: 1px solid #e7edf5;
-    border-radius: 12px;
+    margin: 0 0 6px;
+    padding: 12px 14px 12px 46px;
+    border-left: 3px solid #bfdbfe;
+    border-radius: 0 10px 10px 0;
     background: #f8fafc;
     list-style: none;
+}
+
+.source-accounts-panel[hidden] {
+    display: none;
+}
+
+.source-accounts-panel:not([hidden]) {
+    animation: source-panel-enter 140ms ease-out;
+}
+
+@keyframes source-panel-enter {
+    from {
+        opacity: 0;
+        transform: translateY(-3px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* 「刷新账号名称」是来源行内的小按钮，仅管理模式下渲染 */
@@ -1611,9 +1690,15 @@
 .advanced-field textarea[hidden] { display: none; }
 .advanced-alias-fields { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }
 .advanced-section > .settings-updated { margin-top: 12px; }
+@media (prefers-reduced-motion: reduce) {
+    .source-accounts-panel { animation: none; }
+    .source-accounts-caret { transition: none; }
+}
+
 @media (max-width: 600px) {
     .settings-nav { flex-wrap: wrap; }
     .settings-tab { flex: 1 1 calc(50% - 4px); padding: 8px 10px; }
+    .source-accounts-panel { padding-right: 12px; padding-left: 34px; }
     .settings-page-title { font-size: 1.18rem; }
     .settings-card { padding: 16px; }
     .bonus-exclusion-card { padding: 16px; }

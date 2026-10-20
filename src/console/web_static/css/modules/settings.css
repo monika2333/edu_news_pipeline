@@ -855,20 +855,403 @@
     font-size: 0.82rem;
 }
 .settings-tab.settings-tab-advanced.is-active { color: #1d4ed8; text-decoration: underline; }
-.bonus-heading { color: #64748b; font-size: 0.82rem; margin-top: 18px; }
-.bonus-row { display: grid; grid-template-columns: minmax(120px, 1fr) 160px 64px; gap: 8px 14px; align-items: center; padding: 5px 0; }
-.bonus-list { margin-bottom: 12px; }
-.bonus-delete { padding: 8px; white-space: nowrap; }
-.bonus-row input, .settings-textarea {
-    box-sizing: border-box; width: 100%; min-width: 0; padding: 8px 10px;
-    border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; font: inherit;
+/* 加分词典页签：左编辑器 + 右侧生效说明。
+   行只按分值正负着色（正＝加分、负＝减分），不重排——保存仍按 DOM 顺序
+   回传词典顺序；行状态类由 bonus_tab.js 的 syncBonusRowState 维护。 */
+.bonus-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
 }
-.bonus-row-error { grid-column: 1 / -1; color: #b91c1c; font-size: 0.82rem; }
+
+.bonus-title {
+    margin: 0 0 4px;
+    font-size: 1.12rem;
+}
+
+.bonus-legend {
+    display: flex;
+    flex: none;
+    gap: 12px;
+    padding-top: 4px;
+}
+
+/* 自动保存状态行：左侧状态、右侧最后修改，冲突时补一个「载入最新配置」。
+   保存/放弃按钮已经移除，这里只做状态展示 */
+.bonus-status-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    min-height: 22px;
+    margin: -6px 0 14px;
+}
+
+.bonus-save-status {
+    color: #64748b;
+    font-size: 0.8rem;
+}
+
+.bonus-save-status.is-ok { color: #15803d; }
+.bonus-save-status.is-error { color: #b91c1c; }
+
+.bonus-updated {
+    margin-left: auto;
+    color: #94a3b8;
+    font-size: 0.78rem;
+}
+
+.bonus-reload {
+    min-height: 28px;
+    padding: 2px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.bonus-reload[hidden] { display: none; }
+
+.bonus-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #475569;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.bonus-legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 3px;
+    background: #cbd5e1;
+}
+
+.bonus-legend-item.is-positive .bonus-legend-dot { background: #16a34a; }
+.bonus-legend-item.is-negative .bonus-legend-dot { background: #dc2626; }
+
+/* 两栏：编辑区自适应，说明卡固定 280px；窄屏退化为单栏 */
+.bonus-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 24px;
+    align-items: start;
+}
+
+.bonus-main { min-width: 0; }
+
+.bonus-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.bonus-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 14px;
+    border: 1px solid #e7edf5;
+    border-radius: 12px;
+    background: #f8fafc;
+}
+
+.bonus-stat-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #64748b;
+    font-size: 0.78rem;
+}
+
+.bonus-stat-label::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #cbd5e1;
+}
+
+.bonus-stat.is-positive .bonus-stat-label::before { background: #16a34a; }
+.bonus-stat.is-negative .bonus-stat-label::before { background: #dc2626; }
+
+.bonus-stat-value {
+    color: #1e293b;
+    font-size: 1.28rem;
+    font-weight: 600;
+    line-height: 1.25;
+    font-variant-numeric: tabular-nums;
+}
+
+.bonus-stat-number { margin-right: 4px; }
+.bonus-stat.is-positive .bonus-stat-number { color: #15803d; }
+.bonus-stat.is-negative .bonus-stat-number { color: #b91c1c; }
+.bonus-stat-unit { color: #64748b; font-size: 0.82rem; font-weight: 400; }
+.bonus-stat-foot { color: #94a3b8; font-size: 0.76rem; }
+
+/* 词条表格：行分隔 + 行内输入框尽量轻，避免一排空框 */
+.bonus-table {
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.bonus-row {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) 150px 76px;
+    column-gap: 14px;
+    align-items: center;
+    padding: 4px 14px;
+    border-bottom: 1px solid #eef2f7;
+}
+
+.bonus-list .bonus-row:last-child { border-bottom: 0; }
+
+/* 正负两组：加分词在上、减分词在下（DOM 顺序即保存顺序）。
+   组头沿用行的正负配色，滚动到长列表中部也能看清当前在哪一组 */
+.bonus-group + .bonus-group { border-top: 1px solid #e2e8f0; }
+
+.bonus-group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-bottom: 1px solid #eef2f7;
+    background: #f8fafc;
+}
+
+.bonus-group.is-negative .bonus-group-head {
+    background: #fff7f7;
+    box-shadow: inset 3px 0 0 #ef4444;
+}
+
+.bonus-group.is-positive .bonus-group-head {
+    background: #f7fdf9;
+    box-shadow: inset 3px 0 0 #22c55e;
+}
+
+.bonus-group-title {
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.bonus-group-count {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 0.74rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.bonus-group.is-negative .bonus-group-count { background: #fee2e2; color: #b91c1c; }
+.bonus-group.is-positive .bonus-group-count { background: #dcfce7; color: #15803d; }
+
+.bonus-group-hint { color: #94a3b8; font-size: 0.76rem; }
+
+.bonus-group-empty {
+    margin: 0;
+    padding: 12px 14px 14px;
+    color: #94a3b8;
+    font-size: 0.8rem;
+}
+
+.bonus-group-empty[hidden] { display: none; }
+
+.bonus-heading {
+    padding: 9px 14px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    color: #64748b;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.bonus-heading span:first-child { text-align: center; }
+.bonus-heading span:nth-child(3),
+.bonus-heading span:last-child { text-align: right; }
+
+/* 正负分行：底色 + 左侧色条；空值与非法值保持中性灰 */
+.bonus-row.is-positive { background: #f7fdf9; box-shadow: inset 3px 0 0 #22c55e; }
+.bonus-row.is-negative { background: #fff7f7; box-shadow: inset 3px 0 0 #ef4444; }
+.bonus-row.is-positive:hover { background: #f1faf4; }
+.bonus-row.is-negative:hover { background: #fff1f1; }
+/* 保存校验失败的行：左侧色条改为红色，正负徽标仍按实际分值显示 */
+.bonus-row.is-error { background: #fff7f7; box-shadow: inset 3px 0 0 #ef4444; }
+
+.bonus-sign {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    justify-self: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    background: #f1f5f9;
+    color: #94a3b8;
+    font-size: 0.92rem;
+    font-weight: 700;
+    line-height: 1;
+    user-select: none;
+}
+
+.bonus-row.is-positive .bonus-sign { background: #dcfce7; color: #15803d; }
+.bonus-row.is-negative .bonus-sign { background: #fee2e2; color: #b91c1c; }
+
+.bonus-keyword {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: #172033;
+    font: inherit;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.bonus-keyword::placeholder { color: #94a3b8; }
+.bonus-keyword:hover { border-color: #e2e8f0; background: #fff; }
+.bonus-keyword:focus-visible {
+    border-color: #2563eb;
+    background: #fff;
+    outline: 3px solid rgb(37 99 235 / 12%);
+}
+
+.bonus-value-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-self: end;
+    padding: 0 8px 0 4px;
+    border: 1px solid #dbe3ee;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.bonus-value-wrap:focus-within {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgb(37 99 235 / 12%);
+}
+
+.bonus-value-wrap:has([aria-invalid="true"]) { border-color: #b91c1c; }
+
+.bonus-value {
+    width: 86px;
+    box-sizing: border-box;
+    padding: 8px 2px;
+    border: 0;
+    background: transparent;
+    color: #1e293b;
+    font: inherit;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    -webkit-appearance: textfield;
+    appearance: textfield;
+}
+
+.bonus-value:focus-visible { outline: none; }
+.bonus-value::-webkit-inner-spin-button,
+.bonus-value::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+.bonus-row.is-positive .bonus-value { color: #15803d; }
+.bonus-row.is-negative .bonus-value { color: #b91c1c; }
+.bonus-value-unit { color: #94a3b8; font-size: 0.78rem; }
+
+.bonus-delete {
+    justify-self: end;
+    min-height: 30px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    color: #b91c1c;
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.bonus-delete:hover { border-color: #fca5a5; background: #fef2f2; }
+
+.bonus-row-error {
+    grid-column: 1 / -1;
+    padding: 0 0 4px 48px;
+    color: #b91c1c;
+    font-size: 0.8rem;
+}
+
 .bonus-row-error:empty { display: none; }
-.bonus-row.is-error { background: #fff7f7; }
+
+/* 每个分组末尾各有一个整行添加入口，虚线分隔，不与「删除」抢注意力 */
+.bonus-group > .bonus-add {
+    display: block;
+    width: 100%;
+    min-height: 40px;
+    padding: 10px 14px;
+    border: 0;
+    border-top: 1px dashed #cbd5e1;
+    border-radius: 0;
+    background: #fbfdff;
+    color: #2563eb;
+    font-size: 0.86rem;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+}
+
+.bonus-group > .bonus-add:hover {
+    background: #eff6ff;
+    transform: none;
+}
+
+.bonus-guide {
+    position: sticky;
+    top: 16px;
+    padding: 16px 18px;
+    border: 1px solid #e7edf5;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #f8fbff, #fff 65%);
+}
+
+.bonus-guide-title { margin: 0 0 10px; font-size: 0.9rem; }
+.bonus-guide-list {
+    margin: 0;
+    padding-left: 18px;
+    color: #475569;
+    font-size: 0.82rem;
+    line-height: 1.7;
+}
+.bonus-guide-list li + li { margin-top: 6px; }
+
+.bonus-guide-foot {
+    margin: 12px 0 0;
+    padding-top: 10px;
+    border-top: 1px dashed #e2e8f0;
+    color: #94a3b8;
+    font-size: 0.78rem;
+}
+
+.settings-textarea {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    font: inherit;
+}
+
 .settings-panel [aria-invalid="true"] { border-color: #b91c1c; }
-.bonus-row input:focus-visible, .settings-textarea:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
-#settings-panel-bonuses > .settings-save-bar { position: sticky; bottom: 0; padding: 12px 0; background: #fff; border-top: 1px solid #e2e8f0; }
+.settings-textarea:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+
+@media (max-width: 1100px) {
+    .bonus-layout { grid-template-columns: minmax(0, 1fr); }
+    .bonus-guide { position: static; }
+}
 .advanced-warning { padding-bottom: 12px; }
 .advanced-section + .advanced-section { border-top: 1px solid #e2e8f0; margin-top: 22px; padding-top: 10px; }
 .advanced-field { display: block; margin-top: 14px; }
@@ -876,11 +1259,16 @@
 .settings-textarea { display: block; resize: vertical; line-height: 1.65; }
 .settings-word-count { display: block; text-align: right; margin-top: 5px; color: #64748b; font-size: 0.82rem; }
 .advanced-alias-fields { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }
-.advanced-section > .settings-updated, #settings-panel-bonuses > .settings-updated { margin-top: 12px; }
+.advanced-section > .settings-updated { margin-top: 12px; }
 @media (max-width: 600px) {
     .settings-tabs { gap: 4px; }
     .settings-tab { padding: 8px 10px; }
-    .bonus-row { grid-template-columns: minmax(100px, 1fr) 96px 54px; gap: 6px; }
+    .bonus-head { flex-direction: column; gap: 8px; }
+    .bonus-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .bonus-stat:last-child { grid-column: 1 / -1; }
+    .bonus-row { grid-template-columns: 26px minmax(0, 1fr) 104px 52px; column-gap: 8px; padding: 4px 10px; }
     .bonus-heading { font-size: 0.74rem; }
+    .bonus-value { width: 52px; }
+    .bonus-row-error { padding-left: 34px; }
     .advanced-alias-fields { grid-template-columns: 1fr; gap: 0; }
 }

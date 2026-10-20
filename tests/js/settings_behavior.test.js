@@ -2551,30 +2551,162 @@ async function saveDictionary(page, section) {
     dictionaryBlock(page, section).querySelector('.section-save').click();
     await waitFor(() => page.server.inflight === 0);
 }
+
+// 加分词典是即时保存：改完值后焦点离开整行（change + focusout）即触发整段 PUT；
+// focusout 同时负责把行挪到对应的正负分组
+function commitBonusValue(page, el, value) {
+    el.value = value;
+    el.dispatchEvent(new page.window.Event('input', { bubbles: true }));
+    el.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+    el.dispatchEvent(new page.window.FocusEvent('focusout', {
+        bubbles: true,
+        relatedTarget: page.panel('bonuses').querySelector('.bonus-title'),
+    }));
+}
+function leaveBonusRow(page, row) {
+    row.querySelector('.bonus-value').dispatchEvent(new page.window.FocusEvent('focusout', {
+        bubbles: true,
+        relatedTarget: page.panel('bonuses').querySelector('.bonus-title'),
+    }));
+}
 function unloadBlocked(page) {
     const event = new page.window.Event('beforeunload', { cancelable: true });
     page.window.dispatchEvent(event);
     return event.defaultPrevented;
 }
 
-test('F1：改分值增行删行后按页面顺序携带词典版本保存', async () => {
+test('F1：改分值增行删行后按词典顺序（先加分后减分）自动保存', async () => {
     const page = await bootPage({ hash: '#bonuses' });
     try {
         const panel = page.panel('bonuses');
-        inputValue(page, panel.querySelector('.bonus-value'), '-100');
+        const firstRow = bonusRows(page)[0];
+        commitBonusValue(page, firstRow.querySelector('.bonus-value'), '-100');
+        await waitFor(() => dictionaryPuts(page).length === 1 && page.server.inflight === 0);
+        leaveBonusRow(page, firstRow);
+        await waitFor(() => bonusGroupRows(page, 'negative').length === 1);
+
         panel.querySelector('.bonus-add').click();
-        let rows = panel.querySelectorAll('.bonus-row:not(.bonus-heading)');
-        inputValue(page, rows[2].querySelector('.bonus-keyword'), '  专题B  ');
-        inputValue(page, rows[2].querySelector('.bonus-value'), '100');
-        rows[1].querySelector('.bonus-delete').click();
-        await saveDictionary(page, 'score_keyword_bonuses');
-        assert.deepEqual(dictionaryPuts(page).map(({ path, body }) => ({ path, body })), [{
-            path: '/api/admin/settings/score_keyword_bonuses',
-            body: { expected_version: 11, value: [{ keyword: '专题Z', bonus: -100 }, { keyword: '专题B', bonus: 100 }] },
-        }]);
-        assert.deepEqual([...panel.querySelectorAll('.bonus-keyword')].map((el) => el.value), ['专题Z', '专题B']);
-        assert.match(panel.querySelector('.settings-save-status').textContent, /保存成功/);
+        const positiveRows = bonusGroupRows(page, 'positive');
+        const newRow = positiveRows[positiveRows.length - 1];
+        inputValue(page, newRow.querySelector('.bonus-keyword'), '  专题B  ');
+        commitBonusValue(page, newRow.querySelector('.bonus-value'), '100');
+        await waitFor(() => dictionaryPuts(page).length === 2 && page.server.inflight === 0);
+
+        bonusGroupRows(page, 'positive')[0].querySelector('.bonus-delete').click();
+        await waitFor(() => dictionaryPuts(page).length === 3 && page.server.inflight === 0);
+
+        assert.deepEqual(dictionaryPuts(page).map(({ path, body }) => ({ path, body })), [
+            {
+                path: '/api/admin/settings/score_keyword_bonuses',
+                body: {
+                    expected_version: 11,
+                    value: [{ keyword: '专题A', bonus: 20 }, { keyword: '专题Z', bonus: -100 }],
+                },
+            },
+            {
+                path: '/api/admin/settings/score_keyword_bonuses',
+                body: {
+                    expected_version: 12,
+                    value: [
+                        { keyword: '专题A', bonus: 20 },
+                        { keyword: '专题B', bonus: 100 },
+                        { keyword: '专题Z', bonus: -100 },
+                    ],
+                },
+            },
+            {
+                path: '/api/admin/settings/score_keyword_bonuses',
+                body: {
+                    expected_version: 13,
+                    value: [{ keyword: '专题B', bonus: 100 }, { keyword: '专题Z', bonus: -100 }],
+                },
+            },
+        ]);
+        // 焦点离开后行已归组：加分词在上、减分词在下
+        assert.deepEqual([...panel.querySelectorAll('.bonus-keyword')].map((el) => el.value), ['专题B', '专题Z']);
+        assert.match(panel.querySelector('.bonus-save-status').textContent, /已自动保存/);
         assert.equal(unloadBlocked(page), false);
+    } finally { page.close(); }
+});
+
+function bonusGroupKeys(page) {
+    return [...page.panel('bonuses').querySelectorAll('.bonus-group')]
+        .map((group) => group.dataset.bonusGroup);
+}
+
+function bonusGroupRows(page, key) {
+    return [...page.panel('bonuses')
+        .querySelectorAll(`.bonus-group[data-bonus-group="${key}"] .bonus-row:not(.bonus-heading)`)];
+}
+
+test('加分词典按正负分组：加分词在上、减分词在下，写入也是先加分后减分', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        const panel = page.panel('bonuses');
+        assert.deepEqual(bonusGroupKeys(page), ['positive', 'negative']);
+        assert.equal(bonusGroupRows(page, 'negative').length, 0);
+        assert.equal(
+            panel.querySelector('.bonus-group[data-bonus-group="negative"] .bonus-group-empty').hidden,
+            false,
+        );
+
+        // 改完分值即自动提交：仍按加分在前、减分在后回传
+        const rows = bonusRows(page);
+        commitBonusValue(page, rows[1].querySelector('.bonus-value'), '-20');
+        await waitFor(() => dictionaryPuts(page).length === 1 && page.server.inflight === 0);
+        assert.deepEqual(dictionaryPuts(page)[0].body.value, [
+            { keyword: '专题Z', bonus: 10 }, { keyword: '专题A', bonus: -20 },
+        ]);
+
+        // 焦点离开后按新顺序归组：A 进减分组、Z 留加分组
+        leaveBonusRow(page, rows[1]);
+        await waitFor(() => bonusGroupRows(page, 'negative').length === 1);
+        assert.deepEqual(bonusGroupRows(page, 'negative')
+            .map((row) => row.querySelector('.bonus-keyword').value), ['专题A']);
+        assert.deepEqual(bonusGroupRows(page, 'positive')
+            .map((row) => row.querySelector('.bonus-keyword').value), ['专题Z']);
+        assert.equal(
+            panel.querySelector('.bonus-group[data-bonus-group="negative"] .bonus-group-count').textContent,
+            '1 条',
+        );
+    } finally { page.close(); }
+});
+
+test('加分词典：分值改成负数并离开该行后自动归入减分组', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        const panel = page.panel('bonuses');
+        const rows = bonusRows(page);
+        commitBonusValue(page, rows[1].querySelector('.bonus-value'), '-30');
+        leaveBonusRow(page, rows[1]);
+        await waitFor(() => bonusGroupRows(page, 'negative').length === 1);
+        await waitFor(() => dictionaryPuts(page).length === 1 && page.server.inflight === 0);
+        assert.deepEqual(bonusGroupRows(page, 'negative')
+            .map((row) => row.querySelector('.bonus-keyword').value), ['专题A']);
+        assert.deepEqual(bonusGroupRows(page, 'positive')
+            .map((row) => row.querySelector('.bonus-keyword').value), ['专题Z']);
+        assert.deepEqual(dictionaryPuts(page)[0].body.value, [
+            { keyword: '专题Z', bonus: 10 }, { keyword: '专题A', bonus: -30 },
+        ]);
+    } finally { page.close(); }
+});
+
+test('加分词典：减分组末尾的添加入口直接在该组生成新行', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        const panel = page.panel('bonuses');
+        panel.querySelector('.bonus-group[data-bonus-group="negative"] .bonus-add').click();
+        await waitFor(() => bonusGroupRows(page, 'negative').length === 1);
+        const row = bonusGroupRows(page, 'negative')[0];
+        assert.equal(row.querySelector('.bonus-keyword'), page.document.activeElement);
+        inputValue(page, row.querySelector('.bonus-keyword'), '减分词X');
+        commitBonusValue(page, row.querySelector('.bonus-value'), '-25');
+        await waitFor(() => dictionaryPuts(page).length === 1 && page.server.inflight === 0);
+        assert.deepEqual(dictionaryPuts(page)[0].body.value, [
+            { keyword: '专题Z', bonus: 10 },
+            { keyword: '专题A', bonus: 20 },
+            { keyword: '减分词X', bonus: -25 },
+        ]);
     } finally { page.close(); }
 });
 
@@ -2590,12 +2722,12 @@ for (const [name, selector, value] of [
         const page = await bootPage();
         try {
             const panel = page.panel('bonuses');
-            inputValue(page, panel.querySelector(selector), value);
-            panel.querySelector('.section-save').click();
+            const field = panel.querySelector(selector);
+            commitBonusValue(page, field, value);
             await assertNever(() => dictionaryPuts(page).length > 0);
             assert.ok(panel.querySelector('.bonus-row.is-error'));
-            assert.equal(panel.querySelector(selector).getAttribute('aria-invalid'), 'true');
-            assert.match(panel.querySelector('.settings-save-status').textContent, /保存已取消/);
+            assert.equal(field.getAttribute('aria-invalid'), 'true');
+            assert.match(panel.querySelector('.bonus-save-status').textContent, /有未保存的修改/);
         } finally { page.close(); }
     });
 }
@@ -2651,7 +2783,9 @@ for (const [name, value, message] of [
 }
 
 const DICTIONARY_SECTIONS = ['score_keyword_bonuses', 'education_keywords', 'beijing_keywords', 'source_aliases'];
-for (const section of DICTIONARY_SECTIONS) {
+// 加分词典是即时保存，没有保存/放弃/载入按钮；其余三个词表仍是草稿式保存
+const DRAFT_DICTIONARY_SECTIONS = DICTIONARY_SECTIONS.filter((key) => key !== 'score_keyword_bonuses');
+for (const section of DRAFT_DICTIONARY_SECTIONS) {
     test(`F9 F10：${section} 独立版本请求与未保存守卫`, async () => {
         const page = await bootPage();
         try {
@@ -2662,7 +2796,7 @@ for (const section of DICTIONARY_SECTIONS) {
             inputValue(page, field, original + '新词');
             assert.equal(unloadBlocked(page), true);
             page.clickTab('sources');
-            page.clickTab(section === 'score_keyword_bonuses' ? 'bonuses' : 'advanced');
+            page.clickTab('advanced');
             assert.equal(block.querySelector('input, textarea'), field);
             assert.equal(field.value, original + '新词');
             await saveDictionary(page, section);
@@ -2694,6 +2828,70 @@ for (const section of DICTIONARY_SECTIONS) {
             } finally { page.close(); }
         });
     }
+}
+
+// 即时保存的加分词典：改完值自动提交、冲突时保留本地修改并可载入最新配置
+test('加分词典：即时保存使用当前版本，保存后清除未保存标记', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        const panel = page.panel('bonuses');
+        const field = panel.querySelector('.bonus-keyword');
+        assert.equal(unloadBlocked(page), false);
+        inputValue(page, field, field.value + '新');
+        assert.equal(unloadBlocked(page), true);
+        field.dispatchEvent(new page.window.FocusEvent('focusout', {
+            bubbles: true,
+            relatedTarget: panel.querySelector('.bonus-title'),
+        }));
+        await waitFor(() => dictionaryPuts(page).length === 1 && page.server.inflight === 0);
+        assert.equal(dictionaryPuts(page)[0].path, '/api/admin/settings/score_keyword_bonuses');
+        assert.equal(dictionaryPuts(page)[0].body.expected_version, 11);
+        assert.equal(unloadBlocked(page), false);
+        page.clickTab('sources');
+        page.clickTab('bonuses');
+        assert.equal(panel.querySelector('.bonus-keyword'), field);
+        assert.equal(field.value, '专题Z新');
+    } finally { page.close(); }
+});
+
+test('加分词典：409 冲突保留本地修改并可载入最新配置', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        const panel = page.panel('bonuses');
+        const input = panel.querySelector('.bonus-value');
+        page.server.saveBehavior.score_keyword_bonuses = { status: 409, payload: { detail: '服务端说明' } };
+        commitBonusValue(page, input, '-40');
+        await waitFor(() => dictionaryPuts(page).length === 1 && page.server.inflight === 0);
+        assert.equal(dictionaryPuts(page)[0].status, 409);
+        assert.equal(input.value, '-40');
+        assert.match(panel.querySelector('.bonus-save-status').textContent, /服务端说明/);
+        assert.equal(panel.querySelector('.bonus-reload').hidden, false);
+        assert.equal(unloadBlocked(page), true);
+
+        panel.querySelector('.bonus-reload').click();
+        await waitFor(() => panel.querySelector('.bonus-reload').hidden && page.server.inflight === 0);
+        assert.equal(panel.querySelector('.bonus-value').value, '10');
+        assert.equal(unloadBlocked(page), false);
+    } finally { page.close(); }
+});
+
+test('加分词典：422 保留本地修改并显示服务端原因', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        const panel = page.panel('bonuses');
+        const input = panel.querySelector('.bonus-value');
+        page.server.saveBehavior.score_keyword_bonuses = { status: 422, payload: { detail: '服务端说明' } };
+        commitBonusValue(page, input, '-40');
+        await waitFor(() => dictionaryPuts(page).length === 1 && page.server.inflight === 0);
+        assert.equal(dictionaryPuts(page)[0].status, 422);
+        assert.equal(input.value, '-40');
+        assert.match(panel.querySelector('.bonus-save-status').textContent, /服务端说明/);
+        assert.equal(panel.querySelector('.bonus-reload').hidden, true);
+        assert.equal(unloadBlocked(page), true);
+    } finally { page.close(); }
+});
+
+for (const section of DICTIONARY_SECTIONS) {
     test(`分区缺失：仅 ${section} 显示导入提示`, async () => {
         const sections = defaultSections();
         delete sections[section];
@@ -2702,18 +2900,19 @@ for (const section of DICTIONARY_SECTIONS) {
             for (const key of DICTIONARY_SECTIONS) {
                 const block = dictionaryBlock(page, key);
                 assert.equal(!!block.querySelector('.settings-import-notice'), key === section);
-                assert.equal(!!block.querySelector('.section-save'), key !== section);
+                const hasSaveBar = key !== 'score_keyword_bonuses';
+                assert.equal(!!block.querySelector('.section-save'), hasSaveBar && key !== section);
             }
         } finally { page.close(); }
     });
 }
 
-for (const target of DICTIONARY_SECTIONS.slice(1)) {
+for (const target of DRAFT_DICTIONARY_SECTIONS) {
     test(`F8：${target} 冲突载入仅重置自身并保留其他版本`, async () => {
         const page = await bootPage();
         try {
             const drafts = new Map();
-            for (const section of DICTIONARY_SECTIONS) {
+            for (const section of DRAFT_DICTIONARY_SECTIONS) {
                 const field = dictionaryBlock(page, section).querySelector('input, textarea');
                 inputValue(page, field, field.value + '草稿');
                 drafts.set(section, [field, field.value]);
@@ -2725,7 +2924,7 @@ for (const target of DICTIONARY_SECTIONS.slice(1)) {
             block.querySelector('.section-reload').click();
             await waitFor(() => block.querySelector('.section-reload').hidden && page.server.inflight === 0);
             assert.equal(block.querySelector('textarea').value, target === 'source_aliases' ? '客户端\n网' : defaultSections()[target].value.join('\n'));
-            for (const section of DICTIONARY_SECTIONS.filter((key) => key !== target)) {
+            for (const section of DRAFT_DICTIONARY_SECTIONS.filter((key) => key !== target)) {
                 const [field, draft] = drafts.get(section);
                 assert.equal(dictionaryBlock(page, section).querySelector('input, textarea'), field);
                 assert.equal(field.value, draft);
@@ -2740,22 +2939,31 @@ for (const target of DICTIONARY_SECTIONS.slice(1)) {
     });
 }
 
-test('F11：清空词典保存必须确认，取消零请求，确认提交空数组', async () => {
+test('F11：删除最后一条要确认，取消保留，确认后即时提交空数组', async () => {
     const page = await bootPage();
     try {
         const panel = page.panel('bonuses');
-        panel.querySelectorAll('.bonus-delete').forEach((button) => button.click());
+        // 先删掉一条（加分组的第二行），立即自动保存剩下的那一条
+        bonusRows(page)[1].querySelector('.bonus-delete').click();
+        await waitFor(() => dictionaryPuts(page).length === 1 && page.server.inflight === 0);
+        assert.deepEqual(dictionaryPuts(page)[0].body.value, [{ keyword: '专题Z', bonus: 10 }]);
+
+        // 删最后一条要确认；取消时保留，且不追加请求
         const prompts = [];
         page.window.confirm = (message) => { prompts.push(message); return false; };
-        panel.querySelector('.section-save').click();
-        await assertNever(() => dictionaryPuts(page).length > 0);
+        bonusRows(page)[0].querySelector('.bonus-delete').click();
+        await assertNever(() => dictionaryPuts(page).length > 1);
         assert.equal(prompts.length, 1);
-        assert.match(prompts[0], /保存后所有文章都不再有关键词加分/);
-        assert.equal(unloadBlocked(page), true);
+        assert.match(prompts[0], /不再有关键词加分/);
+        assert.equal(bonusRows(page).length, 1);
+        assert.equal(unloadBlocked(page), false);
+
         page.window.confirm = () => true;
-        await saveDictionary(page, 'score_keyword_bonuses');
-        assert.deepEqual(dictionaryPuts(page)[0].body.value, []);
+        bonusRows(page)[0].querySelector('.bonus-delete').click();
+        await waitFor(() => dictionaryPuts(page).length === 2 && page.server.inflight === 0);
+        assert.deepEqual(dictionaryPuts(page)[1].body.value, []);
         assert.equal(panel.querySelectorAll('.bonus-keyword').length, 0);
+        assert.equal(unloadBlocked(page), false);
     } finally { page.close(); }
 });
 
@@ -2874,7 +3082,7 @@ test('空别名和后缀无需确认；关键词服务端去重后回填', async
     } finally { page.close(); }
 });
 
-for (const section of DICTIONARY_SECTIONS) {
+for (const section of DRAFT_DICTIONARY_SECTIONS) {
     test(`保存锁定：${section} 只锁当前块且不重复提交`, async () => {
         const page = await bootPage();
         try {
@@ -2901,17 +3109,36 @@ for (const section of DICTIONARY_SECTIONS) {
     });
 }
 
-test('整体 payload 重载后四个草稿继续使用编辑开始时的版本', async () => {
+test('保存锁定：加分词典串行提交，不并发使用同一版本号', async () => {
+    const page = await bootPage({ hash: '#bonuses' });
+    try {
+        const panel = page.panel('bonuses');
+        page.server.hold('save-score_keyword_bonuses');
+        commitBonusValue(page, panel.querySelectorAll('.bonus-value')[0], '-10');
+        await waitFor(() => page.server.held.length === 1);
+        // 第一次保存未返回时再改另一行：只排队，不并发发请求
+        commitBonusValue(page, panel.querySelectorAll('.bonus-value')[1], '30');
+        await assertNever(() => dictionaryPuts(page).length > 1);
+        page.server.release('save-score_keyword_bonuses');
+        await waitFor(() => dictionaryPuts(page).length === 2 && page.server.inflight === 0);
+        assert.equal(dictionaryPuts(page)[1].body.expected_version, 12);
+        assert.deepEqual(dictionaryPuts(page)[1].body.value, [
+            { keyword: '专题A', bonus: 30 }, { keyword: '专题Z', bonus: -10 },
+        ]);
+    } finally { page.close(); }
+});
+
+test('整体 payload 重载后其余词表草稿继续使用编辑开始时的版本', async () => {
     const page = await bootPage();
     try {
-        for (const section of DICTIONARY_SECTIONS) {
+        for (const section of DRAFT_DICTIONARY_SECTIONS) {
             const field = dictionaryBlock(page, section).querySelector('input, textarea');
             inputValue(page, field, field.value + '本地');
             page.server.sections[section].version += 10;
         }
         page.document.querySelector('.env-reload-btn').click();
         await waitFor(() => page.server.requests('get-settings').length === 1 && page.server.inflight === 0);
-        for (const section of DICTIONARY_SECTIONS) {
+        for (const section of DRAFT_DICTIONARY_SECTIONS) {
             await saveDictionary(page, section);
             assert.equal(dictionaryPuts(page).at(-1).body.expected_version, defaultSections()[section].version);
             assert.equal(dictionaryPuts(page).at(-1).status, 409);
@@ -2919,46 +3146,11 @@ test('整体 payload 重载后四个草稿继续使用编辑开始时的版本',
     } finally { page.close(); }
 });
 
-// 「放弃修改」按钮（section_editor.js buildSectionSaveBar 的 discard 分支）的行为锁定：
-// 界面回到该块最后见到的快照、脏标记清除、再次保存发回原始值，且只影响当前块。
+// 其余词表仍是草稿式保存：「放弃修改」按钮（section_editor.js 的 discard 分支）
+// 回到该块最后见到的快照、脏标记清除、再次保存发回原始值，且只影响当前块。
 function bonusRows(page) {
     return [...page.panel('bonuses').querySelectorAll('.bonus-row:not(.bonus-heading)')];
 }
-function bonusGrid(page) {
-    return bonusRows(page).map((row) => [
-        row.querySelector('.bonus-keyword').value,
-        Number(row.querySelector('.bonus-value').value),
-    ]);
-}
-
-test('放弃修改（加分词典）：改分值增行删行后放弃，行数顺序与每行值复原', async () => {
-    const page = await bootPage();
-    try {
-        const panel = page.panel('bonuses');
-        inputValue(page, bonusRows(page)[0].querySelector('.bonus-value'), '-100');
-        panel.querySelector('.bonus-add').click();
-        inputValue(page, bonusRows(page)[2].querySelector('.bonus-keyword'), '临时B');
-        inputValue(page, bonusRows(page)[2].querySelector('.bonus-value'), '100');
-        bonusRows(page)[1].querySelector('.bonus-delete').click();
-        assert.deepEqual(bonusGrid(page), [['专题Z', -100], ['临时B', 100]]);
-        assert.equal(unloadBlocked(page), true);
-
-        panel.querySelector('.section-discard').click();
-        // 放弃会重渲染，行节点全部重建，必须重查 DOM 后断言回到库里保存的两行
-        assert.deepEqual(bonusGrid(page), [['专题Z', 10], ['专题A', 20]]);
-        assert.equal(unloadBlocked(page), false);
-        assert.equal(page.window.eval('state.dirty.score_keyword_bonuses'), false);
-
-        await saveDictionary(page, 'score_keyword_bonuses');
-        assert.deepEqual(dictionaryPuts(page).map(({ path, body }) => ({ path, body })), [{
-            path: '/api/admin/settings/score_keyword_bonuses',
-            body: {
-                expected_version: 11,
-                value: [{ keyword: '专题Z', bonus: 10 }, { keyword: '专题A', bonus: 20 }],
-            },
-        }]);
-    } finally { page.close(); }
-});
 
 for (const [section, draft] of [
     ['education_keywords', '教育\n学校\n课堂'],
@@ -3039,12 +3231,24 @@ test('放弃修改只影响当前块：另一块的草稿与未保存标记原�
     } finally { page.close(); }
 });
 
-test('仅点「添加一行」未输入任何内容也算未保存修改，离开页面触发确认', async () => {
+test('加分词典：只加一个空行不算未保存修改，填了一半才拦离开', async () => {
     const page = await bootPage();
     try {
         assert.equal(unloadBlocked(page), false);
         page.panel('bonuses').querySelector('.bonus-add').click();
-        assert.equal(page.window.eval('state.dirty.score_keyword_bonuses'), true);
+        // 完全空着的行只是本地草稿，不会写库也不触发离开确认
+        assert.equal(page.window.eval('state.dirty.score_keyword_bonuses'), false);
+        assert.equal(unloadBlocked(page), false);
+
+        const row = bonusRows(page).at(-1);
+        inputValue(page, row.querySelector('.bonus-keyword'), '半条');
+        assert.equal(unloadBlocked(page), true);
+        row.querySelector('.bonus-keyword').dispatchEvent(new page.window.FocusEvent('focusout', {
+            bubbles: true,
+            relatedTarget: page.panel('bonuses').querySelector('.bonus-title'),
+        }));
+        await assertNever(() => dictionaryPuts(page).length > 0);
+        assert.ok(row.classList.contains('is-error'));
         assert.equal(unloadBlocked(page), true);
     } finally { page.close(); }
 });

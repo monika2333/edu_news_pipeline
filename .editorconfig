@@ -1,0 +1,15 @@
+# 编辑器侧兜底：.gitattributes 保证入库/检出一律 LF，这里让编辑器默认就写 LF + UTF-8，
+# 磁盘和仓库不再分叉。
+#
+# 不要加 insert_final_newline：仓库有 16 个文件本来就没有行尾换行（vendor 的
+# Sortable.min.js、几个 CSS、ruff.toml、两个 prompt 等），加了会让以后每次编辑这些
+# 文件都多出一个「补换行」的改动。
+# 也不要加 trim_trailing_whitespace：Markdown 用行尾两个空格表示硬换行。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+
+[*.{cmd,bat}]
+end_of_line = crlf

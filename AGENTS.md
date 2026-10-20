@@ -297,7 +297,7 @@ db_config = {
 - 不要为函数、类、文件做机械摘要。
 - 如果只是代码能直接看出的事实，优先改代码命名、结构或测试，而不是写解释性文档。
 - Markdown、配置和中文文本文件统一使用 UTF-8 编码（无 BOM）。
-- 行尾统一 LF：仓库根 `.gitattributes` 用 `* text=auto eol=lf` 在提交与比较时归一，Windows 编辑器写出 CRLF 也不会产生整文件假 diff。不要为了「看着正常」把文件转成 CRLF；`core.autocrlf` 各机器怎么配都不影响结果。
+- 行尾统一 LF：仓库根 `.gitattributes` 用 `* text=auto eol=lf` 在提交与比较时归一，Windows 编辑器写出 CRLF 也不会产生整文件假 diff；`.editorconfig` 让编辑器默认写 UTF-8 + LF（`.cmd`/`*.bat` 例外，检出 CRLF）。不要为了「看着正常」把文件转成 CRLF；`core.autocrlf` 各机器怎么配都不影响结果。
 - 完成任务后，如果改动使某份文档失真（尤其是 `docs/data_flow.md` 和 `docs/env_reference.md`），同步更新它。
 
 ## Agent 工作规则

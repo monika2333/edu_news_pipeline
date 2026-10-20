@@ -337,13 +337,8 @@
 .sources-action-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 10px;
-}
-
-.sources-action-hint {
-    color: #94a3b8;
-    font-size: 0.8rem;
 }
 
 .settings-source-item {

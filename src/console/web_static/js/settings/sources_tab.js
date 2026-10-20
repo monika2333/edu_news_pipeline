@@ -230,11 +230,10 @@ function buildSourceRow(key, { enabled }) {
 
 // 卡片内的操作条：吸顶固定在「每小时来源」卡片顶部（平铺后页面变长，
 // 管理模式开关必须始终够得着）；待删除提交条出现在其下方，跟着一起固定。
-// 卡片标题在操作条上方，这里只放即时保存提示与页面级管理模式开关。
+// 操作条右侧只放页面级管理模式开关。
 function buildSourcesActionBar() {
     const bar = createEl('div', 'sources-action-bar');
     const head = createEl('div', 'sources-action-head');
-    head.appendChild(createEl('span', 'sources-action-hint', '启停即时保存'));
     const manageBtn = createEl('button', 'btn btn-secondary accounts-manage-btn', '管理模式', {
         type: 'button',
         'aria-pressed': state.manageMode ? 'true' : 'false',
@@ -249,10 +248,10 @@ function buildSourcesActionBar() {
 function renderSourcesPanel(panel, section) {
     // 单一来源列表：全部非每日来源按 payload 目录序渲染（后端返回的启用列表也是目录序，
     // 前端不再排序），开关状态即启停状态，启停不改变行位置。
-    // 需要账号的来源，其账号面板作为紧随的兄弟 <li> 始终平铺渲染
+    // 需要账号的来源，其账号面板作为紧随的兄弟 <li> 始终渲染、按需展开
     const hourlyCard = buildSettingsCard(
         '每小时来源',
-        '开关即启停，立即写入；下一轮抓取按新配置执行。点来源右侧「展开」查看或管理抓取账号。',
+        '开关即启停，下一轮抓取按新配置执行',
     );
     hourlyCard.appendChild(buildSourcesActionBar());
     hourlyCard.appendChild(buildLastModifiedLine(section));

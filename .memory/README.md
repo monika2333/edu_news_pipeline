@@ -7,7 +7,7 @@
 | 文件 | 内容 | 何时读 |
 |---|---|---|
 | [global.md](global.md) | 项目速览、权威文档指路、环境关键事实 | **任何任务必读** |
-| [open-tasks.md](open-tasks.md) | 进行中任务、部署侧待办、未排期候选 | 开始新任务前（避免撞车/重复探索） |
+| [open-tasks.md](open-tasks.md) | 进行中任务、未排期候选（部署侧待办不记在这里） | 开始新任务前（避免撞车/重复探索） |
 | [workflow.md](workflow.md) | 协作约定与操作规程：委托书流程、测试、worktree、合并推送、变异测试 | 动手改代码前 |
 | [pitfalls.md](pitfalls.md) | 技术踩坑清单与爬虫站点知识，按主题分节 | 改对应模块前（尤其 adapters、jsdom 测试、DB 迁移） |
 | [decisions.md](decisions.md) | 用户拍板的约束，含「不要做」清单（防止好心的"优化"改回去） | 涉及 UI 形态、检索语义、功能口径时必读 |

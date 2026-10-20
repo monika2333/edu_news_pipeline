@@ -4,6 +4,12 @@ IMPORTANT: Read and write this file as UTF-8. In Windows PowerShell, use `Get-Co
 
 本文档是 AI agent 在本项目中工作的全局指南。它负责说明通用命令、代码风格和工程约束；目录级细节请优先阅读对应目录下的局部 `AGENTS.md`。
 
+## 跨会话协作记忆（.memory/）
+
+- **任何任务开始前，先读 `.memory/README.md` 和 `.memory/global.md`**：那里记录着代码和 git 历史看不出来的东西——用户拍板的约束（含「不要做」清单，见 `.memory/decisions.md`）、踩坑经验与站点知识（`.memory/pitfalls.md`）、测试/worktree/合并的操作规程（`.memory/workflow.md`）、进行中事项（`.memory/open-tasks.md`）。
+- **任务完成后更新 `.memory/`**：交付进 `.memory/delivery-log.md`（细节写 `archive/`）、新踩坑进 `pitfalls.md`、新拍板进 `decisions.md`、待办变化进 `open-tasks.md`。维护规则见 `.memory/README.md`。
+- 分工：本文件及局部 AGENTS.md = 怎么写代码的规范；`docs/` = 表契约与环境变量；`.memory/` = 经验、决策与状态。同一事实只记一处，发现重复时收敛到权威位置。
+
 ## 局部 Agent 指南
 
 - 修改 `src/console/` 前，先阅读 `src/console/AGENTS.md`。

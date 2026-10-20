@@ -8,6 +8,7 @@ import requests
 
 from src.adapters import (
     account_profiles,
+    http_21jingji,
     http_beijinghao,
     http_btime,
     http_chinadaily,
@@ -160,6 +161,58 @@ def test_beijinghao_name_uses_column_page_title_transport(
     )
 
     assert name == "现代教育报"
+
+
+def test_21jingji_name_uses_active_channel_nav(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _Session(
+        _Response(
+            text=(
+                "<html><head><title>宏观财经新闻_宏观经济政策与经济形势报道 - 21经济网</title></head>"
+                '<body><div class="wrap nav-wrap"><div class="layout" id="navWrap">'
+                '<a class="cur" href="/channel/politics">宏观</a>'
+                '<a href="/channel/company">公司</a>'
+                "</div></div></body></html>"
+            )
+        )
+    )
+    monkeypatch.setattr(http_21jingji, "_session", lambda: session)
+
+    name = account_profiles.resolve_account_name(
+        "21jingji",
+        normalized_identifier="https://www.21jingji.com/channel/politics/",
+        profile_url="https://www.21jingji.com/channel/politics/",
+        timeout=8,
+    )
+
+    assert name == "宏观"
+    assert session.calls[0]["url"] == "https://www.21jingji.com/channel/politics/"
+
+
+def test_21jingji_name_falls_back_to_matching_nav_link_without_active_class(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _Session(
+        _Response(
+            text=(
+                "<html><head><title>宏观财经新闻_宏观经济政策与经济形势报道 - 21经济网</title></head>"
+                '<body><div class="layout" id="navWrap">'
+                '<a href="/channel/politics">宏观</a>'
+                "</div></body></html>"
+            )
+        )
+    )
+    monkeypatch.setattr(http_21jingji, "_session", lambda: session)
+
+    name = account_profiles.resolve_account_name(
+        "21jingji",
+        normalized_identifier="https://www.21jingji.com/channel/politics/",
+        profile_url="https://www.21jingji.com/channel/politics/",
+        timeout=8,
+    )
+
+    assert name == "宏观"
 
 
 def test_chinadaily_name_uses_channel_page_title_without_site_suffix(

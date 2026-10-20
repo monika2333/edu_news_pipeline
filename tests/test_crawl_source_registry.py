@@ -41,6 +41,13 @@ DEFAULT_STRATEGY = {
     "delay_after_last": False,
 }
 LINKED_SOURCES = {
+    "21jingji": (
+        "jingji_list_items",
+        "jingji_make_article_id",
+        "jingji_feed_item_to_row",
+        "jingji_fetch_detail",
+        "jingji_build_detail_update",
+    ),
     "beijinghao": (
         "beijinghao_list_items",
         "beijinghao_make_article_id",
@@ -124,6 +131,7 @@ def run_adapter(monkeypatch: pytest.MonkeyPatch) -> object:
             "beijinghao": (account,),
             "chinadaily": (account,),
             "qianlong": (account,),
+            "21jingji": (account,),
         },
         education_keywords=(),
     )
@@ -201,6 +209,7 @@ def _patch_linked_callbacks(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize(
     ("dispatch_key", "source", "display_name", "strategy_overrides"),
     [
+        ("21jingji", "21jingji", "21jingji", {"count_feed_errors": False}),
         ("beijinghao", "beijinghao", "Beijinghao", {"count_feed_errors": False}),
         ("bjrb", "bjrb", "Beijing Daily", {"load_existing_ids": False, "count_prepare_errors": True, "missing_ids_fallback": "all", "detail_delay": 0.45}),
         ("btime", "btime", "Btime", {"count_feed_errors": False}),
@@ -264,6 +273,7 @@ def test_every_dispatch_key_preserves_source_flow_strategy_and_callbacks(
 @pytest.mark.parametrize(
     ("source", "runner_name", "extra_kwargs", "linked_source"),
     [
+        ("21jingji", "_run_registered_linked_page_flow", {"pages": 3}, "21jingji"),
         ("beijinghao", "_run_registered_linked_page_flow", {"pages": 3}, "beijinghao"),
         ("bjrb", "_run_bjrb_flow", {"timeout_value": 14.5, "delay_value": 0.45}, None),
         ("btime", "_run_registered_linked_page_flow", {"pages": 3}, "btime"),
@@ -291,7 +301,7 @@ def test_registry_passes_each_runner_its_current_arguments(
     calls: list[dict[str, Any]] = []
 
     expected_kwargs = dict(extra_kwargs)
-    if source in {"toutiao", "tencent", "btime", "beijinghao", "chinadaily", "qianlong"}:
+    if source in {"toutiao", "tencent", "btime", "beijinghao", "chinadaily", "qianlong", "21jingji"}:
         expected_kwargs["accounts"] = crawl_sources.get_business_config().accounts[source]
     if source in {"toutiao", "tencent"}:
         expected_kwargs.update(

@@ -4,11 +4,13 @@ import asyncio
 import json
 import time
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 import requests
 from bs4 import BeautifulSoup
 
 from src.adapters import (
+    http_21jingji,
     http_beijinghao,
     http_btime,
     http_chinadaily,
@@ -146,6 +148,35 @@ def _resolve_beijinghao(profile_url: str, *, timeout: float) -> str:
     return name
 
 
+def _resolve_21jingji(profile_url: str, *, timeout: float) -> str:
+    session = http_21jingji._session()
+    response = _request(
+        session,
+        profile_url,
+        headers={"Referer": profile_url},
+        timeout=timeout,
+    )
+    soup = BeautifulSoup(decode_response(response), "html.parser")
+    # 频道导航当前项：div#navWrap 里带 cur 类的链接，文本就是栏目名（如「宏观」）
+    active = soup.select_one("#navWrap a.cur")
+    name = _name(active.get_text(" ", strip=True)) if active is not None else None
+    if name is None:
+        # 回退：按当前栏目路径找导航链接，不依赖站点是否给当前项加 cur 类
+        path = urlsplit(profile_url).path.rstrip("/")
+        for anchor in soup.select("#navWrap a[href]"):
+            href_path = urlsplit(str(anchor.get("href") or "")).path.rstrip("/")
+            if href_path == path:
+                name = _name(anchor.get_text(" ", strip=True))
+                if name is not None:
+                    break
+    if name is None and soup.title is not None:
+        title = soup.title.get_text(" ", strip=True)
+        name = _name(title.split("_")[0].split(" - ")[0])
+    if name is None:
+        raise AccountNameUnavailable("页面里没有找到栏目名")
+    return name
+
+
 def _resolve_chinadaily(profile_url: str, *, timeout: float) -> str:
     session = http_chinadaily._session()
     response = _request(
@@ -228,6 +259,8 @@ def resolve_account_name(
             )
         if source == "beijinghao":
             return _resolve_beijinghao(profile_url, timeout=timeout)
+        if source == "21jingji":
+            return _resolve_21jingji(profile_url, timeout=timeout)
         if source == "chinadaily":
             return _resolve_chinadaily(profile_url, timeout=timeout)
         if source == "qianlong":

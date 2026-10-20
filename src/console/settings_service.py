@@ -13,6 +13,7 @@ from src.adapters.account_profiles import (
     resolve_account_name,
 )
 from src.adapters.db_postgres_core import get_adapter
+from src.adapters.http_21jingji import parse_channel_input as parse_21jingji_channel
 from src.adapters.http_beijinghao import parse_column_input
 from src.adapters.http_btime import parse_uid_input
 from src.adapters.http_chinadaily import parse_channel_input as parse_chinadaily_channel
@@ -347,6 +348,15 @@ def _account_parser(source: str) -> Callable[[str], dict[str, str]]:
             return {
                 "normalized_identifier": item.column_code,
                 "profile_url": item.page_url,
+            }
+
+        return parse
+    if normalized_source == "21jingji":
+        def parse(raw: str) -> dict[str, str]:
+            item = parse_21jingji_channel(raw)
+            return {
+                "normalized_identifier": item.url,
+                "profile_url": item.url,
             }
 
         return parse

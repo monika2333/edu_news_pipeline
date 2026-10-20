@@ -9,6 +9,14 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Set, Tuple, TypedDict
 
 from src.adapters.db_postgres_core import get_adapter
+from src.adapters.http_21jingji import (
+    ChannelEntry as JingjiChannelEntry,
+    build_detail_update as jingji_build_detail_update,
+    feed_item_to_row as jingji_feed_item_to_row,
+    fetch_detail as jingji_fetch_detail,
+    list_items as jingji_list_items,
+    make_article_id as jingji_make_article_id,
+)
 from src.adapters.http_bbtnews import (
     build_detail_update as bbtnews_build_detail_update,
     feed_item_to_row as bbtnews_feed_item_to_row,
@@ -748,6 +756,14 @@ def _run_registered_linked_page_flow(
             )
             for account in accounts
         ]
+    elif config.account_source == "21jingji":
+        list_kwargs["entries"] = [
+            JingjiChannelEntry(
+                url=account.profile_url,
+                raw_source=account.original_input,
+            )
+            for account in accounts
+        ]
 
     if config.account_source and not list_kwargs["entries"]:
         log_info(
@@ -1015,6 +1031,20 @@ def _bjrb_runner_kwargs(_context: SourceRunContext) -> Dict[str, Any]:
 
 
 _SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
+    "21jingji": SourceRegistration(
+        runner_name="_run_registered_linked_page_flow",
+        kwargs_factory=_account_pages_runner_kwargs("21jingji"),
+        linked_page=LinkedPageConfig(
+            source="21jingji",
+            display_name="21jingji",
+            list_items_name="jingji_list_items",
+            make_article_id_name="jingji_make_article_id",
+            feed_item_to_row_name="jingji_feed_item_to_row",
+            fetch_detail_name="jingji_fetch_detail",
+            build_detail_update_name="jingji_build_detail_update",
+            account_source="21jingji",
+        ),
+    ),
     "beijinghao": SourceRegistration(
         runner_name="_run_registered_linked_page_flow",
         kwargs_factory=_account_pages_runner_kwargs("beijinghao"),

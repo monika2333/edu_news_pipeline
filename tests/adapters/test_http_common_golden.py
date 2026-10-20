@@ -50,6 +50,7 @@ _CONTENT_GOLDEN = (
 )
 
 CONTENT_GOLDENS = {
+    "http_21jingji": _CONTENT_GOLDEN,
     "http_bbtnews": _CONTENT_GOLDEN,
     "http_beijinghao": _CONTENT_GOLDEN,
     "http_btime": _CONTENT_GOLDEN,

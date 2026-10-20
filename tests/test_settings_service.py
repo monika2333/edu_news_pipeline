@@ -430,6 +430,33 @@ def test_chinadaily_account_parse_rejects_article_and_foreign_urls() -> None:
         settings_service.parse_account("chinadaily", "https://example.com/6597728fa310af3247ffaeae")
 
 
+def test_21jingji_account_parse_normalizes_channel_url() -> None:
+    parsed = settings_service.parse_account(
+        "21jingji",
+        "//www.21jingji.com/channel/politics",
+    )
+
+    assert parsed == {
+        "source": "21jingji",
+        "normalized_identifier": "https://www.21jingji.com/channel/politics/",
+        "original_input": "//www.21jingji.com/channel/politics",
+        "profile_url": "https://www.21jingji.com/channel/politics/",
+    }
+
+
+def test_21jingji_account_parse_rejects_article_and_foreign_urls() -> None:
+    with pytest.raises(ValueError):
+        settings_service.parse_account(
+            "21jingji",
+            "https://www.21jingji.com/article/20261020/herald/a114daa8.html",
+        )
+    with pytest.raises(ValueError):
+        settings_service.parse_account(
+            "21jingji",
+            "https://example.com/channel/politics/",
+        )
+
+
 def test_qianlong_account_parse_normalizes_channel_url() -> None:
     parsed = settings_service.parse_account("qianlong", "https://edu.qianlong.com/")
 

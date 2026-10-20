@@ -1,0 +1,11 @@
+# 行尾统一：文本文件一律以 LF 入库、以 LF 检出。
+#
+# 目的：Windows 上编辑时会写出 CRLF，由 git 在 add/比较时归一，
+# 既不产生「整文件假 diff」，也不依赖每台机器的 core.autocrlf 设置。
+# 二进制文件由 text=auto 自动识别，不做换行转换（tests/fixtures/ 下
+# 个别抓取样本就是按二进制处理的）。
+* text=auto eol=lf
+
+# Windows 批处理由 cmd.exe 解析，检出时保留 CRLF（入库仍是 LF，不影响 diff）。
+*.cmd text eol=crlf
+*.bat text eol=crlf

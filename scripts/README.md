@@ -30,6 +30,13 @@ Scripts layout
 - tasks/run_clean_logs.ps1
   - Wrapper invoked by the scheduled task; runs `clean-logs.ps1` and tees output to `logs/clean_logs_task_*.log`.
 
+- db/refresh-schema.ps1
+  - Dumps the live database into `database/schema.sql` and normalizes the result into the
+    committed shape (strips pg_dump guards and the public schema block, pins
+    `schema_migrations.version` to `varchar(128)`).
+  - `-NoDump` only normalizes the existing file; `-Verify` runs the migration replay and
+    normalizer tests afterwards. The rules live in `db/normalize_schema.py`.
+
 Notes
 - Do not move or delete `run_export.ps1` unless you also update existing Scheduled Tasks, which point to its absolute path.
 - If you move the repo folder, re-register all tasks so the absolute paths are updated.

@@ -133,6 +133,22 @@ dbmate new <migration_name>
 dbmate down
 ```
 
+### 刷新 schema.sql（`dbmate up` 之后）
+
+`dbmate up` 应用迁移时会顺带回写 `database/schema.sql`，但 pg_dump 18 的原始输出里带着
+每次随机的 `\restrict` 令牌、`public` schema 注释块，以及 `schema_migrations.version` 的
+库内形态（无长度 `varchar`）。原样提交会让 diff 全是噪音，其中版本类型变化还会让
+`tests/test_migration_replay.py` 的镜像 DDL 比对失败。刷新用一条命令：
+
+```powershell
+.\scripts\db\refresh-schema.ps1          # DATABASE_URL 取环境变量，缺省读 .env.local
+.\scripts\db\refresh-schema.ps1 -Verify  # 顺手跑迁移重放与规整测试
+```
+
+规整规则在 `scripts/db/normalize_schema.py`，由 `tests/test_schema_normalizer.py` 守护
+（其中一条用例要求 `database/schema.sql` 恒为规整形态，提交原始 dump 会直接在 CI 里失败）。
+刷新后的 diff 应只剩 `INSERT INTO public.schema_migrations` 的版本行。
+
 ### 注意事项
 - 迁移文件保存在 `database/migrations/`。
 - 如果 `DATABASE_URL` 格式不正确，dbmate 会提示 "invalid url"。

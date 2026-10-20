@@ -1,5 +1,3 @@
-\restrict D1fOSBQ82VEfCYawRkTQeoI8edHXppYA1Xjs0PvW0f6jVRTYPfPBjJJpPc0GiMK
-
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
 
@@ -1818,8 +1816,6 @@ ALTER TABLE ONLY public.submitted_report_items
 --
 -- PostgreSQL database dump complete
 --
-
-\unrestrict D1fOSBQ82VEfCYawRkTQeoI8edHXppYA1Xjs0PvW0f6jVRTYPfPBjJJpPc0GiMK
 
 
 --

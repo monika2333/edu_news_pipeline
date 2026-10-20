@@ -825,7 +825,7 @@ test('S23：账号启停请求进行中开关处于 disabled，放行后恢复�
     }
 });
 
-test('S24：来源行内顺序为开关 → 名称 → 账号数徽标 →（管理模式下）刷新按钮；停用行带弱化样式类；每日任务只读行有等宽占位', async () => {
+test('S24：来源行内顺序为开关 → 名称 → 账号数徽标 →（管理模式下）刷新按钮；停用行带弱化样式类；每日任务行名称直接对齐标题', async () => {
     const page = await bootPage();
     try {
         // 启用行：开关打头，名称、账号数徽标依次在后；徽标是纯展示 span，
@@ -857,11 +857,14 @@ test('S24：来源行内顺序为开关 → 名称 → 账号数徽标 →（管
             null,
         );
 
-        // 每日任务只读行：无开关，首个子元素是与开关等宽的占位，名称紧随其后
+        // 每日任务只读行：无开关，名称直接从列表左缘开始，与「每日任务」标题对齐
         const dailyRow = page.document
             .querySelector('#sources-daily-list li[data-source="bjrb"]');
-        assert.ok(dailyRow.children[0].classList.contains('settings-source-toggle-placeholder'));
-        assert.ok(dailyRow.children[1].classList.contains('settings-source-name'));
+        assert.ok(dailyRow.children[0].classList.contains('settings-source-name'));
+        assert.equal(
+            dailyRow.querySelector('.settings-source-toggle-placeholder'),
+            null,
+        );
 
         // 管理模式：刷新按钮出现在来源行内、账号数徽标之后
         manageButton(page).click();

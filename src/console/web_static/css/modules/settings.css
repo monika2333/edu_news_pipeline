@@ -322,6 +322,12 @@
     display: block;
 }
 
+/* 只读行没有开关，去掉左右内边距，让名称与卡片标题左缘严格对齐 */
+.settings-source-list.settings-daily-list .settings-source-item {
+    padding-right: 0;
+    padding-left: 0;
+}
+
 /* 卡片内的操作条：吸顶固定，平铺后页面变长，管理模式开关必须始终够得着；
    z-index 高于滚过的芯片网格（网格内芯片不建层叠上下文，10 足够压住） */
 .sources-action-bar {
@@ -495,12 +501,6 @@
 .settings-switch:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-}
-
-/* 每日任务只读行没有开关，用等宽占位让两组行的名称左边缘对齐 */
-.settings-source-toggle-placeholder {
-    width: 34px;
-    flex: none;
 }
 
 .source-row-error {

@@ -289,8 +289,7 @@ function renderSourcesPanel(panel, section) {
             const item = createEl('li', 'settings-source-item is-readonly', '', {
                 dataset: { source: source.key },
             });
-            // 只读行没有开关，补一个与开关等宽的空占位，让两组行的名称左边缘对齐
-            item.appendChild(createEl('span', 'settings-source-toggle-placeholder'));
+            // 只读行没有开关，名称直接从列表左缘开始，与「每日任务」标题对齐
             item.appendChild(createEl('span', 'settings-source-name', source.display_name));
             item.appendChild(createEl(
                 'span',

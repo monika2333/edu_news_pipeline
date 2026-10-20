@@ -22,7 +22,7 @@
 
 ## 环境关键事实
 
-- 平台 Windows（PowerShell / Git Bash 均可）。跑测试必须用仓库根 venv：PowerShell `.\venv\Scripts\python.exe -m pytest`，Git Bash `./venv/Scripts/python.exe -m pytest`（系统默认 python 缺依赖）。详见 workflow.md。
+- 平台 Windows（PowerShell / Git Bash 均可）。跑测试必须用仓库根 venv，命令与两种 shell 写法见根 `AGENTS.md`「构建与开发命令」（系统默认 python 缺依赖）。
 - DB 凭据在仓库根 `.env.local`（未跟踪）；DB 行为测试直连真实 Postgres（临时表模式），无 testcontainers。
 - 系统 git 配置 `core.autocrlf=true`，但本仓库 `.git/config` 已覆盖为 `false`；仓库标准是 LF——工具写文件后仍要盯行尾（详见 workflow.md 提交卫生）。
 - **ZCode 环境**下推送 main 会被 worktree-guard 拦截，需 authorize-main → push → revoke-main 三步独立命令；其他工具直接 `git push`（详见 workflow.md）。

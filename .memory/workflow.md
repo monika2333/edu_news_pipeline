@@ -15,7 +15,7 @@
 
 ## 2. 测试怎么跑
 
-- **必须用仓库根 venv**：Git Bash 下 `./venv/Scripts/python.exe -m pytest`。系统默认 python（3.14）缺 psycopg 等依赖，裸 `python -m pytest` 会在收集阶段 ModuleNotFoundError。worktree 里要用主仓库 venv 的绝对路径。
+- **必须用仓库根 venv**：命令与两种 shell 写法见根 `AGENTS.md`「构建与开发命令」。系统默认 python（3.14）缺 psycopg 等依赖，裸 `python -m pytest` 会在收集阶段 ModuleNotFoundError。worktree 里要用主仓库 venv 的绝对路径。
 - DB 行为测试**直连真实 Postgres**（`get_settings()` 的 db_* 配置），无 embedded/testcontainers。模式：给涉及的每张表建 `CREATE TEMP TABLE {t} (LIKE public.{t} INCLUDING DEFAULTS) ON COMMIT DROP` 再 seed，几分钟跑完。新写 DB 行为测试照抄 `tests/test_article_attribution_search.py` 这类现成模式。
 - 新增 UPDATE/写路径 SQL 时**必须配真实 DB 测试**：fake-cursor 测试抓不到占位符顺序类 bug（实际发生过：`SET ... = %s` 参数排在 WHERE 参数之后导致运行错位）。
 - jsdom 测试（`tests/js/`，pytest 包装在 `test_*_js_behavior.py`）需要 Node 20+ 和 `npm ci --prefix tests/js`。**全量报告出现带 Node/jsdom 原因的 skipped = jsdom 依赖又没了**（用例数量会随测试增减，不要按固定 skipped 数字判断；CI 缺依赖会直接失败）。

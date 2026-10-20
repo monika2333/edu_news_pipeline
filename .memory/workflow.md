@@ -56,6 +56,7 @@
 ## 6. 提交卫生
 
 - **Edit 工具可能把被编辑文件整个写回成 CRLF**（仓库标准 LF；改 README/Markdown 时实际发生过，`git diff --check` 会逐行报 trailing whitespace），`git add -u` 会把全仓库行尾改写吞进提交（实际发生过 amend 卷进 443 个文件）。规矩：`git add` 只加显式路径；Edit 过的文件（src、Markdown、配置都算）提交前 `sed -i 's/\r$//'` 转回 LF；提交后 `git show --stat` 核对文件数与增删行数符合预期。
+- **`git status` 干净 ≠ 磁盘是 LF**：`git ls-files --eol` 显示 264 个已跟踪文件是 `i/lf w/crlf`（2026-10-20 核对，含 `config/prompts/`、`database/migrations/`、多个 `scripts/*.ps1`）——索引记的是 add 时的 worktree 尺寸，stat 没变就不比内容，所以它们一直「干净」；一旦被编辑就会冒出整文件假 diff。改这类文件前先按字节转 LF（`read_bytes().replace(b"\r\n", b"\n")` 后 `write_bytes`），再 `git add` 刷新 stat。
 - Python 脚本改文档同理：`write_text` 文本模式产生 775 行假 diff 的事故发生过，行尾敏感文件用 `write_bytes`。
 - ZCode 的 Bash 在多次调用间 cwd 可能重置，跨仓库操作每条命令显式 `cd` 绝对路径。
 - `grep` 找「外部调用方」的两个坑：`head -N` 截断输出会漏看后面的匹配就下结论；Git Bash 的 grep 输出反斜杠路径，`grep -v "src/adapters/"` 过滤不掉。正确姿势：先按目录圈定 `grep -rn ... 目录清单`，不截断。
@@ -66,3 +67,14 @@
 - 无登录凭据时渲染页面截图：TestClient 依赖覆盖渲染 HTML + `/static/` 重写为同源 + http.server 托管快照目录，改 viewport 截图（吸顶头部页面禁用 fullPage，会拼接伪影）。
 - 登录页 Playwright 点击提交按钮会超时，用 `form.requestSubmit()`（evaluate）替代。
 - 与并行会话（其他 worktree 任务）合流时可能撞名：先查 main 是否已有同功能文件，取一方并把己方用例移植过去，勿维护两套。
+
+## 8. 刷新 schema.sql
+
+`dbmate up` 应用迁移后会顺带回写 `database/schema.sql`，但那是 pg_dump 的**原始**形态（随机 `\restrict` 令牌、public 注释块、`schema_migrations.version` 随库变化的类型）。不要直接 `git add` 它，跑：
+
+```powershell
+.\scripts\db\refresh-schema.ps1          # DATABASE_URL 取环境变量，缺省读 .env.local
+.\scripts\db\refresh-schema.ps1 -Verify  # 顺带跑迁移重放 + 规整测试
+```
+
+它先 dump 到临时文件，交给 `scripts/db/normalize_schema.py` 规整并校验，通过后才原子替换目标文件（失败时 `database/schema.sql` 保持原样，规则写在那个模块的 docstring 里）；dump 前会先查 `dbmate status`，有 pending 迁移就直接报错，避免把旧结构写进 schema。规整后的 diff 应只剩 `INSERT INTO public.schema_migrations` 的版本行。忘了跑也没关系：`tests/test_schema_normalizer.py::test_committed_schema_is_normalized` 会在 CI 里拦下原始 dump。背景与踩坑原因见 [pitfalls.md](pitfalls.md)「数据库」节。

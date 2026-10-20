@@ -1,45 +1,88 @@
 /* 系统设置页（/admin/settings）样式；面板、表格、按钮等通用样式复用 admin.css 与 components.css。 */
 
-/* 页签是一条完整的导航条，不是几个独立的胶囊按钮：
-   浅灰轨道 + 选中项白底，和页头的视图切换（.admin-view-switch）同一套语言。
-   四项等宽并在整行铺开，将来增加到 5～6 项也不会挤成一小撮。
-   「高级」用一条细分隔线与前三项分开，表示它是系统类配置，
-   但仍是同样的页签，不再做右对齐的小字链接。 */
-.settings-tabs {
+/* 左栏导航：设置分区竖排，左侧固定导航、右侧内容。
+   导航项是「短标签 + 一行副标题」，用 data-desc + ::after 渲染，
+   不进无障碍名称；分组把高频配置与系统级配置分开，
+   「高级」不再需要一个特殊的右对齐入口，和别的项一样落在「系统」组里。 */
+.settings-shell {
+    display: grid;
+    grid-template-columns: 208px minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+}
+
+.settings-nav {
+    position: sticky;
+    top: 16px;
     display: flex;
-    gap: 4px;
-    margin-bottom: 20px;
-    padding: 5px;
-    border: 1px solid var(--border-color);
+    flex-direction: column;
+    gap: 2px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    padding: 10px;
+    border: 1px solid #e2e8f0;
     border-radius: 14px;
-    background: #eef2f7;
+    background: #fff;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+}
+
+.settings-nav-group {
+    margin: 8px 10px 4px;
+    color: #94a3b8;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
+.settings-nav-group:first-child {
+    margin-top: 2px;
+}
+
+.settings-nav-sep {
+    height: 1px;
+    margin: 8px 10px;
+    background: #e2e8f0;
 }
 
 .settings-tab {
     position: relative;
-    flex: 1 1 0;
-    min-height: 42px;
-    padding: 8px 16px;
+    width: 100%;
+    padding: 9px 12px;
     border: 0;
-    border-radius: 10px;
+    border-radius: 9px;
     background: transparent;
     color: #475569;
     font: inherit;
-    font-size: 0.92rem;
+    font-size: 0.9rem;
     font-weight: 600;
+    text-align: left;
     cursor: pointer;
     transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
+.settings-tab::after {
+    display: block;
+    margin-top: 2px;
+    color: #94a3b8;
+    font-size: 0.74rem;
+    font-weight: 400;
+    line-height: 1.4;
+    content: attr(data-desc);
+}
+
 .settings-tab:hover {
-    background: rgb(255 255 255 / 55%);
+    background: #f8fafc;
     color: #1d4ed8;
 }
 
 .settings-tab.is-active {
-    background: #fff;
+    background: #eff6ff;
     color: #1d4ed8;
-    box-shadow: 0 1px 3px rgb(15 23 42 / 10%);
+    box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.settings-tab.is-active::after {
+    color: #60a5fa;
 }
 
 .settings-tab:focus-visible {
@@ -47,14 +90,8 @@
     outline-offset: 2px;
 }
 
-.settings-tab.settings-tab-advanced::before {
-    position: absolute;
-    top: 10px;
-    bottom: 10px;
-    left: -3px;
-    width: 1px;
-    background: #cbd5e1;
-    content: "";
+.settings-main {
+    min-width: 0;
 }
 
 /* 页头说明当前分区在管什么。页签只给短标签，长标题和解释放这里，
@@ -1398,6 +1435,38 @@
 .settings-panel [aria-invalid="true"] { border-color: #b91c1c; }
 .settings-textarea:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 
+/* 窄一档就退回顶部横向页签：内容区再窄，步骤表和词典表格会开始横向滚动 */
+@media (max-width: 1200px) {
+    .settings-shell { display: block; }
+    .settings-nav {
+        position: static;
+        flex-direction: row;
+        align-items: center;
+        gap: 4px;
+        max-height: none;
+        overflow: visible;
+        margin-bottom: 20px;
+        padding: 5px;
+        background: #eef2f7;
+        box-shadow: none;
+    }
+    .settings-nav-group,
+    .settings-nav-sep { display: none; }
+    .settings-tab {
+        flex: 1 1 0;
+        width: auto;
+        min-width: 0;
+        padding: 9px 12px;
+        border-radius: 9px;
+        text-align: center;
+    }
+    .settings-tab::after { display: none; }
+    .settings-tab.is-active {
+        background: #fff;
+        box-shadow: 0 1px 3px rgb(15 23 42 / 10%);
+    }
+}
+
 @media (max-width: 1100px) {
     .bonus-layout { grid-template-columns: minmax(0, 1fr); }
     .bonus-guide { position: static; }
@@ -1409,9 +1478,8 @@
 .advanced-alias-fields { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }
 .advanced-section > .settings-updated { margin-top: 12px; }
 @media (max-width: 600px) {
-    .settings-tabs { flex-wrap: wrap; }
+    .settings-nav { flex-wrap: wrap; }
     .settings-tab { flex: 1 1 calc(50% - 4px); padding: 8px 10px; }
-    .settings-tab.settings-tab-advanced::before { display: none; }
     .settings-page-title { font-size: 1.18rem; }
     .settings-card { padding: 16px; }
     .bonus-exclusion-card { padding: 16px; }

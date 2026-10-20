@@ -24,30 +24,37 @@
         <main>
             <p class="admin-alert" id="settings-alert" hidden></p>
 
-            <div class="settings-tabs" role="tablist" aria-label="系统设置分区">
-                <button class="settings-tab" id="settings-tab-models" type="button"
-                    role="tab" aria-controls="settings-panel-models" data-settings-tab="models">模型</button>
-                <button class="settings-tab" id="settings-tab-sources" type="button"
-                    role="tab" aria-controls="settings-panel-sources" data-settings-tab="sources">数据源</button>
-                <button class="settings-tab" id="settings-tab-bonuses" type="button"
-                    role="tab" aria-controls="settings-panel-bonuses" data-settings-tab="bonuses">加分词典</button>
-                <button class="settings-tab settings-tab-advanced" id="settings-tab-advanced" type="button"
-                    role="tab" aria-controls="settings-panel-advanced" data-settings-tab="advanced">高级</button>
+            <div class="settings-shell">
+                <aside class="settings-nav" role="tablist" aria-label="系统设置分区">
+                    <p class="settings-nav-group">配置</p>
+                    <button class="settings-tab" id="settings-tab-models" type="button"
+                        role="tab" aria-controls="settings-panel-models" data-settings-tab="models">模型</button>
+                    <button class="settings-tab" id="settings-tab-sources" type="button"
+                        role="tab" aria-controls="settings-panel-sources" data-settings-tab="sources">数据源</button>
+                    <button class="settings-tab" id="settings-tab-bonuses" type="button"
+                        role="tab" aria-controls="settings-panel-bonuses" data-settings-tab="bonuses">加分词典</button>
+                    <div class="settings-nav-sep" aria-hidden="true"></div>
+                    <p class="settings-nav-group">系统</p>
+                    <button class="settings-tab settings-tab-advanced" id="settings-tab-advanced" type="button"
+                        role="tab" aria-controls="settings-panel-advanced" data-settings-tab="advanced">高级</button>
+                </aside>
+
+                <div class="settings-main">
+                    <header class="settings-page-head">
+                        <h2 class="settings-page-title" id="settings-page-title">模型与接入点</h2>
+                        <p class="settings-page-desc" id="settings-page-desc"></p>
+                    </header>
+
+                    <section class="settings-panel" id="settings-panel-models"
+                        role="tabpanel" aria-labelledby="settings-tab-models"></section>
+                    <section class="settings-panel" id="settings-panel-sources"
+                        role="tabpanel" aria-labelledby="settings-tab-sources"></section>
+                    <section class="settings-panel" id="settings-panel-bonuses"
+                        role="tabpanel" aria-labelledby="settings-tab-bonuses" hidden></section>
+                    <section class="settings-panel" id="settings-panel-advanced"
+                        role="tabpanel" aria-labelledby="settings-tab-advanced" hidden></section>
+                </div>
             </div>
-
-            <header class="settings-page-head">
-                <h2 class="settings-page-title" id="settings-page-title">模型与接入点</h2>
-                <p class="settings-page-desc" id="settings-page-desc"></p>
-            </header>
-
-            <section class="settings-panel" id="settings-panel-models"
-                role="tabpanel" aria-labelledby="settings-tab-models"></section>
-            <section class="settings-panel" id="settings-panel-sources"
-                role="tabpanel" aria-labelledby="settings-tab-sources"></section>
-            <section class="settings-panel" id="settings-panel-bonuses"
-                role="tabpanel" aria-labelledby="settings-tab-bonuses" hidden></section>
-            <section class="settings-panel" id="settings-panel-advanced"
-                role="tabpanel" aria-labelledby="settings-tab-advanced" hidden></section>
         </main>
     </div>
 

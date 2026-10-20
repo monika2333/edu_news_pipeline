@@ -9,18 +9,22 @@ const SETTINGS_TABS = ['models', 'sources', 'bonuses', 'advanced'];
 // 导航要短（将来加页签也放得下），页头负责解释当前分区在管什么。
 const SETTINGS_TAB_META = {
     models: {
+        nav: '模型与接入点',
         title: '模型与接入点',
         description: '设置默认模型、流水线各步骤使用的模型，以及外部模型服务的接入点。',
     },
     sources: {
+        nav: '来源与账号',
         title: '数据源',
         description: '管理每小时抓取的来源与其抓取账号；开关即时生效，下一轮抓取按新配置执行。',
     },
     bonuses: {
+        nav: '关键词与排除',
         title: '加分词典',
         description: '命中关键词即加减分；排除名单命中的文章直接淘汰，不进入评分。',
     },
     advanced: {
+        nav: '低频配置',
         title: '高级',
         description: '低频配置：抓取关键词、来源别名与审阅自动排序。改动影响全局，请谨慎修改。',
     },
@@ -68,6 +72,12 @@ function cacheSettingsElements() {
     elements.alert = document.getElementById('settings-alert');
     elements.toast = document.getElementById('toast');
     elements.tabButtons = Array.from(document.querySelectorAll('[data-settings-tab]'));
+    elements.tabButtons.forEach((btn) => {
+        const meta = SETTINGS_TAB_META[btn.dataset.settingsTab];
+        // 侧栏每项的副标题只做视觉提示，用 data-desc + CSS ::after 渲染：
+        // 不进入无障碍名称，也不把按钮文案写长
+        btn.dataset.desc = meta ? meta.nav : '';
+    });
     elements.panels = {
         models: document.getElementById('settings-panel-models'),
         sources: document.getElementById('settings-panel-sources'),

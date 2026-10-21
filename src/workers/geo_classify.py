@@ -9,6 +9,7 @@ from src.adapters.llm_beijing_gate import (
     BeijingGateIndeterminateError,
     call_beijing_gate,
 )
+from src.adapters.prompt_store import load_active_prompts
 from src.business_config import get_business_config
 from src.config import get_settings
 from src.domain import (
@@ -125,13 +126,19 @@ def _process_beijing_gate(
     *,
     llm_retries: int,
     max_failures: int,
+    prompt_template: Optional[str] = None,
 ) -> tuple[int, int, int, int]:
     confirmed = 0
     rerouted = 0
     failures = 0
     fallback_completed = 0
     future_map = {
-        executor.submit(call_beijing_gate, candidate, retries=llm_retries): candidate
+        executor.submit(
+            call_beijing_gate,
+            candidate,
+            retries=llm_retries,
+            prompt_template=prompt_template,
+        ): candidate
         for candidate in candidates
     }
 
@@ -237,6 +244,7 @@ def _process_gate_backlog(
     batch_size: int,
     llm_retries: int,
     max_failures: int,
+    prompt_template: Optional[str] = None,
 ) -> tuple[int, int, int, int]:
     totals = [0, 0, 0, 0]
     remaining = limit
@@ -261,6 +269,7 @@ def _process_gate_backlog(
             executor,
             llm_retries=llm_retries,
             max_failures=max_failures,
+            prompt_template=prompt_template,
         )
         for index, value in enumerate(result):
             totals[index] += value
@@ -287,6 +296,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
     beijing_keywords = get_business_config().beijing_keywords
 
     with worker_session(WORKER, limit=limit_value):
+        prompts = load_active_prompts(adapter)
         rows = adapter.news_summaries.fetch_pending_routes(limit_value)
         local_stats = _route_locally(adapter, rows, beijing_keywords)
         with ContextPropagatingThreadPoolExecutor(max_workers=workers) as executor:
@@ -297,6 +307,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
                 batch_size=batch_size,
                 llm_retries=llm_retries,
                 max_failures=max_failures,
+                prompt_template=prompts["beijing_gate"].content,
             )
 
         if not rows and not any((confirmed, rerouted, gate_failures, fallbacks)):

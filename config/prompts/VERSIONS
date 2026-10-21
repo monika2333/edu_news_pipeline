@@ -1,3 +1,5 @@
+# 文件回退版本：仅当 prompt_revisions 表里还没有该 key 的 revision 时生效。
+# 生产以控制台保存的 revision 为准；改这里的标签不会影响已经保存过的提示词。
 external_positive: v2
 external_negative: v1
 internal_positive: v2

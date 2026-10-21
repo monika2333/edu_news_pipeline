@@ -218,9 +218,12 @@ SUBMISSION_FEEDBACK_MATCH_THRESHOLD=0.90
 `BAAI/bge-large-zh`，不能通过环境变量更换；
 更换模型必须清空已有存档向量并完整重算。
 
-## 提示词路径
+## 提示词路径（仅文件回退）
 
-提示词路径仍由环境变量控制（通常不需要修改）：
+提示词正文已迁到控制台设置页「提示词」，版本与内容保存在 `prompt_revisions` 表。
+下列环境变量只在数据库里还没有该提示词的 revision 时决定回退文件；控制台保存过之后，
+数据库版本优先，修改文件不再影响流水线（文件里 `<prompt>` 标签外的说明文字本来就
+不会发送给模型）：
 
 ```env
 EXTERNAL_FILTER_PROMPT_PATH=config/prompts/external_positive_importance_prompt.md

@@ -461,6 +461,42 @@ CREATE TABLE public.primary_articles (
 
 
 --
+-- Name: prompt_revisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.prompt_revisions (
+    id bigint NOT NULL,
+    prompt_key text NOT NULL,
+    revision integer NOT NULL,
+    content text NOT NULL,
+    note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by_user_id uuid,
+    CONSTRAINT prompt_revisions_content_check CHECK ((btrim(content) <> ''::text)),
+    CONSTRAINT prompt_revisions_revision_check CHECK ((revision > 0))
+);
+
+
+--
+-- Name: prompt_revisions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.prompt_revisions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: prompt_revisions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.prompt_revisions_id_seq OWNED BY public.prompt_revisions.id;
+
+
+--
 -- Name: raw_articles; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -733,6 +769,13 @@ COMMENT ON COLUMN public.submitted_reports.source_sender_id IS 'Provider-scoped 
 
 
 --
+-- Name: prompt_revisions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prompt_revisions ALTER COLUMN id SET DEFAULT nextval('public.prompt_revisions_id_seq'::regclass);
+
+
+--
 -- Name: review_events id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -921,6 +964,22 @@ ALTER TABLE ONLY public.pipeline_runs
 
 ALTER TABLE ONLY public.primary_articles
     ADD CONSTRAINT primary_articles_pkey PRIMARY KEY (article_id);
+
+
+--
+-- Name: prompt_revisions prompt_revisions_key_revision_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prompt_revisions
+    ADD CONSTRAINT prompt_revisions_key_revision_unique UNIQUE (prompt_key, revision);
+
+
+--
+-- Name: prompt_revisions prompt_revisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prompt_revisions
+    ADD CONSTRAINT prompt_revisions_pkey PRIMARY KEY (id);
 
 
 --
@@ -1670,6 +1729,14 @@ ALTER TABLE ONLY public.primary_articles
 
 
 --
+-- Name: prompt_revisions prompt_revisions_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prompt_revisions
+    ADD CONSTRAINT prompt_revisions_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: score_feedbacks score_feedbacks_article_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1882,4 +1949,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260928120000'),
     ('20260928130000'),
     ('20261020150000'),
-    ('20261020163000');
+    ('20261020163000'),
+    ('20261021150000');

@@ -52,7 +52,7 @@ def _node_or_skip() -> str:
     pytest.skip(reason)
 
 
-def test_settings_page_behaviour(tmp_path: Path) -> None:
+def _run_js_test(tmp_path: Path, test_file: str) -> None:
     node = _node_or_skip()
     settings_html = tmp_path / "settings.html"
     settings_html.write_text(_render_settings_page(), encoding="utf-8")
@@ -67,7 +67,7 @@ def test_settings_page_behaviour(tmp_path: Path) -> None:
             node,
             "--test",
             "--test-reporter=spec",
-            str(JS_TEST_DIR / "settings_behavior.test.js"),
+            str(JS_TEST_DIR / test_file),
         ],
         cwd=JS_TEST_DIR,
         env=env,
@@ -78,3 +78,11 @@ def test_settings_page_behaviour(tmp_path: Path) -> None:
         timeout=300,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_settings_page_behaviour(tmp_path: Path) -> None:
+    _run_js_test(tmp_path, "settings_behavior.test.js")
+
+
+def test_prompt_settings_page_behaviour(tmp_path: Path) -> None:
+    _run_js_test(tmp_path, "prompt_settings_flow.test.js")

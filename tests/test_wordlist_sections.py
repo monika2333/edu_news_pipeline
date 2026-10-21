@@ -31,6 +31,7 @@ from src.business_config import (
     load_business_config,
 )
 from src.domain import SourceAliasRules, normalize_source_name
+from src.domain.prompt import PromptTemplate
 from src.workers import crawl_sources, enrich_summary, geo_classify, score
 from tests.conftest import make_endpoint_config
 
@@ -593,6 +594,19 @@ def test_geo_classify_routes_by_configured_beijing_keywords(monkeypatch) -> None
     monkeypatch.setattr(
         geo_classify, "call_beijing_gate", lambda candidate, retries: None
     )
+    monkeypatch.setattr(
+        geo_classify,
+        "load_active_prompts",
+        lambda adapter: {
+            "beijing_gate": PromptTemplate(
+                key="beijing_gate",
+                version="v1",
+                content="GATE TEMPLATE",
+                source="file",
+                revision=1,
+            )
+        },
+    )
 
     # M7: the keyword exists only in the frozen config.
     config = make_endpoint_config(beijing_keywords=("配置独有词",))
@@ -722,6 +736,19 @@ def test_geo_classify_keeps_frozen_keywords_when_database_changes(
     )
     monkeypatch.setattr(
         geo_classify, "call_beijing_gate", lambda candidate, retries: None
+    )
+    monkeypatch.setattr(
+        geo_classify,
+        "load_active_prompts",
+        lambda adapter: {
+            "beijing_gate": PromptTemplate(
+                key="beijing_gate",
+                version="v1",
+                content="GATE TEMPLATE",
+                source="file",
+                revision=1,
+            )
+        },
     )
 
     frozen_config = load_business_config(_fake_adapter(frozen_rows))

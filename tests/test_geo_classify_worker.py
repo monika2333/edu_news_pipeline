@@ -8,6 +8,7 @@ from src.adapters.llm_beijing_gate import (
     BeijingGateResponse,
 )
 from src.domain.external_filter import BeijingGateCandidate
+from src.domain.prompt import PromptTemplate
 from src.workers import geo_classify
 
 
@@ -43,8 +44,12 @@ class _DummyFuture:
 class _DummyExecutor:
     def __init__(self, result_map):
         self._result_map = result_map
+        self.calls = []
 
-    def submit(self, func, candidate, retries):
+    def submit(self, func, candidate, retries, **kwargs):
+        self.calls.append(
+            {"func": func, "candidate": candidate, "retries": retries, **kwargs}
+        )
         return _DummyFuture(self._result_map[candidate.article_id])
 
 
@@ -283,7 +288,25 @@ def test_run_combines_local_routing_and_beijing_gate(monkeypatch) -> None:
     )
     monkeypatch.setattr(geo_classify, "get_adapter", lambda: adapter)
     monkeypatch.setattr(geo_classify, "get_settings", lambda: settings)
-    monkeypatch.setattr(geo_classify, "call_beijing_gate", lambda candidate, retries: decision)
+    monkeypatch.setattr(
+        geo_classify,
+        "load_active_prompts",
+        lambda adapter: {
+            "beijing_gate": PromptTemplate(
+                key="beijing_gate",
+                version="v9",
+                content="GATE TEMPLATE",
+                source="database",
+                revision=9,
+                revision_id=90,
+            )
+        },
+    )
+    monkeypatch.setattr(
+        geo_classify,
+        "call_beijing_gate",
+        lambda candidate, retries, prompt_template=None: decision,
+    )
 
     config = make_endpoint_config(
         beijing_keywords=("北京",),
@@ -296,3 +319,26 @@ def test_run_combines_local_routing_and_beijing_gate(monkeypatch) -> None:
         (candidate.article_id, True, "pending_beijing_gate")
     ]
     assert adapter.gate_updates == [candidate.article_id]
+
+def test_process_beijing_gate_passes_prompt_template_to_model():
+    candidate = _beijing_gate_candidate()
+    decision = SimpleNamespace(
+        is_beijing_related=True,
+        reason="明确属于北京市范围",
+        raw_text="raw text",
+    )
+    adapter = _RecordingProcessAdapter()
+    executor = _DummyExecutor({candidate.article_id: decision})
+
+    with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
+        geo_classify._process_beijing_gate(
+            adapter,
+            [candidate],
+            executor,
+            llm_retries=1,
+            max_failures=3,
+            prompt_template="GATE TEMPLATE",
+        )
+
+    assert executor.calls[0]["prompt_template"] == "GATE TEMPLATE"
+    assert executor.calls[0]["retries"] == 1

@@ -17,6 +17,7 @@ from src.console import (
     exports_routes,
     health_routes,
     manual_filter_routes,
+    prompts_routes,
     runs_routes,
     settings_routes,
     shifts_routes,
@@ -89,6 +90,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_routes.router)
     app.include_router(runs_routes.router, dependencies=admin_dependencies)
     app.include_router(settings_routes.router, dependencies=admin_dependencies)
+    app.include_router(prompts_routes.router, dependencies=admin_dependencies)
     app.include_router(articles_routes.router, dependencies=protected_dependencies)
     app.include_router(exports_routes.router, dependencies=admin_dependencies)
     app.include_router(

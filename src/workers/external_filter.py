@@ -8,10 +8,11 @@ from src.adapters.external_filter_model import (
     call_external_filter_model,
     parse_external_filter_score,
     prompt_key_for_category,
-    prompt_version_for_key,
 )
+from src.adapters.prompt_store import load_active_prompts
 from src.config import get_settings
 from src.domain import ExternalFilterCandidate
+from src.domain.prompt import PromptTemplate
 from src.workers import (
     ContextPropagatingThreadPoolExecutor,
     log_error,
@@ -32,10 +33,11 @@ def _score_candidate(
     *,
     retries: int,
     thresholds: Mapping[str, int],
+    prompt: PromptTemplate,
 ) -> tuple[int, str, bool, str, str, str]:
     category = candidate.candidate_category
-    prompt_key = prompt_key_for_category(category)
-    prompt_version = prompt_version_for_key(prompt_key)
+    prompt_key = prompt.key
+    prompt_version = prompt.version
     base_category = (category.split("_", 1)[0] if category else "").strip().lower()
     if base_category not in {"internal", "external"}:
         base_category = "external"
@@ -49,6 +51,7 @@ def _score_candidate(
         candidate,
         category=category,
         retries=retries,
+        prompt_template=prompt.content,
     )
     score_value = parse_external_filter_score(raw_output)
     if score_value is None:
@@ -64,6 +67,7 @@ def _process_external_filter_batch(
     thresholds: Mapping[str, int],
     max_retries: int,
     remaining_limit: Optional[int],
+    prompts: Mapping[str, PromptTemplate],
 ) -> tuple[int, int, int]:
     processed = 0
     failed = 0
@@ -74,6 +78,7 @@ def _process_external_filter_batch(
             candidate,
             retries=max_retries,
             thresholds=thresholds,
+            prompt=prompts[prompt_key_for_category(candidate.candidate_category)],
         ): candidate
         for candidate in candidates
     }
@@ -130,6 +135,8 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
         "internal_negative": settings.internal_filter_negative_threshold,
     }
     workers = max(1, concurrency or settings.default_concurrency or 5)
+    # 本轮只解析一次：同一篇文章的内容和 prompt_version 必须来自同一份模板。
+    prompts = load_active_prompts(adapter)
 
     with worker_session(WORKER, limit=limit):
         with ContextPropagatingThreadPoolExecutor(max_workers=workers) as executor:
@@ -155,6 +162,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                     thresholds,
                     max_retries,
                     remaining,
+                    prompts,
                 )
                 total_processed += processed
                 total_failed += failed

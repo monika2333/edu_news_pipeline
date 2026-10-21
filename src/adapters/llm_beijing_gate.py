@@ -93,13 +93,17 @@ def _truncate(text: str, limit: int = 1500) -> str:
     return f"{cleaned[:limit]}…（内容截断）"
 
 
-def build_prompt(candidate: BeijingGateCandidate) -> str:
-    template = _load_prompt_template()
+def build_prompt(
+    candidate: BeijingGateCandidate,
+    *,
+    template: Optional[str] = None,
+) -> str:
+    resolved_template = template if template is not None else _load_prompt_template()
     title = candidate.title or "（无标题）"
     summary = (candidate.summary or "").strip() or "（无摘要）"
     content = _truncate(candidate.content)
     return (
-        f"{template}\n\n"
+        f"{resolved_template}\n\n"
         "【待判定新闻】\n"
         f"标题：{title}\n"
         f"摘要：{summary}\n"
@@ -153,14 +157,19 @@ def _post_chat_completion(
     )
 
 
-def call_beijing_gate(candidate: BeijingGateCandidate, *, retries: int = 3) -> BeijingGateDecision:
+def call_beijing_gate(
+    candidate: BeijingGateCandidate,
+    *,
+    retries: int = 3,
+    prompt_template: Optional[str] = None,
+) -> BeijingGateDecision:
     started_at = time.monotonic()
     settings = get_settings()
     step_config = get_llm_step_config("beijing_gate")
     model = step_config.model
     deadline = started_at + settings.llm_beijing_gate_budget
     endpoint = resolve_llm_endpoint("beijing_gate")
-    prompt = build_prompt(candidate)
+    prompt = build_prompt(candidate, template=prompt_template)
     payload: dict[str, Any] = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],

@@ -239,6 +239,124 @@ function sectionsWithBareEndpointStep() {
     return sections;
 }
 
+// 提示词页签的默认负载：两个来自数据库（带历史）、三个来自文件默认。
+// content 用可辨识的短串，测试断言保存/恢复时不必读仓库里的真实提示词。
+function defaultPrompts() {
+    const base = {
+        step: 'external_filter',
+        kind: 'score',
+        char_count: 0,
+        updated_at: '2026-10-20T08:00:00Z',
+        updated_by: { user_id: 'u1', display_name: '编辑甲' },
+    };
+    const prompts = [
+        {
+            ...base,
+            key: 'external_positive',
+            label: '京外正面重要性',
+            description: '评估京外正面新闻对北京教育系统的参考价值。',
+            content: 'EXTERNAL POSITIVE PROMPT v2',
+            version: 'v2',
+            revision: 2,
+            revision_id: 12,
+            source: 'database',
+        },
+        {
+            ...base,
+            key: 'external_negative',
+            label: '京外负面重要性',
+            description: '评估京外负面新闻的风险预警价值。',
+            content: 'EXTERNAL NEGATIVE PROMPT v1',
+            version: 'v1',
+            revision: 1,
+            revision_id: null,
+            source: 'file',
+            updated_at: null,
+            updated_by: null,
+        },
+        {
+            ...base,
+            key: 'internal_positive',
+            label: '京内正面重要性',
+            description: '评估京内正面新闻对教育决策的参考价值。',
+            content: 'INTERNAL POSITIVE PROMPT v2',
+            version: 'v2',
+            revision: 2,
+            revision_id: 21,
+            source: 'database',
+        },
+        {
+            ...base,
+            key: 'internal_negative',
+            label: '京内负面重要性',
+            description: '评估京内负面新闻的风险提示价值。',
+            content: 'INTERNAL NEGATIVE PROMPT v1',
+            version: 'v1',
+            revision: 1,
+            revision_id: null,
+            source: 'file',
+            updated_at: null,
+            updated_by: null,
+        },
+        {
+            ...base,
+            step: 'beijing_gate',
+            kind: 'decision',
+            key: 'beijing_gate',
+            label: '京内二次判定',
+            description: '判断稿件是否仍应归入北京分类。',
+            content: 'BEIJING GATE PROMPT v1',
+            version: 'v1',
+            revision: 1,
+            revision_id: null,
+            source: 'file',
+            updated_at: null,
+            updated_by: null,
+        },
+    ];
+    return prompts.map((item) => ({ ...item, char_count: item.content.length }));
+}
+
+// 历史版本：数据库来源的两个 key 带一条更早的版本，便于测试查看/恢复。
+function defaultPromptHistory() {
+    return {
+        external_positive: [
+            {
+                id: 11,
+                revision: 1,
+                version: 'v1',
+                note: '初始文件版本',
+                char_count: 22,
+                created_at: '2026-10-01T08:00:00Z',
+                created_by: null,
+                content: 'EXTERNAL POSITIVE v1',
+            },
+            {
+                id: 12,
+                revision: 2,
+                version: 'v2',
+                note: '收紧 Tier 1',
+                char_count: 28,
+                created_at: '2026-10-20T08:00:00Z',
+                created_by: { user_id: 'u1', display_name: '编辑甲' },
+                content: 'EXTERNAL POSITIVE PROMPT v2',
+            },
+        ],
+        internal_positive: [
+            {
+                id: 21,
+                revision: 2,
+                version: 'v2',
+                note: null,
+                char_count: 28,
+                created_at: '2026-10-20T08:00:00Z',
+                created_by: { user_id: 'u1', display_name: '编辑甲' },
+                content: 'INTERNAL POSITIVE PROMPT v2',
+            },
+        ],
+    };
+}
+
 function makeAccount(overrides = {}) {
     return {
         id: overrides.id || `acc-${Math.random().toString(36).slice(2, 10)}`,
@@ -286,6 +404,13 @@ class FakeSettingsServer {
             embedding_model: 'BAAI/bge-m3',
         };
         this.accounts = options.accounts || defaultAccounts();
+        // 提示词：默认两个数据库来源（带历史）、三个文件来源；测试可直接改
+        // this.prompts / this.promptHistory 构造保存冲突或历史场景。
+        this.prompts = options.prompts || defaultPrompts();
+        this.promptHistory = options.promptHistory || defaultPromptHistory();
+        this.promptSeq = 100;
+        // 提示词保存的定制响应：{ status, payload }，命中一次后失效
+        this.promptSaveBehavior = null;
         // 环境变量重载的定制行为：reloadEnvBehavior() 在返回前执行，测试用它
         // 模拟「服务器端 .env 变化后的重载结果」（如某接入点 Key 由未配置变为已配置）；
         // envVarCount 是响应里的 loaded_env_vars 回显
@@ -328,6 +453,16 @@ class FakeSettingsServer {
         if (pathname === '/api/admin/settings/crawl_sources') return 'save-sources';
         const dictionaryMatch = pathname.match(/^\/api\/admin\/settings\/(score_keyword_bonuses|score_exclusion_keywords|education_keywords|beijing_keywords|source_aliases|review_sort_keywords)$/);
         if (dictionaryMatch) return `save-${dictionaryMatch[1]}`;
+        if (pathname === '/api/admin/prompts') return 'get-prompts';
+        if (/^\/api\/admin\/prompts\/[^/]+\/versions\/[^/]+$/.test(pathname)) {
+            return 'prompt-revision';
+        }
+        if (/^\/api\/admin\/prompts\/[^/]+\/versions$/.test(pathname)) {
+            return 'prompt-versions';
+        }
+        if (/^\/api\/admin\/prompts\/[^/]+$/.test(pathname) && method === 'PUT') {
+            return 'save-prompt';
+        }
         if (pathname === '/api/admin/crawl-accounts') {
             return method === 'POST' ? 'add-account' : 'list-accounts';
         }
@@ -443,6 +578,94 @@ class FakeSettingsServer {
                 error: null,
                 endpoint: body && body.endpoint !== undefined ? body.endpoint : null,
             }];
+        }
+        if (pathname === '/api/admin/prompts' && method === 'GET') {
+            return [200, { items: this.prompts }];
+        }
+        const promptSaveMatch = pathname.match(/^\/api\/admin\/prompts\/([^/]+)$/);
+        if (promptSaveMatch && method === 'PUT') {
+            const key = decodeURIComponent(promptSaveMatch[1]);
+            const item = this.prompts.find((prompt) => prompt.key === key);
+            if (!item) return [404, { detail: '提示词不存在' }];
+            if (this.promptSaveBehavior) {
+                const behavior = this.promptSaveBehavior;
+                this.promptSaveBehavior = null;
+                return [behavior.status, behavior.payload];
+            }
+            if (body.expected_revision_id !== item.revision_id) {
+                return [409, { detail: `提示词已在别处被修改（当前版本：${item.version}）` }];
+            }
+            const content = String(body.content || '').replace(/\r\n/g, '\n').trim();
+            if (!content) return [422, { detail: '提示词内容不能为空' }];
+            if (content === item.content) {
+                return [422, { detail: '提示词内容未发生变化' }];
+            }
+            if (!this.promptHistory[key]) this.promptHistory[key] = [];
+            const history = this.promptHistory[key];
+            if (!history.length && item.source === 'file') {
+                history.push({
+                    id: this.promptSeq++,
+                    revision: item.revision,
+                    version: item.version,
+                    note: '初始文件版本',
+                    char_count: item.content.length,
+                    created_at: item.updated_at || '2026-10-01T08:00:00Z',
+                    created_by: null,
+                    content: item.content,
+                });
+            }
+            const nextRevision = Math.max(
+                item.revision,
+                ...history.map((revision) => revision.revision),
+            ) + 1;
+            const entry = {
+                id: this.promptSeq++,
+                revision: nextRevision,
+                version: `v${nextRevision}`,
+                note: body.note || null,
+                char_count: content.length,
+                created_at: '2026-10-21T08:00:00Z',
+                created_by: { user_id: 'admin-id', display_name: '测试管理员' },
+                content,
+            };
+            history.push(entry);
+            item.content = content;
+            item.version = entry.version;
+            item.revision = nextRevision;
+            item.revision_id = entry.id;
+            item.source = 'database';
+            item.char_count = content.length;
+            item.updated_at = entry.created_at;
+            item.updated_by = entry.created_by;
+            return [200, { item: { ...item } }];
+        }
+        const promptVersionsMatch = pathname.match(
+            /^\/api\/admin\/prompts\/([^/]+)\/versions$/,
+        );
+        if (promptVersionsMatch && method === 'GET') {
+            const key = decodeURIComponent(promptVersionsMatch[1]);
+            if (!this.prompts.some((prompt) => prompt.key === key)) {
+                return [404, { detail: '提示词不存在' }];
+            }
+            const limit = Number(url.searchParams.get('limit') || 20);
+            const history = (this.promptHistory[key] || [])
+                .slice()
+                .sort((left, right) => right.revision - left.revision);
+            return [200, {
+                items: history.slice(0, limit).map(({ content, ...rest }) => rest),
+                has_more: history.length > limit,
+            }];
+        }
+        const promptRevisionMatch = pathname.match(
+            /^\/api\/admin\/prompts\/([^/]+)\/versions\/([^/]+)$/,
+        );
+        if (promptRevisionMatch && method === 'GET') {
+            const key = decodeURIComponent(promptRevisionMatch[1]);
+            const revisionId = decodeURIComponent(promptRevisionMatch[2]);
+            const entry = (this.promptHistory[key] || [])
+                .find((revision) => String(revision.id) === revisionId);
+            if (!entry) return [404, { detail: '提示词版本不存在' }];
+            return [200, { ...entry, prompt_key: key }];
         }
         const saveMatch = pathname.match(
             /^\/api\/admin\/settings\/(llm_models|llm_endpoints|crawl_sources|score_keyword_bonuses|score_exclusion_keywords|education_keywords|beijing_keywords|source_aliases|review_sort_keywords)$/,
@@ -669,6 +892,8 @@ module.exports = {
     defaultSections,
     defaultAccounts,
     defaultEndpointsPayload,
+    defaultPrompts,
+    defaultPromptHistory,
     makeAccount,
     sectionsWithBareEndpointStep,
 };

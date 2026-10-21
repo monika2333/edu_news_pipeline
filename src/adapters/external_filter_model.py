@@ -102,8 +102,15 @@ def _truncate(text: str, limit: int = 1500) -> str:
     return text[:limit] + "……（内容截断）"
 
 
-def build_prompt(candidate: ExternalFilterCandidate, *, category: str = "external") -> str:
-    template = _load_prompt_template(category)
+def build_prompt(
+    candidate: ExternalFilterCandidate,
+    *,
+    category: str = "external",
+    template: Optional[str] = None,
+) -> str:
+    resolved_template = (
+        template if template is not None else _load_prompt_template(category)
+    )
     prompt_key = prompt_key_for_category(category)
     is_internal_category = prompt_key.startswith("internal")
     title = candidate.title or "（无标题）"
@@ -115,7 +122,7 @@ def build_prompt(candidate: ExternalFilterCandidate, *, category: str = "externa
         keyword_text = "、".join(candidate.keyword_matches)
         keyword_section = f"Bonus Keywords: {keyword_text}\n\n"
     return (
-        f"{template}\n\n"
+        f"{resolved_template}\n\n"
         f"{keyword_section}"
         "【新闻内容】\n"
         f"标题：{title}\n"
@@ -131,6 +138,7 @@ def call_external_filter_model(
     category: str = "external",
     retries: int = 3,
     timeout: Optional[int] = None,
+    prompt_template: Optional[str] = None,
 ) -> str:
     started_at = time.monotonic()
     settings = get_settings()
@@ -140,7 +148,16 @@ def call_external_filter_model(
     endpoint = resolve_llm_endpoint("external_filter")
     payload = {
         "model": model,
-        "messages": [{"role": "user", "content": build_prompt(candidate, category=category)}],
+        "messages": [
+            {
+                "role": "user",
+                "content": build_prompt(
+                    candidate,
+                    category=category,
+                    template=prompt_template,
+                ),
+            }
+        ],
         "temperature": 0.0,
     }
     endpoint.finalize_payload(

@@ -3,7 +3,7 @@
 // 启动逻辑在 init.js。用户输入一律经 createEl/textContent 渲染，禁止拼接 innerHTML。
 'use strict';
 
-const SETTINGS_TABS = ['models', 'sources', 'bonuses', 'advanced'];
+const SETTINGS_TABS = ['models', 'prompts', 'sources', 'bonuses', 'advanced'];
 
 // 页签短标签用于导航，页头标题与一句话说明用于内容区。两者分开：
 // 导航要短（将来加页签也放得下），页头负责解释当前分区在管什么。
@@ -17,6 +17,12 @@ const SETTINGS_TAB_META = {
         nav: '来源与账号',
         title: '数据源',
         description: '管理每小时抓取的来源与其抓取账号',
+    },
+    prompts: {
+        nav: '提示词与版本',
+        title: '提示词',
+        description: '编辑评分与京内判定提示词。每次保存生成新版本，可回看与恢复；'
+            + '修改在下一次流水线运行生效。',
     },
     bonuses: {
         nav: '关键词与排除',
@@ -62,6 +68,17 @@ const state = {
         beijing_keywords: false, source_aliases: false,
         review_sort_keywords: false },
     modelsDraft: null,
+    // 提示词页签：内容来自独立的 /api/admin/prompts 负载（不进 app_settings）。
+    // drafts 按 key 保存未提交的编辑，切换提示词/页签不丢；history 懒加载。
+    prompts: {
+        payload: null,
+        loading: false,
+        error: null,
+        selectedKey: null,
+        drafts: {},
+        history: {},
+        saving: false,
+    },
     // 进行中的来源启停请求数；非零时禁用面板内全部来源开关
     sourceToggleInflight: 0,
 };
@@ -80,6 +97,7 @@ function cacheSettingsElements() {
     });
     elements.panels = {
         models: document.getElementById('settings-panel-models'),
+        prompts: document.getElementById('settings-panel-prompts'),
         sources: document.getElementById('settings-panel-sources'),
         bonuses: document.getElementById('settings-panel-bonuses'),
         advanced: document.getElementById('settings-panel-advanced'),
@@ -161,7 +179,9 @@ function clearDirty(section) {
 }
 
 function hasUnsavedChanges() {
-    return Object.values(state.dirty).some(Boolean);
+    if (Object.values(state.dirty).some(Boolean)) return true;
+    // 提示词草稿按 key 存在 state.prompts.drafts；由 prompts_tab.js 提供判定。
+    return typeof promptDraftsDirty === 'function' && promptDraftsDirty();
 }
 
 function registerUnsavedGuard() {

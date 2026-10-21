@@ -20,8 +20,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const { tab } = parseSettingsHash();
 
     await loadAllAccountOverviews();
+    await loadPrompts();
 
     renderModelsTab();
+    renderPromptsTab();
     renderSourcesTab();
     renderBonusesTab();
     renderAdvancedTab();

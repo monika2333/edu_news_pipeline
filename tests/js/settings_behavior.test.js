@@ -3375,7 +3375,8 @@ test('排除名单：加分表格下方渲染独立卡片，默认空数组且�
         assert.ok(main.querySelector('.bonus-table'));
         assert.ok(main.querySelector('.bonus-exclusion-card'));
         assert.equal(page.window.eval('state.activeTab'), 'bonuses');
-        assert.equal(page.document.querySelectorAll('[data-settings-tab]').length, 4);
+        // 排除名单不新增页签；当前页签集合是模型/提示词/数据源/加分词典/高级
+        assert.equal(page.document.querySelectorAll('[data-settings-tab]').length, 5);
         assert.equal(
             page.document.querySelector('[data-settings-tab="score_exclusion_keywords"]'),
             null,

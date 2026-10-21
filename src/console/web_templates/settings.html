@@ -29,6 +29,8 @@
                     <p class="settings-nav-group">配置</p>
                     <button class="settings-tab" id="settings-tab-models" type="button"
                         role="tab" aria-controls="settings-panel-models" data-settings-tab="models">模型</button>
+                    <button class="settings-tab" id="settings-tab-prompts" type="button"
+                        role="tab" aria-controls="settings-panel-prompts" data-settings-tab="prompts">提示词</button>
                     <button class="settings-tab" id="settings-tab-sources" type="button"
                         role="tab" aria-controls="settings-panel-sources" data-settings-tab="sources">数据源</button>
                     <button class="settings-tab" id="settings-tab-bonuses" type="button"
@@ -47,6 +49,8 @@
 
                     <section class="settings-panel" id="settings-panel-models"
                         role="tabpanel" aria-labelledby="settings-tab-models"></section>
+                    <section class="settings-panel" id="settings-panel-prompts"
+                        role="tabpanel" aria-labelledby="settings-tab-prompts" hidden></section>
                     <section class="settings-panel" id="settings-panel-sources"
                         role="tabpanel" aria-labelledby="settings-tab-sources"></section>
                     <section class="settings-panel" id="settings-panel-bonuses"
@@ -70,6 +74,7 @@
     <script src="/static/js/settings/section_editor.js?v={{ version }}"></script>
     <script src="/static/js/settings/bonus_tab.js?v={{ version }}"></script>
     <script src="/static/js/settings/advanced_tab.js?v={{ version }}"></script>
+    <script src="/static/js/settings/prompts_tab.js?v={{ version }}"></script>
     <script src="/static/js/settings/init.js?v={{ version }}"></script>
 </body>
 

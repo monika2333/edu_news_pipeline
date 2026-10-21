@@ -334,9 +334,9 @@ function buildSearchResultItem(item, summaryToggles) {
     if (pickMode) {
         const pickBtn = createEl(
             'button',
-            'btn btn-primary btn-sm search-pick-btn',
+            'search-pick-btn',
             '选这篇',
-            { type: 'button' }
+            { type: 'button', title: '选择这篇用于试跑' }
         );
         pickBtn.addEventListener('click', () => pickSearchArticle(item));
         header.appendChild(pickBtn);

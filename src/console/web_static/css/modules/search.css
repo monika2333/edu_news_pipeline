@@ -686,6 +686,27 @@ body[data-search-drawer-mode="pick"] .search-tabs {
 }
 
 .search-pick-btn {
-    margin-left: 8px;
+    margin-left: 10px;
+    padding: 2px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.6;
     vertical-align: middle;
+    cursor: pointer;
+}
+
+.search-pick-btn:hover {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.search-pick-btn:focus-visible {
+    outline: 2px solid #bfdbfe;
+    outline-offset: 1px;
 }

@@ -1629,3 +1629,89 @@ def test_cleanup_review_buckets_api_rejects_invalid_buckets() -> None:
         },
     ).status_code == 422
     assert client.post(url, json={"buckets": [valid_bucket]}).status_code == 422
+
+
+def test_preview_header_api_uses_admin_viewpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.console import preview_header_service
+
+    calls: list[dict[str, Any]] = []
+
+    def fake_build(**kwargs: Any) -> Dict[str, Any]:
+        calls.append(dict(kwargs))
+        return {
+            "available": True,
+            "lines": ["首都教育舆情", "总第4848期", "2026年10月22日"],
+        }
+
+    monkeypatch.setattr(preview_header_service, "build_preview_header", fake_build)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+
+    response = TestClient(app).get(
+        "/api/manual_filter/preview-header?report_type=wanbao"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["lines"][1] == "总第4848期"
+    assert calls == [{"report_type": "wanbao", "viewer": "admin"}]
+
+
+def test_preview_header_api_rejects_unknown_report_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.console import preview_header_service
+
+    def fake_build(**kwargs: Any) -> Dict[str, Any]:
+        raise ValueError("不支持的报别: feedback")
+
+    monkeypatch.setattr(preview_header_service, "build_preview_header", fake_build)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+
+    response = TestClient(app).get(
+        "/api/manual_filter/preview-header?report_type=feedback"
+    )
+
+    assert response.status_code == 422
+
+
+def test_duty_preview_header_api_uses_duty_viewpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.console import preview_header_service
+
+    calls: list[dict[str, Any]] = []
+
+    def fake_build(**kwargs: Any) -> Dict[str, Any]:
+        calls.append(dict(kwargs))
+        return {
+            "available": True,
+            "lines": ["首都教育舆情", "总第4848期", "2026年10月21日"],
+        }
+
+    monkeypatch.setattr(preview_header_service, "build_preview_header", fake_build)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _duty_editor_user
+
+    response = TestClient(app).get(
+        "/api/duty/shifts/shift-1/preview-header?report_type=wanbao"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["lines"][2] == "2026年10月21日"
+    assert calls == [{"report_type": "wanbao", "viewer": "duty"}]
+
+
+def test_admin_workspace_cannot_read_duty_preview_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+
+    response = TestClient(app).get(
+        "/api/duty/shifts/shift-1/preview-header?report_type=wanbao"
+    )
+
+    assert response.status_code == 403

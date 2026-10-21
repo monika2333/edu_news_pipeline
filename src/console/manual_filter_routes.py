@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.console import (
     manual_filter_admin_service,
     manual_filter_service,
+    preview_header_service,
     score_feedback_service,
 )
 from src.console.manual_filter_duplicate_service import (
@@ -356,6 +357,21 @@ def save_edits_api(
         )
     except (ValueError, RuntimeError) as exc:
         _raise_manual_write_http_error(exc)
+
+
+@router.get("/preview-header")
+def preview_header_api(
+    report_type: str = "zongbao",
+    user: ConsoleUser = Depends(require_admin_workspace_user),
+) -> Dict[str, Any]:
+    """汇总审阅页「预览」的期号题头，按管理员口径（日期行 = 报送日）推算。"""
+    try:
+        return preview_header_service.build_preview_header(
+            report_type=report_type,
+            viewer="admin",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/stats")

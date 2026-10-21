@@ -353,6 +353,9 @@
 }
 
 .modal-body textarea {
+    /* content-box 下 width:100% + padding/border 会让 textarea 比弹窗宽出
+       约 26px，把 modal-body 撑出横向滚动条（预览框要往右拖才看得全的根因） */
+    box-sizing: border-box;
     width: 100%;
     flex: 1 1 auto;
     min-height: 180px;

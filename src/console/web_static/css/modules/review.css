@@ -987,3 +987,71 @@ body.duplicate-review-open .search-drawer-toggle {
     font-weight: 700;
     color: #b91c1c;
 }
+
+/* ===== 预览题头开关 =====
+   题头直接是预览文本（textarea）的前三行，与正文同字体，不单独占区块；
+   这里只剩「包含题头」开关、关闭按钮和基准异常的提示行。 */
+
+/* 关闭按钮：固定在弹窗右上角，比通用 .btn-icon 更大更好点 */
+#preview-modal .modal-content {
+    position: relative;
+}
+
+#preview-modal .modal-header {
+    /* 给右上角的关闭按钮让位 */
+    padding-right: 48px;
+}
+
+.preview-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 6px 10px;
+    font-size: 1.5rem;
+    line-height: 1;
+    border-radius: 8px;
+}
+
+.preview-close:hover {
+    background: rgba(15, 23, 42, 0.06);
+}
+
+/* 底部：开关靠左、复制按钮靠右。用 margin-right:auto 而不是 space-between，
+   开关隐藏时复制按钮仍然停在右侧 */
+.preview-modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.preview-modal-footer .preview-header-switch {
+    margin-right: auto;
+}
+
+/* 开关默认隐藏（无基准 / 备选桶）；.filter-refine-switch-control 的
+   display:inline-flex 会压过浏览器默认的 [hidden]，必须显式声明。 */
+.preview-header-switch[hidden] {
+    display: none;
+}
+
+.preview-header-switch .filter-refine-switch-text {
+    font-size: 14px;
+}
+
+/* 预览文本框：尺寸/边框/字体沿用 components.css 的 .modal-body textarea，
+   这里只补长内容表现——等宽字体下长行按框宽折行，不产生横向滚动条 */
+.preview-text {
+    height: 400px;
+    resize: vertical;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.preview-doc-notices {
+    margin: 0 0 10px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}

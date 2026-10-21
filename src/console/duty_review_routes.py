@@ -5,7 +5,12 @@ from typing import Any, Dict, NoReturn, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
-from src.console import duty_review_service, score_feedback_service, shifts_service
+from src.console import (
+    duty_review_service,
+    preview_header_service,
+    score_feedback_service,
+    shifts_service,
+)
 from src.console.articles_schemas import NewsArticleIngestStatusResponse
 from src.console.auth_service import ConsoleUser
 from src.console.duty_review_schemas import (
@@ -542,6 +547,22 @@ def preview(
         )
     except (ValueError, PermissionError) as exc:
         _raise_review_error(exc)
+
+
+@router.get("/preview-header")
+def preview_header(
+    shift_id: str,
+    report_type: ReportType = "zongbao",
+    user: ConsoleUser = Depends(require_role("duty_editor")),
+) -> dict[str, Any]:
+    """值班编辑预览的期号题头：日期行写制作日（= 当天）。"""
+    try:
+        return preview_header_service.build_preview_header(
+            report_type=report_type,
+            viewer="duty",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 __all__ = ["router"]

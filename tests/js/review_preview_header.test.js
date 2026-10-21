@@ -185,6 +185,24 @@ test('PH6：题头接口失败不影响预览', async () => {
     } finally { page.close(); }
 });
 
+test('PH7：按 Escape 关闭预览弹窗', async () => {
+    const page = await bootReviewPage();
+    try {
+        await openPreview(page);
+        const modal = page.document.getElementById('preview-modal');
+        assert.equal(modal.classList.contains('active'), true);
+
+        // 在 body 上派发，走真实的捕获→冒泡路径
+        page.document.body.dispatchEvent(new page.window.KeyboardEvent('keydown', {
+            key: 'Escape',
+            bubbles: true,
+            cancelable: true,
+        }));
+
+        assert.equal(modal.classList.contains('active'), false);
+    } finally { page.close(); }
+});
+
 test.after(() => {
     assert.deepEqual(unhandledRejections, []);
 });

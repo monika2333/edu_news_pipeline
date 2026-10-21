@@ -263,3 +263,20 @@ function buildPreviewCopyText() {
     const textarea = document.getElementById('preview-text');
     return textarea ? textarea.value : '';
 }
+
+function closePreviewModal() {
+    const modal = document.getElementById('preview-modal');
+    if (modal) modal.classList.remove('active');
+}
+
+// Escape 关闭预览弹窗。
+// 用捕获阶段注册并由本处截断：预览弹窗盖在所有浮层（含原文抽屉）之上，
+// 抽屉的 Escape 处理器在 document 冒泡阶段注册得更早，不拦下会先把抽屉关掉。
+document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    const modal = document.getElementById('preview-modal');
+    if (!modal || !modal.classList.contains('active')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closePreviewModal();
+}, true);

@@ -442,22 +442,11 @@
     {% if is_duty_workspace or is_admin_review %}
     <div class="modal" id="preview-modal">
         <div class="modal-content">
+            {# 关闭按钮固定在弹窗右上角（样式见 review.css 的 .preview-close） #}
+            <button class="btn-icon preview-close" id="btn-close-preview" type="button"
+                aria-label="关闭预览">✕</button>
             <div class="modal-header">
                 <h3>预览内容</h3>
-                <div class="preview-modal-actions">
-                    {# 题头默认包含；用户关掉后由 localStorage 记住（review_tab_preview.js）。
-                       开关复用筛选页「细化筛选」的 switch 控件样式。 #}
-                    <label class="filter-refine-switch-control preview-header-switch"
-                        id="preview-header-toggle" hidden>
-                        <span class="filter-refine-switch">
-                            <input type="checkbox" id="preview-include-header" checked
-                                aria-label="包含题头">
-                            <span class="filter-refine-switch-slider" aria-hidden="true"></span>
-                        </span>
-                        <span class="filter-refine-switch-text">包含题头</span>
-                    </label>
-                    <button class="btn btn-secondary" id="btn-close-preview">关闭</button>
-                </div>
             </div>
             <div class="modal-body">
                 <p class="preview-doc-notices" id="preview-doc-notices" hidden></p>
@@ -465,7 +454,18 @@
                    不再单独占一个区块 #}
                 <textarea id="preview-text" class="preview-text" readonly></textarea>
             </div>
-            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
+            <div class="modal-footer preview-modal-footer">
+                {# 题头默认包含；用户关掉后由 localStorage 记住（review_tab_preview.js）。
+                   开关复用筛选页「细化筛选」的 switch 控件样式，靠左、复制按钮靠右。 #}
+                <label class="filter-refine-switch-control preview-header-switch"
+                    id="preview-header-toggle" hidden>
+                    <span class="filter-refine-switch">
+                        <input type="checkbox" id="preview-include-header" checked
+                            aria-label="包含题头">
+                        <span class="filter-refine-switch-slider" aria-hidden="true"></span>
+                    </span>
+                    <span class="filter-refine-switch-text">包含题头</span>
+                </label>
                 <button class="btn btn-primary" id="btn-copy-preview">复制内容</button>
             </div>
         </div>

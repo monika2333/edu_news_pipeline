@@ -140,10 +140,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Preview Modal Handlers
     const btnClosePreview = document.getElementById('btn-close-preview');
     if (btnClosePreview) {
-        btnClosePreview.addEventListener('click', () => {
-            const modal = document.getElementById('preview-modal');
-            if (modal) modal.classList.remove('active');
-        });
+        btnClosePreview.addEventListener('click', closePreviewModal);
     }
     const btnCopyPreview = document.getElementById('btn-copy-preview');
     if (btnCopyPreview) {

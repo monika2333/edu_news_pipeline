@@ -150,7 +150,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         btnCopyPreview.addEventListener('click', async () => {
             const textarea = document.getElementById('preview-text');
             if (!textarea) return;
-            const text = textarea.value;
+            const text = buildPreviewCopyText();
             if (!text) return;
             try {
                 if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -164,6 +164,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 showToast('复制失败', 'error');
             }
         });
+    }
+    const previewHeaderCheckbox = document.getElementById('preview-include-header');
+    if (previewHeaderCheckbox) {
+        previewHeaderCheckbox.addEventListener('change', handlePreviewHeaderToggle);
     }
 
     if (elements.sortToggleBtn) {

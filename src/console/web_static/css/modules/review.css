@@ -987,3 +987,39 @@ body.duplicate-review-open .search-drawer-toggle {
     font-weight: 700;
     color: #b91c1c;
 }
+
+/* ===== 预览题头开关 =====
+   题头直接是预览文本（textarea）的前三行，与正文同字体，不单独占区块；
+   这里只剩「包含题头」这个开关和基准异常的提示行。 */
+
+.preview-modal-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* 开关默认隐藏（无基准 / 备选桶）；.filter-refine-switch-control 的
+   display:inline-flex 会压过浏览器默认的 [hidden]，必须显式声明。 */
+.preview-header-switch[hidden] {
+    display: none;
+}
+
+.preview-header-switch .filter-refine-switch-text {
+    font-size: 14px;
+}
+
+/* 预览文本框：尺寸/边框/字体沿用 components.css 的 .modal-body textarea，
+   这里只补长内容表现——等宽字体下长行按框宽折行，不产生横向滚动条 */
+.preview-text {
+    height: 400px;
+    resize: vertical;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.preview-doc-notices {
+    margin: 0 0 10px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}

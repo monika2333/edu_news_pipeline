@@ -68,6 +68,8 @@ class FakeWorkspaceServer {
         // article_id -> /api/articles/content 响应体（可只给差异字段，其余自动补全）；
         // 未播种的 id 返回与后端一致的全 null 兜底响应
         articleContents = null,
+        // /preview-header 的响应体；null / available=false 表示「没有期号基准」
+        previewHeader = null,
     } = {}) {
         this.articles = new Map();
         for (let index = 0; index < articleCount; index += 1) {
@@ -101,6 +103,7 @@ class FakeWorkspaceServer {
         // 条件参数（q / 分类 / 分数 / decided_since / batch_decided_at）在此模拟
         this.discardedItems = discardedItems || [];
         this.articleContents = articleContents || {};
+        this.previewHeader = previewHeader;
         this.log = [];
         this.inflight = 0;
         this.holds = {};
@@ -169,6 +172,7 @@ class FakeWorkspaceServer {
     classify(url) {
         const pathname = url.pathname;
         if (pathname === '/api/articles/content') return 'article-content';
+        if (pathname.endsWith('/preview-header')) return 'preview-header';
         if (pathname.endsWith('/clusters')) return 'list';
         // cleanup-candidates 必须在 candidates 之前判断（endsWith 会误匹配）
         if (pathname.endsWith('/cleanup-candidates')) return 'cleanup-candidates';
@@ -249,6 +253,21 @@ class FakeWorkspaceServer {
                 is_beijing_related: null,
                 sentiment_label: null,
                 external_importance_score: null,
+            }];
+        }
+        if (pathname.endsWith('/preview-header')) {
+            const reportType = url.searchParams.get('report_type') || 'zongbao';
+            if (this.previewHeader && this.previewHeader.available) {
+                return [200, { report_type: reportType, ...this.previewHeader }];
+            }
+            return [200, {
+                report_type: reportType,
+                available: false,
+                lines: [],
+                title_line: '',
+                issue_line: '',
+                date_line: '',
+                notices: ['尚未录入该报别的报送存档，无法推算期号'],
             }];
         }
         if (pathname === '/api/duty/shifts') {
@@ -561,6 +580,10 @@ async function bootPage(mode, serverOptions = {}) {
             window.Request = Request;
             window.Headers = Headers;
             window.scrollTo = () => {};
+            // 「包含题头」的偏好存在 localStorage，启动前种入以验证「记住上次选择」
+            if (serverOptions.previewHeaderEnabled === false) {
+                window.localStorage.setItem('manual_filter_preview_header', 'false');
+            }
             window.HTMLElement.prototype.scrollIntoView = () => {};
             window.matchMedia = () => ({
                 matches: false,

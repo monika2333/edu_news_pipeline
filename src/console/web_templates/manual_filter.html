@@ -444,11 +444,26 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3>预览内容</h3>
-                <button class="btn btn-secondary" id="btn-close-preview">关闭</button>
+                <div class="preview-modal-actions">
+                    {# 题头默认包含；用户关掉后由 localStorage 记住（review_tab_preview.js）。
+                       开关复用筛选页「细化筛选」的 switch 控件样式。 #}
+                    <label class="filter-refine-switch-control preview-header-switch"
+                        id="preview-header-toggle" hidden>
+                        <span class="filter-refine-switch">
+                            <input type="checkbox" id="preview-include-header" checked
+                                aria-label="包含题头">
+                            <span class="filter-refine-switch-slider" aria-hidden="true"></span>
+                        </span>
+                        <span class="filter-refine-switch-text">包含题头</span>
+                    </label>
+                    <button class="btn btn-secondary" id="btn-close-preview">关闭</button>
+                </div>
             </div>
             <div class="modal-body">
-                <textarea id="preview-text" readonly
-                    style="height: 400px; resize: vertical; width: 100%; border: 1px solid #d9d9d9; padding: 10px; font-family: monospace;"></textarea>
+                <p class="preview-doc-notices" id="preview-doc-notices" hidden></p>
+                {# 题头（标题/期号/日期）由 review_tab_preview.js 写进 textarea 的前三行，
+                   不再单独占一个区块 #}
+                <textarea id="preview-text" class="preview-text" readonly></textarea>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
                 <button class="btn btn-primary" id="btn-copy-preview">复制内容</button>

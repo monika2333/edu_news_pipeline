@@ -55,6 +55,9 @@
 - 跨页复用组件只能复刻样式、**类名不能共用**：`filter-refine-clear-link` 等类名会被 filter_refine.js 的委托劫持点击；禁用 `.filter-refine-row`/`data-refine-field` 命名同理。
 - 浮层分档现状：sticky 工具条最高 100（review-toolbar），账号菜单 150，modal/content_drawer 1000，检索抽屉 1050-1200，toast 2000。改层级先对照这张表。
 - `--test-name-pattern` 配中文用例名可定向跑 node --test（全角＋号曾匹配超时，换类名定位）；`page.window.eval('state.dirty.xxx')` 可读页面全局 const。
+- 项目**没有 `.btn-sm` 定义**：`btn btn-primary btn-sm` 实际仍套 `.btn` 的 `10px 24px` + `min-height: 40px`，放在检索卡片标题行会变成大蓝块（用户 2026-10-21 明确嫌突兀）。小按钮用专属 class 自己定尺寸（试跑选文章已改用 `.search-pick-btn`）。
+- 校验类测试（空正文/未知文章）即使预期在调用 LLM 前抛错，也必须把 LLM 调用换成「一被调用就失败」的桩；否则校验被变异掉时测试会真实请求模型（实测空正文变异跑了约 40s 真实调用）。设置页 `test_prompt_test_service._patch_common` 已默认装桩，需要 LLM 的用例再覆盖。
+- 提示词试跑复用共享搜索抽屉时，选择模式必须跳过 `search_drawer_open` / `search_drawer_tab` / `search_filters` 三个共享 localStorage 键；用 `body[data-search-drawer-mode="pick"]` 切模式，不要改三页默认行为。
 
 ## 已知「等价变异」/ 测试盲区备忘
 

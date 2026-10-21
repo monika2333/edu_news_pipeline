@@ -391,6 +391,101 @@ function defaultAccounts() {
     };
 }
 
+function defaultSearchArticles() {
+    return [{
+        article_id: 'article-1',
+        title: '北京某中学开展课后服务',
+        source: '北京日报',
+        publish_time: null,
+        publish_time_iso: null,
+        url: 'https://example.com/article-1',
+        llm_summary: '北京市某中学启动课后服务，覆盖多个学科。',
+        keywords: ['教育', '课后服务'],
+        llm_keywords: ['教育'],
+        score: 80,
+        raw_relevance_score: 80,
+        keyword_bonus_score: 0,
+        sentiment_label: 'positive',
+        sentiment_confidence: 0.9,
+        status: 'ready_for_export',
+        summary_status: 'completed',
+        external_importance_status: 'ready_for_export',
+        external_importance_score: 72,
+        is_beijing_related: true,
+        is_beijing_related_llm: true,
+        external_importance_checked_at: '2026-10-20T09:00:00Z',
+        summary_generated_at: '2026-10-20T08:30:00Z',
+        created_at: '2026-10-20T08:00:00Z',
+        updated_at: '2026-10-20T09:00:00Z',
+        attribution: {
+            level: 'not_reviewed',
+            ingested_at: '2026-10-20T08:00:00Z',
+            ingested_at_source: 'news_summaries.created_at',
+            relevance_score: 80,
+            importance_score: 72,
+            manual_decisions: [],
+            matched_article_title: null,
+        },
+        archive_links: [],
+        score_feedback: null,
+    }];
+}
+
+function promptTestResultFor(key, item, body) {
+    const content = String((body && body.content) || '');
+    const isDraft = content !== item.content;
+    const base = {
+        prompt_key: key,
+        prompt_label: item.label,
+        kind: item.kind,
+        draft: isDraft,
+        prompt_version: isDraft ? null : item.version,
+        model: 'test-model',
+        elapsed_ms: 1234,
+        article: {
+            article_id: (body && body.article_id) || 'article-1',
+            title: '北京某中学开展课后服务',
+            source: '北京日报',
+            category: 'internal_positive',
+            status: 'ready_for_export',
+        },
+        current: {
+            score: 72,
+            prompt_key: 'internal_positive',
+            prompt_version: 'v2',
+            category: 'internal_positive',
+            status: 'ready_for_export',
+            checked_at: '2026-10-20T09:00:00Z',
+        },
+        raw_output: '78',
+        error: null,
+        score: 78,
+        threshold: 60,
+        passed: true,
+        decision: null,
+    };
+    if (item.kind === 'decision') {
+        base.score = null;
+        base.threshold = null;
+        base.passed = null;
+        base.raw_output = '{"is_beijing_related": true, "reason": "北京市教委主导"}';
+        base.decision = {
+            is_beijing_related: true,
+            reason: '北京市教委主导',
+            attempts: 1,
+            provider: 'test',
+            model: 'test-model',
+        };
+        base.current = {
+            is_beijing_related: true,
+            is_beijing_related_llm: true,
+            status: 'ready_for_export',
+            checked_at: '2026-10-20T08:30:00Z',
+        };
+    }
+    return base;
+}
+
 class FakeSettingsServer {
     constructor(options = {}) {
         this.sections = options.sections === undefined ? defaultSections() : options.sections;
@@ -409,8 +504,11 @@ class FakeSettingsServer {
         this.prompts = options.prompts || defaultPrompts();
         this.promptHistory = options.promptHistory || defaultPromptHistory();
         this.promptSeq = 100;
+        this.articles = options.articles || defaultSearchArticles();
         // 提示词保存的定制响应：{ status, payload }，命中一次后失效
         this.promptSaveBehavior = null;
+        // 提示词试跑的定制响应：{ status, payload }，命中一次后失效
+        this.promptTestBehavior = null;
         // 环境变量重载的定制行为：reloadEnvBehavior() 在返回前执行，测试用它
         // 模拟「服务器端 .env 变化后的重载结果」（如某接入点 Key 由未配置变为已配置）；
         // envVarCount 是响应里的 loaded_env_vars 回显
@@ -453,7 +551,11 @@ class FakeSettingsServer {
         if (pathname === '/api/admin/settings/crawl_sources') return 'save-sources';
         const dictionaryMatch = pathname.match(/^\/api\/admin\/settings\/(score_keyword_bonuses|score_exclusion_keywords|education_keywords|beijing_keywords|source_aliases|review_sort_keywords)$/);
         if (dictionaryMatch) return `save-${dictionaryMatch[1]}`;
+        if (pathname === '/api/articles/search') return 'article-search';
         if (pathname === '/api/admin/prompts') return 'get-prompts';
+        if (/^\/api\/admin\/prompts\/[^/]+\/test$/.test(pathname) && method === 'POST') {
+            return 'prompt-test';
+        }
         if (/^\/api\/admin\/prompts\/[^/]+\/versions\/[^/]+$/.test(pathname)) {
             return 'prompt-revision';
         }
@@ -552,6 +654,28 @@ class FakeSettingsServer {
 
     respond(url, method, body) {
         const pathname = url.pathname;
+        if (pathname === '/api/articles/search') {
+            return [200, {
+                items: this.articles,
+                limit: 10,
+                has_more: false,
+                next_cursor: null,
+                lookback_days: 30,
+                window_start: '2026-09-20T00:00:00Z',
+                terms: ['教育'],
+            }];
+        }
+        if (/^\/api\/admin\/prompts\/[^/]+\/test$/.test(pathname) && method === 'POST') {
+            if (this.promptTestBehavior) {
+                const behavior = this.promptTestBehavior;
+                this.promptTestBehavior = null;
+                return [behavior.status, behavior.payload];
+            }
+            const key = decodeURIComponent(pathname.split('/')[4]);
+            const item = this.prompts.find((prompt) => prompt.key === key);
+            if (!item) return [404, { detail: '提示词不存在' }];
+            return [200, promptTestResultFor(key, item, body)];
+        }
         if (pathname === '/api/admin/settings') {
             return [200, {
                 sections: this.sections,
@@ -894,6 +1018,7 @@ module.exports = {
     defaultEndpointsPayload,
     defaultPrompts,
     defaultPromptHistory,
+    defaultSearchArticles,
     makeAccount,
     sectionsWithBareEndpointStep,
 };

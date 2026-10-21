@@ -15,4 +15,11 @@ class PromptUpdateRequest(BaseModel):
     note: Optional[str] = Field(default=None, max_length=MAX_PROMPT_NOTE_LENGTH)
 
 
-__all__ = ["PromptUpdateRequest"]
+class PromptTestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    article_id: str = Field(min_length=1, max_length=400)
+    content: Optional[str] = Field(default=None, max_length=MAX_PROMPT_CONTENT_LENGTH)
+
+
+__all__ = ["PromptTestRequest", "PromptUpdateRequest"]

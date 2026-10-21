@@ -6,6 +6,7 @@ from typing import Any
 from src.adapters.db_postgres_news_summaries import (
     fetch_latest_news_summary_created_at,
     fetch_news_summary_content,
+    fetch_prompt_test_article,
     insert_pending_summary,
     update_dedup_embeddings,
     upsert_news_summaries_from_primary,
@@ -89,6 +90,54 @@ def test_fetch_news_summary_content_selects_drawer_metadata() -> None:
     assert "FROM raw_articles" in query
     assert "LEFT JOIN news_summaries" in query
     assert "ra.fetched_at" in query
+    assert params == ("article-1",)
+
+
+def test_fetch_prompt_test_article_selects_pipeline_context() -> None:
+    expected = {
+        "article_id": "article-1",
+        "title": "Test title",
+        "source": "Test source",
+        "publish_time_iso": "2026-10-20T08:00:00+00:00",
+        "llm_summary": "摘要",
+        "content_markdown": "正文",
+        "sentiment_label": "positive",
+        "is_beijing_related": True,
+        "is_beijing_related_llm": True,
+        "external_importance_status": "ready_for_export",
+        "external_importance_score": 72,
+        "external_importance_raw": {
+            "prompt_key": "internal_positive",
+            "prompt_version": "v2",
+        },
+        "external_importance_checked_at": "2026-10-20T09:00:00+00:00",
+        "beijing_gate_checked_at": "2026-10-20T08:30:00+00:00",
+        "beijing_gate_raw": {"is_beijing_related": True},
+        "score_details": {
+            "matched_rules": [{"label": "高考"}, {"rule_id": "校园安全"}]
+        },
+        "status": "ready_for_export",
+    }
+    cursor = FakeCursor(expected)
+
+    result = fetch_prompt_test_article(cursor, "article-1")
+
+    assert result is not None
+    assert result["article_id"] == "article-1"
+    assert result["keyword_matches"] == ["高考", "校园安全"]
+    query, params = cursor.calls[0]
+    for column in (
+        "llm_summary",
+        "content_markdown",
+        "sentiment_label",
+        "is_beijing_related",
+        "external_importance_raw",
+        "beijing_gate_raw",
+        "score_details",
+    ):
+        assert column in query
+    assert "FROM news_summaries" in query
+    assert "WHERE article_id = %s" in query
     assert params == ("article-1",)
 
 

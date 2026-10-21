@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, 
 import psycopg
 from psycopg.types.json import Json
 
-from src.adapters.db_postgres_shared import iso_datetime
+from src.adapters.db_postgres_shared import iso_datetime, keyword_labels_from_score_details
 from src.domain import BeijingGateCandidate, ExternalFilterCandidate, PrimaryArticleForScoring
 
 if TYPE_CHECKING:
@@ -320,18 +320,7 @@ def fetch_external_filter_candidates(
         article_id = row.get("article_id")
         if not article_id:
             continue
-        score_details = row.get("score_details") or {}
-        if isinstance(score_details, list):
-            score_details = {}
-        matched_rules = score_details.get("matched_rules") if isinstance(score_details, dict) else None
-        keyword_matches = []
-        if isinstance(matched_rules, list):
-            for rule in matched_rules:
-                if not isinstance(rule, dict):
-                    continue
-                label = rule.get("label") or rule.get("rule_id")
-                if label:
-                    keyword_matches.append(str(label))
+        keyword_matches = keyword_labels_from_score_details(row.get("score_details"))
 
         results.append(
             ExternalFilterCandidate(

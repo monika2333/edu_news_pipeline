@@ -1853,3 +1853,108 @@
     .bonus-row-error { padding-left: 34px; }
     .advanced-alias-fields { grid-template-columns: 1fr; gap: 0; }
 }
+
+/* 提示词试跑：选文、结果与原始输出 */
+.prompt-test-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 12px;
+}
+.prompt-test-article {
+    flex: 1 1 260px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #f8fafc;
+}
+.prompt-test-article-title {
+    color: #0f172a;
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 1.4;
+}
+.prompt-test-article-meta { margin-top: 4px; color: #64748b; font-size: 0.76rem; }
+.prompt-test-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.prompt-test-status { min-width: 0; }
+.prompt-test-hint { margin: 10px 0 0; color: #94a3b8; font-size: 0.78rem; line-height: 1.55; }
+.prompt-test-error {
+    margin: 10px 0 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #fef2f2;
+    color: #b91c1c;
+    font-size: 0.8rem;
+    line-height: 1.55;
+}
+.prompt-test-result { margin-top: 14px; padding-top: 14px; border-top: 1px dashed #e2e8f0; }
+.prompt-test-result-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.prompt-test-verdict {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+.prompt-test-verdict.is-pass { background: #dcfce7; color: #166534; }
+.prompt-test-verdict.is-fail { background: #fee2e2; color: #b91c1c; }
+.prompt-test-verdict.is-muted { background: #f1f5f9; color: #64748b; }
+.prompt-test-score-wrap { display: flex; align-items: baseline; gap: 4px; }
+.prompt-test-score { color: #0f172a; font-size: 1.8rem; font-weight: 700; line-height: 1; }
+.prompt-test-score-unit { color: #94a3b8; font-size: 0.78rem; }
+.prompt-test-threshold { color: #64748b; font-size: 0.78rem; }
+.prompt-test-reason {
+    flex: 1 1 100%;
+    margin: 0;
+    color: #475569;
+    font-size: 0.82rem;
+    line-height: 1.55;
+}
+.prompt-test-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 10px;
+    color: #64748b;
+    font-size: 0.76rem;
+}
+.prompt-test-meta-item { display: inline-flex; gap: 4px; }
+.prompt-test-meta-label { color: #94a3b8; }
+.prompt-test-current {
+    margin: 10px 0 0;
+    color: #334155;
+    font-size: 0.82rem;
+    line-height: 1.55;
+}
+.prompt-test-note { margin: 8px 0 0; color: #94a3b8; font-size: 0.76rem; line-height: 1.55; }
+.prompt-test-raw { margin-top: 10px; }
+.prompt-test-raw summary { color: #64748b; font-size: 0.78rem; cursor: pointer; }
+.prompt-test-raw pre {
+    max-height: 300px;
+    margin: 8px 0 0;
+    padding: 10px;
+    overflow: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #0f172a;
+    font-size: 0.76rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+@media (max-width: 600px) {
+    .prompt-test-toolbar { align-items: flex-start; }
+    .prompt-test-article { flex: 1 1 100%; }
+}

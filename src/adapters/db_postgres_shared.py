@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 from uuid import UUID
 
 def article_hash(article_id: Optional[str], original_url: Optional[str], title: Optional[str]) -> str:
@@ -48,4 +48,32 @@ def json_safe(value: Any) -> Any:
     return value
 
 
-__all__ = ["article_hash", "to_iso", "iso_datetime", "json_safe"]
+def keyword_labels_from_score_details(score_details: Any) -> list[str]:
+    """Extract matched bonus-keyword labels from ``news_summaries.score_details``.
+
+    The column is JSON from the score step; historical rows may be a list, null or
+    a dict without ``matched_rules``. Only labels matter to the prompt test.
+    """
+
+    if not isinstance(score_details, Mapping):
+        return []
+    matched_rules = score_details.get("matched_rules")
+    if not isinstance(matched_rules, list):
+        return []
+    labels: list[str] = []
+    for rule in matched_rules:
+        if not isinstance(rule, Mapping):
+            continue
+        label = rule.get("label") or rule.get("rule_id")
+        if label:
+            labels.append(str(label))
+    return labels
+
+
+__all__ = [
+    "article_hash",
+    "json_safe",
+    "iso_datetime",
+    "keyword_labels_from_score_details",
+    "to_iso",
+]

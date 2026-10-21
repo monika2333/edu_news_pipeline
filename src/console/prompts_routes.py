@@ -5,9 +5,9 @@ from typing import Any, NoReturn
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.adapters.db_postgres_prompt_revisions import PromptRevisionConflictError
-from src.console import prompt_service
+from src.console import prompt_service, prompt_test_service
 from src.console.auth_service import ConsoleUser
-from src.console.prompt_schemas import PromptUpdateRequest
+from src.console.prompt_schemas import PromptTestRequest, PromptUpdateRequest
 from src.console.security import require_role
 
 router = APIRouter(prefix="/api/admin/prompts", tags=["prompts"])
@@ -21,6 +21,20 @@ def _raise_prompt_error(exc: Exception) -> NoReturn:
     if isinstance(exc, PermissionError):
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _raise_prompt_test_error(exc: Exception) -> NoReturn:
+    if isinstance(exc, prompt_test_service.PromptTestArticleNotFoundError):
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if isinstance(exc, KeyError):
+        raise HTTPException(status_code=404, detail="提示词不存在") from exc
+    if isinstance(exc, prompt_test_service.PromptTestArticleUnavailableError):
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if isinstance(exc, PermissionError):
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    if isinstance(exc, ValueError):
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    raise exc
 
 
 @router.get("")
@@ -47,6 +61,24 @@ def put_prompt(
     except Exception as exc:
         _raise_prompt_error(exc)
     return {"item": item}
+
+
+@router.post("/{prompt_key}/test")
+def test_prompt(
+    prompt_key: str,
+    payload: PromptTestRequest,
+    user: ConsoleUser = Depends(require_role("admin")),
+) -> dict[str, Any]:
+    """Run one article through the current or draft prompt; never writes state."""
+    try:
+        return prompt_test_service.test_prompt(
+            prompt_key,
+            article_id=payload.article_id,
+            content=payload.content,
+            actor=user,
+        )
+    except Exception as exc:
+        _raise_prompt_test_error(exc)
 
 
 @router.get("/{prompt_key}/versions")

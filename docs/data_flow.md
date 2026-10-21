@@ -141,6 +141,11 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 统计按 `prompt_key + prompt_version` 关联——因此**同一 key 的 revision 只增不复用**，
 旧反馈不会错绑到新评分。京内判定不写 `prompt_version`，其 revision 只用于回看与恢复。
 
+控制台的「试跑」是只读探针：按 `article_id` 读取该行 `news_summaries` 的标题、来源、
+摘要、正文、情感、京内外与 `score_details`（加分命中词），用编辑器当前内容或不保存的草稿
+调用对应 LLM 步骤，然后把分数/判定、阈值、原始输出与文章当前生产结果回显给管理员。
+它**不写 `news_summaries`、不写 `score_feedbacks`、不改变文章状态**，因此可以反复试跑。
+
 七个 LLM 步骤的模型与 reasoning 开关由 `app_settings.llm_models` 提供。每一步的
 `model` 为 `null` 时只回退到该分区的 `default`，reasoning 则始终使用该步骤的
 明确布尔值，不再形成模型跨步骤回退或 reasoning 共用关系。

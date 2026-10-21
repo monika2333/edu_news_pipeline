@@ -12,9 +12,11 @@
     <link rel="stylesheet" href="/static/css/modules/admin.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/header.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/settings.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/modules/search.css?v={{ version }}">
 </head>
 
-<body data-current-user-name="{{ current_user.display_name }}">
+<body data-current-user-name="{{ current_user.display_name }}"
+    data-search-drawer-mode="pick">
     <div class="container admin-shell">
         {% set page_eyebrow = "控制台管理" %}
         {% set page_title = "系统设置" %}
@@ -62,10 +64,13 @@
         </main>
     </div>
 
+    {% include "_search_drawer.html" %}
+
     <div class="toast" id="toast">操作成功</div>
     <script src="/static/js/api_error.js?v={{ version }}"></script>
     <script src="/static/js/auth.js?v={{ version }}"></script>
     <script src="/static/js/manual_filter/utils.js?v={{ version }}"></script>
+    <script src="/static/js/manual_filter/search_drawer.js?v={{ version }}"></script>
     <script src="/static/js/settings/core.js?v={{ version }}"></script>
     <script src="/static/js/settings/endpoints.js?v={{ version }}"></script>
     <script src="/static/js/settings/models_tab.js?v={{ version }}"></script>

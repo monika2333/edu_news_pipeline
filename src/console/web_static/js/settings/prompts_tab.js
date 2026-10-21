@@ -8,6 +8,14 @@ const PROMPT_HISTORY_PAGE_SIZE = 20;
 // 与后端 PROMPT_HISTORY_MAX_LIMIT 保持一致，避免「加载更多」到上限后原地打转。
 const PROMPT_HISTORY_MAX_PAGE = 100;
 const PROMPT_KIND_LABELS = { score: '0-100 评分', decision: 'JSON 判定' };
+const PROMPT_TEST_CATEGORY_LABELS = {
+    external_positive: '京外正面',
+    external_negative: '京外负面',
+    internal_positive: '京内正面',
+    internal_negative: '京内负面',
+    external: '京外',
+    internal: '京内',
+};
 
 function promptItems() {
     return (state.prompts.payload && state.prompts.payload.items) || [];
@@ -53,6 +61,42 @@ function promptUpdatedLine(item) {
     return `最后修改：${name} · ${formatLocalDateTime(item.updated_at)}`;
 }
 
+function promptTestCategoryKey(item) {
+    const base = item && item.is_beijing_related ? 'internal' : 'external';
+    const sentiment = String((item && item.sentiment_label) || '').toLowerCase();
+    if (sentiment === 'positive' || sentiment === 'negative') {
+        return `${base}_${sentiment}`;
+    }
+    return base;
+}
+
+function promptTestArticleFromSearch(item) {
+    const badge = typeof articleCategoryBadge === 'function'
+        ? articleCategoryBadge(item)
+        : null;
+    const score = item && item.external_importance_score;
+    return {
+        articleId: item.article_id,
+        title: item.title || '（无标题）',
+        source: item.source || '',
+        score: typeof score === 'number' ? score : null,
+        category: promptTestCategoryKey(item),
+        categoryLabel: badge ? badge.label : '',
+        ingestedAt: (item.attribution && item.attribution.ingested_at) || null,
+    };
+}
+
+// 搜索抽屉选择模式回调：只更新试跑卡片，不触碰编辑器草稿。
+window.onSearchArticlePicked = function onSearchArticlePicked(item) {
+    capturePromptDraft();
+    state.prompts.testArticle = promptTestArticleFromSearch(item);
+    state.prompts.testResult = null;
+    state.prompts.testError = null;
+    if (state.prompts.payload) {
+        renderPromptsTab({ capture: false });
+    }
+};
+
 function capturePromptDraft() {
     const key = state.prompts.selectedKey;
     if (!key) return;
@@ -95,6 +139,8 @@ async function loadPrompts() {
         state.prompts.payload = payload;
         state.prompts.error = null;
         state.prompts.history = {};
+        state.prompts.testResult = null;
+        state.prompts.testError = null;
         const items = promptItems();
         if (!state.prompts.selectedKey || !items.some((item) => item.key === state.prompts.selectedKey)) {
             state.prompts.selectedKey = items.length ? items[0].key : null;
@@ -150,6 +196,9 @@ function selectPrompt(key) {
     if (state.prompts.selectedKey === key) return;
     capturePromptDraft();
     state.prompts.selectedKey = key;
+    // 文章跨提示词保留（便于同一篇对比），上次结果只对旧提示词有效。
+    state.prompts.testResult = null;
+    state.prompts.testError = null;
     renderPromptsTab({ capture: false });
 }
 
@@ -275,6 +324,8 @@ function buildPromptEditorCard(item) {
                 delete state.prompts.drafts[item.key];
                 delete state.prompts.history[item.key];
                 state.prompts.selectedKey = item.key;
+                state.prompts.testResult = null;
+                state.prompts.testError = null;
                 state.prompts.saving = false;
                 stopTicker();
                 renderPromptsTab({ capture: false });
@@ -314,6 +365,8 @@ function buildPromptEditorCard(item) {
 
     discardBtn.addEventListener('click', () => {
         delete state.prompts.drafts[item.key];
+        state.prompts.testResult = null;
+        state.prompts.testError = null;
         renderPromptsTab({ capture: false });
         const nextStatus = document.getElementById('prompt-save-status');
         if (nextStatus) setSettingsStatus(nextStatus, '已放弃未保存的修改。');
@@ -334,6 +387,267 @@ function buildPromptEditorCard(item) {
         }
     });
 
+    return card;
+}
+
+function promptTestCategoryLabel(category) {
+    return PROMPT_TEST_CATEGORY_LABELS[category] || category || '';
+}
+
+function buildPromptTestArticleChip(article) {
+    const chip = createEl('div', 'prompt-test-article');
+    chip.appendChild(createEl('div', 'prompt-test-article-title', article.title));
+    const metaParts = [];
+    if (article.source) metaParts.push(article.source);
+    if (article.categoryLabel) metaParts.push(article.categoryLabel);
+    if (article.score !== null && article.score !== undefined) {
+        metaParts.push(`当前生产分 ${article.score}`);
+    } else {
+        metaParts.push('当前未评分');
+    }
+    if (article.ingestedAt) {
+        metaParts.push(`收录 ${formatLocalDateTime(article.ingestedAt)}`);
+    }
+    chip.appendChild(createEl('div', 'prompt-test-article-meta', metaParts.join(' · ')));
+    return chip;
+}
+
+function openPromptTestPicker(statusEl) {
+    if (typeof window.openSearchDrawer !== 'function') {
+        setSettingsStatus(statusEl, '文章检索尚未加载，无法选择文章。', 'error');
+        return;
+    }
+    window.openSearchDrawer();
+}
+
+function buildPromptTestResult(item, result) {
+    const box = createEl('div', 'prompt-test-result');
+    const head = createEl('div', 'prompt-test-result-head');
+    if (result.kind === 'score') {
+        const score = result.score;
+        const verdictLabel = score === null
+            ? '未返回分数'
+            : (result.passed ? '通过' : '未通过');
+        const verdictClass = score === null
+            ? 'is-muted'
+            : (result.passed ? 'is-pass' : 'is-fail');
+        head.appendChild(createEl(
+            'span',
+            `prompt-test-verdict ${verdictClass}`,
+            verdictLabel,
+        ));
+        const scoreWrap = createEl('div', 'prompt-test-score-wrap');
+        scoreWrap.append(
+            createEl('span', 'prompt-test-score', score === null ? '—' : String(score)),
+            createEl('span', 'prompt-test-score-unit', '/ 100'),
+        );
+        head.appendChild(scoreWrap);
+        if (result.threshold !== null && result.threshold !== undefined) {
+            head.appendChild(createEl(
+                'span',
+                'prompt-test-threshold',
+                `阈值 ${result.threshold}`,
+            ));
+        }
+    } else {
+        const decision = result.decision || {};
+        const value = decision.is_beijing_related;
+        const verdictLabel = value === true
+            ? '判为京内'
+            : value === false ? '判为京外' : '未能判定';
+        const verdictClass = value === true
+            ? 'is-pass'
+            : value === false ? 'is-fail' : 'is-muted';
+        head.appendChild(createEl(
+            'span',
+            `prompt-test-verdict ${verdictClass}`,
+            verdictLabel,
+        ));
+        if (decision.reason) {
+            head.appendChild(createEl('p', 'prompt-test-reason', decision.reason));
+        }
+    }
+    box.appendChild(head);
+
+    const meta = createEl('div', 'prompt-test-meta');
+    const versionLabel = result.draft
+        ? '草稿（未保存）'
+        : (result.prompt_version || '—');
+    [
+        ['模型', result.model || '—'],
+        ['耗时', `${result.elapsed_ms} ms`],
+        ['版本', versionLabel],
+    ].forEach(([label, value]) => {
+        const metaItem = createEl('span', 'prompt-test-meta-item');
+        metaItem.append(
+            createEl('span', 'prompt-test-meta-label', label),
+            document.createTextNode(value),
+        );
+        meta.appendChild(metaItem);
+    });
+    box.appendChild(meta);
+
+    if (
+        result.kind === 'score'
+        && result.article
+        && result.article.category
+        && result.article.category !== result.prompt_key
+    ) {
+        box.appendChild(createEl(
+            'p',
+            'prompt-test-note',
+            `这篇文章在生产流程中走「${promptTestCategoryLabel(result.article.category)}」，`
+                + `本次试跑的是「${result.prompt_label}」。`,
+        ));
+    }
+
+    if (result.current) {
+        let currentText;
+        if (result.kind === 'score') {
+            if (result.current.score !== null && result.current.score !== undefined) {
+                const version = result.current.prompt_version
+                    ? `（${result.current.prompt_version}）`
+                    : '';
+                const category = result.current.prompt_key
+                    ? ` · ${promptTestCategoryLabel(result.current.prompt_key)}`
+                    : '';
+                currentText = `文章当前生产分数：${result.current.score}${version}${category}`;
+            } else {
+                currentText = '文章当前没有生产评分';
+            }
+        } else {
+            const value = result.current.is_beijing_related;
+            currentText = `文章当前判定：${
+                value === true ? '京内' : value === false ? '京外' : '未判定'
+            }`;
+        }
+        box.appendChild(createEl('p', 'prompt-test-current', currentText));
+    }
+
+    if (result.error) {
+        box.appendChild(createEl('p', 'prompt-test-error', result.error));
+    }
+    if (result.raw_output) {
+        const details = createEl('details', 'prompt-test-raw');
+        details.appendChild(createEl('summary', '', '原始输出'));
+        details.appendChild(createEl('pre', '', result.raw_output));
+        box.appendChild(details);
+    }
+    box.appendChild(createEl(
+        'p',
+        'prompt-test-note',
+        '试跑不写库，也不改变文章状态；结果对应点击试跑时的编辑器内容。',
+    ));
+    return box;
+}
+
+function buildPromptTestCard(item) {
+    const card = buildSettingsCard(
+        '试跑',
+        '用当前编辑器里的提示词（可以是未保存的草稿）对一篇文章实际调用模型；'
+            + '不写库，也不改变文章状态。',
+    );
+    const article = state.prompts.testArticle;
+    const toolbar = createEl('div', 'prompt-test-toolbar');
+    const status = createEl('span', 'settings-save-status prompt-test-status', '', {
+        role: 'status',
+        'aria-live': 'polite',
+        id: 'prompt-test-status',
+    });
+
+    if (!article) {
+        const pickBtn = createEl(
+            'button',
+            'btn btn-secondary prompt-test-pick',
+            '选一篇文章试跑',
+            { type: 'button' },
+        );
+        pickBtn.disabled = state.prompts.testRunning;
+        pickBtn.addEventListener('click', () => openPromptTestPicker(status));
+        toolbar.append(pickBtn, status);
+        card.appendChild(toolbar);
+        card.appendChild(createEl(
+            'p',
+            'prompt-test-hint',
+            '从全库检索中选一篇已进入摘要环节的文章；标题、来源、摘要和正文会由系统拼进提示词。',
+        ));
+    } else {
+        toolbar.appendChild(buildPromptTestArticleChip(article));
+        const actions = createEl('div', 'prompt-test-actions');
+        const pickBtn = createEl(
+            'button',
+            'btn btn-secondary btn-sm prompt-test-pick',
+            '换一篇',
+            { type: 'button' },
+        );
+        const runBtn = createEl(
+            'button',
+            'btn btn-primary btn-sm prompt-test-run',
+            '开始试跑',
+            { type: 'button' },
+        );
+        pickBtn.disabled = state.prompts.testRunning;
+        runBtn.disabled = state.prompts.testRunning;
+        pickBtn.addEventListener('click', () => openPromptTestPicker(status));
+        runBtn.addEventListener('click', async () => {
+            if (state.prompts.testRunning) return;
+            const editor = document.getElementById('prompt-editor');
+            const content = editor ? editor.value : '';
+            if (!content.trim()) {
+                setSettingsStatus(status, '提示词内容不能为空。', 'error');
+                return;
+            }
+            const requestKey = item.key;
+            state.prompts.testRunning = true;
+            state.prompts.testResult = null;
+            state.prompts.testError = null;
+            renderPromptsTab({ capture: false });
+            const runningStatus = document.getElementById('prompt-test-status');
+            let stopTicker = () => {};
+            if (runningStatus) stopTicker = startElapsedTicker(runningStatus, '试跑中');
+            try {
+                const { response, payload } = await apiRequest(
+                    `/api/admin/prompts/${encodeURIComponent(item.key)}/test`,
+                    {
+                        method: 'POST',
+                        body: {
+                            article_id: article.articleId,
+                            content,
+                        },
+                    },
+                );
+                if (state.prompts.selectedKey !== requestKey) return;
+                if (response.ok) {
+                    state.prompts.testResult = payload;
+                    state.prompts.testError = null;
+                } else {
+                    state.prompts.testResult = null;
+                    state.prompts.testError = `试跑失败：${
+                        formatApiError(payload, '请稍后重试')
+                    }`;
+                }
+            } catch (error) {
+                if (state.prompts.selectedKey === requestKey) {
+                    state.prompts.testResult = null;
+                    state.prompts.testError = `试跑失败：${error.message || '网络错误'}`;
+                }
+            } finally {
+                stopTicker();
+                state.prompts.testRunning = false;
+                renderPromptsTab({ capture: false });
+            }
+        });
+        actions.append(pickBtn, runBtn);
+        toolbar.append(actions);
+        card.append(toolbar, status);
+    }
+
+    if (state.prompts.testError) {
+        card.appendChild(createEl('p', 'prompt-test-error', state.prompts.testError));
+    }
+    if (state.prompts.testResult) {
+        card.appendChild(buildPromptTestResult(item, state.prompts.testResult));
+    }
     return card;
 }
 
@@ -435,6 +749,8 @@ function buildPromptHistoryItem(item, revision, preview) {
         try {
             const content = await fetchPromptRevisionContent(item.key, revision);
             state.prompts.selectedKey = item.key;
+            state.prompts.testResult = null;
+            state.prompts.testError = null;
             if (content === item.content) {
                 delete state.prompts.drafts[item.key];
             } else {
@@ -572,6 +888,7 @@ function renderPromptsTab({ capture = true } = {}) {
     nav.appendChild(list);
     const main = createEl('div', 'prompt-main');
     main.appendChild(buildPromptEditorCard(item));
+    main.appendChild(buildPromptTestCard(item));
     const historyMount = createEl('div', 'prompt-history-mount');
     main.appendChild(historyMount);
     layout.append(nav, main);

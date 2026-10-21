@@ -90,7 +90,7 @@ def get_prompts_payload(adapter: Optional[Any] = None) -> dict[str, Any]:
     }
 
 
-def _normalize_content(content: str) -> str:
+def normalize_prompt_content(content: str) -> str:
     text = str(content or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if not text:
         raise ValueError("提示词内容不能为空")
@@ -123,7 +123,7 @@ def save_prompt(
 ) -> dict[str, Any]:
     definition = prompt_definition(prompt_key)
     actor_user_id = _require_actor(actor)
-    normalized_content = _normalize_content(content)
+    normalized_content = normalize_prompt_content(content)
     normalized_note = _normalize_note(note)
     adapter = get_adapter()
     current = load_active_prompt(definition.key, adapter)
@@ -244,5 +244,6 @@ __all__ = [
     "get_prompt_revision",
     "get_prompts_payload",
     "list_prompt_revisions",
+    "normalize_prompt_content",
     "save_prompt",
 ]

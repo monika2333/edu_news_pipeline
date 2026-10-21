@@ -29,8 +29,15 @@ function searchDrawerFetch(url) {
     return fetchImpl(url);
 }
 
+// 选择模式：设置页「提示词试跑」复用本抽屉选文章。
+// 该模式只显示全库文章检索，不读写三处引用页共享的 localStorage 状态，
+// 也不渲染「原文」和评分反馈入口，避免影响筛选页/值班页/存档页。
+function searchDrawerPickMode() {
+    return document.body.dataset.searchDrawerMode === 'pick';
+}
+
 // tab 切换：报送存档检索（archive）/ 全库文章检索（articles）。
-function switchSearchTab(tab) {
+function switchSearchTab(tab, { persist = true } = {}) {
     const drawer = document.getElementById('search-drawer');
     if (!drawer) return;
     const target = tab === 'articles' ? 'articles' : 'archive';
@@ -42,7 +49,9 @@ function switchSearchTab(tab) {
     drawer.querySelectorAll('.search-panel').forEach(panel => {
         panel.hidden = panel.dataset.searchPanel !== target;
     });
-    localStorage.setItem(SEARCH_TAB_STORAGE_KEY, target);
+    if (persist && !searchDrawerPickMode()) {
+        localStorage.setItem(SEARCH_TAB_STORAGE_KEY, target);
+    }
 }
 
 function setupSearchDrawer() {
@@ -58,16 +67,29 @@ function setupSearchDrawer() {
     if (drawer.dataset.searchDrawerReady === 'true') return;
     drawer.dataset.searchDrawerReady = 'true';
 
+    const pickMode = searchDrawerPickMode();
+    if (pickMode) {
+        drawer.classList.add('is-pick-mode');
+        const header = drawer.querySelector('.drawer-header h3');
+        if (header) header.textContent = '选择一篇文章';
+        const tabs = drawer.querySelector('.search-tabs');
+        if (tabs) tabs.hidden = true;
+    }
+
     function toggleDrawer(show) {
         drawer.classList.toggle('active', show);
         overlay.classList.toggle('active', show);
         // body 类用于把原文抽屉抬到检索抽屉之上（见 content_drawer.css）
         document.body.classList.toggle('search-drawer-open', show);
-        if (toggleBtn) {
+        if (toggleBtn && !pickMode) {
             toggleBtn.style.display = show ? 'none' : 'flex';
         }
-        localStorage.setItem('search_drawer_open', show);
+        if (!pickMode) {
+            localStorage.setItem('search_drawer_open', show);
+        }
     }
+
+    window.openSearchDrawer = () => toggleDrawer(true);
 
     if (toggleBtn) toggleBtn.addEventListener('click', () => toggleDrawer(true));
     if (closeBtn) closeBtn.addEventListener('click', () => toggleDrawer(false));
@@ -87,14 +109,19 @@ function setupSearchDrawer() {
         toggleDrawer(false);
     });
 
-    if (localStorage.getItem('search_drawer_open') === 'true') {
+    if (!pickMode && localStorage.getItem('search_drawer_open') === 'true') {
         toggleDrawer(true);
     }
 
     drawer.querySelectorAll('.search-tab').forEach(btn => {
         btn.addEventListener('click', () => switchSearchTab(btn.dataset.searchTab));
     });
-    switchSearchTab(localStorage.getItem(SEARCH_TAB_STORAGE_KEY) || SEARCH_TAB_DEFAULT);
+    switchSearchTab(
+        pickMode
+            ? 'articles'
+            : (localStorage.getItem(SEARCH_TAB_STORAGE_KEY) || SEARCH_TAB_DEFAULT),
+        { persist: !pickMode },
+    );
 
     // 新关键词 = 新一轮检索，窗口回到后端默认值；
     // 扩大窗口只对当前这轮检索（含翻页）生效。
@@ -123,11 +150,11 @@ function setupSearchDrawer() {
         queryInput.addEventListener('input', syncDrawerClearButton);
     }
 
-    if (typeof setupArchiveSearch === 'function') {
+    if (!pickMode && typeof setupArchiveSearch === 'function') {
         setupArchiveSearch();
     }
 
-    loadSearchFilters();
+    if (!pickMode) loadSearchFilters();
     syncDrawerClearButton();
 }
 
@@ -140,6 +167,7 @@ function syncDrawerClearButton() {
 }
 
 function loadSearchFilters() {
+    if (searchDrawerPickMode()) return;
     try {
         const saved = JSON.parse(localStorage.getItem('search_filters') || '{}');
         if (saved && saved.q) {
@@ -156,7 +184,9 @@ function saveSearchFilters() {
     const filters = {
         q: qInput ? qInput.value.trim() : ''
     };
-    localStorage.setItem('search_filters', JSON.stringify(filters));
+    if (!searchDrawerPickMode()) {
+        localStorage.setItem('search_filters', JSON.stringify(filters));
+    }
     return filters;
 }
 
@@ -168,7 +198,9 @@ function clearDrawerSearch() {
     searchState.cursor = null;
     searchState.nextCursor = null;
     searchState.lookbackDays = null;
-    localStorage.removeItem('search_filters');
+    if (!searchDrawerPickMode()) {
+        localStorage.removeItem('search_filters');
+    }
 
     const container = document.getElementById('search-results-list');
     const statsInfo = document.getElementById('search-results-stats');
@@ -278,7 +310,19 @@ function buildArchiveLinksDetails(links) {
     return box;
 }
 
+function pickSearchArticle(item) {
+    if (typeof window.onSearchArticlePicked === 'function') {
+        window.onSearchArticlePicked(item);
+    }
+    const drawer = document.getElementById('search-drawer');
+    const overlay = document.getElementById('search-overlay');
+    if (drawer) drawer.classList.remove('active');
+    if (overlay) overlay.classList.remove('active');
+    document.body.classList.remove('search-drawer-open');
+}
+
 function buildSearchResultItem(item, summaryToggles) {
+    const pickMode = searchDrawerPickMode();
     const itemEl = createEl('div', 'search-item', '', {
         dataset: { articleId: item.article_id || '' }
     });
@@ -287,16 +331,27 @@ function buildSearchResultItem(item, summaryToggles) {
     const header = createEl('h4');
     const title = item.title || '未命名标题';
     header.appendChild(document.createTextNode(title));
-    // 「原文」按钮打开内容抽屉（content-drawer），复用筛选页逻辑：
-    // 触发走各页面内容抽屉脚本的 .content-drawer-trigger 委托，
-    // 外部原始链接在抽屉顶栏的「原文链接」里保留。
-    // 内容抽屉直接盖在检索抽屉之上，关掉后检索结果还在。
-    const contentBtn = createEl('button', 'content-drawer-trigger', '原文', {
-        type: 'button',
-        title: '查看原文',
-        dataset: { articleId: item.article_id || '', bonusKeywords: '' }
-    });
-    header.appendChild(contentBtn);
+    if (pickMode) {
+        const pickBtn = createEl(
+            'button',
+            'btn btn-primary btn-sm search-pick-btn',
+            '选这篇',
+            { type: 'button' }
+        );
+        pickBtn.addEventListener('click', () => pickSearchArticle(item));
+        header.appendChild(pickBtn);
+    } else {
+        // 「原文」按钮打开内容抽屉（content-drawer），复用筛选页逻辑：
+        // 触发走各页面内容抽屉脚本的 .content-drawer-trigger 委托，
+        // 外部原始链接在抽屉顶栏的「原文链接」里保留。
+        // 内容抽屉直接盖在检索抽屉之上，关掉后检索结果还在。
+        const contentBtn = createEl('button', 'content-drawer-trigger', '原文', {
+            type: 'button',
+            title: '查看原文',
+            dataset: { articleId: item.article_id || '', bonusKeywords: '' }
+        });
+        header.appendChild(contentBtn);
+    }
     // 「有存档」徽章跟在「原文」后面：回链在存档流程中已确定，
     // 只有状态为 matched 的文章才有，点开在卡片内看存档详情。
     const archiveLinks = Array.isArray(item.archive_links) ? item.archive_links : [];
@@ -364,7 +419,8 @@ function buildSearchResultItem(item, summaryToggles) {
     // 只有有重要性评分的文章才显示——反馈绑定当前评分上下文，
     // 没走到评分的文章后端也会拒绝（ScoreFeedbackContextMissingError）。
     if (
-        item.external_importance_score !== null
+        !pickMode
+        && item.external_importance_score !== null
         && item.external_importance_score !== undefined
         && typeof renderScoreFeedbackControl === 'function'
     ) {

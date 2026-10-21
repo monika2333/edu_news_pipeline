@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.adapters.db_postgres_prompt_revisions import PromptRevisionConflictError
-from src.console import prompt_service
+from src.console import prompt_service, prompt_test_service
 from src.console.app import create_app
 from src.console.auth_service import ConsoleUser
 from src.console.security import require_console_user
@@ -185,4 +185,97 @@ def test_prompt_versions_routes(monkeypatch) -> None:
 )
 def test_put_prompt_request_model_rejects_invalid_body(body: dict[str, Any]) -> None:
     response = _client().put("/api/admin/prompts/external_positive", json=body)
+    assert response.status_code == 422
+
+def test_post_prompt_test_passes_payload_and_actor(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_test(prompt_key, *, article_id, content, actor):
+        captured.update(
+            prompt_key=prompt_key,
+            article_id=article_id,
+            content=content,
+            actor=actor,
+        )
+        return {"prompt_key": prompt_key, "score": 78, "kind": "score"}
+
+    monkeypatch.setattr(prompt_test_service, "test_prompt", fake_test)
+
+    response = _client().post(
+        "/api/admin/prompts/external_positive/test",
+        json={"article_id": "article-1", "content": "draft body"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["score"] == 78
+    assert captured["prompt_key"] == "external_positive"
+    assert captured["article_id"] == "article-1"
+    assert captured["content"] == "draft body"
+    assert captured["actor"].user_id == "admin-id"
+
+
+def test_post_prompt_test_error_mapping(monkeypatch) -> None:
+    def missing(*args, **kwargs):
+        raise prompt_test_service.PromptTestArticleNotFoundError("文章不存在")
+
+    monkeypatch.setattr(prompt_test_service, "test_prompt", missing)
+    response = _client().post(
+        "/api/admin/prompts/external_positive/test",
+        json={"article_id": "missing"},
+    )
+    assert response.status_code == 404
+
+    def unavailable(*args, **kwargs):
+        raise prompt_test_service.PromptTestArticleUnavailableError("该文章尚无正文")
+
+    monkeypatch.setattr(prompt_test_service, "test_prompt", unavailable)
+    response = _client().post(
+        "/api/admin/prompts/external_positive/test",
+        json={"article_id": "article-1"},
+    )
+    assert response.status_code == 422
+    assert "正文" in response.json()["detail"]
+
+    def unknown_prompt(*args, **kwargs):
+        raise KeyError("unknown")
+
+    monkeypatch.setattr(prompt_test_service, "test_prompt", unknown_prompt)
+    response = _client().post(
+        "/api/admin/prompts/unknown/test",
+        json={"article_id": "article-1"},
+    )
+    assert response.status_code == 404
+
+
+def test_post_prompt_test_rejects_non_admin(monkeypatch) -> None:
+    called = False
+
+    def fake_test(*args, **kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(prompt_test_service, "test_prompt", fake_test)
+    response = _client(_duty()).post(
+        "/api/admin/prompts/external_positive/test",
+        json={"article_id": "article-1"},
+    )
+
+    assert response.status_code == 403
+    assert called is False
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"article_id": ""},
+        {"article_id": "article-1", "content": "x" * 50_001},
+    ],
+    ids=["missing", "empty-id", "too-long-content"],
+)
+def test_post_prompt_test_rejects_invalid_body(body: dict[str, Any]) -> None:
+    response = _client().post(
+        "/api/admin/prompts/external_positive/test",
+        json=body,
+    )
     assert response.status_code == 422

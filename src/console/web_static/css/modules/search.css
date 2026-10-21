@@ -674,3 +674,18 @@
 .archive-item-source {
     color: var(--text-secondary);
 }
+
+/* 设置页「提示词试跑」的选择模式：只保留全库文章检索，
+   浮动入口由页面按钮打开；不影响筛选页/值班页/存档页。 */
+body[data-search-drawer-mode="pick"] .search-drawer-toggle {
+    display: none !important;
+}
+
+body[data-search-drawer-mode="pick"] .search-tabs {
+    display: none;
+}
+
+.search-pick-btn {
+    margin-left: 8px;
+    vertical-align: middle;
+}

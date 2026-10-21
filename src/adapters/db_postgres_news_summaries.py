@@ -8,6 +8,7 @@ import psycopg
 from psycopg.types.json import Json
 
 from src.adapters.db_postgres_article_attribution import search_article_attributions
+from src.adapters.db_postgres_shared import keyword_labels_from_score_details
 from src.adapters.sql_search import ilike_all_clauses
 
 if TYPE_CHECKING:
@@ -150,6 +151,10 @@ class NewsSummariesNamespace:
     def fetch_content(self, article_id: str) -> Optional[Dict[str, Any]]:
         with self._adapter._cursor() as cur:
             return fetch_news_summary_content(cur, article_id)
+
+    def fetch_prompt_test_article(self, article_id: str) -> Optional[Dict[str, Any]]:
+        with self._adapter._cursor() as cur:
+            return fetch_prompt_test_article(cur, article_id)
 
     def fetch_latest_created_at(
         self,
@@ -610,6 +615,54 @@ def fetch_news_summary_content(cur: psycopg.Cursor, article_id: str) -> Optional
     cur.execute(query, (article_id,))
     row = cur.fetchone()
     return dict(row) if row else None
+
+
+def fetch_prompt_test_article(
+    cur: psycopg.Cursor,
+    article_id: str,
+) -> Optional[Dict[str, Any]]:
+    """Load the fields needed to run one prompt against one pipeline article.
+
+    This is a read-only probe for the console's prompt test; it never writes.
+    Raw-only articles (no ``news_summaries`` row) are intentionally not served:
+    the prompt needs the summary/sentiment/score context to be faithful.
+    """
+
+    if not article_id:
+        return None
+    cur.execute(
+        """
+        SELECT
+            article_id,
+            title,
+            source,
+            publish_time_iso,
+            llm_summary,
+            content_markdown,
+            sentiment_label,
+            is_beijing_related,
+            is_beijing_related_llm,
+            external_importance_status,
+            external_importance_score,
+            external_importance_raw,
+            external_importance_checked_at,
+            beijing_gate_checked_at,
+            beijing_gate_raw,
+            score_details,
+            status
+        FROM news_summaries
+        WHERE article_id = %s
+        """,
+        (article_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    result["keyword_matches"] = keyword_labels_from_score_details(
+        row.get("score_details")
+    )
+    return result
 
 
 def fetch_latest_news_summary_created_at(

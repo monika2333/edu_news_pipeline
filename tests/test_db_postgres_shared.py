@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from src.adapters.db_postgres_shared import json_safe
+from src.adapters.db_postgres_shared import json_safe, keyword_labels_from_score_details
 
 
 def test_json_safe_recursively_serializes_audit_values() -> None:
@@ -25,3 +25,19 @@ def test_json_safe_recursively_serializes_audit_values() -> None:
         "items": [{"score": 82.5}],
     }
     assert json.loads(json.dumps(result)) == result
+
+
+def test_keyword_labels_from_score_details_handles_all_historical_shapes() -> None:
+    assert keyword_labels_from_score_details(
+        {
+            "matched_rules": [
+                {"label": "高考", "bonus": 10},
+                {"rule_id": "校园安全"},
+                {"label": ""},
+                "not-a-rule",
+            ]
+        }
+    ) == ["高考", "校园安全"]
+    assert keyword_labels_from_score_details({"matched_rules": "bad"}) == []
+    assert keyword_labels_from_score_details([{"label": "legacy"}]) == []
+    assert keyword_labels_from_score_details(None) == []

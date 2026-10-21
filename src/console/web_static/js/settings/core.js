@@ -78,6 +78,11 @@ const state = {
         drafts: {},
         history: {},
         saving: false,
+        // 试跑：article 跨提示词保留（方便同一篇对比），result 只对应最后一次点击。
+        testArticle: null,
+        testResult: null,
+        testRunning: false,
+        testError: null,
     },
     // 进行中的来源启停请求数；非零时禁用面板内全部来源开关
     sourceToggleInflight: 0,

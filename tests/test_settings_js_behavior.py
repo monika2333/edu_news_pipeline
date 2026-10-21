@@ -86,3 +86,7 @@ def test_settings_page_behaviour(tmp_path: Path) -> None:
 
 def test_prompt_settings_page_behaviour(tmp_path: Path) -> None:
     _run_js_test(tmp_path, "prompt_settings_flow.test.js")
+
+
+def test_prompt_test_page_behaviour(tmp_path: Path) -> None:
+    _run_js_test(tmp_path, "prompt_test_flow.test.js")

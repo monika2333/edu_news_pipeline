@@ -86,6 +86,11 @@ def test_filter_decision_flow_behaviour(tmp_path: Path) -> None:
     _run_node_behavior_test(node, tmp_path, "filter_decision_flow.test.js")
 
 
+def test_filter_decision_menu_behaviour(tmp_path: Path) -> None:
+    node = _node_or_skip()
+    _run_node_behavior_test(node, tmp_path, "filter_decision_menu.test.js")
+
+
 def test_refine_filter_flow_behaviour(tmp_path: Path) -> None:
     node = _node_or_skip()
     _run_node_behavior_test(node, tmp_path, "refine_filter_flow.test.js")

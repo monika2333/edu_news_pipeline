@@ -548,6 +548,26 @@
     color: var(--primary-color);
 }
 
+/* 触屏没有右键：长按「采纳」「备选」打开同一菜单（filter_decision_menu.js）。
+   关掉长按呼出的文字选择与系统菜单，避免和自定义菜单抢手势；菜单项按 44px 触控高度放宽。 */
+@media (hover: none) {
+    #filter-list .radio-option,
+    #filter-list .radio-option .radio-label {
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+    }
+
+    .filter-decision-menu {
+        min-width: 150px;
+    }
+
+    .filter-decision-menu-item {
+        min-height: 44px;
+        padding: 12px 16px;
+    }
+}
+
 @media (max-width: 768px) {
     .report-type-tab {
         top: auto;

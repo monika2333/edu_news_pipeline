@@ -420,7 +420,7 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     assert 'href="/submission-archive"' not in html
     assert 'id="workspace-shift-select"' in html
     assert 'data-tab="filter">筛选</button>' in html
-    assert 'data-tab="review">已选结果</button>' in html
+    assert 'data-tab="review">审阅</button>' in html
     assert 'data-tab="discard">放弃</button>' in html
     assert 'class="workspace-tabs-row"' in html
     assert 'class="workspace-tab-actions"' in html

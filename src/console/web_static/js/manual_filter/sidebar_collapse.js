@@ -1,6 +1,6 @@
 // Manual Filter JS - Sidebar Collapse
 //
-// 分类侧栏折叠：筛选页与已选结果页共用同一份状态（localStorage），
+// 分类侧栏折叠：筛选页与审阅页共用同一份状态（localStorage），
 // 折叠后侧栏收成窄条，仅保留当前桶按钮（竖排显示，仍可见当前所在桶）。
 // 折叠/展开复用 layout_anchor.js 的锚定机制，避免列表跳动。
 

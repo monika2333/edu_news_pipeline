@@ -80,7 +80,7 @@ async function openPreview(page) {
     );
 }
 
-// 值班端：/duty 默认停在「筛选」，要切到「已选结果」；数据走 workspace.js 的
+// 值班端：/duty 默认停在「筛选」，要切到「审阅」；数据走 workspace.js 的
 // 值班接口转译层（这条路径曾因白名单漏了 /preview-header 而静默没有题头）
 async function bootDutyReviewPage(options = {}) {
     // articleCount 给 1 是为了让 bootPage 等 init 跑完（值班页默认停在筛选页），
@@ -94,7 +94,7 @@ async function bootDutyReviewPage(options = {}) {
     page.document.querySelector('.tab-btn[data-tab="review"]').click();
     await waitForCondition(
         () => page.document.querySelectorAll('#review-list .article-card').length > 0,
-        '值班端已选结果未渲染'
+        '值班端审阅列表未渲染'
     );
     return page;
 }

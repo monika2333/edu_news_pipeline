@@ -1,3 +1,11 @@
+"""值班编辑（duty_editor）班次作用域的审阅接口。
+
+**本 router 的 GET 必须只读。** 前端 `workspace.js` 的 `workspaceFetch` 会把
+未登记的 GET 直接透传到 `/api/duty/shifts/{shift_id}` 前缀（分流规则见
+`src/console/AGENTS.md`），所以任何 GET 一旦引入写副作用——懒初始化、缓存重建、
+审计落库——就等于把写能力暴露给任意引用该前缀的前端模块。需要写操作就开显式
+POST/PUT 端点，不要塞进 GET。
+"""
 from __future__ import annotations
 
 from datetime import date, datetime

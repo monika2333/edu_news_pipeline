@@ -88,3 +88,4 @@
 - 细化筛选折叠行行为（展开/收起、条件随请求下发并回第 1 页、清空筛选唯一入口、值班端回退平铺、跨零点提示）变更：同步更新 `tests/js/refine_filter_flow.test.js`（同由 `tests/test_manual_filter_js_behavior.py` 触发）。
 - 筛选页「采纳」「备选」决定菜单（右键 / 触屏长按）变更：同步更新 `tests/js/filter_decision_menu.test.js`（同由 `tests/test_manual_filter_js_behavior.py` 触发）。用例覆盖右键与长按共用判定、长按抬手补发的 click 不得落成轻点决定、短按仍是轻点决定、滑动取消长按、「放弃」不参与、聚类标题同口径。
 - 值班页请求转译层（`workspace.js` 的 `workspaceFetch` 分流规则）变更：`.\venv\Scripts\python.exe -m pytest tests/test_workspace_proxy_js_behavior.py`。
+- **共享界面改动默认双跑两端**：凡是落在 `manual_filter.html` 或 `manual_filter/*.js` 的功能，jsdom 用例写成 `for (const mode of ['duty', 'admin'])`（参考 `tests/js/filter_decision_flow.test.js`），至少各一条行为用例。两页共用同一份模板与模块，差异只在 `workspace_mode` 与 `workspaceFetch` 的分流层——只测一端曾漏掉值班端的题头开关。角色独占功能（报送存档、设置页、用户/排班、值班汇总 / 定稿撤回、班次选择）只测对应角色，补另一端是假覆盖。duty 用例起步照抄 `review_preview_header.test.js` 的 `bootDutyReviewPage`（切「已选结果」页签前要等 init 完成，夹具的 `/reviews` 负责值班审阅列表）。

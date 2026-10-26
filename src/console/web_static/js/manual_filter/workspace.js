@@ -272,14 +272,6 @@ async function workspaceFetch(input, options = {}) {
         if (response.ok) invalidateDutyListCache();
         return response;
     }
-    if (action === '/discarded-batches') {
-        return window.fetch(`${API_BASE}/discarded-batches`, options);
-    }
-    if (action === '/stats') return window.fetch(`${API_BASE}/stats${url.search}`, options);
-    // 期号题头是纯读接口，白名单漏掉会落到末尾的 403 降级（预览静默少一块）
-    if (action === '/preview-header') {
-        return window.fetch(`${API_BASE}${action}${url.search}`, options);
-    }
     if (action === '/score-feedback' || action === '/score-feedback/clear') {
         return window.fetch(`${API_BASE}${action}`, options);
     }
@@ -291,5 +283,17 @@ async function workspaceFetch(input, options = {}) {
         return window.fetch(`${API_BASE}${action}${url.search}`, options);
     }
     if (action === '/order') return dutyOrderResponse(options);
+
+    // 只读接口直接透传：值班前缀下的 GET 都是幂等只读、由后端按角色鉴权，
+    // 上面逐条登记的只有「需要翻译或失效缓存」的路径。别给只读接口再加白名单——
+    // 漏登记曾让 /preview-header 在值班端静默 403（管理员有、值班没有）。
+    const method = (options.method || 'GET').toUpperCase();
+    if (method === 'GET') {
+        return window.fetch(`${API_BASE}${action}${url.search}`, options);
+    }
+
+    // 未登记的写操作一律拒绝：它多半意味着这里缺了载荷改写/缓存失效，
+    // 放行只会把问题推到后端变成难以解释的 4xx。告警让漏登记在开发期就可见。
+    console.warn('[workspace] 值班端未登记的写操作：', action);
     return workspaceJsonResponse({ detail: '值班账号不能执行此操作' }, 403);
 }

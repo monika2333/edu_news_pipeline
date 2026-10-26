@@ -489,7 +489,8 @@ def test_duty_page_reuses_manual_filter_workspace_without_admin_entries() -> Non
     ) in workspace_script
     assert "值班账号不能执行此操作" in workspace_script
     assert "async function dutyStatsResponse" not in workspace_script
-    assert "`${API_BASE}/stats${url.search}`" in workspace_script
+    # 只读接口不再逐条登记（/stats、/preview-header 等走 GET 透传），
+    # 分流规则由 tests/js/workspace_proxy.test.js 以行为测试锁定
     assert "if (response.ok) invalidateDutyListCache();" in workspace_script
     # 决定后处理的行为约定（移除节点/立即补页/本地计数/撤销恢复）由
     # tests/js/filter_decision_flow.test.js 在两端以行为测试覆盖，这里不再做源码字符串断言。

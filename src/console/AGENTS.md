@@ -12,7 +12,7 @@
 - `web_templates/` 管理 Jinja markup；`web_static/` 管理 CSS 和 JavaScript。
 - 当前 Web 页面入口按角色分发，`web_routes.py` 负责根路径跳转：管理员由 `admin_entry.html` + `admin_last_view.js` 按浏览器中该用户最后访问的主视图进入（无有效记录时回退 `/admin/duty-summary`），值班编辑进入 `/duty`。
 - `/duty` 复用 `web_templates/manual_filter.html`，通过 `workspace_mode="duty"` 区分。值班编辑页面的可见控件应在这个共享模板及 `web_static/js/manual_filter/` 中维护。
-- `web_static/js/manual_filter/workspace.js` 是共享页面与值班 API 之间的转译层，负责把人工筛选工作区请求映射到当前班次的 `/api/duty/shifts/{shift_id}` 接口。新增或修改值班编辑操作时，应同步检查模板、对应 manual-filter JS 模块和该转译层。
+- `web_static/js/manual_filter/workspace.js` 是共享页面与值班 API 之间的转译层，负责把人工筛选工作区请求映射到当前班次的 `/api/duty/shifts/{shift_id}` 接口。新增或修改值班编辑操作时，应同步检查模板、对应 manual-filter JS 模块和该转译层。**分流规则（2026-10-26 定稿）**：只有「需要改写载荷或失效 `dutyWorkspaceItems` 缓存」的路径才显式登记；其余 GET 一律透传到班次前缀（只读、幂等、后端按角色鉴权——别给只读接口补白名单，漏登记曾让 `/preview-header` 在值班端静默 403）；未登记的写操作仍返回合成 403 并 `console.warn`，让漏登记在开发期可见。该行为由 `tests/js/workspace_proxy.test.js` 锁定。
 - 报送存档的纯逻辑不在本目录：文本解析、回链相似度算法、阈值配置在 `src/domain/submission_archive_*.py`，回链执行在 `src/workers/submission_archive_processing.py`。本目录的 `submission_archive_*.py` 只负责 HTTP 接口、录入界面和人工确认队列。不要把这些逻辑搬回 console。
 
 ## 人工筛选规则
@@ -87,3 +87,4 @@
 - 筛选页决定流程（单条/整簇决定、放弃本页剩余内容、摘要与来源编辑保存、列表加载）变更：`.\venv\Scripts\python.exe -m pytest tests/test_manual_filter_js_behavior.py`。这组 jsdom 行为测试（`tests/js/filter_decision_flow.test.js`）锁定四项约定：值班端决定后先提示后补页、`loadFilterData` 最新请求获胜、只保存改过的卡片、决定前等待进行中的编辑保存。改动这些行为时同步更新该测试；不要用源码字符串断言代替行为测试，字符串断言锁不住逻辑。夹具 `tests/js/manual_filter_harness.js` 以真实路由渲染的页面启动，后端由其中的假服务模拟，接口字段变化时需同步更新假服务。
 - 细化筛选折叠行行为（展开/收起、条件随请求下发并回第 1 页、清空筛选唯一入口、值班端回退平铺、跨零点提示）变更：同步更新 `tests/js/refine_filter_flow.test.js`（同由 `tests/test_manual_filter_js_behavior.py` 触发）。
 - 筛选页「采纳」「备选」决定菜单（右键 / 触屏长按）变更：同步更新 `tests/js/filter_decision_menu.test.js`（同由 `tests/test_manual_filter_js_behavior.py` 触发）。用例覆盖右键与长按共用判定、长按抬手补发的 click 不得落成轻点决定、短按仍是轻点决定、滑动取消长按、「放弃」不参与、聚类标题同口径。
+- 值班页请求转译层（`workspace.js` 的 `workspaceFetch` 分流规则）变更：`.\venv\Scripts\python.exe -m pytest tests/test_workspace_proxy_js_behavior.py`。

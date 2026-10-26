@@ -22,6 +22,12 @@
 - 变异测试时直接跑 node 套件更快：用主仓 venv 执行 `from tests.test_settings_js_behavior import _render_settings_page` 渲染出临时 HTML，然后 `cd tests/js && CONSOLE_STATIC_DIR=<静态目录> SETTINGS_PAGE_HTML=<临时HTML> node --test --test-reporter=spec xxx.test.js`（两个环境变量缺一不可，名字是 CONSOLE_STATIC_DIR）。
 - psql 18 已在用户 PATH；但 ZCode 的 Bash 是非交互 shell，重启前可能要 `export PATH="/c/Program Files/PostgreSQL/18/bin:$PATH"`。`test_migration_replay` 报错先看是 psql 缺失还是 CRLF，再下结论。
 - 真实库测试无库可连时应 skip（connect_timeout=5），不要硬炸。
+- **小任务不必跑全量 pytest（2026-10-26 用户拍板，本机全量约 2 分钟）**：测试范围按「改了什么」判断，不再一律全量。以下四条全部成立时，只跑定向测试即可；纯文档/`.memory/` 改动则不跑测试：
+  1. 没有碰 Python 逻辑、SQL、迁移或写库路径；
+  2. 没有碰共享前端模块（`manual_filter/*.js`、`settings/*.js` 等）的分支、状态或请求参数——纯注释、文案、纯 CSS 视觉调整不算；
+  3. 不是合并其他分支的收尾（合并后仍必须全量，见 §4），也没有并行会话改动混入；
+  4. 改动点被某个定向用例直接覆盖（例如改页签文案，就跑断言该文案的用例）。
+  典型只需定向：页签/按钮/提示文案、注释、纯 CSS、文档。典型必须全量：service / route / adapter / worker / domain、SQL 与迁移、共享前端行为、依赖升级、合并结果。**拿不准就跑全量**；不要用「只改了文本」当理由跳过对应用例，也不要因为跑过全量就省掉定向用例。
 
 ## 3. worktree 操作规程
 

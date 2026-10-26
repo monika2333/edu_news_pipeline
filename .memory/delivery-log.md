@@ -4,6 +4,7 @@
 
 | 日期 | 功能 | 合入 | archive |
 |---|---|---|---|
+| 2026-10-26 | 值班编辑控制台「已选结果」页签更名为「审阅」（`data-tab` 仍为 `review`，仅值班端） | d810615 | 命名拍板记入 `decisions.md` |
 | 2026-10-26 | 预览题头改按班次取报送日（方案 A）：历史班次显示当时那一期；归档优先、公式兜底；删掉「同一期/基准过旧」提示 | d8e3a51 | 口径写进 `decisions.md` 与 `docs/data_flow.md`「期号」节 |
 | 2026-10-26 | 值班页请求转译层改规则：GET 透传 / 写操作显式登记 + 未登记写操作 403 且告警（消灭「漏登记=静默没功能」这类漂移） | ca68db0 之后的同一批提交 | 规则写进 `src/console/AGENTS.md`，坑见 pitfalls，行为由 `tests/js/workspace_proxy.test.js` 锁定 |
 | 2026-10-26 | 修正：值班编辑页预览没有期号题头（`workspace.js` 白名单漏 `/preview-header`，合成 403 静默降级） | ca68db0 | 见 2026-10-21 预览题头那篇 + pitfalls「值班页请求走 workspaceFetch 的分流」 |

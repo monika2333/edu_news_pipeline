@@ -364,11 +364,10 @@ def preview_header_api(
     report_type: str = "zongbao",
     user: ConsoleUser = Depends(require_admin_workspace_user),
 ) -> Dict[str, Any]:
-    """汇总审阅页「预览」的期号题头，按管理员口径（日期行 = 报送日）推算。"""
+    """汇总审阅页「预览」的期号题头：以今天为报送日，今天已归档则取那一期。"""
     try:
         return preview_header_service.build_preview_header(
             report_type=report_type,
-            viewer="admin",
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

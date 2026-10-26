@@ -1049,8 +1049,9 @@ body.duplicate-review-open .search-drawer-toggle {
     overflow-wrap: anywhere;
 }
 
+/* 只在「没有期号基准」时出现（正常预览没有这一行），间距收紧避免看起来像空行 */
 .preview-doc-notices {
-    margin: 0 0 10px;
+    margin: 0 0 6px;
     font-size: 12px;
     line-height: 1.6;
     color: var(--text-secondary);

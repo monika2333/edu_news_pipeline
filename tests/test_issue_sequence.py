@@ -84,7 +84,8 @@ def test_next_issue_same_day_keeps_baseline_number() -> None:
     assert offset == 0
 
 
-def test_next_issue_never_goes_backwards() -> None:
+def test_next_issue_reconstructs_earlier_dates() -> None:
+    """历史班次要用同一公式往回推：天数差为负是合法的。"""
     baseline = _baseline(total=4847, compiled=date(2026, 10, 20))
 
     numbers, offset = issue_sequence.next_issue_numbers(
@@ -92,8 +93,8 @@ def test_next_issue_never_goes_backwards() -> None:
         target_date=date(2026, 10, 1),
     )
 
-    assert numbers.total == 4847
-    assert offset == 0
+    assert offset == -19
+    assert numbers.total == 4828
 
 
 def test_next_issue_year_number_continues_across_new_year() -> None:

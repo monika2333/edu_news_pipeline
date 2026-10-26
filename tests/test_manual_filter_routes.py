@@ -1655,7 +1655,8 @@ def test_preview_header_api_uses_admin_viewpoint(
 
     assert response.status_code == 200
     assert response.json()["lines"][1] == "总第4848期"
-    assert calls == [{"report_type": "wanbao", "viewer": "admin"}]
+    # 管理端不传 business_date，由服务层按「今天」取报送日
+    assert calls == [{"report_type": "wanbao"}]
 
 
 def test_preview_header_api_rejects_unknown_report_type(
@@ -1677,7 +1678,7 @@ def test_preview_header_api_rejects_unknown_report_type(
     assert response.status_code == 422
 
 
-def test_duty_preview_header_api_uses_duty_viewpoint(
+def test_duty_preview_header_api_uses_shift_business_date(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.console import preview_header_service
@@ -1691,7 +1692,9 @@ def test_duty_preview_header_api_uses_duty_viewpoint(
             "lines": ["首都教育舆情", "总第4848期", "2026年10月21日"],
         }
 
-    monkeypatch.setattr(preview_header_service, "build_preview_header", fake_build)
+    monkeypatch.setattr(
+        preview_header_service, "build_shift_preview_header", fake_build
+    )
     app = create_app()
     app.dependency_overrides[require_console_user] = _duty_editor_user
 
@@ -1701,7 +1704,32 @@ def test_duty_preview_header_api_uses_duty_viewpoint(
 
     assert response.status_code == 200
     assert response.json()["lines"][2] == "2026年10月21日"
-    assert calls == [{"report_type": "wanbao", "viewer": "duty"}]
+    # 值班端按「所查看班次」取报送日，shift_id 必须一路传下去
+    assert len(calls) == 1
+    assert calls[0]["shift_id"] == "shift-1"
+    assert calls[0]["report_type"] == "wanbao"
+    assert calls[0]["user"].user_id == "editor-1"
+
+
+def test_duty_preview_header_returns_404_for_unknown_shift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.console import preview_header_service, shifts_service
+
+    def fake_build(**kwargs: Any) -> Dict[str, Any]:
+        raise shifts_service.ShiftNotFoundError("Duty shift not found")
+
+    monkeypatch.setattr(
+        preview_header_service, "build_shift_preview_header", fake_build
+    )
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _duty_editor_user
+
+    response = TestClient(app).get(
+        "/api/duty/shifts/shift-missing/preview-header?report_type=wanbao"
+    )
+
+    assert response.status_code == 404
 
 
 def test_admin_workspace_cannot_read_duty_preview_header(

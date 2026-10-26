@@ -563,14 +563,15 @@ def preview_header(
     report_type: ReportType = "zongbao",
     user: ConsoleUser = Depends(require_role("duty_editor")),
 ) -> dict[str, Any]:
-    """值班编辑预览的期号题头：日期行写制作日（= 当天）。"""
+    """预览题头：以所查看班次的覆盖日期作为报送日（历史班次看当时那一期）。"""
     try:
-        return preview_header_service.build_preview_header(
+        return preview_header_service.build_shift_preview_header(
+            shift_id=shift_id,
+            user=user,
             report_type=report_type,
-            viewer="duty",
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (ValueError, PermissionError) as exc:
+        _raise_review_error(exc)
 
 
 __all__ = ["router"]

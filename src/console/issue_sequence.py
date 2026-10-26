@@ -98,11 +98,10 @@ def next_issue_numbers(
 ) -> tuple[IssueNumbers, int]:
     """按取材日推算目标日期的期号，返回 (期号, 天数差)。
 
-    天数差小于 0（基准比目标还新）时按 0 处理：期号绝不回退。
+    天数差可以为负：看历史班次时目标日比最近一条归档更早，需要往回推。
+    （期号是取材日的线性函数，往前推与往后推是同一个公式。）
     """
     day_offset = (target_date - baseline.compiled_date).days
-    if day_offset < 0:
-        day_offset = 0
     numbers = IssueNumbers(
         total=baseline.numbers.total + day_offset,
         year_no=(

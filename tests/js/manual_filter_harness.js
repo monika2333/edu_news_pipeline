@@ -312,6 +312,14 @@ class FakeWorkspaceServer {
                 .map(([decided_at, count]) => ({ decided_at, count }));
             return [200, { items }];
         }
+        // 值班端的审阅列表：workspace.js 的 loadAllDutyItems 按 /reviews 分页聚合
+        if (pathname.endsWith('/reviews')) {
+            const decision = url.searchParams.get('decision') || 'selected';
+            const items = this.reviewItems.filter(
+                (item) => (item.status || 'selected') === decision
+            );
+            return [200, { items, total: items.length, limit: 200, offset: 0 }];
+        }
         if (pathname.endsWith('/stats')) {
             return [200, { pending: this.pendingArticles().length, selected: 0, backup: 0, discarded: 0 }];
         }

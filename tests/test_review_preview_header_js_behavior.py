@@ -56,6 +56,25 @@ def _render_review_page() -> str:
     return response.text
 
 
+def _render_duty_page() -> str:
+    app = create_app()
+    app.dependency_overrides[require_console_user] = lambda: ConsoleUser(
+        method="test",
+        user_id="duty-id",
+        username="duty",
+        display_name="测试值班编辑",
+        role="duty_editor",
+    )
+    original_get_adapter = web_routes.get_adapter
+    web_routes.get_adapter = lambda: _FakeAdapter()
+    try:
+        response = TestClient(app).get("/duty")
+    finally:
+        web_routes.get_adapter = original_get_adapter
+    assert response.status_code == 200, f"/duty 渲染失败：{response.status_code}"
+    return response.text
+
+
 def _node_or_skip() -> str:
     node = shutil.which("node")
     has_deps = (JS_TEST_DIR / "node_modules" / "jsdom").is_dir()
@@ -72,11 +91,14 @@ def test_review_preview_header_behaviour(tmp_path: Path) -> None:
     node = _node_or_skip()
     page_html = tmp_path / "review.html"
     page_html.write_text(_render_review_page(), encoding="utf-8")
+    duty_html = tmp_path / "duty.html"
+    duty_html.write_text(_render_duty_page(), encoding="utf-8")
 
     env = {
         **os.environ,
         "CONSOLE_STATIC_DIR": str(STATIC_DIR),
         "FILTER_PAGE_ADMIN_HTML": str(page_html),
+        "FILTER_PAGE_DUTY_HTML": str(duty_html),
     }
     result = subprocess.run(
         [

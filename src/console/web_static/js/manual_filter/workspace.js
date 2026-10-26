@@ -276,6 +276,10 @@ async function workspaceFetch(input, options = {}) {
         return window.fetch(`${API_BASE}/discarded-batches`, options);
     }
     if (action === '/stats') return window.fetch(`${API_BASE}/stats${url.search}`, options);
+    // 期号题头是纯读接口，白名单漏掉会落到末尾的 403 降级（预览静默少一块）
+    if (action === '/preview-header') {
+        return window.fetch(`${API_BASE}${action}${url.search}`, options);
+    }
     if (action === '/score-feedback' || action === '/score-feedback/clear') {
         return window.fetch(`${API_BASE}${action}`, options);
     }

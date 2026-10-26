@@ -80,6 +80,43 @@ async function openPreview(page) {
     );
 }
 
+// 值班端：/duty 默认停在「筛选」，要切到「已选结果」；数据走 workspace.js 的
+// 值班接口转译层（这条路径曾因白名单漏了 /preview-header 而静默没有题头）
+async function bootDutyReviewPage(options = {}) {
+    // articleCount 给 1 是为了让 bootPage 等 init 跑完（值班页默认停在筛选页），
+    // 否则切页签可能落在 setupTabs() 之前，点击无人响应
+    const page = await bootPage('duty', {
+        articleCount: 1,
+        reviewItems: [reviewItem('r1', '市教委发布寒假安排')],
+        previewHeader: previewHeaderPayload(),
+        ...options,
+    });
+    page.document.querySelector('.tab-btn[data-tab="review"]').click();
+    await waitForCondition(
+        () => page.document.querySelectorAll('#review-list .article-card').length > 0,
+        '值班端已选结果未渲染'
+    );
+    return page;
+}
+
+test('PH8：值班端预览同样带题头（接口经 workspace.js 转译层）', async () => {
+    const page = await bootDutyReviewPage();
+    try {
+        await openPreview(page);
+
+        assert.equal(page.document.getElementById('preview-header-toggle').hidden, false);
+        const text = page.document.getElementById('preview-text').value;
+        assert.ok(text.startsWith(`${HEADER.join('\n')}\n\n`), text.slice(0, 120));
+
+        const requests = page.server.requests('preview-header');
+        assert.equal(requests.length, 1);
+        assert.ok(
+            /\/api\/duty\/shifts\/[^/]+\/preview-header$/.test(requests[0].path),
+            requests[0].path
+        );
+    } finally { page.close(); }
+});
+
 test('PH1：题头默认拼在预览文本开头，与正文同框', async () => {
     const page = await bootReviewPage();
     try {

@@ -57,6 +57,7 @@
 - `--test-name-pattern` 配中文用例名可定向跑 node --test（全角＋号曾匹配超时，换类名定位）；`page.window.eval('state.dirty.xxx')` 可读页面全局 const。
 - 项目**没有 `.btn-sm` 定义**：`btn btn-primary btn-sm` 实际仍套 `.btn` 的 `10px 24px` + `min-height: 40px`，放在检索卡片标题行会变成大蓝块（用户 2026-10-21 明确嫌突兀）。小按钮用专属 class 自己定尺寸（试跑选文章已改用 `.search-pick-btn`）。
 - 校验类测试（空正文/未知文章）即使预期在调用 LLM 前抛错，也必须把 LLM 调用换成「一被调用就失败」的桩；否则校验被变异掉时测试会真实请求模型（实测空正文变异跑了约 40s 真实调用）。设置页 `test_prompt_test_service._patch_common` 已默认装桩，需要 LLM 的用例再覆盖。
+- **值班页新增接口必须同步加进 `workspace.js` 的 action 白名单**：`workspaceFetch` 是显式 switch，未列出的路径一律落到末尾的 `workspaceJsonResponse({detail: '值班账号不能执行此操作'}, 403)`。后端接口和权限都正常，前端却拿到合成 403 后静默降级，症状就是「管理员能看到、值班编辑看不到」——`/preview-header` 就这么漏过一次（2026-10-26 修复）。配套要点：① 新功能要把 duty 模式也写进 jsdom 用例（此前只有 admin 用例，所以漏检）；② `bootPage('duty')` 在 `articleCount: 0` 时可能在 `setupTabs()` 之前返回，切页签前必须先等 init 完成（给 `articleCount: 1` 最省事）；③ 夹具的 `/reviews` 要能返回值班审阅列表（`loadAllDutyItems` 走它分页聚合）。
 - 提示词试跑复用共享搜索抽屉时，选择模式必须跳过 `search_drawer_open` / `search_drawer_tab` / `search_filters` 三个共享 localStorage 键；用 `body[data-search-drawer-mode="pick"]` 切模式，不要改三页默认行为。
 - jsdom 没有 `TouchEvent`：用普通可冒泡 `Event` + `Object.defineProperty(event, 'touches'/'changedTouches', ...)` 就能驱动页面里的手势逻辑（页面只读这两个字段与 `cancelable`）。但「长按抬手后浏览器补发一次 click」只在真实浏览器发生，jsdom 里手动补发 click 测的是兜底守卫，不是浏览器语义；真实触屏行为用 Playwright + CDP `Input.dispatchTouchEvent`（context 开 `has_touch=True`）验证。jsdom 的 label 激活行为尊重 `defaultPrevented`（捕获阶段 `preventDefault` 能拦住 label→radio）。
 

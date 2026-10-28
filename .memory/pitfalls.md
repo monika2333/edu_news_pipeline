@@ -16,6 +16,9 @@
 - **`dbmate up` 回写的 `schema.sql` 只有「迁移版本行」该提交**：pg_dump 18 每次生成不同的 `\restrict`/`\unrestrict` 随机令牌，还会带出 public schema 注释块、以及把 `schema_migrations.version` 写成本机库现状的 `varchar`（无长度）。后两者与 `tests/test_migration_replay.py` 里硬编码 `varchar(128)` 的镜像 DDL 冲突，原样提交该用例立刻变红（实测）。现在由 `scripts/db/refresh-schema.ps1` 统一处理（规程见 [workflow.md](workflow.md)「刷新 schema.sql」），`tests/test_schema_normalizer.py` 把「提交的 `schema.sql` 必须已是规整形态」钉进了 CI。历史上这份文件的形态来回翻转多次（a3a63e4 等）就是每次有人手工清理这类噪音。
 - 「清理旧新闻」类多桶写路径：回滚类测试的注入点必须在「写入已执行」之后；「先锁全部再统一写」的实现里，锁定阶段注入是空转（用户抓到过 T3 空转，09e7c96 修订）。
 - service 层报别校验用 `NEWS_REPORT_TYPES` 显式判断——`coerce_report_type` 会把非法值静默归综报，不能当守卫用。
+- **迁移里要写 `CREATE/DROP INDEX CONCURRENTLY`，就必须让一个 up 块只含一条 DDL**：dbmate 与 `tests/test_migration_replay._migration_up` 都把「`-- migrate:up` 到 `-- migrate:down`」之间的整段文本当**一条语句串**执行，PostgreSQL 会把它包进隐式事务，`CONCURRENTLY` 直接报 `ActiveSqlTransaction`（2026-10-28 实测）。`transaction:false` 只关掉 dbmate 的显式 BEGIN，不改变「多语句被包进隐式事务」这件事。拆成多个 `-- migrate:up` 块 dbmate 能过，但回放只抽取第一段再单次 execute，反而必红。要么接受非并发建索引（小块表秒级、写锁只在该事务内），要么改回放工具——别假设 `transaction:false` 就能并发。
+- **改表达式索引时复用索引名，别起新名**：baseline 迁移 `20241101000000` 里有 `create index if not exists news_summaries_search_expr_trgm`，而 `test_migration_replay::test_backfilled_baseline_is_applied_without_changing_existing_schema` 会删掉 baseline 版本号后重放 baseline、要求 schema 逐字不变。换成新索引名 → 重放时旧表达式索引被建回来 → 该用例必红。正确做法是 `drop index if exists <旧名>` + **同名** `create index if not exists`（新表达式）；重放 baseline 时 `if not exists` 按名字判为 no-op。
+- **trigram GIN 索引在长正文上很占体积，别留死索引**：`news_summaries` 5331 行就有 138 MB/索引（正文平均两万多字符），`raw_articles` 24734 行约 245 MB。表达式换掉后旧索引不再被任何查询选中，留着只吃写放大。2026-10-28 一开始为绕开上面那条回填用例保留了旧摘要索引，量出体积后改为同名重建，库从 669 MB 收到 534 MB。
 
 ## 日志
 

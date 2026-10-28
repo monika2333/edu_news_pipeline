@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import psycopg
@@ -9,7 +9,6 @@ from psycopg.types.json import Json
 
 from src.adapters.db_postgres_article_attribution import search_article_attributions
 from src.adapters.db_postgres_shared import keyword_labels_from_score_details
-from src.adapters.sql_search import ilike_all_clauses
 
 if TYPE_CHECKING:
     from src.adapters.db_postgres_core import PostgresAdapter
@@ -104,31 +103,6 @@ class NewsSummariesNamespace:
         with self._adapter._cursor() as cur:
             mark_summary_failed(cur, article_id, message=message)
 
-    def search(
-        self,
-        *,
-        terms: Optional[Sequence[str]] = None,
-        sources: Optional[Sequence[str]] = None,
-        sentiments: Optional[Sequence[str]] = None,
-        statuses: Optional[Sequence[str]] = None,
-        start_date: Optional[date] = None,
-        end_date: Optional[date] = None,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> Dict[str, Any]:
-        with self._adapter._cursor() as cur:
-            return search_news_summaries(
-                cur,
-                terms=terms,
-                sources=sources,
-                sentiments=sentiments,
-                statuses=statuses,
-                start_date=start_date,
-                end_date=end_date,
-                limit=limit,
-                offset=offset,
-            )
-
     def search_with_attribution(
         self,
         *,
@@ -179,16 +153,6 @@ class NewsSummariesNamespace:
     ) -> int:
         with self._adapter.transaction() as cur:
             return update_dedup_embeddings(cur, embeddings)
-
-SEARCH_TEXT_EXPRESSION = (
-    "(coalesce(title, '') || ' ' || coalesce(llm_summary, '') || ' ' || coalesce(content_markdown, ''))"
-)
-SEARCH_TRGM_INDEX_SQL = f"""
-    CREATE EXTENSION IF NOT EXISTS pg_trgm;
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS news_summaries_search_expr_trgm
-    ON news_summaries
-    USING gin ({SEARCH_TEXT_EXPRESSION} gin_trgm_ops);
-"""
 
 
 def insert_pending_summary(
@@ -494,100 +458,6 @@ def mark_summary_failed(cur: psycopg.Cursor, article_id: str, *, message: Option
     cur.execute(query, (article_id,))
     if message:
         print(f"[warn] summary failed {article_id}: {message}", file=sys.stderr)
-
-
-def search_news_summaries(
-    cur: psycopg.Cursor,
-    *,
-    terms: Optional[Sequence[str]] = None,
-    sources: Optional[Sequence[str]] = None,
-    sentiments: Optional[Sequence[str]] = None,
-    statuses: Optional[Sequence[str]] = None,
-    start_date: Optional[date] = None,
-    end_date: Optional[date] = None,
-    limit: int = 50,
-    offset: int = 0,
-) -> Dict[str, Any]:
-    limit = max(1, min(int(limit or 50), 200))
-    offset = max(0, int(offset or 0))
-    clauses: List[str] = []
-    params: List[Any] = []
-    if terms:
-        term_clauses, term_params = ilike_all_clauses(SEARCH_TEXT_EXPRESSION, terms)
-        clauses.extend(term_clauses)
-        params.extend(term_params)
-
-    normalized_sources = [item.strip() for item in (sources or []) if item and item.strip()]
-    if normalized_sources:
-        clauses.append("source = ANY(%s)")
-        params.append(normalized_sources)
-
-    normalized_sentiments = [item.strip().lower() for item in (sentiments or []) if item and item.strip()]
-    if normalized_sentiments:
-        clauses.append("lower(coalesce(sentiment_label, '')) = ANY(%s)")
-        params.append(normalized_sentiments)
-
-    normalized_statuses = [item.strip().lower() for item in (statuses or []) if item and item.strip()]
-    if normalized_statuses:
-        clauses.append("lower(coalesce(status, '')) = ANY(%s)")
-        params.append(normalized_statuses)
-
-    if start_date:
-        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
-        clauses.append("publish_time_iso >= %s")
-        params.append(start_dt)
-
-    if end_date:
-        exclusive_end = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
-        clauses.append("publish_time_iso < %s")
-        params.append(exclusive_end)
-
-    where_clause = " AND ".join(clauses) if clauses else "TRUE"
-    count_sql = f"SELECT COUNT(*) FROM news_summaries WHERE {where_clause}"
-    select_sql = f"""
-        SELECT
-            article_id,
-            title,
-            source,
-            publish_time,
-            publish_time_iso,
-            url,
-            llm_summary,
-            COALESCE(llm_keywords, '{{}}'::text[]) AS llm_keywords,
-            score,
-            raw_relevance_score,
-            keyword_bonus_score,
-            sentiment_label,
-            sentiment_confidence,
-            status,
-            summary_status,
-            external_importance_status,
-            external_importance_score,
-            is_beijing_related,
-            is_beijing_related_llm,
-            external_importance_checked_at,
-            external_importance_raw,
-            summary_generated_at,
-            created_at,
-            updated_at
-        FROM news_summaries
-        WHERE {where_clause}
-        ORDER BY publish_time_iso DESC NULLS LAST, created_at DESC
-        LIMIT %s OFFSET %s
-    """
-    cur.execute(count_sql, tuple(params))
-    total_row = cur.fetchone() or {}
-    total = int(total_row.get("count") or 0)
-    fetch_params = list(params)
-    fetch_params.extend([limit, offset])
-    cur.execute(select_sql, tuple(fetch_params))
-    rows = cur.fetchall()
-    return {
-        "items": [dict(row) for row in rows],
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-    }
 
 
 def fetch_news_summary_content(cur: psycopg.Cursor, article_id: str) -> Optional[Dict[str, Any]]:
@@ -961,7 +831,6 @@ __all__ = [
     "insert_pending_summary",
     "mark_summary_attempt",
     "mark_summary_failed",
-    "search_news_summaries",
     "update_dedup_embeddings",
     "update_summary_categories",
     "update_summary_score",

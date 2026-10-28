@@ -8,7 +8,6 @@
 
 ## 未排期候选
 
-- 死代码清理（2026-10-28 记录）：`src/adapters/db_postgres_news_summaries.py` 的 `SEARCH_TRGM_INDEX_SQL`、`SEARCH_TEXT_EXPRESSION`、`search_news_summaries` 与命名空间上的 `search` 方法都没有调用方。检索纳入来源后，`SEARCH_TRGM_INDEX_SQL` 的索引表达式与索引名定义已过期（`if not exists` 会静默 no-op，比没有更容易误导）。删除前先全仓 + tests grep 引用，确认 `__all__` 与测试没有依赖；再确认 `search_news_summaries` 没有外部脚本调用。
 - 检索按「消息来源」筛选（未排期）：目前只能按抓取来源 `source` 搜；`news_summaries.llm_source`（LLM 识别的消息来源，5331 篇里 3277 篇与 `source` 不同）与人工来源不可检索。若要做，应作为独立维度（来源过滤下拉），不要塞进自由文本 AND 组（理由见 `decisions.md`「检索语义」）。
 - 爬虫 adapter 整理后续（需先补黄金快照）：统一各站标题提取（现 9 处实现）、btime 结尾锚定后缀收编进 `strip_site_suffix`、发布时间解析共享化。
 - 提示词试跑的后续候选（未排期）：批量/多文章对比、从筛选页文章直接发起重评、后台异步试跑；当前只有设置页单篇同步试跑。

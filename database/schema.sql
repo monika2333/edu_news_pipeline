@@ -1281,7 +1281,7 @@ CREATE INDEX news_summaries_score_idx ON public.news_summaries USING btree (scor
 -- Name: news_summaries_search_expr_trgm; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX news_summaries_search_expr_trgm ON public.news_summaries USING gin ((((((COALESCE(title, ''::text) || ' '::text) || COALESCE(llm_summary, ''::text)) || ' '::text) || COALESCE(content_markdown, ''::text))) public.gin_trgm_ops);
+CREATE INDEX news_summaries_search_expr_trgm ON public.news_summaries USING gin ((((((((COALESCE(title, ''::text) || ' '::text) || COALESCE(llm_summary, ''::text)) || ' '::text) || COALESCE(content_markdown, ''::text)) || ' '::text) || COALESCE(source, ''::text))) public.gin_trgm_ops);
 
 
 --
@@ -1372,7 +1372,7 @@ CREATE INDEX raw_articles_fetched_at_idx ON public.raw_articles USING btree (fet
 -- Name: raw_articles_search_expr_trgm; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX raw_articles_search_expr_trgm ON public.raw_articles USING gin ((((COALESCE(title, ''::text) || ' '::text) || COALESCE(content_markdown, ''::text))) public.gin_trgm_ops);
+CREATE INDEX raw_articles_search_expr_trgm ON public.raw_articles USING gin ((((((COALESCE(title, ''::text) || ' '::text) || COALESCE(content_markdown, ''::text)) || ' '::text) || COALESCE(source, ''::text))) public.gin_trgm_ops);
 
 
 --
@@ -1950,4 +1950,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260928130000'),
     ('20261020150000'),
     ('20261020163000'),
-    ('20261021150000');
+    ('20261021150000'),
+    ('20261028180000');

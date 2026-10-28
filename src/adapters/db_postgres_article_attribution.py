@@ -9,11 +9,12 @@ from src.adapters.sql_search import ilike_all_clauses, ilike_any_clause
 
 
 RAW_SEARCH_TEXT_EXPRESSION = (
-    "(coalesce(ra.title, '') || ' ' || coalesce(ra.content_markdown, ''))"
+    "(coalesce(ra.title, '') || ' ' || coalesce(ra.content_markdown, '') || ' ' || "
+    "coalesce(ra.source, ''))"
 )
 SUMMARY_SEARCH_TEXT_EXPRESSION = (
     "(coalesce(ns.title, '') || ' ' || coalesce(ns.llm_summary, '') || ' ' || "
-    "coalesce(ns.content_markdown, ''))"
+    "coalesce(ns.content_markdown, '') || ' ' || coalesce(ns.source, ''))"
 )
 
 
@@ -36,11 +37,11 @@ def search_article_attributions(
         raise ValueError("Article search terms must not be empty")
     if (cursor_ingested_at is None) != (cursor_article_id is None):
         raise ValueError("Article search cursor fields must be provided together")
-    # summary_hits 的两组条件各管一件事：表达式条件保证「每个词都命中」（也是
-    # trigram GIN 索引能生效的唯一形态），llm_summary 的 OR 组保证「摘要对命中
-    # 有贡献」（至少一个词落在 LLM 摘要里）。摘要路径的本意是补充「靠摘要才命中」
-    # 的文章，而不是要求所有词都出现在摘要里——那会漏掉一个词在原文、
-    # 另一个词仅在摘要的跨字段命中。
+    # summary_hits 的两组条件各管一件事：表达式条件保证「每个词都命中」（表达式
+    # 必须与 trigram GIN 索引定义逐字一致，否则索引静默失效），llm_summary 的 OR
+    # 组保证「摘要对命中有贡献」（至少一个词落在 LLM 摘要里）。摘要路径的本意是
+    # 补充「靠摘要才命中」的文章，而不是要求所有词都出现在摘要里——那会漏掉一个
+    # 词在原文、另一个词仅在摘要的跨字段命中。
     raw_term_clauses, like_patterns = ilike_all_clauses(
         RAW_SEARCH_TEXT_EXPRESSION, terms
     )

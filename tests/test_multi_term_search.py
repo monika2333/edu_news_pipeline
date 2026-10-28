@@ -123,28 +123,37 @@ def search_adapter() -> Iterator[PostgresAdapter]:
 
 def _seed_multi_term_rows(conn: psycopg.connection.Connection) -> None:
     rows = [
-        # (article_id, title, llm_summary)
-        ("mt-1", "alpha 教育政策", "beta 通知"),  # 两词分落标题与摘要：AND 语义必须命中
-        ("mt-2", "alpha 单独出现", None),  # 只含首词
-        ("mt-3", "gamma", "beta"),  # 只含次词
-        ("mt-4", "a%b", None),  # LIKE 通配符字面样本
-        ("mt-5", "aXb", None),  # 若 % 未转义会被 a%b 误命中
-        ("mt-6", "c_d", None),  # LIKE 单字符通配符字面样本
-        ("mt-7", "cXd", None),  # 若 _ 未转义会被 c_d 误命中
+        # (article_id, title, llm_summary, source)
+        ("mt-1", "alpha 教育政策", "beta 通知", None),  # 两词分落标题与摘要：AND 语义必须命中
+        ("mt-2", "alpha 单独出现", None, None),  # 只含首词
+        ("mt-3", "gamma", "beta", None),  # 只含次词
+        ("mt-4", "a%b", None, None),  # LIKE 通配符字面样本
+        ("mt-5", "aXb", None, None),  # 若 % 未转义会被 a%b 误命中
+        ("mt-6", "c_d", None, None),  # LIKE 单字符通配符字面样本
+        ("mt-7", "cXd", None, None),  # 若 _ 未转义会被 c_d 误命中
+        ("mt-src", "来源命中标题", None, "srcqianlong"),  # 只有抓取来源含检索词
+        ("mt-src-both", "bothword 标题词", None, "srcword 来源"),  # 标题词与来源词同行的样本
+        ("mt-src-titleonly", "bothword 另一篇标题", None, None),  # 只有标题词
     ]
     with conn.cursor() as cur:
         cur.executemany(
             """
             INSERT INTO news_summaries (
-                article_id, title, llm_summary, content_markdown, status,
+                article_id, title, llm_summary, content_markdown, source, status,
                 score, external_importance_score, sentiment_label,
                 is_beijing_related, created_at, score_details
             )
-            VALUES (%s, %s, %s, '', 'ready_for_export', 90, 90, 'positive', true, %s, '{}'::jsonb)
+            VALUES (%s, %s, %s, '', %s, 'ready_for_export', 90, 90, 'positive', true, %s, '{}'::jsonb)
             """,
             [
-                (article_id, title, summary, datetime(2025, 1, 1, tzinfo=timezone.utc))
-                for article_id, title, summary in rows
+                (
+                    article_id,
+                    title,
+                    summary,
+                    source,
+                    datetime(2025, 1, 1, tzinfo=timezone.utc),
+                )
+                for article_id, title, summary, source in rows
             ],
         )
         cur.executemany(
@@ -152,7 +161,7 @@ def _seed_multi_term_rows(conn: psycopg.connection.Connection) -> None:
             INSERT INTO manual_reviews (owner_user_id, article_id, status, version)
             VALUES (%s, %s, 'pending', 1)
             """,
-            [(OWNER_USER_ID, article_id) for article_id, _, _ in rows],
+            [(OWNER_USER_ID, article_id) for article_id, _, _, _ in rows],
         )
 
 
@@ -180,3 +189,18 @@ def test_percent_is_matched_literally_not_as_wildcard(search_adapter: PostgresAd
 
 def test_underscore_is_matched_literally_not_as_wildcard(search_adapter: PostgresAdapter) -> None:
     assert _search_article_ids(search_adapter, ["c_d"]) == {"mt-6"}
+
+
+def test_candidate_search_matches_fetch_source_term(search_adapter: PostgresAdapter) -> None:
+    # 筛选页 / 放弃页 / 值班检索共用 SEARCH_TEXT_EXPRESSION：抓取来源也参与匹配
+    assert _search_article_ids(search_adapter, ["srcqianlong"]) == {"mt-src"}
+
+
+def test_source_and_title_terms_must_hit_the_same_row(search_adapter: PostgresAdapter) -> None:
+    assert _search_article_ids(search_adapter, ["bothword"]) == {
+        "mt-src-both",
+        "mt-src-titleonly",
+    }
+    # 来源词在 mt-src-both 的 source 里，标题词在两篇的标题里，
+    # 逐词 AND 要求同一行同时命中，否则只返回 mt-src-both
+    assert _search_article_ids(search_adapter, ["bothword", "srcword"]) == {"mt-src-both"}

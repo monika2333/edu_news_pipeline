@@ -14,7 +14,8 @@ from src.domain.report_type import normalize_report_type as normalize_report_typ
 
 
 SEARCH_TEXT_EXPRESSION = (
-    "(coalesce(ns.title, '') || ' ' || coalesce(ns.llm_summary, '') || ' ' || coalesce(ns.content_markdown, ''))"
+    "(coalesce(ns.title, '') || ' ' || coalesce(ns.llm_summary, '') || ' ' || "
+    "coalesce(ns.content_markdown, '') || ' ' || coalesce(ns.source, ''))"
 )
 CREATED_LOCAL_DATE_EXPRESSION = (
     "(ns.created_at AT TIME ZONE 'Asia/Shanghai')::date"

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import re
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from pathlib import Path
+from typing import Any, Iterator
 from unittest.mock import Mock
 from uuid import UUID
 
@@ -12,6 +15,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
 from src.adapters.db_postgres_article_attribution import (
+    RAW_SEARCH_TEXT_EXPRESSION,
     SUMMARY_SEARCH_TEXT_EXPRESSION,
     search_article_attributions,
 )
@@ -116,6 +120,27 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
         VALUES (%s, %s, %s, %s)
         """,
         raw_rows,
+    )
+    # 来源检索场景：source 是抓取来源，显式与 llm_source 取不同值；既有种子行
+    # 的 source 保持为空，避免影响它们的断言。
+    cur.executemany(
+        """
+        INSERT INTO raw_articles (article_id, title, content_markdown, source, fetched_at)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        [
+            # 来源词单独命中：标题与正文都不含来源词
+            ("attr-src-raw", "来源单独命中标题", "来源单独命中正文", "qianlongsrc", now),
+            # bug 最小复现：标题含词 A、正文不含词 B，只有 source 含词 B
+            ("attr-src-combo", "全球妇女峰会报道", "正文不含来源词", "qianlongcombo", now),
+            # 只在 raw_articles 里存在（没有 news_summaries 行）的文章
+            ("attr-src-rawonly", "只有原文行的稿件", "本篇没有摘要行", "qianlongrawonly", now),
+            # 摘要路径隔离：原文侧（标题/正文/来源）都不含待检索的两个词
+            ("attr-src-summary", "摘要隔离原文标题", "摘要隔离原文正文", "rawsideonly", now),
+            # AND 未被破坏：第一篇只有词 A，第二篇只有词 B（词 B 落在 source 里）
+            ("attr-and-first", "andalpha 首篇标题", "首篇正文", "firstsrc", now),
+            ("attr-and-second", "第二篇标题", "第二篇正文", "andbeta 来源", now),
+        ],
     )
     cur.executemany(
         """
@@ -292,6 +317,58 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
         )
         """,
         (now,),
+    )
+    # 来源检索的 news_summaries 行：
+    # - attr-src-raw 的摘要侧不含来源词，命中只可能来自 raw_articles.source；
+    # - attr-src-summary 的两个词分别只落在 llm_summary 与 ns.source，原文侧
+    #   都不含，只有「摘要路径也纳入 source」才会命中。
+    cur.execute(
+        """
+        INSERT INTO news_summaries (
+            article_id,
+            title,
+            llm_summary,
+            content_markdown,
+            source,
+            llm_source,
+            status,
+            score,
+            external_importance_status,
+            external_importance_score,
+            external_importance_raw,
+            created_at
+        )
+        VALUES
+            (
+                'attr-src-raw',
+                '来源单独命中摘要标题',
+                '来源单独命中摘要',
+                '来源单独命中摘要正文',
+                'othersrc',
+                'wrongllmsource',
+                'ready_for_export',
+                70,
+                'ready_for_export',
+                70,
+                NULL,
+                %s
+            ),
+            (
+                'attr-src-summary',
+                '摘要隔离摘要标题',
+                'summarysrcword 摘要补充',
+                '摘要隔离原文正文',
+                'summarysrcsource',
+                'wrongllmsource',
+                'ready_for_export',
+                75,
+                'ready_for_export',
+                70,
+                NULL,
+                %s
+            )
+        """,
+        (now, now),
     )
     # 评分反馈：attr-importance 的当前评分上下文上有一条「偏低」反馈。
     cur.execute(
@@ -650,7 +727,14 @@ def test_adapter_rejects_empty_terms_before_executing_sql() -> None:
 def test_summary_search_expression_matches_trigram_index_definition() -> None:
     assert SUMMARY_SEARCH_TEXT_EXPRESSION == (
         "(coalesce(ns.title, '') || ' ' || coalesce(ns.llm_summary, '') || ' ' || "
-        "coalesce(ns.content_markdown, ''))"
+        "coalesce(ns.content_markdown, '') || ' ' || coalesce(ns.source, ''))"
+    )
+
+
+def test_raw_search_expression_matches_trigram_index_definition() -> None:
+    assert RAW_SEARCH_TEXT_EXPRESSION == (
+        "(coalesce(ra.title, '') || ' ' || coalesce(ra.content_markdown, '') || ' ' || "
+        "coalesce(ra.source, ''))"
     )
 
 
@@ -998,6 +1082,135 @@ def test_multi_term_cursor_pagination_is_stable_and_has_no_duplicates() -> None:
     assert len(first_ids) == 3
     assert len(second_ids) == 3
     assert set(first_ids).isdisjoint(second_ids)
+
+
+@contextmanager
+def _seeded_search_cursor() -> Iterator[psycopg.Cursor]:
+    """真实 Postgres 临时表 + 归因种子数据。"""
+    settings = get_settings()
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            _create_temp_search_tables(cur)
+            _seed_attribution_scenarios(cur)
+            yield cur
+
+
+def _search_article_ids(cur: psycopg.Cursor, terms: list[str]) -> list[str]:
+    result, _ = _search(cur, terms)
+    return [item["article_id"] for item in result["items"]]
+
+
+def test_search_matches_article_when_only_fetch_source_contains_term() -> None:
+    with _seeded_search_cursor() as cur:
+        assert _search_article_ids(cur, ["qianlongsrc"]) == ["attr-src-raw"]
+        # 摘要侧 source 是另一个值：命中只可能来自 raw_articles.source
+        cur.execute(
+            "SELECT source FROM news_summaries WHERE article_id = 'attr-src-raw'"
+        )
+        assert cur.fetchone()["source"] == "othersrc"
+
+
+def test_search_matches_title_term_and_fetch_source_term_together() -> None:
+    with _seeded_search_cursor() as cur:
+        # 本次 bug 的最小复现：标题含「全球妇女峰会」、source 含 qianlongcombo，
+        # 正文两个词都没有，逐词 AND 也必须命中
+        assert _search_article_ids(cur, ["全球妇女峰会"]) == ["attr-src-combo"]
+        assert _search_article_ids(cur, ["qianlongcombo"]) == ["attr-src-combo"]
+        assert _search_article_ids(cur, ["全球妇女峰会", "qianlongcombo"]) == [
+            "attr-src-combo"
+        ]
+
+
+def test_search_matches_source_term_on_raw_only_article() -> None:
+    with _seeded_search_cursor() as cur:
+        cur.execute(
+            "SELECT count(*) AS total FROM news_summaries "
+            "WHERE article_id = 'attr-src-rawonly'"
+        )
+        assert cur.fetchone()["total"] == 0
+        assert _search_article_ids(cur, ["qianlongrawonly"]) == ["attr-src-rawonly"]
+
+
+def test_summary_path_matches_news_summaries_source_term() -> None:
+    with _seeded_search_cursor() as cur:
+        # 两个词分别只在 llm_summary 与 news_summaries.source 里；
+        # 原文侧（标题/正文/source）都不含，命中只可能来自摘要路径
+        cur.execute(
+            "SELECT title || ' ' || coalesce(content_markdown, '') || ' ' "
+            "|| coalesce(source, '') AS raw_text "
+            "FROM raw_articles WHERE article_id = 'attr-src-summary'"
+        )
+        assert "summarysrc" not in cur.fetchone()["raw_text"]
+        assert _search_article_ids(cur, ["summarysrcword", "summarysrcsource"]) == [
+            "attr-src-summary"
+        ]
+
+
+def test_source_terms_still_require_all_terms_on_the_same_row() -> None:
+    with _seeded_search_cursor() as cur:
+        # 两篇文章各只含一个词：词 A 在标题、词 B 在另一篇的 source，
+        # 任何 OR 化（把 source 条件摘出 AND 组）都会让它们被放行
+        assert _search_article_ids(cur, ["andalpha"]) == ["attr-and-first"]
+        assert _search_article_ids(cur, ["andbeta"]) == ["attr-and-second"]
+        assert _search_article_ids(cur, ["andalpha", "andbeta"]) == []
+
+
+def _normalize_whitespace(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _source_index_migration_text() -> str:
+    migrations_dir = Path(__file__).parents[1] / "database" / "migrations"
+    paths = sorted(migrations_dir.glob("*_add_source_to_search_expressions.sql"))
+    assert len(paths) == 1, f"expected exactly one source index migration, got {paths}"
+    return paths[0].read_text(encoding="utf-8")
+
+
+def _create_index_statement(text: str, index_name: str) -> str:
+    marker = f"create index if not exists {index_name}"
+    assert marker in text, marker
+    start = text.index(marker)
+    end = text.index(");", start) + 2
+    return text[start:end]
+
+
+def test_source_search_index_migration_matches_search_expressions() -> None:
+    migration_text = _source_index_migration_text()
+    up_text, down_text = migration_text.split("-- migrate:down", 1)
+    normalized_up = _normalize_whitespace(up_text)
+    # 索引复用原名，不再引入 *_src_trgm
+    assert "_src_trgm" not in _normalize_whitespace(migration_text)
+
+    for index_name, expression in (
+        ("raw_articles_search_expr_trgm", RAW_SEARCH_TEXT_EXPRESSION),
+        ("news_summaries_search_expr_trgm", SUMMARY_SEARCH_TEXT_EXPRESSION),
+    ):
+        # 只断言 up 段：同名 drop + 同名 create，新表达式必须落在对应
+        # create index 语句里（down 段的旧表达式不得蒙混过关）
+        assert f"drop index if exists public.{index_name}" in normalized_up
+        create_statement = _create_index_statement(normalized_up, index_name)
+        without_alias = _normalize_whitespace(
+            expression.replace("ra.", "").replace("ns.", "")
+        )
+        assert without_alias in create_statement, index_name
+
+    # down 段：同名索引重建回不含 source 的旧表达式
+    normalized_down = _normalize_whitespace(down_text)
+    for index_name in (
+        "raw_articles_search_expr_trgm",
+        "news_summaries_search_expr_trgm",
+    ):
+        assert f"drop index if exists public.{index_name}" in normalized_down
+        down_statement = _create_index_statement(normalized_down, index_name)
+        assert "coalesce(source, '')" not in down_statement, index_name
 
 
 def _console_user() -> ConsoleUser:

@@ -86,6 +86,21 @@ def test_edit_count_and_total_changed_chars_are_capped() -> None:
         )
 
 
+def test_insertion_budget_counts_only_actually_added_characters() -> None:
+    anchor = "锚" * 700
+    added = "新" * 162
+    content = f"开头\n{anchor}\n结尾"
+
+    result = apply_prompt_edits(
+        content,
+        [PromptEdit(old=anchor, new=anchor + added)],
+    )
+
+    assert result == f"开头\n{anchor}{added}\n结尾"
+    # 旧口径会把锚点算两遍（700 + 862 = 1562），误判超限。
+    assert len(result) - len(content) == 162
+
+
 def test_noop_and_empty_edits_are_rejected() -> None:
     with pytest.raises(PromptEditError, match="没有返回任何改动"):
         apply_prompt_edits("abc", [])

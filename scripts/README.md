@@ -16,12 +16,12 @@ Scripts layout
     full flow without writing prompt versions or run records.
   - Register it to run every night at 00:00 (server local time). Run this from
     the repository root in an elevated PowerShell, replacing the Python path if
-    the server venv is not `.venv`:
+    the server venv is not `venv`:
 
     ```powershell
     $action = New-ScheduledTaskAction `
         -Execute "powershell.exe" `
-        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$PWD\scripts\run_optimize_prompts.ps1`" -Python `"$PWD\.venv\Scripts\python.exe`"" `
+        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$PWD\scripts\run_optimize_prompts.ps1`" -Python `"$PWD\venv\Scripts\python.exe`"" `
         -WorkingDirectory $PWD
     $trigger = New-ScheduledTaskTrigger -Daily -At 00:00
     Register-ScheduledTask `

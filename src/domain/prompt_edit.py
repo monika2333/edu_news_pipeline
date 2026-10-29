@@ -128,6 +128,27 @@ def r_broken_allowance(reference_count: int) -> int:
     )
 
 
+def _changed_char_count(old: str, new: str) -> int:
+    """Count actually added/deleted characters, ignoring shared anchor text.
+
+    Trim the common prefix and suffix first. This is the口径 promised to the
+    model: inserting 162 characters after a 240-character anchor changes 162
+    characters, not 642.
+    """
+
+    limit = min(len(old), len(new))
+    prefix = 0
+    while prefix < limit and old[prefix] == new[prefix]:
+        prefix += 1
+    suffix = 0
+    while (
+        suffix < limit - prefix
+        and old[len(old) - 1 - suffix] == new[len(new) - 1 - suffix]
+    ):
+        suffix += 1
+    return (len(old) - prefix - suffix) + (len(new) - prefix - suffix)
+
+
 def apply_prompt_edits(
     content: str,
     edits: Sequence[PromptEdit],
@@ -140,14 +161,17 @@ def apply_prompt_edits(
     ``old`` must occur exactly once in the text at the moment it is applied.
     Insertions are represented by replacing a unique anchor with anchor + new
     text, so no separate insert operation is needed. The total changed size is
-    the sum of every old and new string length, which is easy to audit.
+    the sum of each edit's actually added and deleted characters (shared
+    prefix/suffix excluded), matching the meta-prompt's 800-character budget.
     """
 
     if not edits:
         raise PromptEditError("优化模型没有返回任何改动")
     if len(edits) > max_edits:
         raise PromptEditError(f"单次最多允许 {max_edits} 处替换，实际 {len(edits)} 处")
-    changed_chars = sum(len(edit.old) + len(edit.new) for edit in edits)
+    changed_chars = sum(
+        _changed_char_count(edit.old, edit.new) for edit in edits
+    )
     if changed_chars > max_changed_chars:
         raise PromptEditError(
             f"改动总量 {changed_chars} 字超过上限 {max_changed_chars} 字"

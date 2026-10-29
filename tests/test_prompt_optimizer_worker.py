@@ -11,6 +11,7 @@ from src.adapters.llm_prompt_optimizer import (
     DECISION_CHANGE,
     DECISION_NO_CHANGE,
     PromptOptimizerDecision,
+    PromptOptimizerResponseError,
 )
 from src.domain.prompt import PromptTemplate
 from src.domain.prompt_edit import PromptEdit
@@ -263,6 +264,61 @@ def test_current_replay_splits_target_reference_and_ignored(monkeypatch) -> None
     assert optimization.saved == []
 
 
+def test_current_replay_errors_are_ignored_not_counted_as_target(monkeypatch) -> None:
+    _patch_prompt(monkeypatch)
+    feedback = [
+        _feedback_row("real"),
+        _feedback_row("flaky"),
+        _feedback_row("unparsed"),
+    ]
+    optimization = _FakeOptimization(feedback=feedback)
+    rows = {item["article_id"]: _article_row(item["article_id"]) for item in feedback}
+    adapter = _Adapter(rows, optimization)
+    optimizer_cases: list[list[dict[str, Any]]] = []
+    candidate_calls: list[str] = []
+
+    def replay(row, key, content):
+        article_id = row["article_id"]
+        if content == "BASE PROMPT":
+            if article_id == "flaky":
+                raise RuntimeError("upstream 502")
+            if article_id == "unparsed":
+                return None
+            return 45
+        candidate_calls.append(article_id)
+        return 45 if article_id == "real" else 70
+
+    def optimizer(key, content, cases, references, failure_feedback):
+        optimizer_cases.append(cases)
+        return _change_optimizer("CAND")
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=replay,
+        optimizer=optimizer,
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "check_failed"
+    assert item["t_count"] == 1
+    assert item["fixed_count"] == 0
+    assert item["skipped_count"] == 2
+    assert item["replay_error_count"] == 2
+    assert item["new_revision_id"] is None
+    assert optimization.saved == []
+    assert all(len(cases) == 1 for cases in optimizer_cases)
+    assert candidate_calls == ["real", "real"]
+
+    cases = {case["article_id"]: case for case in optimization.runs[-1]["cases"]}
+    assert cases["real"]["bucket"] == "T"
+    assert cases["flaky"]["bucket"] == "ignored"
+    assert "502" in cases["flaky"]["skip_reason"]
+    assert cases["unparsed"]["bucket"] == "ignored"
+    assert "未解析" in cases["unparsed"]["skip_reason"]
+
+
 def test_empty_target_set_does_not_call_optimizer(monkeypatch) -> None:
     _patch_prompt(monkeypatch)
     optimization = _FakeOptimization(feedback=[_feedback_row("fixed")])
@@ -329,6 +385,51 @@ def test_failed_check_retries_once_with_failure_feedback_then_saves(monkeypatch)
     assert optimization.saved[0]["baseline"] is None
 
 
+def test_reference_damage_above_ten_percent_fails_even_below_fixed_count(
+    monkeypatch,
+) -> None:
+    _patch_prompt(monkeypatch)
+    feedback = [_feedback_row(f"t{index}") for index in range(3)]
+    submissions = [
+        _submission_row(f"r{index}", stored_score=80) for index in range(5)
+    ]
+    optimization = _FakeOptimization(feedback=feedback, submissions=submissions)
+    rows = {
+        item["article_id"]: _article_row(item["article_id"])
+        for item in feedback + submissions
+    }
+    adapter = _Adapter(rows, optimization)
+
+    def replay(row, key, content):
+        article_id = row["article_id"]
+        if content == "BASE PROMPT":
+            return 20 if article_id.startswith("t") else 80
+        if article_id in {"r0", "r1"}:
+            return 20
+        return 80
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=replay,
+        optimizer=lambda *args: _change_optimizer("CAND"),
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "check_failed"
+    assert item["fixed_count"] == 3
+    assert item["broken_count"] == 2
+    assert item["r_count"] == 5
+    assert item["attempts"] == 2
+    assert item["new_revision_id"] is None
+    assert optimization.saved == []
+    last_check = optimization.runs[-1]["attempts"][-1]["check"]
+    assert last_check["passed"] is False
+    assert any("允许最多 1 条" in failure for failure in last_check["failures"])
+    assert not any("不少于" in failure for failure in last_check["failures"])
+
+
 def test_two_failed_checks_stop_after_one_retry_without_version(monkeypatch) -> None:
     _patch_prompt(monkeypatch)
     feedback = [_feedback_row("t1")]
@@ -361,6 +462,128 @@ def test_two_failed_checks_stop_after_one_retry_without_version(monkeypatch) -> 
     assert optimization.runs[-1]["outcome"] == "check_failed"
     assert "未通过检查" not in item["error"]
     assert "只修好" in item["error"]
+
+
+@pytest.mark.parametrize("scenario", ["no_correction", "declined", "failed", "error"])
+def test_dry_run_never_writes_a_run_record_for_non_version_outcomes(
+    monkeypatch,
+    scenario: str,
+) -> None:
+    _patch_prompt(monkeypatch)
+    feedback = [] if scenario == "no_correction" else [_feedback_row("t1")]
+    optimization = _FakeOptimization(feedback=feedback)
+    adapter = _Adapter({"t1": _article_row("t1")}, optimization)
+
+    def replay(row, key, content):
+        return 30 if content == "BASE PROMPT" else 30
+
+    def optimizer(*args):
+        if scenario == "error":
+            raise RuntimeError("network timeout")
+        if scenario == "declined":
+            return _no_change_optimizer()
+        return _change_optimizer("CAND")
+
+    result = worker.run(
+        ["external_positive"],
+        dry_run=True,
+        adapter=adapter,
+        replay=replay,
+        optimizer=optimizer,
+        now=NOW,
+    )
+
+    expected = {
+        "no_correction": "no_correction",
+        "declined": "model_declined",
+        "failed": "check_failed",
+        "error": "error",
+    }[scenario]
+    assert result["items"][0]["outcome"] == expected
+    assert optimization.runs == []
+    assert optimization.saved == []
+
+
+def test_invalid_model_output_is_retried_with_reason(monkeypatch) -> None:
+    _patch_prompt(monkeypatch)
+    feedback = [_feedback_row("t1")]
+    optimization = _FakeOptimization(feedback=feedback)
+    adapter = _Adapter({"t1": _article_row("t1")}, optimization)
+    feedbacks: list[Optional[str]] = []
+
+    def optimizer(key, content, cases, references, failure_feedback):
+        feedbacks.append(failure_feedback)
+        if len(feedbacks) == 1:
+            raise PromptOptimizerResponseError("优化模型没有返回 JSON 对象")
+        return _change_optimizer("CAND")
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=lambda row, key, content: 20 if content == "BASE PROMPT" else 80,
+        optimizer=optimizer,
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "revision_created"
+    assert item["attempts"] == 2
+    assert feedbacks[0] is None
+    assert feedbacks[1] is not None
+    assert "输出不合格" in feedbacks[1]
+    assert "JSON" in feedbacks[1]
+    assert optimization.runs[-1]["attempts"][0]["decision"] == "invalid_output"
+
+
+def test_invalid_model_output_twice_ends_as_check_failed_without_version(
+    monkeypatch,
+) -> None:
+    _patch_prompt(monkeypatch)
+    optimization = _FakeOptimization(feedback=[_feedback_row("t1")])
+    adapter = _Adapter({"t1": _article_row("t1")}, optimization)
+
+    def optimizer(*args):
+        raise PromptOptimizerResponseError("edits 必须是数组")
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=lambda row, key, content: 20,
+        optimizer=optimizer,
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "check_failed"
+    assert item["attempts"] == 2
+    assert item["new_revision_id"] is None
+    assert optimization.saved == []
+    assert "连续不合格" in item["error"]
+
+
+def test_transport_error_is_not_retried(monkeypatch) -> None:
+    _patch_prompt(monkeypatch)
+    optimization = _FakeOptimization(feedback=[_feedback_row("t1")])
+    adapter = _Adapter({"t1": _article_row("t1")}, optimization)
+    calls: list[Any] = []
+
+    def optimizer(*args):
+        calls.append(args)
+        raise TimeoutError("request timed out")
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=lambda row, key, content: 20,
+        optimizer=optimizer,
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "error"
+    assert len(calls) == 1
+    assert item["attempts"] == 1
+    assert "优化模型调用失败" in item["error"]
 
 
 def test_manual_save_during_run_records_error_and_does_not_overwrite(monkeypatch) -> None:

@@ -100,9 +100,8 @@ def parse_prompt_optimizer_response(
     else:
         raise PromptOptimizerResponseError("note 必须是字符串")
     if len(note) > PROMPT_OPTIMIZER_NOTE_LIMIT:
-        raise PromptOptimizerResponseError(
-            f"note 不能超过 {PROMPT_OPTIMIZER_NOTE_LIMIT} 字"
-        )
+        # 备注只是辅助信息；截断它比丢掉整次有效改动更合理。
+        note = note[:PROMPT_OPTIMIZER_NOTE_LIMIT]
 
     raw_edits = payload.get("edits", [])
     if raw_edits is None:

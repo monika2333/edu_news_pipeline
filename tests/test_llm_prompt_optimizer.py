@@ -63,21 +63,26 @@ def test_parse_no_change_allows_empty_edits() -> None:
             '{"decision":"change","edits":[{"old":"A","new":3}]}',
             "new 必须是字符串",
         ),
-        (
-            json.dumps(
-                {
-                    "decision": "no_change",
-                    "edits": [],
-                    "note": "x" * 201,
-                }
-            ),
-            "note 不能超过",
-        ),
     ],
 )
 def test_parse_rejects_malformed_contract(raw: str, message: str) -> None:
     with pytest.raises(PromptOptimizerResponseError, match=message):
         parse_prompt_optimizer_response(raw)
+
+
+def test_overlong_note_is_truncated_instead_of_rejecting_the_output() -> None:
+    decision = parse_prompt_optimizer_response(
+        json.dumps(
+            {
+                "decision": "no_change",
+                "edits": [],
+                "note": "x" * 201,
+            }
+        )
+    )
+
+    assert len(decision.note) == 200
+    assert decision.note == "x" * 200
 
 
 def test_user_prompt_contains_cases_current_content_and_retry_reason() -> None:

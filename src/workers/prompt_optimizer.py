@@ -19,6 +19,7 @@ from src.adapters.external_filter_model import (
 from src.adapters.llm_prompt_optimizer import (
     DECISION_NO_CHANGE,
     PromptOptimizerDecision,
+    PromptOptimizerResponseError,
     call_prompt_optimizer,
 )
 from src.adapters.prompt_store import load_active_prompt
@@ -305,6 +306,11 @@ def _summary(
         "t_count": len(target_cases),
         "r_count": len(reference_cases),
         "skipped_count": skipped_count,
+        "replay_error_count": sum(
+            1
+            for case in cases
+            if str(case.skip_reason or "").startswith("当前版本回放")
+        ),
         "fixed_count": check.fixed_count if check else 0,
         "broken_count": check.broken_count if check else 0,
         "check_passed": bool(check and check.passed),
@@ -685,8 +691,19 @@ def _optimize_prompt(
         try:
             score = replay(row, prompt_key, prompt.content)
         except Exception as exc:  # 单条回放失败不应中断整轮
-            case.replay_error = str(exc) or exc.__class__.__name__
-            score = None
+            message = str(exc) or exc.__class__.__name__
+            case.replay_error = message
+            case.skip_reason = f"当前版本回放失败：{message}"
+            case.bucket = CASE_BUCKET_IGNORED
+            skipped_count += 1
+            continue
+        if score is None:
+            case.current_score = None
+            case.replay_error = "模型未返回可解析的分数"
+            case.skip_reason = "当前版本回放未解析出分数"
+            case.bucket = CASE_BUCKET_IGNORED
+            skipped_count += 1
+            continue
         case.current_score = score
         case.current_satisfied = case_satisfied(
             case.direction,
@@ -738,6 +755,41 @@ def _optimize_prompt(
                     for case in reference_cases[:10]
                 ],
                 failure_feedback,
+            )
+        except PromptOptimizerResponseError as exc:
+            message = str(exc) or exc.__class__.__name__
+            attempts.append(
+                {
+                    "attempt": attempt_number,
+                    "decision": "invalid_output",
+                    "note": None,
+                    "edits": [],
+                    "apply_error": None,
+                    "check": None,
+                    "error": message,
+                }
+            )
+            failure_feedback = f"上一轮模型输出不合格：{message}"
+            if attempt_number < OPTIMIZATION_MAX_ATTEMPTS:
+                continue
+            return _finish_without_revision(
+                adapter=adapter,
+                prompt_key=prompt_key,
+                outcome=OUTCOME_CHECK_FAILED,
+                started_at=started_at,
+                window_start=window_start,
+                baseline_revision_id=baseline_revision_id,
+                model=model,
+                cases=cases,
+                target_cases=target_cases,
+                reference_cases=reference_cases,
+                skipped_count=skipped_count,
+                model_calls=model_calls,
+                check=None,
+                attempts=attempts,
+                error=f"优化模型输出连续不合格：{message}",
+                note=None,
+                dry_run=dry_run,
             )
         except Exception as exc:
             attempts.append(

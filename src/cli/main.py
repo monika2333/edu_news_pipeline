@@ -452,6 +452,7 @@ def _optimize_prompts(args: argparse.Namespace) -> int:
             f"{item['prompt_key']}: outcome={item['outcome']} "
             f"cases={item['case_count']} T={item['t_count']} "
             f"R={item['r_count']} skipped={item['skipped_count']} "
+            f"replay_errors={item.get('replay_error_count', 0)} "
             f"model_calls={item['model_calls']} "
             f"optimizer_calls={item.get('optimizer_calls', 0)} "
             f"check={item.get('check_status') or 'not_run'}"

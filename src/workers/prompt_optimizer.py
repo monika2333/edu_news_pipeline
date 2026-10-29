@@ -308,7 +308,13 @@ def _summary(
         "fixed_count": check.fixed_count if check else 0,
         "broken_count": check.broken_count if check else 0,
         "check_passed": bool(check and check.passed),
+        "check_status": (
+            "passed" if check and check.passed
+            else "failed" if check
+            else None
+        ),
         "model_calls": model_calls,
+        "optimizer_calls": len(attempts),
         "attempts": len(attempts),
         "error": error,
         "note": note,

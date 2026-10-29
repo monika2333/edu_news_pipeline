@@ -690,6 +690,29 @@ def test_manual_save_during_run_records_error_and_does_not_overwrite(monkeypatch
     assert result["had_error"] is True
 
 
+def test_persist_run_is_noop_in_dry_run() -> None:
+    optimization = _FakeOptimization()
+    adapter = _Adapter({}, optimization)
+    run_id = worker._persist_run(
+        adapter,
+        prompt_key="external_positive",
+        outcome="no_correction",
+        started_at=NOW,
+        finished_at=NOW,
+        window_start=NOW - timedelta(days=30),
+        baseline_revision_id=None,
+        new_revision_id=None,
+        model="optimizer-model",
+        cases=[],
+        attempts=[],
+        error=None,
+        dry_run=True,
+    )
+
+    assert run_id is None
+    assert optimization.runs == []
+
+
 def test_dry_run_previews_cases_without_calling_models(monkeypatch) -> None:
     _patch_prompt(monkeypatch)
     feedback = [

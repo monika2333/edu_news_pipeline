@@ -329,6 +329,40 @@ def test_failed_check_retries_once_with_failure_feedback_then_saves(monkeypatch)
     assert optimization.saved[0]["baseline"] is None
 
 
+def test_two_failed_checks_stop_after_one_retry_without_version(monkeypatch) -> None:
+    _patch_prompt(monkeypatch)
+    feedback = [_feedback_row("t1")]
+    optimization = _FakeOptimization(
+        feedback=feedback,
+        submissions=[_submission_row("r1", stored_score=80)],
+    )
+    rows = {"t1": _article_row("t1"), "r1": _article_row("r1")}
+    adapter = _Adapter(rows, optimization)
+    optimizer_calls: list[Any] = []
+
+    def optimizer(*args):
+        optimizer_calls.append(args)
+        return _change_optimizer("CAND")
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=lambda row, key, content: 20 if row["article_id"] == "t1" else 80,
+        optimizer=optimizer,
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "check_failed"
+    assert item["attempts"] == 2
+    assert len(optimizer_calls) == 2
+    assert item["new_revision_id"] is None
+    assert optimization.saved == []
+    assert optimization.runs[-1]["outcome"] == "check_failed"
+    assert "未通过检查" not in item["error"]
+    assert "只修好" in item["error"]
+
+
 def test_manual_save_during_run_records_error_and_does_not_overwrite(monkeypatch) -> None:
     _patch_prompt(monkeypatch)
     feedback = [_feedback_row("t1")]

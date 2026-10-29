@@ -61,6 +61,7 @@
 
 ## 6. 提交卫生
 
+- **commit message 一律用简体中文书写（2026-10-29 用户拍板）**：subject 到 body 都写中文（`type(scope): 中文说明`，type/scope 可保留英文惯用词），不要再写英文 subject——2026-10 之前的英文历史保留不动，不要为统一语言去改写历史。PowerShell 内联中文有乱码风险（消息里会出现替换字符），写正文或较长消息时用 UTF-8 消息文件 + `git commit -F <file>`（`-F -` 走管道同理）。
 - **Edit 工具可能把被编辑文件整个写回成 CRLF**（仓库标准 LF；改 README/Markdown 时实际发生过，`git diff --check` 会逐行报 trailing whitespace），`git add -u` 会把全仓库行尾改写吞进提交（实际发生过 amend 卷进 443 个文件）。规矩：`git add` 只加显式路径；Edit 过的文件（src、Markdown、配置都算）提交前 `sed -i 's/\r$//'` 转回 LF；提交后 `git show --stat` 核对文件数与增删行数符合预期。
 - **行尾已统一（2026-10-20，27f9c9e / 1c6a58f）**：`.gitattributes` 用 `* text=auto eol=lf` 在提交与比较时归一，`*.cmd` / `*.bat` 检出时保留 CRLF（入库仍是 LF）；编辑器侧由 `.editorconfig` 兜底（UTF-8 + LF，cmd/bat 例外，刻意不启用 insert_final_newline 与 trim_trailing_whitespace）。Windows 编辑器写出 CRLF 不会再产生整文件假 diff——实测把文件转成 CRLF 后 `git diff` 为空、`git add -A` 不暂存任何东西。核对用 `git ls-files --eol`，不要信 `git status`：它显示的干净可能是索引里 add 时的 worktree 尺寸没变，此前就有 264 个文件 `i/lf w/crlf` 一直「干净」，一编辑就冒整文件假 diff。同理 `write_text` 在 Windows 会 LF→CRLF，但现在已被属性兜住，只有改「必须逐字节精确」的文件（如导出快照）才需要 `write_bytes`。
 - Python 脚本改文档同理：`write_text` 文本模式产生 775 行假 diff 的事故发生过，行尾敏感文件用 `write_bytes`。

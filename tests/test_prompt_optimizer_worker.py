@@ -395,6 +395,76 @@ def test_one_prompt_error_does_not_block_the_next_prompt(monkeypatch) -> None:
     assert "collect failed" in result["items"][0]["error"]
 
 
+def test_submission_uses_60_floor_not_a_lower_threshold(monkeypatch) -> None:
+    _patch_prompt(monkeypatch)
+    optimization = _FakeOptimization(
+        submissions=[_submission_row("s1", stored_score=55)],
+    )
+    adapter = _Adapter({"s1": _article_row("s1")}, optimization)
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=lambda row, key, content: 55,
+        optimizer=lambda *args: _no_change_optimizer(),
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "model_declined"
+    assert item["t_count"] == 1
+    case = optimization.runs[0]["cases"][0]
+    assert case["threshold"] == 60
+    assert case["bucket"] == "T"
+
+
+def test_feedback_on_same_article_wins_over_archive(monkeypatch) -> None:
+    _patch_prompt(monkeypatch)
+    feedback = [
+        _feedback_row("same", feedback_type="too_high", score=80, stored_score=40)
+    ]
+    optimization = _FakeOptimization(
+        feedback=feedback,
+        submissions=[_submission_row("same", stored_score=40)],
+    )
+    adapter = _Adapter({"same": _article_row("same")}, optimization)
+
+    worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=lambda row, key, content: 90,
+        optimizer=lambda *args: _no_change_optimizer(),
+        now=NOW,
+    )
+
+    cases = optimization.runs[0]["cases"]
+    assert len(cases) == 1
+    assert cases[0]["origin"] == "feedback"
+    assert cases[0]["direction"] == "down"
+    assert cases[0]["threshold"] == 70
+
+
+def test_default_replay_never_uses_the_write_adapter(monkeypatch) -> None:
+    monkeypatch.setattr(
+        worker,
+        "call_external_filter_model",
+        lambda candidate, **kwargs: "85",
+    )
+
+    def forbidden_adapter():
+        raise AssertionError("replay must not request the write adapter")
+
+    monkeypatch.setattr(worker, "get_adapter", forbidden_adapter)
+
+    score = worker._default_replay(
+        _article_row("a1"),
+        "external_positive",
+        "PROMPT",
+    )
+
+    assert score == 85
+
+
 def test_window_uses_current_version_created_at(monkeypatch) -> None:
     _patch_prompt(monkeypatch, _prompt(created_days_ago=20))
     feedback = [_feedback_row("old", days_ago=25), _feedback_row("recent", days_ago=1)]

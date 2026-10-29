@@ -244,9 +244,17 @@ def _add_optimize_prompts(subparsers: argparse._SubParsersAction) -> None:
         help="Only process this prompt key; repeatable (default: all four)",
     )
     parser.add_argument(
+        "--concurrency",
+        type=_positive_int,
+        default=None,
+        help="Optional replay concurrency override (default: CONCURRENCY setting)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Run the full flow including model calls and checks, but write nothing",
+        help=(
+            "只预览案例与预检结果，不调用模型、不写库"
+        ),
     )
 
 
@@ -444,10 +452,39 @@ def _optimize_prompts(args: argparse.Namespace) -> int:
     result = run_prompt_optimizer(
         prompt_keys=args.prompt_keys,
         dry_run=bool(args.dry_run),
+        concurrency=getattr(args, "concurrency", None),
     )
-    mode = "dry-run（不写版本、不写运行记录）" if args.dry_run else "write"
+    mode = (
+        "dry-run（只预览案例与预检，不调用模型、不写库）"
+        if args.dry_run
+        else "write"
+    )
     print(f"optimize-prompts: {mode}")
     for item in result["items"]:
+        if item["outcome"] == "preview":
+            precheck = (
+                "no_correction"
+                if item.get("preview_precheck_will_finish")
+                else "replay"
+            )
+            print(
+                f"{item['prompt_key']}: outcome=preview "
+                f"version={item.get('prompt_version') or '-'} "
+                f"window_start={item['window_start']} "
+                f"cases={item['case_count']} "
+                f"feedback_low={item.get('preview_feedback_low_count', 0)} "
+                f"feedback_high={item.get('preview_feedback_high_count', 0)} "
+                f"submissions={item.get('preview_submission_count', 0)} "
+                f"in_window={item.get('preview_in_window_count', 0)} "
+                f"precheck={precheck} "
+                f"estimated_skipped="
+                f"{item.get('preview_estimated_skipped_count', 0)} "
+                f"estimated_replay="
+                f"{item.get('preview_estimated_replay_count', 0)} "
+                f"min_model_calls="
+                f"{item.get('preview_min_model_calls', 0)}"
+            )
+            continue
         line = (
             f"{item['prompt_key']}: outcome={item['outcome']} "
             f"cases={item['case_count']} T={item['t_count']} "

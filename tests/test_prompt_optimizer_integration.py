@@ -166,24 +166,42 @@ def test_dry_run_then_real_run_are_read_only_and_linked(
     )
     before_news = _snapshot(conn, "news_summaries")
     before_feedback = _snapshot(conn, "score_feedbacks")
+    before_revisions = _snapshot(conn, "prompt_revisions")
+    before_runs = _snapshot(conn, "prompt_optimization_runs")
+    dry_replay_calls: list[str] = []
+    dry_optimizer_calls: list[str] = []
+
+    def dry_replay(row, key, content):
+        dry_replay_calls.append(row["article_id"])
+        return _replay(row, key, content)
+
+    def dry_optimizer(*args):
+        dry_optimizer_calls.append("called")
+        return _optimizer(*args)
 
     dry = worker.run(
         ["external_positive"],
         dry_run=True,
         adapter=adapter,
-        replay=_replay,
-        optimizer=_optimizer,
+        replay=dry_replay,
+        optimizer=dry_optimizer,
         now=NOW,
     )
-    assert dry["items"][0]["outcome"] == "revision_created"
-    assert dry["items"][0]["new_revision_id"] is None
+    dry_item = dry["items"][0]
+    assert dry_item["outcome"] == "preview"
+    assert dry_item["new_revision_id"] is None
+    assert dry_item["case_count"] == 2
+    assert dry_item["preview_precheck_will_finish"] is False
+    assert dry_item["preview_estimated_skipped_count"] == 0
+    assert dry_item["preview_estimated_replay_count"] == 2
+    assert dry_item["preview_min_model_calls"] == 3
+    assert dry_item["model_calls"] == 0
+    assert dry_replay_calls == []
+    assert dry_optimizer_calls == []
     assert _snapshot(conn, "news_summaries") == before_news
     assert _snapshot(conn, "score_feedbacks") == before_feedback
-    with conn.cursor() as cur:
-        cur.execute("SELECT count(*) AS count FROM prompt_revisions")
-        assert int(cur.fetchone()["count"]) == 1
-        cur.execute("SELECT count(*) AS count FROM prompt_optimization_runs")
-        assert int(cur.fetchone()["count"]) == 0
+    assert _snapshot(conn, "prompt_revisions") == before_revisions
+    assert _snapshot(conn, "prompt_optimization_runs") == before_runs
 
     result = worker.run(
         ["external_positive"],

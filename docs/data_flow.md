@@ -179,14 +179,19 @@ T 至少修好一半且至少 1 条、R 改坏条数 ≤ max(1, ⌊|R|×10%⌋) 
 **只读回放**：回放复用 `fetch_prompt_test_article`、`ExternalFilterCandidate`、
 `call_external_filter_model` 与 `parse_external_filter_score`，只读
 `news_summaries`，不写文章分数、不写评分标注、不改变文章状态，也不重打已有文章。
-新版本只影响此后新打分的文章。
+当前版本与每次候选版本的回放都用线程池并发执行；结果按案例对应回填，
+案例与 T/R 顺序、检查结论与串行执行一致。新版本只影响此后新打分的文章。
 
-每次运行（无论是否生成版本）在 `prompt_optimization_runs` 写一行：结果、起止时间、
+正式运行（非 dry-run，无论是否生成版本）在 `prompt_optimization_runs` 写一行：结果、起止时间、
 窗口起点、基准/新版本 id、模型、每条案例明细、每次尝试的改动与检查结论、错误信息。
 该表是“为什么改 / 为什么没改”的**权威展示与校准依据**，但不参与业务判定；历史版本
 本身仍以 `prompt_revisions` 为权威。自动版本与「初始文件版本」的 `created_by_user_id`
 都为空，控制台只能通过运行记录的 `new_revision_id` 关联识别自动版本，**不得给
-`prompt_revisions` 增加来源列**。`--dry-run` 走完整流程但既不写版本也不写运行记录。
+`prompt_revisions` 增加来源列**。
+
+`--dry-run` 只做预览：读当前版本、窗口与案例，执行预检；预检不通过时再逐条读取文章
+统计缺正文/不在摘要库的跳过数，然后停止。它**不调用评分模型、不调用优化模型、
+不写版本、不写运行记录**，结果值为 `preview`（仅用于 CLI 汇总与返回值，不写数据库）。
 
 八个 LLM 步骤的模型与 reasoning 开关由 `app_settings.llm_models` 提供。每一步的
 `model` 为 `null` 时只回退到该分区的 `default`，reasoning 则始终使用该步骤的

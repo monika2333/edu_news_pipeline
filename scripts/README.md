@@ -12,16 +12,18 @@ Scripts layout
 
 - run_optimize_prompts.ps1
   - Runs `python -m src.cli.main optimize-prompts` from the repo root.
-  - Writes timestamped logs to `logs/optimize_prompts_*.log`; `-DryRun` runs the
-    full flow without writing prompt versions or run records.
+  - Writes timestamped logs to `logs/optimize_prompts_*.log`; `-DryRun` only
+    previews the collected cases and precheck result, without calling any model
+    or writing prompt versions / run records.
   - Register it to run every night at 00:00 (server local time). Run this from
-    the repository root in an elevated PowerShell, replacing the Python path if
-    the server venv is not `venv`:
+    the repository root in an elevated PowerShell. The production venv is
+    `.venv`; if a machine uses a different directory name, point `-Python` at
+    that machine's actual `Scripts\python.exe`:
 
     ```powershell
     $action = New-ScheduledTaskAction `
         -Execute "powershell.exe" `
-        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$PWD\scripts\run_optimize_prompts.ps1`" -Python `"$PWD\venv\Scripts\python.exe`"" `
+        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$PWD\scripts\run_optimize_prompts.ps1`" -Python `"$PWD\.venv\Scripts\python.exe`"" `
         -WorkingDirectory $PWD
     $trigger = New-ScheduledTaskTrigger -Daily -At 00:00
     Register-ScheduledTask `

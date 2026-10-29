@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, Optional
@@ -264,6 +266,86 @@ def test_current_replay_splits_target_reference_and_ignored(monkeypatch) -> None
     assert optimization.saved == []
 
 
+def test_concurrent_replay_matches_serial_order_and_actually_overlaps(
+    monkeypatch,
+) -> None:
+    _patch_prompt(monkeypatch)
+    feedback = [_feedback_row(f"c{index}") for index in range(4)]
+    delays = {"c0": 0.08, "c1": 0.06, "c2": 0.04, "c3": 0.02}
+
+    def run_once(concurrency: int):
+        optimization = _FakeOptimization(feedback=feedback)
+        rows = {
+            item["article_id"]: _article_row(item["article_id"])
+            for item in feedback
+        }
+        adapter = _Adapter(rows, optimization)
+        lock = threading.Lock()
+        state = {"active": 0, "current": 0, "candidate": 0}
+
+        def replay(row, key, content):
+            article_id = row["article_id"]
+            phase = "candidate" if "CAND" in content else "current"
+            with lock:
+                state["active"] += 1
+                state[phase] = max(state[phase], state["active"])
+            try:
+                time.sleep(delays[article_id])
+                if phase == "candidate":
+                    return 80
+                return 20 if article_id in {"c0", "c2"} else 80
+            finally:
+                with lock:
+                    state["active"] -= 1
+
+        result = worker.run(
+            ["external_positive"],
+            concurrency=concurrency,
+            adapter=adapter,
+            replay=replay,
+            optimizer=lambda *args: _change_optimizer("CAND"),
+            now=NOW,
+        )
+        return result, optimization, state
+
+    serial_result, serial_opt, serial_peaks = run_once(1)
+    parallel_result, parallel_opt, parallel_peaks = run_once(4)
+
+    serial_item = serial_result["items"][0]
+    parallel_item = parallel_result["items"][0]
+    assert serial_peaks["current"] == 1
+    assert serial_peaks["candidate"] == 1
+    assert parallel_peaks["current"] > 1
+    assert parallel_peaks["candidate"] > 1
+
+    serial_cases = serial_opt.runs[0]["cases"]
+    parallel_cases = parallel_opt.runs[0]["cases"]
+    assert serial_cases == parallel_cases
+    assert [
+        (case["article_id"], case["bucket"])
+        for case in serial_cases
+        if case["bucket"] in {"T", "R"}
+    ] == [
+        (case["article_id"], case["bucket"])
+        for case in parallel_cases
+        if case["bucket"] in {"T", "R"}
+    ]
+    assert serial_opt.runs[0]["attempts"] == parallel_opt.runs[0]["attempts"]
+    assert serial_opt.saved[0]["content"] == parallel_opt.saved[0]["content"]
+    for key in (
+        "outcome",
+        "case_count",
+        "t_count",
+        "r_count",
+        "fixed_count",
+        "broken_count",
+        "check_passed",
+        "model_calls",
+    ):
+        assert serial_item[key] == parallel_item[key]
+    assert serial_item["outcome"] == "revision_created"
+
+
 def test_current_replay_errors_are_ignored_not_counted_as_target(monkeypatch) -> None:
     _patch_prompt(monkeypatch)
     feedback = [
@@ -465,7 +547,7 @@ def test_two_failed_checks_stop_after_one_retry_without_version(monkeypatch) -> 
 
 
 @pytest.mark.parametrize("scenario", ["no_correction", "declined", "failed", "error"])
-def test_dry_run_never_writes_a_run_record_for_non_version_outcomes(
+def test_non_dry_run_records_each_non_version_outcome(
     monkeypatch,
     scenario: str,
 ) -> None:
@@ -486,7 +568,6 @@ def test_dry_run_never_writes_a_run_record_for_non_version_outcomes(
 
     result = worker.run(
         ["external_positive"],
-        dry_run=True,
         adapter=adapter,
         replay=replay,
         optimizer=optimizer,
@@ -500,7 +581,8 @@ def test_dry_run_never_writes_a_run_record_for_non_version_outcomes(
         "error": "error",
     }[scenario]
     assert result["items"][0]["outcome"] == expected
-    assert optimization.runs == []
+    assert len(optimization.runs) == 1
+    assert optimization.runs[0]["outcome"] == expected
     assert optimization.saved == []
 
 
@@ -608,25 +690,122 @@ def test_manual_save_during_run_records_error_and_does_not_overwrite(monkeypatch
     assert result["had_error"] is True
 
 
-def test_dry_run_checks_but_writes_nothing(monkeypatch) -> None:
+def test_dry_run_previews_cases_without_calling_models(monkeypatch) -> None:
     _patch_prompt(monkeypatch)
-    feedback = [_feedback_row("t1")]
-    optimization = _FakeOptimization(feedback=feedback)
-    adapter = _Adapter({"t1": _article_row("t1")}, optimization)
+    feedback = [
+        _feedback_row("t-low", days_ago=1, feedback_type="too_low"),
+        _feedback_row(
+            "t-high",
+            days_ago=1,
+            feedback_type="too_high",
+            score=80,
+        ),
+    ]
+    submissions = [
+        _submission_row("s-in", days_ago=1, stored_score=40),
+        _submission_row("s-old", days_ago=10, stored_score=40),
+    ]
+    optimization = _FakeOptimization(feedback=feedback, submissions=submissions)
+    no_body = _article_row("s-in")
+    no_body["content_markdown"] = "   "
+    rows = {
+        "t-low": _article_row("t-low"),
+        "s-in": no_body,
+        "s-old": _article_row("s-old"),
+    }
+    adapter = _Adapter(rows, optimization)
+    replay_calls: list[str] = []
+    optimizer_calls: list[str] = []
+
+    def replay(row, key, content):
+        replay_calls.append(row["article_id"])
+        return 80
+
+    def optimizer(*args):
+        optimizer_calls.append("called")
+        return _change_optimizer("CAND")
 
     result = worker.run(
         ["external_positive"],
         dry_run=True,
         adapter=adapter,
-        replay=lambda row, key, content: 20 if content == "BASE PROMPT" else 80,
-        optimizer=lambda *args: _change_optimizer("CAND"),
+        replay=replay,
+        optimizer=optimizer,
         now=NOW,
     )
 
     item = result["items"][0]
-    assert item["outcome"] == "revision_created"
-    assert item["dry_run"] is True
-    assert item["new_revision_id"] is None
+    assert item["outcome"] == "preview"
+    assert item["prompt_version"] == "v3"
+    assert item["window_start"] == (NOW - timedelta(days=3)).isoformat()
+    assert item["case_count"] == 4
+    assert item["preview_feedback_low_count"] == 1
+    assert item["preview_feedback_high_count"] == 1
+    assert item["preview_submission_count"] == 2
+    assert item["preview_in_window_count"] == 3
+    assert item["preview_precheck_will_finish"] is False
+    assert item["preview_estimated_skipped_count"] == 2
+    assert item["preview_estimated_replay_count"] == 2
+    assert item["preview_min_model_calls"] == 3
+    assert item["model_calls"] == 0
+    assert item["optimizer_calls"] == 0
+    assert replay_calls == []
+    assert optimizer_calls == []
+    assert optimization.runs == []
+    assert optimization.saved == []
+
+
+def test_dry_run_precheck_stops_without_reading_articles_or_models(
+    monkeypatch,
+) -> None:
+    _patch_prompt(monkeypatch)
+    optimization = _FakeOptimization(
+        submissions=[_submission_row("s1", stored_score=80)],
+    )
+    adapter = _Adapter({}, optimization)
+    replay_calls: list[str] = []
+    optimizer_calls: list[str] = []
+
+    result = worker.run(
+        ["external_positive"],
+        dry_run=True,
+        adapter=adapter,
+        replay=lambda row, key, content: replay_calls.append("replay") or 80,
+        optimizer=lambda *args: optimizer_calls.append("optimizer"),
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "preview"
+    assert item["preview_precheck_will_finish"] is True
+    assert item["preview_estimated_skipped_count"] == 0
+    assert item["preview_estimated_replay_count"] == 0
+    assert item["preview_min_model_calls"] == 0
+    assert replay_calls == []
+    assert optimizer_calls == []
+    assert optimization.runs == []
+    assert optimization.saved == []
+
+
+def test_dry_run_prompt_error_does_not_block_the_next_prompt(monkeypatch) -> None:
+    _patch_prompt(monkeypatch)
+    optimization = _FakeOptimization(collect_error_keys={"external_positive"})
+    adapter = _Adapter({}, optimization)
+
+    result = worker.run(
+        ["external_positive", "external_negative"],
+        dry_run=True,
+        adapter=adapter,
+        replay=lambda row, key, content: 80,
+        optimizer=lambda *args: _no_change_optimizer(),
+        now=NOW,
+    )
+
+    assert [item["outcome"] for item in result["items"]] == [
+        "error",
+        "preview",
+    ]
+    assert result["had_error"] is True
     assert optimization.runs == []
     assert optimization.saved == []
 

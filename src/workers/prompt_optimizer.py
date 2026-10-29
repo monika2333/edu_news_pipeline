@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from concurrent.futures import as_completed
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Mapping, Optional, Sequence
 
@@ -46,9 +48,15 @@ from src.domain.prompt_edit import (
     evaluate_candidate_check,
     feedback_criterion,
 )
-from src.workers import log_error, log_info, log_summary
+from src.workers import (
+    ContextPropagatingThreadPoolExecutor,
+    log_error,
+    log_info,
+    log_summary,
+)
 
 WORKER_NAME = "prompt-optimizer"
+OUTCOME_PREVIEW = "preview"
 DEFAULT_PROMPT_KEYS = tuple(sorted(SCORING_PROMPT_KEYS))
 ReplayFn = Callable[[Mapping[str, Any], str, str], Optional[int]]
 OptimizerFn = Callable[
@@ -108,6 +116,51 @@ def _default_optimizer(
         reference_cases=reference_cases,
         failure_feedback=failure_feedback,
     )
+
+
+@dataclass(frozen=True)
+class _ReplayResult:
+    score: Optional[int]
+    error: Optional[str] = None
+
+
+def _replay_cases(
+    cases: Sequence[OptimizationCase],
+    *,
+    rows: Mapping[str, Mapping[str, Any]],
+    prompt_key: str,
+    content: str,
+    replay: ReplayFn,
+    concurrency: int,
+) -> dict[str, _ReplayResult]:
+    """Replay cases concurrently, keyed by article id.
+
+    Completion order is intentionally irrelevant: callers apply the returned
+    mapping by iterating their original case list. That keeps scores, buckets,
+    skip reasons and run-record case order identical to serial execution.
+    """
+
+    if not cases:
+        return {}
+    results: dict[str, _ReplayResult] = {}
+    workers = max(1, int(concurrency or 1))
+    with ContextPropagatingThreadPoolExecutor(max_workers=workers) as executor:
+        future_map = {
+            executor.submit(replay, rows[case.article_id], prompt_key, content): case
+            for case in cases
+        }
+        for future in as_completed(future_map):
+            case = future_map[future]
+            try:
+                score = future.result()
+            except Exception as exc:
+                results[case.article_id] = _ReplayResult(
+                    score=None,
+                    error=str(exc) or exc.__class__.__name__,
+                )
+            else:
+                results[case.article_id] = _ReplayResult(score=score)
+    return results
 
 
 def _case_payload(case: OptimizationCase) -> dict[str, Any]:
@@ -423,6 +476,75 @@ def _finish_without_revision(
     )
 
 
+def _preview_result(
+    *,
+    prompt: PromptTemplate,
+    prompt_key: str,
+    started_at: datetime,
+    window_start: datetime,
+    baseline_revision_id: Optional[int],
+    model: str,
+    cases: Sequence[OptimizationCase],
+    precheck_will_finish: bool,
+    skipped_count: int,
+    estimated_replay_count: int,
+) -> dict[str, Any]:
+    feedback_low = sum(
+        1
+        for case in cases
+        if case.origin == CASE_ORIGIN_FEEDBACK and case.direction == DIRECTION_UP
+    )
+    feedback_high = sum(
+        1
+        for case in cases
+        if case.origin == CASE_ORIGIN_FEEDBACK and case.direction != DIRECTION_UP
+    )
+    submissions = sum(
+        1 for case in cases if case.origin == CASE_ORIGIN_SUBMISSION
+    )
+    in_window = sum(1 for case in cases if case.event_at >= window_start)
+    summary = _summary(
+        prompt_key=prompt_key,
+        outcome=OUTCOME_PREVIEW,
+        started_at=started_at,
+        finished_at=_utcnow(),
+        window_start=window_start,
+        baseline_revision_id=baseline_revision_id,
+        new_revision_id=None,
+        new_version=None,
+        model=model,
+        cases=cases,
+        target_cases=[],
+        reference_cases=[],
+        skipped_count=skipped_count,
+        model_calls=0,
+        check=None,
+        attempts=[],
+        error=None,
+        note=None,
+        dry_run=True,
+        run_id=None,
+    )
+    summary.update(
+        {
+            "prompt_version": prompt.version,
+            "preview_feedback_low_count": feedback_low,
+            "preview_feedback_high_count": feedback_high,
+            "preview_submission_count": submissions,
+            "preview_in_window_count": in_window,
+            "preview_precheck_will_finish": precheck_will_finish,
+            "preview_estimated_skipped_count": skipped_count,
+            "preview_estimated_replay_count": estimated_replay_count,
+            "preview_min_model_calls": (
+                0
+                if precheck_will_finish
+                else estimated_replay_count + 1
+            ),
+        }
+    )
+    return summary
+
+
 def _save_revision(
     *,
     adapter: Any,
@@ -630,6 +752,7 @@ def _optimize_prompt(
     dry_run: bool,
     replay: ReplayFn,
     optimizer: OptimizerFn,
+    concurrency: int,
 ) -> dict[str, Any]:
     prompt = load_active_prompt(prompt_key, adapter)
     if not prompt.content.strip():
@@ -648,7 +771,21 @@ def _optimize_prompt(
         since=lookback_start,
         limit=OPTIMIZATION_MAX_CASES,
     )
-    if _precheck_skips_replay(cases, window_start):
+    precheck_will_finish = _precheck_skips_replay(cases, window_start)
+    if precheck_will_finish:
+        if dry_run:
+            return _preview_result(
+                prompt=prompt,
+                prompt_key=prompt_key,
+                started_at=started_at,
+                window_start=window_start,
+                baseline_revision_id=baseline_revision_id,
+                model=model,
+                cases=cases,
+                precheck_will_finish=True,
+                skipped_count=0,
+                estimated_replay_count=0,
+            )
         return _finish_without_revision(
             adapter=adapter,
             prompt_key=prompt_key,
@@ -669,9 +806,29 @@ def _optimize_prompt(
             dry_run=dry_run,
         )
 
+    if dry_run:
+        skipped_count = 0
+        for case in cases:
+            row = adapter.news_summaries.fetch_prompt_test_article(case.article_id)
+            if row is None or not str(row.get("content_markdown") or "").strip():
+                skipped_count += 1
+        return _preview_result(
+            prompt=prompt,
+            prompt_key=prompt_key,
+            started_at=started_at,
+            window_start=window_start,
+            baseline_revision_id=baseline_revision_id,
+            model=model,
+            cases=cases,
+            precheck_will_finish=False,
+            skipped_count=skipped_count,
+            estimated_replay_count=len(cases) - skipped_count,
+        )
+
     model_calls = 0
     skipped_count = 0
     rows: dict[str, Mapping[str, Any]] = {}
+    replayable_cases: list[OptimizationCase] = []
     for case in cases:
         row = adapter.news_summaries.fetch_prompt_test_article(case.article_id)
         if row is None:
@@ -687,16 +844,26 @@ def _optimize_prompt(
         rows[case.article_id] = row
         case.summary = str(row.get("llm_summary") or case.summary)
         case.content_excerpt = str(row.get("content_markdown") or "")[:600]
-        model_calls += 1
-        try:
-            score = replay(row, prompt_key, prompt.content)
-        except Exception as exc:  # 单条回放失败不应中断整轮
-            message = str(exc) or exc.__class__.__name__
-            case.replay_error = message
-            case.skip_reason = f"当前版本回放失败：{message}"
+        replayable_cases.append(case)
+
+    current_results = _replay_cases(
+        replayable_cases,
+        rows=rows,
+        prompt_key=prompt_key,
+        content=prompt.content,
+        replay=replay,
+        concurrency=concurrency,
+    )
+    model_calls += len(replayable_cases)
+    for case in replayable_cases:
+        result = current_results[case.article_id]
+        if result.error is not None:
+            case.replay_error = result.error
+            case.skip_reason = f"当前版本回放失败：{result.error}"
             case.bucket = CASE_BUCKET_IGNORED
             skipped_count += 1
             continue
+        score = result.score
         if score is None:
             case.current_score = None
             case.replay_error = "模型未返回可解析的分数"
@@ -888,18 +1055,32 @@ def _optimize_prompt(
                 dry_run=dry_run,
             )
 
-        candidate_scores: dict[str, Optional[int]] = {}
+        candidate_cases = [
+            case
+            for case in target_cases + reference_cases
+            if case.article_id in rows
+        ]
+        candidate_scores: dict[str, Optional[int]] = {
+            case.article_id: None
+            for case in target_cases + reference_cases
+            if case.article_id not in rows
+        }
+        candidate_results = _replay_cases(
+            candidate_cases,
+            rows=rows,
+            prompt_key=prompt_key,
+            content=candidate_content,
+            replay=replay,
+            concurrency=concurrency,
+        )
+        model_calls += len(candidate_cases)
         for case in target_cases + reference_cases:
-            row = rows.get(case.article_id)
-            if row is None:
-                candidate_scores[case.article_id] = None
+            result = candidate_results.get(case.article_id)
+            if result is None:
                 continue
-            model_calls += 1
-            try:
-                score = replay(row, prompt_key, candidate_content)
-            except Exception as exc:
-                case.replay_error = str(exc) or exc.__class__.__name__
-                score = None
+            if result.error is not None:
+                case.replay_error = result.error
+            score = result.score
             candidate_scores[case.article_id] = score
             case.candidate_score = score
             case.candidate_satisfied = case_satisfied(
@@ -979,6 +1160,7 @@ def run(
     prompt_keys: Optional[Sequence[str]] = None,
     *,
     dry_run: bool = False,
+    concurrency: Optional[int] = None,
     adapter: Any = None,
     replay: Optional[ReplayFn] = None,
     optimizer: Optional[OptimizerFn] = None,
@@ -986,6 +1168,8 @@ def run(
 ) -> dict[str, Any]:
     """Run one nightly optimization pass over one or more scoring prompts."""
 
+    settings = get_settings()
+    workers = max(1, concurrency or settings.default_concurrency or 5)
     resolved_adapter = adapter or get_adapter()
     keys = list(prompt_keys) if prompt_keys else list(DEFAULT_PROMPT_KEYS)
     unknown = [key for key in keys if key not in SCORING_PROMPT_KEYS]
@@ -1006,6 +1190,7 @@ def run(
                 dry_run=dry_run,
                 replay=replay_fn,
                 optimizer=optimizer_fn,
+                concurrency=workers,
             )
         except Exception as exc:
             log_error(WORKER_NAME, prompt_key, exc)
@@ -1041,6 +1226,7 @@ def run(
 
 __all__ = [
     "DEFAULT_PROMPT_KEYS",
+    "OUTCOME_PREVIEW",
     "WORKER_NAME",
     "run",
 ]

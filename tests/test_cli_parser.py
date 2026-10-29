@@ -350,11 +350,14 @@ def test_optimize_prompts_cli_parses_selected_keys_and_dry_run() -> None:
             "external_positive",
             "--prompt-key",
             "internal_negative",
+            "--concurrency",
+            "9",
             "--dry-run",
         ]
     )
 
     assert args.prompt_keys == ["external_positive", "internal_negative"]
+    assert args.concurrency == 9
     assert args.dry_run is True
 
 
@@ -389,16 +392,75 @@ def test_optimize_prompts_exit_code_reflects_prompt_errors(
 
     monkeypatch.setattr(prompt_optimizer, "run", fake_run)
     code = cli_main._optimize_prompts(
-        SimpleNamespace(prompt_keys=["external_positive"], dry_run=True)
+        SimpleNamespace(
+            prompt_keys=["external_positive"],
+            dry_run=True,
+            concurrency=7,
+        )
     )
 
     assert code == 1
     assert calls == [
-        {"prompt_keys": ["external_positive"], "dry_run": True}
+        {
+            "prompt_keys": ["external_positive"],
+            "dry_run": True,
+            "concurrency": 7,
+        }
     ]
     output = capsys.readouterr().out
     assert "optimize-prompts: dry-run" in output
     assert "outcome=error" in output
+    assert "total_model_calls=0" in output
+
+
+def test_optimize_prompts_preview_output_includes_estimates(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from src.workers import prompt_optimizer
+
+    fake_item = {
+        "prompt_key": "external_positive",
+        "outcome": "preview",
+        "prompt_version": "v3",
+        "window_start": "2026-10-20T00:00:00+00:00",
+        "case_count": 5,
+        "preview_feedback_low_count": 1,
+        "preview_feedback_high_count": 1,
+        "preview_submission_count": 3,
+        "preview_in_window_count": 4,
+        "preview_precheck_will_finish": False,
+        "preview_estimated_skipped_count": 2,
+        "preview_estimated_replay_count": 3,
+        "preview_min_model_calls": 4,
+        "model_calls": 0,
+        "t_count": 0,
+        "r_count": 0,
+        "skipped_count": 2,
+    }
+
+    def fake_run(**kwargs):
+        return {"items": [fake_item], "had_error": False}
+
+    monkeypatch.setattr(prompt_optimizer, "run", fake_run)
+    code = cli_main._optimize_prompts(
+        SimpleNamespace(prompt_keys=None, dry_run=True, concurrency=None)
+    )
+
+    assert code == 0
+    output = capsys.readouterr().out
+    assert "dry-run（只预览案例与预检，不调用模型、不写库）" in output
+    assert "outcome=preview" in output
+    assert "version=v3" in output
+    assert "window_start=2026-10-20T00:00:00+00:00" in output
+    assert "feedback_low=1" in output
+    assert "feedback_high=1" in output
+    assert "submissions=3" in output
+    assert "in_window=4" in output
+    assert "precheck=replay" in output
+    assert "estimated_skipped=2" in output
+    assert "estimated_replay=3" in output
+    assert "min_model_calls=4" in output
     assert "total_model_calls=0" in output
 
 

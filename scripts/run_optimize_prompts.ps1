@@ -1,3 +1,4 @@
+# -DryRun: 只预览案例与预检结果，不调用模型、不写库。
 param(
     [string]$Python = "python",
     [switch]$DryRun

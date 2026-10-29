@@ -385,6 +385,12 @@ def test_settings_payload_exposes_endpoints_and_drops_base_url(
     assert items["deepseek"]["api_key_env_configured"] is True
     serialized = json.dumps(endpoints)
     assert "deepseek-key" not in serialized
+    assert "prompt_optimizer" in {
+        item["key"] for item in payload["steps"]
+    }
+    assert next(
+        item for item in payload["steps"] if item["key"] == "prompt_optimizer"
+    )["display_name"] == "提示词优化"
 
 
 @pytest.mark.parametrize(

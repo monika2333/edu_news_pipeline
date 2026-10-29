@@ -452,6 +452,37 @@ def test_submission_uses_60_floor_not_a_lower_threshold(monkeypatch) -> None:
     assert case["bucket"] == "T"
 
 
+def test_file_fallback_window_is_thirty_days(monkeypatch) -> None:
+    _patch_prompt(
+        monkeypatch,
+        PromptTemplate(
+            key="external_positive",
+            version="v1",
+            content="BASE PROMPT",
+            source="file",
+            revision=1,
+            revision_id=None,
+            updated_at=None,
+        ),
+    )
+    optimization = _FakeOptimization(
+        feedback=[_feedback_row("old", days_ago=25)],
+    )
+    adapter = _Adapter({"old": _article_row("old")}, optimization)
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=lambda row, key, content: 30,
+        optimizer=lambda *args: _no_change_optimizer(),
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["t_count"] == 1
+    assert item["outcome"] == "model_declined"
+
+
 def test_feedback_on_same_article_wins_over_archive(monkeypatch) -> None:
     _patch_prompt(monkeypatch)
     feedback = [

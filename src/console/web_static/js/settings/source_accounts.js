@@ -14,6 +14,10 @@
 // 后端 refresh-names 接口单批上限 20（Pydantic max_length），前端切片必须与之对齐
 const REFRESH_NAMES_BATCH_SIZE = 20;
 
+// 新增账号的自动解析失败时弹 toast：具体原因写在面板错误行与失败徽章的 title 里，
+// toast 只负责「失败了、去哪重试」，避免长错误串在全局提示里放不下
+const NAME_RESOLVE_FAILED_TOAST = '账号名称获取失败，可点击「刷新账号名称」重试';
+
 // 面板 UI 状态按来源隔离、懒创建，只剩 refreshInflight 一项（名称刷新按钮是按来源的）；
 // 管理模式、待删标记、删除提交都是页面级 state（见 core.js）
 function accountPanelState(source) {
@@ -412,7 +416,8 @@ function buildAccountAddChip(source) {
     return chip;
 }
 
-// 虚线芯片点击后就地变成的输入框：回车或点「添加」提交，Esc 取消退回虚线形态。
+// 虚线芯片点击后就地变成的输入框：回车或点「添加」提交，「×」或 Esc 取消退回
+// 虚线形态（Esc 是快捷键，「×」是可见入口，二者走同一个 close）。
 // 添加成功后输入框保持打开并清空、焦点保留（renderAccountList 重建网格时
 // 保留该节点），方便连续添加下一个；失败时输入内容保留，错误写进共享错误行。
 function buildAccountAddForm(source) {
@@ -425,11 +430,18 @@ function buildAccountAddForm(source) {
     const addBtn = createEl('button', 'btn btn-primary btn-account-add', '添加', {
         type: 'button',
     });
+    const cancelBtn = createEl('button', 'account-add-cancel', '×', {
+        type: 'button',
+        'aria-label': '取消添加',
+        title: '取消添加',
+    });
     form.appendChild(input);
     form.appendChild(addBtn);
+    form.appendChild(cancelBtn);
     const close = () => {
         if (form.isConnected) form.replaceWith(buildAccountAddChip(source));
     };
+    cancelBtn.addEventListener('click', close);
     input.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
             event.preventDefault();
@@ -471,6 +483,13 @@ async function resolveNewAccountName(source, accountId) {
             const failed = results.find((result) => result.status === 'failed' && result.error);
             if (failed) {
                 accountPanelError(source, `名称解析失败：${failed.error}`);
+                showSettingsToast(NAME_RESOLVE_FAILED_TOAST, 'error');
+                return;
+            }
+            const resolved = results.find((result) => result.account
+                && result.account.display_name);
+            if (resolved) {
+                showSettingsToast(`已获取账号名称：${resolved.account.display_name}`);
             }
             return;
         }
@@ -479,6 +498,7 @@ async function resolveNewAccountName(source, accountId) {
     }
     state.accountNameResolving.delete(accountId);
     accountPanelError(source, `名称解析失败：${failureMessage}`);
+    showSettingsToast(NAME_RESOLVE_FAILED_TOAST, 'error');
     // 没有可用的刷新结果时也要把芯片徽章从「名称解析中」恢复成中性待获取
     const item = currentAccountItems(source)
         .find((account) => account.id === accountId);
@@ -510,12 +530,14 @@ async function submitAccountAdd(source, input, addBtn) {
         // 创建请求即时返回（不含名称）：芯片先以「名称解析中」出现，
         // 随后排队补一次解析，完成后名称就地补上，添加过程不再阻塞
         const created = payload.item;
+        let resolving = false;
         if (created && created.id && !created.display_name) {
             state.accountNameResolving.add(created.id);
             queueNewAccountNameResolution(source, created.id);
+            resolving = true;
         }
         input.value = '';
-        showSettingsToast('账号已添加');
+        showSettingsToast(resolving ? '账号已添加，正在获取账号名称…' : '账号已添加');
         await refreshAccountsAndList(source);
     } catch (error) {
         accountPanelError(source, `添加失败：${error.message || '网络错误'}`);

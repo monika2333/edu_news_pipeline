@@ -1078,6 +1078,9 @@ test('S31：添加即时成功并显示「名称解析中」，随后自动补�
         const resolvingBadge = chip.querySelector('.account-name-badge');
         assert.match(resolvingBadge.textContent, /名称解析中/);
         assert.ok(!resolvingBadge.classList.contains('is-error'));
+        // 添加成功的 toast 说明名称正在后台获取
+        await waitFor(() => page.document.getElementById('toast').textContent
+            .includes('账号已添加，正在获取账号名称'));
         // 前端自动对这一条补发 refresh-names（响应仍挂着）
         await waitFor(() => page.server.requests('refresh-names').length === 1);
         assert.deepEqual(
@@ -1085,19 +1088,21 @@ test('S31：添加即时成功并显示「名称解析中」，随后自动补�
             [created.id],
         );
 
-        // 放行解析响应：名称就地补上，解析中徽章消失
+        // 放行解析响应：名称就地补上，解析中徽章消失，toast 收尾报出获取到的名称
         page.server.release('refresh-names');
         await waitFor(() => accountChip(page, created.id)
             .querySelector('.account-chip-name').textContent === '自动名称-brand-new-id');
         const doneChip = accountChip(page, created.id);
         assert.ok(!doneChip.classList.contains('is-unresolved'));
         assert.equal(doneChip.querySelector('.account-name-badge'), null);
+        await waitFor(() => page.document.getElementById('toast').textContent
+            .includes('已获取账号名称：自动名称-brand-new-id'));
     } finally {
         page.close();
     }
 });
 
-test('S31b：新增后的名称解析失败时，徽章变「名称获取失败」并写面板错误行', async () => {
+test('S31b：新增后的名称解析失败时，徽章变「名称获取失败」并写面板错误行，toast 提示重试', async () => {
     const page = await bootPage();
     try {
         page.server.refreshBehavior = () => ({ status: 'failed', error: '头条主页请求超时' });
@@ -1123,6 +1128,8 @@ test('S31b：新增后的名称解析失败时，徽章变「名称获取失败�
         assert.ok(failedBadge.classList.contains('is-error'));
         assert.equal(failedBadge.title, '头条主页请求超时');
         assert.match(accountsPanelError(page, 'toutiao').textContent, /名称解析失败/);
+        await waitFor(() => page.document.getElementById('toast').textContent
+            .includes('账号名称获取失败'));
     } finally {
         page.close();
     }
@@ -1701,21 +1708,35 @@ test('N19：虚线芯片就地变输入框，添加成功后输入框保持打�
         const input = form.querySelector('.account-add-input');
         assert.equal(input.placeholder, '主页链接或 ID');
         assert.equal(page.document.activeElement, input, '打开后焦点应进入输入框');
+        const cancelBtn = form.querySelector('.account-add-cancel');
+        assert.ok(cancelBtn, '应与「添加」并排渲染可见的取消按钮');
+        assert.equal(cancelBtn.getAttribute('aria-label'), '取消添加');
+
+        // 「×」取消：退回虚线芯片形态（Esc 的可见等价入口）
+        cancelBtn.click();
+        assert.equal(grid.querySelector('.account-add-inline'), null);
+        assert.ok(grid.querySelector('.account-add-chip'));
+
+        // 重新打开后再走添加流程
+        grid.querySelector('.account-add-chip').click();
+        const reopened = grid.querySelector('.account-add-inline');
+        assert.ok(reopened, '取消后应能重新打开输入框');
+        const reopenedInput = reopened.querySelector('.account-add-input');
 
         // 添加成功：输入框仍在（同一节点）、值被清空、焦点保留
-        input.value = 'new-acc-x';
-        form.querySelector('.btn-account-add').click();
+        reopenedInput.value = 'new-acc-x';
+        reopened.querySelector('.btn-account-add').click();
         await waitFor(() => page.server.requests('add-account').length === 1
             && page.server.requests('add-account')[0].done);
         const created = page.server.accounts.toutiao
             .find((item) => item.normalized_identifier === 'new-acc-x');
         await waitForChip(page, created.id);
-        assert.equal(grid.querySelector('.account-add-input'), input, '输入框应保持打开');
-        assert.equal(input.value, '', '添加成功后输入框应清空');
-        assert.equal(page.document.activeElement, input, '焦点应保留在输入框');
+        assert.equal(grid.querySelector('.account-add-input'), reopenedInput, '输入框应保持打开');
+        assert.equal(reopenedInput.value, '', '添加成功后输入框应清空');
+        assert.equal(page.document.activeElement, reopenedInput, '焦点应保留在输入框');
 
         // Esc 退回虚线形态
-        input.dispatchEvent(new page.window.KeyboardEvent('keydown', {
+        reopenedInput.dispatchEvent(new page.window.KeyboardEvent('keydown', {
             key: 'Escape',
             bubbles: true,
         }));

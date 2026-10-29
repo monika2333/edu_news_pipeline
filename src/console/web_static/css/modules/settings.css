@@ -742,7 +742,7 @@
     border-color: #2563eb;
 }
 
-/* 虚线芯片点击后就地变成的输入框：回车/点「添加」提交，Esc 退回虚线形态 */
+/* 虚线芯片点击后就地变成的输入框：回车/点「添加」提交，「×」或 Esc 退回虚线形态 */
 .account-add-inline {
     display: inline-flex;
     align-items: center;
@@ -759,6 +759,29 @@
     min-height: 28px;
     padding: 2px 12px;
     font-size: 0.8rem;
+}
+
+/* 「×」取消按钮：Esc 的可见等价入口，视觉沿用账号芯片操作小圆钮的样式语言 */
+.account-add-inline .account-add-cancel {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid #cbd5e1;
+    border-radius: 50%;
+    background: #fff;
+    color: #475569;
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.account-add-inline .account-add-cancel:hover {
+    color: #b91c1c;
+    border-color: #b91c1c;
 }
 
 /* 接入点块：只读清单 + 「管理接入点」编辑态（endpoints.js 渲染）。

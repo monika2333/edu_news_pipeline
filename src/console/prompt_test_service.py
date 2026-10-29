@@ -20,8 +20,8 @@ from src.console.auth_service import ConsoleUser
 from src.console.prompt_service import normalize_prompt_content
 from src.domain.external_filter import (
     BeijingGateCandidate,
-    ExternalFilterCandidate,
     determine_candidate_category,
+    external_filter_candidate_from_row,
 )
 from src.domain.prompt import PROMPT_KIND_SCORE, prompt_definition
 
@@ -64,24 +64,6 @@ def _base_article_payload(
         "category": category,
         "status": row.get("status"),
     }
-
-
-def _score_candidate(row: dict[str, Any]) -> ExternalFilterCandidate:
-    return ExternalFilterCandidate(
-        article_id=str(row.get("article_id") or ""),
-        title=row.get("title"),
-        source=row.get("source"),
-        publish_time_iso=row.get("publish_time_iso"),
-        summary=str(row.get("llm_summary") or ""),
-        content=str(row.get("content_markdown") or ""),
-        sentiment_label=row.get("sentiment_label"),
-        is_beijing_related=row.get("is_beijing_related"),
-        is_beijing_related_llm=row.get("is_beijing_related_llm"),
-        external_importance_status=(
-            str(row.get("external_importance_status") or "pending_external_filter")
-        ),
-        keyword_matches=tuple(row.get("keyword_matches") or ()),
-    )
 
 
 def _gate_candidate(row: dict[str, Any]) -> BeijingGateCandidate:
@@ -131,7 +113,7 @@ def _run_score_test(
     prompt_key: str,
     content: str,
 ) -> dict[str, Any]:
-    candidate = _score_candidate(row)
+    candidate = external_filter_candidate_from_row(row)
     settings = get_settings()
     model = get_llm_step_config("external_filter").model
     started = time.monotonic()

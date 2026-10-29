@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 import threading
@@ -137,6 +137,8 @@ class Settings:
     llm_sentiment_budget: int
     llm_source_budget: int
     llm_duplicate_review_budget: int
+    llm_prompt_optimizer_timeout: int
+    llm_prompt_optimizer_budget: int
     llm_quota_alert_enabled: bool
     llm_quota_alert_cooldown_seconds: int
     llm_quota_alert_state_path: Path
@@ -211,6 +213,10 @@ def get_settings() -> Settings:
     llm_beijing_gate_timeout = (
         _optional_int(os.getenv("LLM_BEIJING_GATE_TIMEOUT")) or llm_global_timeout or 60
     )
+    llm_prompt_optimizer_timeout = (
+        _optional_int(os.getenv("LLM_PROMPT_OPTIMIZER_TIMEOUT"))
+        or max(llm_global_timeout, 120)
+    )
     llm_global_budget = _optional_int(os.getenv("LLM_BUDGET")) or 180
     llm_beijing_gate_budget = (
         _optional_int(os.getenv("LLM_BEIJING_GATE_BUDGET")) or llm_global_budget
@@ -232,6 +238,10 @@ def get_settings() -> Settings:
     )
     llm_duplicate_review_budget = (
         _optional_int(os.getenv("LLM_DUPLICATE_REVIEW_BUDGET")) or llm_global_budget
+    )
+    llm_prompt_optimizer_budget = (
+        _optional_int(os.getenv("LLM_PROMPT_OPTIMIZER_BUDGET"))
+        or max(llm_global_budget, 300)
     )
     llm_quota_alert_enabled = _bool_from_env(
         os.getenv("LLM_QUOTA_ALERT_ENABLED"),
@@ -390,6 +400,8 @@ def get_settings() -> Settings:
         llm_sentiment_budget=llm_sentiment_budget,
         llm_source_budget=llm_source_budget,
         llm_duplicate_review_budget=llm_duplicate_review_budget,
+        llm_prompt_optimizer_timeout=llm_prompt_optimizer_timeout,
+        llm_prompt_optimizer_budget=llm_prompt_optimizer_budget,
         llm_quota_alert_enabled=llm_quota_alert_enabled,
         llm_quota_alert_cooldown_seconds=llm_quota_alert_cooldown_seconds,
         llm_quota_alert_state_path=llm_quota_alert_state_path,

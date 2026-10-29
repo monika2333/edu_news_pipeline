@@ -78,6 +78,7 @@ const STEP_KEYS = [
     'external_filter',
     'beijing_gate',
     'duplicate_review',
+    'prompt_optimizer',
 ];
 const STEP_LABELS = {
     summary: '摘要生成',
@@ -87,6 +88,7 @@ const STEP_LABELS = {
     external_filter: '重要性过滤',
     beijing_gate: '京内判定',
     duplicate_review: '查重复核',
+    prompt_optimizer: '提示词优化',
 };
 
 function defaultSteps() {
@@ -117,6 +119,7 @@ function defaultModelsValue() {
             external_filter: { model: null, reasoning: false, endpoint: null },
             beijing_gate: { model: null, reasoning: false, endpoint: null },
             duplicate_review: { model: null, reasoning: false, endpoint: null },
+            prompt_optimizer: { model: null, reasoning: true, endpoint: null },
         },
     };
 }
@@ -241,6 +244,24 @@ function sectionsWithBareEndpointStep() {
 
 // 提示词页签的默认负载：两个来自数据库（带历史）、三个来自文件默认。
 // content 用可辨识的短串，测试断言保存/恢复时不必读仓库里的真实提示词。
+function defaultOptimizationStatus(overrides = {}) {
+    return {
+        run_id: 7,
+        outcome: 'revision_created',
+        outcome_label: '已生成新版本',
+        finished_at: '2026-10-30T00:00:00Z',
+        window_start: '2026-10-20T00:00:00Z',
+        new_revision_id: 12,
+        new_version: 'v2',
+        fixed_count: 2,
+        broken_count: 1,
+        t_total: 3,
+        r_total: 4,
+        error: null,
+        ...overrides,
+    };
+}
+
 function defaultPrompts() {
     const base = {
         step: 'external_filter',
@@ -260,6 +281,7 @@ function defaultPrompts() {
             revision: 2,
             revision_id: 12,
             source: 'database',
+            optimization_status: defaultOptimizationStatus(),
         },
         {
             ...base,
@@ -273,6 +295,16 @@ function defaultPrompts() {
             source: 'file',
             updated_at: null,
             updated_by: null,
+            optimization_status: defaultOptimizationStatus({
+                outcome: 'no_correction',
+                outcome_label: '无需修正',
+                new_revision_id: null,
+                new_version: null,
+                fixed_count: 0,
+                broken_count: 0,
+                t_total: 0,
+                r_total: 0,
+            }),
         },
         {
             ...base,
@@ -284,6 +316,14 @@ function defaultPrompts() {
             revision: 2,
             revision_id: 21,
             source: 'database',
+            optimization_status: defaultOptimizationStatus({
+                outcome: 'model_declined',
+                outcome_label: '模型判断不改',
+                new_revision_id: null,
+                new_version: null,
+                fixed_count: 0,
+                broken_count: 0,
+            }),
         },
         {
             ...base,
@@ -297,6 +337,14 @@ function defaultPrompts() {
             source: 'file',
             updated_at: null,
             updated_by: null,
+            optimization_status: defaultOptimizationStatus({
+                outcome: 'check_failed',
+                outcome_label: '未通过检查',
+                new_revision_id: null,
+                new_version: null,
+                fixed_count: 1,
+                broken_count: 3,
+            }),
         },
         {
             ...base,
@@ -329,17 +377,72 @@ function defaultPromptHistory() {
                 char_count: 22,
                 created_at: '2026-10-01T08:00:00Z',
                 created_by: null,
+                origin: 'file_baseline',
                 content: 'EXTERNAL POSITIVE v1',
             },
             {
                 id: 12,
                 revision: 2,
                 version: 'v2',
-                note: '收紧 Tier 1',
+                note: '补充高校舆情规则',
                 char_count: 28,
                 created_at: '2026-10-20T08:00:00Z',
-                created_by: { user_id: 'u1', display_name: '编辑甲' },
+                created_by: null,
+                origin: 'auto_optimized',
                 content: 'EXTERNAL POSITIVE PROMPT v2',
+                optimization: {
+                    run_id: 7,
+                    outcome: 'revision_created',
+                    outcome_label: '已生成新版本',
+                    started_at: '2026-10-29T23:59:00Z',
+                    finished_at: '2026-10-30T00:02:00Z',
+                    window_start: '2026-10-20T00:00:00Z',
+                    baseline_revision_id: 11,
+                    new_revision_id: 12,
+                    model: 'optimizer-strong',
+                    error: null,
+                    attempts: [{
+                        attempt: 2,
+                        decision: 'change',
+                        note: '补充高校舆情规则',
+                        edits: [{
+                            old: '若涉及高校',
+                            new: '若涉及高校\n且出现舆情风险',
+                        }],
+                        check: {
+                            passed: true,
+                            fixed_count: 2,
+                            broken_count: 1,
+                            t_total: 3,
+                            r_total: 4,
+                            unparseable_count: 0,
+                            failures: [],
+                        },
+                    }],
+                    cases: [{
+                        article_id: 'a1',
+                        title: '某高校舆情事件',
+                        origin_label: '报送存档（zongbao）',
+                        direction_label: '调高',
+                        original_score: 45,
+                        current_score: 40,
+                        candidate_score: 62,
+                        candidate_satisfied: true,
+                        bucket: 'T',
+                        reason: '已报送',
+                    }, {
+                        article_id: 'a2',
+                        title: '参照案例',
+                        origin_label: '评分标注·偏低',
+                        direction_label: '调高',
+                        original_score: 60,
+                        current_score: 70,
+                        candidate_score: 72,
+                        candidate_satisfied: true,
+                        bucket: 'R',
+                        reason: '原本就该高分',
+                    }],
+                },
             },
         ],
         internal_positive: [
@@ -351,6 +454,7 @@ function defaultPromptHistory() {
                 char_count: 28,
                 created_at: '2026-10-20T08:00:00Z',
                 created_by: { user_id: 'u1', display_name: '编辑甲' },
+                origin: 'user',
                 content: 'INTERNAL POSITIVE PROMPT v2',
             },
         ],
@@ -750,6 +854,7 @@ class FakeSettingsServer {
                 char_count: content.length,
                 created_at: '2026-10-21T08:00:00Z',
                 created_by: { user_id: 'admin-id', display_name: '测试管理员' },
+                origin: 'user',
                 content,
             };
             history.push(entry);

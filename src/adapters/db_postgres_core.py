@@ -18,6 +18,7 @@ from src.adapters import (
     db_postgres_manual_reviews as manual_reviews,
     db_postgres_news_summaries as news_summaries,
     db_postgres_process as process,
+    db_postgres_prompt_optimization as prompt_optimization,
     db_postgres_prompt_revisions as prompt_revisions,
     db_postgres_score_feedback as score_feedback,
     db_postgres_shift_reviews as shift_reviews,
@@ -99,6 +100,9 @@ class PostgresAdapter:
         self.manual_reviews = manual_reviews.ManualReviewsNamespace(self)
         self.news_summaries = news_summaries.NewsSummariesNamespace(self)
         self.process = process.ProcessNamespace(self)
+        self.prompt_optimization = (
+            prompt_optimization.PromptOptimizationNamespace(self)
+        )
         self.prompt_revisions = prompt_revisions.PromptRevisionsNamespace(self)
         self.score_feedback = score_feedback.ScoreFeedbackNamespace(self)
         self.shift_reviews = shift_reviews.ShiftReviewsNamespace(self)

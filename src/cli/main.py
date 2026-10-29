@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import getpass
@@ -16,6 +16,7 @@ from src.business_config import (
     warn_legacy_config,
 )
 from src.config import get_settings
+from src.domain.prompt import SCORING_PROMPT_KEYS
 from src.workers.crawl_sources import run as crawl_sources
 from src.workers.enrich_summary import run as enrich_summaries
 from src.workers.external_filter import run as run_external_filter
@@ -229,6 +230,26 @@ def _add_feishu_archive_bot(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_optimize_prompts(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "optimize-prompts",
+        help="Nightly minimal edits to the four scoring prompts from human signals",
+    )
+    parser.add_argument(
+        "--prompt-key",
+        dest="prompt_keys",
+        action="append",
+        choices=sorted(SCORING_PROMPT_KEYS),
+        default=None,
+        help="Only process this prompt key; repeatable (default: all four)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run the full flow including model calls and checks, but write nothing",
+    )
+
+
 def _add_import_settings(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "import-settings",
@@ -417,6 +438,37 @@ def _clear_review_buckets() -> int:
     return 0
 
 
+def _optimize_prompts(args: argparse.Namespace) -> int:
+    from src.workers.prompt_optimizer import run as run_prompt_optimizer
+
+    result = run_prompt_optimizer(
+        prompt_keys=args.prompt_keys,
+        dry_run=bool(args.dry_run),
+    )
+    mode = "dry-run（不写版本、不写运行记录）" if args.dry_run else "write"
+    print(f"optimize-prompts: {mode}")
+    for item in result["items"]:
+        line = (
+            f"{item['prompt_key']}: outcome={item['outcome']} "
+            f"cases={item['case_count']} T={item['t_count']} "
+            f"R={item['r_count']} skipped={item['skipped_count']} "
+            f"model_calls={item['model_calls']}"
+        )
+        if item["outcome"] == "revision_created":
+            line += (
+                f" new_version={item['new_version'] or '(dry-run)'} "
+                f"fixed={item['fixed_count']} broken={item['broken_count']}"
+            )
+        if item.get("error"):
+            line += f" error={item['error']}"
+        print(line)
+    print(
+        "total_model_calls="
+        f"{sum(int(item['model_calls']) for item in result['items'])}"
+    )
+    return 1 if result["had_error"] else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="edu-news", description="Edu news pipeline controller")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -437,6 +489,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_generate_shifts(subparsers)
     _add_refresh_manual_clusters(subparsers)
     _add_clear_review_buckets(subparsers)
+    _add_optimize_prompts(subparsers)
     _add_feishu_archive_bot(subparsers)
     _add_import_settings(subparsers)
     return parser
@@ -503,6 +556,8 @@ def _run_command(args: argparse.Namespace) -> int:
         return _refresh_manual_clusters()
     elif command == "clear-review-buckets":
         return _clear_review_buckets()
+    elif command == "optimize-prompts":
+        return _optimize_prompts(args)
     elif command == "feishu-archive-bot":
         from src.workers.feishu_archive_bot import run as run_feishu_archive_bot
 
@@ -528,6 +583,7 @@ def main(argv: list[str] | None = None) -> int:
         "score",
         "external-filter",
         "submission-dedup",
+        "optimize-prompts",
     }
     if args.command not in business_commands:
         return _run_command(args)

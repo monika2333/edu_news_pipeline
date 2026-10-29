@@ -461,6 +461,48 @@ CREATE TABLE public.primary_articles (
 
 
 --
+-- Name: prompt_optimization_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.prompt_optimization_runs (
+    id bigint NOT NULL,
+    prompt_key text NOT NULL,
+    outcome text NOT NULL,
+    started_at timestamp with time zone NOT NULL,
+    finished_at timestamp with time zone DEFAULT now() NOT NULL,
+    window_start timestamp with time zone NOT NULL,
+    baseline_revision_id bigint,
+    new_revision_id bigint,
+    model text NOT NULL,
+    cases jsonb DEFAULT '[]'::jsonb NOT NULL,
+    attempts jsonb DEFAULT '[]'::jsonb NOT NULL,
+    error text,
+    CONSTRAINT prompt_optimization_runs_new_revision_pair_check CHECK (((outcome = 'revision_created'::text) = (new_revision_id IS NOT NULL))),
+    CONSTRAINT prompt_optimization_runs_outcome_check CHECK ((outcome = ANY (ARRAY['no_correction'::text, 'model_declined'::text, 'check_failed'::text, 'revision_created'::text, 'error'::text]))),
+    CONSTRAINT prompt_optimization_runs_prompt_key_check CHECK ((prompt_key = ANY (ARRAY['external_positive'::text, 'external_negative'::text, 'internal_positive'::text, 'internal_negative'::text])))
+);
+
+
+--
+-- Name: prompt_optimization_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.prompt_optimization_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: prompt_optimization_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.prompt_optimization_runs_id_seq OWNED BY public.prompt_optimization_runs.id;
+
+
+--
 -- Name: prompt_revisions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -769,6 +811,13 @@ COMMENT ON COLUMN public.submitted_reports.source_sender_id IS 'Provider-scoped 
 
 
 --
+-- Name: prompt_optimization_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prompt_optimization_runs ALTER COLUMN id SET DEFAULT nextval('public.prompt_optimization_runs_id_seq'::regclass);
+
+
+--
 -- Name: prompt_revisions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -964,6 +1013,14 @@ ALTER TABLE ONLY public.pipeline_runs
 
 ALTER TABLE ONLY public.primary_articles
     ADD CONSTRAINT primary_articles_pkey PRIMARY KEY (article_id);
+
+
+--
+-- Name: prompt_optimization_runs prompt_optimization_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prompt_optimization_runs
+    ADD CONSTRAINT prompt_optimization_runs_pkey PRIMARY KEY (id);
 
 
 --
@@ -1355,6 +1412,20 @@ CREATE INDEX primary_articles_status_idx ON public.primary_articles USING btree 
 
 
 --
+-- Name: prompt_optimization_runs_key_finished_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX prompt_optimization_runs_key_finished_idx ON public.prompt_optimization_runs USING btree (prompt_key, finished_at DESC, id DESC);
+
+
+--
+-- Name: prompt_optimization_runs_new_revision_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX prompt_optimization_runs_new_revision_idx ON public.prompt_optimization_runs USING btree (new_revision_id) WHERE (new_revision_id IS NOT NULL);
+
+
+--
 -- Name: raw_articles_detail_fetched_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1729,6 +1800,22 @@ ALTER TABLE ONLY public.primary_articles
 
 
 --
+-- Name: prompt_optimization_runs prompt_optimization_runs_baseline_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prompt_optimization_runs
+    ADD CONSTRAINT prompt_optimization_runs_baseline_revision_id_fkey FOREIGN KEY (baseline_revision_id) REFERENCES public.prompt_revisions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: prompt_optimization_runs prompt_optimization_runs_new_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prompt_optimization_runs
+    ADD CONSTRAINT prompt_optimization_runs_new_revision_id_fkey FOREIGN KEY (new_revision_id) REFERENCES public.prompt_revisions(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: prompt_revisions prompt_revisions_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1951,4 +2038,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261020150000'),
     ('20261020163000'),
     ('20261021150000'),
-    ('20261028180000');
+    ('20261028180000'),
+    ('20261029200000'),
+    ('20261029201000');

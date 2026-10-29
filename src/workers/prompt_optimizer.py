@@ -1,0 +1,988 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Mapping, Optional, Sequence
+
+from src.adapters.db_postgres_core import get_adapter
+from src.adapters.db_postgres_prompt_optimization import (
+    OUTCOME_CHECK_FAILED,
+    OUTCOME_ERROR,
+    OUTCOME_MODEL_DECLINED,
+    OUTCOME_NO_CORRECTION,
+    OUTCOME_REVISION_CREATED,
+)
+from src.adapters.db_postgres_prompt_revisions import PromptRevisionConflictError
+from src.adapters.external_filter_model import (
+    call_external_filter_model,
+    parse_external_filter_score,
+)
+from src.adapters.llm_prompt_optimizer import (
+    DECISION_NO_CHANGE,
+    PromptOptimizerDecision,
+    call_prompt_optimizer,
+)
+from src.adapters.prompt_store import load_active_prompt
+from src.business_config import get_llm_step_config
+from src.config import get_settings
+from src.domain.external_filter import external_filter_candidate_from_row
+from src.domain.prompt import SCORING_PROMPT_KEYS, PromptTemplate
+from src.domain.prompt_edit import (
+    CASE_BUCKET_IGNORED,
+    CASE_BUCKET_R,
+    CASE_BUCKET_T,
+    CASE_ORIGIN_FEEDBACK,
+    CASE_ORIGIN_SUBMISSION,
+    DIRECTION_UP,
+    OPTIMIZATION_LOOKBACK_DAYS,
+    OPTIMIZATION_MAX_ATTEMPTS,
+    OPTIMIZATION_MAX_CASES,
+    SUBMITTED_SCORE_FLOOR,
+    CheckResult,
+    OptimizationCase,
+    PromptEditError,
+    apply_prompt_edits,
+    case_satisfied,
+    evaluate_candidate_check,
+    feedback_criterion,
+)
+from src.workers import log_error, log_info, log_summary
+
+WORKER_NAME = "prompt-optimizer"
+DEFAULT_PROMPT_KEYS = tuple(sorted(SCORING_PROMPT_KEYS))
+ReplayFn = Callable[[Mapping[str, Any], str, str], Optional[int]]
+OptimizerFn = Callable[
+    [
+        str,
+        str,
+        Sequence[Mapping[str, Any]],
+        Sequence[Mapping[str, Any]],
+        Optional[str],
+    ],
+    PromptOptimizerDecision,
+]
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _as_datetime(value: Any, fallback: datetime) -> datetime:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return fallback
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    return fallback
+
+
+def _default_replay(
+    row: Mapping[str, Any],
+    prompt_key: str,
+    content: str,
+) -> Optional[int]:
+    settings = get_settings()
+    raw_output = call_external_filter_model(
+        external_filter_candidate_from_row(row),
+        category=prompt_key,
+        retries=max(1, settings.external_filter_max_retries),
+        prompt_template=content,
+    )
+    return parse_external_filter_score(raw_output)
+
+
+def _default_optimizer(
+    prompt_key: str,
+    content: str,
+    cases: Sequence[Mapping[str, Any]],
+    reference_cases: Sequence[Mapping[str, Any]],
+    failure_feedback: Optional[str],
+) -> PromptOptimizerDecision:
+    return call_prompt_optimizer(
+        prompt_key=prompt_key,
+        current_content=content,
+        cases=cases,
+        reference_cases=reference_cases,
+        failure_feedback=failure_feedback,
+    )
+
+
+def _case_payload(case: OptimizationCase) -> dict[str, Any]:
+    return {
+        "article_id": case.article_id,
+        "title": case.title,
+        "source": case.source,
+        "origin": case.origin,
+        "origin_label": case.origin_label,
+        "direction": case.direction,
+        "direction_label": case.direction_label,
+        "criterion_label": case.criterion_label,
+        "threshold": case.threshold,
+        "original_score": case.original_score,
+        "stored_score": case.stored_score,
+        "event_at": case.event_at.isoformat(),
+        "reason": case.reason,
+        "feedback_type": case.feedback_type,
+        "report_types": list(case.report_types),
+        "bucket": case.bucket,
+        "current_score": case.current_score,
+        "candidate_score": case.candidate_score,
+        "current_satisfied": case.current_satisfied,
+        "candidate_satisfied": case.candidate_satisfied,
+        "skip_reason": case.skip_reason,
+        "replay_error": case.replay_error,
+    }
+
+
+def _optimizer_case_payload(case: OptimizationCase) -> dict[str, Any]:
+    return {
+        "title": case.title,
+        "source": case.source,
+        "summary": case.summary,
+        "content_excerpt": case.content_excerpt,
+        "current_score": case.current_score,
+        "stored_score": case.stored_score,
+        "direction": case.direction,
+        "direction_label": case.direction_label,
+        "criterion_label": case.criterion_label,
+        "reason": case.reason,
+        "origin_label": case.origin_label,
+    }
+
+
+def _collect_cases(
+    adapter: Any,
+    prompt_key: str,
+    *,
+    since: datetime,
+    limit: int = OPTIMIZATION_MAX_CASES,
+) -> list[OptimizationCase]:
+    feedback_rows, submission_rows = adapter.prompt_optimization.collect_cases(
+        prompt_key,
+        since=since,
+        limit=limit,
+    )
+    feedback_cases: list[OptimizationCase] = []
+    feedback_article_ids: set[str] = set()
+    for row in feedback_rows:
+        article_id = str(row.get("article_id") or "")
+        if not article_id:
+            continue
+        direction, threshold = feedback_criterion(
+            str(row.get("feedback_type") or ""),
+            float(row.get("original_score") or 0.0),
+        )
+        feedback_article_ids.add(article_id)
+        feedback_cases.append(
+            OptimizationCase(
+                article_id=article_id,
+                title=str(row.get("title") or "（无标题）"),
+                source=row.get("source"),
+                origin=CASE_ORIGIN_FEEDBACK,
+                direction=direction,
+                threshold=threshold,
+                original_score=float(row.get("original_score") or 0.0),
+                prompt_key=prompt_key,
+                event_at=_as_datetime(row.get("event_at"), since),
+                reason=row.get("reason"),
+                feedback_type=str(row.get("feedback_type") or ""),
+                stored_score=(
+                    float(row["stored_score"])
+                    if row.get("stored_score") is not None
+                    else None
+                ),
+                summary=str(row.get("summary") or ""),
+            )
+        )
+
+    submission_cases: list[OptimizationCase] = []
+    for row in submission_rows:
+        article_id = str(row.get("article_id") or "")
+        if not article_id or article_id in feedback_article_ids:
+            # 同一篇文章同时有标注和存档时，以标注为准。
+            continue
+        stored_score = (
+            float(row["stored_score"])
+            if row.get("stored_score") is not None
+            else None
+        )
+        report_types = tuple(
+            sorted(str(item) for item in (row.get("report_types") or ()))
+        )
+        submission_cases.append(
+            OptimizationCase(
+                article_id=article_id,
+                title=str(row.get("title") or "（无标题）"),
+                source=row.get("source"),
+                origin=CASE_ORIGIN_SUBMISSION,
+                direction=DIRECTION_UP,
+                threshold=SUBMITTED_SCORE_FLOOR,
+                original_score=stored_score,
+                prompt_key=prompt_key,
+                event_at=_as_datetime(row.get("event_at"), since),
+                report_types=report_types,
+                stored_score=stored_score,
+                summary=str(row.get("summary") or ""),
+            )
+        )
+
+    merged = feedback_cases + submission_cases
+    merged.sort(key=lambda item: item.event_at, reverse=True)
+    return merged[:limit]
+
+
+def _precheck_skips_replay(
+    cases: Sequence[OptimizationCase],
+    window_start: datetime,
+) -> bool:
+    window_cases = [case for case in cases if case.event_at >= window_start]
+    if any(case.origin == CASE_ORIGIN_FEEDBACK for case in window_cases):
+        return False
+    return all(
+        case.stored_score is not None
+        and case.stored_score >= SUBMITTED_SCORE_FLOOR
+        for case in window_cases
+        if case.origin == CASE_ORIGIN_SUBMISSION
+    )
+
+
+def _failure_feedback(
+    check: CheckResult,
+    target_cases: Sequence[OptimizationCase],
+    reference_cases: Sequence[OptimizationCase],
+) -> str:
+    lines = ["自动检查未通过："]
+    lines.extend(f"- {item}" for item in check.failures)
+    not_fixed = [
+        case.title for case in target_cases if not case.candidate_satisfied
+    ]
+    broken = [
+        case.title for case in reference_cases if not case.candidate_satisfied
+    ]
+    if not_fixed:
+        lines.append("仍未修好：" + "、".join(not_fixed[:8]))
+    if broken:
+        lines.append("被改坏：" + "、".join(broken[:8]))
+    return "\n".join(lines)
+
+
+def _summary(
+    *,
+    prompt_key: str,
+    outcome: str,
+    started_at: datetime,
+    finished_at: datetime,
+    window_start: datetime,
+    baseline_revision_id: Optional[int],
+    new_revision_id: Optional[int],
+    new_version: Optional[str],
+    model: str,
+    cases: Sequence[OptimizationCase],
+    target_cases: Sequence[OptimizationCase],
+    reference_cases: Sequence[OptimizationCase],
+    skipped_count: int,
+    model_calls: int,
+    check: Optional[CheckResult],
+    attempts: Sequence[Mapping[str, Any]],
+    error: Optional[str],
+    note: Optional[str],
+    dry_run: bool,
+    run_id: Optional[int] = None,
+) -> dict[str, Any]:
+    return {
+        "prompt_key": prompt_key,
+        "outcome": outcome,
+        "started_at": started_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+        "window_start": window_start.isoformat(),
+        "baseline_revision_id": baseline_revision_id,
+        "new_revision_id": new_revision_id,
+        "new_version": new_version,
+        "model": model,
+        "case_count": len(cases),
+        "t_count": len(target_cases),
+        "r_count": len(reference_cases),
+        "skipped_count": skipped_count,
+        "fixed_count": check.fixed_count if check else 0,
+        "broken_count": check.broken_count if check else 0,
+        "check_passed": bool(check and check.passed),
+        "model_calls": model_calls,
+        "attempts": len(attempts),
+        "error": error,
+        "note": note,
+        "dry_run": dry_run,
+        "run_id": run_id,
+    }
+
+
+def _persist_run(
+    adapter: Any,
+    *,
+    prompt_key: str,
+    outcome: str,
+    started_at: datetime,
+    finished_at: datetime,
+    window_start: datetime,
+    baseline_revision_id: Optional[int],
+    new_revision_id: Optional[int],
+    model: str,
+    cases: Sequence[OptimizationCase],
+    attempts: Sequence[Mapping[str, Any]],
+    error: Optional[str],
+    dry_run: bool,
+) -> Optional[int]:
+    if dry_run:
+        return None
+    row = adapter.prompt_optimization.record_run(
+        prompt_key=prompt_key,
+        outcome=outcome,
+        started_at=started_at,
+        finished_at=finished_at,
+        window_start=window_start,
+        baseline_revision_id=baseline_revision_id,
+        new_revision_id=new_revision_id,
+        model=model,
+        cases=[_case_payload(case) for case in cases],
+        attempts=attempts,
+        error=error,
+    )
+    return int(row["id"])
+
+
+def _finish_without_revision(
+    *,
+    adapter: Any,
+    prompt_key: str,
+    outcome: str,
+    started_at: datetime,
+    window_start: datetime,
+    baseline_revision_id: Optional[int],
+    model: str,
+    cases: Sequence[OptimizationCase],
+    target_cases: Sequence[OptimizationCase],
+    reference_cases: Sequence[OptimizationCase],
+    skipped_count: int,
+    model_calls: int,
+    check: Optional[CheckResult],
+    attempts: Sequence[Mapping[str, Any]],
+    error: Optional[str],
+    note: Optional[str],
+    dry_run: bool,
+) -> dict[str, Any]:
+    finished_at = _utcnow()
+    run_id = _persist_run(
+        adapter,
+        prompt_key=prompt_key,
+        outcome=outcome,
+        started_at=started_at,
+        finished_at=finished_at,
+        window_start=window_start,
+        baseline_revision_id=baseline_revision_id,
+        new_revision_id=None,
+        model=model,
+        cases=cases,
+        attempts=attempts,
+        error=error,
+        dry_run=dry_run,
+    )
+    return _summary(
+        prompt_key=prompt_key,
+        outcome=outcome,
+        started_at=started_at,
+        finished_at=finished_at,
+        window_start=window_start,
+        baseline_revision_id=baseline_revision_id,
+        new_revision_id=None,
+        new_version=None,
+        model=model,
+        cases=cases,
+        target_cases=target_cases,
+        reference_cases=reference_cases,
+        skipped_count=skipped_count,
+        model_calls=model_calls,
+        check=check,
+        attempts=attempts,
+        error=error,
+        note=note,
+        dry_run=dry_run,
+        run_id=run_id,
+    )
+
+
+def _save_revision(
+    *,
+    adapter: Any,
+    prompt_key: str,
+    candidate_content: str,
+    prompt: PromptTemplate,
+    note: Optional[str],
+    started_at: datetime,
+    window_start: datetime,
+    baseline_revision_id: Optional[int],
+    model: str,
+    cases: Sequence[OptimizationCase],
+    target_cases: Sequence[OptimizationCase],
+    reference_cases: Sequence[OptimizationCase],
+    skipped_count: int,
+    model_calls: int,
+    check: CheckResult,
+    attempts: Sequence[Mapping[str, Any]],
+    dry_run: bool,
+) -> dict[str, Any]:
+    if dry_run:
+        finished_at = _utcnow()
+        return _summary(
+            prompt_key=prompt_key,
+            outcome=OUTCOME_REVISION_CREATED,
+            started_at=started_at,
+            finished_at=finished_at,
+            window_start=window_start,
+            baseline_revision_id=baseline_revision_id,
+            new_revision_id=None,
+            new_version=None,
+            model=model,
+            cases=cases,
+            target_cases=target_cases,
+            reference_cases=reference_cases,
+            skipped_count=skipped_count,
+            model_calls=model_calls,
+            check=check,
+            attempts=attempts,
+            error=None,
+            note=note,
+            dry_run=True,
+            run_id=None,
+        )
+
+    baseline = None
+    if prompt.source == "file" and prompt.content.strip():
+        baseline = {
+            "revision": prompt.revision or 1,
+            "content": prompt.content,
+        }
+    try:
+        saved = adapter.prompt_optimization.record_run_with_revision(
+            prompt_key=prompt_key,
+            content=candidate_content,
+            note=note,
+            expected_revision_id=prompt.revision_id,
+            baseline=baseline,
+            baseline_revision_id=baseline_revision_id,
+            started_at=started_at,
+            finished_at=_utcnow(),
+            window_start=window_start,
+            model=model,
+            cases=[_case_payload(case) for case in cases],
+            attempts=attempts,
+        )
+    except PromptRevisionConflictError as exc:
+        return _finish_without_revision(
+            adapter=adapter,
+            prompt_key=prompt_key,
+            outcome=OUTCOME_ERROR,
+            started_at=started_at,
+            window_start=window_start,
+            baseline_revision_id=baseline_revision_id,
+            model=model,
+            cases=cases,
+            target_cases=target_cases,
+            reference_cases=reference_cases,
+            skipped_count=skipped_count,
+            model_calls=model_calls,
+            check=check,
+            attempts=attempts,
+            error=f"运行期间提示词被手动保存，已放弃本次结果：{exc}",
+            note=note,
+            dry_run=False,
+        )
+    except Exception as exc:
+        return _finish_without_revision(
+            adapter=adapter,
+            prompt_key=prompt_key,
+            outcome=OUTCOME_ERROR,
+            started_at=started_at,
+            window_start=window_start,
+            baseline_revision_id=baseline_revision_id,
+            model=model,
+            cases=cases,
+            target_cases=target_cases,
+            reference_cases=reference_cases,
+            skipped_count=skipped_count,
+            model_calls=model_calls,
+            check=check,
+            attempts=attempts,
+            error=f"写入新版本失败：{exc}",
+            note=note,
+            dry_run=False,
+        )
+
+    revision = saved["revision"]
+    run = saved["run"]
+    finished_at = _as_datetime(run.get("finished_at"), _utcnow())
+    return _summary(
+        prompt_key=prompt_key,
+        outcome=OUTCOME_REVISION_CREATED,
+        started_at=started_at,
+        finished_at=finished_at,
+        window_start=window_start,
+        baseline_revision_id=(
+            int(run["baseline_revision_id"])
+            if run.get("baseline_revision_id") is not None
+            else baseline_revision_id
+        ),
+        new_revision_id=int(revision["id"]),
+        new_version=f"v{int(revision['revision'])}",
+        model=model,
+        cases=cases,
+        target_cases=target_cases,
+        reference_cases=reference_cases,
+        skipped_count=skipped_count,
+        model_calls=model_calls,
+        check=check,
+        attempts=attempts,
+        error=None,
+        note=note,
+        dry_run=False,
+        run_id=int(run["id"]),
+    )
+
+
+def _record_unexpected_error(
+    *,
+    adapter: Any,
+    prompt_key: str,
+    started_at: datetime,
+    error: Exception,
+    dry_run: bool,
+) -> dict[str, Any]:
+    """Best-effort error row; a database failure must not block other prompts."""
+
+    window_start = started_at - timedelta(days=OPTIMIZATION_LOOKBACK_DAYS)
+    try:
+        model = get_llm_step_config("prompt_optimizer").model
+    except Exception:
+        model = ""
+    try:
+        return _finish_without_revision(
+            adapter=adapter,
+            prompt_key=prompt_key,
+            outcome=OUTCOME_ERROR,
+            started_at=started_at,
+            window_start=window_start,
+            baseline_revision_id=None,
+            model=model,
+            cases=[],
+            target_cases=[],
+            reference_cases=[],
+            skipped_count=0,
+            model_calls=0,
+            check=None,
+            attempts=[],
+            error=str(error) or error.__class__.__name__,
+            note=None,
+            dry_run=dry_run,
+        )
+    except Exception as record_error:
+        log_error(WORKER_NAME, f"{prompt_key} run-record", record_error)
+        finished_at = _utcnow()
+        return _summary(
+            prompt_key=prompt_key,
+            outcome=OUTCOME_ERROR,
+            started_at=started_at,
+            finished_at=finished_at,
+            window_start=window_start,
+            baseline_revision_id=None,
+            new_revision_id=None,
+            new_version=None,
+            model=model,
+            cases=[],
+            target_cases=[],
+            reference_cases=[],
+            skipped_count=0,
+            model_calls=0,
+            check=None,
+            attempts=[],
+            error=str(error) or error.__class__.__name__,
+            note=None,
+            dry_run=dry_run,
+        )
+
+
+def _optimize_prompt(
+    *,
+    adapter: Any,
+    prompt_key: str,
+    started_at: datetime,
+    dry_run: bool,
+    replay: ReplayFn,
+    optimizer: OptimizerFn,
+) -> dict[str, Any]:
+    prompt = load_active_prompt(prompt_key, adapter)
+    if not prompt.content.strip():
+        raise ValueError(f"提示词 {prompt_key} 内容为空，无法优化")
+    model = get_llm_step_config("prompt_optimizer").model
+    lookback_start = started_at - timedelta(days=OPTIMIZATION_LOOKBACK_DAYS)
+    window_start = max(
+        lookback_start,
+        _as_datetime(prompt.updated_at, lookback_start),
+    )
+    baseline_revision_id = prompt.revision_id
+
+    cases = _collect_cases(
+        adapter,
+        prompt_key,
+        since=lookback_start,
+        limit=OPTIMIZATION_MAX_CASES,
+    )
+    if _precheck_skips_replay(cases, window_start):
+        return _finish_without_revision(
+            adapter=adapter,
+            prompt_key=prompt_key,
+            outcome=OUTCOME_NO_CORRECTION,
+            started_at=started_at,
+            window_start=window_start,
+            baseline_revision_id=baseline_revision_id,
+            model=model,
+            cases=cases,
+            target_cases=[],
+            reference_cases=[],
+            skipped_count=0,
+            model_calls=0,
+            check=None,
+            attempts=[],
+            error=None,
+            note=None,
+            dry_run=dry_run,
+        )
+
+    model_calls = 0
+    skipped_count = 0
+    rows: dict[str, Mapping[str, Any]] = {}
+    for case in cases:
+        row = adapter.news_summaries.fetch_prompt_test_article(case.article_id)
+        if row is None:
+            case.skip_reason = "文章不在 news_summaries"
+            case.bucket = CASE_BUCKET_IGNORED
+            skipped_count += 1
+            continue
+        if not str(row.get("content_markdown") or "").strip():
+            case.skip_reason = "文章没有正文"
+            case.bucket = CASE_BUCKET_IGNORED
+            skipped_count += 1
+            continue
+        rows[case.article_id] = row
+        case.summary = str(row.get("llm_summary") or case.summary)
+        case.content_excerpt = str(row.get("content_markdown") or "")[:600]
+        model_calls += 1
+        try:
+            score = replay(row, prompt_key, prompt.content)
+        except Exception as exc:  # 单条回放失败不应中断整轮
+            case.replay_error = str(exc) or exc.__class__.__name__
+            score = None
+        case.current_score = score
+        case.current_satisfied = case_satisfied(
+            case.direction,
+            case.threshold,
+            score,
+        )
+        if case.current_satisfied:
+            case.bucket = CASE_BUCKET_R
+        elif case.event_at >= window_start:
+            case.bucket = CASE_BUCKET_T
+        else:
+            case.bucket = CASE_BUCKET_IGNORED
+
+    target_cases = [case for case in cases if case.bucket == CASE_BUCKET_T]
+    reference_cases = [case for case in cases if case.bucket == CASE_BUCKET_R]
+    if not target_cases:
+        return _finish_without_revision(
+            adapter=adapter,
+            prompt_key=prompt_key,
+            outcome=OUTCOME_NO_CORRECTION,
+            started_at=started_at,
+            window_start=window_start,
+            baseline_revision_id=baseline_revision_id,
+            model=model,
+            cases=cases,
+            target_cases=[],
+            reference_cases=reference_cases,
+            skipped_count=skipped_count,
+            model_calls=model_calls,
+            check=None,
+            attempts=[],
+            error=None,
+            note=None,
+            dry_run=dry_run,
+        )
+
+    attempts: list[dict[str, Any]] = []
+    failure_feedback: Optional[str] = None
+    last_check: Optional[CheckResult] = None
+    for attempt_number in range(1, OPTIMIZATION_MAX_ATTEMPTS + 1):
+        model_calls += 1
+        try:
+            decision = optimizer(
+                prompt_key,
+                prompt.content,
+                [_optimizer_case_payload(case) for case in target_cases],
+                [
+                    _optimizer_case_payload(case)
+                    for case in reference_cases[:10]
+                ],
+                failure_feedback,
+            )
+        except Exception as exc:
+            attempts.append(
+                {
+                    "attempt": attempt_number,
+                    "decision": "error",
+                    "note": None,
+                    "edits": [],
+                    "apply_error": None,
+                    "check": None,
+                    "error": str(exc) or exc.__class__.__name__,
+                }
+            )
+            return _finish_without_revision(
+                adapter=adapter,
+                prompt_key=prompt_key,
+                outcome=OUTCOME_ERROR,
+                started_at=started_at,
+                window_start=window_start,
+                baseline_revision_id=baseline_revision_id,
+                model=model,
+                cases=cases,
+                target_cases=target_cases,
+                reference_cases=reference_cases,
+                skipped_count=skipped_count,
+                model_calls=model_calls,
+                check=None,
+                attempts=attempts,
+                error=f"优化模型调用失败：{exc}",
+                note=None,
+                dry_run=dry_run,
+            )
+
+        attempt_payload: dict[str, Any] = {
+            "attempt": attempt_number,
+            "decision": decision.decision,
+            "note": decision.note,
+            "edits": [
+                {"old": edit.old, "new": edit.new}
+                for edit in decision.edits
+            ],
+            "apply_error": None,
+            "check": None,
+            "error": None,
+        }
+        if decision.decision == DECISION_NO_CHANGE:
+            attempts.append(attempt_payload)
+            return _finish_without_revision(
+                adapter=adapter,
+                prompt_key=prompt_key,
+                outcome=OUTCOME_MODEL_DECLINED,
+                started_at=started_at,
+                window_start=window_start,
+                baseline_revision_id=baseline_revision_id,
+                model=model,
+                cases=cases,
+                target_cases=target_cases,
+                reference_cases=reference_cases,
+                skipped_count=skipped_count,
+                model_calls=model_calls,
+                check=None,
+                attempts=attempts,
+                error=None,
+                note=decision.note,
+                dry_run=dry_run,
+            )
+
+        try:
+            candidate_content = apply_prompt_edits(
+                prompt.content,
+                decision.edits,
+            )
+        except PromptEditError as exc:
+            attempt_payload["apply_error"] = str(exc)
+            attempts.append(attempt_payload)
+            failure_feedback = f"上一轮改动无法套用：{exc}"
+            if attempt_number < OPTIMIZATION_MAX_ATTEMPTS:
+                continue
+            return _finish_without_revision(
+                adapter=adapter,
+                prompt_key=prompt_key,
+                outcome=OUTCOME_CHECK_FAILED,
+                started_at=started_at,
+                window_start=window_start,
+                baseline_revision_id=baseline_revision_id,
+                model=model,
+                cases=cases,
+                target_cases=target_cases,
+                reference_cases=reference_cases,
+                skipped_count=skipped_count,
+                model_calls=model_calls,
+                check=None,
+                attempts=attempts,
+                error=str(exc),
+                note=decision.note,
+                dry_run=dry_run,
+            )
+
+        candidate_scores: dict[str, Optional[int]] = {}
+        for case in target_cases + reference_cases:
+            row = rows.get(case.article_id)
+            if row is None:
+                candidate_scores[case.article_id] = None
+                continue
+            model_calls += 1
+            try:
+                score = replay(row, prompt_key, candidate_content)
+            except Exception as exc:
+                case.replay_error = str(exc) or exc.__class__.__name__
+                score = None
+            candidate_scores[case.article_id] = score
+            case.candidate_score = score
+            case.candidate_satisfied = case_satisfied(
+                case.direction,
+                case.threshold,
+                score,
+            )
+
+        check = evaluate_candidate_check(
+            target_cases,
+            reference_cases,
+            candidate_scores,
+        )
+        last_check = check
+        attempt_payload["check"] = {
+            "passed": check.passed,
+            "fixed_count": check.fixed_count,
+            "broken_count": check.broken_count,
+            "t_total": check.t_total,
+            "r_total": check.r_total,
+            "unparseable_count": check.unparseable_count,
+            "failures": list(check.failures),
+        }
+        attempts.append(attempt_payload)
+        if check.passed:
+            note = decision.note or (
+                f"自动优化：修好 {check.fixed_count}/{check.t_total} 条，"
+                f"改坏 {check.broken_count}/{check.r_total} 条"
+            )
+            return _save_revision(
+                adapter=adapter,
+                prompt_key=prompt_key,
+                candidate_content=candidate_content,
+                prompt=prompt,
+                note=note[:200],
+                started_at=started_at,
+                window_start=window_start,
+                baseline_revision_id=baseline_revision_id,
+                model=model,
+                cases=cases,
+                target_cases=target_cases,
+                reference_cases=reference_cases,
+                skipped_count=skipped_count,
+                model_calls=model_calls,
+                check=check,
+                attempts=attempts,
+                dry_run=dry_run,
+            )
+        failure_feedback = _failure_feedback(
+            check,
+            target_cases,
+            reference_cases,
+        )
+
+    return _finish_without_revision(
+        adapter=adapter,
+        prompt_key=prompt_key,
+        outcome=OUTCOME_CHECK_FAILED,
+        started_at=started_at,
+        window_start=window_start,
+        baseline_revision_id=baseline_revision_id,
+        model=model,
+        cases=cases,
+        target_cases=target_cases,
+        reference_cases=reference_cases,
+        skipped_count=skipped_count,
+        model_calls=model_calls,
+        check=last_check,
+        attempts=attempts,
+        error="；".join(last_check.failures) if last_check else None,
+        note=None,
+        dry_run=dry_run,
+    )
+
+
+def run(
+    prompt_keys: Optional[Sequence[str]] = None,
+    *,
+    dry_run: bool = False,
+    adapter: Any = None,
+    replay: Optional[ReplayFn] = None,
+    optimizer: Optional[OptimizerFn] = None,
+    now: Optional[datetime] = None,
+) -> dict[str, Any]:
+    """Run one nightly optimization pass over one or more scoring prompts."""
+
+    resolved_adapter = adapter or get_adapter()
+    keys = list(prompt_keys) if prompt_keys else list(DEFAULT_PROMPT_KEYS)
+    unknown = [key for key in keys if key not in SCORING_PROMPT_KEYS]
+    if unknown:
+        raise ValueError(f"不支持的提示词：{', '.join(unknown)}")
+    replay_fn = replay or _default_replay
+    optimizer_fn = optimizer or _default_optimizer
+    started_at = now or _utcnow()
+    items: list[dict[str, Any]] = []
+
+    for prompt_key in keys:
+        log_info(WORKER_NAME, f"开始处理 {prompt_key}")
+        try:
+            summary = _optimize_prompt(
+                adapter=resolved_adapter,
+                prompt_key=prompt_key,
+                started_at=started_at,
+                dry_run=dry_run,
+                replay=replay_fn,
+                optimizer=optimizer_fn,
+            )
+        except Exception as exc:
+            log_error(WORKER_NAME, prompt_key, exc)
+            summary = _record_unexpected_error(
+                adapter=resolved_adapter,
+                prompt_key=prompt_key,
+                started_at=started_at,
+                error=exc,
+                dry_run=dry_run,
+            )
+        items.append(summary)
+        log_info(
+            WORKER_NAME,
+            f"{prompt_key}: {summary['outcome']} "
+            f"cases={summary['case_count']} T={summary['t_count']} "
+            f"R={summary['r_count']} model_calls={summary['model_calls']}",
+        )
+
+    failed = sum(1 for item in items if item["outcome"] == OUTCOME_ERROR)
+    log_summary(
+        WORKER_NAME,
+        ok=len(items) - failed,
+        failed=failed,
+    )
+    return {
+        "items": items,
+        "had_error": failed > 0,
+        "dry_run": dry_run,
+        "started_at": started_at.isoformat(),
+        "finished_at": _utcnow().isoformat(),
+    }
+
+
+__all__ = [
+    "DEFAULT_PROMPT_KEYS",
+    "WORKER_NAME",
+    "run",
+]

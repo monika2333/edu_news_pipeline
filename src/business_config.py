@@ -21,6 +21,7 @@ LLM_STEPS = (
     "external_filter",
     "beijing_gate",
     "duplicate_review",
+    "prompt_optimizer",
 )
 LLM_STEP_LABELS = {
     "summary": "摘要生成",
@@ -30,6 +31,17 @@ LLM_STEP_LABELS = {
     "external_filter": "重要性过滤",
     "beijing_gate": "京内判定",
     "duplicate_review": "查重复核",
+    "prompt_optimizer": "提示词优化",
+}
+# 新增步骤在旧分区里缺失时的默认值。一次性导入（import-settings）的
+# llm_models 由旧环境变量拼装，不会自动知道新步骤；这里补默认值让新部署
+# 也能直接得到该步骤。已有生产库仍由迁移显式补上同一份默认值。
+LLM_STEP_MISSING_DEFAULTS: dict[str, dict[str, Any]] = {
+    "prompt_optimizer": {
+        "model": None,
+        "reasoning": True,
+        "endpoint": None,
+    },
 }
 API_STYLE_OPENROUTER = "openrouter"
 API_STYLE_THINKING = "thinking"
@@ -325,14 +337,19 @@ def validate_llm_models(value: Any) -> dict[str, Any]:
     if not isinstance(steps, Mapping):
         raise ValueError("llm_models.steps 必须是对象")
     missing = [step for step in LLM_STEPS if step not in steps]
+    missing_required = [
+        step for step in missing if step not in LLM_STEP_MISSING_DEFAULTS
+    ]
     extra = sorted(set(steps) - set(LLM_STEPS))
-    if missing:
-        raise ValueError(f"llm_models.steps 缺少：{', '.join(missing)}")
+    if missing_required:
+        raise ValueError(f"llm_models.steps 缺少：{', '.join(missing_required)}")
     if extra:
         raise ValueError(f"llm_models.steps 含未知步骤：{', '.join(extra)}")
     normalized_steps: dict[str, dict[str, Any]] = {}
     for step in LLM_STEPS:
-        step_value = steps[step]
+        step_value = steps.get(step)
+        if step_value is None:
+            step_value = LLM_STEP_MISSING_DEFAULTS[step]
         if not isinstance(step_value, Mapping):
             raise ValueError(f"llm_models.steps.{step} 必须是对象")
         unexpected_step_fields = set(step_value) - {"model", "reasoning", "endpoint"}
@@ -940,6 +957,7 @@ __all__ = [
     "LLM_API_STYLES",
     "LLM_STEPS",
     "LLM_STEP_LABELS",
+    "LLM_STEP_MISSING_DEFAULTS",
     "REVIEW_SORT_CATEGORIES",
     "REVIEW_SORT_KEYWORD_DEFAULTS",
     "SCORE_BONUS_MAX",

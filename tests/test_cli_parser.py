@@ -22,6 +22,7 @@ from tests.conftest import make_endpoint_config
         "export",
         "refresh-manual-clusters",
         "clear-review-buckets",
+        "optimize-prompts",
         "feishu-archive-bot",
         "submission-feedback-dedup",
     ],
@@ -45,6 +46,7 @@ def test_cli_help_available() -> None:
         "export",
         "refresh-manual-clusters",
         "clear-review-buckets",
+        "optimize-prompts",
         "feishu-archive-bot",
         "submission-feedback-dedup",
     ]:
@@ -338,6 +340,66 @@ def test_f6_import_settings_apply_writes_through_service(
             "accounts": preview["accounts"],
         }
     ]
+
+
+def test_optimize_prompts_cli_parses_selected_keys_and_dry_run() -> None:
+    args = build_parser().parse_args(
+        [
+            "optimize-prompts",
+            "--prompt-key",
+            "external_positive",
+            "--prompt-key",
+            "internal_negative",
+            "--dry-run",
+        ]
+    )
+
+    assert args.prompt_keys == ["external_positive", "internal_negative"]
+    assert args.dry_run is True
+
+
+def test_optimize_prompts_exit_code_reflects_prompt_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from src.workers import prompt_optimizer
+
+    calls: list[dict[str, object]] = []
+
+    def fake_run(**kwargs):
+        calls.append(kwargs)
+        return {
+            "items": [
+                {
+                    "prompt_key": "external_positive",
+                    "outcome": "error",
+                    "case_count": 0,
+                    "t_count": 0,
+                    "r_count": 0,
+                    "skipped_count": 0,
+                    "model_calls": 0,
+                    "error": "boom",
+                    "new_version": None,
+                    "fixed_count": 0,
+                    "broken_count": 0,
+                }
+            ],
+            "had_error": True,
+        }
+
+    monkeypatch.setattr(prompt_optimizer, "run", fake_run)
+    code = cli_main._optimize_prompts(
+        SimpleNamespace(prompt_keys=["external_positive"], dry_run=True)
+    )
+
+    assert code == 1
+    assert calls == [
+        {"prompt_keys": ["external_positive"], "dry_run": True}
+    ]
+    output = capsys.readouterr().out
+    assert "optimize-prompts: dry-run" in output
+    assert "outcome=error" in output
+    assert "total_model_calls=0" in output
 
 
 def test_clear_review_buckets_cli_uses_scheduled_actor_and_prints_counts(

@@ -146,7 +146,45 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 调用对应 LLM 步骤，然后把分数/判定、阈值、原始输出与文章当前生产结果回显给管理员。
 它**不写 `news_summaries`、不写 `score_feedbacks`、不改变文章状态**，因此可以反复试跑。
 
-七个 LLM 步骤的模型与 reasoning 开关由 `app_settings.llm_models` 提供。每一步的
+### 夜间评分提示词自动优化（`optimize-prompts`）
+
+四个评分提示词（`external_positive` / `external_negative` / `internal_positive` /
+`internal_negative`）各有一轮独立的夜间优化，京内二次判定不参与。每轮只处理
+“一篇文章 + 一个期望方向 + 一个达标判据”的案例，来源只有两类：
+
+| 来源 | 取数口径 | 方向 | 达标判据 |
+|---|---|---|---|
+| 评分标注 | `score_feedbacks`，`feedback_type` 为 `too_low` / `too_high`；按 `updated_at` 进窗口，不区分标注人；同一篇多条取最新 | 调高 / 调低 | 回放分 ≥ min(标注时分数 + 10, 100) / ≤ max(标注时分数 − 10, 0) |
+| 报送存档 | `submitted_report_items.link_status = 'matched'` 且 `article_id` 非空；按 `link_matched_at` 进窗口；综报、晚报、反馈三类报别都算 | 调高 | 回放分 ≥ 60 |
+
+归属按文章评分时实际使用的 `news_summaries.external_importance_raw.prompt_key`
+（评分标注用自身 `prompt_key` 列）。同一篇文章同时有标注和存档时**以标注为准**；
+两类案例合并后按事件时间取最近 90 条。没有正文或不在 `news_summaries` 的文章跳过并计数。
+
+**窗口语义**：当期窗口起点 = max(该提示词当前 revision 的 `created_at`, 当前时间 − 30 天)；
+数据库无该 key 的 revision（文件回退）时取 30 天。标注按 `updated_at`、存档按
+`link_matched_at` 判定是否在窗口内。保存任何新版本（人工或自动）都会自然重置窗口。
+窗口内的不达标案例进入待修正集 T；当前版本下已达标者进入参照集 R（窗口内外都算）；
+窗口外且不达标者忽略。
+
+T 非空时才调用「提示词优化」LLM 步骤。模型只返回 1–3 处 `old → new` 精确文本替换，
+由代码套用，`old` 必须恰好出现一次；再用候选版本回放 T 和 R，全部分数可解析、
+T 至少修好一半且至少 1 条、R 改坏条数 ≤ max(1, ⌊|R|×10%⌋) 且少于修好条数才算通过。
+不通过时把失败原因回传模型重试一次；每个提示词每晚最多两次尝试。
+
+**只读回放**：回放复用 `fetch_prompt_test_article`、`ExternalFilterCandidate`、
+`call_external_filter_model` 与 `parse_external_filter_score`，只读
+`news_summaries`，不写文章分数、不写评分标注、不改变文章状态，也不重打已有文章。
+新版本只影响此后新打分的文章。
+
+每次运行（无论是否生成版本）在 `prompt_optimization_runs` 写一行：结果、起止时间、
+窗口起点、基准/新版本 id、模型、每条案例明细、每次尝试的改动与检查结论、错误信息。
+该表是“为什么改 / 为什么没改”的**权威展示与校准依据**，但不参与业务判定；历史版本
+本身仍以 `prompt_revisions` 为权威。自动版本与「初始文件版本」的 `created_by_user_id`
+都为空，控制台只能通过运行记录的 `new_revision_id` 关联识别自动版本，**不得给
+`prompt_revisions` 增加来源列**。`--dry-run` 走完整流程但既不写版本也不写运行记录。
+
+八个 LLM 步骤的模型与 reasoning 开关由 `app_settings.llm_models` 提供。每一步的
 `model` 为 `null` 时只回退到该分区的 `default`，reasoning 则始终使用该步骤的
 明确布尔值，不再形成模型跨步骤回退或 reasoning 共用关系。
 
@@ -380,7 +418,8 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | `review_events` | 审计日志，记录谁在什么时候改了什么 |
 | `pipeline_runs` / `pipeline_run_steps` | 流水线执行记录；`config_snapshot` 保存本轮各步骤解析后的模型、reasoning 与实际使用的接入点、接入点表（key/base_url/api_style，不含任何 Key）、实际来源、启用账号、各词表配置的完整内容（加分词表、排除名单、教育关键词、京内关键词、来源归一化规则、自动排序关键词）和各分区配置版本 |
 | `score_feedbacks` | 编辑对 AI 打分的反馈（偏高/偏低），按文章当前评分上下文（prompt_key + prompt_version）关联；人工筛选/值班工作区与全库检索卡片（经 `/api/articles/score-feedback`）都写这张表 |
-| `prompt_revisions` | 五类提示词的追加式版本历史：`prompt_key + revision` 唯一，当前版本 = 该 key 的最大 revision；正文只保存 `<prompt>` 标签内的有效模板，`created_by_user_id` 记录保存人。控制台保存时同一事务内必要时先补一条「初始文件版本」，再追加新 revision；历史不修改、不删除，恢复 = 以旧内容新增版本。文件只在表内没有该 key 的记录时作为回退 |
+| `prompt_revisions` | 五类提示词的追加式版本历史：`prompt_key + revision` 唯一，当前版本 = 该 key 的最大 revision；正文只保存 `<prompt>` 标签内的有效模板，`created_by_user_id` 记录保存人（自动优化写 `NULL`）。控制台保存或自动优化时同一事务内必要时先补一条「初始文件版本」，再追加新 revision；历史不修改、不删除，恢复 = 以旧内容新增版本。文件只在表内没有该 key 的记录时作为回退 |
+| `prompt_optimization_runs` | 夜间自动优化的运行记录（sidecar，只增）：每提示词每晚最多一行，保存结果、窗口、基准/新版本关联、模型、案例明细、尝试与检查结论、错误。它是控制台展示“为什么改 / 为什么没改”和日后校准阈值的权威来源；**不参与业务判定**，也绝不改写 `prompt_revisions` |
 | `news_title_embeddings` | 仅编码新闻标题的向量，用于人工筛选聚类；不参与报送查重 |
 | `schema_migrations` | dbmate 迁移记录，**不要手工修改** |
 
@@ -403,6 +442,8 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | `report_type` 的两个枚举不可合并 | 新闻报别两值，报送稿类型三值（含 `feedback`） | 值班编辑下拉出现"反馈"，或报送存档无法录入反馈 |
 | 业务配置一轮内冻结 | 文章各步骤必须使用同一轮启动时的配置 | 中途修改会让同一轮文章无法准确归因 |
 | 同一 `prompt_key` 的 revision 只增不复用 | 评分反馈按 `prompt_key + prompt_version` 绑定 | 旧反馈错绑到新提示词的评分上，反馈统计失真 |
+| 自动优化回放只读 | 复用试跑路径重打分 | 写回 `news_summaries` 会重打已有文章、污染生产评分与反馈绑定 |
+| 自动版本只靠运行记录 `new_revision_id` 识别 | `prompt_revisions.created_by_user_id` 为 `NULL` 同时覆盖初始文件版本 | 给 `prompt_revisions` 加来源列会改动已有表结构；靠备注猜来源会随模型备注漂移 |
 
 `pipeline_runs.config_snapshot` 是配置历史的唯一依据，直接记录整轮实际配置（包括
 各步骤解析后的模型与 reasoning、每一步实际使用的接入点 key，接入点表

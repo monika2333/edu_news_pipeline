@@ -105,7 +105,7 @@ test('S1：配置分区缺失时对应页签显示导入提示且不渲染编辑
     }
 });
 
-test('S2：修改默认模型联动跟随默认提示，保存请求包含全部七个步骤与版本号', async () => {
+test('S2：修改默认模型联动跟随默认提示，保存请求包含全部八个步骤与版本号', async () => {
     const page = await bootPage();
     try {
         const defaultInput = page.document.getElementById('models-default-input');
@@ -134,6 +134,7 @@ test('S2：修改默认模型联动跟随默认提示，保存请求包含全部
             'beijing_gate',
             'duplicate_review',
             'external_filter',
+            'prompt_optimizer',
             'scoring',
             'sentiment',
             'source',
@@ -1968,7 +1969,7 @@ test('E1：步骤切到「指定」出现接入点下拉与空的模型输入框
     }
 });
 
-test('E2：保存请求体的七个步骤都带 endpoint，跟随默认为 null，指定的为所选 key', async () => {
+test('E2：保存请求体的八个步骤都带 endpoint，跟随默认为 null，指定的为所选 key', async () => {
     const page = await bootPage();
     try {
         const row = page.modelsRow('summary');
@@ -1986,6 +1987,7 @@ test('E2：保存请求体的七个步骤都带 endpoint，跟随默认为 null�
             'beijing_gate',
             'duplicate_review',
             'external_filter',
+            'prompt_optimizer',
             'scoring',
             'sentiment',
             'source',
@@ -1997,7 +1999,7 @@ test('E2：保存请求体的七个步骤都带 endpoint，跟随默认为 null�
         });
         assert.equal(steps.summary.endpoint, 'deepseek');
         assert.equal(steps.summary.model, 'deepseek/chat-v4');
-        for (const key of ['source', 'sentiment', 'external_filter', 'beijing_gate', 'duplicate_review']) {
+        for (const key of ['source', 'sentiment', 'external_filter', 'beijing_gate', 'duplicate_review', 'prompt_optimizer']) {
             assert.equal(steps[key].endpoint, null, `${key} 跟随默认时 endpoint 应为 null`);
             assert.equal(steps[key].model, null, `${key} 跟随默认时 model 应为 null`);
         }

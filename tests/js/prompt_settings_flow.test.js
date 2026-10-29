@@ -201,6 +201,88 @@ test('P7 提示词加载失败时显示重试入口', async () => {
     }
 });
 
+test('P8 每个评分提示词显示最近一次自动优化状态', async () => {
+    const page = await bootPage();
+    try {
+        await openPrompts(page);
+        const statuses = [...page.panel('prompts').querySelectorAll('.prompt-auto-status')]
+            .map((el) => el.textContent);
+        assert.equal(statuses.length, 4);
+        assert.match(statuses[0], /生成 v2/);
+        assert.match(statuses[1], /未改动：无需修正/);
+        assert.match(statuses[2], /未改动：模型判断不改/);
+        assert.match(statuses[3], /未通过检查：修好 1 条、改坏 3 条/);
+
+        page.window.eval(`
+            state.prompts.payload.items[3].optimization_status = {
+                outcome: 'error',
+                outcome_label: '出错',
+                finished_at: '2026-10-30T01:00:00Z',
+                error: '模型调用超时',
+            };
+            renderPromptsTab();
+        `);
+        await waitFor(() => /出错：模型调用超时/
+            .test(page.panel('prompts').textContent));
+    } finally {
+        page.close();
+    }
+});
+
+test('P9 自动版本显示「自动优化」，初始文件版本仍显示「系统导入」', async () => {
+    const page = await bootPage();
+    try {
+        await openPrompts(page);
+        await waitFor(() => page.document.querySelector('.prompt-history-item'));
+        const items = [...page.document.querySelectorAll('.prompt-history-item')];
+        const v2 = items.find(
+            (item) => item.querySelector('.prompt-version').textContent === 'v2',
+        );
+        const v1 = items.find(
+            (item) => item.querySelector('.prompt-version').textContent === 'v1',
+        );
+        assert.match(v2.querySelector('.prompt-history-user').textContent, /自动优化/);
+        assert.match(v1.querySelector('.prompt-history-user').textContent, /系统导入/);
+        assert.doesNotMatch(v2.textContent, /系统导入/);
+    } finally {
+        page.close();
+    }
+});
+
+test('P10 自动版本详情展示改动、检查结论与案例表', async () => {
+    const page = await bootPage();
+    try {
+        await openPrompts(page);
+        await waitFor(() => page.document.querySelector('.prompt-history-item'));
+        const items = [...page.document.querySelectorAll('.prompt-history-item')];
+        const v2 = items.find(
+            (item) => item.querySelector('.prompt-version').textContent === 'v2',
+        );
+        const view = [...v2.querySelectorAll('button')]
+            .find((button) => button.textContent === '查看');
+        view.click();
+        await waitFor(() => {
+            const detail = page.document.querySelector('.prompt-optimization-detail');
+            return detail && !detail.hidden && detail.textContent.includes('某高校舆情事件');
+        });
+        const detail = page.document.querySelector('.prompt-optimization-detail');
+        assert.match(detail.textContent, /若涉及高校/);
+        assert.match(detail.textContent, /且出现舆情风险/);
+        assert.match(detail.textContent, /通过/);
+        assert.match(detail.textContent, /T 修好 2\/3 条 · R 改坏 1\/4 条/);
+        const rows = [...detail.querySelectorAll('.prompt-optimization-cases tbody tr')];
+        assert.equal(rows.length, 2);
+        assert.match(rows[0].textContent, /某高校舆情事件/);
+        assert.match(rows[0].textContent, /报送存档（zongbao）/);
+        assert.match(rows[0].textContent, /调高/);
+        assert.match(rows[0].textContent, /45 → 40 → 62/);
+        assert.match(rows[0].textContent, /达标/);
+        assert.match(rows[0].textContent, /已报送/);
+    } finally {
+        page.close();
+    }
+});
+
 test.after(() => {
     assert.deepEqual(unhandledRejections, []);
 });

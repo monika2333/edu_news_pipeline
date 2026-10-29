@@ -10,6 +10,32 @@ Scripts layout
     - `-StartDate <yyyy-MM-dd>`: first-run date (defaults to today).
     - `-Remove`: unregister the tasks.
 
+- run_optimize_prompts.ps1
+  - Runs `python -m src.cli.main optimize-prompts` from the repo root.
+  - Writes timestamped logs to `logs/optimize_prompts_*.log`; `-DryRun` runs the
+    full flow without writing prompt versions or run records.
+  - Register it to run every night at 00:00 (server local time). Run this from
+    the repository root in an elevated PowerShell, replacing the Python path if
+    the server venv is not `.venv`:
+
+    ```powershell
+    $action = New-ScheduledTaskAction `
+        -Execute "powershell.exe" `
+        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$PWD\scripts\run_optimize_prompts.ps1`" -Python `"$PWD\.venv\Scripts\python.exe`"" `
+        -WorkingDirectory $PWD
+    $trigger = New-ScheduledTaskTrigger -Daily -At 00:00
+    Register-ScheduledTask `
+        -TaskName "EduNewsPromptOptimizer" `
+        -Action $action `
+        -Trigger $trigger `
+        -Description "Nightly minimal edits to the four scoring prompts"
+    ```
+
+    Verify with `Get-ScheduledTask -TaskName EduNewsPromptOptimizer` and
+    `Start-ScheduledTask -TaskName EduNewsPromptOptimizer`. The command exits
+    non-zero when any prompt failed, so the task history reflects partial
+    failures without blocking the other prompts.
+
 - clean-logs.ps1
   - Compresses logs older than 3 days and deletes items older than 14 days.
   - Supports `-DryRun` to preview actions.

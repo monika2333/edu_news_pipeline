@@ -47,7 +47,7 @@ class PromptRevisionsNamespace:
         note: Optional[str],
         expected_revision_id: Optional[int],
         baseline: Optional[Mapping[str, Any]],
-        actor_user_id: str,
+        actor_user_id: Optional[str],
     ) -> dict[str, Any]:
         with self._adapter.transaction() as cur:
             return append_prompt_revision(
@@ -120,13 +120,17 @@ def append_prompt_revision(
     note: Optional[str],
     expected_revision_id: Optional[int],
     baseline: Optional[Mapping[str, Any]],
-    actor_user_id: str,
+    actor_user_id: Optional[str],
 ) -> dict[str, Any]:
     """Append one revision, optionally seeding the pre-console file version first.
 
     The advisory lock serializes writers per prompt key. ``expected_revision_id`` is
     the id the editor loaded; ``None`` means "no database revision yet". A stale
     token raises ``PromptRevisionConflictError`` instead of silently overwriting.
+
+    ``actor_user_id=None`` is the system identity used by the nightly optimizer.
+    The run record table, not ``prompt_revisions``, distinguishes those versions
+    from imported file baselines.
     """
 
     # 同一提示词的并发保存串行化；不同提示词互不阻塞。
@@ -191,12 +195,15 @@ def append_prompt_revision(
         (prompt_key, next_revision, content, note, actor_user_id),
     )
     row = dict(cur.fetchone())
-    cur.execute(
-        "SELECT display_name FROM console_users WHERE id = %s",
-        (actor_user_id,),
-    )
-    user = cur.fetchone()
-    row["created_by_display_name"] = user["display_name"] if user else None
+    if actor_user_id is None:
+        row["created_by_display_name"] = None
+    else:
+        cur.execute(
+            "SELECT display_name FROM console_users WHERE id = %s",
+            (actor_user_id,),
+        )
+        user = cur.fetchone()
+        row["created_by_display_name"] = user["display_name"] if user else None
     return row
 
 

@@ -53,6 +53,43 @@ function promptSourceLabel(item) {
     return PROMPT_SOURCE_LABELS[item.source] || item.source || '-';
 }
 
+function promptOptimizationStatusText(item) {
+    const status = item && item.optimization_status;
+    if (item && item.kind !== 'score') return '';
+    if (!status) return '尚无自动优化记录';
+    const time = formatLocalDateTime(status.finished_at);
+    let detail;
+    switch (status.outcome) {
+        case 'revision_created':
+            detail = `生成 ${status.new_version || '新版本'}`;
+            break;
+        case 'no_correction':
+            detail = '未改动：无需修正';
+            break;
+        case 'model_declined':
+            detail = '未改动：模型判断不改';
+            break;
+        case 'check_failed':
+            detail = `未通过检查：修好 ${status.fixed_count || 0} 条、`
+                + `改坏 ${status.broken_count || 0} 条`;
+            break;
+        case 'error': {
+            const reason = String(status.error || '未知错误');
+            detail = `出错：${reason.length > 36 ? `${reason.slice(0, 36)}…` : reason}`;
+            break;
+        }
+        default:
+            detail = status.outcome_label || status.outcome || '状态未知';
+    }
+    return `${time} · ${detail}`;
+}
+
+function promptRevisionActorLabel(revision) {
+    if (revision.origin === 'auto_optimized') return '自动优化';
+    if (revision.origin === 'file_baseline') return '系统导入';
+    return (revision.created_by && revision.created_by.display_name) || '系统导入';
+}
+
 function promptUpdatedLine(item) {
     if (item.source === 'file') {
         return '当前来自 config/prompts 默认文件；保存后会写入数据库并生成新版本。';
@@ -188,6 +225,15 @@ function buildPromptNavItem(item) {
     dirty.hidden = !promptHasDraft(item.key);
     if (!dirty.hidden) button.classList.add('is-dirty');
     button.append(name, meta, dirty);
+    const statusText = promptOptimizationStatusText(item);
+    if (statusText) {
+        button.appendChild(createEl(
+            'span',
+            'prompt-auto-status',
+            statusText,
+            { title: statusText },
+        ));
+    }
     button.addEventListener('click', () => selectPrompt(item.key));
     return button;
 }
@@ -685,19 +731,181 @@ function loadPromptHistory(key, { limit = PROMPT_HISTORY_PAGE_SIZE, force = fals
     return promise;
 }
 
-async function fetchPromptRevisionContent(key, revision) {
-    if (revision._content !== undefined) return revision._content;
+async function fetchPromptRevisionPayload(key, revision) {
+    if (revision._payload !== undefined) return revision._payload;
     const { response, payload } = await apiRequest(
         `/api/admin/prompts/${encodeURIComponent(key)}/versions/${revision.id}`,
     );
     if (!response.ok) {
         throw new Error(formatApiError(payload, '加载版本内容失败'));
     }
-    revision._content = payload.content || '';
-    return revision._content;
+    revision._payload = payload;
+    return revision._payload;
 }
 
-function buildPromptHistoryItem(item, revision, preview) {
+async function fetchPromptRevisionContent(key, revision) {
+    const payload = await fetchPromptRevisionPayload(key, revision);
+    return payload.content || '';
+}
+
+function promptScoreText(value) {
+    if (value === null || value === undefined || value === '') return '—';
+    const number = Number(value);
+    return Number.isFinite(number) ? String(Math.round(number)) : '—';
+}
+
+function buildOptimizationEdits(edits) {
+    const wrap = createEl('div', 'prompt-optimization-edits');
+    if (!edits.length) {
+        wrap.appendChild(createEl('p', 'prompt-optimization-empty', '本次没有文本改动。'));
+        return wrap;
+    }
+    edits.forEach((edit, index) => {
+        const block = createEl('div', 'prompt-optimization-edit');
+        block.appendChild(createEl(
+            'p',
+            'prompt-optimization-edit-title',
+            `改动 ${index + 1}`,
+        ));
+        const oldBlock = createEl('div', 'prompt-optimization-diff is-old');
+        oldBlock.appendChild(createEl('span', 'prompt-optimization-diff-label', '替换前'));
+        oldBlock.appendChild(createEl('pre', '', edit.old || '（空）'));
+        const newBlock = createEl('div', 'prompt-optimization-diff is-new');
+        newBlock.appendChild(createEl('span', 'prompt-optimization-diff-label', '替换后'));
+        newBlock.appendChild(createEl('pre', '', edit.new || '（删除）'));
+        block.append(oldBlock, newBlock);
+        wrap.appendChild(block);
+    });
+    return wrap;
+}
+
+function buildOptimizationCheck(check) {
+    const wrap = createEl('div', 'prompt-optimization-check');
+    if (!check) {
+        wrap.appendChild(createEl('p', 'prompt-optimization-empty', '没有检查结论。'));
+        return wrap;
+    }
+    const verdict = createEl(
+        'span',
+        `prompt-badge ${check.passed ? 'is-pass' : 'is-fail'}`,
+        check.passed ? '通过' : '未通过',
+    );
+    wrap.appendChild(verdict);
+    wrap.appendChild(createEl(
+        'span',
+        'prompt-optimization-check-meta',
+        `T 修好 ${check.fixed_count}/${check.t_total} 条 · `
+            + `R 改坏 ${check.broken_count}/${check.r_total} 条`,
+    ));
+    if (check.unparseable_count) {
+        wrap.appendChild(createEl(
+            'p',
+            'prompt-optimization-failure',
+            `${check.unparseable_count} 条回放未解析出分数`,
+        ));
+    }
+    (check.failures || []).forEach((failure) => {
+        wrap.appendChild(createEl('p', 'prompt-optimization-failure', failure));
+    });
+    return wrap;
+}
+
+function buildOptimizationCaseTable(cases) {
+    const wrap = createEl('div', 'admin-table-wrap prompt-optimization-cases-wrap');
+    const table = createEl('table', 'admin-table prompt-optimization-cases');
+    const head = createEl('thead');
+    const headRow = createEl('tr');
+    ['标题', '来源类型', '方向', '原分 → 当前 → 新版本', '是否达标', '标注原因']
+        .forEach((label) => headRow.appendChild(createEl('th', '', label)));
+    head.appendChild(headRow);
+    table.appendChild(head);
+    const body = createEl('tbody');
+    cases.forEach((item) => {
+        const row = createEl('tr');
+        const titleCell = createEl('td', 'prompt-optimization-case-title');
+        titleCell.appendChild(createEl('span', '', item.title || '（无标题）'));
+        if (item.bucket) {
+            titleCell.appendChild(createEl(
+                'span',
+                'prompt-badge prompt-optimization-bucket',
+                item.bucket,
+            ));
+        }
+        row.appendChild(titleCell);
+        row.appendChild(createEl('td', '', item.origin_label || '—'));
+        row.appendChild(createEl('td', '', item.direction_label || '—'));
+        row.appendChild(createEl(
+            'td',
+            'prompt-optimization-score-flow',
+            `${promptScoreText(item.original_score)} → `
+                + `${promptScoreText(item.current_score)} → `
+                + `${promptScoreText(item.candidate_score)}`,
+        ));
+        let achieved = '—';
+        if (item.bucket === 'T' || item.bucket === 'R') {
+            achieved = item.candidate_satisfied ? '达标' : '未达标';
+        } else if (item.skip_reason) {
+            achieved = '跳过';
+        }
+        row.appendChild(createEl('td', '', achieved));
+        row.appendChild(createEl(
+            'td',
+            'prompt-optimization-reason',
+            item.reason || item.skip_reason || '—',
+        ));
+        body.appendChild(row);
+    });
+    if (!cases.length) {
+        const row = createEl('tr');
+        const cell = createEl('td', 'prompt-optimization-empty', '没有案例。');
+        cell.colSpan = 6;
+        row.appendChild(cell);
+        body.appendChild(row);
+    }
+    table.appendChild(body);
+    wrap.appendChild(table);
+    return wrap;
+}
+
+function renderPromptOptimizationDetail(mount, optimization) {
+    clearEl(mount);
+    if (!optimization) {
+        mount.hidden = true;
+        return;
+    }
+    mount.hidden = false;
+    const head = createEl('div', 'prompt-optimization-detail-head');
+    head.appendChild(createEl(
+        'span',
+        'prompt-badge prompt-version',
+        optimization.outcome_label || optimization.outcome || '自动优化',
+    ));
+    head.appendChild(createEl(
+        'span',
+        'prompt-optimization-time',
+        formatLocalDateTime(optimization.finished_at),
+    ));
+    head.appendChild(createEl(
+        'span',
+        'prompt-optimization-model',
+        optimization.model || '—',
+    ));
+    mount.appendChild(head);
+    if (optimization.error) {
+        mount.appendChild(createEl('p', 'prompt-optimization-error', optimization.error));
+    }
+
+    const attempts = optimization.attempts || [];
+    const lastAttempt = attempts.length ? attempts[attempts.length - 1] : {};
+    mount.appendChild(createEl('h4', 'prompt-optimization-subtitle', '本次改动'));
+    mount.appendChild(buildOptimizationEdits(lastAttempt.edits || []));
+    mount.appendChild(createEl('h4', 'prompt-optimization-subtitle', '检查结论'));
+    mount.appendChild(buildOptimizationCheck(lastAttempt.check));
+    mount.appendChild(createEl('h4', 'prompt-optimization-subtitle', '案例'));
+    mount.appendChild(buildOptimizationCaseTable(optimization.cases || []));
+}
+
+function buildPromptHistoryItem(item, revision, preview, detailMount) {
     const row = createEl('li', 'prompt-history-item');
     const main = createEl('div', 'prompt-history-main');
     const title = createEl('div', 'prompt-history-title');
@@ -707,7 +915,7 @@ function buildPromptHistoryItem(item, revision, preview) {
         createEl(
             'span',
             'prompt-history-user',
-            (revision.created_by && revision.created_by.display_name) || '系统导入',
+            promptRevisionActorLabel(revision),
         ),
     );
     main.appendChild(title);
@@ -726,13 +934,15 @@ function buildPromptHistoryItem(item, revision, preview) {
         try {
             if (!preview.hidden && preview.dataset.revisionId === String(revision.id)) {
                 preview.hidden = true;
+                detailMount.hidden = true;
                 viewBtn.textContent = '查看';
                 return;
             }
-            const content = await fetchPromptRevisionContent(item.key, revision);
-            preview.textContent = content;
+            const payload = await fetchPromptRevisionPayload(item.key, revision);
+            preview.textContent = payload.content || '';
             preview.dataset.revisionId = String(revision.id);
             preview.hidden = false;
+            renderPromptOptimizationDetail(detailMount, payload.optimization);
             viewBtn.textContent = '收起';
             if (typeof preview.scrollIntoView === 'function') {
                 preview.scrollIntoView({ block: 'nearest' });
@@ -829,11 +1039,13 @@ function renderPromptHistory(mount, item) {
     }
     const preview = createEl('pre', 'prompt-history-preview');
     preview.hidden = true;
+    const detail = createEl('div', 'prompt-optimization-detail');
+    detail.hidden = true;
     const list = createEl('ul', 'prompt-history-list');
     cache.items.forEach((revision) => {
-        list.appendChild(buildPromptHistoryItem(item, revision, preview));
+        list.appendChild(buildPromptHistoryItem(item, revision, preview, detail));
     });
-    card.append(list, preview);
+    card.append(list, preview, detail);
     if (cache.has_more && cache.items.length < PROMPT_HISTORY_MAX_PAGE) {
         const more = createEl('button', 'btn btn-secondary btn-sm prompt-history-more', '加载更多', {
             type: 'button',

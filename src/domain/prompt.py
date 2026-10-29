@@ -113,6 +113,27 @@ def prompt_definition(key: str) -> PromptDefinition:
         raise KeyError(f"未知提示词：{key}") from exc
 
 
+def normalize_prompt_content(content: str) -> str:
+    """Normalize and validate one prompt body.
+
+    Lives in ``src.domain`` because both the console save path and the nightly
+    prompt optimizer must enforce exactly the same boundaries. The error
+    messages are part of the console contract and intentionally unchanged.
+    """
+
+    text = str(content or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        raise ValueError("提示词内容不能为空")
+    if len(text) > MAX_PROMPT_CONTENT_LENGTH:
+        raise ValueError(
+            f"提示词内容不能超过 {MAX_PROMPT_CONTENT_LENGTH} 个字符（当前 {len(text)}）"
+        )
+    lowered = text.lower()
+    if "<prompt>" in lowered or "</prompt>" in lowered:
+        raise ValueError("只填写 <prompt> 标签内的正文，不要包含标签本身")
+    return text
+
+
 def format_prompt_version(revision: int) -> str:
     return f"v{int(revision)}"
 
@@ -142,6 +163,7 @@ __all__ = [
     "PromptTemplate",
     "SCORING_PROMPT_KEYS",
     "format_prompt_version",
+    "normalize_prompt_content",
     "parse_prompt_version",
     "prompt_definition",
 ]

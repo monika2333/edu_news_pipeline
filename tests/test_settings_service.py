@@ -14,6 +14,7 @@ from src.adapters.account_profiles import (
     AccountNameUnavailable,
 )
 from src.adapters.http_toutiao import PROFILE_NAME_TIMEOUT_SECONDS
+from src.business_config import validate_llm_models
 from src.config import get_settings
 from src.console import manual_filter_duplicate_service, settings_service
 from src.console.app import create_app
@@ -911,6 +912,21 @@ def test_f7_legacy_filter_gate_and_duplicate_models_follow_scoring(
     assert value["steps"]["external_filter"]["model"] == "scoring-model"
     assert value["steps"]["beijing_gate"]["model"] == "scoring-model"
     assert value["steps"]["duplicate_review"]["model"] == "scoring-model"
+
+
+def test_legacy_import_includes_prompt_optimizer_step_with_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_legacy_model_environment(monkeypatch)
+    monkeypatch.setenv("LLM_MODEL", "same-model")
+
+    value = validate_llm_models(settings_service._legacy_models())
+
+    assert value["steps"]["prompt_optimizer"] == {
+        "model": None,
+        "reasoning": True,
+        "endpoint": None,
+    }
 
 
 def test_f7_legacy_models_equal_to_default_are_stored_as_null(

@@ -17,6 +17,7 @@ from src.adapters.db_postgres_core import PostgresAdapter
 from src.business_config import (
     REVIEW_SORT_KEYWORD_DEFAULTS,
     load_business_config,
+    validate_llm_models,
 )
 from src.config import get_settings
 from src.console import settings_service
@@ -54,6 +55,12 @@ EXCLUSION_KEYWORDS_MIGRATION_PATH = (
     / "database"
     / "migrations"
     / "20261020150000_add_score_exclusion_keywords_setting.sql"
+)
+PROMPT_OPTIMIZER_STEP_MIGRATION_PATH = (
+    Path(__file__).parents[1]
+    / "database"
+    / "migrations"
+    / "20261029201000_add_prompt_optimizer_llm_step.sql"
 )
 ADMIN_ID = "00000000-0000-0000-0000-000000000201"
 
@@ -120,6 +127,12 @@ def _sort_keywords_migration_parts() -> tuple[str, str]:
 
 def _exclusion_keywords_migration_parts() -> tuple[str, str]:
     source = EXCLUSION_KEYWORDS_MIGRATION_PATH.read_text(encoding="utf-8")
+    up, down = source.split("-- migrate:down", maxsplit=1)
+    return up.split("-- migrate:up", maxsplit=1)[1], down
+
+
+def _prompt_optimizer_step_migration_parts() -> tuple[str, str]:
+    source = PROMPT_OPTIMIZER_STEP_MIGRATION_PATH.read_text(encoding="utf-8")
     up, down = source.split("-- migrate:down", maxsplit=1)
     return up.split("-- migrate:up", maxsplit=1)[1], down
 
@@ -848,3 +861,68 @@ def test_m18_process_adapter_persists_the_effective_config_snapshot() -> None:
         ).fetchone()
         assert row["plan"] == ["crawl"]
         assert row["config_snapshot"] == snapshot
+
+
+def test_prompt_optimizer_step_migration_only_fills_missing_step() -> None:
+    step_up, step_down = _prompt_optimizer_step_migration_parts()
+    old_steps = {
+        step: {"model": None, "reasoning": step != "summary"}
+        for step in (
+            "summary",
+            "source",
+            "sentiment",
+            "scoring",
+            "external_filter",
+            "beijing_gate",
+            "duplicate_review",
+        )
+    }
+    with _isolated_database() as connection:
+        _create_legacy_schema(connection)
+        _apply_managed_setting_migrations(connection)
+        connection.execute(
+            "INSERT INTO public.app_settings (section, value, version) "
+            "VALUES ('llm_models', %s::jsonb, 3)",
+            (json.dumps({"default": "model-a", "steps": old_steps}),),
+        )
+
+        connection.execute(step_up)
+
+        row = connection.execute(
+            "SELECT value, version FROM public.app_settings WHERE section = 'llm_models'"
+        ).fetchone()
+        normalized = validate_llm_models(row["value"])
+        assert normalized["steps"]["prompt_optimizer"] == {
+            "model": None,
+            "reasoning": True,
+            "endpoint": None,
+        }
+        assert normalized["steps"]["summary"]["reasoning"] is False
+        assert row["version"] == 3
+
+        # 管理员已经改过时，重复执行迁移不得覆盖。
+        connection.execute(
+            "UPDATE public.app_settings "
+            "SET value = jsonb_set("
+            "  value, '{steps,prompt_optimizer}', "
+            "  '{\"model\":\"strong-model\",\"reasoning\":false,\"endpoint\":null}'::jsonb"
+            ")"
+            "WHERE section = 'llm_models'"
+        )
+        connection.execute(step_up)
+        custom = connection.execute(
+            "SELECT value -> 'steps' -> 'prompt_optimizer' AS step "
+            "FROM public.app_settings WHERE section = 'llm_models'"
+        ).fetchone()
+        assert custom["step"] == {
+            "model": "strong-model",
+            "reasoning": False,
+            "endpoint": None,
+        }
+
+        connection.execute(step_down)
+        after_down = connection.execute(
+            "SELECT value -> 'steps' ? 'prompt_optimizer' AS present "
+            "FROM public.app_settings WHERE section = 'llm_models'"
+        ).fetchone()
+        assert after_down["present"] is False

@@ -267,6 +267,19 @@ def test_step_endpoint_with_null_model_is_rejected_inside_llm_models() -> None:
         business_config.validate_llm_models(value)
 
 
+def test_missing_prompt_optimizer_step_gets_documented_default() -> None:
+    normalized = business_config.validate_llm_models(_settings_rows()[0]["value"])
+
+    assert normalized["steps"]["prompt_optimizer"] == {
+        "model": None,
+        "reasoning": True,
+        "endpoint": None,
+    }
+    resolved = business_config.resolve_llm_steps(_settings_rows()[0]["value"])
+    assert resolved["prompt_optimizer"].model == "default-model"
+    assert resolved["prompt_optimizer"].reasoning is True
+
+
 def test_endpoint_requiring_model_message_names_the_binding_reason() -> None:
     value = _settings_rows()[0]["value"]
     value["steps"]["scoring"] = {

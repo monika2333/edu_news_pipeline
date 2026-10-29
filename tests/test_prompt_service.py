@@ -100,8 +100,71 @@ class _FakePromptRevisions:
         return dict(row)
 
 
+class _FakeOptimization:
+    def __init__(self) -> None:
+        self.latest = {
+            "external_positive": {
+                "id": 7,
+                "prompt_key": "external_positive",
+                "outcome": "revision_created",
+                "finished_at": "2026-10-30T00:00:00Z",
+                "window_start": "2026-10-20T00:00:00Z",
+                "new_revision_id": 12,
+                "new_revision": 2,
+                "attempts": [
+                    {
+                        "check": {
+                            "passed": True,
+                            "fixed_count": 2,
+                            "broken_count": 1,
+                            "t_total": 3,
+                            "r_total": 4,
+                        }
+                    }
+                ],
+                "error": None,
+            }
+        }
+        self.by_revision = {
+            12: {
+                "id": 7,
+                "prompt_key": "external_positive",
+                "outcome": "revision_created",
+                "started_at": "2026-10-30T00:00:00Z",
+                "finished_at": "2026-10-30T00:02:00Z",
+                "window_start": "2026-10-20T00:00:00Z",
+                "baseline_revision_id": 11,
+                "new_revision_id": 12,
+                "model": "optimizer-model",
+                "cases": [{"article_id": "a1", "bucket": "T"}],
+                "attempts": [{"attempt": 1, "check": {"passed": True}}],
+                "error": None,
+            }
+        }
+
+    def fetch_latest_runs(self, keys):
+        return {
+            key: self.latest[key]
+            for key in keys
+            if key in self.latest
+        }
+
+    def fetch_runs_for_revision_ids(self, ids):
+        return {
+            revision_id: self.by_revision[revision_id]
+            for revision_id in ids
+            if revision_id in self.by_revision
+        }
+
+    def fetch_run_by_new_revision_id(self, revision_id):
+        return self.by_revision.get(revision_id)
+
+
 def _adapter(rows: Optional[dict[str, dict[str, Any]]] = None):
-    return SimpleNamespace(prompt_revisions=_FakePromptRevisions(rows))
+    return SimpleNamespace(
+        prompt_revisions=_FakePromptRevisions(rows),
+        prompt_optimization=_FakeOptimization(),
+    )
 
 
 def _patch_adapter(monkeypatch: pytest.MonkeyPatch, adapter: Any) -> None:
@@ -265,6 +328,61 @@ def test_list_revisions_returns_metadata_and_has_more(monkeypatch: pytest.Monkey
     assert first["version"] == "v2"
     assert first["created_by"]["display_name"] == "编辑甲"
     assert first["char_count"] == len("external_positive database body")
+
+
+def test_prompts_payload_carries_latest_auto_optimization_status() -> None:
+    payload = prompt_service.get_prompts_payload(_adapter())
+
+    status = payload["items"][0]["optimization_status"]
+    assert status["outcome"] == "revision_created"
+    assert status["outcome_label"] == "已生成新版本"
+    assert status["new_version"] == "v2"
+    assert status["new_revision_id"] == 12
+    assert status["fixed_count"] == 2
+    assert status["broken_count"] == 1
+
+
+def test_history_and_detail_mark_auto_version_origin() -> None:
+    adapter = _adapter()
+    history = prompt_service.list_prompt_revisions(
+        "external_positive",
+        adapter=adapter,
+    )
+    auto_item = next(item for item in history["items"] if item["version"] == "v2")
+    assert auto_item["origin"] == "auto_optimized"
+
+    detail = prompt_service.get_prompt_revision(
+        "external_positive",
+        int(auto_item["id"]),
+        adapter=adapter,
+    )
+    assert detail["origin"] == "auto_optimized"
+    assert detail["optimization"]["cases"][0]["article_id"] == "a1"
+    assert detail["optimization"]["model"] == "optimizer-model"
+
+
+def test_history_marks_file_baseline_separately_from_auto_versions() -> None:
+    adapter = _adapter()
+    adapter.prompt_revisions.history["external_positive"].insert(
+        0,
+        {
+            "id": 98,
+            "prompt_key": "external_positive",
+            "revision": 1,
+            "content": "file body",
+            "note": "初始文件版本",
+            "created_at": "2026-10-01T08:00:00Z",
+            "created_by_user_id": None,
+            "created_by_display_name": None,
+        },
+    )
+
+    history = prompt_service.list_prompt_revisions(
+        "external_positive",
+        adapter=adapter,
+    )
+    baseline = next(item for item in history["items"] if item["id"] == 98)
+    assert baseline["origin"] == "file_baseline"
 
 
 def test_get_revision_returns_content_and_missing_raises() -> None:

@@ -28,6 +28,30 @@ class BeijingGateCandidate:
     beijing_gate_attempted_at: Optional[str] = None
 
 
+def external_filter_candidate_from_row(row: Any) -> ExternalFilterCandidate:
+    """Build a scoring candidate from a ``news_summaries`` read row.
+
+    Shared by the console prompt test and the nightly prompt optimizer so both
+    replay through exactly the same candidate shape. Pure mapping, no I/O.
+    """
+
+    return ExternalFilterCandidate(
+        article_id=str(row.get("article_id") or ""),
+        title=row.get("title"),
+        source=row.get("source"),
+        publish_time_iso=row.get("publish_time_iso"),
+        summary=str(row.get("llm_summary") or ""),
+        content=str(row.get("content_markdown") or ""),
+        sentiment_label=row.get("sentiment_label"),
+        is_beijing_related=row.get("is_beijing_related"),
+        is_beijing_related_llm=row.get("is_beijing_related_llm"),
+        external_importance_status=(
+            str(row.get("external_importance_status") or "pending_external_filter")
+        ),
+        keyword_matches=tuple(row.get("keyword_matches") or ()),
+    )
+
+
 @dataclass(slots=True)
 class ExternalFilterCandidate:
     article_id: str
@@ -62,4 +86,5 @@ __all__ = [
     "ExternalFilterCandidate",
     "ExternalFilterResult",
     "determine_candidate_category",
+    "external_filter_candidate_from_row",
 ]

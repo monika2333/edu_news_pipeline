@@ -1,4 +1,6 @@
-# -DryRun: 只预览案例与预检结果，不调用模型、不写库。
+# -DryRun: preview cases and the precheck only; no model calls, no database writes.
+# Keep this file ASCII-only. Windows PowerShell 5.1 decodes BOM-less scripts with
+# the ANSI code page, so non-ASCII bytes here can break parsing before it runs.
 param(
     [string]$Python = "python",
     [switch]$DryRun

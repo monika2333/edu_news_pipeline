@@ -46,26 +46,15 @@ def fetch_link_candidate_bodies(
             select article_id, order_index
             from unnest(%s::text[]) with ordinality
                 as requested(article_id, order_index)
-        ),
-        latest_brief as (
-            select distinct on (bi.article_id)
-                bi.article_id,
-                bi.final_summary
-            from brief_items bi
-            join requested req on req.article_id = bi.article_id
-            where nullif(btrim(bi.final_summary), '') is not null
-            order by bi.article_id, bi.created_at desc
         )
         select
             req.article_id,
             coalesce(
-                lb.final_summary,
-                nullif(btrim(mr.summary), ''),
+                mr.summary,
                 nullif(btrim(ns.llm_summary), ''),
                 ''
             ) as body
         from requested req
-        left join latest_brief lb on lb.article_id = req.article_id
         left join lateral (
             select candidate.summary
             from manual_reviews candidate

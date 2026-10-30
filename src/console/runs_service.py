@@ -148,18 +148,9 @@ def trigger_pipeline_run(
 def get_dashboard_snapshot(limit: int = 10) -> Dict[str, Any]:
     runs = list_pipeline_runs(limit)
     latest_run = get_latest_pipeline_run(include_steps=True)
-    latest_export = None
-    try:
-        from src.console import exports_service
-
-        latest_export = exports_service.get_latest_export(include_items=False)
-    except Exception as exc:  # pragma: no cover - dashboard should degrade gracefully
-        print(f"[console] warning: failed to load latest export: {exc}", file=sys.stderr)
-        latest_export = None
     return {
         "runs": runs,
         "latest_run": latest_run,
-        "latest_export": latest_export,
     }
 
 

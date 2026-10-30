@@ -4,8 +4,7 @@ import json
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Mapping, Optional, Sequence
+from typing import Optional
 
 import requests
 
@@ -14,7 +13,6 @@ from src.config import get_settings
 _FEISHU_API_ROOT = "https://open.feishu.cn/open-apis"
 _TOKEN_URL = f"{_FEISHU_API_ROOT}/auth/v3/tenant_access_token/internal/"
 _MESSAGE_URL = f"{_FEISHU_API_ROOT}/im/v1/messages"
-_FILE_URL = f"{_FEISHU_API_ROOT}/im/v1/files"
 _DEFAULT_TIMEOUT = 10
 _WEEKDAY_LABELS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
@@ -46,39 +44,6 @@ class _TokenCache:
 
 _token_cache: Optional[_TokenCache] = None
 _token_lock = threading.Lock()
-
-
-def notify_export_summary(
-    *,
-    tag: str,
-    output_path: Path,
-    entries: Sequence[str],
-    category_counts: Mapping[str, int],
-    preview_limit: int = 0,
-) -> bool:
-    """Send a Feishu notification for a successful export."""
-    config = _load_config()
-    if not entries:
-        raise ValueError("entries must not be empty")
-
-    message = _render_message(
-        tag=tag,
-        output_path=output_path,
-        entries=entries,
-        category_counts=category_counts,
-        preview_limit=preview_limit,
-    )
-    _send_text_message(config, message)
-
-    try:
-        file_key = _upload_file(config, output_path)
-        _send_file_message(config, file_key)
-    except FeishuRequestError:
-        raise
-    except FileNotFoundError as exc:
-        raise FeishuRequestError(f"Export file missing: {output_path}") from exc
-
-    return True
 
 
 def notify_llm_quota_alert(
@@ -198,29 +163,6 @@ def _render_console_registration_message(
     return "\n".join(lines)
 
 
-def _render_message(
-    *,
-    tag: str,
-    output_path: Path,
-    entries: Sequence[str],
-    category_counts: Mapping[str, int],
-    preview_limit: int,
-) -> str:
-    counts_line = _format_counts(category_counts)
-    preview_lines = _build_preview(entries, limit=preview_limit) if preview_limit > 0 else []
-
-    lines: list[str] = [f"Edu News Brief - {tag}"]
-    if counts_line:
-        lines.append(counts_line)
-    lines.append("")
-    if preview_lines:
-        lines.extend(preview_lines)
-        lines.append("")
-    lines.append(f"Full file: {output_path}")
-
-    return _truncate("\n".join(lines), 1800)
-
-
 def _load_config() -> _FeishuConfig:
     settings = get_settings()
     app_id = settings.feishu_app_id
@@ -237,69 +179,6 @@ def _load_config() -> _FeishuConfig:
         receive_id=receive_id,
         receive_id_type=receive_id_type,
     )
-
-
-
-
-def _build_preview(entries: Sequence[str], *, limit: int) -> list[str]:
-    lines: list[str] = []
-    for entry in entries[:limit]:
-        normalized = entry.replace("\n", " ")
-        normalized = " ".join(normalized.split())
-        lines.append(f"- {_truncate(normalized, 200)}")
-    if len(entries) > limit:
-        lines.append(f"... remaining {len(entries) - limit} entries in file")
-    return lines
-
-
-
-
-
-def _format_counts(counts: Mapping[str, int]) -> str:
-    filtered = [f"{name}:{total}" for name, total in counts.items() if total]
-    return "Category counts: " + ", ".join(filtered) if filtered else ""
-
-
-
-
-def _upload_file(config: _FeishuConfig, file_path: Path) -> str:
-    if not file_path.exists():
-        raise FileNotFoundError(str(file_path))
-
-    token = _get_token(config)
-    headers = {
-        "Authorization": f"Bearer {token}",
-    }
-    data = {
-        "file_type": "stream",
-        "file_name": file_path.name,
-    }
-    with file_path.open("rb") as handle:
-        files = {"file": (file_path.name, handle, "text/plain; charset=utf-8")}
-        try:
-            response = requests.post(
-                _FILE_URL,
-                headers=headers,
-                data=data,
-                files=files,
-                timeout=_DEFAULT_TIMEOUT,
-            )
-        except requests.RequestException as exc:  # pragma: no cover - network failure
-            raise FeishuRequestError(f"Failed to upload file to Feishu: {exc}") from exc
-
-    try:
-        data = response.json()
-    except ValueError as exc:  # pragma: no cover - defensive
-        raise FeishuRequestError("Feishu file upload response was not valid JSON") from exc
-
-    if data.get("code") != 0:
-        msg = data.get("msg") or data
-        raise FeishuRequestError(f"Feishu file upload error: {msg}")
-
-    file_key = data.get("data", {}).get("file_key")
-    if not file_key:
-        raise FeishuRequestError("Feishu file upload did not return file_key")
-    return file_key
 
 
 def _fetch_tenant_access_token(config: _FeishuConfig) -> _TokenCache:
@@ -328,41 +207,6 @@ def _get_token(config: _FeishuConfig) -> str:
         if _token_cache is None or not _token_cache.is_valid():
             _token_cache = _fetch_tenant_access_token(config)
         return _token_cache.token
-
-
-
-
-def _send_file_message(config: _FeishuConfig, file_key: str) -> None:
-    token = _get_token(config)
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json; charset=utf-8",
-    }
-    params = {"receive_id_type": config.receive_id_type}
-    payload = {
-        "receive_id": config.receive_id,
-        "msg_type": "file",
-        "content": json.dumps({"file_key": file_key}),
-    }
-    try:
-        response = requests.post(
-            _MESSAGE_URL,
-            headers=headers,
-            params=params,
-            json=payload,
-            timeout=_DEFAULT_TIMEOUT,
-        )
-    except requests.RequestException as exc:  # pragma: no cover - network failure
-        raise FeishuRequestError(f"Failed to send Feishu file message: {exc}") from exc
-
-    try:
-        data = response.json()
-    except ValueError as exc:  # pragma: no cover
-        raise FeishuRequestError("Feishu file message response was not valid JSON") from exc
-
-    if data.get("code") != 0:
-        msg = data.get("msg") or data
-        raise FeishuRequestError(f"Feishu file message API error: {msg}")
 
 
 def _send_text_message(config: _FeishuConfig, message: str) -> None:
@@ -409,7 +253,6 @@ __all__ = [
     "FeishuRequestError",
     "is_configured",
     "notify_console_registration",
-    "notify_export_summary",
     "notify_llm_quota_alert",
     "send_text_to_chat",
 ]

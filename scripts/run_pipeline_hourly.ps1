@@ -39,7 +39,7 @@ if (-not (Test-Path $LogDirectory)) {
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $logFile = Join-Path $LogDirectory "pipeline_hourly_$timestamp.log"
 
-# Run through routing, filtering, and submission dedup; export remains separate.
+# Run through routing, filtering, and submission dedup.
 # Prefer module execution so project root stays on sys.path
 $arguments = @(
     "-m",

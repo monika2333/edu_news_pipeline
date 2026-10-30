@@ -1,12 +1,12 @@
 # Edu News Pipeline
 
-面向教育新闻的自动化采集、评分、摘要与导出流水线，并提供 Web 控制台进行人工筛选与复核。
+面向教育新闻的自动化采集、评分、摘要流水线，并提供 Web 控制台进行人工筛选与复核。
 
 ## 功能总览
-- **流水线**：抓取 → 去重 → 评分 → 摘要 → 情感/来源补充 → 北京/外地分流与重要性评分 → 与历史报送查重 → 导出简报。
+- **流水线**：抓取 → 去重 → 评分 → 摘要 → 情感/来源补充 → 北京/外地分流与重要性评分 → 与历史报送查重。
 - **Web 控制台**：管理员使用 `/manual_filter` 全量复核，值班编辑使用 `/duty` 处理本人班次，用户与排班在 `/admin` 管理。
 - **报送存档与查重**：`/submission-archive` 录入已报送稿件并回链到系统内新闻；新入库的新闻会与存档比对，在复核界面提示"已报过"。
-- **导出/预览**：支持在审阅页按综报/晚报预览文本并归档为已导出；流水线 `export` 命令仍可生成 TXT 简报并推送飞书。
+- **预览/归档**：支持在审阅页按综报/晚报预览文本并归档为已导出。
 
 ## 快速开始
 1) 安装依赖
@@ -36,7 +36,6 @@ python -m src.cli.main enrich-summary
 python -m src.cli.main geo-classify
 python -m src.cli.main external-filter
 python -m src.cli.main submission-dedup
-python -m src.cli.main export
 ```
 可用 `-h` 查看每个步骤的参数。
 
@@ -56,7 +55,6 @@ python -m src.cli.main export
 | `geo-classify` | 判定北京/外地 |
 | `external-filter` | 外地新闻的重要性评分 |
 | `submission-dedup` | 与近期报送存档比对查重 |
-| `export` | 生成 TXT 简报并推送飞书 |
 
 ### 计划任务后台调用
 

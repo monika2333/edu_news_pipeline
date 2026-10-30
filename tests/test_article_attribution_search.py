@@ -68,8 +68,6 @@ def _create_temp_search_tables(cur: psycopg.Cursor) -> None:
         "news_summaries",
         "manual_reviews",
         "shift_reviews",
-        "brief_items",
-        "brief_batches",
         "console_users",
         "submitted_reports",
         "submitted_report_items",
@@ -387,7 +385,6 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
     )
     user_id = UUID("11111111-1111-1111-1111-111111111111")
     shift_id = UUID("22222222-2222-2222-2222-222222222222")
-    batch_id = UUID("33333333-3333-3333-3333-333333333333")
     cur.execute(
         """
         INSERT INTO console_users (
@@ -453,17 +450,6 @@ def _seed_attribution_scenarios(cur: psycopg.Cursor) -> None:
         VALUES (%s, 'attr-discarded', %s, %s, 'discarded', %s)
         """,
         (shift_id, user_id, user_id, now - timedelta(minutes=3)),
-    )
-    cur.execute(
-        "INSERT INTO brief_batches (id, report_date) VALUES (%s, %s)",
-        (batch_id, date(2026, 8, 12)),
-    )
-    cur.execute(
-        """
-        INSERT INTO brief_items (brief_batch_id, article_id)
-        VALUES (%s, 'attr-discarded')
-        """,
-        (batch_id,),
     )
     # 报送存档回链：attr-selected 有一条已确认回链（matched），
     # attr-discarded 只有待确认回链（pending），不算「有存档」。

@@ -103,6 +103,18 @@ def test_removed_console_pages_are_not_registered() -> None:
     assert client.get("/api/admin/duty-summary/uncovered").status_code == 404
 
 
+def test_exports_api_is_no_longer_mounted() -> None:
+    """TXT 简报导出已整体移除：管理员请求旧接口必须 404。
+
+    对照组取一个仍然挂载的管理员接口（/runs），证明 404 不是
+    整体鉴权失败造成的。
+    """
+    client = _build_client()
+
+    assert client.get("/exports/latest").status_code == 404
+    assert client.get("/runs?limit=1").status_code == 200
+
+
 def test_favicon_is_served_from_the_static_assets() -> None:
     app = create_app()
 

@@ -13,7 +13,6 @@ from psycopg.rows import dict_row
 from src.adapters import (
     db_postgres_app_config as app_config,
     db_postgres_audit as audit,
-    db_postgres_export as export,
     db_postgres_ingest as ingest,
     db_postgres_manual_reviews as manual_reviews,
     db_postgres_news_summaries as news_summaries,
@@ -95,7 +94,6 @@ class PostgresAdapter:
         # 用一把可重入锁把连接的整个使用期串行化。
         self._conn_lock = threading.RLock()
         self.app_config = app_config.AppConfigNamespace(self)
-        self.export = export.ExportNamespace(self)
         self.ingest = ingest.IngestNamespace(self)
         self.manual_reviews = manual_reviews.ManualReviewsNamespace(self)
         self.news_summaries = news_summaries.NewsSummariesNamespace(self)

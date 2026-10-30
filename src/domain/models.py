@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Dict, Optional, Sequence, TypedDict
 
 
@@ -80,44 +79,6 @@ class PrimaryArticleForSummarizing:
     score_details: Dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(slots=True)
-class ExportCandidate:
-    filtered_article_id: str
-    raw_article_id: str
-    article_hash: str
-    title: Optional[str]
-    summary: str
-    content: str
-    source: Optional[str]
-    llm_source: Optional[str]
-    score: float
-    original_url: Optional[str]
-    published_at: Optional[str]
-    sentiment_label: Optional[str] = None
-    sentiment_confidence: Optional[float] = None
-    is_beijing_related: Optional[bool] = None
-    raw_relevance_score: Optional[float] = None
-    keyword_bonus_score: Optional[float] = None
-    score_details: Dict[str, Any] = field(default_factory=dict)
-    external_importance_score: Optional[float] = None
-    external_importance_checked_at: Optional[str] = None
-    manual_rank: Optional[float] = None
-
-
-@dataclass(slots=True)
-class BriefExportRecord:
-    article_id: str
-    section: str
-    title: Optional[str]
-    summary: str
-    score: Optional[float]
-    original_url: Optional[str]
-    published_at: Optional[str]
-    source: Optional[str]
-    generated_at: Optional[datetime] = None
-    keywords: Sequence[str] | None = None
-
-
 __all__ = [
     "ArticleInput",
     "MissingContentTarget",
@@ -125,6 +86,4 @@ __all__ = [
     "SummaryForScoring",
     "PrimaryArticleForScoring",
     "PrimaryArticleForSummarizing",
-    "ExportCandidate",
-    "BriefExportRecord",
 ]

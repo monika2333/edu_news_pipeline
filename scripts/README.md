@@ -1,15 +1,5 @@
 Scripts layout
 
-- run_export.ps1
-  - Runs `python -m src.cli.main export` from the repo root.
-  - Writes logs to `logs/` with a timestamped filename.
-
-- tasks/schedule_export_tasks.ps1
-  - Registers two Windows Scheduled Tasks at 15:00 and 20:00 daily.
-  - Params:
-    - `-StartDate <yyyy-MM-dd>`: first-run date (defaults to today).
-    - `-Remove`: unregister the tasks.
-
 - run_optimize_prompts.ps1
   - Runs `python -m src.cli.main optimize-prompts` from the repo root.
   - Writes timestamped logs to `logs/optimize_prompts_*.log`; `-DryRun` only
@@ -66,5 +56,4 @@ Scripts layout
     normalizer tests afterwards. The rules live in `db/normalize_schema.py`.
 
 Notes
-- Do not move or delete `run_export.ps1` unless you also update existing Scheduled Tasks, which point to its absolute path.
 - If you move the repo folder, re-register all tasks so the absolute paths are updated.

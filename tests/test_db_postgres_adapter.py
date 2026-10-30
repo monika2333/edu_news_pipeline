@@ -116,21 +116,6 @@ def test_postgres_adapter_core_roundtrip() -> None:
         assert summary_content is not None
         assert summary_content["article_id"] == article_id
 
-        export_candidates = adapter.export.fetch_candidates(min_score=0.5)
-        matched_candidates = [candidate for candidate in export_candidates if candidate.filtered_article_id == article_id]
-        assert matched_candidates
-        assert matched_candidates[0].is_beijing_related is True
-
-        tag = f"geo-{uuid.uuid4()}"
-        adapter.export.record(tag, [(matched_candidates[0], "jingnei")], output_path="demo/path.txt")
-        history_ids, batch_id = adapter.export.get_history(tag)
-        assert batch_id is not None
-        assert article_id in history_ids
-        items = adapter.export.fetch_brief_items_by_batch(batch_id)
-        assert items
-        metadata = items[0].get("metadata") or {}
-        assert metadata.get("is_beijing_related") is True
-
         adapter.process.record_pipeline_run_start(
             run_id=run_id,
             started_at=fetched_at,
@@ -175,7 +160,5 @@ def test_postgres_adapter_core_roundtrip() -> None:
                 cur.execute("DELETE FROM pipeline_runs WHERE run_id = %s", (run_id,))
                 cur.execute("DELETE FROM news_summaries WHERE article_id = %s", (article_id,))
                 cur.execute("DELETE FROM raw_articles WHERE article_id = %s", (article_id,))
-                cur.execute("DELETE FROM brief_items WHERE article_id = %s", (article_id,))
-                cur.execute("DELETE FROM brief_batches WHERE generated_by LIKE %s", ("geo-%",))
 
     _reset_adapter_cache()

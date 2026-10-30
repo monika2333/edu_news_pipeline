@@ -5,31 +5,47 @@
 create extension if not exists pg_trgm with schema public;
 create extension if not exists pgcrypto with schema public;
 
-create table if not exists public.brief_batches (
-    id uuid primary key default gen_random_uuid(),
-    report_date date not null,
-    sequence_no integer not null default 1,
-    generated_at timestamptz not null default now(),
-    generated_by text,
-    export_payload jsonb,
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now(),
-    unique (report_date, sequence_no)
-);
-
-create table if not exists public.brief_items (
-    id uuid primary key default gen_random_uuid(),
-    brief_batch_id uuid not null references public.brief_batches(id) on delete cascade,
-    article_id text,
-    section text,
-    order_index integer not null default 0,
-    final_summary text,
-    approved_by text,
-    approved_at timestamptz,
-    metadata jsonb,
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now()
-);
+-- brief_batches / brief_items 曾在此无条件补建。TXT 简报导出移除后，这两张表
+-- 由 20261030120000_drop_brief_tables.sql 删除，schema.sql 不再包含它们；给
+-- 这样的库重放 baseline 不能把表建回来，因此只在「远古库」上补建：连
+-- submitted_reports（20260728120000 引入）都没有的库才可能缺 brief 表——真实
+-- 的 pre-Dbmate 老库本就有这两张表（此处只为防缺），更新的库要么本就有，
+-- 要么由 init 迁移（20250926172450）建出、最终再被 drop 迁移删掉。
+do $baseline$
+begin
+    if to_regclass('public.brief_batches') is null
+       and to_regclass('public.submitted_reports') is null then
+        execute $table$
+            create table public.brief_batches (
+                id uuid primary key default gen_random_uuid(),
+                report_date date not null,
+                sequence_no integer not null default 1,
+                generated_at timestamptz not null default now(),
+                generated_by text,
+                export_payload jsonb,
+                created_at timestamptz not null default now(),
+                updated_at timestamptz not null default now(),
+                unique (report_date, sequence_no)
+            )
+        $table$;
+        execute $table$
+            create table public.brief_items (
+                id uuid primary key default gen_random_uuid(),
+                brief_batch_id uuid not null references public.brief_batches(id) on delete cascade,
+                article_id text,
+                section text,
+                order_index integer not null default 0,
+                final_summary text,
+                approved_by text,
+                approved_at timestamptz,
+                metadata jsonb,
+                created_at timestamptz not null default now(),
+                updated_at timestamptz not null default now()
+            )
+        $table$;
+    end if;
+end
+$baseline$;
 
 do $baseline$
 begin
@@ -141,23 +157,26 @@ $baseline$;
 
 do $baseline$
 begin
-    if not exists (
-        select 1
-        from pg_catalog.pg_trigger
-        where tgrelid = to_regclass('public.brief_batches')
-          and tgname = 'brief_batches_set_updated_at'
-          and not tgisinternal
-    ) then
+    -- brief 表只在上面补建出的远古库上才存在；表不在时跳过，避免给已删表的库重建触发器。
+    if to_regclass('public.brief_batches') is not null
+       and not exists (
+           select 1
+           from pg_catalog.pg_trigger
+           where tgrelid = to_regclass('public.brief_batches')
+             and tgname = 'brief_batches_set_updated_at'
+             and not tgisinternal
+       ) then
         execute 'create trigger brief_batches_set_updated_at before update on public.brief_batches for each row execute function public.set_updated_at()';
     end if;
 
-    if not exists (
-        select 1
-        from pg_catalog.pg_trigger
-        where tgrelid = to_regclass('public.brief_items')
-          and tgname = 'brief_items_set_updated_at'
-          and not tgisinternal
-    ) then
+    if to_regclass('public.brief_items') is not null
+       and not exists (
+           select 1
+           from pg_catalog.pg_trigger
+           where tgrelid = to_regclass('public.brief_items')
+             and tgname = 'brief_items_set_updated_at'
+             and not tgisinternal
+       ) then
         execute 'create trigger brief_items_set_updated_at before update on public.brief_items for each row execute function public.set_updated_at()';
     end if;
 

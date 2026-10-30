@@ -3,7 +3,6 @@
 // 由 _search_drawer.html 引入，运行期依赖 utils.js 的
 // createEl/clearEl/formatLocalDateTime/formatScore。
 
-// 链上节点：brief_items 只是自动导出的初稿，不代表筛选结果，不再作为链上节点。
 const ATTRIBUTION_CHAIN_STEPS = [
     { key: 'keyword', label: '初筛' },
     { key: 'relevance', label: '相关性' },

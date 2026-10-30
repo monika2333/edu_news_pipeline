@@ -18,7 +18,6 @@ from src.business_config import (
 )
 from src.workers.crawl_sources import run as run_crawl
 from src.workers.enrich_summary import run as run_enrich_summary
-from src.workers.export_brief import run as run_export
 from src.workers.external_filter import run as run_external_filter
 from src.workers.geo_classify import run as run_geo_classify
 from src.workers.hash_primary import run as run_hash_primary
@@ -36,7 +35,6 @@ DEFAULT_PIPELINE: Sequence[str] = (
     "geo-classify",
     "external-filter",
     "submission-dedup",
-    "export",
 )
 
 
@@ -223,13 +221,6 @@ def _run_submission_dedup_step() -> Dict[str, str]:
     }
 
 
-def _run_export_step() -> Dict[str, str]:
-    output_path = run_export()
-    if output_path is None:
-        return {}
-    return {"export_path": str(output_path)}
-
-
 STEP_REGISTRY: Dict[str, StepHandler] = {
     "crawl": _run_crawl_step,
     "hash-primary": _run_hash_primary_step,
@@ -239,7 +230,6 @@ STEP_REGISTRY: Dict[str, StepHandler] = {
     "score": _run_score_step,
     "external-filter": _run_external_filter_step,
     "submission-dedup": _run_submission_dedup_step,
-    "export": _run_export_step,
 }
 
 
@@ -363,7 +353,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         choices=list(STEP_REGISTRY.keys()),
         help=(
             "Explicit step order to run (default: crawl hash-primary score summarize "
-            "enrich-summary geo-classify external-filter submission-dedup export)"
+            "enrich-summary geo-classify external-filter submission-dedup)"
         ),
     )
     parser.add_argument(

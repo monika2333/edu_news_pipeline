@@ -108,41 +108,6 @@ CREATE TABLE public.app_settings (
 
 
 --
--- Name: brief_batches; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.brief_batches (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    report_date date NOT NULL,
-    sequence_no integer DEFAULT 1 NOT NULL,
-    generated_at timestamp with time zone DEFAULT now() NOT NULL,
-    generated_by text,
-    export_payload jsonb,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: brief_items; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.brief_items (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    brief_batch_id uuid NOT NULL,
-    article_id text,
-    section text,
-    order_index integer DEFAULT 0 NOT NULL,
-    final_summary text,
-    approved_by text,
-    approved_at timestamp with time zone,
-    metadata jsonb,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
 -- Name: console_user_sessions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -840,30 +805,6 @@ ALTER TABLE ONLY public.app_settings
 
 
 --
--- Name: brief_batches brief_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.brief_batches
-    ADD CONSTRAINT brief_batches_pkey PRIMARY KEY (id);
-
-
---
--- Name: brief_batches brief_batches_report_date_sequence_no_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.brief_batches
-    ADD CONSTRAINT brief_batches_report_date_sequence_no_key UNIQUE (report_date, sequence_no);
-
-
---
--- Name: brief_items brief_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.brief_items
-    ADD CONSTRAINT brief_items_pkey PRIMARY KEY (id);
-
-
---
 -- Name: console_user_sessions console_user_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1157,27 +1098,6 @@ ALTER TABLE ONLY public.submitted_report_items
 
 ALTER TABLE ONLY public.submitted_reports
     ADD CONSTRAINT submitted_reports_pkey PRIMARY KEY (id);
-
-
---
--- Name: brief_items_article_created_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX brief_items_article_created_at_idx ON public.brief_items USING btree (article_id, created_at DESC);
-
-
---
--- Name: brief_items_batch_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX brief_items_batch_idx ON public.brief_items USING btree (brief_batch_id);
-
-
---
--- Name: brief_items_section_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX brief_items_section_idx ON public.brief_items USING btree (section);
 
 
 --
@@ -1615,20 +1535,6 @@ CREATE INDEX submitted_reports_type_date_idx ON public.submitted_reports USING b
 
 
 --
--- Name: brief_batches brief_batches_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER brief_batches_set_updated_at BEFORE UPDATE ON public.brief_batches FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: brief_items brief_items_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER brief_items_set_updated_at BEFORE UPDATE ON public.brief_items FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
 -- Name: filtered_articles filtered_articles_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -1669,14 +1575,6 @@ CREATE TRIGGER raw_articles_set_updated_at BEFORE UPDATE ON public.raw_articles 
 
 ALTER TABLE ONLY public.app_settings
     ADD CONSTRAINT app_settings_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.console_users(id) ON DELETE RESTRICT;
-
-
---
--- Name: brief_items brief_items_brief_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.brief_items
-    ADD CONSTRAINT brief_items_brief_batch_id_fkey FOREIGN KEY (brief_batch_id) REFERENCES public.brief_batches(id) ON DELETE CASCADE;
 
 
 --
@@ -2040,4 +1938,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261021150000'),
     ('20261028180000'),
     ('20261029200000'),
-    ('20261029201000');
+    ('20261029201000'),
+    ('20261030120000');

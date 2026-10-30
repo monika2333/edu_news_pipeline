@@ -621,7 +621,6 @@ def test_fetch_link_candidate_titles_only_reads_news_summaries() -> None:
     query, params = cursor.calls[0]
     assert "from news_summaries ns" in query
     assert "manual_export_items" not in query
-    assert "brief_items" not in query
     assert params == (date(2026, 7, 29), 3, date(2026, 7, 29))
 
 
@@ -629,7 +628,7 @@ def test_fetch_link_candidate_bodies_uses_one_batch_query() -> None:
     cursor = FakeCursor(
         [
             {"article_id": "article-1", "body": "人工摘要"},
-            {"article_id": "article-2", "body": "简报摘要"},
+            {"article_id": "article-2", "body": "自动摘要"},
         ]
     )
 
@@ -642,8 +641,7 @@ def test_fetch_link_candidate_bodies_uses_one_batch_query() -> None:
     assert len(cursor.calls) == 1
     query, params = cursor.calls[0]
     assert "manual_export_items" not in query
-    assert "select distinct on (bi.article_id)" in query
-    assert query.index("lb.final_summary") < query.index("mr.summary")
+    assert "latest_brief" not in query
     assert query.index("mr.summary") < query.index("ns.llm_summary")
     assert params == (["article-1", "article-2"],)
 
@@ -658,6 +656,114 @@ def test_fetch_link_candidate_bodies_skips_empty_batch() -> None:
 
     assert rows == []
     assert cursor.calls == []
+
+
+_LINK_BODY_OWNER_ID = "33333333-3333-3333-3333-333333333333"
+
+
+def _create_temp_link_body_tables(cur: psycopg.Cursor) -> None:
+    for table in ("news_summaries", "manual_reviews"):
+        cur.execute(
+            f"CREATE TEMP TABLE {table} "
+            f"(LIKE public.{table} INCLUDING DEFAULTS) ON COMMIT DROP"
+        )
+
+
+def _seed_link_body_summary(cur: psycopg.Cursor, article_id: str, llm_summary: str) -> None:
+    cur.execute(
+        "INSERT INTO news_summaries (article_id, llm_summary) VALUES (%s, %s)",
+        (article_id, llm_summary),
+    )
+
+
+def _seed_link_body_manual_review(
+    cur: psycopg.Cursor,
+    article_id: str,
+    *,
+    status: str,
+    summary: str,
+    decided_at: Optional[datetime],
+    updated_at: datetime,
+) -> None:
+    cur.execute(
+        """
+        INSERT INTO manual_reviews (
+            owner_user_id, article_id, status, summary, decided_at, updated_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s)
+        """,
+        (_LINK_BODY_OWNER_ID, article_id, status, summary, decided_at, updated_at),
+    )
+
+
+def test_fetch_link_candidate_bodies_prefers_manual_summary_with_real_sql() -> None:
+    """回链正文取值优先级：manual_reviews.summary > news_summaries.llm_summary > ''。
+
+    D 行的两条人工记录特意让 exported 行 decided_at 为空、updated_at 更旧：
+    删掉 (candidate.status = 'exported') desc 排序项时，较新的 selected 行
+    会经 updated_at 反超，用例随之失败。
+    """
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            _create_temp_link_body_tables(cur)
+            _seed_link_body_summary(cur, "link-body-a", "自动摘要A")
+            _seed_link_body_manual_review(
+                cur,
+                "link-body-a",
+                status="selected",
+                summary="人工摘要A",
+                decided_at=now - timedelta(minutes=2),
+                updated_at=now - timedelta(minutes=2),
+            )
+            _seed_link_body_summary(cur, "link-body-b", "自动摘要B")
+            _seed_link_body_summary(cur, "link-body-c", "   ")
+            _seed_link_body_manual_review(
+                cur,
+                "link-body-c",
+                status="selected",
+                summary="",
+                decided_at=now - timedelta(minutes=1),
+                updated_at=now - timedelta(minutes=1),
+            )
+            _seed_link_body_summary(cur, "link-body-d", "自动摘要D")
+            _seed_link_body_manual_review(
+                cur,
+                "link-body-d",
+                status="exported",
+                summary="人工摘要D-archived",
+                decided_at=None,
+                updated_at=now - timedelta(minutes=30),
+            )
+            _seed_link_body_manual_review(
+                cur,
+                "link-body-d",
+                status="selected",
+                summary="人工摘要D-newer",
+                decided_at=now - timedelta(minutes=5),
+                updated_at=now - timedelta(minutes=5),
+            )
+
+            rows = db_postgres_submission_archive.fetch_link_candidate_bodies(
+                cur,
+                article_ids=["link-body-c", "link-body-a", "link-body-d", "link-body-b"],
+            )
+
+    assert [(row["article_id"], row["body"]) for row in rows] == [
+        ("link-body-c", ""),
+        ("link-body-a", "人工摘要A"),
+        ("link-body-d", "人工摘要D-archived"),
+        ("link-body-b", "自动摘要B"),
+    ]
 
 
 def test_fetch_manual_link_candidates_uses_inclusive_date_boundaries() -> None:

@@ -97,6 +97,16 @@ def _rows(model: str = "model-a") -> list[dict[str, Any]]:
     ]
 
 
+def test_export_step_is_removed_from_default_pipeline_and_registry() -> None:
+    assert "export" not in runner.DEFAULT_PIPELINE
+    assert "export" not in runner.STEP_REGISTRY
+
+
+def test_export_step_is_rejected_by_cli_args() -> None:
+    with pytest.raises(SystemExit):
+        runner._parse_args(["--steps", "export"])
+
+
 def test_m2_pipeline_freezes_business_config_for_the_whole_run(monkeypatch) -> None:
     rows = _rows()
     adapter = _adapter(rows)

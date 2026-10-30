@@ -27,13 +27,13 @@ primary_articles ──────────────────► score
 news_summaries ────────────────────► summarize / enrich-summary
      │                                geo-classify / external-filter
      │
-     ├──────────────┬─────────────────┬─────────────────┐
-     │              │                 │                 │
-     ▼              ▼                 ▼                 ▼
-manual_reviews   shift_reviews    submission_        brief_items /
-（管理员复核）    （值班编辑复核）   duplicate_matches  brief_batches
-     │              │              （与历史报送比对）  （简报初稿，自动
-     │              │ 管理员采纳                        生成，不经人工）
+     ├──────────────┬─────────────────┐
+     │              │                 │
+     ▼              ▼                 ▼
+manual_reviews   shift_reviews    submission_
+（管理员复核）    （值班编辑复核）   duplicate_matches
+     │              │              （与历史报送比对）
+     │              │ 管理员采纳
      │◄─────────────┘
      │
      │ 人工采纳、编辑、定稿
@@ -217,16 +217,6 @@ T 至少修好一半且至少 1 条、R 改坏条数 ≤ max(1, ⌊|R|×10%⌋) 
 
 分两条并行路径，见第三节。
 
-### 阶段 6：导出（`export`）
-
-**写入**：`brief_batches`、`brief_items`
-
-取数条件为 `news_summaries.status = 'ready_for_export'` 且 `summary_status = 'completed'` 且 `score >= min_score`（默认读取 `SCORE_PROMOTION_THRESHOLD`），按报别生成 TXT 简报并推送飞书。
-
-该查询**不涉及 `manual_reviews` 或 `shift_reviews`**：凡是过阈值的文章都会进入 `brief_items`，与人工是否采纳无关。这条路径产出的是供人工参考的初稿，不是最终报送内容。
-
-`manual_reviews.status = 'exported'` 由控制台的「归档」操作写入（`POST /api/manual_filter/archive` → `manual_filter_admin_service.archive_items`），是管理员的手动动作，与本阶段的导出脚本无关。
-
 ---
 
 ## 三、双轨复核模型
@@ -239,7 +229,7 @@ T 至少修好一半且至少 1 条、R 改坏条数 ≤ max(1, ⌊|R|×10%⌋) 
 
 - 每位管理员对每篇文章各有一行，归属由 `owner_user_id` 标识；唯一约束为 `owner_user_id + article_id`
 - 外部重要性过滤通过时，为当时所有在职管理员（`role = 'admin' AND is_active AND deleted_at IS NULL`）各预写一行；新管理员只接收账号创建后的新闻，不回填历史
-- 状态：`pending` / `selected` / `backup` / `discarded` / `exported`
+- 状态：`pending` / `selected` / `backup` / `discarded` / `exported`。`exported` 由控制台「归档」操作写入（`POST /api/manual_filter/archive` → `manual_filter_admin_service.archive_items`），表示管理员已把该条定稿报送，是人工动作；这个名字是早期自动导出脚本的历史残留，与任何自动导出行为无关，不要按字面意思清理或改写它
 - `report_type` 只有 `zongbao` / `wanbao`，且**只在采纳时才有意义**——`pending` 状态下这个值不代表任何东西
 - `version` 用于乐观锁，防止同一管理员的并发请求覆盖自己的新决定
 - 人工摘要/来源（`summary` / `manual_llm_source`）只在用户实际编辑时写入：前端以「最近一次被服务端确认的值」为基准做改动判定，决定操作不再顺带把界面显示值整份写成人工值；历史数据中已有的此类副本不做清理
@@ -292,7 +282,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 1. 管理员在 `/submission-archive` 粘贴一份已经报出去的稿件，或白名单用户将格式完整的稿件私聊发送给飞书机器人 → `submitted_reports`
 2. 系统解析拆分成条目 → `submitted_report_items`
-3. 后台子进程做**自动回链**：把每个条目匹配回系统里的 `news_summaries`（标题相似度 + 正文相似度）
+3. 后台子进程做**自动回链**：把每个条目匹配回系统里的 `news_summaries`（标题相似度 + 正文相似度）。正文候选取值优先级为 `manual_reviews.summary`（多条时 `status = 'exported'` 的已归档记录优先，再按 `decided_at`、`updated_at` 取最新）→ `news_summaries.llm_summary` → `''`
 4. 编辑可以确认自动候选，也可以围绕报告 `compiled_date` 检索 `news_summaries.title` / `llm_summary`，人工绑定或解绑条目
 5. 自动与人工结果都写回 `submitted_report_items`；人工绑定只改 `article_id`、`link_status`、`link_decided_by`、`link_matched_at`，解绑将状态恢复为 `unmatched`
 6. 对反馈报告，在回链完成后把每条反馈与其 `compiled_date`（取材日）向前 7 天至取材日当天（闭区间）的综报/晚报条目逐级比对，结果写入 `submission_item_duplicate_matches`
@@ -405,17 +395,16 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | `duty_schedules` | 七天轮值模板，用于生成班次 | 权威 |
 | `manual_clusters` | 聚类结果**缓存** | **缓存，可随时清空重建** |
 
-### 导出与报送
+### 报送存档
 
 | 表 | 职责 | 权威性 |
 |---|---|---|
-| `brief_batches` / `brief_items` | 自动生成的简报初稿批次与条目 | 对「导出事件本身」权威；**不代表人工采纳，也不代表已报送** |
 | `submitted_reports` / `submitted_report_items` | 人工录入的已报送稿件 | 权威 |
 | `submission_duplicate_matches` | 查重结果 | 派生，可重算 |
 | `submission_item_duplicate_matches` | 反馈条目与更早综报/晚报条目的已报送判定 | 派生，可重算 |
 
-> **判断某篇是否报送过，一律以 `submitted_report_items` 为准，不得依据 `brief_items`。**
-> `brief_items` 只说明这篇进入过自动初稿，所有过阈值的文章都会进入；实际报送稿由人工定稿后发出，系统内唯一的记录来源是人工录入的报送存档。
+> **判断某篇是否报送过，一律以 `submitted_report_items` 为准。**
+> 实际报送稿由人工定稿后发出，系统内唯一的记录来源是人工录入的报送存档。
 
 ### 辅助
 

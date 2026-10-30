@@ -19,7 +19,6 @@ from tests.conftest import make_endpoint_config
         "enrich-summary",
         "geo-classify",
         "score",
-        "export",
         "refresh-manual-clusters",
         "clear-review-buckets",
         "optimize-prompts",
@@ -43,7 +42,6 @@ def test_cli_help_available() -> None:
         "enrich-summary",
         "geo-classify",
         "score",
-        "export",
         "refresh-manual-clusters",
         "clear-review-buckets",
         "optimize-prompts",
@@ -53,18 +51,9 @@ def test_cli_help_available() -> None:
         assert keyword in help_text
 
 
-def test_export_min_score_defaults_to_promotion_threshold(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        cli_main,
-        "get_settings",
-        lambda: SimpleNamespace(score_promotion_threshold=30),
-    )
-
-    args = build_parser().parse_args(["export"])
-
-    assert args.min_score == 30
+def test_export_subcommand_is_removed() -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["export"])
 
 
 def test_feedback_dedup_cli_supports_single_report_or_all() -> None:
@@ -79,20 +68,6 @@ def test_feedback_dedup_cli_supports_single_report_or_all() -> None:
     assert single.all_reports is False
     assert all_reports.report_id is None
     assert all_reports.all_reports is True
-
-
-def test_export_min_score_explicit_value_overrides_settings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        cli_main,
-        "get_settings",
-        lambda: SimpleNamespace(score_promotion_threshold=30),
-    )
-
-    args = build_parser().parse_args(["export", "--min-score", "45"])
-
-    assert args.min_score == 45
 
 
 def test_refresh_manual_clusters_rejects_report_type() -> None:

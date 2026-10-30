@@ -7,7 +7,6 @@ import os
 import sys
 import threading
 import time
-from pathlib import Path
 from typing import Mapping
 
 from src.business_config import (
@@ -15,7 +14,6 @@ from src.business_config import (
     load_business_config,
     warn_legacy_config,
 )
-from src.config import get_settings
 from src.domain.prompt import SCORING_PROMPT_KEYS
 from src.workers.crawl_sources import run as crawl_sources
 from src.workers.enrich_summary import run as enrich_summaries
@@ -140,22 +138,6 @@ def _add_submission_feedback_dedup(
         dest="all_reports",
         help="Recompute all feedback reports",
     )
-
-
-def _add_export(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("export", help="Export high scoring summaries")
-    parser.add_argument("--limit", type=_positive_int, default=None, help="Max number of summaries to export")
-    parser.add_argument("--date", type=str, default=None, help="Report date (YYYY-MM-DD). Defaults to today")
-    parser.add_argument("--report-tag", type=str, default=None, help="Explicit report tag identifier")
-    parser.add_argument(
-        "--min-score",
-        type=_positive_int,
-        default=get_settings().score_promotion_threshold,
-        help="Minimum score to include (defaults to SCORE_PROMOTION_THRESHOLD)",
-    )
-    parser.add_argument("--skip-exported", action=argparse.BooleanOptionalAction, default=True, help="Skip items already exported in previous runs")
-    parser.add_argument("--record-history", action=argparse.BooleanOptionalAction, default=True, help="Persist export metadata back to the database")
-    parser.add_argument("--output", type=Path, default=None, help="Override output file path")
 
 
 def _add_geo_tag(subparsers: argparse._SubParsersAction) -> None:
@@ -525,7 +507,6 @@ def build_parser() -> argparse.ArgumentParser:
     _add_submission_dedup(subparsers)
     _add_backfill_submission_embeddings(subparsers)
     _add_submission_feedback_dedup(subparsers)
-    _add_export(subparsers)
     _add_geo_tag(subparsers)
     _add_create_console_user(subparsers)
     _add_cleanup_console_sessions(subparsers)
@@ -574,18 +555,6 @@ def _run_command(args: argparse.Namespace) -> int:
         print(
             "Recomputed feedback prior matches: "
             f"reports={result['reports']}, matches={result['matches']}"
-        )
-    elif command == "export":
-        from src.workers.export_brief import run as export_brief
-
-        export_brief(
-            limit=args.limit,
-            date=args.date,
-            min_score=args.min_score,
-            report_tag=args.report_tag,
-            skip_exported=args.skip_exported,
-            record_history=args.record_history,
-            output_base=args.output,
         )
     elif command == "geo-tag":
         geo_tag(limit=args.limit, batch_size=args.batch_size)

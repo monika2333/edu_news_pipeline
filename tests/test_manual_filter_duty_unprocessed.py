@@ -60,7 +60,6 @@ def duty_filter_adapter() -> Iterator[PostgresAdapter]:
                 "manual_clusters",
                 "score_feedbacks",
                 "review_events",
-                "brief_items",
                 "submitted_reports",
                 "submitted_report_items",
             ):

@@ -57,6 +57,7 @@
 - 跑 pytest 前设 `PYTHONDONTWRITEBYTECODE=1`（或清被变异文件的 `__pycache__`）：等长替换 + git checkout 还原后 mtime/size 可能仍匹配旧缓存，pytest 会读到变异版 pyc，症状是「还原后状态也不对」。
 - **含反斜杠的变异目标串不要经 Bash 传**（Bash 工具会把 `\\` 折半），写 Python 驱动脚本（heredoc 内用 `chr(92)` 构造反斜杠）。
 - **Bash 大块 heredoc 会被无声截断**（实测两次，甚至吞掉后续命令）——大段内容一律 Write 工具写临时文件再拼接。
+- **变异驱动脚本对同一文件的多处修改必须合并为一次替换**：按条目循环 `copyfile` 备份时，第二个条目会把备份覆盖成「已打第一处变异」的内容，restore 只能还原出半变异状态（2026-10-30 M1/M3 实际发生，靠 `git diff` 核对残留后 checkout 兜底）。恢复后要 `git status`/`git diff` 确认无残留，不能只看脚本说 restored。
 - 纯 CSS 层叠等 pytest/jsdom 覆盖不到的改动，用浏览器夹具验证法：真实 CSS + 真实 DOM 结构静态夹具 → `python -m http.server` → 浏览器打开（**不能开 file: URL，必须 http**）→ `document.elementFromPoint` 对目标元素 20%/50%/75%/90% 高度多点命中检测（中心点可能恰好落在覆盖区外）；变异打在**拷贝件**上，生产文件不动。见 archive/2026-10-08-账号菜单z-index修复.md。
 
 ## 6. 提交卫生

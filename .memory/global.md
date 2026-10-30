@@ -2,7 +2,7 @@
 
 ## 项目是什么
 
-教育系统新闻采集流水线：多来源抓取（crawl）→ 主哈希去重（hash-primary）→ 重要性评分（score）→ 摘要（summarize/enrich-summary）→ 地理分类（geo-classify）→ 外部过滤（external-filter，LLM 重要性评分）→ 人工筛选控制台（FastAPI + 原生 JS）→ 报送导出（export，综报/晚报）。
+教育系统新闻采集流水线：多来源抓取（crawl）→ 主哈希去重（hash-primary）→ 重要性评分（score）→ 摘要（summarize/enrich-summary）→ 地理分类（geo-classify）→ 外部过滤（external-filter，LLM 重要性评分）→ 人工筛选控制台（FastAPI + 原生 JS）。TXT 简报自动导出已于 2026-10-30 整体移除（worker、CLI/控制台接口、简报批次/条目两张表及配套迁移一并清理，详见 delivery-log 与 archive），报送链路由人工筛选控制台与报送存档承担；`manual_reviews.status = 'exported'`（控制台「归档」写入）与 `news_summaries.status = 'ready_for_export'` 是遗留命名，仍在使用中，勿改名。
 
 - 技术栈：Python 3.9+（CI 用 3.12；本机 venv 3.14.3，2026-10-20 核对）、FastAPI + uvicorn、PostgreSQL（psycopg 3）、前端原生 JS 按功能平铺（无框架）、pytest + jsdom 行为测试。
 - 远端：GitHub `monika2333/edu_news_pipeline`（origin/main）。单人开发 + AI 协作，任务经 worktree 或功能分支交付。

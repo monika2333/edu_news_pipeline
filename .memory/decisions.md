@@ -43,4 +43,5 @@
 - **记忆只在 main 合并后更新并单独提交**：worktree 内 `.memory/` 只读；完整规则见 `.memory/README.md`「维护规则」第 2 条（2026-10-20 拍板）。
 - **部署侧待办不进 `.memory/`**（2026-10-20 拍板）：生产/部署侧手工动作由用户自行跟踪；`open-tasks.md` 只记开发进行中事项与未排期候选。
 - 数据库变更只做加法；`manual_clusters` 不加报别维度（权威规则见根 `AGENTS.md`）。
+- **一次性例外（2026-10-30 拍板）：TXT 简报导出连表删除 + 授权修改 baseline 迁移**。`brief_batches`/`brief_items` 两表随 export 功能整体 drop（线上 43 批/2929 条数据一并删除，用户明确拍板「不留开关不留兼容层」）；baseline（20241101000000）的 brief 建表段改为「仅缺 `submitted_reports` 的远古库才补建」守卫——这是「已有迁移文件不动」规则首次被用户授权打破，动因与推演见 archive/2026-10-30-移除TXT简报导出.md。此后如再遇到「删 baseline 建过的表」，先读 pitfalls「删除 baseline 建过的表」条目。
 - `.audit/`、`.discussion/`、`.incidents/` 三个过程文档目录**不需要**（2026-10-20 拍板）：它们与 `.memory/`（决策/踩坑/交付）和 git 历史职责重叠，且其按日期目录 + README 索引 + 文件名前缀的归档规则对单人 + AI 协作维护成本过高，收益不抵成本。

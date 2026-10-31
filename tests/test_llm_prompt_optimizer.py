@@ -21,6 +21,23 @@ def test_meta_prompt_file_is_present_and_demands_structured_json() -> None:
     assert "<prompt>" in meta
 
 
+def test_meta_prompt_positive_example_avoids_archive_criteria_words() -> None:
+    """✓ 示例行不得出现「存档 / 回链 / 报送」类判据字样（2026-10-31 拍板）。
+
+    模型会模仿示例的写法；示例里出现判据字样会诱导它把验收判据写进评分
+    提示词（首版 internal_negative 的「报送存档…不低于 60」硬保底即由此而来）。
+    """
+
+    meta = load_prompt_optimizer_meta()
+    example_lines = [
+        line for line in meta.splitlines() if line.lstrip().startswith("- ✓")
+    ]
+    assert example_lines, "元提示词应至少保留一条 ✓ 示例行"
+    for line in example_lines:
+        for word in ("存档", "回链", "报送"):
+            assert word not in line, f"✓ 示例行不得包含判据字样「{word}」：{line}"
+
+
 def test_parse_change_response_with_fenced_json() -> None:
     raw = """```json
 {"decision":"change","edits":[{"old":"A","new":"A\\n新增"}],"note":"补规则"}

@@ -359,6 +359,9 @@ test('P11 确认回放分数显示两次形式，「波动」正确展示', asyn
         assert.match(rows[0].textContent, /58 → 58\/62 → 66\/64/);
         assert.match(rows[0].textContent, /波动/);
         assert.doesNotMatch(rows[0].textContent, /undefined/);
+        // 「是否达标」是第 5 列：fluctuation 案例整格恰为「波动」，fixed 案例仍为「达标」。
+        assert.equal([...rows[0].querySelectorAll('td')][4].textContent, '波动');
+        assert.equal([...rows[1].querySelectorAll('td')][4].textContent, '达标');
         // 修好案例仍显示达标；只有候选有第二次时只合并候选一段。
         assert.match(rows[1].textContent, /45 → 40 → 62\/62/);
         assert.match(rows[1].textContent, /达标/);

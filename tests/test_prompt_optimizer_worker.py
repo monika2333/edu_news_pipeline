@@ -1050,7 +1050,6 @@ def test_enter_t_confirmation_error_or_unparsed_falls_back_to_ignore(
     rows = {item["article_id"]: _article_row(item["article_id"]) for item in feedback}
     adapter = _Adapter(rows, optimization)
     calls: dict[tuple[str, str], int] = {}
-    lock = {"cur-boom": 0}
 
     def replay(row, key, content):
         article_id = row["article_id"]
@@ -1176,6 +1175,41 @@ def test_better_baseline_still_allows_real_fix(monkeypatch) -> None:
     case = optimization.runs[0]["cases"][0]
     assert case["fix_state"] == "fixed"
     assert case["candidate_confirm_score"] == 68
+
+
+def test_second_attempt_resets_previous_confirm_fields(monkeypatch) -> None:
+    """第 1 轮确认为修好的案例，第 2 轮首打不满足时，运行记录反映第 2 轮。"""
+    _patch_prompt(monkeypatch)
+    # 三条 T：t-star 第 1 轮候选 70/70 修好；另两条始终 50 修不好，
+    # 使第 1 轮 fixed=1 < ceil(3/2)=2 触发重试。
+    feedback = [_feedback_row("t-star"), _feedback_row("f1"), _feedback_row("f2")]
+    optimization = _FakeOptimization(feedback=feedback)
+    rows = {item["article_id"]: _article_row(item["article_id"]) for item in feedback}
+    adapter = _Adapter(rows, optimization)
+    script = {
+        "t-star": {"cur": [50, 50], "cand": [70, 70, 55]},
+        "f1": {"cur": [50, 50], "cand": [50, 50]},
+        "f2": {"cur": [50, 50], "cand": [50, 50]},
+    }
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=_scripted_replay(script, {}),
+        optimizer=lambda *args: _change_optimizer("CAND"),
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "check_failed"
+    assert item["attempts"] == 2
+    # 第 1 轮 t-star 确为修好（证明残留数据在第 1 轮确实产生过）。
+    assert optimization.runs[0]["attempts"][0]["check"]["fixed_count"] == 1
+    # 最终运行记录是第 2 轮的结果：首打 55 不达标 → 未变化，没有确认回放。
+    cases = {case["article_id"]: case for case in optimization.runs[0]["cases"]}
+    assert cases["t-star"]["fix_state"] == "unchanged"
+    assert cases["t-star"]["candidate_score"] == 55
+    assert cases["t-star"]["candidate_confirm_score"] is None
 
 
 def test_fixed_requires_candidate_double_confirmation(monkeypatch) -> None:

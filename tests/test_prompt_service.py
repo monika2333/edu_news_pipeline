@@ -136,8 +136,25 @@ class _FakeOptimization:
                 "baseline_revision_id": 11,
                 "new_revision_id": 12,
                 "model": "optimizer-model",
-                "cases": [{"article_id": "a1", "bucket": "T"}],
-                "attempts": [{"attempt": 1, "check": {"passed": True}}],
+                "cases": [
+                    {
+                        "article_id": "a1",
+                        "bucket": "T",
+                        "current_confirm_score": 62,
+                        "candidate_confirm_score": 66,
+                        "fix_state": "fixed",
+                    }
+                ],
+                "attempts": [
+                    {
+                        "attempt": 1,
+                        "check": {
+                            "passed": True,
+                            "weighted_fixed_score": 2,
+                            "fluctuation_count": 1,
+                        },
+                    }
+                ],
                 "error": None,
             }
         }
@@ -359,6 +376,14 @@ def test_history_and_detail_mark_auto_version_origin() -> None:
     assert detail["origin"] == "auto_optimized"
     assert detail["optimization"]["cases"][0]["article_id"] == "a1"
     assert detail["optimization"]["model"] == "optimizer-model"
+    # 确认回放分数、fix_state 与检查计权字段原样透传给控制台。
+    case = detail["optimization"]["cases"][0]
+    assert case["current_confirm_score"] == 62
+    assert case["candidate_confirm_score"] == 66
+    assert case["fix_state"] == "fixed"
+    check = detail["optimization"]["attempts"][-1]["check"]
+    assert check["weighted_fixed_score"] == 2
+    assert check["fluctuation_count"] == 1
 
 
 def test_history_marks_file_baseline_separately_from_auto_versions() -> None:

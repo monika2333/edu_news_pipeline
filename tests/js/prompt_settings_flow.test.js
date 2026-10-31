@@ -269,7 +269,12 @@ test('P10 自动版本详情展示改动、检查结论与案例表', async () =
         assert.match(detail.textContent, /若涉及高校/);
         assert.match(detail.textContent, /且出现舆情风险/);
         assert.match(detail.textContent, /通过/);
+        // 这份夹具是没有确认回放字段的历史运行记录：结论行不带计权/波动、
+        // 分数栏保持单次形式，且不能出现 undefined。
         assert.match(detail.textContent, /T 修好 2\/3 条 · R 改坏 1\/4 条/);
+        assert.doesNotMatch(detail.textContent, /计权/);
+        assert.doesNotMatch(detail.textContent, /波动/);
+        assert.doesNotMatch(detail.textContent, /undefined/);
         const rows = [...detail.querySelectorAll('.prompt-optimization-cases tbody tr')];
         assert.equal(rows.length, 2);
         assert.match(rows[0].textContent, /某高校舆情事件/);
@@ -278,6 +283,86 @@ test('P10 自动版本详情展示改动、检查结论与案例表', async () =
         assert.match(rows[0].textContent, /45 → 40 → 62/);
         assert.match(rows[0].textContent, /达标/);
         assert.match(rows[0].textContent, /已报送/);
+    } finally {
+        page.close();
+    }
+});
+
+test('P11 确认回放分数显示两次形式，「波动」正确展示', async () => {
+    const page = await bootPage();
+    try {
+        await openPrompts(page);
+        await waitFor(() => page.document.querySelector('.prompt-history-item'));
+        // 注入带确认回放字段的运行记录（模拟新版本写出的 cases/check）。
+        const optimization = page.server.promptHistory.external_positive[1].optimization;
+        optimization.attempts[0].check = {
+            passed: true,
+            fixed_count: 1,
+            broken_count: 1,
+            weighted_fixed_score: 2,
+            fluctuation_count: 2,
+            t_total: 2,
+            r_total: 4,
+            unparseable_count: 0,
+            failures: [],
+        };
+        optimization.cases = [
+            {
+                article_id: 'a1',
+                title: '波动案例',
+                origin_label: '评分标注·偏低',
+                direction_label: '调高',
+                original_score: 58,
+                current_score: 58,
+                current_confirm_score: 62,
+                candidate_score: 66,
+                candidate_confirm_score: 64,
+                candidate_satisfied: true,
+                fix_state: 'fluctuation',
+                bucket: 'T',
+                reason: '应该高分',
+            },
+            {
+                article_id: 'a2',
+                title: '修好案例',
+                origin_label: '报送存档（zongbao）',
+                direction_label: '调高',
+                original_score: 45,
+                current_score: 40,
+                candidate_score: 62,
+                candidate_confirm_score: 62,
+                candidate_satisfied: true,
+                fix_state: 'fixed',
+                bucket: 'T',
+                reason: '已报送',
+            },
+        ];
+        const items = [...page.document.querySelectorAll('.prompt-history-item')];
+        const v2 = items.find(
+            (item) => item.querySelector('.prompt-version').textContent === 'v2',
+        );
+        const view = [...v2.querySelectorAll('button')]
+            .find((button) => button.textContent === '查看');
+        view.click();
+        await waitFor(() => {
+            const detail = page.document.querySelector('.prompt-optimization-detail');
+            return detail && !detail.hidden && detail.textContent.includes('波动案例');
+        });
+        const detail = page.document.querySelector('.prompt-optimization-detail');
+        assert.match(
+            detail.textContent,
+            /T 修好 1\/2 条（计权 2 分） · R 改坏 1\/4 条 · 波动 2 条/,
+        );
+        const rows = [...detail.querySelectorAll('.prompt-optimization-cases tbody tr')];
+        assert.equal(rows.length, 2);
+        // 有确认分数时显示成两次的形式；「是否达标」栏显示波动。
+        assert.match(rows[0].textContent, /58 → 58\/62 → 66\/64/);
+        assert.match(rows[0].textContent, /波动/);
+        assert.doesNotMatch(rows[0].textContent, /undefined/);
+        // 修好案例仍显示达标；只有候选有第二次时只合并候选一段。
+        assert.match(rows[1].textContent, /45 → 40 → 62\/62/);
+        assert.match(rows[1].textContent, /达标/);
+        assert.doesNotMatch(detail.textContent, /undefined/);
     } finally {
         page.close();
     }

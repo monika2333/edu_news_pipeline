@@ -388,6 +388,49 @@ def test_optimize_prompts_exit_code_reflects_prompt_errors(
     assert "total_model_calls=0" in output
 
 
+def test_optimize_prompts_output_includes_fluctuation_and_confirm_counts(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from src.workers import prompt_optimizer
+
+    fake_item = {
+        "prompt_key": "external_positive",
+        "outcome": "check_failed",
+        "case_count": 6,
+        "t_count": 2,
+        "r_count": 3,
+        "skipped_count": 1,
+        "replay_error_count": 1,
+        "fluctuation_ignored_count": 2,
+        "confirm_replay_count": 4,
+        "model_calls": 15,
+        "optimizer_calls": 2,
+        "check_status": "failed",
+        "new_version": None,
+        "fixed_count": 1,
+        "broken_count": 1,
+        "error": None,
+        "note": None,
+    }
+
+    def fake_run(**kwargs):
+        return {"items": [fake_item], "had_error": False}
+
+    monkeypatch.setattr(prompt_optimizer, "run", fake_run)
+    code = cli_main._optimize_prompts(
+        SimpleNamespace(prompt_keys=None, dry_run=False, concurrency=None)
+    )
+
+    assert code == 0
+    output = capsys.readouterr().out
+    assert "outcome=check_failed" in output
+    assert "fluctuation_ignored=2" in output
+    assert "confirm_replays=4" in output
+    assert "model_calls=15" in output
+    assert "total_model_calls=15" in output
+
+
 def test_optimize_prompts_preview_output_includes_estimates(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

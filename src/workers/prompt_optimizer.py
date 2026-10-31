@@ -36,6 +36,8 @@ from src.domain.prompt_edit import (
     CASE_ORIGIN_FEEDBACK,
     CASE_ORIGIN_SUBMISSION,
     DIRECTION_UP,
+    FIX_STATE_BROKEN,
+    FIX_STATE_FIXED,
     OPTIMIZATION_LOOKBACK_DAYS,
     OPTIMIZATION_MAX_ATTEMPTS,
     OPTIMIZATION_MAX_CASES,
@@ -44,19 +46,23 @@ from src.domain.prompt_edit import (
     OptimizationCase,
     PromptEditError,
     apply_prompt_edits,
+    case_broken_probe,
+    case_fixed_probe,
     case_satisfied,
     evaluate_candidate_check,
     feedback_criterion,
+    resolve_case_state,
 )
 from src.workers import (
     ContextPropagatingThreadPoolExecutor,
     log_error,
     log_info,
-    log_summary,
 )
 
 WORKER_NAME = "prompt-optimizer"
 OUTCOME_PREVIEW = "preview"
+# 进入 T 之前的二次确认发现两次结论不一致时的忽略原因（写入 skip_reason）。
+CURRENT_FLUCTUATION_SKIP_REASON = "当前版本两次结论不一致（分数波动）"
 DEFAULT_PROMPT_KEYS = tuple(sorted(SCORING_PROMPT_KEYS))
 ReplayFn = Callable[[Mapping[str, Any], str, str], Optional[int]]
 OptimizerFn = Callable[
@@ -185,6 +191,9 @@ def _case_payload(case: OptimizationCase) -> dict[str, Any]:
         "candidate_score": case.candidate_score,
         "current_satisfied": case.current_satisfied,
         "candidate_satisfied": case.candidate_satisfied,
+        "current_confirm_score": case.current_confirm_score,
+        "candidate_confirm_score": case.candidate_confirm_score,
+        "fix_state": case.fix_state,
         "skip_reason": case.skip_reason,
         "replay_error": case.replay_error,
     }
@@ -310,10 +319,12 @@ def _failure_feedback(
     lines = ["自动检查未通过："]
     lines.extend(f"- {item}" for item in check.failures)
     not_fixed = [
-        case.title for case in target_cases if not case.candidate_satisfied
+        case.title for case in target_cases if case.fix_state != FIX_STATE_FIXED
     ]
     broken = [
-        case.title for case in reference_cases if not case.candidate_satisfied
+        case.title
+        for case in reference_cases
+        if case.fix_state == FIX_STATE_BROKEN
     ]
     if not_fixed:
         lines.append("仍未修好：" + "、".join(not_fixed[:8]))
@@ -344,6 +355,7 @@ def _summary(
     note: Optional[str],
     dry_run: bool,
     run_id: Optional[int] = None,
+    confirm_replay_count: int = 0,
 ) -> dict[str, Any]:
     return {
         "prompt_key": prompt_key,
@@ -364,8 +376,17 @@ def _summary(
             for case in cases
             if str(case.skip_reason or "").startswith("当前版本回放")
         ),
+        "fluctuation_ignored_count": sum(
+            1
+            for case in cases
+            if case.skip_reason == CURRENT_FLUCTUATION_SKIP_REASON
+        ),
         "fixed_count": check.fixed_count if check else 0,
         "broken_count": check.broken_count if check else 0,
+        "weighted_fixed_score": (
+            check.weighted_fixed_score if check else 0
+        ),
+        "fluctuation_count": check.fluctuation_count if check else 0,
         "check_passed": bool(check and check.passed),
         "check_status": (
             "passed" if check and check.passed
@@ -373,6 +394,7 @@ def _summary(
             else None
         ),
         "model_calls": model_calls,
+        "confirm_replay_count": confirm_replay_count,
         "optimizer_calls": len(attempts),
         "attempts": len(attempts),
         "error": error,
@@ -435,6 +457,7 @@ def _finish_without_revision(
     error: Optional[str],
     note: Optional[str],
     dry_run: bool,
+    confirm_replay_count: int = 0,
 ) -> dict[str, Any]:
     finished_at = _utcnow()
     run_id = _persist_run(
@@ -473,6 +496,7 @@ def _finish_without_revision(
         note=note,
         dry_run=dry_run,
         run_id=run_id,
+        confirm_replay_count=confirm_replay_count,
     )
 
 
@@ -564,6 +588,7 @@ def _save_revision(
     check: CheckResult,
     attempts: Sequence[Mapping[str, Any]],
     dry_run: bool,
+    confirm_replay_count: int = 0,
 ) -> dict[str, Any]:
     if dry_run:
         finished_at = _utcnow()
@@ -588,6 +613,7 @@ def _save_revision(
             note=note,
             dry_run=True,
             run_id=None,
+            confirm_replay_count=confirm_replay_count,
         )
 
     baseline = None
@@ -630,6 +656,7 @@ def _save_revision(
             error=f"运行期间提示词被手动保存，已放弃本次结果：{exc}",
             note=note,
             dry_run=False,
+            confirm_replay_count=confirm_replay_count,
         )
     except Exception as exc:
         return _finish_without_revision(
@@ -650,6 +677,7 @@ def _save_revision(
             error=f"写入新版本失败：{exc}",
             note=note,
             dry_run=False,
+            confirm_replay_count=confirm_replay_count,
         )
 
     revision = saved["revision"]
@@ -680,6 +708,7 @@ def _save_revision(
         note=note,
         dry_run=False,
         run_id=int(run["id"]),
+        confirm_replay_count=confirm_replay_count,
     )
 
 
@@ -826,6 +855,7 @@ def _optimize_prompt(
         )
 
     model_calls = 0
+    confirm_replay_count = 0
     skipped_count = 0
     rows: dict[str, Mapping[str, Any]] = {}
     replayable_cases: list[OptimizationCase] = []
@@ -855,6 +885,7 @@ def _optimize_prompt(
         concurrency=concurrency,
     )
     model_calls += len(replayable_cases)
+    confirm_candidates: list[OptimizationCase] = []
     for case in replayable_cases:
         result = current_results[case.article_id]
         if result.error is not None:
@@ -880,9 +911,43 @@ def _optimize_prompt(
         if case.current_satisfied:
             case.bucket = CASE_BUCKET_R
         elif case.event_at >= window_start:
-            case.bucket = CASE_BUCKET_T
+            # 窗口内首打不达标：进入 T 之前先用当前版本再打一次确认。
+            confirm_candidates.append(case)
         else:
             case.bucket = CASE_BUCKET_IGNORED
+
+    # 进入 T 前的二次确认：两次都不达标才进 T，一次达标一次不达标视为分数波动。
+    current_confirm_results = _replay_cases(
+        confirm_candidates,
+        rows=rows,
+        prompt_key=prompt_key,
+        content=prompt.content,
+        replay=replay,
+        concurrency=concurrency,
+    )
+    model_calls += len(confirm_candidates)
+    confirm_replay_count += len(confirm_candidates)
+    for case in confirm_candidates:
+        result = current_confirm_results[case.article_id]
+        if result.error is not None:
+            case.replay_error = result.error
+            case.skip_reason = f"当前版本回放失败：{result.error}"
+            case.bucket = CASE_BUCKET_IGNORED
+            skipped_count += 1
+            continue
+        second = result.score
+        if second is None:
+            case.replay_error = "模型未返回可解析的分数"
+            case.skip_reason = "当前版本回放未解析出分数"
+            case.bucket = CASE_BUCKET_IGNORED
+            skipped_count += 1
+            continue
+        case.current_confirm_score = second
+        if case_satisfied(case.direction, case.threshold, second):
+            case.skip_reason = CURRENT_FLUCTUATION_SKIP_REASON
+            case.bucket = CASE_BUCKET_IGNORED
+            continue
+        case.bucket = CASE_BUCKET_T
 
     target_cases = [case for case in cases if case.bucket == CASE_BUCKET_T]
     reference_cases = [case for case in cases if case.bucket == CASE_BUCKET_R]
@@ -905,6 +970,7 @@ def _optimize_prompt(
             error=None,
             note=None,
             dry_run=dry_run,
+            confirm_replay_count=confirm_replay_count,
         )
 
     attempts: list[dict[str, Any]] = []
@@ -957,6 +1023,7 @@ def _optimize_prompt(
                 error=f"优化模型输出连续不合格：{message}",
                 note=None,
                 dry_run=dry_run,
+                confirm_replay_count=confirm_replay_count,
             )
         except Exception as exc:
             attempts.append(
@@ -988,6 +1055,7 @@ def _optimize_prompt(
                 error=f"优化模型调用失败：{exc}",
                 note=None,
                 dry_run=dry_run,
+                confirm_replay_count=confirm_replay_count,
             )
 
         attempt_payload: dict[str, Any] = {
@@ -1022,6 +1090,7 @@ def _optimize_prompt(
                 error=None,
                 note=decision.note,
                 dry_run=dry_run,
+                confirm_replay_count=confirm_replay_count,
             )
 
         try:
@@ -1053,6 +1122,7 @@ def _optimize_prompt(
                 error=str(exc),
                 note=decision.note,
                 dry_run=dry_run,
+                confirm_replay_count=confirm_replay_count,
             )
 
         candidate_cases = [
@@ -1065,6 +1135,10 @@ def _optimize_prompt(
             for case in target_cases + reference_cases
             if case.article_id not in rows
         }
+        # 上一轮尝试的确认分数与结论不能带进本轮。
+        for case in target_cases + reference_cases:
+            case.candidate_confirm_score = None
+            case.fix_state = None
         candidate_results = _replay_cases(
             candidate_cases,
             rows=rows,
@@ -1089,16 +1163,78 @@ def _optimize_prompt(
                 score,
             )
 
+        # 算修好 / 改坏前的二次确认：只有第一次回放同时满足「达标（或不达标）+
+        # 变动过容差」的案例才补打一次候选版本，两次都满足才算数。
+        confirm_cases = [
+            case
+            for case in target_cases + reference_cases
+            if case.article_id in rows
+            and case.candidate_score is not None
+            and (
+                (
+                    case.bucket == CASE_BUCKET_T
+                    and case_fixed_probe(case, case.candidate_score)
+                )
+                or (
+                    case.bucket == CASE_BUCKET_R
+                    and case_broken_probe(case, case.candidate_score)
+                )
+            )
+        ]
+        candidate_confirm_results = _replay_cases(
+            confirm_cases,
+            rows=rows,
+            prompt_key=prompt_key,
+            content=candidate_content,
+            replay=replay,
+            concurrency=concurrency,
+        )
+        model_calls += len(confirm_cases)
+        confirm_replay_count += len(confirm_cases)
+        candidate_confirm_scores: dict[str, Optional[int]] = {}
+        for case in confirm_cases:
+            result = candidate_confirm_results[case.article_id]
+            if result.error is not None:
+                case.replay_error = result.error
+            second = result.score
+            if second is None:
+                # 确认回放未解析出分数：计入未解析，整次检查不通过。
+                candidate_confirm_scores[case.article_id] = None
+                continue
+            case.candidate_confirm_score = second
+            candidate_confirm_scores[case.article_id] = second
+            case.fix_state = resolve_case_state(
+                case,
+                case.candidate_score,
+                second,
+                confirmed=True,
+            )
+        for case in target_cases + reference_cases:
+            if (
+                case.fix_state is None
+                and case.article_id in rows
+                and case.candidate_score is not None
+            ):
+                case.fix_state = resolve_case_state(
+                    case,
+                    case.candidate_score,
+                    None,
+                    confirmed=False,
+                )
+
         check = evaluate_candidate_check(
             target_cases,
             reference_cases,
             candidate_scores,
+            candidate_confirm_scores,
         )
         last_check = check
         attempt_payload["check"] = {
             "passed": check.passed,
             "fixed_count": check.fixed_count,
             "broken_count": check.broken_count,
+            "weighted_fixed_score": check.weighted_fixed_score,
+            "fluctuation_count": check.fluctuation_count,
             "t_total": check.t_total,
             "r_total": check.r_total,
             "unparseable_count": check.unparseable_count,
@@ -1128,6 +1264,7 @@ def _optimize_prompt(
                 check=check,
                 attempts=attempts,
                 dry_run=dry_run,
+                confirm_replay_count=confirm_replay_count,
             )
         failure_feedback = _failure_feedback(
             check,
@@ -1153,6 +1290,7 @@ def _optimize_prompt(
         error="；".join(last_check.failures) if last_check else None,
         note=None,
         dry_run=dry_run,
+        confirm_replay_count=confirm_replay_count,
     )
 
 
@@ -1210,10 +1348,25 @@ def run(
         )
 
     failed = sum(1 for item in items if item["outcome"] == OUTCOME_ERROR)
-    log_summary(
+    outcome_counts: dict[str, int] = {}
+    for item in items:
+        outcome = str(item.get("outcome") or "")
+        outcome_counts[outcome] = outcome_counts.get(outcome, 0) + 1
+    # 按结果分别计数，未通过检查不算成功（退出码规则不变：只有 error 非零）。
+    log_info(
         WORKER_NAME,
-        ok=len(items) - failed,
-        failed=failed,
+        "result: "
+        + " ".join(
+            f"{outcome}={outcome_counts.get(outcome, 0)}"
+            for outcome in (
+                OUTCOME_REVISION_CREATED,
+                OUTCOME_NO_CORRECTION,
+                OUTCOME_MODEL_DECLINED,
+                OUTCOME_CHECK_FAILED,
+                OUTCOME_ERROR,
+                OUTCOME_PREVIEW,
+            )
+        ),
     )
     return {
         "items": items,

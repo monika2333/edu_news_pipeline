@@ -256,7 +256,9 @@ def test_current_replay_splits_target_reference_and_ignored(monkeypatch) -> None
     assert item["case_count"] == 3
     assert item["t_count"] == 1
     assert item["r_count"] == 1
-    assert item["model_calls"] == 4
+    # 3 次首打 + 1 次进 T 前确认（只有窗口内的 in-window）+ 1 次优化模型。
+    assert item["model_calls"] == 5
+    assert item["confirm_replay_count"] == 1
     cases = optimization.runs[0]["cases"]
     by_id = {case["article_id"]: case for case in cases}
     assert by_id["in-window"]["bucket"] == "T"
@@ -455,7 +457,9 @@ def test_failed_check_retries_once_with_failure_feedback_then_saves(monkeypatch)
     item = result["items"][0]
     assert item["outcome"] == "revision_created"
     assert item["new_version"] == "v4"
-    assert item["model_calls"] == 11
+    # 3 首打 + 2 进 T 前确认 + 优化×2 + 候选×2 轮（3+3）+ 第 2 轮修好确认×2。
+    assert item["model_calls"] == 15
+    assert item["confirm_replay_count"] == 4
     assert item["attempts"] == 2
     assert optimizer_feedback[0] is None
     assert optimizer_feedback[1] is not None
@@ -975,3 +979,435 @@ def test_window_uses_current_version_created_at(monkeypatch) -> None:
     }
     assert by_id["old"]["bucket"] == "ignored"
     assert by_id["recent"]["bucket"] == "T"
+
+
+def _scripted_replay(
+    script: dict[str, dict[str, list[Optional[int]]]],
+    calls: dict[tuple[str, str], int],
+):
+    """按 (文章, 阶段) 的调用序号回放脚本分数，并记录每次调用。"""
+
+    def replay(row, key, content):
+        article_id = row["article_id"]
+        phase = "cand" if "CAND" in content else "cur"
+        counter = calls.get((article_id, phase), 0)
+        calls[(article_id, phase)] = counter + 1
+        scores = script[article_id][phase]
+        assert counter < len(scores), f"{article_id}/{phase} 调用次数超出脚本"
+        return scores[counter]
+
+    return replay
+
+
+def test_enter_t_confirmation_ignores_current_flapping_cases(monkeypatch) -> None:
+    """第一次不达标、确认重打达标 → 波动忽略，不进 T 也不进 R。"""
+    _patch_prompt(monkeypatch)
+    feedback = [
+        _feedback_row("flap"),
+        _feedback_row("stable"),
+    ]
+    optimization = _FakeOptimization(feedback=feedback)
+    rows = {item["article_id"]: _article_row(item["article_id"]) for item in feedback}
+    adapter = _Adapter(rows, optimization)
+    script = {
+        "flap": {"cur": [58, 62], "cand": []},
+        "stable": {"cur": [55, 55], "cand": []},
+    }
+    optimizer_cases: list[list[dict[str, Any]]] = []
+
+    def optimizer(key, content, cases, references, failure_feedback):
+        optimizer_cases.append(cases)
+        return _no_change_optimizer()
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=_scripted_replay(script, {}),
+        optimizer=optimizer,
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "model_declined"
+    assert item["t_count"] == 1
+    assert item["r_count"] == 0
+    assert item["fluctuation_ignored_count"] == 1
+    cases = {case["article_id"]: case for case in optimization.runs[0]["cases"]}
+    assert cases["flap"]["bucket"] == "ignored"
+    assert cases["flap"]["skip_reason"] == "当前版本两次结论不一致（分数波动）"
+    assert cases["flap"]["current_confirm_score"] == 62
+    assert cases["stable"]["bucket"] == "T"
+    # 波动案例不发给优化模型。
+    assert [case["title"] for case in optimizer_cases[0]] == ["标题-stable"]
+
+
+def test_enter_t_confirmation_error_or_unparsed_falls_back_to_ignore(
+    monkeypatch,
+) -> None:
+    _patch_prompt(monkeypatch)
+    feedback = [_feedback_row("boom"), _feedback_row("blank"), _feedback_row("ok")]
+    optimization = _FakeOptimization(feedback=feedback)
+    rows = {item["article_id"]: _article_row(item["article_id"]) for item in feedback}
+    adapter = _Adapter(rows, optimization)
+    calls: dict[tuple[str, str], int] = {}
+    lock = {"cur-boom": 0}
+
+    def replay(row, key, content):
+        article_id = row["article_id"]
+        phase = "cand" if "CAND" in content else "cur"
+        counter = calls.get((article_id, phase), 0)
+        calls[(article_id, phase)] = counter + 1
+        if article_id == "boom" and counter == 1:
+            raise RuntimeError("upstream 502")
+        if article_id == "blank" and counter == 1:
+            return None
+        if article_id == "boom":
+            return 58
+        if article_id == "blank":
+            return 58
+        return 50 if article_id == "ok" else 58
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=replay,
+        optimizer=_no_change_optimizer,
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "model_declined"
+    assert item["t_count"] == 1
+    assert item["skipped_count"] == 2
+    cases = {case["article_id"]: case for case in optimization.runs[0]["cases"]}
+    assert cases["boom"]["bucket"] == "ignored"
+    assert "当前版本回放失败" in cases["boom"]["skip_reason"]
+    assert cases["blank"]["bucket"] == "ignored"
+    assert "未解析" in cases["blank"]["skip_reason"]
+    assert cases["ok"]["bucket"] == "T"
+
+
+def test_first_pass_case_enters_r_without_confirmation(monkeypatch) -> None:
+    """第一次就达标的案例直接进 R，不发起进 T 前的确认回放。"""
+    _patch_prompt(monkeypatch)
+    feedback = [_feedback_row("pass-first"), _feedback_row("t1")]
+    optimization = _FakeOptimization(feedback=feedback)
+    rows = {item["article_id"]: _article_row(item["article_id"]) for item in feedback}
+    adapter = _Adapter(rows, optimization)
+    script = {
+        "pass-first": {"cur": [80], "cand": [80]},
+        "t1": {"cur": [50, 50], "cand": [70, 70]},
+    }
+    calls: dict[tuple[str, str], int] = {}
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=_scripted_replay(script, calls),
+        optimizer=lambda *args: _change_optimizer("CAND"),
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "revision_created"
+    assert calls == {
+        ("pass-first", "cur"): 1,
+        ("t1", "cur"): 2,
+        ("pass-first", "cand"): 1,
+        ("t1", "cand"): 2,
+    }
+    # 确认回放共两次：t1 进 T 前一次 + t1 修好前一次。
+    assert item["confirm_replay_count"] == 2
+    assert item["model_calls"] == 7
+
+
+def test_enter_t_baseline_is_closer_score_so_small_gain_is_not_fixed(
+    monkeypatch,
+) -> None:
+    """起点取更接近达标的确认分（62 而非首打 55）：涨 4 分不算修好、也不发起确认。"""
+    _patch_prompt(monkeypatch)
+    feedback = [_feedback_row("t1", score=55)]  # 阈值 65
+    optimization = _FakeOptimization(feedback=feedback)
+    adapter = _Adapter({"t1": _article_row("t1")}, optimization)
+    script = {"t1": {"cur": [55, 62], "cand": [66, 66]}}
+    calls: dict[tuple[str, str], int] = {}
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=_scripted_replay(script, calls),
+        optimizer=lambda *args: _change_optimizer("CAND"),
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "check_failed"
+    assert item["fixed_count"] == 0
+    # 只有进 T 前的一次确认；两次尝试的候选首打都不满足涨幅，没有候选确认。
+    assert calls[("t1", "cur")] == 2
+    assert calls[("t1", "cand")] == 2
+    assert item["confirm_replay_count"] == 1
+    case = optimization.runs[0]["cases"][0]
+    assert case["bucket"] == "T"
+    assert case["current_confirm_score"] == 62
+    assert case["candidate_confirm_score"] is None
+    assert case["fix_state"] == "unchanged"
+
+
+def test_better_baseline_still_allows_real_fix(monkeypatch) -> None:
+    _patch_prompt(monkeypatch)
+    feedback = [_feedback_row("t1", score=55)]  # 阈值 65
+    optimization = _FakeOptimization(feedback=feedback)
+    adapter = _Adapter({"t1": _article_row("t1")}, optimization)
+    script = {"t1": {"cur": [55, 62], "cand": [68, 68]}}
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=_scripted_replay(script, {}),
+        optimizer=lambda *args: _change_optimizer("CAND"),
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "revision_created"
+    assert item["fixed_count"] == 1
+    assert item["confirm_replay_count"] == 2
+    case = optimization.runs[0]["cases"][0]
+    assert case["fix_state"] == "fixed"
+    assert case["candidate_confirm_score"] == 68
+
+
+def test_fixed_requires_candidate_double_confirmation(monkeypatch) -> None:
+    """修好要两次都满足：第一次涨 20、第二次掉回 52 → 记波动、不计修好。"""
+    _patch_prompt(monkeypatch)
+    feedback = [_feedback_row("t1")]
+    optimization = _FakeOptimization(feedback=feedback)
+    adapter = _Adapter({"t1": _article_row("t1")}, optimization)
+    script = {"t1": {"cur": [50, 50], "cand": [70, 52, 70, 52]}}
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=_scripted_replay(script, {}),
+        optimizer=lambda *args: _change_optimizer("CAND"),
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "check_failed"
+    assert item["fixed_count"] == 0
+    assert item["model_calls"] == 8
+    assert item["confirm_replay_count"] == 3
+    case = optimization.runs[0]["cases"][0]
+    assert case["fix_state"] == "fluctuation"
+    assert case["candidate_score"] == 70
+    assert case["candidate_confirm_score"] == 52
+    assert optimization.runs[0]["attempts"][0]["check"]["fluctuation_count"] == 1
+
+
+def test_broken_requires_candidate_double_confirmation(monkeypatch) -> None:
+    """改坏要两次都满足：第一次跌 30、确认回 80 达标 → 记波动、不算改坏。"""
+    _patch_prompt(monkeypatch)
+    feedback = [_feedback_row("t1")]
+    optimization = _FakeOptimization(
+        feedback=feedback,
+        submissions=[_submission_row("r1", stored_score=80)],
+    )
+    adapter = _Adapter(
+        {"t1": _article_row("t1"), "r1": _article_row("r1")},
+        optimization,
+    )
+    script = {
+        "t1": {"cur": [50, 50], "cand": [70, 70]},
+        "r1": {"cur": [80], "cand": [50, 80]},
+    }
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=_scripted_replay(script, {}),
+        optimizer=lambda *args: _change_optimizer("CAND"),
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "revision_created"
+    check = optimization.runs[0]["attempts"][0]["check"]
+    assert check["broken_count"] == 0
+    assert check["fluctuation_count"] == 1
+    cases = {case["article_id"]: case for case in optimization.runs[0]["cases"]}
+    assert cases["r1"]["fix_state"] == "fluctuation"
+    assert cases["r1"]["candidate_confirm_score"] == 80
+    assert cases["t1"]["fix_state"] == "fixed"
+
+
+def test_confirmation_replays_only_triggered_for_boundary_cases(monkeypatch) -> None:
+    """候选首打不满足条件的案例不发起确认（防止对所有 R 膨胀补打）。"""
+    _patch_prompt(monkeypatch)
+    feedback = [_feedback_row("t1")]
+    optimization = _FakeOptimization(
+        feedback=feedback,
+        submissions=[_submission_row("r1", stored_score=80)],
+    )
+    adapter = _Adapter(
+        {"t1": _article_row("t1"), "r1": _article_row("r1")},
+        optimization,
+    )
+    # t1 候选 58 仍不达标（未变化）；r1 候选 80 仍达标（未受影响）。
+    script = {
+        "t1": {"cur": [50, 50], "cand": [58, 58]},
+        "r1": {"cur": [80], "cand": [80, 80]},
+    }
+    calls: dict[tuple[str, str], int] = {}
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=_scripted_replay(script, calls),
+        optimizer=lambda *args: _change_optimizer("CAND"),
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "check_failed"
+    assert item["confirm_replay_count"] == 1
+    assert item["model_calls"] == 9
+    assert calls == {
+        ("t1", "cur"): 2,
+        ("r1", "cur"): 1,
+        ("t1", "cand"): 2,
+        ("r1", "cand"): 2,
+    }
+    cases = {case["article_id"]: case for case in optimization.runs[0]["cases"]}
+    assert cases["t1"]["fix_state"] == "unchanged"
+    assert cases["r1"]["fix_state"] == "unchanged"
+
+
+def test_candidate_confirm_unparseable_fails_attempt_then_recovers(monkeypatch) -> None:
+    """确认回放解析不出分数 → 计入未解析、该次检查不通过；下一轮重试可恢复。"""
+    _patch_prompt(monkeypatch)
+    feedback = [_feedback_row("t1")]
+    optimization = _FakeOptimization(feedback=feedback)
+    adapter = _Adapter({"t1": _article_row("t1")}, optimization)
+    script = {"t1": {"cur": [50, 50], "cand": [70, None, 70, 70]}}
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=_scripted_replay(script, {}),
+        optimizer=lambda *args: _change_optimizer("CAND"),
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "revision_created"
+    attempts = optimization.runs[0]["attempts"]
+    assert attempts[0]["check"]["passed"] is False
+    assert attempts[0]["check"]["unparseable_count"] == 1
+    assert any(
+        "未能解析出分数" in failure for failure in attempts[0]["check"]["failures"]
+    )
+    assert attempts[1]["check"]["passed"] is True
+    case = optimization.runs[0]["cases"][0]
+    assert case["fix_state"] == "fixed"
+    assert case["candidate_confirm_score"] == 70
+
+
+def test_oct31_night_scenario_under_new_rules(monkeypatch) -> None:
+    """复现 2026-10-31 internal_positive 场景：波动案例不进 T，降 3–4 分不算改坏。"""
+    _patch_prompt(monkeypatch)
+    feedback = [
+        _feedback_row("shuzhi"),    # 数智育人：运行时 58，测量重打能过线
+        _feedback_row("wenhua"),    # 首都高校环境文化季：同上
+        _feedback_row("t-real"),
+        _feedback_row("t-hard"),
+    ]
+    submissions = [
+        _submission_row(f"r{index}", stored_score=62) for index in range(7)
+    ]
+    optimization = _FakeOptimization(feedback=feedback, submissions=submissions)
+    rows = {
+        item["article_id"]: _article_row(item["article_id"])
+        for item in feedback + submissions
+    }
+    adapter = _Adapter(rows, optimization)
+    script = {
+        # 当前版本首打 58 不达标 → 确认重打 62/61 过线 → 波动忽略，不进 T。
+        "shuzhi": {"cur": [58, 62], "cand": []},
+        "wenhua": {"cur": [58, 61], "cand": []},
+        # 真实待修正：t-real 两次 55 → 起点 55，候选 66 涨 11 → 确认 66 修好（计权 2）。
+        "t-real": {"cur": [55, 55], "cand": [66, 66]},
+        # t-hard 两次 50/52 → 起点 52，候选 58 仍不达标 → 未变化。
+        "t-hard": {"cur": [50, 52], "cand": [58, 58]},
+        # 参照：旧分 61–63，候选只降 3–4 分的三条（10-31 被判改坏的其中三条）。
+        "r0": {"cur": [61], "cand": [58, 58]},
+        "r1": {"cur": [62], "cand": [58, 58]},
+        "r2": {"cur": [63], "cand": [59, 59]},
+        # 真实改坏：降 9–11 分，两次确认都成立。
+        "r3": {"cur": [61], "cand": [50, 52]},
+        "r4": {"cur": [65], "cand": [80, 80]},
+        "r5": {"cur": [66], "cand": [80, 80]},
+        "r6": {"cur": [67], "cand": [80, 80]},
+    }
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=_scripted_replay(script, {}),
+        optimizer=lambda *args: _change_optimizer("CAND"),
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["outcome"] == "revision_created"
+    assert item["t_count"] == 2
+    assert item["r_count"] == 7
+    assert item["fluctuation_ignored_count"] == 2
+    assert item["fixed_count"] == 1
+    assert item["broken_count"] == 1
+    assert item["weighted_fixed_score"] == 2
+    assert item["confirm_replay_count"] == 6
+    cases = {case["article_id"]: case for case in optimization.runs[0]["cases"]}
+    # 测量中当前版本重打能过线的两条：确认后不进 T。
+    for article_id in ("shuzhi", "wenhua"):
+        assert cases[article_id]["bucket"] == "ignored"
+        assert cases[article_id]["skip_reason"] == "当前版本两次结论不一致（分数波动）"
+    # 降 3–4 分的三条不算改坏。
+    for article_id in ("r0", "r1", "r2"):
+        assert cases[article_id]["fix_state"] == "unchanged"
+    assert cases["r3"]["fix_state"] == "broken"
+    assert cases["t-real"]["fix_state"] == "fixed"
+    assert cases["t-hard"]["fix_state"] == "unchanged"
+    check = optimization.runs[0]["attempts"][0]["check"]
+    assert check["weighted_fixed_score"] == 2
+    assert check["fluctuation_count"] == 0
+
+
+def test_run_summary_counts_outcomes_separately(
+    monkeypatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """run() 结尾按结果分别计数，check_failed 不再算进成功。"""
+    _patch_prompt(monkeypatch)
+    feedback = [_feedback_row("t1")]
+    optimization = _FakeOptimization(feedback=feedback)
+    adapter = _Adapter({"t1": _article_row("t1")}, optimization)
+    script = {"t1": {"cur": [50, 50], "cand": [58, 58]}}
+
+    result = worker.run(
+        ["external_positive"],
+        adapter=adapter,
+        replay=_scripted_replay(script, {}),
+        optimizer=lambda *args: _change_optimizer("CAND"),
+        now=NOW,
+    )
+
+    assert result["items"][0]["outcome"] == "check_failed"
+    captured = capsys.readouterr()
+    assert (
+        "result: revision_created=0 no_correction=0 model_declined=0 "
+        "check_failed=1 error=0 preview=0" in captured.out
+    )
+    assert "ok=" not in captured.out
+    assert result["had_error"] is False

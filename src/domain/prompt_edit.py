@@ -16,9 +16,17 @@ FEEDBACK_SCORE_MARGIN = 10.0
 SUBMITTED_SCORE_FLOOR = 60.0
 PROMPT_EDIT_MAX_EDITS = 3
 PROMPT_EDIT_MAX_CHANGED_CHARS = 800
-# R（参照集）允许被改坏的条数 = max(1, floor(|R| * 10%))，且必须少于修好的条数。
+# R（参照集）允许被改坏的条数 = max(1, floor(|R| * 10%))，且必须少于修好计权分。
 R_BROKEN_RATIO = 0.10
 R_BROKEN_MIN_ALLOWANCE = 1
+# 波动容差：2026-10-31 生产库实测（scripts/measure_replay_noise.py，81 篇各重打），
+# 约 90% 文章三次分数最大分差在 0–4 分，5–9 分近乎空档。分数朝某方向变动不足
+# 5 分视为正常抖动，不作为修好 / 改坏的证据。
+NOISE_BAND = 5
+# 证据计权（2026-10-31 用户拍板的初始值）：评分标注是人工给出的更强证据，修好
+# 1 条记 2 分；报送存档来源修好记 1 分。计权只用于「改坏须少于修好」这一条判定，
+# 其余门槛仍按条数计。
+FEEDBACK_FIXED_WEIGHT = 2
 
 DIRECTION_UP = "up"
 DIRECTION_DOWN = "down"
@@ -27,6 +35,11 @@ CASE_ORIGIN_SUBMISSION = "submission"
 CASE_BUCKET_T = "T"
 CASE_BUCKET_R = "R"
 CASE_BUCKET_IGNORED = "ignored"
+# 案例在候选版本下的最终判定（运行记录 cases JSON 的 fix_state 字段）。
+FIX_STATE_FIXED = "fixed"
+FIX_STATE_BROKEN = "broken"
+FIX_STATE_FLUCTUATION = "fluctuation"
+FIX_STATE_UNCHANGED = "unchanged"
 
 
 class PromptEditError(ValueError):
@@ -65,10 +78,28 @@ class OptimizationCase:
     candidate_score: Optional[int] = None
     current_satisfied: Optional[bool] = None
     candidate_satisfied: Optional[bool] = None
+    current_confirm_score: Optional[int] = None
+    candidate_confirm_score: Optional[int] = None
+    fix_state: Optional[str] = None
 
     @property
     def direction_label(self) -> str:
         return "调高" if self.direction == DIRECTION_UP else "调低"
+
+    @property
+    def fix_baseline_score(self) -> Optional[float]:
+        """T 案例衡量涨幅的起点：两次当前版本回放中更接近达标的那次。
+
+        调高方向取较大值、调低方向取较小值，防止把一次偏低的抽样当作起点、
+        虚增候选版本的涨幅。R 案例的改坏起点直接用 ``current_score``，不走这里。
+        """
+
+        if self.current_score is None:
+            return None
+        if self.current_confirm_score is None:
+            return float(self.current_score)
+        pair = (self.current_score, self.current_confirm_score)
+        return float(max(pair)) if self.direction == DIRECTION_UP else float(min(pair))
 
     @property
     def criterion_label(self) -> str:
@@ -88,6 +119,8 @@ class CheckResult:
     passed: bool
     fixed_count: int
     broken_count: int
+    weighted_fixed_score: int
+    fluctuation_count: int
     t_total: int
     r_total: int
     unparseable_count: int
@@ -119,6 +152,92 @@ def case_satisfied(
     if direction == DIRECTION_DOWN:
         return score <= threshold
     raise ValueError(f"未知调整方向：{direction}")
+
+
+def _opposite_direction(direction: str) -> str:
+    if direction == DIRECTION_UP:
+        return DIRECTION_DOWN
+    if direction == DIRECTION_DOWN:
+        return DIRECTION_UP
+    raise ValueError(f"未知调整方向：{direction}")
+
+
+def moved_at_least(
+    direction: str,
+    baseline: Optional[float],
+    score: Optional[int],
+) -> bool:
+    """分数相对 baseline 朝 direction 方向变动至少 NOISE_BAND 分才算「真的变了」。"""
+
+    if baseline is None or score is None:
+        return False
+    delta = float(score) - float(baseline)
+    if direction == DIRECTION_UP:
+        return delta >= NOISE_BAND
+    if direction == DIRECTION_DOWN:
+        return -delta >= NOISE_BAND
+    raise ValueError(f"未知调整方向：{direction}")
+
+
+def case_fixed_probe(case: OptimizationCase, score: Optional[int]) -> bool:
+    """候选分数是否满足「修好」的单次条件：达标且相对原分数涨幅过容差。"""
+
+    return case_satisfied(
+        case.direction,
+        case.threshold,
+        score,
+    ) and moved_at_least(case.direction, case.fix_baseline_score, score)
+
+
+def case_broken_probe(case: OptimizationCase, score: Optional[int]) -> bool:
+    """候选分数是否满足「改坏」的单次条件：不达标且相对当前分反向跌过容差。"""
+
+    return not case_satisfied(
+        case.direction,
+        case.threshold,
+        score,
+    ) and moved_at_least(
+        _opposite_direction(case.direction),
+        case.current_score,
+        score,
+    )
+
+
+def resolve_case_state(
+    case: OptimizationCase,
+    first_score: Optional[int],
+    second_score: Optional[int],
+    *,
+    confirmed: bool,
+) -> str:
+    """判定一条案例在候选版本下的最终状态（fix_state）。
+
+    修好 / 改坏都要求单次条件连续两次满足：第一次不满足记「未变化」；
+    第一次满足而第二次不满足（或没有发起确认）记「波动」；两次都满足才
+    记「修好」/「改坏」。
+    """
+
+    if case.bucket == CASE_BUCKET_T:
+        if not case_fixed_probe(case, first_score):
+            return FIX_STATE_UNCHANGED
+        if not confirmed:
+            return FIX_STATE_FLUCTUATION
+        return (
+            FIX_STATE_FIXED
+            if case_fixed_probe(case, second_score)
+            else FIX_STATE_FLUCTUATION
+        )
+    if case.bucket == CASE_BUCKET_R:
+        if not case_broken_probe(case, first_score):
+            return FIX_STATE_UNCHANGED
+        if not confirmed:
+            return FIX_STATE_FLUCTUATION
+        return (
+            FIX_STATE_BROKEN
+            if case_broken_probe(case, second_score)
+            else FIX_STATE_FLUCTUATION
+        )
+    return FIX_STATE_UNCHANGED
 
 
 def r_broken_allowance(reference_count: int) -> int:
@@ -200,9 +319,18 @@ def evaluate_candidate_check(
     target_cases: Sequence[OptimizationCase],
     reference_cases: Sequence[OptimizationCase],
     candidate_scores: Mapping[str, Optional[int]],
+    candidate_confirm_scores: Optional[Mapping[str, Optional[int]]] = None,
 ) -> CheckResult:
-    """Apply the three acceptance gates from the delegation, step 2.4.5."""
+    """Apply the acceptance gates: noise band, double confirmation, weighting.
 
+    ``candidate_confirm_scores`` 只包含实际发起过确认回放的案例（值为第二次候选
+    分数；值为 ``None`` 表示确认回放未解析出分数，按未解析处理）。修好 / 改坏
+    的判定见 ``resolve_case_state``；三条门槛中「T 至少修好一半且至少 1 条」与
+    「R 改坏不超过 max(1, ⌊|R|×10%⌋)」按条数计，「改坏须少于修好」按证据计权
+    （评分标注每条修好记 ``FEEDBACK_FIXED_WEIGHT`` 分、报送存档记 1 分）。
+    """
+
+    confirms = dict(candidate_confirm_scores or {})
     t_total = len(target_cases)
     r_total = len(reference_cases)
     all_cases = list(target_cases) + list(reference_cases)
@@ -210,24 +338,39 @@ def evaluate_candidate_check(
         case
         for case in all_cases
         if candidate_scores.get(case.article_id) is None
+        or (
+            case.article_id in confirms
+            and confirms[case.article_id] is None
+        )
     ]
-    fixed = sum(
-        1
-        for case in target_cases
-        if case_satisfied(
-            case.direction,
-            case.threshold,
+    unparseable_ids = {case.article_id for case in unparseable}
+    fixed_cases: list[OptimizationCase] = []
+    broken_cases: list[OptimizationCase] = []
+    fluctuation = 0
+    for case in all_cases:
+        if case.article_id in unparseable_ids:
+            continue
+        confirmed = case.article_id in confirms
+        state = resolve_case_state(
+            case,
             candidate_scores.get(case.article_id),
+            confirms.get(case.article_id) if confirmed else None,
+            confirmed=confirmed,
         )
-    )
-    broken = sum(
-        1
-        for case in reference_cases
-        if not case_satisfied(
-            case.direction,
-            case.threshold,
-            candidate_scores.get(case.article_id),
-        )
+        if state == FIX_STATE_FIXED:
+            fixed_cases.append(case)
+        elif state == FIX_STATE_BROKEN:
+            broken_cases.append(case)
+        elif state == FIX_STATE_FLUCTUATION:
+            fluctuation += 1
+
+    fixed = len(fixed_cases)
+    broken = len(broken_cases)
+    weighted_fixed = sum(
+        FEEDBACK_FIXED_WEIGHT
+        if case.origin == CASE_ORIGIN_FEEDBACK
+        else 1
+        for case in fixed_cases
     )
     required_fixed = math.ceil(t_total / 2) if t_total else 0
     broken_allowance = r_broken_allowance(r_total)
@@ -246,15 +389,17 @@ def evaluate_candidate_check(
         failures.append(
             f"参照集 R 改坏 {broken}/{r_total} 条，允许最多 {broken_allowance} 条"
         )
-    if broken >= fixed:
+    if broken >= weighted_fixed:
         failures.append(
-            f"参照集 R 改坏 {broken} 条，不少于 T 修好的 {fixed} 条"
+            f"参照集 R 改坏 {broken} 条，不少于修好计权分 {weighted_fixed}"
         )
 
     return CheckResult(
         passed=not failures,
         fixed_count=fixed,
         broken_count=broken,
+        weighted_fixed_score=weighted_fixed,
+        fluctuation_count=fluctuation,
         t_total=t_total,
         r_total=r_total,
         unparseable_count=len(unparseable),
@@ -271,7 +416,13 @@ __all__ = [
     "DIRECTION_DOWN",
     "DIRECTION_UP",
     "CheckResult",
+    "FEEDBACK_FIXED_WEIGHT",
     "FEEDBACK_SCORE_MARGIN",
+    "FIX_STATE_BROKEN",
+    "FIX_STATE_FIXED",
+    "FIX_STATE_FLUCTUATION",
+    "FIX_STATE_UNCHANGED",
+    "NOISE_BAND",
     "OPTIMIZATION_LOOKBACK_DAYS",
     "OPTIMIZATION_MAX_ATTEMPTS",
     "OPTIMIZATION_MAX_CASES",
@@ -284,8 +435,12 @@ __all__ = [
     "R_BROKEN_RATIO",
     "SUBMITTED_SCORE_FLOOR",
     "apply_prompt_edits",
+    "case_broken_probe",
+    "case_fixed_probe",
     "case_satisfied",
     "evaluate_candidate_check",
     "feedback_criterion",
+    "moved_at_least",
     "r_broken_allowance",
+    "resolve_case_state",
 ]

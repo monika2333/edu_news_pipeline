@@ -754,6 +754,13 @@ function promptScoreText(value) {
     return Number.isFinite(number) ? String(Math.round(number)) : '—';
 }
 
+// 有确认回放分数时显示成两次的形式（如 58/62）；历史记录缺该字段时退回单次。
+function promptReplayPairText(first, second) {
+    const base = promptScoreText(first);
+    if (second === null || second === undefined || second === '') return base;
+    return `${base}/${promptScoreText(second)}`;
+}
+
 function buildOptimizationEdits(edits) {
     const wrap = createEl('div', 'prompt-optimization-edits');
     if (!edits.length) {
@@ -791,11 +798,21 @@ function buildOptimizationCheck(check) {
         check.passed ? '通过' : '未通过',
     );
     wrap.appendChild(verdict);
+    let checkMeta = `T 修好 ${check.fixed_count}/${check.t_total} 条`;
+    if (
+        check.weighted_fixed_score !== null
+        && check.weighted_fixed_score !== undefined
+    ) {
+        checkMeta += `（计权 ${check.weighted_fixed_score} 分）`;
+    }
+    checkMeta += ` · R 改坏 ${check.broken_count}/${check.r_total} 条`;
+    if (check.fluctuation_count) {
+        checkMeta += ` · 波动 ${check.fluctuation_count} 条`;
+    }
     wrap.appendChild(createEl(
         'span',
         'prompt-optimization-check-meta',
-        `T 修好 ${check.fixed_count}/${check.t_total} 条 · `
-            + `R 改坏 ${check.broken_count}/${check.r_total} 条`,
+        checkMeta,
     ));
     if (check.unparseable_count) {
         wrap.appendChild(createEl(
@@ -838,11 +855,13 @@ function buildOptimizationCaseTable(cases) {
             'td',
             'prompt-optimization-score-flow',
             `${promptScoreText(item.original_score)} → `
-                + `${promptScoreText(item.current_score)} → `
-                + `${promptScoreText(item.candidate_score)}`,
+                + `${promptReplayPairText(item.current_score, item.current_confirm_score)} → `
+                + `${promptReplayPairText(item.candidate_score, item.candidate_confirm_score)}`,
         ));
         let achieved = '—';
-        if (item.bucket === 'T' || item.bucket === 'R') {
+        if (item.fix_state === 'fluctuation') {
+            achieved = '波动';
+        } else if (item.bucket === 'T' || item.bucket === 'R') {
             achieved = item.candidate_satisfied ? '达标' : '未达标';
         } else if (item.skip_reason) {
             achieved = '跳过';

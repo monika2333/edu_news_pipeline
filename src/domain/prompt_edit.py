@@ -19,7 +19,7 @@ PROMPT_EDIT_MAX_CHANGED_CHARS = 800
 # R（参照集）允许被改坏的条数 = max(1, floor(|R| * 10%))，且必须少于修好计权分。
 R_BROKEN_RATIO = 0.10
 R_BROKEN_MIN_ALLOWANCE = 1
-# 波动容差：2026-10-31 生产库实测（scripts/measure_replay_noise.py，81 篇各重打），
+# 波动容差：2026-10-31 生产库实测（81 篇各重打 2 遍，加上运行记录共 3 个分数），
 # 约 90% 文章三次分数最大分差在 0–4 分，5–9 分近乎空档。分数朝某方向变动不足
 # 5 分视为正常抖动，不作为修好 / 改坏的证据。
 NOISE_BAND = 5

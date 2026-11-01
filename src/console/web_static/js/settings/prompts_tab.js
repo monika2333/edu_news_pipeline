@@ -901,6 +901,18 @@ function promptOptimizationCaseFlow(item) {
         + `${promptReplayPairText(item.candidate_score, item.candidate_confirm_score)}`;
 }
 
+// 「未变化」组混着两类语义不同的案例：T 没修好（未达标）与 R 本来就达标、
+// 只是没被改坏（达标）。组级文案固定成「未达标」会把后者说错，所以
+// unchanged 组按单条 candidate_satisfied 判定；样式仍用中性的 is-unchanged。
+function promptOptimizationCaseStatus(item, group) {
+    if (group.key === 'unchanged') {
+        if (item.candidate_satisfied === true) return '达标';
+        if (item.candidate_satisfied === false) return '未达标';
+        return '—';
+    }
+    return group.status;
+}
+
 // 卡片式案例行：标题 + 方向/来源 + 分数流 + 状态 一行，原因一行，
 // 不再用 6 列表格（宽屏也不至于把分数列挤掉）。
 function buildOptimizationCaseRow(item, group) {
@@ -929,7 +941,7 @@ function buildOptimizationCaseRow(item, group) {
     head.appendChild(createEl(
         'span',
         `prompt-optimization-case-status ${group.statusClass}`,
-        group.status,
+        promptOptimizationCaseStatus(item, group),
     ));
     row.appendChild(head);
     row.appendChild(createEl(
@@ -1124,38 +1136,42 @@ function buildPromptHistoryItem(item, revision) {
     const renderLoadedPanel = (payload) => {
         clearEl(panel);
         panel.appendChild(createEl('pre', 'prompt-history-preview', payload.content || ''));
-        if (!payload.optimization) return;
-        // 自动优化详情是二级开关：默认收起，标题行直接给结论摘要。
-        // 手工保存/文件基线版本没有 optimization，不渲染这个开关。
-        const section = createEl('div', 'prompt-optimization-section');
-        const optToggle = createEl('button', 'prompt-optimization-toggle', '', {
-            type: 'button',
-            'aria-expanded': 'false',
-        });
-        optToggle.append(
-            createEl(
-                'span',
-                'prompt-optimization-toggle-label',
-                promptOptimizationSummary(payload.optimization),
-            ),
-            createEl('span', 'prompt-optimization-caret', '▾', {
-                'aria-hidden': 'true',
-            }),
-        );
-        const detail = createEl('div', 'prompt-optimization-detail');
-        detail.hidden = true;
-        optToggle.addEventListener('click', () => {
-            const open = detail.hidden;
-            if (open && !detail.dataset.rendered) {
-                renderPromptOptimizationDetail(detail, payload.optimization);
-                detail.dataset.rendered = '1';
-            }
-            detail.hidden = !open;
-            optToggle.classList.toggle('is-open', open);
-            optToggle.setAttribute('aria-expanded', String(open));
-        });
-        section.append(optToggle, detail);
-        panel.appendChild(section);
+        if (payload.optimization) {
+            // 自动优化详情是二级开关：默认收起，标题行直接给结论摘要。
+            // 手工保存/文件基线版本没有 optimization，不渲染这个开关。
+            const section = createEl('div', 'prompt-optimization-section');
+            const optToggle = createEl('button', 'prompt-optimization-toggle', '', {
+                type: 'button',
+                'aria-expanded': 'false',
+            });
+            optToggle.append(
+                createEl(
+                    'span',
+                    'prompt-optimization-toggle-label',
+                    promptOptimizationSummary(payload.optimization),
+                ),
+                createEl('span', 'prompt-optimization-caret', '▾', {
+                    'aria-hidden': 'true',
+                }),
+            );
+            const detail = createEl('div', 'prompt-optimization-detail');
+            detail.hidden = true;
+            optToggle.addEventListener('click', () => {
+                const open = detail.hidden;
+                if (open && !detail.dataset.rendered) {
+                    renderPromptOptimizationDetail(detail, payload.optimization);
+                    detail.dataset.rendered = '1';
+                }
+                detail.hidden = !open;
+                optToggle.classList.toggle('is-open', open);
+                optToggle.setAttribute('aria-expanded', String(open));
+            });
+            section.append(optToggle, detail);
+            panel.appendChild(section);
+        }
+        // 成功后标记已加载：收起再展开直接复用现有 DOM，不重渲染、
+        // 不闪「加载中…」，二级展开态也得以保留。
+        loaded = true;
     };
 
     const expand = async () => {

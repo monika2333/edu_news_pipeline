@@ -546,7 +546,9 @@ test('A6 案例按结论分组，默认只渲染第一组，点组头才创建�
         await waitFor(() => caseRows(detail).length === 2);
         rows = caseRows(detail);
         assert.match(rows[1].textContent, /参照案例/);
-        assert.match(rows[1].textContent, /未达标/);
+        // R 案例本来就达标、只是没被改坏：状态不能写成「未达标」。
+        assert.match(rows[1].textContent, /达标/);
+        assert.doesNotMatch(rows[1].textContent, /未达标/);
     } finally {
         page.close();
     }
@@ -591,9 +593,15 @@ test('A7 历史记录缺 fix_state 时按 bucket 与候选判定回退分组', a
         unchangedGroup.querySelector('.prompt-optimization-case-group-head').click();
         await waitFor(() => caseRows(unchangedGroup).length === 2);
         const unchangedTexts = caseRows(unchangedGroup).map((row) => row.textContent);
-        assert.ok(unchangedTexts.some((text) => /参照案例/.test(text)));
-        assert.ok(unchangedTexts.some((text) => /T 未达标案例/.test(text)));
-        assert.ok(unchangedTexts.every((text) => /未达标/.test(text)));
+        const referenceRow = unchangedTexts.find((text) => /参照案例/.test(text));
+        const notFixedRow = unchangedTexts.find((text) => /T 未达标案例/.test(text));
+        assert.ok(referenceRow);
+        assert.ok(notFixedRow);
+        // R 本来就达标、只是没被改坏：显示「达标」而不是「未达标」。
+        assert.match(referenceRow, /达标/);
+        assert.doesNotMatch(referenceRow, /未达标/);
+        // T 没修好仍是「未达标」。
+        assert.match(notFixedRow, /未达标/);
     } finally {
         page.close();
     }
@@ -671,6 +679,30 @@ test('A10 检查失败原因最多直接显示 3 条，其余就地展开', asyn
         ['失败一', '失败二', '失败三', '失败四', '失败五'].forEach((failure) => {
             assert.ok(texts.includes(failure));
         });
+    } finally {
+        page.close();
+    }
+});
+
+test('A11 收起后再展开复用已加载面板，不闪加载态且保留二级展开', async () => {
+    const page = await bootPage();
+    try {
+        await openPrompts(page);
+        await waitHistory(page);
+        const v2 = historyItemByVersion(page, 'v2');
+        await expandVersion(v2);
+        await expandOptimization(v2);
+        // 收起版本：面板隐藏，但内容与二级展开态保留在 DOM 里。
+        versionToggle(v2).click();
+        assert.equal(historyPanel(v2).hidden, true);
+        // 再展开：同步走已加载快路径，不应重新插入「加载中…」。
+        versionToggle(v2).click();
+        assert.equal(
+            historyPanel(v2).querySelector('.prompt-history-panel-loading'),
+            null,
+        );
+        assert.equal(optimizationDetail(v2).hidden, false);
+        assert.equal(revisionPreview(v2).textContent, 'EXTERNAL POSITIVE PROMPT v2');
     } finally {
         page.close();
     }

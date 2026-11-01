@@ -16,6 +16,18 @@ const PROMPT_TEST_CATEGORY_LABELS = {
     external: '京外',
     internal: '京内',
 };
+// 自动优化案例按结论分组，顺序即展示顺序与「默认展开第一组」的优先级。
+const PROMPT_OPTIMIZATION_CASE_GROUPS = [
+    { key: 'fixed', label: '已修好', status: '达标', statusClass: 'is-fixed' },
+    { key: 'broken', label: '改坏', status: '改坏', statusClass: 'is-broken' },
+    { key: 'fluctuation', label: '波动', status: '波动', statusClass: 'is-fluctuation' },
+    { key: 'unchanged', label: '未变化', status: '未达标', statusClass: 'is-unchanged' },
+    { key: 'skipped', label: '跳过', status: '跳过', statusClass: 'is-skipped' },
+];
+// 运行记录里的 fix_state 只会是这四个值（跳过的案例不带 fix_state）。
+const PROMPT_OPTIMIZATION_FIX_STATES = ['fixed', 'broken', 'fluctuation', 'unchanged'];
+// 失败原因最多直接展示 3 条，其余收进「还有 N 条」的就地展开入口。
+const PROMPT_OPTIMIZATION_VISIBLE_FAILURES = 3;
 
 function promptItems() {
     return (state.prompts.payload && state.prompts.payload.items) || [];
@@ -798,14 +810,14 @@ function buildOptimizationCheck(check) {
         check.passed ? '通过' : '未通过',
     );
     wrap.appendChild(verdict);
-    let checkMeta = `T 修好 ${check.fixed_count}/${check.t_total} 条`;
+    let checkMeta = `T 修好 ${check.fixed_count || 0}/${check.t_total || 0} 条`;
     if (
         check.weighted_fixed_score !== null
         && check.weighted_fixed_score !== undefined
     ) {
         checkMeta += `（计权 ${check.weighted_fixed_score} 分）`;
     }
-    checkMeta += ` · R 改坏 ${check.broken_count}/${check.r_total} 条`;
+    checkMeta += ` · R 改坏 ${check.broken_count || 0}/${check.r_total || 0} 条`;
     if (check.fluctuation_count) {
         checkMeta += ` · 波动 ${check.fluctuation_count} 条`;
     }
@@ -821,69 +833,200 @@ function buildOptimizationCheck(check) {
             `${check.unparseable_count} 条回放未解析出分数`,
         ));
     }
-    (check.failures || []).forEach((failure) => {
+    const failures = (check.failures || [])
+        .map((failure) => String(failure))
+        .filter((failure) => failure.trim().length > 0);
+    failures.slice(0, PROMPT_OPTIMIZATION_VISIBLE_FAILURES).forEach((failure) => {
         wrap.appendChild(createEl('p', 'prompt-optimization-failure', failure));
+    });
+    const hiddenCount = failures.length - PROMPT_OPTIMIZATION_VISIBLE_FAILURES;
+    if (hiddenCount > 0) {
+        const rest = createEl('div', 'prompt-optimization-failures-rest');
+        rest.hidden = true;
+        let rendered = false;
+        const more = createEl(
+            'button',
+            'prompt-optimization-more-failures',
+            `还有 ${hiddenCount} 条`,
+            { type: 'button' },
+        );
+        more.addEventListener('click', () => {
+            // 就地展开：第一次点开时才把剩余条目建进 DOM，再点收起。
+            if (rest.hidden) {
+                if (!rendered) {
+                    failures
+                        .slice(PROMPT_OPTIMIZATION_VISIBLE_FAILURES)
+                        .forEach((failure) => {
+                            rest.appendChild(createEl(
+                                'p',
+                                'prompt-optimization-failure',
+                                failure,
+                            ));
+                        });
+                    rendered = true;
+                }
+                rest.hidden = false;
+                more.textContent = '收起';
+            } else {
+                rest.hidden = true;
+                more.textContent = `还有 ${hiddenCount} 条`;
+            }
+        });
+        wrap.append(rest, more);
+    }
+    return wrap;
+}
+
+// 案例归组：skip_reason 优先，其次用运行记录里的 fix_state；
+// 2026-10-31 之前写出的运行记录没有 fix_state，必须按 bucket + 候选判定回退，
+// 否则历史记录会被整体误判成「未变化」。
+function promptOptimizationCaseGroupKey(item) {
+    const caseItem = item || {};
+    if (String(caseItem.skip_reason || '').trim()) return 'skipped';
+    if (PROMPT_OPTIMIZATION_FIX_STATES.includes(caseItem.fix_state)) {
+        return caseItem.fix_state;
+    }
+    if (caseItem.bucket === 'T') {
+        return caseItem.candidate_satisfied ? 'fixed' : 'unchanged';
+    }
+    if (caseItem.bucket === 'R') {
+        return caseItem.candidate_satisfied === false ? 'broken' : 'unchanged';
+    }
+    return 'unchanged';
+}
+
+function promptOptimizationCaseFlow(item) {
+    return `${promptScoreText(item.original_score)} → `
+        + `${promptReplayPairText(item.current_score, item.current_confirm_score)} → `
+        + `${promptReplayPairText(item.candidate_score, item.candidate_confirm_score)}`;
+}
+
+// 卡片式案例行：标题 + 方向/来源 + 分数流 + 状态 一行，原因一行，
+// 不再用 6 列表格（宽屏也不至于把分数列挤掉）。
+function buildOptimizationCaseRow(item, group) {
+    const row = createEl('div', 'prompt-optimization-case');
+    const head = createEl('div', 'prompt-optimization-case-head');
+    head.appendChild(createEl(
+        'span',
+        'prompt-optimization-case-title',
+        item.title || '（无标题）',
+    ));
+    const metaParts = [];
+    if (item.origin_label) metaParts.push(item.origin_label);
+    if (item.direction_label) metaParts.push(item.direction_label);
+    if (metaParts.length) {
+        head.appendChild(createEl(
+            'span',
+            'prompt-optimization-case-meta',
+            metaParts.join(' · '),
+        ));
+    }
+    head.appendChild(createEl(
+        'span',
+        'prompt-optimization-case-score',
+        promptOptimizationCaseFlow(item),
+    ));
+    head.appendChild(createEl(
+        'span',
+        `prompt-optimization-case-status ${group.statusClass}`,
+        group.status,
+    ));
+    row.appendChild(head);
+    row.appendChild(createEl(
+        'p',
+        'prompt-optimization-case-reason',
+        item.reason || item.skip_reason || '—',
+    ));
+    return row;
+}
+
+function buildOptimizationCases(cases) {
+    const wrap = createEl('div', 'prompt-optimization-case-groups');
+    const groups = PROMPT_OPTIMIZATION_CASE_GROUPS.map((group) => ({
+        group,
+        items: [],
+    }));
+    (cases || []).forEach((item) => {
+        const key = promptOptimizationCaseGroupKey(item);
+        const entry = groups.find((candidate) => candidate.group.key === key);
+        if (entry) entry.items.push(item);
+    });
+    const nonEmpty = groups.filter((entry) => entry.items.length > 0);
+    if (!nonEmpty.length) {
+        wrap.appendChild(createEl('p', 'prompt-optimization-empty', '没有案例。'));
+        return wrap;
+    }
+    groups.forEach((entry) => {
+        if (!entry.items.length) return;
+        // 默认只展开第一个非空组（通常是「已修好」）；其余组只渲染组头，
+        // 行在点开组头时才建进 DOM（不是先建好再用 CSS 隐藏）。
+        const expanded = entry === nonEmpty[0];
+        const section = createEl('div', 'prompt-optimization-case-group');
+        section.classList.toggle('is-open', expanded);
+        const head = createEl('button', 'prompt-optimization-case-group-head', '', {
+            type: 'button',
+            'aria-expanded': String(expanded),
+        });
+        head.classList.toggle('is-open', expanded);
+        head.append(
+            createEl(
+                'span',
+                'prompt-optimization-case-group-label',
+                `${entry.group.label} ${entry.items.length} 条`,
+            ),
+            createEl('span', 'prompt-optimization-case-group-caret', '▾', {
+                'aria-hidden': 'true',
+            }),
+        );
+        const body = createEl('div', 'prompt-optimization-case-group-body');
+        body.hidden = !expanded;
+        let rendered = false;
+        const renderRows = () => {
+            if (rendered) return;
+            entry.items.forEach((item) => {
+                body.appendChild(buildOptimizationCaseRow(item, entry.group));
+            });
+            rendered = true;
+        };
+        if (expanded) renderRows();
+        head.addEventListener('click', () => {
+            const open = body.hidden;
+            if (open) renderRows();
+            body.hidden = !open;
+            head.classList.toggle('is-open', open);
+            head.setAttribute('aria-expanded', String(open));
+            section.classList.toggle('is-open', open);
+        });
+        section.append(head, body);
+        wrap.appendChild(section);
     });
     return wrap;
 }
 
-function buildOptimizationCaseTable(cases) {
-    const wrap = createEl('div', 'admin-table-wrap prompt-optimization-cases-wrap');
-    const table = createEl('table', 'admin-table prompt-optimization-cases');
-    const head = createEl('thead');
-    const headRow = createEl('tr');
-    ['标题', '来源类型', '方向', '原分 → 当前 → 新版本', '是否达标', '标注原因']
-        .forEach((label) => headRow.appendChild(createEl('th', '', label)));
-    head.appendChild(headRow);
-    table.appendChild(head);
-    const body = createEl('tbody');
-    cases.forEach((item) => {
-        const row = createEl('tr');
-        const titleCell = createEl('td', 'prompt-optimization-case-title');
-        titleCell.appendChild(createEl('span', '', item.title || '（无标题）'));
-        if (item.bucket) {
-            titleCell.appendChild(createEl(
-                'span',
-                'prompt-badge prompt-optimization-bucket',
-                item.bucket,
-            ));
+// 二级开关的标题行直接给结论摘要；计权/波动字段缺失就不拼对应段落，
+// 没有 check 时只显示到 outcome_label。
+function promptOptimizationSummary(optimization) {
+    const parts = ['自动优化'];
+    const outcome = optimization.outcome_label || optimization.outcome;
+    if (outcome) parts.push(outcome);
+    const attempts = optimization.attempts || [];
+    const lastAttempt = attempts.length ? attempts[attempts.length - 1] : null;
+    const check = lastAttempt && lastAttempt.check;
+    if (check) {
+        let summary = `修好 ${check.fixed_count || 0}/${check.t_total || 0} 条`;
+        if (
+            check.weighted_fixed_score !== null
+            && check.weighted_fixed_score !== undefined
+        ) {
+            summary += `（计权 ${check.weighted_fixed_score} 分）`;
         }
-        row.appendChild(titleCell);
-        row.appendChild(createEl('td', '', item.origin_label || '—'));
-        row.appendChild(createEl('td', '', item.direction_label || '—'));
-        row.appendChild(createEl(
-            'td',
-            'prompt-optimization-score-flow',
-            `${promptScoreText(item.original_score)} → `
-                + `${promptReplayPairText(item.current_score, item.current_confirm_score)} → `
-                + `${promptReplayPairText(item.candidate_score, item.candidate_confirm_score)}`,
-        ));
-        let achieved = '—';
-        if (item.fix_state === 'fluctuation') {
-            achieved = '波动';
-        } else if (item.bucket === 'T' || item.bucket === 'R') {
-            achieved = item.candidate_satisfied ? '达标' : '未达标';
-        } else if (item.skip_reason) {
-            achieved = '跳过';
+        summary += ` · 改坏 ${check.broken_count || 0}/${check.r_total || 0} 条`;
+        if (check.fluctuation_count) {
+            summary += ` · 波动 ${check.fluctuation_count} 条`;
         }
-        row.appendChild(createEl('td', '', achieved));
-        row.appendChild(createEl(
-            'td',
-            'prompt-optimization-reason',
-            item.reason || item.skip_reason || '—',
-        ));
-        body.appendChild(row);
-    });
-    if (!cases.length) {
-        const row = createEl('tr');
-        const cell = createEl('td', 'prompt-optimization-empty', '没有案例。');
-        cell.colSpan = 6;
-        row.appendChild(cell);
-        body.appendChild(row);
+        parts.push(summary);
     }
-    table.appendChild(body);
-    wrap.appendChild(table);
-    return wrap;
+    return parts.join(' · ');
 }
 
 function renderPromptOptimizationDetail(mount, optimization) {
@@ -921,11 +1064,25 @@ function renderPromptOptimizationDetail(mount, optimization) {
     mount.appendChild(createEl('h4', 'prompt-optimization-subtitle', '检查结论'));
     mount.appendChild(buildOptimizationCheck(lastAttempt.check));
     mount.appendChild(createEl('h4', 'prompt-optimization-subtitle', '案例'));
-    mount.appendChild(buildOptimizationCaseTable(optimization.cases || []));
+    mount.appendChild(buildOptimizationCases(optimization.cases || []));
 }
 
-function buildPromptHistoryItem(item, revision, preview, detailMount) {
+// 展开/收起只是 DOM 局部状态：同一列表内手风琴互斥，重绘后回到全部收起。
+function setPromptHistoryItemOpen(row, open) {
+    const panel = row.querySelector('.prompt-history-panel');
+    const toggle = row.querySelector('.prompt-history-toggle');
+    row.classList.toggle('is-open', open);
+    if (panel) panel.hidden = !open;
+    if (!toggle) return;
+    toggle.classList.toggle('is-open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    const label = toggle.querySelector('.prompt-history-toggle-label');
+    if (label) label.textContent = open ? '收起' : '展开';
+}
+
+function buildPromptHistoryItem(item, revision) {
     const row = createEl('li', 'prompt-history-item');
+    const header = createEl('div', 'prompt-history-row');
     const main = createEl('div', 'prompt-history-main');
     const title = createEl('div', 'prompt-history-title');
     title.append(
@@ -943,34 +1100,101 @@ function buildPromptHistoryItem(item, revision, preview, detailMount) {
     main.appendChild(createEl('p', 'prompt-history-size', `${revision.char_count} 字符`));
 
     const actions = createEl('div', 'prompt-history-actions');
-    const viewBtn = createEl('button', 'btn btn-secondary btn-sm', '查看', { type: 'button' });
+    // 整个标题行不做点击区域：只有这个按钮可点，避免误触「恢复」或选中备注文字。
+    const toggleBtn = createEl('button', 'btn btn-secondary btn-sm prompt-history-toggle', '', {
+        type: 'button',
+        'aria-expanded': 'false',
+    });
+    toggleBtn.append(
+        createEl('span', 'prompt-history-toggle-label', '展开'),
+        createEl('span', 'prompt-history-caret', '▾', { 'aria-hidden': 'true' }),
+    );
     const restoreBtn = createEl('button', 'btn btn-secondary btn-sm', '恢复', { type: 'button' });
-    actions.append(viewBtn, restoreBtn);
-    row.append(main, actions);
+    actions.append(toggleBtn, restoreBtn);
+    header.append(main, actions);
 
-    viewBtn.addEventListener('click', async () => {
-        viewBtn.disabled = true;
+    // 就地展开区：始终是本条 <li> 的后代、紧随标题行之后。
+    const panel = createEl('div', 'prompt-history-panel');
+    panel.hidden = true;
+    row.append(header, panel);
+
+    let loaded = false;
+    let loading = false;
+
+    const renderLoadedPanel = (payload) => {
+        clearEl(panel);
+        panel.appendChild(createEl('pre', 'prompt-history-preview', payload.content || ''));
+        if (!payload.optimization) return;
+        // 自动优化详情是二级开关：默认收起，标题行直接给结论摘要。
+        // 手工保存/文件基线版本没有 optimization，不渲染这个开关。
+        const section = createEl('div', 'prompt-optimization-section');
+        const optToggle = createEl('button', 'prompt-optimization-toggle', '', {
+            type: 'button',
+            'aria-expanded': 'false',
+        });
+        optToggle.append(
+            createEl(
+                'span',
+                'prompt-optimization-toggle-label',
+                promptOptimizationSummary(payload.optimization),
+            ),
+            createEl('span', 'prompt-optimization-caret', '▾', {
+                'aria-hidden': 'true',
+            }),
+        );
+        const detail = createEl('div', 'prompt-optimization-detail');
+        detail.hidden = true;
+        optToggle.addEventListener('click', () => {
+            const open = detail.hidden;
+            if (open && !detail.dataset.rendered) {
+                renderPromptOptimizationDetail(detail, payload.optimization);
+                detail.dataset.rendered = '1';
+            }
+            detail.hidden = !open;
+            optToggle.classList.toggle('is-open', open);
+            optToggle.setAttribute('aria-expanded', String(open));
+        });
+        section.append(optToggle, detail);
+        panel.appendChild(section);
+    };
+
+    const expand = async () => {
+        // 手风琴：展开新条目时收起同一列表里的其它条目。
+        const list = row.closest('.prompt-history-list');
+        if (list) {
+            list.querySelectorAll('.prompt-history-item').forEach((other) => {
+                if (other !== row) setPromptHistoryItemOpen(other, false);
+            });
+        }
+        if (loaded) {
+            setPromptHistoryItemOpen(row, true);
+            return;
+        }
+        if (loading) return;
+        loading = true;
+        setPromptHistoryItemOpen(row, true);
+        clearEl(panel);
+        panel.appendChild(createEl('p', 'prompt-history-panel-loading', '加载中…'));
+        toggleBtn.disabled = true;
         try {
-            if (!preview.hidden && preview.dataset.revisionId === String(revision.id)) {
-                preview.hidden = true;
-                detailMount.hidden = true;
-                viewBtn.textContent = '查看';
-                return;
-            }
             const payload = await fetchPromptRevisionPayload(item.key, revision);
-            preview.textContent = payload.content || '';
-            preview.dataset.revisionId = String(revision.id);
-            preview.hidden = false;
-            renderPromptOptimizationDetail(detailMount, payload.optimization);
-            viewBtn.textContent = '收起';
-            if (typeof preview.scrollIntoView === 'function') {
-                preview.scrollIntoView({ block: 'nearest' });
-            }
+            if (!row.isConnected) return;
+            renderLoadedPanel(payload);
         } catch (error) {
+            if (row.isConnected) setPromptHistoryItemOpen(row, false);
             showSettingsAlert(error.message || '加载版本内容失败');
         } finally {
-            viewBtn.disabled = false;
+            loading = false;
+            if (row.isConnected) toggleBtn.disabled = false;
         }
+    };
+
+    toggleBtn.addEventListener('click', () => {
+        if (row.classList.contains('is-open')) {
+            setPromptHistoryItemOpen(row, false);
+            return;
+        }
+        expand();
     });
 
     restoreBtn.addEventListener('click', async () => {
@@ -1056,15 +1280,11 @@ function renderPromptHistory(mount, item) {
         mount.appendChild(card);
         return;
     }
-    const preview = createEl('pre', 'prompt-history-preview');
-    preview.hidden = true;
-    const detail = createEl('div', 'prompt-optimization-detail');
-    detail.hidden = true;
     const list = createEl('ul', 'prompt-history-list');
     cache.items.forEach((revision) => {
-        list.appendChild(buildPromptHistoryItem(item, revision, preview, detail));
+        list.appendChild(buildPromptHistoryItem(item, revision));
     });
-    card.append(list, preview, detail);
+    card.appendChild(list);
     if (cache.has_more && cache.items.length < PROMPT_HISTORY_MAX_PAGE) {
         const more = createEl('button', 'btn btn-secondary btn-sm prompt-history-more', '加载更多', {
             type: 'button',

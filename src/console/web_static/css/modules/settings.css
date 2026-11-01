@@ -1824,13 +1824,19 @@
     list-style: none;
 }
 .prompt-history-item {
+    padding: 9px 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+}
+.prompt-history-item.is-open {
+    border-color: #bfdbfe;
+    background: #f8fbff;
+}
+.prompt-history-row {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
-    padding: 9px 10px;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
 }
 .prompt-history-main { min-width: 0; }
 .prompt-history-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -1839,9 +1845,19 @@
 .prompt-history-size { color: #94a3b8; font-size: 0.76rem; }
 .prompt-history-note { margin: 4px 0 0; color: #475569; font-size: 0.8rem; line-height: 1.5; }
 .prompt-history-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+/* 展开按钮的小三角：复用来源账号面板的旋转做法，旋转交给 CSS */
+.prompt-history-caret {
+    display: inline-block;
+    font-size: 0.7rem;
+    line-height: 1;
+    transition: transform 0.15s ease;
+}
+.prompt-history-toggle.is-open .prompt-history-caret { transform: rotate(180deg); }
+.prompt-history-panel { margin-top: 10px; }
+.prompt-history-panel-loading { margin: 0; color: #94a3b8; font-size: 0.8rem; }
 .prompt-history-preview {
     max-height: 360px;
-    margin: 10px 0 0;
+    margin: 0;
     padding: 12px;
     overflow: auto;
     border: 1px solid #e2e8f0;
@@ -1853,6 +1869,43 @@
     line-height: 1.6;
     white-space: pre-wrap;
     word-break: break-word;
+}
+/* 自动优化详情的二级开关：标题行即结论摘要，默认收起 */
+.prompt-optimization-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    margin-top: 12px;
+    padding: 8px 10px;
+    border: 1px solid #dbeafe;
+    border-radius: 10px;
+    background: #f8fbff;
+    color: #1e3a8a;
+    font: inherit;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.prompt-optimization-toggle:hover,
+.prompt-optimization-toggle:focus-visible {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    outline: none;
+}
+.prompt-optimization-toggle-label { min-width: 0; }
+.prompt-optimization-caret {
+    display: inline-block;
+    flex: none;
+    margin-left: auto;
+    font-size: 0.7rem;
+    line-height: 1;
+    transition: transform 0.15s ease;
+}
+.prompt-optimization-toggle.is-open .prompt-optimization-caret {
+    transform: rotate(180deg);
 }
 .prompt-optimization-detail {
     margin-top: 12px;
@@ -1919,13 +1972,125 @@
 .prompt-optimization-failure,
 .prompt-optimization-error { margin: 6px 0 0; color: #b91c1c; font-size: 0.76rem; }
 .prompt-optimization-empty { margin: 4px 0; color: #94a3b8; font-size: 0.76rem; }
-.prompt-optimization-cases { min-width: 760px; font-size: 0.76rem; }
-.prompt-optimization-cases th,
-.prompt-optimization-cases td { vertical-align: top; }
-.prompt-optimization-case-title { min-width: 180px; }
-.prompt-optimization-bucket { margin-left: 6px; background: #e0e7ff; color: #3730a3; }
-.prompt-optimization-score-flow { white-space: nowrap; }
-.prompt-optimization-reason { min-width: 160px; color: #475569; }
+.prompt-optimization-failures-rest {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+.prompt-optimization-more-failures {
+    margin-top: 2px;
+    padding: 2px 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    background: #fff;
+    color: #1d4ed8;
+    font: inherit;
+    font-size: 0.74rem;
+    cursor: pointer;
+}
+.prompt-optimization-more-failures:hover,
+.prompt-optimization-more-failures:focus-visible {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    outline: none;
+}
+/* 案例按结论分组：组头也是折叠开关，组内用卡片行，不再有 min-width 横向滚动 */
+.prompt-optimization-case-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.prompt-optimization-case-group {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fff;
+}
+.prompt-optimization-case-group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #334155;
+    font: inherit;
+    font-size: 0.78rem;
+    text-align: left;
+    cursor: pointer;
+}
+.prompt-optimization-case-group-head:hover,
+.prompt-optimization-case-group-head:focus-visible {
+    background: #eff6ff;
+    color: #1d4ed8;
+    outline: none;
+}
+.prompt-optimization-case-group-caret {
+    display: inline-block;
+    flex: none;
+    margin-left: auto;
+    font-size: 0.7rem;
+    line-height: 1;
+    transition: transform 0.15s ease;
+}
+.prompt-optimization-case-group-head.is-open .prompt-optimization-case-group-caret {
+    transform: rotate(180deg);
+}
+.prompt-optimization-case-group-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+}
+/* display:flex 会压过浏览器默认的 [hidden]{display:none}，必须显式声明 */
+.prompt-optimization-case-group-body[hidden],
+.prompt-optimization-failures-rest[hidden] { display: none; }
+.prompt-optimization-case {
+    padding: 7px 9px;
+    border: 1px solid #eef2f7;
+    border-radius: 8px;
+    background: #fbfdff;
+}
+.prompt-optimization-case-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+}
+.prompt-optimization-case-title {
+    min-width: 0;
+    color: #0f172a;
+    font-size: 0.8rem;
+    font-weight: 600;
+    word-break: break-word;
+}
+.prompt-optimization-case-meta { color: #64748b; font-size: 0.74rem; }
+.prompt-optimization-case-score {
+    color: #334155;
+    font-size: 0.76rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.prompt-optimization-case-status {
+    flex: none;
+    margin-left: auto;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+}
+.prompt-optimization-case-status.is-fixed { background: #dcfce7; color: #166534; }
+.prompt-optimization-case-status.is-broken { background: #fee2e2; color: #b91c1c; }
+.prompt-optimization-case-status.is-fluctuation { background: #fef3c7; color: #92400e; }
+.prompt-optimization-case-status.is-unchanged { background: #f1f5f9; color: #475569; }
+.prompt-optimization-case-status.is-skipped { background: #f1f5f9; color: #64748b; }
+.prompt-optimization-case-reason {
+    margin: 4px 0 0;
+    color: #475569;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    word-break: break-word;
+}
 .prompt-history-loading,
 .prompt-history-empty { margin: 12px 0; color: #94a3b8; font-size: 0.82rem; }
 .prompt-history-more { margin-top: 8px; }
@@ -1939,7 +2104,10 @@
 
 @media (prefers-reduced-motion: reduce) {
     .source-accounts-panel { animation: none; }
-    .source-accounts-caret { transition: none; }
+    .source-accounts-caret,
+    .prompt-history-caret,
+    .prompt-optimization-caret,
+    .prompt-optimization-case-group-caret { transition: none; }
 }
 
 @media (max-width: 600px) {

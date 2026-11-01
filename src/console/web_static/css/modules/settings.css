@@ -1870,7 +1870,8 @@
     white-space: pre-wrap;
     word-break: break-word;
 }
-/* 自动优化详情的二级开关：标题行即结论摘要，默认收起 */
+/* 自动优化区块：「本次改动」常显，二级开关只收检查结论与案例（默认收起） */
+.prompt-optimization-section { margin-top: 12px; }
 .prompt-optimization-toggle {
     display: flex;
     align-items: center;
@@ -1914,7 +1915,7 @@
     border-radius: 10px;
     background: #f8fbff;
 }
-.prompt-optimization-detail-head {
+.prompt-optimization-run-head {
     display: flex;
     align-items: center;
     flex-wrap: wrap;

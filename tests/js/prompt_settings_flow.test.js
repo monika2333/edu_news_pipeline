@@ -311,19 +311,27 @@ test('P10 自动版本详情展示改动、检查结论与案例（历史记录�
         await waitHistory(page);
         const v2 = historyItemByVersion(page, 'v2');
         await expandVersion(v2);
-        // 自动优化详情默认收起，必须再点二级开关。
+        // 「本次改动」（替换前/替换后）跟着第一次展开直接显示。
+        const panel = historyPanel(v2);
+        assert.match(panel.textContent, /本次改动/);
+        assert.match(panel.textContent, /替换前/);
+        assert.match(panel.textContent, /替换后/);
+        assert.match(panel.textContent, /若涉及高校/);
+        assert.match(panel.textContent, /且出现舆情风险/);
+        const edits = panel.querySelector('.prompt-optimization-edits');
+        assert.ok(edits);
+        // 检查结论与案例默认收起，必须再点二级开关。
         assert.equal(optimizationDetail(v2).hidden, true);
+        assert.equal(optimizationDetail(v2).contains(edits), false);
         await expandOptimization(v2);
         const detail = optimizationDetail(v2);
-        assert.match(detail.textContent, /若涉及高校/);
-        assert.match(detail.textContent, /且出现舆情风险/);
         assert.match(detail.textContent, /通过/);
         // 这份夹具是没有确认回放字段的历史运行记录：结论行不带计权/波动、
         // 分数栏保持单次形式，且不能出现 undefined。
         assert.match(detail.textContent, /T 修好 2\/3 条 · R 改坏 1\/4 条/);
         assert.doesNotMatch(detail.textContent, /计权/);
         assert.doesNotMatch(detail.textContent, /波动/);
-        assert.doesNotMatch(detail.textContent, /undefined/);
+        assert.doesNotMatch(panel.textContent, /undefined/);
         // 默认只渲染第一组（已修好）的案例行。
         const rows = caseRows(detail);
         assert.equal(rows.length, 1);
@@ -485,7 +493,7 @@ test('A3 展开按钮带小三角，展开时按钮带 is-open', async () => {
     }
 });
 
-test('A4 自动优化详情默认收起，二级开关显示结论摘要', async () => {
+test('A4 检查结论与案例默认收起，二级开关显示结论摘要', async () => {
     const page = await bootPage();
     try {
         await openPrompts(page);
@@ -497,6 +505,8 @@ test('A4 自动优化详情默认收起，二级开关显示结论摘要', async
         assert.equal(detail.hidden, true);
         const toggle = optimizationToggle(v2);
         assert.ok(toggle);
+        assert.match(toggle.textContent, /检查结论与案例/);
+        assert.match(toggle.textContent, /通过/);
         assert.match(toggle.textContent, /修好 2\/3 条/);
         assert.match(toggle.textContent, /改坏 1\/4 条/);
         assert.equal(toggle.getAttribute('aria-expanded'), 'false');
@@ -505,7 +515,31 @@ test('A4 自动优化详情默认收起，二级开关显示结论摘要', async
     }
 });
 
-test('A5 展开详情后依次是本次改动、检查结论、案例', async () => {
+test('A12 第一次展开就能看到本次改动，不需要再点二级开关', async () => {
+    const page = await bootPage();
+    try {
+        await openPrompts(page);
+        await waitHistory(page);
+        const v2 = historyItemByVersion(page, 'v2');
+        await expandVersion(v2);
+        // 只点了一次版本展开：二级详情仍然收起，但替换前/替换后已经可见。
+        assert.equal(optimizationDetail(v2).hidden, true);
+        const panel = historyPanel(v2);
+        const edits = panel.querySelector('.prompt-optimization-edits');
+        assert.ok(edits);
+        assert.equal(edits.closest('.prompt-optimization-detail'), null);
+        assert.match(edits.textContent, /替换前/);
+        assert.match(edits.textContent, /替换后/);
+        assert.match(edits.textContent, /若涉及高校/);
+        assert.match(edits.textContent, /且出现舆情风险/);
+        // 运行头部（结论/时间/模型）也在常显区，不在收起的详情里。
+        assert.ok(panel.querySelector('.prompt-optimization-run-head'));
+    } finally {
+        page.close();
+    }
+});
+
+test('A5 展开后依次是本次改动、检查结论、案例', async () => {
     const page = await bootPage();
     try {
         await openPrompts(page);
@@ -513,8 +547,8 @@ test('A5 展开详情后依次是本次改动、检查结论、案例', async ()
         const v2 = historyItemByVersion(page, 'v2');
         await expandVersion(v2);
         await expandOptimization(v2);
-        const detail = optimizationDetail(v2);
-        const subtitles = [...detail.querySelectorAll('.prompt-optimization-subtitle')]
+        // 「本次改动」在常显区，检查结论/案例在二级详情里，三者顺序仍固定。
+        const subtitles = [...v2.querySelectorAll('.prompt-optimization-subtitle')]
             .map((el) => el.textContent);
         assert.deepEqual(subtitles, ['本次改动', '检查结论', '案例']);
     } finally {

@@ -1015,40 +1015,27 @@ function buildOptimizationCases(cases) {
     return wrap;
 }
 
-// 二级开关的标题行直接给结论摘要；计权/波动字段缺失就不拼对应段落，
-// 没有 check 时只显示到 outcome_label。
-function promptOptimizationSummary(optimization) {
-    const parts = ['自动优化'];
-    const outcome = optimization.outcome_label || optimization.outcome;
-    if (outcome) parts.push(outcome);
+// 「本次改动」与运行头部随第一次展开直接显示，二级开关只收「检查结论 + 案例」，
+// 所以这里的摘要只讲检查结果（通过/未通过 + 修好/改坏条数）；没有 check 时只剩标题。
+function promptOptimizationCheckSummary(optimization) {
+    const parts = ['检查结论与案例'];
     const attempts = optimization.attempts || [];
     const lastAttempt = attempts.length ? attempts[attempts.length - 1] : null;
     const check = lastAttempt && lastAttempt.check;
     if (check) {
-        let summary = `修好 ${check.fixed_count || 0}/${check.t_total || 0} 条`;
-        if (
-            check.weighted_fixed_score !== null
-            && check.weighted_fixed_score !== undefined
-        ) {
-            summary += `（计权 ${check.weighted_fixed_score} 分）`;
-        }
-        summary += ` · 改坏 ${check.broken_count || 0}/${check.r_total || 0} 条`;
+        parts.push(check.passed ? '通过' : '未通过');
+        parts.push(`修好 ${check.fixed_count || 0}/${check.t_total || 0} 条`);
+        parts.push(`改坏 ${check.broken_count || 0}/${check.r_total || 0} 条`);
         if (check.fluctuation_count) {
-            summary += ` · 波动 ${check.fluctuation_count} 条`;
+            parts.push(`波动 ${check.fluctuation_count} 条`);
         }
-        parts.push(summary);
     }
     return parts.join(' · ');
 }
 
-function renderPromptOptimizationDetail(mount, optimization) {
-    clearEl(mount);
-    if (!optimization) {
-        mount.hidden = true;
-        return;
-    }
-    mount.hidden = false;
-    const head = createEl('div', 'prompt-optimization-detail-head');
+// 本次自动优化的运行头部：结论徽章、完成时间、模型。跟「本次改动」一起常显。
+function buildOptimizationRunHead(optimization) {
+    const head = createEl('div', 'prompt-optimization-run-head');
     head.appendChild(createEl(
         'span',
         'prompt-badge prompt-version',
@@ -1064,15 +1051,19 @@ function renderPromptOptimizationDetail(mount, optimization) {
         'prompt-optimization-model',
         optimization.model || '—',
     ));
-    mount.appendChild(head);
-    if (optimization.error) {
-        mount.appendChild(createEl('p', 'prompt-optimization-error', optimization.error));
-    }
+    return head;
+}
 
+// 二级开关里的内容：检查结论 + 案例。「本次改动」已在版本展开时直接渲染，不在这里。
+function renderPromptOptimizationCheckDetail(mount, optimization) {
+    clearEl(mount);
+    if (!optimization) {
+        mount.hidden = true;
+        return;
+    }
+    mount.hidden = false;
     const attempts = optimization.attempts || [];
     const lastAttempt = attempts.length ? attempts[attempts.length - 1] : {};
-    mount.appendChild(createEl('h4', 'prompt-optimization-subtitle', '本次改动'));
-    mount.appendChild(buildOptimizationEdits(lastAttempt.edits || []));
     mount.appendChild(createEl('h4', 'prompt-optimization-subtitle', '检查结论'));
     mount.appendChild(buildOptimizationCheck(lastAttempt.check));
     mount.appendChild(createEl('h4', 'prompt-optimization-subtitle', '案例'));
@@ -1137,9 +1128,26 @@ function buildPromptHistoryItem(item, revision) {
         clearEl(panel);
         panel.appendChild(createEl('pre', 'prompt-history-preview', payload.content || ''));
         if (payload.optimization) {
-            // 自动优化详情是二级开关：默认收起，标题行直接给结论摘要。
-            // 手工保存/文件基线版本没有 optimization，不渲染这个开关。
+            const optimization = payload.optimization;
+            const attempts = optimization.attempts || [];
+            const lastAttempt = attempts.length ? attempts[attempts.length - 1] : {};
+            const edits = lastAttempt.edits || [];
             const section = createEl('div', 'prompt-optimization-section');
+            // 运行头部与「本次改动」跟着版本展开直接显示：替换前/替换后是
+            // 点开历史版本最先要看的内容，不需要再点一次二级开关。
+            section.appendChild(buildOptimizationRunHead(optimization));
+            if (optimization.error) {
+                section.appendChild(createEl(
+                    'p',
+                    'prompt-optimization-error',
+                    optimization.error,
+                ));
+            }
+            if (edits.length) {
+                section.appendChild(createEl('h4', 'prompt-optimization-subtitle', '本次改动'));
+                section.appendChild(buildOptimizationEdits(edits));
+            }
+            // 二级开关只收「检查结论 + 案例」，默认收起。
             const optToggle = createEl('button', 'prompt-optimization-toggle', '', {
                 type: 'button',
                 'aria-expanded': 'false',
@@ -1148,7 +1156,7 @@ function buildPromptHistoryItem(item, revision) {
                 createEl(
                     'span',
                     'prompt-optimization-toggle-label',
-                    promptOptimizationSummary(payload.optimization),
+                    promptOptimizationCheckSummary(optimization),
                 ),
                 createEl('span', 'prompt-optimization-caret', '▾', {
                     'aria-hidden': 'true',
@@ -1159,7 +1167,7 @@ function buildPromptHistoryItem(item, revision) {
             optToggle.addEventListener('click', () => {
                 const open = detail.hidden;
                 if (open && !detail.dataset.rendered) {
-                    renderPromptOptimizationDetail(detail, payload.optimization);
+                    renderPromptOptimizationCheckDetail(detail, optimization);
                     detail.dataset.rendered = '1';
                 }
                 detail.hidden = !open;

@@ -41,7 +41,6 @@ from src.domain.prompt_edit import (
     OPTIMIZATION_LOOKBACK_DAYS,
     OPTIMIZATION_MAX_ATTEMPTS,
     OPTIMIZATION_MAX_CASES,
-    SUBMITTED_SCORE_FLOOR,
     CheckResult,
     OptimizationCase,
     PromptEditError,
@@ -52,6 +51,7 @@ from src.domain.prompt_edit import (
     evaluate_candidate_check,
     feedback_criterion,
     resolve_case_state,
+    submitted_score_floor,
 )
 from src.workers import (
     ContextPropagatingThreadPoolExecutor,
@@ -281,7 +281,7 @@ def _collect_cases(
                 source=row.get("source"),
                 origin=CASE_ORIGIN_SUBMISSION,
                 direction=DIRECTION_UP,
-                threshold=SUBMITTED_SCORE_FLOOR,
+                threshold=submitted_score_floor(prompt_key),
                 original_score=stored_score,
                 prompt_key=prompt_key,
                 event_at=_as_datetime(row.get("event_at"), since),
@@ -305,7 +305,7 @@ def _precheck_skips_replay(
         return False
     return all(
         case.stored_score is not None
-        and case.stored_score >= SUBMITTED_SCORE_FLOOR
+        and case.stored_score >= submitted_score_floor(case.prompt_key)
         for case in window_cases
         if case.origin == CASE_ORIGIN_SUBMISSION
     )

@@ -5,6 +5,7 @@ from typing import Optional
 
 import pytest
 
+from src.domain.prompt import SCORING_PROMPT_KEYS
 from src.domain.prompt_edit import (
     CASE_BUCKET_R,
     CASE_BUCKET_T,
@@ -17,6 +18,7 @@ from src.domain.prompt_edit import (
     FIX_STATE_FLUCTUATION,
     FIX_STATE_UNCHANGED,
     NOISE_BAND,
+    SUBMITTED_SCORE_FLOORS,
     OptimizationCase,
     PromptEdit,
     PromptEditError,
@@ -28,6 +30,7 @@ from src.domain.prompt_edit import (
     feedback_criterion,
     moved_at_least,
     resolve_case_state,
+    submitted_score_floor,
 )
 
 
@@ -183,6 +186,21 @@ def test_feedback_criterion_uses_margin_and_clamps_to_score_range() -> None:
     assert feedback_criterion("too_low", 96) == (DIRECTION_UP, 100)
     assert feedback_criterion("too_high", 52) == (DIRECTION_DOWN, 42)
     assert feedback_criterion("too_high", 3) == (DIRECTION_DOWN, 0)
+
+
+def test_submitted_score_floors_cover_all_scoring_prompts() -> None:
+    assert set(SUBMITTED_SCORE_FLOORS) == set(SCORING_PROMPT_KEYS)
+    assert SUBMITTED_SCORE_FLOORS == {
+        "internal_positive": 50,
+        "external_positive": 70,
+        "external_negative": 60,
+        "internal_negative": 60,
+    }
+
+
+def test_submitted_score_floor_rejects_prompt_key_without_mapping() -> None:
+    with pytest.raises(KeyError, match="unknown_positive"):
+        submitted_score_floor("unknown_positive")
 
 
 def test_case_satisfied_handles_none_and_direction() -> None:

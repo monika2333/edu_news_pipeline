@@ -13,7 +13,15 @@ OPTIMIZATION_LOOKBACK_DAYS = 30
 OPTIMIZATION_MAX_CASES = 90
 OPTIMIZATION_MAX_ATTEMPTS = 2
 FEEDBACK_SCORE_MARGIN = 10.0
-SUBMITTED_SCORE_FLOOR = 60.0
+# 报送存档案例的达标线（回放分 ≥ 该值），按提示词的档位边界分别设置。
+# 2026-11-01 用户拍板：对齐各提示词档位边界；依据是生产库近 30 天分数段分布统计。
+# 改提示词档位时必须同步检查这里。
+SUBMITTED_SCORE_FLOORS: Mapping[str, float] = {
+    "internal_positive": 50.0,  # T3 下沿
+    "external_positive": 70.0,  # T1 下沿
+    "external_negative": 60.0,  # T2 下沿（不变）
+    "internal_negative": 60.0,  # 暂无分档，沿用原值
+}
 PROMPT_EDIT_MAX_EDITS = 3
 PROMPT_EDIT_MAX_CHANGED_CHARS = 800
 # R（参照集）允许被改坏的条数 = max(1, floor(|R| * 10%))，且必须少于修好计权分。
@@ -40,6 +48,17 @@ FIX_STATE_FIXED = "fixed"
 FIX_STATE_BROKEN = "broken"
 FIX_STATE_FLUCTUATION = "fluctuation"
 FIX_STATE_UNCHANGED = "unchanged"
+
+
+def submitted_score_floor(prompt_key: str) -> float:
+    """按提示词取报送存档达标线；缺少该 key 时直接报错，不回退默认值。"""
+
+    try:
+        return SUBMITTED_SCORE_FLOORS[prompt_key]
+    except KeyError:
+        raise KeyError(
+            f"提示词 {prompt_key} 没有配置报送存档达标线（SUBMITTED_SCORE_FLOORS）"
+        ) from None
 
 
 class PromptEditError(ValueError):
@@ -433,7 +452,7 @@ __all__ = [
     "PromptEditError",
     "R_BROKEN_MIN_ALLOWANCE",
     "R_BROKEN_RATIO",
-    "SUBMITTED_SCORE_FLOOR",
+    "SUBMITTED_SCORE_FLOORS",
     "apply_prompt_edits",
     "case_broken_probe",
     "case_fixed_probe",
@@ -443,4 +462,5 @@ __all__ = [
     "moved_at_least",
     "r_broken_allowance",
     "resolve_case_state",
+    "submitted_score_floor",
 ]

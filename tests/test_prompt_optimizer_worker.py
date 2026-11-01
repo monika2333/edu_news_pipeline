@@ -858,17 +858,26 @@ def test_one_prompt_error_does_not_block_the_next_prompt(monkeypatch) -> None:
     assert "collect failed" in result["items"][0]["error"]
 
 
-def test_submission_uses_60_floor_not_a_lower_threshold(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("prompt_key", "floor"),
+    [
+        ("internal_positive", 50),
+        ("external_positive", 70),
+        ("external_negative", 60),
+        ("internal_negative", 60),
+    ],
+)
+def test_submission_threshold_follows_prompt_key(monkeypatch, prompt_key, floor) -> None:
     _patch_prompt(monkeypatch)
     optimization = _FakeOptimization(
-        submissions=[_submission_row("s1", stored_score=55)],
+        submissions=[_submission_row("s1", stored_score=floor - 5)],
     )
     adapter = _Adapter({"s1": _article_row("s1")}, optimization)
 
     result = worker.run(
-        ["external_positive"],
+        [prompt_key],
         adapter=adapter,
-        replay=lambda row, key, content: 55,
+        replay=lambda row, key, content: floor - 5,
         optimizer=lambda *args: _no_change_optimizer(),
         now=NOW,
     )
@@ -877,8 +886,134 @@ def test_submission_uses_60_floor_not_a_lower_threshold(monkeypatch) -> None:
     assert item["outcome"] == "model_declined"
     assert item["t_count"] == 1
     case = optimization.runs[0]["cases"][0]
-    assert case["threshold"] == 60
+    assert case["threshold"] == floor
     assert case["bucket"] == "T"
+
+
+@pytest.mark.parametrize(
+    ("prompt_key", "floor"),
+    [
+        ("internal_positive", 50),
+        ("external_positive", 70),
+        ("external_negative", 60),
+        ("internal_negative", 60),
+    ],
+)
+def test_collected_submission_cases_use_prompt_key_floor(prompt_key, floor) -> None:
+    optimization = _FakeOptimization(
+        submissions=[_submission_row("s1", stored_score=40)],
+    )
+
+    cases = worker._collect_cases(
+        _Adapter({}, optimization),
+        prompt_key,
+        since=NOW - timedelta(days=30),
+    )
+
+    assert [case.threshold for case in cases] == [floor]
+    assert [case.prompt_key for case in cases] == [prompt_key]
+
+
+def test_collected_feedback_cases_ignore_submitted_floor() -> None:
+    optimization = _FakeOptimization(
+        feedback=[_feedback_row("f1", score=46)],
+        submissions=[_submission_row("s1", stored_score=40)],
+    )
+
+    cases = worker._collect_cases(
+        _Adapter({}, optimization),
+        "internal_positive",
+        since=NOW - timedelta(days=30),
+    )
+
+    thresholds = {case.origin: case.threshold for case in cases}
+    # 标注分 ±10 不变（46 + 10 = 56），报送存档取该提示词的 50。
+    assert thresholds == {"feedback": 56, "submission": 50}
+
+
+@pytest.mark.parametrize(
+    ("prompt_key", "stored_score", "will_finish"),
+    [
+        ("internal_positive", 55, True),
+        ("external_positive", 65, False),
+    ],
+)
+def test_precheck_takes_floor_from_prompt_key(
+    monkeypatch,
+    prompt_key: str,
+    stored_score: float,
+    will_finish: bool,
+) -> None:
+    _patch_prompt(monkeypatch)
+    optimization = _FakeOptimization(
+        submissions=[_submission_row("s1", stored_score=stored_score)],
+    )
+    rows = {} if will_finish else {"s1": _article_row("s1")}
+    adapter = _Adapter(rows, optimization)
+    replay_calls: list[str] = []
+
+    result = worker.run(
+        [prompt_key],
+        dry_run=True,
+        adapter=adapter,
+        replay=lambda row, key, content: replay_calls.append(key) or 80,
+        optimizer=lambda *args: _no_change_optimizer(),
+        now=NOW,
+    )
+
+    item = result["items"][0]
+    assert item["preview_precheck_will_finish"] is will_finish
+    assert item["preview_estimated_replay_count"] == (0 if will_finish else 1)
+    assert replay_calls == []
+
+
+def test_internal_positive_submission_floor_decides_r_and_t(monkeypatch) -> None:
+    _patch_prompt(monkeypatch)
+
+    # 回放 52 分达到该提示词的 50 分线 → 进参照集 R。
+    optimization = _FakeOptimization(
+        submissions=[_submission_row("s-pass", stored_score=48)],
+    )
+    adapter = _Adapter({"s-pass": _article_row("s-pass")}, optimization)
+
+    passed = worker.run(
+        ["internal_positive"],
+        adapter=adapter,
+        replay=lambda row, key, content: 52,
+        optimizer=lambda *args: _no_change_optimizer(),
+        now=NOW,
+    )
+
+    item = passed["items"][0]
+    assert item["outcome"] == "no_correction"
+    assert item["r_count"] == 1
+    assert item["t_count"] == 0
+    case = optimization.runs[0]["cases"][0]
+    assert case["threshold"] == 50
+    assert case["bucket"] == "R"
+
+    # 回放 48 分不达标：过一次确认回放后进入待修正集 T。
+    optimization = _FakeOptimization(
+        submissions=[_submission_row("s-fail", stored_score=48)],
+    )
+    adapter = _Adapter({"s-fail": _article_row("s-fail")}, optimization)
+
+    failed = worker.run(
+        ["internal_positive"],
+        adapter=adapter,
+        replay=lambda row, key, content: 48,
+        optimizer=lambda *args: _no_change_optimizer(),
+        now=NOW,
+    )
+
+    item = failed["items"][0]
+    assert item["outcome"] == "model_declined"
+    assert item["t_count"] == 1
+    case = optimization.runs[0]["cases"][0]
+    assert case["threshold"] == 50
+    assert case["bucket"] == "T"
+    assert case["current_score"] == 48
+    assert case["current_confirm_score"] == 48
 
 
 def test_file_fallback_window_is_thirty_days(monkeypatch) -> None:
@@ -1349,7 +1484,10 @@ def test_candidate_confirm_unparseable_fails_attempt_then_recovers(monkeypatch) 
 
 
 def test_oct31_night_scenario_under_new_rules(monkeypatch) -> None:
-    """复现 2026-10-31 internal_positive 场景：波动案例不进 T，降 3–4 分不算改坏。"""
+    """复现 2026-10-31 internal_positive 场景：波动案例不进 T，降 3–4 分不算改坏。
+
+    参照案例的分数按 external_positive 的 70 分达标线平移；首版实测共用 60 分线。
+    """
     _patch_prompt(monkeypatch)
     feedback = [
         _feedback_row("shuzhi"),    # 数智育人：运行时 58，测量重打能过线
@@ -1358,7 +1496,7 @@ def test_oct31_night_scenario_under_new_rules(monkeypatch) -> None:
         _feedback_row("t-hard"),
     ]
     submissions = [
-        _submission_row(f"r{index}", stored_score=62) for index in range(7)
+        _submission_row(f"r{index}", stored_score=72) for index in range(7)
     ]
     optimization = _FakeOptimization(feedback=feedback, submissions=submissions)
     rows = {
@@ -1374,15 +1512,15 @@ def test_oct31_night_scenario_under_new_rules(monkeypatch) -> None:
         "t-real": {"cur": [55, 55], "cand": [66, 66]},
         # t-hard 两次 50/52 → 起点 52，候选 58 仍不达标 → 未变化。
         "t-hard": {"cur": [50, 52], "cand": [58, 58]},
-        # 参照：旧分 61–63，候选只降 3–4 分的三条（10-31 被判改坏的其中三条）。
-        "r0": {"cur": [61], "cand": [58, 58]},
-        "r1": {"cur": [62], "cand": [58, 58]},
-        "r2": {"cur": [63], "cand": [59, 59]},
-        # 真实改坏：降 9–11 分，两次确认都成立。
-        "r3": {"cur": [61], "cand": [50, 52]},
-        "r4": {"cur": [65], "cand": [80, 80]},
-        "r5": {"cur": [66], "cand": [80, 80]},
-        "r6": {"cur": [67], "cand": [80, 80]},
+        # 参照：旧分 71–73，候选只降 3–4 分的三条（原 10-31 被判改坏的其中三条）。
+        "r0": {"cur": [71], "cand": [68, 68]},
+        "r1": {"cur": [72], "cand": [68, 68]},
+        "r2": {"cur": [73], "cand": [69, 69]},
+        # 真实改坏：降 11 分且跌破 70 分线，两次确认都成立。
+        "r3": {"cur": [71], "cand": [60, 60]},
+        "r4": {"cur": [75], "cand": [80, 80]},
+        "r5": {"cur": [76], "cand": [80, 80]},
+        "r6": {"cur": [77], "cand": [80, 80]},
     }
 
     result = worker.run(

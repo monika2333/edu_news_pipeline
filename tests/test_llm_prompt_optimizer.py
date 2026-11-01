@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -36,6 +37,33 @@ def test_meta_prompt_positive_example_avoids_archive_criteria_words() -> None:
     for line in example_lines:
         for word in ("存档", "回链", "报送"):
             assert word not in line, f"✓ 示例行不得包含判据字样「{word}」：{line}"
+
+
+def test_self_check_submission_line_has_no_concrete_score() -> None:
+    """报送存档的达标线按提示词不同，自检口径不得写死具体分数。
+
+    四个评分提示词共用这份元提示词，达标线随案例的 criterion_label 传入；
+    写了固定分数就会诱导模型把它搬进评分规则（2026-11-01 拍板）。
+    """
+
+    meta = load_prompt_optimizer_meta()
+    lines = meta.splitlines()
+    start = next(
+        index for index, line in enumerate(lines) if line.startswith("【自检口径")
+    )
+    section: list[str] = []
+    for line in lines[start + 1 :]:
+        if line.startswith("【"):
+            break
+        section.append(line)
+
+    submission_lines = [line for line in section if "报送存档" in line]
+    assert submission_lines, "自检口径应保留报送存档一行"
+    for line in submission_lines:
+        assert not re.search(r"[0-9]", line), (
+            f"报送存档一行不得包含具体达标分数：{line}"
+        )
+    assert "不低于 60" not in meta
 
 
 def test_parse_change_response_with_fenced_json() -> None:

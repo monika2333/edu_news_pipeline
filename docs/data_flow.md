@@ -155,7 +155,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 | 来源 | 取数口径 | 方向 | 达标判据 |
 |---|---|---|---|
 | 评分标注 | `score_feedbacks`，`feedback_type` 为 `too_low` / `too_high`；按 `updated_at` 进窗口，不区分标注人；同一篇多条取最新 | 调高 / 调低 | 回放分 ≥ min(标注时分数 + 10, 100) / ≤ max(标注时分数 − 10, 0) |
-| 报送存档 | `submitted_report_items.link_status = 'matched'` 且 `article_id` 非空；按 `link_matched_at` 进窗口；综报、晚报、反馈三类报别都算 | 调高 | 回放分 ≥ 60 |
+| 报送存档 | `submitted_report_items.link_status = 'matched'` 且 `article_id` 非空；按 `link_matched_at` 进窗口；综报、晚报、反馈三类报别都算 | 调高 | 回放分 ≥ 该提示词的达标线（`internal_positive` 50 / `external_positive` 70 / `external_negative` 60 / `internal_negative` 60，分别对齐各自档位边界） |
 
 归属按文章评分时实际使用的 `news_summaries.external_importance_raw.prompt_key`
 （评分标注用自身 `prompt_key` 列）。同一篇文章同时有标注和存档时**以标注为准**；

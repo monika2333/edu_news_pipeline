@@ -483,24 +483,25 @@ def test_education_parser_keeps_image_first_and_text_only_entries() -> None:
     assert all(item.title for item in items)
 
 
-def test_education_parser_counts_window_drops_and_non_article_links() -> None:
-    # 计数口径：每个 .item 恰好一条微博分享链接是非文章链接；置顶条目无 .time。
+def test_education_parser_counts_window_drops_and_items_without_article() -> None:
+    # 计数口径：第三项是「找不到文章链接的 .item」数量，分享链接不计入，
+    # 正常页面应为 0；置顶条目无 .time。
     expected = {
-        "mryw": (MRYW_URL, 3, 13, 15),
-        "jcjy": (JCJY_URL, 1, 14, 15),
-        "gdjy": (GDJY_URL, 4, 11, 15),
-        "eduzyjy": (EDUZYJY_URL, 1, 14, 15),
+        "mryw": (MRYW_URL, 3, 13, 0),
+        "jcjy": (JCJY_URL, 1, 14, 0),
+        "gdjy": (GDJY_URL, 4, 11, 0),
+        "eduzyjy": (EDUZYJY_URL, 1, 14, 0),
     }
-    for alias, (url, kept, dropped, non_article) in expected.items():
-        items, window_dropped, non_article_skipped = hx._parse_education_list_html(
+    for alias, (url, kept, dropped, without_article) in expected.items():
+        items, window_dropped, items_without_article = hx._parse_education_list_html(
             _edu_fixture(f"{alias}_index.htm"),
             url,
             cutoff=EDU_TODAY - timedelta(days=3),
         )
-        assert (len(items), window_dropped, non_article_skipped) == (
+        assert (len(items), window_dropped, items_without_article) == (
             kept,
             dropped,
-            non_article,
+            without_article,
         ), f"{alias} counts drifted"
 
 
@@ -511,6 +512,51 @@ def test_education_parser_raises_without_container() -> None:
             MRYW_URL,
             cutoff=EDU_TODAY - timedelta(days=3),
         )
+
+
+# 容器在但一条文章都解析不出的两种形态：没有 .item；.item 在但都没有文章链接。
+DEAD_CHANNEL_PAGES = (
+    '<html><body><div id="content-list"></div></body></html>',
+    '<html><body><div id="content-list">'
+    '<div class="item"><span>无链接条目</span></div>'
+    '<div class="item"><a href="//service.weibo.com/share/share.php?url=x">分享</a></div>'
+    "</div></body></html>",
+)
+
+
+def test_education_parser_raises_when_no_article_entries_parse() -> None:
+    # 容器缺失之外的第二类频道失败：窗口过滤前一条文章都解析不出。
+    for html in DEAD_CHANNEL_PAGES:
+        with pytest.raises(ValueError, match="article entries"):
+            hx._parse_education_list_html(
+                html,
+                MRYW_URL,
+                cutoff=EDU_TODAY - timedelta(days=3),
+            )
+
+
+def test_education_parser_counts_items_without_article_links() -> None:
+    # 计数口径：分享链接不计入；只有找不到文章链接的 .item 才计数。
+    html = (
+        '<html><body><div id="content-list">'
+        '<div class="item"><div class="txt"><div class="tit">'
+        '<a href="https://education.news.cn/20261030/dbc6acf913ef43abb14aab3f8230804e/c.html">'
+        "正常条目</a></div>"
+        '<div class="info"><div class="share">'
+        '<a href="//service.weibo.com/share/share.php?url=x">分享</a></div></div></div></div>'
+        '<div class="item"><a href="//service.weibo.com/share/share.php?url=y">只有分享</a></div>'
+        '<div class="item"><span>纯文字无链接</span></div>'
+        "</div></body></html>"
+    )
+
+    items, _dropped, items_without_article = hx._parse_education_list_html(
+        html,
+        MRYW_URL,
+        cutoff=EDU_TODAY - timedelta(days=3),
+    )
+
+    assert [item.title for item in items] == ["正常条目"]
+    assert items_without_article == 2
 
 
 def test_education_date_prefers_url_date_over_list_time(
@@ -628,6 +674,28 @@ def test_education_single_channel_missing_container_keeps_others(
     assert "每日要闻" in stderr
 
 
+@pytest.mark.parametrize(
+    "dead_page",
+    DEAD_CHANNEL_PAGES,
+    ids=["empty-container", "items-without-article-links"],
+)
+def test_education_dead_channel_keeps_others(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    dead_page: str,
+) -> None:
+    # 窗口过滤前一条文章都解析不出（无 .item / .item 无文章链接）与容器缺失
+    # 同级：该频道 [warn]，其余频道照常。
+    _serve_edu_fixtures(monkeypatch, overrides={MRYW_URL: dead_page})
+
+    items = hx.list_education_items(today=EDU_TODAY)
+
+    assert len(items) == 6
+    stderr = capsys.readouterr().err
+    assert "[warn]" in stderr
+    assert "每日要闻" in stderr
+
+
 def test_education_all_http_failures_raise(monkeypatch: pytest.MonkeyPatch) -> None:
     _serve_edu_fixtures(
         monkeypatch,
@@ -642,6 +710,25 @@ def test_education_all_missing_containers_raise(monkeypatch: pytest.MonkeyPatch)
     _serve_edu_fixtures(
         monkeypatch,
         overrides={url: "<html></html>" for url in EDU_CHANNEL_URLS.values()},
+    )
+
+    with pytest.raises(RuntimeError, match="education channels failed"):
+        hx.list_education_items(today=EDU_TODAY)
+
+
+@pytest.mark.parametrize(
+    "dead_page",
+    DEAD_CHANNEL_PAGES,
+    ids=["empty-container", "items-without-article-links"],
+)
+def test_education_all_dead_channels_raise(
+    monkeypatch: pytest.MonkeyPatch,
+    dead_page: str,
+) -> None:
+    # 全部频道都解析不出文章时同样 raise。
+    _serve_edu_fixtures(
+        monkeypatch,
+        overrides={url: dead_page for url in EDU_CHANNEL_URLS.values()},
     )
 
     with pytest.raises(RuntimeError, match="education channels failed"):
@@ -733,6 +820,6 @@ def test_education_stderr_summary_line(monkeypatch: pytest.MonkeyPatch, capsys: 
         "new=9",
         "existing_skipped=0",
         "window_dropped=52",
-        "non_article_skipped=60",
+        "items_without_article=0",
     ):
         assert token in stderr, token

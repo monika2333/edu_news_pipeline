@@ -4,7 +4,6 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, Iterator, Optional
-from urllib.parse import urlsplit
 
 import pytest
 
@@ -99,6 +98,10 @@ LINKED_SOURCES = {
         "xinhua_fetch_detail",
         "xinhua_build_detail_update",
     ),
+    # xinhua_edu 预期接线：list 回调专属（xinhua_edu_list_items，桩 marker
+    # 为 "xinhua_edu"）；其余四个回调复用 xinhua_*，桩 marker 为 "xinhua"
+    # （见 CALLBACK_OWNER_OVERRIDES）。接线若被错接到别的来源（如
+    # stdaily_*），桩 marker 会暴露出不属于本来源的名字而被断言抓住。
     "xinhua_edu": (
         "xinhua_edu_list_items",
         "xinhua_make_article_id",
@@ -114,6 +117,17 @@ LINKED_SOURCES = {
         "stdaily_build_detail_update",
     ),
 }
+
+# 复用他源回调的来源 → 回调名所属来源。桩与断言都按这个归属绑定 marker，
+# 而不是从 item.url 推导：从 URL 推导时，接线接到任何来源的桩都返回同样的
+# marker，注册表里 name 字段接错（N1-N5 类变异）会静默通过。
+CALLBACK_OWNER_OVERRIDES = {"xinhua_edu": "xinhua"}
+
+
+def _callback_owner(source: str) -> str:
+    """Return the source that owns `source`'s non-list callbacks."""
+
+    return CALLBACK_OWNER_OVERRIDES.get(source, source)
 
 
 @contextmanager
@@ -174,37 +188,39 @@ def run_adapter(monkeypatch: pytest.MonkeyPatch) -> object:
 def _patch_linked_callbacks(monkeypatch: pytest.MonkeyPatch) -> None:
     for source, callback_names in LINKED_SOURCES.items():
         list_name, make_id_name, feed_name, fetch_name, build_name = callback_names
+        # 桩的 marker 按回调名所属来源绑定（默认参数在 patch 时定值），
+        # 不从 URL 推导——否则注册表 name 字段接错测不出来。
+        # xinhua 与 xinhua_edu 共用的四个回调名都归属 xinhua，两个来源的
+        # 迭代各打一次同名桩，绑定的 marker 相同，不存在相互覆盖问题；
+        # list_items 的回调名各来源唯一，绑定到来源本身。
+        owner = _callback_owner(source)
 
         def list_items(*, marker: str = source, **_kwargs: Any) -> list[str]:
             return [marker]
 
-        # xinhua 与 xinhua_edu 共用 make_article_id/feed_row/detail 回调名。
-        # 这些桩的 marker 必须在调用时从 URL 取：若在 patch 时用默认参数
-        # 绑定，同名桩循环打两次只会留下最后一个来源的标记，先注册来源
-        # 的用例断言必炸。list_items 的回调名各来源唯一，仍按名绑定。
-        def make_article_id(url: str, **_kwargs: Any) -> str:
-            return f"{urlsplit(str(url)).netloc.split('.')[0]}:id"
+        def make_article_id(_url: str, *, marker: str = owner) -> str:
+            return f"{marker}:id"
 
         def feed_item_to_row(
-            item: Any,
+            _item: Any,
             article_id: str,
             *,
             fetched_at: datetime,
+            marker: str = owner,
         ) -> dict[str, Any]:
-            marker = urlsplit(str(item.url)).netloc.split(".")[0]
             return {"callback": marker, "article_id": article_id, "fetched_at": fetched_at}
 
-        def fetch_detail(url: str, **_kwargs: Any) -> dict[str, str]:
-            return {"callback": urlsplit(str(url)).netloc.split(".")[0]}
+        def fetch_detail(_url: str, *, marker: str = owner) -> dict[str, str]:
+            return {"callback": marker}
 
         def build_detail_update(
-            item: Any,
+            _item: Any,
             article_id: str,
             payload: dict[str, str],
             *,
             detail_fetched_at: datetime,
+            marker: str = owner,
         ) -> dict[str, Any]:
-            marker = urlsplit(str(item.url)).netloc.split(".")[0]
             return {
                 "callback": marker,
                 "article_id": article_id,
@@ -275,13 +291,16 @@ def test_every_dispatch_key_preserves_source_flow_strategy_and_callbacks(
     if source in LINKED_SOURCES:
         item = SimpleNamespace(url=f"https://{source}.test/item")
         fetched_at = datetime(2026, 9, 10, tzinfo=timezone.utc)
+        # list 回调专属本来源；其余四个回调按回调名所属来源断言
+        # （xinhua_edu 复用 xinhua_*，预期 marker 为 "xinhua"）。
+        owner = _callback_owner(source)
         assert flow.list_items(2, {"existing"}) == [source]
         article_id, feed_row = flow.prepare_feed(item, fetched_at)
-        assert article_id == f"{source}:id"
-        assert feed_row["callback"] == source
+        assert article_id == f"{owner}:id"
+        assert feed_row["callback"] == owner
         detail_row = flow.fetch_detail(item, article_id, fetched_at)
-        assert detail_row["callback"] == source
-        assert detail_row["payload_callback"] == source
+        assert detail_row["callback"] == owner
+        assert detail_row["payload_callback"] == owner
 
 
 @pytest.mark.parametrize(

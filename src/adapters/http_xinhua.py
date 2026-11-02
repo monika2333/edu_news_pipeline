@@ -319,10 +319,12 @@ def _parse_education_list_html(
     "每日要闻""热点专题"等块不进结果。
 
     Returns the items inside the lookback window, how many article entries
-    were dropped for being too old, and how many non-article links (分享、
-    直播页等) were skipped. Raises ValueError when the expected container is
-    missing so the caller can count that channel as failed instead of
-    reporting a silent 0-item success.
+    were dropped for being too old, and how many .item entries yielded no
+    article link at all (share links are not counted). Raises ValueError
+    when the expected container is missing or when not a single article
+    entry can be parsed before window filtering—both mean the page has
+    changed and the caller counts that channel as failed; a page whose
+    articles all fall outside the window is NOT a failure.
     """
 
     soup = BeautifulSoup(html_text, "html.parser")
@@ -333,7 +335,8 @@ def _parse_education_list_html(
     items: list[FeedItemLike] = []
     seen_urls: set[str] = set()
     window_dropped = 0
-    non_article_skipped = 0
+    items_without_article = 0
+    articles_seen = 0
 
     for entry in container.select(".item"):
         tit_anchor = entry.select_one(".tit a[href]")
@@ -346,12 +349,11 @@ def _parse_education_list_html(
                 tit_title = tit_anchor.get_text(" ", strip=True)
 
         # 标题兜底：条目内第一个有文字的链接（图文条目的第一个链接是图片，
-        # 没有文字，天然跳过）。
+        # 没有文字，天然跳过）。分享链接等非文章地址不参与、也不计数。
         fallback_title = ""
         for anchor in entry.find_all("a", href=True):
             url = normalize_url(urljoin(page_url, str(anchor.get("href") or "")))
             if _match_article_path(url) is None:
-                non_article_skipped += 1
                 continue
             if item_url is None:
                 item_url = url
@@ -360,7 +362,12 @@ def _parse_education_list_html(
                 if text:
                     fallback_title = text
 
-        if item_url is None or item_url in seen_urls:
+        if item_url is None:
+            # 整条找不到文章链接是改版信号，单独计数进汇总日志。
+            items_without_article += 1
+            continue
+        articles_seen += 1
+        if item_url in seen_urls:
             continue
         title = tit_title or fallback_title
         if not title:
@@ -394,7 +401,15 @@ def _parse_education_list_html(
             )
         )
 
-    return items, window_dropped, non_article_skipped
+    # 容器在但一条文章都解析不出（含没有任何 .item）：与容器缺失同级，
+    # 否则改版会表现为长期静默 0 条。窗口把文章全滤掉不算（articles_seen
+    # 在窗口过滤前统计）。
+    if articles_seen == 0:
+        raise ValueError(
+            f"education channel page has no parseable article entries: {page_url}"
+        )
+
+    return items, window_dropped, items_without_article
 
 
 def list_education_items(
@@ -421,13 +436,13 @@ def list_education_items(
     collected: list[FeedItemLike] = []
     channel_notes: list[str] = []
     window_dropped = 0
-    non_article_skipped = 0
+    items_without_article = 0
     failed_channels = 0
     for name, channel_url in EDUCATION_CHANNELS:
         try:
             response = session.get(channel_url, timeout=DEFAULT_TIMEOUT)
             response.raise_for_status()
-            items, dropped, skipped_links = _parse_education_list_html(
+            items, dropped, without_article = _parse_education_list_html(
                 decode_response(response),
                 channel_url,
                 cutoff=cutoff,
@@ -443,7 +458,7 @@ def list_education_items(
             LOGGER.warning("xinhua_edu channel fetch failed: %s (%s)", name, exc)
             continue
         window_dropped += dropped
-        non_article_skipped += skipped_links
+        items_without_article += without_article
         collected.extend(items)
         channel_notes.append(f"{name}={len(items)}")
 
@@ -469,7 +484,7 @@ def list_education_items(
         f"{', '.join(channel_notes) if channel_notes else 'none loaded'}; "
         f"unique={len(merged)} new={len(results)} "
         f"existing_skipped={existing_skipped} window_dropped={window_dropped} "
-        f"non_article_skipped={non_article_skipped}",
+        f"items_without_article={items_without_article}",
         file=sys.stderr,
     )
     return results

@@ -116,6 +116,7 @@ from src.adapters.http_xinhua import (
     feed_item_to_row as xinhua_feed_item_to_row,
     fetch_detail as xinhua_fetch_detail,
     list_items as xinhua_list_items,
+    list_education_items as xinhua_edu_list_items,
     make_article_id as xinhua_make_article_id,
 )
 from src.adapters.http_stdaily import (
@@ -1160,6 +1161,20 @@ _SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
             source="xinhua",
             display_name="Xinhua Beijing",
             list_items_name="xinhua_list_items",
+            make_article_id_name="xinhua_make_article_id",
+            feed_item_to_row_name="xinhua_feed_item_to_row",
+            fetch_detail_name="xinhua_fetch_detail",
+            build_detail_update_name="xinhua_build_detail_update",
+        ),
+    ),
+    "xinhua_edu": SourceRegistration(
+        runner_name="_run_registered_linked_page_flow",
+        kwargs_factory=_pages_runner_kwargs,
+        linked_page=LinkedPageConfig(
+            source="xinhua_edu",
+            display_name="Xinhua Education",
+            # 教育频道与北京频道同站家族：ID、feed 行、详情直接复用 xinhua_* 回调。
+            list_items_name="xinhua_edu_list_items",
             make_article_id_name="xinhua_make_article_id",
             feed_item_to_row_name="xinhua_feed_item_to_row",
             fetch_detail_name="xinhua_fetch_detail",

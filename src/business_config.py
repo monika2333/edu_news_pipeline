@@ -79,6 +79,9 @@ SOURCE_CATALOG = (
     SourceDefinition("gmw", "光明网"),
     SourceDefinition("qianlong", "千龙网", requires_accounts=True),
     SourceDefinition("xinhua", "新华网"),
+    # 新来源默认不在 crawl_sources 已保存列表里，需要在控制台设置页手动启用；
+    # 有噪音时也可单独关闭，无需发版。
+    SourceDefinition("xinhua_edu", "新华网教育"),
     SourceDefinition("stdaily", "科技日报"),
     SourceDefinition("bbtnews", "北京商报"),
     SourceDefinition("btime", "北京时间", requires_accounts=True),

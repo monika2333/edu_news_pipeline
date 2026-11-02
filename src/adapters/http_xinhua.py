@@ -53,7 +53,27 @@ COLUMNS: tuple[tuple[str, str], ...] = (
     ("聚焦", "http://bj.news.cn/jj/index.htm"),
 )
 
-_ARTICLE_PATH_RE = re.compile(r"^/(\d{8})/([0-9a-f]{32})/c\.html$", re.IGNORECASE)
+EDUCATION_CHANNEL_BASE_URL = "https://education.news.cn/"
+EDUCATION_DEFAULT_LOOKBACK_DAYS = 3
+
+# 教育频道只接以下 4 个栏目：图文列表、仍在更新。每轮只请求首屏，
+# 不处理"加载更多"和 ds_*.json 翻页。
+# 其余栏目不要好心加回来（2026-11-02 核对）：
+# - 权威发布：首屏不按时间倒序（置顶旧稿），首页已出现的新稿不在首屏
+#   前 15 条内，只抓首屏会漏稿——除非做翻页，否则不能接。
+# - 国际教育、商科教育、名校大家谈、教育对话、教育观察等：已停更。
+EDUCATION_CHANNELS: tuple[tuple[str, str], ...] = (
+    ("每日要闻", "https://education.news.cn/mryw/index.htm"),
+    ("基础教育", "https://education.news.cn/jcjy/index.htm"),
+    ("高等教育", "https://education.news.cn/gdjy/index.htm"),
+    ("职业教育", "https://education.news.cn/eduzyjy/index.htm"),
+)
+
+# 文章路径允许日期前带一段小写栏目名（如 www.news.cn/legal/20261020/<slug>/c.html，
+# 教育频道每日要闻首屏真实存在）。栏目段保持小写敏感；slug 段沿用大小写不敏感
+# （历史页面存在大写十六进制 slug，ID 一律 .lower() 归一）。
+# 分组序号保持不变：group(1)=日期，group(2)=slug。
+_ARTICLE_PATH_RE = re.compile(r"^/(?:[a-z]+/)?(\d{8})/(?i:([0-9a-f]{32}))/c\.html$")
 _LIST_DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 _DETAIL_TIME_RE = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
@@ -122,7 +142,9 @@ def _parse_list_date(text: str) -> Optional[date]:
 
 def _url_date(url: str) -> Optional[date]:
     raw = urlsplit(normalize_url(url)).path
-    match = re.match(r"^/(\d{4})(\d{2})(\d{2})/", raw)
+    # 与 _ARTICLE_PATH_RE 对齐：允许日期前带一段小写栏目名，否则带前缀的
+    # 文章地址取不到日期，回溯窗口对它们不生效。
+    match = re.match(r"^/(?:[a-z]+/)?(\d{4})(\d{2})(\d{2})/", raw)
     if not match:
         return None
     try:
@@ -203,6 +225,16 @@ def _lookback_days() -> int:
     return max(0, value)
 
 
+def _education_lookback_days() -> int:
+    # 与 XINHUA_LOOKBACK_DAYS 同义但独立：教育频道可单独调整回溯窗口。
+    raw = os.getenv("XINHUA_EDU_LOOKBACK_DAYS")
+    try:
+        value = int(raw) if raw is not None else EDUCATION_DEFAULT_LOOKBACK_DAYS
+    except (TypeError, ValueError):
+        return EDUCATION_DEFAULT_LOOKBACK_DAYS
+    return max(0, value)
+
+
 def list_items(
     limit: Optional[int] = None,
     pages: Optional[int] = None,
@@ -268,6 +300,176 @@ def list_items(
         f"{', '.join(column_notes) if column_notes else 'none loaded'}; "
         f"unique={len(merged)} new={len(results)} "
         f"existing_skipped={existing_skipped} window_dropped={window_dropped}",
+        file=sys.stderr,
+    )
+    return results
+
+
+def _parse_education_list_html(
+    html_text: str,
+    page_url: str,
+    *,
+    cutoff: date,
+) -> tuple[list[FeedItemLike], int, int]:
+    """Parse one education channel index page, ``#content-list`` items only.
+
+    教育频道条目是图文结构，第一个链接是图片、share 区还有微博分享链接，
+    不能复用全页扫链接的 _parse_list_html（它会在检查标题前登记 URL，
+    图片在前的整条会被丢掉）。只认 #content-list 内的 .item，侧栏的
+    "每日要闻""热点专题"等块不进结果。
+
+    Returns the items inside the lookback window, how many article entries
+    were dropped for being too old, and how many non-article links (分享、
+    直播页等) were skipped. Raises ValueError when the expected container is
+    missing so the caller can count that channel as failed instead of
+    reporting a silent 0-item success.
+    """
+
+    soup = BeautifulSoup(html_text, "html.parser")
+    container = soup.select_one("#content-list")
+    if container is None:
+        raise ValueError(f"education channel page has no #content-list: {page_url}")
+
+    items: list[FeedItemLike] = []
+    seen_urls: set[str] = set()
+    window_dropped = 0
+    non_article_skipped = 0
+
+    for entry in container.select(".item"):
+        tit_anchor = entry.select_one(".tit a[href]")
+        item_url: Optional[str] = None
+        tit_title = ""
+        if tit_anchor is not None:
+            tit_url = normalize_url(urljoin(page_url, str(tit_anchor.get("href") or "")))
+            if _match_article_path(tit_url) is not None:
+                item_url = tit_url
+                tit_title = tit_anchor.get_text(" ", strip=True)
+
+        # 标题兜底：条目内第一个有文字的链接（图文条目的第一个链接是图片，
+        # 没有文字，天然跳过）。
+        fallback_title = ""
+        for anchor in entry.find_all("a", href=True):
+            url = normalize_url(urljoin(page_url, str(anchor.get("href") or "")))
+            if _match_article_path(url) is None:
+                non_article_skipped += 1
+                continue
+            if item_url is None:
+                item_url = url
+            if not fallback_title:
+                text = anchor.get_text(" ", strip=True)
+                if text:
+                    fallback_title = text
+
+        if item_url is None or item_url in seen_urls:
+            continue
+        title = tit_title or fallback_title
+        if not title:
+            continue
+        seen_urls.add(item_url)
+
+        # 列表日期以 URL 中的 YYYYMMDD 为准；真实页面存在列表显示日期与
+        # URL 错位一天的情况，.time 只作兜底（置顶条目没有 .time）。
+        item_date = _url_date(item_url)
+        if item_date is None:
+            time_node = entry.select_one(".time")
+            item_date = _parse_list_date(
+                time_node.get_text(" ", strip=True) if time_node else ""
+            )
+        if item_date is not None and item_date < cutoff:
+            window_dropped += 1
+            continue
+
+        iso = (
+            datetime(item_date.year, item_date.month, item_date.day, tzinfo=CHINA_TZ).isoformat()
+            if item_date is not None
+            else None
+        )
+        items.append(
+            FeedItemLike(
+                title=title,
+                url=item_url,
+                section=None,
+                publish_time_iso=iso,
+                raw={"list_date": item_date.isoformat() if item_date else None},
+            )
+        )
+
+    return items, window_dropped, non_article_skipped
+
+
+def list_education_items(
+    limit: Optional[int] = None,
+    pages: Optional[int] = None,
+    *,
+    existing_ids: Optional[set[str]] = None,
+    today: Optional[date] = None,
+) -> list[FeedItemLike]:
+    """Fetch every education channel's index page once and return fresh items.
+
+    `pages` is accepted for the shared linked-page flow but ignored: each
+    channel only exposes its first screen ("加载更多"/ds_*.json 不处理).
+    """
+
+    del pages
+    if limit is not None and limit <= 0:
+        return []
+
+    current_date = today or datetime.now(CHINA_TZ).date()
+    cutoff = current_date - timedelta(days=_education_lookback_days())
+
+    session = _session()
+    collected: list[FeedItemLike] = []
+    channel_notes: list[str] = []
+    window_dropped = 0
+    non_article_skipped = 0
+    failed_channels = 0
+    for name, channel_url in EDUCATION_CHANNELS:
+        try:
+            response = session.get(channel_url, timeout=DEFAULT_TIMEOUT)
+            response.raise_for_status()
+            items, dropped, skipped_links = _parse_education_list_html(
+                decode_response(response),
+                channel_url,
+                cutoff=cutoff,
+            )
+        except Exception as exc:
+            # 页面改版不能表现为长期 0 条且没有报警：单频道失败保留其余频道，
+            # 但必须以 stderr [warn] 输出（worker 里 LOGGER.warning 不可见）。
+            failed_channels += 1
+            print(
+                f"[warn] xinhua_edu channel fetch failed: {name} ({exc})",
+                file=sys.stderr,
+            )
+            LOGGER.warning("xinhua_edu channel fetch failed: %s (%s)", name, exc)
+            continue
+        window_dropped += dropped
+        non_article_skipped += skipped_links
+        collected.extend(items)
+        channel_notes.append(f"{name}={len(items)}")
+
+    if failed_channels == len(EDUCATION_CHANNELS):
+        raise RuntimeError(
+            f"All {len(EDUCATION_CHANNELS)} xinhua education channels failed to load"
+        )
+
+    merged = _merge_columns_to_unique(collected)
+    results: list[FeedItemLike] = []
+    existing_skipped = 0
+    for item in merged:
+        article_id = make_article_id(item.url)
+        if existing_ids is not None and article_id in existing_ids:
+            existing_skipped += 1
+            continue
+        if limit is not None and len(results) >= limit:
+            break
+        results.append(item)
+
+    print(
+        f"[info] xinhua_edu channels: "
+        f"{', '.join(channel_notes) if channel_notes else 'none loaded'}; "
+        f"unique={len(merged)} new={len(results)} "
+        f"existing_skipped={existing_skipped} window_dropped={window_dropped} "
+        f"non_article_skipped={non_article_skipped}",
         file=sys.stderr,
     )
     return results
@@ -369,12 +571,15 @@ def build_detail_update(
 __all__ = [
     "COLUMNS",
     "DEFAULT_LOOKBACK_DAYS",
+    "EDUCATION_CHANNELS",
+    "EDUCATION_DEFAULT_LOOKBACK_DAYS",
     "FeedItemLike",
     "SOURCE_NAME",
     "build_detail_update",
     "fetch_detail",
     "feed_item_to_row",
     "html_to_markdown",
+    "list_education_items",
     "list_items",
     "make_article_id",
     "normalize_url",

@@ -4,9 +4,11 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, Iterator, Optional
+from urllib.parse import urlsplit
 
 import pytest
 
+from src.business_config import SOURCE_BY_KEY, SOURCE_CATALOG, validate_crawl_sources
 from src.workers import crawl_sources
 
 
@@ -97,6 +99,13 @@ LINKED_SOURCES = {
         "xinhua_fetch_detail",
         "xinhua_build_detail_update",
     ),
+    "xinhua_edu": (
+        "xinhua_edu_list_items",
+        "xinhua_make_article_id",
+        "xinhua_feed_item_to_row",
+        "xinhua_fetch_detail",
+        "xinhua_build_detail_update",
+    ),
     "stdaily": (
         "stdaily_list_items",
         "stdaily_make_article_id",
@@ -169,29 +178,33 @@ def _patch_linked_callbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         def list_items(*, marker: str = source, **_kwargs: Any) -> list[str]:
             return [marker]
 
-        def make_article_id(_url: str, *, marker: str = source) -> str:
-            return f"{marker}:id"
+        # xinhua 与 xinhua_edu 共用 make_article_id/feed_row/detail 回调名。
+        # 这些桩的 marker 必须在调用时从 URL 取：若在 patch 时用默认参数
+        # 绑定，同名桩循环打两次只会留下最后一个来源的标记，先注册来源
+        # 的用例断言必炸。list_items 的回调名各来源唯一，仍按名绑定。
+        def make_article_id(url: str, **_kwargs: Any) -> str:
+            return f"{urlsplit(str(url)).netloc.split('.')[0]}:id"
 
         def feed_item_to_row(
-            _item: Any,
+            item: Any,
             article_id: str,
             *,
             fetched_at: datetime,
-            marker: str = source,
         ) -> dict[str, Any]:
+            marker = urlsplit(str(item.url)).netloc.split(".")[0]
             return {"callback": marker, "article_id": article_id, "fetched_at": fetched_at}
 
-        def fetch_detail(_url: str, *, marker: str = source) -> dict[str, str]:
-            return {"callback": marker}
+        def fetch_detail(url: str, **_kwargs: Any) -> dict[str, str]:
+            return {"callback": urlsplit(str(url)).netloc.split(".")[0]}
 
         def build_detail_update(
-            _item: Any,
+            item: Any,
             article_id: str,
             payload: dict[str, str],
             *,
             detail_fetched_at: datetime,
-            marker: str = source,
         ) -> dict[str, Any]:
+            marker = urlsplit(str(item.url)).netloc.split(".")[0]
             return {
                 "callback": marker,
                 "article_id": article_id,
@@ -223,6 +236,7 @@ def _patch_linked_callbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         ("tencent", "tencent", "Tencent", {"count_prepare_errors": True, "missing_ids_fallback": "none", "detail_delay": 0.75, "delay_after_failure": True, "delay_after_last": True}),
         ("toutiao", "toutiao", "Toutiao", {"count_prepare_errors": True}),
         ("xinhua", "xinhua", "Xinhua Beijing", {"count_feed_errors": False}),
+        ("xinhua_edu", "xinhua_edu", "Xinhua Education", {"count_feed_errors": False}),
         ("stdaily", "stdaily", "Stdaily", {"count_feed_errors": False}),
         ("beijingdaily", "bjrb", "Beijing Daily", {"load_existing_ids": False, "count_prepare_errors": True, "missing_ids_fallback": "all", "detail_delay": 0.45}),
         ("laodongwubao", "ldwb", "Laodong Wubao", {"details_in_list": True, "skip_existing_ids": True, "continue_after_feed_error": True}),
@@ -287,6 +301,7 @@ def test_every_dispatch_key_preserves_source_flow_strategy_and_callbacks(
         ("tencent", "_run_tencent_flow", {"pages": 3}, None),
         ("toutiao", "_run_toutiao_flow", {"show_browser": True, "timeout_value": 21, "lang": "zh-test"}, None),
         ("xinhua", "_run_registered_linked_page_flow", {"pages": 3}, "xinhua"),
+        ("xinhua_edu", "_run_registered_linked_page_flow", {"pages": 3}, "xinhua_edu"),
         ("stdaily", "_run_registered_linked_page_flow", {"pages": 3}, "stdaily"),
     ],
 )
@@ -427,3 +442,18 @@ def test_f8_default_sources_execute_in_database_order_without_sorting(
     crawl_sources.run(sources=None)
 
     assert calls == list(source_order)
+
+
+def test_xinhua_edu_catalog_entry_follows_xinhua_and_stays_disabled_by_default() -> None:
+    # T11：目录里紧跟 xinhua；不在已保存的 crawl_sources 列表里就不会被启用。
+    keys = [item.key for item in SOURCE_CATALOG]
+    assert keys.index("xinhua_edu") == keys.index("xinhua") + 1
+
+    definition = SOURCE_BY_KEY["xinhua_edu"]
+    assert definition.display_name == "新华网教育"
+    assert not definition.daily_only
+    assert not definition.requires_accounts
+
+    # 校验只按目录序排序已保存列表，不把新目录项补进去。
+    assert validate_crawl_sources(["xinhua"]) == ["xinhua"]
+    assert validate_crawl_sources(["xinhua_edu", "xinhua"]) == ["xinhua", "xinhua_edu"]

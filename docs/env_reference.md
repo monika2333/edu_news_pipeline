@@ -266,7 +266,10 @@ SCORE_KEYWORD_BONUSES_PATH
 每小时抓取来源及其顺序已迁入控制台设置页。一次性流水线需要覆盖来源时，使用
 `python -m scripts.run_pipeline_once --sources ...` 或 `python -m src.cli.main crawl --sources ...`。
 
-当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`chinanews_xj`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`xinhua`、`stdaily`、`bbtnews`、`laodongwubao`/`ldwb`、`bjrb`/`beijingdaily`、`btime`、`beijinghao`。
+当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`chinanews_xj`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`xinhua`、`xinhua_edu`、`stdaily`、`bbtnews`、`laodongwubao`/`ldwb`、`bjrb`/`beijingdaily`、`btime`、`beijinghao`。
+
+`xinhua_edu`（新华网教育频道）默认不在已保存的来源列表里，部署后在控制台
+「设置 → 数据源」手动启用；有噪音时可单独关闭，无需发版。
 
 北京日报和劳动午报不能加入每小时来源列表。服务器每日定时抓取时，分别调用
 `scripts/run_bjrb_daily.ps1` 和 `scripts/run_ldwb_daily.ps1`，脚本通过单次
@@ -332,6 +335,12 @@ QIANLONG_EXISTING_CONSECUTIVE_STOP=5
 # 列表项日期早于"今天减 N 天"的直接丢弃；每轮都生效，
 # 防止首轮把各栏目的历史稿件一次性灌进库里。
 XINHUA_LOOKBACK_DAYS=3
+
+# Xinhua Education / 新华网教育频道
+# 与 XINHUA_LOOKBACK_DAYS 同义但独立：教育频道可单独调整回溯窗口。
+# 教育频道列表日期以 URL 中的 YYYYMMDD 为准（列表显示日期与真实页面
+# 存在 +/-1 天错位），窗口过滤同样按 URL 日期。
+XINHUA_EDU_LOOKBACK_DAYS=3
 
 # Stdaily / 科技日报（滚动新闻）
 # 翻页深度由 crawl 的 pages 参数控制（每页约 16 条）；此窗口按列表行

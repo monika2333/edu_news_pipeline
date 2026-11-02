@@ -78,7 +78,9 @@ SOURCE_CATALOG = (
     SourceDefinition("chinadaily", "中国日报", requires_accounts=True),
     SourceDefinition("gmw", "光明网"),
     SourceDefinition("qianlong", "千龙网", requires_accounts=True),
-    SourceDefinition("xinhua", "新华网"),
+    # 显示名带「北京」与 xinhua_edu（新华网教育）区分；key 与稿件来源不变，
+    # 落库 source 仍写「新华网」（SOURCE_NAME）。
+    SourceDefinition("xinhua", "新华网北京"),
     # 新来源默认不在 crawl_sources 已保存列表里，需要在控制台设置页手动启用；
     # 有噪音时也可单独关闭，无需发版。
     SourceDefinition("xinhua_edu", "新华网教育"),

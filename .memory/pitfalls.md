@@ -45,6 +45,7 @@
 - **btime（北京时间）**：`refresh` 必须固定 1——refresh=0 接口会静默返回 2020 年存档；`pageRow:10` 单包、`list_items` 显式 `del pages` 不翻页。视频稿（news_type=3）正文只在页面内嵌 `topic_data` JSON（`modules[*].modules[*][*].data.content` 取 `type=="txt"`），可见 article 节点是标题复读 SEO 样板；实现为 topic_data 优先、HTML 兜底。
 - **stdaily（科技日报）**：只有「滚动新闻」一个栏目；列表解析**必须圈定 `div.f_lieb_list` 容器**，全页抓锚点会混入侧栏 ~25 条「热门点击」旧稿（xinhua 是全页抓，别照抄）；ID `stdaily:<content编号>` 不含频道路径——TRS 同稿跨频道编号相同天然去重；图片说明在 `topic` 属性而非 alt。
 - **xinhua（新华网北京频道）**：ID `xinhua:<32hex>`；15 栏目在 `COLUMNS` 维护（/zt 专题已删——只链专题页非文章列表）。**测试里合成 URL 的 slug 种子只能含十六进制字符**（beef/fade/cafe 这类），含 o/u/r 等字母的 seed 会让链接不被识别、测试静默测不到目标行为。
+- **xinhua_edu（新华网教育）**：4 频道（mryw/jcjy/gdjy/eduzyjy）首屏 `#content-list > .item`；条目第一个链接是图片（无文字），`.share` 区有一条微博分享链接（非文章，跳过并计数）；侧栏「每日要闻」「热点专题」在容器外但**复用 `.item` 模板形态**，圈定容器不是可有可无。列表日期与 `.time` 双向错位 ±1 天（两个真实样本方向相反：jcjy 一篇详情时间跟显示日期、mryw 一篇跟 URL 日期）——口径是 URL 日期为准、详情精确时间覆盖。「权威发布」首屏不按时间倒序（置顶旧稿），首页已出现的新稿不在首屏前 15 条内，只抓首屏会漏，不能接；国际教育、商科教育等已停更。`ds_*.json` 翻页探测 404（站方按需生成）；gdjy 首屏 15 条跨 12 天 ≈1.2 条/天，六成是院校宣传稿。
 - **bbtnews（北京商报）**：ID `bbtnews:<CMS编号>`；站方时间粒度只到日（publish_time 落零点）；列表只认左栏 `.c-l-wrap` 内三区，页脚「新闻排行」是同构 li 放宽就混入；URL 强制 https；扩栏目往 `COLUMNS` 加行即可。
 - **qianlong（千龙）**：`DEFAULT_MAX_PAGES = 1`，`QIANLONG_PAGES` 仅作上调覆盖（防环境变量漏配整档灌入；existing 截停对新栏目永不触发）。注意变异验证时「默认改回 None」会让测试**无限挂起**（404 不计空页 → `_iter_listing_urls` 死循环），做此变异须带超时。
 - **bjrb（北京日报数字版）**：副标题在 `#sub-title`，按原连接符合并进标题（冒号前缀→「主：副」，破折号/无前缀→「主——副」）；只爬当天刊期（`BJRB_DATE` 可指定）。

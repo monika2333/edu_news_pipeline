@@ -11,7 +11,14 @@ if (-not (Test-Path -LiteralPath $RepoRoot)) {
 
 $resolvedRepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 if (-not $PythonPath) {
-    $PythonPath = Join-Path $resolvedRepoRoot "venv\Scripts\python.exe"
+    # 与 refresh-schema.ps1 同一候选序：兼容 venv / .venv 两种目录命名
+    foreach ($candidate in @("venv\Scripts\python.exe", ".venv\Scripts\python.exe")) {
+        $candidatePath = Join-Path $resolvedRepoRoot $candidate
+        if (Test-Path -LiteralPath $candidatePath) {
+            $PythonPath = $candidatePath
+            break
+        }
+    }
 }
 
 if (-not (Test-Path -LiteralPath $PythonPath)) {

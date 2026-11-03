@@ -19,59 +19,59 @@ IMPORTANT: Read and write this file as UTF-8. In Windows PowerShell, use `Get-Co
 
 ## 构建与开发命令
 
-> **以下 Python 命令都在仓库根目录执行，并使用仓库根 venv 的解释器。** 系统默认 `python` 缺 psycopg / fastapi 等依赖，裸 `python -m pytest` 会在收集阶段直接 `ModuleNotFoundError`。
+> **以下 Python 命令都在仓库根目录执行，并使用仓库根 `.venv` 的解释器。** 系统默认 `python` 缺 psycopg / fastapi 等依赖，裸 `python -m pytest` 会在收集阶段直接 `ModuleNotFoundError`。
 >
-> - PowerShell：`.\venv\Scripts\python.exe ...`；或先执行 `.\venv\Scripts\Activate.ps1`，之后直接用 `python`
-> - Git Bash：`./venv/Scripts/python.exe ...`；或先 `source venv/Scripts/activate`
+> - PowerShell：`.\.venv\Scripts\python.exe ...`；或先执行 `.\.venv\Scripts\Activate.ps1`，之后直接用 `python`
+> - Git Bash：`./.venv/Scripts/python.exe ...`；或先 `source .venv/Scripts/activate`
 >
-> 下面示例统一写 PowerShell 形式；Git Bash 把 `.\venv\Scripts\python.exe` 换成 `./venv/Scripts/python.exe` 即可。
+> 下面示例统一写 PowerShell 形式；Git Bash 把 `.\.venv\Scripts\python.exe` 换成 `./.venv/Scripts/python.exe` 即可。
 
 ### 运行应用
 
 ```powershell
 # 启动 Web 控制台（FastAPI + uvicorn，默认端口 8000）
-.\venv\Scripts\python.exe run_console.py
+.\.venv\Scripts\python.exe run_console.py
 
 # 也可以直接用 uvicorn 模块启动
-.\venv\Scripts\python.exe -m uvicorn src.console.app:app --host 0.0.0.0 --port 8000
+.\.venv\Scripts\python.exe -m uvicorn src.console.app:app --host 0.0.0.0 --port 8000
 ```
 
 ### 流水线命令
 
 ```powershell
 # 运行单个流水线步骤
-.\venv\Scripts\python.exe -m src.cli.main crawl --sources toutiao,tencent --limit 5000
-.\venv\Scripts\python.exe -m src.cli.main hash-primary --limit 5000
-.\venv\Scripts\python.exe -m src.cli.main score --limit 2500
-.\venv\Scripts\python.exe -m src.cli.main summarize --limit 2500
-.\venv\Scripts\python.exe -m src.cli.main enrich-summary --limit 2500
-.\venv\Scripts\python.exe -m src.cli.main geo-classify --limit 2500
-.\venv\Scripts\python.exe -m src.cli.main external-filter --limit 2000
+.\.venv\Scripts\python.exe -m src.cli.main crawl --sources toutiao,tencent --limit 5000
+.\.venv\Scripts\python.exe -m src.cli.main hash-primary --limit 5000
+.\.venv\Scripts\python.exe -m src.cli.main score --limit 2500
+.\.venv\Scripts\python.exe -m src.cli.main summarize --limit 2500
+.\.venv\Scripts\python.exe -m src.cli.main enrich-summary --limit 2500
+.\.venv\Scripts\python.exe -m src.cli.main geo-classify --limit 2500
+.\.venv\Scripts\python.exe -m src.cli.main external-filter --limit 2000
 
 # 查看任意命令帮助
-.\venv\Scripts\python.exe -m src.cli.main [command] --help
+.\.venv\Scripts\python.exe -m src.cli.main [command] --help
 ```
 
 ### 测试命令
 
 ```powershell
 # 运行全部测试
-.\venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m pytest
 
 # 运行单个测试文件
-.\venv\Scripts\python.exe -m pytest tests/test_score_worker.py
+.\.venv\Scripts\python.exe -m pytest tests/test_score_worker.py
 
 # 运行覆盖率
-.\venv\Scripts\python.exe -m pytest --cov=src --cov-report=html
+.\.venv\Scripts\python.exe -m pytest --cov=src --cov-report=html
 
 # 详细输出
-.\venv\Scripts\python.exe -m pytest -v
+.\.venv\Scripts\python.exe -m pytest -v
 
 # 运行指定测试类或测试方法
-.\venv\Scripts\python.exe -m pytest tests/test_score_worker.py::TestScoreWorker::test_scoring_logic -v
+.\.venv\Scripts\python.exe -m pytest tests/test_score_worker.py::TestScoreWorker::test_scoring_logic -v
 ```
 
-人工筛选页有一组浏览器端行为测试（jsdom，位于 `tests/js/`），同样由 `.\venv\Scripts\python.exe -m pytest` 触发。需要本机安装 Node 20+，并先执行一次：
+人工筛选页有一组浏览器端行为测试（jsdom，位于 `tests/js/`），同样由 `.\.venv\Scripts\python.exe -m pytest` 触发。需要本机安装 Node 20+，并先执行一次：
 
 ```powershell
 npm ci --prefix tests/js
@@ -83,13 +83,13 @@ npm ci --prefix tests/js
 
 ```powershell
 # 安装依赖
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 
 # 如果存在 setup.py，可安装为开发模式
-.\venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m pip install -e .
 
 # 开发时使用自动重载
-.\venv\Scripts\python.exe -m uvicorn src.console.app:app --reload --host 0.0.0.0 --port 8000
+.\.venv\Scripts\python.exe -m uvicorn src.console.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ## 代码风格

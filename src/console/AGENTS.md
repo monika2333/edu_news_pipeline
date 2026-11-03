@@ -76,16 +76,16 @@
 
 ## 建议测试
 
-- 人工筛选读 service 变更：`.\venv\Scripts\python.exe -m pytest tests/test_manual_filter_service.py`
-- 人工筛选写 service 变更：`.\venv\Scripts\python.exe -m pytest tests/test_manual_filter_admin_service.py`
-- 人工筛选 route/API 变更：`.\venv\Scripts\python.exe -m pytest tests/test_manual_filter_routes.py`
-- 控制台 Web 入口或页面路由变更：`.\venv\Scripts\python.exe -m pytest tests/test_console_web_routes.py`
-- run 或 article service 变更：运行最接近的 `tests/test_*` 文件；如果影响 CLI 触发行为，再运行 `.\venv\Scripts\python.exe -m pytest tests/test_cli_parser.py`
-- 较大的人工筛选控制台重构：`.\venv\Scripts\python.exe -m pytest tests/test_manual_filter_service.py tests/test_manual_filter_admin_service.py tests/test_manual_filter_routes.py`
+- 人工筛选读 service 变更：`.\.venv\Scripts\python.exe -m pytest tests/test_manual_filter_service.py`
+- 人工筛选写 service 变更：`.\.venv\Scripts\python.exe -m pytest tests/test_manual_filter_admin_service.py`
+- 人工筛选 route/API 变更：`.\.venv\Scripts\python.exe -m pytest tests/test_manual_filter_routes.py`
+- 控制台 Web 入口或页面路由变更：`.\.venv\Scripts\python.exe -m pytest tests/test_console_web_routes.py`
+- run 或 article service 变更：运行最接近的 `tests/test_*` 文件；如果影响 CLI 触发行为，再运行 `.\.venv\Scripts\python.exe -m pytest tests/test_cli_parser.py`
+- 较大的人工筛选控制台重构：`.\.venv\Scripts\python.exe -m pytest tests/test_manual_filter_service.py tests/test_manual_filter_admin_service.py tests/test_manual_filter_routes.py`
 - 设置页行为测试（`tests/test_settings_js_behavior.py`，夹具 `tests/js/settings_harness.js`）的等待辅助函数分两种语义：**`waitFor(predicate)` 是「等待条件成立」，超时即抛错使测试失败**（失败信息带条件源码），不允许依赖它的返回值做否定断言；**「某事在一段时间内不应发生」的否定断言必须用 `assertNever(predicate, windowMs)`**，它等满整个窗口、条件一旦成立即抛错。新增 harness 照抄等待辅助函数时必须保持这个约定——超时静默返回 `false` 的写法会让未检查返回值的调用点变成空断言。
-- 细化筛选 SQL 子句与参数归一化变更：`.\venv\Scripts\python.exe -m pytest tests/test_sql_candidate_filters.py`。
-- 筛选页决定流程（单条/整簇决定、放弃本页剩余内容、摘要与来源编辑保存、列表加载）变更：`.\venv\Scripts\python.exe -m pytest tests/test_manual_filter_js_behavior.py`。这组 jsdom 行为测试（`tests/js/filter_decision_flow.test.js`）锁定四项约定：值班端决定后先提示后补页、`loadFilterData` 最新请求获胜、只保存改过的卡片、决定前等待进行中的编辑保存。改动这些行为时同步更新该测试；不要用源码字符串断言代替行为测试，字符串断言锁不住逻辑。夹具 `tests/js/manual_filter_harness.js` 以真实路由渲染的页面启动，后端由其中的假服务模拟，接口字段变化时需同步更新假服务。
+- 细化筛选 SQL 子句与参数归一化变更：`.\.venv\Scripts\python.exe -m pytest tests/test_sql_candidate_filters.py`。
+- 筛选页决定流程（单条/整簇决定、放弃本页剩余内容、摘要与来源编辑保存、列表加载）变更：`.\.venv\Scripts\python.exe -m pytest tests/test_manual_filter_js_behavior.py`。这组 jsdom 行为测试（`tests/js/filter_decision_flow.test.js`）锁定四项约定：值班端决定后先提示后补页、`loadFilterData` 最新请求获胜、只保存改过的卡片、决定前等待进行中的编辑保存。改动这些行为时同步更新该测试；不要用源码字符串断言代替行为测试，字符串断言锁不住逻辑。夹具 `tests/js/manual_filter_harness.js` 以真实路由渲染的页面启动，后端由其中的假服务模拟，接口字段变化时需同步更新假服务。
 - 细化筛选折叠行行为（展开/收起、条件随请求下发并回第 1 页、清空筛选唯一入口、值班端回退平铺、跨零点提示）变更：同步更新 `tests/js/refine_filter_flow.test.js`（同由 `tests/test_manual_filter_js_behavior.py` 触发）。
 - 筛选页「采纳」「备选」决定菜单（右键 / 触屏长按）变更：同步更新 `tests/js/filter_decision_menu.test.js`（同由 `tests/test_manual_filter_js_behavior.py` 触发）。用例覆盖右键与长按共用判定、长按抬手补发的 click 不得落成轻点决定、短按仍是轻点决定、滑动取消长按、「放弃」不参与、聚类标题同口径。
-- 值班页请求转译层（`workspace.js` 的 `workspaceFetch` 分流规则）变更：`.\venv\Scripts\python.exe -m pytest tests/test_workspace_proxy_js_behavior.py`。
+- 值班页请求转译层（`workspace.js` 的 `workspaceFetch` 分流规则）变更：`.\.venv\Scripts\python.exe -m pytest tests/test_workspace_proxy_js_behavior.py`。
 - **共享界面改动默认双跑两端**：凡是落在 `manual_filter.html` 或 `manual_filter/*.js` 的功能，jsdom 用例写成 `for (const mode of ['duty', 'admin'])`（参考 `tests/js/filter_decision_flow.test.js`），至少各一条行为用例。两页共用同一份模板与模块，差异只在 `workspace_mode` 与 `workspaceFetch` 的分流层——只测一端曾漏掉值班端的题头开关。角色独占功能（报送存档、设置页、用户/排班、值班汇总 / 定稿撤回、班次选择）只测对应角色，补另一端是假覆盖。duty 用例起步照抄 `review_preview_header.test.js` 的 `bootDutyReviewPage`（切「审阅」页签前要等 init 完成，夹具的 `/reviews` 负责值班审阅列表）。

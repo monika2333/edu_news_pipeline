@@ -37,7 +37,7 @@ FEISHU_ARCHIVE_ALLOWED_OPEN_IDS=ou_xxx
 前台验证：
 
 ```powershell
-.\venv\Scripts\python.exe -m src.cli.main feishu-archive-bot
+.\.venv\Scripts\python.exe -m src.cli.main feishu-archive-bot
 ```
 
 验证正常后，可用管理员 PowerShell 注册开机任务：

@@ -320,11 +320,12 @@ def _parse_education_list_html(
 
     Returns the items inside the lookback window, how many article entries
     were dropped for being too old, and how many .item entries yielded no
-    article link at all (share links are not counted). Raises ValueError
-    when the expected container is missing or when not a single article
-    entry can be parsed before window filtering—both mean the page has
-    changed and the caller counts that channel as failed; a page whose
-    articles all fall outside the window is NOT a failure.
+    usable article (no article link or no title; share links are not
+    counted). Raises ValueError when the expected container is missing or
+    when not a single article entry can be parsed before window
+    filtering—both mean the page has changed and the caller counts that
+    channel as failed; a page whose articles all fall outside the window is
+    NOT a failure.
     """
 
     soup = BeautifulSoup(html_text, "html.parser")
@@ -366,12 +367,15 @@ def _parse_education_list_html(
             # 整条找不到文章链接是改版信号，单独计数进汇总日志。
             items_without_article += 1
             continue
-        articles_seen += 1
         if item_url in seen_urls:
             continue
         title = tit_title or fallback_title
         if not title:
+            # 有文章链接但取不到标题同样成不了稿：计入 items_without_article，
+            # 且不算「解析出文章」——否则改版丢标题会表现为静默 0 条。
+            items_without_article += 1
             continue
+        articles_seen += 1
         seen_urls.add(item_url)
 
         # 列表日期以 URL 中的 YYYYMMDD 为准；真实页面存在列表显示日期与

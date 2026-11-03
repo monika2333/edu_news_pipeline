@@ -559,6 +559,51 @@ def test_education_parser_counts_items_without_article_links() -> None:
     assert items_without_article == 2
 
 
+# 有文章链接但取不到标题的形态：锚点空文字 / .tit 内纯空白。
+TITLELESS_DEAD_PAGE = (
+    '<html><body><div id="content-list">'
+    '<div class="item">'
+    '<a href="https://education.news.cn/20261030/dbc6acf913ef43abb14aab3f8230804e/c.html"></a>'
+    "</div>"
+    '<div class="item"><div class="tit">'
+    '<a href="https://education.news.cn/20261030/c60e1513ab77425a98e7227e4716f10e/c.html">   </a>'
+    "</div></div>"
+    "</div></body></html>"
+)
+
+
+def test_education_parser_raises_when_articles_have_no_titles() -> None:
+    # 有文章链接但取不到标题的条目不算「解析出文章」：全页如此时按频道失败。
+    with pytest.raises(ValueError, match="article entries"):
+        hx._parse_education_list_html(
+            TITLELESS_DEAD_PAGE,
+            MRYW_URL,
+            cutoff=EDU_TODAY - timedelta(days=3),
+        )
+
+
+def test_education_parser_counts_titleless_items_without_article() -> None:
+    html = (
+        '<html><body><div id="content-list">'
+        '<div class="item"><div class="tit">'
+        '<a href="https://education.news.cn/20261030/dbc6acf913ef43abb14aab3f8230804e/c.html">'
+        "正常条目</a></div></div>"
+        '<div class="item">'
+        '<a href="https://education.news.cn/20261030/c60e1513ab77425a98e7227e4716f10e/c.html"></a>'
+        "</div>"
+        "</div></body></html>"
+    )
+
+    items, _dropped, items_without_article = hx._parse_education_list_html(
+        html,
+        MRYW_URL,
+        cutoff=EDU_TODAY - timedelta(days=3),
+    )
+
+    assert [item.title for item in items] == ["正常条目"]
+    assert items_without_article == 1
+
+
 def test_education_date_prefers_url_date_over_list_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -729,6 +774,31 @@ def test_education_all_dead_channels_raise(
     _serve_edu_fixtures(
         monkeypatch,
         overrides={url: dead_page for url in EDU_CHANNEL_URLS.values()},
+    )
+
+    with pytest.raises(RuntimeError, match="education channels failed"):
+        hx.list_education_items(today=EDU_TODAY)
+
+
+def test_education_titleless_channel_keeps_others(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # 全部 .item 都有文章链接但取不到标题：同样按频道失败，其余频道照常。
+    _serve_edu_fixtures(monkeypatch, overrides={MRYW_URL: TITLELESS_DEAD_PAGE})
+
+    items = hx.list_education_items(today=EDU_TODAY)
+
+    assert len(items) == 6
+    stderr = capsys.readouterr().err
+    assert "[warn]" in stderr
+    assert "每日要闻" in stderr
+
+
+def test_education_all_titleless_channels_raise(monkeypatch: pytest.MonkeyPatch) -> None:
+    _serve_edu_fixtures(
+        monkeypatch,
+        overrides={url: TITLELESS_DEAD_PAGE for url in EDU_CHANNEL_URLS.values()},
     )
 
     with pytest.raises(RuntimeError, match="education channels failed"):

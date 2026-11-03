@@ -133,6 +133,7 @@ class FakeWorkspaceServer {
             status: 'pending',
             is_beijing_related: article.is_beijing_related === undefined ? true : article.is_beijing_related,
             sentiment_label: article.sentiment_label === undefined ? 'positive' : article.sentiment_label,
+            bonus_keywords: article.bonus_keywords === undefined ? [] : article.bonus_keywords,
         };
     }
 

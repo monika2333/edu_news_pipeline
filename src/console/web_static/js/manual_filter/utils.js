@@ -124,7 +124,8 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
     const safe = item || {};
     const currentStatus = safe.manual_status || safe.status || 'pending';
     const sourcePlaceholder = safe.llm_source_raw ? `(LLM: ${safe.llm_source_raw})` : '留空则回退抓取来源';
-    const bonusClass = safe.bonus_keywords && safe.bonus_keywords.length ? ' has-bonus' : '';
+    // 浅红高亮只用于京内桶（京内正面/京内负面）：京外与未归类卡片即使命中加分词也保持白底。
+    const bonusClass = safe.bonus_keywords && safe.bonus_keywords.length && safe.is_beijing_related ? ' has-bonus' : '';
     const duplicateBadge = renderSubmissionDuplicateBadge(safe);
     // 地域与情感合并成一个分类标签（京内正面/京内负面/京外正面/京外负面），
     // 不再分别展示 sentiment 原文和「京内: 是/否」两处；未归类时留中性占位。

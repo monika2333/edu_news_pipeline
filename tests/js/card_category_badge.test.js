@@ -8,7 +8,9 @@
 // 2. 样式沿用分类徽章：badge + search-category-badge + positive/negative；
 // 3. 情感非 negative 一律按正面，neutral 情感走 neutral 样式类（与检索卡片、原文抽屉同口径）；
 // 4. 地域或情感未就绪时不猜词，留中性「-」占位，且不得出现「京内:」这类旧字段；
-// 5. 聚类内的成员卡片与单条卡片走同一渲染，标签口径一致。
+// 5. 聚类内的成员卡片与单条卡片走同一渲染，标签口径一致；
+// 6. 命中加分词的浅红高亮（has-bonus）只用于京内桶（京内正面/京内负面），
+//    京外与未归类卡片命中也保持白底；meta 行的 Bonus 关键词列表不受桶限制照常显示。
 'use strict';
 
 const test = require('node:test');
@@ -119,5 +121,66 @@ test('聚类内成员卡片同样合并成一个分类标签', async () => {
         assert.equal(metaBadges(page.card('a00'))[0].className.includes('positive'), true);
         assert.equal(metaBadges(page.card('a01'))[0].textContent, '京外负面');
         assert.equal(metaBadges(page.card('a01'))[0].className.includes('negative'), true);
+    });
+});
+
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}卡片：京内命中加分词标浅红，Bonus 关键词照常显示`, async () => {
+        const page = await bootPage(mode, {
+            articleCount: 1,
+            articleCategories: {
+                a00: { is_beijing_related: true, sentiment_label: 'positive', bonus_keywords: ['中考改革', '双减'] },
+            },
+        });
+        try {
+            const card = page.card('a00');
+            assert.ok(card.classList.contains('has-bonus'), '京内卡片命中加分词应有 has-bonus');
+            assert.equal(metaText(card).includes('中考改革'), true, 'Bonus 关键词列表不受桶限制照常显示');
+            assert.deepEqual(unhandledRejections, []);
+        } finally {
+            page.close();
+        }
+    });
+
+    test(`${MODE_LABELS[mode]}卡片：京外命中加分词不标红`, async () => {
+        const page = await bootPage(mode, {
+            articleCount: 1,
+            articleCategories: {
+                a00: { is_beijing_related: false, sentiment_label: 'negative', bonus_keywords: ['中考改革'] },
+            },
+        });
+        try {
+            const card = page.card('a00');
+            assert.equal(card.classList.contains('has-bonus'), false, '京外卡片命中加分词也应保持白底');
+            assert.equal(metaText(card).includes('中考改革'), true, 'Bonus 关键词列表照常显示');
+            assert.deepEqual(unhandledRejections, []);
+        } finally {
+            page.close();
+        }
+    });
+}
+
+test('未归类卡片命中加分词不标红', async () => {
+    await withPage({
+        articleCount: 1,
+        articleCategories: {
+            a00: { is_beijing_related: null, sentiment_label: 'negative', bonus_keywords: ['中考改革'] },
+        },
+    }, async (page) => {
+        assert.equal(page.card('a00').classList.contains('has-bonus'), false, '未归类不属于京内桶，不应标红');
+    });
+});
+
+test('京内未命中加分词不标红，聚类成员卡片同口径', async () => {
+    await withPage({
+        articleCount: 2,
+        clusters: [['a00', 'a01']],
+        articleCategories: {
+            a00: { is_beijing_related: true, sentiment_label: 'positive' },
+            a01: { is_beijing_related: false, sentiment_label: 'negative', bonus_keywords: ['中考改革'] },
+        },
+    }, async (page) => {
+        assert.equal(page.card('a00').classList.contains('has-bonus'), false, '京内但未命中加分词，不应标红');
+        assert.equal(page.card('a01').classList.contains('has-bonus'), false, '聚类内京外成员命中加分词也不标红');
     });
 });

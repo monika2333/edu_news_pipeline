@@ -28,7 +28,7 @@
 
 ## Windows 计划任务 / PowerShell 脚本
 
-- **`.ps1` 里出现非 ASCII 又没存 UTF-8 BOM → Windows PowerShell 5.1 按 ANSI(cp936) 解码，解析期就炸**：中文注释最后一个字节会把后面的 `\r\n` 当双字节字符吃掉，下一行 `param(` 被并进注释，报错却指向 `param` 块的 `)`（`Unexpected token ')'`）。计划任务的表现只是「启动即结束」+ Last Result=1，**连脚本自己的日志都不会生成**——`Tee-Object` 在解析失败之后才轮到执行。2026-10-30 `EduNewsPromptOptimizer` 连续两晚空跑就是这个原因（`scripts/run_optimize_prompts.ps1` 首行中文注释，2026-10-29 新增）。规矩：`scripts/**/*.ps1` 一律纯 ASCII，要中文就存 UTF-8 BOM；`tests/test_powershell_script_encoding.py` 已钉住。
+- **`.ps1` 里出现非 ASCII 又没存 UTF-8 BOM → Windows PowerShell 5.1 按 ANSI(cp936) 解码，解析期就炸**：中文注释最后一个字节会把后面的 `\r\n` 当双字节字符吃掉，下一行 `param(` 被并进注释，报错却指向 `param` 块的 `)`（`Unexpected token ')'`）。计划任务的表现只是「启动即结束」+ Last Result=1，**连脚本自己的日志都不会生成**——`Tee-Object` 在解析失败之后才轮到执行。2026-10-30 `EduNewsPromptOptimizer` 连续两晚空跑就是这个原因（`scripts/run_optimize_prompts.ps1` 首行中文注释，2026-10-29 新增）。规矩：`scripts/**/*.ps1` 一律纯 ASCII，要中文就存 UTF-8 BOM；`tests/test_powershell_script_encoding.py` 已钉住。**给既有纯 ASCII 的 .ps1 加中文注释同样触发**（2026-11-03 给 `run_feishu_archive_bot_service.ps1` 加中文注释，CI 红一次后 31bf7b1 改回英文）——AI 会话改任何 `.ps1` 前先 `grep -cP "[^\x00-\x7F]"` 查非 ASCII 或跑一遍该用例。
 - 排查「秒退、无日志、Last Result=1」的顺序：① `schtasks /query /tn <名字> /v /fo LIST` 看 Last Run/Last Result 与 Task To Run；② 把 Task To Run 整条**原样**在任务用的解释器下跑一遍——必须是 `powershell.exe`（5.1），用 `pwsh` 7 复现不出来（PS7 默认按 UTF-8 读无 BOM 脚本）；③ 再看数据库里有没有本次运行的记录，区分「脚本没跑起来」与「跑起来后失败」。
 - 任务日志是 `Tee-Object` 写的 UTF-16LE，本机用 `Get-Content` 读正常；用非 Windows 工具或 python 按 UTF-8 读会显示乱码，不要当成日志损坏。
 

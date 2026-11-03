@@ -4,6 +4,7 @@
 
 | 日期 | 功能 | 合入 | archive |
 |---|---|---|---|
+| 2026-11-03 | 存档页删除标签行左侧的全局待确认回链提示（`#archive-nav-pending` + setNavPending/loadNavPending + 样式；详情标题栏「待确认回链 N」批量按钮承担同一职责，link-queue 接口保留） | a994b55 | 拍板记入 `decisions.md` |
 | 2026-11-03 | 筛选页命中加分词的浅红高亮仅限京内桶（京外与未归类保持白底；Bonus 列表与抽屉高亮不变；行为测试补齐双端用例） | 08656e9 | 拍板记入 `decisions.md` |
 | 2026-11-03 | xinhua_edu 小修：`articles_seen` 改在标题确认后加一，有文章链接但无标题的条目计入 `items_without_article` 且可触发频道失败（防改版丢标题静默 0 条） | cb752f6 | 同 [2026-11-02-新华网教育频道.md](archive/2026-11-02-新华网教育频道.md) |
 | 2026-11-02 | 补丁修复 xinhua_edu 三处：解析不出文章（无 .item / .item 均无文章链接）并入频道失败分级；注册表桩按回调名所属来源绑定 marker（恢复接线变异区分能力）；计数改「找不到文章链接的 .item」数（`items_without_article`，分享链接不计） | bfbd54b | 同 [2026-11-02-新华网教育频道.md](archive/2026-11-02-新华网教育频道.md)，坑记 pitfalls |

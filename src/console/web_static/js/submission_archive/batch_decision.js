@@ -5,8 +5,7 @@
 // - 当期回链确认：拉取 GET /link-queue?report_id=<当前报告>，对照卡由本文件的
 //   linkCard 渲染（原 link_queue.js，随回链确认队列页下线并入）；事件处理在
 //   本弹窗容器上自行委托。提交仍走 POST /items/{id}/link-decision，成功后经
-//   browser.js 的 applyManualLinkResult 局部同步背后的详情卡片，不重拉报告；
-//   关闭时 loadNavPending() 刷新顶部的全局待确认提示。
+//   browser.js 的 applyManualLinkResult 局部同步背后的详情卡片，不重拉报告。
 // - 当期疑似已报送判定（仅反馈报告且判定结束后入口才出现）：条目取自
 //   activeReportItems（prior_match.status === 'suspected'），命中明细逐条并发
 //   拉取 GET /items/{id}/prior-matches，单条失败只在该卡片内提示；命中明细复用
@@ -134,8 +133,6 @@ function closeBatchLinkModal() {
     els.modal.classList.remove('active');
     els.modal.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('archive-batch-modal-open');
-    // 弹窗里的确认会改变全局待确认数量，关闭时刷新顶部待确认提示
-    loadNavPending();
 }
 
 async function submitBatchLinkDecision(button) {

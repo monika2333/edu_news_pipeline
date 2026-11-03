@@ -588,7 +588,6 @@ async function pollReportStatus(id) {
             scheduleReportStatusPoll(id);
         } else {
             priorMatchPollCount = 0;
-            loadNavPending();
         }
     } catch (error) {
         if (activeReportId === id) {

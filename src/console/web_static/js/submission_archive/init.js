@@ -2,7 +2,6 @@
 /* ---------- 初始化 ---------- */
 
 document.addEventListener('DOMContentLoaded', () => {
-    loadNavPending();
     if (view === 'list' || view === 'detail') {
         initBrowserView();
         initExportModal();

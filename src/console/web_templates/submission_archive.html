@@ -38,8 +38,6 @@
         </header>
 
         <div class="workspace-tabs-row archive-tabs-row">
-            <a class="archive-nav-pending" id="archive-nav-pending"
-                href="/submission-archive" hidden></a>
             {% if current_user.role == "admin" %}
             <div class="workspace-tab-actions">
                 {% if archive_view in ("list", "detail") %}

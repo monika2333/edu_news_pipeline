@@ -659,10 +659,9 @@ def test_batch_decisions_update_cards_locally_without_report_reload() -> None:
     assert "applyPriorMatchDecisionResult(itemId, data.prior_match)" in batch
     assert "selectReport(" not in batch
     assert "loadReportList(" not in batch
-    # 提交走既有接口；回链弹窗关闭时刷新顶部全局待确认提示
+    # 提交走既有接口
     assert "/link-decision`" in batch
     assert "/prior-match-decision`" in batch
-    assert "loadNavPending()" in batch
 
 
 def test_batch_decision_assets_loaded_in_template() -> None:
@@ -713,17 +712,15 @@ def test_link_queue_page_and_assets_removed() -> None:
     assert not Path(f"{SUBMISSION_ARCHIVE_CSS_DIR}/link_queue.css").exists()
 
 
-def test_tabs_row_keeps_create_button_and_adds_global_pending_hint() -> None:
+def test_tabs_row_keeps_create_button_without_global_pending_hint() -> None:
     template = Path(TEMPLATE_HTML).read_text(encoding="utf-8")
 
-    # 外层行保留：「新增存档」按钮在这一行；全局待确认提示是链接（不是按钮），
-    # 放在原 nav 的左侧位置，位于「新增存档」之前
+    # 外层行保留：「新增存档」按钮在这一行。曾放在行左侧的全局待确认提示
+    # （#archive-nav-pending 链接）已删除——详情标题栏「待确认回链 N」批量按钮
+    # 足够明显，不再重复提示
     assert "workspace-tabs-row archive-tabs-row" in template
     assert "workspace-tab-actions" in template
-    assert '<a class="archive-nav-pending" id="archive-nav-pending"' in template
-    assert template.index('id="archive-nav-pending"') < template.index(
-        'href="/submission-archive/new"'
-    )
+    assert "archive-nav-pending" not in template
 
 
 def test_pending_item_meta_no_longer_links_to_queue_page() -> None:
@@ -775,38 +772,25 @@ def test_comparison_card_css_moved_into_batch_decision() -> None:
     assert ".archive-queue-heading" not in all_css
 
 
-def test_nav_pending_hint_renders_link_to_target_report() -> None:
-    # 不剥注释：断言里的 URL 含 //，会被 _strip_js_comments 截断
+def test_nav_pending_hint_logic_removed() -> None:
+    # 全局待确认提示下线后，core.js 不得残留 setNavPending/loadNavPending，
+    # browser.css 不得残留警示色样式（详情标题栏批量按钮承担同一职责）
     core = Path(CORE_JS).read_text(encoding="utf-8")
-
-    # setNavPending 同时接收总数与目标报告 id：0 时隐藏，大于 0 时渲染
-    # 「待确认回链 N」并指向该报告详情页
-    assert "function setNavPending(total, reportId)" in core
-    assert "hint.hidden = count <= 0;" in core
-    assert "待确认回链 ${count}" in core
-    assert "/submission-archive/${encodeURIComponent(reportId" in core
-    # loadNavPending 只取 limit=1：总数之外还要从 items[0] 拿待处理报告的 id
-    load_body = core.split("async function loadNavPending()", maxsplit=1)[1]
-    assert "/link-queue?limit=1" in load_body
-    assert "first.report_id" in load_body
-    assert "setNavPending(data.total," in load_body
-
-
-def test_nav_pending_hint_css_reuses_badge_warning_semantics() -> None:
     css = Path(f"{SUBMISSION_ARCHIVE_CSS_DIR}/browser.css").read_text(encoding="utf-8")
+    browser = Path(BROWSER_JS).read_text(encoding="utf-8")
 
-    block = css.split(".archive-nav-pending {", maxsplit=1)[1].split("}")[0]
-    assert "var(--warning-color)" in block
-    # display:inline-flex 会盖掉 hidden 属性，必须显式压制
-    assert ".archive-nav-pending[hidden]" in css
+    assert "setNavPending" not in core
+    assert "loadNavPending" not in core
+    assert "archive-nav-pending" not in css
+    assert "loadNavPending" not in browser
 
 
-def test_init_drops_link_queue_branch_but_keeps_nav_pending_refresh() -> None:
+def test_init_drops_link_queue_branch() -> None:
     init = Path(f"{SUBMISSION_ARCHIVE_JS_DIR}/init.js").read_text(encoding="utf-8")
 
     assert "link-queue" not in init
     assert "loadLinkQueue" not in init
-    assert "loadNavPending()" in init
+    assert "loadNavPending" not in init
 
 
 def test_init_browser_view_auto_selects_latest_report_without_push_url() -> None:

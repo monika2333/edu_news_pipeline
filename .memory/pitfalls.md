@@ -72,6 +72,7 @@
 - 校验类测试（空正文/未知文章）即使预期在调用 LLM 前抛错，也必须把 LLM 调用换成「一被调用就失败」的桩；否则校验被变异掉时测试会真实请求模型（实测空正文变异跑了约 40s 真实调用）。设置页 `test_prompt_test_service._patch_common` 已默认装桩，需要 LLM 的用例再覆盖。
 - **值班页请求走 `workspaceFetch` 的分流，不是透明转发**：2026-10-26 起规则是「需要改写载荷/失效缓存的写操作显式登记；其余 GET 透传到班次前缀；未登记的写操作返回合成 403 并 `console.warn`」。历史坑：早期它是纯白名单 + 默认 403，漏登记的后端接口会静默降级，症状是「管理员能看到、值班编辑看不到」——`/preview-header` 就这么漏过一次（`ca68db0` 先补白名单，随后按上面的规则改成 GET 透传）。新增值班可见接口时：GET 无需登记，写操作必须想清楚载荷映射与缓存失效。配套要点：① 新功能要把 duty 模式也写进 jsdom 用例（此前只有 admin 用例，所以漏检）；② `bootPage('duty')` 在 `articleCount: 0` 时可能在 `setupTabs()` 之前返回，切页签前必须先等 init 完成（给 `articleCount: 1` 最省事）；③ 夹具的 `/reviews` 要能返回值班审阅列表（`loadAllDutyItems` 走它分页聚合）。行为由 `tests/js/workspace_proxy.test.js` 锁定。
 - 提示词试跑复用共享搜索抽屉时，选择模式必须跳过 `search_drawer_open` / `search_drawer_tab` / `search_filters` 三个共享 localStorage 键；用 `body[data-search-drawer-mode="pick"]` 切模式，不要改三页默认行为。
+- **给 node 子进程传 env 必须基于 `os.environ` 拷贝再增改**：整个替换成最小字典（只留 `CONSOLE_STATIC_DIR` 等）会让 Node 启动即崩 `Assertion failed: ncrypto::CSPRNG(nullptr, 0)`（rc=134），像测试全崩但其实是进程没起来。变异测试驱动里实际踩过（2026-11-04）。
 - jsdom 没有 `TouchEvent`：用普通可冒泡 `Event` + `Object.defineProperty(event, 'touches'/'changedTouches', ...)` 就能驱动页面里的手势逻辑（页面只读这两个字段与 `cancelable`）。但「长按抬手后浏览器补发一次 click」只在真实浏览器发生，jsdom 里手动补发 click 测的是兜底守卫，不是浏览器语义；真实触屏行为用 Playwright + CDP `Input.dispatchTouchEvent`（context 开 `has_touch=True`）验证。jsdom 的 label 激活行为尊重 `defaultPrevented`（捕获阶段 `preventDefault` 能拦住 label→radio）。
 
 ## 已知「等价变异」/ 测试盲区备忘

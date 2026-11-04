@@ -310,6 +310,7 @@ def test_apply_writes_all_sections_through_the_incremental_path(
     assert result["sections"]["source_aliases"] == {
         "suffixes": ["客户端"],
         "aliases": {"北京号": "北京日报"},
+        "fallback_names": [],
     }
 
 

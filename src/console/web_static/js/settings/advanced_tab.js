@@ -6,7 +6,7 @@ const ADVANCED_SECTIONS = {
         '教育关键词不能为空：为空会让所有文章直接放行。'],
     beijing_keywords: ['京内关键词', '用于判断稿件是否与北京相关，没有命中的会被判为京外。',
         '京内关键词不能为空：为空会把所有稿件判为京外。'],
-    source_aliases: ['来源别名', '统一来源名称，后缀和别名都可留空，表示不做归一化。'],
+    source_aliases: ['来源别名', '统一来源名称，并设置哪些识别来源直接回退到抓取来源。所有项都可留空。'],
     // 自动排序关键词只影响审阅页展示顺序，立即生效，不参与爬取与打分流程。
     review_sort_keywords: ['自动排序关键词',
         '审阅页「自动排序」按 市教委 → 中小学 → 高校 的固定优先级给条目归类排序，'
@@ -241,6 +241,19 @@ function renderAdvancedSection(section, panel) {
                 hint: '按第一个等号拆分；支持半角 = 和全角 ＝。',
             },
         );
+        // 旧配置行可能没有 fallback_names 字段，渲染时按空名单兜底。
+        const fallbackNames = buildSettingsTextarea(
+            fields,
+            '回退来源',
+            (saved.value.fallback_names || []).join('\n'),
+            section,
+            'alias-fallback-names',
+            {
+                unit: '条',
+                addPlaceholder: '添加来源名称，回车确认',
+                hint: '识别来源与这里的名称完全相同时不采用，直接使用抓取来源。书名号等符号也要一致。',
+            },
+        );
         readValue = (status) => {
             const entries = [];
             const seen = new Set();
@@ -263,7 +276,11 @@ function renderAdvancedSection(section, panel) {
                 seen.add(key);
                 entries.push([key, target]);
             }
-            return { suffixes: settingsTextLines(suffixes.value), aliases: Object.fromEntries(entries) };
+            return {
+                suffixes: settingsTextLines(suffixes.value),
+                aliases: Object.fromEntries(entries),
+                fallback_names: settingsTextLines(fallbackNames.value),
+            };
         };
         panel.appendChild(createEl('p', 'settings-effect-note', '只对之后入库的文章生效，已有的文章不会重新处理。'));
     } else if (section === 'review_sort_keywords') {

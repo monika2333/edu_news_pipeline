@@ -4,7 +4,7 @@ from typing import Optional
 
 import pytest
 
-from src.domain import SourceAliasRules, normalize_source_name
+from src.domain import SourceAliasRules, matches_fallback_name, normalize_source_name
 from src.workers import enrich_summary
 
 
@@ -66,6 +66,61 @@ def test_empty_rules_preserve_source() -> None:
     rules = SourceAliasRules()
 
     assert _normalize("北京号客户端", rules) == "北京号客户端"
+
+
+# ---------------------------------------------------------------------------
+# 回退名单：整串全等命中即回退抓取来源（纯规则，与 worker 无关）
+# ---------------------------------------------------------------------------
+
+
+def test_fallback_name_hits_exact_match() -> None:
+    rules = SourceAliasRules(fallback_names=("现代教育报",))
+
+    assert matches_fallback_name("现代教育报", "现代教育报", rules) is True
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["现代教育报社", "《现代教育报》", "现代教育报客户端"],
+)
+def test_fallback_name_requires_full_string_equality(name: str) -> None:
+    # 名单只做精准匹配：机构名派生、书名号包裹、带渠道后缀都不命中，
+    # 大小写与符号一律不做归一。包含匹配类变异在此被抓出。
+    rules = SourceAliasRules(fallback_names=("现代教育报",))
+
+    assert matches_fallback_name(name, name, rules) is False
+
+
+def test_fallback_name_matches_normalized_name() -> None:
+    # 名单写标准名称：识别结果「现代教育报客户端」剥后缀后命中
+    rules = SourceAliasRules(suffixes=("客户端",), fallback_names=("现代教育报",))
+
+    assert matches_fallback_name("现代教育报客户端", "现代教育报", rules) is True
+
+
+def test_fallback_name_matches_raw_name() -> None:
+    # 名单写原始名称：归一化后的「现代教育报」不在名单，但归一化前命中
+    rules = SourceAliasRules(suffixes=("客户端",), fallback_names=("现代教育报客户端",))
+
+    assert matches_fallback_name("现代教育报客户端", "现代教育报", rules) is True
+
+
+def test_empty_fallback_list_never_matches() -> None:
+    # 名单为空时任何来源都不回退（M6 变异把字段改必填会破坏旧配置读取；
+    # 把默认值改掉会在此暴露）
+    assert matches_fallback_name("现代教育报", "现代教育报", SourceAliasRules()) is False
+    assert (
+        matches_fallback_name("现代教育报", "现代教育报", SourceAliasRules(fallback_names=()))
+        is False
+    )
+
+
+def test_fallback_name_tolerates_none_inputs() -> None:
+    rules = SourceAliasRules(fallback_names=("现代教育报",))
+
+    assert matches_fallback_name(None, None, rules) is False
+    assert matches_fallback_name(None, "现代教育报", rules) is True
+    assert matches_fallback_name("现代教育报", None, rules) is True
 
 
 def test_worker_normalizes_source_and_logs_changed_value(

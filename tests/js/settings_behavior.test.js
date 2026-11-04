@@ -2762,9 +2762,108 @@ test('F6 F12：全角等号按首个拆分且后缀顺序不变', async () => {
         await saveDictionary(page, 'source_aliases');
         assert.deepEqual(dictionaryPuts(page)[0].body, {
             expected_version: 14,
-            value: { suffixes: ['网', '客户端', '报'], aliases: JSON.parse('{"北青":"北京青年报=新版","__proto__":"标准来源","A":"B＝C"}') },
+            value: {
+                suffixes: ['网', '客户端', '报'],
+                aliases: JSON.parse('{"北青":"北京青年报=新版","__proto__":"标准来源","A":"B＝C"}'),
+                fallback_names: [],
+            },
         });
         assert.equal(block.querySelector('.alias-mappings').value, '北青=北京青年报=新版\n__proto__=标准来源\nA=B＝C');
+    } finally { page.close(); }
+});
+
+// 回退来源（fallback_names）：与后缀/别名共用「来源别名」分区、保存按钮与版本号。
+function fallbackField(page) {
+    const block = dictionaryBlock(page, 'source_aliases');
+    return [...block.querySelectorAll('.advanced-field')]
+        .find((field) => field.querySelector('.alias-fallback-names'));
+}
+
+function addFallbackName(page, name) {
+    const field = fallbackField(page);
+    const addInput = field.querySelector('.keyword-add-input');
+    addInput.value = name;
+    addInput.dispatchEvent(new page.window.Event('input', { bubbles: true }));
+    addInput.dispatchEvent(new page.window.KeyboardEvent('keydown', {
+        key: 'Enter', bubbles: true, cancelable: true,
+    }));
+}
+
+test('回退来源：旧配置缺 fallback_names 字段照常渲染且不报错', async () => {
+    // harness 默认 source_aliases 就是不含该字段的旧配置行
+    const page = await bootPage({ hash: '#advanced' });
+    try {
+        const block = dictionaryBlock(page, 'source_aliases');
+        const textarea = block.querySelector('.alias-fallback-names');
+        assert.ok(textarea, '回退来源字段必须渲染');
+        assert.equal(textarea.value, '');
+        const field = fallbackField(page);
+        assert.equal(field.querySelector('.advanced-field-label').textContent, '回退来源');
+        assert.match(field.querySelector('.settings-word-count').textContent, /0 条/);
+        assert.equal(field.querySelector('.keyword-add-input').getAttribute('placeholder'), '添加来源名称，回车确认');
+        const hint = field.querySelector('.keyword-field-hint');
+        assert.match(hint.textContent, /完全相同/);
+        assert.match(hint.textContent, /抓取来源/);
+        assert.match(hint.textContent, /书名号/);
+        assert.match(block.querySelector('.settings-card-desc').textContent, /直接回退到抓取来源/);
+    } finally { page.close(); }
+});
+
+test('回退来源：逐条添加删除并共用来源别名保存按钮', async () => {
+    const page = await bootPage({ hash: '#advanced' });
+    try {
+        addFallbackName(page, ' 现代教育报 ');
+        const field = fallbackField(page);
+        assert.equal(field.querySelector('.alias-fallback-names').value, '现代教育报');
+        assert.equal(field.querySelectorAll('.keyword-chip').length, 1);
+        assert.match(field.querySelector('.settings-word-count').textContent, /1 条/);
+        assert.equal(unloadBlocked(page), true);
+
+        // 逐条删除：textarea 同步变空、脏标记仍在
+        field.querySelector('.keyword-chip-remove').click();
+        assert.equal(field.querySelector('.alias-fallback-names').value, '');
+        assert.equal(field.querySelectorAll('.keyword-chip').length, 0);
+        assert.equal(unloadBlocked(page), true);
+
+        addFallbackName(page, '现代教育报');
+        addFallbackName(page, '北京日报');
+        await saveDictionary(page, 'source_aliases');
+        const put = dictionaryPuts(page)[0];
+        assert.equal(put.path, '/api/admin/settings/source_aliases');
+        assert.equal(put.body.expected_version, 14);
+        assert.deepEqual(put.body.value, {
+            suffixes: ['客户端', '网'],
+            aliases: { 北青: '北京青年报' },
+            fallback_names: ['现代教育报', '北京日报'],
+        });
+        assert.match(dictionaryBlock(page, 'source_aliases').querySelector('.settings-save-status').textContent, /保存成功/);
+    } finally { page.close(); }
+});
+
+test('回退来源：已配置名单渲染为芯片并可整段批量编辑', async () => {
+    const sections = defaultSections();
+    sections.source_aliases.value = {
+        suffixes: ['客户端'],
+        aliases: { 北京号: '北京日报' },
+        fallback_names: ['现代教育报', '北京日报'],
+    };
+    const page = await bootPage({ hash: '#advanced', sections });
+    try {
+        const field = fallbackField(page);
+        assert.equal(field.querySelector('.alias-fallback-names').value, '现代教育报\n北京日报');
+        assert.deepEqual(
+            [...field.querySelectorAll('.keyword-chip-text')].map((el) => el.textContent),
+            ['现代教育报', '北京日报'],
+        );
+        assert.match(field.querySelector('.settings-word-count').textContent, /2 条/);
+
+        // 批量编辑展开原生 textarea，整段替换后保存
+        field.querySelector('.keyword-batch-toggle').click();
+        const textarea = field.querySelector('.alias-fallback-names');
+        assert.equal(textarea.hidden, false);
+        inputValue(page, textarea, '现代教育报\n北京日报\n现代教育报社');
+        await saveDictionary(page, 'source_aliases');
+        assert.deepEqual(dictionaryPuts(page)[0].body.value.fallback_names, ['现代教育报', '北京日报', '现代教育报社']);
     } finally { page.close(); }
 });
 
@@ -3155,8 +3254,9 @@ test('空别名和后缀无需确认；关键词服务端去重后回填', async
         const aliases = dictionaryBlock(page, 'source_aliases');
         inputValue(page, aliases.querySelector('.alias-suffixes'), '');
         inputValue(page, aliases.querySelector('.alias-mappings'), '');
+        inputValue(page, aliases.querySelector('.alias-fallback-names'), '');
         await saveDictionary(page, 'source_aliases');
-        assert.deepEqual(dictionaryPuts(page)[0].body.value, { suffixes: [], aliases: {} });
+        assert.deepEqual(dictionaryPuts(page)[0].body.value, { suffixes: [], aliases: {}, fallback_names: [] });
         const education = dictionaryBlock(page, 'education_keywords');
         inputValue(page, education.querySelector('textarea'), ' 学校 \n学校\n\n教育');
         await saveDictionary(page, 'education_keywords');
@@ -3263,16 +3363,18 @@ for (const [section, draft] of [
     });
 }
 
-test('放弃修改（source_aliases）：两个文本框复原、脏标记清除、再保存发回原始别名表', async () => {
+test('放弃修改（source_aliases）：三个文本框复原、脏标记清除、再保存发回原始别名表', async () => {
     const page = await bootPage();
     try {
         const block = dictionaryBlock(page, 'source_aliases');
         inputValue(page, block.querySelector('.alias-suffixes'), '客户端\n网\n日报');
         inputValue(page, block.querySelector('.alias-mappings'), '北青=北京青年报\n晚报=北京晚报');
+        inputValue(page, block.querySelector('.alias-fallback-names'), '现代教育报\n北京日报');
         assert.equal(unloadBlocked(page), true);
         block.querySelector('.section-discard').click();
         assert.equal(block.querySelector('.alias-suffixes').value, '客户端\n网');
         assert.equal(block.querySelector('.alias-mappings').value, '北青=北京青年报');
+        assert.equal(block.querySelector('.alias-fallback-names').value, '');
         assert.equal(unloadBlocked(page), false);
         assert.equal(page.window.eval('state.dirty.source_aliases'), false);
 
@@ -3281,7 +3383,7 @@ test('放弃修改（source_aliases）：两个文本框复原、脏标记清除
             path: '/api/admin/settings/source_aliases',
             body: {
                 expected_version: 14,
-                value: { suffixes: ['客户端', '网'], aliases: { 北青: '北京青年报' } },
+                value: { suffixes: ['客户端', '网'], aliases: { 北青: '北京青年报' }, fallback_names: [] },
             },
         }]);
     } finally { page.close(); }

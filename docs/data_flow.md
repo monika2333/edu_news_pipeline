@@ -222,7 +222,7 @@ T 非空时才调用「提示词优化」LLM 步骤。模型只返回 1–3 处 
 历史数据：`endpoint` 字段缺失按 `null` 处理；但 `endpoint` 非 `null` 时该步骤的
 `model` 必须显式指定——模型名与服务商绑定，不允许换接入点后继承默认模型。
 
-`llm_source` 表示模型识别出的发布/署名媒体名称。来源响应完成既有格式清洗后，只有长度不超过 64 个字符的结果才会进入来源名称归一化；归一化依次剥离一次渠道后缀、再按整串全等规则替换别名，规则来自 `app_settings.source_aliases` 分区（suffixes 为有序列表，剥离只发生一次；aliases 为整串映射），处理后的值才写入数据库。超过 64 个字符的内容视为模型未按格式返回，必须整体丢弃并写入 `NULL`，不得截断保存。来源为空时，导出与人工复核界面回退使用抓取来源。
+`llm_source` 表示模型识别出的发布/署名媒体名称。来源响应完成既有格式清洗后，只有长度不超过 64 个字符的结果才会进入来源名称归一化；归一化依次剥离一次渠道后缀、再按整串全等规则替换别名，规则来自 `app_settings.source_aliases` 分区（suffixes 为有序列表，剥离只发生一次；aliases 为整串映射），处理后的值才写入数据库。超过 64 个字符的内容视为模型未按格式返回，必须整体丢弃并写入 `NULL`，不得截断保存。来源为空时，导出与人工复核界面回退使用抓取来源。归一化结束后，识别结果还会与同一分区的回退名单（`fallback_names`）比较：归一化前与归一化后的名称任一与名单项整串全等（大小写、符号都不做归一），该识别结果不保存、直接写入 `NULL`，后续展示自然回退到抓取来源；判断在写入时完成（`enrich-summary`），读取路径不感知名单。
 
 京内本地判定（`geo-classify` 的本地路由与 `geo-tag` 回填）使用
 `app_settings.beijing_keywords` 分区的词表，对摘要、标题、正文做小写化后的子串
@@ -428,7 +428,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 | 表 | 职责 |
 |---|---|
-| `app_settings` | 分区保存业务配置（提示词正文另见 `prompt_revisions`）：接入点（`llm_endpoints`）、模型（`llm_models`）、每小时来源（`crawl_sources`）、评分加分词表（`score_keyword_bonuses`，有序数组）、评分排除名单（`score_exclusion_keywords`，有序字符串数组，空数组表示不排除任何文章）、抓取教育关键词闸门（`education_keywords`）、京内本地判定词表（`beijing_keywords`）、来源归一化规则（`source_aliases`）、审阅页自动排序词表（`review_sort_keywords`，键固定为市教委/中小学/高校三个类别）。版本号用于控制台乐观锁。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身。`llm_endpoints`、`review_sort_keywords`、`score_exclusion_keywords` 由迁移种子创建（没有旧配置文件，不进一次性导入）；其余分区由 `import-settings` 导入（只写数据库中尚不存在的分区，已存在的一律跳过，不覆盖；重复执行安全） |
+| `app_settings` | 分区保存业务配置（提示词正文另见 `prompt_revisions`）：接入点（`llm_endpoints`）、模型（`llm_models`）、每小时来源（`crawl_sources`）、评分加分词表（`score_keyword_bonuses`，有序数组）、评分排除名单（`score_exclusion_keywords`，有序字符串数组，空数组表示不排除任何文章）、抓取教育关键词闸门（`education_keywords`）、京内本地判定词表（`beijing_keywords`）、来源归一化规则（`source_aliases`，含回退名单 `fallback_names`——可选字段，旧配置行可缺失、缺失按空名单处理）、审阅页自动排序词表（`review_sort_keywords`，键固定为市教委/中小学/高校三个类别）。版本号用于控制台乐观锁。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身。`llm_endpoints`、`review_sort_keywords`、`score_exclusion_keywords` 由迁移种子创建（没有旧配置文件，不进一次性导入）；其余分区由 `import-settings` 导入（只写数据库中尚不存在的分区，已存在的一律跳过，不覆盖；重复执行安全） |
 | `crawl_accounts` | 六类账号型来源的账号权威清单（中国日报、千龙网的行是栏目列表页 URL，不是社交账号）；`display_name` 是系统解析的名称，`display_name_synced_at` / `display_name_error` 记录最近成功时间或失败原因；运行时只读取启用行 |
 | `console_users` / `console_user_sessions` | 账号与登录会话 |
 | `review_events` | 审计日志，记录谁在什么时候改了什么 |

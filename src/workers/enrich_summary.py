@@ -10,7 +10,7 @@ from src.adapters.llm_source import detect_source
 from src.adapters.sentiment_classifier import classify_sentiment
 from src.business_config import get_business_config
 from src.config import get_settings
-from src.domain import SourceAliasRules, normalize_source_name
+from src.domain import SourceAliasRules, matches_fallback_name, normalize_source_name
 from src.workers import (
     ContextPropagatingThreadPoolExecutor,
     log_error,
@@ -98,6 +98,20 @@ def _detect_article_source(
             f"article_id={article_id} original={original_llm_source!r} "
             f"normalized={llm_source!r}",
         )
+    # 回退名单：识别结果（归一化前或归一化后）与名单整串全等时丢弃识别结果，
+    # 写 NULL 让展示层回退抓取来源。必须写 None 不能写空串——
+    # COALESCE 不会跳过空字符串，空串会让回退失效。
+    if llm_source is not None and matches_fallback_name(
+        original_llm_source, llm_source, source_aliases
+    ):
+        article_id = str(article.get("article_id") or "<unknown>")
+        log_info(
+            WORKER,
+            "FALLBACK source name "
+            f"article_id={article_id} original={original_llm_source!r} "
+            f"normalized={llm_source!r}",
+        )
+        llm_source = None
     return EnrichmentResult(
         kind="source",
         llm_source=llm_source,

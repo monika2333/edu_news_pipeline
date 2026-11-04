@@ -284,6 +284,7 @@ class BusinessConfig:
             "source_aliases": {
                 "suffixes": list(self.source_aliases.suffixes),
                 "aliases": dict(self.source_aliases.aliases),
+                "fallback_names": list(self.source_aliases.fallback_names),
             },
             "review_sort_keywords": {
                 category: list(rules)
@@ -624,7 +625,7 @@ def validate_beijing_keywords(value: Any) -> list[str]:
 def validate_source_aliases(value: Any) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError("source_aliases 必须是对象")
-    unexpected = set(value) - {"suffixes", "aliases"}
+    unexpected = set(value) - {"suffixes", "aliases", "fallback_names"}
     if unexpected:
         raise ValueError(f"source_aliases 含未知字段：{', '.join(sorted(unexpected))}")
     suffixes = value.get("suffixes")
@@ -633,6 +634,11 @@ def validate_source_aliases(value: Any) -> dict[str, Any]:
         raise ValueError("source_aliases.suffixes 必须是有序列表（剥离顺序有意义）")
     if not isinstance(aliases, Mapping):
         raise ValueError("source_aliases.aliases 必须是对象")
+    # fallback_names 是回退名单：线上已有配置行不含该字段，缺失按空名单处理，
+    # 校验结果始终包含该字段（运行快照因此也能还原当轮实际名单）。
+    fallback_names = value.get("fallback_names", [])
+    if not isinstance(fallback_names, list):
+        raise ValueError("source_aliases.fallback_names 必须是有序列表")
     normalized_suffixes: list[str] = []
     for index, suffix in enumerate(suffixes):
         if not isinstance(suffix, str) or not suffix:
@@ -645,7 +651,19 @@ def validate_source_aliases(value: Any) -> dict[str, Any]:
         if not isinstance(target, str) or not target:
             raise ValueError(f"source_aliases.aliases[{key}] 的值必须是非空字符串")
         normalized_aliases[key] = target
-    return {"suffixes": normalized_suffixes, "aliases": normalized_aliases}
+    normalized_fallback_names: list[str] = []
+    for index, name in enumerate(fallback_names):
+        if not isinstance(name, str):
+            raise ValueError(f"source_aliases.fallback_names[{index}] 必须是字符串")
+        stripped = name.strip()
+        if not stripped:
+            raise ValueError(f"source_aliases.fallback_names[{index}] 不能为空")
+        normalized_fallback_names.append(stripped)
+    return {
+        "suffixes": normalized_suffixes,
+        "aliases": normalized_aliases,
+        "fallback_names": normalized_fallback_names,
+    }
 
 
 def resolve_source_aliases(value: Any) -> SourceAliasRules:
@@ -653,6 +671,7 @@ def resolve_source_aliases(value: Any) -> SourceAliasRules:
     return SourceAliasRules(
         suffixes=tuple(normalized["suffixes"]),
         aliases=dict(normalized["aliases"]),
+        fallback_names=tuple(normalized["fallback_names"]),
     )
 
 

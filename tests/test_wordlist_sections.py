@@ -30,7 +30,7 @@ from src.business_config import (
     get_business_config,
     load_business_config,
 )
-from src.domain import SourceAliasRules, normalize_source_name
+from src.domain import SourceAliasRules, matches_fallback_name, normalize_source_name
 from src.domain.prompt import PromptTemplate
 from src.workers import crawl_sources, enrich_summary, geo_classify, score
 from tests.conftest import make_endpoint_config
@@ -210,15 +210,58 @@ class TestSourceAliasesValidator:
             {"suffixes": ["客户端"], "aliases": {"北京号": "北京日报"}}
         )
 
+        # 校验结果始终包含 fallback_names：缺失按空名单处理
         assert normalized == {
             "suffixes": ["客户端"],
             "aliases": {"北京号": "北京日报"},
+            "fallback_names": [],
         }
+
+    def test_fallback_names_validated_trimmed_and_preserved(self) -> None:
+        normalized = business_config.validate_source_aliases(
+            {
+                "suffixes": [],
+                "aliases": {},
+                "fallback_names": [" 现代教育报 ", "北京日报"],
+            }
+        )
+
+        assert normalized["fallback_names"] == ["现代教育报", "北京日报"]
+
+    def test_fallback_names_missing_field_defaults_to_empty(self) -> None:
+        # 线上已有配置行不含 fallback_names，必须继续可读
+        normalized = business_config.validate_source_aliases(
+            {"suffixes": ["客户端"], "aliases": {}}
+        )
+
+        assert normalized["fallback_names"] == []
+
+    def test_fallback_names_rejects_non_list(self) -> None:
+        with pytest.raises(ValueError, match="fallback_names 必须是有序列表"):
+            business_config.validate_source_aliases(
+                {"suffixes": [], "aliases": {}, "fallback_names": "现代教育报"}
+            )
+
+    def test_fallback_names_rejects_non_string_item_with_index(self) -> None:
+        with pytest.raises(ValueError, match=r"fallback_names\[1\] 必须是字符串"):
+            business_config.validate_source_aliases(
+                {"suffixes": [], "aliases": {}, "fallback_names": ["现代教育报", 3]}
+            )
+
+    def test_fallback_names_rejects_blank_item_with_index(self) -> None:
+        with pytest.raises(ValueError, match=r"fallback_names\[2\] 不能为空"):
+            business_config.validate_source_aliases(
+                {
+                    "suffixes": [],
+                    "aliases": {},
+                    "fallback_names": ["现代教育报", "北京日报", "  "],
+                }
+            )
 
     def test_both_empty_is_allowed_and_means_no_normalization(self) -> None:
         assert business_config.validate_source_aliases(
             {"suffixes": [], "aliases": {}}
-        ) == {"suffixes": [], "aliases": {}}
+        ) == {"suffixes": [], "aliases": {}, "fallback_names": []}
 
     def test_invalid_entries_are_rejected(self) -> None:
         with pytest.raises(ValueError, match="suffixes"):
@@ -242,6 +285,20 @@ class TestSourceAliasesValidator:
         assert isinstance(rules, SourceAliasRules)
         assert rules.suffixes == ("客户端",)
         assert rules.aliases == {"北京号": "北京日报"}
+        assert rules.fallback_names == ()
+
+
+def test_resolve_passes_fallback_names_to_rules() -> None:
+    # M7 的对照：resolve 必须把名单传进领域规则，否则 worker 永远不回退
+    rules = business_config.resolve_source_aliases(
+        {
+            "suffixes": ["客户端"],
+            "aliases": {"北京号": "北京日报"},
+            "fallback_names": ["现代教育报"],
+        }
+    )
+
+    assert rules.fallback_names == ("现代教育报",)
 
 
 def test_source_aliases_suffix_order_is_preserved_end_to_end() -> None:
@@ -290,7 +347,7 @@ def test_validate_section_dispatches_new_sections() -> None:
     assert business_config.validate_section("beijing_keywords", ["北京"]) == ["北京"]
     assert business_config.validate_section(
         "source_aliases", {"suffixes": [], "aliases": {}}
-    ) == {"suffixes": [], "aliases": {}}
+    ) == {"suffixes": [], "aliases": {}, "fallback_names": []}
 
 
 # ---------------------------------------------------------------------------
@@ -325,6 +382,11 @@ def test_load_requires_each_new_section(section: str) -> None:
         ("beijing_keywords", []),
         # 来源别名：别名值为空字符串
         ("source_aliases", {"suffixes": ["客户端"], "aliases": {"北京号": ""}}),
+        # 来源别名：回退名单含空白项
+        (
+            "source_aliases",
+            {"suffixes": [], "aliases": {}, "fallback_names": [" "]},
+        ),
     ],
 )
 def test_load_rejects_invalid_stored_wordlists(
@@ -355,6 +417,7 @@ def test_load_resolves_wordlists_and_versions() -> None:
     assert loaded.source_aliases == SourceAliasRules(
         suffixes=("客户端",),
         aliases={"北京号": "北京日报"},
+        fallback_names=(),
     )
     assert loaded.versions == {
         "llm_endpoints": 2,
@@ -387,6 +450,7 @@ def test_snapshot_records_full_wordlist_content_and_versions() -> None:
     assert snapshot["source_aliases"] == {
         "suffixes": ["客户端"],
         "aliases": {"北京号": "北京日报"},
+        "fallback_names": [],
     }
     assert snapshot["review_sort_keywords"] == {
         "市教委": ["市教委"],
@@ -394,6 +458,33 @@ def test_snapshot_records_full_wordlist_content_and_versions() -> None:
         "高校": ["大学"],
     }
     assert set(snapshot["versions"]) == set(business_config.SETTING_SECTIONS)
+
+
+def test_fallback_names_load_usable_and_enter_snapshot() -> None:
+    """M8 对照：回退名单经校验、加载后可用于实际判定，并完整进入运行快照。"""
+
+    value = {
+        "suffixes": ["客户端"],
+        "aliases": {"现教报": "现代教育报"},
+        "fallback_names": ["现代教育报"],
+    }
+    rows = _settings_rows()
+    next(row for row in rows if row["section"] == "source_aliases")["value"] = value
+    loaded = load_business_config(_fake_adapter(rows))
+
+    rules = loaded.source_aliases
+    assert rules.fallback_names == ("现代教育报",)
+    # 加载出的规则直接参与判定：识别结果「现教报客户端」剥后缀 + 别名后
+    # 得到「现代教育报」，归一化后的名称命中名单 → 应回退
+    normalized = normalize_source_name("现教报客户端", rules)
+    assert normalized == "现代教育报"
+    assert matches_fallback_name("现教报客户端", normalized, rules) is True
+
+    assert loaded.snapshot()["source_aliases"] == {
+        "suffixes": ["客户端"],
+        "aliases": {"现教报": "现代教育报"},
+        "fallback_names": ["现代教育报"],
+    }
 
 
 def test_snapshot_order_survives_replace_with_crawl_sources() -> None:

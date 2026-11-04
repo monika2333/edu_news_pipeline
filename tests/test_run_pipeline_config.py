@@ -261,7 +261,11 @@ def test_m9_m18_source_override_is_used_and_written_to_snapshot(monkeypatch) -> 
     assert snapshot["score_exclusion_keywords"] == []
     assert snapshot["education_keywords"] == ["教育"]
     assert snapshot["beijing_keywords"] == ["北京"]
-    assert snapshot["source_aliases"] == {"suffixes": ["客户端"], "aliases": {}}
+    assert snapshot["source_aliases"] == {
+        "suffixes": ["客户端"],
+        "aliases": {},
+        "fallback_names": [],
+    }
     assert snapshot["review_sort_keywords"] == {
         "市教委": ["市教委"],
         "中小学": ["小学"],

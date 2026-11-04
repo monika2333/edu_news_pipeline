@@ -35,6 +35,7 @@ from .region import is_beijing_related
 from .scoring import DEFAULT_WEIGHTS, ScoreResult, ScoreWeights, score_summary
 from .source_aliases import (
     SourceAliasRules,
+    matches_fallback_name,
     normalize_source_name,
 )
 from .states import IN_PROGRESS_STATES, TERMINAL_STATES, ProcessState, is_terminal
@@ -55,6 +56,7 @@ __all__ = [
     "is_terminal",
     "score_summary",
     "SourceAliasRules",
+    "matches_fallback_name",
     "normalize_source_name",
     "is_beijing_related",
     "BeijingGateCandidate",

@@ -1556,6 +1556,22 @@
     font-size: 0.86rem;
     font-weight: 600;
 }
+/* 来源别名的三个字段有固定处理顺序，编号徽标把顺序和字段边界一起画出来 */
+.advanced-field-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+}
 .advanced-field .settings-word-count {
     display: inline;
     margin: 0 0 0 auto;
@@ -1676,7 +1692,22 @@
 .advanced-field textarea.settings-textarea { margin-top: 10px; }
 /* .settings-textarea 的 display:block 会压过浏览器默认的 [hidden]{display:none} */
 .advanced-field textarea[hidden] { display: none; }
-.advanced-alias-fields { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }
+/* 来源别名：三个字段单列纵排；两栏时「回退来源」会被挤在窄边栏里折行。
+   字段之间用细分割线划界，编号（1/2/3）沿用 head 里的 .advanced-field-step。 */
+.advanced-alias-fields {
+    display: flex;
+    flex-direction: column;
+}
+.advanced-alias-fields > .advanced-field {
+    margin-top: 0;
+    padding: 18px 0;
+    border-top: 1px solid #eef2f7;
+}
+.advanced-alias-fields > .advanced-field:first-child {
+    padding-top: 0;
+    border-top: 0;
+}
+.advanced-alias-fields > .advanced-field:last-child { padding-bottom: 0; }
 .advanced-section > .settings-updated { margin-top: 12px; }
 
 /* 提示词页签：左侧提示词列表 + 右侧编辑器，窄屏堆叠 */
@@ -2125,7 +2156,6 @@
     .bonus-heading { font-size: 0.74rem; }
     .bonus-value { width: 52px; }
     .bonus-row-error { padding-left: 34px; }
-    .advanced-alias-fields { grid-template-columns: 1fr; gap: 0; }
 }
 
 /* 提示词试跑：选文、结果与原始输出 */

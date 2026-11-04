@@ -6,7 +6,9 @@ const ADVANCED_SECTIONS = {
         '教育关键词不能为空：为空会让所有文章直接放行。'],
     beijing_keywords: ['京内关键词', '用于判断稿件是否与北京相关，没有命中的会被判为京外。',
         '京内关键词不能为空：为空会把所有稿件判为京外。'],
-    source_aliases: ['来源别名', '统一来源名称，并设置哪些识别来源直接回退到抓取来源。所有项都可留空。'],
+    source_aliases: ['来源别名',
+        '统一来源名称，并设置哪些识别来源直接回退到抓取来源。'
+        + '三项按编号顺序处理，所有项都可留空。'],
     // 自动排序关键词只影响审阅页展示顺序，立即生效，不参与爬取与打分流程。
     review_sort_keywords: ['自动排序关键词',
         '审阅页「自动排序」按 市教委 → 中小学 → 高校 的固定优先级给条目归类排序，'
@@ -37,11 +39,17 @@ function splitAliasLine(line) {
 // 原生 textarea 做整段粘贴/替换。textarea 仍是唯一数据源（readValue 只读它），
 // 芯片和输入框只是它的视图，输入事件会同时触发脏标记、计数和芯片重绘。
 // mode='aliases' 时芯片显示「原名称 → 标准名称」，添加输入也按同一格式拆分。
+// options.order 给来源别名这类有处理先后顺序的字段一个编号徽标。
 function buildSettingsTextarea(panel, label, value, section, className, options = {}) {
     const mode = options.mode || 'list';
     const unit = options.unit || '个词';
     const field = createEl('div', 'advanced-field');
     const head = createEl('div', 'advanced-field-head');
+    if (options.order) {
+        head.appendChild(createEl('span', 'advanced-field-step', String(options.order), {
+            'aria-hidden': 'true',
+        }));
+    }
     head.appendChild(createEl('span', 'advanced-field-label', label));
     const count = createEl('span', 'settings-word-count', '', { 'aria-live': 'polite' });
     const toggle = createEl('button', 'keyword-batch-toggle', '批量编辑', {
@@ -223,9 +231,11 @@ function renderAdvancedSection(section, panel) {
             section,
             'alias-suffixes',
             {
+                order: 1,
                 unit: '条',
                 addPlaceholder: '添加后缀，回车确认',
-                hint: '归一化时按从上到下的顺序，只剥离第一个匹配到的后缀。',
+                hint: '去掉识别来源末尾固定的后缀（如「客户端」「网」）。'
+                    + '按从上到下的顺序，只剥离第一个命中的后缀。',
             },
         );
         const aliases = buildSettingsTextarea(
@@ -235,10 +245,11 @@ function renderAdvancedSection(section, panel) {
             section,
             'alias-mappings',
             {
+                order: 2,
                 mode: 'aliases',
                 unit: '条',
                 addPlaceholder: '原名称=标准名称，回车添加',
-                hint: '按第一个等号拆分；支持半角 = 和全角 ＝。',
+                hint: '把不同写法归到同一个标准来源名。按第一个等号拆分，支持半角 = 和全角 ＝。',
             },
         );
         // 旧配置行可能没有 fallback_names 字段，渲染时按空名单兜底。
@@ -249,9 +260,11 @@ function renderAdvancedSection(section, panel) {
             section,
             'alias-fallback-names',
             {
+                order: 3,
                 unit: '条',
                 addPlaceholder: '添加来源名称，回车确认',
-                hint: '识别来源与这里的名称完全相同时不采用，直接使用抓取来源。书名号等符号也要一致。',
+                hint: '识别来源与名单中的名称完全相同时不采用，直接使用抓取来源；'
+                    + '归一化前后的名称都参与比对。书名号等符号也要一致。',
             },
         );
         readValue = (status) => {

@@ -4,6 +4,7 @@
 
 | 日期 | 功能 | 合入 | archive |
 |---|---|---|---|
+| 2026-11-05 | 审阅页命中加分词的浅红高亮同口径仅限京内（`renderReviewCard` 按条目 `is_beijing_related` 门控；新建 `review_card_bonus.test.js` + 独立 pytest 包装，页面快照渲染 /duty 与 /admin/review 两端） | d1b5931 | 拍板并入 `decisions.md` 2026-11-03 那条 |
 | 2026-11-04 | 高级页「来源别名」卡片改单列：后缀/别名/回退来源纵向排列 + 1/2/3 顺序徽标 + 细分隔线，补全三段说明；仍留在高级页签，不新增独立页或一级入口 | cded5ac | [2026-11-04-来源别名单列布局.md](archive/2026-11-04-来源别名单列布局.md) |
 | 2026-11-04 | 来源回退名单（`source_aliases.fallback_names`，可选字段）：识别结果归一化前后与名单整串全等即写 `NULL` 回退抓取来源（写入路径处理，读取零改动）；设置页「来源别名」卡片新增「回退来源」字段；运行快照含当轮名单 | c573dba | [2026-11-04-来源回退名单.md](archive/2026-11-04-来源回退名单.md) |
 | 2026-11-03 | 存档页删除标签行左侧的全局待确认回链提示（`#archive-nav-pending` + setNavPending/loadNavPending + 样式；详情标题栏「待确认回链 N」批量按钮承担同一职责，link-queue 接口保留） | a994b55 | 拍板记入 `decisions.md` |

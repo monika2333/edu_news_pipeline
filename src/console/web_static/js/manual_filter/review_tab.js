@@ -247,7 +247,8 @@ function renderReviewCard(item) {
     const placeholder = item.llm_source_raw ? `(LLM: ${item.llm_source_raw})` : '留空则回退抓取来源';
     const sourceText = item.source || item.llm_source_display || '-';
     const bonusText = (item.bonus_keywords && item.bonus_keywords.length) ? item.bonus_keywords.join(', ') : '';
-    const bonusClass = bonusText ? ' has-bonus' : '';
+    // 浅红高亮只用于京内（与筛选页 renderArticleCard 同口径）：京外与未归类命中加分词保持白底。
+    const bonusClass = bonusText && item.is_beijing_related ? ' has-bonus' : '';
     const searchText = escapeReviewAttr(buildReviewSearchText(item));
     const summaryCount = countReviewSummaryChars(item.summary);
     const selectValue =

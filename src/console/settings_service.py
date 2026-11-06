@@ -40,8 +40,8 @@ from src.business_config import (
     SOURCE_CATALOG,
     normalize_source_key,
     normalize_source_list,
-    resolve_llm_steps,
     resolve_llm_endpoints,
+    resolve_llm_steps,
     validate_crawl_sources,
     validate_llm_endpoints,
     validate_llm_models,
@@ -91,6 +91,7 @@ def _endpoints_payload(settings: Any, sections: Mapping[str, Any]) -> dict[str, 
                 "api_key_env": item["api_key_env"],
                 "api_style": item["api_style"],
                 "temperature_override": item["temperature_override"],
+                "default_model": item["default_model"],
                 "api_key_env_configured": bool(os.getenv(item["api_key_env"])),
             }
             for item in normalized["items"]
@@ -146,17 +147,18 @@ def _endpoint_definition(endpoint_key: Optional[str]) -> LLMEndpointConfig:
     return definition
 
 
-def test_llm_model(
-    step: str,
+def _probe_model(
+    *,
     model: str,
     reasoning: bool,
-    endpoint: Optional[str] = None,
+    endpoint: Optional[str],
+    operation: str,
 ) -> dict[str, Any]:
-    if step not in LLM_STEPS:
-        raise ValueError(f"未知模型步骤：{step}")
-    normalized_model = model.strip()
-    if not normalized_model:
-        raise ValueError("模型名不能为空")
+    """对「接入点 + 模型 + reasoning」组合发一次最小真实请求。
+
+    供逐步测试按钮（test_llm_model）与保存时的统一模型测试共用；
+    operation 只用于请求日志归属，不参与校验。"""
+
     settings = get_settings()
     try:
         resolved = resolve_endpoint(_endpoint_definition(endpoint))
@@ -171,7 +173,7 @@ def test_llm_model(
     )
     request_budget = max(180, request_timeout + 30) if reasoning else 12
     payload: dict[str, Any] = {
-        "model": normalized_model,
+        "model": model,
         "messages": [{"role": "user", "content": "只回复 OK"}],
         "temperature": 0,
         "max_tokens": max_tokens,
@@ -191,8 +193,8 @@ def test_llm_model(
             budget=request_budget,
             retries=1,
             retryable_statuses=set(),
-            operation=f"settings_model_test:{step}",
-            model=normalized_model,
+            operation=operation,
+            model=model,
             retry_non_retryable_statuses=False,
             endpoint_label=resolved.label,
         )
@@ -207,6 +209,25 @@ def test_llm_model(
         "elapsed_ms": round((time.monotonic() - started) * 1000),
         "error": None,
     }
+
+
+def test_llm_model(
+    step: str,
+    model: str,
+    reasoning: bool,
+    endpoint: Optional[str] = None,
+) -> dict[str, Any]:
+    if step not in LLM_STEPS:
+        raise ValueError(f"未知模型步骤：{step}")
+    normalized_model = model.strip()
+    if not normalized_model:
+        raise ValueError("模型名不能为空")
+    return _probe_model(
+        model=normalized_model,
+        reasoning=reasoning,
+        endpoint=endpoint,
+        operation=f"settings_model_test:{step}",
+    )
 
 
 def reload_server_environment(actor: ConsoleUser) -> dict[str, Any]:
@@ -232,6 +253,110 @@ def _require_llm_endpoints(adapter: Any) -> tuple[dict[str, LLMEndpointConfig], 
     return resolve_llm_endpoints(row["value"])
 
 
+def _resolved_step_combinations(
+    models_value: Optional[Any],
+    endpoint_items: Mapping[str, LLMEndpointConfig],
+    default_endpoint: str,
+) -> dict[str, tuple[str, str, bool]]:
+    """每一步最终使用的「接入点 key + 模型 + reasoning」。
+
+    llm_models 分区缺失（全新部署尚未 import-settings）时没有步骤，返回空表。"""
+
+    if models_value is None:
+        return {}
+    steps = resolve_llm_steps(
+        models_value,
+        endpoints=endpoint_items,
+        default_endpoint=default_endpoint,
+    )
+    return {
+        step: (
+            steps[step].endpoint or default_endpoint,
+            steps[step].model,
+            steps[step].reasoning,
+        )
+        for step in LLM_STEPS
+    }
+
+
+def _endpoint_connection_signature(endpoint: LLMEndpointConfig) -> tuple[str, str, str]:
+    return (endpoint.base_url, endpoint.api_key_env, endpoint.api_style)
+
+
+def _run_save_time_model_tests(
+    *,
+    models_before: Optional[Any],
+    models_after: Optional[Any],
+    endpoints_before: Mapping[str, LLMEndpointConfig],
+    default_endpoint_before: str,
+    endpoints_after: Mapping[str, LLMEndpointConfig],
+    default_endpoint_after: str,
+) -> None:
+    """保存 llm_models / llm_endpoints 前的统一模型测试。
+
+    每一步分别比较保存前、保存后最终使用的「接入点 + 模型 + reasoning」：
+    三项变了，或所用接入点的连接信息（base_url / api_key_env / api_style）
+    变了，就测保存后的组合，相同组合只测一次。接入点层面另测：新增的接入点
+    或 default_model 改了的接入点，即使暂时没有步骤在用，也用 reasoning 关
+    测一次它的默认模型——以后哪一步切过去也不会拿到一个坏的默认值。
+    任一测试失败抛 ValueError 拒绝整次保存，数据库不变。"""
+
+    before_combinations = _resolved_step_combinations(
+        models_before, endpoints_before, default_endpoint_before
+    )
+    after_combinations = _resolved_step_combinations(
+        models_after, endpoints_after, default_endpoint_after
+    )
+    tested: set[tuple[str, str, bool]] = set()
+
+    def run_step_test(step: str, combination: tuple[str, str, bool]) -> None:
+        endpoint_key, model, reasoning = combination
+        if combination in tested:
+            return
+        tested.add(combination)
+        outcome = test_llm_model(step, model, reasoning, endpoint=endpoint_key)
+        if not outcome["success"]:
+            raise ValueError(
+                f"{LLM_STEP_LABELS[step]}模型测试失败：{outcome['error']}"
+            )
+
+    for step in LLM_STEPS:
+        before = before_combinations.get(step)
+        after = after_combinations.get(step)
+        if after is None:
+            continue
+        if before == after:
+            # 组合未变也可能要测：所用接入点的连接信息变了
+            endpoint_before = endpoints_before.get(after[0])
+            if endpoint_before is None or (
+                _endpoint_connection_signature(endpoint_before)
+                == _endpoint_connection_signature(endpoints_after[after[0]])
+            ):
+                continue
+        run_step_test(step, after)
+
+    # 接入点默认模型测试（reasoning 关）：新增接入点、default_model 改了
+    for key, item in endpoints_after.items():
+        before_item = endpoints_before.get(key)
+        if before_item is not None and before_item.default_model == item.default_model:
+            continue
+        combination = (key, item.default_model, False)
+        if combination in tested:
+            continue
+        tested.add(combination)
+        outcome = _probe_model(
+            model=item.default_model,
+            reasoning=False,
+            endpoint=key,
+            operation=f"settings_model_test:{key}",
+        )
+        if not outcome["success"]:
+            raise ValueError(
+                f"接入点「{item.label}」的默认模型 {item.default_model} "
+                f"测试失败：{outcome['error']}"
+            )
+
+
 def update_setting(
     section: str,
     *,
@@ -246,44 +371,49 @@ def update_setting(
     if current is None:
         raise KeyError(section)
     if section == "llm_models":
-        endpoint_items, endpoint_default = _require_llm_endpoints(adapter)
-        after_steps = resolve_llm_steps(normalized)
+        before_endpoints_items, before_default = _require_llm_endpoints(adapter)
+        after_steps = resolve_llm_steps(
+            normalized,
+            endpoints=before_endpoints_items,
+            default_endpoint=before_default,
+        )
         for step in LLM_STEPS:
             endpoint_ref = after_steps[step].endpoint
-            if endpoint_ref is not None and endpoint_ref not in endpoint_items:
+            if endpoint_ref is not None and endpoint_ref not in before_endpoints_items:
                 raise ValueError(
                     f"{LLM_STEP_LABELS[step]}引用了不存在的接入点：{endpoint_ref}"
                 )
-        before_steps = resolve_llm_steps(current["value"])
-        tested_combinations: set[tuple[str, str, bool]] = set()
-        for step in LLM_STEPS:
-            if before_steps[step] == after_steps[step]:
-                continue
-            config = after_steps[step]
-            resolved_endpoint = config.endpoint or endpoint_default
-            combination = (resolved_endpoint, config.model, config.reasoning)
-            if combination in tested_combinations:
-                continue
-            tested_combinations.add(combination)
-            outcome = test_llm_model(
-                step,
-                config.model,
-                config.reasoning,
-                endpoint=resolved_endpoint,
-            )
-            if not outcome["success"]:
-                raise ValueError(
-                    f"{LLM_STEP_LABELS[step]}模型测试失败：{outcome['error']}"
-                )
+        _run_save_time_model_tests(
+            models_before=current["value"],
+            models_after=normalized,
+            endpoints_before=before_endpoints_items,
+            default_endpoint_before=before_default,
+            endpoints_after=before_endpoints_items,
+            default_endpoint_after=before_default,
+        )
     elif section == "llm_endpoints":
-        before_endpoints = validate_llm_endpoints(current["value"])
-        removed_keys = {
-            item["key"] for item in before_endpoints["items"]
-        } - {item["key"] for item in normalized["items"]}
+        before_endpoints_items, before_default = resolve_llm_endpoints(current["value"])
+        removed_keys = set(before_endpoints_items) - {
+            item["key"] for item in normalized["items"]
+        }
         if removed_keys:
-            reasons = _endpoint_deletion_conflicts(removed_keys, before_endpoints, adapter)
+            reasons = _endpoint_deletion_conflicts(
+                removed_keys,
+                validate_llm_endpoints(current["value"]),
+                adapter,
+            )
             if reasons:
                 raise ValueError("拒绝删除接入点：" + "；".join(reasons))
+        models_row = adapter.app_config.fetch_setting("llm_models")
+        after_endpoints_items, after_default = resolve_llm_endpoints(normalized)
+        _run_save_time_model_tests(
+            models_before=models_row["value"] if models_row else None,
+            models_after=models_row["value"] if models_row else None,
+            endpoints_before=before_endpoints_items,
+            default_endpoint_before=before_default,
+            endpoints_after=after_endpoints_items,
+            default_endpoint_after=after_default,
+        )
     return adapter.app_config.update_app_setting_as_user(
         section=section,
         value=normalized,
@@ -663,8 +793,39 @@ def delete_account(account_id: str, *, actor: ConsoleUser) -> dict[str, Any]:
     )
 
 
-def _legacy_models() -> dict[str, Any]:
-    default = os.getenv("LLM_MODEL") or "deepseek/deepseek-v4-flash"
+# 旧环境变量全部缺失时的兜底模型，与全新部署迁移
+# （20261106150000_move_default_model_into_endpoints.sql）给种子接入点写的
+# default_model 是同一份值；两边必须保持一致。
+LLM_FALLBACK_DEFAULT_MODEL = "deepseek/deepseek-v4-flash"
+# 迁移种子里唯一接入点的 key；llm_endpoints 分区读不到时（库暂不可达或
+# 迁移未跑）按种子形态兜底，仅影响预览展示，unresolved 状态不会写入。
+LEGACY_FALLBACK_ENDPOINT_KEY = "openrouter"
+
+
+def _legacy_endpoint_reference() -> tuple[str, str]:
+    """默认接入点 key 与它的 default_model，供 _legacy_models 组装新结构。"""
+
+    try:
+        row = get_adapter().app_config.fetch_setting("llm_endpoints")
+    except Exception:
+        # 降级路径：预览要能在库不可达时仍展示解析结果（标记 unresolved，
+        # 不会写入），此时退回迁移种子的同一份兜底值。
+        row = None
+    if row is None:
+        return LEGACY_FALLBACK_ENDPOINT_KEY, LLM_FALLBACK_DEFAULT_MODEL
+    items, default_key = resolve_llm_endpoints(row["value"])
+    return default_key, items[default_key].default_model
+
+
+def _legacy_models(*, default_endpoint: str, default_model: str) -> dict[str, Any]:
+    """从旧环境变量拼装 llm_models 分区（新结构：无顶层 default）。
+
+    等于默认接入点 default_model 的步骤写双 null（跟随默认接入点的默认
+    模型），其余步骤显式绑定默认接入点 key + 该模型——继承链的基准仍是
+    LLM_MODEL 环境变量（旧语义），但「写成 null」的判据是接入点的
+    default_model，保证解析结果与旧结构一致。"""
+
+    default = os.getenv("LLM_MODEL") or LLM_FALLBACK_DEFAULT_MODEL
     summary = os.getenv("LLM_SUMMARY_MODEL") or default
     scoring = os.getenv("LLM_SCORING_MODEL") or default
     resolved = {
@@ -696,11 +857,11 @@ def _legacy_models() -> dict[str, Any]:
         "duplicate_review": global_reasoning,
     }
     return {
-        "default": default,
         "steps": {
             step: {
-                "model": None if model == default else model,
+                "model": None if model == default_model else model,
                 "reasoning": reasoning[step],
+                "endpoint": None if model == default_model else default_endpoint,
             }
             for step, model in resolved.items()
         },
@@ -860,6 +1021,12 @@ def preview_legacy_import(*, root: Optional[Path] = None) -> dict[str, Any]:
     daily_sources = [
         key for key in normalized_sources if SOURCE_BY_KEY[key].daily_only
     ]
+    # 默认接入点引用的兜底值：库可达时才真正读取（见下方 db_state_known 分支），
+    # 解析有错误时不碰库，预览 unresolved 不会写入，兜底值只影响展示。
+    legacy_endpoint_key, legacy_default_model = (
+        LEGACY_FALLBACK_ENDPOINT_KEY,
+        LLM_FALLBACK_DEFAULT_MODEL,
+    )
     accounts: list[dict[str, Any]] = []
     account_summary: dict[str, Any] = {}
     has_parse_errors = False
@@ -908,7 +1075,13 @@ def preview_legacy_import(*, root: Optional[Path] = None) -> dict[str, Any]:
             "errors": errors,
         }
     sections: dict[str, Any] = {
-        "llm_models": validate_section("llm_models", _legacy_models()),
+        "llm_models": validate_section(
+            "llm_models",
+            _legacy_models(
+                default_endpoint=legacy_endpoint_key,
+                default_model=legacy_default_model,
+            ),
+        ),
         "crawl_sources": validate_crawl_sources(
             normalized_sources,
             allow_daily=True,
@@ -949,6 +1122,16 @@ def preview_legacy_import(*, root: Optional[Path] = None) -> dict[str, Any]:
     db_state_known = not wordlist_errors and not has_parse_errors
     existing_sections: set[str] = set()
     if db_state_known:
+        # 库可达时才读默认接入点引用：解析有错误时不碰库（预览 unresolved
+        # 不写入），引用值保持上面的迁移种子兜底。
+        legacy_endpoint_key, legacy_default_model = _legacy_endpoint_reference()
+        sections["llm_models"] = validate_section(
+            "llm_models",
+            _legacy_models(
+                default_endpoint=legacy_endpoint_key,
+                default_model=legacy_default_model,
+            ),
+        )
         rows = get_adapter().app_config.fetch_settings()
         existing_sections = {str(row["section"]) for row in rows}
     for section, value in sections.items():

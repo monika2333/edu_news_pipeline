@@ -48,6 +48,8 @@ API_STYLE_THINKING = "thinking"
 LLM_API_STYLES = (API_STYLE_OPENROUTER, API_STYLE_THINKING)
 ENDPOINT_KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 LLM_API_KEY_ENV_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*_API_KEY$")
+# 接入点默认模型与步骤模型名的长度上限一致（settings_schemas.ModelTestRequest）。
+LLM_MODEL_NAME_MAX_LENGTH = 300
 ENDPOINT_ITEM_FIELDS = frozenset(
     {
         "key",
@@ -56,6 +58,7 @@ ENDPOINT_ITEM_FIELDS = frozenset(
         "api_key_env",
         "api_style",
         "temperature_override",
+        "default_model",
     }
 )
 
@@ -194,6 +197,7 @@ class LLMEndpointConfig:
     api_key_env: str
     api_style: str
     temperature_override: Optional[float]
+    default_model: str
 
 
 @dataclass(frozen=True)
@@ -332,14 +336,21 @@ def normalize_source_list(
 
 
 def validate_llm_models(value: Any) -> dict[str, Any]:
+    """校验 llm_models 分区（新结构：无顶层 default，模型归各接入点）。
+
+    步骤字段的合法组合：
+    - endpoint 与 model 都为 null：跟随默认接入点，用它的 default_model；
+    - endpoint 非空、model 为 null：用该接入点的 default_model；
+    - endpoint 与 model 都非空：用该接入点跑填写的模型；
+    - endpoint 为 null 而 model 非空：拒绝——模型名只在某个服务商处有效，
+      不固定接入点的话，以后切换默认接入点时这一步会拿着别家格式的模型名调用。
+    """
+
     if not isinstance(value, Mapping):
         raise ValueError("llm_models 必须是对象")
-    unexpected = set(value) - {"default", "steps"}
+    unexpected = set(value) - {"steps"}
     if unexpected:
         raise ValueError(f"llm_models 含未知字段：{', '.join(sorted(unexpected))}")
-    default = value.get("default")
-    if not isinstance(default, str) or not default.strip():
-        raise ValueError("llm_models.default 必须是非空模型名")
     steps = value.get("steps")
     if not isinstance(steps, Mapping):
         raise ValueError("llm_models.steps 必须是对象")
@@ -384,17 +395,18 @@ def validate_llm_models(value: Any) -> dict[str, Any]:
             endpoint = raw_endpoint.strip()
         else:
             raise ValueError(f"llm_models.steps.{step}.endpoint 必须是接入点 key 或 null")
-        if endpoint is not None and normalized_model is None:
+        if endpoint is None and normalized_model is not None:
             raise ValueError(
-                f"llm_models.steps.{step} 指定了 endpoint 时 model 不能为空："
-                "模型名与接入点服务商绑定，不能继承默认模型"
+                f"{LLM_STEP_LABELS[step]}（llm_models.steps.{step}）填了模型但未指定接入点："
+                "模型名与接入点服务商绑定，请为该步骤选择接入点，"
+                "或清空模型改用所选接入点的默认模型"
             )
         normalized_steps[step] = {
             "model": normalized_model,
             "reasoning": reasoning,
             "endpoint": endpoint,
         }
-    return {"default": default.strip(), "steps": normalized_steps}
+    return {"steps": normalized_steps}
 
 
 def validate_endpoint_base_url(value: Any, *, allowed_hosts: Sequence[str]) -> str:
@@ -476,6 +488,14 @@ def validate_llm_endpoints(value: Any) -> dict[str, Any]:
         api_style = item.get("api_style")
         if api_style not in LLM_API_STYLES:
             raise ValueError(f"{prefix}.api_style 必须是 openrouter 或 thinking")
+        raw_default_model = item.get("default_model")
+        if not isinstance(raw_default_model, str) or not raw_default_model.strip():
+            raise ValueError(f"{prefix}.default_model 必须是非空模型名")
+        default_model = raw_default_model.strip()
+        if len(default_model) > LLM_MODEL_NAME_MAX_LENGTH:
+            raise ValueError(
+                f"{prefix}.default_model 长度不能超过 {LLM_MODEL_NAME_MAX_LENGTH} 字符"
+            )
         temperature = item.get("temperature_override")
         if temperature is not None:
             if isinstance(temperature, bool) or not isinstance(
@@ -492,6 +512,7 @@ def validate_llm_endpoints(value: Any) -> dict[str, Any]:
                 "api_key_env": api_key_env,
                 "api_style": api_style,
                 "temperature_override": temperature,
+                "default_model": default_model,
             }
         )
     default = value.get("default")
@@ -764,17 +785,36 @@ def validate_section(section: str, value: Any) -> Any:
     return validator(value)
 
 
-def resolve_llm_steps(value: Mapping[str, Any]) -> dict[str, LLMStepConfig]:
+def resolve_llm_steps(
+    value: Mapping[str, Any],
+    *,
+    endpoints: Mapping[str, LLMEndpointConfig],
+    default_endpoint: str,
+) -> dict[str, LLMStepConfig]:
+    """按「所选接入点 + 步骤填写」解析每一步最终使用的模型。
+
+    模型 = 步骤的 model，为 null 时取第 1 步所得接入点的 default_model；
+    接入点 = 步骤的 endpoint，为 null 时取 default_endpoint。解析后
+    LLMStepConfig.model 始终是具体模型名，endpoint 保留步骤原始选择
+    （null 表示跟随默认接入点，见 resolved_endpoint_key）。
+    """
+
     normalized = validate_llm_models(value)
-    default = normalized["default"]
-    return {
-        step: LLMStepConfig(
-            model=normalized["steps"][step]["model"] or default,
-            reasoning=normalized["steps"][step]["reasoning"],
-            endpoint=normalized["steps"][step]["endpoint"],
+    resolved: dict[str, LLMStepConfig] = {}
+    for step in LLM_STEPS:
+        step_value = normalized["steps"][step]
+        endpoint_key = step_value["endpoint"] or default_endpoint
+        endpoint = endpoints.get(endpoint_key)
+        if endpoint is None:
+            raise ValueError(
+                f"{LLM_STEP_LABELS[step]}引用了不存在的接入点：{endpoint_key}"
+            )
+        resolved[step] = LLMStepConfig(
+            model=step_value["model"] or endpoint.default_model,
+            reasoning=step_value["reasoning"],
+            endpoint=step_value["endpoint"],
         )
-        for step in LLM_STEPS
-    }
+    return resolved
 
 
 def resolve_llm_endpoints(
@@ -789,16 +829,26 @@ def resolve_llm_endpoints(
             api_key_env=item["api_key_env"],
             api_style=item["api_style"],
             temperature_override=item["temperature_override"],
+            default_model=item["default_model"],
         )
         for item in normalized["items"]
     }
     return items, normalized["default"]
 
 
-def resolve_models(value: Mapping[str, Any]) -> dict[str, str]:
+def resolve_models(
+    value: Mapping[str, Any],
+    *,
+    endpoints: Mapping[str, LLMEndpointConfig],
+    default_endpoint: str,
+) -> dict[str, str]:
     return {
         step: config.model
-        for step, config in resolve_llm_steps(value).items()
+        for step, config in resolve_llm_steps(
+            value,
+            endpoints=endpoints,
+            default_endpoint=default_endpoint,
+        ).items()
     }
 
 
@@ -863,7 +913,11 @@ def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
             )
         )
     return BusinessConfig(
-        llm_steps=resolve_llm_steps(llm_value),
+        llm_steps=resolve_llm_steps(
+            llm_value,
+            endpoints=llm_endpoints,
+            default_endpoint=default_endpoint,
+        ),
         crawl_sources=tuple(sources),
         accounts={key: tuple(items) for key, items in accounts.items()},
         versions={

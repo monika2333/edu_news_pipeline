@@ -222,18 +222,15 @@
     margin-top: 10px;
 }
 
-.settings-default-row {
+/* 步骤表第二列：接入点下拉 + 模型输入框同一行（.step-controls），
+   模型留空时下方一行灰字显示实际会用的默认模型。 */
+.step-controls {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin: 12px 0;
+    gap: 8px;
+    min-width: 0;
 }
 
-.settings-default-label {
-    font-weight: 600;
-}
-
-.settings-default-input,
 .step-model-input,
 .account-add-input {
     padding: 8px 10px;
@@ -243,43 +240,18 @@
     font: inherit;
 }
 
-.settings-default-input {
-    width: min(420px, 100%);
-}
-
-/* 步骤表第二列：「模式槽 + 内容槽」两段。
-   模式槽宽度固定（否则「跟随默认」与「指定」两个选项会让整列左右跳），
-   内容槽吸收剩余宽度；切换模式只重建内容槽，控件不会再被长文本挤到第二行。 */
-.step-mode {
-    display: grid;
-    grid-template-columns: max-content minmax(0, 1fr);
-    align-items: center;
-    gap: 10px;
-}
-
-.step-model-mode {
-    min-width: 6.6em;
-}
-
-.step-content {
-    min-width: 0;
-}
-
-.step-custom {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-}
-
-/* 跟随默认的一行灰字：模型名可能很长，给省略号 + title，不再撑开表格 */
-.step-follow-hint {
+/* 留空提示只在模型框为空时出现：为空即 display:none，不占行内空间 */
+.step-model-hint {
     display: block;
     overflow: hidden;
     color: #64748b;
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.step-model-hint:empty {
+    display: none;
 }
 
 .step-endpoint-select {
@@ -325,22 +297,13 @@
 }
 
 @media (max-width: 900px) {
-    /* 窄屏：模式槽与内容槽上下堆叠，控件可换行，不用横向挤压换对齐 */
-    .step-mode {
-        grid-template-columns: minmax(0, 1fr);
-        gap: 6px;
-    }
-
-    .step-model-mode {
-        justify-self: start;
-    }
-
-    .step-follow-hint {
-        white-space: normal;
-    }
-
-    .step-custom {
+    /* 窄屏：控件可换行，灰字提示不省略 */
+    .step-controls {
         flex-wrap: wrap;
+    }
+
+    .step-model-hint {
+        white-space: normal;
     }
 
     .step-model-input {
@@ -921,6 +884,7 @@
 }
 
 .endpoint-item-style,
+.endpoint-item-model,
 .endpoint-item-key {
     color: #64748b;
     font-size: 0.8rem;
@@ -1129,9 +1093,8 @@
     color: #b45309;
 }
 
-/* 步骤表格第二列的接入点下拉与模型输入框同排 */
+/* 步骤表格第二列的接入点下拉与模型输入框同排（间距走 .step-controls 的 gap） */
 .step-endpoint-select {
-    margin-left: 8px;
     padding: 7px 8px;
     border: 1px solid #cbd5e1;
     border-radius: 8px;

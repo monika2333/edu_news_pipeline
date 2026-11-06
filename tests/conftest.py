@@ -22,6 +22,7 @@ OPENROUTER_ENDPOINT = LLMEndpointConfig(
     api_key_env="LLM_API_KEY",
     api_style="openrouter",
     temperature_override=None,
+    default_model="openrouter/default-model",
 )
 DEEPSEEK_ENDPOINT = LLMEndpointConfig(
     key="deepseek",
@@ -30,6 +31,7 @@ DEEPSEEK_ENDPOINT = LLMEndpointConfig(
     api_key_env="LLM_DEEPSEEK_API_KEY",
     api_style="thinking",
     temperature_override=None,
+    default_model="deepseek-chat",
 )
 
 

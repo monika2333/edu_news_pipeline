@@ -109,13 +109,12 @@ function defaultSources() {
 
 function defaultModelsValue() {
     return {
-        default: 'deepseek/default-model',
         steps: {
             summary: { model: null, reasoning: false, endpoint: null },
             source: { model: null, reasoning: true, endpoint: null },
             sentiment: { model: null, reasoning: true, endpoint: null },
-            // 旧数据形态：指定了模型但 endpoint 为 null（前端归一为默认接入点）
-            scoring: { model: 'vendor/scoring-model', reasoning: true, endpoint: null },
+            // 接入点 + 模型：显式组合（迁移后的合法形态）
+            scoring: { model: 'vendor/scoring-model', reasoning: true, endpoint: 'openrouter' },
             external_filter: { model: null, reasoning: false, endpoint: null },
             beijing_gate: { model: null, reasoning: false, endpoint: null },
             duplicate_review: { model: null, reasoning: false, endpoint: null },
@@ -125,7 +124,8 @@ function defaultModelsValue() {
 }
 
 // 已保存的接入点分区值（与后端 app_settings.llm_endpoints 的 value 同形，
-// 不含 api_key_env_configured——那是顶层 endpoints 负载里的展示字段）
+// 不含 api_key_env_configured——那是顶层 endpoints 负载里的展示字段）。
+// default_model 是每个接入点自己的默认模型，步骤「模型」留空时就用它。
 function defaultEndpointsValue() {
     return {
         default: 'openrouter',
@@ -137,6 +137,7 @@ function defaultEndpointsValue() {
                 api_key_env: 'LLM_API_KEY',
                 api_style: 'openrouter',
                 temperature_override: null,
+                default_model: 'deepseek/default-model',
             },
             {
                 key: 'deepseek',
@@ -145,6 +146,7 @@ function defaultEndpointsValue() {
                 api_key_env: 'DEEPSEEK_API_KEY',
                 api_style: 'thinking',
                 temperature_override: null,
+                default_model: 'deepseek-chat-v4',
             },
         ],
     };
@@ -163,6 +165,7 @@ function defaultEndpointsPayload() {
                 api_key_env: 'LLM_API_KEY',
                 api_style: 'openrouter',
                 temperature_override: null,
+                default_model: 'deepseek/default-model',
                 api_key_env_configured: true,
             },
             {
@@ -172,6 +175,7 @@ function defaultEndpointsPayload() {
                 api_key_env: 'DEEPSEEK_API_KEY',
                 api_style: 'thinking',
                 temperature_override: null,
+                default_model: 'deepseek-chat-v4',
                 api_key_env_configured: false,
             },
         ],
@@ -230,8 +234,8 @@ function defaultSections() {
     };
 }
 
-// 「有 endpoint、无 model」的步骤形态：正常界面产不出这种状态，
-// 但库里可能存在手改出来的行（页面加载后不碰该行直接保存会踩空模型拦截）
+// 「有 endpoint、无 model」的步骤形态：新结构下的合法组合（用该接入点的
+// default_model），灰字提示应显示 DeepSeek 的默认模型，保存直接放行
 function sectionsWithBareEndpointStep() {
     const sections = defaultSections();
     sections.llm_models.value.steps.scoring = {

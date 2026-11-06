@@ -1,27 +1,21 @@
-// 系统设置页 - 模型页签：环境信息、接入点块、默认模型、七个步骤的
-// 接入点与模型来源、reasoning、逐步测试与带版本号的保存。
+// 系统设置页 - 模型页签：环境信息、八个步骤的接入点与模型（模型留空跟随
+// 所选接入点的默认模型）、reasoning、逐步测试与带版本号的保存。
+// 默认模型归各接入点（接入点卡片里维护），本页签不再有全局默认模型输入框。
 'use strict';
 
 function modelsDraftFromSection(section) {
-    const savedEndpoints = savedEndpointsValue();
-    // 旧数据允许「指定了模型但 endpoint 为 null」，界面上归一为「指定 + 默认接入点」：
-    // 与后端 resolve（endpoint 缺省落到 default）语义一致，且保持「跟随默认 = 双 null」
-    const fallbackEndpoint = savedEndpoints ? savedEndpoints.default : null;
+    // 迁移后后端保证「model 非空 ⇒ endpoint 非空」；双 null 表示跟随默认
+    // 接入点并用它的默认模型。草稿里 model 统一存字符串，null 记空串。
     const steps = {};
     stepList().forEach(({ key }) => {
         const saved = (section.value.steps && section.value.steps[key]) || {};
-        let model = saved.model === undefined ? null : saved.model;
-        let endpoint = saved.endpoint === undefined ? null : saved.endpoint;
-        if (model !== null && endpoint === null) endpoint = fallbackEndpoint;
         steps[key] = {
-            model,
+            model: typeof saved.model === 'string' ? saved.model : '',
             reasoning: !!saved.reasoning,
-            endpoint,
-            // 只在页面内记忆「切回指定时回到上次选的接入点」，不参与保存
-            lastEndpoint: endpoint,
+            endpoint: saved.endpoint || null,
         };
     });
-    return { default: section.value.default || '', steps };
+    return { steps };
 }
 
 function buildModelsEnvBlock() {
@@ -89,32 +83,6 @@ function buildModelsEnvBlock() {
     return card;
 }
 
-function modelsFollowHintText() {
-    const savedEndpoints = savedEndpointsValue();
-    const endpointLabel = savedEndpoints && savedEndpoints.default
-        ? endpointDisplayLabel(savedEndpoints.default)
-        : '未设置';
-    // 不带「接入点：」「模型：」这类标签词：这行字与控件同处一格，
-    // 越短越不容易把控件挤到第二行（长模型名走省略号 + title）
-    return `跟随默认 · ${endpointLabel} / ${state.modelsDraft.default || '未填写'}`;
-}
-
-// 默认模型输入框变化时只刷新「跟随默认」行的提示文本。
-// 不能整格重建：重建会把用户正在输入的模型输入框一起换掉，光标与焦点都会丢。
-function updateModelsFollowHints() {
-    elements.panels.models
-        .querySelectorAll('tr[data-step]')
-        .forEach((row) => {
-            const draft = state.modelsDraft.steps[row.dataset.step];
-            if (!draft || draft.endpoint !== null) return;
-            const hint = row.querySelector('.step-follow-hint');
-            if (!hint) return;
-            const text = modelsFollowHintText();
-            hint.textContent = text;
-            hint.title = text;
-        });
-}
-
 function clearStepTestResult(step) {
     const row = elements.panels.models.querySelector(`tr[data-step="${step}"]`);
     if (!row) return;
@@ -123,21 +91,39 @@ function clearStepTestResult(step) {
     result.textContent = '';
 }
 
-function clearFollowStepTestResults() {
-    Object.entries(state.modelsDraft.steps).forEach(([step, draft]) => {
-        if (draft.endpoint === null) clearStepTestResult(step);
-    });
+// 模型留空时灰字提示实际会用的模型（所选接入点——或默认接入点——的默认模型）。
+// 为空串时 CSS :empty 把节点藏掉，不给行内流留占位。
+function stepModelHintText(draft) {
+    if ((draft.model || '').trim()) return '';
+    const savedEndpoints = savedEndpointsValue();
+    if (!savedEndpoints) return '';
+    const model = endpointDefaultModel(draft.endpoint || savedEndpoints.default);
+    return model ? `留空使用 ${model}` : '';
+}
+
+function updateStepModelHint(row, draft) {
+    const hint = row.querySelector('.step-model-hint');
+    if (!hint) return;
+    hint.textContent = stepModelHintText(draft);
 }
 
 async function runStepModelTest(step) {
     const row = elements.panels.models.querySelector(`tr[data-step="${step}"]`);
     if (!row || !state.modelsDraft) return;
     const draft = state.modelsDraft.steps[step];
-    // 测试使用页面当前值：跟随默认时取默认模型输入框的当前内容。
-    const model = (draft.endpoint === null ? state.modelsDraft.default : draft.model).trim();
     const reasoning = !!draft.reasoning;
     const resultEl = row.querySelector('.step-test-result');
     const button = row.querySelector('.step-test-btn');
+    const savedEndpoints = savedEndpointsValue();
+    if (!savedEndpoints || !savedEndpoints.default) {
+        setSettingsStatus(resultEl, '失败：接入点配置尚未保存', 'error');
+        return;
+    }
+    // 模型框有值就测该值；留空就测所选（或默认）接入点已保存的默认模型。
+    // 负载里的 endpoint 与实际解析一致：跟随默认也发解析出的默认接入点 key。
+    const typed = (draft.model || '').trim();
+    const resolvedEndpoint = draft.endpoint || savedEndpoints.default;
+    const model = typed || endpointDefaultModel(resolvedEndpoint) || '';
     if (!model) {
         setSettingsStatus(resultEl, '失败：模型名不能为空', 'error');
         return;
@@ -145,9 +131,7 @@ async function runStepModelTest(step) {
     button.disabled = true;
     const stopTicker = startElapsedTicker(resultEl, '测试中');
     try {
-        // 指定接入点的步骤带上 endpoint 由后端落到该接入点；跟随默认时不带该字段
-        const body = { step, model, reasoning };
-        if (draft.endpoint !== null) body.endpoint = draft.endpoint;
+        const body = { step, model, reasoning, endpoint: resolvedEndpoint };
         const { response, payload } = await apiRequest('/api/admin/settings/llm_models/test', {
             method: 'POST',
             body,
@@ -168,63 +152,21 @@ async function runStepModelTest(step) {
     }
 }
 
-// 第二列的内容槽按模式重建：跟随默认只渲染一行灰字，指定才渲染接入点与模型控件。
-// 不再用 hidden 在同一段行内流里切换——长提示会把控件挤到第二行，
-// 也让「指定」模式下残留「跟随默认」文案成为可能。
-function renderStepContent(row, draft) {
-    const modeSelect = row.querySelector('.step-model-mode');
-    const content = row.querySelector('.step-content');
-    if (!content) return;
-    const stepName = row.dataset.stepLabel || row.dataset.step;
-    if (modeSelect) modeSelect.value = draft.endpoint === null ? 'follow' : 'custom';
-    clearEl(content);
-
-    if (draft.endpoint === null) {
-        const text = modelsFollowHintText();
-        const hint = createEl('span', 'step-follow-hint', text);
-        hint.title = text;
-        content.appendChild(hint);
-        return;
-    }
-
-    const custom = createEl('div', 'step-custom');
-    // 接入点下拉只列「已保存」的接入点：后端校验步骤引用时查的是库里的接入点，
-    // 草稿里的新接入点存不进去；新增接入点先保存，这里立即能选（下拉数据源见
-    // core.js 的 savedEndpointsValue）。
+// 接入点下拉第一项：跟随默认（默认接入点显示名）；其后是各已保存接入点。
+function buildStepEndpointSelect(displayName, draft) {
     const savedEndpoints = savedEndpointsValue();
-    const endpointSelect = createEl('select', 'step-endpoint-select', '', {
-        'aria-label': `${stepName}接入点`,
+    const select = createEl('select', 'step-endpoint-select', '', {
+        'aria-label': `${displayName}接入点`,
     });
+    const defaultLabel = savedEndpoints && savedEndpoints.default
+        ? endpointDisplayLabel(savedEndpoints.default)
+        : '未设置';
+    select.appendChild(createEl('option', '', `跟随默认（${defaultLabel}）`, { value: '' }));
     ((savedEndpoints && savedEndpoints.items) || []).forEach((item) => {
-        endpointSelect.appendChild(createEl('option', '', item.label, { value: item.key }));
+        select.appendChild(createEl('option', '', item.label, { value: item.key }));
     });
-    endpointSelect.value = draft.endpoint;
-
-    const modelInput = createEl('input', 'step-model-input', '', {
-        type: 'text',
-        'aria-label': `${stepName}模型名`,
-        placeholder: '模型名，如 deepseek/deepseek-v4-flash',
-    });
-    modelInput.value = draft.model || '';
-
-    endpointSelect.addEventListener('change', () => {
-        draft.endpoint = endpointSelect.value;
-        draft.lastEndpoint = draft.endpoint;
-        // 换接入点即换服务商：清空模型输入与该行的测试结果，不留错误的旧值
-        draft.model = '';
-        modelInput.value = '';
-        clearStepTestResult(row.dataset.step);
-        markDirty('llm_models');
-    });
-    modelInput.addEventListener('input', () => {
-        draft.model = modelInput.value;
-        clearStepTestResult(row.dataset.step);
-        markDirty('llm_models');
-    });
-
-    custom.appendChild(endpointSelect);
-    custom.appendChild(modelInput);
-    content.appendChild(custom);
+    select.value = draft.endpoint || '';
+    return select;
 }
 
 function buildStepRow(step, displayName) {
@@ -234,20 +176,23 @@ function buildStepRow(step, displayName) {
 
     row.appendChild(createEl('td', 'settings-step-name', displayName));
 
-    // 第二列固定为「模式槽 + 内容槽」两段：模式槽宽度稳定，内容槽吸收剩余宽度，
-    // 切换模式只重建内容槽，行内不再换行错位（布局见 settings.css 的步骤表段）
     const modelCell = createEl('td', 'settings-step-model');
-    const modeRow = createEl('div', 'step-mode');
-    const modeSelect = createEl('select', 'step-model-mode', '', {
-        'aria-label': `${displayName}模型来源`,
+    const controls = createEl('div', 'step-controls');
+    const endpointSelect = buildStepEndpointSelect(displayName, draft);
+    const modelInput = createEl('input', 'step-model-input', '', {
+        type: 'text',
+        'aria-label': `${displayName}模型名`,
+        placeholder: '留空使用所选接入点的默认模型',
     });
-    modeSelect.appendChild(createEl('option', '', '跟随默认', { value: 'follow' }));
-    modeSelect.appendChild(createEl('option', '', '指定', { value: 'custom' }));
-    modeRow.appendChild(modeSelect);
-    modeRow.appendChild(createEl('div', 'step-content'));
-    modelCell.appendChild(modeRow);
+    modelInput.value = draft.model || '';
+    controls.appendChild(endpointSelect);
+    controls.appendChild(modelInput);
+    modelCell.appendChild(controls);
+    const hint = createEl('span', 'step-model-hint');
+    modelCell.appendChild(hint);
     row.appendChild(modelCell);
-    renderStepContent(row, draft);
+    // 挂载后才能按行查找：updateStepModelHint 用 row.querySelector 找灰字节点
+    updateStepModelHint(row, draft);
 
     const reasoningCell = createEl('td', 'settings-step-reasoning');
     const reasoningToggle = createEl('input', 'step-reasoning', '', {
@@ -265,23 +210,26 @@ function buildStepRow(step, displayName) {
     testCell.appendChild(testResult);
     row.appendChild(testCell);
 
-    modeSelect.addEventListener('change', () => {
-        if (modeSelect.value === 'custom') {
-            // 首次切到「指定」时选中当前默认接入点；此前选过则回到上次的接入点
-            draft.endpoint = draft.lastEndpoint
-                || (savedEndpoints && savedEndpoints.default)
-                || '';
-            // 模型名与接入点服务商绑定，跨服务商预填必然是错的（OpenRouter 上是
-            // deepseek/xxx，官网是 deepseek-flash）：切到指定一律留空，模型必须现填
-            draft.model = '';
-        } else {
-            // 记住上次的接入点，切回「指定」时回到同一个服务商
-            draft.lastEndpoint = draft.endpoint;
-            draft.endpoint = null;
-            draft.model = null;
+    endpointSelect.addEventListener('change', () => {
+        draft.endpoint = endpointSelect.value || null;
+        // 模型名与接入点服务商绑定，跨服务商保留旧值必然是错的：
+        // 换接入点（含切回跟随默认）一律清空模型输入，灰字换成新接入点的默认模型
+        draft.model = '';
+        modelInput.value = '';
+        updateStepModelHint(row, draft);
+        clearStepTestResult(row.dataset.step);
+        markDirty('llm_models');
+    });
+    modelInput.addEventListener('input', () => {
+        draft.model = modelInput.value;
+        if (draft.endpoint === null && (draft.model || '').trim() && savedEndpoints) {
+            // 「跟随默认」下开始输入模型：模型名只属于某个服务商，
+            // 当场切到默认接入点本身，用户看得见这个变化，不是保存时悄悄改
+            draft.endpoint = savedEndpoints.default;
+            endpointSelect.value = savedEndpoints.default;
         }
-        renderStepContent(row, draft);
-        clearStepTestResult(step);
+        updateStepModelHint(row, draft);
+        clearStepTestResult(row.dataset.step);
         markDirty('llm_models');
     });
     reasoningToggle.addEventListener('change', () => {
@@ -297,13 +245,13 @@ function buildStepRow(step, displayName) {
 }
 
 function buildModelsSaveValue() {
-    const value = { default: state.modelsDraft.default.trim(), steps: {} };
+    const value = { steps: {} };
     stepList().forEach(({ key }) => {
         const draft = state.modelsDraft.steps[key];
+        const model = (draft.model || '').trim();
         value.steps[key] = {
-            // (draft.model || '') 兜底同上：手改出的「有 endpoint、无 model」行
-            // 走到这里时会被保存前的空模型拦截挡住，正常不会到这；兜底防 TypeError
-            model: draft.endpoint === null ? null : (draft.model || '').trim(),
+            // 跟随默认必然双 null；选了接入点则模型留空也合法（用它的默认模型）
+            model: draft.endpoint === null ? null : (model || null),
             reasoning: !!draft.reasoning,
             endpoint: draft.endpoint,
         };
@@ -320,35 +268,16 @@ function renderModelsTab({ keepDraft = false } = {}) {
         return;
     }
     // 接入点保存成功后的重渲染必须保留模型草稿（keepDraft）：只重建 DOM，
-    // 步骤表格里未保存的修改不能丢
+    // 步骤表格里未保存的修改不能丢；灰字提示随之反映新的默认模型
     if (!keepDraft || !state.modelsDraft) {
         state.modelsDraft = modelsDraftFromSection(section);
     }
 
     const mainCard = buildSettingsCard(
-        '默认模型与流水线步骤',
-        '未单独指定的步骤跟随默认模型；保存后下一轮流水线生效，查重复核立即生效。',
+        '流水线步骤模型',
+        '接入点选「跟随默认」时使用默认接入点；模型留空时使用所选接入点的默认模型。'
+            + '保存后下一轮流水线生效，查重复核立即生效。',
     );
-
-    const defaultRow = createEl('div', 'settings-default-row');
-    const defaultLabel = createEl('label', 'settings-default-label', '默认模型', {
-        for: 'models-default-input',
-    });
-    const defaultInput = createEl('input', 'settings-default-input', '', {
-        id: 'models-default-input',
-        type: 'text',
-        placeholder: '模型名，如 deepseek/deepseek-v4-flash',
-    });
-    defaultInput.value = state.modelsDraft.default;
-    defaultInput.addEventListener('input', () => {
-        state.modelsDraft.default = defaultInput.value;
-        updateModelsFollowHints();
-        clearFollowStepTestResults();
-        markDirty('llm_models');
-    });
-    defaultRow.appendChild(defaultLabel);
-    defaultRow.appendChild(defaultInput);
-    mainCard.appendChild(defaultRow);
 
     // 接入点分区为脏时的提示（节点常驻、hidden 切换，见 endpoints.js）
     mainCard.appendChild(buildEndpointsDirtyNote());
@@ -400,27 +329,6 @@ function renderModelsTab({ keepDraft = false } = {}) {
     panel.appendChild(buildModelsEnvBlock());
 
     saveBtn.addEventListener('click', async () => {
-        if (!state.modelsDraft.default.trim()) {
-            setSettingsStatus(status, '默认模型不能为空。', 'error');
-            return;
-        }
-        // 与后端硬规则对齐的前端拦截：指定接入点就必须指定模型——界面上
-        // 「只选接入点不填模型」这个状态不该等 422 回来才发现。
-        // model 兜底为空串：库里可能存在手改出的「有 endpoint、无 model」行，
-        // 直接 .trim() 会在保存按钮里抛 TypeError，按钮点了没反应且无任何提示
-        const missing = stepList().filter(({ key }) => {
-            const draft = state.modelsDraft.steps[key];
-            return draft.endpoint !== null && !(draft.model || '').trim();
-        });
-        if (missing.length) {
-            const names = missing.map(({ display_name }) => display_name).join('、');
-            setSettingsStatus(
-                status,
-                `保存已取消：${names} 指定了接入点但模型名为空，请填写模型名或切回跟随默认。`,
-                'error',
-            );
-            return;
-        }
         await saveSettingsSection('llm_models', buildModelsSaveValue(), {
             statusEl: status,
             saveBtn,

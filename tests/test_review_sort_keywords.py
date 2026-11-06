@@ -210,7 +210,6 @@ class TestLoadAndSnapshot:
             {
                 "section": "llm_models",
                 "value": {
-                    "default": "default-model",
                     "steps": {
                         step: {"model": None, "reasoning": False}
                         for step in (
@@ -238,6 +237,7 @@ class TestLoadAndSnapshot:
                             "api_key_env": "LLM_API_KEY",
                             "api_style": "openrouter",
                             "temperature_override": None,
+                            "default_model": "default-model",
                         }
                     ],
                 },

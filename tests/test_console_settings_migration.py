@@ -17,6 +17,8 @@ from src.adapters.db_postgres_core import PostgresAdapter
 from src.business_config import (
     REVIEW_SORT_KEYWORD_DEFAULTS,
     load_business_config,
+    resolve_llm_endpoints,
+    resolve_llm_steps,
     validate_llm_models,
 )
 from src.config import get_settings
@@ -61,6 +63,12 @@ PROMPT_OPTIMIZER_STEP_MIGRATION_PATH = (
     / "database"
     / "migrations"
     / "20261029201000_add_prompt_optimizer_llm_step.sql"
+)
+DEFAULT_MODEL_MIGRATION_PATH = (
+    Path(__file__).parents[1]
+    / "database"
+    / "migrations"
+    / "20261106150000_move_default_model_into_endpoints.sql"
 )
 ADMIN_ID = "00000000-0000-0000-0000-000000000201"
 
@@ -137,20 +145,29 @@ def _prompt_optimizer_step_migration_parts() -> tuple[str, str]:
     return up.split("-- migrate:up", maxsplit=1)[1], down
 
 
+def _default_model_migration_parts() -> tuple[str, str]:
+    source = DEFAULT_MODEL_MIGRATION_PATH.read_text(encoding="utf-8")
+    up, down = source.split("-- migrate:down", maxsplit=1)
+    return up.split("-- migrate:up", maxsplit=1)[1], down
+
+
 def _apply_managed_setting_migrations(connection: psycopg.Connection) -> None:
     """The migrations a fresh deployment applies before the one-shot import:
     console-managed settings, then the migration-seeded rows (llm_endpoints、
     review_sort_keywords、score_exclusion_keywords——都没有旧配置文件，
-    不进一次性导入)。"""
+    不进一次性导入），最后是默认模型跟随接入点的结构迁移（全新库上
+    llm_models 还不存在，只给种子接入点补 default_model）。"""
 
     base_up, _base_down = _migration_parts()
     endpoints_up, _endpoints_down = _endpoints_migration_parts()
     sort_keywords_up, _sort_keywords_down = _sort_keywords_migration_parts()
     exclusion_up, _exclusion_down = _exclusion_keywords_migration_parts()
+    default_model_up, _default_model_down = _default_model_migration_parts()
     connection.execute(base_up)
     connection.execute(endpoints_up)
     connection.execute(sort_keywords_up)
     connection.execute(exclusion_up)
+    connection.execute(default_model_up)
 
 
 def _create_legacy_schema(connection: psycopg.Connection) -> None:
@@ -184,11 +201,11 @@ def _create_legacy_schema(connection: psycopg.Connection) -> None:
 def _sections() -> dict[str, object]:
     """Exactly what ``preview_legacy_import`` produces: llm_endpoints,
     review_sort_keywords and score_exclusion_keywords are seeded by their own
-    migrations and never part of the one-shot import."""
+    migrations and never part of the one-shot import。llm_models 是新结构
+    （无顶层 default）：步骤模型为 null 时跟随默认接入点的 default_model。"""
 
     return {
         "llm_models": {
-            "default": "model-a",
             "steps": {
                 step: {"model": None, "reasoning": step != "summary"}
                 for step in (
@@ -383,40 +400,111 @@ def test_score_exclusion_keywords_migration_seeds_empty_array_and_down_removes_i
         assert remaining is None
 
 
-def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
-    """The real fresh-deployment order: dbmate up applies every migration
-    (seeded llm_endpoints included), then `import-settings --apply` writes
-    everything through the incremental path. On the empty database the
-    accounts must actually be written; re-running the import must skip every
-    section without changing data or accounts."""
+def _write_import_wordlists(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(exist_ok=True)
+    (config_dir / "education_keywords.txt").write_text("教育\n学校\n", encoding="utf-8")
+    (config_dir / "beijing_keywords.txt").write_text("北京\n海淀\n", encoding="utf-8")
+    (config_dir / "source_aliases.json").write_text(
+        json.dumps(
+            {"suffixes": ["客户端"], "aliases": {"北京号": "北京日报"}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (config_dir / "score_keyword_bonuses.json").write_text(
+        json.dumps({"教育工委": 100}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (config_dir / "toutiao_author.txt").write_text("account-1\n", encoding="utf-8")
 
+
+def _patch_import_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    adapter: PostgresAdapter,
+) -> None:
+    monkeypatch.setattr(settings_service, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(settings_service, "load_environment", lambda: None)
+    for key in (
+        "CRAWL_SOURCES",
+        "LLM_MODEL",
+        "LLM_SUMMARY_MODEL",
+        "LLM_SOURCE_MODEL",
+        "LLM_SENTIMENT_MODEL",
+        "LLM_SCORING_MODEL",
+        "LLM_EXTERNAL_FILTER_MODEL",
+        "LLM_BEIJING_GATE_MODEL",
+        "LLM_REASONING_ENABLED",
+        "LLM_SUMMARY_REASONING_ENABLED",
+        "LLM_SOURCE_REASONING_ENABLED",
+        "LLM_SENTIMENT_REASONING_ENABLED",
+        "SCORE_KEYWORD_BONUSES",
+        "KEYWORDS_PATH",
+        "BEIJING_KEYWORDS_PATH",
+        "SOURCE_ALIASES_PATH",
+        "SCORE_KEYWORD_BONUSES_PATH",
+        "TOUTIAO_AUTHORS_PATH",
+        "TENCENT_AUTHORS_PATH",
+        "BTIME_UIDS_PATH",
+        "BEIJINGHAO_COLUMNS_PATH",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
+def _apply_fresh_deploy_migrations(connection: psycopg.Connection) -> None:
     base_up, _base_down = _migration_parts()
     names_up, _names_down = _account_names_migration_parts()
     endpoints_up, _endpoints_down = _endpoints_migration_parts()
     sort_keywords_up, _sort_keywords_down = _sort_keywords_migration_parts()
     exclusion_up, _exclusion_down = _exclusion_keywords_migration_parts()
-    with _isolated_database() as connection:
-        _create_legacy_schema(connection)
-        connection.execute(base_up)
-        connection.execute(names_up)
-        connection.execute(endpoints_up)
-        connection.execute(sort_keywords_up)
-        connection.execute(exclusion_up)
+    default_model_up, _default_model_down = _default_model_migration_parts()
+    _create_legacy_schema(connection)
+    connection.execute(base_up)
+    connection.execute(names_up)
+    connection.execute(endpoints_up)
+    connection.execute(sort_keywords_up)
+    connection.execute(exclusion_up)
+    connection.execute(default_model_up)
 
+
+def test_fresh_deploy_migrations_then_import_loads_full_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """The real fresh-deployment order: dbmate up applies every migration
+    (seeded llm_endpoints included, default_model = 兜底值), then
+    `import-settings --apply` writes everything through the incremental path
+    with LLM_MODEL unset——全部步骤写双 null，解析出兜底默认模型。重复导入
+    必须跳过每个分区，不改数据与账号。"""
+
+    with _isolated_database() as connection:
+        _apply_fresh_deploy_migrations(connection)
         adapter = PostgresAdapter(connection)
-        report = adapter.import_app_config_missing(
-            sections=_sections(),
-            accounts=[_account("account-1")],
-        )
+        _patch_import_environment(monkeypatch, tmp_path, adapter)
+        _write_import_wordlists(tmp_path)
+
+        report = settings_service.import_legacy_config(apply=True, root=tmp_path)
 
         assert sorted(report["written_sections"]) == sorted(_sections())
-        assert report["skipped_sections"] == []
         assert report["accounts_written"] is True
 
+        fallback = settings_service.LLM_FALLBACK_DEFAULT_MODEL
         loaded = load_business_config(adapter)
-        assert loaded.llm_steps["summary"].model == "model-a"
-        assert loaded.crawl_sources == ("toutiao", "tencent")
-        assert loaded.score_bonus_rules() == {"教育工委": 100, "高考": 10}
+        for step in (
+            "summary",
+            "source",
+            "sentiment",
+            "scoring",
+            "external_filter",
+            "beijing_gate",
+            "duplicate_review",
+            "prompt_optimizer",
+        ):
+            assert loaded.model_for(step) == fallback, step
+            assert loaded.resolved_endpoint_key(step) == "openrouter", step
+        assert loaded.crawl_sources == ("toutiao",)
+        assert loaded.score_bonus_rules() == {"教育工委": 100}
         assert loaded.education_keywords == ("教育", "学校")
         assert loaded.beijing_keywords == ("北京", "海淀")
         assert loaded.source_aliases.suffixes == ("客户端",)
@@ -428,14 +516,22 @@ def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
         assert [
             account.normalized_identifier for account in loaded.accounts["toutiao"]
         ] == ["account-1"]
-        assert loaded.endpoint_for_step("summary").key == "openrouter"
-        assert loaded.endpoint_for_step("duplicate_review").key == "openrouter"
 
         seed = connection.execute(
             "SELECT value, version FROM app_settings WHERE section = 'llm_endpoints'"
         ).fetchone()
-        assert seed["version"] == 1
         assert seed["value"]["default"] == "openrouter"
+        assert seed["value"]["items"][0]["default_model"] == fallback
+        assert seed["version"] == 2
+        stored_models = connection.execute(
+            "SELECT value, version FROM app_settings WHERE section = 'llm_models'"
+        ).fetchone()
+        assert "default" not in stored_models["value"]
+        assert stored_models["value"]["steps"]["summary"] == {
+            "model": None,
+            "reasoning": False,
+            "endpoint": None,
+        }
         imported_sections = connection.execute(
             "SELECT section FROM app_settings ORDER BY section"
         ).fetchall()
@@ -461,10 +557,7 @@ def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
             }
 
         before_rerun = _snapshot_rows()
-        rerun = adapter.import_app_config_missing(
-            sections=_sections(),
-            accounts=[_account("account-1")],
-        )
+        rerun = settings_service.import_legacy_config(apply=True, root=tmp_path)
         assert rerun["written_sections"] == []
         assert sorted(rerun["skipped_sections"]) == sorted(_sections())
         assert rerun["accounts_written"] is False
@@ -473,6 +566,58 @@ def test_fresh_deploy_migrations_then_import_loads_full_config() -> None:
             "SELECT count(*) AS n FROM crawl_accounts"
         ).fetchone()["n"]
         assert accounts_count == 1
+
+
+def test_fresh_deploy_import_with_custom_llm_model_binds_default_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """LLM_MODEL 设为别的值：解析值不等于默认接入点 default_model 的步骤
+    必须显式写「默认接入点 key + 该模型」，保证解析结果与旧语义一致
+    （旧结构里它们解析为 llm_models.default = LLM_MODEL）。"""
+
+    with _isolated_database() as connection:
+        _apply_fresh_deploy_migrations(connection)
+        adapter = PostgresAdapter(connection)
+        _patch_import_environment(monkeypatch, tmp_path, adapter)
+        _write_import_wordlists(tmp_path)
+        monkeypatch.setenv("LLM_MODEL", "custom-model")
+
+        settings_service.import_legacy_config(apply=True, root=tmp_path)
+
+        loaded = load_business_config(adapter)
+        for step in (
+            "summary",
+            "source",
+            "sentiment",
+            "scoring",
+            "external_filter",
+            "beijing_gate",
+            "duplicate_review",
+        ):
+            assert loaded.model_for(step) == "custom-model", step
+            assert loaded.resolved_endpoint_key(step) == "openrouter", step
+        stored_models = connection.execute(
+            "SELECT value FROM app_settings WHERE section = 'llm_models'"
+        ).fetchone()
+        steps = stored_models["value"]["steps"]
+        for step in (
+            "summary",
+            "source",
+            "sentiment",
+            "scoring",
+            "external_filter",
+            "beijing_gate",
+            "duplicate_review",
+        ):
+            assert steps[step]["model"] == "custom-model", step
+            assert steps[step]["endpoint"] == "openrouter", step
+        # prompt_optimizer 由校验层补默认值，保持双 null
+        assert steps["prompt_optimizer"] == {
+            "model": None,
+            "reasoning": True,
+            "endpoint": None,
+        }
 
 
 def test_phase2_import_writes_only_missing_sections_on_populated_database(
@@ -490,6 +635,7 @@ def test_phase2_import_writes_only_missing_sections_on_populated_database(
     endpoints_up, _endpoints_down = _endpoints_migration_parts()
     sort_keywords_up, _sort_keywords_down = _sort_keywords_migration_parts()
     exclusion_up, _exclusion_down = _exclusion_keywords_migration_parts()
+    default_model_up, _default_model_down = _default_model_migration_parts()
     with _isolated_database() as connection:
         _create_legacy_schema(connection)
         connection.execute(base_up)
@@ -497,6 +643,7 @@ def test_phase2_import_writes_only_missing_sections_on_populated_database(
         connection.execute(endpoints_up)
         connection.execute(sort_keywords_up)
         connection.execute(exclusion_up)
+        connection.execute(default_model_up)
         adapter = PostgresAdapter(connection)
 
         phase1_sections = {
@@ -883,7 +1030,7 @@ def test_prompt_optimizer_step_migration_only_fills_missing_step() -> None:
         connection.execute(
             "INSERT INTO public.app_settings (section, value, version) "
             "VALUES ('llm_models', %s::jsonb, 3)",
-            (json.dumps({"default": "model-a", "steps": old_steps}),),
+            (json.dumps({"steps": old_steps}),),
         )
 
         connection.execute(step_up)
@@ -926,3 +1073,274 @@ def test_prompt_optimizer_step_migration_only_fills_missing_step() -> None:
             "FROM public.app_settings WHERE section = 'llm_models'"
         ).fetchone()
         assert after_down["present"] is False
+
+
+# ---------- 默认模型跟随接入点迁移（20261106150000） ----------
+
+
+def _production_like_old_state() -> tuple[dict[str, Any], dict[str, Any]]:
+    """接近生产的旧结构配置：OpenRouter 为默认、查重复核指定 DeepSeek、
+    相关性评分「有模型、无接入点」（旧语义落到默认接入点）。"""
+
+    endpoints = {
+        "default": "openrouter",
+        "items": [
+            {
+                "key": "openrouter",
+                "label": "OpenRouter",
+                "base_url": "https://openrouter.ai/api/v1",
+                "api_key_env": "LLM_API_KEY",
+                "api_style": "openrouter",
+                "temperature_override": None,
+            },
+            {
+                "key": "deepseek",
+                "label": "DeepSeek",
+                "base_url": "https://api.deepseek.com",
+                "api_key_env": "LLM_DEEPSEEK_API_KEY",
+                "api_style": "thinking",
+                "temperature_override": 0.5,
+            },
+        ],
+    }
+    models = {
+        "default": "old-default-model",
+        "steps": {
+            "summary": {"model": None, "reasoning": False},
+            "source": {"model": None, "reasoning": True},
+            # 第一个显式引用 deepseek 的步骤：它的模型成为 deepseek 的 default_model
+            "sentiment": {"model": "sentiment-model", "reasoning": True, "endpoint": "deepseek"},
+            # 旧数据形态：有模型、无接入点（旧语义落到默认接入点）
+            "scoring": {"model": "scoring-model", "reasoning": True},
+            "external_filter": {"model": None, "reasoning": False},
+            "beijing_gate": {"model": None, "reasoning": True},
+            "duplicate_review": {
+                "model": "deepseek-dup-model",
+                "reasoning": False,
+                "endpoint": "deepseek",
+            },
+            "prompt_optimizer": {"model": None, "reasoning": True},
+        },
+    }
+    return endpoints, models
+
+
+def _old_resolution(
+    models_value: dict[str, Any],
+    endpoints_value: dict[str, Any],
+) -> dict[str, tuple[str, str, bool]]:
+    """旧语义解析：model 回退到 llm_models.default，endpoint 回退到默认接入点。"""
+
+    default = models_value["default"]
+    default_endpoint = endpoints_value["default"]
+    return {
+        step: (
+            cfg.get("endpoint") or default_endpoint,
+            cfg.get("model") or default,
+            bool(cfg.get("reasoning")),
+        )
+        for step, cfg in models_value["steps"].items()
+    }
+
+
+def _new_resolution(
+    models_value: dict[str, Any],
+    endpoints_value: dict[str, Any],
+) -> dict[str, tuple[str, str, bool]]:
+    items, default_key = resolve_llm_endpoints(endpoints_value)
+    steps = resolve_llm_steps(
+        models_value,
+        endpoints=items,
+        default_endpoint=default_key,
+    )
+    return {
+        step: (
+            steps[step].endpoint or default_key,
+            steps[step].model,
+            steps[step].reasoning,
+        )
+        for step in steps
+    }
+
+
+def _seed_old_state(
+    connection: psycopg.Connection,
+    endpoints: dict[str, Any],
+    models: dict[str, Any],
+    *,
+    endpoints_version: int = 1,
+    models_version: int = 3,
+) -> None:
+    connection.execute(
+        "DELETE FROM public.app_settings WHERE section = 'llm_endpoints'"
+    )
+    connection.execute(
+        "INSERT INTO public.app_settings (section, value, version) "
+        "VALUES ('llm_endpoints', %s::jsonb, %s)",
+        (json.dumps(endpoints), endpoints_version),
+    )
+    connection.execute(
+        "INSERT INTO public.app_settings (section, value, version) "
+        "VALUES ('llm_models', %s::jsonb, %s)",
+        (json.dumps(models), models_version),
+    )
+
+
+def _fetch_sections(
+    connection: psycopg.Connection,
+) -> tuple[dict[str, Any], int, dict[str, Any], int]:
+    endpoints_row = connection.execute(
+        "SELECT value, version FROM public.app_settings WHERE section = 'llm_endpoints'"
+    ).fetchone()
+    models_row = connection.execute(
+        "SELECT value, version FROM public.app_settings WHERE section = 'llm_models'"
+    ).fetchone()
+    return (
+        endpoints_row["value"],
+        int(endpoints_row["version"]),
+        models_row["value"],
+        int(models_row["version"]),
+    )
+
+
+def test_default_model_migration_preserves_resolution_and_bumps_versions() -> None:
+    endpoints_up, _down = _default_model_migration_parts()
+    old_endpoints, old_models = _production_like_old_state()
+    expected_resolution = _old_resolution(old_models, old_endpoints)
+    with _isolated_database() as connection:
+        _create_legacy_schema(connection)
+        base_up, _ = _migration_parts()
+        seed_up, _ = _endpoints_migration_parts()
+        connection.execute(base_up)
+        connection.execute(seed_up)
+        _seed_old_state(connection, old_endpoints, old_models)
+
+        connection.execute(endpoints_up)
+
+        new_endpoints, endpoints_version, new_models, models_version = (
+            _fetch_sections(connection)
+        )
+        # 硬要求：每一步解析出的「接入点 + 模型 + reasoning」完全一致
+        assert _new_resolution(new_models, new_endpoints) == expected_resolution
+        assert "default" not in new_models
+        assert endpoints_version == 2
+        assert models_version == 4
+        items = {item["key"]: item for item in new_endpoints["items"]}
+        # 默认接入点取旧 llm_models.default；deepseek 取第一个引用步骤的模型
+        assert items["openrouter"]["default_model"] == "old-default-model"
+        assert items["deepseek"]["default_model"] == "sentiment-model"
+        # 模型恰等于接入点新 default_model 的步骤置 null（解析结果不变）
+        assert new_models["steps"]["sentiment"]["model"] is None
+        assert new_models["steps"]["sentiment"]["endpoint"] == "deepseek"
+        # 有模型、无接入点的步骤固定到当时的默认接入点
+        assert new_models["steps"]["scoring"] == {
+            "model": "scoring-model",
+            "reasoning": True,
+            "endpoint": "openrouter",
+        }
+        # 模型不等于 default_model 的显式步骤原样保留
+        assert new_models["steps"]["duplicate_review"] == {
+            "model": "deepseek-dup-model",
+            "reasoning": False,
+            "endpoint": "deepseek",
+        }
+
+
+def test_default_model_migration_fails_for_unreferenced_endpoint_naming_the_key() -> None:
+    endpoints_up, _down = _default_model_migration_parts()
+    old_endpoints, old_models = _production_like_old_state()
+    old_endpoints["items"].append(
+        {
+            "key": "glm",
+            "label": "GLM",
+            "base_url": "https://open.bigmodel.cn/api/paas/v4",
+            "api_key_env": "LLM_GLM_API_KEY",
+            "api_style": "thinking",
+            "temperature_override": None,
+        }
+    )
+    with _isolated_database() as connection:
+        _create_legacy_schema(connection)
+        base_up, _ = _migration_parts()
+        seed_up, _ = _endpoints_migration_parts()
+        connection.execute(base_up)
+        connection.execute(seed_up)
+        _seed_old_state(connection, old_endpoints, old_models)
+
+        with pytest.raises(Exception, match="glm"):
+            connection.execute(endpoints_up)
+
+        # 报错中止：两个分区都保持迁移前的旧结构
+        endpoints_value, endpoints_version, models_value, models_version = (
+            _fetch_sections(connection)
+        )
+        assert "default_model" not in endpoints_value["items"][0]
+        assert endpoints_version == 1
+        assert models_value["default"] == "old-default-model"
+        assert models_version == 3
+
+
+def test_default_model_migration_down_restores_old_resolution() -> None:
+    up_sql, down_sql = _default_model_migration_parts()
+    old_endpoints, old_models = _production_like_old_state()
+    original_resolution = _old_resolution(old_models, old_endpoints)
+    with _isolated_database() as connection:
+        _create_legacy_schema(connection)
+        base_up, _ = _migration_parts()
+        seed_up, _ = _endpoints_migration_parts()
+        connection.execute(base_up)
+        connection.execute(seed_up)
+        _seed_old_state(connection, old_endpoints, old_models)
+
+        connection.execute(up_sql)
+        connection.execute(down_sql)
+
+        restored_endpoints, endpoints_version, restored_models, models_version = (
+            _fetch_sections(connection)
+        )
+        # up → down 后解析结果仍与原始一致
+        assert _old_resolution(restored_models, restored_endpoints) == (
+            original_resolution
+        )
+        # default 取默认接入点的 default_model；接入点不再带 default_model
+        assert restored_models["default"] == "old-default-model"
+        for item in restored_endpoints["items"]:
+            assert "default_model" not in item
+        # 「指定了接入点但模型为空」的步骤补回该接入点的 default_model
+        assert restored_models["steps"]["sentiment"]["model"] == "sentiment-model"
+        # version 各减 1，回到迁移前的值
+        assert endpoints_version == 1
+        assert models_version == 3
+
+
+def test_default_model_migration_on_fresh_seed_sets_fallback_default_model() -> None:
+    """全新部署：llm_models 还没由 import-settings 写入时，迁移给种子接入点
+    补 _legacy_models 同一份兜底值，llm_models 保持缺席。down 还原种子形态。"""
+
+    up_sql, down_sql = _default_model_migration_parts()
+    fallback = settings_service.LLM_FALLBACK_DEFAULT_MODEL
+    with _isolated_database() as connection:
+        _create_legacy_schema(connection)
+        base_up, _ = _migration_parts()
+        seed_up, _ = _endpoints_migration_parts()
+        connection.execute(base_up)
+        connection.execute(seed_up)
+
+        connection.execute(up_sql)
+
+        migrated = connection.execute(
+            "SELECT value, version FROM public.app_settings WHERE section = 'llm_endpoints'"
+        ).fetchone()
+        assert migrated["version"] == 2
+        assert migrated["value"]["items"][0]["default_model"] == fallback
+        assert connection.execute(
+            "SELECT 1 FROM public.app_settings WHERE section = 'llm_models'"
+        ).fetchone() is None
+
+        connection.execute(down_sql)
+
+        restored = connection.execute(
+            "SELECT value, version FROM public.app_settings WHERE section = 'llm_endpoints'"
+        ).fetchone()
+        assert restored["version"] == 1
+        assert "default_model" not in restored["value"]["items"][0]

@@ -93,7 +93,7 @@ test('S1：配置分区缺失时对应页签显示导入提示且不渲染编辑
         assert.match(modelsNotice.textContent, /尚未导入/);
         assert.match(modelsNotice.textContent, /import-settings/);
         assert.equal(page.document.getElementById('btn-models-save'), null);
-        assert.equal(page.document.getElementById('models-default-input'), null);
+        assert.equal(page.document.querySelector('.step-endpoint-select'), null);
 
         const sourcesNotice = page.panel('sources').querySelector('.settings-import-notice');
         assert.ok(sourcesNotice);
@@ -105,30 +105,30 @@ test('S1：配置分区缺失时对应页签显示导入提示且不渲染编辑
     }
 });
 
-test('S2：修改默认模型联动跟随默认提示，保存请求包含全部八个步骤与版本号', async () => {
+test('S2：跟随默认下输入模型当场切到默认接入点，保存请求包含全部八个步骤与版本号', async () => {
     const page = await bootPage();
     try {
-        const defaultInput = page.document.getElementById('models-default-input');
-        assert.equal(defaultInput.value, 'deepseek/default-model');
-        const summaryHint = page.modelsRow('summary').querySelector('.step-follow-hint');
-        assert.match(summaryHint.textContent, /跟随默认 · OpenRouter \/ deepseek\/default-model/);
+        // 每行两个独立控件：接入点下拉（首项跟随默认）+ 模型输入框
+        const row = page.modelsRow('summary');
+        const endpointSelect = row.querySelector('.step-endpoint-select');
+        assert.equal(endpointSelect.value, '', '跟随默认步骤的下拉值是空串');
+        assert.equal(endpointSelect.options[0].textContent, '跟随默认（OpenRouter）');
+        const hint = row.querySelector('.step-model-hint');
+        assert.equal(hint.textContent, '留空使用 deepseek/default-model');
 
-        inputValue(page, defaultInput, 'new/default-x');
-        assert.match(summaryHint.textContent, /跟随默认 · OpenRouter \/ new\/default-x/);
-        // 指定模型的步骤不再渲染跟随提示：内容槽里只剩接入点与模型控件
-        // （模式下拉自身带「跟随默认」选项，所以只看内容槽的文本）
-        const scoringRow = page.modelsRow('scoring');
-        assert.equal(scoringRow.querySelector('.step-follow-hint'), null);
-        assert.ok(
-            !scoringRow.querySelector('.step-content').textContent.includes('跟随默认'),
-            '指定模式的内容槽里不得残留「跟随默认」文案',
-        );
+        // 「跟随默认」下开始输入模型：下拉当场切到默认接入点本身，用户看得见
+        const modelInput = row.querySelector('.step-model-input');
+        inputValue(page, modelInput, 'new/default-x');
+        assert.equal(endpointSelect.value, 'openrouter');
+        assert.equal(page.window.eval('state.modelsDraft.steps.summary.endpoint'), 'openrouter');
+        // 已填模型：灰字提示消失
+        assert.equal(hint.textContent, '');
 
         page.document.getElementById('btn-models-save').click();
         await waitFor(() => page.server.requests('save-models').length === 1);
         const body = page.server.requests('save-models')[0].body;
         assert.equal(body.expected_version, 7);
-        assert.equal(body.value.default, 'new/default-x');
+        assert.equal(body.value.default, undefined, '新结构没有顶层 default');
         assert.deepEqual(Object.keys(body.value.steps).sort(), [
             'beijing_gate',
             'duplicate_review',
@@ -139,16 +139,20 @@ test('S2：修改默认模型联动跟随默认提示，保存请求包含全部
             'source',
             'summary',
         ]);
-        // 跟随默认的步骤必须保存为 null，而不是默认模型名
-        assert.equal(body.value.steps.summary.model, null);
+        // 跟随默认的步骤必须保存为双 null
         assert.equal(body.value.steps.source.model, null);
-        // 指定模型的步骤保留自己的模型名
+        assert.equal(body.value.steps.source.endpoint, null);
+        // 跟随默认下输入模型的步骤：保存负载里 endpoint 非空（默认接入点）
+        assert.equal(body.value.steps.summary.model, 'new/default-x');
+        assert.equal(body.value.steps.summary.endpoint, 'openrouter');
+        // 指定模型的步骤保留自己的接入点与模型名
         assert.equal(body.value.steps.scoring.model, 'vendor/scoring-model');
+        assert.equal(body.value.steps.scoring.endpoint, 'openrouter');
         assert.equal(body.value.steps.scoring.reasoning, true);
 
         await waitFor(() => page.server.requests('save-models')[0].done);
-        await waitFor(() => page.document.getElementById('models-default-input') === null
-            || page.document.getElementById('models-default-input').value === 'new/default-x');
+        await waitFor(() => page.modelsRow('summary').querySelector('.step-model-input') === null
+            || page.modelsRow('summary').querySelector('.step-model-input').value === 'new/default-x');
     } finally {
         page.close();
     }
@@ -158,8 +162,8 @@ test('S3：测试按钮发送页面当前值，修改步骤后旧结果被清除
     const page = await bootPage();
     try {
         const row = page.modelsRow('summary');
-        const defaultInput = page.document.getElementById('models-default-input');
-        inputValue(page, defaultInput, 'page/current-model');
+        const modelInput = row.querySelector('.step-model-input');
+        inputValue(page, modelInput, 'page/current-model');
         const reasoning = row.querySelector('.step-reasoning');
         reasoning.checked = true;
         reasoning.dispatchEvent(new page.window.Event('change', { bubbles: true }));
@@ -167,9 +171,10 @@ test('S3：测试按钮发送页面当前值，修改步骤后旧结果被清除
         row.querySelector('.step-test-btn').click();
         await waitFor(() => page.server.requests('model-test').length === 1);
         const body = page.server.requests('model-test')[0].body;
-        // 必须是页面当前值：跟随默认取默认输入框当前内容，reasoning 取当前开关
+        // 必须是页面当前值：跟随默认下输入后已切到默认接入点，endpoint 与解析一致
         assert.equal(body.step, 'summary');
         assert.equal(body.model, 'page/current-model');
+        assert.equal(body.endpoint, 'openrouter');
         assert.equal(body.reasoning, true);
 
         const result = row.querySelector('.step-test-result');
@@ -214,8 +219,8 @@ test('S5：保存返回 422 时显示服务端原因并保留全部修改', asyn
             status: 422,
             payload: { detail: '摘要生成模型测试失败：连接超时' },
         };
-        const defaultInput = page.document.getElementById('models-default-input');
-        inputValue(page, defaultInput, 'broken/model');
+        const modelInput = page.modelsRow('summary').querySelector('.step-model-input');
+        inputValue(page, modelInput, 'broken/model');
 
         page.document.getElementById('btn-models-save').click();
         await waitFor(() => page.server.requests('save-models').length === 1
@@ -223,7 +228,7 @@ test('S5：保存返回 422 时显示服务端原因并保留全部修改', asyn
         const status = page.document.getElementById('models-save-status');
         await waitFor(() => status.textContent.includes('摘要生成模型测试失败：连接超时'));
         // 本地修改保留，保存按钮恢复可用
-        assert.equal(defaultInput.value, 'broken/model');
+        assert.equal(modelInput.value, 'broken/model');
         assert.equal(page.document.getElementById('btn-models-save').disabled, false);
         assert.ok(page.document.getElementById('btn-models-reload').hidden);
     } finally {
@@ -243,11 +248,17 @@ test('S6：保存返回 409 时保留修改，仅点击「载入最新配置」�
         };
         page.server.sections.llm_models = {
             ...page.server.sections.llm_models,
-            value: { ...page.server.sections.llm_models.value, default: 'server/new-default' },
+            value: {
+                ...page.server.sections.llm_models.value,
+                steps: {
+                    ...page.server.sections.llm_models.value.steps,
+                    summary: { model: 'server/new-default', reasoning: false, endpoint: 'openrouter' },
+                },
+            },
             version: 8,
         };
-        const defaultInput = page.document.getElementById('models-default-input');
-        inputValue(page, defaultInput, 'local/edit');
+        const modelInput = page.modelsRow('summary').querySelector('.step-model-input');
+        inputValue(page, modelInput, 'local/edit');
 
         page.document.getElementById('btn-models-save').click();
         await waitFor(() => page.server.requests('save-models').length === 1
@@ -256,7 +267,7 @@ test('S6：保存返回 409 时保留修改，仅点击「载入最新配置」�
         await waitFor(() => status.textContent.startsWith('保存冲突：'));
         assert.match(status.textContent, /配置版本已变化：当前版本为 8/);
         // 本地修改未被覆盖，也没有自动重新拉取
-        assert.equal(defaultInput.value, 'local/edit');
+        assert.equal(modelInput.value, 'local/edit');
         assert.equal(page.server.requests('get-settings').length, 0);
         const reloadBtn = page.document.getElementById('btn-models-reload');
         assert.equal(reloadBtn.hidden, false);
@@ -266,7 +277,7 @@ test('S6：保存返回 409 时保留修改，仅点击「载入最新配置」�
             () => page.server.requests('get-settings').length === 1,
         );
         await waitFor(
-            () => page.document.getElementById('models-default-input').value === 'server/new-default',
+            () => page.modelsRow('summary').querySelector('.step-model-input').value === 'server/new-default',
         );
         assert.equal(
             page.document.getElementById('btn-models-reload').hidden,
@@ -402,7 +413,7 @@ test('S12：模型页签的未保存修改在页签切换后保留，离开页�
         // 在模型页签制造未保存修改
         inputValue(
             page,
-            page.document.getElementById('models-default-input'),
+            page.modelsRow('summary').querySelector('.step-model-input'),
             'local/unsaved-model',
         );
 
@@ -411,7 +422,7 @@ test('S12：模型页签的未保存修改在页签切换后保留，离开页�
         assert.ok(page.panel('models').hidden);
         page.clickTab('models');
         assert.equal(
-            page.document.getElementById('models-default-input').value,
+            page.modelsRow('summary').querySelector('.step-model-input').value,
             'local/unsaved-model',
         );
 
@@ -423,8 +434,8 @@ test('S12：模型页签的未保存修改在页签切换后保留，离开页�
         // 放弃修改后回到服务器值，离开不再拦截
         page.document.getElementById('btn-models-discard').click();
         assert.equal(
-            page.document.getElementById('models-default-input').value,
-            'deepseek/default-model',
+            page.modelsRow('summary').querySelector('.step-model-input').value,
+            '',
         );
         const discardedEvent = new page.window.Event('beforeunload', { cancelable: true });
         page.window.dispatchEvent(discardedEvent);
@@ -1924,60 +1935,55 @@ function endpointOptions(page, step) {
         .map((option) => option.value);
 }
 
-function switchStepMode(page, row, mode) {
-    const modeSelect = row.querySelector('.step-model-mode');
-    modeSelect.value = mode;
-    modeSelect.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+function selectStepEndpoint(page, row, key) {
+    const endpointSelect = row.querySelector('.step-endpoint-select');
+    endpointSelect.value = key;
+    endpointSelect.dispatchEvent(new page.window.Event('change', { bubbles: true }));
 }
 
-test('E1：步骤切到「指定」出现接入点下拉与空的模型输入框，切换接入点清空模型与该行测试结果', async () => {
+test('E1：接入点下拉含跟随默认首项；换接入点清空模型与该行测试结果，灰字换成新接入点的默认模型', async () => {
     const page = await bootPage();
     try {
         const row = page.modelsRow('summary');
-        // 跟随默认提示同时给出默认接入点与默认模型
-        const hint = row.querySelector('.step-follow-hint');
-        assert.match(hint.textContent, /跟随默认 · OpenRouter \/ deepseek\/default-model/);
-        assert.equal(hint.title, hint.textContent, '提示带 title，长模型名被省略时仍可看全文');
-
-        // 先在跟随默认下跑一次测试，让该行有测试结果可供「被清除」断言
-        row.querySelector('.step-test-btn').click();
-        await waitFor(() => row.querySelector('.step-test-result').textContent.includes('成功'));
-
-        switchStepMode(page, row, 'custom');
-        // 内容槽按模式重建：跟随提示从 DOM 消失，换成接入点下拉 + 模型输入框
-        assert.equal(row.querySelector('.step-follow-hint'), null, '指定模式下不应再有跟随提示');
         const endpointSelect = row.querySelector('.step-endpoint-select');
-        assert.ok(endpointSelect, '指定模式应渲染接入点下拉');
         const modelInput = row.querySelector('.step-model-input');
-        assert.ok(modelInput, '指定模式应渲染模型输入框');
-        // 切到「指定」不预填：跨服务商预填必然是错的，留空比留错值安全
-        assert.equal(modelInput.value, '');
-        assert.equal(endpointSelect.value, 'openrouter', '首次切到指定应选中当前默认接入点');
-        assert.equal(row.querySelector('.step-test-result').textContent, '');
+        // 跟随默认 + 留空：灰字显示默认接入点的默认模型
+        assert.equal(endpointSelect.value, '');
+        assert.equal(row.querySelector('.step-model-hint').textContent,
+            '留空使用 deepseek/default-model');
 
-        // 填入模型并再次产生测试结果后换接入点：模型输入与测试结果都被清空
-        inputValue(page, modelInput, 'deepseek/reasoner-v4');
+        // 先跑一次测试，让该行有测试结果可供「被清除」断言
         row.querySelector('.step-test-btn').click();
         await waitFor(() => row.querySelector('.step-test-result').textContent.includes('成功'));
-        endpointSelect.value = 'deepseek';
-        endpointSelect.dispatchEvent(new page.window.Event('change', { bubbles: true }));
-        assert.equal(modelInput.value, '');
+
+        // 从「跟随默认」换到 DeepSeek：清空模型输入、清空测试结果、灰字换默认模型
+        selectStepEndpoint(page, row, 'deepseek');
+        assert.equal(modelInput.value, '', '换接入点清空模型输入');
         assert.equal(row.querySelector('.step-test-result').textContent, '');
+        assert.equal(row.querySelector('.step-model-hint').textContent,
+            '留空使用 deepseek-chat-v4');
+        assert.equal(page.window.eval('state.dirty.llm_models'), true);
+
+        // 切回跟随默认：模型保持为空（该组合不合法），灰字换回默认接入点的默认模型
+        selectStepEndpoint(page, row, '');
+        assert.equal(page.window.eval('state.modelsDraft.steps.summary.endpoint'), null);
+        assert.equal(modelInput.value, '');
+        assert.equal(row.querySelector('.step-model-hint').textContent,
+            '留空使用 deepseek/default-model');
     } finally {
         page.close();
     }
 });
 
-test('E2：保存请求体的八个步骤都带 endpoint，跟随默认为 null，指定的为所选 key', async () => {
+test('E2：保存请求体的八个步骤都带 endpoint，跟随默认为双 null，指定的为所选 key 与模型', async () => {
     const page = await bootPage();
     try {
         const row = page.modelsRow('summary');
-        switchStepMode(page, row, 'custom');
         // 先换接入点再填模型（换接入点会清空模型输入）
-        const endpointSelect = row.querySelector('.step-endpoint-select');
-        endpointSelect.value = 'deepseek';
-        endpointSelect.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+        selectStepEndpoint(page, row, 'deepseek');
         inputValue(page, row.querySelector('.step-model-input'), 'deepseek/chat-v4');
+        // 相关性评分换成「接入点 + 空模型」：合法组合，保存为 model null
+        selectStepEndpoint(page, page.modelsRow('scoring'), 'deepseek');
 
         page.document.getElementById('btn-models-save').click();
         await waitFor(() => page.server.requests('save-models').length === 1);
@@ -2002,28 +2008,29 @@ test('E2：保存请求体的八个步骤都带 endpoint，跟随默认为 null�
             assert.equal(steps[key].endpoint, null, `${key} 跟随默认时 endpoint 应为 null`);
             assert.equal(steps[key].model, null, `${key} 跟随默认时 model 应为 null`);
         }
-        // 旧数据（指定模型但无 endpoint）归一为默认接入点：与后端 resolve 语义一致
-        assert.equal(steps.scoring.endpoint, 'openrouter');
-        assert.equal(steps.scoring.model, 'vendor/scoring-model');
+        assert.equal(steps.scoring.endpoint, 'deepseek');
+        assert.equal(steps.scoring.model, null);
     } finally {
         page.close();
     }
 });
 
-test('E3：指定接入点但模型为空时保存被前端拦截，不发请求并行内报错', async () => {
+test('E3：模型留空时直接保存放行（用所选接入点的默认模型），不发拦截报错', async () => {
     const page = await bootPage();
     try {
         const row = page.modelsRow('summary');
-        switchStepMode(page, row, 'custom');
-        // 模型输入留空
+        // 跟随默认 + 模型留空：双 null 是合法组合
+        assert.equal(row.querySelector('.step-model-input').value, '');
 
         page.document.getElementById('btn-models-save').click();
-        // 判别性断言最先检查：拦截意味着没有保存请求
-        await assertNever(() => page.server.requests('save-models').length > 0, 300);
-        const status = page.document.getElementById('models-save-status');
-        assert.match(status.textContent, /摘要生成/);
-        assert.match(status.textContent, /模型名为空/);
-        assert.ok(status.classList.contains('is-error'));
+        await waitFor(() => page.server.requests('save-models').length === 1
+            && page.server.requests('save-models')[0].done);
+        const body = page.server.requests('save-models')[0].body;
+        assert.equal(body.value.steps.summary.model, null);
+        assert.equal(body.value.steps.summary.endpoint, null);
+        // 保存成功会重渲染页签：状态节点被重建且为空，成功提示走 toast
+        await waitFor(() => page.document.getElementById('toast').textContent
+            .includes('模型配置已保存'));
     } finally {
         page.close();
     }
@@ -2041,14 +2048,12 @@ test('E4：步骤接入点下拉只列已保存接入点；接入点分区为脏
         assert.ok(!note.hidden);
         assert.match(note.textContent, /接入点有未保存修改/);
 
-        // 草稿里新增的接入点不出现在步骤下拉：后端校验引用查的是库里的接入点。
-        // 下拉只在「指定」模式下渲染（跟随默认的行没有控件可点），先切过去
+        // 草稿里新增的接入点不出现在步骤下拉：后端校验引用查的是库里的接入点
         page.document.querySelector('.endpoint-add-btn').click();
         await waitFor(() => page.document.querySelectorAll('.endpoint-edit-row').length === 3);
         inputValue(page, endpointEditRow(page, 'new-1').querySelector('.endpoint-base-url-input'),
             'https://open.bigmodel.cn/api/paas/v4');
-        switchStepMode(page, page.modelsRow('summary'), 'custom');
-        assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter', 'deepseek']);
+        assert.deepEqual(endpointOptions(page, 'summary'), ['', 'openrouter', 'deepseek']);
         assert.equal(page.window.eval('state.dirty.llm_endpoints'), true);
 
         // 模型页签整体重渲染（放弃修改会重建全部 DOM）后，下拉仍只来自已保存值：
@@ -2056,17 +2061,14 @@ test('E4：步骤接入点下拉只列已保存接入点；接入点分区为脏
         page.document.getElementById('btn-models-discard').click();
         await waitFor(() => page.modelsRow('summary')
             && !page.document.querySelector('.endpoints-dirty-note').hidden);
-        // 放弃修改把步骤表重建回跟随默认（草稿已丢弃），再切指定读下拉
-        assert.equal(page.modelsRow('summary').querySelector('.step-model-mode').value, 'follow');
         assert.equal(page.window.eval('state.dirty.llm_models'), false);
-        switchStepMode(page, page.modelsRow('summary'), 'custom');
-        assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter', 'deepseek']);
+        assert.deepEqual(endpointOptions(page, 'summary'), ['', 'openrouter', 'deepseek']);
 
         // 放弃接入点修改：提示消失、接入点脏标记复位、下拉不变
         page.document.querySelector('.btn-endpoints-discard').click();
         await waitFor(() => page.document.querySelector('.endpoints-dirty-note').hidden);
         assert.equal(page.window.eval('state.dirty.llm_endpoints'), false);
-        assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter', 'deepseek']);
+        assert.deepEqual(endpointOptions(page, 'summary'), ['', 'openrouter', 'deepseek']);
     } finally {
         page.close();
     }
@@ -2153,12 +2155,12 @@ test('E7：地址主机不在白名单时行内报错且不发请求；完整请
     }
 });
 
-test('E8：接入点保存成功后下拉立即包含新接入点，步骤表格未保存的模型修改不丢失', async () => {
+test('E8：接入点保存成功后下拉立即包含新接入点，步骤草稿不丢、灰字反映新默认模型', async () => {
     const page = await bootPage();
     try {
-        // 先在模型页制造未保存修改：摘要生成切「指定」并填模型
+        // 先在模型页制造未保存修改：摘要生成选 DeepSeek 并填模型
         const row = page.modelsRow('summary');
-        switchStepMode(page, row, 'custom');
+        selectStepEndpoint(page, row, 'deepseek');
         inputValue(page, row.querySelector('.step-model-input'), 'local/unsaved-model');
         assert.equal(page.window.eval('state.dirty.llm_models'), true);
 
@@ -2171,6 +2173,7 @@ test('E8：接入点保存成功后下拉立即包含新接入点，步骤表格
         inputValue(page, newRow.querySelector('.endpoint-base-url-input'),
             'https://open.bigmodel.cn/api/paas/v4');
         inputValue(page, newRow.querySelector('.endpoint-key-env-input'), 'ZHIPU_API_KEY');
+        inputValue(page, newRow.querySelector('.endpoint-default-model-input'), 'glm-4.6');
         page.document.querySelector('.btn-endpoints-save').click();
         await waitFor(() => page.server.requests('save-endpoints').length === 1
             && page.server.requests('save-endpoints')[0].done);
@@ -2178,14 +2181,19 @@ test('E8：接入点保存成功后下拉立即包含新接入点，步骤表格
         // 保存成功后编辑器回到只读态，下拉立即包含新接入点（key 从主机名派生）
         await waitFor(() => !page.document.querySelector('.endpoint-edit-row'));
         assert.deepEqual(endpointOptions(page, 'summary'),
-            ['openrouter', 'deepseek', 'open-bigmodel-cn']);
+            ['', 'openrouter', 'deepseek', 'open-bigmodel-cn']);
 
-        // 步骤表格里未保存的模型修改仍在（只重建 DOM，不重建模型草稿）
+        // 步骤表格里未保存的模型修改仍在（只重建 DOM，不重建模型草稿），
+        // 灰字随已保存值反映新的默认模型
         const rowAfter = page.modelsRow('summary');
-        assert.equal(rowAfter.querySelector('.step-model-mode').value, 'custom');
+        assert.equal(rowAfter.querySelector('.step-endpoint-select').value, 'deepseek');
         assert.equal(rowAfter.querySelector('.step-model-input').value, 'local/unsaved-model');
         assert.equal(page.window.eval('state.dirty.llm_models'), true);
         assert.equal(page.window.eval('state.dirty.llm_endpoints'), false);
+        // 只读列表展示默认模型
+        const glmItem = page.document
+            .querySelector('.endpoint-item[data-endpoint-key="open-bigmodel-cn"]');
+        assert.match(glmItem.textContent, /默认模型：glm-4\.6/);
     } finally {
         page.close();
     }
@@ -2202,7 +2210,11 @@ test('E9：模型分区与接入点分区的脏状态互相独立，任一为脏
         assert.equal(guardFires(), false, '初始无修改不应拦截离开');
 
         // 仅模型分区脏
-        inputValue(page, page.document.getElementById('models-default-input'), 'x/model-a');
+        inputValue(
+            page,
+            page.modelsRow('summary').querySelector('.step-model-input'),
+            'x/model-a',
+        );
         assert.equal(page.window.eval('state.dirty.llm_models'), true);
         assert.equal(page.window.eval('state.dirty.llm_endpoints'), false);
         assert.equal(guardFires(), true);
@@ -2226,31 +2238,36 @@ test('E9：模型分区与接入点分区的脏状态互相独立，任一为脏
     }
 });
 
-test('E10：测试按钮对「指定」步骤发送 endpoint，对「跟随默认」步骤不发送该字段', async () => {
+test('E10：留空测试发送所选接入点已保存的默认模型；填了模型就测该值，endpoint 与解析一致', async () => {
     const page = await bootPage();
     try {
         const row = page.modelsRow('summary');
-        switchStepMode(page, row, 'custom');
-        inputValue(page, row.querySelector('.step-model-input'), 'm/custom');
+        // 摘要生成选 DeepSeek 且模型留空：测 DeepSeek 已保存的默认模型
+        selectStepEndpoint(page, row, 'deepseek');
 
         row.querySelector('.step-test-btn').click();
         await waitFor(() => page.server.requests('model-test').length === 1);
-        const customBody = page.server.requests('model-test')[0].body;
-        assert.equal(customBody.endpoint, 'openrouter', '指定步骤应带上所选接入点');
-        assert.equal(customBody.model, 'm/custom');
+        const emptyModelBody = page.server.requests('model-test')[0].body;
+        assert.equal(emptyModelBody.model, 'deepseek-chat-v4', '留空测默认模型，不是空串');
+        assert.equal(emptyModelBody.endpoint, 'deepseek');
         await waitFor(() => page.server.requests('model-test')[0].done);
 
-        // 切回跟随默认：不带 endpoint 字段，模型取默认模型输入框当前值
-        switchStepMode(page, row, 'follow');
-        // 内容槽换回灰字提示，接入点与模型控件从 DOM 移除
-        assert.ok(row.querySelector('.step-follow-hint'), '跟随默认应重新渲染提示');
-        assert.equal(row.querySelector('.step-model-input'), null);
-        assert.equal(row.querySelector('.step-endpoint-select'), null);
+        // 填入模型后测试：测该值，endpoint 不变
+        inputValue(page, row.querySelector('.step-model-input'), 'm/custom');
         row.querySelector('.step-test-btn').click();
         await waitFor(() => page.server.requests('model-test').length === 2);
-        const followBody = page.server.requests('model-test')[1].body;
-        assert.equal('endpoint' in followBody, false, '跟随默认不应发送 endpoint 字段');
+        const customBody = page.server.requests('model-test')[1].body;
+        assert.equal(customBody.model, 'm/custom');
+        assert.equal(customBody.endpoint, 'deepseek');
+        await waitFor(() => page.server.requests('model-test')[1].done);
+
+        // 切回跟随默认并留空：测默认接入点已保存的默认模型
+        selectStepEndpoint(page, row, '');
+        row.querySelector('.step-test-btn').click();
+        await waitFor(() => page.server.requests('model-test').length === 3);
+        const followBody = page.server.requests('model-test')[2].body;
         assert.equal(followBody.model, 'deepseek/default-model');
+        assert.equal(followBody.endpoint, 'openrouter', '跟随默认发解析出的默认接入点');
     } finally {
         page.close();
     }
@@ -2300,9 +2317,8 @@ test('E12：环境块不再显示 API 地址与 API Key，改为显示允许的�
 test('E13：接入点 409 后「载入最新配置」同步刷新步骤下拉，模型草稿保留', async () => {
     const page = await bootPage();
     try {
-        // 模型页先制造未保存修改：摘要生成切「指定」+ 模型名
+        // 模型页先制造未保存修改：摘要生成选默认接入点 + 模型名
         const row = page.modelsRow('summary');
-        switchStepMode(page, row, 'custom');
         inputValue(page, row.querySelector('.step-model-input'), 'local/unsaved-model');
 
         // 接入点保存撞 409（另一处已改），保存栏出现「载入最新配置」
@@ -2332,11 +2348,11 @@ test('E13：接入点 409 后「载入最新配置」同步刷新步骤下拉，
 
         reloadBtn.click();
         // 步骤下拉与重拉后的接入点清单一致（deepseek 消失）
-        await waitFor(() => endpointOptions(page, 'summary').length === 1);
-        assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter']);
+        await waitFor(() => endpointOptions(page, 'summary').length === 2);
+        assert.deepEqual(endpointOptions(page, 'summary'), ['', 'openrouter']);
         // 步骤表格里未保存的模型修改仍在（只重建 DOM，不重建模型草稿）
         const rowAfter = page.modelsRow('summary');
-        assert.equal(rowAfter.querySelector('.step-model-mode').value, 'custom');
+        assert.equal(rowAfter.querySelector('.step-endpoint-select').value, 'openrouter');
         assert.equal(rowAfter.querySelector('.step-model-input').value, 'local/unsaved-model');
         assert.equal(page.window.eval('state.dirty.llm_models'), true);
         assert.equal(page.window.eval('state.dirty.llm_endpoints'), false);
@@ -2395,10 +2411,7 @@ test('E15：步骤草稿指向的接入点删除同样被拦截，提示含步�
     try {
         // 已保存值无人引用 deepseek；只在草稿里把摘要生成改指向它
         const row = page.modelsRow('summary');
-        switchStepMode(page, row, 'custom');
-        const endpointSelect = row.querySelector('.step-endpoint-select');
-        endpointSelect.value = 'deepseek';
-        endpointSelect.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+        selectStepEndpoint(page, row, 'deepseek');
         inputValue(page, row.querySelector('.step-model-input'), 'deepseek/chat-v4');
         assert.equal(page.window.eval('state.dirty.llm_models'), true);
 
@@ -2417,22 +2430,26 @@ test('E15：步骤草稿指向的接入点删除同样被拦截，提示含步�
     }
 });
 
-test('E16：「有 endpoint、无 model」的行点保存走空模型拦截，不抛异常不发请求', async () => {
+test('E16：「有 endpoint、无 model」的行是合法组合：灰字显示该接入点默认模型，保存直接放行', async () => {
     const page = await bootPage({ sections: sectionsWithBareEndpointStep() });
     try {
-        // 相关性评分在库里是 endpoint=deepseek、model=null：渲染为指定 + 空输入框
+        // 相关性评分在库里是 endpoint=deepseek、model=null：渲染为 DeepSeek + 空输入框
         const row = page.modelsRow('scoring');
-        assert.equal(row.querySelector('.step-model-mode').value, 'custom');
+        assert.equal(row.querySelector('.step-endpoint-select').value, 'deepseek');
         assert.equal(row.querySelector('.step-model-input').value, '');
+        assert.equal(row.querySelector('.step-model-hint').textContent,
+            '留空使用 deepseek-chat-v4');
 
         page.document.getElementById('btn-models-save').click();
-        // 判别性断言最先检查：走拦截意味着没有保存请求
-        await assertNever(() => page.server.requests('save-models').length > 0, 300);
-        const status = page.document.getElementById('models-save-status');
-        assert.match(status.textContent, /相关性评分/);
-        assert.match(status.textContent, /模型名为空/);
-        assert.ok(status.classList.contains('is-error'));
-        // 手改行不得在保存路径里抛未处理异常
+        await waitFor(() => page.server.requests('save-models').length === 1
+            && page.server.requests('save-models')[0].done);
+        const steps = page.server.requests('save-models')[0].body.value.steps;
+        assert.equal(steps.scoring.endpoint, 'deepseek');
+        assert.equal(steps.scoring.model, null);
+        // 保存成功会重渲染页签：状态节点被重建且为空，成功提示走 toast
+        await waitFor(() => page.document.getElementById('toast').textContent
+            .includes('模型配置已保存'));
+        // 合法组合的保存路径不得抛未处理异常
         assert.deepEqual(unhandledRejections, []);
     } finally {
         page.close();
@@ -2470,6 +2487,9 @@ test('E17：新增接入点 key 按地址自动生成，头部实时预览，重
         inputValue(page, row2.querySelector('.endpoint-label-input'), 'DeepSeek 备用');
         inputValue(page, newRow.querySelector('.endpoint-key-env-input'), 'DEEPSEEK_API_KEY');
         inputValue(page, row2.querySelector('.endpoint-key-env-input'), 'DEEPSEEK_API_KEY_2');
+        // 默认模型必填：不填会在行内被拦住
+        inputValue(page, newRow.querySelector('.endpoint-default-model-input'), 'deepseek-main');
+        inputValue(page, row2.querySelector('.endpoint-default-model-input'), 'deepseek-backup');
         page.document.querySelector('.btn-endpoints-save').click();
         await waitFor(() => page.server.requests('save-endpoints').length === 1
             && page.server.requests('save-endpoints')[0].done);
@@ -2477,12 +2497,10 @@ test('E17：新增接入点 key 按地址自动生成，头部实时预览，重
         const keys = page.server.sections.llm_endpoints.value.items.map((item) => item.key);
         assert.deepEqual(keys.sort(),
             ['api-deepseek-com', 'api-deepseek-com-2', 'deepseek', 'openrouter']);
-        // 步骤下拉立即能看到两个新接入点（下拉值是派生 key）；
-        // 下拉只在「指定」模式下渲染
+        // 步骤下拉立即能看到两个新接入点（下拉值是派生 key）
         await waitFor(() => !page.document.querySelector('.endpoint-edit-row'));
-        switchStepMode(page, page.modelsRow('summary'), 'custom');
         assert.deepEqual(endpointOptions(page, 'summary'),
-            ['openrouter', 'deepseek', 'api-deepseek-com', 'api-deepseek-com-2']);
+            ['', 'openrouter', 'deepseek', 'api-deepseek-com', 'api-deepseek-com-2']);
     } finally {
         page.close();
     }
@@ -2499,7 +2517,7 @@ test('E18：「重新加载环境变量」发出 POST 并重拉设置，Key 配�
         assert.match(deepseekBefore.textContent, /Key 未配置/);
 
         // 制造未保存的模型修改，验证重载后的页签重建不丢草稿
-        inputValue(page, page.document.getElementById('models-default-input'),
+        inputValue(page, page.modelsRow('summary').querySelector('.step-model-input'),
             'local/draft-model');
 
         // 重载时模拟服务器端效果：.env 里补上 Key 后，endpoints 负载翻为已配置
@@ -2525,7 +2543,7 @@ test('E18：「重新加载环境变量」发出 POST 并重拉设置，Key 配�
         // 模型草稿保留（只重建 DOM，不重建模型草稿）
         assert.equal(page.window.eval('state.dirty.llm_models'), true);
         assert.equal(
-            page.document.getElementById('models-default-input').value,
+            page.modelsRow('summary').querySelector('.step-model-input').value,
             'local/draft-model',
         );
     } finally {
@@ -2549,6 +2567,53 @@ test('E19：重载失败时不重拉设置、不重渲染，行内错误可见�
         await assertNever(() => page.server.requests('get-settings').length > 0, 200);
         assert.equal(page.document.querySelector('.env-reload-btn'), btn);
         assert.equal(btn.disabled, false);
+    } finally {
+        page.close();
+    }
+});
+
+// ---------- 接入点默认模型场景（E20） ----------
+
+test('E20：接入点默认模型为空时保存被行内拦住；后端模型测试失败时报错原样展示', async () => {
+    const page = await bootPage();
+    try {
+        await enterEndpointsManage(page);
+        const row = endpointEditRow(page, 'deepseek');
+        // 默认模型为空：保存被行内拦截，指出是哪个接入点，不发请求
+        const modelInput = row.querySelector('.endpoint-default-model-input');
+        modelInput.value = '';
+        modelInput.dispatchEvent(new page.window.Event('input', { bubbles: true }));
+        page.document.querySelector('.btn-endpoints-save').click();
+        await assertNever(() => page.server.requests('save-endpoints').length > 0, 300);
+        const rowError = row.querySelector('.endpoint-row-error');
+        assert.match(rowError.textContent, /DeepSeek/);
+        assert.match(rowError.textContent, /默认模型不能为空/);
+        assert.match(page.document.querySelector('.endpoints-save-status').textContent,
+            /未通过校验/);
+
+        // 填回默认模型后保存：后端模型测试失败（默认模型变了要实测），
+        // 后端报错原样显示在保存栏
+        inputValue(page, modelInput, 'broken-new-model');
+        page.server.saveBehavior.llm_endpoints = {
+            status: 422,
+            payload: { detail: '接入点「DeepSeek」的默认模型 broken-new-model 测试失败：连接超时' },
+        };
+        page.document.querySelector('.btn-endpoints-save').click();
+        await waitFor(() => page.server.requests('save-endpoints').length === 1
+            && page.server.requests('save-endpoints')[0].done);
+        await waitFor(() => page.document.querySelector('.endpoints-save-status').textContent
+            .includes('broken-new-model 测试失败：连接超时'));
+
+        // 保存可能触发后端模型测试、耗时变长：扣住请求观察「保存中」计时提示
+        page.server.hold('save-endpoints');
+        page.document.querySelector('.btn-endpoints-save').click();
+        await waitFor(() => page.server.requests('save-endpoints').length === 2);
+        assert.match(
+            page.document.querySelector('.endpoints-save-status').textContent,
+            /保存中/,
+        );
+        page.server.release('save-endpoints');
+        await waitFor(() => page.server.requests('save-endpoints')[1].done);
     } finally {
         page.close();
     }

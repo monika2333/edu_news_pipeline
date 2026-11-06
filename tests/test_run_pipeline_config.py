@@ -42,7 +42,6 @@ def _rows(model: str = "model-a") -> list[dict[str, Any]]:
         {
             "section": "llm_models",
             "value": {
-                "default": model,
                 "steps": {
                     step: {"model": None, "reasoning": step != "summary"}
                     for step in (
@@ -53,6 +52,7 @@ def _rows(model: str = "model-a") -> list[dict[str, Any]]:
                         "external_filter",
                         "beijing_gate",
                         "duplicate_review",
+                        "prompt_optimizer",
                     )
                 },
             },
@@ -70,6 +70,7 @@ def _rows(model: str = "model-a") -> list[dict[str, Any]]:
                         "api_key_env": "LLM_API_KEY",
                         "api_style": "openrouter",
                         "temperature_override": None,
+                        "default_model": model,
                     }
                 ],
             },
@@ -185,7 +186,9 @@ def test_f1_f2_f5_summary_worker_uses_one_run_snapshot_without_leaking(
 
     def change_database_during_worker() -> None:
         assert worker_started.wait(timeout=5)
+        # 模型名跟随接入点的 default_model：默认模型变化要同时替换两个分区
         rows[0] = _rows("model-b")[0]
+        rows[1] = _rows("model-b")[1]
         database_changed.set()
 
     updater = threading.Thread(target=change_database_during_worker)

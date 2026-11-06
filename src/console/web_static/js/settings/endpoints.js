@@ -47,6 +47,7 @@ function makeEndpointsDraft() {
             base_url: item.base_url,
             api_key_env: item.api_key_env,
             api_style: item.api_style,
+            default_model: item.default_model || '',
             temperature_override: item.temperature_override === null
                 || item.temperature_override === undefined
                 ? ''
@@ -171,6 +172,7 @@ function buildEndpointsSaveValue() {
             base_url: item.base_url.trim().replace(/\/+$/, ''),
             api_key_env: item.api_key_env.trim(),
             api_style: item.api_style,
+            default_model: item.default_model.trim(),
             temperature_override: item.temperature_override === ''
                 ? null
                 : Number(item.temperature_override),
@@ -323,6 +325,20 @@ function buildEndpointEditRow(item, saved, rerender) {
     });
     fields.appendChild(buildEndpointField('接口风格', styleSelect, styleHint));
 
+    // 默认模型必填：步骤「模型」留空时实际调用的就是它。
+    // 模型名只在某个服务商处有效，所以归接入点而不是全局。
+    const defaultModelInput = createEl('input', 'endpoint-default-model-input', '', {
+        type: 'text',
+        'aria-label': '默认模型',
+        placeholder: '如 deepseek/deepseek-v4-flash',
+    });
+    defaultModelInput.value = item.default_model;
+    defaultModelInput.addEventListener('input', () => {
+        item.default_model = defaultModelInput.value;
+        markEndpointsDirty();
+    });
+    fields.appendChild(buildEndpointField('默认模型', defaultModelInput));
+
     const tempInput = createEl('input', 'endpoint-temp-input', '', {
         type: 'number',
         step: '0.1',
@@ -414,6 +430,7 @@ function buildEndpointsEditor(saved) {
             base_url: '',
             api_key_env: '',
             api_style: 'openrouter',
+            default_model: '',
             temperature_override: '',
         });
         renderEndpointsBlock();
@@ -440,13 +457,20 @@ function buildEndpointsEditor(saved) {
     wrap.appendChild(footer);
 
     saveBtn.addEventListener('click', async () => {
-        // 行内预校验：任一行不通过就在该行报错，不发请求
+        // 行内预校验：任一行不通过就在该行报错，不发请求。
+        // 保存接入点可能触发后端模型测试（默认模型变了要实测），耗时变长，
+        // 进行中提示由 saveSettingsSection 的计时器承担，失败时原样展示后端报错。
         const allowedHosts = endpointsPayloadInfo().allowed_hosts;
         let hasError = false;
         endpointsDraft.items.forEach((item) => {
             const row = wrap.querySelector(`[data-client-id="${item.clientId}"]`);
             if (!row) return;
-            const message = endpointBaseUrlError(item.base_url, allowedHosts);
+            const messages = [endpointBaseUrlError(item.base_url, allowedHosts)];
+            if (!item.default_model.trim()) {
+                const name = item.label.trim() || item.key || '新接入点';
+                messages.push(`「${name}」的默认模型不能为空。`);
+            }
+            const message = messages.filter(Boolean).join(' ');
             row.querySelector('.endpoint-row-error').textContent = message;
             if (message) hasError = true;
         });
@@ -522,6 +546,8 @@ function buildEndpointsReadonly(saved) {
         li.appendChild(createEl('code', 'endpoint-item-url', item.base_url));
         li.appendChild(createEl('span', 'endpoint-item-style',
             ENDPOINT_STYLE_LABELS[item.api_style] || item.api_style));
+        li.appendChild(createEl('span', 'endpoint-item-model',
+            `默认模型：${item.default_model || '-'}`));
         li.appendChild(createEl('span', 'endpoint-item-key', `Key：${item.api_key_env}`));
         const configured = endpointKeyConfigured(item.key);
         li.appendChild(createEl(

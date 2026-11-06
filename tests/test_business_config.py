@@ -22,6 +22,7 @@ def _endpoint_items_value() -> dict[str, object]:
                 "api_key_env": "LLM_API_KEY",
                 "api_style": "openrouter",
                 "temperature_override": None,
+                "default_model": "default-model",
             },
             {
                 "key": "deepseek",
@@ -30,8 +31,30 @@ def _endpoint_items_value() -> dict[str, object]:
                 "api_key_env": "LLM_DEEPSEEK_API_KEY",
                 "api_style": "thinking",
                 "temperature_override": 0.5,
+                "default_model": "deepseek-default",
             },
         ],
+    }
+
+
+def _llm_models_value() -> dict[str, object]:
+    return {
+        "steps": {
+            # 双 null：跟随默认接入点，用它的 default_model
+            "summary": {"model": None, "reasoning": False},
+            # 接入点 + 模型：显式组合
+            "source": {"model": "source-model", "reasoning": True, "endpoint": "openrouter"},
+            # 接入点 + 空模型：用该接入点的 default_model
+            "sentiment": {"model": None, "reasoning": True, "endpoint": "deepseek"},
+            "scoring": {"model": "scoring-model", "reasoning": True, "endpoint": "deepseek"},
+            "external_filter": {"model": None, "reasoning": False},
+            "beijing_gate": {"model": "gate-model", "reasoning": True, "endpoint": "deepseek"},
+            "duplicate_review": {
+                "model": "duplicate-model",
+                "reasoning": False,
+                "endpoint": "openrouter",
+            },
+        },
     }
 
 
@@ -39,18 +62,7 @@ def _settings_rows() -> list[dict[str, object]]:
     return [
         {
             "section": "llm_models",
-            "value": {
-                "default": "default-model",
-                "steps": {
-                    "summary": {"model": None, "reasoning": False},
-                    "source": {"model": "source-model", "reasoning": True},
-                    "sentiment": {"model": None, "reasoning": True},
-                    "scoring": {"model": "scoring-model", "reasoning": True},
-                    "external_filter": {"model": None, "reasoning": False},
-                    "beijing_gate": {"model": "gate-model", "reasoning": True},
-                    "duplicate_review": {"model": "duplicate-model", "reasoning": False},
-                },
-            },
+            "value": _llm_models_value(),
             "version": 3,
         },
         {
@@ -99,6 +111,10 @@ def _settings_rows() -> list[dict[str, object]]:
     ]
 
 
+def _resolved_endpoints() -> tuple[dict, str]:
+    return business_config.resolve_llm_endpoints(_endpoint_items_value())
+
+
 @pytest.fixture(autouse=True)
 def _allowed_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = replace(get_settings(), llm_allowed_hosts=ALLOWED_HOSTS)
@@ -106,23 +122,167 @@ def _allowed_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_m1_null_steps_follow_default_and_explicit_steps_win() -> None:
-    resolved = business_config.resolve_llm_steps(_settings_rows()[0]["value"])
+    endpoints_items, default_key = _resolved_endpoints()
+    resolved = business_config.resolve_llm_steps(
+        _llm_models_value(),
+        endpoints=endpoints_items,
+        default_endpoint=default_key,
+    )
 
+    # 组合一（双 null）：跟随默认接入点，用它的 default_model
     assert resolved["summary"].model == "default-model"
+    assert resolved["summary"].endpoint is None
     assert resolved["external_filter"].model == "default-model"
+    # 组合二（接入点 + 空模型）：用所选接入点的 default_model
+    assert resolved["sentiment"].model == "deepseek-default"
+    assert resolved["sentiment"].endpoint == "deepseek"
+    # 组合三（接入点 + 模型）：显式组合原样生效
+    assert resolved["scoring"].model == "scoring-model"
+    assert resolved["scoring"].endpoint == "deepseek"
     assert resolved["source"].model == "source-model"
     assert resolved["duplicate_review"].model == "duplicate-model"
     assert resolved["summary"].reasoning is False
     assert resolved["source"].reasoning is True
 
 
+def test_resolve_models_returns_concrete_names_for_all_steps() -> None:
+    endpoints_items, default_key = _resolved_endpoints()
+
+    models = business_config.resolve_models(
+        _llm_models_value(),
+        endpoints=endpoints_items,
+        default_endpoint=default_key,
+    )
+
+    assert models == {
+        "summary": "default-model",
+        "source": "source-model",
+        "sentiment": "deepseek-default",
+        "scoring": "scoring-model",
+        "external_filter": "default-model",
+        "beijing_gate": "gate-model",
+        "duplicate_review": "duplicate-model",
+        "prompt_optimizer": "default-model",
+    }
+
+
+def test_step_with_model_but_no_endpoint_is_rejected() -> None:
+    value = _llm_models_value()
+    value["steps"]["duplicate_review"] = {
+        "model": "duplicate-model",
+        "reasoning": False,
+        "endpoint": None,
+    }
+
+    with pytest.raises(ValueError, match="查重复核"):
+        business_config.validate_llm_models(value)
+
+
+def test_step_model_without_endpoint_message_names_the_binding_reason() -> None:
+    value = _llm_models_value()
+    value["steps"]["scoring"] = {
+        "model": "scoring-model",
+        "reasoning": True,
+        "endpoint": None,
+    }
+
+    with pytest.raises(ValueError, match="模型名与接入点服务商绑定"):
+        business_config.validate_llm_models(value)
+
+
+def test_top_level_default_is_rejected() -> None:
+    value = _llm_models_value()
+    value["default"] = "legacy-default"
+
+    with pytest.raises(ValueError, match="未知字段：default"):
+        business_config.validate_llm_models(value)
+
+
 @pytest.mark.parametrize(
-    "source",
-    ["bjrb", "laodongwubao", "ldwb", "beijingdaily"],
+    ("patch", "message"),
+    [
+        ({"default_model": None}, "default_model 必须是非空模型名"),
+        ({"default_model": "   "}, "default_model 必须是非空模型名"),
+        ({"default_model": "x" * 301}, "长度不能超过 300"),
+    ],
 )
-def test_m7_hourly_sources_reject_daily_only_keys_and_aliases(source: str) -> None:
-    with pytest.raises(ValueError, match="仅允许每日单独任务"):
-        business_config.validate_crawl_sources([source])
+def test_endpoint_default_model_is_required_and_bounded(
+    patch: dict[str, object],
+    message: str,
+) -> None:
+    value = _endpoint_items_value()
+    value["items"][1] = {**value["items"][1], **patch}
+
+    with pytest.raises(ValueError, match=message):
+        business_config.validate_llm_endpoints(value)
+
+
+def test_default_model_missing_field_is_rejected() -> None:
+    value = _endpoint_items_value()
+    del value["items"][0]["default_model"]
+
+    with pytest.raises(ValueError, match="default_model 必须是非空模型名"):
+        business_config.validate_llm_endpoints(value)
+
+
+def test_default_model_is_stripped_in_normalized_output() -> None:
+    value = _endpoint_items_value()
+    value["items"][1]["default_model"] = "  deepseek-default  "
+
+    normalized = business_config.validate_llm_endpoints(value)
+
+    assert normalized["items"][1]["default_model"] == "deepseek-default"
+
+
+def test_endpoint_field_missing_is_read_as_null_and_normalized_output_carries_it() -> None:
+    raw_value = _llm_models_value()
+    raw_value["steps"]["summary"].pop("endpoint", None)
+
+    normalized = business_config.validate_llm_models(raw_value)
+
+    assert normalized["steps"]["summary"]["endpoint"] is None
+    endpoints_items, default_key = _resolved_endpoints()
+    resolved = business_config.resolve_llm_steps(
+        raw_value,
+        endpoints=endpoints_items,
+        default_endpoint=default_key,
+    )
+    assert resolved["summary"].endpoint is None
+
+
+def test_step_endpoint_with_null_model_is_legal() -> None:
+    value = _llm_models_value()
+    value["steps"]["duplicate_review"] = {
+        "model": None,
+        "reasoning": True,
+        "endpoint": "deepseek",
+    }
+
+    normalized = business_config.validate_llm_models(value)
+
+    assert normalized["steps"]["duplicate_review"] == {
+        "model": None,
+        "reasoning": True,
+        "endpoint": "deepseek",
+    }
+
+
+def test_missing_prompt_optimizer_step_gets_documented_default() -> None:
+    normalized = business_config.validate_llm_models(_llm_models_value())
+
+    assert normalized["steps"]["prompt_optimizer"] == {
+        "model": None,
+        "reasoning": True,
+        "endpoint": None,
+    }
+    endpoints_items, default_key = _resolved_endpoints()
+    resolved = business_config.resolve_llm_steps(
+        _llm_models_value(),
+        endpoints=endpoints_items,
+        default_endpoint=default_key,
+    )
+    assert resolved["prompt_optimizer"].model == "default-model"
+    assert resolved["prompt_optimizer"].reasoning is True
 
 
 def test_m10_runtime_loads_only_enabled_account_query_results() -> None:
@@ -244,54 +404,6 @@ def test_m25_crawl_source_validation_rejects_invalid_lists_before_sorting(
         business_config.validate_crawl_sources(sources)
 
 
-def test_endpoint_field_missing_is_read_as_null_and_normalized_output_carries_it() -> None:
-    raw_value = _settings_rows()[0]["value"]
-    raw_value["steps"]["summary"].pop("endpoint", None)
-
-    normalized = business_config.validate_llm_models(raw_value)
-
-    assert all(step["endpoint"] is None for step in normalized["steps"].values())
-    resolved = business_config.resolve_llm_steps(raw_value)
-    assert all(config.endpoint is None for config in resolved.values())
-
-
-def test_step_endpoint_with_null_model_is_rejected_inside_llm_models() -> None:
-    value = _settings_rows()[0]["value"]
-    value["steps"]["duplicate_review"] = {
-        "model": None,
-        "reasoning": True,
-        "endpoint": "deepseek",
-    }
-
-    with pytest.raises(ValueError, match="指定了 endpoint 时 model 不能为空"):
-        business_config.validate_llm_models(value)
-
-
-def test_missing_prompt_optimizer_step_gets_documented_default() -> None:
-    normalized = business_config.validate_llm_models(_settings_rows()[0]["value"])
-
-    assert normalized["steps"]["prompt_optimizer"] == {
-        "model": None,
-        "reasoning": True,
-        "endpoint": None,
-    }
-    resolved = business_config.resolve_llm_steps(_settings_rows()[0]["value"])
-    assert resolved["prompt_optimizer"].model == "default-model"
-    assert resolved["prompt_optimizer"].reasoning is True
-
-
-def test_endpoint_requiring_model_message_names_the_binding_reason() -> None:
-    value = _settings_rows()[0]["value"]
-    value["steps"]["scoring"] = {
-        "model": None,
-        "reasoning": True,
-        "endpoint": "deepseek",
-    }
-
-    with pytest.raises(ValueError, match="模型名与接入点服务商绑定"):
-        business_config.validate_llm_models(value)
-
-
 def test_load_business_config_rejects_unknown_endpoint_reference() -> None:
     rows = _settings_rows()
     rows[0]["value"]["steps"]["duplicate_review"] = {
@@ -312,14 +424,8 @@ def test_load_business_config_rejects_unknown_endpoint_reference() -> None:
 
 
 def test_load_business_config_resolves_step_endpoints_and_default() -> None:
-    rows = _settings_rows()
-    rows[0]["value"]["steps"]["duplicate_review"] = {
-        "model": "duplicate-model",
-        "reasoning": False,
-        "endpoint": "deepseek",
-    }
     app_config = SimpleNamespace(
-        fetch_settings=lambda: rows,
+        fetch_settings=lambda: _settings_rows(),
         fetch_enabled_accounts=lambda: [],
     )
 
@@ -328,9 +434,36 @@ def test_load_business_config_resolves_step_endpoints_and_default() -> None:
     )
 
     assert loaded.default_endpoint == "openrouter"
-    assert loaded.endpoint_for_step("duplicate_review").key == "deepseek"
+    assert loaded.endpoint_for_step("duplicate_review").key == "openrouter"
+    assert loaded.endpoint_for_step("sentiment").key == "deepseek"
     assert loaded.endpoint_for_step("summary").key == "openrouter"
     assert loaded.resolved_endpoint_key("summary") == "openrouter"
+    assert loaded.resolved_endpoint_key("sentiment") == "deepseek"
+    assert loaded.model_for("summary") == "default-model"
+    assert loaded.model_for("sentiment") == "deepseek-default"
+
+
+def test_snapshot_records_resolved_models_and_endpoint_keys() -> None:
+    app_config = SimpleNamespace(
+        fetch_settings=lambda: _settings_rows(),
+        fetch_enabled_accounts=lambda: [],
+    )
+
+    loaded = business_config.load_business_config(
+        SimpleNamespace(app_config=app_config)
+    )
+
+    snapshot_models = loaded.snapshot()["llm_models"]
+    assert snapshot_models["summary"] == {
+        "model": "default-model",
+        "reasoning": False,
+        "endpoint": "openrouter",
+    }
+    assert snapshot_models["sentiment"] == {
+        "model": "deepseek-default",
+        "reasoning": True,
+        "endpoint": "deepseek",
+    }
 
 
 @pytest.mark.parametrize(

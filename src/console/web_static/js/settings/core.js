@@ -11,7 +11,8 @@ const SETTINGS_TAB_META = {
     models: {
         nav: '模型与接入点',
         title: '模型与接入点',
-        description: '设置默认模型、流水线各步骤使用的模型，以及外部模型服务的接入点。',
+        description: '设置流水线各步骤使用的模型与外部模型服务的接入点，'
+            + '每个接入点自带默认模型。',
     },
     sources: {
         nav: '来源与账号',
@@ -234,6 +235,18 @@ function endpointDisplayLabel(key) {
         ? saved.items.find((item) => item.key === key)
         : null;
     return found ? found.label : (key || '');
+}
+
+// 已保存接入点的 default_model；key 为 null 时取默认接入点。
+// 与 endpointDisplayLabel 同源：只读已保存分区，不读接入点编辑态草稿。
+function endpointDefaultModel(key) {
+    const saved = savedEndpointsValue();
+    const resolved = key || (saved && saved.default) || null;
+    if (!resolved) return null;
+    const found = saved && saved.items
+        ? saved.items.find((item) => item.key === resolved)
+        : null;
+    return found && found.default_model ? found.default_model : null;
 }
 
 // 分区缺失（服务器尚未运行 import-settings）时的占位提示：不渲染任何编辑控件。

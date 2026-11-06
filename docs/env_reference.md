@@ -76,17 +76,22 @@ LLM_API_TITLE=Edu News Pipeline
 
 默认行为：
 
-- 各步骤模型、默认模型、reasoning 开关及所用接入点已迁入控制台设置页。
+- 各步骤模型、reasoning 开关及所用接入点已迁入控制台设置页；默认模型归各接入点
+  （`llm_endpoints` 每个接入点的 `default_model`，步骤「模型」留空时使用）。
 - reasoning 默认不传 `effort`，并设置 `exclude=true`，避免响应里返回思考内容。
 - `api_style: thinking` 的接入点（DeepSeek、GLM 官方接口）关闭思考时显式发送 `{"thinking": {"type": "disabled"}}`。
 - LLM timeout 默认 90 秒。
 
 ### 模型配置
 
-默认模型、八个步骤（含「提示词优化」）的模型覆盖、各步骤 reasoning 开关及各步骤使用的接入点已迁入控制台
-设置页；旧的 `LLM_MODEL`、各 `LLM_*_MODEL`、`LLM_REASONING_ENABLED`、
+八个步骤（含「提示词优化」）的模型覆盖、各步骤 reasoning 开关及各步骤使用的接入点已迁入控制台
+设置页；每个接入点自带必填的默认模型（`default_model`），分区里没有全局默认模型。
+旧的 `LLM_MODEL`、各 `LLM_*_MODEL`、`LLM_REASONING_ENABLED`、
 `LLM_SUMMARY_REASONING_ENABLED`、`LLM_SOURCE_REASONING_ENABLED`、
-`LLM_SENTIMENT_REASONING_ENABLED` 和 `LLM_API_BASE_URL` 变量不再生效。
+`LLM_SENTIMENT_REASONING_ENABLED` 和 `LLM_API_BASE_URL` 变量不再生效——只在
+全新部署的 `import-settings` 一次性导入中作旧值来源：解析出的模型等于默认接入点
+`default_model`（兜底值 `deepseek/deepseek-v4-flash`）的步骤写双 `null`，其余步骤
+显式绑定默认接入点 key + 该模型。
 
 ### reasoning 的全局参数
 

@@ -211,16 +211,27 @@ T 非空时才调用「提示词优化」LLM 步骤。模型只返回 1–3 处 
 统计缺正文/不在摘要库的跳过数，然后停止。它**不调用评分模型、不调用优化模型、
 不写版本、不写运行记录**，结果值为 `preview`（仅用于 CLI 汇总与返回值，不写数据库）。
 
-八个 LLM 步骤的模型与 reasoning 开关由 `app_settings.llm_models` 提供。每一步的
-`model` 为 `null` 时只回退到该分区的 `default`，reasoning 则始终使用该步骤的
-明确布尔值，不再形成模型跨步骤回退或 reasoning 共用关系。
+八个 LLM 步骤的模型与 reasoning 开关由 `app_settings.llm_models` 提供。分区没有
+顶层 `default`：默认模型归各接入点（`llm_endpoints` 每个接入点的必填
+`default_model`）。每一步按「所选接入点 + 步骤填写」解析出最终模型：接入点取
+`endpoint`（为 `null` 时取 `llm_endpoints.default`），模型取 `model`（为 `null`
+时取该接入点的 `default_model`）。合法组合只有三种——双 `null`（跟随默认接入点
+的默认模型）、接入点 + 空模型（用该接入点的默认模型）、接入点 + 模型（显式
+组合）；「无接入点、有模型」被校验拒绝，因为模型名只在某个服务商处有效，不固定
+接入点的话，切换默认接入点时这一步会拿着别家格式的模型名调用。reasoning 则始终
+使用该步骤的明确布尔值。解析后的具体模型与最终接入点 key 照旧进入
+`pipeline_runs.config_snapshot`。
 
-每个 LLM 步骤还带一个 `endpoint` 字段（`null` 表示跟随默认接入点），指向
+每个 LLM 步骤的 `endpoint` 字段（`null` 表示跟随默认接入点）指向
 `app_settings.llm_endpoints` 分区中的接入点：接入点保存服务地址 `base_url`、Key
-所在的**环境变量名** `api_key_env`（Key 本身不进数据库）和 `api_style`
-（`openrouter` / `thinking`，决定 reasoning 请求体写法与归属 header）。读取兼容
-历史数据：`endpoint` 字段缺失按 `null` 处理；但 `endpoint` 非 `null` 时该步骤的
-`model` 必须显式指定——模型名与服务商绑定，不允许换接入点后继承默认模型。
+所在的**环境变量名** `api_key_env`（Key 本身不进数据库）、`api_style`
+（`openrouter` / `thinking`，决定 reasoning 请求体写法与归属 header）和必填的
+`default_model`。读取兼容历史数据：`endpoint` 字段缺失按 `null` 处理。
+`llm_endpoints` 或 `llm_models` 保存时会统一做模型实测：任一步骤保存前后解析出的
+「接入点 + 模型 + reasoning」变化，或所用接入点的连接信息（`base_url` /
+`api_key_env` / `api_style`）变化，就实测该组合（相同组合只测一次）；新增接入点
+或 `default_model` 变了的接入点即使暂无步骤引用也实测一次默认模型，任一失败整次
+保存被拒绝。
 
 `llm_source` 表示模型识别出的发布/署名媒体名称。来源响应完成既有格式清洗后，只有长度不超过 64 个字符的结果才会进入来源名称归一化；归一化依次剥离一次渠道后缀、再按整串全等规则替换别名，规则来自 `app_settings.source_aliases` 分区（suffixes 为有序列表，剥离只发生一次；aliases 为整串映射），处理后的值才写入数据库。超过 64 个字符的内容视为模型未按格式返回，必须整体丢弃并写入 `NULL`，不得截断保存。来源为空时，导出与人工复核界面回退使用抓取来源。归一化结束后，识别结果还会与同一分区的回退名单（`fallback_names`）比较：归一化前与归一化后的名称任一与名单项整串全等（大小写、符号都不做归一），该识别结果不保存、直接写入 `NULL`，后续展示自然回退到抓取来源；判断在写入时完成（`enrich-summary`），读取路径不感知名单。
 
@@ -428,7 +439,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 | 表 | 职责 |
 |---|---|
-| `app_settings` | 分区保存业务配置（提示词正文另见 `prompt_revisions`）：接入点（`llm_endpoints`）、模型（`llm_models`）、每小时来源（`crawl_sources`）、评分加分词表（`score_keyword_bonuses`，有序数组）、评分排除名单（`score_exclusion_keywords`，有序字符串数组，空数组表示不排除任何文章）、抓取教育关键词闸门（`education_keywords`）、京内本地判定词表（`beijing_keywords`）、来源归一化规则（`source_aliases`，含回退名单 `fallback_names`——可选字段，旧配置行可缺失、缺失按空名单处理）、审阅页自动排序词表（`review_sort_keywords`，键固定为市教委/中小学/高校三个类别）。版本号用于控制台乐观锁。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身。`llm_endpoints`、`review_sort_keywords`、`score_exclusion_keywords` 由迁移种子创建（没有旧配置文件，不进一次性导入）；其余分区由 `import-settings` 导入（只写数据库中尚不存在的分区，已存在的一律跳过，不覆盖；重复执行安全） |
+| `app_settings` | 分区保存业务配置（提示词正文另见 `prompt_revisions`）：接入点（`llm_endpoints`，每个接入点必填 `default_model`——步骤模型留空时用它）、模型（`llm_models`，无顶层 `default`；每步为 `endpoint` / `model` / `reasoning`，`model` 为 `null` 时用所选接入点的 `default_model`，「无接入点、有模型」非法）、每小时来源（`crawl_sources`）、评分加分词表（`score_keyword_bonuses`，有序数组）、评分排除名单（`score_exclusion_keywords`，有序字符串数组，空数组表示不排除任何文章）、抓取教育关键词闸门（`education_keywords`）、京内本地判定词表（`beijing_keywords`）、来源归一化规则（`source_aliases`，含回退名单 `fallback_names`——可选字段，旧配置行可缺失、缺失按空名单处理）、审阅页自动排序词表（`review_sort_keywords`，键固定为市教委/中小学/高校三个类别）。版本号用于控制台乐观锁；`llm_endpoints` / `llm_models` 的结构迁移（20261106150000）会把两个分区 version 各加 1。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身。`llm_endpoints`、`review_sort_keywords`、`score_exclusion_keywords` 由迁移种子创建（没有旧配置文件，不进一次性导入）；其余分区由 `import-settings` 导入（只写数据库中尚不存在的分区，已存在的一律跳过，不覆盖；重复执行安全；`_legacy_models()` 产出的 `llm_models` 已是新结构——无顶层 `default`，等于默认接入点 `default_model` 的步骤写双 `null`，其余显式绑定默认接入点 key） |
 | `crawl_accounts` | 六类账号型来源的账号权威清单（中国日报、千龙网的行是栏目列表页 URL，不是社交账号）；`display_name` 是系统解析的名称，`display_name_synced_at` / `display_name_error` 记录最近成功时间或失败原因；运行时只读取启用行 |
 | `console_users` / `console_user_sessions` | 账号与登录会话 |
 | `review_events` | 审计日志，记录谁在什么时候改了什么 |

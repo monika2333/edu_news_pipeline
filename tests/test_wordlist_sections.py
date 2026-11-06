@@ -50,6 +50,7 @@ def _endpoint_items_value() -> dict[str, Any]:
                 "api_key_env": "LLM_API_KEY",
                 "api_style": "openrouter",
                 "temperature_override": None,
+                "default_model": "default-model",
             }
         ],
     }
@@ -60,7 +61,6 @@ def _settings_rows() -> list[dict[str, Any]]:
         {
             "section": "llm_models",
             "value": {
-                "default": "default-model",
                 "steps": {
                     step: {"model": None, "reasoning": False}
                     for step in (

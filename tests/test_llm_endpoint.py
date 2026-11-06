@@ -217,6 +217,7 @@ def test_temperature_override_rewrites_assembled_body(
         api_key_env="LLM_DEEPSEEK_API_KEY",
         api_style="thinking",
         temperature_override=0.7,
+        default_model="deepseek-chat",
     )
     config = make_endpoint_config(
         endpoints=(OPENROUTER_ENDPOINT, override),
@@ -243,6 +244,7 @@ def test_missing_endpoint_key_names_the_env_variable(
         api_key_env="LLM_GHOST_API_KEY",
         api_style="thinking",
         temperature_override=None,
+        default_model="ghost-default",
     )
     monkeypatch.delenv("LLM_GHOST_API_KEY", raising=False)
     config = make_endpoint_config(
@@ -269,6 +271,7 @@ def test_non_whitelisted_host_is_blocked_before_sending(
         api_key_env="LLM_API_KEY",
         api_style="openrouter",
         temperature_override=None,
+        default_model="evil-default",
     )
     config = make_endpoint_config(
         endpoints=(OPENROUTER_ENDPOINT, evil),

@@ -135,6 +135,13 @@ from src.adapters.http_toutiao import (
     feed_item_to_row,
     resolve_article_id_from_feed,
 )
+from src.adapters.http_xinjinghao import (
+    AccountEntry as XinjinghaoEntry,
+    article_to_detail_row as xinjinghao_article_to_detail_row,
+    feed_item_to_row as xinjinghao_feed_item_to_row,
+    list_items as xinjinghao_list_items,
+    make_article_id as xinjinghao_make_article_id,
+)
 from src.business_config import (
     CrawlAccount,
     get_business_config,
@@ -795,6 +802,62 @@ def _run_registered_linked_page_flow(
     )
 
 
+def _run_xinjinghao_flow(
+    *,
+    adapter: Any,
+    keywords: Sequence[str],
+    remaining_limit: Optional[int],
+    pages: Optional[int],
+    accounts: Sequence[CrawlAccount] = (),
+) -> CrawlStats:
+    if not accounts:
+        log_info(WORKER, "Xinjinghao has no enabled accounts; skipped.")
+        return _empty_stats()
+
+    entries = [
+        XinjinghaoEntry(
+            xjh_id=account.normalized_identifier,
+            page_url=account.profile_url,
+            raw_source=account.original_input,
+        )
+        for account in accounts
+    ]
+
+    def prepare_feed(item: Any, fetched_at: datetime) -> Tuple[str, Dict[str, Any]]:
+        article_id = xinjinghao_make_article_id(item.url)
+        return article_id, xinjinghao_feed_item_to_row(
+            item,
+            article_id,
+            fetched_at=fetched_at,
+        )
+
+    return _run_source_flow(
+        adapter=adapter,
+        flow=SourceFlow(
+            source="xinjinghao",
+            display_name="Xinjinghao",
+            list_items=lambda limit, existing: xinjinghao_list_items(
+                limit=limit,
+                entries=entries,
+                pages=pages or 1,
+                existing_ids=existing,
+            ),
+            prepare_feed=prepare_feed,
+            fetch_detail=lambda item, article_id, fetched_at: (
+                xinjinghao_article_to_detail_row(
+                    item,
+                    article_id,
+                    detail_fetched_at=fetched_at,
+                )
+            ),
+            # 列表接口已带完整正文，一次请求同时产出 feed 行与 detail 行。
+            details_in_list=True,
+        ),
+        keywords=keywords,
+        remaining_limit=remaining_limit,
+    )
+
+
 def _run_gmw_flow(
     *,
     adapter: Any,
@@ -1059,6 +1122,10 @@ _SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
             build_detail_update_name="beijinghao_build_detail_update",
             account_source="beijinghao",
         ),
+    ),
+    "xinjinghao": SourceRegistration(
+        runner_name="_run_xinjinghao_flow",
+        kwargs_factory=_account_pages_runner_kwargs("xinjinghao"),
     ),
     "bjrb": SourceRegistration(
         runner_name="_run_bjrb_flow",

@@ -15,6 +15,7 @@ from src.adapters import (
     http_qianlong,
     http_tencent,
     http_toutiao,
+    http_xinjinghao,
 )
 
 
@@ -161,6 +162,75 @@ def test_beijinghao_name_uses_column_page_title_transport(
     )
 
     assert name == "现代教育报"
+
+
+def test_xinjinghao_name_uses_account_info_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _Session(
+        _Response(payload={"code": 0, "data": {"institution_name": " 北京援藏 "}})
+    )
+    monkeypatch.setattr(http_xinjinghao, "_session", lambda: session)
+
+    name = account_profiles.resolve_account_name(
+        "xinjinghao",
+        normalized_identifier="296",
+        profile_url="https://m.bjnews.com.cn/mp/296",
+        timeout=8,
+    )
+
+    assert name == "北京援藏"
+    assert session.calls[0]["url"] == http_xinjinghao.ACCOUNT_INFO_API_URL
+    assert session.calls[0]["params"] == {"xjh_id": "296"}
+
+
+def test_xinjinghao_name_falls_back_to_profile_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _Session(
+        _Response(
+            payload={"code": 500, "data": {}},
+            text="<html><head><title>北京援藏的主页</title></head></html>",
+        )
+    )
+    monkeypatch.setattr(http_xinjinghao, "_session", lambda: session)
+
+    name = account_profiles.resolve_account_name(
+        "xinjinghao",
+        normalized_identifier="296",
+        profile_url="https://m.bjnews.com.cn/mp/296",
+        timeout=8,
+    )
+
+    assert name == "北京援藏"
+    assert [call["url"] for call in session.calls] == [
+        http_xinjinghao.ACCOUNT_INFO_API_URL,
+        "https://m.bjnews.com.cn/mp/296",
+    ]
+
+
+def test_xinjinghao_name_falls_back_to_hidden_name_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _Session(
+        _Response(
+            payload={"code": 500, "data": {}},
+            text=(
+                '<html><body><input id="xjh_name_hidden" value="北京援藏">'
+                "</body></html>"
+            ),
+        )
+    )
+    monkeypatch.setattr(http_xinjinghao, "_session", lambda: session)
+
+    name = account_profiles.resolve_account_name(
+        "xinjinghao",
+        normalized_identifier="296",
+        profile_url="https://m.bjnews.com.cn/mp/296",
+        timeout=8,
+    )
+
+    assert name == "北京援藏"
 
 
 def test_21jingji_name_uses_active_channel_nav(

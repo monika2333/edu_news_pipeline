@@ -266,7 +266,7 @@ SCORE_KEYWORD_BONUSES_PATH
 每小时抓取来源及其顺序已迁入控制台设置页。一次性流水线需要覆盖来源时，使用
 `python -m scripts.run_pipeline_once --sources ...` 或 `python -m src.cli.main crawl --sources ...`。
 
-当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`chinanews_xj`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`xinhua`、`xinhua_edu`、`stdaily`、`bbtnews`、`laodongwubao`/`ldwb`、`bjrb`/`beijingdaily`、`btime`、`beijinghao`。
+当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`chinanews_xj`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`xinhua`、`xinhua_edu`、`stdaily`、`bbtnews`、`laodongwubao`/`ldwb`、`bjrb`/`beijingdaily`、`btime`、`beijinghao`、`xinjinghao`。
 
 `xinhua_edu`（新华网教育频道）默认不在已保存的来源列表里，部署后在控制台
 「设置 → 数据源」手动启用；有噪音时可单独关闭，无需发版。
@@ -291,6 +291,8 @@ TENCENT_DETAIL_DELAY=0.5
 TENCENT_EXISTING_CONSECUTIVE_STOP=5
 
 # Btime / 北京时间与 Beijinghao / 北京号账号已迁入控制台设置页
+
+# Xinjinghao / 新京号账号已迁入控制台设置页
 
 # China Education Daily / JYB
 JYB_TIMEOUT=20

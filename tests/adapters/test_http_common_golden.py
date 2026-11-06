@@ -60,6 +60,7 @@ CONTENT_GOLDENS = {
     "http_chinanews_xj": _CONTENT_GOLDEN,
     "http_stdaily": _CONTENT_GOLDEN,
     "http_xinhua": _CONTENT_GOLDEN,
+    "http_xinjinghao": _CONTENT_GOLDEN,
 }
 
 NOISE_GOLDENS = {
@@ -67,6 +68,7 @@ NOISE_GOLDENS = {
     # share/related 等区文本保留——差异来自各自的 extra_unwanted 配置
     "http_beijinghao": "正文保留。",
     "http_btime": "正文保留。\n\n分享组件\n\n相关阅读\n\n编辑：某人",
+    "http_xinjinghao": "正文保留。",
 }
 
 TOPIC_GOLDENS = {

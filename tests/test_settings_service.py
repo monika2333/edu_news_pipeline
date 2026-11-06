@@ -464,6 +464,30 @@ def test_21jingji_account_parse_rejects_article_and_foreign_urls() -> None:
         )
 
 
+def test_xinjinghao_account_parse_normalizes_bare_id_and_url() -> None:
+    for raw in (
+        "296",
+        "https://m.bjnews.com.cn/mp/296",
+        "https://m.bjnews.com.cn/mp/296?from=list",
+    ):
+        parsed = settings_service.parse_account("xinjinghao", raw)
+
+        assert parsed["source"] == "xinjinghao"
+        assert parsed["normalized_identifier"] == "296"
+        assert parsed["profile_url"] == "https://m.bjnews.com.cn/mp/296"
+        assert parsed["original_input"] == raw
+
+
+def test_xinjinghao_account_parse_rejects_article_and_foreign_urls() -> None:
+    for raw in (
+        "https://m.bjnews.com.cn/detail/1793885788019604.html",
+        "https://www.bjnews.com.cn/mp/296",
+        "https://example.com/mp/296",
+    ):
+        with pytest.raises(ValueError):
+            settings_service.parse_account("xinjinghao", raw)
+
+
 def test_qianlong_account_parse_normalizes_channel_url() -> None:
     parsed = settings_service.parse_account("qianlong", "https://edu.qianlong.com/")
 
@@ -1136,8 +1160,8 @@ def test_toutiao_uses_database_before_http_and_tencent_falls_back_after_http(
     assert calls == ["tencent"]
 
 
-@pytest.mark.parametrize("source", ["btime", "beijinghao"])
-def test_btime_and_beijinghao_never_use_article_fallback(
+@pytest.mark.parametrize("source", ["btime", "beijinghao", "xinjinghao"])
+def test_http_account_sources_never_use_article_fallback(
     monkeypatch: pytest.MonkeyPatch,
     source: str,
 ) -> None:

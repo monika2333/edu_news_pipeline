@@ -88,6 +88,7 @@ SOURCE_CATALOG = (
     SourceDefinition("bbtnews", "北京商报"),
     SourceDefinition("btime", "北京时间", requires_accounts=True),
     SourceDefinition("beijinghao", "北京号", requires_accounts=True),
+    SourceDefinition("xinjinghao", "新京号", requires_accounts=True),
     SourceDefinition("bjrb", "北京日报", daily_only=True, aliases=("beijingdaily",)),
     SourceDefinition(
         "ldwb",

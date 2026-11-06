@@ -23,6 +23,9 @@ from src.adapters.http_toutiao import (
     PROFILE_NAME_TIMEOUT_SECONDS,
     parse_author_input as parse_toutiao_author,
 )
+from src.adapters.http_xinjinghao import (
+    parse_account_input as parse_xinjinghao_account,
+)
 from src.adapters.llm_chat import post_chat_completion
 from src.adapters.llm_endpoint import (
     LLMEndpointKeyMissingError,
@@ -347,6 +350,15 @@ def _account_parser(source: str) -> Callable[[str], dict[str, str]]:
             item = parse_column_input(raw)
             return {
                 "normalized_identifier": item.column_code,
+                "profile_url": item.page_url,
+            }
+
+        return parse
+    if normalized_source == "xinjinghao":
+        def parse(raw: str) -> dict[str, str]:
+            item = parse_xinjinghao_account(raw)
+            return {
+                "normalized_identifier": item.xjh_id,
                 "profile_url": item.page_url,
             }
 

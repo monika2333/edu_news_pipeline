@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from typing import Any, Optional
 from urllib.parse import urlsplit
@@ -17,6 +18,7 @@ from src.adapters import (
     http_qianlong,
     http_tencent,
     http_toutiao,
+    http_xinjinghao,
 )
 from src.adapters.http_common import decode_response, strip_site_suffix
 
@@ -148,6 +150,58 @@ def _resolve_beijinghao(profile_url: str, *, timeout: float) -> str:
     return name
 
 
+def _resolve_xinjinghao(
+    normalized_identifier: str,
+    profile_url: str,
+    *,
+    timeout: float,
+) -> str:
+    session = http_xinjinghao._session()
+    # 号信息接口失败还要回退主页，两次请求共享同一个预算，避免把
+    # 「纯 HTTP 来源 8 秒」的上限翻倍。
+    budget = min(MAX_ACCOUNT_TIMEOUT_SECONDS, max(0.0, float(timeout)))
+    deadline = time.monotonic() + budget
+    payload: Any = {}
+    try:
+        response = _request(
+            session,
+            http_xinjinghao.ACCOUNT_INFO_API_URL,
+            params={"xjh_id": normalized_identifier},
+            headers={"Referer": profile_url},
+            timeout=budget,
+            page_label="号信息接口",
+        )
+        payload = response.json()
+    except (AccountNameUnavailable, requests.RequestException, ValueError):
+        payload = {}
+    if isinstance(payload, dict) and payload.get("code") in (None, 0, "0"):
+        data = payload.get("data") or {}
+        if isinstance(data, dict):
+            name = _name(data.get("institution_name"))
+            if name is not None:
+                return name
+
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise AccountNameUnavailable("号信息接口解析超时")
+    # 号信息接口不可用时回退主页：优先隐藏域，其次标题去掉「的主页」后缀。
+    response = _request(
+        session,
+        profile_url,
+        headers={"Referer": profile_url},
+        timeout=remaining,
+    )
+    soup = BeautifulSoup(decode_response(response), "html.parser")
+    hidden = soup.select_one("#xjh_name_hidden")
+    name = _name(hidden.get("value")) if hidden is not None else None
+    if name is None and soup.title is not None:
+        title = soup.title.get_text(" ", strip=True)
+        name = _name(re.sub(r"\s*的主页\s*$", "", title))
+    if name is None:
+        raise AccountNameUnavailable("页面里没有找到账号名")
+    return name
+
+
 def _resolve_21jingji(profile_url: str, *, timeout: float) -> str:
     session = http_21jingji._session()
     response = _request(
@@ -259,6 +313,12 @@ def resolve_account_name(
             )
         if source == "beijinghao":
             return _resolve_beijinghao(profile_url, timeout=timeout)
+        if source == "xinjinghao":
+            return _resolve_xinjinghao(
+                normalized_identifier,
+                profile_url,
+                timeout=timeout,
+            )
         if source == "21jingji":
             return _resolve_21jingji(profile_url, timeout=timeout)
         if source == "chinadaily":

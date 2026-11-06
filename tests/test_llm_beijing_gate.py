@@ -6,9 +6,11 @@ from pathlib import Path
 import pytest
 
 from src.adapters import llm_beijing_gate as gate
-from src.business_config import LLMStepConfig
+from src.business_config import LLMStepConfig, business_config_context
 from src.config import get_settings
 from src.domain import BeijingGateCandidate
+from conftest import DEEPSEEK_ENDPOINT, OPENROUTER_ENDPOINT, make_endpoint_config
+
 pytestmark = pytest.mark.usefixtures("openrouter_endpoint_env")
 
 
@@ -144,6 +146,36 @@ def test_call_beijing_gate_uses_json_schema_and_retries_indeterminate_output(
     assert isinstance(response_format, dict)
     assert response_format["type"] == "json_schema"
     assert response_format["json_schema"]["strict"] is True
+
+
+def test_call_beijing_gate_uses_json_object_for_json_mode_only_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_DEEPSEEK_API_KEY", "test-key")
+    config = make_endpoint_config(
+        endpoints=(OPENROUTER_ENDPOINT, DEEPSEEK_ENDPOINT),
+        default_endpoint="deepseek",
+        step_endpoints={"beijing_gate": "deepseek"},
+    )
+    captured: dict[str, object] = {}
+
+    def fake_post(payload, *, endpoint, retries, timeout, deadline):
+        captured["response_format"] = payload["response_format"]
+        captured["api_style"] = endpoint.api_style
+        return gate.BeijingGateResponse(
+            raw_text='{"is_beijing_related": false, "reason": "事件发生在外省"}',
+            provider="deepseek",
+            model="deepseek-flash",
+        )
+
+    monkeypatch.setattr(gate, "_post_chat_completion", fake_post)
+
+    with business_config_context(config):
+        decision = gate.call_beijing_gate(_candidate())
+
+    assert captured["api_style"] == "thinking"
+    assert captured["response_format"] == {"type": "json_object"}
+    assert decision.is_beijing_related is False
 
 
 def test_call_beijing_gate_preserves_final_indeterminate_response(

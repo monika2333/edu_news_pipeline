@@ -8,7 +8,7 @@ from typing import Any, Mapping, Optional
 
 from src.adapters.llm_chat import extract_message_text, post_chat_completion
 from src.adapters.llm_endpoint import ResolvedLLMEndpoint, resolve_llm_endpoint
-from src.business_config import get_llm_step_config
+from src.business_config import API_STYLE_OPENROUTER, get_llm_step_config
 from src.config import get_settings
 from src.domain import BeijingGateCandidate
 
@@ -30,6 +30,12 @@ BEIJING_GATE_RESPONSE_FORMAT: dict[str, Any] = {
         },
     },
 }
+JSON_OBJECT_RESPONSE_FORMAT: dict[str, Any] = {"type": "json_object"}
+# json_schema 是 OpenAI 的结构化输出扩展；原生 provider（DeepSeek 等）收到
+# type=json_schema 会直接 400 "This response_format type is unavailable now"，
+# 只支持 JSON mode。字段契约已写在提示词里，解析失败仍会重试，因此这里按
+# 接入点能力降级，而不是让整个 geo_classify 步骤不可用。
+JSON_SCHEMA_CAPABLE_API_STYLES = frozenset({API_STYLE_OPENROUTER})
 
 _PROMPT_CACHE: Optional[str] = None
 
@@ -157,6 +163,20 @@ def _post_chat_completion(
     )
 
 
+def build_response_format(endpoint: ResolvedLLMEndpoint) -> dict[str, Any]:
+    """Return the structured-output mode the endpoint accepts.
+
+    OpenRouter/OpenAI-compatible providers enforce the strict json_schema
+    contract. Native providers implementing only OpenAI's JSON mode (DeepSeek
+    is the current example) reject ``json_schema`` with HTTP 400, so they get
+    ``json_object`` and rely on the prompt plus ``_parse_decision`` validation.
+    """
+
+    if endpoint.api_style in JSON_SCHEMA_CAPABLE_API_STYLES:
+        return BEIJING_GATE_RESPONSE_FORMAT
+    return JSON_OBJECT_RESPONSE_FORMAT
+
+
 def call_beijing_gate(
     candidate: BeijingGateCandidate,
     *,
@@ -174,7 +194,7 @@ def call_beijing_gate(
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0,
-        "response_format": BEIJING_GATE_RESPONSE_FORMAT,
+        "response_format": build_response_format(endpoint),
     }
     endpoint.finalize_payload(
         payload,
@@ -271,5 +291,6 @@ __all__ = [
     "BeijingGateDecision",
     "BeijingGateIndeterminateError",
     "build_prompt",
+    "build_response_format",
     "call_beijing_gate",
 ]

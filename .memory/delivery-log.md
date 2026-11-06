@@ -4,6 +4,7 @@
 
 | 日期 | 功能 | 合入 | archive |
 |---|---|---|---|
+| 2026-11-06 | 修复切到 DeepSeek 接入点后 geo_classify 全量 400：京内判定按 `api_style` 选择结构化输出（OpenRouter 保留 strict `json_schema`，其余降级 `json_object`） | 8bdcac3 | [2026-11-06-DeepSeek接入点京内判定400.md](archive/2026-11-06-DeepSeek接入点京内判定400.md) |
 | 2026-11-06 | 新京号（北京援藏）来源接入：账号=号主页 `/mp/<id>`，稿件来源固定「新京报」，列表接口自带正文（`details_in_list`），剥结尾编辑信息，默认 1 页；迁移只种账号 296，开关默认关；修复补历史时 existing 截停与 article_id 双路径问题 | dbaa227、c1a129c | [2026-11-06-新京号接入.md](archive/2026-11-06-新京号接入.md) |
 | 2026-11-05 | 审阅页命中加分词的浅红高亮同口径仅限京内（`renderReviewCard` 按条目 `is_beijing_related` 门控；新建 `review_card_bonus.test.js` + 独立 pytest 包装，页面快照渲染 /duty 与 /admin/review 两端） | d1b5931 | 拍板并入 `decisions.md` 2026-11-03 那条 |
 | 2026-11-04 | 高级页「来源别名」卡片改单列：后缀/别名/回退来源纵向排列 + 1/2/3 顺序徽标 + 细分隔线，补全三段说明；仍留在高级页签，不新增独立页或一级入口 | cded5ac | [2026-11-04-来源别名单列布局.md](archive/2026-11-04-来源别名单列布局.md) |

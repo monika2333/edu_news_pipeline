@@ -26,6 +26,12 @@
 
 - **adapters 层要让日志可见必须 `print(..., file=sys.stderr)`**：CLI/定时任务没有 logging handler，`logging.info` 被丢弃（只有 WARNING+ 走 lastResort）。照 `http_toutiao.py`/`http_tencent.py` 先例：`[info]`/`[warn]` 前缀；语义性 warning 可同时 `LOGGER.warning`。adapters 不能 import src.workers（依赖方向），所以不能用 `log_info`。
 
+## LLM / 外部 API
+
+- **切换接入点后只有 geo_classify 400？先查结构化输出：`response_format` 的 `json_schema` 是 OpenAI 扩展，DeepSeek 等原生 provider 只支持 `json_object`**，会回 `400 This response_format type is unavailable now`。2026-11-06 下午控制台把七个步骤从 OpenRouter 切到 `api.deepseek.com`（`deepseek-flash`）后，只有带 `json_schema` 请求的京内判定步骤失败（241 篇待判定全灭），其余步骤不带 `response_format` 所以照常。`llm_beijing_gate.build_response_format()` 现在按 `api_style` 选格式：`openrouter` 保留 strict `json_schema`，其余降级为 `json_object`（字段契约写在提示词里，解析失败仍会重试）。新增接入点时如果它其实支持 `json_schema`，不会自动启用——需要显式扩展 `JSON_SCHEMA_CAPABLE_API_STYLES`。
+- **京内判定连续失败会触发「默认按北京放行」的兜底**：`beijing_gate_fail_count` 达到 `BEIJING_GATE_MAX_RETRIES`（默认 3）后，`geo_classify` 会把稿件标成 `ready_for_export` 且 `is_beijing_related=True`，不再走外部过滤。看到 gate 大批失败要按「数据可能被误放行」处理，不能只当日志噪音。
+- 顺带记一笔：`post_chat_completion` 默认 `retry_non_retryable_statuses=True`，400 这类请求错误也会重试满次数，故障请求量会被放大（这次每篇稿件打 3 次）。要不要改为不重试属于行为调整，尚未拍板。
+
 ## Windows 计划任务 / PowerShell 脚本
 
 - **`.ps1` 里出现非 ASCII 又没存 UTF-8 BOM → Windows PowerShell 5.1 按 ANSI(cp936) 解码，解析期就炸**：中文注释最后一个字节会把后面的 `\r\n` 当双字节字符吃掉，下一行 `param(` 被并进注释，报错却指向 `param` 块的 `)`（`Unexpected token ')'`）。计划任务的表现只是「启动即结束」+ Last Result=1，**连脚本自己的日志都不会生成**——`Tee-Object` 在解析失败之后才轮到执行。2026-10-30 `EduNewsPromptOptimizer` 连续两晚空跑就是这个原因（`scripts/run_optimize_prompts.ps1` 首行中文注释，2026-10-29 新增）。规矩：`scripts/**/*.ps1` 一律纯 ASCII，要中文就存 UTF-8 BOM；`tests/test_powershell_script_encoding.py` 已钉住。**给既有纯 ASCII 的 .ps1 加中文注释同样触发**（2026-11-03 给 `run_feishu_archive_bot_service.ps1` 加中文注释，CI 红一次后 31bf7b1 改回英文）——AI 会话改任何 `.ps1` 前先 `grep -cP "[^\x00-\x7F]"` 查非 ASCII 或跑一遍该用例。

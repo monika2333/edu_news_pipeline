@@ -82,6 +82,8 @@
 - 提示词试跑复用共享搜索抽屉时，选择模式必须跳过 `search_drawer_open` / `search_drawer_tab` / `search_filters` 三个共享 localStorage 键；用 `body[data-search-drawer-mode="pick"]` 切模式，不要改三页默认行为。
 - **给 node 子进程传 env 必须基于 `os.environ` 拷贝再增改**：整个替换成最小字典（只留 `CONSOLE_STATIC_DIR` 等）会让 Node 启动即崩 `Assertion failed: ncrypto::CSPRNG(nullptr, 0)`（rc=134），像测试全崩但其实是进程没起来。变异测试驱动里实际踩过（2026-11-04）。
 - jsdom 没有 `TouchEvent`：用普通可冒泡 `Event` + `Object.defineProperty(event, 'touches'/'changedTouches', ...)` 就能驱动页面里的手势逻辑（页面只读这两个字段与 `cancelable`）。但「长按抬手后浏览器补发一次 click」只在真实浏览器发生，jsdom 里手动补发 click 测的是兜底守卫，不是浏览器语义；真实触屏行为用 Playwright + CDP `Input.dispatchTouchEvent`（context 开 `has_touch=True`）验证。jsdom 的 label 激活行为尊重 `defaultPrevented`（捕获阶段 `preventDefault` 能拦住 label→radio）。
+- **「常驻节点 + hidden 切换」配行内流布局会自己把布局搞坏**（设置页模型步骤表，2026-11-06）：提示 span 与控件平铺在同一个 `td` 里，`hidden` 只负责显隐、不负责不占位——一旦它没被隐藏，长文本就把后面的 select/input 挤到第二行，且换行后的内容从单元格左缘起排，看起来像「错位」。同类场景**按模式重建内容槽**（`clearEl` + 重渲染）比切换 `hidden` 稳：不显示的文案压根不在 DOM 里，样式再怎么写都不会漏出来。顺带两个表格布局事实：`table-layout: auto` 下列宽由单元格内容决定，长提示会把别的列压到逐字断行（中文可在任意字间断行），要 `width: 1%` + `nowrap` 保列、把 `width: 100%` 给需要吸收剩余空间的列；行内流里的 `select`/`input` 宽度要显式给（`flex: 1 1 14em; min-width: 0`），否则一个长文本邻居就能让它们换行。
+- 纯 CSS/布局改动 jsdom 测不到，用 headless Chrome 直接渲染静态夹具核对几何：`chrome --headless=new --window-size=W,H --screenshot=out.png file:///...` 出图，`--dump-dom` 配合页内 `window.onload` 脚本把 `getBoundingClientRect()` 写进 `<pre>` 再解析，能量到「各行第一列左缘是否一致、`table.scrollWidth` 是否超出 `.admin-table-wrap`」。CLI 的 headless Chrome **可以**开 `file://` 夹具（workflow.md §5 那条 `file:` 限制只针对浏览器技能/Playwright）。夹具放临时目录，不要把预览 HTML 提交进仓库。
 
 ## 已知「等价变异」/ 测试盲区备忘
 

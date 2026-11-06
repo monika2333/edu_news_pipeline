@@ -247,15 +247,50 @@
     width: min(420px, 100%);
 }
 
-.step-model-input {
-    width: 240px;
-    margin-left: 8px;
+/* 步骤表第二列：「模式槽 + 内容槽」两段。
+   模式槽宽度固定（否则「跟随默认」与「指定」两个选项会让整列左右跳），
+   内容槽吸收剩余宽度；切换模式只重建内容槽，控件不会再被长文本挤到第二行。 */
+.step-mode {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
 }
 
+.step-model-mode {
+    min-width: 6.6em;
+}
+
+.step-content {
+    min-width: 0;
+}
+
+.step-custom {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+/* 跟随默认的一行灰字：模型名可能很长，给省略号 + title，不再撑开表格 */
 .step-follow-hint {
-    margin-left: 8px;
+    display: block;
+    overflow: hidden;
     color: #64748b;
     font-size: 0.82rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.step-endpoint-select {
+    flex: 0 0 auto;
+    max-width: 12em;
+}
+
+.step-model-input {
+    flex: 1 1 14em;
+    box-sizing: border-box;
+    min-width: 0;
 }
 
 .settings-step-model select {
@@ -266,9 +301,64 @@
     font: inherit;
 }
 
+/* 第一列是短中文步骤名：不给固定宽度时会被第二列的长文本压到逐字断行
+   （「摘要生 / 成」）。width:1% + nowrap 让它按内容收缩，把剩余宽度留给第二列。 */
+.settings-steps-table th:first-child,
+.settings-steps-table td:first-child {
+    width: 1%;
+    white-space: nowrap;
+}
+
+/* reasoning 列只有一个复选框，宽度按控件给，界面变宽时不再跟着伸缩 */
+.settings-steps-table th:nth-child(3),
+.settings-steps-table td:nth-child(3) {
+    width: 1%;
+    text-align: center;
+    white-space: nowrap;
+}
+
+/* 第二列吸收表格剩余的横向空间，其余三列都按内容收缩——
+   否则富余宽度会落在最后的「测试」列上，中间留出一条空白带 */
+.settings-steps-table th:nth-child(2),
+.settings-steps-table td:nth-child(2) {
+    width: 100%;
+}
+
+@media (max-width: 900px) {
+    /* 窄屏：模式槽与内容槽上下堆叠，控件可换行，不用横向挤压换对齐 */
+    .step-mode {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 6px;
+    }
+
+    .step-model-mode {
+        justify-self: start;
+    }
+
+    .step-follow-hint {
+        white-space: normal;
+    }
+
+    .step-custom {
+        flex-wrap: wrap;
+    }
+
+    .step-model-input {
+        flex: 1 1 10em;
+    }
+}
+
 .step-test-result {
     margin-left: 10px;
     font-size: 0.82rem;
+    /* 列窄时整条结果换到按钮下方，不要从「1.2 / 秒」中间断开 */
+    white-space: nowrap;
+}
+
+/* 按钮与结果始终同一行：这一列按「按钮 + 结果」的实际宽度收缩，
+   结果出现时不会把按钮下面的行高撑起来 */
+.settings-step-test {
+    white-space: nowrap;
 }
 
 .step-test-result.is-ok {

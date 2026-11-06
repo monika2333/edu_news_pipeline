@@ -111,19 +111,18 @@ test('S2：修改默认模型联动跟随默认提示，保存请求包含全部
         const defaultInput = page.document.getElementById('models-default-input');
         assert.equal(defaultInput.value, 'deepseek/default-model');
         const summaryHint = page.modelsRow('summary').querySelector('.step-follow-hint');
-        assert.match(
-            summaryHint.textContent,
-            /跟随默认（接入点：OpenRouter · 模型：deepseek\/default-model）/,
-        );
+        assert.match(summaryHint.textContent, /跟随默认 · OpenRouter \/ deepseek\/default-model/);
 
         inputValue(page, defaultInput, 'new/default-x');
-        assert.match(
-            summaryHint.textContent,
-            /跟随默认（接入点：OpenRouter · 模型：new\/default-x）/,
+        assert.match(summaryHint.textContent, /跟随默认 · OpenRouter \/ new\/default-x/);
+        // 指定模型的步骤不再渲染跟随提示：内容槽里只剩接入点与模型控件
+        // （模式下拉自身带「跟随默认」选项，所以只看内容槽的文本）
+        const scoringRow = page.modelsRow('scoring');
+        assert.equal(scoringRow.querySelector('.step-follow-hint'), null);
+        assert.ok(
+            !scoringRow.querySelector('.step-content').textContent.includes('跟随默认'),
+            '指定模式的内容槽里不得残留「跟随默认」文案',
         );
-        // 指定模型的步骤不显示跟随提示
-        const scoringHint = page.modelsRow('scoring').querySelector('.step-follow-hint');
-        assert.ok(scoringHint.hidden);
 
         page.document.getElementById('btn-models-save').click();
         await waitFor(() => page.server.requests('save-models').length === 1);
@@ -1937,20 +1936,20 @@ test('E1：步骤切到「指定」出现接入点下拉与空的模型输入框
         const row = page.modelsRow('summary');
         // 跟随默认提示同时给出默认接入点与默认模型
         const hint = row.querySelector('.step-follow-hint');
-        assert.match(
-            hint.textContent,
-            /跟随默认（接入点：OpenRouter · 模型：deepseek\/default-model）/,
-        );
+        assert.match(hint.textContent, /跟随默认 · OpenRouter \/ deepseek\/default-model/);
+        assert.equal(hint.title, hint.textContent, '提示带 title，长模型名被省略时仍可看全文');
 
         // 先在跟随默认下跑一次测试，让该行有测试结果可供「被清除」断言
         row.querySelector('.step-test-btn').click();
         await waitFor(() => row.querySelector('.step-test-result').textContent.includes('成功'));
 
         switchStepMode(page, row, 'custom');
+        // 内容槽按模式重建：跟随提示从 DOM 消失，换成接入点下拉 + 模型输入框
+        assert.equal(row.querySelector('.step-follow-hint'), null, '指定模式下不应再有跟随提示');
         const endpointSelect = row.querySelector('.step-endpoint-select');
-        await waitFor(() => !endpointSelect.hidden);
+        assert.ok(endpointSelect, '指定模式应渲染接入点下拉');
         const modelInput = row.querySelector('.step-model-input');
-        assert.ok(!modelInput.hidden);
+        assert.ok(modelInput, '指定模式应渲染模型输入框');
         // 切到「指定」不预填：跨服务商预填必然是错的，留空比留错值安全
         assert.equal(modelInput.value, '');
         assert.equal(endpointSelect.value, 'openrouter', '首次切到指定应选中当前默认接入点');
@@ -2042,11 +2041,13 @@ test('E4：步骤接入点下拉只列已保存接入点；接入点分区为脏
         assert.ok(!note.hidden);
         assert.match(note.textContent, /接入点有未保存修改/);
 
-        // 草稿里新增的接入点不出现在步骤下拉：后端校验引用查的是库里的接入点
+        // 草稿里新增的接入点不出现在步骤下拉：后端校验引用查的是库里的接入点。
+        // 下拉只在「指定」模式下渲染（跟随默认的行没有控件可点），先切过去
         page.document.querySelector('.endpoint-add-btn').click();
         await waitFor(() => page.document.querySelectorAll('.endpoint-edit-row').length === 3);
         inputValue(page, endpointEditRow(page, 'new-1').querySelector('.endpoint-base-url-input'),
             'https://open.bigmodel.cn/api/paas/v4');
+        switchStepMode(page, page.modelsRow('summary'), 'custom');
         assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter', 'deepseek']);
         assert.equal(page.window.eval('state.dirty.llm_endpoints'), true);
 
@@ -2055,14 +2056,17 @@ test('E4：步骤接入点下拉只列已保存接入点；接入点分区为脏
         page.document.getElementById('btn-models-discard').click();
         await waitFor(() => page.modelsRow('summary')
             && !page.document.querySelector('.endpoints-dirty-note').hidden);
+        // 放弃修改把步骤表重建回跟随默认（草稿已丢弃），再切指定读下拉
+        assert.equal(page.modelsRow('summary').querySelector('.step-model-mode').value, 'follow');
+        assert.equal(page.window.eval('state.dirty.llm_models'), false);
+        switchStepMode(page, page.modelsRow('summary'), 'custom');
         assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter', 'deepseek']);
 
-        // 放弃接入点修改：提示消失、脏标记复位、下拉不变
+        // 放弃接入点修改：提示消失、接入点脏标记复位、下拉不变
         page.document.querySelector('.btn-endpoints-discard').click();
         await waitFor(() => page.document.querySelector('.endpoints-dirty-note').hidden);
         assert.equal(page.window.eval('state.dirty.llm_endpoints'), false);
         assert.deepEqual(endpointOptions(page, 'summary'), ['openrouter', 'deepseek']);
-        assert.equal(page.window.eval('state.dirty.llm_models'), false);
     } finally {
         page.close();
     }
@@ -2238,6 +2242,10 @@ test('E10：测试按钮对「指定」步骤发送 endpoint，对「跟随默�
 
         // 切回跟随默认：不带 endpoint 字段，模型取默认模型输入框当前值
         switchStepMode(page, row, 'follow');
+        // 内容槽换回灰字提示，接入点与模型控件从 DOM 移除
+        assert.ok(row.querySelector('.step-follow-hint'), '跟随默认应重新渲染提示');
+        assert.equal(row.querySelector('.step-model-input'), null);
+        assert.equal(row.querySelector('.step-endpoint-select'), null);
         row.querySelector('.step-test-btn').click();
         await waitFor(() => page.server.requests('model-test').length === 2);
         const followBody = page.server.requests('model-test')[1].body;
@@ -2469,8 +2477,10 @@ test('E17：新增接入点 key 按地址自动生成，头部实时预览，重
         const keys = page.server.sections.llm_endpoints.value.items.map((item) => item.key);
         assert.deepEqual(keys.sort(),
             ['api-deepseek-com', 'api-deepseek-com-2', 'deepseek', 'openrouter']);
-        // 步骤下拉立即能看到两个新接入点（下拉值是派生 key）
+        // 步骤下拉立即能看到两个新接入点（下拉值是派生 key）；
+        // 下拉只在「指定」模式下渲染
         await waitFor(() => !page.document.querySelector('.endpoint-edit-row'));
+        switchStepMode(page, page.modelsRow('summary'), 'custom');
         assert.deepEqual(endpointOptions(page, 'summary'),
             ['openrouter', 'deepseek', 'api-deepseek-com', 'api-deepseek-com-2']);
     } finally {

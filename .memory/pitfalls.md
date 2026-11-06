@@ -10,6 +10,7 @@
 
 ## 数据库
 
+- **plpgsql 的 `RAISE EXCEPTION` 不带括号**：语法是 `RAISE EXCEPTION '格式串 %', 参数`；写成函数调用式 `RAISE EXCEPTION ('...', arg)` 直接 SyntaxError，报错指向括号处，与「DO 块里其他 IF/循环」无关（20261106150000 迁移实测）。jsonb 取值参与比较时两边都要 `->>`（`text = jsonb` 无操作符）。
 - **psycopg 3.2：`with conn:` 退出会关闭连接**（`Connection.__exit__` 里非 pool 连接直接 close），不再是旧「事务边界」语义。真实库测试若在 with conn 块外还要用连接（adapter 调用+断言），必须显式 seed + `conn.commit()`，不能包 with conn。
 - **app_settings（及任何可能被应用先行写入的表）种子迁移必须带 `ON CONFLICT ... DO NOTHING`**：设置页可以在任何迁移之前建行，长寿命库上裸 INSERT 必撞 pkey（20260923120000 实际炸过，3f1e4cd 修复了 llm_endpoints 与 review_sort_keywords 两条）。
 - 诊断 dbmate 失败以 `schema_migrations` 表为准——失败的迁移不留记录；用户终端粘贴的报错可能串行误导。
@@ -85,7 +86,10 @@
 - 提示词试跑复用共享搜索抽屉时，选择模式必须跳过 `search_drawer_open` / `search_drawer_tab` / `search_filters` 三个共享 localStorage 键；用 `body[data-search-drawer-mode="pick"]` 切模式，不要改三页默认行为。
 - **给 node 子进程传 env 必须基于 `os.environ` 拷贝再增改**：整个替换成最小字典（只留 `CONSOLE_STATIC_DIR` 等）会让 Node 启动即崩 `Assertion failed: ncrypto::CSPRNG(nullptr, 0)`（rc=134），像测试全崩但其实是进程没起来。变异测试驱动里实际踩过（2026-11-04）。
 - jsdom 没有 `TouchEvent`：用普通可冒泡 `Event` + `Object.defineProperty(event, 'touches'/'changedTouches', ...)` 就能驱动页面里的手势逻辑（页面只读这两个字段与 `cancelable`）。但「长按抬手后浏览器补发一次 click」只在真实浏览器发生，jsdom 里手动补发 click 测的是兜底守卫，不是浏览器语义；真实触屏行为用 Playwright + CDP `Input.dispatchTouchEvent`（context 开 `has_touch=True`）验证。jsdom 的 label 激活行为尊重 `defaultPrevented`（捕获阶段 `preventDefault` 能拦住 label→radio）。
-- **「常驻节点 + hidden 切换」配行内流布局会自己把布局搞坏**（设置页模型步骤表，2026-11-06）：提示 span 与控件平铺在同一个 `td` 里，`hidden` 只负责显隐、不负责不占位——一旦它没被隐藏，长文本就把后面的 select/input 挤到第二行，且换行后的内容从单元格左缘起排，看起来像「错位」。同类场景**按模式重建内容槽**（`clearEl` + 重渲染）比切换 `hidden` 稳：不显示的文案压根不在 DOM 里，样式再怎么写都不会漏出来。顺带两个表格布局事实：`table-layout: auto` 下列宽由单元格内容决定，长提示会把别的列压到逐字断行（中文可在任意字间断行），要 `width: 1%` + `nowrap` 保列、把 `width: 100%` 给需要吸收剩余空间的列；行内流里的 `select`/`input` 宽度要显式给（`flex: 1 1 14em; min-width: 0`），否则一个长文本邻居就能让它们换行。
+- **「常驻节点 + hidden 切换」配行内流布局会自己把布局搞坏**（设置页模型步骤表，2026-11-06）：提示 span 与控件平铺在同一个 `td` 里，`hidden` 只负责显隐、不负责不占位——一旦它没被隐藏，长文本就把后面的 select/input 挤到第二行，且换行后的内容从单元格左缘起排，看起来像「错位」。现行形态（默认模型跟随接入点改造后）是：模型留空灰字 `.step-model-hint` 常驻渲染、靠 `:empty { display: none }` 消失，文本更新只改 textContent 不重建节点（重建会抢焦点）。顺带两个表格布局事实：`table-layout: auto` 下列宽由单元格内容决定，长提示会把别的列压到逐字断行（中文可在任意字间断行），要 `width: 1%` + `nowrap` 保列、把 `width: 100%` 给需要吸收剩余空间的列；行内流里的 `select`/`input` 宽度要显式给（`flex: 1 1 14em; min-width: 0`），否则一个长文本邻居就能让它们换行。
+- **jsdom：节点未挂载前不要走「容器.querySelector」刷新它**：`updateStepModelHint(row, …)` 在 td 尚未 append 到 row 时调用，`row.querySelector` 找不到目标、提示留空——挂载完成后再调用，或直接持有节点引用赋值（2026-11-06 实测，症状是「函数单跑正确、页面渲染后为空」）。
+- **jsdom：分区保存成功路径会重渲染页签，保存状态节点被重建且为空**：成功文案写在旧节点上，保存后断言 `models-save-status` 永远超时；成功断言走 `#toast`（「模型配置已保存」），失败分支（422/409 不重渲染）才能断言状态节点（2026-11-06 实测）。
+
 - 纯 CSS/布局改动 jsdom 测不到，用 headless Chrome 直接渲染静态夹具核对几何：`chrome --headless=new --window-size=W,H --screenshot=out.png file:///...` 出图，`--dump-dom` 配合页内 `window.onload` 脚本把 `getBoundingClientRect()` 写进 `<pre>` 再解析，能量到「各行第一列左缘是否一致、`table.scrollWidth` 是否超出 `.admin-table-wrap`」。CLI 的 headless Chrome **可以**开 `file://` 夹具（workflow.md §5 那条 `file:` 限制只针对浏览器技能/Playwright）。夹具放临时目录，不要把预览 HTML 提交进仓库。
 
 ## 已知「等价变异」/ 测试盲区备忘

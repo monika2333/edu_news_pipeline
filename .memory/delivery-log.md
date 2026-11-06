@@ -4,6 +4,7 @@
 
 | 日期 | 功能 | 合入 | archive |
 |---|---|---|---|
+| 2026-11-06 | 默认模型跟随接入点：`llm_endpoints` 每接入点必填 `default_model`，`llm_models` 删顶层 `default`（迁移 20261106150000，解析结果逐字节等价）；步骤表改「接入点下拉 + 模型输入框」，模型留空用所选接入点默认模型；保存 `llm_models`/`llm_endpoints` 统一解析级模型实测；全新部署路径重做并双环境变量用例覆盖 | 9a214ee（ecfd6c9 功能 + AGENTS.md 同步） | [2026-11-06-默认模型跟随接入点.md](archive/2026-11-06-默认模型跟随接入点.md) |
 | 2026-11-06 | LLM 4xx 错误治理：类型化 `LLMRequestError`（systematic/article/transient/quota）、4xx 默认不重试、geo 系统性/额度/配置类错误熔断且不计文章失败、飞书请求错误告警（指纹冷却）、run 汇总计入熔断失败；article 级 4xx 达上限保持 pending，不再默认按北京放行 | cc3598b、22b569d | [2026-11-06-LLM-4xx错误治理.md](archive/2026-11-06-LLM-4xx错误治理.md) |
 | 2026-11-06 | 修复切到 DeepSeek 接入点后 geo_classify 全量 400：京内判定按 `api_style` 选择结构化输出（OpenRouter 保留 strict `json_schema`，其余降级 `json_object`） | 8bdcac3 | [2026-11-06-DeepSeek接入点京内判定400.md](archive/2026-11-06-DeepSeek接入点京内判定400.md) |
 | 2026-11-06 | 设置页模型步骤表第二列改「模式槽 + 内容槽」：内容按模式重建（跟随默认只渲染一行灰字、指定才渲染控件），修掉指定模式下残留「跟随默认」提示与控件换行错位；列宽约束让步骤名不再逐字断行，≤900px 上下堆叠 | 68aebb3 | [2026-11-06-模型步骤表布局.md](archive/2026-11-06-模型步骤表布局.md) |

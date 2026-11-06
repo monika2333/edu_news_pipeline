@@ -164,6 +164,23 @@ def test_parse_list_payload_empty_data_and_existing_ids() -> None:
     )
 
 
+def test_parse_list_payload_derives_article_id_from_share_url() -> None:
+    item = _item("uuid-a")
+    item["share_url"] = "https://m.bjnews.com.cn/detail/url-b.html"
+
+    items = http_xinjinghao._parse_list_payload(_payload(items=[item]))
+
+    assert len(items) == 1
+    assert http_xinjinghao.make_article_id(items[0].url) == "xinjinghao:url-b"
+    assert (
+        http_xinjinghao._parse_list_payload(
+            _payload(items=[item]),
+            existing_ids={"xinjinghao:url-b"},
+        )
+        == []
+    )
+
+
 def test_list_items_fetches_one_page_and_passes_referer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -231,12 +248,14 @@ def test_list_items_keeps_fetched_pages_when_next_page_fails(
     assert [call["params"]["page"] for call in session.calls] == [1, 2]
 
 
-def test_list_items_stops_when_filtered_page_has_no_more_new_items(
+def test_list_items_keeps_paging_when_first_page_still_has_new_items(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     first_page = [_item(str(1000 + index)) for index in range(10)]
     existing = {f"xinjinghao:{1000 + index}" for index in range(6)}
-    session = FakeSession({1: _payload(items=first_page), 2: _payload(items=[_item("2000")])})
+    session = FakeSession(
+        {1: _payload(items=first_page), 2: _payload(items=[_item("2000")])}
+    )
     monkeypatch.setattr(http_xinjinghao, "_session", lambda: session)
 
     items = http_xinjinghao.list_items(
@@ -245,8 +264,29 @@ def test_list_items_stops_when_filtered_page_has_no_more_new_items(
         existing_ids=existing,
     )
 
-    assert len(items) == 4
-    assert [call["params"]["page"] for call in session.calls] == [1]
+    assert len(items) == 5
+    assert [call["params"]["page"] for call in session.calls] == [1, 2]
+
+
+def test_list_items_keeps_paging_when_first_page_is_all_existing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_page = [_item(str(1000 + index)) for index in range(10)]
+    existing = {f"xinjinghao:{1000 + index}" for index in range(10)}
+    session = FakeSession(
+        {1: _payload(items=first_page), 2: _payload(items=[_item("2000")])}
+    )
+    monkeypatch.setattr(http_xinjinghao, "_session", lambda: session)
+
+    items = http_xinjinghao.list_items(
+        [_entry()],
+        pages=5,
+        existing_ids=existing,
+    )
+
+    assert len(items) == 1
+    assert http_xinjinghao.make_article_id(items[0].url) == "xinjinghao:2000"
+    assert [call["params"]["page"] for call in session.calls] == [1, 2]
 
 
 def test_feed_item_to_row_forces_xinjingbao_source() -> None:

@@ -210,9 +210,11 @@ def _parse_list_payload(
         title = str(row.get("title") or "").strip()
         share_url = str(entry.get("share_url") or row.get("share_url") or "").strip()
         url = normalize_url(share_url or (f"{DETAIL_BASE_URL}{uuid}.html" if uuid else ""))
-        if not (uuid and title and url and _is_detail_url(url)):
+        if not (title and url and _is_detail_url(url)):
             continue
-        article_id = make_article_id(uuid)
+        # 文章 ID 统一由 URL 派生：过滤、known_ids 与 prepare_feed 必须同源，
+        # 不能一半用 row.uuid、一半用 share_url。
+        article_id = make_article_id(url)
         if article_id in seen:
             continue
         seen.add(article_id)
@@ -239,6 +241,14 @@ def list_items(
     *,
     existing_ids: Optional[set[str]] = None,
 ) -> list[FeedItemLike]:
+    """按账号、按页抓取新京号列表。
+
+    ``existing_ids`` 只用于过滤已入库条目，**不参与停止判断**；停止翻页只看
+    原始 ``data`` 数组：空数组、不足一页（最后一页）或 ``pages`` 硬上限。
+    这样 ``--pages 70`` 补历史时，即使第 1 页全是已入库条目，也会继续翻到
+    page 2 以下的老稿。
+    """
+
     if limit is not None and limit <= 0:
         return []
     page_count = max(1, pages or 1)
@@ -264,17 +274,17 @@ def list_items(
                     exc,
                 )
                 break
+            rows = payload.get("data")
+            raw_count = len(rows) if isinstance(rows, list) else 0
             batch = _parse_list_payload(payload, existing_ids=known_ids)
-            if not batch:
-                break
             for item in batch:
                 items.append(item)
                 known_ids.add(make_article_id(item.url))
                 if limit is not None and len(items) >= limit:
                     return items
-            # 去掉已入库 ID 后不足一页，说明已经翻到与库内重叠的位置，
-            # 再往后都是旧稿，不需要继续消耗请求。
-            if len(batch) < PAGE_SIZE:
+            # 只按原始 data 判断是否到达最后一页；过滤后的 batch 可能为空
+            # （整页都已入库），此时必须继续翻页，否则补历史会被第 1 页截停。
+            if raw_count < PAGE_SIZE:
                 break
     return items
 

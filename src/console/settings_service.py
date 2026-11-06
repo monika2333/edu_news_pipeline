@@ -151,19 +151,30 @@ def _probe_model(
     *,
     model: str,
     reasoning: bool,
-    endpoint: Optional[str],
+    endpoint_definition: LLMEndpointConfig,
     operation: str,
 ) -> dict[str, Any]:
-    """对「接入点 + 模型 + reasoning」组合发一次最小真实请求。
+    """对「接入点定义 + 模型 + reasoning」组合发一次最小真实请求。
 
-    供逐步测试按钮（test_llm_model）与保存时的统一模型测试共用；
-    operation 只用于请求日志归属，不参与校验。"""
+    探针直接接收接入点定义，不拿 key 去数据库查：保存 llm_endpoints 时
+    库里还是旧值，查库会让新增接入点的实测报「接入点不存在」，改连接
+    信息时实测的也是旧地址/旧 Key——保存时的校验必须作用于待保存的值。
+    逐步「测试」按钮经 test_llm_model 传入库中已保存的定义（按钮只引用
+    已保存接入点）。operation 只用于请求日志归属，不参与校验。"""
 
     settings = get_settings()
     try:
-        resolved = resolve_endpoint(_endpoint_definition(endpoint))
-    except LLMEndpointKeyMissingError as exc:
-        return {"success": False, "elapsed_ms": 0, "error": str(exc)}
+        resolved = resolve_endpoint(endpoint_definition)
+    except LLMEndpointKeyMissingError:
+        return {
+            "success": False,
+            "elapsed_ms": 0,
+            "error": (
+                f"缺少 API Key：请先在服务器的 .env.local 里配置 "
+                f"{endpoint_definition.api_key_env}，"
+                "然后点「重新加载环境变量」后再试"
+            ),
+        }
     reasoning_limit = settings.llm_reasoning_max_tokens or 0
     max_tokens = max(2048, reasoning_limit * 2) if reasoning else 8
     request_timeout = (
@@ -225,7 +236,7 @@ def test_llm_model(
     return _probe_model(
         model=normalized_model,
         reasoning=reasoning,
-        endpoint=endpoint,
+        endpoint_definition=_endpoint_definition(endpoint),
         operation=f"settings_model_test:{step}",
     )
 
@@ -299,7 +310,11 @@ def _run_save_time_model_tests(
     变了，就测保存后的组合，相同组合只测一次。接入点层面另测：新增的接入点
     或 default_model 改了的接入点，即使暂时没有步骤在用，也用 reasoning 关
     测一次它的默认模型——以后哪一步切过去也不会拿到一个坏的默认值。
-    任一测试失败抛 ValueError 拒绝整次保存，数据库不变。"""
+    任一测试失败抛 ValueError 拒绝整次保存，数据库不变。
+    两类探针都用**将要保存的**接入点定义（endpoints_after）连接——
+    库里还是旧值，查库会让新增接入点实测报「不存在」、改连接信息实测
+    旧地址/旧 Key；保存 llm_models 时 endpoints_after 本来就是库里的
+    已保存值，与 endpoints 保存共用同一条传入定义的路径。"""
 
     before_combinations = _resolved_step_combinations(
         models_before, endpoints_before, default_endpoint_before
@@ -314,7 +329,12 @@ def _run_save_time_model_tests(
         if combination in tested:
             return
         tested.add(combination)
-        outcome = test_llm_model(step, model, reasoning, endpoint=endpoint_key)
+        outcome = _probe_model(
+            model=model,
+            reasoning=reasoning,
+            endpoint_definition=endpoints_after[endpoint_key],
+            operation=f"settings_model_test:{step}",
+        )
         if not outcome["success"]:
             raise ValueError(
                 f"{LLM_STEP_LABELS[step]}模型测试失败：{outcome['error']}"
@@ -347,7 +367,7 @@ def _run_save_time_model_tests(
         outcome = _probe_model(
             model=item.default_model,
             reasoning=False,
-            endpoint=key,
+            endpoint_definition=item,
             operation=f"settings_model_test:{key}",
         )
         if not outcome["success"]:

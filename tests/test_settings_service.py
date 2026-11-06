@@ -529,44 +529,58 @@ def test_qianlong_account_parse_rejects_foreign_hosts() -> None:
         settings_service.parse_account("qianlong", "https://qianlong.com.evil.com/")
 
 
-def _stub_step_tests(
-    monkeypatch: pytest.MonkeyPatch,
-    records: list[tuple[str, str, str, bool]],
-    *,
-    succeed: bool = True,
-) -> None:
-    monkeypatch.setattr(
-        settings_service,
-        "test_llm_model",
-        lambda step, model, reasoning, endpoint=None: (
-            records.append((step, endpoint, model, reasoning))
-            or {
-                "success": succeed,
-                "elapsed_ms": 1,
-                "error": None if succeed else f"{step}:{endpoint}:{model}:unavailable",
-            }
-        ),
-    )
-
-
-def _stub_endpoint_probes(
+def _stub_probes(
     monkeypatch: pytest.MonkeyPatch,
     records: list[tuple[str, str, bool]],
     *,
     succeed: bool = True,
 ) -> None:
-    monkeypatch.setattr(
-        settings_service,
-        "_probe_model",
-        lambda *, model, reasoning, endpoint, operation: (
-            records.append((endpoint, model, reasoning))
-            or {
-                "success": succeed,
-                "elapsed_ms": 1,
-                "error": None if succeed else f"{endpoint}:{model}:probe failed",
+    """记录保存路径实际探针的组合（接入点 key, 模型, reasoning）。
+
+    步骤组合测试与接入点默认模型测试已统一走 _probe_model（传入定义），
+    一次打桩即可观察两类探针；只用于组合/去重断言，不断言请求细节。"""
+
+    def fake_probe(*, model, reasoning, endpoint_definition, operation):
+        records.append((endpoint_definition.key, model, reasoning))
+        return {
+            "success": succeed,
+            "elapsed_ms": 1,
+            "error": None if succeed else f"{endpoint_definition.key}:{model}:probe failed",
+        }
+
+    monkeypatch.setattr(settings_service, "_probe_model", fake_probe)
+
+
+def _stub_llm_http(monkeypatch: pytest.MonkeyPatch, records: list[dict[str, Any]]) -> None:
+    """只替换 HTTP 发送层 post_chat_completion：记录实际请求的
+    URL / Authorization / 模型。探针内部的定义解析、Key 读取、
+    接入点解析全部走真实代码——打桩位置太高会把「用错配置」这类
+    问题藏起来（本次补丁的教训）。"""
+
+    def fake_post(url, **kwargs):
+        records.append(
+            {
+                "url": url,
+                "authorization": kwargs["headers"].get("Authorization"),
+                "model": kwargs["payload"]["model"],
+                "operation": kwargs.get("operation"),
             }
-        ),
-    )
+        )
+        return {"choices": [{"message": {"content": "OK"}}]}
+
+    monkeypatch.setattr(settings_service, "post_chat_completion", fake_post)
+
+
+def _glm_item() -> dict[str, Any]:
+    return {
+        "key": "glm",
+        "label": "GLM",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "api_key_env": "LLM_GLM_API_KEY",
+        "api_style": "thinking",
+        "temperature_override": None,
+        "default_model": "glm-4.6",
+    }
 
 
 def test_m16_changed_model_is_tested_server_side_before_save(
@@ -584,15 +598,8 @@ def test_m16_changed_model_is_tested_server_side_before_save(
             saves=calls,
         ),
     )
-    monkeypatch.setattr(
-        settings_service,
-        "test_llm_model",
-        lambda step, model, reasoning, endpoint=None: {
-            "success": False,
-            "elapsed_ms": 1,
-            "error": f"{step}:{endpoint}:{model}:{reasoning}:unavailable",
-        },
-    )
+    records: list[tuple[str, str, bool]] = []
+    _stub_probes(monkeypatch, records, succeed=False)
     after = _llm_value(summary="new-summary-model")
     # 模型名只在某个服务商处有效：填了模型就必须固定接入点
     after["steps"]["summary"]["endpoint"] = "openrouter"
@@ -615,7 +622,7 @@ def test_m16_model_without_endpoint_is_rejected_before_any_test(
 ) -> None:
     after = _llm_value(summary="orphan-model")
     saves: list[dict[str, Any]] = []
-    step_tests: list[tuple[str, str, str, bool]] = []
+    records: list[tuple[str, str, bool]] = []
     _patch_settings_adapter(
         monkeypatch,
         _settings_section_adapter(
@@ -626,7 +633,7 @@ def test_m16_model_without_endpoint_is_rejected_before_any_test(
             saves=saves,
         ),
     )
-    _stub_step_tests(monkeypatch, step_tests)
+    _stub_probes(monkeypatch, records)
 
     with pytest.raises(ValueError, match="摘要生成"):
         settings_service.update_setting(
@@ -637,7 +644,7 @@ def test_m16_model_without_endpoint_is_rejected_before_any_test(
         )
 
     assert saves == []
-    assert step_tests == []
+    assert records == []
 
 
 def test_m16_reasoning_only_change_is_tested_before_save(
@@ -646,8 +653,7 @@ def test_m16_reasoning_only_change_is_tested_before_save(
     before = _llm_value()
     after = _llm_value()
     after["steps"]["summary"]["reasoning"] = True
-    step_tests: list[tuple[str, str, str, bool]] = []
-    probes: list[tuple[str, str, bool]] = []
+    records: list[tuple[str, str, bool]] = []
     saves: list[dict[str, Any]] = []
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     _patch_settings_adapter(
@@ -660,8 +666,7 @@ def test_m16_reasoning_only_change_is_tested_before_save(
             saves=saves,
         ),
     )
-    _stub_step_tests(monkeypatch, step_tests)
-    _stub_endpoint_probes(monkeypatch, probes)
+    _stub_probes(monkeypatch, records)
 
     settings_service.update_setting(
         "llm_models",
@@ -670,8 +675,7 @@ def test_m16_reasoning_only_change_is_tested_before_save(
         actor=_admin(),
     )
 
-    assert step_tests == [("summary", "openrouter", "default-model", True)]
-    assert probes == []
+    assert records == [("openrouter", "default-model", True)]
     assert len(saves) == 1
 
 
@@ -686,8 +690,7 @@ def test_models_save_endpoint_without_model_is_legal_and_uses_endpoint_default(
         "reasoning": True,
         "endpoint": "deepseek",
     }
-    step_tests: list[tuple[str, str, str, bool]] = []
-    probes: list[tuple[str, str, bool]] = []
+    records: list[tuple[str, str, bool]] = []
     saves: list[dict[str, Any]] = []
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     _patch_settings_adapter(
@@ -700,8 +703,7 @@ def test_models_save_endpoint_without_model_is_legal_and_uses_endpoint_default(
             saves=saves,
         ),
     )
-    _stub_step_tests(monkeypatch, step_tests)
-    _stub_endpoint_probes(monkeypatch, probes)
+    _stub_probes(monkeypatch, records)
 
     settings_service.update_setting(
         "llm_models",
@@ -710,8 +712,7 @@ def test_models_save_endpoint_without_model_is_legal_and_uses_endpoint_default(
         actor=_admin(),
     )
 
-    assert step_tests == [("duplicate_review", "deepseek", "deepseek-default", True)]
-    assert probes == []
+    assert records == [("deepseek", "deepseek-default", True)]
     assert len(saves) == 1
 
 
@@ -724,7 +725,7 @@ def test_models_save_switching_step_endpoint_tests_resolved_combination(
         "reasoning": True,
         "endpoint": "deepseek",
     }
-    step_tests: list[tuple[str, str, str, bool]] = []
+    records: list[tuple[str, str, bool]] = []
     saves: list[dict[str, Any]] = []
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     _patch_settings_adapter(
@@ -737,7 +738,7 @@ def test_models_save_switching_step_endpoint_tests_resolved_combination(
             saves=saves,
         ),
     )
-    _stub_step_tests(monkeypatch, step_tests)
+    _stub_probes(monkeypatch, records)
 
     settings_service.update_setting(
         "llm_models",
@@ -746,7 +747,7 @@ def test_models_save_switching_step_endpoint_tests_resolved_combination(
         actor=_admin(),
     )
 
-    assert step_tests == [("source", "deepseek", "deepseek-default", True)]
+    assert records == [("deepseek", "deepseek-default", True)]
     assert len(saves) == 1
 
 
@@ -758,8 +759,7 @@ def test_endpoint_save_switching_default_tests_all_following_combinations(
 
     endpoints = _llm_endpoints_value()
     endpoints["default"] = "deepseek"
-    step_tests: list[tuple[str, str, str, bool]] = []
-    probes: list[tuple[str, str, bool]] = []
+    records: list[tuple[str, str, bool]] = []
     saves: list[dict[str, Any]] = []
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     monkeypatch.setenv("LLM_DEEPSEEK_API_KEY", "test-key")
@@ -773,8 +773,7 @@ def test_endpoint_save_switching_default_tests_all_following_combinations(
             saves=saves,
         ),
     )
-    _stub_step_tests(monkeypatch, step_tests)
-    _stub_endpoint_probes(monkeypatch, probes)
+    _stub_probes(monkeypatch, records)
 
     settings_service.update_setting(
         "llm_endpoints",
@@ -783,13 +782,12 @@ def test_endpoint_save_switching_default_tests_all_following_combinations(
         actor=_admin(),
     )
 
-    # 八个步骤都跟随默认；组合去重后只按 reasoning 分两批实测
-    assert step_tests == [
-        ("summary", "deepseek", "deepseek-default", False),
-        ("source", "deepseek", "deepseek-default", True),
-    ]
+    # 八个步骤都跟随默认；组合去重后只按 reasoning 分两批实测；
     # 接入点本身没有新增、default_model 没改 → 无接入点级探针
-    assert probes == []
+    assert records == [
+        ("deepseek", "deepseek-default", False),
+        ("deepseek", "deepseek-default", True),
+    ]
     assert len(saves) == 1
 
 
@@ -804,8 +802,7 @@ def test_endpoint_default_model_change_tests_using_step_and_endpoint_itself(
         "reasoning": True,
         "endpoint": "deepseek",
     }
-    step_tests: list[tuple[str, str, str, bool]] = []
-    probes: list[tuple[str, str, bool]] = []
+    records: list[tuple[str, str, bool]] = []
     saves: list[dict[str, Any]] = []
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     _patch_settings_adapter(
@@ -815,8 +812,7 @@ def test_endpoint_default_model_change_tests_using_step_and_endpoint_itself(
             saves=saves,
         ),
     )
-    _stub_step_tests(monkeypatch, step_tests)
-    _stub_endpoint_probes(monkeypatch, probes)
+    _stub_probes(monkeypatch, records)
 
     settings_service.update_setting(
         "llm_endpoints",
@@ -826,8 +822,10 @@ def test_endpoint_default_model_change_tests_using_step_and_endpoint_itself(
     )
 
     # 用它的步骤实测新默认组合；接入点自身（reasoning 关）另测一次
-    assert step_tests == [("duplicate_review", "deepseek", "deepseek-chat-v4", True)]
-    assert probes == [("deepseek", "deepseek-chat-v4", False)]
+    assert records == [
+        ("deepseek", "deepseek-chat-v4", True),
+        ("deepseek", "deepseek-chat-v4", False),
+    ]
     assert len(saves) == 1
 
 
@@ -837,19 +835,8 @@ def test_endpoint_save_tests_unused_new_and_default_changed_endpoints(
     endpoints = _llm_endpoints_value()
     # deepseek 没有任何步骤引用：改它的默认模型只触发接入点级探针
     endpoints["items"][1]["default_model"] = "deepseek-chat-v4"
-    endpoints["items"].append(
-        {
-            "key": "glm",
-            "label": "GLM",
-            "base_url": "https://open.bigmodel.cn/api/paas/v4",
-            "api_key_env": "LLM_GLM_API_KEY",
-            "api_style": "thinking",
-            "temperature_override": None,
-            "default_model": "glm-4",
-        }
-    )
-    step_tests: list[tuple[str, str, str, bool]] = []
-    probes: list[tuple[str, str, bool]] = []
+    endpoints["items"].append({**_glm_item(), "default_model": "glm-4"})
+    records: list[tuple[str, str, bool]] = []
     saves: list[dict[str, Any]] = []
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     _patch_settings_adapter(
@@ -859,8 +846,7 @@ def test_endpoint_save_tests_unused_new_and_default_changed_endpoints(
             saves=saves,
         ),
     )
-    _stub_step_tests(monkeypatch, step_tests)
-    _stub_endpoint_probes(monkeypatch, probes)
+    _stub_probes(monkeypatch, records)
 
     settings_service.update_setting(
         "llm_endpoints",
@@ -870,8 +856,7 @@ def test_endpoint_save_tests_unused_new_and_default_changed_endpoints(
     )
 
     # 所有步骤都跟随 openrouter，解析组合未变 → 无步骤测试
-    assert step_tests == []
-    assert sorted(probes) == [
+    assert sorted(records) == [
         ("deepseek", "deepseek-chat-v4", False),
         ("glm", "glm-4", False),
     ]
@@ -882,8 +867,7 @@ def test_unchanged_configuration_sends_no_test_requests(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # llm_models：提交与当前一致的值 → 不发任何测试
-    step_tests: list[tuple[str, str, str, bool]] = []
-    probes: list[tuple[str, str, bool]] = []
+    records: list[tuple[str, str, bool]] = []
     saves: list[dict[str, Any]] = []
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     _patch_settings_adapter(
@@ -896,8 +880,7 @@ def test_unchanged_configuration_sends_no_test_requests(
             saves=saves,
         ),
     )
-    _stub_step_tests(monkeypatch, step_tests)
-    _stub_endpoint_probes(monkeypatch, probes)
+    _stub_probes(monkeypatch, records)
 
     settings_service.update_setting(
         "llm_models",
@@ -916,8 +899,7 @@ def test_unchanged_configuration_sends_no_test_requests(
         actor=_admin(),
     )
 
-    assert step_tests == []
-    assert probes == []
+    assert records == []
     assert len(saves) == 2
 
 
@@ -927,8 +909,7 @@ def test_endpoint_connection_change_tests_steps_even_with_same_combination(
     endpoints = _llm_endpoints_value()
     # 换了 Key 环境变量：解析组合没变，但连接信息变了 → 跟随步骤要重测
     endpoints["items"][0]["api_key_env"] = "LLM_OPENROUTER_API_KEY"
-    step_tests: list[tuple[str, str, str, bool]] = []
-    probes: list[tuple[str, str, bool]] = []
+    records: list[tuple[str, str, bool]] = []
     saves: list[dict[str, Any]] = []
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     _patch_settings_adapter(
@@ -938,8 +919,7 @@ def test_endpoint_connection_change_tests_steps_even_with_same_combination(
             saves=saves,
         ),
     )
-    _stub_step_tests(monkeypatch, step_tests)
-    _stub_endpoint_probes(monkeypatch, probes)
+    _stub_probes(monkeypatch, records)
 
     settings_service.update_setting(
         "llm_endpoints",
@@ -948,11 +928,10 @@ def test_endpoint_connection_change_tests_steps_even_with_same_combination(
         actor=_admin(),
     )
 
-    assert step_tests == [
-        ("summary", "openrouter", "default-model", False),
-        ("source", "openrouter", "default-model", True),
+    assert records == [
+        ("openrouter", "default-model", False),
+        ("openrouter", "default-model", True),
     ]
-    assert probes == []
     assert len(saves) == 1
 
 
@@ -962,8 +941,7 @@ def test_failed_endpoint_default_model_test_rejects_save_naming_endpoint_and_mod
     endpoints = _llm_endpoints_value()
     endpoints["items"][1]["default_model"] = "broken-model"
     saves: list[dict[str, Any]] = []
-    step_tests: list[tuple[str, str, str, bool]] = []
-    probes: list[tuple[str, str, bool]] = []
+    records: list[tuple[str, str, bool]] = []
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     _patch_settings_adapter(
         monkeypatch,
@@ -972,8 +950,7 @@ def test_failed_endpoint_default_model_test_rejects_save_naming_endpoint_and_mod
             saves=saves,
         ),
     )
-    _stub_step_tests(monkeypatch, step_tests)
-    _stub_endpoint_probes(monkeypatch, probes, succeed=False)
+    _stub_probes(monkeypatch, records, succeed=False)
 
     with pytest.raises(ValueError, match="DeepSeek") as excinfo:
         settings_service.update_setting(
@@ -998,7 +975,7 @@ def test_failed_step_test_rejects_models_save_and_keeps_database(
         "endpoint": "openrouter",
     }
     saves: list[dict[str, Any]] = []
-    step_tests: list[tuple[str, str, str, bool]] = []
+    records: list[tuple[str, str, bool]] = []
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     _patch_settings_adapter(
         monkeypatch,
@@ -1010,9 +987,7 @@ def test_failed_step_test_rejects_models_save_and_keeps_database(
             saves=saves,
         ),
     )
-    _stub_step_tests(monkeypatch, step_tests, succeed=False)
-    probes: list[tuple[str, str, bool]] = []
-    _stub_endpoint_probes(monkeypatch, probes)
+    _stub_probes(monkeypatch, records, succeed=False)
 
     with pytest.raises(ValueError, match="摘要生成模型测试失败"):
         settings_service.update_setting(
@@ -1023,6 +998,234 @@ def test_failed_step_test_rejects_models_save_and_keeps_database(
         )
 
     assert saves == []
+
+
+# ---------- 保存探针使用待保存定义（只替换 HTTP 发送层） ----------
+
+
+def test_save_probes_new_endpoint_with_pending_definition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """新增接入点：探针发往**新**接入点的地址、带**新** Key、模型是它的默认模型。"""
+
+    endpoints = _llm_endpoints_value()
+    endpoints["items"].append(_glm_item())
+    saves: list[dict[str, Any]] = []
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_GLM_API_KEY", "glm-key")
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter(
+            {"llm_models": _llm_value(), "llm_endpoints": _llm_endpoints_value()},
+            saves=saves,
+        ),
+    )
+    http: list[dict[str, Any]] = []
+    _stub_llm_http(monkeypatch, http)
+
+    settings_service.update_setting(
+        "llm_endpoints",
+        value=endpoints,
+        expected_version=4,
+        actor=_admin(),
+    )
+
+    assert len(saves) == 1
+    # 只有接入点级探针（glm 是新增）：发往新地址、新 Key、默认模型
+    assert len(http) == 1
+    assert http[0]["url"] == "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+    assert http[0]["authorization"] == "Bearer glm-key"
+    assert http[0]["model"] == "glm-4.6"
+
+
+def test_save_rejects_new_endpoint_with_missing_key_naming_env_and_no_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """新增接入点但 Key 环境变量未配置：保存被拒、数据库不变、零请求，
+    报错写明环境变量名和处理提示（先配 .env.local 再点「重新加载环境变量」）。"""
+
+    endpoints = _llm_endpoints_value()
+    endpoints["items"].append(_glm_item())
+    saves: list[dict[str, Any]] = []
+    monkeypatch.delenv("LLM_GLM_API_KEY", raising=False)
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter(
+            {"llm_models": _llm_value(), "llm_endpoints": _llm_endpoints_value()},
+            saves=saves,
+        ),
+    )
+    http: list[dict[str, Any]] = []
+
+    def must_not_post(url, **kwargs):
+        http.append({"url": url})
+        raise AssertionError("Key 未配置时不得发出任何请求")
+
+    monkeypatch.setattr(settings_service, "post_chat_completion", must_not_post)
+
+    with pytest.raises(ValueError) as excinfo:
+        settings_service.update_setting(
+            "llm_endpoints",
+            value=endpoints,
+            expected_version=4,
+            actor=_admin(),
+        )
+
+    message = str(excinfo.value)
+    assert "LLM_GLM_API_KEY" in message
+    assert ".env.local" in message
+    assert "重新加载环境变量" in message
+    assert saves == []
+    assert http == []
+
+
+def test_save_retests_steps_with_new_key_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """改某接入点的 api_key_env：跟随步骤重测时带的是**新** Key。"""
+
+    endpoints = _llm_endpoints_value()
+    endpoints["items"][0]["api_key_env"] = "LLM_OPENROUTER_V2_API_KEY"
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.setenv("LLM_OPENROUTER_V2_API_KEY", "new-openrouter-key")
+    saves: list[dict[str, Any]] = []
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter(
+            {"llm_models": _llm_value(), "llm_endpoints": _llm_endpoints_value()},
+            saves=saves,
+        ),
+    )
+    http: list[dict[str, Any]] = []
+    _stub_llm_http(monkeypatch, http)
+
+    settings_service.update_setting(
+        "llm_endpoints",
+        value=endpoints,
+        expected_version=4,
+        actor=_admin(),
+    )
+
+    assert len(saves) == 1
+    # 旧 Key 环境变量已删：请求带得出 Authorization 只能是 新 Key
+    assert http, "连接信息变化必须触发步骤重测"
+    for record in http:
+        assert record["authorization"] == "Bearer new-openrouter-key"
+        assert record["url"] == "https://openrouter.ai/api/v1/chat/completions"
+
+
+def test_save_retests_steps_with_new_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """改某接入点的 base_url：重测请求发往**新**地址。"""
+
+    endpoints = _llm_endpoints_value()
+    endpoints["items"][0]["base_url"] = "https://openrouter.ai/api/v2"
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    saves: list[dict[str, Any]] = []
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter(
+            {"llm_models": _llm_value(), "llm_endpoints": _llm_endpoints_value()},
+            saves=saves,
+        ),
+    )
+    http: list[dict[str, Any]] = []
+    _stub_llm_http(monkeypatch, http)
+
+    settings_service.update_setting(
+        "llm_endpoints",
+        value=endpoints,
+        expected_version=4,
+        actor=_admin(),
+    )
+
+    assert len(saves) == 1
+    assert http, "连接信息变化必须触发步骤重测"
+    for record in http:
+        assert record["url"] == "https://openrouter.ai/api/v2/chat/completions"
+
+
+def test_add_endpoint_via_http_api_returns_200_and_is_visible(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """通过管理接口新增接入点：PUT 200，探针实测新接入点，GET 立即可见。"""
+
+    endpoints = _llm_endpoints_value()
+    endpoints["items"].append(_glm_item())
+    store: dict[str, dict[str, Any]] = {
+        "llm_models": {"value": _llm_value(), "version": 4},
+        "llm_endpoints": {"value": _llm_endpoints_value(), "version": 3},
+    }
+
+    class _Store:
+        def fetch_settings(self) -> list[dict[str, Any]]:
+            return [
+                {
+                    "section": section,
+                    "value": item["value"],
+                    "version": item["version"],
+                    "updated_at": None,
+                    "updated_by_user_id": None,
+                    "updated_by_display_name": None,
+                }
+                for section, item in store.items()
+            ]
+
+        def fetch_setting(self, section: str) -> dict[str, Any] | None:
+            item = store.get(section)
+            return None if item is None else {"section": section, **item}
+
+        def update_app_setting_as_user(
+            self,
+            *,
+            section: str,
+            value: Any,
+            expected_version: int,
+            actor_user_id: str,
+        ) -> dict[str, Any]:
+            item = store[section]
+            if item["version"] != expected_version:
+                from src.adapters.db_postgres_app_config import (
+                    ConfigVersionConflictError,
+                )
+
+                raise ConfigVersionConflictError("配置版本冲突")
+            item["value"] = value
+            item["version"] += 1
+            return {"section": section, "value": value, "version": item["version"]}
+
+    monkeypatch.setattr(
+        settings_service, "get_adapter", lambda: SimpleNamespace(app_config=_Store())
+    )
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_GLM_API_KEY", "glm-key")
+    http: list[dict[str, Any]] = []
+    _stub_llm_http(monkeypatch, http)
+    monkeypatch.setattr("src.console.app.warn_legacy_config", lambda: [])
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _admin
+    client = TestClient(app)
+
+    put = client.put(
+        "/api/admin/settings/llm_endpoints",
+        json={"value": endpoints, "expected_version": 3},
+    )
+
+    assert put.status_code == 200
+    # 探针发往新接入点（新增接入点曾经因探针查库直接保存失败）
+    assert any(
+        record["url"] == "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+        and record["authorization"] == "Bearer glm-key"
+        for record in http
+    )
+
+    fetched = client.get("/api/admin/settings")
+
+    assert fetched.status_code == 200
+    keys = [item["key"] for item in fetched.json()["endpoints"]["items"]]
+    assert keys == ["openrouter", "deepseek", "glm"]
 
 
 def test_llm_models_save_rejects_unknown_endpoint_reference(

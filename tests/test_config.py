@@ -43,6 +43,9 @@ LLM_ENV_KEYS = (
     "LLM_QUOTA_ALERT_ENABLED",
     "LLM_QUOTA_ALERT_COOLDOWN_SECONDS",
     "LLM_QUOTA_ALERT_STATE_PATH",
+    "LLM_REQUEST_ALERT_ENABLED",
+    "LLM_REQUEST_ALERT_COOLDOWN_SECONDS",
+    "LLM_REQUEST_ALERT_STATE_PATH",
     "LLM_BASE_URL",
     "OPENROUTER_BASE_URL",
     "OPENROUTER_API_KEY",
@@ -105,6 +108,11 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
     monkeypatch.setenv("LLM_QUOTA_ALERT_ENABLED", "false")
     monkeypatch.setenv("LLM_QUOTA_ALERT_COOLDOWN_SECONDS", "99")
     monkeypatch.setenv("LLM_QUOTA_ALERT_STATE_PATH", "logs/test_quota_state.json")
+    monkeypatch.setenv("LLM_REQUEST_ALERT_ENABLED", "false")
+    monkeypatch.setenv("LLM_REQUEST_ALERT_COOLDOWN_SECONDS", "45")
+    monkeypatch.setenv(
+        "LLM_REQUEST_ALERT_STATE_PATH", "logs/test_request_alert_state.json"
+    )
     monkeypatch.setenv("LLM_ALLOWED_HOSTS", "openrouter.ai, Evil.example ,,api.deepseek.com")
 
     settings = config.get_settings()
@@ -135,6 +143,12 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
     assert settings.llm_quota_alert_enabled is False
     assert settings.llm_quota_alert_cooldown_seconds == 99
     assert settings.llm_quota_alert_state_path.name == "test_quota_state.json"
+    assert settings.llm_request_alert_enabled is False
+    assert settings.llm_request_alert_cooldown_seconds == 45
+    assert (
+        settings.llm_request_alert_state_path.name
+        == "test_request_alert_state.json"
+    )
 
 
 def test_settings_prefers_positive_filter_threshold_names(
@@ -207,6 +221,12 @@ def test_settings_ignores_removed_llm_variable_names(
     assert settings.llm_quota_alert_enabled is True
     assert settings.llm_quota_alert_cooldown_seconds == 21600
     assert settings.llm_quota_alert_state_path.name == "llm_quota_alert_state.json"
+    assert settings.llm_request_alert_enabled is True
+    assert settings.llm_request_alert_cooldown_seconds == 1800
+    assert (
+        settings.llm_request_alert_state_path.name
+        == "llm_request_alert_state.json"
+    )
     assert settings.default_concurrency == 50
     assert settings.summary_concurrency == 50
 

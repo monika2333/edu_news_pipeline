@@ -148,6 +148,18 @@ LLM_QUOTA_ALERT_STATE_PATH=logs/llm_quota_alert_state.json
 
 `LLM_QUOTA_ALERT_COOLDOWN_SECONDS` 默认 21600 秒，即同类 LLM 额度/计费问题 6 小时内最多提醒一次。`LLM_QUOTA_ALERT_STATE_PATH` 用于跨定时任务进程记录最近一次提醒时间。
 
+### LLM 请求错误飞书提醒
+
+额度之外的**系统性**请求错误（4xx 里除额度/文章级超限之外的部分，例如接入点不支持某种 `response_format`、模型名不存在、鉴权失败）会单独告警并熔断当前步骤；属于单篇文章超限的错误（400/413 且正文指向上下文/长度/体积）不告警，只计文章失败。
+
+```env
+LLM_REQUEST_ALERT_ENABLED=true
+LLM_REQUEST_ALERT_COOLDOWN_SECONDS=1800
+LLM_REQUEST_ALERT_STATE_PATH=logs/llm_request_alert_state.json
+```
+
+冷却按「status + provider code + provider message + 接入点 label + model」指纹计算，默认 1800 秒内同一指纹只提醒一次；状态按指纹写入独立的 JSON 文件，跨进程共享，不要与 `LLM_QUOTA_ALERT_STATE_PATH` 混用（两套告警各记各的）。告警发送失败只打印日志，不影响流水线。
+
 ## 控制台认证
 
 浏览器使用数据库账号和可撤销的服务端会话。先执行迁移，再通过

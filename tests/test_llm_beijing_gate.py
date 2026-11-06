@@ -178,6 +178,59 @@ def test_call_beijing_gate_uses_json_object_for_json_mode_only_endpoint(
     assert decision.is_beijing_related is False
 
 
+class _RawBody:
+    def __init__(self, chunks: list[bytes]) -> None:
+        self._chunks = list(chunks)
+
+    def read1(self, amount: int, *, decode_content: bool) -> bytes:
+        assert amount == 8192
+        assert decode_content is True
+        if not self._chunks:
+            return b""
+        return self._chunks.pop(0)
+
+
+class _ErrorResponse:
+    encoding = "utf-8"
+
+    def __init__(self, status_code: int, body: str) -> None:
+        self.status_code = status_code
+        self.raw = _RawBody([body.encode("utf-8")])
+
+    def close(self) -> None:
+        return None
+
+
+def test_call_beijing_gate_raises_typed_error_for_400_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.adapters import llm_chat
+
+    calls: list[dict[str, object]] = []
+    body = (
+        '{"error": {"message": "This response_format type is unavailable now '
+        '(request_id: gate-req-1)", "code": "invalid_request_error"}}'
+    )
+
+    def fake_post(*args, **kwargs):
+        calls.append(kwargs)
+        return _ErrorResponse(400, body)
+
+    monkeypatch.setattr(llm_chat.requests, "post", fake_post)
+
+    with pytest.raises(llm_chat.LLMRequestError) as exc_info:
+        gate.call_beijing_gate(_candidate(), retries=3)
+
+    assert len(calls) == 1
+    error = exc_info.value
+    assert error.operation == "beijing_gate"
+    assert error.status_code == 400
+    assert error.scope == llm_chat.LLM_SCOPE_SYSTEMATIC
+    assert error.retryable is False
+    assert error.provider_code == "invalid_request_error"
+    assert error.request_id == "gate-req-1"
+
+
 def test_call_beijing_gate_preserves_final_indeterminate_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

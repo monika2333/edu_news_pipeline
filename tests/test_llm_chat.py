@@ -14,11 +14,20 @@ import pytest
 
 from src.adapters import llm_chat
 from src.adapters.llm_chat import (
+    LLM_FAILURE_QUOTA,
+    LLM_FAILURE_TRANSIENT,
+    LLM_SCOPE_ARTICLE,
+    LLM_SCOPE_SYSTEMATIC,
     LLMQuotaError,
+    LLMRequestError,
     LLMWallClockTimeout,
     apply_reasoning_config,
+    build_llm_request_error,
+    classify_llm_failure,
     extract_message_text,
     is_llm_quota_response,
+    is_retryable_llm_status,
+    parse_llm_error_body,
     post_chat_completion,
     raise_for_llm_quota_error,
 )
@@ -371,3 +380,328 @@ def test_post_chat_completion_returns_complete_json_object(
     )
 
     assert result == expected
+
+
+_DEEPSEEK_JSON_SCHEMA_ERROR = json.dumps(
+    {
+        "error": {
+            "message": "This response_format type is unavailable now (request_id: req-123)",
+            "type": "invalid_request_error",
+            "param": None,
+            "code": "invalid_request_error",
+        }
+    }
+)
+_RETRYABLE_STATUSES = {408, 429, 500, 502, 503, 504}
+
+
+def _fake_status_post(
+    status_code: int,
+    body: str,
+    calls: list[dict],
+):
+    def fake_post(*args, **kwargs):
+        calls.append(kwargs)
+        return _StreamingResponse(status_code, [body.encode("utf-8")])
+
+    return fake_post
+
+
+def test_parse_llm_error_body_extracts_request_id_from_message() -> None:
+    detail = parse_llm_error_body(_DEEPSEEK_JSON_SCHEMA_ERROR)
+
+    assert detail.parsed is True
+    assert detail.provider_code == "invalid_request_error"
+    assert detail.provider_message == "This response_format type is unavailable now"
+    assert detail.request_id == "req-123"
+
+
+def test_parse_llm_error_body_reads_top_level_request_id() -> None:
+    detail = parse_llm_error_body(
+        json.dumps({"message": "unknown model", "request_id": "top-level-1"})
+    )
+
+    assert detail.provider_message == "unknown model"
+    assert detail.request_id == "top-level-1"
+
+
+def test_parse_llm_error_body_keeps_non_json_text() -> None:
+    detail = parse_llm_error_body("<html>502 Bad Gateway</html>")
+
+    assert detail.parsed is False
+    assert detail.provider_code is None
+    assert detail.provider_message == "<html>502 Bad Gateway</html>"
+    assert detail.raw_text == "<html>502 Bad Gateway</html>"
+
+
+def test_parse_llm_error_body_truncates_huge_non_json_text() -> None:
+    detail = parse_llm_error_body("x" * 5000)
+
+    assert len(detail.raw_text) == 600
+    assert detail.raw_text.endswith("...")
+
+
+def test_classify_llm_failure_json_schema_400_is_systematic() -> None:
+    assert (
+        classify_llm_failure(400, _DEEPSEEK_JSON_SCHEMA_ERROR)
+        == LLM_SCOPE_SYSTEMATIC
+    )
+
+
+def test_classify_llm_failure_marks_context_and_size_errors_as_article() -> None:
+    context = json.dumps(
+        {"error": {"message": "This model's maximum context length is 8192 tokens"}}
+    )
+    too_large = json.dumps({"error": {"message": "Request entity too large"}})
+
+    assert classify_llm_failure(400, context) == LLM_SCOPE_ARTICLE
+    assert classify_llm_failure(413, too_large) == LLM_SCOPE_ARTICLE
+    # 400/413 但没有长度/体积标记时仍是系统性错误
+    assert classify_llm_failure(413, "unexpected failure") == LLM_SCOPE_SYSTEMATIC
+    assert classify_llm_failure(400, "bad payload format") == LLM_SCOPE_SYSTEMATIC
+
+
+def test_classify_llm_failure_other_4xx_are_systematic() -> None:
+    for status_code in (401, 403, 404, 422):
+        assert (
+            classify_llm_failure(status_code, "invalid request")
+            == LLM_SCOPE_SYSTEMATIC
+        )
+
+
+def test_classify_llm_failure_keeps_retryable_statuses_transient() -> None:
+    assert classify_llm_failure(429, "rate limit exceeded") == LLM_FAILURE_TRANSIENT
+    assert classify_llm_failure(500, "internal error") == LLM_FAILURE_TRANSIENT
+    assert classify_llm_failure(408, "timeout") == LLM_FAILURE_TRANSIENT
+
+
+def test_is_retryable_llm_status_covers_408_409_425_429_and_5xx() -> None:
+    assert all(is_retryable_llm_status(code) for code in (408, 409, 425, 429, 500, 503))
+    assert all(
+        not is_retryable_llm_status(code) for code in (400, 401, 403, 404, 422)
+    )
+
+
+def test_classify_llm_failure_prioritises_quota() -> None:
+    assert (
+        classify_llm_failure(400, "insufficient credits, maximum context length 8192")
+        == LLM_FAILURE_QUOTA
+    )
+    assert classify_llm_failure(429, "余额不足，请充值") == LLM_FAILURE_QUOTA
+
+
+def test_build_llm_request_error_describes_status_code_endpoint_model_and_id() -> None:
+    error = build_llm_request_error(
+        status_code=400,
+        response_text=_DEEPSEEK_JSON_SCHEMA_ERROR,
+        operation="beijing_gate",
+        model="deepseek-flash",
+        endpoint_label="DeepSeek",
+    )
+
+    assert error.scope == LLM_SCOPE_SYSTEMATIC
+    assert error.retryable is False
+    assert error.provider_code == "invalid_request_error"
+    assert error.request_id == "req-123"
+    described = str(error)
+    for fragment in (
+        "status=400",
+        "scope=systematic",
+        "retryable=no",
+        "endpoint=DeepSeek",
+        "model=deepseek-flash",
+        "provider_code=invalid_request_error",
+        "request_id=req-123",
+        "This response_format type is unavailable now",
+    ):
+        assert fragment in described
+
+
+def test_build_llm_request_error_marks_retryable_status() -> None:
+    error = build_llm_request_error(
+        status_code=503,
+        response_text="upstream unavailable",
+        operation="summarize",
+        model="model-a",
+    )
+
+    assert error.retryable is True
+    assert error.is_systematic is False
+    assert error.is_article is False
+
+
+def test_post_chat_completion_does_not_retry_400_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        llm_chat.requests,
+        "post",
+        _fake_status_post(400, _DEEPSEEK_JSON_SCHEMA_ERROR, calls),
+    )
+
+    with pytest.raises(LLMRequestError) as exc_info:
+        post_chat_completion(
+            "https://llm.example.test/chat/completions",
+            payload={"model": "deepseek-flash"},
+            headers={},
+            timeout=1,
+            budget=10,
+            retries=3,
+            retryable_statuses=_RETRYABLE_STATUSES,
+            operation="beijing_gate",
+            model="deepseek-flash",
+            endpoint_label="DeepSeek",
+            backoff_initial=0.0,
+            allowed_hosts={"llm.example.test"},
+        )
+
+    assert len(calls) == 1
+    error = exc_info.value
+    assert error.status_code == 400
+    assert error.scope == LLM_SCOPE_SYSTEMATIC
+    assert error.retryable is False
+    assert error.request_id == "req-123"
+    assert error.endpoint_label == "DeepSeek"
+
+
+def test_post_chat_completion_never_retries_400_even_if_listed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        llm_chat.requests,
+        "post",
+        _fake_status_post(400, "bad request", calls),
+    )
+
+    with pytest.raises(LLMRequestError):
+        post_chat_completion(
+            "https://llm.example.test/chat/completions",
+            payload={"model": "model-a"},
+            headers={},
+            timeout=1,
+            budget=10,
+            retries=3,
+            retryable_statuses={400},
+            operation="test_canonical_guard",
+            model="model-a",
+            backoff_initial=0.0,
+            allowed_hosts={"llm.example.test"},
+        )
+
+    assert len(calls) == 1
+
+
+def test_post_chat_completion_retries_500_until_attempts_exhausted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        llm_chat.requests,
+        "post",
+        _fake_status_post(500, "upstream internal error", calls),
+    )
+
+    with pytest.raises(LLMRequestError) as exc_info:
+        post_chat_completion(
+            "https://llm.example.test/chat/completions",
+            payload={"model": "model-a"},
+            headers={},
+            timeout=1,
+            budget=10,
+            retries=3,
+            retryable_statuses={429, 500},
+            operation="summarize",
+            model="model-a",
+            backoff_initial=0.0,
+            allowed_hosts={"llm.example.test"},
+        )
+
+    assert len(calls) == 3
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.retryable is True
+
+
+def test_post_chat_completion_retries_429(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        llm_chat.requests,
+        "post",
+        _fake_status_post(429, "rate limit exceeded", calls),
+    )
+
+    with pytest.raises(LLMRequestError) as exc_info:
+        post_chat_completion(
+            "https://llm.example.test/chat/completions",
+            payload={"model": "model-a"},
+            headers={},
+            timeout=1,
+            budget=10,
+            retries=2,
+            retryable_statuses={429},
+            operation="score",
+            model="model-a",
+            backoff_initial=0.0,
+            allowed_hosts={"llm.example.test"},
+        )
+
+    assert len(calls) == 2
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.retryable is True
+
+
+def test_post_chat_completion_quota_error_wins_over_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict] = []
+    body = json.dumps({"error": {"message": "余额不足，请充值"}}, ensure_ascii=False)
+    monkeypatch.setattr(
+        llm_chat.requests,
+        "post",
+        _fake_status_post(429, body, calls),
+    )
+    monkeypatch.setattr(
+        llm_chat,
+        "get_settings",
+        lambda: SimpleNamespace(llm_quota_alert_enabled=False),
+    )
+
+    with pytest.raises(LLMQuotaError):
+        post_chat_completion(
+            "https://llm.example.test/chat/completions",
+            payload={"model": "model-a"},
+            headers={},
+            timeout=1,
+            budget=10,
+            retries=3,
+            retryable_statuses={429},
+            operation="score",
+            model="model-a",
+            backoff_initial=0.0,
+            allowed_hosts={"llm.example.test"},
+        )
+
+    assert len(calls) == 1
+
+
+def test_llm_quota_error_survives_context_manager_traceback_assignment() -> None:
+    """RuntimeError 子类经过 contextlib 管理的 with 块时不能被 frozen 挡住。"""
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _guard():
+        yield
+
+    error = LLMQuotaError(
+        operation="score",
+        model="model-a",
+        status_code=402,
+        response_text="Insufficient Balance",
+    )
+    with pytest.raises(LLMQuotaError):
+        with _guard():
+            raise error

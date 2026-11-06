@@ -1,10 +1,14 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
+import hashlib
 import json
+import re
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from pathlib import Path
+from typing import Mapping, Optional
 
 import requests
 
@@ -15,6 +19,11 @@ _TOKEN_URL = f"{_FEISHU_API_ROOT}/auth/v3/tenant_access_token/internal/"
 _MESSAGE_URL = f"{_FEISHU_API_ROOT}/im/v1/messages"
 _DEFAULT_TIMEOUT = 10
 _WEEKDAY_LABELS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+_REQUEST_ALERT_STATE_LIMIT = 50
+_REQUEST_ID_TEXT_PATTERN = re.compile(
+    r"[（(]?\s*request[_ ]?id\s*[:：]\s*[A-Za-z0-9._:\-]+\s*[)）]?",
+    re.IGNORECASE,
+)
 
 
 class FeishuConfigError(RuntimeError):
@@ -44,6 +53,7 @@ class _TokenCache:
 
 _token_cache: Optional[_TokenCache] = None
 _token_lock = threading.Lock()
+_request_alert_lock = threading.Lock()
 
 
 def notify_llm_quota_alert(
@@ -65,6 +75,75 @@ def notify_llm_quota_alert(
     )
     _send_text_message(config, message)
     return True
+
+
+def notify_llm_request_alert(
+    *,
+    operation: str,
+    endpoint_label: Optional[str],
+    model: str,
+    status_code: int,
+    provider_code: Optional[str] = None,
+    provider_message: Optional[str] = None,
+    request_id: Optional[str] = None,
+) -> bool:
+    """Send a Feishu alert for a systematic (non-retryable) LLM request failure.
+
+    Alerts are throttled per fingerprint — status + provider code + provider
+    message + endpoint label + model — for
+    ``LLM_REQUEST_ALERT_COOLDOWN_SECONDS``. The throttle state lives in
+    ``LLM_REQUEST_ALERT_STATE_PATH`` so separate scheduled runs share one
+    window. Returns True only when a message was actually sent; delivery
+    problems are printed and swallowed because an alert outage must never break
+    the pipeline.
+    """
+
+    settings = get_settings()
+    if not settings.llm_request_alert_enabled:
+        return False
+
+    fingerprint = _request_alert_fingerprint(
+        status_code=status_code,
+        provider_code=provider_code,
+        provider_message=provider_message,
+        endpoint_label=endpoint_label,
+        model=model,
+    )
+    occurred_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    message = _render_llm_request_alert_message(
+        operation=operation,
+        endpoint_label=endpoint_label,
+        model=model,
+        status_code=status_code,
+        provider_code=provider_code,
+        provider_message=provider_message,
+        request_id=request_id,
+        occurred_at=occurred_at,
+    )
+
+    with _request_alert_lock:
+        now = time.time()
+        state_path = settings.llm_request_alert_state_path
+        entries = _read_request_alert_state(state_path)
+        last_alert_at = entries.get(fingerprint)
+        cooldown = max(0, settings.llm_request_alert_cooldown_seconds)
+        if last_alert_at is not None and now - last_alert_at < cooldown:
+            return False
+        try:
+            config = _load_config()
+            _send_text_message(config, message)
+        except FeishuConfigError as exc:
+            print(f"[llm_alert] Feishu request alert skipped: {exc}")
+            return False
+        except FeishuRequestError as exc:
+            print(f"[llm_alert] Feishu request alert failed: {exc}")
+            return False
+        except Exception as exc:  # 告警是旁路，任何异常都不能中断流水线
+            print(f"[llm_alert] Feishu request alert unexpected error: {exc}")
+            return False
+        entries[fingerprint] = now
+        _write_request_alert_state(state_path, entries)
+        return True
 
 
 def notify_console_registration(
@@ -140,6 +219,97 @@ def _render_llm_quota_alert_message(
         "Action: check the LLM account balance, billing status, quota, and API key.",
     ]
     return _truncate("\n".join(lines), 1800)
+
+
+def _render_llm_request_alert_message(
+    *,
+    operation: str,
+    endpoint_label: Optional[str],
+    model: str,
+    status_code: int,
+    provider_code: Optional[str],
+    provider_message: Optional[str],
+    request_id: Optional[str],
+    occurred_at: str,
+) -> str:
+    lines = [
+        "Edu News Pipeline - LLM request rejected (systematic)",
+        f"Operation: {operation}",
+        f"Endpoint: {endpoint_label or '(unknown)'}",
+        f"Model: {model or '(unknown)'}",
+        f"HTTP status: {status_code}",
+        f"Provider code: {provider_code or '-'}",
+        f"Request id: {request_id or '-'}",
+        f"Occurred at: {occurred_at}",
+        "",
+        f"Provider response: {_truncate(provider_message or '(empty)', 600)}",
+        "",
+        "Action: 检查调用代码、接入点能力（如 response_format/结构化输出支持）、"
+        "模型名与请求参数；该错误不会重试，本轮步骤已熔断，修复后重跑即可。",
+    ]
+    return _truncate("\n".join(lines), 1800)
+
+
+def _request_alert_fingerprint(
+    *,
+    status_code: int,
+    provider_code: Optional[str],
+    provider_message: Optional[str],
+    endpoint_label: Optional[str],
+    model: str,
+) -> str:
+    normalized = "\n".join(
+        (
+            f"status={status_code}",
+            f"code={(provider_code or '').strip().lower()}",
+            f"message={_normalize_alert_text(provider_message)}",
+            f"endpoint={(endpoint_label or '').strip().lower()}",
+            f"model={(model or '').strip().lower()}",
+        )
+    )
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _normalize_alert_text(value: Optional[str]) -> str:
+    """Collapse whitespace and drop request ids so identical errors share a fingerprint."""
+
+    cleaned = _REQUEST_ID_TEXT_PATTERN.sub(" ", value or "")
+    return " ".join(cleaned.split())
+
+
+def _read_request_alert_state(state_path: Path) -> dict[str, float]:
+    if not state_path.exists():
+        return {}
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(data, Mapping):
+        return {}
+    raw_entries = data.get("fingerprints")
+    if not isinstance(raw_entries, Mapping):
+        return {}
+    entries: dict[str, float] = {}
+    for key, value in raw_entries.items():
+        if isinstance(key, str) and isinstance(value, (int, float)):
+            entries[key] = float(value)
+    return entries
+
+
+def _write_request_alert_state(
+    state_path: Path,
+    entries: Mapping[str, float],
+) -> None:
+    trimmed = sorted(entries.items(), key=lambda item: item[1], reverse=True)
+    payload = dict(trimmed[:_REQUEST_ALERT_STATE_LIMIT])
+    try:
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(
+            json.dumps({"fingerprints": payload}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        print(f"[llm_alert] failed to write request alert state: {exc}")
 
 
 def _render_console_registration_message(
@@ -254,5 +424,6 @@ __all__ = [
     "is_configured",
     "notify_console_registration",
     "notify_llm_quota_alert",
+    "notify_llm_request_alert",
     "send_text_to_chat",
 ]

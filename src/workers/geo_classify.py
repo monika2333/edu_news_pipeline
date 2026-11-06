@@ -9,6 +9,7 @@ from src.adapters.llm_beijing_gate import (
     BeijingGateIndeterminateError,
     call_beijing_gate,
 )
+from src.adapters.llm_chat import LLMQuotaError, LLMRequestError
 from src.adapters.prompt_store import load_active_prompts
 from src.business_config import get_business_config
 from src.config import get_settings
@@ -17,6 +18,7 @@ from src.domain import (
     determine_candidate_category,
     is_beijing_related,
 )
+from src.notifications.feishu import notify_llm_request_alert
 from src.workers import (
     ContextPropagatingThreadPoolExecutor,
     log_error,
@@ -34,6 +36,15 @@ class LocalRoutingStats:
     staged_gate: int = 0
     failed: int = 0
     skipped: int = 0
+
+
+@dataclass(slots=True)
+class GateBatchResult:
+    confirmed: int = 0
+    rerouted: int = 0
+    failures: int = 0
+    fallbacks: int = 0
+    systematic_error: Optional[Exception] = None
 
 
 def _determine_route(
@@ -114,9 +125,87 @@ def _beijing_gate_failure_payload(
     }
     if isinstance(exc, BeijingGateIndeterminateError):
         payload.update(exc.diagnostic_payload())
+    if isinstance(exc, LLMRequestError):
+        payload.update(
+            {
+                "scope": exc.scope,
+                "status_code": exc.status_code,
+                "provider_code": exc.provider_code,
+                "request_id": exc.request_id,
+                "endpoint": exc.endpoint_label,
+                "model": exc.model,
+            }
+        )
     if fallback:
         payload["fallback"] = fallback
     return payload
+
+
+def _gate_breaker_error(exc: Exception) -> Optional[Exception]:
+    """Return ``exc`` when the whole step must stop instead of counting a failure.
+
+    Systematic LLM request errors (code/config/endpoint-capability problems)
+    and quota/billing errors are unrelated to the article being processed:
+    retrying the next candidates only replays the same failure. Transient
+    errors (5xx/429/timeouts/network) return ``None`` and keep the existing
+    count-and-fallback path.
+    """
+
+    if isinstance(exc, LLMRequestError) and exc.is_systematic:
+        return exc
+    if isinstance(exc, LLMQuotaError):
+        return exc
+    return None
+
+
+def _notify_systematic_error(exc: Exception) -> None:
+    """Send the once-per-run Feishu alert for a systematic request failure."""
+
+    if not isinstance(exc, LLMRequestError):
+        # 额度错误已有独立的 LLMQuotaError 告警，不重复发。
+        return
+    try:
+        notify_llm_request_alert(
+            operation=exc.operation,
+            endpoint_label=exc.endpoint_label,
+            model=exc.model,
+            status_code=exc.status_code,
+            provider_code=exc.provider_code,
+            provider_message=exc.provider_message,
+            request_id=exc.request_id,
+        )
+    except Exception as alert_exc:  # 告警是旁路，失败不能打断熔断流程
+        print(f"[{WORKER}] LLM request alert failed: {alert_exc}")
+
+
+def _record_article_failure(
+    adapter: Any,
+    candidate: BeijingGateCandidate,
+    exc: LLMRequestError,
+    *,
+    new_fail_count: int,
+    max_failures: int,
+) -> None:
+    """Count one article-scoped 4xx towards the per-article failure budget.
+
+    The article keeps ``pending_beijing_gate``. Once the budget is exhausted it
+    becomes a dead letter for manual handling instead of being silently
+    approved as Beijing.
+    """
+
+    adapter.process.mark_beijing_gate_failure(
+        candidate.article_id,
+        fail_count=new_fail_count,
+        error=str(exc),
+        raw_output=_beijing_gate_failure_payload(exc, fail_count=new_fail_count),
+    )
+    log_error(WORKER, candidate.article_id, exc)
+    if new_fail_count >= max_failures:
+        log_info(
+            WORKER,
+            f"GATE EXHAUSTED {candidate.article_id}: fail_count={new_fail_count} "
+            "status=pending_beijing_gate reason=article_request_error",
+        )
 
 
 def _process_beijing_gate(
@@ -127,11 +216,8 @@ def _process_beijing_gate(
     llm_retries: int,
     max_failures: int,
     prompt_template: Optional[str] = None,
-) -> tuple[int, int, int, int]:
-    confirmed = 0
-    rerouted = 0
-    failures = 0
-    fallback_completed = 0
+) -> GateBatchResult:
+    result = GateBatchResult()
     future_map = {
         executor.submit(
             call_beijing_gate,
@@ -141,9 +227,11 @@ def _process_beijing_gate(
         ): candidate
         for candidate in candidates
     }
+    pending = set(future_map)
 
     for future in as_completed(future_map):
         candidate = future_map[future]
+        pending.discard(future)
         try:
             decision = future.result()
             raw_payload = _beijing_gate_raw_payload(
@@ -169,7 +257,7 @@ def _process_beijing_gate(
                     sentiment_label=candidate.sentiment_label,
                     candidate_category=category,
                 )
-                confirmed += 1
+                result.confirmed += 1
                 log_info(WORKER, f"GATE {candidate.article_id}: confirmed Beijing")
             elif decision.is_beijing_related is False:
                 category = determine_candidate_category(False, candidate.sentiment_label)
@@ -184,14 +272,34 @@ def _process_beijing_gate(
                     sentiment_label=candidate.sentiment_label,
                     candidate_category=category,
                 )
-                rerouted += 1
+                result.rerouted += 1
                 log_info(WORKER, f"GATE {candidate.article_id}: classified outside Beijing")
             else:
                 raise RuntimeError("Beijing gate returned indeterminate result")
         except Exception as exc:
-            failures += 1
+            breaker = _gate_breaker_error(exc)
+            if breaker is not None:
+                # 熔断：系统性/额度错误与文章数据无关。只记一条 run 级日志与
+                # 一次告警，不写 fail_count、不走兜底；本批剩余 future 取消，
+                # 已提交但未处理的也一律不再写库。
+                result.systematic_error = breaker
+                log_error(WORKER, "run", breaker)
+                _notify_systematic_error(breaker)
+                for outstanding in pending:
+                    outstanding.cancel()
+                break
+            result.failures += 1
             new_fail_count = candidate.beijing_gate_fail_count + 1
-            if new_fail_count >= max_failures:
+            if isinstance(exc, LLMRequestError) and exc.is_article:
+                # 单篇文章超限：只计一次文章失败，不按「默认北京」放行。
+                _record_article_failure(
+                    adapter,
+                    candidate,
+                    exc,
+                    new_fail_count=new_fail_count,
+                    max_failures=max_failures,
+                )
+            elif new_fail_count >= max_failures:
                 fallback_is_beijing = (
                     candidate.is_beijing_related
                     if candidate.is_beijing_related is not None
@@ -216,7 +324,7 @@ def _process_beijing_gate(
                     sentiment_label=candidate.sentiment_label,
                     candidate_category=category,
                 )
-                fallback_completed += 1
+                result.fallbacks += 1
                 log_error(WORKER, candidate.article_id, exc)
                 log_info(
                     WORKER,
@@ -233,7 +341,7 @@ def _process_beijing_gate(
                     ),
                 )
                 log_error(WORKER, candidate.article_id, exc)
-    return confirmed, rerouted, failures, fallback_completed
+    return result
 
 
 def _process_gate_backlog(
@@ -245,8 +353,8 @@ def _process_gate_backlog(
     llm_retries: int,
     max_failures: int,
     prompt_template: Optional[str] = None,
-) -> tuple[int, int, int, int]:
-    totals = [0, 0, 0, 0]
+) -> GateBatchResult:
+    totals = GateBatchResult()
     remaining = limit
     attempted_article_ids: set[str] = set()
     while remaining is None or remaining > 0:
@@ -263,7 +371,7 @@ def _process_gate_backlog(
         if not candidates:
             break
         attempted_article_ids.update(candidate.article_id for candidate in candidates)
-        result = _process_beijing_gate(
+        batch = _process_beijing_gate(
             adapter,
             candidates,
             executor,
@@ -271,11 +379,17 @@ def _process_gate_backlog(
             max_failures=max_failures,
             prompt_template=prompt_template,
         )
-        for index, value in enumerate(result):
-            totals[index] += value
+        totals.confirmed += batch.confirmed
+        totals.rerouted += batch.rerouted
+        totals.failures += batch.failures
+        totals.fallbacks += batch.fallbacks
+        if batch.systematic_error is not None:
+            # 熔断后不再提交后续批次。
+            totals.systematic_error = batch.systematic_error
+            break
         if remaining is not None:
             remaining -= len(candidates)
-    return totals[0], totals[1], totals[2], totals[3]
+    return totals
 
 
 def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
@@ -300,7 +414,7 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
         rows = adapter.news_summaries.fetch_pending_routes(limit_value)
         local_stats = _route_locally(adapter, rows, beijing_keywords)
         with ContextPropagatingThreadPoolExecutor(max_workers=workers) as executor:
-            confirmed, rerouted, gate_failures, fallbacks = _process_gate_backlog(
+            gate = _process_gate_backlog(
                 adapter,
                 executor,
                 limit=limit_value,
@@ -309,6 +423,10 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
                 max_failures=max_failures,
                 prompt_template=prompts["beijing_gate"].content,
             )
+        confirmed = gate.confirmed
+        rerouted = gate.rerouted
+        gate_failures = gate.failures
+        fallbacks = gate.fallbacks
 
         if not rows and not any((confirmed, rerouted, gate_failures, fallbacks)):
             log_info(WORKER, "No pending geographic classifications found.")
@@ -325,6 +443,10 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
             failed=local_stats.failed + gate_failures,
             skipped=local_stats.skipped or None,
         )
+        if gate.systematic_error is not None:
+            # 让调度器看到本轮失败：run_pipeline_once 会把这一步标成 failed
+            # 并以非零码退出，而不是「打了日志但正常结束」。
+            raise gate.systematic_error
 
 
 __all__ = ["run"]

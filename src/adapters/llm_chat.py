@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from collections.abc import Callable, Collection
@@ -38,8 +39,45 @@ _QUOTA_KEYWORDS = (
 )
 _QUOTA_CHECK_STATUSES = {400, 401, 403, 429}
 
+# 失败归属分四类，判定顺序即优先级：额度/计费 > 临时错误 > 文章级 > 系统性。
+# 只有 systematic 与 article 会写进 LLMRequestError.scope；quota 与 transient
+# 由调用方按各自路径处理（额度告警 / 保持临时错误语义）。
+LLM_FAILURE_QUOTA = "quota"
+LLM_FAILURE_TRANSIENT = "transient"
+LLM_SCOPE_SYSTEMATIC = "systematic"
+LLM_SCOPE_ARTICLE = "article"
+LLM_REQUEST_SCOPES = frozenset({LLM_SCOPE_SYSTEMATIC, LLM_SCOPE_ARTICLE})
 
-@dataclass(frozen=True)
+# 值得重试的状态码：408/409/425/429 与全部 5xx。其余 4xx（400/401/403/404/
+# 422…）是确定性请求错误，重试只会把一次故障放大成 N 次。
+_RETRYABLE_STATUS_CODES = frozenset({408, 409, 425, 429})
+
+# 只有 400/413 且正文指向「这一篇的上下文/长度/体积超限」才算文章级错误。
+_ARTICLE_SCOPE_STATUS_CODES = frozenset({400, 413})
+_ARTICLE_SCOPE_MARKERS = (
+    "context length",
+    "maximum context",
+    "max context",
+    "too many tokens",
+    "token limit",
+    "prompt is too long",
+    "request entity too large",
+    "payload too large",
+    "content too large",
+    "string too long",
+)
+_PROVIDER_TEXT_LIMIT = 600
+_REQUEST_ID_PATTERN = re.compile(
+    r"[（(]?\s*request[_ ]?id\s*[:：]\s*([A-Za-z0-9._:\-]+)\s*[)）]?",
+    re.IGNORECASE,
+)
+
+
+# 注意：这两个异常故意不用 frozen dataclass。它们是 RuntimeError 子类，
+# 经过 contextlib 管理的 with 块（例如 worker_session）时，contextlib 会做
+# Python 级 `exc.__traceback__ = ...` 赋值，frozen 会抛 FrozenInstanceError
+# 把真正的错误吞掉。
+@dataclass
 class LLMQuotaError(RuntimeError):
     operation: str
     model: str
@@ -53,6 +91,69 @@ class LLMQuotaError(RuntimeError):
             f"LLM quota or billing error during {self.operation} "
             f"(model={self.model}, status={self.status_code}): {self.response_text}",
         )
+
+
+@dataclass(frozen=True)
+class LLMProviderErrorDetail:
+    """Parse result of a provider error body.
+
+    ``provider_message`` 已去掉 ``(request_id: ...)`` 片段（请求 id 单独放在
+    ``request_id``），这样同一种错误在不同请求之间保持同一文案。
+    """
+
+    provider_code: Optional[str] = None
+    provider_message: Optional[str] = None
+    request_id: Optional[str] = None
+    raw_text: str = ""
+    parsed: bool = False
+
+
+@dataclass
+class LLMRequestError(RuntimeError):
+    """A typed terminal LLM HTTP failure.
+
+    ``scope`` 区分两类归属：
+
+    - ``systematic``：代码、配置、接入点能力（如不支持 ``response_format``
+      的类型）、模型名或鉴权问题。这类错误与具体文章无关，重复请求必然失败。
+    - ``article``：这一篇文章的数据本身超限（上下文/长度/体积类 400/413）。
+
+    ``retryable`` 是状态码层面的临时性判定（408/409/425/429/5xx 为 True）。
+    临时错误仍按原有重试/计数/兜底路径处理，不要用 ``scope`` 判断。
+    """
+
+    operation: str
+    model: str
+    status_code: int
+    scope: str
+    retryable: bool = False
+    endpoint_label: Optional[str] = None
+    provider_code: Optional[str] = None
+    provider_message: Optional[str] = None
+    request_id: Optional[str] = None
+    raw_response_text: str = ""
+
+    def __post_init__(self) -> None:
+        RuntimeError.__init__(self, self.describe())
+
+    def describe(self) -> str:
+        return (
+            f"LLM request failed during {self.operation} "
+            f"(status={self.status_code}, scope={self.scope}, "
+            f"retryable={'yes' if self.retryable else 'no'}, "
+            f"endpoint={self.endpoint_label or '-'}, model={self.model}, "
+            f"provider_code={self.provider_code or '-'}, "
+            f"request_id={self.request_id or '-'}): "
+            f"{self.provider_message or '(no provider message)'}"
+        )
+
+    @property
+    def is_systematic(self) -> bool:
+        return not self.retryable and self.scope == LLM_SCOPE_SYSTEMATIC
+
+    @property
+    def is_article(self) -> bool:
+        return not self.retryable and self.scope == LLM_SCOPE_ARTICLE
 
 
 class LLMEndpointBlockedError(RuntimeError):
@@ -119,7 +220,7 @@ def post_chat_completion(
     backoff_multiplier: float = 2.0,
     backoff_max: float = 8.0,
     advance_backoff_on_exception: bool = True,
-    retry_non_retryable_statuses: bool = True,
+    retry_non_retryable_statuses: bool = False,
     response_validator: Optional[Callable[[dict[str, Any]], None]] = None,
     non_retryable_exceptions: tuple[type[Exception], ...] = (),
     http_error_factory: Optional[Callable[[int, str], Exception]] = None,
@@ -133,6 +234,13 @@ def post_chat_completion(
     complete business call, including response reads, retries, and backoff.
     Callers with outer semantic retries may pass the same absolute ``deadline``
     to every invocation. The optional callback receives each HTTP attempt number.
+
+    Non-2xx responses raise a typed :class:`LLMRequestError` (unless
+    ``http_error_factory`` is supplied). Only statuses in
+    ``retryable_statuses`` that are also retryable by nature (408/409/425/429 or
+    5xx) are retried; 400/401/403/404/422 fail after a single request. Passing
+    ``retry_non_retryable_statuses=True`` restores the legacy retry-everything
+    behaviour and should be treated as an explicit, documented exception.
     """
 
     ensure_url_host_allowed(url, allowed_hosts=allowed_hosts)
@@ -201,12 +309,22 @@ def post_chat_completion(
                 model=model,
                 endpoint_label=endpoint_label,
             )
-            error_factory = http_error_factory or _default_http_error
-            http_error = error_factory(response.status_code, response_text)
-            if (
-                response.status_code not in retryable_statuses
-                and not retry_non_retryable_statuses
-            ):
+            if http_error_factory is not None:
+                http_error = http_error_factory(
+                    response.status_code, response_text
+                )
+            else:
+                http_error = build_llm_request_error(
+                    status_code=response.status_code,
+                    response_text=response_text,
+                    operation=operation,
+                    model=model,
+                    endpoint_label=endpoint_label,
+                )
+            status_retryable = is_retryable_llm_status(
+                response.status_code
+            ) and response.status_code in retryable_statuses
+            if not status_retryable and not retry_non_retryable_statuses:
                 raise _StopRetry(http_error)
             last_error = http_error
             status_failure = True
@@ -314,10 +432,6 @@ def _raise_if_deadline_exceeded(
     raise error from cause
 
 
-def _default_http_error(status_code: int, response_text: str) -> Exception:
-    return RuntimeError(f"API {status_code}: {response_text[:160]}")
-
-
 def build_headers(
     *,
     api_key: str,
@@ -386,6 +500,148 @@ def is_llm_quota_response(status_code: int, response_text: str) -> bool:
         return False
     lowered = response_text.lower()
     return any(keyword in lowered for keyword in _QUOTA_KEYWORDS)
+
+
+def is_retryable_llm_status(status_code: int) -> bool:
+    """Return True only for 408/409/425/429 and every 5xx.
+
+    Everything else — notably 400/401/403/404/422 — is a deterministic request
+    error: retrying it only multiplies the failing requests.
+    """
+
+    return status_code in _RETRYABLE_STATUS_CODES or 500 <= status_code <= 599
+
+
+def parse_llm_error_body(response_text: str) -> LLMProviderErrorDetail:
+    """Extract provider code/message/request_id; never raises on malformed bodies.
+
+    Handles ``{"error": {"message", "code", "request_id"}}``, a top-level
+    ``message``/``code``/``request_id``, an ``error`` string, and providers that
+    only embed the request id in the message as ``(request_id: xxx)``. A body
+    that is not JSON keeps a truncated copy of the raw text as the message.
+    """
+
+    raw_text = _truncate_response(response_text or "", _PROVIDER_TEXT_LIMIT)
+    payload: Any = None
+    text = (response_text or "").strip()
+    if text:
+        try:
+            payload = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            payload = None
+
+    provider_code: Optional[str] = None
+    provider_message: Optional[str] = None
+    request_id: Optional[str] = None
+    if isinstance(payload, Mapping):
+        error_block = payload.get("error")
+        if isinstance(error_block, Mapping):
+            provider_code = _string_or_none(error_block.get("code"))
+            provider_message = _string_or_none(error_block.get("message"))
+            request_id = _string_or_none(error_block.get("request_id"))
+        elif isinstance(error_block, str):
+            provider_message = error_block
+        if provider_code is None:
+            provider_code = _string_or_none(payload.get("code"))
+        if provider_message is None:
+            provider_message = _string_or_none(payload.get("message"))
+        if provider_message is None:
+            provider_message = _string_or_none(payload.get("error_description"))
+        if request_id is None:
+            request_id = _string_or_none(payload.get("request_id"))
+
+    if request_id is None:
+        request_id = _extract_request_id(provider_message) or _extract_request_id(
+            raw_text
+        )
+    cleaned_message = _strip_request_id(provider_message)
+    if cleaned_message is not None:
+        provider_message = cleaned_message
+    elif raw_text:
+        provider_message = raw_text
+
+    return LLMProviderErrorDetail(
+        provider_code=provider_code,
+        provider_message=provider_message,
+        request_id=request_id,
+        raw_text=raw_text,
+        parsed=isinstance(payload, Mapping),
+    )
+
+
+def classify_llm_failure(status_code: int, response_text: str) -> str:
+    """Classify a non-2xx LLM response.
+
+    Order matters: quota/billing keywords win over everything (an HTTP 400 may
+    still be a billing problem), then retryable statuses stay transient, then
+    400/413 with context/length/size markers are article-scoped, and every other
+    status is systematic.
+    """
+
+    if is_llm_quota_response(status_code, response_text):
+        return LLM_FAILURE_QUOTA
+    if is_retryable_llm_status(status_code):
+        return LLM_FAILURE_TRANSIENT
+    if status_code in _ARTICLE_SCOPE_STATUS_CODES:
+        detail = parse_llm_error_body(response_text)
+        haystack = " ".join(
+            part for part in (detail.provider_message, detail.raw_text) if part
+        ).lower()
+        if any(marker in haystack for marker in _ARTICLE_SCOPE_MARKERS):
+            return LLM_SCOPE_ARTICLE
+    return LLM_SCOPE_SYSTEMATIC
+
+
+def build_llm_request_error(
+    *,
+    status_code: int,
+    response_text: str,
+    operation: str,
+    model: str,
+    endpoint_label: Optional[str] = None,
+) -> LLMRequestError:
+    """Build the typed error raised for a non-2xx HTTP response."""
+
+    detail = parse_llm_error_body(response_text)
+    kind = classify_llm_failure(status_code, response_text)
+    scope = LLM_SCOPE_ARTICLE if kind == LLM_SCOPE_ARTICLE else LLM_SCOPE_SYSTEMATIC
+    return LLMRequestError(
+        operation=operation,
+        model=model,
+        status_code=status_code,
+        scope=scope,
+        retryable=is_retryable_llm_status(status_code),
+        endpoint_label=endpoint_label,
+        provider_code=detail.provider_code,
+        provider_message=detail.provider_message,
+        request_id=detail.request_id,
+        raw_response_text=detail.raw_text,
+    )
+
+
+def _string_or_none(value: Any) -> Optional[str]:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = str(value).strip()
+    return text or None
+
+
+def _extract_request_id(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    match = _REQUEST_ID_PATTERN.search(value)
+    if not match:
+        return None
+    return match.group(1).strip() or None
+
+
+def _strip_request_id(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    cleaned = " ".join(_REQUEST_ID_PATTERN.sub(" ", value).split())
+    return cleaned or None
 
 
 def raise_for_llm_quota_error(
@@ -491,14 +747,25 @@ def _write_quota_alert_state(state_path: Path, *, now: float) -> None:
 
 
 __all__ = [
+    "LLM_FAILURE_QUOTA",
+    "LLM_FAILURE_TRANSIENT",
+    "LLM_REQUEST_SCOPES",
+    "LLM_SCOPE_ARTICLE",
+    "LLM_SCOPE_SYSTEMATIC",
     "LLMEndpointBlockedError",
+    "LLMProviderErrorDetail",
     "LLMQuotaError",
+    "LLMRequestError",
     "LLMWallClockTimeout",
     "apply_reasoning_config",
     "build_headers",
+    "build_llm_request_error",
+    "classify_llm_failure",
     "ensure_url_host_allowed",
     "extract_message_text",
     "is_llm_quota_response",
+    "is_retryable_llm_status",
+    "parse_llm_error_body",
     "post_chat_completion",
     "raise_for_llm_quota_error",
 ]

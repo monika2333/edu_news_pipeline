@@ -142,6 +142,9 @@ class Settings:
     llm_quota_alert_enabled: bool
     llm_quota_alert_cooldown_seconds: int
     llm_quota_alert_state_path: Path
+    llm_request_alert_enabled: bool
+    llm_request_alert_cooldown_seconds: int
+    llm_request_alert_state_path: Path
     score_promotion_threshold: int
     process_limit: Optional[int]
     default_concurrency: int
@@ -250,6 +253,16 @@ def get_settings() -> Settings:
     llm_quota_alert_cooldown_seconds = (
         _optional_int(os.getenv("LLM_QUOTA_ALERT_COOLDOWN_SECONDS")) or 21600
     )
+    llm_request_alert_enabled = _bool_from_env(
+        os.getenv("LLM_REQUEST_ALERT_ENABLED"),
+        default=True,
+    )
+    raw_request_alert_cooldown = _optional_int(
+        os.getenv("LLM_REQUEST_ALERT_COOLDOWN_SECONDS")
+    )
+    llm_request_alert_cooldown_seconds = (
+        raw_request_alert_cooldown if raw_request_alert_cooldown is not None else 1800
+    )
     raw_score_threshold = _optional_int(
         _get_env("SCORE_PROMOTION_THRESHOLD", "SCORE_THRESHOLD")
     )
@@ -328,6 +341,12 @@ def get_settings() -> Settings:
         default=_REPO_ROOT / "logs" / "llm_quota_alert_state.json",
     )
 
+    raw_request_alert_state_path = os.getenv("LLM_REQUEST_ALERT_STATE_PATH")
+    llm_request_alert_state_path = _resolve_path(
+        raw_request_alert_state_path,
+        default=_REPO_ROOT / "logs" / "llm_request_alert_state.json",
+    )
+
     console_basic_username = os.getenv("CONSOLE_BASIC_USERNAME")
     console_basic_password = os.getenv("CONSOLE_BASIC_PASSWORD")
     console_api_token = os.getenv("CONSOLE_API_TOKEN")
@@ -373,6 +392,7 @@ def get_settings() -> Settings:
     internal_negative_filter_prompt_path = internal_negative_filter_prompt_path.resolve()
     beijing_gate_prompt_path = beijing_gate_prompt_path.resolve()
     llm_quota_alert_state_path = llm_quota_alert_state_path.resolve()
+    llm_request_alert_state_path = llm_request_alert_state_path.resolve()
 
     return Settings(
         db_host=db_host,
@@ -405,6 +425,9 @@ def get_settings() -> Settings:
         llm_quota_alert_enabled=llm_quota_alert_enabled,
         llm_quota_alert_cooldown_seconds=llm_quota_alert_cooldown_seconds,
         llm_quota_alert_state_path=llm_quota_alert_state_path,
+        llm_request_alert_enabled=llm_request_alert_enabled,
+        llm_request_alert_cooldown_seconds=llm_request_alert_cooldown_seconds,
+        llm_request_alert_state_path=llm_request_alert_state_path,
         score_promotion_threshold=score_promotion_threshold,
         process_limit=process_limit,
         default_concurrency=default_concurrency,

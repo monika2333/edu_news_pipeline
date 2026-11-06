@@ -8,6 +8,8 @@
 
 ## 未排期候选
 
+- 其他 LLM 步骤接入系统性错误熔断/告警（未排期）：目前只有 `geo-classify` 的京内判定会因 systematic/配置类错误熔断并飞书告警；score / summarize / external_filter / source / sentiment / prompt_optimizer / duplicate_review 只做到不可重试 4xx 不再重试，仍按各自逐篇失败/兜底处理。铺开时复用 `LLMRequestError` 与 `_gate_breaker_error` 的语义，不要复制分类逻辑。
+- article 级 4xx 死信可见性（未排期）：`beijing_gate_fail_count` 达到上限后稿件保持 `pending_beijing_gate` 但不再被 `fetch_beijing_gate_candidates` 取到，目前只有 `GATE EXHAUSTED` 日志，控制台/巡检没有入口；是否加状态或运维查询待定。
 - 检索按「消息来源」筛选（未排期）：目前只能按抓取来源 `source` 搜；`news_summaries.llm_source`（LLM 识别的消息来源，5331 篇里 3277 篇与 `source` 不同）与人工来源不可检索。若要做，应作为独立维度（来源过滤下拉），不要塞进自由文本 AND 组（理由见 `decisions.md`「检索语义」）。
 - 爬虫 adapter 整理后续（需先补黄金快照）：统一各站标题提取（现 9 处实现）、btime 结尾锚定后缀收编进 `strip_site_suffix`、发布时间解析共享化。
 - 提示词试跑的后续候选（未排期）：批量/多文章对比、从筛选页文章直接发起重评、后台异步试跑；当前只有设置页单篇同步试跑。

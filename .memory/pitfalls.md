@@ -29,8 +29,11 @@
 ## LLM / 外部 API
 
 - **切换接入点后只有 geo_classify 400？先查结构化输出：`response_format` 的 `json_schema` 是 OpenAI 扩展，DeepSeek 等原生 provider 只支持 `json_object`**，会回 `400 This response_format type is unavailable now`。2026-11-06 下午控制台把七个步骤从 OpenRouter 切到 `api.deepseek.com`（`deepseek-flash`）后，只有带 `json_schema` 请求的京内判定步骤失败（241 篇待判定全灭），其余步骤不带 `response_format` 所以照常。`llm_beijing_gate.build_response_format()` 现在按 `api_style` 选格式：`openrouter` 保留 strict `json_schema`，其余降级为 `json_object`（字段契约写在提示词里，解析失败仍会重试）。新增接入点时如果它其实支持 `json_schema`，不会自动启用——需要显式扩展 `JSON_SCHEMA_CAPABLE_API_STYLES`。
-- **京内判定连续失败会触发「默认按北京放行」的兜底**：`beijing_gate_fail_count` 达到 `BEIJING_GATE_MAX_RETRIES`（默认 3）后，`geo_classify` 会把稿件标成 `ready_for_export` 且 `is_beijing_related=True`，不再走外部过滤。看到 gate 大批失败要按「数据可能被误放行」处理，不能只当日志噪音。
-- 顺带记一笔：`post_chat_completion` 默认 `retry_non_retryable_statuses=True`，400 这类请求错误也会重试满次数，故障请求量会被放大（这次每篇稿件打 3 次）。要不要改为不重试属于行为调整，尚未拍板。
+- **4xx 默认不再重试，错误按归属分四类（2026-11-06）**：`post_chat_completion` 现在只重试 408/429/5xx 与网络异常；400/401/403/404/409/422/425 只发一次。`classify_llm_failure` 的优先级是额度 > 临时 > article（仅 400/413 且命中上下文/长度/体积词）> systematic（其余）。geo 的 systematic、额度和配置类错误不写 `beijing_gate_fail_count`、不兜底、熔断本轮并飞书告警；article 级只计一次、达上限保持 `pending_beijing_gate` 作为死信；临时错误保留原重试/计数/兜底。**不要再把 400 计入文章失败，也不要恢复「重试所有非 2xx」的默认值**。
+- **配置类错误也算 systematic，不能只看 HTTP 400**：缺少 API Key（`LLMEndpointKeyMissingError`）、接入点主机不在 `LLM_ALLOWED_HOSTS`（`LLMEndpointBlockedError`）、业务配置缺步骤/接入点（`BusinessConfigError`）发生在请求发出前，没有 HTTP 状态。geo 已把它们纳入熔断，飞书消息显示 `no HTTP response`、provider code 用异常类名；只按 HTTP 状态判断会漏掉这些，继续记成文章失败。
+- **京内判定的「默认按北京放行」兜底仍然存在，但现在只对临时错误生效**：`beijing_gate_fail_count` 达到 `BEIJING_GATE_MAX_RETRIES`（默认 3）时，只有 5xx/408/429/网络超时这类临时错误才会把稿件标成 `ready_for_export` 且 `is_beijing_related=True`；systematic/article/配置类错误不会走这条路。看到 gate 大批失败仍要按「可能误放行」核查，先看日志里的 `scope` 和是否 `systematic=1`。
+- **`LLMQuotaError` 曾被 frozen dataclass 吞掉**：RuntimeError 子类经过 `with worker_session(...)` 这类 contextlib 上下文时，contextlib 会做 `exc.__traceback__ = ...` 赋值；frozen dataclass 的 `__setattr__` 抛 `FrozenInstanceError`，真正的额度错误被替换成 `FrozenInstanceError`。`LLMQuotaError` / `LLMRequestError` 必须保持普通 dataclass（非 frozen），新增异常子类不要随手加 `frozen=True`。
+- **全量 pytest 偶发 `test_postgres_adapter_core_roundtrip` 失败**：该用例会向生产库插一行 `pending_enrichment`，再断言它出现在 `fetch_pending_enrichments(20)` 的前 20 条里；定时流水线并发运行时可能把这一行消费掉，导致断言失败。单独重跑或错开流水线窗口即可通过，先别怀疑本次改动。彻底修法是让测试用临时表/fixture 隔离（未做）。
 
 ## Windows 计划任务 / PowerShell 脚本
 

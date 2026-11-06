@@ -40,6 +40,7 @@
 - `decode_response` 分级：服务端头 > HTML meta 声明 > chardet > utf-8（中新网服务器不带 charset 时 chardet 误判 pt154 致整页乱码的存量 bug）。
 - trust_env 参数化有实测意义：jyb/劳动午报关代理，其余信任系统代理（本机挂死代理时表现不同）。
 - 账号型来源（beijinghao/btime/tencent 走 crawl_accounts）与列表型来源行为不同；worker 每轮先加载 existing_ids 去重。防灌档靠静态上限 + existing 截停 + lookback 窗口（15 源审计结论见 archive/2026-10-01-千龙默认页数1页.md）。
+- **账号型来源补历史时，`existing_ids` 只能过滤、不能截停翻页**：`--pages N` 补历史时第 1 页往往全是已入库条目，若把「过滤后为空/不足一页」当停止条件，page 2 以下老稿永远抓不到。停止只看原始 `data` 数组：空、原始条数小于页大小、或 `pages` 硬上限；`existing_ids` 只过滤。新京号 2026-11-06 第一版实现踩过，修复见 [archive/2026-11-06-新京号接入.md](archive/2026-11-06-新京号接入.md)。
 
 各站特记：
 - **btime（北京时间）**：`refresh` 必须固定 1——refresh=0 接口会静默返回 2020 年存档；`pageRow:10` 单包、`list_items` 显式 `del pages` 不翻页。视频稿（news_type=3）正文只在页面内嵌 `topic_data` JSON（`modules[*].modules[*][*].data.content` 取 `type=="txt"`），可见 article 节点是标题复读 SEO 样板；实现为 topic_data 优先、HTML 兜底。
@@ -52,6 +53,7 @@
 - **bjrb（北京日报数字版）**：副标题在 `#sub-title`，按原连接符合并进标题（冒号前缀→「主：副」，破折号/无前缀→「主——副」）；只爬当天刊期（`BJRB_DATE` 可指定）。
 - **jyb（中国教育报/神州学人）**：文章经 jyb 搜索 API 入库（`jyb:` 前缀）；副题是 `.title` **后面**的 `.subtitle`（同名 div 是引题位）；发布时间在 `var customtime` JS 变量里（bs4 `get_text()` 默认排除 script）。
 - **21jingji（21经济网）**：频道页第一页 20 条，主列表是 `div.col-l div.news`（侧栏「热文排行」「智库」同页，全页抓会混入）；「查看更多」的前端接口 `m.21jingji.com/channel/politics?page=..&type=json` 现已 404，**没有服务端翻页**。文章在 `m.21jingji.com/article/<日期>/herald/<hash>.html`，正文 `.txtContent .main_content`，发布时间在 `.newsAuthor .author-infos span`。账号名取频道导航 `#navWrap a.cur`——`navWrap` 是 **id 不是 class**，`.navWrap` 选不中，会跌到标题兜底拿到「宏观财经新闻」。列表只有相对时间：feed 行 publish_time 为空、由详情补；`list_items` 必须跳过 existing_ids，否则 feed upsert 的 `EXCLUDED.publish_time=NULL` 会把详情精确时间冲掉。
+- **xinjinghao（新京号）**：文章列表 `https://api.bjnews.com.cn/api/v101/xjh/xjh_article.php?xjh_id=<id>&page=N`，每页 10 条、按时间倒序，`row.content` 自带完整正文（不用再抓详情），`share_url` 详情页 `m.bjnews.com.cn/detail/<uuid>.html`，`publish_timestamp` 是 UTC 秒；号名取 `xjh_info.php` 的 `institution_name`。主页 `/mp/<id>/` 和 `www.bjnews.com.cn/mp/<id>` 都 404，解析要保留无斜杠的 `m.bjnews.com.cn/mp/<id>`。正文结尾模板含「供稿：教育援藏团队」等，必须剥结尾连续元信息行，否则「教育」会命中关键词闸门；`article_id` 统一由 URL 派生（`xinjinghao:<uuid>`），不要一半用 `row.uuid`、一半用 `share_url`。
 
 ## 前端 / jsdom 测试
 

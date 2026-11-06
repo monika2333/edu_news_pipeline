@@ -317,8 +317,8 @@
     white-space: nowrap;
 }
 
-/* 最后一列只有「测试」按钮与结果，按内容收缩，
-   把表格剩余的横向空间全部让给第二列的接入点与模型输入框 */
+/* 第二列吸收表格剩余的横向空间，其余三列都按内容收缩——
+   否则富余宽度会落在最后的「测试」列上，中间留出一条空白带 */
 .settings-steps-table th:nth-child(2),
 .settings-steps-table td:nth-child(2) {
     width: 100%;

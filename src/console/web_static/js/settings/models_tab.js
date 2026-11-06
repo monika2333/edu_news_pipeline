@@ -17,6 +17,8 @@ function modelsDraftFromSection(section) {
             model,
             reasoning: !!saved.reasoning,
             endpoint,
+            // 只在页面内记忆「切回指定时回到上次选的接入点」，不参与保存
+            lastEndpoint: endpoint,
         };
     });
     return { default: section.value.default || '', steps };
@@ -92,24 +94,24 @@ function modelsFollowHintText() {
     const endpointLabel = savedEndpoints && savedEndpoints.default
         ? endpointDisplayLabel(savedEndpoints.default)
         : '未设置';
-    return `跟随默认（接入点：${endpointLabel} · 模型：${state.modelsDraft.default || '未填写'}）`;
+    // 不带「接入点：」「模型：」这类标签词：这行字与控件同处一格，
+    // 越短越不容易把控件挤到第二行（长模型名走省略号 + title）
+    return `跟随默认 · ${endpointLabel} / ${state.modelsDraft.default || '未填写'}`;
 }
 
+// 默认模型输入框变化时只刷新「跟随默认」行的提示文本。
+// 不能整格重建：重建会把用户正在输入的模型输入框一起换掉，光标与焦点都会丢。
 function updateModelsFollowHints() {
     elements.panels.models
         .querySelectorAll('tr[data-step]')
         .forEach((row) => {
-            const step = row.dataset.step;
-            const draft = state.modelsDraft.steps[step];
+            const draft = state.modelsDraft.steps[row.dataset.step];
+            if (!draft || draft.endpoint !== null) return;
             const hint = row.querySelector('.step-follow-hint');
-            const input = row.querySelector('.step-model-input');
-            const select = row.querySelector('.step-endpoint-select');
-            // 跟随默认 = 接入点与模型双空；指定 = 两者都有值
-            const follow = draft.endpoint === null;
-            hint.hidden = !follow;
-            input.hidden = follow;
-            select.hidden = follow;
-            if (follow) hint.textContent = modelsFollowHintText();
+            if (!hint) return;
+            const text = modelsFollowHintText();
+            hint.textContent = text;
+            hint.title = text;
         });
 }
 
@@ -166,44 +168,86 @@ async function runStepModelTest(step) {
     }
 }
 
+// 第二列的内容槽按模式重建：跟随默认只渲染一行灰字，指定才渲染接入点与模型控件。
+// 不再用 hidden 在同一段行内流里切换——长提示会把控件挤到第二行，
+// 也让「指定」模式下残留「跟随默认」文案成为可能。
+function renderStepContent(row, draft) {
+    const modeSelect = row.querySelector('.step-model-mode');
+    const content = row.querySelector('.step-content');
+    if (!content) return;
+    const stepName = row.dataset.stepLabel || row.dataset.step;
+    if (modeSelect) modeSelect.value = draft.endpoint === null ? 'follow' : 'custom';
+    clearEl(content);
+
+    if (draft.endpoint === null) {
+        const text = modelsFollowHintText();
+        const hint = createEl('span', 'step-follow-hint', text);
+        hint.title = text;
+        content.appendChild(hint);
+        return;
+    }
+
+    const custom = createEl('div', 'step-custom');
+    // 接入点下拉只列「已保存」的接入点：后端校验步骤引用时查的是库里的接入点，
+    // 草稿里的新接入点存不进去；新增接入点先保存，这里立即能选（下拉数据源见
+    // core.js 的 savedEndpointsValue）。
+    const savedEndpoints = savedEndpointsValue();
+    const endpointSelect = createEl('select', 'step-endpoint-select', '', {
+        'aria-label': `${stepName}接入点`,
+    });
+    ((savedEndpoints && savedEndpoints.items) || []).forEach((item) => {
+        endpointSelect.appendChild(createEl('option', '', item.label, { value: item.key }));
+    });
+    endpointSelect.value = draft.endpoint;
+
+    const modelInput = createEl('input', 'step-model-input', '', {
+        type: 'text',
+        'aria-label': `${stepName}模型名`,
+        placeholder: '模型名，如 deepseek/deepseek-v4-flash',
+    });
+    modelInput.value = draft.model || '';
+
+    endpointSelect.addEventListener('change', () => {
+        draft.endpoint = endpointSelect.value;
+        draft.lastEndpoint = draft.endpoint;
+        // 换接入点即换服务商：清空模型输入与该行的测试结果，不留错误的旧值
+        draft.model = '';
+        modelInput.value = '';
+        clearStepTestResult(row.dataset.step);
+        markDirty('llm_models');
+    });
+    modelInput.addEventListener('input', () => {
+        draft.model = modelInput.value;
+        clearStepTestResult(row.dataset.step);
+        markDirty('llm_models');
+    });
+
+    custom.appendChild(endpointSelect);
+    custom.appendChild(modelInput);
+    content.appendChild(custom);
+}
+
 function buildStepRow(step, displayName) {
     const draft = state.modelsDraft.steps[step];
     const savedEndpoints = savedEndpointsValue();
-    const row = createEl('tr', '', '', { dataset: { step } });
+    const row = createEl('tr', '', '', { dataset: { step, stepLabel: displayName } });
 
     row.appendChild(createEl('td', 'settings-step-name', displayName));
 
+    // 第二列固定为「模式槽 + 内容槽」两段：模式槽宽度稳定，内容槽吸收剩余宽度，
+    // 切换模式只重建内容槽，行内不再换行错位（布局见 settings.css 的步骤表段）
     const modelCell = createEl('td', 'settings-step-model');
+    const modeRow = createEl('div', 'step-mode');
     const modeSelect = createEl('select', 'step-model-mode', '', {
         'aria-label': `${displayName}模型来源`,
     });
     modeSelect.appendChild(createEl('option', '', '跟随默认', { value: 'follow' }));
     modeSelect.appendChild(createEl('option', '', '指定', { value: 'custom' }));
-    modeSelect.value = draft.endpoint === null ? 'follow' : 'custom';
-    const followHint = createEl('span', 'step-follow-hint', modelsFollowHintText());
-    // 接入点下拉只列「已保存」的接入点：后端校验步骤引用时查的是库里的接入点，
-    // 草稿里的新接入点存不进去；新增接入点先保存，这里立即能选（下拉数据源见
-    // core.js 的 savedEndpointsValue）。
-    const endpointSelect = createEl('select', 'step-endpoint-select', '', {
-        'aria-label': `${displayName}接入点`,
-    });
-    ((savedEndpoints && savedEndpoints.items) || []).forEach((item) => {
-        endpointSelect.appendChild(createEl('option', '', item.label, { value: item.key }));
-    });
-    endpointSelect.value = draft.endpoint || '';
-    endpointSelect.hidden = draft.endpoint === null;
-    const modelInput = createEl('input', 'step-model-input', '', {
-        type: 'text',
-        'aria-label': `${displayName}模型名`,
-        placeholder: '模型名，如 deepseek/deepseek-v4-flash',
-    });
-    modelInput.value = draft.model === null ? '' : draft.model;
-    modelInput.hidden = draft.endpoint === null;
-    modelCell.appendChild(modeSelect);
-    modelCell.appendChild(followHint);
-    modelCell.appendChild(endpointSelect);
-    modelCell.appendChild(modelInput);
+    modeRow.appendChild(modeSelect);
+    modeRow.appendChild(createEl('div', 'step-content'));
+    modelCell.appendChild(modeRow);
     row.appendChild(modelCell);
+    renderStepContent(row, draft);
 
     const reasoningCell = createEl('td', 'settings-step-reasoning');
     const reasoningToggle = createEl('input', 'step-reasoning', '', {
@@ -223,34 +267,20 @@ function buildStepRow(step, displayName) {
 
     modeSelect.addEventListener('change', () => {
         if (modeSelect.value === 'custom') {
-            // 首次切到「指定」时选中当前默认接入点；此前选过则保留上次选择
-            draft.endpoint = endpointSelect.value
+            // 首次切到「指定」时选中当前默认接入点；此前选过则回到上次的接入点
+            draft.endpoint = draft.lastEndpoint
                 || (savedEndpoints && savedEndpoints.default)
                 || '';
-            endpointSelect.value = draft.endpoint;
             // 模型名与接入点服务商绑定，跨服务商预填必然是错的（OpenRouter 上是
             // deepseek/xxx，官网是 deepseek-flash）：切到指定一律留空，模型必须现填
-            modelInput.value = '';
             draft.model = '';
         } else {
+            // 记住上次的接入点，切回「指定」时回到同一个服务商
+            draft.lastEndpoint = draft.endpoint;
             draft.endpoint = null;
             draft.model = null;
         }
-        updateModelsFollowHints();
-        clearStepTestResult(step);
-        markDirty('llm_models');
-    });
-    endpointSelect.addEventListener('change', () => {
-        if (draft.endpoint === null) return;
-        draft.endpoint = endpointSelect.value;
-        // 换接入点即换服务商：清空模型输入与该行的测试结果，不留错误的旧值
-        modelInput.value = '';
-        draft.model = '';
-        clearStepTestResult(step);
-        markDirty('llm_models');
-    });
-    modelInput.addEventListener('input', () => {
-        if (draft.endpoint !== null) draft.model = modelInput.value;
+        renderStepContent(row, draft);
         clearStepTestResult(step);
         markDirty('llm_models');
     });
@@ -339,7 +369,6 @@ function renderModelsTab({ keepDraft = false } = {}) {
     table.appendChild(tbody);
     tableWrap.appendChild(table);
     mainCard.appendChild(tableWrap);
-    updateModelsFollowHints();
 
     const saveBar = createEl('div', 'settings-save-bar');
     const saveBtn = createEl('button', 'btn btn-primary', '保存模型配置', {

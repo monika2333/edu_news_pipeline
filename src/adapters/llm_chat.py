@@ -48,9 +48,12 @@ LLM_SCOPE_SYSTEMATIC = "systematic"
 LLM_SCOPE_ARTICLE = "article"
 LLM_REQUEST_SCOPES = frozenset({LLM_SCOPE_SYSTEMATIC, LLM_SCOPE_ARTICLE})
 
-# 值得重试的状态码：408/409/425/429 与全部 5xx。其余 4xx（400/401/403/404/
-# 422…）是确定性请求错误，重试只会把一次故障放大成 N 次。
-_RETRYABLE_STATUS_CODES = frozenset({408, 409, 425, 429})
+# 值得重试的状态码：408（请求超时）、429（限流）与全部 5xx。其余 4xx
+# （400/401/403/404/409/422/425…）是确定性请求错误，重试只会把一次故障放大
+# 成 N 次；409/425 也不在重试集合里——没有任何调用方把它们放进
+# retryable_statuses，若留在集合里只会得到「retryable=True 但从不重试」的
+# 假语义，反而让 geo_classify 把它们当临时错误去走兜底。
+_RETRYABLE_STATUS_CODES = frozenset({408, 429})
 
 # 只有 400/413 且正文指向「这一篇的上下文/长度/体积超限」才算文章级错误。
 _ARTICLE_SCOPE_STATUS_CODES = frozenset({400, 413})
@@ -118,7 +121,7 @@ class LLMRequestError(RuntimeError):
       的类型）、模型名或鉴权问题。这类错误与具体文章无关，重复请求必然失败。
     - ``article``：这一篇文章的数据本身超限（上下文/长度/体积类 400/413）。
 
-    ``retryable`` 是状态码层面的临时性判定（408/409/425/429/5xx 为 True）。
+    ``retryable`` 是状态码层面的临时性判定（408/429/5xx 为 True）。
     临时错误仍按原有重试/计数/兜底路径处理，不要用 ``scope`` 判断。
     """
 
@@ -237,10 +240,11 @@ def post_chat_completion(
 
     Non-2xx responses raise a typed :class:`LLMRequestError` (unless
     ``http_error_factory`` is supplied). Only statuses in
-    ``retryable_statuses`` that are also retryable by nature (408/409/425/429 or
-    5xx) are retried; 400/401/403/404/422 fail after a single request. Passing
-    ``retry_non_retryable_statuses=True`` restores the legacy retry-everything
-    behaviour and should be treated as an explicit, documented exception.
+    ``retryable_statuses`` that are also retryable by nature (408/429 or 5xx)
+    are retried; 400/401/403/404/409/422/425 fail after a single request.
+    Passing ``retry_non_retryable_statuses=True`` restores the legacy
+    retry-everything behaviour and should be treated as an explicit,
+    documented exception.
     """
 
     ensure_url_host_allowed(url, allowed_hosts=allowed_hosts)
@@ -503,10 +507,10 @@ def is_llm_quota_response(status_code: int, response_text: str) -> bool:
 
 
 def is_retryable_llm_status(status_code: int) -> bool:
-    """Return True only for 408/409/425/429 and every 5xx.
+    """Return True only for 408/429 and every 5xx.
 
-    Everything else — notably 400/401/403/404/422 — is a deterministic request
-    error: retrying it only multiplies the failing requests.
+    Everything else — notably 400/401/403/404/409/422/425 — is a deterministic
+    request error: retrying it only multiplies the failing requests.
     """
 
     return status_code in _RETRYABLE_STATUS_CODES or 500 <= status_code <= 599
@@ -554,11 +558,14 @@ def parse_llm_error_body(response_text: str) -> LLMProviderErrorDetail:
         request_id = _extract_request_id(provider_message) or _extract_request_id(
             raw_text
         )
-    cleaned_message = _strip_request_id(provider_message)
-    if cleaned_message is not None:
-        provider_message = cleaned_message
-    elif raw_text:
-        provider_message = raw_text
+    cleaned_message = _strip_request_id(provider_message) or raw_text
+    # 日志与飞书指纹都直接用 provider_message，这里必须同样截断，避免超大
+    # 错误体（HTML 网关页等）原样进入日志。
+    provider_message = (
+        _truncate_response(cleaned_message, _PROVIDER_TEXT_LIMIT)
+        if cleaned_message
+        else None
+    )
 
     return LLMProviderErrorDetail(
         provider_code=provider_code,

@@ -156,6 +156,65 @@ def test_notify_llm_request_alert_builds_text_message(monkeypatch, fake_settings
     assert fake_settings.llm_request_alert_state_path.exists()
 
 
+def test_notify_llm_request_alert_handles_missing_http_response(
+    monkeypatch,
+    fake_settings,
+):
+    captured = {}
+
+    def fake_send(config, message):
+        captured["message"] = message
+
+    monkeypatch.setattr(feishu, "_send_text_message", fake_send)
+
+    result = feishu.notify_llm_request_alert(
+        operation="beijing_gate",
+        endpoint_label=None,
+        model=None,
+        status_code=None,
+        provider_code="LLMEndpointKeyMissingError",
+        provider_message=(
+            "Missing LLM API key for endpoint 'DeepSeek' "
+            "(set LLM_DEEPSEEK_API_KEY)"
+        ),
+    )
+
+    assert result is True
+    message = captured["message"]
+    assert "HTTP status: no HTTP response" in message
+    assert "Provider code: LLMEndpointKeyMissingError" in message
+    assert "Endpoint: (unknown)" in message
+    assert "Model: (unknown)" in message
+    assert "Request id: -" in message
+    assert "Provider response:" in message
+
+
+def test_notify_llm_request_alert_separates_config_fingerprints(
+    monkeypatch,
+    fake_settings,
+):
+    sent = []
+    monkeypatch.setattr(
+        feishu,
+        "_send_text_message",
+        lambda config, message: sent.append(message),
+    )
+
+    for provider_code in ("LLMEndpointKeyMissingError", "LLMEndpointBlockedError"):
+        assert (
+            feishu.notify_llm_request_alert(
+                operation="beijing_gate",
+                endpoint_label=None,
+                model=None,
+                status_code=None,
+                provider_code=provider_code,
+                provider_message=f"{provider_code} happened",
+            )
+            is True
+        )
+    assert len(sent) == 2
+
+
 def test_notify_llm_request_alert_suppresses_same_fingerprint(monkeypatch, fake_settings):
     sent = []
     monkeypatch.setattr(

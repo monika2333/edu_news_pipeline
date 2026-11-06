@@ -9,9 +9,14 @@ from src.adapters.llm_beijing_gate import (
     BeijingGateIndeterminateError,
     call_beijing_gate,
 )
-from src.adapters.llm_chat import LLMQuotaError, LLMRequestError
+from src.adapters.llm_chat import (
+    LLMEndpointBlockedError,
+    LLMQuotaError,
+    LLMRequestError,
+)
+from src.adapters.llm_endpoint import LLMEndpointKeyMissingError
 from src.adapters.prompt_store import load_active_prompts
-from src.business_config import get_business_config
+from src.business_config import BusinessConfigError, get_business_config
 from src.config import get_settings
 from src.domain import (
     BeijingGateCandidate,
@@ -28,6 +33,14 @@ from src.workers import (
 )
 
 WORKER = "geo_classify"
+
+# 发生在请求发出之前的配置类错误：缺少 API Key、接入点主机被白名单拦截、
+# 业务配置缺步骤/接入点。它们与具体文章无关，必须熔断而不是记为文章失败。
+_ENDPOINT_CONFIG_ERRORS: tuple[type[Exception], ...] = (
+    LLMEndpointKeyMissingError,
+    LLMEndpointBlockedError,
+    BusinessConfigError,
+)
 
 
 @dataclass(slots=True)
@@ -144,10 +157,12 @@ def _beijing_gate_failure_payload(
 def _gate_breaker_error(exc: Exception) -> Optional[Exception]:
     """Return ``exc`` when the whole step must stop instead of counting a failure.
 
-    Systematic LLM request errors (code/config/endpoint-capability problems)
-    and quota/billing errors are unrelated to the article being processed:
-    retrying the next candidates only replays the same failure. Transient
-    errors (5xx/429/timeouts/network) return ``None`` and keep the existing
+    Systematic LLM request errors (code/config/endpoint-capability problems),
+    quota/billing errors, and failures raised while resolving the endpoint
+    before any HTTP request (missing API key, blocked host, broken business
+    config) are unrelated to the article being processed: retrying the next
+    candidates only replays the same failure. Transient errors
+    (5xx/408/429/timeouts/network) return ``None`` and keep the existing
     count-and-fallback path.
     """
 
@@ -155,25 +170,41 @@ def _gate_breaker_error(exc: Exception) -> Optional[Exception]:
         return exc
     if isinstance(exc, LLMQuotaError):
         return exc
+    if isinstance(exc, _ENDPOINT_CONFIG_ERRORS):
+        return exc
     return None
 
 
 def _notify_systematic_error(exc: Exception) -> None:
     """Send the once-per-run Feishu alert for a systematic request failure."""
 
-    if not isinstance(exc, LLMRequestError):
+    if isinstance(exc, LLMRequestError):
+        alert_fields: dict[str, Any] = {
+            "operation": exc.operation,
+            "endpoint_label": exc.endpoint_label,
+            "model": exc.model,
+            "status_code": exc.status_code,
+            "provider_code": exc.provider_code,
+            "provider_message": exc.provider_message,
+            "request_id": exc.request_id,
+        }
+    elif isinstance(exc, _ENDPOINT_CONFIG_ERRORS):
+        # 请求在发出前就失败，没有 HTTP 状态、request id，也拿不到已解析的
+        # 接入点与模型：用异常类名当 provider code，消息里显示 unknown。
+        alert_fields = {
+            "operation": "beijing_gate",
+            "endpoint_label": None,
+            "model": None,
+            "status_code": None,
+            "provider_code": type(exc).__name__,
+            "provider_message": str(exc),
+            "request_id": None,
+        }
+    else:
         # 额度错误已有独立的 LLMQuotaError 告警，不重复发。
         return
     try:
-        notify_llm_request_alert(
-            operation=exc.operation,
-            endpoint_label=exc.endpoint_label,
-            model=exc.model,
-            status_code=exc.status_code,
-            provider_code=exc.provider_code,
-            provider_message=exc.provider_message,
-            request_id=exc.request_id,
-        )
+        notify_llm_request_alert(**alert_fields)
     except Exception as alert_exc:  # 告警是旁路，失败不能打断熔断流程
         print(f"[{WORKER}] LLM request alert failed: {alert_exc}")
 
@@ -428,19 +459,25 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
         gate_failures = gate.failures
         fallbacks = gate.fallbacks
 
-        if not rows and not any((confirmed, rerouted, gate_failures, fallbacks)):
+        systematic = 1 if gate.systematic_error is not None else 0
+        if not rows and not any(
+            (confirmed, rerouted, gate_failures, fallbacks, systematic)
+        ):
             log_info(WORKER, "No pending geographic classifications found.")
         log_info(
             WORKER,
             "result detail: "
             f"external={local_stats.routed_external} staged_gate={local_stats.staged_gate} "
-            f"confirmed={confirmed} rerouted={rerouted} fallbacks={fallbacks}",
+            f"confirmed={confirmed} rerouted={rerouted} fallbacks={fallbacks} "
+            f"systematic={systematic}",
         )
         completed = local_stats.routed_external + confirmed + rerouted + fallbacks
         log_summary(
             WORKER,
             ok=completed,
-            failed=local_stats.failed + gate_failures,
+            # 熔断是 run 级失败：即使没有逐篇失败，汇总也必须显示 failed>=1，
+            # 否则「日志 failed=0、退出码非零」会误导排查。
+            failed=local_stats.failed + gate_failures + systematic,
             skipped=local_stats.skipped or None,
         )
         if gate.systematic_error is not None:

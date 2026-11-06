@@ -81,13 +81,18 @@ def notify_llm_request_alert(
     *,
     operation: str,
     endpoint_label: Optional[str],
-    model: str,
-    status_code: int,
+    model: Optional[str] = None,
+    status_code: Optional[int] = None,
     provider_code: Optional[str] = None,
     provider_message: Optional[str] = None,
     request_id: Optional[str] = None,
 ) -> bool:
     """Send a Feishu alert for a systematic (non-retryable) LLM request failure.
+
+    Covers failures that never produced a provider response — missing API key,
+    endpoint host blocked by the allowlist, broken business config — by allowing
+    ``status_code`` to be None (rendered as "no HTTP response") and
+    ``endpoint_label``/``model`` to be unknown.
 
     Alerts are throttled per fingerprint — status + provider code + provider
     message + endpoint label + model — for
@@ -225,19 +230,20 @@ def _render_llm_request_alert_message(
     *,
     operation: str,
     endpoint_label: Optional[str],
-    model: str,
-    status_code: int,
+    model: Optional[str],
+    status_code: Optional[int],
     provider_code: Optional[str],
     provider_message: Optional[str],
     request_id: Optional[str],
     occurred_at: str,
 ) -> str:
+    status_text = "no HTTP response" if status_code is None else str(status_code)
     lines = [
         "Edu News Pipeline - LLM request rejected (systematic)",
         f"Operation: {operation}",
         f"Endpoint: {endpoint_label or '(unknown)'}",
         f"Model: {model or '(unknown)'}",
-        f"HTTP status: {status_code}",
+        f"HTTP status: {status_text}",
         f"Provider code: {provider_code or '-'}",
         f"Request id: {request_id or '-'}",
         f"Occurred at: {occurred_at}",
@@ -252,15 +258,15 @@ def _render_llm_request_alert_message(
 
 def _request_alert_fingerprint(
     *,
-    status_code: int,
+    status_code: Optional[int],
     provider_code: Optional[str],
     provider_message: Optional[str],
     endpoint_label: Optional[str],
-    model: str,
+    model: Optional[str],
 ) -> str:
     normalized = "\n".join(
         (
-            f"status={status_code}",
+            f"status={'none' if status_code is None else status_code}",
             f"code={(provider_code or '').strip().lower()}",
             f"message={_normalize_alert_text(provider_message)}",
             f"endpoint={(endpoint_label or '').strip().lower()}",

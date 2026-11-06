@@ -12,9 +12,12 @@ from src.adapters.llm_beijing_gate import (
 from src.adapters.llm_chat import (
     LLM_SCOPE_ARTICLE,
     LLM_SCOPE_SYSTEMATIC,
+    LLMEndpointBlockedError,
     LLMQuotaError,
     LLMRequestError,
 )
+from src.adapters.llm_endpoint import LLMEndpointKeyMissingError
+from src.business_config import BusinessConfigError
 from src.domain.external_filter import BeijingGateCandidate
 from src.domain.prompt import PromptTemplate
 from src.workers import geo_classify
@@ -65,6 +68,17 @@ def _article_request_error() -> LLMRequestError:
         provider_message="This model's maximum context length is 8192 tokens",
         request_id="req-article-1",
     )
+
+
+_CONFIG_ERRORS = [
+    LLMEndpointKeyMissingError(
+        "Missing LLM API key for endpoint 'DeepSeek' (set LLM_DEEPSEEK_API_KEY)"
+    ),
+    LLMEndpointBlockedError(
+        "接入点主机 evil.example.test 不在 LLM_ALLOWED_HOSTS 白名单内，"
+        "已按安全策略阻止请求：https://evil.example.test/chat/completions"
+    ),
+]
 
 
 class _DummyFuture:
@@ -329,6 +343,83 @@ def test_process_beijing_gate_systematic_error_aborts_without_writes(
     assert alerts[0]["endpoint_label"] == "DeepSeek"
     assert executor.futures[1].cancelled is True
     assert capsys.readouterr().out.count("ERROR run:") == 1
+
+
+def test_gate_breaker_error_covers_configuration_failures() -> None:
+    for error in (
+        *_CONFIG_ERRORS,
+        BusinessConfigError("缺少模型配置步骤：beijing_gate"),
+        _systematic_request_error(),
+        LLMQuotaError(
+            operation="beijing_gate",
+            model="model-a",
+            status_code=402,
+            response_text="Insufficient Balance",
+        ),
+    ):
+        assert geo_classify._gate_breaker_error(error) is error
+
+    transient = LLMRequestError(
+        operation="beijing_gate",
+        model="model-a",
+        status_code=500,
+        scope=LLM_SCOPE_SYSTEMATIC,
+        retryable=True,
+    )
+    assert geo_classify._gate_breaker_error(transient) is None
+    indeterminate = BeijingGateIndeterminateError(
+        BeijingGateResponse(
+            raw_text="{}", provider="provider-a", model="model-a"
+        ),
+        attempts=1,
+    )
+    assert geo_classify._gate_breaker_error(indeterminate) is None
+
+
+@pytest.mark.parametrize(
+    "error",
+    _CONFIG_ERRORS,
+    ids=["missing_key", "blocked_host"],
+)
+def test_process_beijing_gate_config_error_aborts_without_writes(
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+) -> None:
+    candidate = _beijing_gate_candidate()
+    adapter = _RecordingProcessAdapter()
+    executor = _DummyExecutor({candidate.article_id: error})
+    alerts: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        geo_classify,
+        "notify_llm_request_alert",
+        lambda **kwargs: alerts.append(kwargs) or True,
+    )
+
+    with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
+        result = geo_classify._process_beijing_gate(
+            adapter,
+            [candidate],
+            executor,
+            llm_retries=3,
+            max_failures=3,
+        )
+
+    assert result.systematic_error is error
+    assert (result.confirmed, result.rerouted, result.failures, result.fallbacks) == (
+        0,
+        0,
+        0,
+        0,
+    )
+    # 配置类错误不得写文章失败计数，也不得走 ready_for_export 兜底。
+    assert adapter.process.completed == []
+    assert adapter.process.failures == []
+    assert len(alerts) == 1
+    assert alerts[0]["status_code"] is None
+    assert alerts[0]["provider_code"] == type(error).__name__
+    assert alerts[0]["provider_message"] == str(error)
+    assert alerts[0]["endpoint_label"] is None
+    assert alerts[0]["model"] is None
 
 
 def test_process_beijing_gate_quota_error_aborts_without_request_alert(
@@ -633,6 +724,7 @@ def _run_geo_classify_with_gate_error(
 
 def test_run_fails_and_stops_after_systematic_gate_error(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     error = _systematic_request_error()
 
@@ -642,9 +734,36 @@ def test_run_fails_and_stops_after_systematic_gate_error(
     assert adapter.gate_fetch_calls == 1
     assert len(alerts) == 1
     assert alerts[0]["request_id"] == "req-systematic-1"
+    output = capsys.readouterr().out
+    assert "systematic=1" in output
+    assert "failed=1" in output
 
 
-def test_run_fails_after_quota_gate_error(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    "error",
+    _CONFIG_ERRORS,
+    ids=["missing_key", "blocked_host"],
+)
+def test_run_fails_and_stops_after_config_error(
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    adapter, alerts = _run_geo_classify_with_gate_error(monkeypatch, error)
+
+    assert adapter.gate_updates == []
+    assert adapter.gate_fetch_calls == 1
+    assert len(alerts) == 1
+    assert alerts[0]["provider_code"] == type(error).__name__
+    output = capsys.readouterr().out
+    assert "systematic=1" in output
+    assert "failed=1" in output
+
+
+def test_run_fails_after_quota_gate_error(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     error = LLMQuotaError(
         operation="beijing_gate",
         model="model-a",
@@ -657,6 +776,9 @@ def test_run_fails_after_quota_gate_error(monkeypatch: pytest.MonkeyPatch) -> No
     assert adapter.gate_updates == []
     assert adapter.gate_fetch_calls == 1
     assert alerts == []
+    output = capsys.readouterr().out
+    assert "systematic=1" in output
+    assert "failed=1" in output
 
 
 def test_process_beijing_gate_passes_prompt_template_to_model():

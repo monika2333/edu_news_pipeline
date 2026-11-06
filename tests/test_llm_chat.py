@@ -441,6 +441,17 @@ def test_parse_llm_error_body_truncates_huge_non_json_text() -> None:
     assert detail.raw_text.endswith("...")
 
 
+def test_parse_llm_error_body_truncates_huge_provider_message() -> None:
+    detail = parse_llm_error_body(
+        json.dumps({"error": {"message": "y" * 5000, "code": "invalid_request_error"}})
+    )
+
+    assert detail.provider_code == "invalid_request_error"
+    assert detail.provider_message is not None
+    assert len(detail.provider_message) == 600
+    assert detail.provider_message.endswith("...")
+
+
 def test_classify_llm_failure_json_schema_400_is_systematic() -> None:
     assert (
         classify_llm_failure(400, _DEEPSEEK_JSON_SCHEMA_ERROR)
@@ -475,11 +486,19 @@ def test_classify_llm_failure_keeps_retryable_statuses_transient() -> None:
     assert classify_llm_failure(408, "timeout") == LLM_FAILURE_TRANSIENT
 
 
-def test_is_retryable_llm_status_covers_408_409_425_429_and_5xx() -> None:
-    assert all(is_retryable_llm_status(code) for code in (408, 409, 425, 429, 500, 503))
+def test_is_retryable_llm_status_covers_only_408_429_and_5xx() -> None:
+    assert all(is_retryable_llm_status(code) for code in (408, 429, 500, 503))
+    # 409/425 没有任何调用方放进 retryable_statuses，留在可重试集合里只会得到
+    # 「retryable=True 但从不重试」的假语义，因此按不可重试处理。
     assert all(
-        not is_retryable_llm_status(code) for code in (400, 401, 403, 404, 422)
+        not is_retryable_llm_status(code)
+        for code in (400, 401, 403, 404, 409, 422, 425)
     )
+
+
+def test_classify_llm_failure_treats_409_and_425_as_systematic() -> None:
+    assert classify_llm_failure(409, "conflict") == LLM_SCOPE_SYSTEMATIC
+    assert classify_llm_failure(425, "too early") == LLM_SCOPE_SYSTEMATIC
 
 
 def test_classify_llm_failure_prioritises_quota() -> None:

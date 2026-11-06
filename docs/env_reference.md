@@ -150,7 +150,12 @@ LLM_QUOTA_ALERT_STATE_PATH=logs/llm_quota_alert_state.json
 
 ### LLM 请求错误飞书提醒
 
-额度之外的**系统性**请求错误（4xx 里除额度/文章级超限之外的部分，例如接入点不支持某种 `response_format`、模型名不存在、鉴权失败）会单独告警并熔断当前步骤；属于单篇文章超限的错误（400/413 且正文指向上下文/长度/体积）不告警，只计文章失败。
+额度之外的**系统性**请求错误会单独告警并熔断已接入的步骤。**目前只有 `geo-classify` 的京内判定（`llm_beijing_gate`）接入了熔断与这条告警**，覆盖：
+
+- 不可重试的 4xx（例如接入点不支持某种 `response_format`、模型名不存在、鉴权失败）；
+- 请求发出前的配置类错误（缺少 API Key、接入点主机不在 `LLM_ALLOWED_HOSTS` 白名单、业务配置缺步骤或接入点）——这类错误没有 HTTP 状态，消息显示 `no HTTP response`，`Provider code` 用异常类名。
+
+其他流水线步骤本轮只做到「不可重试 4xx 不再重试」，仍按各自的逐篇失败与兜底逻辑处理，没有接入熔断和这条告警。属于单篇文章超限的错误（400/413 且正文指向上下文/长度/体积）不告警，只计文章失败。
 
 ```env
 LLM_REQUEST_ALERT_ENABLED=true
@@ -158,7 +163,7 @@ LLM_REQUEST_ALERT_COOLDOWN_SECONDS=1800
 LLM_REQUEST_ALERT_STATE_PATH=logs/llm_request_alert_state.json
 ```
 
-冷却按「status + provider code + provider message + 接入点 label + model」指纹计算，默认 1800 秒内同一指纹只提醒一次；状态按指纹写入独立的 JSON 文件，跨进程共享，不要与 `LLM_QUOTA_ALERT_STATE_PATH` 混用（两套告警各记各的）。告警发送失败只打印日志，不影响流水线。
+冷却按「status（配置类错误记为 none）+ provider code + provider message + 接入点 label + model」指纹计算，默认 1800 秒内同一指纹只提醒一次；状态按指纹写入独立的 JSON 文件，跨进程共享，不要与 `LLM_QUOTA_ALERT_STATE_PATH` 混用（两套告警各记各的）。告警发送失败只打印日志，不影响流水线。
 
 ## 控制台认证
 

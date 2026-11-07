@@ -72,12 +72,6 @@ def test_model(payload: ModelTestRequest) -> dict[str, Any]:
         _raise_service_error(exc)
 
 
-@router.post("/settings/environment/reload")
-def reload_environment(user: ConsoleUser = Depends(require_role("admin"))) -> dict[str, Any]:
-    """Re-read env files on the server so edited values take effect without a restart."""
-    return settings_service.reload_server_environment(user)
-
-
 @router.get("/crawl-accounts")
 def get_crawl_accounts(source: str = Query(...)) -> dict[str, Any]:
     try:

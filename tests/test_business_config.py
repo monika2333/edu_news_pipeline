@@ -470,7 +470,7 @@ def test_snapshot_records_resolved_models_and_endpoint_keys() -> None:
     ("patch", "message"),
     [
         ({"base_url": "http://api.deepseek.com"}, "https"),
-        ({"base_url": "https://evil.example.com/v1"}, "白名单"),
+        ({"base_url": "https://evil.example.com/v1"}, "允许列表内"),
         ({"base_url": "https://api.deepseek.com:8443"}, "443"),
         ({"base_url": "https://api.deepseek.com/?x=1"}, "query"),
         ({"base_url": "https://api.deepseek.com#frag"}, "fragment"),
@@ -550,3 +550,121 @@ def test_legacy_api_base_url_env_warns_as_expired(
     assert any(
         "LLM_API_BASE_URL" in message and "不再生效" in message for message in messages
     )
+
+
+def _rows_with_endpoint(rows: list[dict], item: dict) -> list[dict]:
+    """往 llm_endpoints 分区追加一个接入点（用于构造白名单外接入点场景）。"""
+
+    out = []
+    for row in rows:
+        if row["section"] == "llm_endpoints":
+            value = {
+                "default": row["value"]["default"],
+                "items": [*row["value"]["items"], item],
+            }
+            out.append({**row, "value": value})
+        else:
+            out.append(row)
+    return out
+
+
+# ALLOWED_HOSTS 夹具只放三个域名：api.moonshot.cn（2026-11 起在完整默认列表里，
+# 但不在这个夹具里）在此充当「白名单外域名」。
+_BLOCKED_ITEM = {
+    "key": "moonshot",
+    "label": "Kimi",
+    "base_url": "https://api.moonshot.cn/v1",
+    "api_key_env": "MOONSHOT_API_KEY",
+    "api_style": "thinking",
+    "temperature_override": None,
+    "default_model": "kimi-model",
+}
+
+
+def test_endpoint_host_allowed_matches_lowercase_exact() -> None:
+    assert business_config.endpoint_host_allowed(
+        "https://API.DeepSeek.com/v1", allowed_hosts=ALLOWED_HOSTS
+    )
+    assert not business_config.endpoint_host_allowed(
+        "https://api.moonshot.cn/v1", allowed_hosts=ALLOWED_HOSTS
+    )
+    assert not business_config.endpoint_host_allowed(
+        "https://openrouter.ai.evil.example/v1", allowed_hosts=ALLOWED_HOSTS
+    )
+
+
+def test_validate_llm_endpoints_can_skip_host_allowlist_for_saved_configs() -> None:
+    """读取已保存配置只做结构校验：白名单外的接入点照常解析出来。"""
+
+    value = _endpoint_items_value()
+    value["items"].append(_BLOCKED_ITEM)
+
+    normalized = business_config.validate_llm_endpoints(
+        value, require_host_allowed=False
+    )
+
+    assert normalized["items"][-1]["base_url"] == "https://api.moonshot.cn/v1"
+    with pytest.raises(ValueError, match="允许列表内"):
+        business_config.validate_llm_endpoints(value)
+
+
+def test_load_business_config_warns_but_loads_when_blocked_endpoint_unused(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """没有步骤在用的白名单外接入点：加载成功，只记一条警告。"""
+
+    app_config = SimpleNamespace(
+        fetch_settings=lambda: _rows_with_endpoint(_settings_rows(), _BLOCKED_ITEM),
+        fetch_enabled_accounts=lambda: [],
+    )
+
+    with caplog.at_level("WARNING"):
+        loaded = business_config.load_business_config(
+            SimpleNamespace(app_config=app_config)
+        )
+
+    assert "moonshot" in loaded.llm_endpoints
+    assert any("api.moonshot.cn" in record.message for record in caplog.records)
+
+
+def test_load_business_config_fails_when_step_uses_blocked_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """被步骤使用的白名单外接入点：加载失败，报错写明域名与处理办法。"""
+
+    rows = _rows_with_endpoint(_settings_rows(), _BLOCKED_ITEM)
+    rows = [
+        {
+            **row,
+            "value": (
+                {
+                    **row["value"],
+                    "steps": {
+                        **row["value"]["steps"],
+                        # 让「来源识别」显式使用白名单外的接入点
+                        "source": {
+                            "model": None,
+                            "reasoning": True,
+                            "endpoint": "moonshot",
+                        },
+                    },
+                }
+                if row["section"] == "llm_models"
+                else row["value"]
+            ),
+        }
+        for row in rows
+    ]
+    app_config = SimpleNamespace(
+        fetch_settings=lambda: rows,
+        fetch_enabled_accounts=lambda: [],
+    )
+
+    with pytest.raises(business_config.BusinessConfigError) as excinfo:
+        business_config.load_business_config(SimpleNamespace(app_config=app_config))
+
+    message = str(excinfo.value)
+    assert "api.moonshot.cn" in message
+    assert "来源识别" in message
+    assert "LLM_ALLOWED_HOSTS" in message

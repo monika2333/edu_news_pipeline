@@ -2,8 +2,8 @@
 // 覆盖验收场景 S1-S33 与芯片布局场景 N1-N23；其中 S7、S17 随排序模式删除，
 // S9、S16、S29、S30、N5、N16 随旧数据源页形态删除
 // （批量粘贴、展开抽屉、筛选框、面板会话这些被测形态不复存在）。
-// E1-E17 覆盖接入点管理（endpoints.js）与每步骤接入点选择（models_tab.js），
-// E18-E19 覆盖环境变量重载按钮。
+// E1-E26 覆盖接入点管理（endpoints.js）、每步骤接入点选择（models_tab.js）、
+// Key 配置提示与保存拦截、白名单外接入点展示。
 'use strict';
 
 const { test } = require('node:test');
@@ -15,6 +15,7 @@ const {
     assertNever,
     defaultSections,
     defaultAccounts,
+    defaultEndpointsPayload,
     makeAccount,
     sectionsWithBareEndpointStep,
     unhandledRejections,
@@ -2174,6 +2175,8 @@ test('E8：接入点保存成功后下拉立即包含新接入点，步骤草稿
             'https://open.bigmodel.cn/api/paas/v4');
         inputValue(page, newRow.querySelector('.endpoint-key-env-input'), 'ZHIPU_API_KEY');
         inputValue(page, newRow.querySelector('.endpoint-default-model-input'), 'glm-4.6');
+        // 新增接入点后端会实测：模拟用户已配好 Key（点保存时重拉到的名单）
+        page.server.endpoints.configured_api_key_envs = ['LLM_API_KEY', 'ZHIPU_API_KEY'];
         page.document.querySelector('.btn-endpoints-save').click();
         await waitFor(() => page.server.requests('save-endpoints').length === 1
             && page.server.requests('save-endpoints')[0].done);
@@ -2390,9 +2393,10 @@ test('E14：「载入最新配置」失败时不重渲染，行内错误仍可�
         const rowBefore = endpointEditRow(page, 'deepseek');
         const modelsRowBefore = page.modelsRow('summary');
         page.server.failNext['get-settings'] = 1;
+        const getCount = page.server.requests('get-settings').length;
         reloadBtn.click();
-        await waitFor(() => page.server.requests('get-settings').length === 1
-            && page.server.requests('get-settings')[0].done);
+        await waitFor(() => page.server.requests('get-settings').length === getCount + 1
+            && page.server.requests('get-settings')[getCount].done);
         await waitFor(() => page.document.querySelector('.endpoints-save-status').textContent
             .includes('载入失败'));
         assert.equal(page.document.querySelectorAll('.endpoint-edit-row').length, 2);
@@ -2486,7 +2490,14 @@ test('E17：新增接入点 key 按地址自动生成，头部实时预览，重
         inputValue(page, newRow.querySelector('.endpoint-label-input'), 'DeepSeek 主');
         inputValue(page, row2.querySelector('.endpoint-label-input'), 'DeepSeek 备用');
         inputValue(page, newRow.querySelector('.endpoint-key-env-input'), 'DEEPSEEK_API_KEY');
-        inputValue(page, row2.querySelector('.endpoint-key-env-input'), 'DEEPSEEK_API_KEY_2');
+        // 变量名必须以 _API_KEY 结尾（后端 LLM_API_KEY_ENV_PATTERN 同款规则），
+        // 不能写成 DEEPSEEK_API_KEY_2 这类非法形态
+        inputValue(page, row2.querySelector('.endpoint-key-env-input'), 'DEEPSEEK_BACKUP_API_KEY');
+        // 新增接入点后端会实测，需要 Key 已配置：模拟用户已改好 .env.local，
+        // 点保存时重拉到的名单包含两个新变量
+        page.server.endpoints.configured_api_key_envs = [
+            'LLM_API_KEY', 'DEEPSEEK_API_KEY', 'DEEPSEEK_BACKUP_API_KEY',
+        ];
         // 默认模型必填：不填会在行内被拦住
         inputValue(page, newRow.querySelector('.endpoint-default-model-input'), 'deepseek-main');
         inputValue(page, row2.querySelector('.endpoint-default-model-input'), 'deepseek-backup');
@@ -2506,67 +2517,260 @@ test('E17：新增接入点 key 按地址自动生成，头部实时预览，重
     }
 });
 
-// ---------- 环境变量重载场景（E18-E19） ----------
+// ---------- Key 配置提示与保存拦截场景（E18-E26） ----------
+// 「重新加载环境变量」按钮已删除：控制台发现 env 文件改过会自动重读，
+// 页面靠点保存前重拉负载、窗口重新获得焦点时刷新来拿到最新名单。
 
-test('E18：「重新加载环境变量」发出 POST 并重拉设置，Key 配置状态翻转为已配置，模型草稿保留', async () => {
+test('E18：页面上不存在「重新加载环境变量」按钮，环境块说明改为自动读取，也没有说反了的旧文案', async () => {
     const page = await bootPage();
     try {
-        // 只读接入点列表初始为「Key 未配置」（fixture 里 deepseek 未配置）
-        const deepseekBefore = page.document
-            .querySelector('.endpoint-item[data-endpoint-key="deepseek"]');
-        assert.match(deepseekBefore.textContent, /Key 未配置/);
-
-        // 制造未保存的模型修改，验证重载后的页签重建不丢草稿
-        inputValue(page, page.modelsRow('summary').querySelector('.step-model-input'),
-            'local/draft-model');
-
-        // 重载时模拟服务器端效果：.env 里补上 Key 后，endpoints 负载翻为已配置
-        page.server.reloadEnvBehavior = () => {
-            page.server.endpoints.items[1].api_key_env_configured = true;
-        };
-
-        page.document.querySelector('.env-reload-btn').click();
-        await waitFor(() => page.server.requests('reload-env').length === 1
-            && page.server.requests('reload-env')[0].done);
-        // 重载成功后必须重拉设置，让 api_key_env_configured 重新计算
-        await waitFor(() => page.server.requests('get-settings').length === 1
-            && page.server.requests('get-settings')[0].done);
-        await waitFor(() => page.document.getElementById('toast').textContent
-            .includes('环境变量已重新加载'));
-
-        // 重建后的只读列表状态翻为「Key 已配置」
-        await waitFor(() => {
-            const item = page.document
-                .querySelector('.endpoint-item[data-endpoint-key="deepseek"]');
-            return item && item.textContent.includes('Key 已配置');
-        });
-        // 模型草稿保留（只重建 DOM，不重建模型草稿）
-        assert.equal(page.window.eval('state.dirty.llm_models'), true);
+        assert.equal(page.document.querySelector('.env-reload-btn'), null);
+        assert.equal(page.document.querySelector('.settings-env-reload'), null);
+        assert.match(page.panel('models').textContent, /修改 \.env\.local 后无需重启，控制台会自动读取/);
+        // 旧文案（「先保存再配 Key」是反的）不得出现在页面任何地方
+        assert.equal(page.panel('models').textContent.includes('保存后需在服务器'), false);
         assert.equal(
-            page.modelsRow('summary').querySelector('.step-model-input').value,
-            'local/draft-model',
+            page.panel('models').textContent.includes('重新加载环境变量'), false,
+            '页面上任何地方都不应再出现「重新加载环境变量」',
         );
     } finally {
         page.close();
     }
 });
 
-test('E19：重载失败时不重拉设置、不重渲染，行内错误可见且按钮恢复可用', async () => {
+test('E19：新增接入点的 Key 提示跟随输入框实时变化——已配置/未配置/格式不对三种状态', async () => {
     const page = await bootPage();
     try {
-        page.server.failNext['reload-env'] = 1;
-        const btn = page.document.querySelector('.env-reload-btn');
-        btn.click();
-        await waitFor(() => page.server.requests('reload-env').length === 1
-            && page.server.requests('reload-env')[0].done);
-        await waitFor(() => page.document
-            .querySelector('.env-reload-status').textContent.includes('重载失败'));
+        await enterEndpointsManage(page);
+        page.document.querySelector('.endpoint-add-btn').click();
+        await waitFor(() => endpointEditRow(page, 'new-1'));
+        const row = endpointEditRow(page, 'new-1');
+        const envInput = row.querySelector('.endpoint-key-env-input');
+        const hint = row.querySelector('.endpoint-key-env-hint');
 
-        // 判别性断言：失败分支不重拉设置，也不重建环境块
-        assert.equal(page.server.requests('get-settings').length, 0);
-        await assertNever(() => page.server.requests('get-settings').length > 0, 200);
-        assert.equal(page.document.querySelector('.env-reload-btn'), btn);
-        assert.equal(btn.disabled, false);
+        // 空：不显示提示（保存时另有「不能为空」类校验兜底）
+        assert.equal(hint.textContent, '');
+
+        // 格式不对：警告写出规则
+        inputValue(page, envInput, 'glm-key');
+        assert.match(hint.textContent, /大写字母开头/);
+        assert.match(hint.textContent, /_API_KEY 结尾/);
+
+        // 格式对且已配置（LLM_API_KEY 在 fixture 名单里）：提示「Key 已配置」
+        inputValue(page, envInput, 'LLM_API_KEY');
+        assert.equal(hint.textContent, 'Key 已配置');
+
+        // 格式对但未配置：警告写出完整步骤，含变量名与 .env.local
+        inputValue(page, envInput, 'GLM_API_KEY');
+        assert.match(hint.textContent, /GLM_API_KEY/);
+        assert.match(hint.textContent, /\.env\.local/);
+        assert.match(hint.textContent, /回来保存/);
+        assert.equal(hint.textContent.includes('重新加载环境变量'), false);
+        assert.ok(hint.classList.contains('is-warning'));
+    } finally {
+        page.close();
+    }
+});
+
+test('E20：新增接入点 Key 未配置时点保存被该行拦下，不发保存请求', async () => {
+    const page = await bootPage();
+    try {
+        await enterEndpointsManage(page);
+        page.document.querySelector('.endpoint-add-btn').click();
+        await waitFor(() => endpointEditRow(page, 'new-1'));
+        const row = endpointEditRow(page, 'new-1');
+        inputValue(page, row.querySelector('.endpoint-base-url-input'), 'https://open.bigmodel.cn/api/paas/v4');
+        inputValue(page, row.querySelector('.endpoint-label-input'), '智谱 GLM');
+        inputValue(page, row.querySelector('.endpoint-key-env-input'), 'GLM_API_KEY');
+        inputValue(page, row.querySelector('.endpoint-default-model-input'), 'glm-4.6');
+
+        page.document.querySelector('.btn-endpoints-save').click();
+        await assertNever(() => page.server.requests('save-endpoints').length > 0, 300);
+        const rowError = row.querySelector('.endpoint-row-error');
+        assert.match(rowError.textContent, /GLM_API_KEY/);
+        assert.match(rowError.textContent, /\.env\.local/);
+        assert.match(page.document.querySelector('.endpoints-save-status').textContent,
+            /未通过校验/);
+    } finally {
+        page.close();
+    }
+});
+
+test('E21：没动的接入点 Key 未配置只警告不拦——改另一个接入点的标签，保存照常发出', async () => {
+    const page = await bootPage();
+    try {
+        await enterEndpointsManage(page);
+        // deepseek 未动且 Key（DEEPSEEK_API_KEY）未配置：先在行内确认有提示
+        const deepseekRow = endpointEditRow(page, 'deepseek');
+        const deepseekHint = deepseekRow.querySelector('.endpoint-key-env-hint');
+        assert.match(deepseekHint.textContent, /DEEPSEEK_API_KEY/);
+        assert.match(deepseekHint.textContent, /未配置/);
+
+        // 只改 openrouter 的标签
+        const openrouterRow = endpointEditRow(page, 'openrouter');
+        inputValue(page, openrouterRow.querySelector('.endpoint-label-input'), 'OpenRouter 改名');
+
+        page.document.querySelector('.btn-endpoints-save').click();
+        await waitFor(() => page.server.requests('save-endpoints').length === 1
+            && page.server.requests('save-endpoints')[0].done);
+        await waitFor(() => page.document.getElementById('toast').textContent
+            .includes('接入点配置已保存'));
+
+        // 保存请求照常发出；没动的 deepseek 行只有警告（amber，不是拦截错误）
+        assert.match(deepseekRow.querySelector('.endpoint-row-error').textContent,
+            /警告：.*DEEPSEEK_API_KEY/);
+        assert.ok(deepseekRow.querySelector('.endpoint-row-error').classList.contains('is-warning'));
+        const savedBody = page.server.requests('save-endpoints')[0].body.value;
+        assert.equal(savedBody.items.find((item) => item.key === 'openrouter').label,
+            'OpenRouter 改名');
+    } finally {
+        page.close();
+    }
+});
+
+test('E22：点保存先重拉设置负载再判断——.env.local 改过的新名单不误拦，草稿保留', async () => {
+    const page = await bootPage();
+    try {
+        await enterEndpointsManage(page);
+        page.document.querySelector('.endpoint-add-btn').click();
+        await waitFor(() => endpointEditRow(page, 'new-1'));
+        const row = endpointEditRow(page, 'new-1');
+        inputValue(page, row.querySelector('.endpoint-base-url-input'), 'https://open.bigmodel.cn/api/paas/v4');
+        inputValue(page, row.querySelector('.endpoint-label-input'), '智谱 GLM');
+        inputValue(page, row.querySelector('.endpoint-key-env-input'), 'GLM_API_KEY');
+        inputValue(page, row.querySelector('.endpoint-default-model-input'), 'glm-4.6');
+
+        // 用户在另一个窗口改好了 .env.local：点保存时后端拉到的名单多了 GLM_API_KEY
+        // （FakeSettingsServer 模拟后端请求前自动重读 env 文件后的负载）
+        page.server.endpoints.configured_api_key_envs = ['LLM_API_KEY', 'GLM_API_KEY'];
+
+        page.document.querySelector('.btn-endpoints-save').click();
+        await waitFor(() => page.server.requests('save-endpoints').length === 1
+            && page.server.requests('save-endpoints')[0].done);
+        await waitFor(() => page.document.getElementById('toast').textContent
+            .includes('接入点配置已保存'));
+
+        // 保存请求照常发出；重拉发生在保存之前；新接入点草稿完整进入保存值
+        assert.ok(page.server.requests('get-settings').length >= 1);
+        const savedBody = page.server.requests('save-endpoints')[0].body.value;
+        const savedGlm = savedBody.items.find((item) => item.label === '智谱 GLM');
+        assert.equal(savedGlm.api_key_env, 'GLM_API_KEY');
+        assert.equal(savedGlm.default_model, 'glm-4.6');
+    } finally {
+        page.close();
+    }
+});
+
+test('E23：窗口重新获得焦点时刷新负载，Key 提示随之翻转为已配置，编辑中草稿保留', async () => {
+    const page = await bootPage();
+    try {
+        await enterEndpointsManage(page);
+        page.document.querySelector('.endpoint-add-btn').click();
+        await waitFor(() => endpointEditRow(page, 'new-1'));
+        const row = endpointEditRow(page, 'new-1');
+        const envInput = row.querySelector('.endpoint-key-env-input');
+        inputValue(page, envInput, 'GLM_API_KEY');
+        const hint = row.querySelector('.endpoint-key-env-hint');
+        assert.match(hint.textContent, /未配置/);
+
+        // 用户在服务器改好 .env.local 回来：窗口 focus → 重拉负载 + 重渲染（keepDraft）
+        page.server.endpoints.configured_api_key_envs = ['LLM_API_KEY', 'GLM_API_KEY'];
+        page.window.dispatchEvent(new page.window.Event('focus'));
+        await waitFor(() => page.server.requests('get-settings').length >= 1);
+        await waitFor(() => {
+            const freshRow = endpointEditRow(page, 'new-1');
+            return freshRow
+                && freshRow.querySelector('.endpoint-key-env-hint').textContent === 'Key 已配置';
+        });
+        // 编辑中的草稿在重渲染后保留
+        assert.equal(endpointEditRow(page, 'new-1').querySelector('.endpoint-key-env-input').value,
+            'GLM_API_KEY');
+    } finally {
+        page.close();
+    }
+});
+
+test('E24：白名单外的已存接入点在只读列表标红并写明修法，引用它的步骤行有提示', async () => {
+    const blockedPayload = defaultEndpointsPayload();
+    blockedPayload.items[1].host_allowed = false; // deepseek 指向白名单外域名
+    // 用「scoring 显式绑定 deepseek」的模型分区：被引用的步骤行要有提示
+    const page = await bootPage({
+        endpoints: blockedPayload,
+        sections: sectionsWithBareEndpointStep(),
+    });
+    try {
+        const item = page.document
+            .querySelector('.endpoint-item[data-endpoint-key="deepseek"]');
+        assert.ok(item.classList.contains('is-host-blocked'));
+        assert.match(item.textContent, /api\.deepseek\.com/);
+        assert.match(item.textContent, /不在允许列表内/);
+        assert.match(item.textContent, /LLM_ALLOWED_HOSTS/);
+
+        // scoring 显式选了 deepseek → 该行提示
+        const scoringRow = page.modelsRow('scoring');
+        assert.match(scoringRow.querySelector('.step-host-blocked-hint').textContent,
+            /DeepSeek/);
+        assert.match(scoringRow.querySelector('.step-host-blocked-hint').textContent,
+            /api\.deepseek\.com/);
+        // 跟随默认（openrouter，白名单内）的步骤没有提示
+        assert.equal(page.modelsRow('summary').querySelector('.step-host-blocked-hint'), null);
+    } finally {
+        page.close();
+    }
+});
+
+test('E25：默认接入点在白名单外时，跟随默认的步骤行也有提示', async () => {
+    const blockedPayload = defaultEndpointsPayload();
+    // openrouter 是默认接入点且指向白名单外域名
+    blockedPayload.items[0].host_allowed = false;
+    const page = await bootPage({ endpoints: blockedPayload });
+    try {
+        const item = page.document
+            .querySelector('.endpoint-item[data-endpoint-key="openrouter"]');
+        assert.ok(item.classList.contains('is-host-blocked'));
+        // 跟随默认的 summary 步骤（默认接入点 openrouter 被拉黑）有提示；
+        // 显式选了 openrouter 的 scoring 步骤同样有提示
+        assert.match(page.modelsRow('summary').querySelector('.step-host-blocked-hint').textContent,
+            /OpenRouter/);
+        assert.match(page.modelsRow('scoring').querySelector('.step-host-blocked-hint').textContent,
+            /OpenRouter/);
+        // 显式选了白名单内 deepseek 的步骤没有提示（换个模型分区构造）
+        const barePage = await bootPage({
+            endpoints: blockedPayload,
+            sections: sectionsWithBareEndpointStep(),
+        });
+        try {
+            assert.equal(
+                barePage.modelsRow('scoring').querySelector('.step-host-blocked-hint'),
+                null,
+                '显式选择白名单内接入点的步骤不应有提示',
+            );
+        } finally {
+            barePage.close();
+        }
+    } finally {
+        page.close();
+    }
+});
+
+test('E26：白名单报错文案改为追加语义，不再提「重新加载环境变量」', async () => {
+    const page = await bootPage();
+    try {
+        await enterEndpointsManage(page);
+        page.document.querySelector('.endpoint-add-btn').click();
+        await waitFor(() => endpointEditRow(page, 'new-1'));
+        const row = endpointEditRow(page, 'new-1');
+        inputValue(page, row.querySelector('.endpoint-base-url-input'), 'https://llm.vendor.example/v1');
+        inputValue(page, row.querySelector('.endpoint-key-env-input'), 'LLM_API_KEY');
+        inputValue(page, row.querySelector('.endpoint-default-model-input'), 'vendor-model');
+
+        page.document.querySelector('.btn-endpoints-save').click();
+        await assertNever(() => page.server.requests('save-endpoints').length > 0, 300);
+        const rowError = row.querySelector('.endpoint-row-error');
+        assert.match(rowError.textContent, /llm\.vendor\.example/);
+        assert.match(rowError.textContent, /LLM_ALLOWED_HOSTS/);
+        assert.match(rowError.textContent, /追加/);
+        assert.equal(rowError.textContent.includes('重新加载环境变量'), false);
     } finally {
         page.close();
     }
@@ -2592,8 +2796,10 @@ test('E20：接入点默认模型为空时保存被行内拦住；后端模型�
             /未通过校验/);
 
         // 填回默认模型后保存：后端模型测试失败（默认模型变了要实测），
-        // 后端报错原样显示在保存栏
+        // 后端报错原样显示在保存栏。默认模型改了会被实测，Key 未配置会被
+        // 前端拦截，所以先把名单里补上 DEEPSEEK_API_KEY（模拟已配好 Key）
         inputValue(page, modelInput, 'broken-new-model');
+        page.server.endpoints.configured_api_key_envs = ['LLM_API_KEY', 'DEEPSEEK_API_KEY'];
         page.server.saveBehavior.llm_endpoints = {
             status: 422,
             payload: { detail: '接入点「DeepSeek」的默认模型 broken-new-model 测试失败：连接超时' },
@@ -3394,7 +3600,9 @@ test('整体 payload 重载后其余词表草稿继续使用编辑开始时的�
             inputValue(page, field, field.value + '本地');
             page.server.sections[section].version += 10;
         }
-        page.document.querySelector('.env-reload-btn').click();
+        // 「重新加载环境变量」按钮已删：整体 payload 重载现在由窗口重新获得
+        // 焦点触发（控制台自动读取 env 文件改动的配套机制）
+        page.window.dispatchEvent(new page.window.Event('focus'));
         await waitFor(() => page.server.requests('get-settings').length === 1 && page.server.inflight === 0);
         for (const section of DRAFT_DICTIONARY_SECTIONS) {
             await saveDictionary(page, section);

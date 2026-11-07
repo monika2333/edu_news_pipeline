@@ -5,12 +5,13 @@ import threading
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional, Set
+from typing import Mapping, Optional, Set
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _ENV_LOADED = False
 # 本进程从 env 文件读入的变量名；显式导出的系统变量不在此列。
-# reload_environment 据此只清退文件来源的变量，不碰进程原本的环境。
+# 重读 env 文件时据此区分「文件来源」与「进程原本的环境」：
+# 文件值可以覆盖文件来源的旧值，但绝不覆盖显式导出的变量。
 _ENV_FILE_KEYS: Set[str] = set()
 _ENV_RELOAD_LOCK = threading.Lock()
 _ENV_FILES = (
@@ -18,18 +19,33 @@ _ENV_FILES = (
     _REPO_ROOT / ".env",
     _REPO_ROOT / "config" / "abstract.env",
 )
+# env 文件上次读取时的状态快照（存在性、mtime、大小），控制台进程在处理
+# 请求前对照它检测文件是否被改过：改了才重读，没变不碰文件。
+_ENV_FILES_SIGNATURE: Optional[tuple] = None
 BGE_EMBEDDING_MODEL = "BAAI/bge-large-zh"
+# 接入点主机白名单的内置默认列表：LLM_ALLOWED_HOSTS 只能**追加**域名，
+# 不能替换或删掉这里的条目。覆盖 OpenRouter、DeepSeek、智谱 GLM、Kimi
+# （国内/国际账号）、阿里云百炼（通义）、火山方舟（豆包，华北2北京地域）、
+# 硅基流动；域名以各家官方文档为准（2026-11-07 核对）。百炼按业务空间分配
+# 的专属域名（<WorkspaceId>.cn-beijing.maas.aliyuncs.com）每个账号不同，
+# 不进默认列表，需要时追加到 LLM_ALLOWED_HOSTS。
 DEFAULT_LLM_ALLOWED_HOSTS = (
     "openrouter.ai",
     "api.deepseek.com",
     "open.bigmodel.cn",
+    "api.moonshot.cn",
+    "api.moonshot.ai",
+    "dashscope.aliyuncs.com",
+    "ark.cn-beijing.volces.com",
+    "api.siliconflow.cn",
 )
 
 
-def _load_env_file(path: Path, loaded_keys: Set[str]) -> None:
-    """Best-effort `.env` loader that respects already-set variables."""
+def _parse_env_file(path: Path) -> dict[str, str]:
+    """Parse one env file into key→value pairs; missing or malformed → {}."""
     if not path.exists():
-        return
+        return {}
+    values: dict[str, str] = {}
     try:
         for raw in path.read_text(encoding="utf-8").splitlines():
             line = raw.strip()
@@ -40,50 +56,100 @@ def _load_env_file(path: Path, loaded_keys: Set[str]) -> None:
             value = value.strip()
             if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
                 value = value[1:-1]
-            if key and key not in os.environ:
-                os.environ[key] = value
-                loaded_keys.add(key)
+            if key:
+                values[key] = value
     except Exception:
         # Gracefully ignore malformed env files; explicit env vars win anyway.
         pass
+    return values
 
 
-def _read_env_files() -> None:
+def _parse_env_files() -> dict[str, str]:
+    """所有 env 文件合并出的「文件想要的值」；同一变量先读到的文件优先。"""
+
+    values: dict[str, str] = {}
     for candidate in _ENV_FILES:
-        _load_env_file(candidate, _ENV_FILE_KEYS)
+        for key, value in _parse_env_file(candidate).items():
+            values.setdefault(key, value)
+    return values
+
+
+def _apply_env_values(values: Mapping[str, str]) -> None:
+    """把文件值应用到 os.environ，全程不产生「变量短暂消失」的空档。
+
+    与文件重读的两条既有语义一致：进程启动前显式导出的变量优先（文件值
+    不覆盖它们）；文件里删掉的变量随之消失。先整体覆盖文件来源的变量，
+    再只删除文件里已不存在的变量——前后都在文件里的变量从未被删除。"""
+
+    exported = set(os.environ) - _ENV_FILE_KEYS
+    for key, value in values.items():
+        if key in exported:
+            continue
+        os.environ[key] = value
+        _ENV_FILE_KEYS.add(key)
+    for key in sorted(_ENV_FILE_KEYS - set(values)):
+        os.environ.pop(key, None)
+        _ENV_FILE_KEYS.discard(key)
+
+
+def _env_files_signature() -> tuple:
+    """env 文件的轻量指纹：存在性 + mtime + 大小（新建与删除也体现为变化）。"""
+
+    signature: list[tuple[Path, Optional[tuple[int, int]]]] = []
+    for candidate in _ENV_FILES:
+        try:
+            stat = candidate.stat()
+            signature.append((candidate, (stat.st_mtime_ns, stat.st_size)))
+        except OSError:
+            signature.append((candidate, None))
+    return tuple(signature)
 
 
 def load_environment() -> None:
     """Load environment files once, preferring explicitly exported values."""
-    global _ENV_LOADED
+    global _ENV_LOADED, _ENV_FILES_SIGNATURE
     if _ENV_LOADED:
         return
     with _ENV_RELOAD_LOCK:
         if _ENV_LOADED:
             return
-        _read_env_files()
+        _apply_env_values(_parse_env_files())
+        _ENV_FILES_SIGNATURE = _env_files_signature()
         _ENV_LOADED = True
 
 
 def reload_environment() -> int:
     """Re-read the env files and invalidate the cached Settings.
 
-    Mirrors a restart's env semantics without one: keys previously sourced
-    from the env files are dropped first, so removed entries disappear and
-    changed values take effect; variables exported in the shell before the
+    Mirrors a restart's env semantics without one, without a gap where
+    file-sourced variables are missing: new file values are parsed first,
+    then applied over the old ones in place, and only variables removed
+    from the files get dropped. Variables exported in the shell before the
     process started keep winning over file values, as on initial load.
     Returns the number of env vars now sourced from the files.
     """
-    global _ENV_LOADED
+    global _ENV_LOADED, _ENV_FILES_SIGNATURE
     with _ENV_RELOAD_LOCK:
-        for key in _ENV_FILE_KEYS:
-            os.environ.pop(key, None)
-        _ENV_FILE_KEYS.clear()
-        _ENV_LOADED = False
-        _read_env_files()
+        _apply_env_values(_parse_env_files())
+        _ENV_FILES_SIGNATURE = _env_files_signature()
         _ENV_LOADED = True
     get_settings.cache_clear()
     return len(_ENV_FILE_KEYS)
+
+
+def refresh_environment_if_changed() -> bool:
+    """env 文件被改过时重读并失效设置缓存；没改就只做一次文件信息检查。
+
+    控制台进程在处理请求前调用（见 app.py 的中间件）：用户在服务器上改完
+    `.env.local`（比如补了接入点的 Key）后无需重启、也不用点任何按钮，
+    下一个请求就能读到新值。流水线各步骤是计划任务新起的进程，启动时本来
+    就读最新文件，不经过这里。返回是否发生了重读。"""
+    global _ENV_FILES_SIGNATURE
+    current = _env_files_signature()
+    if current == _ENV_FILES_SIGNATURE:
+        return False
+    reload_environment()
+    return True
 
 
 
@@ -187,14 +253,20 @@ def get_settings() -> Settings:
     db_schema = _get_env("DB_SCHEMA", "POSTGRES_SCHEMA") or "public"
 
     llm_api_key = os.getenv("LLM_API_KEY")
+    # 白名单 = 内置默认列表 + LLM_ALLOWED_HOSTS 追加的域名（去重、小写化、
+    # 默认在前）。环境变量不能替换默认列表：只写新域名时，已有服务商的
+    # 接入点必须仍然在白名单里，否则整条流水线的配置加载会失败。
     raw_allowed_hosts = os.getenv("LLM_ALLOWED_HOSTS") or ""
-    llm_allowed_hosts = tuple(
+    extra_allowed_hosts = tuple(
         dict.fromkeys(
             host.strip().lower()
             for host in raw_allowed_hosts.split(",")
             if host.strip()
         )
-    ) or DEFAULT_LLM_ALLOWED_HOSTS
+    )
+    llm_allowed_hosts = tuple(
+        dict.fromkeys((*DEFAULT_LLM_ALLOWED_HOSTS, *extra_allowed_hosts))
+    )
     llm_api_http_referer = os.getenv("LLM_API_HTTP_REFERER")
     llm_api_title = os.getenv("LLM_API_TITLE")
     raw_reasoning_effort = (os.getenv("LLM_REASONING_EFFORT") or "").strip().lower()
@@ -458,4 +530,11 @@ def get_settings() -> Settings:
     )
 
 
-__all__ = ["DEFAULT_LLM_ALLOWED_HOSTS", "Settings", "get_settings", "load_environment", "reload_environment"]
+__all__ = [
+    "DEFAULT_LLM_ALLOWED_HOSTS",
+    "Settings",
+    "get_settings",
+    "load_environment",
+    "refresh_environment_if_changed",
+    "reload_environment",
+]

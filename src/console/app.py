@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from src.business_config import warn_legacy_config
+from src.config import refresh_environment_if_changed
 from src.console import (
     admin_summary_routes,
     articles_routes,
@@ -63,6 +64,16 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_303_SEE_OTHER,
             )
         return await http_exception_handler(request, exc)
+
+    # env 文件改过就自动重读（改 .env.local 免重启生效的统一入口）：
+    # 检查只是 stat 文件信息，没变化时零开销。放在中间件一处统一做，
+    # 不散落在各个接口里——查重复核这类在控制台进程里调用模型的功能
+    # 也因此能马上用上新 Key。流水线各步骤是计划任务新起的进程，启动时
+    # 本来就读最新文件，不经过这里（一轮运行中途换 Key 会让前后行为不一致）。
+    @app.middleware("http")
+    async def refresh_env_files_middleware(request: Request, call_next):
+        refresh_environment_if_changed()
+        return await call_next(request)
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon() -> FileResponse:

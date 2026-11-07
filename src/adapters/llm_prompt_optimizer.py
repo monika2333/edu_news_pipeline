@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
 from src.adapters.llm_chat import extract_message_text, post_chat_completion
-from src.adapters.llm_endpoint import resolve_llm_endpoint
+from src.adapters.llm_endpoint import ResolvedLLMEndpoint, resolve_llm_endpoint
 from src.business_config import get_llm_step_config
 from src.config import get_settings
 from src.domain.prompt_edit import PromptEdit
@@ -196,6 +196,12 @@ def build_optimizer_user_prompt(
     return "".join(parts)
 
 
+def probe_request_extras(endpoint: ResolvedLLMEndpoint) -> dict[str, Any]:
+    """提示词优化真实请求里 model/messages/max_tokens 之外的固定参数（见 llm_summary 同名函数）。"""
+
+    return {"temperature": 0.0}
+
+
 def call_prompt_optimizer(
     *,
     prompt_key: str,
@@ -268,4 +274,5 @@ __all__ = [
     "format_optimizer_cases",
     "load_prompt_optimizer_meta",
     "parse_prompt_optimizer_response",
+    "probe_request_extras",
 ]

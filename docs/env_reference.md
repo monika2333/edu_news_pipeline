@@ -27,15 +27,26 @@ DB_SCHEMA=public
 LLM_API_KEY=replace-with-your-llm-api-key
 ```
 
-模型与接入点（endpoint）配置已迁入控制台设置页（`llm_endpoints` / `llm_models` 分区）：每个 LLM 步骤可以指定接入点，接入点保存服务地址与 Key 所在的环境变量名，API Key 本身仍只存放在 `.env`。修改 `.env.local` 后无需重启服务：在控制台设置页「环境（只读）」块点「重新加载环境变量」即可让文件里的改动生效（数据库连接等少数配置仍需重启）。接入点地址的主机必须在 `LLM_ALLOWED_HOSTS` 白名单内：
+模型与接入点（endpoint）配置已迁入控制台设置页（`llm_endpoints` / `llm_models` 分区）：每个 LLM 步骤可以指定接入点，接入点保存服务地址与 Key 所在的环境变量名，API Key 本身仍只存放在 `.env.local`。修改 `.env.local` 后无需重启服务：控制台进程在处理请求前会自动检测 env 文件的改动（`.env.local`、`.env`、`config/abstract.env`）并重新读取，改完直接回控制台保存即可。接入点地址的主机必须在 `LLM_ALLOWED_HOSTS` 白名单内：
 
 ```env
-LLM_ALLOWED_HOSTS=openrouter.ai,api.deepseek.com,open.bigmodel.cn
+LLM_ALLOWED_HOSTS=your-new-provider.example.com
 ```
 
-未配置时使用内置默认值（即上面这一组）。精确匹配主机名、大小写不敏感、不支持通配符、只允许 443 端口；新增服务商时需要同时在该变量中加入其域名，然后在控制台点「重新加载环境变量」（或重启服务）再保存接入点。`LLM_API_BASE_URL` 已不再生效（仅单一地址、无法按步骤区分），设置后启动时会告警提示移除。
+最终白名单 = 内置默认列表 + 该变量追加的域名（去重、小写化；该变量**不能**替换或删掉默认列表）。默认列表覆盖常见服务商：`openrouter.ai`、`api.deepseek.com`、`open.bigmodel.cn`、`api.moonshot.cn`、`api.moonshot.ai`、`dashscope.aliyuncs.com`、`ark.cn-beijing.volces.com`、`api.siliconflow.cn`，都无需配置。精确匹配主机名、大小写不敏感、不支持通配符、只允许 443 端口；新增其他服务商时，把它的域名追加到该变量（只写新增的，不用重复写默认的），控制台会自动读取。阿里云百炼按业务空间分配的专属域名（`<WorkspaceId>.cn-beijing.maas.aliyuncs.com`）每个账号不同，不在默认列表里，要用就追加。`LLM_API_BASE_URL` 已不再生效（仅单一地址、无法按步骤区分），设置后启动时会告警提示移除。
 
-注意失败半径：白名单在配置加载时对整个 `llm_endpoints` 分区生效——如果从这个变量删掉某个域名，而数据库里仍有接入点指向它，**整条流水线的配置加载都会失败**（`load_business_config` 报「数据库业务配置无效」），不只是用到该接入点的步骤。清理该变量前必须先在控制台删掉指向对应域名的接入点。
+注意失败半径（只针对自己追加的域名）：默认列表里的域名删不掉，不会出问题；从 `LLM_ALLOWED_HOSTS` 里删掉自己追加的域名，而数据库里仍有接入点指向它时，被步骤使用的接入点会让**整条流水线的配置加载失败**（`load_business_config` 报「数据库业务配置无效」），没有步骤在用的只记一条警告。设置页不受影响（照常打开并标出问题接入点），可以在控制台里把该接入点改掉或删除。
+
+#### 新增一个接入点（服务商）
+
+保存接入点时控制台会用它的默认模型实测一次，测不通就不保存，所以要按这个顺序：
+
+1. 在服务器的 `.env.local` 里加上这个服务商的 Key，变量名必须以 `_API_KEY` 结尾，例如 `GLM_API_KEY=...`；
+2. OpenRouter、DeepSeek、智谱 GLM、Kimi、通义、豆包、硅基流动已在默认白名单里，不用处理；其他服务商，把它的域名追加到 `LLM_ALLOWED_HOSTS`（只写新增的，不用重复写默认的）；
+3. 到控制台「模型」页签的「管理接入点」里新增接入点，填写地址、Key 变量名和默认模型，然后保存。
+
+控制台会自动发现 env 文件的改动，不用重启。第 1～2 步没做完就保存，会被拒绝，控制台会写明缺的是哪个变量或哪个域名。
+改已有接入点的 Key 变量名或地址也一样：先在 `.env.local` 里配好，再保存。
 
 ## 建议填写
 
@@ -62,10 +73,9 @@ DBMATE_SCHEMA_FILE=database/schema.sql
 
 ```env
 LLM_API_KEY=replace-with-your-llm-api-key
-LLM_ALLOWED_HOSTS=openrouter.ai,api.deepseek.com,open.bigmodel.cn
 ```
 
-`LLM_API_BASE_URL` 已失效：服务地址改由控制台「接入点」配置管理，不要在 `.env` 中保留。
+`LLM_ALLOWED_HOSTS` 未配置时就是完整的内置默认列表（见上文），只有新增默认之外的服务商才需要追加。`LLM_API_BASE_URL` 已失效：服务地址改由控制台「接入点」配置管理，不要在 `.env` 中保留。
 
 OpenRouter 可选请求标识（仅对 `api_style: openrouter` 的接入点发送）：
 
@@ -436,8 +446,9 @@ DB_SCHEMA=public
 DATABASE_URL=postgres://postgres:replace-with-your-password@localhost:5432/edu_news_pipeline?sslmode=disable
 
 LLM_API_KEY=replace-with-your-llm-api-key
-LLM_ALLOWED_HOSTS=openrouter.ai,api.deepseek.com,open.bigmodel.cn
 
 CONSOLE_BASIC_USERNAME=admin
 CONSOLE_BASIC_PASSWORD=replace-with-a-strong-password
 ```
+
+`LLM_ALLOWED_HOSTS` 不在模板里：默认列表已覆盖常见服务商，只有追加新服务商时才需要它（见上文「LLM API」一节）。

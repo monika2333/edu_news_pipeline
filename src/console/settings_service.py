@@ -49,6 +49,7 @@ from src.business_config import (
 )
 from src.config import BGE_EMBEDDING_MODEL, get_settings, load_environment, reload_environment
 from src.console.auth_service import ConsoleUser
+from src.console.source_list_pages import list_pages_for_source
 
 
 logger = logging.getLogger(__name__)
@@ -120,6 +121,13 @@ def get_settings_payload() -> dict[str, Any]:
                 "display_name": item.display_name,
                 "daily_only": item.daily_only,
                 "requires_accounts": item.requires_accounts,
+                # 列表页链接直接取自各爬虫 adapter 的常量（见 source_list_pages），
+                # 只有每小时、且不需要账号的来源才有；其余来源给空数组
+                "list_pages": (
+                    []
+                    if item.requires_accounts or item.daily_only
+                    else list_pages_for_source(item.key)
+                ),
             }
             for item in SOURCE_CATALOG
         ],

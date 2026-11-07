@@ -81,12 +81,12 @@ from src.adapters.http_chinanews_xj import (
     make_article_id as cn_xj_make_article_id,
 )
 from src.adapters.http_gmw import (
-    DEFAULT_BASE_URL as GMW_DEFAULT_BASE_URL,
     DEFAULT_TIMEOUT as GMW_DEFAULT_TIMEOUT,
     article_to_detail_row as gmw_article_to_detail_row,
     article_to_feed_row as gmw_article_to_feed_row,
     fetch_articles as gmw_fetch_articles,
     make_article_id as gmw_make_article_id,
+    resolve_listing_url as gmw_resolve_listing_url,
 )
 from src.adapters.http_laodongwubao import (
     article_to_detail_row as ldwb_article_to_detail_row,
@@ -1061,7 +1061,7 @@ def _toutiao_runner_kwargs(context: SourceRunContext) -> Dict[str, Any]:
 
 def _gmw_runner_kwargs(_context: SourceRunContext) -> Dict[str, Any]:
     return {
-        "base_url": _env_str("GMW_BASE_URL", GMW_DEFAULT_BASE_URL),
+        "base_url": gmw_resolve_listing_url(),
         "timeout_value": _env_float("GMW_TIMEOUT", GMW_DEFAULT_TIMEOUT),
     }
 

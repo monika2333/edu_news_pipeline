@@ -420,7 +420,8 @@
     font-size: 0.82rem;
 }
 
-.source-account-badge {
+.source-account-badge,
+.source-column-count {
     flex: none;
     padding: 3px 10px;
     border: 1px solid #cbd5e1;
@@ -479,11 +480,38 @@
     transform: rotate(180deg);
 }
 
-/* 无需账号的来源：用一个灰色说明补位，避免行右侧空着像少了个控件 */
+/* 无需账号的来源：用一个灰色说明补位，避免行右侧空着像少了个控件。
+   list_pages 缺失时（前后端未同时部署）仍回退到这里 */
 .source-no-accounts {
     flex: none;
     color: #94a3b8;
     font-size: 0.78rem;
+}
+
+/* 单页来源的「↗ 列表页」外链：占原来「无需账号」的位置，做成轻量描边胶囊，
+   与账号芯片的 ↗ 保持同一套视觉语言 */
+.source-list-page-link {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    gap: 4px;
+    padding: 4px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #fff;
+    color: #475569;
+    font-size: 0.78rem;
+    line-height: 1.3;
+    text-decoration: none;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.source-list-page-link:hover,
+.source-list-page-link:focus-visible {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    color: #1d4ed8;
+    outline: none;
 }
 
 /* 胶囊滑块开关：账号行 .account-enabled-toggle 与来源行 .source-enabled-toggle 共用。
@@ -561,9 +589,10 @@
     white-space: nowrap;
 }
 
-/* 展开后的账号面板：挂在来源行下方、左侧内缩到名称位置，
+/* 展开后的账号面板 / 栏目面板：挂在来源行下方、左侧内缩到名称位置，
    浅底 + 左侧色条表明它从属于上面的来源行，而不是一张独立卡片 */
-.source-accounts-panel {
+.source-accounts-panel,
+.source-columns-panel {
     margin: 0 0 6px;
     padding: 12px 14px 12px 46px;
     border-left: 3px solid #bfdbfe;
@@ -572,11 +601,13 @@
     list-style: none;
 }
 
-.source-accounts-panel[hidden] {
+.source-accounts-panel[hidden],
+.source-columns-panel[hidden] {
     display: none;
 }
 
-.source-accounts-panel:not([hidden]) {
+.source-accounts-panel:not([hidden]),
+.source-columns-panel:not([hidden]) {
     animation: source-panel-enter 140ms ease-out;
 }
 
@@ -610,6 +641,49 @@
     max-height: 160px;
     overflow-y: auto;
     padding: 2px;
+}
+
+/* 栏目芯片网格：栏目由代码决定、不能在页面上增删，所以只读。芯片沿用账号
+   芯片的尺寸与圆角，但用虚线边框 + 常驻 ↗ 表明它只是一个外链 */
+.source-columns-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 2px;
+}
+
+.source-column-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-sizing: border-box;
+    padding: 5px 12px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 999px;
+    background: #fff;
+    color: #475569;
+    font-size: 0.84rem;
+    text-decoration: none;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.source-column-chip:hover,
+.source-column-chip:focus-visible {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    color: #1d4ed8;
+    outline: none;
+}
+
+.source-column-chip-arrow {
+    color: #94a3b8;
+    font-size: 0.78rem;
+    line-height: 1;
+}
+
+.source-column-chip:hover .source-column-chip-arrow,
+.source-column-chip:focus-visible .source-column-chip-arrow {
+    color: #1d4ed8;
 }
 
 /* 芯片：默认态是启用开关（label 包裹视觉隐藏的 checkbox，整个芯片即点击区）。

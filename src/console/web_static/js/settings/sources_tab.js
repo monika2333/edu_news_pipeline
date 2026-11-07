@@ -8,6 +8,12 @@ function sourceRequiresAccounts(key) {
     return accountSources().some((source) => source.key === key);
 }
 
+// payload 里缺 list_pages（前后端未同时部署）或值为空时按空数组处理：
+// 该来源行退回原来的「无需账号」，不报错、也不影响其他行
+function sourceListPages(source) {
+    return source && Array.isArray(source.list_pages) ? source.list_pages : [];
+}
+
 // 账号数量徽标只更新文本，不重建列表，避免打断进行中的账号操作。
 function refreshSourcesAccountBadges() {
     elements.panels.sources
@@ -58,14 +64,17 @@ function hasAccountPanel(source) {
     return !!accountPanelEl(source);
 }
 
-// 账号面板手风琴：同时只展开一个来源。不重建列表，只切 hidden 与按钮状态，
-// 这样展开/收起不会打断面板里正在进行的账号操作
+// 账号面板与栏目面板共用同一个手风琴状态：同时只展开一个来源的一块面板。
+// 不重建列表，只切 hidden 与按钮状态，这样展开/收起不会打断面板里正在进行的
+// 账号操作
 function syncSourcePanels() {
     const panel = elements.panels.sources;
     if (!panel) return;
-    panel.querySelectorAll('.source-accounts-panel').forEach((accountsPanel) => {
-        accountsPanel.hidden = accountsPanel.dataset.accountsFor !== state.expandedSource;
-    });
+    panel.querySelectorAll('.source-accounts-panel, .source-columns-panel')
+        .forEach((detailPanel) => {
+            const key = detailPanel.dataset.accountsFor || detailPanel.dataset.columnsFor;
+            detailPanel.hidden = key !== state.expandedSource;
+        });
     panel.querySelectorAll('.source-accounts-toggle').forEach((btn) => {
         const row = btn.closest('li[data-source]');
         const open = !!row && row.dataset.source === state.expandedSource;
@@ -91,6 +100,63 @@ function insertAccountsPanel(row, key) {
     panel.hidden = state.expandedSource !== key;
     row.after(panel);
     renderSourceAccounts(key, panel);
+}
+
+// 栏目只读：链接地址与栏目名全部来自后端（adapter 常量），页面不提供增删入口。
+// 面板同样是来源行之后的兄弟 <li>，与账号面板共用 state.expandedSource。
+function insertColumnsPanel(row, source) {
+    const panel = createEl('li', 'source-columns-panel', '', {
+        dataset: { columnsFor: source.key },
+    });
+    panel.id = `settings-columns-${source.key}`;
+    panel.hidden = state.expandedSource !== source.key;
+    row.after(panel);
+    renderSourceColumns(source, panel);
+}
+
+function renderSourceColumns(source, panel) {
+    const grid = createEl('div', 'source-columns-grid');
+    sourceListPages(source).forEach((page) => {
+        const chip = createEl('a', 'source-column-chip', '', {
+            href: page.url,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            'aria-label': `打开 ${source.display_name} 的${page.label}`,
+        });
+        chip.appendChild(createEl('span', 'source-column-chip-label', page.label));
+        chip.appendChild(createEl('span', 'source-column-chip-arrow', '↗', {
+            'aria-hidden': 'true',
+        }));
+        grid.appendChild(chip);
+    });
+    panel.appendChild(grid);
+}
+
+// 单个列表页的来源：在原来「无需账号」的位置直接给一个外链，没有展开按钮。
+// 文字完全取自后端 label，前端不做任何替换
+function buildListPageLink(source, page) {
+    return createEl('a', 'source-list-page-link', `↗ ${page.label}`, {
+        href: page.url,
+        target: '_blank',
+        rel: 'noopener noreferrer',
+        'aria-label': `打开 ${source.display_name} 的${page.label}`,
+    });
+}
+
+function buildSourcePanelToggle(source, { controls, label }) {
+    const expandBtn = createEl('button', 'source-accounts-toggle', '', {
+        type: 'button',
+        'aria-expanded': String(state.expandedSource === source.key),
+        'aria-controls': controls,
+        'aria-label': label,
+    });
+    expandBtn.appendChild(createEl('span', 'source-accounts-toggle-label', '展开'));
+    expandBtn.appendChild(createEl('span', 'source-accounts-caret', '▾', {
+        'aria-hidden': 'true',
+    }));
+    expandBtn.classList.toggle('is-open', state.expandedSource === source.key);
+    expandBtn.addEventListener('click', () => setExpandedSource(source.key));
+    return expandBtn;
 }
 
 // 来源启停即时保存：切换开关即写库（按目录序构造的完整启用列表 + 当前版本号），不进草稿。
@@ -165,7 +231,8 @@ async function toggleSourceEnabled(key, target, toggle, errorEl) {
     }
 }
 
-function buildSourceRow(key, { enabled }) {
+function buildSourceRow(source, { enabled }) {
+    const key = source.key;
     const item = createEl('li', 'settings-source-item', '', { dataset: { source: key } });
     // 停用行只做视觉弱化（名称降灰）：行高、内边距与控件位置不变，开关切换时行不位移
     if (!enabled) item.classList.add('is-disabled');
@@ -207,21 +274,31 @@ function buildSourceRow(key, { enabled }) {
         });
         item.appendChild(refreshBtn);
         // 手风琴开关排在徽标/刷新按钮之后；徽标仍是纯展示，展开入口只有这个按钮
-        const expandBtn = createEl('button', 'source-accounts-toggle', '', {
-            type: 'button',
-            'aria-expanded': String(state.expandedSource === key),
-            'aria-controls': `settings-accounts-${key}`,
-            'aria-label': `展开或收起 ${sourceDisplayName(key)} 的抓取账号`,
-        });
-        expandBtn.appendChild(createEl('span', 'source-accounts-toggle-label', '展开'));
-        expandBtn.appendChild(createEl('span', 'source-accounts-caret', '▾', {
-            'aria-hidden': 'true',
+        item.appendChild(buildSourcePanelToggle(source, {
+            controls: `settings-accounts-${key}`,
+            label: `展开或收起 ${source.display_name} 的抓取账号`,
         }));
-        expandBtn.classList.toggle('is-open', state.expandedSource === key);
-        expandBtn.addEventListener('click', () => setExpandedSource(key));
-        item.appendChild(expandBtn);
     } else {
-        item.appendChild(createEl('span', 'source-no-accounts', '无需账号'));
+        const pages = sourceListPages(source);
+        if (pages.length === 1) {
+            // 单个列表页：原来「无需账号」的位置直接换成外链，不提供展开按钮
+            item.appendChild(buildListPageLink(source, pages[0]));
+        } else if (pages.length > 1) {
+            // 多个栏目：纯展示徽标 + 与账号面板相同的展开按钮/手风琴
+            item.classList.add('has-columns');
+            item.appendChild(createEl(
+                'span',
+                'source-column-count',
+                `共 ${pages.length} 个栏目`,
+            ));
+            item.appendChild(buildSourcePanelToggle(source, {
+                controls: `settings-columns-${key}`,
+                label: `展开或收起 ${source.display_name} 的栏目`,
+            }));
+        } else {
+            // 缺 list_pages 或列表为空（前后端未同时部署）：退回旧行为
+            item.appendChild(createEl('span', 'source-no-accounts', '无需账号'));
+        }
     }
 
     item.appendChild(errorEl);
@@ -242,12 +319,14 @@ function renderSourcesPanel(panel, section) {
     sourceCatalog()
         .filter((item) => !item.daily_only)
         .forEach((source) => {
-            const row = buildSourceRow(source.key, {
+            const row = buildSourceRow(source, {
                 enabled: section.value.includes(source.key),
             });
             list.appendChild(row);
             if (sourceRequiresAccounts(source.key)) {
                 insertAccountsPanel(row, source.key);
+            } else if (sourceListPages(source).length > 1) {
+                insertColumnsPanel(row, source);
             }
         });
     hourlyCard.appendChild(list);

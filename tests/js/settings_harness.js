@@ -107,6 +107,106 @@ function defaultSources() {
     ];
 }
 
+// 与后端 payload 同形的 Xinhua 栏目（顺序必须与 adapter 常量一致）
+function xinhuaColumns() {
+    return [
+        ['新华社记者看北京', 'http://bj.news.cn/jz/index.htm'],
+        ['京华新声', 'http://bj.news.cn/jhxs/index.htm'],
+        ['要闻', 'http://bj.news.cn/gdxw/index.htm'],
+        ['政务', 'http://bj.news.cn/bjzw/index.htm'],
+        ['京津冀', 'http://bj.news.cn/jjj/index.htm'],
+        ['社会', 'http://bj.news.cn/sh/index.htm'],
+        ['文旅', 'http://bj.news.cn/wl/index.htm'],
+        ['科教', 'http://bj.news.cn/kj/index.htm'],
+        ['财经', 'http://bj.news.cn/cj/index.htm'],
+        ['视频', 'http://bj.news.cn/sp/index.htm'],
+        ['访谈', 'http://bj.news.cn/ft/index.htm'],
+        ['图说', 'http://bj.news.cn/tj/index.htm'],
+        ['视觉', 'http://bj.news.cn/tp/index.htm'],
+        ['资讯联播', 'http://bj.news.cn/xxgj/index.html'],
+        ['聚焦', 'http://bj.news.cn/jj/index.htm'],
+    ].map(([label, url]) => ({ label, url }));
+}
+
+function xinhuaEducationColumns() {
+    return [
+        ['每日要闻', 'https://education.news.cn/mryw/index.htm'],
+        ['基础教育', 'https://education.news.cn/jcjy/index.htm'],
+        ['高等教育', 'https://education.news.cn/gdjy/index.htm'],
+        ['职业教育', 'https://education.news.cn/eduzyjy/index.htm'],
+    ].map(([label, url]) => ({ label, url }));
+}
+
+// 带 list_pages 的目录：F1/F1b/F2/F3/F4 用这个夹具，
+// 保留 defaultSources 作为「payload 缺 list_pages」的兼容场景（F5）
+function sourcesWithListPages() {
+    const listPage = (url) => [{ label: '列表页', url }];
+    return [
+        { key: 'toutiao', display_name: '今日头条', daily_only: false, requires_accounts: true, list_pages: [] },
+        { key: 'tencent', display_name: '腾讯新闻', daily_only: false, requires_accounts: true, list_pages: [] },
+        {
+            key: 'chinanews',
+            display_name: '中新网',
+            daily_only: false,
+            requires_accounts: false,
+            list_pages: listPage('https://www.chinanews.com.cn/scroll-news/news1.html'),
+        },
+        {
+            key: 'chinanews_xj',
+            display_name: '中新网新疆',
+            daily_only: false,
+            requires_accounts: false,
+            list_pages: listPage('https://www.xj.chinanews.com.cn/dizhou/'),
+        },
+        {
+            key: 'jyb',
+            display_name: '中国教育报',
+            daily_only: false,
+            requires_accounts: false,
+            list_pages: listPage('http://www.jyb.cn/search.html?topsearch='),
+        },
+        {
+            key: 'gmw',
+            display_name: '光明网',
+            daily_only: false,
+            requires_accounts: false,
+            list_pages: listPage('https://news.gmw.cn/node_4108.htm'),
+        },
+        {
+            key: 'xinhua',
+            display_name: '新华网北京',
+            daily_only: false,
+            requires_accounts: false,
+            list_pages: xinhuaColumns(),
+        },
+        {
+            key: 'xinhua_edu',
+            display_name: '新华网教育',
+            daily_only: false,
+            requires_accounts: false,
+            list_pages: xinhuaEducationColumns(),
+        },
+        {
+            key: 'stdaily',
+            display_name: '科技日报',
+            daily_only: false,
+            requires_accounts: false,
+            list_pages: [{ label: '滚动新闻', url: 'https://www.stdaily.com/web/gdxw/node_324.html' }],
+        },
+        {
+            key: 'bbtnews',
+            display_name: '北京商报',
+            daily_only: false,
+            requires_accounts: false,
+            list_pages: [{ label: '教育频道', url: 'https://www.bbtnews.com.cn/chuizhipd/chanjingzx/jiaoyupd/' }],
+        },
+        { key: 'btime', display_name: '北京时间', daily_only: false, requires_accounts: true, list_pages: [] },
+        { key: 'beijinghao', display_name: '北京号', daily_only: false, requires_accounts: true, list_pages: [] },
+        { key: 'bjrb', display_name: '北京日报', daily_only: true, requires_accounts: false, list_pages: [] },
+        { key: 'ldwb', display_name: '劳动午报', daily_only: true, requires_accounts: false, list_pages: [] },
+    ];
+}
+
 function defaultModelsValue() {
     return {
         steps: {
@@ -1124,6 +1224,8 @@ module.exports = {
     unhandledRejections,
     defaultSections,
     defaultAccounts,
+    defaultSources,
+    sourcesWithListPages,
     defaultEndpointsPayload,
     defaultPrompts,
     defaultPromptHistory,

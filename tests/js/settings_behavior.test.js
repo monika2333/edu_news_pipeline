@@ -17,6 +17,7 @@ const {
     defaultAccounts,
     makeAccount,
     sectionsWithBareEndpointStep,
+    sourcesWithListPages,
     unhandledRejections,
 } = require('./settings_harness.js');
 
@@ -1910,6 +1911,174 @@ test('N23：刷新进行中启停其他来源触发整块重渲染，刷新收�
         assert.deepEqual(unhandledRejections, []);
     } finally {
         page.close();
+    }
+});
+
+// ---------- 列表页 / 栏目面板场景（F1-F5） ----------
+
+function columnsPanel(page, key) {
+    return page.document
+        .querySelector(`.source-columns-panel[data-columns-for="${key}"]`);
+}
+
+function columnChips(page, key) {
+    return [...columnsPanel(page, key).querySelectorAll('a.source-column-chip')];
+}
+
+test('F1：单页来源行渲染列表页外链，无展开按钮、不再显示「无需账号」', async () => {
+    const page = await bootPage({ sources: sourcesWithListPages() });
+    try {
+        const row = sourceRow(page, 'gmw');
+        const link = row.querySelector('a.source-list-page-link');
+        assert.ok(link, '光明网行应有列表页外链');
+        assert.equal(link.getAttribute('href'), 'https://news.gmw.cn/node_4108.htm');
+        assert.equal(link.getAttribute('target'), '_blank');
+        assert.match(link.getAttribute('rel'), /noopener/);
+        assert.ok(link.getAttribute('aria-label').includes('光明网'));
+        assert.equal(link.textContent, '↗ 列表页');
+        // 单页来源不需要展开按钮，也不再出现旧的占位说明
+        assert.equal(row.querySelector('.source-accounts-toggle'), null);
+        assert.equal(row.querySelector('.source-no-accounts'), null);
+    } finally {
+        page.close();
+    }
+});
+
+test('F1b：链接文字原样取自 payload 的 label，前端不写死', async () => {
+    const page = await bootPage({ sources: sourcesWithListPages() });
+    try {
+        const text = (key) => sourceRow(page, key)
+            .querySelector('a.source-list-page-link').textContent;
+        assert.equal(text('stdaily'), '↗ 滚动新闻');
+        assert.equal(text('bbtnews'), '↗ 教育频道');
+        assert.equal(text('gmw'), '↗ 列表页');
+    } finally {
+        page.close();
+    }
+
+    // 任意字符串：页面上必须原样显示，证明前端没有按来源 key 写死文字
+    const sources = sourcesWithListPages();
+    sources.find((item) => item.key === 'jyb').list_pages = [{
+        label: '站内搜索 · 最新稿',
+        url: 'https://example.com/jyb-latest',
+    }];
+    const custom = await bootPage({ sources });
+    try {
+        assert.equal(
+            sourceRow(custom, 'jyb').querySelector('a.source-list-page-link').textContent,
+            '↗ 站内搜索 · 最新稿',
+        );
+    } finally {
+        custom.close();
+    }
+});
+
+test('F2：新华网北京展开后按顺序渲染 15 个只读栏目芯片', async () => {
+    const page = await bootPage({ sources: sourcesWithListPages() });
+    try {
+        const expected = page.server.sources
+            .find((item) => item.key === 'xinhua').list_pages;
+        const row = sourceRow(page, 'xinhua');
+        assert.equal(
+            row.querySelector('.source-column-count').textContent,
+            '共 15 个栏目',
+        );
+        row.querySelector('.source-accounts-toggle').click();
+
+        const panel = columnsPanel(page, 'xinhua');
+        assert.equal(panel.hidden, false);
+        const chips = columnChips(page, 'xinhua');
+        assert.equal(chips.length, 15);
+        assert.deepEqual(
+            chips.map((chip) => chip.getAttribute('href')),
+            expected.map((item) => item.url),
+        );
+        assert.deepEqual(
+            chips.map((chip) => chip.querySelector('.source-column-chip-label').textContent),
+            expected.map((item) => item.label),
+        );
+        chips.forEach((chip) => {
+            assert.equal(chip.getAttribute('target'), '_blank');
+            assert.match(chip.getAttribute('rel'), /noopener/);
+        });
+        // 栏目只读：没有开关、删除、添加入口，也没有刷新账号名称
+        assert.equal(panel.querySelector('input, button, textarea'), null);
+        assert.ok(!panel.textContent.includes('刷新账号名称'));
+    } finally {
+        page.close();
+    }
+});
+
+test('F3：栏目面板与账号面板共用同一手风琴状态', async () => {
+    const page = await bootPage({ sources: sourcesWithListPages() });
+    try {
+        sourceRow(page, 'toutiao').querySelector('.source-accounts-toggle').click();
+        assert.equal(accountsPanel(page, 'toutiao').hidden, false);
+
+        sourceRow(page, 'xinhua').querySelector('.source-accounts-toggle').click();
+        assert.equal(columnsPanel(page, 'xinhua').hidden, false);
+        assert.equal(accountsPanel(page, 'toutiao').hidden, true);
+
+        sourceRow(page, 'toutiao').querySelector('.source-accounts-toggle').click();
+        assert.equal(accountsPanel(page, 'toutiao').hidden, false);
+        assert.equal(columnsPanel(page, 'xinhua').hidden, true);
+    } finally {
+        page.close();
+    }
+});
+
+test('F4：启停来源触发整块重渲染后，已展开的栏目面板保持展开', async () => {
+    const page = await bootPage({ sources: sourcesWithListPages() });
+    try {
+        sourceRow(page, 'xinhua_edu').querySelector('.source-accounts-toggle').click();
+        const oldPanel = columnsPanel(page, 'xinhua_edu');
+        assert.equal(oldPanel.hidden, false);
+
+        sourceRow(page, 'chinanews').querySelector('.source-enabled-toggle').click();
+        await waitFor(() => page.server.inflight === 0
+            && columnsPanel(page, 'xinhua_edu') !== oldPanel);
+
+        assert.equal(page.window.eval('state.expandedSource'), 'xinhua_edu');
+        assert.equal(columnsPanel(page, 'xinhua_edu').hidden, false);
+        assert.equal(columnChips(page, 'xinhua_edu').length, 4);
+        assert.equal(
+            sourceRow(page, 'xinhua_edu').querySelector('.source-accounts-toggle')
+                .getAttribute('aria-expanded'),
+            'true',
+        );
+    } finally {
+        page.close();
+    }
+});
+
+test('F5：list_pages 缺失或为空时该行退回「无需账号」，其余行正常', async () => {
+    // 默认夹具没有 list_pages 字段：整页仍应正常渲染
+    const page = await bootPage();
+    try {
+        const row = sourceRow(page, 'chinanews');
+        assert.equal(row.querySelector('.source-list-page-link'), null);
+        assert.equal(row.querySelector('.source-no-accounts').textContent, '无需账号');
+        assert.equal(page.document.querySelector('.source-columns-panel'), null);
+        assert.deepEqual(unhandledRejections, []);
+    } finally {
+        page.close();
+    }
+
+    // 只有光明网的 list_pages 为空数组：只有这一行退回，其他行不受影响
+    const sources = sourcesWithListPages();
+    sources.find((item) => item.key === 'gmw').list_pages = [];
+    const partial = await bootPage({ sources });
+    try {
+        const gmwRow = sourceRow(partial, 'gmw');
+        assert.equal(gmwRow.querySelector('.source-list-page-link'), null);
+        assert.equal(gmwRow.querySelector('.source-no-accounts').textContent, '无需账号');
+        assert.equal(
+            sourceRow(partial, 'stdaily').querySelector('a.source-list-page-link').textContent,
+            '↗ 滚动新闻',
+        );
+        assert.deepEqual(unhandledRejections, []);
+    } finally {
+        partial.close();
     }
 });
 

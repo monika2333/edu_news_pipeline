@@ -29,6 +29,20 @@ DEFAULT_SEARCH_API_URL = "http://new.jyb.cn/jybuc/hyBaseCol/search.action"
 CHINA_TZ = timezone(timedelta(hours=8))
 
 
+def resolve_start_url() -> str:
+    """列表页地址的唯一取值规则：JYB_START_URL 覆盖默认 SEARCH_URL。
+
+    爬虫与设置页都调用它，保证页面上的链接就是本轮实际请求的搜索页。"""
+    return os.getenv("JYB_START_URL", SEARCH_URL)
+
+
+def resolve_listing_url() -> str:
+    """设置页展示的列表页：站内搜索页 + 空关键词参数（空关键词按时间倒序）。"""
+    start_url = resolve_start_url()
+    separator = "&" if "?" in start_url else "?"
+    return f"{start_url}{separator}topsearch="
+
+
 @dataclass
 class FeedItemLike:
     title: str
@@ -139,7 +153,7 @@ def list_items(limit: Optional[int] = None, pages: Optional[int] = None, *, exis
     except Exception:
         timeout = 20.0
     api_url = os.getenv("JYB_SEARCH_API_URL", DEFAULT_SEARCH_API_URL)
-    start_url = os.getenv("JYB_START_URL", SEARCH_URL)
+    start_url = resolve_start_url()
     # Default to blank keywords when env is unset
     raw_keywords = os.getenv("JYB_KEYWORDS", "")
     keywords = [kw.strip() for kw in raw_keywords.split(',') if kw.strip()] or [""]
@@ -362,6 +376,8 @@ __all__ = [
     'normalize_url',
     'is_detail_url',
     'make_article_id',
+    'resolve_start_url',
+    'resolve_listing_url',
     'list_items',
     'fetch_detail',
     'html_to_markdown',

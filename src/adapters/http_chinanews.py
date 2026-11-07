@@ -23,6 +23,9 @@ USER_AGENT = (
 # China timezone for ChinaNews timestamps
 CHINA_TZ = timezone(timedelta(hours=8))
 SOURCE_NAME = "中国新闻网"
+# 滚动新闻第 N 页：爬虫与设置页「数据源」共用同一个地址常量，
+# 避免页面上展示的列表页与爬虫实际请求的页面悄悄分叉。
+SCROLL_NEWS_URL_TEMPLATE = "https://www.chinanews.com.cn/scroll-news/news{page}.html"
 
 
 @dataclass
@@ -138,8 +141,13 @@ def _ts_from_iso(iso: Optional[str]) -> Optional[int]:
         return None
 
 
+def scroll_news_url(page: int) -> str:
+    """滚动新闻第 page 页的地址；设置页展示第 1 页。"""
+    return SCROLL_NEWS_URL_TEMPLATE.format(page=page)
+
+
 def _fetch_page_html(page: int, sess: requests.Session) -> str:
-    url = f"https://www.chinanews.com.cn/scroll-news/news{page}.html"
+    url = scroll_news_url(page)
     resp = sess.get(url, timeout=15)
     resp.raise_for_status()
     return decode_response(resp)
@@ -379,6 +387,7 @@ __all__ = [
     'FeedItemLike',
     'normalize_url',
     'make_article_id',
+    'scroll_news_url',
     'list_items',
     'fetch_detail',
     'html_to_markdown',

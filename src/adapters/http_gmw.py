@@ -4,6 +4,7 @@ from __future__ import annotations
 import gzip
 import http.cookiejar
 import logging
+import os
 import re
 import urllib.request
 import zlib
@@ -17,6 +18,15 @@ LOGGER = logging.getLogger(__name__)
 DEFAULT_LISTING_URL = "https://news.gmw.cn/node_4108.htm"
 ARTICLE_URL_PATTERN = re.compile(r"content_\d+\.htm$", re.IGNORECASE)
 LISTING_URL_PATTERN = re.compile(r"node_\d+(?:_\d+)?\.htm$", re.IGNORECASE)
+
+
+def resolve_listing_url() -> str:
+    """列表页地址的唯一取值规则：GMW_BASE_URL 覆盖默认常量。
+
+    爬虫与设置页都调用它，保证页面上的链接就是本轮实际请求的列表页。
+    与 crawl_sources 原来的读取口径一致：空白环境变量按未设置处理。"""
+    value = os.getenv("GMW_BASE_URL")
+    return value.strip() if value and value.strip() else DEFAULT_LISTING_URL
 
 
 @dataclass
@@ -756,4 +766,5 @@ __all__ = [
     "DEFAULT_BASE_URL",
     "DEFAULT_TIMEOUT",
     "SOURCE_NAME",
+    "resolve_listing_url",
 ]

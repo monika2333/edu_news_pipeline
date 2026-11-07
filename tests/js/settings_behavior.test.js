@@ -2556,6 +2556,10 @@ test('E19：新增接入点的 Key 提示跟随输入框实时变化——已配
         assert.match(hint.textContent, /大写字母开头/);
         assert.match(hint.textContent, /_API_KEY 结尾/);
 
+        // 合法字符但不以 _API_KEY 结尾：同样提示格式要求
+        inputValue(page, envInput, 'DEEPSEEK_API_KEY_2');
+        assert.match(hint.textContent, /_API_KEY 结尾/);
+
         // 格式对且已配置（LLM_API_KEY 在 fixture 名单里）：提示「Key 已配置」
         inputValue(page, envInput, 'LLM_API_KEY');
         assert.equal(hint.textContent, 'Key 已配置');

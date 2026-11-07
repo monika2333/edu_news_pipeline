@@ -95,6 +95,8 @@
 
 - 纯 CSS/布局改动 jsdom 测不到，用 headless Chrome 直接渲染静态夹具核对几何：`chrome --headless=new --window-size=W,H --screenshot=out.png file:///...` 出图，`--dump-dom` 配合页内 `window.onload` 脚本把 `getBoundingClientRect()` 写进 `<pre>` 再解析，能量到「各行第一列左缘是否一致、`table.scrollWidth` 是否超出 `.admin-table-wrap`」。CLI 的 headless Chrome **可以**开 `file://` 夹具（workflow.md §5 那条 `file:` 限制只针对浏览器技能/Playwright）。夹具放临时目录，不要把预览 HTML 提交进仓库。
 
+- **变异要打在「唯一决定行为」的位置**（2026-11-07）：设置页栏目面板「重渲染重置展开态」的变异先打在 `insertColumnsPanel` 的 `panel.hidden` 上，被紧接着的 `syncSourcePanels()` 覆盖而存活；改到 `renderSourcesPanel` 开头重置 `state.expandedSource` 才真正模拟丢状态。变异存活时先确认它是否真的改变了最终状态，再判断是不是测试盲区。
+
 ## 已知「等价变异」/ 测试盲区备忘
 
 变异测试里存活过、后来定性为等价或需特殊用例的：

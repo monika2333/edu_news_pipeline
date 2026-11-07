@@ -4,6 +4,7 @@
 
 | 日期 | 功能 | 合入 | archive |
 |---|---|---|---|
+| 2026-11-07 | 数据源页无账号来源加「列表页」链接：payload `sources[].list_pages` 直接取 adapter 常量（中新网滚动页提常量、光明网/中国教育报环境变量规则收进 adapter 与爬虫共用）；单页行显示「↗ {label}」，多栏目来源渲染只读栏目面板并与账号面板共用 `state.expandedSource`；缺字段/空数组逐行回退「无需账号」；B1-B4/F1-F5 与 M1-M12 全 KILLED | 751d38a | [2026-11-07-数据源列表页链接.md](archive/2026-11-07-数据源列表页链接.md) |
 | 2026-11-07 | 系统性 LLM 错误不计文章失败并推广到 `external-filter` / `summarize`：公共 `llm_failures` 判定与每轮一条告警；geo 取消提前停止与 `run()` 重新抛出，`systematic` 改为受影响篇数并计入 failed；external-filter 不写失败计数且同轮 `attempted_article_ids` 去重；summarize 退回 `mark_attempt` 预加计数且不 `mark_failed`（新增 `refund_summary_attempt`，只退 pending 且 > 0 的行）；变异 M1–M15 全部 KILLED | 67a5b62、0086bd5 | [2026-11-07-LLM系统性错误不计失败.md](archive/2026-11-07-LLM系统性错误不计失败.md) |
 | 2026-11-06 | 补丁：保存接入点的模型测试改用待保存定义（原探针查库导致新增接入点必失败、改连接信息实测旧值）；Key 缺失报错中文化；新增 5 条只替换 post_chat_completion 的测试（断言 URL/Authorization）；变异 P1-P3 全 KILLED | ea824f3 | 坑记 `pitfalls.md`（校验作用于待保存值 / 打桩太高藏问题） |
 | 2026-11-06 | 默认模型跟随接入点：`llm_endpoints` 每接入点必填 `default_model`，`llm_models` 删顶层 `default`（迁移 20261106150000，解析结果逐字节等价）；步骤表改「接入点下拉 + 模型输入框」，模型留空用所选接入点默认模型；保存 `llm_models`/`llm_endpoints` 统一解析级模型实测；全新部署路径重做并双环境变量用例覆盖 | 9a214ee（ecfd6c9 功能 + AGENTS.md 同步） | [2026-11-06-默认模型跟随接入点.md](archive/2026-11-06-默认模型跟随接入点.md) |

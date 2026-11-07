@@ -251,7 +251,8 @@ def _render_llm_request_alert_message(
         f"Provider response: {_truncate(provider_message or '(empty)', 600)}",
         "",
         "Action: 检查调用代码、接入点能力（如 response_format/结构化输出支持）、"
-        "模型名与请求参数；该错误不会重试，本轮步骤已熔断，修复后重跑即可。",
+        "模型名与请求参数；该错误不会重试；受影响文章保持待处理、不计失败次数，"
+        "修复后下一轮会自动重新请求，无需手动重跑。",
     ]
     return _truncate("\n".join(lines), 1800)
 

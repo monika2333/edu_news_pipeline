@@ -134,6 +134,8 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 前四个生成/富化步骤各有独立的 `*_attempted_at` 和 `*_fail_count`，用于重试控制和失败隔离——**某一步失败不会阻塞其他生成/富化步骤**。`submission-dedup` 的四个字段是可重建缓存，不承担流水线重试状态。
 
+`geo-classify`、`external-filter`、`summarize` 的 `*_fail_count` 只统计与该篇文章相关的失败。系统性 LLM 错误（不可重试的 4xx、额度/计费、请求发出前的配置类错误）与文章数据无关，**不写入这三个计数**，也不会触发达到上限后的状态变更（按北京放行 / 标 `external_filtered` / 标 `failed`）；文章保持原待处理状态，下一轮继续请求。`summarize` 的 `mark_attempt` 在提交请求前就把 `summary_fail_count` +1（同时用作认领），遇到系统性错误会退回这次预加（仅当行仍是 `summary_status = 'pending' AND status = 'pending'` 且计数 > 0），因此该字段最终仍反映真实的文章级失败次数。
+
 `external-filter` 与 `geo-classify` 的提示词正文来自 `prompt_revisions`：控制台每次保存
 追加一个 revision，流水线启动时按 key 取最大 revision 并冻结到本轮运行；数据库里没有
 该 key 时回退 `config/prompts` 文件。四个评分提示词实际使用的版本写入

@@ -20,6 +20,10 @@ from src.workers import (
     log_summary,
     worker_session,
 )
+from src.workers.llm_failures import (
+    SystematicErrorAlert,
+    is_systematic_llm_error,
+)
 
 WORKER = "external_filter"
 
@@ -68,10 +72,15 @@ def _process_external_filter_batch(
     max_retries: int,
     remaining_limit: Optional[int],
     prompts: Mapping[str, PromptTemplate],
+    alert: Optional[SystematicErrorAlert] = None,
 ) -> tuple[int, int, int]:
     processed = 0
     failed = 0
     filter_ready = 0
+    session_alert = alert or SystematicErrorAlert(
+        operation="external_filter",
+        worker=WORKER,
+    )
     future_map = {
         executor.submit(
             _score_candidate,
@@ -106,6 +115,17 @@ def _process_external_filter_batch(
             processed += 1
         except Exception as exc:
             failed += 1
+            if is_systematic_llm_error(exc):
+                # 系统性/额度/配置类错误与文章数据无关：不增加失败计数，
+                # 不触发 external_filtered 淘汰，文章保持待处理。其余请求
+                # 照常处理，本步骤正常结束。
+                log_error(
+                    WORKER,
+                    f"{candidate.candidate_category.upper()} {candidate.article_id}",
+                    exc,
+                )
+                session_alert.notify(exc)
+                continue
             new_fail_count = candidate.external_filter_fail_count + 1
             adapter.process.mark_external_filter_failure(
                 candidate.article_id,
@@ -139,6 +159,8 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
     prompts = load_active_prompts(adapter)
 
     with worker_session(WORKER, limit=limit):
+        attempted_article_ids: set[str] = set()
+        alert = SystematicErrorAlert(operation="external_filter", worker=WORKER)
         with ContextPropagatingThreadPoolExecutor(max_workers=workers) as executor:
             while True:
                 fetch_size = batch_size
@@ -146,14 +168,26 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                     if remaining <= 0:
                         break
                     fetch_size = min(fetch_size, remaining)
-                candidates = adapter.process.fetch_external_filter_candidates(
-                    fetch_size,
-                    max_failures=max_retries,
+                fetched_candidates = (
+                    adapter.process.fetch_external_filter_candidates(
+                        fetch_size,
+                        max_failures=max_retries,
+                    )
                 )
+                # 系统性错误不再增加失败计数，候选会一直被重新取回；同轮
+                # 去重保证每篇最多请求一次，也保证本轮一定结束。
+                candidates = [
+                    candidate
+                    for candidate in fetched_candidates
+                    if candidate.article_id not in attempted_article_ids
+                ]
                 if not candidates:
                     if total_processed + total_failed == 0:
                         log_info(WORKER, "No pending importance filter candidates.")
                     break
+                attempted_article_ids.update(
+                    candidate.article_id for candidate in candidates
+                )
 
                 processed, failed, ready_count = _process_external_filter_batch(
                     adapter,
@@ -163,6 +197,7 @@ def run(limit: Optional[int] = None, concurrency: Optional[int] = None) -> None:
                     max_retries,
                     remaining,
                     prompts,
+                    alert=alert,
                 )
                 total_processed += processed
                 total_failed += failed

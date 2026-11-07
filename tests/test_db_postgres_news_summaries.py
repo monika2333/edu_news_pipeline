@@ -3,15 +3,21 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+import psycopg
+from psycopg.rows import dict_row
+
 from src.adapters.db_postgres_news_summaries import (
     fetch_latest_news_summary_created_at,
     fetch_news_summary_content,
     fetch_prompt_test_article,
     insert_pending_summary,
+    mark_summary_attempt,
+    refund_summary_attempt,
     update_dedup_embeddings,
     upsert_news_summaries_from_primary,
     upsert_news_summary,
 )
+from src.config import get_settings
 
 
 class FakeCursor:
@@ -214,3 +220,65 @@ def test_summary_upserts_do_not_overwrite_dedup_cache_columns() -> None:
         assert "dedup_embedding_model" not in query
         assert "dedup_source_hash" not in query
         assert "dedup_embedded_at" not in query
+
+
+def test_refund_summary_attempt_undoes_the_claim_without_touching_other_rows() -> None:
+    settings = get_settings()
+    with psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        dbname=settings.db_name,
+        autocommit=False,
+        row_factory=dict_row,
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "CREATE TEMP TABLE news_summaries "
+                "(LIKE public.news_summaries INCLUDING DEFAULTS) ON COMMIT DROP"
+            )
+            cur.executemany(
+                """
+                INSERT INTO news_summaries (
+                    article_id, summary_status, status, summary_fail_count
+                )
+                VALUES (%s, %s, %s, %s)
+                """,
+                [
+                    ("pending-claimed", "pending", "pending", 2),
+                    ("pending-zero", "pending", "pending", 0),
+                    ("summary-failed", "failed", "pending", 2),
+                    ("status-failed", "pending", "failed", 2),
+                    ("completed", "completed", "pending_enrichment", 2),
+                ],
+            )
+
+            # 认领：只有 pending 行才会 +1。
+            assert mark_summary_attempt(cur, "pending-claimed") is True
+            assert mark_summary_attempt(cur, "pending-zero") is True
+            assert mark_summary_attempt(cur, "summary-failed") is False
+            assert mark_summary_attempt(cur, "status-failed") is False
+            assert mark_summary_attempt(cur, "completed") is False
+
+            # 退回：只对仍 pending 且计数 > 0 的行生效。
+            refund_summary_attempt(cur, "pending-claimed")
+            refund_summary_attempt(cur, "pending-zero")
+            refund_summary_attempt(cur, "summary-failed")
+            refund_summary_attempt(cur, "status-failed")
+            refund_summary_attempt(cur, "completed")
+
+            cur.execute(
+                """
+                SELECT article_id, summary_fail_count, summary_status, status
+                FROM news_summaries
+                ORDER BY article_id
+                """
+            )
+            rows = {row["article_id"]: dict(row) for row in cur.fetchall()}
+
+    assert rows["pending-claimed"]["summary_fail_count"] == 2
+    assert rows["pending-zero"]["summary_fail_count"] == 0
+    assert rows["summary-failed"]["summary_fail_count"] == 2
+    assert rows["status-failed"]["summary_fail_count"] == 2
+    assert rows["completed"]["summary_fail_count"] == 2

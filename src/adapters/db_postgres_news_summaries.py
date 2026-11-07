@@ -33,6 +33,10 @@ class NewsSummariesNamespace:
         with self._adapter._cursor() as cur:
             return mark_summary_attempt(cur, article_id)
 
+    def refund_attempt(self, article_id: str) -> None:
+        with self._adapter._cursor() as cur:
+            refund_summary_attempt(cur, article_id)
+
     def complete_generation(self, article_id: str, summary_text: str) -> None:
         with self._adapter._cursor() as cur:
             complete_summary_generation(cur, article_id, summary_text)
@@ -259,6 +263,28 @@ def mark_summary_attempt(cur: psycopg.Cursor, article_id: str) -> bool:
     """
     cur.execute(query, (article_id,))
     return cur.rowcount == 1
+
+
+def refund_summary_attempt(cur: psycopg.Cursor, article_id: str) -> None:
+    """Undo the ``summary_fail_count + 1`` claimed by ``mark_summary_attempt``.
+
+    Used when the summary request failed for a systematic reason: the article
+    must stay pending with its previous attempt count. Only rows that are still
+    pending and have a positive count are touched, so a row that was completed,
+    failed or already refunded in the meantime keeps its state.
+    """
+
+    if not article_id:
+        return
+    query = """
+        UPDATE news_summaries
+        SET summary_fail_count = summary_fail_count - 1
+        WHERE article_id = %s
+          AND summary_status = 'pending'
+          AND status = 'pending'
+          AND summary_fail_count > 0
+    """
+    cur.execute(query, (article_id,))
 
 
 def complete_summary_generation(cur: psycopg.Cursor, article_id: str, summary_text: str) -> None:
@@ -831,6 +857,7 @@ __all__ = [
     "insert_pending_summary",
     "mark_summary_attempt",
     "mark_summary_failed",
+    "refund_summary_attempt",
     "update_dedup_embeddings",
     "update_summary_categories",
     "update_summary_score",

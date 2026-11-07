@@ -9,21 +9,15 @@ from src.adapters.llm_beijing_gate import (
     BeijingGateIndeterminateError,
     call_beijing_gate,
 )
-from src.adapters.llm_chat import (
-    LLMEndpointBlockedError,
-    LLMQuotaError,
-    LLMRequestError,
-)
-from src.adapters.llm_endpoint import LLMEndpointKeyMissingError
+from src.adapters.llm_chat import LLMRequestError
 from src.adapters.prompt_store import load_active_prompts
-from src.business_config import BusinessConfigError, get_business_config
+from src.business_config import get_business_config
 from src.config import get_settings
 from src.domain import (
     BeijingGateCandidate,
     determine_candidate_category,
     is_beijing_related,
 )
-from src.notifications.feishu import notify_llm_request_alert
 from src.workers import (
     ContextPropagatingThreadPoolExecutor,
     log_error,
@@ -31,16 +25,12 @@ from src.workers import (
     log_summary,
     worker_session,
 )
+from src.workers.llm_failures import (
+    SystematicErrorAlert,
+    is_systematic_llm_error,
+)
 
 WORKER = "geo_classify"
-
-# 发生在请求发出之前的配置类错误：缺少 API Key、接入点主机被白名单拦截、
-# 业务配置缺步骤/接入点。它们与具体文章无关，必须熔断而不是记为文章失败。
-_ENDPOINT_CONFIG_ERRORS: tuple[type[Exception], ...] = (
-    LLMEndpointKeyMissingError,
-    LLMEndpointBlockedError,
-    BusinessConfigError,
-)
 
 
 @dataclass(slots=True)
@@ -57,7 +47,7 @@ class GateBatchResult:
     rerouted: int = 0
     failures: int = 0
     fallbacks: int = 0
-    systematic_error: Optional[Exception] = None
+    systematic: int = 0
 
 
 def _determine_route(
@@ -154,61 +144,6 @@ def _beijing_gate_failure_payload(
     return payload
 
 
-def _gate_breaker_error(exc: Exception) -> Optional[Exception]:
-    """Return ``exc`` when the whole step must stop instead of counting a failure.
-
-    Systematic LLM request errors (code/config/endpoint-capability problems),
-    quota/billing errors, and failures raised while resolving the endpoint
-    before any HTTP request (missing API key, blocked host, broken business
-    config) are unrelated to the article being processed: retrying the next
-    candidates only replays the same failure. Transient errors
-    (5xx/408/429/timeouts/network) return ``None`` and keep the existing
-    count-and-fallback path.
-    """
-
-    if isinstance(exc, LLMRequestError) and exc.is_systematic:
-        return exc
-    if isinstance(exc, LLMQuotaError):
-        return exc
-    if isinstance(exc, _ENDPOINT_CONFIG_ERRORS):
-        return exc
-    return None
-
-
-def _notify_systematic_error(exc: Exception) -> None:
-    """Send the once-per-run Feishu alert for a systematic request failure."""
-
-    if isinstance(exc, LLMRequestError):
-        alert_fields: dict[str, Any] = {
-            "operation": exc.operation,
-            "endpoint_label": exc.endpoint_label,
-            "model": exc.model,
-            "status_code": exc.status_code,
-            "provider_code": exc.provider_code,
-            "provider_message": exc.provider_message,
-            "request_id": exc.request_id,
-        }
-    elif isinstance(exc, _ENDPOINT_CONFIG_ERRORS):
-        # 请求在发出前就失败，没有 HTTP 状态、request id，也拿不到已解析的
-        # 接入点与模型：用异常类名当 provider code，消息里显示 unknown。
-        alert_fields = {
-            "operation": "beijing_gate",
-            "endpoint_label": None,
-            "model": None,
-            "status_code": None,
-            "provider_code": type(exc).__name__,
-            "provider_message": str(exc),
-            "request_id": None,
-        }
-    else:
-        # 额度错误已有独立的 LLMQuotaError 告警，不重复发。
-        return
-    try:
-        notify_llm_request_alert(**alert_fields)
-    except Exception as alert_exc:  # 告警是旁路，失败不能打断熔断流程
-        print(f"[{WORKER}] LLM request alert failed: {alert_exc}")
-
-
 def _record_article_failure(
     adapter: Any,
     candidate: BeijingGateCandidate,
@@ -247,8 +182,13 @@ def _process_beijing_gate(
     llm_retries: int,
     max_failures: int,
     prompt_template: Optional[str] = None,
+    alert: Optional[SystematicErrorAlert] = None,
 ) -> GateBatchResult:
     result = GateBatchResult()
+    session_alert = alert or SystematicErrorAlert(
+        operation="beijing_gate",
+        worker=WORKER,
+    )
     future_map = {
         executor.submit(
             call_beijing_gate,
@@ -258,11 +198,8 @@ def _process_beijing_gate(
         ): candidate
         for candidate in candidates
     }
-    pending = set(future_map)
-
     for future in as_completed(future_map):
         candidate = future_map[future]
-        pending.discard(future)
         try:
             decision = future.result()
             raw_payload = _beijing_gate_raw_payload(
@@ -308,17 +245,14 @@ def _process_beijing_gate(
             else:
                 raise RuntimeError("Beijing gate returned indeterminate result")
         except Exception as exc:
-            breaker = _gate_breaker_error(exc)
-            if breaker is not None:
-                # 熔断：系统性/额度错误与文章数据无关。只记一条 run 级日志与
-                # 一次告警，不写 fail_count、不走兜底；本批剩余 future 取消，
-                # 已提交但未处理的也一律不再写库。
-                result.systematic_error = breaker
-                log_error(WORKER, "run", breaker)
-                _notify_systematic_error(breaker)
-                for outstanding in pending:
-                    outstanding.cancel()
-                break
+            if is_systematic_llm_error(exc):
+                # 系统性/额度/配置类错误与文章数据无关：不写失败计数、不走
+                # 兜底，文章保持待处理。已提交的其余请求照常处理，本轮
+                # 正常结束；告警每轮最多一条。
+                result.systematic += 1
+                log_error(WORKER, candidate.article_id, exc)
+                session_alert.notify(exc)
+                continue
             result.failures += 1
             new_fail_count = candidate.beijing_gate_fail_count + 1
             if isinstance(exc, LLMRequestError) and exc.is_article:
@@ -384,8 +318,13 @@ def _process_gate_backlog(
     llm_retries: int,
     max_failures: int,
     prompt_template: Optional[str] = None,
+    alert: Optional[SystematicErrorAlert] = None,
 ) -> GateBatchResult:
     totals = GateBatchResult()
+    session_alert = alert or SystematicErrorAlert(
+        operation="beijing_gate",
+        worker=WORKER,
+    )
     remaining = limit
     attempted_article_ids: set[str] = set()
     while remaining is None or remaining > 0:
@@ -409,15 +348,13 @@ def _process_gate_backlog(
             llm_retries=llm_retries,
             max_failures=max_failures,
             prompt_template=prompt_template,
+            alert=session_alert,
         )
         totals.confirmed += batch.confirmed
         totals.rerouted += batch.rerouted
         totals.failures += batch.failures
         totals.fallbacks += batch.fallbacks
-        if batch.systematic_error is not None:
-            # 熔断后不再提交后续批次。
-            totals.systematic_error = batch.systematic_error
-            break
+        totals.systematic += batch.systematic
         if remaining is not None:
             remaining -= len(candidates)
     return totals
@@ -453,13 +390,17 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
                 llm_retries=llm_retries,
                 max_failures=max_failures,
                 prompt_template=prompts["beijing_gate"].content,
+                alert=SystematicErrorAlert(
+                    operation="beijing_gate",
+                    worker=WORKER,
+                ),
             )
         confirmed = gate.confirmed
         rerouted = gate.rerouted
         gate_failures = gate.failures
         fallbacks = gate.fallbacks
 
-        systematic = 1 if gate.systematic_error is not None else 0
+        systematic = gate.systematic
         if not rows and not any(
             (confirmed, rerouted, gate_failures, fallbacks, systematic)
         ):
@@ -475,15 +416,9 @@ def run(limit: int = 500, *, concurrency: Optional[int] = None) -> None:
         log_summary(
             WORKER,
             ok=completed,
-            # 熔断是 run 级失败：即使没有逐篇失败，汇总也必须显示 failed>=1，
-            # 否则「日志 failed=0、退出码非零」会误导排查。
             failed=local_stats.failed + gate_failures + systematic,
             skipped=local_stats.skipped or None,
         )
-        if gate.systematic_error is not None:
-            # 让调度器看到本轮失败：run_pipeline_once 会把这一步标成 failed
-            # 并以非零码退出，而不是「打了日志但正常结束」。
-            raise gate.systematic_error
 
 
 __all__ = ["run"]

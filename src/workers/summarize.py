@@ -15,6 +15,10 @@ from src.workers import (
     log_summary,
     worker_session,
 )
+from src.workers.llm_failures import (
+    SystematicErrorAlert,
+    is_systematic_llm_error,
+)
 
 WORKER = "summarize"
 DEFAULT_FETCH_MULTIPLIER = 4
@@ -80,7 +84,12 @@ def _submit_article(
     return executor.submit(_generate_summary, article), article_id, attempt_count
 
 
-def _process_result(entry: PendingTask, adapter: Any, stats: SummaryStats) -> None:
+def _process_result(
+    entry: PendingTask,
+    adapter: Any,
+    stats: SummaryStats,
+    alert: Optional[SystematicErrorAlert] = None,
+) -> None:
     future, article_id, attempt_count = entry
     try:
         result = future.result()
@@ -92,6 +101,13 @@ def _process_result(entry: PendingTask, adapter: Any, stats: SummaryStats) -> No
         stats.failed += 1
         stats.failure_ids.append(article_id)
         log_error(WORKER, article_id, exc)
+        if is_systematic_llm_error(exc):
+            # mark_attempt 在提交前就把 summary_fail_count 加了 1；系统性
+            # 错误不改变文章状态，把这 1 退回去且不调 mark_failed。
+            adapter.news_summaries.refund_attempt(article_id)
+            if alert is not None:
+                alert.notify(exc)
+            return
         if attempt_count >= MAX_RETRIES:
             adapter.news_summaries.mark_failed(article_id, message=str(exc))
 
@@ -125,6 +141,7 @@ def run(
             return
 
         stats = SummaryStats()
+        alert = SystematicErrorAlert(operation="summarize", worker=WORKER)
         pending_tasks: dict[Future[SummaryResult], tuple[str, int]] = {}
         row_iterator = iter(rows)
         rows_exhausted = False
@@ -154,7 +171,12 @@ def run(
                 completed, _ = wait(pending_tasks, return_when=FIRST_COMPLETED)
                 for future in completed:
                     article_id, attempt_count = pending_tasks.pop(future)
-                    _process_result((future, article_id, attempt_count), adapter, stats)
+                    _process_result(
+                        (future, article_id, attempt_count),
+                        adapter,
+                        stats,
+                        alert=alert,
+                    )
 
                 if limit_value is not None and stats.success >= limit_value:
                     break

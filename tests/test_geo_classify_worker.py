@@ -20,7 +20,7 @@ from src.adapters.llm_endpoint import LLMEndpointKeyMissingError
 from src.business_config import BusinessConfigError
 from src.domain.external_filter import BeijingGateCandidate
 from src.domain.prompt import PromptTemplate
-from src.workers import geo_classify
+from src.workers import geo_classify, llm_failures
 
 
 def _beijing_gate_candidate(**overrides) -> BeijingGateCandidate:
@@ -140,6 +140,25 @@ class _RecordingProcessAdapter:
         self.process = _RecordingProcessNamespace()
 
 
+def _decision(*, beijing: bool = True, reason: str = "判定结果") -> SimpleNamespace:
+    return SimpleNamespace(
+        is_beijing_related=beijing,
+        reason=reason,
+        raw_text="raw text",
+    )
+
+
+def _record_alerts(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    alerts: list[dict[str, object]] = []
+
+    def fake_alert(**kwargs: object) -> bool:
+        alerts.append(kwargs)
+        return True
+
+    monkeypatch.setattr(llm_failures, "notify_llm_request_alert", fake_alert)
+    return alerts
+
+
 def test_local_classification_stages_beijing_candidate() -> None:
     article = {
         "article_id": "article-1",
@@ -157,13 +176,8 @@ def test_local_classification_stages_beijing_candidate() -> None:
 
 def test_process_beijing_gate_passes_internal_category() -> None:
     candidate = _beijing_gate_candidate()
-    decision = SimpleNamespace(
-        is_beijing_related=True,
-        reason="明确属于北京市范围",
-        raw_text="raw text",
-    )
     adapter = _RecordingProcessAdapter()
-    executor = _DummyExecutor({candidate.article_id: decision})
+    executor = _DummyExecutor({candidate.article_id: _decision()})
 
     with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
         result = geo_classify._process_beijing_gate(
@@ -180,7 +194,7 @@ def test_process_beijing_gate_passes_internal_category() -> None:
         0,
         0,
     )
-    assert result.systematic_error is None
+    assert result.systematic == 0
     kwargs = adapter.process.completed[0][1]
     assert kwargs["candidate_category"] == "internal_positive"
     assert kwargs["sentiment_label"] == "positive"
@@ -189,13 +203,10 @@ def test_process_beijing_gate_passes_internal_category() -> None:
 
 def test_process_beijing_gate_reroutes_external_category() -> None:
     candidate = _beijing_gate_candidate(is_beijing_related=False)
-    decision = SimpleNamespace(
-        is_beijing_related=False,
-        reason="判定为外省内容",
-        raw_text="raw text",
-    )
     adapter = _RecordingProcessAdapter()
-    executor = _DummyExecutor({candidate.article_id: decision})
+    executor = _DummyExecutor(
+        {candidate.article_id: _decision(beijing=False, reason="判定为外省内容")}
+    )
 
     with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
         result = geo_classify._process_beijing_gate(
@@ -288,92 +299,87 @@ def test_gate_backlog_does_not_retry_failed_candidate_in_same_run() -> None:
         1,
         0,
     )
-    assert result.systematic_error is None
+    assert result.systematic == 0
     assert adapter.process.fetch_calls == 2
     assert len(adapter.process.failures) == 1
 
 
-def test_process_beijing_gate_systematic_error_aborts_without_writes(
+def test_process_beijing_gate_systematic_error_does_not_stop_other_candidates(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     first = _beijing_gate_candidate(article_id="article-a")
     second = _beijing_gate_candidate(article_id="article-b")
+    third = _beijing_gate_candidate(article_id="article-c", is_beijing_related=False)
     error = _systematic_request_error()
     adapter = _RecordingProcessAdapter()
     executor = _DummyExecutor(
         {
             "article-a": error,
-            "article-b": SimpleNamespace(
-                is_beijing_related=True,
-                reason="不应被处理",
-                raw_text="raw",
-            ),
+            "article-b": _decision(beijing=True),
+            "article-c": _decision(beijing=False, reason="外省"),
         }
     )
-    alerts: list[dict[str, object]] = []
-
-    def fake_alert(**kwargs: object) -> bool:
-        alerts.append(kwargs)
-        return True
-
-    monkeypatch.setattr(geo_classify, "notify_llm_request_alert", fake_alert)
+    alerts = _record_alerts(monkeypatch)
 
     with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
         result = geo_classify._process_beijing_gate(
             adapter,
-            [first, second],
+            [first, second, third],
             executor,
             llm_retries=3,
             max_failures=3,
         )
 
-    assert result.systematic_error is error
+    assert result.systematic == 1
     assert (result.confirmed, result.rerouted, result.failures, result.fallbacks) == (
-        0,
-        0,
+        1,
+        1,
         0,
         0,
     )
+    # 成功的两篇照常写库；系统性错误那篇既不写失败计数、也不写 complete。
+    assert [article_id for article_id, _ in adapter.process.completed] == [
+        "article-b",
+        "article-c",
+    ]
+    assert adapter.process.failures == []
+    # 不取消已提交的 future、不 break。
+    assert [future.cancelled for future in executor.futures] == [False, False, False]
+    assert len(alerts) == 1
+    assert alerts[0]["operation"] == "beijing_gate"
+    assert alerts[0]["request_id"] == "req-systematic-1"
+    output = capsys.readouterr().out
+    assert "ERROR article-a:" in output
+    assert "ERROR run:" not in output
+
+
+def test_process_beijing_gate_systematic_error_alerts_once_per_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidates = [
+        _beijing_gate_candidate(article_id=f"article-{index}") for index in range(3)
+    ]
+    error = _systematic_request_error()
+    adapter = _RecordingProcessAdapter()
+    executor = _DummyExecutor({candidate.article_id: error for candidate in candidates})
+    alerts = _record_alerts(monkeypatch)
+
+    with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
+        result = geo_classify._process_beijing_gate(
+            adapter,
+            candidates,
+            executor,
+            llm_retries=3,
+            max_failures=3,
+        )
+
+    assert result.systematic == 3
+    assert result.failures == 0
     assert adapter.process.completed == []
     assert adapter.process.failures == []
     assert len(alerts) == 1
-    assert alerts[0]["request_id"] == "req-systematic-1"
-    assert alerts[0]["status_code"] == 400
-    assert alerts[0]["endpoint_label"] == "DeepSeek"
-    assert executor.futures[1].cancelled is True
-    assert capsys.readouterr().out.count("ERROR run:") == 1
-
-
-def test_gate_breaker_error_covers_configuration_failures() -> None:
-    for error in (
-        *_CONFIG_ERRORS,
-        BusinessConfigError("缺少模型配置步骤：beijing_gate"),
-        _systematic_request_error(),
-        LLMQuotaError(
-            operation="beijing_gate",
-            model="model-a",
-            status_code=402,
-            response_text="Insufficient Balance",
-        ),
-    ):
-        assert geo_classify._gate_breaker_error(error) is error
-
-    transient = LLMRequestError(
-        operation="beijing_gate",
-        model="model-a",
-        status_code=500,
-        scope=LLM_SCOPE_SYSTEMATIC,
-        retryable=True,
-    )
-    assert geo_classify._gate_breaker_error(transient) is None
-    indeterminate = BeijingGateIndeterminateError(
-        BeijingGateResponse(
-            raw_text="{}", provider="provider-a", model="model-a"
-        ),
-        attempts=1,
-    )
-    assert geo_classify._gate_breaker_error(indeterminate) is None
+    assert alerts[0]["operation"] == "beijing_gate"
 
 
 @pytest.mark.parametrize(
@@ -381,19 +387,14 @@ def test_gate_breaker_error_covers_configuration_failures() -> None:
     _CONFIG_ERRORS,
     ids=["missing_key", "blocked_host"],
 )
-def test_process_beijing_gate_config_error_aborts_without_writes(
+def test_process_beijing_gate_config_error_keeps_article_pending(
     monkeypatch: pytest.MonkeyPatch,
     error: Exception,
 ) -> None:
     candidate = _beijing_gate_candidate()
     adapter = _RecordingProcessAdapter()
     executor = _DummyExecutor({candidate.article_id: error})
-    alerts: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        geo_classify,
-        "notify_llm_request_alert",
-        lambda **kwargs: alerts.append(kwargs) or True,
-    )
+    alerts = _record_alerts(monkeypatch)
 
     with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
         result = geo_classify._process_beijing_gate(
@@ -404,17 +405,13 @@ def test_process_beijing_gate_config_error_aborts_without_writes(
             max_failures=3,
         )
 
-    assert result.systematic_error is error
-    assert (result.confirmed, result.rerouted, result.failures, result.fallbacks) == (
-        0,
-        0,
-        0,
-        0,
-    )
+    assert result.systematic == 1
+    assert result.failures == 0
     # 配置类错误不得写文章失败计数，也不得走 ready_for_export 兜底。
     assert adapter.process.completed == []
     assert adapter.process.failures == []
     assert len(alerts) == 1
+    assert alerts[0]["operation"] == "beijing_gate"
     assert alerts[0]["status_code"] is None
     assert alerts[0]["provider_code"] == type(error).__name__
     assert alerts[0]["provider_message"] == str(error)
@@ -422,7 +419,7 @@ def test_process_beijing_gate_config_error_aborts_without_writes(
     assert alerts[0]["model"] is None
 
 
-def test_process_beijing_gate_quota_error_aborts_without_request_alert(
+def test_process_beijing_gate_quota_error_does_not_send_request_alert(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     candidate = _beijing_gate_candidate()
@@ -434,12 +431,7 @@ def test_process_beijing_gate_quota_error_aborts_without_request_alert(
     )
     adapter = _RecordingProcessAdapter()
     executor = _DummyExecutor({candidate.article_id: error})
-    alerts: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        geo_classify,
-        "notify_llm_request_alert",
-        lambda **kwargs: alerts.append(kwargs) or True,
-    )
+    alerts = _record_alerts(monkeypatch)
 
     with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
         result = geo_classify._process_beijing_gate(
@@ -450,12 +442,38 @@ def test_process_beijing_gate_quota_error_aborts_without_request_alert(
             max_failures=3,
         )
 
-    assert result.systematic_error is error
+    assert result.systematic == 1
     assert result.failures == 0
     assert adapter.process.completed == []
     assert adapter.process.failures == []
     # 额度错误有独立的 LLMQuotaError 告警，这里不再重复发请求错误告警。
     assert alerts == []
+
+
+def test_process_beijing_gate_request_alert_failure_is_swallowed(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    candidate = _beijing_gate_candidate()
+    adapter = _RecordingProcessAdapter()
+    executor = _DummyExecutor({candidate.article_id: _systematic_request_error()})
+
+    def broken_alert(**kwargs: object) -> bool:
+        raise RuntimeError("feishu down")
+
+    monkeypatch.setattr(llm_failures, "notify_llm_request_alert", broken_alert)
+
+    with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
+        result = geo_classify._process_beijing_gate(
+            adapter,
+            [candidate],
+            executor,
+            llm_retries=3,
+            max_failures=3,
+        )
+
+    assert result.systematic == 1
+    assert "LLM request alert failed: feishu down" in capsys.readouterr().out
 
 
 def test_process_beijing_gate_article_error_counts_one_failure() -> None:
@@ -479,6 +497,7 @@ def test_process_beijing_gate_article_error_counts_one_failure() -> None:
         1,
         0,
     )
+    assert result.systematic == 0
     assert len(executor.calls) == 1
     assert adapter.process.completed == []
     article_id, kwargs = adapter.process.failures[0]
@@ -552,6 +571,7 @@ def test_process_beijing_gate_retryable_error_keeps_existing_fallback() -> None:
         1,
         1,
     )
+    assert result.systematic == 0
     kwargs = adapter.process.completed[0][1]
     assert kwargs["status"] == "ready_for_export"
     assert kwargs["raw_output"]["fallback"] == "ready_for_export"
@@ -564,12 +584,13 @@ class _NewsSummariesNamespace:
     def fetch_pending_routes(self, limit: int) -> list[dict[str, object]]:
         return [
             {
-                "article_id": self._adapter.candidate.article_id,
-                "title": self._adapter.candidate.title,
-                "content_markdown": self._adapter.candidate.content,
-                "llm_summary": self._adapter.candidate.summary,
-                "sentiment_label": self._adapter.candidate.sentiment_label,
+                "article_id": candidate.article_id,
+                "title": candidate.title,
+                "content_markdown": candidate.content,
+                "llm_summary": candidate.summary,
+                "sentiment_label": candidate.sentiment_label,
             }
+            for candidate in self._adapter.candidates
         ][:limit]
 
     def complete_routing(
@@ -594,25 +615,159 @@ class _RunProcessNamespace:
     ) -> list[BeijingGateCandidate]:
         del max_failures
         self._adapter.gate_fetch_calls += 1
-        return [self._adapter.candidate][:limit]
+        return self._adapter.candidates[:limit]
 
     def complete_beijing_gate(self, article_id: str, **kwargs: object) -> None:
         del kwargs
         self._adapter.gate_updates.append(article_id)
 
     def mark_beijing_gate_failure(self, article_id: str, **kwargs: object) -> None:
-        del kwargs
-        raise AssertionError(f"unexpected Beijing gate failure: {article_id}")
+        self._adapter.gate_failures.append((article_id, dict(kwargs)))
 
 
 class _RunAdapter:
-    def __init__(self, candidate: BeijingGateCandidate) -> None:
-        self.candidate = candidate
+    def __init__(self, candidates: list[BeijingGateCandidate]) -> None:
+        self.candidates = candidates
         self.local_updates: list[tuple[str, bool | None, str]] = []
         self.gate_updates: list[str] = []
+        self.gate_failures: list[tuple[str, dict[str, object]]] = []
         self.gate_fetch_calls = 0
         self.news_summaries = _NewsSummariesNamespace(self)
         self.process = _RunProcessNamespace(self)
+
+
+def _run_geo_classify(
+    monkeypatch: pytest.MonkeyPatch,
+    candidates: list[BeijingGateCandidate],
+    error: Exception,
+    *,
+    error_ids: set[str] | None = None,
+    limit: int | None = None,
+) -> tuple[_RunAdapter, list[dict[str, object]]]:
+    from src.business_config import business_config_context
+    from tests.conftest import make_endpoint_config
+
+    adapter = _RunAdapter(candidates)
+    settings = SimpleNamespace(
+        process_limit=None,
+        default_concurrency=2,
+        external_filter_batch_size=10,
+        beijing_gate_max_retries=3,
+    )
+    failing_ids = error_ids or {candidate.article_id for candidate in candidates}
+    alerts = _record_alerts(monkeypatch)
+
+    def fake_call(candidate: BeijingGateCandidate, **kwargs: object) -> object:
+        del kwargs
+        if candidate.article_id in failing_ids:
+            raise error
+        return _decision(beijing=candidate.is_beijing_related is True)
+
+    monkeypatch.setattr(geo_classify, "get_adapter", lambda: adapter)
+    monkeypatch.setattr(geo_classify, "get_settings", lambda: settings)
+    monkeypatch.setattr(
+        geo_classify,
+        "load_active_prompts",
+        lambda adapter: {
+            "beijing_gate": PromptTemplate(
+                key="beijing_gate",
+                version="v9",
+                content="GATE TEMPLATE",
+                source="database",
+                revision=9,
+                revision_id=90,
+            )
+        },
+    )
+    monkeypatch.setattr(geo_classify, "call_beijing_gate", fake_call)
+
+    config = make_endpoint_config(
+        beijing_keywords=("北京",),
+        education_keywords=("教育",),
+    )
+    with business_config_context(config):
+        geo_classify.run(limit=limit or len(candidates), concurrency=2)
+    return adapter, alerts
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        _systematic_request_error(),
+        *_CONFIG_ERRORS,
+        LLMQuotaError(
+            operation="beijing_gate",
+            model="model-a",
+            status_code=402,
+            response_text="Insufficient Balance",
+        ),
+    ],
+    ids=["systematic", "missing_key", "blocked_host", "quota"],
+)
+def test_run_returns_normally_when_every_gate_request_is_systematic(
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    candidates = [
+        _beijing_gate_candidate(article_id=f"article-{index}") for index in range(3)
+    ]
+
+    adapter, alerts = _run_geo_classify(monkeypatch, candidates, error)
+
+    # 步骤正常结束、不重新抛出；没有取消/提前停止。
+    assert adapter.gate_updates == []
+    assert adapter.gate_failures == []
+    assert adapter.gate_fetch_calls == 1
+    output = capsys.readouterr().out
+    assert "systematic=3" in output
+    assert "failed=3" in output
+    assert len(alerts) == (0 if isinstance(error, LLMQuotaError) else 1)
+
+
+def test_run_mixed_systematic_and_success_counts_affected_articles(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    candidates = [
+        _beijing_gate_candidate(article_id="article-a"),
+        _beijing_gate_candidate(article_id="article-b"),
+        _beijing_gate_candidate(article_id="article-c"),
+    ]
+
+    adapter, alerts = _run_geo_classify(
+        monkeypatch,
+        candidates,
+        _systematic_request_error(),
+        error_ids={"article-b"},
+    )
+
+    assert sorted(adapter.gate_updates) == ["article-a", "article-c"]
+    assert adapter.gate_failures == []
+    assert len(alerts) == 1
+    output = capsys.readouterr().out
+    assert "systematic=1" in output
+    assert "failed=1" in output
+
+
+def test_run_swallows_request_alert_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidates = [_beijing_gate_candidate(article_id="article-a")]
+
+    def broken_alert(**kwargs: object) -> bool:
+        raise RuntimeError("feishu down")
+
+    monkeypatch.setattr(llm_failures, "notify_llm_request_alert", broken_alert)
+
+    adapter, _ = _run_geo_classify(
+        monkeypatch,
+        candidates,
+        _systematic_request_error(),
+    )
+
+    assert adapter.gate_updates == []
+    assert adapter.gate_failures == []
 
 
 def test_run_combines_local_routing_and_beijing_gate(monkeypatch) -> None:
@@ -620,18 +775,15 @@ def test_run_combines_local_routing_and_beijing_gate(monkeypatch) -> None:
     from tests.conftest import make_endpoint_config
 
     candidate = _beijing_gate_candidate()
-    adapter = _RunAdapter(candidate)
+    adapter = _RunAdapter([candidate])
     settings = SimpleNamespace(
         process_limit=None,
         default_concurrency=2,
         external_filter_batch_size=10,
         beijing_gate_max_retries=1,
     )
-    decision = SimpleNamespace(
-        is_beijing_related=True,
-        reason="明确属于北京市范围",
-        raw_text="raw text",
-    )
+    decision = _decision()
+
     monkeypatch.setattr(geo_classify, "get_adapter", lambda: adapter)
     monkeypatch.setattr(geo_classify, "get_settings", lambda: settings)
     monkeypatch.setattr(
@@ -667,129 +819,10 @@ def test_run_combines_local_routing_and_beijing_gate(monkeypatch) -> None:
     assert adapter.gate_updates == [candidate.article_id]
 
 
-def _run_geo_classify_with_gate_error(
-    monkeypatch: pytest.MonkeyPatch,
-    error: Exception,
-) -> tuple[_RunAdapter, list[dict[str, object]]]:
-    from src.business_config import business_config_context
-    from tests.conftest import make_endpoint_config
-
-    candidate = _beijing_gate_candidate()
-    adapter = _RunAdapter(candidate)
-    settings = SimpleNamespace(
-        process_limit=None,
-        default_concurrency=2,
-        external_filter_batch_size=10,
-        beijing_gate_max_retries=3,
-    )
-    alerts: list[dict[str, object]] = []
-
-    def fail_gate(*args: object, **kwargs: object) -> object:
-        raise error
-
-    monkeypatch.setattr(geo_classify, "get_adapter", lambda: adapter)
-    monkeypatch.setattr(geo_classify, "get_settings", lambda: settings)
-    monkeypatch.setattr(
-        geo_classify,
-        "load_active_prompts",
-        lambda adapter: {
-            "beijing_gate": PromptTemplate(
-                key="beijing_gate",
-                version="v9",
-                content="GATE TEMPLATE",
-                source="database",
-                revision=9,
-                revision_id=90,
-            )
-        },
-    )
-    monkeypatch.setattr(geo_classify, "call_beijing_gate", fail_gate)
-    monkeypatch.setattr(
-        geo_classify,
-        "notify_llm_request_alert",
-        lambda **kwargs: alerts.append(kwargs) or True,
-    )
-
-    config = make_endpoint_config(
-        beijing_keywords=("北京",),
-        education_keywords=("教育",),
-    )
-    with business_config_context(config):
-        with pytest.raises(type(error)) as exc_info:
-            geo_classify.run(limit=1, concurrency=1)
-
-    assert exc_info.value is error
-    return adapter, alerts
-
-
-def test_run_fails_and_stops_after_systematic_gate_error(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    error = _systematic_request_error()
-
-    adapter, alerts = _run_geo_classify_with_gate_error(monkeypatch, error)
-
-    assert adapter.gate_updates == []
-    assert adapter.gate_fetch_calls == 1
-    assert len(alerts) == 1
-    assert alerts[0]["request_id"] == "req-systematic-1"
-    output = capsys.readouterr().out
-    assert "systematic=1" in output
-    assert "failed=1" in output
-
-
-@pytest.mark.parametrize(
-    "error",
-    _CONFIG_ERRORS,
-    ids=["missing_key", "blocked_host"],
-)
-def test_run_fails_and_stops_after_config_error(
-    monkeypatch: pytest.MonkeyPatch,
-    error: Exception,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    adapter, alerts = _run_geo_classify_with_gate_error(monkeypatch, error)
-
-    assert adapter.gate_updates == []
-    assert adapter.gate_fetch_calls == 1
-    assert len(alerts) == 1
-    assert alerts[0]["provider_code"] == type(error).__name__
-    output = capsys.readouterr().out
-    assert "systematic=1" in output
-    assert "failed=1" in output
-
-
-def test_run_fails_after_quota_gate_error(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    error = LLMQuotaError(
-        operation="beijing_gate",
-        model="model-a",
-        status_code=402,
-        response_text="Insufficient Balance",
-    )
-
-    adapter, alerts = _run_geo_classify_with_gate_error(monkeypatch, error)
-
-    assert adapter.gate_updates == []
-    assert adapter.gate_fetch_calls == 1
-    assert alerts == []
-    output = capsys.readouterr().out
-    assert "systematic=1" in output
-    assert "failed=1" in output
-
-
 def test_process_beijing_gate_passes_prompt_template_to_model():
     candidate = _beijing_gate_candidate()
-    decision = SimpleNamespace(
-        is_beijing_related=True,
-        reason="明确属于北京市范围",
-        raw_text="raw text",
-    )
     adapter = _RecordingProcessAdapter()
-    executor = _DummyExecutor({candidate.article_id: decision})
+    executor = _DummyExecutor({candidate.article_id: _decision()})
 
     with patch("src.workers.geo_classify.as_completed", lambda futures: list(futures)):
         geo_classify._process_beijing_gate(

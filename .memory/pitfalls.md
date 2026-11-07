@@ -92,6 +92,8 @@
 - **保存时的校验/实测必须作用于「待保存的值」，不能回读数据库**（2026-11-06 补丁）：保存 `llm_endpoints` 时的模型探针曾拿 key 回库里查接入点定义——库里还是旧值，新增接入点必报「接入点不存在」（回归：控制台无法新增任何接入点），改 base_url/api_key_env 时实测的也是旧地址/旧 Key。修法是探针直接接收待保存的定义（`_probe_model(endpoint_definition=…)`），按钮路径才传库中已保存值。
 - **打桩位置太高会把「用错配置」藏起来**（同上）：组合断言类测试替换 `test_llm_model` / `_probe_model` 整个函数，探针内部查库这一步从未执行，回归全绿。涉及「实际发什么请求」的验收，只替换最底下的 HTTP 发送层（`post_chat_completion`），断言 URL 与 Authorization 头。
 - **jsdom：分区保存成功路径会重渲染页签，保存状态节点被重建且为空**：成功文案写在旧节点上，保存后断言 `models-save-status` 永远超时；成功断言走 `#toast`（「模型配置已保存」），失败分支（422/409 不重渲染）才能断言状态节点（2026-11-06 实测）。
+- **设置页「展示字段」在顶层 endpoints 负载，不在分区值里**（2026-11-07）：`configured_api_key_envs` 与 `host_allowed` 挂在 `state.payload.endpoints`（`endpointsPayloadInfo()`），而只读列表、步骤行常常拿着 `savedEndpointsValue()`（`sections.llm_endpoints.value`）渲染——分区值是已保存的原始结构，没有这些字段，第一次实现就把标红写到了分区值上导致 E24/E25 全空。改展示字段相关代码先分清读的是哪一份。
+- **「删除某行为」类变异会打在冗余分支上存活**（2026-11-07）：K6 第一版删 `endpointWillBeTested` 里的 `item.isNew ||`，新接入点随即被后面的 `!savedItem` 兜底判 true，变异等价、测试无法击杀；改打保存拦截里 `blocking = true` 那一行（行为真正被观察的赋值点）立即被 E20 击杀。变异存活先查实现里有没有语义冗余的兜底路径，再考虑补测试。另注意同一表达式会在生产请求与探针各出现一份（`llm_beijing_gate` 的 `"response_format": build_response_format(endpoint)` 逐字节相同两处），变异定位串必须带足够上下文。
 
 - 纯 CSS/布局改动 jsdom 测不到，用 headless Chrome 直接渲染静态夹具核对几何：`chrome --headless=new --window-size=W,H --screenshot=out.png file:///...` 出图，`--dump-dom` 配合页内 `window.onload` 脚本把 `getBoundingClientRect()` 写进 `<pre>` 再解析，能量到「各行第一列左缘是否一致、`table.scrollWidth` 是否超出 `.admin-table-wrap`」。CLI 的 headless Chrome **可以**开 `file://` 夹具（workflow.md §5 那条 `file:` 限制只针对浏览器技能/Playwright）。夹具放临时目录，不要把预览 HTML 提交进仓库。
 

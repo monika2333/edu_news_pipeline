@@ -248,6 +248,7 @@ def test_refund_summary_attempt_undoes_the_claim_without_touching_other_rows() -
                 [
                     ("pending-claimed", "pending", "pending", 2),
                     ("pending-zero", "pending", "pending", 0),
+                    ("pending-untouched", "pending", "pending", 0),
                     ("summary-failed", "failed", "pending", 2),
                     ("status-failed", "pending", "failed", 2),
                     ("completed", "completed", "pending_enrichment", 2),
@@ -264,6 +265,8 @@ def test_refund_summary_attempt_undoes_the_claim_without_touching_other_rows() -
             # 退回：只对仍 pending 且计数 > 0 的行生效。
             refund_summary_attempt(cur, "pending-claimed")
             refund_summary_attempt(cur, "pending-zero")
+            # 没有认领过的 0 计数行不得被退成负数。
+            refund_summary_attempt(cur, "pending-untouched")
             refund_summary_attempt(cur, "summary-failed")
             refund_summary_attempt(cur, "status-failed")
             refund_summary_attempt(cur, "completed")
@@ -279,6 +282,7 @@ def test_refund_summary_attempt_undoes_the_claim_without_touching_other_rows() -
 
     assert rows["pending-claimed"]["summary_fail_count"] == 2
     assert rows["pending-zero"]["summary_fail_count"] == 0
+    assert rows["pending-untouched"]["summary_fail_count"] == 0
     assert rows["summary-failed"]["summary_fail_count"] == 2
     assert rows["status-failed"]["summary_fail_count"] == 2
     assert rows["completed"]["summary_fail_count"] == 2

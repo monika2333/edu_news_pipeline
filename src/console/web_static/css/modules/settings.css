@@ -646,7 +646,8 @@
 }
 
 /* 栏目芯片网格：栏目由代码决定、不能在页面上增删，所以只读。芯片沿用账号
-   芯片的尺寸与圆角，但用虚线边框 + 常驻 ↗ 表明它只是一个外链 */
+   芯片的尺寸与圆角，边框与同一页单页来源的「↗ 列表页」外链保持一致；
+   竖直的「＋ 添加账号」虚线芯片是添加入口，这里不能再用虚线造成同类暗示 */
 .source-columns-grid {
     display: flex;
     flex-wrap: wrap;
@@ -660,7 +661,7 @@
     gap: 6px;
     box-sizing: border-box;
     padding: 5px 12px;
-    border: 1px dashed #cbd5e1;
+    border: 1px solid #cbd5e1;
     border-radius: 999px;
     background: #fff;
     color: #475569;

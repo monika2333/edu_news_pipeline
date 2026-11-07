@@ -4,6 +4,7 @@
 
 | 日期 | 功能 | 合入 | archive |
 |---|---|---|---|
+| 2026-11-07 | 数据源列表页收尾：新增 `test_jyb_list_items_falls_back_to_env_start_url`（JYB_START_URL + 搜索 API 失败 → 截获 HTML 回退地址，sleep 打桩；M1/M2 均 KILLED）；删除无调用方的 `crawl_sources._env_str`；栏目芯片边框改实线，与单页来源「↗ 列表页」外链一致 | 697856f | 同 [2026-11-07-数据源列表页链接.md](archive/2026-11-07-数据源列表页链接.md) |
 | 2026-11-07 | 接入点提前提示与保存前置条件：负载新增 `configured_api_key_envs`（只给名字）+ `host_allowed`，删逐项 `api_key_env_configured`；env 文件自动读取（中间件统一指纹检测 + 无空档重读），删「重新加载环境变量」按钮与 `/environment/reload` 接口；白名单改「默认列表 + LLM_ALLOWED_HOSTS 追加」并扩充默认 8 域名（Kimi/通义/豆包/硅基流动）；读取路径只做结构校验（设置页照常打开、流水线失败半径按「是否有步骤在用」收窄）；步骤实测带真实请求参数（adapter `probe_request_extras`）；前端 Key 提示跟随输入值 + 保存拦截范围不比后端宽 + 焦点刷新名单；变异 K/R/W/H/S 23 条全 KILLED | 0f84152、de1ad30（merge 7519b80，与 751d38a 在 AGENTS.md 同 bullet 不同片段文字冲突已手工融合） | [2026-11-07-接入点提前提示与保存前置条件.md](archive/2026-11-07-接入点提前提示与保存前置条件.md) |
 | 2026-11-07 | 数据源页无账号来源加「列表页」链接：payload `sources[].list_pages` 直接取 adapter 常量（中新网滚动页提常量、光明网/中国教育报环境变量规则收进 adapter 与爬虫共用）；单页行显示「↗ {label}」，多栏目来源渲染只读栏目面板并与账号面板共用 `state.expandedSource`；缺字段/空数组逐行回退「无需账号」；B1-B4/F1-F5 与 M1-M12 全 KILLED | 751d38a | [2026-11-07-数据源列表页链接.md](archive/2026-11-07-数据源列表页链接.md) |
 | 2026-11-07 | 系统性 LLM 错误不计文章失败并推广到 `external-filter` / `summarize`：公共 `llm_failures` 判定与每轮一条告警；geo 取消提前停止与 `run()` 重新抛出，`systematic` 改为受影响篇数并计入 failed；external-filter 不写失败计数且同轮 `attempted_article_ids` 去重；summarize 退回 `mark_attempt` 预加计数且不 `mark_failed`（新增 `refund_summary_attempt`，只退 pending 且 > 0 的行）；变异 M1–M15 全部 KILLED | 67a5b62、0086bd5 | [2026-11-07-LLM系统性错误不计失败.md](archive/2026-11-07-LLM系统性错误不计失败.md) |

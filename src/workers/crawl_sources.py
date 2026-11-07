@@ -267,11 +267,6 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-def _env_str(name: str, default: str) -> str:
-    value = os.getenv(name)
-    return value.strip() if value and value.strip() else default
-
-
 def _collect_feed(
     entries: Sequence[ToutiaoFeedEntry],
     limit: Optional[int],

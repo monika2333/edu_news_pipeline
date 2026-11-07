@@ -146,6 +146,43 @@ def test_mapping_is_copied_per_call_and_keeps_columns_ordered() -> None:
     assert second[0]["label"] == http_xinhua.COLUMNS[0][0]
 
 
+def test_jyb_list_items_falls_back_to_env_start_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """中国教育报爬虫：搜索 API 失败后，HTML 回退请求的是 JYB_START_URL。
+
+    设置页链接与爬虫必须共用同一条取值规则；只测设置页侧不够，这里截获
+    回退分支实际请求的地址。API 失败会重试 3 次并 sleep，打桩避免拖慢测试。"""
+
+    start_url = "http://jyb.test/search.html"
+    api_url = http_chinaeducationdaily.DEFAULT_SEARCH_API_URL
+    monkeypatch.setenv("JYB_START_URL", start_url)
+    monkeypatch.delenv("JYB_SEARCH_API_URL", raising=False)
+    monkeypatch.delenv("JYB_KEYWORDS", raising=False)
+    monkeypatch.setattr(http_chinaeducationdaily.time, "sleep", lambda _seconds: None)
+
+    class _ApiDownSession:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, dict[str, Any] | None]] = []
+
+        def get(self, url: str, **kwargs: Any) -> _FakeResponse:
+            self.calls.append((url, kwargs.get("params")))
+            if url == api_url:
+                raise RuntimeError("搜索 API 不可用")
+            return _FakeResponse()
+
+    session = _ApiDownSession()
+    monkeypatch.setattr(http_chinaeducationdaily, "_session", lambda: session)
+    monkeypatch.setattr(http_chinaeducationdaily, "decode_response", lambda _resp: "")
+
+    assert http_chinaeducationdaily.list_items(pages=1) == []
+
+    fallback_calls = [call for call in session.calls if call[0] != api_url]
+    assert fallback_calls == [(start_url, {"topsearch": "", "page": 1})]
+    # 搜索 API 侧确实失败过（走了回退分支），而不是直接没有请求
+    assert sum(1 for url, _ in session.calls if url == api_url) == 3
+
+
 def test_jyb_listing_url_matches_crawler_start_url_rule(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

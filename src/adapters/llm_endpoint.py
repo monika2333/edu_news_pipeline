@@ -17,6 +17,7 @@ from src.config import Settings, get_settings
 __all__ = [
     "LLMEndpointKeyMissingError",
     "ResolvedLLMEndpoint",
+    "api_key_env_configured",
     "chat_completions_url",
     "resolve_endpoint",
     "resolve_llm_endpoint",
@@ -87,6 +88,16 @@ class ResolvedLLMEndpoint:
 
 def chat_completions_url(base_url: str) -> str:
     return f"{base_url.rstrip('/')}/chat/completions"
+
+
+def api_key_env_configured(env_name: str) -> bool:
+    """该环境变量是否已配置出可用的 Key：值非空才算已配置。
+
+    与 resolve_endpoint 实际取 Key 的判定是同一个「真值判断」，两处共用
+    这条语义：设置页的「已配置」名单按它过滤，保存时的实测按它判缺 Key。
+    空串算未配置——显示已配置但保存被拒是最伤信任的不一致。"""
+
+    return bool(os.getenv(env_name))
 
 
 def resolve_endpoint(definition: LLMEndpointConfig) -> ResolvedLLMEndpoint:

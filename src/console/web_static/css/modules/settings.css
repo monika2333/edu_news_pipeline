@@ -215,13 +215,6 @@
     word-break: break-all;
 }
 
-.settings-env-reload {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 10px;
-}
-
 /* 步骤表第二列：接入点下拉 + 模型输入框同一行（.step-controls），
    模型留空时下方一行灰字显示实际会用的默认模型。 */
 .step-controls {
@@ -252,6 +245,15 @@
 
 .step-model-hint:empty {
     display: none;
+}
+
+/* 步骤行引用了白名单外接入点（含跟随默认而默认就是它）时的行内警告，
+   独占一行放在控件下方，红字标出无法调用与修法 */
+.step-host-blocked-hint {
+    display: block;
+    margin-top: 4px;
+    color: #b91c1c;
+    font-size: 0.78rem;
 }
 
 .step-endpoint-select {
@@ -946,6 +948,19 @@
     background: #fff;
 }
 
+/* 主机不在白名单内的已存接入点：整行标红，说明文案独占一行 */
+.endpoint-item.is-host-blocked {
+    border-color: #ef4444;
+    background: #fff7f7;
+    box-shadow: inset 3px 0 0 #ef4444;
+}
+
+.endpoint-host-blocked-note {
+    flex-basis: 100%;
+    color: #b91c1c;
+    font-size: 0.78rem;
+}
+
 .endpoint-item-label {
     font-weight: 600;
 }
@@ -1115,13 +1130,18 @@
     padding: 7px 0;
 }
 
-/* 行内报错独占卡片底部一行：删除拦截与保存校验都写在这里 */
+/* 行内报错独占卡片底部一行：删除拦截与保存校验都写在这里；
+   is-warning 是不拦保存的提醒（如没改动且不会被实测的接入点没配 Key） */
 .endpoint-row-error {
     display: block;
     min-height: 0;
     margin-top: 8px;
     color: #b91c1c;
     font-size: 0.8rem;
+}
+
+.endpoint-row-error.is-warning {
+    color: #b45309;
 }
 
 .endpoint-row-error:empty {

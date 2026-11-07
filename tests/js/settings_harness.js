@@ -224,7 +224,7 @@ function defaultModelsValue() {
 }
 
 // 已保存的接入点分区值（与后端 app_settings.llm_endpoints 的 value 同形，
-// 不含 api_key_env_configured——那是顶层 endpoints 负载里的展示字段）。
+// 不含 host_allowed——那是顶层 endpoints 负载里的展示字段）。
 // default_model 是每个接入点自己的默认模型，步骤「模型」留空时就用它。
 function defaultEndpointsValue() {
     return {
@@ -252,11 +252,15 @@ function defaultEndpointsValue() {
     };
 }
 
-// GET /api/admin/settings 顶层的 endpoints 负载（与 settings_service._endpoints_payload 同形）
+// GET /api/admin/settings 顶层的 endpoints 负载（与 settings_service._endpoints_payload 同形）。
+// configured_api_key_envs 是服务器当前已配置的 Key 变量名名单：前端对任意变量名
+// （包括草稿里新敲的）判断配没配都以它为准。host_allowed 标记该接入点的主机
+// 是否在白名单内（false 时接入点列表标红、引用它的步骤行提示）。
 function defaultEndpointsPayload() {
     return {
         default: 'openrouter',
         allowed_hosts: ['openrouter.ai', 'api.deepseek.com', 'open.bigmodel.cn'],
+        configured_api_key_envs: ['LLM_API_KEY'],
         items: [
             {
                 key: 'openrouter',
@@ -266,7 +270,7 @@ function defaultEndpointsPayload() {
                 api_style: 'openrouter',
                 temperature_override: null,
                 default_model: 'deepseek/default-model',
-                api_key_env_configured: true,
+                host_allowed: true,
             },
             {
                 key: 'deepseek',
@@ -276,7 +280,7 @@ function defaultEndpointsPayload() {
                 api_style: 'thinking',
                 temperature_override: null,
                 default_model: 'deepseek-chat-v4',
-                api_key_env_configured: false,
+                host_allowed: true,
             },
         ],
     };
@@ -717,11 +721,6 @@ class FakeSettingsServer {
         this.promptSaveBehavior = null;
         // 提示词试跑的定制响应：{ status, payload }，命中一次后失效
         this.promptTestBehavior = null;
-        // 环境变量重载的定制行为：reloadEnvBehavior() 在返回前执行，测试用它
-        // 模拟「服务器端 .env 变化后的重载结果」（如某接入点 Key 由未配置变为已配置）；
-        // envVarCount 是响应里的 loaded_env_vars 回显
-        this.reloadEnvBehavior = options.reloadEnvBehavior || null;
-        this.envVarCount = options.envVarCount === undefined ? 24 : options.envVarCount;
         // 分区保存的定制响应：{ [section]: { status, payload } }，命中一次后失效
         this.saveBehavior = {};
         this.testBehavior = null;
@@ -752,7 +751,6 @@ class FakeSettingsServer {
     classify(url, method) {
         const pathname = url.pathname;
         if (pathname === '/api/admin/settings') return 'get-settings';
-        if (pathname === '/api/admin/settings/environment/reload') return 'reload-env';
         if (pathname === '/api/admin/settings/llm_models/test') return 'model-test';
         if (pathname === '/api/admin/settings/llm_models') return 'save-models';
         if (pathname === '/api/admin/settings/llm_endpoints') return 'save-endpoints';
@@ -892,10 +890,6 @@ class FakeSettingsServer {
                 environment: this.environment,
                 endpoints: this.endpoints,
             }];
-        }
-        if (pathname === '/api/admin/settings/environment/reload' && method === 'POST') {
-            if (this.reloadEnvBehavior) this.reloadEnvBehavior();
-            return [200, { reloaded: true, loaded_env_vars: this.envVarCount }];
         }
         if (pathname === '/api/admin/settings/llm_models/test') {
             if (this.testBehavior) {

@@ -5,7 +5,7 @@ import time
 from typing import Any, Dict, Optional, Tuple
 
 from src.adapters.llm_chat import post_chat_completion
-from src.adapters.llm_endpoint import resolve_llm_endpoint
+from src.adapters.llm_endpoint import ResolvedLLMEndpoint, resolve_llm_endpoint
 from src.business_config import get_llm_step_config
 from src.config import get_settings
 
@@ -14,6 +14,10 @@ _POSITIVE_TOKENS = {"positive", "pos", "good", "favorable", "favourable"}
 _NEGATIVE_TOKENS = {"negative", "neg", "bad", "unfavorable", "unfavourable"}
 
 
+def probe_request_extras(endpoint: ResolvedLLMEndpoint) -> Dict[str, Any]:
+    """情感判断真实请求里 model/messages/max_tokens 之外的固定参数（见 llm_summary 同名函数）。"""
+
+    return {"temperature": 0.0}
 
 
 def _build_prompt(text: str) -> Dict[str, str]:
@@ -107,5 +111,5 @@ def classify_sentiment(content: str, *, retries: int = 4, timeout: Optional[int]
     }
 
 
-__all__ = ["classify_sentiment"]
+__all__ = ["classify_sentiment", "probe_request_extras"]
 

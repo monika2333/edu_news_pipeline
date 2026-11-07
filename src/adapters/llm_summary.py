@@ -4,7 +4,7 @@ import time
 from typing import Any, Dict, Optional
 
 from src.adapters.llm_chat import post_chat_completion
-from src.adapters.llm_endpoint import resolve_llm_endpoint
+from src.adapters.llm_endpoint import ResolvedLLMEndpoint, resolve_llm_endpoint
 from src.business_config import get_llm_step_config
 from src.config import get_settings
 
@@ -30,6 +30,16 @@ def build_summary_payload(article: Dict[str, Any]) -> Dict[str, Any]:
     )
     message = f"{instruction}\n" + "\n".join(prompt_parts)
     return {"messages": [{"role": "user", "content": message}]}
+
+
+def probe_request_extras(endpoint: ResolvedLLMEndpoint) -> Dict[str, Any]:
+    """摘要真实请求里 model/messages/max_tokens 之外的固定参数。
+
+    保存接入点时的模型实测（settings_service._probe_model）经各步骤的
+    本函数构造探针请求，实测参数因此与真实请求一致；改真实请求的参数时
+    这里自然跟着变，不要在探针里另抄一份。"""
+
+    return {"temperature": 0.2}
 
 
 def summarise(
@@ -83,4 +93,4 @@ def summarise(
     }
 
 
-__all__ = ["build_summary_payload", "summarise"]
+__all__ = ["build_summary_payload", "probe_request_extras", "summarise"]

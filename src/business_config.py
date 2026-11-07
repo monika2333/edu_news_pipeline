@@ -409,7 +409,22 @@ def validate_llm_models(value: Any) -> dict[str, Any]:
     return {"steps": normalized_steps}
 
 
-def validate_endpoint_base_url(value: Any, *, allowed_hosts: Sequence[str]) -> str:
+def endpoint_host_allowed(base_url: str, *, allowed_hosts: Sequence[str]) -> bool:
+    """接入点地址的主机是否在白名单内（小写化、精确匹配，与请求侧判定一致）。"""
+
+    host = (urlsplit(base_url).hostname or "").strip().lower()
+    if not host:
+        return False
+    allowed = {item.strip().lower() for item in allowed_hosts if item and item.strip()}
+    return host in allowed
+
+
+def validate_endpoint_base_url(
+    value: Any,
+    *,
+    allowed_hosts: Sequence[str],
+    require_host_allowed: bool = True,
+) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("base_url 必须是非空字符串")
     normalized = value.strip().rstrip("/")
@@ -429,16 +444,32 @@ def validate_endpoint_base_url(value: Any, *, allowed_hosts: Sequence[str]) -> s
         raise ValueError("base_url 端口无效") from exc
     if port is not None and port != 443:
         raise ValueError("base_url 只允许省略端口或使用 443 端口")
-    allowed = {item.strip().lower() for item in allowed_hosts if item and item.strip()}
-    if host not in allowed:
-        raise ValueError(
-            f"base_url 主机 {host} 不在 LLM_ALLOWED_HOSTS 白名单内，"
-            "如需新增服务商请先在 .env 的 LLM_ALLOWED_HOSTS 中加入其域名"
-        )
+    if require_host_allowed:
+        allowed = {
+            item.strip().lower() for item in allowed_hosts if item and item.strip()
+        }
+        if host not in allowed:
+            raise ValueError(
+                f"base_url 主机 {host} 不在允许列表内：请在服务器 .env.local 的 "
+                "LLM_ALLOWED_HOSTS 里追加该域名（不用重复写默认的），再重新保存"
+            )
     return normalized
 
 
-def validate_llm_endpoints(value: Any) -> dict[str, Any]:
+def validate_llm_endpoints(
+    value: Any,
+    *,
+    require_host_allowed: bool = True,
+) -> dict[str, Any]:
+    """校验 llm_endpoints 分区。
+
+    ``require_host_allowed=False`` 只做结构校验，不因主机不在白名单而失败：
+    读取已保存配置的路径（设置页负载、保存 llm_models 时解析旧接入点、
+    流水线加载）都走这个形态——白名单收紧后库里可能留着指向白名单外域名
+    的接入点，读路径必须照常工作，把问题标出来让用户在控制台修，而不是
+    把设置页和整条流水线一起卡死。保存 llm_endpoints（默认 True）仍要求
+    待保存的每个接入点都在白名单内。
+    """
     from src.config import get_settings
 
     if not isinstance(value, Mapping):
@@ -476,6 +507,7 @@ def validate_llm_endpoints(value: Any) -> dict[str, Any]:
         base_url = validate_endpoint_base_url(
             item.get("base_url"),
             allowed_hosts=allowed_hosts,
+            require_host_allowed=require_host_allowed,
         )
         api_key_env = item.get("api_key_env")
         if not isinstance(api_key_env, str) or not LLM_API_KEY_ENV_PATTERN.fullmatch(
@@ -819,8 +851,10 @@ def resolve_llm_steps(
 
 def resolve_llm_endpoints(
     value: Mapping[str, Any],
+    *,
+    require_host_allowed: bool = True,
 ) -> tuple[dict[str, LLMEndpointConfig], str]:
-    normalized = validate_llm_endpoints(value)
+    normalized = validate_llm_endpoints(value, require_host_allowed=require_host_allowed)
     items = {
         item["key"]: LLMEndpointConfig(
             key=item["key"],
@@ -852,6 +886,57 @@ def resolve_models(
     }
 
 
+def _check_blocked_endpoints_for_pipeline(
+    llm_endpoints: Mapping[str, LLMEndpointConfig],
+    *,
+    default_endpoint: str,
+    resolved_steps: Mapping[str, LLMStepConfig],
+) -> None:
+    """流水线加载时的白名单检查：失败半径按「是否有步骤在用」收窄。
+
+    被任一步骤实际使用（显式选择或跟随默认）的接入点不在白名单内 → 加载
+    失败，该步骤必然跑不通，必须让配置问题立刻暴露；没有步骤在用的接入点
+    出了问题只记警告，不影响整条流水线——用户可能正打算在控制台把它改掉
+    或删掉。白名单只在这里做加载期检查；真正发请求前的拦截在传输层
+    （post_chat_completion），无论走哪条路径都不会向白名单外的主机发请求。
+    """
+
+    from src.config import get_settings
+
+    allowed_hosts = get_settings().llm_allowed_hosts
+    used_keys = {
+        resolved_steps[step].endpoint or default_endpoint for step in LLM_STEPS
+    }
+    blocked_used: list[str] = []
+    blocked_unused: list[str] = []
+    for key, item in llm_endpoints.items():
+        if endpoint_host_allowed(item.base_url, allowed_hosts=allowed_hosts):
+            continue
+        host = (urlsplit(item.base_url).hostname or "").lower()
+        summary = f"「{item.label}」（{key}，域名 {host}）"
+        if key in used_keys:
+            referencing = "、".join(
+                LLM_STEP_LABELS[step]
+                for step in LLM_STEPS
+                if (resolved_steps[step].endpoint or default_endpoint) == key
+            )
+            blocked_used.append(f"{summary}正被步骤 {referencing} 使用")
+        else:
+            blocked_unused.append(summary)
+    if blocked_used:
+        raise BusinessConfigError(
+            "数据库业务配置无效：接入点不在 LLM_ALLOWED_HOSTS 白名单内，"
+            "且正被流水线步骤使用：" + "；".join(blocked_used)
+            + "。请在服务器 .env.local 的 LLM_ALLOWED_HOSTS 里追加对应域名，"
+            "或修改、删除这些接入点"
+        )
+    if blocked_unused:
+        logging.getLogger(__name__).warning(
+            "接入点不在 LLM_ALLOWED_HOSTS 白名单内（当前没有步骤在用，不影响本轮流水线）："
+            + "；".join(blocked_unused)
+        )
+
+
 def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
     if adapter is None:
         from src.adapters.db_postgres_core import get_adapter
@@ -864,8 +949,10 @@ def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
         raise BusinessConfigError(f"数据库缺少业务配置分区：{', '.join(missing)}")
     try:
         llm_value = validate_llm_models(indexed["llm_models"]["value"])
+        # 只做结构校验：白名单检查在下面单独做，失败半径按「是否有步骤在用」收窄
         llm_endpoints, default_endpoint = resolve_llm_endpoints(
-            indexed["llm_endpoints"]["value"]
+            indexed["llm_endpoints"]["value"],
+            require_host_allowed=False,
         )
         sources = validate_crawl_sources(indexed["crawl_sources"]["value"])
         bonuses = validate_score_keyword_bonuses(
@@ -893,6 +980,16 @@ def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
             raise BusinessConfigError(
                 f"数据库业务配置无效：{LLM_STEP_LABELS[step]}引用了不存在的接入点：{endpoint_ref}"
             )
+    resolved_steps = resolve_llm_steps(
+        llm_value,
+        endpoints=llm_endpoints,
+        default_endpoint=default_endpoint,
+    )
+    _check_blocked_endpoints_for_pipeline(
+        llm_endpoints,
+        default_endpoint=default_endpoint,
+        resolved_steps=resolved_steps,
+    )
 
     account_rows = adapter.app_config.fetch_enabled_accounts()
     accounts: dict[str, list[CrawlAccount]] = {
@@ -913,11 +1010,7 @@ def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
             )
         )
     return BusinessConfig(
-        llm_steps=resolve_llm_steps(
-            llm_value,
-            endpoints=llm_endpoints,
-            default_endpoint=default_endpoint,
-        ),
+        llm_steps=resolved_steps,
         crawl_sources=tuple(sources),
         accounts={key: tuple(items) for key, items in accounts.items()},
         versions={
@@ -1028,6 +1121,7 @@ __all__ = [
     "CrawlAccount",
     "ENDPOINT_KEY_PATTERN",
     "ENDPOINT_ITEM_FIELDS",
+    "endpoint_host_allowed",
     "LEGACY_CONFIG_FILES",
     "LEGACY_ENV_KEYS",
     "LLMStepConfig",

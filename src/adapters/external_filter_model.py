@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from src.adapters.llm_chat import extract_message_text, post_chat_completion
-from src.adapters.llm_endpoint import resolve_llm_endpoint
+from src.adapters.llm_endpoint import ResolvedLLMEndpoint, resolve_llm_endpoint
 from src.adapters.llm_scoring import parse_score
 from src.business_config import get_llm_step_config
 from src.config import get_settings
@@ -132,6 +132,12 @@ def build_prompt(
     )
 
 
+def probe_request_extras(endpoint: ResolvedLLMEndpoint) -> dict[str, Any]:
+    """重要性过滤真实请求里 model/messages/max_tokens 之外的固定参数（见 llm_summary 同名函数）。"""
+
+    return {"temperature": 0.0}
+
+
 def call_external_filter_model(
     candidate: ExternalFilterCandidate,
     *,
@@ -199,6 +205,7 @@ def parse_external_filter_score(raw_output: str) -> Optional[int]:
 __all__ = [
     "build_prompt",
     "call_external_filter_model",
+    "probe_request_extras",
     "load_prompt_versions",
     "parse_external_filter_score",
     "prompt_key_for_category",

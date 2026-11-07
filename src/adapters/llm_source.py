@@ -4,7 +4,7 @@ import time
 from typing import Any, Dict, Optional
 
 from src.adapters.llm_chat import post_chat_completion
-from src.adapters.llm_endpoint import resolve_llm_endpoint
+from src.adapters.llm_endpoint import ResolvedLLMEndpoint, resolve_llm_endpoint
 from src.business_config import get_llm_step_config
 from src.config import get_settings
 
@@ -32,6 +32,12 @@ def build_source_payload(article: Dict[str, Any]) -> Dict[str, Any]:
     prompt_parts.append(str(content))
     message = "\n".join(prompt_parts)
     return {"messages": [{"role": "user", "content": message}]}
+
+
+def probe_request_extras(endpoint: ResolvedLLMEndpoint) -> Dict[str, Any]:
+    """来源识别真实请求里 model/messages/max_tokens 之外的固定参数（见 llm_summary 同名函数）。"""
+
+    return {"temperature": 0}
 
 
 def _normalise_response(raw: str) -> str:
@@ -122,4 +128,4 @@ def detect_source(
     }
 
 
-__all__ = ["MAX_LLM_SOURCE_LENGTH", "build_source_payload", "detect_source"]
+__all__ = ["MAX_LLM_SOURCE_LENGTH", "build_source_payload", "detect_source", "probe_request_extras"]

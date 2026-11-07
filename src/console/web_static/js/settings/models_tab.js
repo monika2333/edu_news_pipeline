@@ -23,9 +23,8 @@ function buildModelsEnvBlock() {
     const endpoints = (state.payload && state.payload.endpoints) || {};
     const card = buildSettingsCard(
         '环境（只读）',
-        '超时、预算、reasoning 强度等参数在服务器环境变量中配置。修改服务器上的'
-            + ' .env.local 后点「重新加载环境变量」即可生效，无需重启；'
-            + '数据库连接等少数配置仍需重启服务。',
+        '超时、预算、reasoning 强度等参数在服务器环境变量中配置。'
+            + '修改 .env.local 后无需重启，控制台会自动读取。',
     );
     const block = createEl('div', 'settings-env-block');
     const list = createEl('dl', 'settings-env-list');
@@ -36,51 +35,20 @@ function buildModelsEnvBlock() {
     addItem('向量模型', env.embedding_model || '-');
     addItem('允许的接入点主机', (endpoints.allowed_hosts || []).join(', ') || '-');
     block.appendChild(list);
-
-    // 环境变量在进程内是一次性快照（src.config 的 _ENV_LOADED）；
-    // 重载按钮让「改完 .env.local」不必再登录服务器重启进程，接入点的
-    // Key 配置状态随之刷新。失败分支不重渲染，错误就挂在当前块上。
-    const reloadRow = createEl('div', 'settings-env-reload');
-    const reloadBtn = createEl('button', 'btn btn-secondary env-reload-btn',
-        '重新加载环境变量', { type: 'button' });
-    const status = createEl('span', 'settings-save-status env-reload-status');
-    reloadRow.appendChild(reloadBtn);
-    reloadRow.appendChild(status);
-    block.appendChild(reloadRow);
-
-    reloadBtn.addEventListener('click', async () => {
-        reloadBtn.disabled = true;
-        let reloaded = false;
-        try {
-            const { response, payload } = await apiRequest(
-                '/api/admin/settings/environment/reload',
-                { method: 'POST' },
-            );
-            if (!response.ok) {
-                setSettingsStatus(
-                    status,
-                    `重载失败：${formatApiError(payload, '请稍后重试')}`,
-                    'error',
-                );
-            } else {
-                await reloadSettingsPayload();
-                showSettingsToast('环境变量已重新加载');
-                reloaded = true;
-            }
-        } catch (error) {
-            setSettingsStatus(status, `重载失败：${error.message || '网络错误'}`, 'error');
-        } finally {
-            reloadBtn.disabled = false;
-        }
-        // 重渲染放在 try/finally 之后：renderModelsTab 重建整个模型页签，
-        // 按钮 / 状态节点随之脱离文档（与接入点「载入最新配置」同一时序约定）；
-        // keepDraft 保留模型草稿与接入点编辑态，只重建 DOM。
-        if (reloaded) {
-            renderModelsTab({ keepDraft: true });
-        }
-    });
     card.appendChild(block);
     return card;
+}
+
+// 该行步骤解析到的接入点（显式选择，或跟随默认）主机是否不在白名单内；
+// 不在时返回该接入点，行内要提示「现在无法调用」。包括跟随默认、而默认
+// 接入点正好是白名单外的情况。host_allowed 在顶层 endpoints 负载里。
+function stepBlockedEndpoint(draft) {
+    const saved = savedEndpointsValue();
+    if (!saved) return null;
+    const resolvedKey = draft.endpoint || saved.default;
+    const found = endpointsPayloadInfo().items
+        .find((item) => item.key === resolvedKey);
+    return found && found.host_allowed === false ? found : null;
 }
 
 function clearStepTestResult(step) {
@@ -190,6 +158,25 @@ function buildStepRow(step, displayName) {
     modelCell.appendChild(controls);
     const hint = createEl('span', 'step-model-hint');
     modelCell.appendChild(hint);
+    // 该步骤解析到的接入点主机不在白名单内（含跟随默认而默认就是它）：
+    // 这一步现在无法调用，行内写明修法
+    const blocked = stepBlockedEndpoint(draft);
+    if (blocked) {
+        const blockedHost = (() => {
+            try {
+                return new URL(blocked.base_url).hostname.toLowerCase();
+            } catch (error) {
+                return '(无法解析)';
+            }
+        })();
+        modelCell.appendChild(createEl(
+            'span',
+            'step-host-blocked-hint',
+            `该步骤使用的接入点「${blocked.label}」的域名 ${blockedHost} 不在允许列表内，`
+                + '无法调用：请在 .env.local 的 LLM_ALLOWED_HOSTS 里追加该域名，'
+                + '或改选其他接入点。',
+        ));
+    }
     row.appendChild(modelCell);
     // 挂载后才能按行查找：updateStepModelHint 用 row.querySelector 找灰字节点
     updateStepModelHint(row, draft);
@@ -358,3 +345,16 @@ function renderModelsTab({ keepDraft = false } = {}) {
         }
     });
 }
+
+// 页面重新获得焦点（从别的窗口切回来）时刷新一次设置负载：用户常常开着
+// 设置页去改 .env.local，回来后 Key 配置名单与白名单要用最新值，提示才准。
+// keepDraft 保留模型草稿与接入点编辑态，只重建 DOM；失败静默，不打断编辑。
+window.addEventListener('focus', async () => {
+    if (!state.payload) return;
+    try {
+        await reloadSettingsPayload();
+        renderModelsTab({ keepDraft: true });
+    } catch (error) {
+        // 名单刷新失败就继续用当前值，等下次保存或焦点再试
+    }
+});

@@ -6,7 +6,18 @@ import os
 import time
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
+from urllib.parse import urlsplit
 
+from src.adapters import (
+    external_filter_model,
+    llm_beijing_gate,
+    llm_duplicate_review,
+    llm_prompt_optimizer,
+    llm_scoring,
+    llm_source,
+    llm_summary,
+    sentiment_classifier,
+)
 from src.adapters.account_profiles import (
     AccountNameUnavailable,
     MAX_ACCOUNT_TIMEOUT_SECONDS,
@@ -29,15 +40,19 @@ from src.adapters.http_xinjinghao import (
 from src.adapters.llm_chat import post_chat_completion
 from src.adapters.llm_endpoint import (
     LLMEndpointKeyMissingError,
+    ResolvedLLMEndpoint,
+    api_key_env_configured,
     resolve_endpoint,
 )
 from src.business_config import (
     ACCOUNT_SOURCES,
+    LLM_API_KEY_ENV_PATTERN,
     LLMEndpointConfig,
     LLM_STEPS,
     LLM_STEP_LABELS,
     SOURCE_BY_KEY,
     SOURCE_CATALOG,
+    endpoint_host_allowed,
     normalize_source_key,
     normalize_source_list,
     resolve_llm_endpoints,
@@ -47,7 +62,7 @@ from src.business_config import (
     validate_llm_models,
     validate_section,
 )
-from src.config import BGE_EMBEDDING_MODEL, get_settings, load_environment, reload_environment
+from src.config import BGE_EMBEDDING_MODEL, get_settings, load_environment
 from src.console.auth_service import ConsoleUser
 from src.console.source_list_pages import list_pages_for_source
 
@@ -72,18 +87,32 @@ def _modifier(row: Mapping[str, Any], prefix: str) -> dict[str, Any]:
     }
 
 
+def _configured_api_key_envs() -> list[str]:
+    """服务器当前已配置、且名字合法的 Key 环境变量名，按字母排序。
+
+    只给名字，绝不给值或任何派生信息（长度、前缀都不给）。前端拿这份
+    名单对任意变量名（包括还没保存的新接入点）判断配没配。判定与
+    resolve_endpoint 实际取 Key 完全一致：值非空才算已配置，空串算未配置。"""
+
+    return sorted(
+        name
+        for name in os.environ
+        if LLM_API_KEY_ENV_PATTERN.fullmatch(name) and api_key_env_configured(name)
+    )
+
+
 def _endpoints_payload(settings: Any, sections: Mapping[str, Any]) -> dict[str, Any]:
+    # 读取已保存配置只做结构校验（require_host_allowed=False）：白名单收紧后
+    # 库里可能有接入点指向白名单外的域名，设置页必须照常打开并把问题标出来
+    # （host_allowed=False），让用户能在控制台里修，而不是整页打不开。
+    normalized = None
     row = sections.get("llm_endpoints")
-    if row is None:
-        return {
-            "default": None,
-            "allowed_hosts": list(settings.llm_allowed_hosts),
-            "items": [],
-        }
-    normalized = validate_llm_endpoints(row["value"])
+    if row is not None:
+        normalized = validate_llm_endpoints(row["value"], require_host_allowed=False)
     return {
-        "default": normalized["default"],
+        "default": normalized["default"] if normalized else None,
         "allowed_hosts": list(settings.llm_allowed_hosts),
+        "configured_api_key_envs": _configured_api_key_envs(),
         "items": [
             {
                 "key": item["key"],
@@ -93,9 +122,12 @@ def _endpoints_payload(settings: Any, sections: Mapping[str, Any]) -> dict[str, 
                 "api_style": item["api_style"],
                 "temperature_override": item["temperature_override"],
                 "default_model": item["default_model"],
-                "api_key_env_configured": bool(os.getenv(item["api_key_env"])),
+                "host_allowed": endpoint_host_allowed(
+                    item["base_url"],
+                    allowed_hosts=settings.llm_allowed_hosts,
+                ),
             }
-            for item in normalized["items"]
+            for item in (normalized["items"] if normalized else [])
         ],
     }
 
@@ -147,12 +179,29 @@ def _endpoint_definition(endpoint_key: Optional[str]) -> LLMEndpointConfig:
     row = get_adapter().app_config.fetch_setting("llm_endpoints")
     if row is None:
         raise ValueError("接入点配置未初始化：数据库缺少 llm_endpoints 分区")
-    items, default_key = resolve_llm_endpoints(row["value"])
+    # 读取已保存配置只做结构校验：白名单外的接入点仍可被「测试」按钮引用，
+    # 由探针在发请求前拦下并给出可操作的报错
+    items, default_key = resolve_llm_endpoints(row["value"], require_host_allowed=False)
     resolved = endpoint_key or default_key
     definition = items.get(resolved)
     if definition is None:
         raise ValueError(f"接入点不存在：{resolved}")
     return definition
+
+
+# 每个步骤真实请求里 model/messages/max_tokens 之外的固定参数，构造逻辑
+# 归各 adapter（probe_request_extras），探针只负责取用——adapter 改参数时
+# 探针自动跟着变。接入点级探针（无步骤可依）不走这里，用简单探针。
+_STEP_PROBE_EXTRAS = {
+    "summary": llm_summary.probe_request_extras,
+    "source": llm_source.probe_request_extras,
+    "sentiment": sentiment_classifier.probe_request_extras,
+    "scoring": llm_scoring.probe_request_extras,
+    "external_filter": external_filter_model.probe_request_extras,
+    "beijing_gate": llm_beijing_gate.probe_request_extras,
+    "duplicate_review": llm_duplicate_review.probe_request_extras,
+    "prompt_optimizer": llm_prompt_optimizer.probe_request_extras,
+}
 
 
 def _probe_model(
@@ -161,6 +210,7 @@ def _probe_model(
     reasoning: bool,
     endpoint_definition: LLMEndpointConfig,
     operation: str,
+    step: Optional[str] = None,
 ) -> dict[str, Any]:
     """对「接入点定义 + 模型 + reasoning」组合发一次最小真实请求。
 
@@ -168,7 +218,13 @@ def _probe_model(
     库里还是旧值，查库会让新增接入点的实测报「接入点不存在」，改连接
     信息时实测的也是旧地址/旧 Key——保存时的校验必须作用于待保存的值。
     逐步「测试」按钮经 test_llm_model 传入库中已保存的定义（按钮只引用
-    已保存接入点）。operation 只用于请求日志归属，不参与校验。"""
+    已保存接入点）。operation 只用于请求日志归属，不参与校验。
+
+    step 给定时（保存时的步骤级实测、步骤「测试」按钮），探针带上该步骤
+    真实请求的固定参数（response_format、temperature，来自该 adapter 的
+    probe_request_extras）——有的服务商不接受这些参数，只发简单探针会
+    「实测通过、跑到这一步时报 400」。接入点级实测（暂时没有步骤在用的
+    接入点）没有步骤可依，不传 step。"""
 
     settings = get_settings()
     try:
@@ -179,10 +235,23 @@ def _probe_model(
             "elapsed_ms": 0,
             "error": (
                 f"缺少 API Key：请先在服务器的 .env.local 里配置 "
-                f"{endpoint_definition.api_key_env}，"
-                "然后点「重新加载环境变量」后再试"
+                f"{endpoint_definition.api_key_env}，再重新保存"
             ),
         }
+    blocked_host = _blocked_endpoint_host(resolved, settings)
+    if blocked_host:
+        return {
+            "success": False,
+            "elapsed_ms": 0,
+            "error": (
+                f"接入点主机 {blocked_host} 不在允许列表内：请在服务器 .env.local "
+                "的 LLM_ALLOWED_HOSTS 里追加该域名（不用重复写默认的），"
+                "或修改该接入点的地址后再保存。"
+            ),
+        }
+    extras: Mapping[str, Any] = (
+        _STEP_PROBE_EXTRAS[step](resolved) if step is not None else {}
+    )
     reasoning_limit = settings.llm_reasoning_max_tokens or 0
     max_tokens = max(2048, reasoning_limit * 2) if reasoning else 8
     request_timeout = (
@@ -191,12 +260,19 @@ def _probe_model(
         else min(10, settings.llm_scoring_timeout)
     )
     request_budget = max(180, request_timeout + 30) if reasoning else 12
+    # JSON 模式通常要求提示里出现 JSON 字样，探针消息据此调整
+    probe_message = (
+        '连通性测试：请只回复 JSON {"ok": true}'
+        if extras.get("response_format") is not None
+        else "只回复 OK"
+    )
     payload: dict[str, Any] = {
         "model": model,
-        "messages": [{"role": "user", "content": "只回复 OK"}],
+        "messages": [{"role": "user", "content": probe_message}],
         "temperature": 0,
         "max_tokens": max_tokens,
     }
+    payload.update(extras)
     resolved.finalize_payload(
         payload,
         settings=settings,
@@ -230,6 +306,24 @@ def _probe_model(
     }
 
 
+def _blocked_endpoint_host(
+    resolved: ResolvedLLMEndpoint,
+    settings: Any,
+) -> Optional[str]:
+    """接入点主机不在白名单内时返回主机名；实测与「测试」按钮据此在
+    发请求前拦下（传输层另有同样的一道检查，这里提前给出可操作的报错）。"""
+
+    host = (urlsplit(resolved.chat_url).hostname or "").strip().lower()
+    allowed = {
+        item.strip().lower()
+        for item in settings.llm_allowed_hosts
+        if item and item.strip()
+    }
+    if host and host not in allowed:
+        return host
+    return None
+
+
 def test_llm_model(
     step: str,
     model: str,
@@ -246,30 +340,18 @@ def test_llm_model(
         reasoning=reasoning,
         endpoint_definition=_endpoint_definition(endpoint),
         operation=f"settings_model_test:{step}",
+        step=step,
     )
-
-
-def reload_server_environment(actor: ConsoleUser) -> dict[str, Any]:
-    """Re-read the server env files (.env.local 等) and refresh cached settings.
-
-    Lets operators activate edited env values (LLM API keys, allowed hosts)
-    from the console instead of restarting the service. DB connection
-    settings are outside this contract: the adapter pool outlives the reload.
-    """
-    loaded = reload_environment()
-    logger.info(
-        "用户 %s 重新加载了环境变量（来自 env 文件：%d 个）",
-        actor.display_name or actor.username,
-        loaded,
-    )
-    return {"reloaded": True, "loaded_env_vars": loaded}
 
 
 def _require_llm_endpoints(adapter: Any) -> tuple[dict[str, LLMEndpointConfig], str]:
     row = adapter.app_config.fetch_setting("llm_endpoints")
     if row is None:
         raise ValueError("接入点配置未初始化：数据库缺少 llm_endpoints 分区")
-    return resolve_llm_endpoints(row["value"])
+    # 保存 llm_models 时解析的是**已保存**接入点：只做结构校验，不因某个
+    # 接入点的主机不在白名单而拒绝整次保存——用户可能正是在把步骤从它
+    # 身上改走；白名单问题在设置页负载里以 host_allowed 标出
+    return resolve_llm_endpoints(row["value"], require_host_allowed=False)
 
 
 def _resolved_step_combinations(
@@ -342,6 +424,7 @@ def _run_save_time_model_tests(
             reasoning=reasoning,
             endpoint_definition=endpoints_after[endpoint_key],
             operation=f"settings_model_test:{step}",
+            step=step,
         )
         if not outcome["success"]:
             raise ValueError(
@@ -420,14 +503,19 @@ def update_setting(
             default_endpoint_after=before_default,
         )
     elif section == "llm_endpoints":
-        before_endpoints_items, before_default = resolve_llm_endpoints(current["value"])
+        # 读取保存前的接入点只做结构校验：库里可能已有指向白名单外域名的
+        # 接入点，用户这次保存正是要改掉或删掉它，读路径不能先拦住
+        before_endpoints_items, before_default = resolve_llm_endpoints(
+            current["value"],
+            require_host_allowed=False,
+        )
         removed_keys = set(before_endpoints_items) - {
             item["key"] for item in normalized["items"]
         }
         if removed_keys:
             reasons = _endpoint_deletion_conflicts(
                 removed_keys,
-                validate_llm_endpoints(current["value"]),
+                validate_llm_endpoints(current["value"], require_host_allowed=False),
                 adapter,
             )
             if reasons:
@@ -841,7 +929,7 @@ def _legacy_endpoint_reference() -> tuple[str, str]:
         row = None
     if row is None:
         return LEGACY_FALLBACK_ENDPOINT_KEY, LLM_FALLBACK_DEFAULT_MODEL
-    items, default_key = resolve_llm_endpoints(row["value"])
+    items, default_key = resolve_llm_endpoints(row["value"], require_host_allowed=False)
     return default_key, items[default_key].default_model
 
 

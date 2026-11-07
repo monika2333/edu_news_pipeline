@@ -339,3 +339,29 @@ def test_quota_error_carries_endpoint_label_into_alert(
     assert "DeepSeek" in calls[0]["operation"]
     assert "接入点" in calls[0]["operation"]
     assert calls[0]["operation"].startswith("duplicate_review")
+
+
+def test_api_key_env_configured_matches_resolve_endpoint_judgment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """名单过滤与 resolve_endpoint 取 Key 是同一条真值判断：空串算未配置。"""
+
+    monkeypatch.setenv("CONFIGURED_PROBE_API_KEY", "real-key")
+    monkeypatch.setenv("EMPTY_PROBE_API_KEY", "")
+    monkeypatch.delenv("ABSENT_PROBE_API_KEY", raising=False)
+
+    assert llm_endpoint.api_key_env_configured("CONFIGURED_PROBE_API_KEY") is True
+    assert llm_endpoint.api_key_env_configured("EMPTY_PROBE_API_KEY") is False
+    assert llm_endpoint.api_key_env_configured("ABSENT_PROBE_API_KEY") is False
+
+    definition = LLMEndpointConfig(
+        key="empty",
+        label="Empty",
+        base_url="https://api.deepseek.com",
+        api_key_env="EMPTY_PROBE_API_KEY",
+        api_style="thinking",
+        temperature_override=None,
+        default_model="m",
+    )
+    with pytest.raises(LLMEndpointKeyMissingError):
+        llm_endpoint.resolve_endpoint(definition)

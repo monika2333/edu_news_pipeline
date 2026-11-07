@@ -152,28 +152,12 @@ def test_duty_editor_cannot_refresh_account_names() -> None:
     assert response.status_code == 403
 
 
-def test_environment_reload_reloads_and_reports_count(
-    monkeypatch: MonkeyPatch,
-) -> None:
-    calls: list[str] = []
-    monkeypatch.setattr(
-        "src.console.settings_service.reload_environment",
-        lambda: calls.append("called") or 7,
-    )
-    response = _build_client().post("/api/admin/settings/environment/reload")
+def test_environment_reload_endpoint_is_gone() -> None:
+    """「重新加载环境变量」按钮与接口已删：env 文件改动由控制台进程在处理
+    请求前自动检测并重读（见 src/config.refresh_environment_if_changed），
+    不再有手动重载入口。"""
 
-    assert response.status_code == 200
-    assert response.json() == {"reloaded": True, "loaded_env_vars": 7}
-    assert calls == ["called"]
+    client = _build_client()
+    response = client.post("/api/admin/settings/environment/reload")
 
-
-def test_duty_editor_cannot_reload_environment(monkeypatch: MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "src.console.settings_service.reload_environment",
-        lambda: pytest.fail("reload reached the service"),
-    )
-    response = _build_client("duty_editor").post(
-        "/api/admin/settings/environment/reload"
-    )
-
-    assert response.status_code == 403
+    assert response.status_code in {404, 405}

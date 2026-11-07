@@ -400,12 +400,14 @@ def test_settings_payload_exposes_endpoints_and_drops_base_url(
         "api_style",
         "temperature_override",
         "default_model",
-        "api_key_env_configured",
+        "host_allowed",
     }
     assert items["openrouter"]["default_model"] == "default-model"
     assert items["deepseek"]["default_model"] == "deepseek-default"
-    assert items["openrouter"]["api_key_env_configured"] is False
-    assert items["deepseek"]["api_key_env_configured"] is True
+    # 配置状态统一由 configured_api_key_envs 名单表达，逐项字段不再各存一份
+    assert endpoints["configured_api_key_envs"] == ["LLM_DEEPSEEK_API_KEY"]
+    assert items["openrouter"]["host_allowed"] is True
+    assert items["deepseek"]["host_allowed"] is True
     serialized = json.dumps(endpoints)
     assert "deepseek-key" not in serialized
     assert "prompt_optimizer" in {
@@ -540,7 +542,7 @@ def _stub_probes(
     步骤组合测试与接入点默认模型测试已统一走 _probe_model（传入定义），
     一次打桩即可观察两类探针；只用于组合/去重断言，不断言请求细节。"""
 
-    def fake_probe(*, model, reasoning, endpoint_definition, operation):
+    def fake_probe(*, model, reasoning, endpoint_definition, operation, step=None):
         records.append((endpoint_definition.key, model, reasoning))
         return {
             "success": succeed,
@@ -1042,7 +1044,7 @@ def test_save_rejects_new_endpoint_with_missing_key_naming_env_and_no_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """新增接入点但 Key 环境变量未配置：保存被拒、数据库不变、零请求，
-    报错写明环境变量名和处理提示（先配 .env.local 再点「重新加载环境变量」）。"""
+    报错写明环境变量名和处理步骤（先在服务器 .env.local 配好，再重新保存）。"""
 
     endpoints = _llm_endpoints_value()
     endpoints["items"].append(_glm_item())
@@ -1075,7 +1077,8 @@ def test_save_rejects_new_endpoint_with_missing_key_naming_env_and_no_request(
     message = str(excinfo.value)
     assert "LLM_GLM_API_KEY" in message
     assert ".env.local" in message
-    assert "重新加载环境变量" in message
+    assert "再重新保存" in message
+    assert "重新加载环境变量" not in message
     assert saves == []
     assert http == []
 
@@ -1324,13 +1327,21 @@ def test_endpoint_save_rejects_non_whitelisted_base_url(
     endpoints = _llm_endpoints_value()
     endpoints["items"][1]["base_url"] = "https://evil.example.com/v1"
 
-    with pytest.raises(ValueError, match="白名单"):
+    with pytest.raises(ValueError) as excinfo:
         settings_service.update_setting(
             "llm_endpoints",
             value=endpoints,
             expected_version=4,
             actor=_admin(),
         )
+
+    # 保存 llm_endpoints 仍要求全部接入点在白名单内；报错写明域名与追加语义
+    message = str(excinfo.value)
+    assert "evil.example.com" in message
+    assert "允许列表内" in message
+    assert "LLM_ALLOWED_HOSTS" in message
+    assert ".env.local" in message
+    assert "追加" in message
 
 
 def test_update_setting_normalizes_wordlist_sections_before_save(
@@ -1858,3 +1869,525 @@ def test_toutiao_refresh_keeps_existing_name_without_browser_roundtrip(
     assert items[0]["account"]["display_name"] == "保留名"
     # 不对已有名的账号做库内反查之外的任何解析
     assert app_config.article_name_calls == [("toutiao", "identifier-tt")]
+
+
+# ---------- 已配置 Key 名单（configured_api_key_envs）与白名单失效场景 ----------
+
+
+def _patch_allowed_hosts(monkeypatch: pytest.MonkeyPatch, hosts: tuple[str, ...]) -> None:
+    """把两处 get_settings 都指到同一份自定义白名单：settings_service 直接导入，
+    business_config 在函数内按模块属性取。"""
+
+    settings = replace(get_settings(), llm_allowed_hosts=hosts)
+    monkeypatch.setattr(settings_service, "get_settings", lambda: settings)
+    monkeypatch.setattr("src.config.get_settings", lambda: settings)
+
+
+def _endpoints_section_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+    endpoints_value: dict[str, Any],
+    models_value: dict[str, Any] | None = None,
+) -> SimpleNamespace:
+    sections: dict[str, Any] = {"llm_endpoints": endpoints_value}
+    if models_value is not None:
+        sections["llm_models"] = models_value
+    adapter = _settings_section_adapter(sections)
+
+    def fetch_settings() -> list[dict[str, Any]]:
+        return [
+            {"section": section, "value": value, "version": 4,
+             "updated_at": None, "updated_by_user_id": None,
+             "updated_by_display_name": None}
+            for section, value in sections.items()
+        ]
+
+    adapter.app_config.fetch_settings = fetch_settings
+    return adapter
+
+
+def test_configured_api_key_envs_filters_by_format_and_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """名单只含「已设置且名字合法」的变量：未设置、空串、名字不合法的都不进。"""
+
+    monkeypatch.setenv("ZZ_GOOD_TEST_API_KEY", "some-key")
+    monkeypatch.setenv("AA_GOOD_TEST_API_KEY", "other-key")
+    monkeypatch.setenv("EMPTY_TEST_API_KEY", "")
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    monkeypatch.setenv("LLM_API_KEY_V2", "bad-suffix")
+    monkeypatch.delenv("UNSET_TEST_API_KEY", raising=False)
+    _patch_settings_adapter(
+        monkeypatch,
+        _endpoints_section_adapter(monkeypatch, _llm_endpoints_value()),
+    )
+
+    payload = settings_service.get_settings_payload()
+    configured = payload["endpoints"]["configured_api_key_envs"]
+
+    assert "ZZ_GOOD_TEST_API_KEY" in configured
+    assert "AA_GOOD_TEST_API_KEY" in configured
+    assert "EMPTY_TEST_API_KEY" not in configured, "值为空串的变量不算已配置"
+    assert "PATH" not in configured, "名字不符合 LLM_API_KEY_ENV_PATTERN 的变量不进名单"
+    assert "LLM_API_KEY_V2" not in configured
+    assert "UNSET_TEST_API_KEY" not in configured
+    assert configured == sorted(configured), "名单必须按字母排序"
+
+
+def test_settings_payload_never_contains_key_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """负载里只给变量名：任何 Key 的值（哪怕一部分）都不得出现在序列化结果里。"""
+
+    unique_value = "sk-super-secret-probe-value-9f8e7d6c"
+    monkeypatch.setenv("SECRET_PROBE_TEST_API_KEY", unique_value)
+    _patch_settings_adapter(
+        monkeypatch,
+        _endpoints_section_adapter(monkeypatch, _llm_endpoints_value()),
+    )
+
+    payload = settings_service.get_settings_payload()
+    serialized = json.dumps(payload, ensure_ascii=False)
+
+    assert unique_value not in serialized
+    assert unique_value[:20] not in serialized
+    assert "SECRET_PROBE_TEST_API_KEY" in payload["endpoints"]["configured_api_key_envs"]
+
+
+def test_configured_list_matches_save_time_missing_key_judgment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """名单与保存实测共用同一条判定：同一个空串变量，既不在名单里，
+    保存时也被判为缺 Key 拒绝。"""
+
+    monkeypatch.setenv("EMPTY_MATCH_TEST_API_KEY", "")
+    _patch_settings_adapter(
+        monkeypatch,
+        _endpoints_section_adapter(
+            monkeypatch, _llm_endpoints_value(), models_value=_llm_value()
+        ),
+    )
+    payload = settings_service.get_settings_payload()
+    assert "EMPTY_MATCH_TEST_API_KEY" not in payload["endpoints"]["configured_api_key_envs"]
+
+    endpoints = _llm_endpoints_value()
+    endpoints["items"].append(
+        {
+            "key": "emptyvar",
+            "label": "EmptyVar",
+            "base_url": "https://open.bigmodel.cn/api/paas/v4",
+            "api_key_env": "EMPTY_MATCH_TEST_API_KEY",
+            "api_style": "thinking",
+            "temperature_override": None,
+            "default_model": "m",
+        }
+    )
+    monkeypatch.setattr(settings_service, "post_chat_completion", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("不应发请求")))
+
+    with pytest.raises(ValueError) as excinfo:
+        settings_service.update_setting(
+            "llm_endpoints",
+            value=endpoints,
+            expected_version=4,
+            actor=_admin(),
+        )
+    assert "EMPTY_MATCH_TEST_API_KEY" in str(excinfo.value)
+
+
+def test_settings_payload_has_configured_list_without_endpoints_section(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """llm_endpoints 分区缺失（未 import-settings）时负载也带这个字段。"""
+
+    def section_row(section: str, value: Any, version: int) -> dict[str, Any]:
+        return {
+            "section": section,
+            "value": value,
+            "version": version,
+            "updated_at": None,
+            "updated_by_user_id": None,
+            "updated_by_display_name": None,
+        }
+
+    monkeypatch.setenv("ORPHAN_TEST_API_KEY", "v")
+    app_config = SimpleNamespace(
+        fetch_settings=lambda: [section_row("llm_models", _llm_value(), 3)],
+    )
+    _patch_settings_adapter(
+        monkeypatch,
+        SimpleNamespace(app_config=app_config),
+    )
+
+    endpoints = settings_service.get_settings_payload()["endpoints"]
+
+    assert endpoints["default"] is None
+    assert endpoints["items"] == []
+    assert "ORPHAN_TEST_API_KEY" in endpoints["configured_api_key_envs"]
+
+
+def test_settings_payload_marks_blocked_endpoint_host_and_still_serves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """H1：库里有接入点指向白名单外域名时，设置页负载照常生成，
+    该接入点带 host_allowed=False，其余接入点不受影响。"""
+
+    _patch_allowed_hosts(monkeypatch, ("openrouter.ai", "api.deepseek.com"))
+    endpoints = _llm_endpoints_value()
+    endpoints["items"].append(
+        {
+            "key": "legacy",
+            "label": "Legacy",
+            "base_url": "https://evil.example.com/v1",
+            "api_key_env": "LLM_LEGACY_API_KEY",
+            "api_style": "thinking",
+            "temperature_override": None,
+            "default_model": "legacy-model",
+        }
+    )
+    _patch_settings_adapter(
+        monkeypatch,
+        _endpoints_section_adapter(monkeypatch, endpoints),
+    )
+
+    payload = settings_service.get_settings_payload()
+    items = {item["key"]: item for item in payload["endpoints"]["items"]}
+
+    assert items["legacy"]["host_allowed"] is False
+    assert items["openrouter"]["host_allowed"] is True
+    assert items["deepseek"]["host_allowed"] is True
+
+
+def test_llm_models_save_moves_steps_off_blocked_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """H2：库里有白名单外接入点时，保存 llm_models 把步骤从它身上改走能成功。"""
+
+    _patch_allowed_hosts(monkeypatch, ("openrouter.ai", "api.deepseek.com"))
+    endpoints = _llm_endpoints_value()
+    endpoints["items"].append(
+        {
+            "key": "legacy",
+            "label": "Legacy",
+            "base_url": "https://evil.example.com/v1",
+            "api_key_env": "LLM_LEGACY_API_KEY",
+            "api_style": "thinking",
+            "temperature_override": None,
+            "default_model": "legacy-model",
+        }
+    )
+    models = _llm_value()
+    models["steps"]["scoring"] = {
+        "model": None,
+        "reasoning": True,
+        "endpoint": "legacy",
+    }
+    models["steps"]["beijing_gate"] = {
+        "model": None,
+        "reasoning": True,
+        "endpoint": "legacy",
+    }
+    saves: list[dict[str, Any]] = []
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter(
+            {"llm_models": models, "llm_endpoints": endpoints},
+            saves=saves,
+        ),
+    )
+    records: list[tuple[str, str, bool]] = []
+    _stub_probes(monkeypatch, records)
+
+    after = _llm_value()
+    after["steps"]["scoring"] = {"model": None, "reasoning": True, "endpoint": None}
+    after["steps"]["beijing_gate"] = {
+        "model": None,
+        "reasoning": True,
+        "endpoint": None,
+    }
+    settings_service.update_setting(
+        "llm_models",
+        value=after,
+        expected_version=4,
+        actor=_admin(),
+    )
+
+    assert len(saves) == 1
+    # 被挪动的步骤重测组合解析到默认接入点（白名单内），不再碰 legacy
+    tested_keys = {key for key, _model, _reasoning in records}
+    assert "legacy" not in tested_keys
+
+
+def test_llm_endpoints_save_allows_fixing_or_removing_blocked_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """H1：白名单外的接入点可以在同一次保存里改地址或删掉；
+    原样保留则被拒。"""
+
+    _patch_allowed_hosts(monkeypatch, ("openrouter.ai", "api.deepseek.com"))
+    endpoints = _llm_endpoints_value()
+    endpoints["items"].append(
+        {
+            "key": "legacy",
+            "label": "Legacy",
+            "base_url": "https://evil.example.com/v1",
+            "api_key_env": "LLM_LEGACY_API_KEY",
+            "api_style": "thinking",
+            "temperature_override": None,
+            "default_model": "legacy-model",
+        }
+    )
+    # 已保存 llm_models 没有任何步骤引用 legacy：删除不冲突
+    saves: list[dict[str, Any]] = []
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter(
+            {"llm_models": _llm_value(), "llm_endpoints": endpoints},
+            saves=saves,
+        ),
+    )
+    records: list[tuple[str, str, bool]] = []
+    _stub_probes(monkeypatch, records)
+
+    removed = _llm_endpoints_value()
+    settings_service.update_setting(
+        "llm_endpoints",
+        value=removed,
+        expected_version=4,
+        actor=_admin(),
+    )
+    assert len(saves) == 1
+
+    fixed = _llm_endpoints_value()
+    fixed["items"].append(
+        {
+            "key": "legacy",
+            "label": "Legacy",
+            "base_url": "https://api.deepseek.com",
+            "api_key_env": "LLM_LEGACY_API_KEY",
+            "api_style": "thinking",
+            "temperature_override": None,
+            "default_model": "legacy-model",
+        }
+    )
+    settings_service.update_setting(
+        "llm_endpoints",
+        value=fixed,
+        expected_version=4,
+        actor=_admin(),
+    )
+    assert len(saves) == 2
+
+    kept = _llm_endpoints_value()
+    kept["items"].append(
+        {
+            "key": "legacy",
+            "label": "Legacy",
+            "base_url": "https://evil.example.com/v1",
+            "api_key_env": "LLM_LEGACY_API_KEY",
+            "api_style": "thinking",
+            "temperature_override": None,
+            "default_model": "legacy-model",
+        }
+    )
+    with pytest.raises(ValueError, match="允许列表内"):
+        settings_service.update_setting(
+            "llm_endpoints",
+            value=kept,
+            expected_version=4,
+            actor=_admin(),
+        )
+
+
+def test_test_button_never_requests_blocked_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """H3：「测试」按钮对白名单外主机在发请求前拦下，报错写明域名与处理办法。"""
+
+    monkeypatch.setenv("LLM_API_KEY", "openrouter-key")
+    _patch_allowed_hosts(monkeypatch, ("openrouter.ai", "api.deepseek.com"))
+    endpoints = _llm_endpoints_value()
+    endpoints["items"].append(
+        {
+            "key": "legacy",
+            "label": "Legacy",
+            "base_url": "https://evil.example.com/v1",
+            "api_key_env": "LLM_API_KEY",
+            "api_style": "thinking",
+            "temperature_override": None,
+            "default_model": "legacy-model",
+        }
+    )
+    _patch_settings_adapter(
+        monkeypatch,
+        _endpoints_section_adapter(monkeypatch, endpoints),
+    )
+
+    def must_not_post(url, **kwargs):
+        raise AssertionError("白名单外主机不得发出任何请求")
+
+    monkeypatch.setattr(settings_service, "post_chat_completion", must_not_post)
+
+    result = settings_service.test_llm_model("summary", "model-a", False, endpoint="legacy")
+
+    assert result["success"] is False
+    assert "evil.example.com" in result["error"]
+    assert "LLM_ALLOWED_HOSTS" in result["error"]
+    assert ".env.local" in result["error"]
+
+
+def test_models_save_step_probe_never_requests_blocked_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """H3：保存 llm_models 时步骤实测对白名单外主机不发请求，保存被拒并写明域名。"""
+
+    monkeypatch.setenv("LLM_API_KEY", "openrouter-key")
+    _patch_allowed_hosts(monkeypatch, ("openrouter.ai", "api.deepseek.com"))
+    endpoints = _llm_endpoints_value()
+    endpoints["items"].append(
+        {
+            "key": "legacy",
+            "label": "Legacy",
+            "base_url": "https://evil.example.com/v1",
+            "api_key_env": "LLM_API_KEY",
+            "api_style": "thinking",
+            "temperature_override": None,
+            "default_model": "legacy-model",
+        }
+    )
+    models = _llm_value()
+    models["steps"]["scoring"] = {
+        "model": "old-model",
+        "reasoning": True,
+        "endpoint": "legacy",
+    }
+    _patch_settings_adapter(
+        monkeypatch,
+        _settings_section_adapter(
+            {"llm_models": models, "llm_endpoints": endpoints},
+        ),
+    )
+
+    def must_not_post(url, **kwargs):
+        raise AssertionError("白名单外主机不得发出任何请求")
+
+    monkeypatch.setattr(settings_service, "post_chat_completion", must_not_post)
+
+    after = _llm_value()
+    after["steps"]["scoring"] = {
+        "model": "new-model",
+        "reasoning": True,
+        "endpoint": "legacy",
+    }
+    with pytest.raises(ValueError) as excinfo:
+        settings_service.update_setting(
+            "llm_models",
+            value=after,
+            expected_version=4,
+            actor=_admin(),
+        )
+
+    message = str(excinfo.value)
+    assert "相关性评分" in message
+    assert "evil.example.com" in message
+
+
+def test_beijing_gate_step_probe_carries_adapter_response_format(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S1：京内判定步骤实测带的 response_format 与 build_response_format
+    对该接入点给出的一致（OpenRouter json_schema / 其余 json_object 各一例）。"""
+
+    from src.adapters import llm_beijing_gate
+    from src.adapters.llm_endpoint import resolve_endpoint
+    from src.business_config import resolve_llm_endpoints as _resolve
+
+    captured: dict[str, Any] = {}
+    monkeypatch.setenv("LLM_API_KEY", "openrouter-key")
+    monkeypatch.setenv("LLM_DEEPSEEK_API_KEY", "deepseek-key")
+    endpoints_value = _llm_endpoints_value()
+    _patch_settings_adapter(
+        monkeypatch,
+        _endpoints_section_adapter(monkeypatch, endpoints_value),
+    )
+
+    def fake_post(url, **kwargs):
+        captured["payload"] = kwargs["payload"]
+        captured["model"] = kwargs.get("model")
+        return {"choices": [{"message": {"content": '{"ok": true}'}}]}
+
+    monkeypatch.setattr(settings_service, "post_chat_completion", fake_post)
+
+    result = settings_service.test_llm_model("beijing_gate", "gate-model", False)
+    assert result["success"] is True
+    endpoint_items, _default = _resolve(endpoints_value, require_host_allowed=False)
+    expected = llm_beijing_gate.build_response_format(
+        resolve_endpoint(endpoint_items["openrouter"])
+    )
+    assert captured["payload"]["response_format"] == expected
+    assert captured["payload"]["response_format"]["type"] == "json_schema"
+
+    result = settings_service.test_llm_model(
+        "beijing_gate", "gate-model", False, endpoint="deepseek"
+    )
+    assert result["success"] is True
+    expected = llm_beijing_gate.build_response_format(
+        resolve_endpoint(endpoint_items["deepseek"])
+    )
+    assert captured["payload"]["response_format"] == expected
+    assert captured["payload"]["response_format"]["type"] == "json_object"
+
+
+def test_step_probe_reuses_adapter_response_format_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S2：探针复用 adapter 的构造逻辑——改掉 build_response_format 的返回值，
+    探针请求随之变化，而不是拿一份写死的副本。"""
+
+    from src.adapters import llm_beijing_gate
+
+    captured: dict[str, Any] = {}
+    monkeypatch.setenv("LLM_API_KEY", "openrouter-key")
+    _patch_settings_adapter(
+        monkeypatch,
+        _endpoints_section_adapter(monkeypatch, _llm_endpoints_value()),
+    )
+
+    def fake_post(url, **kwargs):
+        captured["payload"] = kwargs["payload"]
+        return {"choices": [{"message": {"content": '{"ok": true}'}}]}
+
+    monkeypatch.setattr(settings_service, "post_chat_completion", fake_post)
+    sentinel = {"type": "json_object", "probe_sentinel": True}
+    monkeypatch.setattr(llm_beijing_gate, "build_response_format", lambda endpoint: sentinel)
+
+    result = settings_service.test_llm_model("beijing_gate", "gate-model", False)
+
+    assert result["success"] is True
+    assert captured["payload"]["response_format"] == sentinel
+
+
+def test_step_probe_carries_step_temperature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S3：各步骤实测请求里的 temperature 与该步骤真实请求一致
+    （摘要 0.2、其余步骤 0；接入点未配 temperature_override）。"""
+
+    captured: list[dict[str, Any]] = []
+    monkeypatch.setenv("LLM_API_KEY", "openrouter-key")
+    _patch_settings_adapter(
+        monkeypatch,
+        _endpoints_section_adapter(monkeypatch, _llm_endpoints_value()),
+    )
+
+    def fake_post(url, **kwargs):
+        captured.append(kwargs["payload"])
+        return {"choices": [{"message": {"content": "OK"}}]}
+
+    monkeypatch.setattr(settings_service, "post_chat_completion", fake_post)
+
+    settings_service.test_llm_model("summary", "model-a", False)
+    settings_service.test_llm_model("scoring", "model-a", False)
+    settings_service.test_llm_model("beijing_gate", "model-a", False)
+
+    assert captured[0]["temperature"] == 0.2, "摘要真实请求 temperature=0.2"
+    assert captured[1]["temperature"] == 0.0
+    assert captured[2]["temperature"] == 0

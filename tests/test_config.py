@@ -119,7 +119,11 @@ def test_settings_reads_canonical_llm_variables(clean_settings_env: None, monkey
 
     assert not hasattr(settings, "llm_api_base_url")
     assert settings.llm_api_key == "test-key"
-    assert settings.llm_allowed_hosts == ("openrouter.ai", "evil.example", "api.deepseek.com")
+    # 白名单 = 完整默认列表 + 环境变量追加（去重、小写化），不是替换
+    assert settings.llm_allowed_hosts == (
+        *config.DEFAULT_LLM_ALLOWED_HOSTS,
+        "evil.example",
+    )
     assert settings.llm_api_http_referer == "https://console.example.test"
     assert settings.llm_api_title == "Edu News Pipeline"
     assert not hasattr(settings, "llm_summary_model")
@@ -198,6 +202,37 @@ def test_settings_ignores_removed_llm_variable_names(
     assert not hasattr(settings, "llm_api_base_url")
     assert settings.llm_api_key is None
     assert settings.llm_allowed_hosts == config.DEFAULT_LLM_ALLOWED_HOSTS
+    # 默认白名单覆盖常见国内外服务商（含 2026-11 扩充的 Kimi / 通义 / 豆包 / 硅基流动）
+    assert settings.llm_allowed_hosts == (
+        "openrouter.ai",
+        "api.deepseek.com",
+        "open.bigmodel.cn",
+        "api.moonshot.cn",
+        "api.moonshot.ai",
+        "dashscope.aliyuncs.com",
+        "ark.cn-beijing.volces.com",
+        "api.siliconflow.cn",
+    )
+
+
+def test_llm_allowed_hosts_appends_dedups_and_lowercases(
+    clean_settings_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """只追加一个新域名时：默认列表全在，重复/大小写/空格都被归一去重。"""
+
+    monkeypatch.setenv(
+        "LLM_ALLOWED_HOSTS",
+        " LLM.Vendor.Example ,openrouter.ai ,, llm.vendor.example ",
+    )
+
+    settings = config.get_settings()
+
+    assert settings.llm_allowed_hosts[: len(config.DEFAULT_LLM_ALLOWED_HOSTS)] == (
+        config.DEFAULT_LLM_ALLOWED_HOSTS
+    )
+    appended = settings.llm_allowed_hosts[len(config.DEFAULT_LLM_ALLOWED_HOSTS):]
+    assert appended == ("llm.vendor.example",)
     assert not hasattr(settings, "llm_summary_model")
     assert not hasattr(settings, "llm_scoring_model")
     assert not hasattr(settings, "llm_reasoning_enabled")
@@ -356,3 +391,138 @@ def test_reload_environment_invalidates_settings_cache(env_file_sandbox: Path) -
 
     # 缓存不失效的话，重载对一切经 get_settings() 的读取都不生效
     assert first is not second
+
+
+def test_reload_environment_never_drops_still_present_vars(
+    env_file_sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """重读全程无空档：前后都存在于文件的变量从未被从 os.environ 删除。"""
+
+    monkeypatch.delenv("ENV_RELOAD_GAP_PROBE", raising=False)
+    env_file_sandbox.write_text("ENV_RELOAD_GAP_PROBE=old\n", encoding="utf-8")
+    config.load_environment()
+    assert os.getenv("ENV_RELOAD_GAP_PROBE") == "old"
+
+    pops: list[str] = []
+    original_pop = os.environ.pop
+
+    def recording_pop(key, *args, **kwargs):
+        pops.append(key)
+        return original_pop(key, *args, **kwargs)
+
+    monkeypatch.setattr(os.environ, "pop", recording_pop)
+
+    env_file_sandbox.write_text("ENV_RELOAD_GAP_PROBE=new\n", encoding="utf-8")
+    config.reload_environment()
+
+    assert os.getenv("ENV_RELOAD_GAP_PROBE") == "new"
+    assert "ENV_RELOAD_GAP_PROBE" not in pops, "重读过程不得删除仍然存在的变量"
+
+
+def test_refresh_environment_if_changed_reads_updated_files(
+    env_file_sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """控制台请求前的自动检测：文件改了就读，下一个请求无需任何重载接口。"""
+
+    monkeypatch.delenv("ENV_REFRESH_PROBE_KEY", raising=False)
+    env_file_sandbox.write_text("ENV_REFRESH_PROBE_KEY=first\n", encoding="utf-8")
+    config.load_environment()
+    assert os.getenv("ENV_REFRESH_PROBE_KEY") == "first"
+
+    # 文件没变：只做信息检查，不重新读取（统计解析次数）
+    parse_calls: list[int] = []
+    original_parse = config._parse_env_files
+
+    def counting_parse():
+        parse_calls.append(1)
+        return original_parse()
+
+    monkeypatch.setattr(config, "_parse_env_files", counting_parse)
+    assert config.refresh_environment_if_changed() is False
+    assert config.refresh_environment_if_changed() is False
+    assert parse_calls == []
+
+    settings_before = config.get_settings()
+    env_file_sandbox.write_text("ENV_REFRESH_PROBE_KEY=second\n", encoding="utf-8")
+    assert config.refresh_environment_if_changed() is True
+    assert parse_calls == [1]
+    assert os.getenv("ENV_REFRESH_PROBE_KEY") == "second"
+    # 重读后设置缓存同步失效
+    assert config.get_settings() is not settings_before
+
+
+def test_refresh_environment_detects_new_and_deleted_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """文件的新建与删除同样被检测（存在性参与指纹）。"""
+
+    second_file = tmp_path / "extra.env"
+    monkeypatch.setattr(
+        config, "_ENV_FILES", (tmp_path / "main.env", second_file)
+    )
+    monkeypatch.setattr(config, "_ENV_LOADED", False)
+    monkeypatch.setattr(config, "_ENV_FILE_KEYS", set())
+    monkeypatch.delenv("ENV_REFRESH_NEW_FILE_KEY", raising=False)
+    config.get_settings.cache_clear()
+    try:
+        (tmp_path / "main.env").write_text("A=1\n", encoding="utf-8")
+        config.load_environment()
+
+        # 新建文件 → 下一次检查发现变化并读到新变量
+        second_file.write_text("ENV_REFRESH_NEW_FILE_KEY=added\n", encoding="utf-8")
+        assert config.refresh_environment_if_changed() is True
+        assert os.getenv("ENV_REFRESH_NEW_FILE_KEY") == "added"
+
+        # 删除文件 → 变量随之消失
+        second_file.unlink()
+        assert config.refresh_environment_if_changed() is True
+        assert os.getenv("ENV_REFRESH_NEW_FILE_KEY") is None
+    finally:
+        config.get_settings.cache_clear()
+
+
+def test_refresh_environment_checks_every_env_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R2 对应行为：三个 env 文件都要参与检测，只盯 .env.local 会漏掉另两个。"""
+
+    first = tmp_path / ".env.local"
+    second = tmp_path / "config.env"
+    monkeypatch.setattr(config, "_ENV_FILES", (first, second))
+    monkeypatch.setattr(config, "_ENV_LOADED", False)
+    monkeypatch.setattr(config, "_ENV_FILE_KEYS", set())
+    monkeypatch.delenv("ENV_REFRESH_SECOND_FILE_KEY", raising=False)
+    config.get_settings.cache_clear()
+    try:
+        first.write_text("A=1\n", encoding="utf-8")
+        second.write_text("ENV_REFRESH_SECOND_FILE_KEY=one\n", encoding="utf-8")
+        config.load_environment()
+        assert os.getenv("ENV_REFRESH_SECOND_FILE_KEY") == "one"
+
+        second.write_text("ENV_REFRESH_SECOND_FILE_KEY=two\n", encoding="utf-8")
+        assert config.refresh_environment_if_changed() is True
+        assert os.getenv("ENV_REFRESH_SECOND_FILE_KEY") == "two"
+    finally:
+        config.get_settings.cache_clear()
+
+
+def test_refresh_environment_keeps_exported_values_winning(
+    env_file_sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """自动重读沿用既有语义：进程启动前导出的同名变量仍然优先。"""
+
+    monkeypatch.delenv("ENV_REFRESH_EXPORTED", raising=False)
+    monkeypatch.setenv("ENV_REFRESH_EXPORTED", "from-shell")
+    env_file_sandbox.write_text("ENV_REFRESH_EXPORTED=from-file\n", encoding="utf-8")
+    config.load_environment()
+    assert os.getenv("ENV_REFRESH_EXPORTED") == "from-shell"
+
+    env_file_sandbox.write_text("ENV_REFRESH_EXPORTED=from-file-v2\n", encoding="utf-8")
+    config.refresh_environment_if_changed()
+
+    assert os.getenv("ENV_REFRESH_EXPORTED") == "from-shell"

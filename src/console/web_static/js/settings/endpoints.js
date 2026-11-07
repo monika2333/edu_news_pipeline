@@ -1,6 +1,7 @@
 // 系统设置页 - 接入点块：只读清单 + 「管理接入点」编辑态（新增/删除/字段编辑、
 // 分区独立保存）。数据来源：已保存分区 sections.llm_endpoints（步骤下拉同样只读
-// 已保存值，不读编辑态草稿）；allowed_hosts 与 Key 配置状态来自顶层 endpoints 负载。
+// 已保存值，不读编辑态草稿）；allowed_hosts、已配置 Key 变量名名单
+// （configured_api_key_envs）与各接入点的 host_allowed 来自顶层 endpoints 负载。
 // 本文件在 models_tab.js 之前加载；接入点的标签、地址全部来自用户输入，
 // 一律经 createEl/textContent 渲染，禁止拼接 innerHTML。
 'use strict';
@@ -18,13 +19,42 @@ let endpointsClientSeq = 0;
 
 function endpointsPayloadInfo() {
     return (state.payload && state.payload.endpoints)
-        || { default: null, allowed_hosts: [], items: [] };
+        || { default: null, allowed_hosts: [], configured_api_key_envs: [], items: [] };
 }
 
-// 该接入点的 Key 是否已在服务器环境配置；null 表示未知（草稿里新增的接入点）
-function endpointKeyConfigured(key) {
-    const found = endpointsPayloadInfo().items.find((item) => item.key === key);
-    return found ? found.api_key_env_configured : null;
+// 服务器当前已配置的 Key 环境变量名名单（后端按「值非空 + 名字合法」过滤）。
+// 判断任意变量名——包括草稿里还没保存的新接入点——配没配都以它为准；
+// 逐接入点的「已保存状态」只有一个来源，不再各存一份。
+function configuredApiKeyEnvs() {
+    return endpointsPayloadInfo().configured_api_key_envs || [];
+}
+
+function apiKeyEnvConfigured(name) {
+    return configuredApiKeyEnvs().includes(String(name || '').trim());
+}
+
+// 与后端 LLM_API_KEY_ENV_PATTERN 一致：大写字母开头、以 _API_KEY 结尾
+const ENDPOINT_KEY_ENV_PATTERN = /^[A-Z][A-Z0-9_]*_API_KEY$/;
+
+// Key 环境变量输入框的实时提示状态：empty（不提示）/ invalid（格式警告）/
+// ok（已配置）/ missing（未配置，写出完整步骤）
+function apiKeyEnvHintState(name) {
+    const trimmed = String(name || '').trim();
+    if (!trimmed) return { kind: 'empty', message: '' };
+    if (!ENDPOINT_KEY_ENV_PATTERN.test(trimmed)) {
+        return {
+            kind: 'invalid',
+            message: '变量名必须是大写字母开头、以 _API_KEY 结尾，例如 GLM_API_KEY。',
+        };
+    }
+    if (apiKeyEnvConfigured(trimmed)) {
+        return { kind: 'ok', message: 'Key 已配置' };
+    }
+    return {
+        kind: 'missing',
+        message: `该环境变量当前未配置：先在服务器的 .env.local 里添加 ${trimmed}，`
+            + '改好后直接回来保存。',
+    };
 }
 
 // 最终请求地址 = base_url 去掉尾斜杠 + /chat/completions。
@@ -102,7 +132,8 @@ function buildEndpointsDirtyNote() {
 }
 
 // 前端预校验：地址必须 https 且主机在 allowed_hosts 内。后端仍是最终权威，
-// 这里拦只是为了省一次往返并把原因（需要改服务器 .env 并重启）说得更具体。
+// 这里拦只是为了省一次往返并把改法说得更具体：白名单 = 内置默认列表 +
+// LLM_ALLOWED_HOSTS 追加的域名，所以只需追加新域名，不用重复写默认的。
 function endpointBaseUrlError(rawBaseUrl, allowedHosts) {
     const trimmed = String(rawBaseUrl || '').trim();
     if (!trimmed) return '地址不能为空。';
@@ -116,10 +147,19 @@ function endpointBaseUrlError(rawBaseUrl, allowedHosts) {
     const host = parsed.hostname.toLowerCase();
     const allowed = allowedHosts.map((item) => String(item).trim().toLowerCase());
     if (!allowed.includes(host)) {
-        return `${host} 不在允许的接入点主机列表内：新增服务商需要先在服务器 `
-            + '.env 的 LLM_ALLOWED_HOSTS 里加域名，点「重新加载环境变量」后再回来保存。';
+        return `该域名 ${host} 不在允许列表内：请在服务器 .env.local 的 `
+            + 'LLM_ALLOWED_HOSTS 里追加该域名（不用重复写默认的），再重新保存。';
     }
     return '';
+}
+
+// 接入点地址的主机名；解析失败返回空串
+function endpointBaseUrlHost(baseUrl) {
+    try {
+        return new URL(String(baseUrl || '').trim()).hostname.toLowerCase();
+    } catch (error) {
+        return '';
+    }
 }
 
 // 新增接入点的 key 不让用户起名：从地址主机名派生（open.bigmodel.cn →
@@ -290,23 +330,23 @@ function buildEndpointEditRow(item, saved, rerender) {
         'aria-label': 'Key 环境变量名',
         placeholder: '如 ZHIPU_API_KEY',
     });
+    // 提示跟着**输入框当前值**实时变化（不是已保存接入点的状态）：
+    // 新敲的变量名立刻能看出配没配、格式对不对。节点常驻渲染，
+    // 空提示靠 textContent 置空，不重建节点（重建会抢焦点）。
+    const envHint = createEl('span', 'endpoint-field-hint endpoint-key-env-hint');
+    const updateKeyEnvHint = () => {
+        const hintState = apiKeyEnvHintState(envInput.value);
+        envHint.textContent = hintState.message;
+        envHint.classList.toggle('is-warning', hintState.kind === 'invalid'
+            || hintState.kind === 'missing');
+    };
     envInput.value = item.api_key_env;
     envInput.addEventListener('input', () => {
         item.api_key_env = envInput.value;
+        updateKeyEnvHint();
         markEndpointsDirty();
     });
-    // Key 状态逐个接入点显示：未配置时提示在 .env 里加变量后点环境块的
-    // 「重新加载环境变量」按钮生效，不必重启服务
-    const configured = item.isNew ? null : endpointKeyConfigured(item.key);
-    let envHint = null;
-    if (configured === false) {
-        envHint = createEl('span', 'endpoint-field-hint is-warning',
-            `该环境变量当前未配置：需在服务器 .env 里添加 ${item.api_key_env}，`
-            + '然后点上方「重新加载环境变量」生效。');
-    } else if (configured === null) {
-        envHint = createEl('span', 'endpoint-field-hint',
-            '保存后需在服务器 .env 里配置该变量，点「重新加载环境变量」生效。');
-    }
+    updateKeyEnvHint();
     fields.appendChild(buildEndpointField('Key 环境变量', envInput, envHint));
 
     const styleSelect = createEl('select', 'endpoint-style-select', '', {
@@ -398,13 +438,55 @@ function buildEndpointsManageToggle() {
     return btn;
 }
 
+// 已保存 llm_models 里解析到指定接入点的步骤名（endpoint 显式选择，或跟随
+// 默认而这次保存后的默认接入点就是它）。只读已保存的模型分区：保存接入点时
+// 后端用的就是已保存 llm_models，步骤草稿的未保存改动不影响这次会实测谁。
+function savedStepsResolvingTo(endpointKey, newDefaultKey) {
+    const modelsSection = settingsSection('llm_models');
+    const steps = modelsSection && modelsSection.value ? modelsSection.value.steps : {};
+    return stepList()
+        .filter(({ key }) => {
+            const step = steps[key];
+            return step && (step.endpoint || newDefaultKey) === endpointKey;
+        })
+        .map(({ display_name }) => display_name);
+}
+
+// 这次保存后端 _run_save_time_model_tests 会不会实测该接入点（前端镜像）。
+// 只用于「Key 未配置要不要拦」：拦截范围必须**不比后端宽**——宁可少拦，
+// 交给后端实测报错；一个没改动、也不会被实测的旧接入点即使没配 Key，
+// 也不能卡住无关的修改。判定依据与后端一致：
+// - 新增接入点 → 接入点级实测它的默认模型；
+// - default_model 改了 → 接入点级实测；
+// - 连接信息（地址 / Key 变量名 / 接口风格）改了且有步骤解析到它 → 步骤级实测；
+// - 这次默认切到它且有跟随默认的步骤 → 步骤组合变化触发实测。
+function endpointWillBeTested(item, newDefaultKey) {
+    const saved = savedEndpointsValue();
+    if (item.isNew || !saved) return true;
+    const savedItem = (saved.items || []).find((entry) => entry.key === item.key);
+    if (!savedItem) return true;
+    if ((savedItem.default_model || '') !== String(item.default_model || '').trim()) {
+        return true;
+    }
+    const connectionChanged = savedItem.base_url !== String(item.base_url || '').trim().replace(/\/+$/, '')
+        || savedItem.api_key_env !== String(item.api_key_env || '').trim()
+        || savedItem.api_style !== item.api_style;
+    const referenced = savedStepsResolvingTo(item.key, newDefaultKey).length > 0;
+    if (connectionChanged) return referenced;
+    if (!referenced) return false;
+    // 连接信息没变但仍被解析到：只有「这次默认切到它」会改变跟随默认步骤的组合
+    return newDefaultKey === item.key && saved.default !== item.key;
+}
+
 function buildEndpointsEditor(saved) {
     const wrap = createEl('div', 'endpoints-editor');
     const head = createEl('div', 'endpoints-head');
     head.appendChild(createEl(
         'span',
         'endpoints-hint',
-        '删除被步骤引用或默认的接入点会被拦截；修改完成后点右下角「保存接入点」提交。',
+        '删除被步骤引用或默认的接入点会被拦截；修改完成后点右下角「保存接入点」提交。'
+            + '新增接入点前，先在 .env.local 配好 Key，新服务商还要把域名加入 '
+            + 'LLM_ALLOWED_HOSTS，改好后直接保存即可。',
     ));
     head.appendChild(buildEndpointsManageToggle());
     wrap.appendChild(head);
@@ -457,28 +539,73 @@ function buildEndpointsEditor(saved) {
     wrap.appendChild(footer);
 
     saveBtn.addEventListener('click', async () => {
+        // 用户常常开着设置页去改 .env.local：点保存先重拉设置负载（后端处理
+        // 请求前会自动读取 env 文件），再用最新名单做拦截判断——不能用打开
+        // 页面时的旧名单，否则用户改好 Key 回来仍会被误拦。拉取失败就用
+        // 现有负载继续（保存请求本身还带版本号，冲突有 409 兜底）。
+        try {
+            await reloadSettingsPayload();
+        } catch (error) {
+            // 静默：名单刷新失败不拦保存
+        }
         // 行内预校验：任一行不通过就在该行报错，不发请求。
         // 保存接入点可能触发后端模型测试（默认模型变了要实测），耗时变长，
         // 进行中提示由 saveSettingsSection 的计时器承担，失败时原样展示后端报错。
         const allowedHosts = endpointsPayloadInfo().allowed_hosts;
+        const saveValue = buildEndpointsSaveValue();
+        const keyByClientId = new Map();
+        endpointsDraft.items.forEach((item, index) => {
+            keyByClientId.set(item.clientId, saveValue.items[index].key);
+        });
+        const newDefaultKey = keyByClientId.get(
+            endpointsDraft.items.find((item) => item.clientId === endpointsDraft.default)
+                ? endpointsDraft.default
+                : endpointsDraft.items[0].clientId,
+        );
         let hasError = false;
         endpointsDraft.items.forEach((item) => {
             const row = wrap.querySelector(`[data-client-id="${item.clientId}"]`);
             if (!row) return;
-            const messages = [endpointBaseUrlError(item.base_url, allowedHosts)];
+            const messages = [];
+            let blocking = false;
+            const baseError = endpointBaseUrlError(item.base_url, allowedHosts);
+            if (baseError) {
+                messages.push(baseError);
+                blocking = true;
+            }
             if (!item.default_model.trim()) {
                 const name = item.label.trim() || item.key || '新接入点';
                 messages.push(`「${name}」的默认模型不能为空。`);
+                blocking = true;
+            }
+            const hintState = apiKeyEnvHintState(item.api_key_env);
+            if (hintState.kind === 'invalid') {
+                // 格式不对后端必然拒绝，就地拦下并写明规则
+                messages.push(hintState.message);
+                blocking = true;
+            } else if (hintState.kind === 'missing') {
+                if (endpointWillBeTested(item, newDefaultKey)) {
+                    // 后端会实测的接入点必须有 Key（实测要拿真实 Key 发请求）：
+                    // 新增的、连接信息或默认模型改了的、这次刚被设为默认的
+                    messages.push(hintState.message);
+                    blocking = true;
+                } else {
+                    // 没改动、也不会被实测的接入点即使没 Key 也只警告不拦——
+                    // 一个暂时没 Key 的旧接入点不该卡住无关的修改
+                    messages.push(`警告：${hintState.message}`);
+                }
             }
             const message = messages.filter(Boolean).join(' ');
-            row.querySelector('.endpoint-row-error').textContent = message;
-            if (message) hasError = true;
+            const rowError = row.querySelector('.endpoint-row-error');
+            rowError.textContent = message;
+            rowError.classList.toggle('is-warning', !!message && !blocking);
+            if (blocking && message) hasError = true;
         });
         if (hasError) {
             setSettingsStatus(status, '接入点未通过校验，请按行内提示修改。', 'error');
             return;
         }
-        await saveSettingsSection('llm_endpoints', buildEndpointsSaveValue(), {
+        await saveSettingsSection('llm_endpoints', saveValue, {
             statusEl: status,
             saveBtn,
             reloadBtn,
@@ -549,12 +676,30 @@ function buildEndpointsReadonly(saved) {
         li.appendChild(createEl('span', 'endpoint-item-model',
             `默认模型：${item.default_model || '-'}`));
         li.appendChild(createEl('span', 'endpoint-item-key', `Key：${item.api_key_env}`));
-        const configured = endpointKeyConfigured(item.key);
+        const configured = apiKeyEnvConfigured(item.api_key_env);
         li.appendChild(createEl(
             'span',
             `endpoint-key-state${configured ? '' : ' is-unset'}`,
-            configured ? 'Key 已配置' : 'Key 未配置：需在 .env 里添加该变量，点「重新加载环境变量」生效',
+            configured
+                ? 'Key 已配置'
+                : `Key 未配置：先在服务器 .env.local 里添加 ${item.api_key_env}，改好后回来保存`,
         ));
+        // 主机不在白名单内的已存接入点：标红并写明修法——这个接入点现在无法
+        // 调用（传输层会拦下所有请求），用户要在控制台里把它修好或删掉。
+        // host_allowed 在顶层 endpoints 负载里（分区值是已保存的原始结构）
+        const payloadItem = endpointsPayloadInfo().items
+            .find((entry) => entry.key === item.key);
+        if (payloadItem && payloadItem.host_allowed === false) {
+            li.classList.add('is-host-blocked');
+            const host = endpointBaseUrlHost(item.base_url);
+            li.appendChild(createEl(
+                'span',
+                'endpoint-host-blocked-note',
+                `该地址的域名 ${host || '(无法解析)'} 不在允许列表内，这个接入点现在无法调用；`
+                    + '请在 .env.local 的 LLM_ALLOWED_HOSTS 里追加该域名，'
+                    + '或者修改地址、删除这个接入点。',
+            ));
+        }
         if (item.key === saved.default) {
             li.appendChild(createEl('span', 'endpoint-default-badge', '默认'));
         }

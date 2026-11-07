@@ -2,15 +2,21 @@
 
 import re
 import time
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from src.adapters.llm_chat import extract_message_text, post_chat_completion
-from src.adapters.llm_endpoint import resolve_llm_endpoint
+from src.adapters.llm_endpoint import ResolvedLLMEndpoint, resolve_llm_endpoint
 from src.business_config import get_llm_step_config
 from src.config import get_settings
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 _SCORE_PATTERN = re.compile(r"(\d{1,3})")
+
+
+def probe_request_extras(endpoint: ResolvedLLMEndpoint) -> Dict[str, Any]:
+    """相关性评分真实请求里 model/messages/max_tokens 之外的固定参数（见 llm_summary 同名函数）。"""
+
+    return {"temperature": 0.0}
 
 
 def _build_prompt(text: str) -> str:
@@ -87,4 +93,4 @@ def score_text(text: str) -> Optional[int]:
     return parse_score(raw)
 
 
-__all__ = ["call_relevance_api", "parse_score", "score_text"]
+__all__ = ["call_relevance_api", "parse_score", "probe_request_extras", "score_text"]

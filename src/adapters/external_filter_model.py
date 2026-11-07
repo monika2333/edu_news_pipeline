@@ -132,8 +132,8 @@ def build_prompt(
     )
 
 
-def probe_request_extras(endpoint: ResolvedLLMEndpoint) -> dict[str, Any]:
-    """重要性过滤真实请求里 model/messages/max_tokens 之外的固定参数（见 llm_summary 同名函数）。"""
+def request_extras(endpoint: ResolvedLLMEndpoint) -> dict[str, Any]:
+    """重要性过滤请求里 model/messages/max_tokens 之外的固定参数（见 llm_summary 同名函数）。"""
 
     return {"temperature": 0.0}
 
@@ -164,7 +164,7 @@ def call_external_filter_model(
                 ),
             }
         ],
-        "temperature": 0.0,
+        **request_extras(endpoint),
     }
     endpoint.finalize_payload(
         payload,
@@ -205,7 +205,7 @@ def parse_external_filter_score(raw_output: str) -> Optional[int]:
 __all__ = [
     "build_prompt",
     "call_external_filter_model",
-    "probe_request_extras",
+    "request_extras",
     "load_prompt_versions",
     "parse_external_filter_score",
     "prompt_key_for_category",

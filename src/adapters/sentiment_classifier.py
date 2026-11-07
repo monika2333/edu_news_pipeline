@@ -14,8 +14,8 @@ _POSITIVE_TOKENS = {"positive", "pos", "good", "favorable", "favourable"}
 _NEGATIVE_TOKENS = {"negative", "neg", "bad", "unfavorable", "unfavourable"}
 
 
-def probe_request_extras(endpoint: ResolvedLLMEndpoint) -> Dict[str, Any]:
-    """情感判断真实请求里 model/messages/max_tokens 之外的固定参数（见 llm_summary 同名函数）。"""
+def request_extras(endpoint: ResolvedLLMEndpoint) -> Dict[str, Any]:
+    """情感判断请求里 model/messages/max_tokens 之外的固定参数（见 llm_summary 同名函数）。"""
 
     return {"temperature": 0.0}
 
@@ -74,7 +74,7 @@ def classify_sentiment(content: str, *, retries: int = 4, timeout: Optional[int]
     payload = {
         "model": model,
         "messages": [message],
-        "temperature": 0.0,
+        **request_extras(endpoint),
     }
     endpoint.finalize_payload(
         payload,
@@ -111,5 +111,5 @@ def classify_sentiment(content: str, *, retries: int = 4, timeout: Optional[int]
     }
 
 
-__all__ = ["classify_sentiment", "probe_request_extras"]
+__all__ = ["classify_sentiment", "request_extras"]
 

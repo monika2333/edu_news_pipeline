@@ -668,3 +668,32 @@ def test_load_business_config_fails_when_step_uses_blocked_endpoint(
     assert "api.moonshot.cn" in message
     assert "来源识别" in message
     assert "LLM_ALLOWED_HOSTS" in message
+
+
+def test_load_business_config_fails_when_default_endpoint_blocked_for_follow_steps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """默认接入点不在白名单内、步骤跟随默认（endpoint 为 null）也算「在用」：
+    加载失败并写出该步骤——否则默认接入点被拉黑时流水线照常加载，
+    跑到各步骤才失败，正是「保存成功、跑不起来」的那类问题。"""
+
+    from dataclasses import replace as dataclass_replace
+    from types import SimpleNamespace
+
+    # 夹具默认 default=openrouter：收紧白名单让它不在其中
+    restricted = dataclass_replace(
+        get_settings(), llm_allowed_hosts=("api.deepseek.com",)
+    )
+    monkeypatch.setattr("src.config.get_settings", lambda: restricted)
+    app_config = SimpleNamespace(
+        fetch_settings=lambda: _settings_rows(),
+        fetch_enabled_accounts=lambda: [],
+    )
+
+    with pytest.raises(business_config.BusinessConfigError) as excinfo:
+        business_config.load_business_config(SimpleNamespace(app_config=app_config))
+
+    message = str(excinfo.value)
+    assert "摘要生成" in message, "报错必须写出跟随默认的步骤"
+    assert "openrouter.ai" in message
+    assert "LLM_ALLOWED_HOSTS" in message

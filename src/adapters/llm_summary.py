@@ -32,12 +32,12 @@ def build_summary_payload(article: Dict[str, Any]) -> Dict[str, Any]:
     return {"messages": [{"role": "user", "content": message}]}
 
 
-def probe_request_extras(endpoint: ResolvedLLMEndpoint) -> Dict[str, Any]:
-    """摘要真实请求里 model/messages/max_tokens 之外的固定参数。
+def request_extras(endpoint: ResolvedLLMEndpoint) -> Dict[str, Any]:
+    """摘要请求里 model/messages/max_tokens 之外的固定参数（temperature）。
 
-    保存接入点时的模型实测（settings_service._probe_model）经各步骤的
-    本函数构造探针请求，实测参数因此与真实请求一致；改真实请求的参数时
-    这里自然跟着变，不要在探针里另抄一份。"""
+    真实请求与保存接入点时的模型实测（settings_service._probe_model）
+    都用本函数的返回值拼请求体——额外参数只有这一份定义，改这里两边
+    同时生效，不会出现「实测通过、真实请求参数却不同」。"""
 
     return {"temperature": 0.2}
 
@@ -61,7 +61,7 @@ def summarise(
     payload.update(
         {
             "model": model,
-            "temperature": 0.2,
+            **request_extras(endpoint),
         }
     )
     endpoint.finalize_payload(
@@ -93,4 +93,4 @@ def summarise(
     }
 
 
-__all__ = ["build_summary_payload", "probe_request_extras", "summarise"]
+__all__ = ["build_summary_payload", "request_extras", "summarise"]

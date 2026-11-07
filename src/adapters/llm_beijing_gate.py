@@ -177,13 +177,13 @@ def build_response_format(endpoint: ResolvedLLMEndpoint) -> dict[str, Any]:
     return JSON_OBJECT_RESPONSE_FORMAT
 
 
-def probe_request_extras(endpoint: ResolvedLLMEndpoint) -> dict[str, Any]:
-    """京内判定真实请求里 model/messages/max_tokens 之外的固定参数。
+def request_extras(endpoint: ResolvedLLMEndpoint) -> dict[str, Any]:
+    """京内判定请求里 model/messages/max_tokens 之外的固定参数。
 
-    保存接入点时的模型实测（settings_service._probe_model）复用本函数构造
-    探针请求：response_format 按 build_response_format 随接入点能力降级，
-    探针与真实请求带同一份参数——有的服务商不接受 JSON 模式，只发探针
-    不带它会出现「实测通过、跑到京内判定时报 400」。"""
+    真实请求与保存接入点时的模型实测（settings_service._probe_model）
+    都用本函数的返回值拼请求体——额外参数只有这一份定义：
+    response_format 经 build_response_format 随接入点能力降级，两处永远
+    一致，不会出现「实测通过、跑到京内判定时报 400」。"""
 
     return {
         "temperature": 0,
@@ -207,8 +207,7 @@ def call_beijing_gate(
     payload: dict[str, Any] = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0,
-        "response_format": build_response_format(endpoint),
+        **request_extras(endpoint),
     }
     endpoint.finalize_payload(
         payload,
@@ -307,5 +306,5 @@ __all__ = [
     "build_prompt",
     "build_response_format",
     "call_beijing_gate",
-    "probe_request_extras",
+    "request_extras",
 ]

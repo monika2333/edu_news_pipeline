@@ -4,6 +4,7 @@
 
 | 日期 | 功能 | 合入 | archive |
 |---|---|---|---|
+| 2026-11-07 | 探针参数唯一来源补丁：`probe_request_extras` 改名 `request_extras`，8 个 adapter 的真实请求改用它拼请求体（额外参数只有一份定义，请求内容逐字节不变）；补三处测试缺口——8 步骤「探针 vs 真实请求」逐字段对照（两边都来自真实调用路径）、中间件接线的 TestClient 端到端（临时 env 文件 + 配置列表反映新 Key）、流水线白名单「跟随默认也算在用」、JSON 探针消息切换；变异 T1/T2a/T2b/T3/T4/T5 全 KILLED | 见本条 commit | [2026-11-07-探针参数唯一来源.md](archive/2026-11-07-探针参数唯一来源.md) |
 | 2026-11-07 | 数据源列表页收尾：新增 `test_jyb_list_items_falls_back_to_env_start_url`（JYB_START_URL + 搜索 API 失败 → 截获 HTML 回退地址，sleep 打桩；M1/M2 均 KILLED）；删除无调用方的 `crawl_sources._env_str`；栏目芯片边框改实线，与单页来源「↗ 列表页」外链一致 | 697856f | 同 [2026-11-07-数据源列表页链接.md](archive/2026-11-07-数据源列表页链接.md) |
 | 2026-11-07 | 接入点提前提示与保存前置条件：负载新增 `configured_api_key_envs`（只给名字）+ `host_allowed`，删逐项 `api_key_env_configured`；env 文件自动读取（中间件统一指纹检测 + 无空档重读），删「重新加载环境变量」按钮与 `/environment/reload` 接口；白名单改「默认列表 + LLM_ALLOWED_HOSTS 追加」并扩充默认 8 域名（Kimi/通义/豆包/硅基流动）；读取路径只做结构校验（设置页照常打开、流水线失败半径按「是否有步骤在用」收窄）；步骤实测带真实请求参数（adapter `probe_request_extras`）；前端 Key 提示跟随输入值 + 保存拦截范围不比后端宽 + 焦点刷新名单；变异 K/R/W/H/S 23 条全 KILLED | 0f84152、de1ad30（merge 7519b80，与 751d38a 在 AGENTS.md 同 bullet 不同片段文字冲突已手工融合） | [2026-11-07-接入点提前提示与保存前置条件.md](archive/2026-11-07-接入点提前提示与保存前置条件.md) |
 | 2026-11-07 | 数据源页无账号来源加「列表页」链接：payload `sources[].list_pages` 直接取 adapter 常量（中新网滚动页提常量、光明网/中国教育报环境变量规则收进 adapter 与爬虫共用）；单页行显示「↗ {label}」，多栏目来源渲染只读栏目面板并与账号面板共用 `state.expandedSource`；缺字段/空数组逐行回退「无需账号」；B1-B4/F1-F5 与 M1-M12 全 KILLED | 751d38a | [2026-11-07-数据源列表页链接.md](archive/2026-11-07-数据源列表页链接.md) |

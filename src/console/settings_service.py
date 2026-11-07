@@ -189,18 +189,19 @@ def _endpoint_definition(endpoint_key: Optional[str]) -> LLMEndpointConfig:
     return definition
 
 
-# 每个步骤真实请求里 model/messages/max_tokens 之外的固定参数，构造逻辑
-# 归各 adapter（probe_request_extras），探针只负责取用——adapter 改参数时
-# 探针自动跟着变。接入点级探针（无步骤可依）不走这里，用简单探针。
-_STEP_PROBE_EXTRAS = {
-    "summary": llm_summary.probe_request_extras,
-    "source": llm_source.probe_request_extras,
-    "sentiment": sentiment_classifier.probe_request_extras,
-    "scoring": llm_scoring.probe_request_extras,
-    "external_filter": external_filter_model.probe_request_extras,
-    "beijing_gate": llm_beijing_gate.probe_request_extras,
-    "duplicate_review": llm_duplicate_review.probe_request_extras,
-    "prompt_optimizer": llm_prompt_optimizer.probe_request_extras,
+# 每个步骤请求里 model/messages/max_tokens 之外的固定参数，与各 adapter
+# 的真实请求共用同一份定义（request_extras）：真实请求用它拼请求体，
+# 步骤级实测取同一份值，两边永远一致。接入点级探针（无步骤可依）不走
+# 这里，用简单探针。
+_STEP_REQUEST_EXTRAS = {
+    "summary": llm_summary.request_extras,
+    "source": llm_source.request_extras,
+    "sentiment": sentiment_classifier.request_extras,
+    "scoring": llm_scoring.request_extras,
+    "external_filter": external_filter_model.request_extras,
+    "beijing_gate": llm_beijing_gate.request_extras,
+    "duplicate_review": llm_duplicate_review.request_extras,
+    "prompt_optimizer": llm_prompt_optimizer.request_extras,
 }
 
 
@@ -222,9 +223,10 @@ def _probe_model(
 
     step 给定时（保存时的步骤级实测、步骤「测试」按钮），探针带上该步骤
     真实请求的固定参数（response_format、temperature，来自该 adapter 的
-    probe_request_extras）——有的服务商不接受这些参数，只发简单探针会
-    「实测通过、跑到这一步时报 400」。接入点级实测（暂时没有步骤在用的
-    接入点）没有步骤可依，不传 step。"""
+    request_extras——真实请求也用它拼请求体，两边只有这一份定义）——
+    有的服务商不接受这些参数，只发简单探针会「实测通过、跑到这一步报
+    400」。接入点级实测（暂时没有步骤在用的接入点）没有步骤可依，
+    不传 step。"""
 
     settings = get_settings()
     try:
@@ -250,7 +252,7 @@ def _probe_model(
             ),
         }
     extras: Mapping[str, Any] = (
-        _STEP_PROBE_EXTRAS[step](resolved) if step is not None else {}
+        _STEP_REQUEST_EXTRAS[step](resolved) if step is not None else {}
     )
     reasoning_limit = settings.llm_reasoning_max_tokens or 0
     max_tokens = max(2048, reasoning_limit * 2) if reasoning else 8

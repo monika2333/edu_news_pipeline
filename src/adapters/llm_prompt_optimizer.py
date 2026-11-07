@@ -196,8 +196,8 @@ def build_optimizer_user_prompt(
     return "".join(parts)
 
 
-def probe_request_extras(endpoint: ResolvedLLMEndpoint) -> dict[str, Any]:
-    """提示词优化真实请求里 model/messages/max_tokens 之外的固定参数（见 llm_summary 同名函数）。"""
+def request_extras(endpoint: ResolvedLLMEndpoint) -> dict[str, Any]:
+    """提示词优化请求里 model/messages/max_tokens 之外的固定参数（见 llm_summary 同名函数）。"""
 
     return {"temperature": 0.0}
 
@@ -227,7 +227,7 @@ def call_prompt_optimizer(
                 ),
             }
         ],
-        "temperature": 0.0,
+        **request_extras(endpoint),
     }
     endpoint.finalize_payload(
         payload,
@@ -274,5 +274,5 @@ __all__ = [
     "format_optimizer_cases",
     "load_prompt_optimizer_meta",
     "parse_prompt_optimizer_response",
-    "probe_request_extras",
+    "request_extras",
 ]

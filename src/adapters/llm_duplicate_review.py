@@ -107,8 +107,8 @@ def _post_chat_completion(
     return extract_message_text(choice)
 
 
-def probe_request_extras(endpoint: ResolvedLLMEndpoint) -> dict[str, Any]:
-    """查重复核真实请求里 model/messages/max_tokens 之外的固定参数（见 llm_summary 同名函数）。"""
+def request_extras(endpoint: ResolvedLLMEndpoint) -> dict[str, Any]:
+    """查重复核请求里 model/messages/max_tokens 之外的固定参数（见 llm_summary 同名函数）。"""
 
     return {"temperature": 0.0}
 
@@ -127,7 +127,7 @@ def call_duplicate_review(
     payload: dict[str, Any] = {
         "model": model,
         "messages": [{"role": "user", "content": build_prompt(items)}],
-        "temperature": 0.0,
+        **request_extras(endpoint),
     }
     endpoint.finalize_payload(
         payload,
@@ -147,7 +147,7 @@ def call_duplicate_review(
 __all__ = [
     "DuplicateReviewResponseError",
     "build_prompt",
-    "probe_request_extras",
+    "request_extras",
     "call_duplicate_review",
     "parse_duplicate_groups",
 ]

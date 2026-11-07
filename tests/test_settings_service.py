@@ -2391,3 +2391,248 @@ def test_step_probe_carries_step_temperature(
     assert captured[0]["temperature"] == 0.2, "摘要真实请求 temperature=0.2"
     assert captured[1]["temperature"] == 0.0
     assert captured[2]["temperature"] == 0
+
+
+# ---------- 探针与真实请求一致（补丁：额外参数只留一份定义） ----------
+
+# 真实请求路径涉及的 adapter 模块：各模块以名字导入了 post_chat_completion，
+# 打桩要逐模块替换（只替换最底下的 HTTP 发送层）。
+_REAL_ADAPTER_MODULES = (
+    llm_summary_module,
+    llm_source_module,
+    llm_scoring_module,
+    sentiment_classifier_module,
+    external_filter_model_module,
+    llm_beijing_gate_module,
+    llm_duplicate_review_module,
+    llm_prompt_optimizer_module,
+) = (
+    __import__("src.adapters.llm_summary", fromlist=["post_chat_completion"]),
+    __import__("src.adapters.llm_source", fromlist=["post_chat_completion"]),
+    __import__("src.adapters.llm_scoring", fromlist=["post_chat_completion"]),
+    __import__("src.adapters.sentiment_classifier", fromlist=["post_chat_completion"]),
+    __import__("src.adapters.external_filter_model", fromlist=["post_chat_completion"]),
+    __import__("src.adapters.llm_beijing_gate", fromlist=["post_chat_completion"]),
+    __import__("src.adapters.llm_duplicate_review", fromlist=["post_chat_completion"]),
+    __import__("src.adapters.llm_prompt_optimizer", fromlist=["post_chat_completion"]),
+)
+
+# 各步骤桩响应：必须能通过该步骤真实调用路径自己的响应校验/解析
+_STEP_RESPONSES = {
+    "summary": "这是一段摘要。",
+    "source": "北京日报",
+    "sentiment": '{"label": "positive", "confidence": 0.9}',
+    "scoring": "85",
+    "external_filter": "78",
+    "beijing_gate": '{"is_beijing_related": true, "reason": "北京市教委主办"}',
+    "duplicate_review": '{"duplicate_groups": []}',
+    "prompt_optimizer": '{"decision": "no_change", "note": "无需修改"}',
+}
+
+_PROBE_VS_REAL_CASES = [
+    ("summary", None),
+    ("source", None),
+    ("sentiment", None),
+    ("scoring", None),
+    ("external_filter", None),
+    ("beijing_gate", None),
+    ("duplicate_review", None),
+    ("prompt_optimizer", None),
+    # 京内判定带 response_format：OpenRouter（json_schema）与非 OpenRouter
+    # （json_object）接入点各测一例
+    ("beijing_gate", "deepseek"),
+]
+
+_IGNORED_PAYLOAD_FIELDS = {"model", "messages", "max_tokens"}
+
+
+def _run_real_step_call(step: str) -> None:
+    """沿真实调用路径触发该步骤的 adapter 请求（只桩 HTTP 层）。"""
+
+    from src.adapters import (
+        external_filter_model,
+        llm_beijing_gate,
+        llm_duplicate_review,
+        llm_prompt_optimizer,
+        llm_scoring,
+        llm_source,
+        llm_summary,
+        sentiment_classifier,
+    )
+    from src.domain import BeijingGateCandidate, ExternalFilterCandidate
+
+    if step == "summary":
+        llm_summary.summarise({"title": "标题", "content": "正文内容"})
+    elif step == "source":
+        llm_source.detect_source({"title": "标题", "content_markdown": "正文内容"})
+    elif step == "scoring":
+        llm_scoring.call_relevance_api("正文内容")
+    elif step == "sentiment":
+        sentiment_classifier.classify_sentiment("正文内容")
+    elif step == "external_filter":
+        external_filter_model.call_external_filter_model(
+            ExternalFilterCandidate(
+                article_id="a1",
+                title="标题",
+                source="北京日报",
+                publish_time_iso=None,
+                summary="摘要",
+                content="正文内容",
+                sentiment_label="positive",
+                is_beijing_related=True,
+                is_beijing_related_llm=True,
+                external_importance_status="pending_external_filter",
+            )
+        )
+    elif step == "beijing_gate":
+        llm_beijing_gate.call_beijing_gate(
+            BeijingGateCandidate(
+                article_id="a1",
+                title="标题",
+                source="北京日报",
+                publish_time_iso=None,
+                summary="摘要",
+                content="正文内容",
+                sentiment_label="positive",
+                is_beijing_related=None,
+                is_beijing_related_llm=None,
+                external_importance_status="ready_for_export",
+            )
+        )
+    elif step == "duplicate_review":
+        llm_duplicate_review.call_duplicate_review(
+            [
+                {
+                    "article_id": "a1",
+                    "title": "标题一",
+                    "summary": "摘要一",
+                    "source": "北京日报",
+                }
+            ]
+        )
+    elif step == "prompt_optimizer":
+        llm_prompt_optimizer.call_prompt_optimizer(
+            prompt_key="external_positive",
+            current_content="旧内容",
+            cases=[],
+            reference_cases=[],
+        )
+    else:  # pragma: no cover - 参数化集合写错时立即暴露
+        raise AssertionError(f"未知步骤：{step}")
+
+
+@pytest.mark.parametrize(("step", "endpoint_key"), _PROBE_VS_REAL_CASES)
+def test_step_probe_payload_matches_real_request_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    step: str,
+    endpoint_key: str | None,
+) -> None:
+    """8 个步骤逐一对照：保存时探针与真实 adapter 调用的请求体，除
+    model / messages / max_tokens 之外的字段完全相同。两边都来自真实
+    调用路径，任何一边写死期望值都算不合格——这是「额外参数只有一份
+    定义」的直接证据。"""
+
+    from src.business_config import business_config_context
+    from tests.conftest import DEEPSEEK_ENDPOINT, OPENROUTER_ENDPOINT, make_endpoint_config
+
+    monkeypatch.setenv("LLM_API_KEY", "openrouter-key")
+    monkeypatch.setenv("LLM_DEEPSEEK_API_KEY", "deepseek-key")
+    config = make_endpoint_config(
+        endpoints=(OPENROUTER_ENDPOINT, DEEPSEEK_ENDPOINT),
+        default_endpoint="openrouter",
+        step_endpoints={step: endpoint_key} if endpoint_key else {},
+    )
+    endpoints_value = {
+        "default": "openrouter",
+        "items": [
+            {
+                "key": "openrouter",
+                "label": "OpenRouter",
+                "base_url": "https://openrouter.ai/api/v1",
+                "api_key_env": "LLM_API_KEY",
+                "api_style": "openrouter",
+                "temperature_override": None,
+                "default_model": "openrouter/default-model",
+            },
+            {
+                "key": "deepseek",
+                "label": "DeepSeek",
+                "base_url": "https://api.deepseek.com",
+                "api_key_env": "LLM_DEEPSEEK_API_KEY",
+                "api_style": "thinking",
+                "temperature_override": None,
+                "default_model": "deepseek-chat",
+            },
+        ],
+    }
+    _patch_settings_adapter(
+        monkeypatch,
+        _endpoints_section_adapter(monkeypatch, endpoints_value),
+    )
+
+    real_payloads: list[dict[str, Any]] = []
+    probe_payloads: list[dict[str, Any]] = []
+    response_content = _STEP_RESPONSES[step]
+
+    def fake_real_post(url, **kwargs):
+        real_payloads.append(kwargs["payload"])
+        return {"choices": [{"message": {"content": response_content}}]}
+
+    def fake_probe_post(url, **kwargs):
+        probe_payloads.append(kwargs["payload"])
+        return {"choices": [{"message": {"content": response_content}}]}
+
+    with business_config_context(config):
+        for module in _REAL_ADAPTER_MODULES:
+            monkeypatch.setattr(module, "post_chat_completion", fake_real_post)
+        _run_real_step_call(step)
+
+        monkeypatch.setattr(settings_service, "post_chat_completion", fake_probe_post)
+        settings_service.test_llm_model(
+            step, f"{step}-model", True, endpoint=endpoint_key
+        )
+
+    assert len(real_payloads) == 1, "真实路径应恰好发出一次请求"
+    assert len(probe_payloads) == 1, "探针应恰好发出一次请求"
+
+    def fixed_fields(payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: value
+            for key, value in payload.items()
+            if key not in _IGNORED_PAYLOAD_FIELDS
+        }
+
+    assert fixed_fields(probe_payloads[0]) == fixed_fields(real_payloads[0])
+    # 非空校验：两边确实带上了本步骤的固定参数（temperature 等）
+    assert fixed_fields(real_payloads[0])
+    if step == "beijing_gate":
+        assert "response_format" in fixed_fields(real_payloads[0])
+
+
+def test_probe_message_switches_to_json_only_for_response_format_steps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """带 response_format 的步骤实测用含 JSON 字样的探针消息（JSON 模式
+    要求提示里出现 JSON 字样）；不带的步骤仍是「只回复 OK」。"""
+
+    monkeypatch.setenv("LLM_API_KEY", "openrouter-key")
+    monkeypatch.setenv("LLM_DEEPSEEK_API_KEY", "deepseek-key")
+    _patch_settings_adapter(
+        monkeypatch,
+        _endpoints_section_adapter(monkeypatch, _llm_endpoints_value()),
+    )
+    captured: list[dict[str, Any]] = []
+
+    def fake_post(url, **kwargs):
+        captured.append(kwargs["payload"])
+        return {"choices": [{"message": {"content": '{"ok": true}'}}]}
+
+    monkeypatch.setattr(settings_service, "post_chat_completion", fake_post)
+
+    settings_service.test_llm_model("beijing_gate", "gate-model", False)
+    settings_service.test_llm_model("summary", "model-a", False)
+
+    gate_message = captured[0]["messages"][0]["content"]
+    assert "JSON" in gate_message
+    assert gate_message != "只回复 OK"
+    assert captured[1]["messages"][0]["content"] == "只回复 OK"

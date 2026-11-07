@@ -34,8 +34,8 @@ def build_source_payload(article: Dict[str, Any]) -> Dict[str, Any]:
     return {"messages": [{"role": "user", "content": message}]}
 
 
-def probe_request_extras(endpoint: ResolvedLLMEndpoint) -> Dict[str, Any]:
-    """来源识别真实请求里 model/messages/max_tokens 之外的固定参数（见 llm_summary 同名函数）。"""
+def request_extras(endpoint: ResolvedLLMEndpoint) -> Dict[str, Any]:
+    """来源识别请求里 model/messages/max_tokens 之外的固定参数（见 llm_summary 同名函数）。"""
 
     return {"temperature": 0}
 
@@ -74,7 +74,7 @@ def detect_source(
     payload.update(
         {
             "model": model,
-            "temperature": 0,
+            **request_extras(endpoint),
         }
     )
     endpoint.finalize_payload(
@@ -128,4 +128,4 @@ def detect_source(
     }
 
 
-__all__ = ["MAX_LLM_SOURCE_LENGTH", "build_source_payload", "detect_source", "probe_request_extras"]
+__all__ = ["MAX_LLM_SOURCE_LENGTH", "build_source_payload", "detect_source", "request_extras"]

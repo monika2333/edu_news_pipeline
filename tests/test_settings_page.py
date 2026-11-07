@@ -161,3 +161,52 @@ def test_environment_reload_endpoint_is_gone() -> None:
     response = client.post("/api/admin/settings/environment/reload")
 
     assert response.status_code in {404, 405}
+
+
+def test_console_requests_refresh_env_files_automatically(
+    tmp_path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """中间件接线：env 文件改过，下一个控制台请求无需任何重载入口就能
+    读到新 Key。手动按钮已删，这条守住 app.py 里的统一检测不被静默拆掉。"""
+
+    import src.config as config
+    from src.console import settings_service
+    from types import SimpleNamespace
+
+    env_file = tmp_path / "auto.env"
+    monkeypatch.setattr(config, "_ENV_FILES", (env_file,))
+    monkeypatch.setattr(config, "_ENV_LOADED", False)
+    monkeypatch.setattr(config, "_ENV_FILE_KEYS", set())
+    monkeypatch.setattr(config, "_ENV_FILES_SIGNATURE", None)
+    monkeypatch.delenv("MW_PROBE_TEST_API_KEY", raising=False)
+    monkeypatch.delenv("MW_BASE_TEST_VAR", raising=False)
+    config.get_settings.cache_clear()
+    try:
+        # 初始文件不含 Key 变量；第一个请求经中间件完成初始读取
+        env_file.write_text("MW_BASE_TEST_VAR=1\n", encoding="utf-8")
+        client = _build_client()
+        assert client.get("/admin/settings").status_code == 200
+
+        # 用户在服务器上补了 Key；不调用任何重载函数
+        env_file.write_text(
+            "MW_BASE_TEST_VAR=1\nMW_PROBE_TEST_API_KEY=added\n",
+            encoding="utf-8",
+        )
+
+        def fetch_settings():
+            return []
+
+        app_config = SimpleNamespace(app_config=SimpleNamespace(fetch_settings=fetch_settings))
+        monkeypatch.setattr(settings_service, "get_adapter", lambda: app_config)
+        payload = client.get("/api/admin/settings").json()
+
+        configured = payload["endpoints"]["configured_api_key_envs"]
+        assert "MW_PROBE_TEST_API_KEY" in configured
+        assert configured == sorted(configured)
+    finally:
+        import os
+
+        os.environ.pop("MW_PROBE_TEST_API_KEY", None)
+        os.environ.pop("MW_BASE_TEST_VAR", None)
+        config.get_settings.cache_clear()

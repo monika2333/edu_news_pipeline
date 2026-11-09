@@ -93,7 +93,12 @@
 }
 
 #review-tab.review-sort-mode .sort-only {
+    /* 这个按钮是 flex 容器，里面的文字是 flex item，.btn 的 text-align:center
+       管不到它；宽度被内容撑满时看不出来，一旦被拉伸（手机端整行）文字就靠左。
+       显式居中，与工具条里其他按钮一致。 */
     display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 #review-tab.review-sort-mode .sort-incompatible {

@@ -389,6 +389,13 @@
     grid-template-columns: 1fr;
 }
 
+/* 单列轨道默认是 minmax(auto, 1fr)，而排序卡的标题是 nowrap 长文本：
+   不给网格项一个可收缩的下限，轨道会按标题的 min-content 撑开，整列比
+   容器还宽（手机上表现为标题右半截跑到屏幕外、页面可以左右拖）。 */
+.review-items {
+    min-width: 0;
+}
+
 .review-grid.single-view .review-col {
     display: none;
 }
@@ -832,8 +839,25 @@ body.duplicate-review-open .search-drawer-toggle {
         grid-column: 1 / -1;
     }
 
-    .review-toolbar .sort-only {
-        grid-column: 1 / -1;
+    /* 排序模式里搜索/全选/查重都被隐藏，沿用上面的四行模板会留下空格子：
+       单独排两行，退出排序吸顶——列表一长，退出入口必须始终在手边；
+       吸顶高度只给两行，避免遮掉太多列表。 */
+    #review-tab.review-sort-mode .review-toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        grid-template-areas:
+            "sort reorder"
+            "preview archive";
+    }
+
+    #review-tab.review-sort-mode #btn-toggle-sort {
+        grid-area: sort;
+        min-height: 44px;
+    }
+
+    #review-tab.review-sort-mode #btn-auto-reorder {
+        grid-area: reorder;
     }
 
     .duplicate-review-group-items {
@@ -921,18 +945,51 @@ body.duplicate-review-open .search-drawer-toggle {
         min-width: 0;
     }
 
-    .review-grid.compact-mode .drag-handle {
-        display: none;
+    /* 排序模式：components.css 的移动端 .card-header 竖排规则是给普通卡片
+       （勾选框 + 标题 + 操作）设计的；排序卡是一行一份的清单，竖排会把 ⋮ 手柄
+       单独顶到中间、标题另起一行。这里按行内布局覆盖回来。 */
+    .review-grid.sort-mode .card-header {
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
     }
 
+    .review-grid.sort-mode .article-title {
+        min-width: 0;
+        flex: 1 1 auto;
+        font-size: 0.95rem;
+        line-height: 1.4;
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
+    }
+
+    /* 触屏上只认 ⋮ 手柄起拖（见 initReviewSortable）：命中区给到 44px，
+       关掉系统长按菜单与选区，否则 iOS/Android 会先弹自己的菜单抢手势。 */
     .review-grid.sort-mode .drag-handle {
-        display: block;
-        padding: 10px;
-        font-size: 1.2rem;
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        font-size: 20px;
+        touch-action: none;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+    }
+
+    /* 排序时标题链接不接管点击：手指擦一下就会跳到原文，回来顺序也乱了。 */
+    .review-grid.sort-mode .article-title a {
+        pointer-events: none;
     }
 
     .review-grid.sort-mode .article-card {
-        padding: 8px;
+        padding: 8px 10px;
     }
 }
 

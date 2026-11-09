@@ -37,10 +37,41 @@ function reviewCardIds(page) {
         .map((card) => card.dataset.id);
 }
 
-async function bootReviewPage(reviewItems) {
-    const page = await bootPage('admin', { reviewItems });
+async function bootReviewPage(reviewItems, mode = 'admin') {
+    // 值班页默认停在「筛选」，且要先让 bootPage 等到 init 跑完（articleCount
+    // 给 1 就是那个信号），否则切页签的点击落在 setupTabs() 之前没人响应。
+    const page = mode === 'duty'
+        ? await bootPage('duty', { articleCount: 1, reviewItems })
+        : await bootPage('admin', { reviewItems });
+    if (mode === 'duty') {
+        page.document.querySelector('.tab-btn[data-tab="review"]').click();
+    }
     await waitForCondition(() => reviewCardIds(page).length === reviewItems.length);
     return page;
+}
+
+// 替换 Sortable 构造函数，记录 initReviewSortable 传进去的选项：
+// 手势参数（手柄、长按门槛）只能在真机/浏览器里感知，jsdom 里靠这个断言。
+function captureSortableOptions(page) {
+    page.window.eval(`
+        window.__sortableCalls = [];
+        window.Sortable = function (element, options) {
+            window.__sortableCalls.push(options);
+            return { destroy() {} };
+        };
+    `);
+}
+
+function setViewportWidth(page, width) {
+    page.window.eval(
+        `Object.defineProperty(window, 'innerWidth', { value: ${width}, configurable: true });`
+    );
+}
+
+async function toggleSortAndReadOptions(page) {
+    page.document.getElementById('btn-toggle-sort').click();
+    await waitForCondition(() => page.window.__sortableCalls.length > 0);
+    return page.window.__sortableCalls[0];
 }
 
 async function autoSort(page) {
@@ -121,6 +152,44 @@ test('R4：一条同时命中两个类别的条目归入优先级更高的类别
         assert.match(page.toastText(), /市教委 1，中小学 0，高校 0，其他 1/);
         // 等页面内的挂起定时器走完再关窗，避免关窗后的异步回调被记为未处理拒绝
         await new Promise((resolve) => setTimeout(resolve, 50));
+    } finally { page.close(); }
+});
+
+// 手机端排序模式的手势契约：只有 ⋮ 手柄能起拖，手指落在卡片正文上不进拖拽态
+// （过去整卡是把手，列表因此滚不动）。两个页面共用同一份模板与模块，两端都测。
+for (const mode of ['duty', 'admin']) {
+    test(`R5（${mode}）：手机端只有 ⋮ 手柄可起拖，并带长按门槛`, async () => {
+        const page = await bootReviewPage(
+            [reviewItem('r1', '市教委发布寒假安排'), reviewItem('r2', '本市K12课后服务扩面')],
+            mode,
+        );
+        try {
+            setViewportWidth(page, 390);
+            captureSortableOptions(page);
+            const options = await toggleSortAndReadOptions(page);
+
+            assert.equal(options.handle, '.drag-handle');
+            assert.equal(options.delay, 120);
+            assert.equal(options.delayOnTouchOnly, true);
+            assert.ok(options.touchStartThreshold >= 4);
+            // 跨组拖拽语义不变：仍可把条目拖进另一个分组（会改写该条分类并落库）
+            assert.equal(options.group.pull, true);
+            assert.equal(options.group.put, true);
+        } finally { page.close(); }
+    });
+}
+
+test('R6：桌面端排序手势不受手机端参数影响', async () => {
+    const page = await bootReviewPage([reviewItem('r1', '市教委发布寒假安排')]);
+    try {
+        setViewportWidth(page, 1280);
+        captureSortableOptions(page);
+        const options = await toggleSortAndReadOptions(page);
+
+        assert.equal(options.handle, '.drag-handle');
+        assert.equal(options.delay, 0);
+        assert.equal(options.delayOnTouchOnly, false);
+        assert.equal(options.touchStartThreshold, 1);
     } finally { page.close(); }
 });
 

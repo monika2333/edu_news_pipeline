@@ -45,22 +45,22 @@ class _FakeAdapter:
     app_config = _FakeAppConfig()
 
 
-def _render_review_page() -> str:
+def _render_page(path: str, role: str) -> str:
     app = create_app()
     app.dependency_overrides[require_console_user] = lambda: ConsoleUser(
         method="test",
-        user_id="admin-id",
-        username="admin",
-        display_name="测试管理员",
-        role="admin",
+        user_id=f"{role}-id",
+        username=role,
+        display_name="测试用户",
+        role=role,
     )
     original_get_adapter = web_routes.get_adapter
     web_routes.get_adapter = lambda: _FakeAdapter()
     try:
-        response = TestClient(app).get("/admin/review")
+        response = TestClient(app).get(path)
     finally:
         web_routes.get_adapter = original_get_adapter
-    assert response.status_code == 200, f"/admin/review 渲染失败：{response.status_code}"
+    assert response.status_code == 200, f"{path} 渲染失败：{response.status_code}"
     return response.text
 
 
@@ -79,13 +79,17 @@ def _node_or_skip() -> str:
 
 def test_review_sort_behaviour(tmp_path: Path) -> None:
     node = _node_or_skip()
-    page_html = tmp_path / "review.html"
-    page_html.write_text(_render_review_page(), encoding="utf-8")
+    admin_html = tmp_path / "review.html"
+    admin_html.write_text(_render_page("/admin/review", "admin"), encoding="utf-8")
+    # 值班端复用同一份模板与模块，手势参数两端各锁一条用例
+    duty_html = tmp_path / "duty.html"
+    duty_html.write_text(_render_page("/duty", "duty_editor"), encoding="utf-8")
 
     env = {
         **os.environ,
         "CONSOLE_STATIC_DIR": str(STATIC_DIR),
-        "FILTER_PAGE_ADMIN_HTML": str(page_html),
+        "FILTER_PAGE_ADMIN_HTML": str(admin_html),
+        "FILTER_PAGE_DUTY_HTML": str(duty_html),
     }
     result = subprocess.run(
         [

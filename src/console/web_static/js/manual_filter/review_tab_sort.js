@@ -182,10 +182,20 @@ function initReviewSortable() {
     lists.forEach(list => {
         const inst = new Sortable(list, {
             animation: 150,
-            handle: isMobileSort ? undefined : '.drag-handle',
+            // 触屏上绝不能让整张卡当把手：那样手指落在卡片上就进拖拽态，
+            // 长列表既滚不动也点不准。始终只认 ⋮ 手柄，移动端再给一个
+            // 「按住 120ms 才起拖」的门槛，让滑动浏览和拖动排序互不抢手势。
+            handle: '.drag-handle',
             ghostClass: 'review-ghost',
             forceFallback: true,
             fallbackOnBody: true,
+            fallbackTolerance: isMobileSort ? 4 : 0,
+            delay: isMobileSort ? 120 : 0,
+            delayOnTouchOnly: isMobileSort,
+            touchStartThreshold: isMobileSort ? 4 : 1,
+            scroll: true,
+            scrollSensitivity: isMobileSort ? 80 : 30,
+            scrollSpeed: isMobileSort ? 12 : 10,
             draggable: '.article-card',
             group: { name: 'review-groups', pull: true, put: true },
             onEnd: handleReviewSortEnd,

@@ -4,6 +4,7 @@
 
 | 日期 | 功能 | 合入 | archive |
 |---|---|---|---|
+| 2026-11-11 | 控制台亮暗主题：全站颜色 token 化（亮色值逐字不变，暗色 `data-theme` 覆盖）、10 个页面首帧无闪、账号菜单单行「外观」原生下拉（跟随系统/亮色/暗色，`localStorage.console_theme` 按浏览器记忆、系统变化实时跟随）；原生控件暗色兜底；亮色 computed style 16 页 0 差异、暗色 26 页/状态 0 白块、M1–M10 全 KILLED、全量 1926 passed。居中补丁提交因用户认为更差已删除 | 7f8548c、8d4c6cf、64ca75e | [2026-11-11-控制台亮暗主题.md](archive/2026-11-11-控制台亮暗主题.md) |
 | 2026-11-09 | 审阅页排序模式手机端可用性：移动端恢复排序卡横排（覆盖 `components.css` 的竖排 `.card-header`）+ 标题两行 + `.review-items{min-width:0}` 收住 459px 横向溢出；触屏只认 ⋮ 手柄（44px 命中区、120ms 长按门槛、4px 阈值、自动滚动），桌面参数等于 Sortable 默认值、截图逐像素不变；排序模式工具条两行吸顶、退出排序 44px；移动端排序时标题链接不接管点击；顺带修「自动排序」按钮 flex 容器导致文字左对齐（补 `justify-content:center`）。R5（duty/admin 双端）/R6 锁定参数，变异 4 条全 KILLED | 70febf4、b5288b7 | [2026-11-09-审阅页排序模式手机端.md](archive/2026-11-09-审阅页排序模式手机端.md) |
 | 2026-11-07 | 探针参数唯一来源补丁：`probe_request_extras` 改名 `request_extras`，8 个 adapter 的真实请求改用它拼请求体（额外参数只有一份定义，请求内容逐字节不变）；补三处测试缺口——8 步骤「探针 vs 真实请求」逐字段对照（两边都来自真实调用路径）、中间件接线的 TestClient 端到端（临时 env 文件 + 配置列表反映新 Key）、流水线白名单「跟随默认也算在用」、JSON 探针消息切换；变异 T1/T2a/T2b/T3/T4/T5 全 KILLED | 0529a7f | 同 [2026-11-07-接入点提前提示与保存前置条件.md](archive/2026-11-07-接入点提前提示与保存前置条件.md) |
 | 2026-11-07 | 数据源列表页收尾：新增 `test_jyb_list_items_falls_back_to_env_start_url`（JYB_START_URL + 搜索 API 失败 → 截获 HTML 回退地址，sleep 打桩；M1/M2 均 KILLED）；删除无调用方的 `crawl_sources._env_str`；栏目芯片边框改实线，与单页来源「↗ 列表页」外链一致 | 697856f | 同 [2026-11-07-数据源列表页链接.md](archive/2026-11-07-数据源列表页链接.md) |

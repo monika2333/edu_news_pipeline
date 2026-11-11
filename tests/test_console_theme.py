@@ -144,8 +144,15 @@ def test_account_menu_hosts_three_appearance_options(
     assert option_values == ["system", "light", "dark"], f"{path} 外观选项缺失或顺序错误"
     assert html.count('aria-pressed="false"') >= 3
     assert re.search(
-        r'account-menu-group-label[^>]*>外观<', html
+        r'account-menu-theme-label[^>]*>外观<', html
     ), f"{path} 缺少「外观」分组标签"
+    # 三档必须收在同一个横向分段容器里，不能各自占一行。
+    theme_block = html.split('class="account-menu-theme-options"', 1)[1].split(
+        "</div>", 1
+    )[0]
+    assert theme_block.count('data-theme-option=') == 3, (
+        f"{path} 外观三项未收在同一行容器中"
+    )
 
 
 @pytest.mark.parametrize(("path", "role"), NO_ACCOUNT_MENU_PAGES)

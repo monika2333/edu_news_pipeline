@@ -3233,7 +3233,15 @@ test('F6 F12：全角等号按首个拆分且后缀顺序不变', async () => {
                 fallback_names: [],
             },
         });
-        assert.equal(block.querySelector('.alias-mappings').value, '北青=北京青年报=新版\n__proto__=标准来源\nA=B＝C');
+        // 键序/空白的规范化只发生在解析层：芯片按解析结果渲染，批量编辑框保留
+        // 用户原文（不因为 jsonb 换了对象键序就重写用户的行序）
+        const aliasField = [...block.querySelectorAll('.advanced-field')]
+            .find((field) => field.querySelector('.alias-mappings'));
+        assert.deepEqual(
+            [...aliasField.querySelectorAll('.keyword-chip-text')].map((el) => el.textContent),
+            ['北青 → 北京青年报=新版', '__proto__ → 标准来源', 'A → B＝C'],
+        );
+        assert.equal(block.querySelector('.alias-mappings').value, ' 北青 ＝ 北京青年报=新版\n __proto__=标准来源\nA=B＝C');
     } finally { page.close(); }
 });
 
@@ -3288,7 +3296,7 @@ test('高级页：保存成功不重绘，批量编辑保持展开、控件节�
         assert.equal(block.querySelector('.settings-textarea'), textarea);
         assert.equal(textarea.hidden, false);
         assert.equal(toggle.textContent, '收起批量');
-        assert.match(block.querySelector('.settings-save-status').textContent, /已自动保存/);
+        assert.equal(block.querySelector('.settings-save-status').textContent, '已自动保存。');
         assert.match(block.querySelector('.settings-updated').textContent, /最后修改/);
     } finally { page.close(); }
 });
@@ -3314,6 +3322,41 @@ test('高级页：409 冲突给还原与载入两个出口，还原后版本不�
         assert.equal(dictionaryPuts(page).at(-1).status, 409);
     } finally { page.close(); }
 });
+
+// 线上两个对象型分区（来源别名、自动排序关键词）的 value 存 jsonb，读回来时对象
+// 键会被重排；来源别名旧配置行还可能缺 fallback_names。它们都不能算「有未保存的
+// 修改」——否则状态行出现假提示，而且每次失焦都会重复 PUT、把版本号推高。
+for (const [section, selector, draft] of [
+    ['source_aliases', '.alias-suffixes', '客户端\n网\n日报'],
+    ['review_sort_keywords', '.settings-textarea', '市教委\n教工委\n首都教育两委'],
+]) {
+    test(`对象型分区（${section}）：jsonb 换键序不算修改，保存后不重复提交`, async () => {
+        const page = await bootPage({ hash: '#advanced' });
+        try {
+            const block = dictionaryBlock(page, section);
+            // 点进点出（没有任何改动）不应发请求
+            leaveDictionary(page, section);
+            await assertNever(() => dictionaryPuts(page).length > 0);
+
+            const field = block.querySelector(selector);
+            inputValue(page, field, draft);
+            await saveDictionary(page, section);
+            assert.equal(dictionaryPuts(page).length, 1);
+            assert.equal(dictionaryPuts(page)[0].status, 200);
+            const status = block.querySelector('.settings-save-status');
+            assert.equal(status.textContent, '已自动保存。');
+            assert.equal(unloadBlocked(page), false);
+            assert.equal(page.window.eval(`state.dirty.${section}`), false);
+            // 对象键序变化不回写控件，用户的行序保持原样
+            assert.equal(field.value, draft);
+
+            // 再失焦一次：没有新修改，不追加请求
+            await saveDictionary(page, section);
+            assert.equal(dictionaryPuts(page).length, 1);
+            assert.equal(status.textContent, '已自动保存。');
+        } finally { page.close(); }
+    });
+}
 
 // 回退来源（fallback_names）：与后缀/别名共用「来源别名」分区、保存按钮与版本号。
 function fallbackField(page) {
@@ -3361,16 +3404,20 @@ test('回退来源：逐条添加删除，删除即时写库、添加留到失�
         assert.equal(field.querySelectorAll('.keyword-chip').length, 1);
         assert.match(field.querySelector('.settings-word-count').textContent, /1 条/);
         assert.equal(unloadBlocked(page), true);
-        // 只添加不提交
+        // 只添加不提交，离开整块才写库
         await assertNever(() => dictionaryPuts(page).length > 0);
+        await saveDictionary(page, 'source_aliases');
+        assert.equal(dictionaryPuts(page).length, 1);
+        assert.deepEqual(dictionaryPuts(page)[0].body.value.fallback_names, ['现代教育报']);
+        assert.equal(unloadBlocked(page), false);
 
-        // 逐条删除：textarea 同步变空，并立即把空名单写回
+        // 删除已保存的芯片：立即写库
         field.querySelector('.keyword-chip-remove').click();
         assert.equal(field.querySelector('.alias-fallback-names').value, '');
         assert.equal(field.querySelectorAll('.keyword-chip').length, 0);
-        await waitFor(() => dictionaryPuts(page).length === 1 && page.server.inflight === 0);
-        assert.equal(dictionaryPuts(page)[0].body.expected_version, 14);
-        assert.deepEqual(dictionaryPuts(page)[0].body.value, {
+        await waitFor(() => dictionaryPuts(page).length === 2 && page.server.inflight === 0);
+        assert.equal(dictionaryPuts(page)[1].body.expected_version, 15);
+        assert.deepEqual(dictionaryPuts(page)[1].body.value, {
             suffixes: ['客户端', '网'],
             aliases: { 北青: '北京青年报' },
             fallback_names: [],
@@ -3380,16 +3427,19 @@ test('回退来源：逐条添加删除，删除即时写库、添加留到失�
         addFallbackName(page, '现代教育报');
         addFallbackName(page, '北京日报');
         await saveDictionary(page, 'source_aliases');
-        const put = dictionaryPuts(page)[1];
+        const put = dictionaryPuts(page)[2];
         assert.equal(put.path, '/api/admin/settings/source_aliases');
         // 第二次保存用的是刚保存成功后的版本号
-        assert.equal(put.body.expected_version, 15);
+        assert.equal(put.body.expected_version, 16);
         assert.deepEqual(put.body.value, {
             suffixes: ['客户端', '网'],
             aliases: { 北青: '北京青年报' },
             fallback_names: ['现代教育报', '北京日报'],
         });
-        assert.match(dictionaryBlock(page, 'source_aliases').querySelector('.settings-save-status').textContent, /已自动保存/);
+        assert.equal(
+            dictionaryBlock(page, 'source_aliases').querySelector('.settings-save-status').textContent,
+            '已自动保存。',
+        );
     } finally { page.close(); }
 });
 
@@ -3745,7 +3795,10 @@ test('F14：自动排序关键词按三类对象保存，留空类别提交空�
                 '高校': ['高校', '大学'],
             },
         });
-        assert.match(dictionaryBlock(page, 'review_sort_keywords').querySelector('.settings-save-status').textContent, /已自动保存/);
+        assert.equal(
+            dictionaryBlock(page, 'review_sort_keywords').querySelector('.settings-save-status').textContent,
+            '已自动保存。',
+        );
     } finally { page.close(); }
 });
 
@@ -3777,8 +3830,7 @@ test('F17：三类全空不再确认，直接保存并在状态行提示后果',
         await saveDictionary(page, 'review_sort_keywords');
         assert.deepEqual(dictionaryPuts(page)[0].body.value, { '市教委': [], '中小学': [], '高校': [] });
         const status = dictionaryBlock(page, 'review_sort_keywords').querySelector('.settings-save-status');
-        assert.match(status.textContent, /已自动保存/);
-        assert.match(status.textContent, /不会调整条目顺序/);
+        assert.equal(status.textContent, '已自动保存。三个类别都为空，自动排序不会调整条目顺序。');
         assert.equal(unloadBlocked(page), false);
     } finally { page.close(); }
 });

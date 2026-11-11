@@ -286,6 +286,25 @@ function defaultEndpointsPayload() {
     };
 }
 
+// PostgreSQL 的 jsonb 会把对象键按「长度 + 字节序」重排，数组顺序保持原样。
+// 高级页的「来源别名」「自动排序关键词」两个分区的 value 是对象，前端保存后的
+// 相等判断必须能容忍这种重排；夹具要模拟同样的顺序，否则测试会比线上更宽松。
+const JSONB_ORDER_SECTIONS = new Set(['source_aliases', 'review_sort_keywords']);
+
+function jsonbOrder(value) {
+    if (Array.isArray(value)) return value.map(jsonbOrder);
+    if (value && typeof value === 'object') {
+        // 用 null 原型：别名里允许出现 __proto__ 这样的键（JSON 语义），普通 {} +
+        // 赋值会把它当成原型设置而丢掉，和真实 jsonb 的行为不一致
+        const ordered = Object.create(null);
+        Object.keys(value)
+            .sort((a, b) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0))
+            .forEach((key) => { ordered[key] = jsonbOrder(value[key]); });
+        return ordered;
+    }
+    return value;
+}
+
 function defaultSections() {
     return {
         llm_endpoints: {
@@ -883,8 +902,12 @@ class FakeSettingsServer {
             return [200, promptTestResultFor(key, item, body)];
         }
         if (pathname === '/api/admin/settings') {
+            const sections = Object.fromEntries(Object.entries(this.sections).map(([key, item]) => [
+                key,
+                JSONB_ORDER_SECTIONS.has(key) ? { ...item, value: jsonbOrder(item.value) } : item,
+            ]));
             return [200, {
-                sections: this.sections,
+                sections,
                 sources: this.sources,
                 steps: this.steps,
                 environment: this.environment,
@@ -1017,6 +1040,8 @@ class FakeSettingsServer {
             } else if (['education_keywords', 'beijing_keywords'].includes(section)) {
                 value = [...new Set(value.map((item) => item.trim()).filter(Boolean))];
             }
+            // 与库里的 jsonb 一致：对象键会被重排后再返回
+            if (JSONB_ORDER_SECTIONS.has(section)) value = jsonbOrder(value);
             const updated = {
                 value,
                 version: current.version + 1,

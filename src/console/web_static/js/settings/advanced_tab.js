@@ -243,6 +243,7 @@ function renderAdvancedSection(section, panel) {
     const commitOptions = { onCommit: () => commitNow() };
     let readValue;
     let applyValue = null;
+    let normalizeValue = null;
     if (section === 'source_aliases') {
         const fields = createEl('div', 'advanced-alias-fields');
         panel.appendChild(fields);
@@ -327,6 +328,13 @@ function renderAdvancedSection(section, panel) {
             );
             fallbackNames.syncValue((value.fallback_names || []).join('\n'));
         };
+        // 旧配置行没有 fallback_names 字段（保存过一次后才会补上）：比较前补齐，
+        // 否则点进点出就会被当成有未保存修改并白写一次库
+        normalizeValue = (value) => ({
+            suffixes: value.suffixes || [],
+            aliases: value.aliases || {},
+            fallback_names: value.fallback_names || [],
+        });
         panel.appendChild(createEl('p', 'settings-effect-note', '只对之后入库的文章生效，已有的文章不会重新处理。'));
     } else if (section === 'review_sort_keywords') {
         const inputs = {};
@@ -402,6 +410,7 @@ function renderAdvancedSection(section, panel) {
     const bar = buildSectionAutoSaveBar(panel, section, readValue, {
         render: () => renderAdvancedSection(section, panel),
         applyValue,
+        normalizeValue,
     });
     commitNow = bar.commit;
     // 焦点离开整块才提交：同一块里从词表跳到添加框、批量编辑等不算离开，

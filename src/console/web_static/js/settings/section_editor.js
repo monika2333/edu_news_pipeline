@@ -2,12 +2,27 @@
 // 写库，卡片底部没有保存/放弃按钮。用户输入仅经 createEl/textContent 渲染。
 'use strict';
 
+// 分区值的相等判断必须忽略对象键序：PostgreSQL 的 jsonb 会把对象键按「长度 +
+// 字节序」重新排列（来源别名的 value、自动排序关键词的 value 都是对象），直接
+// JSON.stringify 比较会把刚保存成功的值误判成「还有未保存的修改」，还会让每次
+// 失焦都重复 PUT、版本号空转。数组顺序有意义，保持原样比较。
+function canonicalSectionJson(value) {
+    if (value === undefined) return 'undefined';
+    if (Array.isArray(value)) return `[${value.map(canonicalSectionJson).join(',')}]`;
+    if (value && typeof value === 'object') {
+        const keys = Object.keys(value).sort();
+        return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalSectionJson(value[key])}`).join(',')}}`;
+    }
+    return JSON.stringify(value);
+}
+
 // 返回 { commit }：commit() 立即校验并保存当前草稿。焦点离开整块才触发的绑定
 // 在 advanced_tab.js（同一分区里换字段不算离开，避免一份草稿被反复 PUT）。
 // options.render：还原时整块重绘；options.applyValue：把服务端规范化后的值同步
-// 回控件（服务端会 trim/去重，不同步就会让本地脏文本反复触发保存）。
+// 回控件（服务端会 trim/去重，不同步就会让本地脏文本反复触发保存）；
+// options.normalizeValue：比较前补齐旧配置行缺失的可选字段（如 fallback_names）。
 function buildSectionAutoSaveBar(panel, section, readValue, options = {}) {
-    const { render, applyValue } = options;
+    const { render, applyValue, normalizeValue } = options;
     // 版本冻结在本编辑器上，只被自己的保存成功推进。窗口重新聚焦时页面会整体
     // 重拉 payload，这里若跟着读最新版本，就会拿别处升级过的版本静默覆盖别人的
     // 修改，409 永远不会出现。
@@ -36,7 +51,12 @@ function buildSectionAutoSaveBar(panel, section, readValue, options = {}) {
         const name = (saved.updated_by && saved.updated_by.display_name) || '未知';
         updatedEl.textContent = `最后修改：${name} · ${formatLocalDateTime(saved.updated_at)}`;
     };
-    const sameValue = (value) => JSON.stringify(value) === JSON.stringify(saved.value);
+    const normalizeSaved = (value) => (
+        typeof normalizeValue === 'function' ? normalizeValue(value) : value
+    );
+    const sameValue = (value) => (
+        canonicalSectionJson(value) === canonicalSectionJson(normalizeSaved(saved.value))
+    );
     const successMessage = (warning) => (warning ? `已自动保存。${warning}` : '已自动保存。');
 
     let saveQueued = false;
@@ -85,10 +105,16 @@ function buildSectionAutoSaveBar(panel, section, readValue, options = {}) {
                     setSettingsStatus(statusEl, current.error, 'error');
                     if (current.reveal) revealAdvancedBatch(current.reveal);
                 } else {
-                    const sentUnchanged = JSON.stringify(current.value) === JSON.stringify(sent);
+                    const sentUnchanged = canonicalSectionJson(current.value)
+                        === canonicalSectionJson(sent);
                     // 服务器会 trim/去重：草稿与提交值一致时把规范化结果写回控件，
                     // 否则本地脏文本会让每次失焦都重复提交同一个值、把版本号越推越高。
-                    if (sentUnchanged && applyValue) applyValue(saved.value);
+                    // 只是 jsonb 换了对象键序时不算「有变化」，不回写，保留用户的行序。
+                    if (sentUnchanged && applyValue
+                        && canonicalSectionJson(normalizeSaved(saved.value))
+                        !== canonicalSectionJson(sent)) {
+                        applyValue(saved.value);
+                    }
                     const pending = !sameValue(readValue().value);
                     state.dirty[section] = pending;
                     showEscape(pending, false);

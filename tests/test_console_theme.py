@@ -140,19 +140,19 @@ def test_account_menu_hosts_three_appearance_options(
     html = _render_page(path, role, monkeypatch)
 
     assert 'role="group" aria-label="外观"' in html
-    option_values = re.findall(r'data-theme-option="([^"]+)"', html)
-    assert option_values == ["system", "light", "dark"], f"{path} 外观选项缺失或顺序错误"
-    assert html.count('aria-pressed="false"') >= 3
     assert re.search(
         r'account-menu-theme-label[^>]*>外观<', html
     ), f"{path} 缺少「外观」分组标签"
-    # 三档必须收在同一个横向分段容器里，不能各自占一行。
-    theme_block = html.split('class="account-menu-theme-options"', 1)[1].split(
-        "</div>", 1
+    # 外观是一个带 data-theme-select 的原生下拉框，三档在同一行。
+    assert "data-theme-select" in html
+    assert 'id="console-theme-select"' in html
+    select_block = html.split('id="console-theme-select"', 1)[1].split(
+        "</select>", 1
     )[0]
-    assert theme_block.count('data-theme-option=') == 3, (
-        f"{path} 外观三项未收在同一行容器中"
-    )
+    option_values = re.findall(r'<option value="([^"]+)"', select_block)
+    assert option_values == ["system", "light", "dark"], f"{path} 外观选项缺失或顺序错误"
+    assert 'class="account-menu-theme-options"' not in html
+    assert "data-theme-option" not in html
 
 
 @pytest.mark.parametrize(("path", "role"), NO_ACCOUNT_MENU_PAGES)

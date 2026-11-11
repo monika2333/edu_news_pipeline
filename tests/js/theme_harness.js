@@ -131,22 +131,13 @@ function themeOf(document) {
     return document.documentElement.getAttribute('data-theme');
 }
 
-function optionButtons(document) {
-    return Array.from(document.querySelectorAll('[data-theme-option]'));
+function themeSelect(document) {
+    return document.querySelector('[data-theme-select]');
 }
 
-function pressedStates(document) {
-    const states = {};
-    optionButtons(document).forEach((button) => {
-        states[button.getAttribute('data-theme-option')] = button.getAttribute('aria-pressed');
-    });
-    return states;
-}
-
-function activeOptions(document) {
-    return optionButtons(document)
-        .filter((button) => button.classList.contains('is-active'))
-        .map((button) => button.getAttribute('data-theme-option'));
+function selectedTheme(document) {
+    const select = themeSelect(document);
+    return select ? select.value : null;
 }
 
 function dispatchStorage(window, key, newValue) {
@@ -164,8 +155,7 @@ module.exports = {
     loadPage,
     readPage,
     themeOf,
-    optionButtons,
-    pressedStates,
-    activeOptions,
+    themeSelect,
+    selectedTheme,
     dispatchStorage,
 };

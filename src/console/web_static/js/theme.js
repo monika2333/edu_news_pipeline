@@ -58,6 +58,10 @@
     }
 
     function syncControls(preferenceValue) {
+        var selects = document.querySelectorAll('[data-theme-select]');
+        for (var selectIndex = 0; selectIndex < selects.length; selectIndex += 1) {
+            selects[selectIndex].value = preferenceValue;
+        }
         var buttons = document.querySelectorAll('[data-theme-option]');
         for (var index = 0; index < buttons.length; index += 1) {
             var button = buttons[index];
@@ -103,6 +107,15 @@
         }
     }
 
+    function handleSelectChange(event) {
+        var target = event.target;
+        if (!target || !target.hasAttribute || !target.hasAttribute('data-theme-select')) {
+            return;
+        }
+        setPreference(target.value);
+        writePreference(preference);
+    }
+
     function updateFromEnvironment() {
         preference = readPreference();
         apply(preference);
@@ -120,6 +133,7 @@
         }
         window.addEventListener('storage', handleStorage);
         document.addEventListener('click', handleOptionClick);
+        document.addEventListener('change', handleSelectChange);
     }
 
     if (document.readyState === 'loading') {

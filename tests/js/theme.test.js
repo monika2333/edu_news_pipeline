@@ -9,9 +9,8 @@ const assert = require('node:assert/strict');
 const {
     loadPage,
     themeOf,
-    optionButtons,
-    pressedStates,
-    activeOptions,
+    themeSelect,
+    selectedTheme,
     dispatchStorage,
 } = require('./theme_harness.js');
 
@@ -24,6 +23,13 @@ async function withPage(envName, options, callback) {
     }
 }
 
+function changeTheme(page, value) {
+    const select = themeSelect(page.document);
+    assert.ok(select, '缺少外观下拉框');
+    select.value = value;
+    select.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+}
+
 test('无偏好时默认跟随系统（系统亮/暗各一）', async () => {
     await withPage('THEME_PAGE_ADMIN_HTML', { systemDark: false }, (page) => {
         assert.equal(themeOf(page.document), 'light');
@@ -32,11 +38,7 @@ test('无偏好时默认跟随系统（系统亮/暗各一）', async () => {
     await withPage('THEME_PAGE_ADMIN_HTML', { systemDark: true }, (page) => {
         assert.equal(themeOf(page.document), 'dark');
         assert.equal(page.document.documentElement.style.colorScheme, 'dark');
-        assert.deepEqual(pressedStates(page.document), {
-            system: 'true',
-            light: 'false',
-            dark: 'false',
-        });
+        assert.equal(selectedTheme(page.document), 'system');
     });
 });
 
@@ -64,7 +66,7 @@ test('已存 light/dark 覆盖系统主题', async () => {
         { storedPreference: 'dark', systemDark: false },
         (page) => {
             assert.equal(themeOf(page.document), 'dark');
-            assert.deepEqual(activeOptions(page.document), ['dark']);
+            assert.equal(selectedTheme(page.document), 'dark');
         }
     );
     await withPage(
@@ -72,7 +74,7 @@ test('已存 light/dark 覆盖系统主题', async () => {
         { storedPreference: 'light', systemDark: true },
         (page) => {
             assert.equal(themeOf(page.document), 'light');
-            assert.deepEqual(activeOptions(page.document), ['light']);
+            assert.equal(selectedTheme(page.document), 'light');
         }
     );
 });
@@ -116,40 +118,26 @@ test('手动 light/dark 模式不受系统主题变化影响', async () => {
     );
 });
 
-test('点击外观选项立即生效、写入 localStorage 并同步 aria-pressed', async () => {
+test('切换外观下拉框立即生效、写入 localStorage 并同步选中值', async () => {
     await withPage(
         'THEME_PAGE_ADMIN_HTML',
         { storedPreference: 'system', systemDark: false },
         (page) => {
-            const darkButton = page.document.querySelector('[data-theme-option="dark"]');
-            assert.ok(darkButton, '缺少暗色选项');
-            darkButton.click();
-
+            changeTheme(page, 'dark');
             assert.equal(themeOf(page.document), 'dark');
             assert.equal(page.window.localStorage.getItem('console_theme'), 'dark');
-            assert.deepEqual(pressedStates(page.document), {
-                system: 'false',
-                light: 'false',
-                dark: 'true',
-            });
-            assert.deepEqual(activeOptions(page.document), ['dark']);
+            assert.equal(selectedTheme(page.document), 'dark');
 
-            const lightButton = page.document.querySelector('[data-theme-option="light"]');
-            lightButton.click();
+            changeTheme(page, 'light');
             assert.equal(themeOf(page.document), 'light');
             assert.equal(page.window.localStorage.getItem('console_theme'), 'light');
-            assert.deepEqual(pressedStates(page.document), {
-                system: 'false',
-                light: 'true',
-                dark: 'false',
-            });
+            assert.equal(selectedTheme(page.document), 'light');
 
-            const systemButton = page.document.querySelector('[data-theme-option="system"]');
             page.matchMedia.setMatches(true);
-            systemButton.click();
+            changeTheme(page, 'system');
             assert.equal(themeOf(page.document), 'dark');
             assert.equal(page.window.localStorage.getItem('console_theme'), 'system');
-            assert.deepEqual(activeOptions(page.document), ['system']);
+            assert.equal(selectedTheme(page.document), 'system');
         }
     );
 });
@@ -164,12 +152,12 @@ test('其他标签页修改 console_theme 时经 storage 事件同步主题与�
             page.window.localStorage.setItem('console_theme', 'dark');
             dispatchStorage(page.window, 'console_theme', 'dark');
             assert.equal(themeOf(page.document), 'dark');
-            assert.deepEqual(activeOptions(page.document), ['dark']);
+            assert.equal(selectedTheme(page.document), 'dark');
 
             page.window.localStorage.clear();
             dispatchStorage(page.window, null, null);
             assert.equal(themeOf(page.document), 'light');
-            assert.deepEqual(activeOptions(page.document), ['system']);
+            assert.equal(selectedTheme(page.document), 'system');
         }
     );
 });
@@ -180,7 +168,7 @@ test('登录页没有外观控件，但遵循已存偏好', async () => {
         { storedPreference: 'dark', systemDark: false },
         (page) => {
             assert.equal(themeOf(page.document), 'dark');
-            assert.equal(optionButtons(page.document).length, 0);
+            assert.equal(themeSelect(page.document), null);
         }
     );
 });
@@ -190,8 +178,8 @@ test('值班编辑页也有外观控件且可切换', async () => {
         'THEME_PAGE_DUTY_HTML',
         { storedPreference: 'system', systemDark: false },
         (page) => {
-            assert.equal(optionButtons(page.document).length, 3);
-            page.document.querySelector('[data-theme-option="dark"]').click();
+            assert.ok(themeSelect(page.document), '缺少外观下拉框');
+            changeTheme(page, 'dark');
             assert.equal(themeOf(page.document), 'dark');
             assert.equal(page.window.localStorage.getItem('console_theme'), 'dark');
         }
@@ -205,7 +193,7 @@ test('主题切换不读写 console_theme 之外的 localStorage 键', async () 
         (page) => {
             page.window.localStorage.setItem('sidebar_collapsed', 'true');
             page.window.localStorage.setItem('search_filters', '{"bucket":"internal"}');
-            page.document.querySelector('[data-theme-option="dark"]').click();
+            changeTheme(page, 'dark');
             assert.equal(page.window.localStorage.getItem('sidebar_collapsed'), 'true');
             assert.equal(
                 page.window.localStorage.getItem('search_filters'),

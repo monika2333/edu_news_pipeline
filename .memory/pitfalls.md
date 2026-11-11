@@ -103,6 +103,7 @@
 - 纯 CSS/布局改动 jsdom 测不到，用 headless Chrome 直接渲染静态夹具核对几何：`chrome --headless=new --window-size=W,H --screenshot=out.png file:///...` 出图，`--dump-dom` 配合页内 `window.onload` 脚本把 `getBoundingClientRect()` 写进 `<pre>` 再解析，能量到「各行第一列左缘是否一致、`table.scrollWidth` 是否超出 `.admin-table-wrap`」。CLI 的 headless Chrome **可以**开 `file://` 夹具（workflow.md §5 那条 `file:` 限制只针对浏览器技能/Playwright）。夹具放临时目录，不要把预览 HTML 提交进仓库。
 
 - **变异要打在「唯一决定行为」的位置**（2026-11-07）：设置页栏目面板「重渲染重置展开态」的变异先打在 `insertColumnsPanel` 的 `panel.hidden` 上，被紧接着的 `syncSourcePanels()` 覆盖而存活；改到 `renderSourcesPanel` 开头重置 `state.expandedSource` 才真正模拟丢状态。变异存活时先确认它是否真的改变了最终状态，再判断是不是测试盲区。
+- **前端比较分区值不能直接 `JSON.stringify`：jsonb 会重排对象键**（2026-11-11 实测）：`app_settings.value` 是 jsonb，读回来对象键按「长度 + 字节序」重排——来源别名是 `{aliases, suffixes[, fallback_names]}`，自动排序关键词是 `{高校, 中小学, 市教委}`，旧配置行还可能整个缺 `fallback_names`。即时保存在保存后用 `JSON.stringify` 比对「响应值 vs DOM 解析值」，刚保存成功的值会被判成「还有未保存的修改」，并让每次失焦都重复 PUT、版本号空转（用户看到的就是那句假提示）。比较必须递归排序对象键（`section_editor.js` 的 `canonicalSectionJson`）并补齐缺失的可选字段。jsdom 夹具有同一个陷阱：`respond` 原样回对象会让测试永远比线上宽松，夹具要按真实 jsonb 重排键序（`settings_harness.js` 的 `jsonbOrder`）；重排时用 `Object.create(null)`，普通 `{}` 赋值会把 `__proto__` 这种合法别名键当成原型设置丢掉。
 
 ## 已知「等价变异」/ 测试盲区备忘
 

@@ -155,6 +155,19 @@ def test_account_menu_hosts_three_appearance_options(
     assert "data-theme-option" not in html
 
 
+@pytest.mark.parametrize(("path", "role", "template_name"), THEME_PAGES)
+def test_stylesheet_links_are_cache_busted(
+    path: str, role: str | None, template_name: str, monkeypatch: MonkeyPatch
+) -> None:
+    """CSS 改动必须带 ?v= 版本号，否则浏览器会继续用旧样式（暗色漏块）。"""
+    html = _render_page(path, role, monkeypatch)
+    links = re.findall(r'<link rel="stylesheet" href="([^"]+)"', html)
+    if path != "/":
+        assert links, f"{template_name} 没有 stylesheet"
+    missing = [href for href in links if "?v=" not in href]
+    assert not missing, f"{template_name} 的 stylesheet 缺少版本号：{missing}"
+
+
 @pytest.mark.parametrize(("path", "role"), NO_ACCOUNT_MENU_PAGES)
 def test_pages_without_account_menu_have_no_appearance_controls(
     path: str, role: str | None, monkeypatch: MonkeyPatch

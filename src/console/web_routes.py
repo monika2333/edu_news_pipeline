@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import hashlib
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +23,31 @@ router = APIRouter(tags=["console"], include_in_schema=False)
 logger = logging.getLogger(__name__)
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent / "web_templates"
+_STATIC_DIR = Path(__file__).resolve().parent / "web_static"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
+
+
+def _asset_version(static_dir: Path | None = None) -> str:
+    """静态资源指纹：文件不变时稳定，任意文件改动后自动换新。
+
+    按相对路径、mtime_ns、大小做短哈希，用于模板里的 ?v= 缓存控制。只做
+    stat 不读文件内容，页面渲染开销可忽略；git checkout / 正常部署都会更新
+    mtime，所以改完 CSS/JS 后下一次请求就能失效旧缓存。
+    """
+    directory = static_dir or _STATIC_DIR
+    digest = hashlib.sha1()
+    if directory.is_dir():
+        for path in sorted(directory.rglob("*")):
+            if not path.is_file():
+                continue
+            stat = path.stat()
+            digest.update(path.relative_to(directory).as_posix().encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(str(stat.st_mtime_ns).encode("ascii"))
+            digest.update(b"\0")
+            digest.update(str(stat.st_size).encode("ascii"))
+            digest.update(b"\0")
+    return digest.hexdigest()[:12]
 
 
 def _review_sort_rules() -> dict[str, list[str]]:
@@ -45,8 +69,8 @@ async def manual_filter_page(
     request: Request,
     user: ConsoleUser = Depends(require_role("admin")),
 ) -> HTMLResponse:
-    # Use current timestamp for cache busting, or could be a build version
-    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    # 静态资源指纹：文件不变时稳定，改了 CSS/JS 自动换版本号
+    version = _asset_version()
     return templates.TemplateResponse(
         "manual_filter.html",
         {
@@ -65,7 +89,7 @@ async def admin_review_page(
     request: Request,
     user: ConsoleUser = Depends(require_role("admin")),
 ) -> HTMLResponse:
-    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    version = _asset_version()
     return templates.TemplateResponse(
         "manual_filter.html",
         {
@@ -87,7 +111,7 @@ async def root_page(
     """Open the active workflow for the user's role and browser history."""
     if user.role == "duty_editor":
         return RedirectResponse(url=request.url_for("duty_page"), status_code=307)
-    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    version = _asset_version()
     return templates.TemplateResponse(
         "admin_entry.html",
         {"request": request, "version": version, "current_user": user},
@@ -99,7 +123,7 @@ async def duty_page(
     request: Request,
     user: ConsoleUser = Depends(require_role("duty_editor")),
 ) -> HTMLResponse:
-    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    version = _asset_version()
     return templates.TemplateResponse(
         "manual_filter.html",
         {
@@ -122,7 +146,7 @@ async def admin_page(
         generate_shifts(days=14, actor_user_id=user.user_id)
     except ShiftScheduleIncompleteError:
         pass
-    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    version = _asset_version()
     return templates.TemplateResponse(
         "admin.html",
         {"request": request, "version": version, "current_user": user},
@@ -134,7 +158,7 @@ async def admin_user_create_page(
     request: Request,
     user: ConsoleUser = Depends(require_role("admin")),
 ) -> HTMLResponse:
-    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    version = _asset_version()
     return templates.TemplateResponse(
         "admin_user_create.html",
         {"request": request, "version": version, "current_user": user},
@@ -147,7 +171,7 @@ async def admin_settings_page(
     user: ConsoleUser = Depends(require_role("admin")),
 ) -> HTMLResponse:
     """系统设置页：模型、数据源与抓取账号的管理员配置入口。"""
-    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    version = _asset_version()
     return templates.TemplateResponse(
         "settings.html",
         {"request": request, "version": version, "current_user": user},
@@ -163,7 +187,7 @@ async def duty_summary_page(
         generate_shifts(days=14, actor_user_id=user.user_id)
     except ShiftScheduleIncompleteError:
         pass
-    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    version = _asset_version()
     return templates.TemplateResponse(
         "duty_summary.html",
         {"request": request, "version": version, "current_user": user},
@@ -172,7 +196,7 @@ async def duty_summary_page(
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request) -> HTMLResponse:
-    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    version = _asset_version()
     return templates.TemplateResponse(
         "login.html",
         {"request": request, "version": version},
@@ -181,7 +205,7 @@ async def login_page(request: Request) -> HTMLResponse:
 
 @router.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request) -> HTMLResponse:
-    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    version = _asset_version()
     return templates.TemplateResponse(
         "register.html",
         {"request": request, "version": version},
@@ -193,7 +217,7 @@ async def account_page(
     request: Request,
     user: ConsoleUser = Depends(require_console_user),
 ) -> HTMLResponse:
-    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    version = _asset_version()
     return templates.TemplateResponse(
         "account.html",
         {"request": request, "version": version, "current_user": user},
@@ -207,7 +231,7 @@ def _submission_archive_response(
     view: str,
     report_id: str | None = None,
 ) -> HTMLResponse:
-    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    version = _asset_version()
     return templates.TemplateResponse(
         "submission_archive.html",
         {

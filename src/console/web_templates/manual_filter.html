@@ -9,15 +9,15 @@
     {% include "_theme_head.html" %}
     <title>新闻筛选控制台{% if is_admin_review %} · 汇总审阅{% elif not is_duty_workspace %} · 全量新闻筛选{% endif %}</title>
     <!-- CSS Core -->
-    <link rel="stylesheet" href="/static/css/variables.css">
-    <link rel="stylesheet" href="/static/css/base.css">
-    <link rel="stylesheet" href="/static/css/utilities.css">
-    <link rel="stylesheet" href="/static/css/layout.css">
-    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/variables.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/base.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/utilities.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/layout.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/css/components.css?v={{ version }}">
     <!-- CSS Modules -->
     <link rel="stylesheet" href="/static/css/modules/filter.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/review.css?v={{ version }}">
-    <link rel="stylesheet" href="/static/css/modules/search.css">
+    <link rel="stylesheet" href="/static/css/modules/search.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/content_drawer.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/sidebar_collapse.css?v={{ version }}">
     <link rel="stylesheet" href="/static/css/modules/score_feedback.css?v={{ version }}">

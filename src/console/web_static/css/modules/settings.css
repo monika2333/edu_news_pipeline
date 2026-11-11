@@ -1856,7 +1856,17 @@
     border-top: 0;
 }
 .advanced-alias-fields > .advanced-field:last-child { padding-bottom: 0; }
-.advanced-section > .settings-updated { margin-top: 12px; }
+/* 高级页是即时保存：卡片底部没有动作按钮，状态与「最后修改」同一行，
+   出错或冲突时才补「还原为已保存内容」「载入最新配置」。没有动作区，
+   也就不需要保存栏的分隔线与内边距。 */
+.settings-card > .settings-save-bar.is-autosave {
+    margin-top: 14px;
+    padding-top: 0;
+    border-top: 0;
+}
+.settings-save-bar.is-autosave .settings-updated {
+    margin: 0 0 0 auto;
+}
 
 /* 提示词页签：左侧提示词列表 + 右侧编辑器，窄屏堆叠 */
 .prompt-layout {

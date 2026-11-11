@@ -39,7 +39,8 @@ function splitAliasLine(line) {
 // 原生 textarea 做整段粘贴/替换。textarea 仍是唯一数据源（readValue 只读它），
 // 芯片和输入框只是它的视图，输入事件会同时触发脏标记、计数和芯片重绘。
 // mode='aliases' 时芯片显示「原名称 → 标准名称」，添加输入也按同一格式拆分。
-// options.order 给来源别名这类有处理先后顺序的字段一个编号徽标。
+// options.order 给来源别名这类有处理先后顺序的字段一个编号徽标；
+// options.onCommit 是「删除芯片后立刻保存」的回调（添加词等失焦再提交）。
 function buildSettingsTextarea(panel, label, value, section, className, options = {}) {
     const mode = options.mode || 'list';
     const unit = options.unit || '个词';
@@ -116,6 +117,7 @@ function buildSettingsTextarea(panel, label, value, section, className, options 
             // mousedown 先于输入框 blur：如果添加框里还有没回车的词，
             // blur 会重绘芯片并把当前按钮换掉，click 就丢了。mousedown
             // 先删除并阻止默认行为（不抢焦点），键盘 Enter 仍走 click。
+            // 删除是破坏性动作，删完立刻保存（添加词仍等失焦，连续录入不逐个发请求）。
             let removed = false;
             const removeChip = (event) => {
                 if (removed) return;
@@ -124,6 +126,7 @@ function buildSettingsTextarea(panel, label, value, section, className, options 
                 const lines = input.value.split(/\r?\n/);
                 lines.splice(item.index, 1);
                 setValue(lines.join('\n'));
+                if (typeof options.onCommit === 'function') options.onCommit();
             };
             remove.addEventListener('mousedown', removeChip);
             remove.addEventListener('click', removeChip);
@@ -165,8 +168,8 @@ function buildSettingsTextarea(panel, label, value, section, className, options 
             addInput.setAttribute('aria-invalid', 'false');
         }
     });
-    // 失焦时提交，避免「打完一个词直接点保存」把词丢掉；但不把焦点抢回来，
-    // 否则点「保存」「批量编辑」或跳到另一个字段都会被打断
+    // 失焦时提交，避免打完一个词直接点到别处把词丢掉；但不把焦点抢回来，
+    // 否则点「批量编辑」或跳到另一个字段都会被打断
     addInput.addEventListener('blur', () => {
         if (addInput.value.trim()) addLine({ focus: false });
     });
@@ -175,18 +178,20 @@ function buildSettingsTextarea(panel, label, value, section, className, options 
         addInput.focus();
     });
 
-    toggle.addEventListener('click', () => {
-        const open = input.hidden;
+    // 批量编辑的开合：正常点击进入时把焦点放进 textarea；校验失败需要展开
+    // 出错位置时不抢焦点（失焦保存中抢焦点会打断用户操作），见 revealAdvancedBatch。
+    const setBatchOpen = (open, { focus = true } = {}) => {
         input.hidden = !open;
         toggle.setAttribute('aria-expanded', String(open));
         toggle.textContent = open ? '收起批量' : '批量编辑';
-        if (open) {
+        if (open && focus) {
             input.focus();
             input.setSelectionRange(input.value.length, input.value.length);
         }
-    });
-    input.openBatch = () => {
-        if (input.hidden) toggle.click();
+    };
+    toggle.addEventListener('click', () => setBatchOpen(input.hidden));
+    input.openBatch = (openOptions) => {
+        if (input.hidden) setBatchOpen(true, openOptions);
     };
 
     input.addEventListener('input', () => {
@@ -195,17 +200,30 @@ function buildSettingsTextarea(panel, label, value, section, className, options 
         renderChips();
     });
 
+    // 服务端规范化（trim/去重）后的值回写：只更新视图，不当作一次用户输入。
+    // 不同步的话，本地文本里的多余空格或重复词会让每次失焦都重复提交同一个值，
+    // 把分区版本号越推越高。
+    input.syncValue = (next) => {
+        // 内容相同时不重新赋值：写回相等的 value 会把光标移到末尾
+        if (input.value !== next) input.value = next;
+        updateCount();
+        renderChips();
+    };
+
     updateCount();
     renderChips();
     return input;
 }
 
 function revealAdvancedBatch(input) {
-    if (typeof input.openBatch === 'function') input.openBatch();
+    if (typeof input.openBatch === 'function') input.openBatch({ focus: false });
 }
 
 const REVIEW_SORT_CATEGORIES = ['市教委', '中小学', '高校'];
 
+// 每个块在焦点离开整块（或芯片删除）时即时保存，没有保存/放弃按钮。
+// readValue() 只做取值与校验：成功返回 { value, warning? }，失败返回
+// { error, reveal? }，由 section_editor.js 的保存栏统一决定状态行与按钮。
 function renderAdvancedSection(section, panel) {
     clearEl(panel);
     const [label, description, emptyMessage] = ADVANCED_SECTIONS[section];
@@ -220,7 +238,11 @@ function renderAdvancedSection(section, panel) {
     heading.appendChild(createEl('p', 'settings-card-desc settings-effect-note', description));
     head.appendChild(heading);
     panel.appendChild(head);
+    // 删除芯片要立刻保存；保存栏在本函数末尾才建好，用这个间接跳板接上
+    let commitNow = () => {};
+    const commitOptions = { onCommit: () => commitNow() };
     let readValue;
+    let applyValue = null;
     if (section === 'source_aliases') {
         const fields = createEl('div', 'advanced-alias-fields');
         panel.appendChild(fields);
@@ -231,6 +253,7 @@ function renderAdvancedSection(section, panel) {
             section,
             'alias-suffixes',
             {
+                ...commitOptions,
                 order: 1,
                 unit: '条',
                 addPlaceholder: '添加后缀，回车确认',
@@ -245,6 +268,7 @@ function renderAdvancedSection(section, panel) {
             section,
             'alias-mappings',
             {
+                ...commitOptions,
                 order: 2,
                 mode: 'aliases',
                 unit: '条',
@@ -260,6 +284,7 @@ function renderAdvancedSection(section, panel) {
             section,
             'alias-fallback-names',
             {
+                ...commitOptions,
                 order: 3,
                 unit: '条',
                 addPlaceholder: '添加来源名称，回车确认',
@@ -267,7 +292,7 @@ function renderAdvancedSection(section, panel) {
                     + '归一化前后的名称都参与比对。书名号等符号也要一致。',
             },
         );
-        readValue = (status) => {
+        readValue = () => {
             const entries = [];
             const seen = new Set();
             const lines = aliases.value.split(/\r?\n/);
@@ -282,18 +307,25 @@ function renderAdvancedSection(section, panel) {
                     seen.has(key) ? '原名称重复。' : '';
                 if (error) {
                     aliases.setAttribute('aria-invalid', 'true');
-                    revealAdvancedBatch(aliases);
-                    setSettingsStatus(status, `别名第 ${index + 1} 行：${error}`, 'error');
-                    return undefined;
+                    return { error: `别名第 ${index + 1} 行：${error}`, reveal: aliases };
                 }
                 seen.add(key);
                 entries.push([key, target]);
             }
             return {
-                suffixes: settingsTextLines(suffixes.value),
-                aliases: Object.fromEntries(entries),
-                fallback_names: settingsTextLines(fallbackNames.value),
+                value: {
+                    suffixes: settingsTextLines(suffixes.value),
+                    aliases: Object.fromEntries(entries),
+                    fallback_names: settingsTextLines(fallbackNames.value),
+                },
             };
+        };
+        applyValue = (value) => {
+            suffixes.syncValue(value.suffixes.join('\n'));
+            aliases.syncValue(
+                Object.entries(value.aliases).map(([key, target]) => `${key}=${target}`).join('\n'),
+            );
+            fallbackNames.syncValue((value.fallback_names || []).join('\n'));
         };
         panel.appendChild(createEl('p', 'settings-effect-note', '只对之后入库的文章生效，已有的文章不会重新处理。'));
     } else if (section === 'review_sort_keywords') {
@@ -306,11 +338,12 @@ function renderAdvancedSection(section, panel) {
                 section,
                 'keyword-list',
                 {
+                    ...commitOptions,
                     addPlaceholder: `添加${category}关键词，回车确认`,
                 },
             );
         });
-        readValue = (status) => {
+        readValue = () => {
             const value = {};
             const seen = new Map();
             for (const category of REVIEW_SORT_CATEGORIES) {
@@ -325,19 +358,23 @@ function renderAdvancedSection(section, panel) {
                             ? `${category}第 ${index + 1} 行：关键词重复。`
                             : `${category}第 ${index + 1} 行：关键词「${lines[index]}」同时出现在 ${owner} 和 ${category}，分类按优先级首个命中，请只保留一处。`;
                         input.setAttribute('aria-invalid', 'true');
-                        revealAdvancedBatch(input);
-                        setSettingsStatus(status, message, 'error');
-                        return undefined;
+                        return { error: message, reveal: input };
                     }
                     seen.set(lowered, category);
                 }
                 value[category] = lines;
             }
-            if (REVIEW_SORT_CATEGORIES.every((category) => !value[category].length)
-                && !window.confirm('三个类别的关键词都为空，自动排序将不会调整条目顺序。确定保存吗？')) {
-                return undefined;
-            }
-            return value;
+            // 三类全空是合法配置（自动排序不调整顺序），不再弹 confirm 打断
+            // 失焦保存，只用状态行提示后果。
+            const warning = REVIEW_SORT_CATEGORIES.every((category) => !value[category].length)
+                ? '三个类别都为空，自动排序不会调整条目顺序。'
+                : '';
+            return { value, warning };
+        };
+        applyValue = (value) => {
+            REVIEW_SORT_CATEGORIES.forEach((category) => {
+                inputs[category].syncValue((value[category] || []).join('\n'));
+            });
         };
     } else {
         const input = buildSettingsTextarea(
@@ -347,27 +384,44 @@ function renderAdvancedSection(section, panel) {
             section,
             'keyword-list',
             {
+                ...commitOptions,
                 addPlaceholder: '添加关键词，回车确认',
             },
         );
-        readValue = (status) => {
+        readValue = () => {
             const value = settingsTextLines(input.value);
             input.setAttribute('aria-invalid', String(!value.length));
             if (!value.length) {
-                revealAdvancedBatch(input);
-                setSettingsStatus(status, emptyMessage, 'error');
-                return undefined;
+                return { error: emptyMessage, reveal: input };
             }
-            return value;
+            return { value };
         };
+        applyValue = (value) => input.syncValue(value.join('\n'));
         panel.appendChild(createEl('p', 'settings-effect-note', '只对之后入库的文章生效，已有的文章不会重新处理。'));
     }
-    buildSectionSaveBar(panel, section, label, readValue, () => renderAdvancedSection(section, panel));
+    const bar = buildSectionAutoSaveBar(panel, section, readValue, {
+        render: () => renderAdvancedSection(section, panel),
+        applyValue,
+    });
+    commitNow = bar.commit;
+    // 焦点离开整块才提交：同一块里从词表跳到添加框、批量编辑等不算离开，
+    // 一份草稿只发一次请求。事件委托挂在页签根上，块重绘不需要重绑。
+    panel.commitAutoSave = bar.commit;
 }
 
 function renderAdvancedTab() {
     const panel = elements.panels.advanced;
     clearEl(panel);
+    if (!panel.dataset.autoSaveBound) {
+        panel.dataset.autoSaveBound = '1';
+        panel.addEventListener('focusout', (event) => {
+            const block = event.target.closest ? event.target.closest('.advanced-section') : null;
+            if (!block || typeof block.commitAutoSave !== 'function') return;
+            const next = event.relatedTarget;
+            if (next && block.contains(next)) return;
+            block.commitAutoSave();
+        });
+    }
     Object.keys(ADVANCED_SECTIONS).forEach((section) => {
         const block = createEl('section', 'settings-card advanced-section', '', { dataset: { section } });
         panel.appendChild(block);

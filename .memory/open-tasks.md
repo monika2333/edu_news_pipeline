@@ -8,7 +8,7 @@
 
 ## 未排期候选
 
-- 亮暗主题后续候选（未排期）：核心 CSS（`variables.css`、`base.css`、`components.css`、`layout.css`、`utilities.css`）仍没有 `?v={{ version }}`，生产强缓存下首次部署可能需要硬刷新；外观下拉若要严格居中需换自定义下拉（用户 2026-11-11 已否决在原生 select 上继续打补丁）。
+- 外观下拉严格居中（未排期）：原生 select 的选中值默认在箭头左侧文本区居中，用户 2026-11-11 已否决 `text-align` / 自绘箭头补丁；若要严格居中需换自定义下拉。
 - article 级 4xx 死信可见性（未排期）：`beijing_gate_fail_count` 达到上限后稿件保持 `pending_beijing_gate` 但不再被 `fetch_beijing_gate_candidates` 取到，目前只有 `GATE EXHAUSTED` 日志，控制台/巡检没有入口；是否加状态或运维查询待定。
 - 检索按「消息来源」筛选（未排期）：目前只能按抓取来源 `source` 搜；`news_summaries.llm_source`（LLM 识别的消息来源，5331 篇里 3277 篇与 `source` 不同）与人工来源不可检索。若要做，应作为独立维度（来源过滤下拉），不要塞进自由文本 AND 组（理由见 `decisions.md`「检索语义」）。
 - 爬虫 adapter 整理后续（需先补黄金快照）：统一各站标题提取（现 9 处实现）、btime 结尾锚定后缀收编进 `strip_site_suffix`、发布时间解析共享化。

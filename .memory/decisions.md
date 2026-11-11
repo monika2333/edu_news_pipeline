@@ -61,6 +61,7 @@
 - **合并优先 ff-only；不能快进时直接普通 merge**（2026-10-20 修订，取代 2026-10-08 的强制 ff-only）：能快进就 `git merge --ff-only`；真分叉时普通 `git merge`、产生 merge commit 可以接受，**不要为了 ff-only 额外 rebase 分支**。合并后仍必须跑主仓库全量 pytest（见 workflow.md）。
 - **委托书式任务流程**：文件范围硬约束 + 必做变异测试（见 workflow.md）。
 - **记忆只在 main 合并后更新并单独提交**：worktree 内 `.memory/` 只读；完整规则见 `.memory/README.md`「维护规则」第 2 条（2026-10-20 拍板）。
+- **控制台静态资源缓存（2026-11-11 拍板）**：所有 CSS/JS 链接必须带 `?v={{ version }}`；`version` 由 `web_routes._asset_version()` 扫描 `web_static` 的 `(相对路径, mtime_ns, size)` 生成稳定短哈希，文件不变时复用缓存、改动/新增自动换新，不需要手动 bump。**不要删 `?v=`**——浏览器按完整 URL 缓存，`?v=` 是缓存键，不是“浏览器检测代码变化”；**也不要为此做 Jinja `static_url()` helper**（项目小、新增资源频率低，显式链接更直观，测试兜底）。背景：核心 CSS 和 `search.css` 曾无版本号，暗色下查重弹窗 `.archive-item` 继续用旧白底缓存。细节见 [archive/2026-11-11-控制台静态资源版本.md](archive/2026-11-11-控制台静态资源版本.md)。
 - **部署侧待办不进 `.memory/`**（2026-10-20 拍板）：生产/部署侧手工动作由用户自行跟踪；`open-tasks.md` 只记开发进行中事项与未排期候选。
 - 数据库变更只做加法；`manual_clusters` 不加报别维度（权威规则见根 `AGENTS.md`）。
 - **一次性例外（2026-10-30 拍板）：TXT 简报导出连表删除 + 授权修改 baseline 迁移**。`brief_batches`/`brief_items` 两表随 export 功能整体 drop（线上 43 批/2929 条数据一并删除，用户明确拍板「不留开关不留兼容层」）；baseline（20241101000000）的 brief 建表段改为「仅缺 `submitted_reports` 的远古库才补建」守卫——这是「已有迁移文件不动」规则首次被用户授权打破，动因与推演见 archive/2026-10-30-移除TXT简报导出.md。此后如再遇到「删 baseline 建过的表」，先读 pitfalls「删除 baseline 建过的表」条目。

@@ -45,8 +45,8 @@ body.archive-batch-modal-open .content-drawer {
     flex: 0 0 auto;
     padding: 5px 12px;
     border-radius: 999px;
-    background: #fef3c7;
-    color: #b45309;
+    background: var(--warning-bg);
+    color: var(--warning-text);
     font-size: 0.82rem;
     font-weight: 700;
 }
@@ -58,7 +58,7 @@ body.archive-batch-modal-open .content-drawer {
 .archive-link-card {
     margin-top: 14px;
     padding: 18px;
-    border: 1px solid #dde5f0;
+    border: 1px solid var(--border-panel);
     border-radius: 14px;
     background: var(--card-bg);
 }
@@ -74,12 +74,12 @@ body.archive-batch-modal-open .content-drawer {
     padding: 14px;
     border: 1px solid var(--border-color);
     border-radius: 10px;
-    background: #f8fafc;
+    background: var(--surface-muted);
 }
 
 .archive-link-col.is-candidate {
-    border-color: #bfdbfe;
-    background: #eff6ff;
+    border-color: var(--primary-border);
+    background: var(--primary-soft);
 }
 
 .archive-link-col-label {
@@ -102,7 +102,7 @@ body.archive-batch-modal-open .content-drawer {
 
 .archive-link-col p.archive-link-body {
     margin: 8px 0 0;
-    color: #475569;
+    color: var(--text-label);
     font-size: 0.85rem;
     line-height: 1.7;
     white-space: pre-wrap;
@@ -128,7 +128,7 @@ body.archive-batch-modal-open .content-drawer {
     margin-top: 14px;
     padding: 10px 14px;
     border-radius: 8px;
-    background: #f8fafc;
+    background: var(--surface-muted);
 }
 
 .archive-score-bar {
@@ -138,7 +138,7 @@ body.archive-batch-modal-open .content-drawer {
     flex: 0 0 160px;
     overflow: hidden;
     border-radius: 999px;
-    background: #e2e8f0;
+    background: var(--surface-skeleton);
 }
 
 .archive-score-bar > span {

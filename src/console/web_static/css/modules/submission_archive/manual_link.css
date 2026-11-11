@@ -23,9 +23,9 @@
 }
 
 .archive-manual-unlink-btn:hover {
-    border-color: #fecaca;
-    background: #fef2f2;
-    color: #b91c1c;
+    border-color: var(--danger-border);
+    background: var(--danger-bg-soft);
+    color: var(--danger-text);
 }
 
 .archive-link-modal-content {
@@ -89,13 +89,13 @@
 }
 
 .archive-link-controls input[type="search"]::placeholder {
-    color: #94a3b8;
+    color: var(--text-muted);
 }
 
 .archive-link-controls input[type="search"]:focus {
     border-color: var(--primary-color);
     outline: none;
-    box-shadow: 0 0 0 3px rgb(37 99 235 / 12%);
+    box-shadow: 0 0 0 3px var(--shadow-focus);
 }
 
 /* 时间范围分段控件，与存档库类型筛选（archive-type-filter）同款 pill 组 */
@@ -105,7 +105,7 @@
     padding: 2px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    background: #f1f5f9;
+    background: var(--surface-subtle);
 }
 
 .archive-link-window-option {
@@ -129,7 +129,7 @@
 .archive-link-window-option.active {
     background: var(--card-bg);
     color: var(--primary-color);
-    box-shadow: 0 1px 2px rgb(15 23 42 / 10%);
+    box-shadow: 0 1px 2px var(--shadow-slate-medium);
 }
 
 .archive-link-controls .btn {
@@ -155,7 +155,7 @@
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--primary-color);
+    background: var(--primary-fill);
     opacity: 0.45;
 }
 
@@ -194,8 +194,8 @@
 }
 
 .archive-link-candidate:hover {
-    border-color: #cbd5e1;
-    box-shadow: 0 1px 4px rgb(15 23 42 / 6%);
+    border-color: var(--border-strong);
+    box-shadow: 0 1px 4px var(--shadow-soft);
 }
 
 .archive-link-candidate-head {
@@ -224,15 +224,15 @@
 .archive-link-candidate-meta span + span::before {
     content: '·';
     margin: 0 8px;
-    color: #cbd5e1;
+    color: var(--text-divider);
 }
 
 .archive-link-candidate-linked {
     padding: 4px 8px;
-    border: 1px solid #fde68a;
+    border: 1px solid var(--warning-border);
     border-radius: 6px;
-    background: #fffbeb;
-    color: #b45309;
+    background: var(--warning-bg-soft);
+    color: var(--warning-text);
     font-size: 0.78rem;
     line-height: 1.5;
 }
@@ -286,7 +286,7 @@
 
 .archive-link-summary-toggle:hover,
 .archive-link-summary-toggle:focus-visible {
-    background: #f1f5f9;
+    background: var(--surface-subtle);
     color: var(--primary-color);
 }
 

@@ -4,7 +4,7 @@
 .archive-panel {
     margin-bottom: 16px;
     padding: 22px;
-    border: 1px solid #dde5f0;
+    border: 1px solid var(--border-panel);
     border-radius: 14px;
     background: var(--card-bg);
 }
@@ -35,7 +35,7 @@
     flex: 0 0 30px;
     margin-top: 2px;
     border-radius: 999px;
-    background: #eff6ff;
+    background: var(--primary-soft);
     color: var(--primary-color);
     font-size: 0.95rem;
     font-weight: 800;
@@ -48,6 +48,7 @@
     padding: 12px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
+    background: var(--surface-input);
     font-family: inherit;
     font-size: 0.92rem;
     line-height: 1.7;
@@ -56,7 +57,7 @@
 
 .archive-paste-input:focus {
     border-color: var(--primary-color);
-    outline: 3px solid rgb(37 99 235 / 12%);
+    outline: 3px solid var(--shadow-focus);
 }
 
 .archive-actions {
@@ -73,10 +74,10 @@
 .archive-warnings {
     margin-top: 16px;
     padding: 10px 14px;
-    border: 1px solid #fbbf24;
+    border: 1px solid var(--warning-border-strong);
     border-radius: 9px;
-    background: #fffbeb;
-    color: #92400e;
+    background: var(--warning-bg-soft);
+    color: var(--warning-text-strong);
     font-size: 0.85rem;
     line-height: 1.7;
 }
@@ -118,7 +119,7 @@
 .archive-field input:focus,
 .archive-field select:focus {
     border-color: var(--primary-color);
-    outline: 3px solid rgb(37 99 235 / 12%);
+    outline: 3px solid var(--shadow-focus);
 }
 
 .archive-save-bar {
@@ -131,10 +132,10 @@
     gap: 12px;
     margin-top: 16px;
     padding: 12px 16px;
-    border: 1px solid #dde5f0;
+    border: 1px solid var(--border-panel);
     border-radius: 12px;
-    background: #fff;
-    box-shadow: 0 8px 24px rgb(15 23 42 / 14%);
+    background: var(--card-bg);
+    box-shadow: 0 8px 24px var(--shadow-strong);
 }
 
 .archive-save-count {

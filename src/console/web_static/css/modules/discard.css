@@ -8,7 +8,7 @@
     margin-bottom: 12px;
     border: 1px solid var(--border-color);
     border-radius: 12px;
-    background: #fff;
+    background: var(--card-bg);
 }
 
 .discard-toolbar-main {
@@ -31,7 +31,7 @@
     box-sizing: border-box;
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    background: #fff;
+    background: var(--surface-input);
     color: var(--text-primary);
     font: inherit;
 }
@@ -39,7 +39,7 @@
 .discard-toolbar-main .search-input:focus {
     outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    box-shadow: 0 0 0 3px var(--shadow-focus-soft);
 }
 
 .discard-toolbar-main .btn {
@@ -91,7 +91,7 @@
     padding: 4px 8px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    background: #fff;
+    background: var(--surface-input);
     color: var(--text-primary);
     font: inherit;
     font-size: 0.85rem;
@@ -110,7 +110,7 @@
     box-sizing: border-box;
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    background: #fff;
+    background: var(--surface-input);
     color: var(--text-primary);
     font: inherit;
     font-size: 0.85rem;
@@ -145,7 +145,7 @@
     line-height: 24px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    background: #fff;
+    background: var(--card-bg);
     color: var(--text-secondary);
     font: inherit;
     font-size: 13px;
@@ -156,7 +156,7 @@
 .discard-filter-clear-link:hover {
     border-color: var(--primary-color);
     color: var(--primary-color);
-    background: #eef2ff;
+    background: var(--primary-tint);
     text-decoration: none;
 }
 
@@ -169,7 +169,7 @@
     padding: 8px 10px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    background: #f8fafc;
+    background: var(--surface-muted);
     font-size: 0.88rem;
 }
 
@@ -198,8 +198,8 @@
 
 /* 全部匹配模式：批量栏整体换浅色强调底色与主色浅边框 */
 .discard-bulk-bar.is-all-mode {
-    background: rgba(37, 99, 235, 0.06);
-    border-color: rgba(37, 99, 235, 0.35);
+    background: var(--primary-hover-wash);
+    border-color: var(--primary-border-strong);
 }
 
 /* Compact list rows. The .article-card / .discard-restore-select hooks are kept
@@ -214,7 +214,7 @@
 }
 
 .discard-item.article-card:hover {
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 2px 4px var(--shadow-subtle);
 }
 
 .discard-item-title {
@@ -275,9 +275,9 @@
     gap: 10px;
     flex-wrap: wrap;
     padding: 40px 20px;
-    border: 1px dashed #cbd5e1;
+    border: 1px dashed var(--border-strong);
     border-radius: 10px;
-    color: #64748b;
+    color: var(--text-secondary);
     font-size: 0.95rem;
 }
 

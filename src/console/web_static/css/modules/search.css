@@ -9,7 +9,7 @@
     border-right: none;
     border-radius: 8px 0 0 8px;
     padding: 12px 8px;
-    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.05);
+    box-shadow: -2px 0 8px var(--shadow-light);
     cursor: pointer;
     z-index: 1050;
     transition: background 0.2s, width 0.2s;
@@ -20,14 +20,14 @@
 }
 
 .search-drawer-toggle:hover {
-    background: #f8fafc;
+    background: var(--surface-hover);
     padding-right: 12px;
 }
 
 .search-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.3);
+    background: var(--overlay-soft);
     z-index: 1090;
     opacity: 0;
     pointer-events: none;
@@ -49,7 +49,7 @@
     height: 100vh;
     background: var(--card-bg);
     z-index: 1100;
-    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.1);
+    box-shadow: -4px 0 16px var(--shadow-medium);
     transition: transform 0.3s ease-in-out;
     display: flex;
     flex-direction: column;
@@ -91,7 +91,7 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 12px;
-    background: white;
+    background: var(--card-bg);
 }
 
 .search-item h4 {
@@ -153,7 +153,7 @@
     padding: 0;
     border: 0;
     border-radius: 4px;
-    background: white;
+    background: var(--surface-raised);
     color: var(--text-secondary);
     font: inherit;
     font-size: 0.78rem;
@@ -167,7 +167,7 @@
 
 .search-summary-toggle:hover,
 .search-summary-toggle:focus-visible {
-    background: #f1f5f9;
+    background: var(--surface-subtle);
     color: var(--primary-color);
 }
 
@@ -189,7 +189,7 @@
         padding: 0;
         border: 1px solid var(--border-color);
         border-radius: 50%;
-        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+        box-shadow: 0 10px 24px var(--shadow-deeper);
         font-size: 1.15rem;
     }
 
@@ -227,26 +227,26 @@
 }
 
 .attribution-chain {
-    --level-color: #64748b;
-    --level-bg: #f1f5f9;
+    --level-color: var(--text-secondary);
+    --level-bg: var(--surface-subtle);
     margin: 4px 0 10px;
 }
 
 .attribution-chain.level-keyword_missed,
 .attribution-chain.level-relevance_below,
 .attribution-chain.level-importance_below {
-    --level-color: #b45309;
-    --level-bg: #fef3c7;
+    --level-color: var(--warning-text);
+    --level-bg: var(--warning-bg);
 }
 
 .attribution-chain.level-not_reviewed {
-    --level-color: #1d4ed8;
-    --level-bg: #dbeafe;
+    --level-color: var(--primary-hover);
+    --level-bg: var(--primary-soft-strong);
 }
 
 .attribution-chain.level-discarded {
-    --level-color: #b91c1c;
-    --level-bg: #fee2e2;
+    --level-color: var(--danger-text);
+    --level-bg: var(--danger-bg);
 }
 
 .attribution-chain-steps {
@@ -283,19 +283,19 @@
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: #fff;
+    background: var(--surface-raised);
     border: 2px solid var(--border-color);
     z-index: 1;
 }
 
 .attribution-step.is-passed .attribution-step-dot {
-    background: #16a34a;
-    border-color: #16a34a;
+    background: var(--success-strong);
+    border-color: var(--success-strong);
 }
 
 .attribution-step.is-passed::before,
 .attribution-step.is-current::before {
-    background: #16a34a;
+    background: var(--success-strong);
 }
 
 .attribution-step.is-current .attribution-step-dot {
@@ -337,13 +337,13 @@
     max-width: 300px;
     padding: 6px 10px;
     border-radius: 6px;
-    background: #1e293b;
-    color: #f8fafc;
+    background: var(--toast-bg);
+    color: var(--inverse-text);
     font-size: 0.72rem;
     line-height: 1.5;
     text-align: left;
     white-space: normal;
-    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25);
+    box-shadow: 0 8px 20px var(--shadow-heavy);
 }
 
 .attribution-step:hover .attribution-step-tooltip {
@@ -353,14 +353,14 @@
 .attribution-step-tooltip-row + .attribution-step-tooltip-row {
     margin-top: 4px;
     padding-top: 4px;
-    border-top: 1px solid rgba(248, 250, 252, 0.2);
+    border-top: 1px solid var(--inverse-divider);
 }
 
 /* ── 归因：命中稿提示、收录时间标注 ─────────────────── */
 .search-matched-note {
     font-size: 0.8rem;
     color: var(--text-secondary);
-    background: #f8fafc;
+    background: var(--surface-muted);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     padding: 4px 8px;
@@ -372,8 +372,8 @@
     margin-left: 4px;
     padding: 0 6px;
     border-radius: 4px;
-    background: #eef2ff;
-    color: #4338ca;
+    background: var(--primary-tint);
+    color: var(--indigo-text);
     font-size: 0.72rem;
 }
 
@@ -384,10 +384,10 @@
     vertical-align: middle;
     margin-left: 8px;
     padding: 1px 8px;
-    border: 1px solid #bbf7d0;
+    border: 1px solid var(--success-border);
     border-radius: 999px;
-    background: #f0fdf4;
-    color: #15803d;
+    background: var(--success-bg-soft);
+    color: var(--success-text);
     font-size: 0.75rem;
     font-weight: 500;
     line-height: 1.5;
@@ -398,12 +398,12 @@
 
 .search-archive-badge:hover,
 .search-archive-badge[aria-expanded="true"] {
-    border-color: #16a34a;
-    background: #dcfce7;
+    border-color: var(--success-strong);
+    background: var(--success-bg);
 }
 
 .search-archive-badge:focus-visible {
-    outline: 2px solid #16a34a;
+    outline: 2px solid var(--success-strong);
     outline-offset: 2px;
 }
 
@@ -415,7 +415,7 @@
     padding: 10px;
     border: 1px dashed var(--border-color);
     border-radius: 8px;
-    background: #f8fafc;
+    background: var(--surface-muted);
 }
 
 .search-archive-details[hidden] {
@@ -484,6 +484,7 @@
     padding: 8px 10px;
     border: 1px solid var(--border-color);
     border-radius: 6px;
+    background: var(--surface-input);
     font-size: 0.9rem;
 }
 
@@ -522,7 +523,7 @@
     border: 0;
     border-radius: 6px;
     background: transparent;
-    color: #334155;
+    color: var(--text-body);
     cursor: pointer;
 }
 
@@ -542,13 +543,13 @@
 }
 
 .search-drawer-clear:hover {
-    background: #f1f5f9;
-    color: #0f172a;
+    background: var(--surface-subtle);
+    color: var(--text-strong);
 }
 
 .search-drawer-clear:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    box-shadow: 0 0 0 3px var(--shadow-focus);
 }
 
 .archive-search-results {
@@ -566,7 +567,7 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 10px;
-    background: #fff;
+    background: var(--card-bg);
 }
 
 .archive-item-head {
@@ -581,7 +582,7 @@
     flex: none;
     padding: 1px 8px;
     border-radius: 999px;
-    background: #f1f5f9;
+    background: var(--surface-subtle);
     color: var(--text-secondary);
     font-size: 0.72rem;
     font-weight: 600;
@@ -590,18 +591,18 @@
 /* 报别配色与报送存档库的 .archive-type-pill（submission_archive/widgets.css）保持一致，
    全局统一：综报蓝、晚报绿、反馈橘。改动时两边同步。 */
 .archive-item-badge[data-report-type="zongbao"] {
-    background: #eff6ff;
-    color: #1d4ed8;
+    background: var(--primary-soft);
+    color: var(--primary-hover);
 }
 
 .archive-item-badge[data-report-type="wanbao"] {
-    background: #ecfdf5;
-    color: #047857;
+    background: var(--success-bg-mint);
+    color: var(--success-ink);
 }
 
 .archive-item-badge[data-report-type="feedback"] {
-    background: #fff7ed;
-    color: #c2410c;
+    background: var(--warning-bg-hot);
+    color: var(--warning-ink);
 }
 
 .archive-item-date {
@@ -666,7 +667,7 @@
 .archive-item mark {
     padding: 0 2px;
     border-radius: 3px;
-    background: #fef08a;
+    background: var(--mark-archive-bg);
     color: inherit;
 }
 
@@ -690,7 +691,7 @@ body[data-search-drawer-mode="pick"] .search-tabs {
     padding: 2px 8px;
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    background: #fff;
+    background: var(--card-bg);
     color: var(--text-secondary);
     font-family: inherit;
     font-size: 0.78rem;
@@ -701,12 +702,12 @@ body[data-search-drawer-mode="pick"] .search-tabs {
 }
 
 .search-pick-btn:hover {
-    border-color: #93c5fd;
-    background: #eff6ff;
-    color: #1d4ed8;
+    border-color: var(--primary-muted);
+    background: var(--primary-soft);
+    color: var(--primary-hover);
 }
 
 .search-pick-btn:focus-visible {
-    outline: 2px solid #bfdbfe;
+    outline: 2px solid var(--primary-border);
     outline-offset: 1px;
 }

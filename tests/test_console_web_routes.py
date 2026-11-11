@@ -221,7 +221,7 @@ def test_submission_archive_separates_all_type_filter_from_report_types() -> Non
     report_filter = 'data-type="zongbao" type="button">综报</button>'
     assert html.index(all_filter) < html.index(divider) < html.index(report_filter)
     assert ".archive-type-divider {" in stylesheet
-    assert "background: #cbd5e1;" in stylesheet
+    assert "background: var(--border-strong);" in stylesheet
 
 
 def test_submission_archive_browser_wires_content_drawer() -> None:
@@ -629,7 +629,7 @@ def test_admin_manual_filter_keeps_admin_only_entries() -> None:
     assert "已导出" not in html
     assert 'class="empty empty-state"' in filter_render_script
     assert ".empty-state {" in components_stylesheet
-    assert "border: 1px dashed #cbd5e1;" in components_stylesheet
+    assert "border: 1px dashed var(--border-strong);" in components_stylesheet
     assert "refresh-action" not in layout_stylesheet
 
 
@@ -817,7 +817,7 @@ def test_duty_summary_collapses_shift_panel_by_default(
     assert ".summary-header {" not in stylesheet
     assert "grid-template-columns: minmax(0, 1fr) 240px;" in stylesheet
     assert "background: var(--card-bg);" in stylesheet
-    assert "box-shadow: 0 1px 3px rgb(0 0 0 / 5%);" in stylesheet
+    assert "box-shadow: 0 1px 3px var(--shadow-light);" in stylesheet
     assert "#summary-shift-list" in stylesheet
     assert ".summary-shift-card {" in stylesheet
     assert "width: 100%;" in stylesheet

@@ -14,7 +14,7 @@
 }
 
 .archive-item.is-processing {
-    border-left: 3px solid #60a5fa;
+    border-left: 3px solid var(--primary-muted);
 }
 
 .archive-item-head {
@@ -32,7 +32,7 @@
     flex: 0 0 24px;
     margin-top: 1px;
     border-radius: 6px;
-    background: #eef2f7;
+    background: var(--surface-sunken);
     color: var(--text-secondary);
     font-size: 0.78rem;
     font-weight: 800;
@@ -73,13 +73,13 @@
 }
 
 .archive-link-pill.is-processing {
-    background: #dbeafe;
-    color: #1d4ed8;
+    background: var(--primary-soft-strong);
+    color: var(--primary-hover);
 }
 
 .archive-link-pill.is-pending {
-    background: #fef3c7;
-    color: #b45309;
+    background: var(--warning-bg);
+    color: var(--warning-text);
 }
 
 .archive-item-tools {
@@ -97,7 +97,7 @@
 
 .archive-item-body {
     margin: 8px 0 0;
-    color: #475569;
+    color: var(--text-label);
     font-size: 0.88rem;
     line-height: 1.75;
     white-space: pre-wrap;
@@ -110,7 +110,7 @@
     gap: 6px 14px;
     margin-top: 10px;
     padding-top: 10px;
-    border-top: 1px dashed #e2e8f0;
+    border-top: 1px dashed var(--border-color);
     color: var(--text-secondary);
     font-size: 0.8rem;
 }
@@ -127,8 +127,8 @@
     padding: 14px 16px;
     border: 1px solid var(--primary-color);
     border-radius: 10px;
-    background: #fff;
-    box-shadow: 0 0 0 3px rgb(37 99 235 / 8%);
+    background: var(--surface-input);
+    box-shadow: 0 0 0 3px var(--shadow-focus-soft);
 }
 
 .archive-item-editor-grid {
@@ -148,6 +148,7 @@
     padding: 7px 10px;
     border: 1px solid var(--border-color);
     border-radius: 7px;
+    background: var(--surface-input);
     font: inherit;
     font-size: 0.88rem;
 }
@@ -158,6 +159,7 @@
     padding: 8px 10px;
     border: 1px solid var(--border-color);
     border-radius: 7px;
+    background: var(--surface-input);
     font: inherit;
     font-size: 0.88rem;
     line-height: 1.6;
@@ -171,7 +173,7 @@
 .archive-item-editor input:focus,
 .archive-item-editor textarea:focus {
     border-color: var(--primary-color);
-    outline: 3px solid rgb(37 99 235 / 12%);
+    outline: 3px solid var(--shadow-focus);
 }
 
 .archive-item-editor-actions {
@@ -215,7 +217,7 @@
 
 .archive-item-edit-btn:hover,
 .archive-item-edit-btn.is-active {
-    background: #eef2f7;
+    background: var(--surface-sunken);
     color: var(--primary-color);
 }
 
@@ -229,7 +231,7 @@
 .archive-item-edit {
     margin-top: 10px;
     padding-top: 12px;
-    border-top: 1px dashed #e2e8f0;
+    border-top: 1px dashed var(--border-color);
 }
 
 /* 选择器加一层 .archive-field：压住 create.css 的 .archive-field input 字号继承，
@@ -241,6 +243,7 @@
     padding: 7px 10px;
     border: 1px solid var(--border-color);
     border-radius: 7px;
+    background: var(--surface-input);
     font: inherit;
     font-size: 0.88rem;
 }
@@ -251,6 +254,7 @@
     padding: 8px 10px;
     border: 1px solid var(--border-color);
     border-radius: 7px;
+    background: var(--surface-input);
     font: inherit;
     font-size: 0.88rem;
     line-height: 1.6;
@@ -270,7 +274,7 @@
 .archive-item-edit input:focus,
 .archive-item-edit textarea:focus {
     border-color: var(--primary-color);
-    outline: 3px solid rgb(37 99 235 / 12%);
+    outline: 3px solid var(--shadow-focus);
 }
 
 /* ===== 已报送标签（反馈条目） ===== */
@@ -296,46 +300,46 @@
 }
 
 .archive-prior-match-pill.is-submitted {
-    background: #ccfbf1;
-    color: #0f766e;
+    background: var(--teal-bg);
+    color: var(--teal-text);
 }
 
 /* 疑似已报送与已报送同属偏绿色调：语义上都是「已经报上了」，不另起醒目的颜色 */
 .archive-prior-match-pill.is-suspected {
-    background: #dcfce7;
-    color: #15803d;
+    background: var(--success-bg);
+    color: var(--success-text);
 }
 
 /* 未报送才是真正需要编辑注意的，用偏红色调，比前两种更醒目；
    无命中的「未报送」也可点击（人工标记为已报送的入口），保持指针与 hover */
 .archive-prior-match-pill.is-unmatched {
-    background: #fee2e2;
-    color: #b91c1c;
+    background: var(--danger-bg);
+    color: var(--danger-text);
 }
 
 /* 人工判定为未报送（dismissed）：配色同 is-unmatched，背后有明细可查、判定可撤销 */
 .archive-prior-match-pill.is-dismissed {
-    background: #fee2e2;
-    color: #b91c1c;
+    background: var(--danger-bg);
+    color: var(--danger-text);
 }
 
 /* 详情统计 chip 的已报送/未报送计数：与条目卡片上的标签同色 */
 .archive-stat-chip.is-prior-matched {
-    background: #ccfbf1;
-    color: #0f766e;
+    background: var(--teal-bg);
+    color: var(--teal-text);
 }
 
 .archive-stat-chip.is-prior-matched strong {
-    color: #0f766e;
+    color: var(--teal-text);
 }
 
 .archive-stat-chip.is-prior-unmatched {
-    background: #fee2e2;
-    color: #b91c1c;
+    background: var(--danger-bg);
+    color: var(--danger-text);
 }
 
 .archive-stat-chip.is-prior-unmatched strong {
-    color: #b91c1c;
+    color: var(--danger-text);
 }
 
 /* ===== 已报送命中明细弹窗 ===== */
@@ -374,7 +378,7 @@
 .archive-prior-match-entry-method {
     padding: 1px 8px;
     border-radius: 999px;
-    background: #eef2f7;
+    background: var(--surface-sunken);
     font-weight: 600;
 }
 
@@ -392,7 +396,7 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
     margin: 6px 0 0;
-    color: #475569;
+    color: var(--text-label);
     font-size: 0.85rem;
     line-height: 1.7;
     white-space: pre-wrap;

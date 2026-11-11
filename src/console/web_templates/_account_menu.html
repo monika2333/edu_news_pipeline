@@ -11,6 +11,22 @@
         <a class="account-menu-item{% if account_menu_active == 'settings' %} is-active{% endif %}" href="/admin/settings"{% if account_menu_active == 'settings' %} aria-current="page"{% endif %}>系统设置</a>
         {% endif %}
         <a class="account-menu-item" href="/account">修改密码</a>
+        <div class="account-menu-divider" role="separator"></div>
+        <div class="account-menu-group" role="group" aria-label="外观">
+            <span class="account-menu-group-label">外观</span>
+            <button class="account-menu-item account-menu-theme-option" type="button" data-theme-option="system" aria-pressed="false">
+                <span class="account-menu-theme-check" aria-hidden="true">✓</span>
+                <span>跟随系统</span>
+            </button>
+            <button class="account-menu-item account-menu-theme-option" type="button" data-theme-option="light" aria-pressed="false">
+                <span class="account-menu-theme-check" aria-hidden="true">✓</span>
+                <span>亮色</span>
+            </button>
+            <button class="account-menu-item account-menu-theme-option" type="button" data-theme-option="dark" aria-pressed="false">
+                <span class="account-menu-theme-check" aria-hidden="true">✓</span>
+                <span>暗色</span>
+            </button>
+        </div>
         <button class="account-menu-item" id="btn-logout" type="button">退出登录</button>
     </div>
 </details>

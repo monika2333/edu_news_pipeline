@@ -5,7 +5,7 @@
     padding: 4px 10px;
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    background: #fff;
+    background: var(--card-bg);
     color: var(--text-secondary);
     font: inherit;
     font-size: 0.8rem;
@@ -20,20 +20,20 @@
 }
 
 .archive-btn-text.is-danger:hover {
-    border-color: #fecaca;
-    background: #fef2f2;
-    color: #b91c1c;
+    border-color: var(--danger-border);
+    background: var(--danger-bg-soft);
+    color: var(--danger-text);
 }
 
 .btn.btn-danger {
-    border: 1px solid #fecaca;
-    background: #fff;
-    color: #b91c1c;
+    border: 1px solid var(--danger-border);
+    background: var(--card-bg);
+    color: var(--danger-text);
 }
 
 .btn.btn-danger:hover {
-    border-color: #f87171;
-    background: #fef2f2;
+    border-color: var(--danger-color);
+    background: var(--danger-bg-soft);
 }
 
 .archive-type-pill {
@@ -49,18 +49,18 @@
 /* 报别配色与搜索抽屉/查重弹窗的 .archive-item-badge（modules/search.css）保持一致，
    全局统一：综报蓝、晚报绿、反馈橘。改动时两边同步。 */
 .archive-type-pill.is-zongbao {
-    background: #eff6ff;
-    color: #1d4ed8;
+    background: var(--primary-soft);
+    color: var(--primary-hover);
 }
 
 .archive-type-pill.is-wanbao {
-    background: #ecfdf5;
-    color: #047857;
+    background: var(--success-bg-mint);
+    color: var(--success-ink);
 }
 
 .archive-type-pill.is-feedback {
-    background: #fff7ed;
-    color: #c2410c;
+    background: var(--warning-bg-hot);
+    color: var(--warning-ink);
 }
 
 .archive-empty {

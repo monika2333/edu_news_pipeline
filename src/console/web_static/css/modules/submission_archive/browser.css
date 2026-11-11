@@ -32,7 +32,7 @@
     flex-direction: column;
     max-height: calc(100vh - 32px);
     padding: 14px;
-    border: 1px solid #dde5f0;
+    border: 1px solid var(--border-panel);
     border-radius: 14px;
     background: var(--card-bg);
 }
@@ -43,7 +43,7 @@
     gap: 4px;
     padding: 4px;
     border-radius: 9px;
-    background: #f1f5f9;
+    background: var(--surface-subtle);
 }
 
 .archive-type-option {
@@ -65,13 +65,13 @@
     flex: 0 0 1px;
     align-self: stretch;
     margin: 6px 2px;
-    background: #cbd5e1;
+    background: var(--border-strong);
 }
 
 .archive-type-option.active {
     background: var(--card-bg);
     color: var(--primary-color);
-    box-shadow: 0 1px 2px rgb(15 23 42 / 10%);
+    box-shadow: 0 1px 2px var(--shadow-slate-medium);
 }
 
 .archive-date-filter {
@@ -98,7 +98,7 @@
 
 .archive-date-filter input:focus {
     border-color: var(--primary-color);
-    outline: 3px solid rgb(37 99 235 / 12%);
+    outline: 3px solid var(--shadow-focus);
 }
 
 /* 报告列表 */
@@ -125,13 +125,13 @@
 }
 
 .archive-report-card:hover {
-    border-color: #c7d2fe;
-    background: #f8fbff;
+    border-color: var(--indigo-border);
+    background: var(--primary-wash);
 }
 
 .archive-report-card.is-active {
     border-color: var(--primary-color);
-    background: #eff6ff;
+    background: var(--primary-soft);
     box-shadow: 0 0 0 1px var(--primary-color);
 }
 
@@ -170,7 +170,7 @@
     height: 6px;
     overflow: hidden;
     border-radius: 999px;
-    background: #e2e8f0;
+    background: var(--surface-skeleton);
 }
 
 .archive-linkbar > span {
@@ -179,19 +179,19 @@
 }
 
 .archive-linkbar .seg-linked {
-    background: #22c55e;
+    background: var(--success-color);
 }
 
 .archive-linkbar .seg-processing {
-    background: #60a5fa;
+    background: var(--primary-muted);
 }
 
 .archive-linkbar .seg-pending {
-    background: #f59e0b;
+    background: var(--warning-color);
 }
 
 .archive-linkbar .seg-unmatched {
-    background: #cbd5e1;
+    background: var(--border-strong);
 }
 
 .archive-report-card-counts {
@@ -206,7 +206,7 @@
 }
 
 .archive-report-card-counts .has-pending {
-    color: #b45309;
+    color: var(--warning-text);
     font-weight: 800;
 }
 
@@ -235,7 +235,7 @@
     justify-content: space-between;
     gap: 24px;
     padding: 20px 22px;
-    border: 1px solid #dde5f0;
+    border: 1px solid var(--border-panel);
     border-radius: 14px;
     background: var(--card-bg);
 }
@@ -264,15 +264,15 @@
 
 /* 待确认回链是需要人工处理的信号，用警示色突出；疑似已报送与条目标签同色 */
 .archive-detail-action-btn.is-pending {
-    border-color: #fcd34d;
-    background: #fef3c7;
-    color: #92400e;
+    border-color: var(--warning-border-soft);
+    background: var(--warning-bg);
+    color: var(--warning-text-strong);
 }
 
 .archive-detail-action-btn.is-suspected {
-    border-color: #86efac;
-    background: #dcfce7;
-    color: #15803d;
+    border-color: var(--success-border-strong);
+    background: var(--success-bg);
+    color: var(--success-text);
 }
 
 .archive-detail-title-row {
@@ -305,7 +305,7 @@
     gap: 5px;
     padding: 5px 12px;
     border-radius: 999px;
-    background: #f1f5f9;
+    background: var(--surface-subtle);
     color: var(--text-secondary);
     font-size: 0.8rem;
     font-weight: 600;
@@ -332,12 +332,12 @@ button.archive-stat-chip:hover {
 }
 
 .archive-stat-chip.is-processing {
-    background: #dbeafe;
-    color: #1d4ed8;
+    background: var(--primary-soft-strong);
+    color: var(--primary-hover);
 }
 
 .archive-stat-chip.is-processing strong {
-    color: #1d4ed8;
+    color: var(--primary-hover);
 }
 
 .archive-detail-items {

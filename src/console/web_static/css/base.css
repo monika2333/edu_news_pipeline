@@ -1,3 +1,7 @@
+html {
+    background-color: var(--bg-color);
+}
+
 body {
     font-family: var(--font-family);
     background-color: var(--bg-color);
@@ -5,4 +9,17 @@ body {
     margin: 0;
     padding: 0;
     line-height: 1.5;
+}
+
+/* 暗色下给未经组件显式着色的原生控件兜底：否则 UA 会画出灰色控件底，
+   在深色页面里成为割裂的白块。:where() 把优先级压到 0，组件自己的
+   input/select/textarea 规则仍然优先；亮色不声明，保持改造前观感。 */
+:where(:root[data-theme="dark"]) :where(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+    select,
+    textarea
+) {
+    background-color: var(--surface-input);
+    border-color: var(--border-input);
+    color: var(--text-primary);
 }

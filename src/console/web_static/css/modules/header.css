@@ -50,7 +50,7 @@
     border-color: var(--primary-color);
     color: var(--primary-color);
     outline: none;
-    box-shadow: 0 0 0 3px rgb(37 99 235 / 10%);
+    box-shadow: 0 0 0 3px var(--shadow-focus-soft);
 }
 
 .account-menu[open] .account-menu-trigger::after {
@@ -67,7 +67,7 @@
     border: 1px solid var(--border-color);
     border-radius: 10px;
     background: var(--card-bg);
-    box-shadow: 0 16px 36px rgb(15 23 42 / 16%);
+    box-shadow: var(--shadow-menu);
     animation: account-menu-enter 140ms ease-out;
 }
 
@@ -88,15 +88,52 @@
 
 .account-menu-item:hover,
 .account-menu-item:focus-visible {
-    background: #eff6ff;
+    background: var(--primary-soft);
     color: var(--primary-color);
     outline: none;
 }
 
 .account-menu-item.is-active {
-    background: #eff6ff;
+    background: var(--primary-soft);
     color: var(--primary-color);
     font-weight: 700;
+}
+
+.account-menu-divider {
+    height: 1px;
+    margin: 6px 4px;
+    background: var(--border-subtle);
+}
+
+.account-menu-group {
+    display: grid;
+}
+
+.account-menu-group-label {
+    padding: 6px 12px 2px;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+
+.account-menu-theme-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.account-menu-theme-check {
+    flex: 0 0 14px;
+    width: 14px;
+    color: var(--primary-color);
+    font-size: 0.8rem;
+    line-height: 1;
+    visibility: hidden;
+}
+
+.account-menu-theme-option.is-active .account-menu-theme-check {
+    visibility: visible;
 }
 
 .admin-view-switch {
@@ -106,7 +143,7 @@
     padding: 4px;
     border: 1px solid var(--border-color);
     border-radius: 10px;
-    background: #f1f5f9;
+    background: var(--surface-subtle);
 }
 
 .admin-view-link {
@@ -139,7 +176,7 @@
 .admin-view-link.is-active {
     background: var(--card-bg);
     color: var(--primary-color);
-    box-shadow: 0 1px 3px rgb(15 23 42 / 12%);
+    box-shadow: 0 1px 3px var(--shadow-strong);
 }
 
 .admin-view-stage-divider {
@@ -148,7 +185,7 @@
     flex: 0 0 2px;
     margin: 7px 5px;
     border-radius: 999px;
-    background: #cbd5e1;
+    background: var(--border-strong);
 }
 
 @keyframes account-menu-enter {

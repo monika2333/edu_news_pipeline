@@ -1,0 +1,29 @@
+{# 首帧主题引导。必须在任何 stylesheet 之前 include：同步脚本先给 <html> 定好
+   data-theme 与 color-scheme，避免先白后黑的闪屏；theme.js 负责运行时切换。 #}
+<script>
+    (function () {
+        var preference = 'system';
+        try {
+            var stored = window.localStorage.getItem('console_theme');
+            if (stored === 'light' || stored === 'dark' || stored === 'system') {
+                preference = stored;
+            }
+        } catch (error) {
+            preference = 'system';
+        }
+        var resolved = preference;
+        if (preference === 'system') {
+            resolved = 'light';
+            try {
+                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                    resolved = 'dark';
+                }
+            } catch (error) {
+                resolved = 'light';
+            }
+        }
+        document.documentElement.setAttribute('data-theme', resolved);
+        document.documentElement.style.colorScheme = resolved;
+    })();
+</script>
+<script defer src="/static/js/theme.js?v={{ version }}"></script>

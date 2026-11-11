@@ -78,7 +78,7 @@
     position: sticky;
     bottom: 20px;
     z-index: 100;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 20px var(--shadow-medium);
 }
 
 .review-toolbar > .btn {
@@ -110,7 +110,7 @@
     align-items: center;
     gap: 10px;
     padding: 8px 12px;
-    background: #f8fafc;
+    background: var(--surface-muted);
     border: 1px solid var(--border-color);
     border-radius: 10px;
 }
@@ -135,12 +135,12 @@
     padding: 8px 12px;
     border-radius: 8px;
     border: 1px solid var(--border-color);
-    background: #ffffff;
+    background: var(--surface-input);
     color: var(--text-primary);
     font-weight: 600;
     font-size: 0.95rem;
     min-width: 160px;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    box-shadow: 0 1px 2px var(--shadow-weak);
 }
 
 .review-toolbar .bulk-select:required:invalid {
@@ -154,7 +154,7 @@
 .review-toolbar .bulk-select:focus {
     outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    box-shadow: 0 0 0 3px var(--shadow-focus);
 }
 
 .review-toolbar .search-group {
@@ -174,7 +174,7 @@
     padding: 8px 44px 8px 12px;
     border-radius: 8px;
     border: 1px solid var(--border-color);
-    background: #ffffff;
+    background: var(--surface-input);
     color: var(--text-primary);
     font-size: 0.95rem;
 }
@@ -193,7 +193,7 @@
     border: 0;
     border-radius: 6px;
     background: transparent;
-    color: #334155;
+    color: var(--text-body);
     cursor: pointer;
 }
 
@@ -213,19 +213,19 @@
 }
 
 .review-search-clear:hover {
-    background: #f1f5f9;
-    color: #0f172a;
+    background: var(--surface-subtle);
+    color: var(--text-strong);
 }
 
 .review-search-clear:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    box-shadow: 0 0 0 3px var(--shadow-focus);
 }
 
 .review-toolbar .search-input:focus {
     outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    box-shadow: 0 0 0 3px var(--shadow-focus);
 }
 
 /* View Toggle */
@@ -245,7 +245,7 @@
     padding: 8px 12px;
     border-radius: 8px;
     border: 1px solid var(--border-color);
-    background: #ffffff;
+    background: var(--surface-input);
     color: var(--text-primary);
     font-weight: 600;
     font-size: 0.95rem;
@@ -277,9 +277,9 @@
     justify-content: center;
     width: 34px;
     height: 34px;
-    border: 1px solid #fecaca;
+    border: 1px solid var(--danger-border);
     border-radius: 8px;
-    background: #fff7f7;
+    background: var(--danger-bg-faint);
     color: var(--danger-color);
     cursor: pointer;
     font-size: 1rem;
@@ -288,14 +288,14 @@
 }
 
 .review-discard-btn:hover {
-    background: #fee2e2;
-    border-color: #fca5a5;
+    background: var(--danger-bg);
+    border-color: var(--danger-border-strong);
     transform: translateY(-1px);
 }
 
 .review-discard-btn:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.16);
+    box-shadow: 0 0 0 3px var(--shadow-danger);
 }
 
 .review-discard-btn:disabled {
@@ -308,7 +308,7 @@
     padding: 6px 12px;
     border-radius: 8px;
     border: 1px solid var(--border-color);
-    background: #ffffff;
+    background: var(--surface-input);
     color: var(--text-primary);
     font-size: 0.95rem;
 }
@@ -331,7 +331,7 @@
     position: absolute;
     right: 12px;
     bottom: 14px;
-    color: #94a3b8;
+    color: var(--text-muted);
     font-size: 0.78rem;
     line-height: 1;
     pointer-events: none;
@@ -429,20 +429,20 @@
 
 .review-category-btn.duplicate-check-running::after {
     content: "查重中";
-    background: #fff7ed;
-    color: #c2410c;
+    background: var(--warning-bg-hot);
+    color: var(--warning-ink);
 }
 
 .review-category-btn.duplicate-check-ready::after {
     content: "有结果";
-    background: #ecfdf5;
-    color: #047857;
+    background: var(--success-bg-mint);
+    color: var(--success-ink);
 }
 
 #btn-check-duplicates.has-result {
-    border-color: #86efac;
-    background: #f0fdf4;
-    color: #047857;
+    border-color: var(--success-border-strong);
+    background: var(--success-bg-soft);
+    color: var(--success-ink);
 }
 
 .duplicate-review-modal-content {
@@ -471,7 +471,7 @@ body.duplicate-review-open .search-drawer-toggle {
     padding: 10px 12px;
     border: 1px solid var(--border-color);
     border-radius: 10px;
-    background: #f8fafc;
+    background: var(--surface-muted);
 }
 
 .duplicate-review-toolbar[hidden] {
@@ -496,7 +496,7 @@ body.duplicate-review-open .search-drawer-toggle {
     padding: 8px 12px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    background: #ffffff;
+    background: var(--surface-input);
     color: var(--text-primary);
     font-weight: 600;
 }
@@ -543,7 +543,7 @@ body.duplicate-review-open .search-drawer-toggle {
 .duplicate-review-group {
     border: 1px solid var(--border-color);
     border-radius: 12px;
-    background: #f8fafc;
+    background: var(--surface-muted);
     padding: 16px;
 }
 
@@ -575,15 +575,15 @@ body.duplicate-review-open .search-drawer-toggle {
     position: relative;
     border: 1px solid var(--border-color);
     border-radius: 10px;
-    background: #ffffff;
+    background: var(--card-bg);
     padding: 14px;
     margin-bottom: 0;
     transition: border-color 0.2s, opacity 0.2s;
 }
 
 .duplicate-review-item.is-processed {
-    border-color: #bbf7d0;
-    background: #f0fdf4;
+    border-color: var(--success-border);
+    background: var(--success-bg-soft);
 }
 
 .duplicate-review-item-header {
@@ -621,7 +621,7 @@ body.duplicate-review-open .search-drawer-toggle {
 
 .duplicate-review-processed {
     margin-top: 10px;
-    color: #15803d;
+    color: var(--success-text);
     font-size: 0.82rem;
     font-weight: 700;
 }
@@ -707,16 +707,16 @@ body.duplicate-review-open .search-drawer-toggle {
     min-height: 44px;
     padding: 6px 8px 6px 12px;
     box-sizing: border-box;
-    border: 1px solid #dbe3ee;
+    border: 1px solid var(--border-soft);
     border-radius: 12px;
-    background: #fff;
+    background: var(--card-bg);
 }
 
 .duty-finalization-state {
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    color: #64748b;
+    color: var(--text-secondary);
     font-size: 0.86rem;
     font-weight: 650;
     white-space: nowrap;
@@ -726,20 +726,20 @@ body.duplicate-review-open .search-drawer-toggle {
     width: 8px;
     height: 8px;
     border-radius: 999px;
-    background: #94a3b8;
+    background: var(--text-muted);
 }
 
 .duty-finalization-status[data-state="finalized"] {
-    border-color: #bbf7d0;
-    background: #f0fdf4;
+    border-color: var(--success-border);
+    background: var(--success-bg-soft);
 }
 
 .duty-finalization-status[data-state="finalized"] .duty-finalization-state {
-    color: #166534;
+    color: var(--success-text-strong);
 }
 
 .duty-finalization-status[data-state="finalized"] .duty-finalization-dot {
-    background: #22c55e;
+    background: var(--success-color);
 }
 
 .duty-finalization-status .btn {
@@ -1001,13 +1001,13 @@ body.duplicate-review-open .search-drawer-toggle {
 /* 一键清空（仅汇总审阅页）：跨四个桶的集合操作，用危险色描边表达点错代价，
    与底部工具条上的排序/预览/归档等高频操作保持物理距离。 */
 .btn-clear-review-buckets {
-    border-color: #fecaca;
-    color: #b91c1c;
+    border-color: var(--danger-border);
+    color: var(--danger-text);
 }
 
 .btn-clear-review-buckets:hover:not(:disabled) {
-    border-color: #f87171;
-    background: #fef2f2;
+    border-color: var(--danger-color);
+    background: var(--danger-bg-soft);
 }
 
 .clear-review-buckets-modal-content {
@@ -1024,7 +1024,7 @@ body.duplicate-review-open .search-drawer-toggle {
     list-style: none;
     margin: 0;
     padding: 12px 16px;
-    background: #f8fafc;
+    background: var(--surface-muted);
     border: 1px solid var(--border-color);
     border-radius: 10px;
     display: flex;
@@ -1047,7 +1047,7 @@ body.duplicate-review-open .search-drawer-toggle {
 .clear-review-buckets-total {
     margin: 0;
     font-weight: 700;
-    color: #b91c1c;
+    color: var(--danger-text);
 }
 
 /* ===== 预览题头开关 =====
@@ -1075,7 +1075,7 @@ body.duplicate-review-open .search-drawer-toggle {
 }
 
 .preview-close:hover {
-    background: rgba(15, 23, 42, 0.06);
+    background: var(--surface-hover-strong);
 }
 
 /* 底部：开关靠左、复制按钮靠右。用 margin-right:auto 而不是 space-between，

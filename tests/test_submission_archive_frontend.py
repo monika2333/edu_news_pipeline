@@ -342,9 +342,9 @@ def test_prior_match_pill_color_semantics() -> None:
     assert ".archive-prior-match-pill.is-suspected" in css
     assert ".archive-prior-match-pill.is-unmatched" in css
     suspected_block = css.split(".archive-prior-match-pill.is-suspected", maxsplit=1)[1]
-    assert "#fee2e2" not in suspected_block.split("}")[0]
+    assert "var(--danger-bg)" not in suspected_block.split("}")[0]
     unmatched_block = css.split(".archive-prior-match-pill.is-unmatched", maxsplit=1)[1]
-    assert "#fee2e2" in unmatched_block.split("}")[0]
+    assert "var(--danger-bg)" in unmatched_block.split("}")[0]
 
 
 def test_prior_matches_modal_markup_and_script_order() -> None:
@@ -495,7 +495,7 @@ def test_unmatched_pill_css_keeps_pointer_after_becoming_clickable() -> None:
     unmatched_block = css.split(
         ".archive-prior-match-pill.is-unmatched", maxsplit=1
     )[1].split("}")[0]
-    assert "#fee2e2" in unmatched_block
+    assert "var(--danger-bg)" in unmatched_block
     assert "cursor" not in unmatched_block
     assert ".archive-prior-match-pill.is-unmatched:hover" not in css
 
@@ -509,7 +509,7 @@ def test_dismissed_pill_css_keeps_pointer_and_footer_hidden_works() -> None:
     dismissed_block = css.split(
         ".archive-prior-match-pill.is-dismissed", maxsplit=1
     )[1].split("}")[0]
-    assert "#fee2e2" in dismissed_block
+    assert "var(--danger-bg)" in dismissed_block
     assert "cursor" not in dismissed_block
     # .modal-footer 的 display:flex 会盖掉 hidden，必须显式压制
     assert ".archive-prior-matches-footer[hidden]" in css

@@ -462,7 +462,7 @@ function showToastAt(toastElement, msg, type = 'success', action = null) {
 
         btn.className = 'btn-action';
         // marginLeft removed, handled by gap in .toast flex container
-        btn.style.color = '#60a5fa'; // Light blue
+        btn.style.color = 'var(--toast-action-color)'; // 主题色，暗色下自动适配
         btn.style.background = 'transparent';
         btn.style.border = 'none';
         btn.style.cursor = 'pointer';

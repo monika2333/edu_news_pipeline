@@ -1,4 +1,10 @@
+/* 全站颜色 token。这是唯一允许出现颜色字面值的文件：
+   :root 为亮色（取值等于改造前的字面值），[data-theme="dark"] 为暗色。
+   其他 CSS / 模板 / JS 只能引用 var(--token)。 */
 :root {
+    color-scheme: light;
+
+    /* 兼容保留：原有变量名继续可用 */
     --primary-color: #2563eb;
     --primary-hover: #1d4ed8;
     --danger-color: #ef4444;
@@ -10,4 +16,332 @@
     --text-secondary: #64748b;
     --border-color: #e2e8f0;
     --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    /* 文本 */
+    --text-strong: #0f172a;
+    --text-title: #172033;
+    --text-body: #334155;
+    --text-label: #475569;
+    --text-muted: #94a3b8;
+    --text-faint: #8c8c8c;
+    --text-dim: #595959;
+    --text-ink: #262626;
+    --text-divider: #cbd5e1;
+    --text-on-accent: #ffffff;
+    --text-on-fill-soft: #dbeafe;
+    --text-on-fill-warning: #fde68a;
+    --inverse-text: #f8fafc;
+    --inverse-divider: rgba(248, 250, 252, 0.2);
+
+    /* 表面 */
+    --surface-raised: #ffffff;
+    --surface-subtle: #f1f5f9;
+    --surface-muted: #f8fafc;
+    --surface-hover: #f8fafc;
+    --surface-hover-strong: rgba(15, 23, 42, 0.06);
+    --surface-skeleton: #e2e8f0;
+    --surface-input: #ffffff;
+    --surface-input-focus: #ffffff;
+    --surface-sunken: #eef2f7;
+    --surface-panel: #e7edf5;
+    --surface-disabled: #d1d5db;
+    --surface-disabled-soft: #f5f5f5;
+    --switch-knob: #ffffff;
+    --overlay: rgba(0, 0, 0, 0.5);
+    --overlay-soft: rgba(0, 0, 0, 0.3);
+
+    /* 边框 */
+    --border-strong: #cbd5e1;
+    --border-subtle: #eef2f7;
+    --border-input: #d9d9d9;
+    --border-panel: #dde5f0;
+    --border-soft: #dbe3ee;
+    --border-faint: #e7edf5;
+    --border-disabled: #bfbfbf;
+    --border-muted: #d1d5db;
+
+    /* 主色 */
+    --primary-fill: #2563eb;
+    --primary-fill-hover: #1d4ed8;
+    --primary-soft: #eff6ff;
+    --primary-soft-strong: #dbeafe;
+    --primary-border: #bfdbfe;
+    --primary-border-soft: #dbeafe;
+    --primary-strong: #1e3a8a;
+    --primary-muted: #60a5fa;
+    --primary-tint: #eef2ff;
+    --primary-wash: #f8fbff;
+    --primary-wash-2: #fbfdff;
+    --primary-hover-wash: rgba(37, 99, 235, 0.06);
+    --primary-border-strong: rgba(37, 99, 235, 0.35);
+
+    /* 危险 */
+    --danger-text: #b91c1c;
+    --danger-text-strong: #991b1b;
+    --danger-ink: #7f1d1d;
+    --danger-bg: #fee2e2;
+    --danger-bg-soft: #fef2f2;
+    --danger-bg-faint: #fff7f7;
+    --danger-bg-ghost: #fff1f1;
+    --danger-border: #fecaca;
+    --danger-border-strong: #fca5a5;
+    --danger-strong: #dc2626;
+    --danger-fill: #dc2626;
+    --danger-fill-hover: #b91c1c;
+    --danger-fill-active: #991b1b;
+
+    /* 成功 */
+    --success-text: #15803d;
+    --success-text-strong: #166534;
+    --success-ink: #047857;
+    --success-ink-strong: #14532d;
+    --success-strong: #16a34a;
+    --success-bg: #dcfce7;
+    --success-bg-soft: #f0fdf4;
+    --success-bg-faint: #f7fdf9;
+    --success-bg-mint: #ecfdf5;
+    --success-bg-hover: #f1faf4;
+    --success-border: #bbf7d0;
+    --success-border-strong: #86efac;
+    --teal-bg: #ccfbf1;
+    --teal-text: #0f766e;
+
+    /* 警告 */
+    --warning-text: #b45309;
+    --warning-text-strong: #92400e;
+    --warning-text-deep: #873800;
+    --warning-ink: #c2410c;
+    --warning-ink-deep: #ad4e00;
+    --warning-ink-strong: #d46b08;
+    --warning-bg: #fef3c7;
+    --warning-bg-soft: #fffbeb;
+    --warning-bg-warm: #fff7e6;
+    --warning-bg-hot: #fff7ed;
+    --warning-border: #fde68a;
+    --warning-border-strong: #fbbf24;
+    --warning-border-soft: #fcd34d;
+
+    /* 加分 / 信息 / 标记 / 靛蓝 */
+    --bonus-bg: #fff5f5;
+    --bonus-border: #f5c2c7;
+    --bonus-badge-border: #c96b1f;
+    --bonus-badge-text: #a54b0b;
+    --info-bg: #e0f2fe;
+    --info-bg-soft: #e6f4ff;
+    --info-text: #0ea5e9;
+    --info-text-strong: #0958d9;
+    --info-border: #1677ff;
+    --info-ink: #003eb3;
+    --indigo-text: #4338ca;
+    --indigo-border: #c7d2fe;
+    --mark-bg: #fde68a;
+    --mark-search-bg: #fdba74;
+    --mark-active-bg: #fb923c;
+    --mark-archive-bg: #fef08a;
+
+    /* 浮层 / 登录 */
+    --toast-bg: #1e293b;
+    --toast-text: #ffffff;
+    --toast-action-color: #60a5fa;
+    --toast-close: rgba(255, 255, 255, 0.4);
+    --login-glow: rgba(37, 99, 235, 0.13);
+    --login-card-bg: rgba(255, 255, 255, 0.94);
+    --login-gradient-start: #f8fafc;
+    --login-gradient-end: #eef2ff;
+    --login-card-border: rgba(148, 163, 184, 0.35);
+    --login-card-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+
+    /* 阴影 */
+    --shadow-weak: rgba(0, 0, 0, 0.04);
+    --shadow-faint: rgba(15, 23, 42, 0.04);
+    --shadow-light: rgba(0, 0, 0, 0.05);
+    --shadow-soft: rgba(15, 23, 42, 0.06);
+    --shadow-subtle: rgba(0, 0, 0, 0.08);
+    --shadow-medium: rgba(0, 0, 0, 0.1);
+    --shadow-slate-medium: rgba(15, 23, 42, 0.1);
+    --shadow-strong: rgba(15, 23, 42, 0.12);
+    --shadow-stronger: rgba(0, 0, 0, 0.14);
+    --shadow-deep: rgba(15, 23, 42, 0.16);
+    --shadow-deeper: rgba(15, 23, 42, 0.18);
+    --shadow-heavy: rgba(15, 23, 42, 0.25);
+    --shadow-dark: rgba(0, 0, 0, 0.15);
+    --shadow-toast: 0 4px 12px rgba(0, 0, 0, 0.15);
+    --shadow-menu: 0 16px 36px rgba(15, 23, 42, 0.16);
+    --shadow-focus-soft: rgba(37, 99, 235, 0.1);
+    --shadow-focus: rgba(37, 99, 235, 0.12);
+    --shadow-focus-strong: rgba(37, 99, 235, 0.2);
+    --shadow-danger-soft: rgba(220, 38, 38, 0.12);
+    --shadow-danger: rgba(220, 38, 38, 0.16);
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    /* 兼容保留 */
+    --primary-color: #60a5fa;
+    --primary-hover: #93c5fd;
+    --danger-color: #f87171;
+    --success-color: #4ade80;
+    --warning-color: #fbbf24;
+    --bg-color: #0b1220;
+    --card-bg: #151f2e;
+    --text-primary: #e2e8f0;
+    --text-secondary: #9aabc0;
+    --border-color: #2a3a4f;
+
+    /* 文本 */
+    --text-strong: #f8fafc;
+    --text-title: #e8eef7;
+    --text-body: #cbd5e1;
+    --text-label: #b6c2d2;
+    --text-muted: #7c8da3;
+    --text-faint: #8a99ac;
+    --text-dim: #b6c2d2;
+    --text-ink: #e2e8f0;
+    --text-divider: #5a6b80;
+    --text-on-accent: #ffffff;
+    --text-on-fill-soft: #dbeafe;
+    --text-on-fill-warning: #fde68a;
+    --inverse-text: #f8fafc;
+    --inverse-divider: rgba(248, 250, 252, 0.15);
+
+    /* 表面 */
+    --surface-raised: #1a2535;
+    --surface-subtle: #1c2839;
+    --surface-muted: #101a28;
+    --surface-hover: #223044;
+    --surface-hover-strong: rgba(148, 163, 184, 0.14);
+    --surface-skeleton: #243247;
+    --surface-input: #0f1a29;
+    --surface-input-focus: #131f30;
+    --surface-sunken: #182333;
+    --surface-panel: #1a2635;
+    --surface-disabled: #2b3a4d;
+    --surface-disabled-soft: #1c2839;
+    --switch-knob: #e2e8f0;
+    --overlay: rgba(2, 6, 23, 0.72);
+    --overlay-soft: rgba(2, 6, 23, 0.55);
+
+    /* 边框 */
+    --border-strong: #3d5069;
+    --border-subtle: #1f2c3c;
+    --border-input: #33455c;
+    --border-panel: #2d3e55;
+    --border-soft: #2a3a50;
+    --border-faint: #233246;
+    --border-disabled: #3d5069;
+    --border-muted: #3a4a5f;
+
+    /* 主色 */
+    --primary-fill: #2563eb;
+    --primary-fill-hover: #3b82f6;
+    --primary-soft: rgba(96, 165, 250, 0.14);
+    --primary-soft-strong: rgba(96, 165, 250, 0.22);
+    --primary-border: rgba(96, 165, 250, 0.38);
+    --primary-border-soft: rgba(96, 165, 250, 0.28);
+    --primary-strong: #bfdbfe;
+    --primary-muted: #93c5fd;
+    --primary-tint: rgba(96, 165, 250, 0.12);
+    --primary-wash: rgba(96, 165, 250, 0.08);
+    --primary-wash-2: rgba(96, 165, 250, 0.05);
+    --primary-hover-wash: rgba(96, 165, 250, 0.12);
+    --primary-border-strong: rgba(96, 165, 250, 0.5);
+
+    /* 危险 */
+    --danger-text: #fca5a5;
+    --danger-text-strong: #fecaca;
+    --danger-ink: #fecaca;
+    --danger-bg: #2e1a20;
+    --danger-bg-soft: #26161b;
+    --danger-bg-faint: #231519;
+    --danger-bg-ghost: #2a171b;
+    --danger-border: rgba(248, 113, 113, 0.38);
+    --danger-border-strong: rgba(248, 113, 113, 0.55);
+    --danger-strong: #f87171;
+    --danger-fill: #dc2626;
+    --danger-fill-hover: #b91c1c;
+    --danger-fill-active: #991b1b;
+
+    /* 成功 */
+    --success-text: #86efac;
+    --success-text-strong: #bbf7d0;
+    --success-ink: #6ee7b7;
+    --success-ink-strong: #bbf7d0;
+    --success-strong: #4ade80;
+    --success-bg: #12291d;
+    --success-bg-soft: #0f2319;
+    --success-bg-faint: #0e2019;
+    --success-bg-mint: #0c221b;
+    --success-bg-hover: #11261d;
+    --success-border: rgba(74, 222, 128, 0.32);
+    --success-border-strong: rgba(74, 222, 128, 0.5);
+    --teal-bg: #0f2a27;
+    --teal-text: #5eead4;
+
+    /* 警告 */
+    --warning-text: #fcd34d;
+    --warning-text-strong: #fde68a;
+    --warning-text-deep: #fcd34d;
+    --warning-ink: #fdba74;
+    --warning-ink-deep: #fcd34d;
+    --warning-ink-strong: #fbbf24;
+    --warning-bg: #32270f;
+    --warning-bg-soft: #2a2110;
+    --warning-bg-warm: #2c2214;
+    --warning-bg-hot: #2b1c12;
+    --warning-border: rgba(251, 191, 36, 0.35);
+    --warning-border-strong: rgba(251, 191, 36, 0.55);
+    --warning-border-soft: rgba(251, 191, 36, 0.45);
+
+    /* 加分 / 信息 / 标记 / 靛蓝 */
+    --bonus-bg: #2c1a1e;
+    --bonus-border: #5c3038;
+    --bonus-badge-border: #d08a4a;
+    --bonus-badge-text: #f0b27a;
+    --info-bg: #123047;
+    --info-bg-soft: #102a3e;
+    --info-text: #7dd3fc;
+    --info-text-strong: #93c5fd;
+    --info-border: #60a5fa;
+    --info-ink: #bfdbfe;
+    --indigo-text: #c7d2fe;
+    --indigo-border: #4c5a91;
+    --mark-bg: #5c4a1c;
+    --mark-search-bg: #6b4b22;
+    --mark-active-bg: #8a4b13;
+    --mark-archive-bg: #5c501c;
+
+    /* 浮层 / 登录 */
+    --toast-bg: #334155;
+    --toast-text: #f8fafc;
+    --toast-action-color: #93c5fd;
+    --toast-close: rgba(248, 250, 252, 0.5);
+    --login-glow: rgba(96, 165, 250, 0.18);
+    --login-card-bg: rgba(21, 31, 46, 0.96);
+    --login-gradient-start: #0b1220;
+    --login-gradient-end: #101a2e;
+    --login-card-border: rgba(148, 163, 184, 0.28);
+    --login-card-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+
+    /* 阴影 */
+    --shadow-weak: rgba(0, 0, 0, 0.45);
+    --shadow-faint: rgba(0, 0, 0, 0.4);
+    --shadow-light: rgba(0, 0, 0, 0.5);
+    --shadow-soft: rgba(0, 0, 0, 0.4);
+    --shadow-subtle: rgba(0, 0, 0, 0.55);
+    --shadow-medium: rgba(0, 0, 0, 0.55);
+    --shadow-slate-medium: rgba(0, 0, 0, 0.55);
+    --shadow-strong: rgba(0, 0, 0, 0.6);
+    --shadow-stronger: rgba(0, 0, 0, 0.6);
+    --shadow-deep: rgba(0, 0, 0, 0.65);
+    --shadow-deeper: rgba(0, 0, 0, 0.65);
+    --shadow-heavy: rgba(0, 0, 0, 0.7);
+    --shadow-dark: rgba(0, 0, 0, 0.6);
+    --shadow-toast: 0 6px 18px rgba(0, 0, 0, 0.6);
+    --shadow-menu: 0 18px 40px rgba(0, 0, 0, 0.65);
+    --shadow-focus-soft: rgba(96, 165, 250, 0.24);
+    --shadow-focus: rgba(96, 165, 250, 0.3);
+    --shadow-focus-strong: rgba(96, 165, 250, 0.42);
+    --shadow-danger-soft: rgba(248, 113, 113, 0.22);
+    --shadow-danger: rgba(248, 113, 113, 0.28);
 }

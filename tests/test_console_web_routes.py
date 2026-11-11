@@ -804,10 +804,10 @@ def test_duty_summary_collapses_shift_panel_by_default(
         not in response.text
     )
     assert 'class="account-menu-item" href="/admin">用户与排班</a>' in response.text
-    assert 'href="/static/css/layout.css"' in response.text
+    assert 'href="/static/css/layout.css?v=' in response.text
     assert 'href="/static/css/modules/filter.css?v=' in response.text
     assert 'href="/static/css/modules/review.css?v=' in response.text
-    assert 'href="/static/css/modules/search.css"' in response.text
+    assert 'href="/static/css/modules/search.css?v=' in response.text
 
     stylesheet = (
         Path(__file__).parents[1]

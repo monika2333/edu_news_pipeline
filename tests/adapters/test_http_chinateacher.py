@@ -77,6 +77,12 @@ def _page_catalog(pages: Sequence[tuple[str, str]], *, duplicate: bool = True) -
         f"<a href={node}.htm id=pageLink>{name}</a></div></div>"
         for name, node in pages
     )
+    if pages:
+        # #pageList1 内部也出现过同一版被模板重复渲染的锚点：靠 URL 去重压回版数。
+        primary += (
+            f'<div class="right_title1"><div class="right_title-name">'
+            f"<a href={pages[0][1]}.htm id=pageLink>{pages[0][0]}</a></div></div>"
+        )
     secondary = "".join(
         f"<td><a id=pageLink href={node}.htm>{name}</a></td>" for name, node in pages
     )

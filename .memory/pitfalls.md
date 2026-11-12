@@ -36,7 +36,7 @@
 - **京内判定的「默认按北京放行」兜底仍然存在，但现在只对临时错误生效**：`beijing_gate_fail_count` 达到 `BEIJING_GATE_MAX_RETRIES`（默认 3）时，只有 5xx/408/429/网络超时这类临时错误才会把稿件标成 `ready_for_export` 且 `is_beijing_related=True`；systematic/article/配置类错误不会走这条路。看到 gate 大批失败仍要按「可能误放行」核查，先看日志里的 `scope` 和 `systematic=N`（本轮受系统性错误影响的篇数，文章仍保持待处理）。
 - **`LLMQuotaError` 曾被 frozen dataclass 吞掉**：RuntimeError 子类经过 `with worker_session(...)` 这类 contextlib 上下文时，contextlib 会做 `exc.__traceback__ = ...` 赋值；frozen dataclass 的 `__setattr__` 抛 `FrozenInstanceError`，真正的额度错误被替换成 `FrozenInstanceError`。`LLMQuotaError` / `LLMRequestError` 必须保持普通 dataclass（非 frozen），新增异常子类不要随手加 `frozen=True`。
 - **全量 pytest 偶发 `test_postgres_adapter_core_roundtrip` 失败**：该用例会向生产库插一行 `pending_enrichment`，再断言它出现在 `fetch_pending_enrichments(20)` 的前 20 条里；定时流水线并发运行时可能把这一行消费掉，导致断言失败。单独重跑或错开流水线窗口即可通过，先别怀疑本次改动。彻底修法是让测试用临时表/fixture 隔离（未做）。
-- **`test_settings_service.py::test_settings_payload_exposes_endpoints_and_drops_base_url` 在本机恒红，且与改动无关**（2026-11-12 核对）：它断言 `configured_api_key_envs == ["LLM_DEEPSEEK_API_KEY"]`，而 `_configured_api_key_envs()` 是扫 `os.environ`；`get_settings()` 会把 `.env.local` 灌进 `os.environ`，本机那份里有 `OPENROUTER_API_KEY` / `DEEPSEEK_API_KEY`，名单就多了两项（顺序无关，是严格等值断言）。stash 掉改动同样红。换一台没有这些 Key 的机器或改断言/夹具才能消掉。
+- **测试断言 `os.environ` 全量扫描的结果时，必须先把环境变量隔离**（2026-11-12 修）：`_configured_api_key_envs()` 扫的是整个 `os.environ`，而 `get_settings()` 会把 `.env.local` 灌进去——本机配了真 Key 的机器上名单会多出几项，`assert configured == ["LLM_DEEPSEEK_API_KEY"]` 这种严格等值断言就只在 CI（没有 `.env.local`）绿、本机恒红，且与改动无关（stash 掉同样红，容易被误判成回归）。修法是让测试自洽而不是放宽断言：先 `load_environment()`（幂等，保证文件值已经落进 `os.environ`），再用 `monkeypatch.delenv` 清掉所有匹配 `LLM_API_KEY_ENV_PATTERN` 的变量，最后 `setenv` 本用例要的那一个——`monkeypatch` 会还原，跨用例不泄漏。用 `in` / `not in` 写的同类断言本来就不受影响。
 
 ## Windows 计划任务 / PowerShell 脚本
 

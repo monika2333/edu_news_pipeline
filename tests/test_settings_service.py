@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
@@ -14,8 +15,8 @@ from src.adapters.account_profiles import (
     AccountNameUnavailable,
 )
 from src.adapters.http_toutiao import PROFILE_NAME_TIMEOUT_SECONDS
-from src.business_config import validate_llm_models
-from src.config import get_settings
+from src.business_config import LLM_API_KEY_ENV_PATTERN, validate_llm_models
+from src.config import get_settings, load_environment
 from src.console import manual_filter_duplicate_service, settings_service
 from src.console.app import create_app
 from src.console.auth_service import ConsoleUser
@@ -361,8 +362,14 @@ def test_f9_reasoning_model_test_has_room_beyond_reasoning_limit(
 def test_settings_payload_exposes_endpoints_and_drops_base_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # 这份名单是扫 os.environ 得到的，而 get_settings() 会把 .env.local 灌进
+    # os.environ：本机配了真实 Key 的机器上会多出几项，严格等值断言就会红。
+    # 先把 env 文件落进来（load_environment 是幂等的），再把所有 *_API_KEY 清空，
+    # 只留本用例注入的那一个，断言才是「与机器环境无关」的。
+    load_environment()
+    for name in [key for key in os.environ if LLM_API_KEY_ENV_PATTERN.fullmatch(key)]:
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("LLM_DEEPSEEK_API_KEY", "deepseek-key")
-    monkeypatch.delenv("LLM_API_KEY", raising=False)
 
     def section_row(section: str, value: Any, version: int) -> dict[str, Any]:
         return {

@@ -99,6 +99,7 @@ SOURCE_CATALOG = (
         daily_only=True,
         aliases=("laodongwubao",),
     ),
+    SourceDefinition("zgjsb", "中国教师报", daily_only=True, aliases=("chinateacher",)),
     # 21 经济网按「账号=栏目」管理；稿件落库来源固定为报名「21世纪经济报道」，
     # 因此显示名用站点名「21经济网」，与北京号（显示「北京号」、来源「北京日报」）同构。
     SourceDefinition("21jingji", "21经济网", requires_accounts=True),

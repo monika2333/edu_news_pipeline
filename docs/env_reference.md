@@ -300,14 +300,21 @@ SCORE_KEYWORD_BONUSES_PATH
 每小时抓取来源及其顺序已迁入控制台设置页。一次性流水线需要覆盖来源时，使用
 `python -m scripts.run_pipeline_once --sources ...` 或 `python -m src.cli.main crawl --sources ...`。
 
-当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`chinanews_xj`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`xinhua`、`xinhua_edu`、`stdaily`、`bbtnews`、`laodongwubao`/`ldwb`、`bjrb`/`beijingdaily`、`btime`、`beijinghao`、`xinjinghao`。
+当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`chinanews_xj`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`xinhua`、`xinhua_edu`、`stdaily`、`bbtnews`、`laodongwubao`/`ldwb`、`bjrb`/`beijingdaily`、`zgjsb`/`chinateacher`、`btime`、`beijinghao`、`xinjinghao`。
 
 `xinhua_edu`（新华网教育频道）默认不在已保存的来源列表里，部署后在控制台
 「设置 → 数据源」手动启用；有噪音时可单独关闭，无需发版。
 
-北京日报和劳动午报不能加入每小时来源列表。服务器每日定时抓取时，分别调用
-`scripts/run_bjrb_daily.ps1` 和 `scripts/run_ldwb_daily.ps1`，脚本通过单次
-`--sources` 覆盖指定来源。
+北京日报、劳动午报和中国教师报不能加入每小时来源列表。服务器每日定时抓取时，分别调用
+`scripts/run_bjrb_daily.ps1`、`scripts/run_ldwb_daily.ps1` 和
+`scripts/run_zgjsb_daily.ps1`，脚本通过单次 `--sources` 覆盖指定来源。
+
+中国教师报是周报（每周三出版，一期 16 版），电子版通常在**北京时间 09:00 左右**整期
+上线，偶尔当天晚些时候补传。它按「站点当前最新一期」抓取，非出版日只是重复检查同一期，
+靠 `article_id` 幂等去重，漏跑一天也不会丢稿。建议服务器每日 **10:00 与 20:00** 各调用
+一次 `scripts/run_zgjsb_daily.ps1`：10:00 接常规上新，20:00 补当天稍晚补传；次日 10:00
+兜住 23:30 之后才上传的尾单。注册脚本 `scripts/tasks/register-zgjsb-daily.ps1` 默认就是
+这两个时间。
 
 部分来源可选配置：
 
@@ -397,6 +404,13 @@ BJRB_DATE=
 BJRB_TIMEOUT=20
 BJRB_DELAY=0.2
 BJRB_BASE_URL=https://bjrbdzb.bjd.com.cn/bjrb
+
+# China Teacher / ZGJSB（每日任务来源，周报、每周三出刊）
+# 留空表示抓站点当前最新一期；历史补抓填某一期的日期（YYYYMMDD 或 YYYY-MM-DD）
+ZGJSB_DATE=
+ZGJSB_TIMEOUT=20
+ZGJSB_DELAY=0.2
+ZGJSB_BASE_URL=http://chinateacher.jyb.cn/zgjsb
 ```
 
 `BJRB_DATE` 为空时默认抓取当前北京时间日期；历史回补可临时设置为 `YYYYMMDD`。北京日报建议在服务器每日北京时间 06:00 调用 `scripts/run_bjrb_daily.ps1`，08:00 可补偿重跑一次；本仓库不在开发机注册该定时任务。

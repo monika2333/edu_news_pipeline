@@ -78,7 +78,8 @@ def _page_catalog(pages: Sequence[tuple[str, str]], *, duplicate: bool = True) -
         for name, node in pages
     )
     if pages:
-        # #pageList1 内部也出现过同一版被模板重复渲染的锚点：靠 URL 去重压回版数。
+        # 真实版面页的 #pageList1 里 16 条互不重复（实测 16 anchors / 16 unique），
+        # 按 URL 去重是「模板重复渲染」的防御；这里刻意补一条同版重复锚点，把去重钉住。
         primary += (
             f'<div class="right_title1"><div class="right_title-name">'
             f"<a href={pages[0][1]}.htm id=pageLink>{pages[0][0]}</a></div></div>"
@@ -107,7 +108,9 @@ def _items_html(items: Sequence[tuple[str, str]], *, duplicate: bool = True) -> 
 PAGE_HTML = (
     _page_catalog(FULL_PAGES[:2])
     + _items_html(SIX_ITEMS)
-    # 真实版面页的 usemap <area> 也带 content 链接；容器外的内容链接一律不算稿件。
+    # 真实版面页容器外的 content 链接只有 #btdh 里同编号的副本（版面图的 usemap 用的是
+    # <area> 不是 <a>），所以全页扫锚点在真实页面上与容器内扫描等价；这里补一条编号
+    # 不同的容器外链接，确保「只认 #titleList1」这条作用域约定真的被测到。
     + '<div class="hot"><a href=content_650999.htm?div=-1>往期推荐</a></div>'
 )
 

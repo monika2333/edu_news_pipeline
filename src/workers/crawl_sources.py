@@ -41,15 +41,6 @@ from src.adapters.http_bjrb import (
     fetch_article as bjrb_fetch_article,
     list_issue_items as bjrb_list_issue_items,
 )
-from src.adapters.http_chinateacher import (
-    DEFAULT_DELAY as ZGJSB_DEFAULT_DELAY,
-    DEFAULT_TIMEOUT as ZGJSB_DEFAULT_TIMEOUT,
-    ZgjsbIssueItem,
-    article_to_detail_row as zgjsb_article_to_detail_row,
-    article_to_feed_row as zgjsb_article_to_feed_row,
-    fetch_article as zgjsb_fetch_article,
-    list_issue_items as zgjsb_list_issue_items,
-)
 from src.adapters.http_btime import (
     UidEntry,
     build_detail_update as btime_build_detail_update,
@@ -88,6 +79,15 @@ from src.adapters.http_chinanews_xj import (
     fetch_detail as cn_xj_fetch_detail,
     list_items as cn_xj_list_items,
     make_article_id as cn_xj_make_article_id,
+)
+from src.adapters.http_chinateacher import (
+    DEFAULT_DELAY as ZGJSB_DEFAULT_DELAY,
+    DEFAULT_TIMEOUT as ZGJSB_DEFAULT_TIMEOUT,
+    ZgjsbIssueItem,
+    article_to_detail_row as zgjsb_article_to_detail_row,
+    article_to_feed_row as zgjsb_article_to_feed_row,
+    fetch_article as zgjsb_fetch_article,
+    list_issue_items as zgjsb_list_issue_items,
 )
 from src.adapters.http_gmw import (
     DEFAULT_TIMEOUT as GMW_DEFAULT_TIMEOUT,

@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 
+import pytest
 import requests
 
+from src.adapters import http_laodongwubao
 from src.adapters.http_laodongwubao import (
     ArticleRecord,
     article_to_detail_row,
     article_to_feed_row,
     crawl_latest_issue,
+    ensure_access,
     make_article_id,
     parse_article,
     SOURCE_NAME,
@@ -78,11 +82,7 @@ class DummyResponse:
             raise requests.HTTPError(f"HTTP {self.status_code}")
 
 
-def test_crawl_latest_issue_uses_http_fallback_and_solves_challenge():
-    session = requests.Session()
-    calls: list[str] = []
-
-    challenge_html = """\
+POW_CHALLENGE_HTML = """\
 <html>
   <head><title>验证中</title></head>
   <body>
@@ -94,10 +94,24 @@ def test_crawl_latest_issue_uses_http_fallback_and_solves_challenge():
   </body>
 </html>
 """
-    redirect_html = """\
+
+WAF_CHALLENGE_HTML = """\
+<html>
+  <head><title>非法访问</title></head>
+  <body>
+    <script>
+      const g_ctwaf_env_check_info = `masked`;
+      document.querySelector('#challenge');
+    </script>
+  </body>
+</html>
+"""
+
+REDIRECT_HTML = """\
 <html><head><META HTTP-EQUIV="REFRESH" CONTENT="0; URL=content/2026-06/18/node_2.htm"></head></html>
 """
-    issue_html = """\
+
+ISSUE_HTML = """\
 <html>
   <body>
     <a id="pageLink" href="./node_2.htm">01： 封面</a>
@@ -106,29 +120,139 @@ def test_crawl_latest_issue_uses_http_fallback_and_solves_challenge():
 </html>
 """
 
+
+def test_verification_challenge_uses_sha256_prefix_zero():
+    """站点把工作量证明从前缀零 SHA-1 换成了 SHA-256，用 SHA-1 会被判 403。"""
+    session = requests.Session()
+    challenge_html = '<script>var zeroLen=3; var stampPrefix="ldwb-probe";</script>'
+    expected = next(
+        counter
+        for counter in range(1_000_000)
+        if hashlib.sha256(f"ldwb-probe{counter}".encode("utf-8")).hexdigest().startswith("000")
+    )
+
+    solved = http_laodongwubao._maybe_solve_verification_challenge(
+        session, "http://ldwb.workerbj.cn/", challenge_html
+    )
+
+    assert solved is True
+    assert session.cookies.get("ctwjcode") == str(expected)
+    assert session.cookies.get("stampprefix") == "ldwb-probe"
+
+
+def test_ensure_access_skips_browser_when_page_is_open(monkeypatch: pytest.MonkeyPatch):
+    session = requests.Session()
+    calls: list[str] = []
+
+    def fake_get(url: str, *, timeout: float, verify: bool) -> DummyResponse:
+        calls.append(url)
+        return DummyResponse(REDIRECT_HTML)
+
+    def fail_browser() -> list[tuple[str, str]]:
+        raise AssertionError("browser must not be launched when the page is open")
+
+    monkeypatch.setattr(http_laodongwubao, "_browser_waf_cookies", fail_browser)
+    setattr(session, "get", fake_get)
+
+    ensure_access(session, timeout=1, verify=False, allow_browser=True)
+
+    assert calls == ["http://ldwb.workerbj.cn/"]
+
+
+def test_ensure_access_uses_browser_tokens_for_waf_page(monkeypatch: pytest.MonkeyPatch):
+    session = requests.Session()
+    calls: list[str] = []
+    browser_calls: list[int] = []
+
+    def fake_get(url: str, *, timeout: float, verify: bool) -> DummyResponse:
+        calls.append(url)
+        if session.cookies.get("ctwj_token_probe"):
+            return DummyResponse(REDIRECT_HTML)
+        return DummyResponse(WAF_CHALLENGE_HTML)
+
+    def fake_browser() -> list[tuple[str, str]]:
+        browser_calls.append(1)
+        return [("ctwj_token_probe", "token-value"), ("ctw_dnytoken_token_probe", "dny")]
+
+    monkeypatch.setattr(http_laodongwubao, "_browser_waf_cookies", fake_browser)
+    setattr(session, "get", fake_get)
+
+    ensure_access(session, timeout=1, verify=False, allow_browser=True)
+
+    assert len(browser_calls) == 1
+    assert calls == ["http://ldwb.workerbj.cn/", "http://ldwb.workerbj.cn/"]
+    assert session.cookies.get("ctwj_token_probe") == "token-value"
+
+
+def test_ensure_access_reports_when_browser_disabled(monkeypatch: pytest.MonkeyPatch):
+    session = requests.Session()
+
+    def fake_get(url: str, *, timeout: float, verify: bool) -> DummyResponse:
+        return DummyResponse(WAF_CHALLENGE_HTML)
+
+    def fail_browser() -> list[tuple[str, str]]:
+        raise AssertionError("browser must not be launched when disabled")
+
+    monkeypatch.setattr(http_laodongwubao, "_browser_waf_cookies", fail_browser)
+    setattr(session, "get", fake_get)
+
+    with pytest.raises(RuntimeError, match="LDWB_WAF_BROWSER is disabled"):
+        ensure_access(session, timeout=1, verify=False, allow_browser=False)
+
+
+def test_ensure_access_reports_persisting_waf_after_browser(monkeypatch: pytest.MonkeyPatch):
+    session = requests.Session()
+
+    def fake_get(url: str, *, timeout: float, verify: bool) -> DummyResponse:
+        return DummyResponse(WAF_CHALLENGE_HTML)
+
+    def fake_browser() -> list[tuple[str, str]]:
+        return [("ctwj_token_probe", "token-value")]
+
+    monkeypatch.setattr(http_laodongwubao, "_browser_waf_cookies", fake_browser)
+    setattr(session, "get", fake_get)
+
+    with pytest.raises(RuntimeError, match="after the browser handshake"):
+        ensure_access(session, timeout=1, verify=False, allow_browser=True)
+
+
+def test_crawl_latest_issue_primes_access_then_crawls(monkeypatch: pytest.MonkeyPatch):
+    session = requests.Session()
+    calls: list[str] = []
+
+    def fail_browser() -> list[tuple[str, str]]:
+        raise AssertionError("browser must not be launched when the PoW answer is accepted")
+
     def fake_get(url: str, *, timeout: float, verify: bool) -> DummyResponse:
         calls.append(url)
         if url == "https://ldwb.workerbj.cn/":
             raise requests.exceptions.SSLError("tlsv1 alert internal error")
         if url == "http://ldwb.workerbj.cn/":
             if session.cookies.get("ctwjcode"):
-                return DummyResponse(redirect_html)
-            return DummyResponse(challenge_html)
+                return DummyResponse(REDIRECT_HTML)
+            return DummyResponse(POW_CHALLENGE_HTML)
         if url == "http://ldwb.workerbj.cn/content/2026-06/18/node_2.htm":
-            return DummyResponse(issue_html)
+            return DummyResponse(ISSUE_HTML)
         if url == "http://ldwb.workerbj.cn/content/2026-06/18/content_169122.htm":
             return DummyResponse(HTML_SAMPLE)
         raise AssertionError(f"unexpected URL {url}")
 
+    monkeypatch.setattr(http_laodongwubao, "_browser_waf_cookies", fail_browser)
     setattr(session, "get", fake_get)
 
     records = crawl_latest_issue(limit=1, session=session, verify_tls=False, timeout=1)
 
-    assert calls[:3] == [
+    assert calls == [
+        "http://ldwb.workerbj.cn/",
+        "http://ldwb.workerbj.cn/",
         "https://ldwb.workerbj.cn/",
         "http://ldwb.workerbj.cn/",
-        "http://ldwb.workerbj.cn/",
+        "http://ldwb.workerbj.cn/content/2026-06/18/node_2.htm",
+        # 该刊期首页本身就是 node_2（a#pageLink 指向自己），所以版面页再取一次。
+        "http://ldwb.workerbj.cn/content/2026-06/18/node_2.htm",
+        "http://ldwb.workerbj.cn/content/2026-06/18/content_169122.htm",
     ]
     assert len(records) == 1
     assert records[0].article_id == "laodongwubao:/content/2026-06/18/content_169122"
     assert records[0].url == "http://ldwb.workerbj.cn/content/2026-06/18/content_169122.htm"
+

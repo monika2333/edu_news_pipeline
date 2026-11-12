@@ -391,6 +391,12 @@ BBTNEWS_LOOKBACK_DAYS=3
 # Laodongwubao
 LDWB_TIMEOUT=20
 LDWB_VERIFY_TLS=true
+# 站点正文在「SHA-256 工作量证明 + 创天 WAF 环境指纹」两层人机验证之后，第二层
+# 只能在真浏览器里跑完：需要 playwright 与 chromium（`playwright install chromium`）。
+# 浏览器只负责换取 token cookie，正文抓取仍走 requests；关掉它则遇到第二层验证直接报错。
+LDWB_WAF_BROWSER=1
+# 浏览器等待验证通过的秒数上限（含页面加载与自动 reload）。
+LDWB_WAF_TIMEOUT=90
 
 # Beijing Daily / BJRB
 BJRB_DATE=

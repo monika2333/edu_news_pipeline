@@ -12,10 +12,14 @@ from bs4 import BeautifulSoup
 
 from src.adapters.db_postgres_core import PostgresAdapter
 from src.adapters.http_laodongwubao import (
+    ensure_access,
     parse_article,
     article_to_feed_row,
     article_to_detail_row,
 )
+
+# 站点 https 端点固定回 TLS alert，且正文与刊期页都在 http 上；与 adapter 保持一致。
+SITE_BASE = "http://ldwb.workerbj.cn/"
 
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -125,7 +129,7 @@ def _construct_issue_start_url_from_date(date_str: str) -> Optional[str]:
     if not m:
         return None
     y, mm, dd = m.group(1), m.group(2), m.group(3)
-    base_dir = f"https://ldwb.workerbj.cn/content/{y}-{mm}/{dd}/"
+    base_dir = f"{SITE_BASE}content/{y}-{mm}/{dd}/"
     # Prefer index.htm; caller may still probe node_1 if index missing
     return base_dir + "index.htm"
 
@@ -142,7 +146,7 @@ def main(argv: List[str]) -> int:
         "url",
         help=(
             "Issue page URL (node_X.htm or index.htm), e.g. "
-            "https://ldwb.workerbj.cn/content/2025-11/14/node_2.htm"
+            "http://ldwb.workerbj.cn/content/2025-11/14/node_2.htm"
         ),
         nargs="?",
     )
@@ -165,6 +169,12 @@ def main(argv: List[str]) -> int:
     sess.headers.update({"User-Agent": UA})
     if not args.verify:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    # 站点有工作量证明 + 创天 WAF 两层人机验证，先过验证再抓刊期页。
+    try:
+        ensure_access(sess, timeout=args.timeout, verify=args.verify)
+    except Exception as exc:
+        print(f"ERROR: unable to pass the Laodong Wubao WAF challenge: {exc}")
+        return 5
 
     # Resolve starting URL
     start_url = args.url
@@ -185,7 +195,7 @@ def main(argv: List[str]) -> int:
         m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", args.date)
         if m:
             y, mm, dd = m.group(1), m.group(2), m.group(3)
-            base_dir = f"https://ldwb.workerbj.cn/content/{y}-{mm}/{dd}/"
+            base_dir = f"{SITE_BASE}content/{y}-{mm}/{dd}/"
             node1 = base_dir + "node_1.htm"
             if node1 not in candidates:
                 candidates.append(node1)

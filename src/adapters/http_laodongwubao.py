@@ -4,6 +4,8 @@ import hashlib
 import html
 import os
 import re
+import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -30,6 +32,29 @@ DEFAULT_TIMEOUT = 20.0
 DEFAULT_VERIFY_TLS = False
 DEFAULT_PUBLISH_HOUR = 0
 CHALLENGE_MAX_COUNTER = 1_000_000
+
+# 站点自 2026-09 起把「非真人访问」挡在两层验证后面：
+#   1) 纯工作量证明页（`stampPrefix` / `zeroLen`，SHA-256 前缀零）——本模块能复算；
+#   2) 创天 WAF 的人机识别页（`g_ctwaf_*`，靠 WebAssembly 做环境指纹）——只能在真浏览器里跑完。
+# 因此纯 requests 已经拿不到正文，必须在需要时启动一次 headless chromium 换 token cookie，
+# 之后所有正文请求仍然走 requests（见 ensure_access）。
+WAF_COOKIE_DOMAIN = "ldwb.workerbj.cn"
+WAF_COOKIE_NAME_PREFIXES = ("ctwj_", "ctw_")
+WAF_BLOCK_MARKERS = ("stampPrefix", "g_ctwaf_")
+DEFAULT_WAF_BROWSER_TIMEOUT = 90.0
+WAF_CHALLENGE_TITLES = {"", "验证中", "403 - Forbidden"}
+
+
+class WafChallengeError(RuntimeError):
+    """页面仍是站点的人机验证页，说明当前 session 没有通过 WAF。"""
+
+
+def _log_info(message: str) -> None:
+    print(f"[info] {message}", file=sys.stderr)
+
+
+def _log_warn(message: str) -> None:
+    print(f"[warn] {message}", file=sys.stderr)
 
 
 @dataclass
@@ -76,8 +101,37 @@ def _resolve_verify_tls(override: Optional[bool]) -> bool:
     return DEFAULT_VERIFY_TLS
 
 
+def _resolve_waf_browser_timeout(override: Optional[float]) -> float:
+    if override is not None:
+        return float(override)
+    env_value = os.getenv("LDWB_WAF_TIMEOUT")
+    if env_value:
+        try:
+            return float(env_value)
+        except ValueError:
+            return DEFAULT_WAF_BROWSER_TIMEOUT
+    return DEFAULT_WAF_BROWSER_TIMEOUT
+
+
+def _resolve_waf_browser_enabled(override: Optional[bool]) -> bool:
+    if override is not None:
+        return override
+    env_value = os.getenv("LDWB_WAF_BROWSER")
+    if env_value:
+        normalized = env_value.strip().lower()
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+    return True
+
+
 def _session() -> requests.Session:
     return build_session(DEFAULT_HEADERS, trust_env=False)
+
+
+def _looks_like_waf_block(html_text: str) -> bool:
+    return any(marker in html_text for marker in WAF_BLOCK_MARKERS)
 
 
 def _fetch_text(session: requests.Session, url: str, *, timeout: float, verify: bool) -> str:
@@ -90,10 +144,18 @@ def _fetch_text(session: requests.Session, url: str, *, timeout: float, verify: 
         resp.raise_for_status()
         resp.encoding = "utf-8"
         text = resp.text
+    if _looks_like_waf_block(text):
+        raise WafChallengeError(f"Laodong Wubao returned a WAF challenge page for {url}")
     return text
 
 
 def _maybe_solve_verification_challenge(session: requests.Session, url: str, html_text: str) -> bool:
+    """解站点第一层工作量证明：SHA-256(前缀 + 十进制计数) 的前 zeroLen 位为 0。
+
+    2026-09 之后站点把前缀零算法从 SHA-1 换成 SHA-256，仍用 SHA-1 算出的
+    counter 会被判无效并回 403。第二层（`g_ctwaf_*` 环境指纹）复算不了，
+    由 ensure_access 交给浏览器处理。
+    """
     prefix_match = re.search(r'var\s+stampPrefix\s*=\s*"([^"]+)"', html_text)
     zero_match = re.search(r"var\s+zeroLen\s*=\s*(\d+)", html_text)
     if not prefix_match or not zero_match:
@@ -106,7 +168,7 @@ def _maybe_solve_verification_challenge(session: requests.Session, url: str, htm
 
     target = "0" * zero_len
     for counter in range(CHALLENGE_MAX_COUNTER):
-        digest = hashlib.sha1(f"{stamp_prefix}{counter}".encode("utf-8")).hexdigest()
+        digest = hashlib.sha256(f"{stamp_prefix}{counter}".encode("utf-8")).hexdigest()
         if digest.startswith(target):
             hostname = urlparse(url).hostname
             if hostname:
@@ -117,6 +179,134 @@ def _maybe_solve_verification_challenge(session: requests.Session, url: str, htm
                 session.cookies.set("stampprefix", stamp_prefix, path="/")
             return True
     raise RuntimeError("Unable to solve Laodong Wubao verification challenge.")
+
+
+def _has_waf_cookies(cookies: Sequence[Dict[str, str]]) -> bool:
+    for cookie in cookies:
+        name = str(cookie.get("name") or "")
+        if name.startswith(WAF_COOKIE_NAME_PREFIXES):
+            return True
+    return False
+
+
+def _browser_waf_cookies(*, timeout: Optional[float] = None) -> List[Tuple[str, str]]:
+    """用 headless chromium 跑完站点人机验证，返回可复用到 requests 的 token cookie。
+
+    站点第二层验证依赖 WebAssembly 环境指纹，Python 侧无法复算；这里只借浏览器
+    通过验证并取 cookie，正文抓取仍由 requests 完成。Chromium 默认会暴露
+    `navigator.webdriver`，站点据此直接回 403，所以必须带
+    `--disable-blink-features=AutomationControlled` 启动。
+    """
+    try:
+        from playwright.sync_api import Error as PlaywrightError
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:  # pragma: no cover - 依赖缺失属于部署问题
+        raise RuntimeError(
+            "Laodong Wubao now needs a real browser to pass its WAF challenge; "
+            "install playwright and run `playwright install chromium`."
+        ) from exc
+
+    wait_seconds = _resolve_waf_browser_timeout(timeout)
+    cookies: List[Dict[str, str]] = []
+    title = ""
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(
+                headless=True,
+                args=["--disable-blink-features=AutomationControlled"],
+            )
+            try:
+                context = browser.new_context(
+                    user_agent=DEFAULT_HEADERS["User-Agent"],
+                    locale="zh-CN",
+                )
+                page = context.new_page()
+                page.goto(
+                    HTTP_BASE_URL,
+                    wait_until="domcontentloaded",
+                    timeout=wait_seconds * 1000,
+                )
+                deadline = time.monotonic() + wait_seconds
+                while time.monotonic() < deadline:
+                    try:
+                        title = page.title()
+                    except PlaywrightError:
+                        # 挑战通过后页面会整页 reload，此刻读标题会撞上导航。
+                        time.sleep(1.0)
+                        continue
+                    if title == "403 - Forbidden":
+                        # 被判成机器人时站点给的是终态页，继续等只会拖到超时。
+                        break
+                    if title and title not in WAF_CHALLENGE_TITLES:
+                        break
+                    time.sleep(1.0)
+                cookies = [
+                    {"name": str(c.get("name") or ""), "value": str(c.get("value") or "")}
+                    for c in context.cookies()
+                    if str(c.get("domain") or "").endswith(WAF_COOKIE_DOMAIN)
+                ]
+            finally:
+                browser.close()
+    except PlaywrightError as exc:
+        raise RuntimeError(f"Laodong Wubao WAF browser handshake failed: {exc}") from exc
+
+    if not _has_waf_cookies(cookies):
+        raise RuntimeError(
+            "Laodong Wubao WAF challenge did not return a token cookie "
+            f"(last page title: {title!r})."
+        )
+    return [(cookie["name"], cookie["value"]) for cookie in cookies]
+
+
+def ensure_access(
+    session: requests.Session,
+    *,
+    timeout: float,
+    verify: bool,
+    allow_browser: Optional[bool] = None,
+) -> None:
+    """确保 session 已通过站点人机验证，可以继续抓正文。
+
+    先发一次探测请求：正常页面直接返回；只有在拿到工作量证明页或第二层 WAF 页时
+    才启动一次浏览器换取 token cookie 并重试。`LDWB_WAF_BROWSER=0` 可关闭浏览器
+    兜底（关闭后遇到第二层验证会直接报错，便于排查是不是站点又改了验证）。
+    """
+    use_browser = _resolve_waf_browser_enabled(allow_browser)
+    try:
+        probe = _fetch_text(session, HTTP_BASE_URL, timeout=timeout, verify=verify)
+    except WafChallengeError as exc:
+        blocked_reason = str(exc)
+    except requests.RequestException as exc:
+        blocked_reason = str(exc)
+        _log_warn(f"ldwb access probe failed: {exc}")
+    else:
+        if not _looks_like_waf_block(probe):
+            return
+        blocked_reason = "probe response still contains the WAF challenge markers"
+
+    if not use_browser:
+        raise RuntimeError(
+            f"Laodong Wubao is behind its WAF challenge ({blocked_reason}) "
+            "and LDWB_WAF_BROWSER is disabled."
+        )
+
+    _log_info("ldwb needs the browser WAF handshake; launching headless chromium")
+    for name, value in _browser_waf_cookies():
+        session.cookies.set(name, value, domain=WAF_COOKIE_DOMAIN, path="/")
+
+    try:
+        retry = _fetch_text(session, HTTP_BASE_URL, timeout=timeout, verify=verify)
+    except WafChallengeError as exc:
+        raise RuntimeError(
+            "Laodong Wubao still returns its WAF challenge after the browser handshake: "
+            f"{exc}"
+        ) from exc
+    if _looks_like_waf_block(retry):
+        raise RuntimeError(
+            "Laodong Wubao still returns its WAF challenge after the browser handshake."
+        )
+    _log_info("ldwb WAF handshake passed")
+
 
 
 def _latest_issue_url(session: requests.Session, *, timeout: float, verify: bool) -> str:
@@ -238,6 +428,7 @@ def crawl_latest_issue(
     session: Optional[requests.Session] = None,
     verify_tls: Optional[bool] = None,
     timeout: Optional[float] = None,
+    allow_waf_browser: Optional[bool] = None,
 ) -> List[ArticleRecord]:
     timeout_s = _resolve_timeout(timeout)
     verify = _resolve_verify_tls(verify_tls)
@@ -247,6 +438,12 @@ def crawl_latest_issue(
     sess = session or _session()
     created_session = session is None
     try:
+        ensure_access(
+            sess,
+            timeout=timeout_s,
+            verify=verify,
+            allow_browser=allow_waf_browser,
+        )
         latest_issue = _latest_issue_url(sess, timeout=timeout_s, verify=verify)
         issue_html = _fetch_text(sess, latest_issue, timeout=timeout_s, verify=verify)
         page_links = _extract_page_links(issue_html, latest_issue)
@@ -324,7 +521,9 @@ def article_to_detail_row(record: ArticleRecord, *, detail_fetched_at: datetime)
 __all__ = [
     "ArticleRecord",
     "SOURCE_NAME",
+    "WafChallengeError",
     "crawl_latest_issue",
+    "ensure_access",
     "parse_article",
     "make_article_id",
     "article_to_feed_row",

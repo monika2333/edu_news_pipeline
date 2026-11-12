@@ -80,6 +80,15 @@ from src.adapters.http_chinanews_xj import (
     list_items as cn_xj_list_items,
     make_article_id as cn_xj_make_article_id,
 )
+from src.adapters.http_chinateacher import (
+    DEFAULT_DELAY as ZGJSB_DEFAULT_DELAY,
+    DEFAULT_TIMEOUT as ZGJSB_DEFAULT_TIMEOUT,
+    ZgjsbIssueItem,
+    article_to_detail_row as zgjsb_article_to_detail_row,
+    article_to_feed_row as zgjsb_article_to_feed_row,
+    fetch_article as zgjsb_fetch_article,
+    list_issue_items as zgjsb_list_issue_items,
+)
 from src.adapters.http_gmw import (
     DEFAULT_TIMEOUT as GMW_DEFAULT_TIMEOUT,
     article_to_detail_row as gmw_article_to_detail_row,
@@ -963,6 +972,47 @@ def _run_bjrb_flow(
     )
 
 
+def _run_zgjsb_flow(
+    *,
+    adapter: Any,
+    keywords: Sequence[str],
+    remaining_limit: Optional[int],
+    timeout_value: float,
+    delay_value: float,
+) -> CrawlStats:
+    def prepare_feed(item: Any, fetched_at: datetime) -> Tuple[str, Dict[str, Any]]:
+        article_id = str(item.article_id or "").strip()
+        return article_id, zgjsb_article_to_feed_row(item, fetched_at=fetched_at)
+
+    def fetch_detail_row(
+        item: ZgjsbIssueItem,
+        _article_id: str,
+        detail_fetched_at: datetime,
+    ) -> Dict[str, Any]:
+        article = zgjsb_fetch_article(item, timeout=timeout_value)
+        return zgjsb_article_to_detail_row(article, detail_fetched_at=detail_fetched_at)
+
+    return _run_source_flow(
+        adapter=adapter,
+        flow=SourceFlow(
+            source="zgjsb",
+            display_name="China Teacher",
+            list_items=lambda limit, _existing: zgjsb_list_issue_items(
+                limit=limit,
+                timeout=timeout_value,
+            ),
+            prepare_feed=prepare_feed,
+            fetch_detail=fetch_detail_row,
+            load_existing_ids=False,
+            count_prepare_errors=True,
+            missing_ids_fallback="all",
+            detail_delay=delay_value,
+        ),
+        keywords=keywords,
+        remaining_limit=remaining_limit,
+    )
+
+
 def _run_qianlong_flow(
     *,
     adapter: Any,
@@ -1089,6 +1139,13 @@ def _bjrb_runner_kwargs(_context: SourceRunContext) -> Dict[str, Any]:
     }
 
 
+def _zgjsb_runner_kwargs(_context: SourceRunContext) -> Dict[str, Any]:
+    return {
+        "timeout_value": _env_float("ZGJSB_TIMEOUT", ZGJSB_DEFAULT_TIMEOUT),
+        "delay_value": max(0.0, _env_float("ZGJSB_DELAY", ZGJSB_DEFAULT_DELAY)),
+    }
+
+
 _SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
     "21jingji": SourceRegistration(
         runner_name="_run_registered_linked_page_flow",
@@ -1126,6 +1183,11 @@ _SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
         runner_name="_run_bjrb_flow",
         kwargs_factory=_bjrb_runner_kwargs,
         aliases=("beijingdaily",),
+    ),
+    "zgjsb": SourceRegistration(
+        runner_name="_run_zgjsb_flow",
+        kwargs_factory=_zgjsb_runner_kwargs,
+        aliases=("chinateacher",),
     ),
     "btime": SourceRegistration(
         runner_name="_run_registered_linked_page_flow",

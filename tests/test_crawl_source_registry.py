@@ -183,6 +183,8 @@ def run_adapter(monkeypatch: pytest.MonkeyPatch) -> object:
     monkeypatch.setenv("QIANLONG_EXISTING_CONSECUTIVE_STOP", "7")
     monkeypatch.setenv("BJRB_TIMEOUT", "14.5")
     monkeypatch.setenv("BJRB_DELAY", "0.45")
+    monkeypatch.setenv("ZGJSB_TIMEOUT", "14.5")
+    monkeypatch.setenv("ZGJSB_DELAY", "0.35")
     return adapter
 
 
@@ -243,6 +245,7 @@ def _patch_linked_callbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         ("beijinghao", "beijinghao", "Beijinghao", {"count_feed_errors": False}),
         ("xinjinghao", "xinjinghao", "Xinjinghao", {"details_in_list": True}),
         ("bjrb", "bjrb", "Beijing Daily", {"load_existing_ids": False, "count_prepare_errors": True, "missing_ids_fallback": "all", "detail_delay": 0.45}),
+        ("zgjsb", "zgjsb", "China Teacher", {"load_existing_ids": False, "count_prepare_errors": True, "missing_ids_fallback": "all", "detail_delay": 0.35}),
         ("btime", "btime", "Btime", {"count_feed_errors": False}),
         ("chinadaily", "chinadaily", "China Daily", {"count_feed_errors": False}),
         ("chinanews", "chinanews", "ChinaNews", {"count_feed_errors": False}),
@@ -257,6 +260,7 @@ def _patch_linked_callbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         ("xinhua_edu", "xinhua_edu", "Xinhua Education", {"count_feed_errors": False}),
         ("stdaily", "stdaily", "Stdaily", {"count_feed_errors": False}),
         ("beijingdaily", "bjrb", "Beijing Daily", {"load_existing_ids": False, "count_prepare_errors": True, "missing_ids_fallback": "all", "detail_delay": 0.45}),
+        ("chinateacher", "zgjsb", "China Teacher", {"load_existing_ids": False, "count_prepare_errors": True, "missing_ids_fallback": "all", "detail_delay": 0.35}),
         ("laodongwubao", "ldwb", "Laodong Wubao", {"details_in_list": True, "skip_existing_ids": True, "continue_after_feed_error": True}),
         ("qq", "tencent", "Tencent", {"count_prepare_errors": True, "missing_ids_fallback": "none", "detail_delay": 0.75, "delay_after_failure": True, "delay_after_last": True}),
     ],
@@ -312,6 +316,7 @@ def test_every_dispatch_key_preserves_source_flow_strategy_and_callbacks(
         ("beijinghao", "_run_registered_linked_page_flow", {"pages": 3}, "beijinghao"),
         ("xinjinghao", "_run_xinjinghao_flow", {"pages": 3}, None),
         ("bjrb", "_run_bjrb_flow", {"timeout_value": 14.5, "delay_value": 0.45}, None),
+        ("zgjsb", "_run_zgjsb_flow", {"timeout_value": 14.5, "delay_value": 0.35}, None),
         ("btime", "_run_registered_linked_page_flow", {"pages": 3}, "btime"),
         ("chinadaily", "_run_registered_linked_page_flow", {"pages": 3}, "chinadaily"),
         ("chinanews", "_run_registered_linked_page_flow", {"pages": 3}, "chinanews"),

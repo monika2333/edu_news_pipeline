@@ -42,6 +42,16 @@ from src.adapters.http_bjrb import (
     fetch_article as bjrb_fetch_article,
     list_issue_items as bjrb_list_issue_items,
 )
+from src.adapters.http_bjwb import (
+    DEFAULT_DELAY as BJWB_DEFAULT_DELAY,
+    DEFAULT_TIMEOUT as BJWB_DEFAULT_TIMEOUT,
+    BjwbIssueItem,
+    BjwbIssueNotPublished,
+    article_to_detail_row as bjwb_article_to_detail_row,
+    article_to_feed_row as bjwb_article_to_feed_row,
+    fetch_article as bjwb_fetch_article,
+    list_issue_items as bjwb_list_issue_items,
+)
 from src.adapters.http_btime import (
     UidEntry,
     build_detail_update as btime_build_detail_update,
@@ -982,6 +992,55 @@ def _run_bjrb_flow(
     )
 
 
+def _run_bjwb_flow(
+    *,
+    adapter: Any,
+    keywords: Sequence[str],
+    remaining_limit: Optional[int],
+    timeout_value: float,
+    delay_value: float,
+) -> CrawlStats:
+    def prepare_feed(item: BjwbIssueItem, fetched_at: datetime) -> Tuple[str, Dict[str, Any]]:
+        article_id = str(item.article_id or "").strip()
+        return article_id, bjwb_article_to_feed_row(item, fetched_at=fetched_at)
+
+    def fetch_detail_row(
+        item: BjwbIssueItem,
+        _article_id: str,
+        detail_fetched_at: datetime,
+    ) -> Dict[str, Any]:
+        article = bjwb_fetch_article(item, timeout=timeout_value)
+        return bjwb_article_to_detail_row(article, detail_fetched_at=detail_fetched_at)
+
+    # 刊期索引指向的那一期还没上线时只记一行、正常结束，不进 failed_sources；
+    # 网络错误、5xx 与页面解析失败仍照常抛出，由 run() 记进失败来源。
+    try:
+        issue_items = bjwb_list_issue_items(
+            limit=remaining_limit,
+            timeout=timeout_value,
+        )
+    except BjwbIssueNotPublished as exc:
+        log_info(WORKER, str(exc))
+        return _empty_stats()
+
+    return _run_source_flow(
+        adapter=adapter,
+        flow=SourceFlow(
+            source="bjwb",
+            display_name="Beijing Evening News",
+            list_items=lambda _limit, _existing: issue_items,
+            prepare_feed=prepare_feed,
+            fetch_detail=fetch_detail_row,
+            load_existing_ids=False,
+            count_prepare_errors=True,
+            missing_ids_fallback="all",
+            detail_delay=delay_value,
+        ),
+        keywords=keywords,
+        remaining_limit=remaining_limit,
+    )
+
+
 def _run_zgjsb_flow(
     *,
     adapter: Any,
@@ -1149,6 +1208,13 @@ def _bjrb_runner_kwargs(_context: SourceRunContext) -> Dict[str, Any]:
     }
 
 
+def _bjwb_runner_kwargs(_context: SourceRunContext) -> Dict[str, Any]:
+    return {
+        "timeout_value": _env_float("BJWB_TIMEOUT", BJWB_DEFAULT_TIMEOUT),
+        "delay_value": max(0.0, _env_float("BJWB_DELAY", BJWB_DEFAULT_DELAY)),
+    }
+
+
 def _zgjsb_runner_kwargs(_context: SourceRunContext) -> Dict[str, Any]:
     return {
         "timeout_value": _env_float("ZGJSB_TIMEOUT", ZGJSB_DEFAULT_TIMEOUT),
@@ -1193,6 +1259,11 @@ _SOURCE_REGISTRY: Dict[str, SourceRegistration] = {
         runner_name="_run_bjrb_flow",
         kwargs_factory=_bjrb_runner_kwargs,
         aliases=("beijingdaily",),
+    ),
+    "bjwb": SourceRegistration(
+        runner_name="_run_bjwb_flow",
+        kwargs_factory=_bjwb_runner_kwargs,
+        aliases=("beijingwanbao",),
     ),
     "zgjsb": SourceRegistration(
         runner_name="_run_zgjsb_flow",

@@ -300,12 +300,12 @@ SCORE_KEYWORD_BONUSES_PATH
 每小时抓取来源及其顺序已迁入控制台设置页。一次性流水线需要覆盖来源时，使用
 `python -m scripts.run_pipeline_once --sources ...` 或 `python -m src.cli.main crawl --sources ...`。
 
-当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`chinanews_xj`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`xinhua`、`xinhua_edu`、`stdaily`、`bbtnews`、`laodongwubao`/`ldwb`、`bjrb`/`beijingdaily`、`zgjsb`/`chinateacher`、`btime`、`beijinghao`、`xinjinghao`。
+当前支持的值：`toutiao`、`tencent`/`qq`、`chinanews`、`chinanews_xj`、`jyb`、`chinadaily`、`gmw`、`qianlong`、`xinhua`、`xinhua_edu`、`stdaily`、`bbtnews`、`laodongwubao`/`ldwb`、`bjrb`/`beijingdaily`、`bjwb`/`beijingwanbao`、`zgjsb`/`chinateacher`、`btime`、`beijinghao`、`xinjinghao`。
 
 `xinhua_edu`（新华网教育频道）默认不在已保存的来源列表里，部署后在控制台
 「设置 → 数据源」手动启用；有噪音时可单独关闭，无需发版。
 
-北京日报、劳动午报和中国教师报是**电子报**来源，不能加入每小时来源列表。服务器上只注册
+北京日报、北京晚报、劳动午报和中国教师报是**电子报**来源，不能加入每小时来源列表。服务器上只注册
 **一个**电子报计划任务 `scripts/tasks/register-epapers.ps1`（默认任务名 `EduNews_Epapers`，
 默认时间 **08:00、12:00、16:00、20:00、00:00**），它调用 `scripts/run_epapers.ps1` →
 `python -m scripts.run_pipeline_once --steps crawl-epapers`，按 `app_settings.epaper_sources`
@@ -320,6 +320,12 @@ SCORE_KEYWORD_BONUSES_PATH
 上线，偶尔当天晚些时候补传。它按「站点当前最新一期」抓取，非出版日只是重复检查同一期，
 靠 `article_id` 幂等去重，漏跑一轮也不会丢稿；每天五轮里 08:00、12:00 接常规上新，
 20:00 补当天稍晚补传，次日 08:00 兜住 23:30 之后才上传的尾单。
+
+北京晚报抓「站点当前最新一期」：`paperindex.htm` 是跳转页，跟着它指向的刊期走，而不是
+按「今天」拼日期。晚报当天的版通常下午才上线，所以 00:00/08:00/12:00 三轮会重复检查
+前一天那一期（幂等去重、开销很小），16:00/20:00 接当天新版，次日 00:00 还能兜住
+23:30 之后才上传的尾单。纯图片版面（广告、电视节目预告、答案页）没有文字正文，正文留空
+写入、不算抓取失败。
 
 部分来源可选配置：
 
@@ -416,6 +422,13 @@ BJRB_TIMEOUT=20
 BJRB_DELAY=0.2
 BJRB_BASE_URL=https://bjrbdzb.bjd.com.cn/bjrb
 
+# Beijing Evening News / BJWB（电子报来源，与北京日报同属 bjrbdzb 数字报平台）
+# 留空表示跟随 paperindex.htm 抓站点当前最新一期；历史补抓填某一期的日期（YYYYMMDD）
+BJWB_DATE=
+BJWB_TIMEOUT=20
+BJWB_DELAY=0.2
+BJWB_BASE_URL=https://bjrbdzb.bjd.com.cn/bjwb
+
 # China Teacher / ZGJSB（电子报来源，周报、每周三出刊）
 # 留空表示抓站点当前最新一期；历史补抓填某一期的日期（YYYYMMDD 或 YYYY-MM-DD）
 ZGJSB_DATE=
@@ -425,6 +438,8 @@ ZGJSB_BASE_URL=http://chinateacher.jyb.cn/zgjsb
 ```
 
 `BJRB_DATE` 为空时默认抓取当前北京时间日期；历史回补可临时设置为 `YYYYMMDD`。北京日报由 `EduNews_Epapers` 任务每天 08:00、12:00、16:00、20:00、00:00 统一抓取；当天这一期尚未上线时只记一行「北京日报 YYYYMMDD 期尚未上线」并跳过该来源，不计入抓取失败。本仓库不在开发机注册该定时任务。
+
+`BJWB_DATE` 为空时跟随 `paperindex.htm` 抓站点当前最新一期（不按「今天」拼日期：晚报当天的版通常下午才上线，按当天日期会在 00:00/08:00/12:00 三轮反复抓空，也兜不住 23:30 之后才上传的尾单）；历史补抓可临时设置为 `YYYYMMDD`。北京晚报同样由 `EduNews_Epapers` 任务抓取，在控制台「设置 → 数据源 → 电子报」打开开关后才生效（新来源默认关闭）。
 
 ## Feishu 通知
 

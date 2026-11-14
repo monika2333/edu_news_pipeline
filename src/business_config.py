@@ -95,6 +95,9 @@ SOURCE_CATALOG = (
     SourceDefinition("beijinghao", "北京号", requires_accounts=True),
     SourceDefinition("xinjinghao", "新京号", requires_accounts=True),
     SourceDefinition("bjrb", "北京日报", epaper=True, aliases=("beijingdaily",)),
+    # 北京晚报与北京日报同属 bjrbdzb 数字报平台，站点前缀不同（/bjwb/）；
+    # 默认不在 epaper_sources 种子里，部署后在设置页「电子报」手动打开。
+    SourceDefinition("bjwb", "北京晚报", epaper=True, aliases=("beijingwanbao",)),
     SourceDefinition(
         "ldwb",
         "劳动午报",

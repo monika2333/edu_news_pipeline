@@ -167,6 +167,10 @@ def run_adapter(monkeypatch: pytest.MonkeyPatch) -> object:
     monkeypatch.setattr(crawl_sources, "get_adapter", lambda: adapter)
     monkeypatch.setattr(crawl_sources, "get_business_config", lambda: business_config)
     monkeypatch.setattr(crawl_sources, "worker_session", _worker_session)
+    # 电子报 flow 会在 _run_source_flow 之前先定位刊期（线上是真实请求），
+    # 注册表测试只验证接线，必须在这里桩掉，否则会打真实站点
+    monkeypatch.setattr(crawl_sources, "bjrb_list_issue_items", lambda **_kwargs: [])
+    monkeypatch.setattr(crawl_sources, "bjwb_list_issue_items", lambda **_kwargs: [])
     monkeypatch.setenv("TOUTIAO_SHOW_BROWSER", "yes")
     monkeypatch.setenv("TOUTIAO_FETCH_TIMEOUT", "21")
     monkeypatch.setenv("TOUTIAO_LANG", "zh-test")
@@ -183,6 +187,8 @@ def run_adapter(monkeypatch: pytest.MonkeyPatch) -> object:
     monkeypatch.setenv("QIANLONG_EXISTING_CONSECUTIVE_STOP", "7")
     monkeypatch.setenv("BJRB_TIMEOUT", "14.5")
     monkeypatch.setenv("BJRB_DELAY", "0.45")
+    monkeypatch.setenv("BJWB_TIMEOUT", "14.5")
+    monkeypatch.setenv("BJWB_DELAY", "0.45")
     monkeypatch.setenv("ZGJSB_TIMEOUT", "14.5")
     monkeypatch.setenv("ZGJSB_DELAY", "0.35")
     return adapter
@@ -245,6 +251,7 @@ def _patch_linked_callbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         ("beijinghao", "beijinghao", "Beijinghao", {"count_feed_errors": False}),
         ("xinjinghao", "xinjinghao", "Xinjinghao", {"details_in_list": True}),
         ("bjrb", "bjrb", "Beijing Daily", {"load_existing_ids": False, "count_prepare_errors": True, "missing_ids_fallback": "all", "detail_delay": 0.45}),
+        ("bjwb", "bjwb", "Beijing Evening News", {"load_existing_ids": False, "count_prepare_errors": True, "missing_ids_fallback": "all", "detail_delay": 0.45}),
         ("zgjsb", "zgjsb", "China Teacher", {"load_existing_ids": False, "count_prepare_errors": True, "missing_ids_fallback": "all", "detail_delay": 0.35}),
         ("btime", "btime", "Btime", {"count_feed_errors": False}),
         ("chinadaily", "chinadaily", "China Daily", {"count_feed_errors": False}),
@@ -260,6 +267,7 @@ def _patch_linked_callbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         ("xinhua_edu", "xinhua_edu", "Xinhua Education", {"count_feed_errors": False}),
         ("stdaily", "stdaily", "Stdaily", {"count_feed_errors": False}),
         ("beijingdaily", "bjrb", "Beijing Daily", {"load_existing_ids": False, "count_prepare_errors": True, "missing_ids_fallback": "all", "detail_delay": 0.45}),
+        ("beijingwanbao", "bjwb", "Beijing Evening News", {"load_existing_ids": False, "count_prepare_errors": True, "missing_ids_fallback": "all", "detail_delay": 0.45}),
         ("chinateacher", "zgjsb", "China Teacher", {"load_existing_ids": False, "count_prepare_errors": True, "missing_ids_fallback": "all", "detail_delay": 0.35}),
         ("laodongwubao", "ldwb", "Laodong Wubao", {"details_in_list": True, "skip_existing_ids": True, "continue_after_feed_error": True}),
         ("qq", "tencent", "Tencent", {"count_prepare_errors": True, "missing_ids_fallback": "none", "detail_delay": 0.75, "delay_after_failure": True, "delay_after_last": True}),
@@ -316,6 +324,7 @@ def test_every_dispatch_key_preserves_source_flow_strategy_and_callbacks(
         ("beijinghao", "_run_registered_linked_page_flow", {"pages": 3}, "beijinghao"),
         ("xinjinghao", "_run_xinjinghao_flow", {"pages": 3}, None),
         ("bjrb", "_run_bjrb_flow", {"timeout_value": 14.5, "delay_value": 0.45}, None),
+        ("bjwb", "_run_bjwb_flow", {"timeout_value": 14.5, "delay_value": 0.45}, None),
         ("zgjsb", "_run_zgjsb_flow", {"timeout_value": 14.5, "delay_value": 0.35}, None),
         ("btime", "_run_registered_linked_page_flow", {"pages": 3}, "btime"),
         ("chinadaily", "_run_registered_linked_page_flow", {"pages": 3}, "chinadaily"),

@@ -164,17 +164,28 @@ def _clean_text(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
 
-def make_article_id(url: str, newid: Optional[str] = None) -> str:
+def make_article_id(
+    url: str,
+    newid: Optional[str] = None,
+    *,
+    source_key: str = SOURCE_KEY,
+) -> str:
     cleaned_newid = (newid or "").strip()
     if cleaned_newid:
-        return f"{SOURCE_KEY}:{cleaned_newid}"
+        return f"{source_key}:{cleaned_newid}"
     parsed = urlparse(urldefrag((url or "").strip()).url)
     path = re.sub(r"\.s?html?$", "", parsed.path or "", flags=re.IGNORECASE)
     path = re.sub(r"/+", "/", path).strip("/")
-    return f"{SOURCE_KEY}:{path or 'index'}"
+    return f"{source_key}:{path or 'index'}"
 
 
-def parse_issue_index(html_text: str, issue_url: str, issue_date: str) -> list[BjrbIssueItem]:
+def parse_issue_index(
+    html_text: str,
+    issue_url: str,
+    issue_date: str,
+    *,
+    source_key: str = SOURCE_KEY,
+) -> list[BjrbIssueItem]:
     soup = BeautifulSoup(html_text, "html.parser")
     items: list[BjrbIssueItem] = []
     seen_ids: set[str] = set()
@@ -188,7 +199,7 @@ def parse_issue_index(html_text: str, issue_url: str, issue_date: str) -> list[B
                 continue
             url = urldefrag(urljoin(issue_url, href)).url
             newid = (anchor.get("data-newid") or "").strip() or None
-            article_id = make_article_id(url, newid)
+            article_id = make_article_id(url, newid, source_key=source_key)
             if article_id in seen_ids:
                 continue
             seen_ids.add(article_id)
@@ -312,7 +323,12 @@ def _merge_title_subtitle(title: str, subtitle: Optional[str]) -> str:
     return f"{title}{joiner}{body}"
 
 
-def parse_article(html_text: str, item: BjrbIssueItem) -> BjrbArticle:
+def parse_article(
+    html_text: str,
+    item: BjrbIssueItem,
+    *,
+    allow_empty_content: bool = False,
+) -> BjrbArticle:
     soup = BeautifulSoup(html_text, "html.parser")
     guide = _extract_optional_text(soup, "#guide")
     main_title = _extract_optional_text(soup, "#main-title") or item.title
@@ -324,7 +340,7 @@ def parse_article(html_text: str, item: BjrbIssueItem) -> BjrbArticle:
     if content is None:
         raise RuntimeError(f"Unable to find BJRB article content for {item.url}")
     content_markdown = _content_to_markdown(content, item.url)
-    if not content_markdown:
+    if not content_markdown and not allow_empty_content:
         raise RuntimeError(f"Empty BJRB article content for {item.url}")
     return BjrbArticle(
         article_id=item.article_id,
@@ -344,13 +360,14 @@ def fetch_article(
     *,
     timeout: Optional[float] = None,
     session: Optional[requests.Session] = None,
+    allow_empty_content: bool = False,
 ) -> BjrbArticle:
     timeout_s = _resolve_timeout(timeout)
     sess = session or _create_session()
     created_session = session is None
     try:
         html_text = _fetch_text(sess, item.url, timeout=timeout_s)
-        return parse_article(html_text, item)
+        return parse_article(html_text, item, allow_empty_content=allow_empty_content)
     finally:
         if created_session:
             sess.close()
@@ -385,7 +402,12 @@ def crawl_issue(
         session.close()
 
 
-def article_to_feed_row(item: BjrbIssueItem, *, fetched_at: datetime) -> dict[str, Any]:
+def article_to_feed_row(
+    item: BjrbIssueItem,
+    *,
+    fetched_at: datetime,
+    source_name: str = SOURCE_NAME,
+) -> dict[str, Any]:
     publish_dt = item.publish_datetime()
     publish_ts = int(publish_dt.astimezone(timezone.utc).timestamp())
     return {
@@ -393,7 +415,7 @@ def article_to_feed_row(item: BjrbIssueItem, *, fetched_at: datetime) -> dict[st
         "profile_url": None,
         "article_id": item.article_id,
         "title": item.title,
-        "source": SOURCE_NAME,
+        "source": source_name,
         "publish_time": publish_ts,
         "publish_time_iso": publish_dt,
         "url": item.url,
@@ -404,7 +426,12 @@ def article_to_feed_row(item: BjrbIssueItem, *, fetched_at: datetime) -> dict[st
     }
 
 
-def article_to_detail_row(article: BjrbArticle, *, detail_fetched_at: datetime) -> dict[str, Any]:
+def article_to_detail_row(
+    article: BjrbArticle,
+    *,
+    detail_fetched_at: datetime,
+    source_name: str = SOURCE_NAME,
+) -> dict[str, Any]:
     publish_dt = article.publish_datetime()
     publish_ts = int(publish_dt.astimezone(timezone.utc).timestamp())
     subtitle = article.subtitle or None
@@ -414,7 +441,7 @@ def article_to_detail_row(article: BjrbArticle, *, detail_fetched_at: datetime) 
         "profile_url": None,
         "article_id": article.article_id,
         "title": article.title,
-        "source": SOURCE_NAME,
+        "source": source_name,
         "publish_time": publish_ts,
         "publish_time_iso": publish_dt,
         "url": article.url,

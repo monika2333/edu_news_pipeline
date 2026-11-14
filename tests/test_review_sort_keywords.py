@@ -244,6 +244,7 @@ class TestLoadAndSnapshot:
                 "version": 1,
             },
             {"section": "crawl_sources", "value": ["toutiao"], "version": 1},
+            {"section": "epaper_sources", "value": ["bjrb"], "version": 1},
             {"section": "score_keyword_bonuses", "value": [], "version": 1},
             {"section": "score_exclusion_keywords", "value": [], "version": 1},
             {"section": "education_keywords", "value": ["教育"], "version": 1},

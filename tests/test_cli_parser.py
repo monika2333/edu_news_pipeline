@@ -199,12 +199,12 @@ def test_main_propagates_refresh_exit_code(
 
 def _import_preview(
     *,
-    daily_only_sources: list[str] | None = None,
+    epaper_sources: list[str] | None = None,
     has_parse_errors: bool = False,
 ) -> dict[str, object]:
     sections: dict[str, object] = {
         "llm_models": {"default": "model-a", "steps": {}},
-        "crawl_sources": daily_only_sources or ["toutiao"],
+        "crawl_sources": epaper_sources or ["toutiao"],
         "score_keyword_bonuses": [{"keyword": "高考", "bonus": 10}],
         "education_keywords": ["教育"],
         "beijing_keywords": ["北京"],
@@ -218,7 +218,7 @@ def _import_preview(
         },
         "account_summary": {},
         "accounts": [],
-        "daily_only_sources": daily_only_sources or [],
+        "epaper_sources": epaper_sources or [],
         "has_parse_errors": has_parse_errors,
         "wordlist_errors": [],
     }
@@ -240,10 +240,10 @@ def _import_report() -> dict[str, object]:
 @pytest.mark.parametrize(
     ("preview", "error"),
     [
-        (_import_preview(daily_only_sources=["bjrb"]), "仅每日任务来源"),
+        (_import_preview(epaper_sources=["bjrb"]), "电子报来源"),
         (_import_preview(has_parse_errors=True), "无法解析"),
     ],
-    ids=["daily-only-source", "parse-error"],
+    ids=["epaper-source", "parse-error"],
 )
 def test_f6_import_settings_apply_uses_service_rejection(
     monkeypatch: pytest.MonkeyPatch,

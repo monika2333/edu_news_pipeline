@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import re
 import time
@@ -12,8 +11,6 @@ from urllib.parse import urldefrag, urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup, Tag  # type: ignore
 from src.adapters.http_common import build_session
-
-LOGGER = logging.getLogger(__name__)
 
 BASE_URL = "https://bjrbdzb.bjd.com.cn/bjrb"
 SOURCE_NAME = "北京日报"
@@ -30,6 +27,15 @@ DEFAULT_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "zh-CN,zh;q=0.9",
 }
+
+
+class BjrbIssueNotPublished(RuntimeError):
+    """当天刊期确实还不存在（站点索引尚未列出该日期）。
+
+    与抓取故障区分：电子报任务在 00:00 那一轮几乎必然赶在当天电子版上线
+    之前，这种情况调用方应记一行「尚未上线」并跳过本轮，不计入失败来源。
+    网络错误、5xx 与页面结构解析失败仍按真正的故障抛出。
+    """
 
 
 @dataclass(slots=True)
@@ -137,12 +143,20 @@ def _issue_date_available(
     base_url: Optional[str],
     timeout: float,
 ) -> bool:
+    """period.js 月索引里是否已列出该期。
+
+    只有「该月索引 404（当月还没有任何一期）」与「日期不在索引里」算尚未
+    上线；5xx、超时等真实故障继续抛出——把它们当成尚未上线会让抓取失败
+    永远从日志和 failed_sources 里消失。
+    """
+
     url = _period_url(issue_date, base_url=base_url)
     try:
         text = _fetch_text(session, url, timeout=timeout)
-    except requests.RequestException as exc:
-        LOGGER.warning("Failed to fetch BJRB period index %s: %s", url, exc)
-        return False
+    except requests.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code == 404:
+            return False
+        raise
     return issue_date in parse_period_dates(text)
 
 
@@ -206,11 +220,19 @@ def list_issue_items(
     created_session = session is None
     try:
         if not _issue_date_available(date_value, session=sess, base_url=base_url, timeout=timeout_s):
-            LOGGER.info("BJRB issue %s is not listed in period index.", date_value)
-            return []
+            raise BjrbIssueNotPublished(f"北京日报 {date_value} 期尚未上线")
         issue_url = _issue_index_url(date_value, base_url=base_url)
-        html_text = _fetch_text(sess, issue_url, timeout=timeout_s)
+        try:
+            html_text = _fetch_text(sess, issue_url, timeout=timeout_s)
+        except requests.HTTPError as exc:
+            # 索引已列出但刊期页 404：版面还没上传完，按尚未上线处理
+            if exc.response is not None and exc.response.status_code == 404:
+                raise BjrbIssueNotPublished(f"北京日报 {date_value} 期尚未上线") from exc
+            raise
         items = parse_issue_index(html_text, issue_url, date_value)
+        if not items:
+            # 刊期页拿得到却解析不出任何稿件 = 站点结构变了，属真实故障
+            raise RuntimeError(f"北京日报 {date_value} 期页面未解析出稿件：{issue_url}")
         if limit is not None and limit > 0:
             return items[:limit]
         return items
@@ -408,6 +430,7 @@ __all__ = [
     "BASE_URL",
     "BjrbArticle",
     "BjrbIssueItem",
+    "BjrbIssueNotPublished",
     "DEFAULT_DELAY",
     "DEFAULT_TIMEOUT",
     "SOURCE_KEY",

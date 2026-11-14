@@ -54,14 +54,33 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 ## 二、流水线各阶段
 
-### 阶段 1：抓取（`crawl`）
+### 阶段 1：抓取（`crawl`、`crawl-epapers`）
 
 **写入**：`raw_articles`、`filtered_articles`
 
-每小时来源集合来自 `app_settings.crawl_sources`，抓取顺序固定为 `SOURCE_CATALOG`
-的目录顺序；设置写入与运行时读取都会规范化为该顺序。账号型来源只读取
-`crawl_accounts` 中启用的行。流水线启动时读取一次业务配置，整轮不随控制台修改而
-变化；单次 `--sources` 仅覆盖本轮来源列表，并按命令行给定的顺序执行。
+来源分两套互斥的集合，各有自己的入口：
+
+- **每小时来源**（`crawl`，主流水线的一部分）：集合来自 `app_settings.crawl_sources`，
+  抓取顺序固定为 `SOURCE_CATALOG` 的目录顺序；设置写入与运行时读取都会规范化为该
+  顺序。账号型来源只读取 `crawl_accounts` 中启用的行。流水线启动时读取一次业务配置，
+  整轮不随控制台修改而变化；单次 `--sources` 仅覆盖本轮来源列表，并按命令行给定的
+  顺序执行。
+- **电子报**（`crawl-epapers`，独立的 `EduNews_Epapers` 计划任务）：日报/周报的电子版
+  不按小时更新，而是一天固定五轮（08:00、12:00、16:00、20:00、00:00）抓「站点当前
+  这一期」。启用集合来自 `app_settings.epaper_sources`（有序列表，允许为空 = 全部
+  关闭，由设置页「数据源 · 电子报」的开关维护），同样按 `SOURCE_CATALOG` 目录序抓取。
+  新登记的电子报默认不启用，由用户在设置页打开，不需要新脚本或新计划任务。
+
+**电子报任务只做抓取，不跑评分/摘要。** 后续步骤按状态直接查「待处理」文章，没有
+行级认领机制；两个进程同时跑处理步骤会重复调用大模型、并发写同一行。主流水线靠自己的
+锁文件保证同一时刻只有一个处理进程，所以处理只能留在主流水线这一个入口。电子报任务
+抓进 `raw_articles` 的文章由下一轮主流水线（每 15 分钟）接手。电子报时间点与主流水线
+整点重合没有问题：两边抓的来源不重叠，且电子报只做抓取。
+
+电子报里「当天这一期还没上线」不是故障：00:00 那一轮几乎必然赶在当天电子版上线之前，
+抓取流程只记一行「北京日报 YYYYMMDD 期尚未上线」并跳过该来源，不计入失败来源；网络
+错误、5xx 与页面解析失败仍按真正的故障计入 `pipeline_runs.artifacts.crawl_failed_sources`。
+劳动午报、中国教师报抓的是「站点当前最新一期」，不存在这个问题。
 
 **教育关键词闸门**：正文写入 `filtered_articles` 前，会对正文做大小写不敏感的
 子串匹配，词表来自 `app_settings.education_keywords`（随业务配置整轮冻结）。
@@ -455,7 +474,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 | 表 | 职责 |
 |---|---|
-| `app_settings` | 分区保存业务配置（提示词正文另见 `prompt_revisions`）：接入点（`llm_endpoints`，每个接入点必填 `default_model`——步骤模型留空时用它）、模型（`llm_models`，无顶层 `default`；每步为 `endpoint` / `model` / `reasoning`，`model` 为 `null` 时用所选接入点的 `default_model`，「无接入点、有模型」非法）、每小时来源（`crawl_sources`）、评分加分词表（`score_keyword_bonuses`，有序数组）、评分排除名单（`score_exclusion_keywords`，有序字符串数组，空数组表示不排除任何文章）、抓取教育关键词闸门（`education_keywords`）、京内本地判定词表（`beijing_keywords`）、来源归一化规则（`source_aliases`，含回退名单 `fallback_names`——可选字段，旧配置行可缺失、缺失按空名单处理）、审阅页自动排序词表（`review_sort_keywords`，键固定为市教委/中小学/高校三个类别）。版本号用于控制台乐观锁；`llm_endpoints` / `llm_models` 的结构迁移（20261106150000）会把两个分区 version 各加 1。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身。`llm_endpoints`、`review_sort_keywords`、`score_exclusion_keywords` 由迁移种子创建（没有旧配置文件，不进一次性导入）；其余分区由 `import-settings` 导入（只写数据库中尚不存在的分区，已存在的一律跳过，不覆盖；重复执行安全；`_legacy_models()` 产出的 `llm_models` 已是新结构——无顶层 `default`，等于默认接入点 `default_model` 的步骤写双 `null`，其余显式绑定默认接入点 key） |
+| `app_settings` | 分区保存业务配置（提示词正文另见 `prompt_revisions`）：接入点（`llm_endpoints`，每个接入点必填 `default_model`——步骤模型留空时用它）、模型（`llm_models`，无顶层 `default`；每步为 `endpoint` / `model` / `reasoning`，`model` 为 `null` 时用所选接入点的 `default_model`，「无接入点、有模型」非法）、每小时来源（`crawl_sources`）、电子报启用列表（`epaper_sources`，有序来源 key 数组，只接受电子报来源，**允许空数组** = 全部关闭；由独立的电子报计划任务读取，与 `crawl_sources` 各有独立 version）、评分加分词表（`score_keyword_bonuses`，有序数组）、评分排除名单（`score_exclusion_keywords`，有序字符串数组，空数组表示不排除任何文章）、抓取教育关键词闸门（`education_keywords`）、京内本地判定词表（`beijing_keywords`）、来源归一化规则（`source_aliases`，含回退名单 `fallback_names`——可选字段，旧配置行可缺失、缺失按空名单处理）、审阅页自动排序词表（`review_sort_keywords`，键固定为市教委/中小学/高校三个类别）。版本号用于控制台乐观锁；`llm_endpoints` / `llm_models` 的结构迁移（20261106150000）会把两个分区 version 各加 1。接入点只记录 Key 所在的环境变量名，绝不存 Key 本身。`llm_endpoints`、`review_sort_keywords`、`score_exclusion_keywords`、`epaper_sources` 由迁移种子创建（没有旧配置文件，不进一次性导入）；其余分区由 `import-settings` 导入（只写数据库中尚不存在的分区，已存在的一律跳过，不覆盖；重复执行安全；`_legacy_models()` 产出的 `llm_models` 已是新结构——无顶层 `default`，等于默认接入点 `default_model` 的步骤写双 `null`，其余显式绑定默认接入点 key） |
 | `crawl_accounts` | 六类账号型来源的账号权威清单（中国日报、千龙网的行是栏目列表页 URL，不是社交账号）；`display_name` 是系统解析的名称，`display_name_synced_at` / `display_name_error` 记录最近成功时间或失败原因；运行时只读取启用行 |
 | `console_users` / `console_user_sessions` | 账号与登录会话 |
 | `review_events` | 审计日志，记录谁在什么时候改了什么 |

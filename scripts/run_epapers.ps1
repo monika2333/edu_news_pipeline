@@ -21,7 +21,7 @@ if (-not (Test-Path -LiteralPath $LogDirectory)) {
 }
 
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$logFile = Join-Path $LogDirectory "pipeline_bjrb_$timestamp.log"
+$logFile = Join-Path $LogDirectory "pipeline_epapers_$timestamp.log"
 
 if (-not $LockDirectory) {
     $LockDirectory = Join-Path $repoRoot "locks"
@@ -30,12 +30,12 @@ if (-not (Test-Path -LiteralPath $LockDirectory)) {
     New-Item -ItemType Directory -Path $LockDirectory -Force | Out-Null
 }
 
-$lockPath = Join-Path $LockDirectory "pipeline_bjrb.lock"
+$lockPath = Join-Path $LockDirectory "pipeline_epapers.lock"
 $lockFile = $null
 try {
     $lockFile = [System.IO.File]::Open($lockPath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
 } catch {
-    "Beijing Daily run already in progress; skipping." | Tee-Object -FilePath $logFile -Append
+    "Epapers run already in progress; skipping." | Tee-Object -FilePath $logFile -Append
     exit 0
 }
 
@@ -43,11 +43,9 @@ $arguments = @(
     "-m",
     "scripts.run_pipeline_once",
     "--steps",
-    "crawl",
-    "--sources",
-    "bjrb",
+    "crawl-epapers",
     "--trigger-source",
-    "scheduler-bjrb"
+    "scheduler-epapers"
 )
 if ($ContinueOnError) {
     $arguments += "--continue-on-error"
@@ -70,7 +68,7 @@ try {
 }
 
 if ($exitCode -ne 0) {
-    Write-Warning "Beijing Daily pipeline exited with code $exitCode"
+    Write-Warning "Epapers pipeline exited with code $exitCode"
 }
 
 exit $exitCode

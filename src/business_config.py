@@ -67,7 +67,9 @@ ENDPOINT_ITEM_FIELDS = frozenset(
 class SourceDefinition:
     key: str
     display_name: str
-    daily_only: bool = False
+    # 电子报来源（日报/周报的电子版）：不是按小时滚动更新，而是一天固定几轮
+    # 抓「当前这一期」，因此不能进每小时来源列表，由独立的电子报任务统一抓取。
+    epaper: bool = False
     requires_accounts: bool = False
     aliases: tuple[str, ...] = ()
 
@@ -92,14 +94,14 @@ SOURCE_CATALOG = (
     SourceDefinition("btime", "北京时间", requires_accounts=True),
     SourceDefinition("beijinghao", "北京号", requires_accounts=True),
     SourceDefinition("xinjinghao", "新京号", requires_accounts=True),
-    SourceDefinition("bjrb", "北京日报", daily_only=True, aliases=("beijingdaily",)),
+    SourceDefinition("bjrb", "北京日报", epaper=True, aliases=("beijingdaily",)),
     SourceDefinition(
         "ldwb",
         "劳动午报",
-        daily_only=True,
+        epaper=True,
         aliases=("laodongwubao",),
     ),
-    SourceDefinition("zgjsb", "中国教师报", daily_only=True, aliases=("chinateacher",)),
+    SourceDefinition("zgjsb", "中国教师报", epaper=True, aliases=("chinateacher",)),
     # 21 经济网按「账号=栏目」管理；稿件落库来源固定为报名「21世纪经济报道」，
     # 因此显示名用站点名「21经济网」，与北京号（显示「北京号」、来源「北京日报」）同构。
     SourceDefinition("21jingji", "21经济网", requires_accounts=True),
@@ -117,6 +119,7 @@ SETTING_SECTIONS = (
     "llm_endpoints",
     "llm_models",
     "crawl_sources",
+    "epaper_sources",
     "score_keyword_bonuses",
     "score_exclusion_keywords",
     "education_keywords",
@@ -213,6 +216,7 @@ class BusinessConfig:
     crawl_sources: tuple[str, ...]
     accounts: Mapping[str, tuple[CrawlAccount, ...]]
     versions: Mapping[str, int]
+    epaper_sources: tuple[str, ...] = ()
     llm_endpoints: Mapping[str, LLMEndpointConfig] = field(default_factory=dict)
     default_endpoint: str = ""
     score_keyword_bonuses: tuple[ScoreKeywordBonus, ...] = ()
@@ -255,7 +259,7 @@ class BusinessConfig:
         return step_config.endpoint or self.default_endpoint
 
     def with_crawl_sources(self, sources: Sequence[str]) -> "BusinessConfig":
-        normalized = normalize_source_list(sources, allow_daily=True)
+        normalized = normalize_source_list(sources, allow_epaper=True)
         return replace(self, crawl_sources=tuple(normalized))
 
     def snapshot(self) -> dict[str, Any]:
@@ -276,6 +280,7 @@ class BusinessConfig:
                 for item in self.llm_endpoints.values()
             },
             "crawl_sources": list(self.crawl_sources),
+            "epaper_sources": list(self.epaper_sources),
             "crawl_accounts": {
                 source: [item.normalized_identifier for item in items]
                 for source, items in self.accounts.items()
@@ -314,7 +319,7 @@ def normalize_source_key(value: str) -> str:
 def normalize_source_list(
     values: Sequence[str],
     *,
-    allow_daily: bool,
+    allow_epaper: bool,
 ) -> list[str]:
     normalized: list[str] = []
     seen: set[str] = set()
@@ -325,8 +330,8 @@ def normalize_source_list(
         definition = SOURCE_BY_KEY.get(key)
         if definition is None:
             raise ValueError(f"未知来源：{raw}")
-        if definition.daily_only and not allow_daily:
-            raise ValueError(f"{raw} 仅允许每日单独任务运行，不能加入每小时来源")
+        if definition.epaper and not allow_epaper:
+            raise ValueError(f"{raw} 是电子报来源，只能由电子报任务抓取，不能加入每小时来源")
         if key in seen:
             raise ValueError(f"来源重复：{raw}")
         seen.add(key)
@@ -334,6 +339,14 @@ def normalize_source_list(
     if not normalized:
         raise ValueError("抓取来源列表不能为空")
     return normalized
+
+
+def _catalog_order(keys: Sequence[str]) -> list[str]:
+    catalog_index = {
+        definition.key: index
+        for index, definition in enumerate(SOURCE_CATALOG)
+    }
+    return sorted(keys, key=catalog_index.__getitem__)
 
 
 def validate_llm_models(value: Any) -> dict[str, Any]:
@@ -554,18 +567,42 @@ def validate_llm_endpoints(
     return {"default": default, "items": normalized_items}
 
 
-def validate_crawl_sources(value: Any, *, allow_daily: bool = False) -> list[str]:
+def validate_crawl_sources(value: Any, *, allow_epaper: bool = False) -> list[str]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise ValueError("crawl_sources 必须是有序列表")
     normalized = normalize_source_list(
         [str(item) for item in value],
-        allow_daily=allow_daily,
+        allow_epaper=allow_epaper,
     )
-    catalog_index = {
-        definition.key: index
-        for index, definition in enumerate(SOURCE_CATALOG)
-    }
-    return sorted(normalized, key=catalog_index.__getitem__)
+    return _catalog_order(normalized)
+
+
+def validate_epaper_sources(value: Any) -> list[str]:
+    """电子报启用列表：只接受电子报来源，且允许为空。
+
+    空列表是合法状态（全部关闭），与 ``crawl_sources`` 的「不能为空」不同：
+    每小时来源是主流水线的固定输入，关空会静默停掉抓取；电子报只是补充来源，
+    用户可以随时全部关掉、以后再打开。
+    """
+
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise ValueError("epaper_sources 必须是有序列表")
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in value:
+        key = normalize_source_key(str(raw))
+        if not key:
+            raise ValueError("来源不能为空")
+        definition = SOURCE_BY_KEY.get(key)
+        if definition is None:
+            raise ValueError(f"未知来源：{raw}")
+        if not definition.epaper:
+            raise ValueError(f"{raw} 不是电子报来源，不能加入电子报任务")
+        if key in seen:
+            raise ValueError(f"来源重复：{raw}")
+        seen.add(key)
+        normalized.append(key)
+    return _catalog_order(normalized)
 
 
 def validate_score_keyword_bonuses(value: Any) -> list[dict[str, Any]]:
@@ -802,6 +839,7 @@ SECTION_VALIDATORS = {
     "llm_endpoints": validate_llm_endpoints,
     "llm_models": validate_llm_models,
     "crawl_sources": validate_crawl_sources,
+    "epaper_sources": validate_epaper_sources,
     "score_keyword_bonuses": validate_score_keyword_bonuses,
     "score_exclusion_keywords": validate_score_exclusion_keywords,
     "education_keywords": validate_education_keywords,
@@ -956,6 +994,9 @@ def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
             require_host_allowed=False,
         )
         sources = validate_crawl_sources(indexed["crawl_sources"]["value"])
+        epaper_sources = validate_epaper_sources(
+            indexed["epaper_sources"]["value"]
+        )
         bonuses = validate_score_keyword_bonuses(
             indexed["score_keyword_bonuses"]["value"]
         )
@@ -1013,6 +1054,7 @@ def load_business_config(adapter: Optional[Any] = None) -> BusinessConfig:
     return BusinessConfig(
         llm_steps=resolved_steps,
         crawl_sources=tuple(sources),
+        epaper_sources=tuple(epaper_sources),
         accounts={key: tuple(items) for key, items in accounts.items()},
         versions={
             section: int(indexed[section]["version"])
@@ -1158,6 +1200,7 @@ __all__ = [
     "validate_crawl_sources",
     "validate_education_keywords",
     "validate_endpoint_base_url",
+    "validate_epaper_sources",
     "validate_keyword_list",
     "validate_llm_endpoints",
     "validate_llm_models",

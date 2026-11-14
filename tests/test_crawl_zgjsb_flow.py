@@ -142,14 +142,14 @@ def test_b2_zgjsb_flow_skips_detail_for_existing_content(
     assert adapter.filtered_rows is None
 
 
-def test_b3_zgjsb_is_a_daily_only_source_with_alias() -> None:
+def test_b3_zgjsb_is_an_epaper_source_with_alias() -> None:
     definition = SOURCE_BY_KEY["zgjsb"]
 
     assert definition.display_name == "中国教师报"
-    assert definition.daily_only is True
+    assert definition.epaper is True
 
-    # validate_crawl_sources 的现有文案是「仅允许每日单独任务运行」，不是「仅每日任务」。
-    with pytest.raises(ValueError, match="仅允许每日单独任务运行"):
+    # 电子报来源不能加入每小时来源列表，但可以用单次 --sources 覆盖手工补抓。
+    with pytest.raises(ValueError, match="电子报来源"):
         validate_crawl_sources(["zgjsb"])
-    assert validate_crawl_sources(["zgjsb"], allow_daily=True) == ["zgjsb"]
-    assert validate_crawl_sources(["chinateacher"], allow_daily=True) == ["zgjsb"]
+    assert validate_crawl_sources(["zgjsb"], allow_epaper=True) == ["zgjsb"]
+    assert validate_crawl_sources(["chinateacher"], allow_epaper=True) == ["zgjsb"]

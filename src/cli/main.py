@@ -321,10 +321,10 @@ def _import_settings(args: argparse.Namespace) -> int:
                     f"  invalid line {item['line_number']}: "
                     f"{item['input']} ({item['error']})"
                 )
-        if preview["daily_only_sources"]:
+        if preview["epaper_sources"]:
             print(
-                "Daily-only sources in hourly list: "
-                + ", ".join(preview["daily_only_sources"])
+                "Epaper sources in hourly list: "
+                + ", ".join(preview["epaper_sources"])
             )
     if not args.apply:
         print("Preview only. Re-run with --apply to write.")

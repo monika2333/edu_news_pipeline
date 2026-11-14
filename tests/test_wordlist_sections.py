@@ -82,6 +82,7 @@ def _settings_rows() -> list[dict[str, Any]]:
             "version": 2,
         },
         {"section": "crawl_sources", "value": ["toutiao"], "version": 5},
+        {"section": "epaper_sources", "value": ["bjrb", "ldwb", "zgjsb"], "version": 1},
         {
             "section": "score_keyword_bonuses",
             "value": [
@@ -423,6 +424,7 @@ def test_load_resolves_wordlists_and_versions() -> None:
         "llm_endpoints": 2,
         "llm_models": 3,
         "crawl_sources": 5,
+        "epaper_sources": 1,
         "score_keyword_bonuses": 7,
         "score_exclusion_keywords": 1,
         "education_keywords": 1,

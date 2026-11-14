@@ -64,6 +64,13 @@ python -m src.cli.main submission-dedup
 | `generate-shifts` | 按周排班模板生成后续班次 |
 | `cleanup-console-sessions` | 清理过期与长期失效的登录会话 |
 
+电子报（北京日报、劳动午报、中国教师报等）由单独的计划任务 `EduNews_Epapers` 抓取：
+`scripts/tasks/register-epapers.ps1` 注册，每天 08:00、12:00、16:00、20:00、00:00 各跑一轮
+（`scripts/run_epapers.ps1` → `python -m scripts.run_pipeline_once --steps crawl-epapers`）。
+开关在控制台「设置 → 数据源 → 电子报」，任务只抓取设置页里启用的来源，评分、摘要等后续
+处理仍由每 15 分钟一轮的主流水线负责。以后新增电子报只需适配器 + `SOURCE_CATALOG` 一行 +
+设置页开关，不需要新增脚本或计划任务。
+
 ### 管理员按需手工执行
 
 | 命令 | 作用 |

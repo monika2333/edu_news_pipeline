@@ -151,13 +151,13 @@ def get_settings_payload() -> dict[str, Any]:
             {
                 "key": item.key,
                 "display_name": item.display_name,
-                "daily_only": item.daily_only,
+                "epaper": item.epaper,
                 "requires_accounts": item.requires_accounts,
                 # 列表页链接直接取自各爬虫 adapter 的常量（见 source_list_pages），
                 # 只有每小时、且不需要账号的来源才有；其余来源给空数组
                 "list_pages": (
                     []
-                    if item.requires_accounts or item.daily_only
+                    if item.requires_accounts or item.epaper
                     else list_pages_for_source(item.key)
                 ),
             }
@@ -1135,9 +1135,9 @@ def preview_legacy_import(*, root: Optional[Path] = None) -> dict[str, Any]:
     repository_root = root or Path(__file__).resolve().parents[2]
     raw_sources = os.getenv("CRAWL_SOURCES") or "toutiao"
     source_tokens = [item.strip() for item in raw_sources.split(",") if item.strip()]
-    normalized_sources = normalize_source_list(source_tokens, allow_daily=True)
-    daily_sources = [
-        key for key in normalized_sources if SOURCE_BY_KEY[key].daily_only
+    normalized_sources = normalize_source_list(source_tokens, allow_epaper=True)
+    epaper_sources = [
+        key for key in normalized_sources if SOURCE_BY_KEY[key].epaper
     ]
     # 默认接入点引用的兜底值：库可达时才真正读取（见下方 db_state_known 分支），
     # 解析有错误时不碰库，预览 unresolved 不会写入，兜底值只影响展示。
@@ -1202,7 +1202,7 @@ def preview_legacy_import(*, root: Optional[Path] = None) -> dict[str, Any]:
         ),
         "crawl_sources": validate_crawl_sources(
             normalized_sources,
-            allow_daily=True,
+            allow_epaper=True,
         ),
     }
     section_sources: dict[str, str] = {}
@@ -1273,7 +1273,7 @@ def preview_legacy_import(*, root: Optional[Path] = None) -> dict[str, Any]:
         "sections_status": sections_status,
         "account_summary": account_summary,
         "accounts": accounts,
-        "daily_only_sources": daily_sources,
+        "epaper_sources": epaper_sources,
         "has_parse_errors": has_parse_errors,
         "wordlist_errors": wordlist_errors,
     }
@@ -1283,9 +1283,9 @@ def import_legacy_config(*, apply: bool, root: Optional[Path] = None) -> dict[st
     preview = preview_legacy_import(root=root)
     if not apply:
         return preview
-    if preview["daily_only_sources"]:
-        joined = ", ".join(preview["daily_only_sources"])
-        raise ValueError(f"每小时来源含仅每日任务来源，拒绝导入：{joined}")
+    if preview["epaper_sources"]:
+        joined = ", ".join(preview["epaper_sources"])
+        raise ValueError(f"每小时来源含电子报来源，拒绝导入：{joined}")
     if preview["has_parse_errors"]:
         raise ValueError("账号文件存在无法解析的行，拒绝导入")
     if preview["wordlist_errors"]:

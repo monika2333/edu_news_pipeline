@@ -62,6 +62,7 @@ def _settings_rows(exclusion_value: Any | None = None) -> list[dict[str, Any]]:
             "version": 1,
         },
         {"section": "crawl_sources", "value": ["toutiao"], "version": 1},
+        {"section": "epaper_sources", "value": ["bjrb"], "version": 1},
         {"section": "score_keyword_bonuses", "value": [], "version": 1},
         {
             "section": "score_exclusion_keywords",

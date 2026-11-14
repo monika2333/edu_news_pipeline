@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Optional, Sequence
 
-from src.adapters.http_bjrb import BjrbArticle, BjrbIssueItem
+import pytest
+import requests
+
+from src.adapters.http_bjrb import BjrbArticle, BjrbIssueItem, BjrbIssueNotPublished
 from src.workers import crawl_sources
 
 
@@ -128,3 +131,59 @@ def test_bjrb_flow_skips_detail_for_existing_content(monkeypatch) -> None:
     assert adapter.feed_rows is not None and len(adapter.feed_rows) == 1
     assert adapter.detail_rows is None
     assert adapter.filtered_rows is None
+
+
+def test_bjrb_flow_reports_unpublished_issue_without_counting_failure(
+    monkeypatch,
+    capsys,
+) -> None:
+    """当天这一期还没上线：记一行后正常返回，不进 failed_sources。
+
+    00:00 那一轮几乎必然赶在当天电子版上线之前，把它当失败会每天产生假告警。
+    """
+
+    def fake_list_issue_items(*, limit=None, timeout=None):
+        raise BjrbIssueNotPublished("北京日报 20261115 期尚未上线")
+
+    monkeypatch.setattr(crawl_sources, "bjrb_list_issue_items", fake_list_issue_items)
+    adapter = _DummyAdapter(missing_ids=set())
+
+    stats = crawl_sources._run_bjrb_flow(
+        adapter=adapter,
+        keywords=["教育"],
+        remaining_limit=10,
+        timeout_value=5.0,
+        delay_value=0.0,
+    )
+
+    assert stats == {"consumed": 0, "ok": 0, "failed": 0, "skipped": 0}
+    assert adapter.feed_rows is None
+    assert "北京日报 20261115 期尚未上线" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        requests.HTTPError("500 Server Error"),
+        requests.ConnectionError("connection reset"),
+        RuntimeError("北京日报 20260618 期页面未解析出稿件"),
+    ],
+    ids=["http-500", "network", "parse-failure"],
+)
+def test_bjrb_flow_keeps_real_failures_visible(monkeypatch, error: Exception) -> None:
+    """真实故障仍要抛出去，由 run() 记进 failed_sources。"""
+
+    def fake_list_issue_items(*, limit=None, timeout=None):
+        raise error
+
+    monkeypatch.setattr(crawl_sources, "bjrb_list_issue_items", fake_list_issue_items)
+    adapter = _DummyAdapter(missing_ids=set())
+
+    with pytest.raises(type(error)):
+        crawl_sources._run_bjrb_flow(
+            adapter=adapter,
+            keywords=["教育"],
+            remaining_limit=10,
+            timeout_value=5.0,
+            delay_value=0.0,
+        )

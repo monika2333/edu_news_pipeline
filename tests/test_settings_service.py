@@ -81,6 +81,7 @@ def _wordlist_rows() -> list[dict[str, Any]]:
             "version": 1,
         },
         {"section": "score_exclusion_keywords", "value": [], "version": 1},
+        {"section": "epaper_sources", "value": ["bjrb", "ldwb", "zgjsb"], "version": 3},
         {"section": "education_keywords", "value": ["教育"], "version": 1},
         {"section": "beijing_keywords", "value": ["北京"], "version": 1},
         {
@@ -429,7 +430,7 @@ def test_settings_payload_exposes_endpoints_and_drops_base_url(
     "source",
     ["bjrb", "laodongwubao", "ldwb", "beijingdaily"],
 )
-def test_m7_daily_only_sources_and_aliases_return_422(
+def test_m7_epaper_sources_and_aliases_return_422(
     monkeypatch: pytest.MonkeyPatch,
     source: str,
 ) -> None:
@@ -443,6 +444,58 @@ def test_m7_daily_only_sources_and_aliases_return_422(
     )
 
     assert response.status_code == 422
+
+
+def test_epaper_sources_put_rejects_hourly_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("src.console.app.warn_legacy_config", lambda: [])
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _admin
+
+    response = TestClient(app).put(
+        "/api/admin/settings/epaper_sources",
+        json={"value": ["toutiao"], "expected_version": 1},
+    )
+
+    assert response.status_code == 422
+    assert "不是电子报来源" in response.json()["detail"]
+
+
+def test_epaper_sources_put_accepts_empty_list_and_normalizes_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """电子报可以全部关掉（空列表合法），且保存时按目录序规范化。"""
+
+    saves: list[dict[str, Any]] = []
+    adapter = _settings_section_adapter(
+        {"epaper_sources": ["bjrb", "ldwb", "zgjsb"]},
+        versions={"epaper_sources": 3},
+        saves=saves,
+    )
+    _patch_settings_adapter(monkeypatch, adapter)
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _admin
+    client = TestClient(app)
+
+    emptied = client.put(
+        "/api/admin/settings/epaper_sources",
+        json={"value": [], "expected_version": 3},
+    )
+    assert emptied.status_code == 200
+    assert emptied.json()["item"]["value"] == []
+    assert saves[-1]["section"] == "epaper_sources"
+    assert saves[-1]["expected_version"] == 3
+
+    reordered = client.put(
+        "/api/admin/settings/epaper_sources",
+        json={
+            "value": ["zgjsb", "laodongwubao", "bjrb"],
+            "expected_version": 3,
+        },
+    )
+    assert reordered.status_code == 200
+    assert reordered.json()["item"]["value"] == ["bjrb", "ldwb", "zgjsb"]
 
 
 def test_chinadaily_account_parse_normalizes_channel_url() -> None:

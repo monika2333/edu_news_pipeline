@@ -1,27 +1,32 @@
 <#
 .SYNOPSIS
-  Register a Windows Task Scheduler job to run the China Teacher crawl.
+  Register the single Windows Task Scheduler job that crawls every enabled epaper.
 
 .DESCRIPTION
-  Creates or updates a scheduled task that executes scripts/run_zgjsb_daily.ps1
-  daily at the requested times. The task explicitly runs PowerShell so Windows
-  file associations cannot open the .ps1 script in an editor.
+  Creates or updates a scheduled task that executes scripts/run_epapers.ps1 at
+  the requested times (default 08:00, 12:00, 16:00, 20:00 and 00:00). The task
+  explicitly runs PowerShell so Windows file associations cannot open the .ps1
+  script in an editor.
 
-  China Teacher is a weekly paper: a new issue is published every Wednesday and
-  the digital edition usually goes online around 09:00 Beijing time. Running the
-  crawl at 10:00 and 20:00 daily is enough: 10:00 catches the usual upload, 20:00
-  catches same-day late re-uploads, and the next day's 10:00 run covers issues
-  that were only uploaded after 23:00. The crawl is idempotent (article_id based
-  de-duplication), so on non-publication days it is only an existence check.
+  The runner only crawls the epapers enabled in the console settings page
+  (app_settings.epaper_sources, default Beijing Daily / Laodong Wubao / China
+  Teacher). It never runs scoring, summarization or any other pipeline step:
+  those go through the hourly main pipeline, whose lock file guarantees a
+  single processing process. Epapers are crawled five times a day, so the
+  00:00 round usually runs before the same-day issue is online; the crawler
+  reports that as "not published yet" instead of a failure.
+
+  Adding another epaper only needs an adapter, one SOURCE_CATALOG entry and the
+  switch in the settings page - no new script and no new scheduled task.
 
 .PARAMETER Times
-  Daily start times in HH:mm (24h). Default: 10:00 and 20:00.
+  Daily start times in HH:mm (24h). Default: 08:00, 12:00, 16:00, 20:00, 00:00.
 
 .PARAMETER TaskName
-  Name of the scheduled task. Default: EduNews_zgjsb_daily.
+  Name of the scheduled task. Default: EduNews_Epapers.
 
 .PARAMETER Python
-  Python executable passed to run_zgjsb_daily.ps1. Default: python.
+  Python executable passed to run_epapers.ps1. Default: python.
 
 .PARAMETER ContinueOnError
   Propagate --continue-on-error to the runner script.
@@ -29,8 +34,8 @@
 
 [CmdletBinding()]
 param(
-    [string[]]$Times = @('10:00', '20:00'),
-    [string]$TaskName = 'EduNews_zgjsb_daily',
+    [string[]]$Times = @('08:00', '12:00', '16:00', '20:00', '00:00'),
+    [string]$TaskName = 'EduNews_Epapers',
     [string]$Python = 'python',
     [switch]$ContinueOnError
 )
@@ -40,7 +45,7 @@ $ErrorActionPreference = 'Stop'
 
 $tasksDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $scriptsDir = Split-Path -Parent $tasksDir
-$runner = Join-Path $scriptsDir 'run_zgjsb_daily.ps1'
+$runner = Join-Path $scriptsDir 'run_epapers.ps1'
 if (-not (Test-Path -LiteralPath $runner)) {
     throw "Runner script not found: $runner"
 }

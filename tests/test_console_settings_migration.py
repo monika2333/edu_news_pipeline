@@ -52,6 +52,12 @@ SORT_KEYWORDS_MIGRATION_PATH = (
     / "migrations"
     / "20260923120000_add_review_sort_keywords_setting.sql"
 )
+EPAPER_SOURCES_MIGRATION_PATH = (
+    Path(__file__).parents[1]
+    / "database"
+    / "migrations"
+    / "20261114120000_add_epaper_sources_setting.sql"
+)
 EXCLUSION_KEYWORDS_MIGRATION_PATH = (
     Path(__file__).parents[1]
     / "database"
@@ -133,6 +139,12 @@ def _sort_keywords_migration_parts() -> tuple[str, str]:
     return up.split("-- migrate:up", maxsplit=1)[1], down
 
 
+def _epaper_sources_migration_parts() -> tuple[str, str]:
+    source = EPAPER_SOURCES_MIGRATION_PATH.read_text(encoding="utf-8")
+    up, down = source.split("-- migrate:down", maxsplit=1)
+    return up.split("-- migrate:up", maxsplit=1)[1], down
+
+
 def _exclusion_keywords_migration_parts() -> tuple[str, str]:
     source = EXCLUSION_KEYWORDS_MIGRATION_PATH.read_text(encoding="utf-8")
     up, down = source.split("-- migrate:down", maxsplit=1)
@@ -154,19 +166,21 @@ def _default_model_migration_parts() -> tuple[str, str]:
 def _apply_managed_setting_migrations(connection: psycopg.Connection) -> None:
     """The migrations a fresh deployment applies before the one-shot import:
     console-managed settings, then the migration-seeded rows (llm_endpoints、
-    review_sort_keywords、score_exclusion_keywords——都没有旧配置文件，
-    不进一次性导入），最后是默认模型跟随接入点的结构迁移（全新库上
+    review_sort_keywords、score_exclusion_keywords、epaper_sources——都没有旧
+    配置文件，不进一次性导入），最后是默认模型跟随接入点的结构迁移（全新库上
     llm_models 还不存在，只给种子接入点补 default_model）。"""
 
     base_up, _base_down = _migration_parts()
     endpoints_up, _endpoints_down = _endpoints_migration_parts()
     sort_keywords_up, _sort_keywords_down = _sort_keywords_migration_parts()
     exclusion_up, _exclusion_down = _exclusion_keywords_migration_parts()
+    epaper_up, _epaper_down = _epaper_sources_migration_parts()
     default_model_up, _default_model_down = _default_model_migration_parts()
     connection.execute(base_up)
     connection.execute(endpoints_up)
     connection.execute(sort_keywords_up)
     connection.execute(exclusion_up)
+    connection.execute(epaper_up)
     connection.execute(default_model_up)
 
 
@@ -400,6 +414,43 @@ def test_score_exclusion_keywords_migration_seeds_empty_array_and_down_removes_i
         assert remaining is None
 
 
+def test_epaper_sources_migration_seeds_three_papers_and_keeps_existing_row() -> None:
+    base_up, _base_down = _migration_parts()
+    up_sql, down_sql = _epaper_sources_migration_parts()
+    with _isolated_database() as connection:
+        _create_legacy_schema(connection)
+        connection.execute(base_up)
+        connection.execute(up_sql)
+
+        row = connection.execute(
+            "SELECT value, version, updated_by_user_id FROM app_settings"
+            " WHERE section = 'epaper_sources'"
+        ).fetchone()
+        assert row["updated_by_user_id"] is None
+        assert row["version"] == 1
+        # 种子值是迁移前各自单独跑的三个报，保证上线后行为不中断
+        assert row["value"] == ["bjrb", "ldwb", "zgjsb"]
+
+        # 已有分区（用户先在设置页写过）不覆盖：ON CONFLICT DO NOTHING
+        connection.execute(
+            "UPDATE app_settings SET value = %s::jsonb, version = 7"
+            " WHERE section = 'epaper_sources'",
+            (json.dumps(["zgjsb"]),),
+        )
+        connection.execute(up_sql)
+        preserved = connection.execute(
+            "SELECT value, version FROM app_settings WHERE section = 'epaper_sources'"
+        ).fetchone()
+        assert preserved["value"] == ["zgjsb"]
+        assert preserved["version"] == 7
+
+        connection.execute(down_sql)
+        remaining = connection.execute(
+            "SELECT 1 FROM app_settings WHERE section = 'epaper_sources'"
+        ).fetchone()
+        assert remaining is None
+
+
 def _write_import_wordlists(tmp_path: Path) -> None:
     config_dir = tmp_path / "config"
     config_dir.mkdir(exist_ok=True)
@@ -458,6 +509,7 @@ def _apply_fresh_deploy_migrations(connection: psycopg.Connection) -> None:
     endpoints_up, _endpoints_down = _endpoints_migration_parts()
     sort_keywords_up, _sort_keywords_down = _sort_keywords_migration_parts()
     exclusion_up, _exclusion_down = _exclusion_keywords_migration_parts()
+    epaper_up, _epaper_down = _epaper_sources_migration_parts()
     default_model_up, _default_model_down = _default_model_migration_parts()
     _create_legacy_schema(connection)
     connection.execute(base_up)
@@ -465,6 +517,7 @@ def _apply_fresh_deploy_migrations(connection: psycopg.Connection) -> None:
     connection.execute(endpoints_up)
     connection.execute(sort_keywords_up)
     connection.execute(exclusion_up)
+    connection.execute(epaper_up)
     connection.execute(default_model_up)
 
 
@@ -504,6 +557,8 @@ def test_fresh_deploy_migrations_then_import_loads_full_config(
             assert loaded.model_for(step) == fallback, step
             assert loaded.resolved_endpoint_key(step) == "openrouter", step
         assert loaded.crawl_sources == ("toutiao",)
+        # 电子报分区由迁移种子创建，不参与一次性导入：种子值保证上线后行为不中断
+        assert loaded.epaper_sources == ("bjrb", "ldwb", "zgjsb")
         assert loaded.score_bonus_rules() == {"教育工委": 100}
         assert loaded.education_keywords == ("教育", "学校")
         assert loaded.beijing_keywords == ("北京", "海淀")
@@ -539,6 +594,7 @@ def test_fresh_deploy_migrations_then_import_loads_full_config(
             "beijing_keywords",
             "crawl_sources",
             "education_keywords",
+            "epaper_sources",
             "llm_endpoints",
             "llm_models",
             "review_sort_keywords",
@@ -635,6 +691,7 @@ def test_phase2_import_writes_only_missing_sections_on_populated_database(
     endpoints_up, _endpoints_down = _endpoints_migration_parts()
     sort_keywords_up, _sort_keywords_down = _sort_keywords_migration_parts()
     exclusion_up, _exclusion_down = _exclusion_keywords_migration_parts()
+    epaper_up, _epaper_down = _epaper_sources_migration_parts()
     default_model_up, _default_model_down = _default_model_migration_parts()
     with _isolated_database() as connection:
         _create_legacy_schema(connection)
@@ -643,6 +700,7 @@ def test_phase2_import_writes_only_missing_sections_on_populated_database(
         connection.execute(endpoints_up)
         connection.execute(sort_keywords_up)
         connection.execute(exclusion_up)
+        connection.execute(epaper_up)
         connection.execute(default_model_up)
         adapter = PostgresAdapter(connection)
 
@@ -725,7 +783,7 @@ def test_phase2_import_writes_only_missing_sections_on_populated_database(
                 (SELECT count(*) FROM crawl_accounts) AS accounts_count
             """
         ).fetchone()
-        assert counts == {"settings_count": 9, "accounts_count": 1}
+        assert counts == {"settings_count": 10, "accounts_count": 1}
         # 旧账号文件里库里没有的 account-9 不得被写入
         revived = connection.execute(
             "SELECT 1 FROM crawl_accounts WHERE normalized_identifier = 'account-9'"

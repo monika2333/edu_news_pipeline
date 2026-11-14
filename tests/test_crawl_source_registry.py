@@ -478,7 +478,7 @@ def test_xinhua_edu_catalog_entry_follows_xinhua_and_stays_disabled_by_default()
 
     definition = SOURCE_BY_KEY["xinhua_edu"]
     assert definition.display_name == "新华网教育"
-    assert not definition.daily_only
+    assert not definition.epaper
     assert not definition.requires_accounts
 
     # 校验只按目录序排序已保存列表，不把新目录项补进去。

@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+import requests
+
 from src.adapters import http_bjrb
 from src.adapters.http_bjrb import (
     BjrbIssueItem,
+    BjrbIssueNotPublished,
     article_to_detail_row,
     article_to_feed_row,
     make_article_id,
@@ -55,19 +59,28 @@ ARTICLE_HTML = """\
 
 
 class _FakeResponse:
-    def __init__(self, content: bytes) -> None:
+    def __init__(self, content: bytes, *, status_code: int = 200) -> None:
         self.content = content
+        self.status_code = status_code
 
     def raise_for_status(self) -> None:
-        return None
+        if self.status_code >= 400:
+            raise requests.HTTPError(
+                f"{self.status_code} error",
+                response=self,
+            )
 
 
 class _FakeSession:
-    def __init__(self) -> None:
+    def __init__(self, responses: dict[str, _FakeResponse] | None = None) -> None:
         self.urls: list[str] = []
+        self._responses = responses or {}
 
     def get(self, url: str, timeout: float) -> _FakeResponse:
         self.urls.append(url)
+        for marker, response in self._responses.items():
+            if marker in url:
+                return response
         return _FakeResponse(b'var datelist=["20260617"];')
 
     def close(self) -> None:
@@ -197,14 +210,80 @@ def test_decode_html_prefers_utf8_bom_over_meta_charset() -> None:
     assert "第1版 头版" in decoded
 
 
-def test_period_dates_and_unavailable_issue() -> None:
+def test_period_dates_and_unpublished_issue_raises_not_published() -> None:
     assert parse_period_dates('var datelist=["20260617","20260618"];') == ["20260617", "20260618"]
     fake_session = _FakeSession()
 
+    with pytest.raises(BjrbIssueNotPublished, match="20260618 期尚未上线"):
+        http_bjrb.list_issue_items(issue_date="20260618", session=fake_session)
+
+    assert fake_session.urls == ["https://bjrbdzb.bjd.com.cn/bjrb/period/202606/period.js"]
+
+
+def test_missing_month_index_counts_as_not_published() -> None:
+    # 实测：尚未出刊的月份 period.js 返回 404（当天日期不在当月索引里时索引本身是 200）
+    fake_session = _FakeSession({
+        "period/202612/period.js": _FakeResponse(b"Not Found", status_code=404),
+    })
+
+    with pytest.raises(BjrbIssueNotPublished):
+        http_bjrb.list_issue_items(issue_date="20261201", session=fake_session)
+
+
+def test_period_index_500_is_a_real_failure_not_not_published() -> None:
+    fake_session = _FakeSession({
+        "period/202606/period.js": _FakeResponse(b"server error", status_code=500),
+    })
+
+    with pytest.raises(requests.HTTPError):
+        http_bjrb.list_issue_items(issue_date="20260618", session=fake_session)
+
+
+def test_issue_page_404_after_index_lists_it_counts_as_not_published() -> None:
+    fake_session = _FakeSession({
+        "period/202606/period.js": _FakeResponse(b'var datelist=["20260618"];'),
+        "20260618_m.html": _FakeResponse(b"Not Found", status_code=404),
+    })
+
+    with pytest.raises(BjrbIssueNotPublished, match="20260618 期尚未上线"):
+        http_bjrb.list_issue_items(issue_date="20260618", session=fake_session)
+
+    assert len(fake_session.urls) == 2
+
+
+def test_issue_page_500_is_a_real_failure() -> None:
+    fake_session = _FakeSession({
+        "period/202606/period.js": _FakeResponse(b'var datelist=["20260618"];'),
+        "20260618_m.html": _FakeResponse(b"server error", status_code=500),
+    })
+
+    with pytest.raises(requests.HTTPError):
+        http_bjrb.list_issue_items(issue_date="20260618", session=fake_session)
+
+
+def test_published_issue_page_without_articles_raises_parse_failure() -> None:
+    fake_session = _FakeSession({
+        "period/202606/period.js": _FakeResponse(b'var datelist=["20260618"];'),
+        "20260618_m.html": _FakeResponse(b"<html><body>empty shell</body></html>"),
+    })
+
+    with pytest.raises(RuntimeError, match="未解析出稿件"):
+        http_bjrb.list_issue_items(issue_date="20260618", session=fake_session)
+
+
+def test_published_issue_lists_items_when_index_and_page_exist() -> None:
+    fake_session = _FakeSession({
+        "period/202606/period.js": _FakeResponse(b'var datelist=["20260618"];'),
+        "20260618_m.html": _FakeResponse(ISSUE_HTML.encode("utf-8-sig")),
+    })
+
     items = http_bjrb.list_issue_items(issue_date="20260618", session=fake_session)
 
-    assert items == []
-    assert fake_session.urls == ["https://bjrbdzb.bjd.com.cn/bjrb/period/202606/period.js"]
+    assert [item.article_id for item in items] == [
+        "bjrb:bjrb2026061800101",
+        "bjrb:bjrb2026061800102",
+        "bjrb:bjrb2026061800201",
+    ]
 
 
 def test_make_article_id_and_rows_are_stable() -> None:

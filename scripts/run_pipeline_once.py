@@ -184,6 +184,26 @@ def _run_crawl_step() -> Dict[str, Any]:
     return {"crawl_failed_sources": ",".join(failed_sources)}
 
 
+def _run_crawl_epapers_step() -> Dict[str, Any]:
+    """抓取本轮启用的电子报（日报/周报电子版）。
+
+    只做抓取：评分、摘要等后续处理统一留给每小时主流水线，避免两个进程
+    同时跑处理步骤（处理按状态取待处理行，没有行级认领，会重复调模型、
+    并发写同一行）。电子报全部关闭是合法状态，此时直接跳过——不能把空列表
+    或 None 传给 run_crawl：前者被 normalize_source_list 拒绝，后者会退回
+    每小时来源。
+    """
+
+    sources = list(get_business_config().epaper_sources)
+    if not sources:
+        print("[pipeline] 无启用的电子报，跳过 crawl-epapers", file=sys.stderr)
+        return {}
+    failed_sources = run_crawl(sources=sources)
+    if not failed_sources:
+        return {}
+    return {"crawl_failed_sources": ",".join(failed_sources)}
+
+
 def _run_hash_primary_step() -> Dict[str, str]:
     run_hash_primary()
     return {}
@@ -223,6 +243,7 @@ def _run_submission_dedup_step() -> Dict[str, str]:
 
 STEP_REGISTRY: Dict[str, StepHandler] = {
     "crawl": _run_crawl_step,
+    "crawl-epapers": _run_crawl_epapers_step,
     "hash-primary": _run_hash_primary_step,
     "summarize": _run_summarize_step,
     "enrich-summary": _run_enrich_summary_step,

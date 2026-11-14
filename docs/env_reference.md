@@ -305,16 +305,21 @@ SCORE_KEYWORD_BONUSES_PATH
 `xinhua_edu`（新华网教育频道）默认不在已保存的来源列表里，部署后在控制台
 「设置 → 数据源」手动启用；有噪音时可单独关闭，无需发版。
 
-北京日报、劳动午报和中国教师报不能加入每小时来源列表。服务器每日定时抓取时，分别调用
-`scripts/run_bjrb_daily.ps1`、`scripts/run_ldwb_daily.ps1` 和
-`scripts/run_zgjsb_daily.ps1`，脚本通过单次 `--sources` 覆盖指定来源。
+北京日报、劳动午报和中国教师报是**电子报**来源，不能加入每小时来源列表。服务器上只注册
+**一个**电子报计划任务 `scripts/tasks/register-epapers.ps1`（默认任务名 `EduNews_Epapers`，
+默认时间 **08:00、12:00、16:00、20:00、00:00**），它调用 `scripts/run_epapers.ps1` →
+`python -m scripts.run_pipeline_once --steps crawl-epapers`，按 `app_settings.epaper_sources`
+依次抓取**已启用**的电子报。启用/停用在控制台「设置 → 数据源 → 电子报」的开关里维护，
+全部关掉是合法状态。任务只做抓取；评分、摘要等后续处理由每 15 分钟一轮的主流水线接手
+（处理步骤按状态取「待处理」文章、没有行级认领，两个进程同时处理会重复调用大模型并并发
+写同一行，所以处理只能留在主流水线）。电子报的时间点与主流水线整点重合没有影响，两边抓
+的来源不重叠。以后新增电子报只需适配器 + `SOURCE_CATALOG` 一行 + 设置页开关，不需要新增
+脚本或计划任务。
 
 中国教师报是周报（每周三出版，一期 16 版），电子版通常在**北京时间 09:00 左右**整期
 上线，偶尔当天晚些时候补传。它按「站点当前最新一期」抓取，非出版日只是重复检查同一期，
-靠 `article_id` 幂等去重，漏跑一天也不会丢稿。建议服务器每日 **10:00 与 20:00** 各调用
-一次 `scripts/run_zgjsb_daily.ps1`：10:00 接常规上新，20:00 补当天稍晚补传；次日 10:00
-兜住 23:30 之后才上传的尾单。注册脚本 `scripts/tasks/register-zgjsb-daily.ps1` 默认就是
-这两个时间。
+靠 `article_id` 幂等去重，漏跑一轮也不会丢稿；每天五轮里 08:00、12:00 接常规上新，
+20:00 补当天稍晚补传，次日 08:00 兜住 23:30 之后才上传的尾单。
 
 部分来源可选配置：
 
@@ -411,7 +416,7 @@ BJRB_TIMEOUT=20
 BJRB_DELAY=0.2
 BJRB_BASE_URL=https://bjrbdzb.bjd.com.cn/bjrb
 
-# China Teacher / ZGJSB（每日任务来源，周报、每周三出刊）
+# China Teacher / ZGJSB（电子报来源，周报、每周三出刊）
 # 留空表示抓站点当前最新一期；历史补抓填某一期的日期（YYYYMMDD 或 YYYY-MM-DD）
 ZGJSB_DATE=
 ZGJSB_TIMEOUT=20
@@ -419,7 +424,7 @@ ZGJSB_DELAY=0.2
 ZGJSB_BASE_URL=http://chinateacher.jyb.cn/zgjsb
 ```
 
-`BJRB_DATE` 为空时默认抓取当前北京时间日期；历史回补可临时设置为 `YYYYMMDD`。北京日报建议在服务器每日北京时间 06:00 调用 `scripts/run_bjrb_daily.ps1`，08:00 可补偿重跑一次；本仓库不在开发机注册该定时任务。
+`BJRB_DATE` 为空时默认抓取当前北京时间日期；历史回补可临时设置为 `YYYYMMDD`。北京日报由 `EduNews_Epapers` 任务每天 08:00、12:00、16:00、20:00、00:00 统一抓取；当天这一期尚未上线时只记一行「北京日报 YYYYMMDD 期尚未上线」并跳过该来源，不计入抓取失败。本仓库不在开发机注册该定时任务。
 
 ## Feishu 通知
 

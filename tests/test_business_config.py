@@ -76,6 +76,11 @@ def _settings_rows() -> list[dict[str, object]]:
             "version": 5,
         },
         {
+            "section": "epaper_sources",
+            "value": ["bjrb", "ldwb", "zgjsb"],
+            "version": 2,
+        },
+        {
             "section": "score_keyword_bonuses",
             "value": [
                 {"keyword": "教育工委", "bonus": 100},
@@ -369,13 +374,13 @@ def test_m22_crawl_source_aliases_are_normalized_before_catalog_sorting() -> Non
         (["ldwb", "bjrb", "toutiao"], ["toutiao", "bjrb", "ldwb"]),
     ],
 )
-def test_m23_daily_only_sources_follow_catalog_order_when_allowed(
+def test_m23_epaper_sources_follow_catalog_order_when_allowed(
     sources: list[str],
     expected: list[str],
 ) -> None:
     assert business_config.validate_crawl_sources(
         sources,
-        allow_daily=True,
+        allow_epaper=True,
     ) == expected
 
 
@@ -384,7 +389,7 @@ def test_m24_normalize_source_list_preserves_caller_order() -> None:
 
     assert business_config.normalize_source_list(
         sources,
-        allow_daily=False,
+        allow_epaper=False,
     ) == sources
 
 
@@ -393,6 +398,7 @@ def test_m24_normalize_source_list_preserves_caller_order() -> None:
     [
         (["missing-source"], "未知来源"),
         (["toutiao", "toutiao"], "来源重复"),
+        (["bjrb"], "电子报来源"),
         ([], "抓取来源列表不能为空"),
     ],
 )
@@ -402,6 +408,41 @@ def test_m25_crawl_source_validation_rejects_invalid_lists_before_sorting(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         business_config.validate_crawl_sources(sources)
+
+
+def test_m26_epaper_sources_allow_empty_list() -> None:
+    # 电子报可以全部关掉：空列表是合法状态，不是「至少保留一个」
+    assert business_config.validate_epaper_sources([]) == []
+
+
+@pytest.mark.parametrize(
+    ("sources", "expected"),
+    [
+        (["zgjsb", "bjrb"], ["bjrb", "zgjsb"]),
+        (["chinateacher", "laodongwubao"], ["ldwb", "zgjsb"]),
+    ],
+)
+def test_m27_epaper_sources_get_catalog_order_and_aliases(
+    sources: list[str],
+    expected: list[str],
+) -> None:
+    assert business_config.validate_epaper_sources(sources) == expected
+
+
+@pytest.mark.parametrize(
+    ("sources", "message"),
+    [
+        (["toutiao"], "不是电子报来源"),
+        (["missing-source"], "未知来源"),
+        (["bjrb", "bjrb"], "来源重复"),
+    ],
+)
+def test_m28_epaper_sources_reject_hourly_unknown_and_duplicate(
+    sources: list[str],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        business_config.validate_epaper_sources(sources)
 
 
 def test_load_business_config_rejects_unknown_endpoint_reference() -> None:

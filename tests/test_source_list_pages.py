@@ -44,7 +44,7 @@ def test_b1_every_hourly_account_free_source_has_list_pages(
     pages = _list_pages(_settings_payload(monkeypatch))
 
     for source in SOURCE_CATALOG:
-        if source.daily_only or source.requires_accounts:
+        if source.epaper or source.requires_accounts:
             assert pages[source.key] == [], source.key
         else:
             assert pages[source.key], (

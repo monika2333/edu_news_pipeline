@@ -77,6 +77,7 @@ def _rows(model: str = "model-a") -> list[dict[str, Any]]:
             "version": 1,
         },
         {"section": "crawl_sources", "value": ["toutiao"], "version": 2},
+        {"section": "epaper_sources", "value": ["zgjsb", "bjrb"], "version": 5},
         {
             "section": "score_keyword_bonuses",
             "value": [{"keyword": "教育工委", "bonus": 100}],
@@ -258,6 +259,8 @@ def test_m9_m18_source_override_is_used_and_written_to_snapshot(monkeypatch) -> 
         }
     }
     assert snapshot["crawl_sources"] == ["tencent", "toutiao"]
+    # 电子报启用列表是冻结配置的一部分：每轮抓了哪些报纸在 pipeline_runs 快照里可查
+    assert snapshot["epaper_sources"] == ["bjrb", "zgjsb"]
     assert snapshot["score_keyword_bonuses"] == [
         {"keyword": "教育工委", "bonus": 100}
     ]
@@ -278,6 +281,7 @@ def test_m9_m18_source_override_is_used_and_written_to_snapshot(monkeypatch) -> 
         "llm_endpoints": 1,
         "llm_models": 1,
         "crawl_sources": 2,
+        "epaper_sources": 5,
         "score_keyword_bonuses": 4,
         "score_exclusion_keywords": 1,
         "education_keywords": 1,
@@ -303,3 +307,64 @@ def test_m20_source_failures_are_preserved_in_run_artifacts(monkeypatch) -> None
     assert adapter.process.finishes[0]["artifacts"] == {
         "crawl_failed_sources": "toutiao"
     }
+
+
+def test_crawl_epapers_step_crawls_only_enabled_epapers(monkeypatch) -> None:
+    adapter = _adapter(_rows())
+    observed_sources: list[tuple[str, ...]] = []
+    monkeypatch.setattr(runner, "warn_legacy_config", lambda: [])
+    monkeypatch.setattr(
+        runner,
+        "run_crawl",
+        lambda *, sources: observed_sources.append(tuple(sources)) or [],
+    )
+
+    result = runner.run_pipeline_once(["crawl-epapers"], adapter=adapter)
+
+    assert result.status == "success"
+    # 只抓 epaper_sources 里启用的两个（目录序），不能抓目录里的全部电子报
+    assert observed_sources == [("bjrb", "zgjsb")]
+
+
+def test_crawl_epapers_step_skips_when_every_epaper_is_disabled(
+    monkeypatch,
+    capsys,
+) -> None:
+    rows = _rows()
+    rows[3] = {"section": "epaper_sources", "value": [], "version": 6}
+    adapter = _adapter(rows)
+    observed_sources: list[Any] = []
+
+    def run_crawl_must_not_fall_back_to_hourly(*, sources: Any) -> list[str]:
+        # 空列表会被 normalize_source_list 拒绝，None 会退回每小时来源；
+        # 两种情况都不能出现在电子报步骤里
+        observed_sources.append(sources)
+        assert sources, "电子报全部关闭时不能把空值传给 run_crawl"
+        raise AssertionError("电子报全部关闭时不应调用 run_crawl")
+
+    monkeypatch.setattr(runner, "warn_legacy_config", lambda: [])
+    monkeypatch.setattr(runner, "run_crawl", run_crawl_must_not_fall_back_to_hourly)
+
+    result = runner.run_pipeline_once(["crawl-epapers"], adapter=adapter)
+
+    assert result.status == "success"
+    assert observed_sources == []
+    assert "无启用的电子报，跳过" in capsys.readouterr().err
+
+
+def test_crawl_epapers_step_records_failed_sources(monkeypatch) -> None:
+    adapter = _adapter(_rows())
+    monkeypatch.setattr(runner, "warn_legacy_config", lambda: [])
+    monkeypatch.setattr(runner, "run_crawl", lambda *, sources: ["ldwb"])
+
+    result = runner.run_pipeline_once(["crawl-epapers"], adapter=adapter)
+
+    assert result.status == "success"
+    assert result.artifacts == {"crawl_failed_sources": "ldwb"}
+
+
+def test_crawl_epapers_is_not_part_of_the_hourly_default_pipeline() -> None:
+    # 主流水线一轮 15 分钟，电子报由独立的五轮任务抓取；默认计划里不能混进来
+    assert "crawl-epapers" in runner.STEP_REGISTRY
+    assert "crawl-epapers" not in runner.DEFAULT_PIPELINE
+    assert "crawl-epapers" in runner._parse_args(["--steps", "crawl-epapers"]).steps

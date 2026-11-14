@@ -36,6 +36,7 @@ from src.adapters.http_bjrb import (
     DEFAULT_DELAY as BJRB_DEFAULT_DELAY,
     DEFAULT_TIMEOUT as BJRB_DEFAULT_TIMEOUT,
     BjrbIssueItem,
+    BjrbIssueNotPublished,
     article_to_detail_row as bjrb_article_to_detail_row,
     article_to_feed_row as bjrb_article_to_feed_row,
     fetch_article as bjrb_fetch_article,
@@ -951,15 +952,24 @@ def _run_bjrb_flow(
         article = bjrb_fetch_article(item, timeout=timeout_value)
         return bjrb_article_to_detail_row(article, detail_fetched_at=detail_fetched_at)
 
+    # 刊期是否已上线要在流程层判定：当天这一期确实还没出（00:00 那轮几乎
+    # 必然如此）只记一行、正常结束，不进 failed_sources；网络错误、5xx 与
+    # 页面解析失败仍照常抛出，由 run() 记进失败来源。
+    try:
+        issue_items = bjrb_list_issue_items(
+            limit=remaining_limit,
+            timeout=timeout_value,
+        )
+    except BjrbIssueNotPublished as exc:
+        log_info(WORKER, str(exc))
+        return _empty_stats()
+
     return _run_source_flow(
         adapter=adapter,
         flow=SourceFlow(
             source="bjrb",
             display_name="Beijing Daily",
-            list_items=lambda limit, _existing: bjrb_list_issue_items(
-                limit=limit,
-                timeout=timeout_value,
-            ),
+            list_items=lambda _limit, _existing: issue_items,
             prepare_feed=prepare_feed,
             fetch_detail=fetch_detail_row,
             load_existing_ids=False,
@@ -1363,10 +1373,10 @@ def run(
     elif isinstance(sources, str):
         selected_order = normalize_source_list(
             [s for s in sources.split(",") if s.strip()],
-            allow_daily=True,
+            allow_epaper=True,
         )
     else:
-        selected_order = normalize_source_list(sources, allow_daily=True)
+        selected_order = normalize_source_list(sources, allow_epaper=True)
 
     # 抓取阶段的教育关键词闸门来自冻结配置；空词表会被校验拒绝，不会静默放行
     keywords: Sequence[str] = business_config.education_keywords

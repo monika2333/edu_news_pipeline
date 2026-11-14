@@ -41,7 +41,7 @@ def _columns(columns: tuple[tuple[str, str], ...]) -> list[ListPage]:
 def list_pages_for_source(source: str) -> list[ListPage]:
     """返回某来源当前对应的原始列表页，顺序与 adapter 常量一致。
 
-    需要账号的来源、每日任务来源，以及尚未接列表页的来源都返回空数组。
+    需要账号的来源、电子报来源，以及尚未接列表页的来源都返回空数组。
     """
 
     if source == "chinanews":

@@ -137,6 +137,25 @@ def _resolve_btime(
 
 def _resolve_beijinghao(profile_url: str, *, timeout: float) -> str:
     session = http_beijinghao._session()
+    category_entry = http_beijinghao.parse_category_input(profile_url)
+    if category_entry is not None:
+        # 客户端栏目分类页的 <title> 由 JS 事后写入，服务端拿到的是空标题；
+        # 页面自己渲染标题用的栏目分类清单才是名称来源。
+        response = _request(
+            session,
+            http_beijinghao.category_meta_url(category_entry),
+            headers={"Referer": profile_url},
+            timeout=timeout,
+            page_label="栏目分类接口",
+        )
+        try:
+            payload = response.json()
+        except (json.JSONDecodeError, requests.JSONDecodeError, ValueError) as exc:
+            raise AccountNameUnavailable("栏目分类接口返回了无效数据") from exc
+        name = _name(http_beijinghao.parse_category_meta_name(payload, category_entry))
+        if name is None:
+            raise AccountNameUnavailable("栏目分类接口里没有找到栏目名")
+        return name
     response = _request(
         session,
         profile_url,

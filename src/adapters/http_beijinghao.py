@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -16,6 +16,9 @@ from src.adapters.http_linked_page_rows import feed_item_to_row as linked_feed_i
 COLUMN_BASE_URL = "https://peking.bjd.com.cn/bjhrootcolumn/system/"
 DETAIL_BASE_URL = "https://peking.bjd.com.cn/content/"
 DETAIL_HOST = "peking.bjd.com.cn"
+# 北京日报客户端栏目分类页的稿件放在 xinwen 域，正文 JSON 与北京号同构。
+CLIENT_DETAIL_HOST = "xinwen.bjd.com.cn"
+DETAIL_HOSTS = frozenset({DETAIL_HOST, CLIENT_DETAIL_HOST})
 SOURCE_NAME = "北京日报"
 ARTICLE_ID_PREFIX = "beijinghao:"
 CHINA_TZ = timezone(timedelta(hours=8))
@@ -24,14 +27,53 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0 Safari/537.36"
 )
+# 客户端栏目分类页（static.bjd.com.cn/static/category/）专用：
+# 列表没有 bjhrootcolumn 栏目编号，只能按 categoryId + columnId 走检索接口取，
+# 分页是检索接口的偏移页（page=0,1,2…），不是 stories.json 的版式页。
+CATEGORY_HOST = "static.bjd.com.cn"
+CATEGORY_PATH = "/static/category/"
+CATEGORY_SEARCH_URL = "https://jiansuo.bjd.com.cn/cass/search"
+CATEGORY_META_URL_TEMPLATE = (
+    "https://static.bjd.com.cn/mdms-res/category/json/{channel_id}/category.json"
+)
+DEFAULT_CHANNEL_ID = "5b165687a010550e5ddc0e6a"
+# 视频/直播稿没有可用的文字正文，对应页面「文章」页签的口径。
+NON_ARTICLE_STORY_TYPES = frozenset({"VIDEO", "LIVE"})
 _DETAIL_PATH_RE = re.compile(r"^/content/([^/?#]+)\.html$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
 class ColumnEntry:
+    """一个待抓取的栏目。
+
+    传统北京号栏目 ``column_code`` 是 bjhrootcolumn 编号；客户端栏目分类页
+    没有这种编号，``column_code`` 存规整后的栏目页地址（与 21jingji、
+    chinadaily 等「账号 = 栏目 URL」来源一致），列表抓取按 ``page_url`` 判型。
+    """
+
     column_code: str
     page_url: str
     raw_source: str
+
+
+@dataclass(frozen=True)
+class CategoryEntry:
+    """北京日报客户端「栏目分类」页的坐标与规整后的页面地址。"""
+
+    column_id: str
+    category_id: str
+    channel_id: str
+    page_url: str
+
+    def search_url(self, page_number: int) -> str:
+        query = urlencode(
+            {
+                "channelId": self.channel_id,
+                "categoryId": self.category_id,
+                "page": page_number,
+            }
+        )
+        return f"{CATEGORY_SEARCH_URL}?{query}"
 
 
 @dataclass
@@ -72,10 +114,112 @@ def parse_column_code(raw: str) -> str:
     return value
 
 
+def _query_value(query: dict[str, list[str]], name: str) -> str:
+    values = query.get(name) or []
+    return str(values[0] if values else "").strip()
+
+
+def parse_category_input(raw: str) -> Optional[CategoryEntry]:
+    """识别客户端栏目分类页地址；不是这一类地址时返回 ``None``。
+
+    地址形如 ``https://static.bjd.com.cn/static/category/?categoryId=…&channelId=…&columnId=…``
+    （``channelId`` 可省略，按客户端生产频道补全）。同域名但参数缺失/非法时
+    报错而不是当成北京号栏目编号处理，否则错误信息会指向无关的编号解析。
+    """
+
+    cleaned = (raw or "").strip().lstrip("\ufeff")
+    if not cleaned:
+        return None
+    candidate = cleaned
+    if candidate.startswith("//"):
+        candidate = f"https:{candidate}"
+    if not re.match(r"^https?://", candidate, re.IGNORECASE):
+        if not candidate.lower().startswith(f"{CATEGORY_HOST}/"):
+            return None
+        candidate = f"https://{candidate}"
+    parsed = urlsplit(candidate)
+    if (parsed.hostname or "").lower() != CATEGORY_HOST:
+        return None
+    if parsed.path.rstrip("/") != CATEGORY_PATH.rstrip("/"):
+        raise ValueError(
+            f"北京日报客户端栏目页地址必须是 {CATEGORY_HOST}{CATEGORY_PATH} 形式：{cleaned}"
+        )
+    query = parse_qs(parsed.query)
+    column_id = _query_value(query, "columnId")
+    category_id = _query_value(query, "categoryId")
+    channel_id = _query_value(query, "channelId") or DEFAULT_CHANNEL_ID
+    missing = [
+        name
+        for name, value in (("columnId", column_id), ("categoryId", category_id))
+        if not value
+    ]
+    if missing:
+        raise ValueError(f"栏目页地址缺少 {'、'.join(missing)} 参数：{cleaned}")
+    for name, value in (
+        ("columnId", column_id),
+        ("categoryId", category_id),
+        ("channelId", channel_id),
+    ):
+        if not re.fullmatch(r"[A-Za-z0-9]+", value):
+            raise ValueError(f"栏目页地址的 {name} 参数不合法：{cleaned}")
+    # 参数顺序统一，同一栏目无论从哪种写法粘进来都落到同一个账号标识。
+    canonical = urlunsplit(
+        (
+            "https",
+            CATEGORY_HOST,
+            CATEGORY_PATH,
+            urlencode(
+                {
+                    "categoryId": category_id,
+                    "channelId": channel_id,
+                    "columnId": column_id,
+                }
+            ),
+            "",
+        )
+    )
+    return CategoryEntry(
+        column_id=column_id,
+        category_id=category_id,
+        channel_id=channel_id,
+        page_url=canonical,
+    )
+
+
+def category_meta_url(entry: CategoryEntry) -> str:
+    return CATEGORY_META_URL_TEMPLATE.format(channel_id=entry.channel_id)
+
+
+def parse_category_meta_name(payload: Any, entry: CategoryEntry) -> Optional[str]:
+    """从栏目分类清单（page 自己渲染标题用的那份 JSON）里取出分类名。"""
+
+    if not isinstance(payload, dict):
+        return None
+    columns = payload.get("data")
+    for column in columns if isinstance(columns, list) else []:
+        if not isinstance(column, dict) or str(column.get("uuid") or "") != entry.column_id:
+            continue
+        categories = column.get("categories")
+        for category in categories if isinstance(categories, list) else []:
+            if not isinstance(category, dict):
+                continue
+            if str(category.get("uuid") or "") != entry.category_id:
+                continue
+            return str(category.get("name") or "").strip() or None
+    return None
+
+
 def parse_column_input(raw: str) -> ColumnEntry:
     cleaned = (raw or "").strip().lstrip("\ufeff")
     if not cleaned:
         raise ValueError("Empty Beijinghao column code")
+    category_entry = parse_category_input(cleaned)
+    if category_entry is not None:
+        return ColumnEntry(
+            column_code=category_entry.page_url,
+            page_url=category_entry.page_url,
+            raw_source=cleaned,
+        )
     column_code = parse_column_code(cleaned)
     return ColumnEntry(
         column_code=column_code,
@@ -96,7 +240,7 @@ def normalize_url(url: str) -> str:
         raw = f"https:{raw}"
     resolved = urljoin(DETAIL_BASE_URL, raw)
     parsed = urlsplit(resolved)
-    scheme = "https" if (parsed.hostname or "").lower() == DETAIL_HOST else parsed.scheme.lower()
+    scheme = "https" if (parsed.hostname or "").lower() in DETAIL_HOSTS else parsed.scheme.lower()
     return urlunsplit((scheme, parsed.netloc.lower(), parsed.path, "", ""))
 
 
@@ -112,7 +256,7 @@ def make_article_id(value: str) -> str:
 
 def _is_detail_url(url: str) -> bool:
     parsed = urlsplit(normalize_url(url))
-    return parsed.hostname == DETAIL_HOST and bool(_DETAIL_PATH_RE.fullmatch(parsed.path))
+    return (parsed.hostname or "") in DETAIL_HOSTS and bool(_DETAIL_PATH_RE.fullmatch(parsed.path))
 
 
 def _date_to_iso(value: str) -> Optional[str]:
@@ -176,6 +320,93 @@ def _list_page_url(entry: ColumnEntry, page_number: int) -> str:
     return base_url if page_number == 1 else f"{base_url}/more_{page_number}"
 
 
+def _category_search_rows(payload: Any) -> list[Any]:
+    """校验检索接口信封并返回这一页的原始行。
+
+    单独拆出来是为了让「这一页还有没有内容」按**原始行数**判断：
+    existing_ids 只过滤、不截停翻页（全页都已入库时继续往后翻）。
+    """
+
+    if not isinstance(payload, dict):
+        raise RuntimeError("Beijinghao category search returned invalid payload")
+    code = payload.get("code")
+    if code not in (0, None):
+        raise RuntimeError(
+            f"Beijinghao category search error {code}: "
+            f"{payload.get('message') or 'unknown error'}"
+        )
+    data = payload.get("data")
+    rows = data.get("content") if isinstance(data, dict) else None
+    return rows if isinstance(rows, list) else []
+
+
+def _parse_category_list_payload(
+    payload: Any,
+    *,
+    existing_ids: Optional[set[str]] = None,
+) -> list[FeedItemLike]:
+    """解析客户端检索接口（/cass/search）的一页结果。"""
+
+    items: list[FeedItemLike] = []
+    seen: set[str] = set(existing_ids or set())
+    for row in _category_search_rows(payload):
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("storyType") or "").strip().upper() in NON_ARTICLE_STORY_TYPES:
+            continue
+        url = normalize_url(str(row.get("url") or ""))
+        if not _is_detail_url(url):
+            continue
+        title = str(row.get("title") or "").strip()
+        if not title:
+            continue
+        article_id = make_article_id(url)
+        if article_id in seen:
+            continue
+        seen.add(article_id)
+        publish_time_iso = _timestamp_to_iso(row.get("publishTime"))
+        items.append(
+            FeedItemLike(
+                title=title,
+                url=url,
+                section=SOURCE_NAME,
+                publish_time_iso=publish_time_iso,
+                raw={"publish_text": publish_time_iso or ""},
+            )
+        )
+    return items
+
+
+def _collect_category_items(
+    entry: CategoryEntry,
+    session: requests.Session,
+    *,
+    page_count: int,
+    known_ids: set[str],
+    items: list[FeedItemLike],
+    limit: Optional[int],
+) -> bool:
+    """按检索接口的偏移页取列表；返回是否已达 limit（True 需提前结束）。"""
+
+    for page_number in range(0, page_count):
+        response = session.get(
+            entry.search_url(page_number),
+            headers={"Referer": entry.page_url},
+            timeout=15,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not _category_search_rows(payload):
+            # 偏移分页：原始行数空了才是到末尾，不能拿过滤后的条数判断
+            break
+        for item in _parse_category_list_payload(payload, existing_ids=known_ids):
+            items.append(item)
+            known_ids.add(make_article_id(item.url))
+            if limit is not None and len(items) >= limit:
+                return True
+    return False
+
+
 def list_items(
     entries: list[ColumnEntry],
     limit: Optional[int] = None,
@@ -190,6 +421,18 @@ def list_items(
     items: list[FeedItemLike] = []
     known_ids = set(existing_ids or set())
     for entry in entries:
+        category_entry = parse_category_input(entry.page_url)
+        if category_entry is not None:
+            if _collect_category_items(
+                category_entry,
+                session,
+                page_count=page_count,
+                known_ids=known_ids,
+                items=items,
+                limit=limit,
+            ):
+                return items
+            continue
         for page_number in range(1, page_count + 1):
             response = session.get(
                 _list_page_url(entry, page_number),
@@ -214,8 +457,12 @@ def html_to_markdown(html_str: str) -> str:
 
 
 def _detail_json_url(url: str) -> str:
-    article_id = make_article_id(url).split(":", 1)[1]
-    return f"{DETAIL_BASE_URL}{article_id}.json"
+    normalized = normalize_url(url)
+    article_id = make_article_id(normalized).split(":", 1)[1]
+    # 北京号稿件在 peking，客户端栏目分类页稿件在 xinwen；正文 JSON 同构，
+    # 按稿件 URL 自己的域名取，不要写死成其中一个。
+    host = (urlsplit(normalized).hostname or DETAIL_HOST).lower()
+    return f"https://{host}/content/{article_id}.json"
 
 
 def _parse_detail_payload(payload: dict[str, Any], url: str) -> dict[str, Any]:
@@ -280,15 +527,19 @@ def build_detail_update(
 
 
 __all__ = [
+    "CategoryEntry",
     "ColumnEntry",
     "FeedItemLike",
     "build_detail_update",
+    "category_meta_url",
     "feed_item_to_row",
     "fetch_detail",
     "html_to_markdown",
     "list_items",
     "make_article_id",
     "normalize_url",
+    "parse_category_input",
+    "parse_category_meta_name",
     "parse_column_code",
     "parse_column_input",
 ]

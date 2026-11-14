@@ -164,6 +164,53 @@ def test_beijinghao_name_uses_column_page_title_transport(
     assert name == "现代教育报"
 
 
+def test_beijinghao_client_category_name_comes_from_category_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 客户端栏目分类页的 <title> 是空串（JS 事后写入），名称必须取自
+    # 页面渲染标题用的栏目分类清单。
+    session = _Session(
+        _Response(
+            payload={
+                "code": 0,
+                "data": [
+                    {
+                        "uuid": "5ba1f926e4b0976ea0d9a0fc",
+                        "name": "产经新闻（标准）",
+                        "categories": [
+                            {"uuid": "6095f818e4b054f0ea85207a", "name": " 教育 "}
+                        ],
+                    }
+                ],
+            }
+        )
+    )
+    monkeypatch.setattr(http_beijinghao, "_session", lambda: session)
+
+    name = account_profiles.resolve_account_name(
+        "beijinghao",
+        normalized_identifier=(
+            "https://static.bjd.com.cn/static/category/"
+            "?categoryId=6095f818e4b054f0ea85207a"
+            "&channelId=5b165687a010550e5ddc0e6a"
+            "&columnId=5ba1f926e4b0976ea0d9a0fc"
+        ),
+        profile_url=(
+            "https://static.bjd.com.cn/static/category/"
+            "?categoryId=6095f818e4b054f0ea85207a"
+            "&channelId=5b165687a010550e5ddc0e6a"
+            "&columnId=5ba1f926e4b0976ea0d9a0fc"
+        ),
+        timeout=8,
+    )
+
+    assert name == "教育"
+    assert session.calls[0]["url"] == (
+        "https://static.bjd.com.cn/mdms-res/category/json/"
+        "5b165687a010550e5ddc0e6a/category.json"
+    )
+
+
 def test_xinjinghao_name_uses_account_info_api(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

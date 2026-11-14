@@ -97,13 +97,14 @@ function defaultSteps() {
 
 function defaultSources() {
     return [
-        { key: 'toutiao', display_name: '今日头条', daily_only: false, requires_accounts: true },
-        { key: 'tencent', display_name: '腾讯新闻', daily_only: false, requires_accounts: true },
-        { key: 'chinanews', display_name: '中新网', daily_only: false, requires_accounts: false },
-        { key: 'btime', display_name: '北京时间', daily_only: false, requires_accounts: true },
-        { key: 'beijinghao', display_name: '北京号', daily_only: false, requires_accounts: true },
-        { key: 'bjrb', display_name: '北京日报', daily_only: true, requires_accounts: false },
-        { key: 'ldwb', display_name: '劳动午报', daily_only: true, requires_accounts: false },
+        { key: 'toutiao', display_name: '今日头条', epaper: false, requires_accounts: true },
+        { key: 'tencent', display_name: '腾讯新闻', epaper: false, requires_accounts: true },
+        { key: 'chinanews', display_name: '中新网', epaper: false, requires_accounts: false },
+        { key: 'btime', display_name: '北京时间', epaper: false, requires_accounts: true },
+        { key: 'beijinghao', display_name: '北京号', epaper: false, requires_accounts: true },
+        { key: 'bjrb', display_name: '北京日报', epaper: true, requires_accounts: false },
+        { key: 'ldwb', display_name: '劳动午报', epaper: true, requires_accounts: false },
+        { key: 'zgjsb', display_name: '中国教师报', epaper: true, requires_accounts: false },
     ];
 }
 
@@ -142,68 +143,69 @@ function xinhuaEducationColumns() {
 function sourcesWithListPages() {
     const listPage = (url) => [{ label: '列表页', url }];
     return [
-        { key: 'toutiao', display_name: '今日头条', daily_only: false, requires_accounts: true, list_pages: [] },
-        { key: 'tencent', display_name: '腾讯新闻', daily_only: false, requires_accounts: true, list_pages: [] },
+        { key: 'toutiao', display_name: '今日头条', epaper: false, requires_accounts: true, list_pages: [] },
+        { key: 'tencent', display_name: '腾讯新闻', epaper: false, requires_accounts: true, list_pages: [] },
         {
             key: 'chinanews',
             display_name: '中新网',
-            daily_only: false,
+            epaper: false,
             requires_accounts: false,
             list_pages: listPage('https://www.chinanews.com.cn/scroll-news/news1.html'),
         },
         {
             key: 'chinanews_xj',
             display_name: '中新网新疆',
-            daily_only: false,
+            epaper: false,
             requires_accounts: false,
             list_pages: listPage('https://www.xj.chinanews.com.cn/dizhou/'),
         },
         {
             key: 'jyb',
             display_name: '中国教育报',
-            daily_only: false,
+            epaper: false,
             requires_accounts: false,
             list_pages: listPage('http://www.jyb.cn/search.html?topsearch='),
         },
         {
             key: 'gmw',
             display_name: '光明网',
-            daily_only: false,
+            epaper: false,
             requires_accounts: false,
             list_pages: listPage('https://news.gmw.cn/node_4108.htm'),
         },
         {
             key: 'xinhua',
             display_name: '新华网北京',
-            daily_only: false,
+            epaper: false,
             requires_accounts: false,
             list_pages: xinhuaColumns(),
         },
         {
             key: 'xinhua_edu',
             display_name: '新华网教育',
-            daily_only: false,
+            epaper: false,
             requires_accounts: false,
             list_pages: xinhuaEducationColumns(),
         },
         {
             key: 'stdaily',
             display_name: '科技日报',
-            daily_only: false,
+            epaper: false,
             requires_accounts: false,
             list_pages: [{ label: '滚动新闻', url: 'https://www.stdaily.com/web/gdxw/node_324.html' }],
         },
         {
             key: 'bbtnews',
             display_name: '北京商报',
-            daily_only: false,
+            epaper: false,
             requires_accounts: false,
             list_pages: [{ label: '教育频道', url: 'https://www.bbtnews.com.cn/chuizhipd/chanjingzx/jiaoyupd/' }],
         },
-        { key: 'btime', display_name: '北京时间', daily_only: false, requires_accounts: true, list_pages: [] },
-        { key: 'beijinghao', display_name: '北京号', daily_only: false, requires_accounts: true, list_pages: [] },
-        { key: 'bjrb', display_name: '北京日报', daily_only: true, requires_accounts: false, list_pages: [] },
-        { key: 'ldwb', display_name: '劳动午报', daily_only: true, requires_accounts: false, list_pages: [] },
+        { key: 'btime', display_name: '北京时间', epaper: false, requires_accounts: true, list_pages: [] },
+        { key: 'beijinghao', display_name: '北京号', epaper: false, requires_accounts: true, list_pages: [] },
+        { key: 'bjrb', display_name: '北京日报', epaper: true, requires_accounts: false, list_pages: [] },
+        { key: 'ldwb', display_name: '劳动午报', epaper: true, requires_accounts: false, list_pages: [] },
+        { key: 'zgjsb', display_name: '中国教师报', epaper: true, requires_accounts: false, list_pages: [] },
     ];
 }
 
@@ -352,6 +354,13 @@ function defaultSections() {
             value: ['toutiao', 'chinanews'],
             version: 4,
             updated_at: '2026-01-10T08:31:00Z',
+            updated_by: { user_id: 'u1', display_name: 'Wimp' },
+        },
+        // 电子报独立分区：值按 payload 目录序（bjrb → ldwb → zgjsb），版本独立维护
+        epaper_sources: {
+            value: ['bjrb', 'ldwb', 'zgjsb'],
+            version: 5,
+            updated_at: '2026-01-10T08:32:00Z',
             updated_by: { user_id: 'u1', display_name: 'Wimp' },
         },
     };
@@ -774,6 +783,7 @@ class FakeSettingsServer {
         if (pathname === '/api/admin/settings/llm_models') return 'save-models';
         if (pathname === '/api/admin/settings/llm_endpoints') return 'save-endpoints';
         if (pathname === '/api/admin/settings/crawl_sources') return 'save-sources';
+        if (pathname === '/api/admin/settings/epaper_sources') return 'save-epaper-sources';
         const dictionaryMatch = pathname.match(/^\/api\/admin\/settings\/(score_keyword_bonuses|score_exclusion_keywords|education_keywords|beijing_keywords|source_aliases|review_sort_keywords)$/);
         if (dictionaryMatch) return `save-${dictionaryMatch[1]}`;
         if (pathname === '/api/articles/search') return 'article-search';
@@ -1018,7 +1028,7 @@ class FakeSettingsServer {
             return [200, { ...entry, prompt_key: key }];
         }
         const saveMatch = pathname.match(
-            /^\/api\/admin\/settings\/(llm_models|llm_endpoints|crawl_sources|score_keyword_bonuses|score_exclusion_keywords|education_keywords|beijing_keywords|source_aliases|review_sort_keywords)$/,
+            /^\/api\/admin\/settings\/(llm_models|llm_endpoints|crawl_sources|epaper_sources|score_keyword_bonuses|score_exclusion_keywords|education_keywords|beijing_keywords|source_aliases|review_sort_keywords)$/,
         );
         if (saveMatch && method === 'PUT') {
             const section = saveMatch[1];

@@ -1,7 +1,9 @@
 // 系统设置页（/admin/settings）的 jsdom 行为测试。
-// 覆盖验收场景 S1-S33 与芯片布局场景 N1-N23；其中 S7、S17 随排序模式删除，
+// 覆盖验收场景 S1-S39 与芯片布局场景 N1-N23；其中 S7、S17 随排序模式删除，
 // S9、S16、S29、S30、N5、N16 随旧数据源页形态删除
 // （批量粘贴、展开抽屉、筛选框、面板会话这些被测形态不复存在）。
+// S34-S39 覆盖电子报分组：写 epaper_sources 分区、允许全部关闭、失败回滚/409 载入、
+// 与 crawl_sources 分区隔离、分区缺失时不渲染。
 // E1-E26 覆盖接入点管理（endpoints.js）、每步骤接入点选择（models_tab.js）、
 // Key 配置提示与保存拦截、白名单外接入点展示。
 'use strict';
@@ -38,6 +40,16 @@ function sourceListIndex(page, key) {
 
 function sourceRow(page, key) {
     return page.document.querySelector(`li[data-source="${key}"]`);
+}
+
+// 电子报分组的行：独立列表 #sources-epaper-list，行结构与每小时来源一致
+function epaperRow(page, key) {
+    return page.document.querySelector(`#sources-epaper-list li[data-source="${key}"]`);
+}
+
+function epaperOrder(page) {
+    return [...page.document.querySelectorAll('#sources-epaper-list li[data-source]')]
+        .map((item) => item.dataset.source);
 }
 
 // 指定来源的账号面板：面板随来源行始终平铺渲染，按 data-accounts-for 作用域查询
@@ -832,8 +844,11 @@ test('S23：账号启停请求进行中开关处于 disabled，放行后恢复�
     }
 });
 
-test('S24：来源行内顺序为开关 → 名称 → 账号数徽标 → 刷新按钮；停用行带弱化样式类；每日任务行名称直接对齐标题', async () => {
-    const page = await bootPage();
+test('S24：来源行内顺序为开关 → 名称 → 账号数徽标 → 刷新按钮；停用行带弱化样式类；电子报分组行同构且带开关', async () => {
+    // 每小时来源默认 toutiao 启用；电子报只启用北京日报，用来对照停用行
+    const sections = defaultSections();
+    sections.epaper_sources = { ...sections.epaper_sources, value: ['bjrb'] };
+    const page = await bootPage({ sections });
     try {
         // 启用行：开关打头，名称、账号数徽标依次在后；徽标是纯展示 span。
         // 「刷新账号名称」常驻 DOM，但只在账号面板展开时可见
@@ -854,25 +869,39 @@ test('S24：来源行内顺序为开关 → 名称 → 账号数徽标 → 刷�
         assert.ok(tencentRow.children[0].matches('input[type="checkbox"].source-enabled-toggle'));
         assert.ok(tencentRow.children[1].classList.contains('settings-source-name'));
 
-        // 每日任务来源只出现在只读分组：不在每小时来源列表、也没有启用开关
-        const daily = page.document.getElementById('sources-daily-list');
-        assert.match(daily.textContent, /北京日报/);
-        assert.match(daily.textContent, /劳动午报/);
-        assert.match(daily.textContent, /每日单独任务，由服务器计划任务调度/);
-        assert.equal(daily.querySelector('.source-enabled-toggle'), null);
+        // 电子报来源只出现在电子报分组：不在每小时来源列表，分组标题、说明与最近修改行齐全
+        const epaperCard = page.document.getElementById('sources-epaper-list')
+            .closest('.settings-card');
+        assert.match(epaperCard.querySelector('.settings-card-title').textContent, /电子报/);
+        assert.match(
+            epaperCard.querySelector('.settings-card-desc').textContent,
+            /每天 08:00、12:00、16:00、20:00、00:00 统一抓取一轮，抓到的文章由主流水线随后处理；开关即启停，下一轮按新配置执行。/,
+        );
+        assert.ok(epaperCard.querySelector('.settings-updated'));
+        assert.match(epaperCard.querySelector('.settings-updated').textContent, /最后修改/);
+        assert.deepEqual(epaperOrder(page), ['bjrb', 'ldwb', 'zgjsb']);
         assert.equal(
             page.document.querySelector('#sources-list li[data-source="bjrb"]'),
             null,
         );
 
-        // 每日任务只读行：无开关，名称直接从列表左缘开始，与「每日任务」标题对齐
-        const dailyRow = page.document
-            .querySelector('#sources-daily-list li[data-source="bjrb"]');
-        assert.ok(dailyRow.children[0].classList.contains('settings-source-name'));
-        assert.equal(
-            dailyRow.querySelector('.settings-source-toggle-placeholder'),
-            null,
-        );
+        // 电子报行与每小时来源行同构：开关打头、名称第二，默认启用的行不加弱化类；
+        // 但不渲染账号徽标、「无需账号」占位、栏目外链与展开按钮
+        const bjrbRow = epaperRow(page, 'bjrb');
+        assert.ok(bjrbRow.children[0].matches('input[type="checkbox"].source-enabled-toggle'));
+        assert.equal(bjrbRow.children[0].checked, true);
+        assert.ok(bjrbRow.children[1].classList.contains('settings-source-name'));
+        assert.equal(bjrbRow.querySelector('.source-account-badge'), null);
+        assert.equal(bjrbRow.querySelector('.source-no-accounts'), null);
+        assert.equal(bjrbRow.querySelector('.source-list-page-link'), null);
+        assert.equal(bjrbRow.querySelector('.source-accounts-toggle'), null);
+        assert.ok(!bjrbRow.classList.contains('is-disabled'));
+
+        // 停用的电子报行只切换弱化类，行结构与行位置不变
+        const ldwbRow = epaperRow(page, 'ldwb');
+        assert.ok(ldwbRow.classList.contains('is-disabled'));
+        assert.equal(ldwbRow.children[0].checked, false);
+        assert.equal(ldwbRow.children[0].tagName, 'INPUT');
 
         // 「刷新账号名称」只在账号面板展开时可见，折叠的来源列表保持干净
         assert.equal(toutiaoRow.children[3].hidden, true);
@@ -1190,6 +1219,212 @@ test('S33：排序模式已删除——页面上不存在「调整抓取顺序�
         assert.ok(!page.panel('sources').textContent.includes('各来源按顺序抓取'));
         await assertNever(() => page.document.getElementById('btn-sources-sort-mode'), 200);
         await assertNever(() => page.document.getElementById('sources-sort-list'), 200);
+    } finally {
+        page.close();
+    }
+});
+
+// ---------- 电子报分组场景（S34-S39） ----------
+
+test('S34：电子报开关写 epaper_sources 分区，请求体按目录序构造并带该分区自己的版本号', async () => {
+    const page = await bootPage();
+    try {
+        page.clickTab('sources');
+        // 电子报按 payload 目录序渲染三份报，默认全部启用
+        assert.deepEqual(epaperOrder(page), ['bjrb', 'ldwb', 'zgjsb']);
+        const row = epaperRow(page, 'bjrb');
+        assert.equal(row.querySelector('.source-enabled-toggle').checked, true);
+        assert.ok(!row.classList.contains('is-disabled'));
+
+        // 停用北京日报：['bjrb','ldwb','zgjsb'] → ['ldwb','zgjsb']
+        row.querySelector('.source-enabled-toggle').click();
+        await waitFor(() => page.server.requests('save-epaper-sources').length === 1);
+        const request = page.server.requests('save-epaper-sources')[0];
+        assert.equal(request.path, '/api/admin/settings/epaper_sources');
+        assert.deepEqual(request.body.value, ['ldwb', 'zgjsb']);
+        // 版本号必须取 epaper_sources 自己的（夹具里是 5，不是 crawl_sources 的 4）
+        assert.equal(request.body.expected_version, 5);
+        await waitFor(() => request.done);
+
+        // 成功后分区值更新，面板重渲染：行位置与目录序不变，停用行弱化、开关回显关闭
+        await waitFor(() => epaperRow(page, 'bjrb') !== row);
+        assert.deepEqual(epaperOrder(page), ['bjrb', 'ldwb', 'zgjsb']);
+        assert.equal(
+            epaperRow(page, 'bjrb').querySelector('.source-enabled-toggle').checked,
+            false,
+        );
+        assert.ok(epaperRow(page, 'bjrb').classList.contains('is-disabled'));
+        assert.deepEqual(page.server.sections.epaper_sources.value, ['ldwb', 'zgjsb']);
+        assert.equal(page.server.sections.epaper_sources.version, 6);
+    } finally {
+        page.close();
+    }
+});
+
+test('S35：电子报允许全部关闭——逐份关掉后真的发出请求且 value 为空数组', async () => {
+    const page = await bootPage();
+    try {
+        const keys = ['bjrb', 'ldwb', 'zgjsb'];
+        const expectedValues = [['ldwb', 'zgjsb'], ['zgjsb'], []];
+        for (let index = 0; index < keys.length; index += 1) {
+            const row = epaperRow(page, keys[index]);
+            row.querySelector('.source-enabled-toggle').click();
+            await waitFor(
+                () => page.server.requests('save-epaper-sources').length === index + 1,
+            );
+            const request = page.server.requests('save-epaper-sources')[index];
+            assert.equal(request.path, '/api/admin/settings/epaper_sources');
+            assert.deepEqual(request.body.value, expectedValues[index]);
+            // 版本号随每次成功保存递增
+            assert.equal(request.body.expected_version, 5 + index);
+            await waitFor(() => request.done && epaperRow(page, keys[index]) !== row);
+            // 全部关掉不是错误：行内不出现任何拦截文案或失败提示
+            assert.equal(
+                epaperRow(page, keys[index]).querySelector('.source-row-error').textContent,
+                '',
+            );
+        }
+
+        // 空列表真的写进了分区，而不是前端拦截后留在本地
+        assert.deepEqual(page.server.sections.epaper_sources.value, []);
+        assert.equal(page.server.sections.epaper_sources.version, 8);
+        // 三份都关闭后仍渲染三行，顺序不变（行位置不随启停变化）
+        assert.deepEqual(epaperOrder(page), ['bjrb', 'ldwb', 'zgjsb']);
+        [...page.document.querySelectorAll('#sources-epaper-list .source-enabled-toggle')]
+            .forEach((toggle) => assert.equal(toggle.checked, false));
+        assert.deepEqual(unhandledRejections, []);
+    } finally {
+        page.close();
+    }
+});
+
+test('S36：电子报保存失败时开关回滚、行内显示错误，分区值与行顺序不变', async () => {
+    const page = await bootPage();
+    try {
+        page.server.saveBehavior.epaper_sources = {
+            status: 500,
+            payload: { detail: '电子报列表保存失败' },
+        };
+        const row = epaperRow(page, 'bjrb');
+        const toggle = row.querySelector('.source-enabled-toggle');
+        assert.equal(toggle.checked, true);
+
+        toggle.click();
+        assert.equal(toggle.checked, false);
+        await waitFor(() => page.server.requests('save-epaper-sources').length === 1
+            && page.server.requests('save-epaper-sources')[0].done);
+        // 失败不重渲染：开关回滚，行节点仍连接在文档里
+        await waitFor(() => toggle.checked === true);
+        assert.match(row.querySelector('.source-row-error').textContent, /停用失败/);
+        assert.match(row.querySelector('.source-row-error').textContent, /电子报列表保存失败/);
+        assert.equal(epaperRow(page, 'bjrb'), row);
+        assert.deepEqual(epaperOrder(page), ['bjrb', 'ldwb', 'zgjsb']);
+        assert.deepEqual(page.server.sections.epaper_sources.value, ['bjrb', 'ldwb', 'zgjsb']);
+        assert.equal(page.server.sections.epaper_sources.version, 5);
+    } finally {
+        page.close();
+    }
+});
+
+test('S37：电子报保存 409 时行内出现「载入最新配置」，载入后按服务端值重渲染', async () => {
+    const page = await bootPage();
+    try {
+        page.server.saveBehavior.epaper_sources = {
+            status: 409,
+            payload: { detail: '配置版本冲突：当前版本为 6' },
+        };
+        const row = epaperRow(page, 'ldwb');
+        row.querySelector('.source-enabled-toggle').click();
+        await waitFor(() => page.server.requests('save-epaper-sources').length === 1
+            && page.server.requests('save-epaper-sources')[0].done);
+        // 开关回滚，错误行内出现「载入最新配置」按钮
+        await waitFor(() => row.querySelector('.source-row-error .source-row-reload'));
+        const errorEl = row.querySelector('.source-row-error');
+        assert.match(errorEl.textContent, /保存冲突/);
+        assert.match(errorEl.textContent, /配置版本冲突：当前版本为 6/);
+        assert.equal(row.querySelector('.source-enabled-toggle').checked, true);
+
+        // 模拟另一处已把电子报改成只剩北京日报；载入后按服务端值重渲染
+        page.server.sections.epaper_sources = {
+            ...page.server.sections.epaper_sources,
+            value: ['bjrb'],
+            version: 7,
+        };
+        row.querySelector('.source-row-reload').click();
+        await waitFor(() => page.server.requests('get-settings').length === 1);
+        await waitFor(() => epaperRow(page, 'ldwb') !== row);
+        assert.equal(
+            epaperRow(page, 'bjrb').querySelector('.source-enabled-toggle').checked,
+            true,
+        );
+        assert.equal(
+            epaperRow(page, 'ldwb').querySelector('.source-enabled-toggle').checked,
+            false,
+        );
+        assert.equal(
+            epaperRow(page, 'zgjsb').querySelector('.source-enabled-toggle').checked,
+            false,
+        );
+        await waitFor(() => page.document.getElementById('toast').textContent
+            .includes('已载入最新配置'));
+    } finally {
+        page.close();
+    }
+});
+
+test('S38：切电子报开关不影响 crawl_sources 分区（不发每小时来源 PUT，版本与值不变）', async () => {
+    const page = await bootPage();
+    try {
+        const crawlBefore = {
+            value: [...page.server.sections.crawl_sources.value],
+            version: page.server.sections.crawl_sources.version,
+        };
+        epaperRow(page, 'zgjsb').querySelector('.source-enabled-toggle').click();
+        await waitFor(() => page.server.requests('save-epaper-sources').length === 1
+            && page.server.requests('save-epaper-sources')[0].done);
+        // 分区名接错会落到 /crawl_sources 上；这里判别性地确认没有该类请求
+        await assertNever(() => page.server.requests('save-sources').length > 0, 300);
+        assert.deepEqual(page.server.sections.crawl_sources.value, crawlBefore.value);
+        assert.equal(page.server.sections.crawl_sources.version, crawlBefore.version);
+        // 电子报分区按自己的版本推进
+        assert.equal(page.server.sections.epaper_sources.version, 6);
+
+        // 反向同理：切每小时来源只写 crawl_sources，电子报分区的值与版本不动
+        const epaperBefore = {
+            value: [...page.server.sections.epaper_sources.value],
+            version: page.server.sections.epaper_sources.version,
+        };
+        const tencentToggle = sourceRow(page, 'tencent')
+            .querySelector('.source-enabled-toggle');
+        tencentToggle.click();
+        await waitFor(() => page.server.requests('save-sources').length === 1
+            && page.server.requests('save-sources')[0].done);
+        await assertNever(() => page.server.requests('save-epaper-sources').length > 1, 300);
+        assert.deepEqual(page.server.sections.epaper_sources.value, epaperBefore.value);
+        assert.equal(page.server.sections.epaper_sources.version, epaperBefore.version);
+        assert.equal(page.server.sections.crawl_sources.version, crawlBefore.version + 1);
+    } finally {
+        page.close();
+    }
+});
+
+test('S39：epaper_sources 分区缺失时只渲染每小时来源，不渲染电子报卡片也不清空面板', async () => {
+    const sections = defaultSections();
+    delete sections.epaper_sources;
+    const page = await bootPage({ sections });
+    try {
+        assert.equal(page.document.getElementById('sources-epaper-list'), null);
+        assert.ok(!page.panel('sources').textContent.includes('电子报'));
+        // 每小时来源照常渲染：不能用 renderImportNotice 清空整块面板
+        assert.equal(page.panel('sources').querySelector('.settings-import-notice'), null);
+        assert.ok(page.document.getElementById('sources-list'));
+        assert.deepEqual(
+            sourceListOrder(page),
+            ['toutiao', 'tencent', 'chinanews', 'btime', 'beijinghao'],
+        );
+        // 电子报来源既不在每小时列表，也没有可渲染的分组
+        assert.equal(page.document.querySelector('#sources-list li[data-source="bjrb"]'), null);
+        assert.equal(page.document.querySelector('li[data-source="bjrb"]'), null);
     } finally {
         page.close();
     }

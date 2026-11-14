@@ -372,17 +372,6 @@
     list-style: none;
 }
 
-/* 每日任务分组继续用 block，行样式与来源行一致但只读 */
-.settings-source-list.settings-daily-list {
-    display: block;
-}
-
-/* 只读行没有开关，去掉左右内边距，让名称与卡片标题左缘严格对齐 */
-.settings-source-list.settings-daily-list .settings-source-item {
-    padding-right: 0;
-    padding-left: 0;
-}
-
 .settings-source-item {
     display: flex;
     align-items: center;
@@ -392,10 +381,6 @@
     box-sizing: border-box;
     padding: 11px 2px;
     border-bottom: 1px solid var(--border-subtle);
-}
-
-.settings-source-item.is-readonly {
-    color: var(--text-secondary);
 }
 
 .settings-source-name {
@@ -415,11 +400,6 @@
 
 .settings-source-empty {
     color: var(--text-muted);
-}
-
-.settings-daily-note {
-    color: var(--text-secondary);
-    font-size: 0.82rem;
 }
 
 .source-account-badge,

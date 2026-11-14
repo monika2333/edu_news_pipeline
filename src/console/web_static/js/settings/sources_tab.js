@@ -1,7 +1,7 @@
 // 系统设置页 - 数据源页签：顶部吸顶操作条（页面级管理模式开关 + 跨来源待删除提交条）、
 // 单列来源列表（开关即写库的即时启停，行位置不随启停变化）、
 // 点来源行右侧「展开」在原位展开该来源的账号面板（手风琴，同时只开一个），
-// 以及每日任务只读分组。
+// 以及电子报分组（同一套开关即启停，写独立的 epaper_sources 分区）。
 'use strict';
 
 function sourceRequiresAccounts(key) {
@@ -159,20 +159,39 @@ function buildSourcePanelToggle(source, { controls, label }) {
     return expandBtn;
 }
 
+// 来源启停分两组：每小时来源写 crawl_sources（且不允许清空），电子报写 epaper_sources
+// （允许全部关闭）。两组共用同一套「切换开关即写库」的实现，差异只有分区名、
+// 该组来源的过滤条件、是否允许清空与空列表拦截文案，不要复制第二套流程。
+const SOURCE_TOGGLE_GROUPS = {
+    hourly: {
+        section: 'crawl_sources',
+        isGroupSource: (item) => !item.epaper,
+        allowEmpty: false,
+        emptyError: '每小时来源不能为空，请至少保留一个来源。',
+    },
+    epaper: {
+        section: 'epaper_sources',
+        isGroupSource: (item) => !!item.epaper,
+        allowEmpty: true,
+        emptyError: '',
+    },
+};
+
 // 来源启停即时保存：切换开关即写库（按目录序构造的完整启用列表 + 当前版本号），不进草稿。
 // 失败时回滚开关视觉状态、行内显示错误、行位置与本地列表不动；成功后整表重渲染，
 // 行位置始终由目录序决定，不随启停变化。
-async function toggleSourceEnabled(key, target, toggle, errorEl) {
-    const section = settingsSection('crawl_sources');
+async function toggleSourceEnabled(key, target, toggle, errorEl, group) {
+    const config = group || SOURCE_TOGGLE_GROUPS.hourly;
+    const section = settingsSection(config.section);
     if (!section) {
         toggle.checked = !target;
         return;
     }
     const current = section.value;
-    // 停用最后一个启用来源在前端拦截，不发请求
-    if (!target && current.includes(key) && current.length <= 1) {
+    // 不允许清空的组（每小时来源）在前端拦截停用最后一个启用来源，不发请求
+    if (!config.allowEmpty && !target && current.includes(key) && current.length <= 1) {
         toggle.checked = true;
-        errorEl.textContent = '每小时来源不能为空，请至少保留一个来源。';
+        errorEl.textContent = config.emptyError;
         return;
     }
     // 请求体按目录序构造：与后端规范化结果、页面渲染顺序三者保持一致
@@ -183,18 +202,18 @@ async function toggleSourceEnabled(key, target, toggle, errorEl) {
         enabledKeys.delete(key);
     }
     const next = sourceCatalog()
-        .filter((item) => !item.daily_only && enabledKeys.has(item.key))
+        .filter((item) => config.isGroupSource(item) && enabledKeys.has(item.key))
         .map((item) => item.key);
     toggle.disabled = true;
     state.sourceToggleInflight += 1;
     syncSourceToggles();
     try {
-        const { response, payload } = await apiRequest('/api/admin/settings/crawl_sources', {
+        const { response, payload } = await apiRequest(`/api/admin/settings/${config.section}`, {
             method: 'PUT',
             body: { value: next, expected_version: section.version },
         });
         if (response.ok) {
-            applySectionItem('crawl_sources', payload.item);
+            applySectionItem(config.section, payload.item);
             showSettingsToast(target ? `已启用 ${sourceDisplayName(key)}` : `已停用 ${sourceDisplayName(key)}`);
             renderSourcesTab();
             return;
@@ -231,7 +250,7 @@ async function toggleSourceEnabled(key, target, toggle, errorEl) {
     }
 }
 
-function buildSourceRow(source, { enabled }) {
+function buildSourceRow(source, { enabled, epaper = false }) {
     const key = source.key;
     const item = createEl('li', 'settings-source-item', '', { dataset: { source: key } });
     // 停用行只做视觉弱化（名称降灰）：行高、内边距与控件位置不变，开关切换时行不位移
@@ -249,13 +268,22 @@ function buildSourceRow(source, { enabled }) {
     const errorEl = createEl('span', 'source-row-error');
     toggle.addEventListener('change', () => {
         errorEl.textContent = '';
-        toggleSourceEnabled(key, toggle.checked, toggle, errorEl);
+        toggleSourceEnabled(
+            key,
+            toggle.checked,
+            toggle,
+            errorEl,
+            epaper ? SOURCE_TOGGLE_GROUPS.epaper : SOURCE_TOGGLE_GROUPS.hourly,
+        );
     });
     item.appendChild(toggle);
 
     item.appendChild(createEl('span', 'settings-source-name', sourceDisplayName(key)));
 
-    if (sourceRequiresAccounts(key)) {
+    if (epaper) {
+        // 电子报只有开关与名称：没有抓取账号，也没有栏目列表，
+        // 不渲染账号徽标、「无需账号」占位或 list_pages 外链
+    } else if (sourceRequiresAccounts(key)) {
         item.classList.add('has-accounts');
         const badge = createEl('span', 'source-account-badge');
         applyAccountBadge(item, badge, key);
@@ -306,7 +334,7 @@ function buildSourceRow(source, { enabled }) {
 }
 
 function renderSourcesPanel(panel, section) {
-    // 单一来源列表：全部非每日来源按 payload 目录序渲染（后端返回的启用列表也是目录序，
+    // 单一来源列表：全部非电子报来源按 payload 目录序渲染（后端返回的启用列表也是目录序，
     // 前端不再排序），开关状态即启停状态，启停不改变行位置。
     // 需要账号的来源，其账号面板作为紧随的兄弟 <li> 始终渲染、按需展开
     const hourlyCard = buildSettingsCard(
@@ -317,7 +345,7 @@ function renderSourcesPanel(panel, section) {
 
     const list = createEl('ul', 'settings-source-list', '', { id: 'sources-list' });
     sourceCatalog()
-        .filter((item) => !item.daily_only)
+        .filter((item) => !item.epaper)
         .forEach((source) => {
             const row = buildSourceRow(source, {
                 enabled: section.value.includes(source.key),
@@ -334,31 +362,30 @@ function renderSourcesPanel(panel, section) {
     // 来源列表建立后再统一同步手风琴的展开态（hidden / aria-expanded / 刷新按钮）
     syncSourcePanels();
 
-    // 每日任务独立分组：只读行，由服务器计划任务调度，不在页面上启停
-    const dailySources = sourceCatalog().filter((item) => item.daily_only);
-    if (dailySources.length) {
-        const dailyCard = buildSettingsCard(
-            '每日任务',
-            '由服务器计划任务独立调度，不参与每小时抓取，也不在页面上启停。',
+    // 电子报独立分组：带启停开关，写独立的 epaper_sources 分区（允许全部关掉）。
+    // 分区缺失（迁移未执行）时不渲染该卡片；这里不能用 renderImportNotice，
+    // 那会清空整块面板、把每小时来源一起丢掉。
+    const epaperSection = settingsSection('epaper_sources');
+    if (epaperSection) {
+        const epaperCard = buildSettingsCard(
+            '电子报',
+            '每天 08:00、12:00、16:00、20:00、00:00 统一抓取一轮，抓到的文章由主流水线随后处理；'
+                + '开关即启停，下一轮按新配置执行。',
         );
-        const dailyList = createEl('ul', 'settings-source-list settings-daily-list', '', {
-            id: 'sources-daily-list',
+        epaperCard.appendChild(buildLastModifiedLine(epaperSection));
+        const epaperList = createEl('ul', 'settings-source-list', '', {
+            id: 'sources-epaper-list',
         });
-        dailySources.forEach((source) => {
-            const item = createEl('li', 'settings-source-item is-readonly', '', {
-                dataset: { source: source.key },
+        sourceCatalog()
+            .filter((item) => item.epaper)
+            .forEach((source) => {
+                epaperList.appendChild(buildSourceRow(source, {
+                    enabled: epaperSection.value.includes(source.key),
+                    epaper: true,
+                }));
             });
-            // 只读行没有开关，名称直接从列表左缘开始，与「每日任务」标题对齐
-            item.appendChild(createEl('span', 'settings-source-name', source.display_name));
-            item.appendChild(createEl(
-                'span',
-                'settings-daily-note',
-                '每日单独任务，由服务器计划任务调度',
-            ));
-            dailyList.appendChild(item);
-        });
-        dailyCard.appendChild(dailyList);
-        panel.appendChild(dailyCard);
+        epaperCard.appendChild(epaperList);
+        panel.appendChild(epaperCard);
     }
 }
 

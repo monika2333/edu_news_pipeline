@@ -8,6 +8,7 @@
 
 ## 未排期候选
 
+- **北京号·客户端栏目分类页的历史补抓**（未排期，待用户决定）：2026-11-14 接入的「教育」栏目（`static.bjd.com.cn/static/category/`）检索接口 `totalElements=692`，但每轮只抓最新 1 页（10 条），历史稿不会自动入库。要补就一次性跑 `crawl --sources beijinghao --pages N`（`existing_ids` 只过滤不截停翻页，可安全重跑）；补不补、补多久是内容决策，别自动跑。
 - **劳动午报 7 周空档是否补录**（未排期，待用户决定）：ldwb 抓取自 2026-09-21 21:45 后全灭，已修复（见 delivery-log 2026-11-12），但 2026-09-22 ~ 2026-11-11 的报纸没有入库。`scripts/tools/backfill_ldwb_issue.py --date YYYY-MM-DD` 现已可用（先过 WAF，`--dry-run` 实测 46 篇/期），按 46 篇/天粗算约 2000+ 篇、会被 hash-primary/score/summarize 正常流水线消费。要不要补、补多久是内容决策，别自动跑。
 - 外观下拉严格居中（未排期）：原生 select 的选中值默认在箭头左侧文本区居中，用户 2026-11-11 已否决 `text-align` / 自绘箭头补丁；若要严格居中需换自定义下拉。
 - article 级 4xx 死信可见性（未排期）：`beijing_gate_fail_count` 达到上限后稿件保持 `pending_beijing_gate` 但不再被 `fetch_beijing_gate_candidates` 取到，目前只有 `GATE EXHAUSTED` 日志，控制台/巡检没有入口；是否加状态或运维查询待定。

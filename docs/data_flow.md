@@ -98,7 +98,7 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 
 `raw_articles` 的抓取分两步：先写列表信息（`upsert_raw_feed_rows`），再补正文（`update_raw_article_details`，同时写 `detail_fetched_at`）。
 
-> **`detail_fetched_at` 是"正文是否已获取"的判据。** `crawl` 命令靠它找出缺正文的行。任何新的入库路径都必须遵守这个两阶段约定——如果一次性写入正文却不写 `detail_fetched_at`，这条数据会被 `crawl` 的详情补抓逻辑反复扫描；反之如果写了 `detail_fetched_at` 但正文为空，这条数据会被永久跳过。
+> **`detail_fetched_at` 标记「详情是否成功抓过」。** `crawl` 的详情补抓只挑「正文为空且 `detail_fetched_at` 为空」的行：抓取失败（5xx、超时、解析报错）不会写这一列，下一轮自动重试；已经抓过但正文确实为空的稿（例如晚报的纯图片版面、只有视频的页面）写了这一列，不再反复抓。任何新的入库路径都必须遵守这个两阶段约定——写正文时同时写 `detail_fetched_at`，否则该行会一直停在「没抓过」的状态，容易被当成待补抓。
 
 ### 阶段 2：去重与选主（`hash-primary`）
 
@@ -501,7 +501,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 | `manual_reviews(owner_user_id, article_id)` 唯一 | 每位管理员对每篇文章只有一份独立决定 | 同一工作区重复行或管理员之间互相覆盖 |
 | 入池为每位在职管理员各写一行 | 管理员候选池采用预写且彼此隔离 | 新闻缺失、重复或新决定被覆盖 |
 | 各来源 `article_id` 必须稳定 | 全链路的关联键 | 同一篇文章重复入库，去重失效 |
-| `detail_fetched_at` 与正文成对写入 | 缺正文修复的判据 | 数据被反复扫描或永久跳过 |
+| `detail_fetched_at` 与正文成对写入 | 详情补抓只挑「正文为空且 `detail_fetched_at` 为空」的行 | 不写标记：该行会被当成没抓过反复补抓；已抓过（含无文字的纯图片版）却没写标记，也会被反复重抓 |
 | `manual_clusters` 是缓存 | 由计划任务整表重建 | ——（可安全清空） |
 | 管理员聚类取数与人工决定无关 | 共享缓存只覆盖最新 5000 条可导出新闻，展示时再按查看者 pending 过滤 | 一位管理员的进度改变其他人的聚类结果 |
 | 聚类不区分报别 | 待筛选池本来就不分报别 | 加回报别维度会导致 `cluster_id` 唯一约束冲突 |

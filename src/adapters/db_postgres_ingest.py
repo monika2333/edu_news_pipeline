@@ -163,6 +163,15 @@ def update_raw_article_details(cur: psycopg.Cursor, rows: Sequence[Mapping[str, 
 
 
 def get_raw_articles_missing_content(cur: psycopg.Cursor, article_ids: Sequence[str]) -> Set[str]:
+    """需要补抓正文的 article_id：正文为空、且详情从未成功抓过的行。
+
+    ``detail_fetched_at`` 标记「详情已经成功抓过」：抓取失败（5xx、超时、
+    解析报错）不会写这一列，下一轮仍会被选中重试；已经抓过但正文确实为空的
+    稿（例如晚报的纯图片版面、只有视频的页面）写了这一列，不再反复抓。
+    只看正文是否为空会让「抓过、没有文字」的稿每轮重抓一次，也让
+    ``detail_fetched_at`` 失去判据作用（见 docs/data_flow.md 的契约清单）。
+    """
+
     unique_ids = list({str(item) for item in article_ids if item})
     if not unique_ids:
         return set()
@@ -170,6 +179,7 @@ def get_raw_articles_missing_content(cur: psycopg.Cursor, article_ids: Sequence[
         "SELECT article_id FROM raw_articles"
         " WHERE article_id = ANY(%s)"
         "   AND (content_markdown IS NULL OR LENGTH(TRIM(content_markdown)) = 0)"
+        "   AND detail_fetched_at IS NULL"
     )
     cur.execute(query, (unique_ids,))
     rows = cur.fetchall()

@@ -463,7 +463,6 @@ def _duty_editor_user() -> ConsoleUser:
     [
         ("/api/manual_filter/decide", {}),
         ("/api/manual_filter/edit", {}),
-        ("/api/manual_filter/archive", {}),
         ("/api/manual_filter/order", {}),
         (
             "/api/manual_filter/bulk-discard",
@@ -485,6 +484,15 @@ def test_manual_filter_writes_reject_duty_editor(
     response = TestClient(app).post(path, json=payload)
 
     assert response.status_code == 403
+
+
+def test_archive_endpoint_is_gone() -> None:
+    app = create_app()
+    app.dependency_overrides[require_console_user] = _anonymous_console_user
+
+    response = TestClient(app).post("/api/manual_filter/archive", json={})
+
+    assert response.status_code in (404, 405)
 
 
 def test_clear_review_buckets_rejects_duty_editor() -> None:

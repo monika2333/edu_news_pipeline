@@ -53,12 +53,6 @@ class SaveEditsRequest(BaseModel):
     report_type: str = "zongbao"
 
 
-class ArchiveRequest(BaseModel):
-    article_ids: List[str] = Field(default_factory=list)
-    versions: Dict[str, int] = Field(default_factory=dict)
-    report_type: str = "zongbao"
-
-
 ReviewGroupKey = Literal[
     "internal_positive",
     "internal_negative",
@@ -382,24 +376,6 @@ def status_counts_api(
         owner_user_id=str(user.user_id),
         report_type=report_type,
     )
-
-
-@router.post("/archive")
-def archive_api(
-    req: ArchiveRequest,
-    user: ConsoleUser = Depends(require_admin_workspace_user),
-    request_id: Optional[str] = Header(default=None, alias="X-Request-ID"),
-) -> Dict[str, Any]:
-    try:
-        return manual_filter_admin_service.archive_items(
-            req.article_ids,
-            versions=req.versions,
-            actor=user,
-            report_type=req.report_type,
-            request_id=request_id,
-        )
-    except (ValueError, RuntimeError) as exc:
-        _raise_manual_write_http_error(exc)
 
 
 @router.post("/order")

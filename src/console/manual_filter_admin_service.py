@@ -169,44 +169,6 @@ def save_edits(
     }
 
 
-def archive_items(
-    article_ids: Sequence[str],
-    *,
-    versions: Mapping[str, int],
-    actor: ConsoleUser,
-    report_type: str = DEFAULT_REPORT_TYPE,
-    request_id: Optional[str] = None,
-) -> dict[str, Any]:
-    owner_user_id = _workspace_user_id(actor)
-    target_ids = _normalize_ids(article_ids)
-    del report_type
-    timestamp = datetime.now(timezone.utc)
-    updates = [
-        {
-            "article_id": article_id,
-            "status": "exported",
-            "rank": None,
-            "report_type": None,
-            "decided_at": timestamp,
-        }
-        for article_id in target_ids
-    ]
-    after = get_adapter().update_manual_review_statuses_as_user(
-        updates,
-        actor_username=actor.username,
-        actor_user_id=owner_user_id,
-        expected_versions=versions,
-        require_versions=_require_client_versions(actor),
-        action="manual_review.archive",
-        report_type=None,
-        request_id=request_id,
-    )
-    return {
-        "exported": len(after),
-        "versions": _version_map(after),
-    }
-
-
 def update_ranks(
     *,
     selected_order: Sequence[str],
@@ -590,7 +552,6 @@ def clear_all_review_buckets(
 
 __all__ = [
     "ManualReviewConflictError",
-    "archive_items",
     "bulk_decide",
     "bulk_discard_candidates",
     "bulk_restore_candidates",

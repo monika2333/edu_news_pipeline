@@ -103,14 +103,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // New Export/Archive Handlers
+    // Review Toolbar Handlers
     const btnPreview = document.getElementById('btn-preview-copy');
     if (btnPreview) {
         btnPreview.addEventListener('click', handlePreviewCopy);
-    }
-    const btnArchive = document.getElementById('btn-archive');
-    if (btnArchive) {
-        btnArchive.addEventListener('click', handleArchive);
     }
     const btnClearReviewBuckets = document.getElementById('btn-clear-review-buckets');
     if (btnClearReviewBuckets) {

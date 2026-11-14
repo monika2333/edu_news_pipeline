@@ -297,7 +297,7 @@ T 非空时才调用「提示词优化」LLM 步骤。模型只返回 1–3 处 
 
 - 每位管理员对每篇文章各有一行，归属由 `owner_user_id` 标识；唯一约束为 `owner_user_id + article_id`
 - 外部重要性过滤通过时，为当时所有在职管理员（`role = 'admin' AND is_active AND deleted_at IS NULL`）各预写一行；新管理员只接收账号创建后的新闻，不回填历史
-- 状态：`pending` / `selected` / `backup` / `discarded` / `exported`。`exported` 由控制台「归档」操作写入（`POST /api/manual_filter/archive` → `manual_filter_admin_service.archive_items`），表示管理员已把该条定稿报送，是人工动作；这个名字是早期自动导出脚本的历史残留，与任何自动导出行为无关，不要按字面意思清理或改写它
+- 状态：`pending` / `selected` / `backup` / `discarded` / `exported`。`exported` 是历史状态：原由控制台「归档」写入（旧审计事件 `manual_review.archive`），该操作已于 2026-11 移除，此后不再有新写入；已有记录保留只读，状态值不改名、不迁移。这个名字是早期自动导出脚本的历史残留，与任何自动导出行为无关，不要按字面意思清理或改写它
 - `report_type` 只有 `zongbao` / `wanbao`，且**只在采纳时才有意义**——`pending` 状态下这个值不代表任何东西
 - `version` 用于乐观锁，防止同一管理员的并发请求覆盖自己的新决定
 - 人工摘要/来源（`summary` / `manual_llm_source`）只在用户实际编辑时写入：前端以「最近一次被服务端确认的值」为基准做改动判定，决定操作不再顺带把界面显示值整份写成人工值；历史数据中已有的此类副本不做清理
@@ -350,7 +350,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 1. 管理员在 `/submission-archive` 粘贴一份已经报出去的稿件，或白名单用户将格式完整的稿件私聊发送给飞书机器人 → `submitted_reports`
 2. 系统解析拆分成条目 → `submitted_report_items`
-3. 后台子进程做**自动回链**：把每个条目匹配回系统里的 `news_summaries`（标题相似度 + 正文相似度）。正文候选取值优先级为 `manual_reviews.summary`（多条时 `status = 'exported'` 的已归档记录优先，再按 `decided_at`、`updated_at` 取最新）→ `news_summaries.llm_summary` → `''`
+3. 后台子进程做**自动回链**：把每个条目匹配回系统里的 `news_summaries`（标题相似度 + 正文相似度）。正文候选取值优先级为 `manual_reviews.summary`（多条时 `status = 'exported'` 的历史归档记录优先——该状态只来自历史记录，2026-11 起不再新写入，见上文 `manual_reviews` 状态说明——再按 `decided_at`、`updated_at` 取最新）→ `news_summaries.llm_summary` → `''`
 4. 编辑可以确认自动候选，也可以围绕报告 `compiled_date` 检索 `news_summaries.title` / `llm_summary`，人工绑定或解绑条目
 5. 自动与人工结果都写回 `submitted_report_items`；人工绑定只改 `article_id`、`link_status`、`link_decided_by`、`link_matched_at`，解绑将状态恢复为 `unmatched`
 6. 对反馈报告，在回链完成后把每条反馈与其 `compiled_date`（取材日）向前 7 天至取材日当天（闭区间）的综报/晚报条目逐级比对，结果写入 `submission_item_duplicate_matches`

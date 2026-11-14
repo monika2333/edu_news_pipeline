@@ -812,7 +812,7 @@ body.duplicate-review-open .search-drawer-toggle {
             "search search"
             "bulk bulk"
             "duplicate sort"
-            "preview archive";
+            "preview preview";
         gap: 10px;
     }
 
@@ -836,10 +836,6 @@ body.duplicate-review-open .search-drawer-toggle {
         grid-area: preview;
     }
 
-    .review-toolbar #btn-archive {
-        grid-area: archive;
-    }
-
     .review-toolbar #btn-finalize-review {
         grid-column: 1 / -1;
     }
@@ -853,7 +849,7 @@ body.duplicate-review-open .search-drawer-toggle {
         z-index: 100;
         grid-template-areas:
             "sort reorder"
-            "preview archive";
+            "preview preview";
     }
 
     #review-tab.review-sort-mode #btn-toggle-sort {

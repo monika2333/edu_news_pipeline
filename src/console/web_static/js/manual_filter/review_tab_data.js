@@ -438,40 +438,6 @@ function applyReviewEditsToState(articleId, summary, llm_source) {
     });
 }
 
-async function handleArchive() {
-    if (!confirm('确定要归档当前列表吗？归档后文章将标记为已导出并从列表中移除。')) {
-        return;
-    }
-
-    const view = state.reviewView === 'backup' ? 'backup' : 'selected';
-    const items = state.reviewData[view] || [];
-    const articleIds = items.map(item => item.article_id).filter(Boolean);
-    if (!articleIds.length) {
-        showToast('当前列表为空', 'error');
-        return;
-    }
-    const payload = {
-        article_ids: articleIds,
-        versions: collectManualReviewVersions(articleIds)
-    };
-
-    try {
-        const res = await workspaceFetch(`${API_BASE}/archive`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const result = await requireManualMutationSuccess(res, '归档失败');
-
-        const count = result.exported || 0;
-        showToast(`归档成功，已标记 ${count} 条文章`);
-        await loadReviewData();
-        loadStats();
-    } catch (e) {
-        showToast(e.message || '归档失败', 'error');
-    }
-}
-
 // --- Clear Review Buckets (admin review) ---
 // 一键清空是服务端集合操作：后端按 scope 清空四个桶，前端不传 article_ids / versions。
 // 页面一次只加载当前桶，拿不到全量条目，因此这里只发起调用并展示服务端计数。

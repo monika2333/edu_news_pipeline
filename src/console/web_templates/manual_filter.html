@@ -122,7 +122,7 @@
         </div>
         {% else %}
         {# 汇总审阅（is_admin_review）：无 tab 切换，操作区放跨桶的一键清空
-           与按收录日期的清理旧新闻，与底部工具条上的排序/预览/归档保持物理距离。 #}
+           与按收录日期的清理旧新闻，与底部工具条上的排序/预览保持物理距离。 #}
         <div class="workspace-tabs-row">
             <div class="workspace-tab-actions">
                 <button class="btn btn-secondary btn-clear-review-buckets" id="btn-clear-review-buckets"
@@ -312,10 +312,6 @@
                         {% if is_duty_workspace %}
                         <button class="btn btn-primary duty-finalization-action" id="btn-finalize-review">
                             定稿并清空列表
-                        </button>
-                        {% else %}
-                        <button class="btn btn-primary" id="btn-archive">
-                            归档
                         </button>
                         {% endif %}
                     </div>

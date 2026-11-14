@@ -268,22 +268,6 @@ def test_save_edits_skips_payload_without_recognized_fields(monkeypatch) -> None
     }
 
 
-def test_archive_preserves_existing_report_type(monkeypatch) -> None:
-    adapter = FakeManualAdminAdapter()
-    monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)
-
-    manual_filter_admin_service.archive_items(
-        ["article-1"],
-        versions={"article-1": 4},
-        actor=_session_admin(),
-        report_type="wanbao",
-    )
-
-    assert adapter.status_update["updates"][0]["status"] == "exported"
-    assert adapter.status_update["updates"][0]["report_type"] is None
-    assert adapter.status_update["report_type"] is None
-
-
 def test_update_ranks_persists_cross_group_category_change(monkeypatch) -> None:
     adapter = FakeManualAdminAdapter()
     monkeypatch.setattr(manual_filter_admin_service, "get_adapter", lambda: adapter)

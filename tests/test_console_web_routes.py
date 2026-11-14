@@ -648,7 +648,7 @@ def test_admin_review_is_an_independent_workspace() -> None:
     assert 'id="filter-tab"' not in html
     assert 'id="discard-tab"' not in html
     assert 'id="btn-check-duplicates"' in html
-    assert 'id="btn-archive"' in html
+    assert 'id="btn-archive"' not in html
     assert 'class="stats"' not in html
     assert 'id="btn-refresh"' not in html
     assert "刷新会重新聚类" not in html

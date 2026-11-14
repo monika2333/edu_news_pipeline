@@ -4,6 +4,7 @@
 
 | 日期 | 功能 | 合入 | archive |
 |---|---|---|---|
+| 2026-11-14 | 移除「每周自动清空」系统级路径：删除启动脚本、CLI 子命令、console service 函数、adapter 方法与跨管理员 SQL 函数及对应测试；保留汇总审阅「一键清空」完整链路与共用审计动作名 `manual_review.clear_buckets`，历史系统清空数据只读；M1–M4 全 KILLED，worktree 与合并后 main 全量均 2019 passed（含 jsdom） | `9082331` | [2026-11-14-移除每周自动清空.md](archive/2026-11-14-移除每周自动清空.md) |
 | 2026-11-14 | 移除汇总审阅页「归档」操作：删除 `#btn-archive` 按钮/前端逻辑/`POST /api/manual_filter/archive` 路由/`archive_items` 服务函数；历史 `exported` 记录只读保留、不迁移，回链正文优先/状态计数/值班结果页「已归档」展示与未处理排除全部保持原样；移动端工具条两处模板改 `"preview preview"`（预览独占整行）；M1–M5 全 KILLED，合并 main 后全量 pytest 2021 passed（含 jsdom） | `ff64b9e` | [2026-11-14-移除汇总审阅归档.md](archive/2026-11-14-移除汇总审阅归档.md) |
 | 2026-11-14 | 提示词页签顺序改为京内优先（京内正面→京内负面→京外正面→京外负面→京内二次判定）：同步调整 `PROMPT_KEYS`/`PROMPT_DEFINITIONS`（`beijing_gate` 仍固定最后），payload 标签顺序补显式断言、自动优化状态用例改按 key 取条目；worktree 与合并后 main 全量均 2022 passed | `832e923` | 拍板记入 `decisions.md` |
 | 2026-11-14 | 北京晚报（`bjwb`/`beijingwanbao`）电子报来源接入：与北京日报同属 bjrbdzb 数字报平台，`http_bjwb` 复用 bjrb 解析器（bjrb 侧加 `source_key`/`source_name`/`allow_empty_content` 向后兼容参数）；跟随 `paperindex.htm` 抓「站点当前最新一期」（晚报当天版下午才上线），`BJWB_DATE` 只作历史补抓；纯图片版面（广告/电视预告/答案页）正文留空、不算失败；目录 `epaper=True`、**默认不启用**（无迁移、无新脚本/计划任务，设置页开关打开即生效）；实测今天这一期 46 篇入库、15 篇过关键词闸门，重跑 1.82s 幂等；顺带修掉注册表测试真实打 bjrb 站点的测试卫生问题。同批修正详情补抓判据（`get_raw_articles_missing_content` 加 `AND detail_fetched_at IS NULL`，纯图片版不再每轮重抓，配真实库测试） | `896024c`、`d0e9cd7` | [2026-11-14-北京晚报接入.md](archive/2026-11-14-北京晚报接入.md) |

@@ -192,8 +192,15 @@ def test_get_prompts_payload_serializes_all_prompts() -> None:
     payload = prompt_service.get_prompts_payload(_adapter())
 
     assert [item["key"] for item in payload["items"]] == list(PROMPT_KEYS)
+    # 控制台「提示词」页签按 payload 顺序展示：先京内、后京外，京内二次判定固定在最后。
+    assert [item["label"] for item in payload["items"]] == [
+        "京内正面重要性",
+        "京内负面重要性",
+        "京外正面重要性",
+        "京外负面重要性",
+        "京内二次判定",
+    ]
     first = payload["items"][0]
-    assert first["label"] == "京外正面重要性"
     assert first["source"] == "database"
     assert first["version"] == "v2"
     assert first["revision_id"] == 12
@@ -350,7 +357,8 @@ def test_list_revisions_returns_metadata_and_has_more(monkeypatch: pytest.Monkey
 def test_prompts_payload_carries_latest_auto_optimization_status() -> None:
     payload = prompt_service.get_prompts_payload(_adapter())
 
-    status = payload["items"][0]["optimization_status"]
+    items = {item["key"]: item for item in payload["items"]}
+    status = items["external_positive"]["optimization_status"]
     assert status["outcome"] == "revision_created"
     assert status["outcome_label"] == "已生成新版本"
     assert status["new_version"] == "v2"

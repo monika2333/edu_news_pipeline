@@ -7,11 +7,13 @@ from typing import Optional
 # 提示词 key 是对外契约：文章 external_importance_raw.prompt_version 与
 # score_feedbacks / 聚类反馈统计都按 key + version 绑定评分上下文，改名会让
 # 历史反馈失去关联。新增 key 时同时补 PromptDefinition 与调用方。
+# 元组顺序 = 控制台「提示词」页签的展示顺序，必须与下方 PROMPT_DEFINITIONS
+# 一致；京内二次判定（beijing_gate）固定放最后，SCORING_PROMPT_KEYS 取前四个。
 PROMPT_KEYS = (
-    "external_positive",
-    "external_negative",
     "internal_positive",
     "internal_negative",
+    "external_positive",
+    "external_negative",
     "beijing_gate",
 )
 SCORING_PROMPT_KEYS = frozenset(PROMPT_KEYS[:4])
@@ -39,24 +41,6 @@ class PromptDefinition:
 
 PROMPT_DEFINITIONS = (
     PromptDefinition(
-        key="external_positive",
-        label="京外正面重要性",
-        description="评估京外正面新闻对北京教育系统的参考价值，输出 0-100 分。",
-        step="external_filter",
-        kind=PROMPT_KIND_SCORE,
-        filename="external_positive_importance_prompt.md",
-        versioned_in_file=True,
-    ),
-    PromptDefinition(
-        key="external_negative",
-        label="京外负面重要性",
-        description="评估京外负面新闻对北京教育系统的风险预警与治理参考价值，输出 0-100 分。",
-        step="external_filter",
-        kind=PROMPT_KIND_SCORE,
-        filename="external_negative_importance_prompt.md",
-        versioned_in_file=True,
-    ),
-    PromptDefinition(
         key="internal_positive",
         label="京内正面重要性",
         description="评估京内正面新闻对北京市教育决策与管理的参考价值，输出 0-100 分。",
@@ -72,6 +56,24 @@ PROMPT_DEFINITIONS = (
         step="external_filter",
         kind=PROMPT_KIND_SCORE,
         filename="internal_negative_importance_prompt.md",
+        versioned_in_file=True,
+    ),
+    PromptDefinition(
+        key="external_positive",
+        label="京外正面重要性",
+        description="评估京外正面新闻对北京教育系统的参考价值，输出 0-100 分。",
+        step="external_filter",
+        kind=PROMPT_KIND_SCORE,
+        filename="external_positive_importance_prompt.md",
+        versioned_in_file=True,
+    ),
+    PromptDefinition(
+        key="external_negative",
+        label="京外负面重要性",
+        description="评估京外负面新闻对北京教育系统的风险预警与治理参考价值，输出 0-100 分。",
+        step="external_filter",
+        kind=PROMPT_KIND_SCORE,
+        filename="external_negative_importance_prompt.md",
         versioned_in_file=True,
     ),
     PromptDefinition(

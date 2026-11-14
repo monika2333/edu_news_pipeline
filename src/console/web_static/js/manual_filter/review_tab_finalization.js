@@ -1,4 +1,4 @@
-// Duty-editor finalization batches. This is independent from administrator archive.
+// Duty-editor finalization batches (「定稿并清空列表」), duty workspace only.
 
 function finalizationReportLabel(reportType = state.reviewReportType) {
     return reportType === 'wanbao' ? '晚报' : '综报';

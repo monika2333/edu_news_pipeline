@@ -620,19 +620,6 @@ def test_clear_review_buckets_returns_counts_and_authenticated_actor(
         "clear_review_buckets",
         clear_review_buckets,
     )
-    all_called = False
-
-    def clear_all_review_buckets(**kwargs: Any) -> dict[str, Any]:
-        del kwargs
-        nonlocal all_called
-        all_called = True
-        return expected
-
-    monkeypatch.setattr(
-        manual_filter_admin_service,
-        "clear_all_review_buckets",
-        clear_all_review_buckets,
-    )
     app = create_app()
     app.dependency_overrides[require_console_user] = lambda: ConsoleUser(
         method="test",
@@ -649,7 +636,6 @@ def test_clear_review_buckets_returns_counts_and_authenticated_actor(
 
     assert response.status_code == 200
     assert response.json() == expected
-    assert all_called is False
     assert captured == {
         "owner_user_id": "admin-1",
         "actor_username": "admin-user",

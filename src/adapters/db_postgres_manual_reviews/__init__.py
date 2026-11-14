@@ -52,7 +52,6 @@ from src.adapters.db_postgres_manual_reviews._queries import (
 )
 from src.adapters.db_postgres_manual_reviews._versions import (
     allocate_manual_review_decision_ranks,
-    clear_all_review_buckets,
     fetch_manual_review_rows,
     update_manual_review_order_as_user,
     update_manual_review_statuses_with_versions,
@@ -350,7 +349,6 @@ __all__ = [
     "ManualReviewsNamespace",
     "ManualReviewConflictError",
     "allocate_manual_review_decision_ranks",
-    "clear_all_review_buckets",
     "count_review_bucket_before_date",
     "delete_manual_clusters",
     "enqueue_manual_review",

@@ -527,29 +527,6 @@ def clear_review_buckets(
     return {"total": len(after), "buckets": buckets}
 
 
-def clear_all_review_buckets(
-    *,
-    actor_username: str,
-    trigger: str,
-    request_id: Optional[str] = None,
-) -> dict[str, Any]:
-    after = get_adapter().clear_all_review_buckets_as_system(
-        actor_username=actor_username,
-        trigger=trigger,
-        request_id=request_id,
-    )
-    buckets = {
-        "zongbao": {"selected": 0, "backup": 0},
-        "wanbao": {"selected": 0, "backup": 0},
-    }
-    for row in after:
-        report_type = _normalize_report_type(row.get("report_type"))
-        previous_status = str(row.get("previous_status") or "")
-        if previous_status in {"selected", "backup"}:
-            buckets[report_type][previous_status] += 1
-    return {"total": len(after), "buckets": buckets}
-
-
 __all__ = [
     "ManualReviewConflictError",
     "bulk_decide",
@@ -558,7 +535,6 @@ __all__ = [
     "cleanup_candidates",
     "cleanup_review_buckets",
     "clear_review_buckets",
-    "clear_all_review_buckets",
     "save_edits",
     "update_ranks",
     "validate_bulk_discard_bucket",

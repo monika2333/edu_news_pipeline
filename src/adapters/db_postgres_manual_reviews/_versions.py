@@ -404,57 +404,9 @@ def update_manual_review_order_as_user(
     return before, after
 
 
-def clear_all_review_buckets(
-    cur: psycopg.Cursor,
-    *,
-    actor_username: str,
-) -> list[dict[str, Any]]:
-    """Discard selected and backup rows across every explicit owner workspace."""
-    cur.execute(
-        """
-        WITH targets AS (
-            SELECT id, status AS previous_status
-            FROM manual_reviews
-            WHERE status IN ('selected', 'backup')
-            FOR UPDATE
-        )
-        UPDATE manual_reviews mr
-        SET status = 'discarded',
-            rank = NULL,
-            decided_by = %s,
-            decided_by_user_id = NULL,
-            decided_at = now(),
-            version = mr.version + 1,
-            updated_at = now()
-        FROM targets
-        WHERE mr.id = targets.id
-        RETURNING
-            mr.id,
-            mr.owner_user_id,
-            mr.article_id,
-            mr.status,
-            mr.summary,
-            mr.rank,
-            mr.notes,
-            mr.score,
-            mr.decided_by,
-            mr.decided_by_user_id,
-            mr.decided_at,
-            mr.manual_llm_source,
-            mr.report_type,
-            mr.version,
-            mr.created_at,
-            mr.updated_at,
-            targets.previous_status
-        """,
-        (actor_username,),
-    )
-    return [dict(row) for row in cur.fetchall()]
-
 __all__ = [
     "_validate_expected_versions",
     "allocate_manual_review_decision_ranks",
-    "clear_all_review_buckets",
     "fetch_manual_review_rows",
     "update_manual_review_order_as_user",
     "update_manual_review_statuses_with_versions",

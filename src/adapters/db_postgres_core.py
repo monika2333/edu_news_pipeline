@@ -1466,31 +1466,6 @@ class PostgresAdapter:
                 "updated": sum(bucket["updated"] for bucket in bucket_rows),
             }
 
-    def clear_all_review_buckets_as_system(
-        self,
-        *,
-        actor_username: str,
-        trigger: str,
-        request_id: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        with self.transaction() as cur:
-            after = manual_reviews.clear_all_review_buckets(
-                cur,
-                actor_username=actor_username,
-            )
-            if after:
-                audit.insert_review_event(
-                    cur,
-                    actor_user_id=None,
-                    action="manual_review.clear_buckets",
-                    target_type="manual_review_batch",
-                    target_id="all",
-                    before_data=None,
-                    after_data={"items": after, "trigger": trigger},
-                    request_id=request_id,
-                )
-            return after
-
     def update_manual_review_summaries_as_user(
         self,
         edits: Mapping[str, Mapping[str, Any]],

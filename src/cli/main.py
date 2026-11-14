@@ -198,13 +198,6 @@ def _add_refresh_manual_clusters(subparsers: argparse._SubParsersAction) -> None
     )
 
 
-def _add_clear_review_buckets(subparsers: argparse._SubParsersAction) -> None:
-    subparsers.add_parser(
-        "clear-review-buckets",
-        help="Discard every selected and backup manual review",
-    )
-
-
 def _add_feishu_archive_bot(subparsers: argparse._SubParsersAction) -> None:
     subparsers.add_parser(
         "feishu-archive-bot",
@@ -408,26 +401,6 @@ def _refresh_manual_clusters() -> int:
     return 2
 
 
-def _clear_review_buckets() -> int:
-    from src.console.manual_filter_admin_service import clear_all_review_buckets
-    from src.workers import log_info
-
-    result = clear_all_review_buckets(
-        actor_username="system:scheduled_clear",
-        trigger="scheduled",
-    )
-    buckets = result["buckets"]
-    message = (
-        f"cleared={result['total']} "
-        f"zongbao(selected={buckets['zongbao']['selected']}, "
-        f"backup={buckets['zongbao']['backup']}) "
-        f"wanbao(selected={buckets['wanbao']['selected']}, "
-        f"backup={buckets['wanbao']['backup']})"
-    )
-    log_info("clear-review-buckets", message)
-    return 0
-
-
 def _optimize_prompts(args: argparse.Namespace) -> int:
     from src.workers.prompt_optimizer import run as run_prompt_optimizer
 
@@ -514,7 +487,6 @@ def build_parser() -> argparse.ArgumentParser:
     _add_cleanup_console_sessions(subparsers)
     _add_generate_shifts(subparsers)
     _add_refresh_manual_clusters(subparsers)
-    _add_clear_review_buckets(subparsers)
     _add_optimize_prompts(subparsers)
     _add_feishu_archive_bot(subparsers)
     _add_import_settings(subparsers)
@@ -568,8 +540,6 @@ def _run_command(args: argparse.Namespace) -> int:
         _generate_shifts(args.days)
     elif command == "refresh-manual-clusters":
         return _refresh_manual_clusters()
-    elif command == "clear-review-buckets":
-        return _clear_review_buckets()
     elif command == "optimize-prompts":
         return _optimize_prompts(args)
     elif command == "feishu-archive-bot":

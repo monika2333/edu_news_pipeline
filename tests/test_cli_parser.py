@@ -20,7 +20,6 @@ from tests.conftest import make_endpoint_config
         "geo-classify",
         "score",
         "refresh-manual-clusters",
-        "clear-review-buckets",
         "optimize-prompts",
         "feishu-archive-bot",
         "submission-feedback-dedup",
@@ -43,7 +42,6 @@ def test_cli_help_available() -> None:
         "geo-classify",
         "score",
         "refresh-manual-clusters",
-        "clear-review-buckets",
         "optimize-prompts",
         "feishu-archive-bot",
         "submission-feedback-dedup",
@@ -54,6 +52,14 @@ def test_cli_help_available() -> None:
 def test_export_subcommand_is_removed() -> None:
     with pytest.raises(SystemExit):
         build_parser().parse_args(["export"])
+
+
+def test_clear_review_buckets_subcommand_is_removed() -> None:
+    parser = build_parser()
+    choices = parser._subparsers._group_actions[0].choices  # type: ignore[attr-defined]
+    assert "clear-review-buckets" not in choices
+    with pytest.raises(SystemExit):
+        parser.parse_args(["clear-review-buckets"])
 
 
 def test_feedback_dedup_cli_supports_single_report_or_all() -> None:
@@ -480,50 +486,3 @@ def test_optimize_prompts_preview_output_includes_estimates(
     assert "estimated_replay=3" in output
     assert "min_model_calls=4" in output
     assert "total_model_calls=0" in output
-
-
-def test_clear_review_buckets_cli_uses_scheduled_actor_and_prints_counts(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    from src.console import manual_filter_admin_service
-
-    calls: list[dict[str, object]] = []
-    wrong_calls: list[dict[str, object]] = []
-
-    def fake_clear_review_buckets(**kwargs: object) -> dict[str, object]:
-        calls.append(kwargs)
-        return {
-            "total": 0,
-            "buckets": {
-                "zongbao": {"selected": 0, "backup": 0},
-                "wanbao": {"selected": 0, "backup": 0},
-            },
-        }
-
-    monkeypatch.setattr(
-        manual_filter_admin_service,
-        "clear_all_review_buckets",
-        fake_clear_review_buckets,
-    )
-    monkeypatch.setattr(
-        manual_filter_admin_service,
-        "clear_review_buckets",
-        lambda **kwargs: wrong_calls.append(kwargs) or fake_clear_review_buckets(),
-    )
-
-    result = cli_main.main(["clear-review-buckets"])
-
-    assert result == 0
-    assert wrong_calls == []
-    assert calls == [
-        {
-            "actor_username": "system:scheduled_clear",
-            "trigger": "scheduled",
-        }
-    ]
-    output = capsys.readouterr().out
-    assert "[clear-review-buckets]" in output
-    assert "cleared=0" in output
-    assert "zongbao(selected=0, backup=0)" in output
-    assert "wanbao(selected=0, backup=0)" in output

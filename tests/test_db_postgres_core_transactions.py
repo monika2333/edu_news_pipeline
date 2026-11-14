@@ -343,7 +343,7 @@ def test_clear_review_buckets_for_owner_uses_versioned_updates_and_one_audit(
         ]
         assert kwargs == {
             "owner_user_id": "admin-1",
-            "actor_username": "system:scheduled_clear",
+            "actor_username": "admin-user",
             "actor_user_id": "admin-1",
             "expected_versions": {"selected-1": 3, "backup-1": 5},
             "require_versions": True,
@@ -373,9 +373,9 @@ def test_clear_review_buckets_for_owner_uses_versioned_updates_and_one_audit(
 
     result = adapter.clear_review_buckets_for_owner_as_user(
         owner_user_id="admin-1",
-        actor_username="system:scheduled_clear",
+        actor_username="admin-user",
         actor_user_id="admin-1",
-        trigger="scheduled",
+        trigger="manual",
         request_id="request-1",
     )
 
@@ -388,7 +388,7 @@ def test_clear_review_buckets_for_owner_uses_versioned_updates_and_one_audit(
         "target_type": "manual_review_batch",
         "target_id": "admin-1",
         "before_data": {"items": before},
-        "after_data": {"items": after, "trigger": "scheduled"},
+        "after_data": {"items": after, "trigger": "manual"},
         "request_id": "request-1",
     }
 
@@ -975,9 +975,9 @@ def test_clear_review_buckets_for_owner_does_not_audit_empty_match(
 
     result = adapter.clear_review_buckets_for_owner_as_user(
         owner_user_id="admin-1",
-        actor_username="system:scheduled_clear",
+        actor_username="admin-user",
         actor_user_id="admin-1",
-        trigger="scheduled",
+        trigger="manual",
     )
 
     assert result == []

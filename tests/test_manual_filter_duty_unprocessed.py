@@ -736,7 +736,7 @@ def test_cluster_singleton_uses_owner_pending_and_null_sentiment_positive_bucket
     assert b_singletons == []
 
 
-def test_owner_clear_and_explicit_system_clear_have_distinct_scopes(
+def test_owner_clear_only_discards_current_admin_buckets(
     duty_filter_adapter: PostgresAdapter,
 ) -> None:
     with duty_filter_adapter._cursor() as cur:
@@ -776,24 +776,7 @@ def test_owner_clear_and_explicit_system_clear_have_distinct_scopes(
         )
         after_owner_clear = cur.fetchall()
 
-    duty_filter_adapter.clear_all_review_buckets_as_system(
-        actor_username="system:scheduled_clear",
-        trigger="scheduled",
-    )
-    with duty_filter_adapter._cursor() as cur:
-        cur.execute(
-            """
-            SELECT owner_user_id::text AS owner_user_id, status
-            FROM manual_reviews
-            WHERE article_id = %s
-            ORDER BY owner_user_id
-            """,
-            (UNPROCESSED,),
-        )
-        after_system_clear = cur.fetchall()
-
     assert [row["status"] for row in after_owner_clear] == ["discarded", "backup"]
-    assert [row["status"] for row in after_system_clear] == ["discarded", "discarded"]
 
 
 def test_submission_link_body_collapses_admin_rows_by_archive_then_update(

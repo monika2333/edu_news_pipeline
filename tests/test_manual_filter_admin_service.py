@@ -476,8 +476,8 @@ def test_clear_review_buckets_counts_successful_rows_and_preserves_fields(
             "manual_llm_source": "来源一",
             "notes": "备注一",
             "score": 91,
-            "decided_by": "system:scheduled_clear",
-            "decided_by_user_id": None,
+            "decided_by": "admin-user",
+            "decided_by_user_id": "admin-1",
         },
         {
             "article_id": "backup-wanbao",
@@ -489,13 +489,26 @@ def test_clear_review_buckets_counts_successful_rows_and_preserves_fields(
             "manual_llm_source": "来源二",
             "notes": "备注二",
             "score": 83,
-            "decided_by": "system:scheduled_clear",
-            "decided_by_user_id": None,
+            "decided_by": "admin-user",
+            "decided_by_user_id": "admin-1",
+        },
+        {
+            "article_id": "unexpected-previous-status",
+            "status": "discarded",
+            "previous_status": "pending",
+            "rank": None,
+            "report_type": "zongbao",
+            "summary": "摘要三",
+            "manual_llm_source": "来源三",
+            "notes": "备注三",
+            "score": 70,
+            "decided_by": "admin-user",
+            "decided_by_user_id": "admin-1",
         },
     ]
 
     class ClearAdapter:
-        def clear_all_review_buckets_as_system(
+        def clear_review_buckets_for_owner_as_user(
             self,
             **kwargs: Any,
         ) -> list[dict[str, Any]]:
@@ -508,13 +521,16 @@ def test_clear_review_buckets_counts_successful_rows_and_preserves_fields(
         lambda: ClearAdapter(),
     )
 
-    result = manual_filter_admin_service.clear_all_review_buckets(
-        actor_username="system:scheduled_clear",
-        trigger="scheduled",
+    result = manual_filter_admin_service.clear_review_buckets(
+        owner_user_id="admin-1",
+        actor_username="admin-user",
+        actor_user_id="admin-1",
+        trigger="manual",
+        request_id="request-1",
     )
 
     assert result == {
-        "total": 2,
+        "total": 3,
         "buckets": {
             "zongbao": {"selected": 1, "backup": 0},
             "wanbao": {"selected": 0, "backup": 1},
@@ -522,9 +538,11 @@ def test_clear_review_buckets_counts_successful_rows_and_preserves_fields(
     }
     assert calls == [
         {
-            "actor_username": "system:scheduled_clear",
-            "trigger": "scheduled",
-            "request_id": None,
+            "owner_user_id": "admin-1",
+            "actor_username": "admin-user",
+            "actor_user_id": "admin-1",
+            "trigger": "manual",
+            "request_id": "request-1",
         }
     ]
     assert rows[0]["report_type"] is None
@@ -534,7 +552,7 @@ def test_clear_review_buckets_counts_successful_rows_and_preserves_fields(
     assert rows[0]["score"] == 91
     assert all(row["status"] == "discarded" for row in rows)
     assert all(row["rank"] is None for row in rows)
-    assert all(row["decided_by_user_id"] is None for row in rows)
+    assert all(row["decided_by_user_id"] == "admin-1" for row in rows)
 
 
 class _FakeCleanupReviewNamespace:

@@ -70,6 +70,9 @@ class FakeWorkspaceServer {
         articleContents = null,
         // /preview-header 的响应体；null / available=false 表示「没有期号基准」
         previewHeader = null,
+        // /duplicate-check 的响应：二维数组，每组是重复新闻的 article_id。
+        // 组内条目必须在 reviewItems 里（弹窗渲染时会按当前审阅列表过滤）。
+        duplicateGroups = null,
     } = {}) {
         this.articles = new Map();
         for (let index = 0; index < articleCount; index += 1) {
@@ -104,6 +107,7 @@ class FakeWorkspaceServer {
         this.discardedItems = discardedItems || [];
         this.articleContents = articleContents || {};
         this.previewHeader = previewHeader;
+        this.duplicateGroups = duplicateGroups || [];
         this.log = [];
         this.inflight = 0;
         this.holds = {};
@@ -117,6 +121,28 @@ class FakeWorkspaceServer {
         return this.articles.get(id)
             || this.reviewItems.find((item) => item.article_id === id)
             || null;
+    }
+
+    // /duplicate-check 响应里的单个条目：字段与后端 _response_item 同构，
+    // 只补测试关心的字段，其余交给弹窗侧的 reconcile 用当前审阅数据覆盖
+    duplicateReviewResponseItem(articleId) {
+        const record = this.reviewRecord(articleId) || {};
+        return {
+            article_id: articleId,
+            title: record.title || `标题${articleId}`,
+            summary: record.summary || record.llm_summary || '',
+            source: record.source || 'toutiao',
+            llm_source_display: record.llm_source_display || record.source || '测试来源',
+            llm_source_raw: record.llm_source_raw || '',
+            llm_source_manual: record.llm_source_manual || '',
+            url: record.url || '',
+            status: record.status || 'selected',
+            report_type: record.report_type || 'zongbao',
+            score: record.external_importance_score === undefined
+                ? 80
+                : record.external_importance_score,
+            bonus_keywords: record.bonus_keywords || [],
+        };
     }
 
     pendingArticles() {
@@ -183,6 +209,7 @@ class FakeWorkspaceServer {
         }
         if (pathname.endsWith('/edit')) return 'edit';
         if (pathname.endsWith('/decide')) return 'decide';
+        if (pathname.endsWith('/duplicate-check')) return 'duplicate-check';
         if (pathname.endsWith('/bulk-discard')) return 'bulk-discard';
         if (pathname.endsWith('/cleanup-review-buckets')) return 'cleanup-review-buckets';
         if (pathname.endsWith('/review')) return 'review-list';
@@ -396,6 +423,35 @@ class FakeWorkspaceServer {
                 }
             }
             return [200, { versions }];
+        }
+        if (pathname.endsWith('/duplicate-check')) {
+            // 与后端 check_duplicates 同构：只统计当前报别/采纳桶的条目，
+            // 组内条目按当前审阅列表过滤（弹窗 reconcile 也会再过滤一遍）
+            const reportType = body.report_type || 'zongbao';
+            const decision = body.decision || 'selected';
+            const scopeItems = this.reviewItems.filter(
+                (item) => (item.status || 'selected') === decision
+                    && (item.report_type || 'zongbao') === reportType
+            );
+            const scopeIds = new Set(scopeItems.map((item) => item.article_id));
+            const groups = this.duplicateGroups
+                .map((ids) => ids.filter((id) => scopeIds.has(id)))
+                .filter((ids) => ids.length >= 2)
+                .map((ids, index) => ({
+                    group_id: `duplicate-${index + 1}`,
+                    items: ids.map((id) => this.duplicateReviewResponseItem(id)),
+                }));
+            return [200, {
+                checked_count: scopeItems.length,
+                checked_article_ids: scopeItems.map((item) => item.article_id),
+                current_count: scopeItems.length,
+                added_count: 0,
+                removed_count: 0,
+                model: 'fake-duplicate-model',
+                report_type: reportType,
+                decision,
+                groups,
+            }];
         }
         if (pathname.endsWith('/bulk-discard')) {
             // 夹具数据都是京内正面，其余桶一律空；apply 按放弃时的最新版本返回明细供撤销

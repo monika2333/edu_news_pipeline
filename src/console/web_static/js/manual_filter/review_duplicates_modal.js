@@ -216,16 +216,25 @@ function hideDiscardedDuplicateReviewItem(item) {
     if (checkbox) checkbox.checked = false;
     if (!group) return;
     updateDuplicateReviewGroupAfterRemoval(group);
-    showDuplicateReviewGroup(duplicateReviewActiveGroupIndex);
+    // 组里还有条目时保留当前滚动位置（和筛选/审阅页决定后停在同一位置一致）；
+    // 这条是最后一条时本组会被标空并自动切到下一组，切组仍回到顶部。
+    showDuplicateReviewGroup(duplicateReviewActiveGroupIndex, {
+        preserveScroll: !group.classList.contains('is-empty')
+    });
 }
 
 function restoreDiscardedDuplicateReviewItem(item) {
     const group = item.closest('.duplicate-review-group');
     item.hidden = false;
     if (!group) return;
+    // 撤销前该组是否就是当前显示的组：原地恢复才保留滚动位置；
+    // 若该组此前已被清空、当前显示的是下一组，则切回被恢复的组并从顶部显示。
+    const wasActiveGroup = getActiveDuplicateReviewGroup() === group;
     updateDuplicateReviewGroupAfterRemoval(group);
     const groupIndex = getDuplicateReviewGroups().indexOf(group);
-    showDuplicateReviewGroup(groupIndex >= 0 ? groupIndex : 0);
+    showDuplicateReviewGroup(groupIndex >= 0 ? groupIndex : 0, {
+        preserveScroll: wasActiveGroup
+    });
 }
 
 function getActiveDuplicateReviewGroup() {
@@ -233,14 +242,17 @@ function getActiveDuplicateReviewGroup() {
     return groups[duplicateReviewActiveGroupIndex] || null;
 }
 
-function showDuplicateReviewGroup(index) {
+function showDuplicateReviewGroup(index, { preserveScroll = false } = {}) {
     const groups = getDuplicateReviewGroups();
     const pager = document.getElementById('duplicate-review-pager');
     const indicator = document.getElementById('duplicate-review-page-indicator');
     const previousButton = document.getElementById('btn-duplicate-prev-group');
     const nextButton = document.getElementById('btn-duplicate-next-group');
+    const results = document.getElementById('duplicate-review-results');
+    const previousScrollTop = results ? results.scrollTop : 0;
     if (!groups.length) {
         if (pager) pager.hidden = true;
+        if (results) results.scrollTop = 0;
         updateDuplicateReviewSelectionState();
         return;
     }
@@ -260,8 +272,9 @@ function showDuplicateReviewGroup(index) {
             refreshReviewSummaryBox(box);
         });
     }
-    const results = document.getElementById('duplicate-review-results');
-    if (results) results.scrollTop = 0;
+    // 切组（首次打开、上一组/下一组、当前组清空自动跳下一组）一律回到顶部；
+    // 只有调用方明确要求保位（组内放弃/撤销后重算页码与计数）才恢复原位置。
+    if (results) results.scrollTop = preserveScroll ? previousScrollTop : 0;
     updateDuplicateReviewSelectionState();
 }
 

@@ -109,6 +109,7 @@
 
 - **变异要打在「唯一决定行为」的位置**（2026-11-07）：设置页栏目面板「重渲染重置展开态」的变异先打在 `insertColumnsPanel` 的 `panel.hidden` 上，被紧接着的 `syncSourcePanels()` 覆盖而存活；改到 `renderSourcesPanel` 开头重置 `state.expandedSource` 才真正模拟丢状态。变异存活时先确认它是否真的改变了最终状态，再判断是不是测试盲区。
 - **前端比较分区值不能直接 `JSON.stringify`：jsonb 会重排对象键**（2026-11-11 实测）：`app_settings.value` 是 jsonb，读回来对象键按「长度 + 字节序」重排——来源别名是 `{aliases, suffixes[, fallback_names]}`，自动排序关键词是 `{高校, 中小学, 市教委}`，旧配置行还可能整个缺 `fallback_names`。即时保存在保存后用 `JSON.stringify` 比对「响应值 vs DOM 解析值」，刚保存成功的值会被判成「还有未保存的修改」，并让每次失焦都重复 PUT、版本号空转（用户看到的就是那句假提示）。比较必须递归排序对象键（`section_editor.js` 的 `canonicalSectionJson`）并补齐缺失的可选字段。jsdom 夹具有同一个陷阱：`respond` 原样回对象会让测试永远比线上宽松，夹具要按真实 jsonb 重排键序（`settings_harness.js` 的 `jsonbOrder`）；重排时用 `Object.create(null)`，普通 `{}` 赋值会把 `__proto__` 这种合法别名键当成原型设置丢掉。
+- **带「切上下文」副作用的渲染函数被「刷新当前上下文」路径复用会跳顶**（2026-11-15）：查重弹窗 `showDuplicateReviewGroup()` 末尾无条件 `results.scrollTop = 0` 是分页切组引入的（`502f35e`），后来「放弃后隐藏条目」直接调用它重算页码（`b6723d7`），组内放弃/撤销就被顺带带回顶部。修法：把重置收进 `{ preserveScroll }` 选项，由调用方说明这次是「换组」还是「组内增删」，别让被复用函数替调用方决定。同类信号——某函数同时负责「切换视图」与「刷新当前视图」时，先检查它的副作用是否只该发生在切换时。jsdom 里 `scrollTop` 可读可写（不做布局钳制），足以对「有没有被重置」做行为回归，别用源码字符串断言替代。
 
 ## 已知「等价变异」/ 测试盲区备忘
 

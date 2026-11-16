@@ -1708,7 +1708,8 @@
     text-align: left;
 }
 
-/* 「批量编辑」：默认收起原生 textarea，芯片是主视图；整段粘贴时才展开 */
+/* 「批量编辑」：芯片是主视图；整段粘贴时把芯片框原地换成原生 textarea，
+   按钮变「逐条编辑」并保持高亮，提示当前处于批量视图 */
 .keyword-batch-toggle {
     flex: none;
     padding: 3px 10px;
@@ -1725,7 +1726,7 @@
     border-color: var(--primary-muted);
     color: var(--primary-hover);
 }
-.keyword-batch-toggle[aria-expanded="true"] {
+.advanced-field.is-batch .keyword-batch-toggle {
     border-color: var(--primary-border);
     background: var(--primary-soft);
     color: var(--primary-hover);
@@ -1817,9 +1818,10 @@
     font-size: 0.78rem;
     line-height: 1.55;
 }
-.advanced-field textarea.settings-textarea { margin-top: 10px; }
-/* .settings-textarea 的 display:block 会压过浏览器默认的 [hidden]{display:none} */
-.advanced-field textarea[hidden] { display: none; }
+/* .settings-textarea 的 display:block、.keyword-chips 的 display:flex
+   都会压过浏览器默认的 [hidden]{display:none}，两种视图二选一靠这两条 */
+.advanced-field textarea[hidden],
+.advanced-field .keyword-chips[hidden] { display: none; }
 /* 来源别名：三个字段单列纵排；两栏时「回退来源」会被挤在窄边栏里折行。
    字段之间用细分割线划界，编号（1/2/3）沿用 head 里的 .advanced-field-step。 */
 .advanced-alias-fields {

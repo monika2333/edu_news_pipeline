@@ -35,8 +35,9 @@ function splitAliasLine(line) {
     return key && target ? { key, target } : null;
 }
 
-// 高级页的关键词编辑器：正文默认是芯片列表，逐条增删；「批量编辑」展开
-// 原生 textarea 做整段粘贴/替换。textarea 仍是唯一数据源（readValue 只读它），
+// 高级页的关键词编辑器：正文默认是芯片列表，逐条增删；「批量编辑」把芯片框
+// 原地换成原生 textarea 做整段粘贴/替换（两种视图同一位置二选一，不上下并列），
+// 「逐条编辑」切回芯片。textarea 仍是唯一数据源（readValue 只读它），
 // 芯片和输入框只是它的视图，输入事件会同时触发脏标记、计数和芯片重绘。
 // mode='aliases' 时芯片显示「原名称 → 标准名称」，添加输入也按同一格式拆分。
 // options.order 给来源别名这类有处理先后顺序的字段一个编号徽标；
@@ -55,7 +56,6 @@ function buildSettingsTextarea(panel, label, value, section, className, options 
     const count = createEl('span', 'settings-word-count', '', { 'aria-live': 'polite' });
     const toggle = createEl('button', 'keyword-batch-toggle', '批量编辑', {
         type: 'button',
-        'aria-expanded': 'false',
         'aria-label': `${label}批量编辑`,
     });
     head.appendChild(count);
@@ -71,10 +71,7 @@ function buildSettingsTextarea(panel, label, value, section, className, options 
     chips.appendChild(addInput);
     field.appendChild(chips);
 
-    if (options.hint) {
-        field.appendChild(createEl('p', 'settings-effect-note keyword-field-hint', options.hint));
-    }
-
+    // textarea 紧跟芯片框：批量模式下它占据芯片框的位置，提示文字留在两者下方
     const input = createEl('textarea', `settings-textarea ${className}`, '', {
         rows: String(options.rows || 8),
         spellcheck: 'false',
@@ -82,6 +79,10 @@ function buildSettingsTextarea(panel, label, value, section, className, options 
     });
     input.value = value;
     field.appendChild(input);
+
+    if (options.hint) {
+        field.appendChild(createEl('p', 'settings-effect-note keyword-field-hint', options.hint));
+    }
     panel.appendChild(field);
 
     const setValue = (next, { focusAdd = false } = {}) => {
@@ -178,12 +179,15 @@ function buildSettingsTextarea(panel, label, value, section, className, options 
         addInput.focus();
     });
 
-    // 批量编辑的开合：正常点击进入时把焦点放进 textarea；校验失败需要展开
-    // 出错位置时不抢焦点（失焦保存中抢焦点会打断用户操作），见 revealAdvancedBatch。
+    // 芯片视图与批量视图的切换：正常点击进入时把焦点放进 textarea；校验失败需要
+    // 切到出错位置时不抢焦点（失焦保存中抢焦点会打断用户操作），见 revealAdvancedBatch。
+    // 切换只换视图不提交：焦点仍在本块的切换按钮上，块级失焦保存不会被触发。
     const setBatchOpen = (open, { focus = true } = {}) => {
         input.hidden = !open;
-        toggle.setAttribute('aria-expanded', String(open));
-        toggle.textContent = open ? '收起批量' : '批量编辑';
+        chips.hidden = open;
+        field.classList.toggle('is-batch', open);
+        toggle.textContent = open ? '逐条编辑' : '批量编辑';
+        toggle.setAttribute('aria-label', `${label}${open ? '逐条编辑' : '批量编辑'}`);
         if (open && focus) {
             input.focus();
             input.setSelectionRange(input.value.length, input.value.length);

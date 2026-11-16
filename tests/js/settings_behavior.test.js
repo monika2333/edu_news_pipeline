@@ -3530,7 +3530,8 @@ test('高级页：保存成功不重绘，批量编辑保持展开、控件节�
         await saveDictionary(page, 'education_keywords');
         assert.equal(block.querySelector('.settings-textarea'), textarea);
         assert.equal(textarea.hidden, false);
-        assert.equal(toggle.textContent, '收起批量');
+        assert.equal(toggle.textContent, '逐条编辑');
+        assert.equal(block.querySelector('.keyword-chips').hidden, true);
         assert.equal(block.querySelector('.settings-save-status').textContent, '已自动保存。');
         assert.match(block.querySelector('.settings-updated').textContent, /最后修改/);
     } finally { page.close(); }
@@ -3983,15 +3984,27 @@ test('高级关键词：内联输入回车添加只入草稿，失焦才提交',
         await saveDictionary(page, 'education_keywords');
         assert.deepEqual(dictionaryPuts(page)[0].body.value, ['教育', '学校', '考试']);
 
+        // 批量编辑原地替换芯片框：两种视图二选一，textarea 占芯片框的位置，不在其下另起一块
         const toggle = block.querySelector('.keyword-batch-toggle');
+        const chips = block.querySelector('.keyword-chips');
         assert.equal(textarea.hidden, true);
-        assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+        assert.equal(chips.hidden, false);
+        assert.equal(chips.nextElementSibling, textarea);
         toggle.click();
         assert.equal(textarea.hidden, false);
-        assert.equal(toggle.getAttribute('aria-expanded'), 'true');
-        assert.equal(toggle.textContent, '收起批量');
+        assert.equal(chips.hidden, true);
+        assert.equal(toggle.textContent, '逐条编辑');
+        assert.equal(page.document.activeElement, textarea);
+        // 批量里改的内容切回逐条视图后反映在芯片上
+        inputValue(page, textarea, '教育\n学校');
         toggle.click();
         assert.equal(textarea.hidden, true);
+        assert.equal(chips.hidden, false);
+        assert.equal(toggle.textContent, '批量编辑');
+        assert.deepEqual(
+            [...chips.querySelectorAll('.keyword-chip-text')].map((el) => el.textContent),
+            ['教育', '学校'],
+        );
     } finally { page.close(); }
 });
 

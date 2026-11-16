@@ -4,6 +4,7 @@
 
 | 日期 | 功能 | 合入 | archive |
 |---|---|---|---|---|
+| 2026-11-16 | 审阅页撤回后回到原位：撤回前记下桶顺序，撤回成功后按原前邻居插回并经 `/order` 落库（审阅卡片 🗑️/下拉、批量移动、查重弹窗单条与批量；管理员与值班双端）；纯前端、无后端/数据库变更；夹具 `/decide` 改为进桶排末尾、`/order` 真实重排；新增 12 条 jsdom 用例（还原旧代码 10 条失败），全量 2021 passed | 见本次提交 | [2026-11-16-审阅页撤回回原位.md](archive/2026-11-16-审阅页撤回回原位.md) |
 | 2026-11-15 | 查重结果弹窗放弃/撤销后保留滚动位置：`showDuplicateReviewGroup` 的 `scrollTop` 归零只保留给切组，组内单条 🗑️/下拉/批量放弃与撤销走 `preserveScroll` 保位（当前组清空自动切下一组仍回顶部）；新增 jsdom 行为测试（`/admin/review` 与 `/duty` 双端，还原旧代码实测 8 条失败验证有效）；worktree 与合并后 main 全量均 2020 passed | `5aaccc2`、`ea33b7f` | [2026-11-15-查重弹窗滚动位置.md](archive/2026-11-15-查重弹窗滚动位置.md) |
 | 2026-11-14 | 移除「每周自动清空」系统级路径：删除启动脚本、CLI 子命令、console service 函数、adapter 方法与跨管理员 SQL 函数及对应测试；保留汇总审阅「一键清空」完整链路与共用审计动作名 `manual_review.clear_buckets`，历史系统清空数据只读；M1–M4 全 KILLED，worktree 与合并后 main 全量均 2019 passed（含 jsdom） | `9082331` | [2026-11-14-移除每周自动清空.md](archive/2026-11-14-移除每周自动清空.md) |
 | 2026-11-14 | 移除汇总审阅页「归档」操作：删除 `#btn-archive` 按钮/前端逻辑/`POST /api/manual_filter/archive` 路由/`archive_items` 服务函数；历史 `exported` 记录只读保留、不迁移，回链正文优先/状态计数/值班结果页「已归档」展示与未处理排除全部保持原样；移动端工具条两处模板改 `"preview preview"`（预览独占整行）；M1–M5 全 KILLED，合并 main 后全量 pytest 2021 passed（含 jsdom） | `ff64b9e` | [2026-11-14-移除汇总审阅归档.md](archive/2026-11-14-移除汇总审阅归档.md) |

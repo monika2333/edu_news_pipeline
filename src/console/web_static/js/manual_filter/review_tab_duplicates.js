@@ -212,6 +212,7 @@ async function handleDuplicateStatusChange(event) {
     const previousValue = getDuplicateDecisionValue(previousStatus, previousReportType);
     if (select.value === previousValue) return;
     const shouldHideAfterUpdate = select.value === 'discarded';
+    const beforeOrder = captureReviewBucketOrder(previousStatus, previousReportType);
 
     select.disabled = true;
     try {
@@ -228,13 +229,19 @@ async function handleDuplicateStatusChange(event) {
         const undoAction = buildUndoToastAction(async () => {
             try {
                 await postDuplicateDecision(buildDuplicateDecisionPayload(previousValue, articleId, previousReportType));
+                const positionRestored = await restoreReviewPositionsAfterUndo(
+                    previousStatus,
+                    previousReportType,
+                    beforeOrder,
+                    [articleId]
+                );
                 updateDuplicateItemDecisionState(item, previousValue, previousReportType);
                 restoreDuplicateReviewItem(item);
                 if (shouldHideAfterUpdate) restoreDiscardedDuplicateReviewItem(item);
                 select.value = previousValue;
                 await loadReviewData();
                 loadStats();
-                showToast('已撤销操作');
+                showToast(reviewUndoToastMessage(positionRestored), positionRestored ? 'success' : 'error');
             } catch (error) {
                 showToast(error.message || '撤销失败', 'error');
             }
@@ -350,6 +357,7 @@ async function applyDuplicateBulkStatus() {
         showToast('所选新闻已在当前栏目', 'error');
         return;
     }
+    const beforeOrder = captureReviewBucketOrder(previousStatus, previousReportType);
     bulkSelect.disabled = true;
     try {
         const edits = {};
@@ -382,6 +390,12 @@ async function applyDuplicateBulkStatus() {
                 if (previousStatus === 'backup') undoPayload.backup_ids = articleIds;
                 undoPayload.versions = collectManualReviewVersions(articleIds);
                 await postDuplicateDecision(undoPayload);
+                const positionRestored = await restoreReviewPositionsAfterUndo(
+                    previousStatus,
+                    previousReportType,
+                    beforeOrder,
+                    articleIds
+                );
                 selectedItems.forEach(item => {
                     updateDuplicateItemDecisionState(item, previousValue, previousReportType);
                     restoreDuplicateReviewItem(item);
@@ -389,7 +403,7 @@ async function applyDuplicateBulkStatus() {
                 });
                 await loadReviewData();
                 loadStats();
-                showToast('已撤销操作');
+                showToast(reviewUndoToastMessage(positionRestored), positionRestored ? 'success' : 'error');
             } catch (error) {
                 showToast(error.message || '撤销失败', 'error');
             }

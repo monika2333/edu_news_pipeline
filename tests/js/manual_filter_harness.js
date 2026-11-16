@@ -123,6 +123,19 @@ class FakeWorkspaceServer {
             || null;
     }
 
+    // /order：把 ids 对应条目当前占据的槽位，按 ids 的顺序重新填回
+    reorderReviewItems(ids) {
+        const records = ids
+            .map((id) => this.reviewItems.find((item) => item.article_id === id))
+            .filter(Boolean);
+        const slots = records
+            .map((record) => this.reviewItems.indexOf(record))
+            .sort((a, b) => a - b);
+        slots.forEach((slot, index) => {
+            this.reviewItems[slot] = records[index];
+        });
+    }
+
     // /duplicate-check 响应里的单个条目：字段与后端 _response_item 同构，
     // 只补测试关心的字段，其余交给弹窗侧的 reconcile 用当前审阅数据覆盖
     duplicateReviewResponseItem(articleId) {
@@ -362,6 +375,10 @@ class FakeWorkspaceServer {
             return [200, { items }];
         }
         if (pathname.endsWith('/order')) {
+            // 与后端口径一致：按提交顺序重写名次。这里把被排序的条目
+            // 在 reviewItems 中占据的槽位按提交顺序重新填回
+            this.reorderReviewItems(body.selected_order || []);
+            this.reorderReviewItems(body.backup_order || []);
             return [200, { success: true }];
         }
         if (pathname.endsWith('/candidates')) {
@@ -370,15 +387,18 @@ class FakeWorkspaceServer {
             return [200, { items, total: items.length, limit: 200, offset: 0 }];
         }
         if (pathname.endsWith('/edit')) {
+            // 候选（articles）与审阅条目（reviewItems）都可能被编辑：
+            // 审阅页改状态前会先 /edit 保存摘要与来源
             const edits = Object.entries(body.edits || {});
             for (const [id] of edits) {
-                if ((body.versions || {})[id] !== this.articles.get(id).version) {
+                const record = this.reviewRecord(id);
+                if (!record || (body.versions || {})[id] !== record.version) {
                     return [409, { detail: 'Review version is stale' }];
                 }
             }
             const versions = {};
             for (const [id, edit] of edits) {
-                const article = this.articles.get(id);
+                const article = this.reviewRecord(id);
                 article.manual_summary = edit.summary;
                 article.manual_source = edit.llm_source;
                 article.version += 1;
@@ -416,6 +436,12 @@ class FakeWorkspaceServer {
                         record.status = decision;
                         if ((decision === 'selected' || decision === 'backup') && body.report_type) {
                             record.report_type = body.report_type;
+                        }
+                        // 与后端口径一致：进入采纳/备选的条目排到桶末尾
+                        // （管理员端 rank = 最大值 + 1，值班端 rank 置空 NULLS LAST）
+                        if (decision === 'selected' || decision === 'backup') {
+                            this.reviewItems.splice(this.reviewItems.indexOf(record), 1);
+                            this.reviewItems.push(record);
                         }
                     }
                     record.version += 1;

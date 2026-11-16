@@ -108,6 +108,7 @@ async function applyReviewBulkStatus() {
     const movedIds = [...selected_ids, ...backup_ids, ...discarded_ids, ...pending_ids];
     const previousView = state.reviewView; // 'selected' or 'backup'
     const previousReportType = state.reviewReportType; // 'zongbao' or 'wanbao'
+    const beforeOrder = captureReviewBucketOrder(previousView, previousReportType);
 
     try {
         isBulkUpdatingReview = true;
@@ -154,8 +155,17 @@ async function applyReviewBulkStatus() {
                         body: JSON.stringify(undoPayload)
                     });
                     await requireManualMutationSuccess(undoResponse, '撤销失败');
+                    const positionRestored = await restoreReviewPositionsAfterUndo(
+                        previousView,
+                        previousReportType,
+                        beforeOrder,
+                        movedIds
+                    );
 
-                    showToast('已撤销操作');
+                    showToast(
+                        reviewUndoToastMessage(positionRestored),
+                        positionRestored ? 'success' : 'error'
+                    );
                     await loadReviewData(); // Reload to show items back
                     loadStats();
                 } catch (e) {
@@ -247,6 +257,83 @@ async function persistReviewOrder() {
     }
 }
 
+// --- 撤回回原位 ---
+// /decide 把条目恢复到采纳/备选时，服务端会把它排到桶末尾（管理员端 rank 取
+// 当前最大值 + 1，值班端 rank 置空、按 NULLS LAST 排）。所以移动前先记下该桶
+// 顺序，撤回成功后按「原来排在它前面的邻居」把条目插回去，再经 /order 落库。
+
+function captureReviewBucketOrder(status, reportType) {
+    if (status !== 'selected' && status !== 'backup') return null;
+    // state.reviewData 只装着当前报别的采纳/备选两桶，别的报别拿不到顺序
+    if (reportType !== state.reviewReportType) return null;
+    const items = (state.reviewData && state.reviewData[status]) || [];
+    return items.map(item => item && item.article_id).filter(Boolean);
+}
+
+// 按移动前的顺序把 restoredIds 插回 currentIds：每条插在移动前排在它前面、
+// 且现在仍在桶里的最近一条之后；前面一条都不剩就放到最前。
+// 撤回期间新进桶的条目保持服务端给的位置。
+function computeRestoredReviewOrder(currentIds, beforeIds, restoredIds) {
+    const restoring = new Set(
+        restoredIds.filter(id => currentIds.includes(id) && beforeIds.includes(id))
+    );
+    const result = currentIds.filter(id => !restoring.has(id));
+    beforeIds.forEach((id, index) => {
+        if (!restoring.has(id)) return;
+        let insertAt = 0;
+        for (let i = index - 1; i >= 0; i -= 1) {
+            const anchor = result.indexOf(beforeIds[i]);
+            if (anchor !== -1) {
+                insertAt = anchor + 1;
+                break;
+            }
+        }
+        result.splice(insertAt, 0, id);
+    });
+    return result;
+}
+
+async function restoreReviewPositions(status, reportType, beforeIds, restoredIds) {
+    if (!beforeIds || !beforeIds.length) return;
+    const params = new URLSearchParams({
+        decision: status,
+        limit: '200',
+        report_type: reportType,
+        _t: Date.now()
+    });
+    const listResponse = await workspaceFetch(`${API_BASE}/review?${params.toString()}`);
+    if (!listResponse.ok) throw new Error(`Review list failed: ${listResponse.status}`);
+    const data = await listResponse.json();
+    const currentIds = (data.items || []).map(item => item && item.article_id).filter(Boolean);
+    const desiredIds = computeRestoredReviewOrder(currentIds, beforeIds, restoredIds);
+    if (desiredIds.every((id, index) => id === currentIds[index])) return;
+    const response = await workspaceFetch(`${API_BASE}/order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            selected_order: status === 'selected' ? desiredIds : [],
+            backup_order: status === 'backup' ? desiredIds : [],
+            group_orders: {},
+            report_type: reportType
+        })
+    });
+    if (!response.ok) throw new Error(`Order update failed: ${response.status}`);
+}
+
+// 撤回本身已经成功，回原位失败只降级为「条目在桶末尾」，不当作撤回失败
+async function restoreReviewPositionsAfterUndo(status, reportType, beforeIds, restoredIds) {
+    try {
+        await restoreReviewPositions(status, reportType, beforeIds, restoredIds);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+function reviewUndoToastMessage(positionRestored) {
+    return positionRestored ? '已撤销操作' : '已撤销操作，但未能恢复原来的位置';
+}
+
 function parseReviewDecision(rawValue, card) {
     let status = rawValue;
     let targetReportType = card.dataset.reportType || state.reviewReportType;
@@ -259,7 +346,7 @@ function parseReviewDecision(rawValue, card) {
     return { status, targetReportType };
 }
 
-function buildReviewUndoAction(id, prevStatus, prevReportType, versions) {
+function buildReviewUndoAction(id, prevStatus, prevReportType, versions, beforeOrder) {
     return buildUndoToastAction(
         async () => {
             try {
@@ -276,7 +363,13 @@ function buildReviewUndoAction(id, prevStatus, prevReportType, versions) {
                     })
                 });
                 await requireManualMutationSuccess(response, '撤销失败');
-                showToast('已撤销操作');
+                const positionRestored = await restoreReviewPositionsAfterUndo(
+                    prevStatus,
+                    prevReportType,
+                    beforeOrder,
+                    [id]
+                );
+                showToast(reviewUndoToastMessage(positionRestored), positionRestored ? 'success' : 'error');
                 await loadReviewData();
                 loadStats();
             } catch (e) {
@@ -298,6 +391,7 @@ async function applyReviewCardDecision(card, rawValue, successMessage = '已更�
     const controls = card.querySelectorAll('.status-select, .review-discard-btn');
     const prevStatus = card.dataset.status || state.reviewView || 'selected';
     const prevReportType = card.dataset.reportType || state.reviewReportType;
+    const beforeOrder = captureReviewBucketOrder(prevStatus, prevReportType);
 
     controls.forEach(control => {
         control.disabled = true;
@@ -342,7 +436,8 @@ async function applyReviewCardDecision(card, rawValue, successMessage = '已更�
                 id,
                 prevStatus,
                 prevReportType,
-                decisionMutation.versions || {}
+                decisionMutation.versions || {},
+                beforeOrder
             )
         );
     } catch (err) {

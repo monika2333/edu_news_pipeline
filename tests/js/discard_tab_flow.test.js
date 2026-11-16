@@ -10,7 +10,9 @@
 //    此时只能恢复到待处理，走 /bulk-restore 的 dry_run 预览 + confirm 执行；
 // 4. 翻页、改条件、列表重新加载都会退出全部匹配模式并清空选择；
 // 5. 值班端放弃列表一律走服务端 /reviews?decision=discarded 分页；
-// 6. 条件行常驻显示，无折叠开关。
+// 6. 条件行常驻显示，无折叠开关；
+// 7. 本页恢复（单条下拉 / 勾选批量）成功后就地移除已恢复的行，不整表重载；
+//    只有本页被恢复空时才重新加载列表。
 'use strict';
 
 const test = require('node:test');
@@ -645,6 +647,82 @@ for (const mode of MODES) {
                 ),
                 '越界后未请求上一页'
             );
+        });
+    });
+}
+
+// J6b：本页未被恢复空时，单条与勾选批量恢复都就地移除行、不整表重载
+for (const mode of MODES) {
+    test(`${MODE_LABELS[mode]}单条恢复：就地移除该行，其余行原样保留、不重载列表`, async () => {
+        const items = makeDiscardedItems(3);
+        await withPage(mode, { discardedItems: items }, async (page) => {
+            const { server, document } = page;
+            await openDiscardTab(page);
+            const keptBefore = [...document.querySelectorAll('#discard-list .discard-item')]
+                .filter(card => card.dataset.id !== 'd01');
+            const listRequestsBefore = discardRequests(server).length;
+
+            const select = document.querySelector('#discard-list .discard-item[data-id="d01"] .discard-restore-select');
+            select.value = 'zongbao:selected';
+            fireChange(page, select);
+
+            assert.ok(
+                await waitFor(() => !document.querySelector('#discard-list .discard-item[data-id="d01"]')),
+                '已恢复的行应被移除'
+            );
+            assert.ok(await waitFor(() => page.toastText().includes('已恢复到综报采纳')), page.toastText());
+            await waitFor(() => server.inflight === 0);
+            await sleep(100);
+            assert.equal(discardRequests(server).length, listRequestsBefore, '不应重新请求放弃列表');
+            const keptAfter = [...document.querySelectorAll('#discard-list .discard-item')];
+            assert.equal(keptAfter.length, 2);
+            keptAfter.forEach((card, index) => {
+                assert.equal(card, keptBefore[index], '其余行应是原来的 DOM 节点，不被重建');
+            });
+            assert.equal(document.getElementById('discard-search-meta').textContent, '共 2 条已放弃新闻');
+            assert.ok(
+                !document.querySelector('#discard-list .loading'),
+                '不应出现「加载中」占位'
+            );
+        });
+    });
+
+    test(`${MODE_LABELS[mode]}勾选部分批量恢复：就地移除所选行、不重载，批量栏恢复可用`, async () => {
+        const items = makeDiscardedItems(3);
+        await withPage(mode, { discardedItems: items }, async (page) => {
+            const { server, document } = page;
+            await openDiscardTab(page);
+            const listRequestsBefore = discardRequests(server).length;
+
+            ['d00', 'd02'].forEach(id => {
+                const box = document.querySelector(`#discard-list .discard-row-check[data-id="${id}"]`);
+                box.checked = true;
+                fireChange(page, box);
+            });
+            const target = document.getElementById('discard-bulk-target');
+            assert.ok(await waitFor(() => !target.disabled), '有选择时「恢复到」应可用');
+            target.value = 'pending';
+            fireChange(page, target);
+
+            assert.ok(
+                await waitFor(() => page.toastText().includes('已恢复 2 条到待处理')),
+                page.toastText()
+            );
+            await waitFor(() => server.inflight === 0);
+            await sleep(100);
+            assert.equal(discardRequests(server).length, listRequestsBefore, '不应重新请求放弃列表');
+            const remaining = [...document.querySelectorAll('#discard-list .discard-item')]
+                .map(card => card.dataset.id);
+            assert.deepEqual(remaining, ['d01']);
+            assert.equal(page.window.eval('discardSelection.size'), 0, '选择应被清空');
+            assert.equal(document.getElementById('discard-select-all').disabled, false, '全选应恢复可用');
+            assert.equal(
+                document.querySelector('#discard-list .discard-row-check[data-id="d01"]').disabled,
+                false,
+                '剩余行勾选框应恢复可用'
+            );
+            assert.equal(target.disabled, true, '无选择时「恢复到」应禁用');
+            assert.equal(document.getElementById('discard-search-meta').textContent, '共 1 条已放弃新闻');
         });
     });
 }

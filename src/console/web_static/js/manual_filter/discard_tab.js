@@ -473,6 +473,28 @@ function clampDiscardPageAfterRestore(restoredCount = 1) {
     if (state.discardPage > totalPages) state.discardPage = totalPages;
 }
 
+// 恢复成功后就地移除已恢复的行，不整表重载（与筛选页决定后的做法一致）：
+// 整表重载会先渲染「加载中」再重建列表，造成闪屏并丢失滚动位置。
+// 只有本页被恢复空时才重新加载，由 loadDiscardData 补页或退回上一页；
+// 其余情况本地同步总数、分页与 meta，批次下拉在后台刷新条数。
+function removeRestoredDiscardRows(ids) {
+    const idSet = new Set(ids);
+    elements.discardList.querySelectorAll('.discard-item[data-id]').forEach(card => {
+        if (idSet.has(card.dataset.id)) card.remove();
+    });
+    ids.forEach(id => discardSelection.delete(id));
+    if (!elements.discardList.querySelector('.discard-item')) {
+        clampDiscardPageAfterRestore(ids.length);
+        loadDiscardData();
+        return;
+    }
+    discardLastTotal = Math.max(0, discardLastTotal - ids.length);
+    updatePagination('discard', discardLastTotal, state.discardPage, DISCARD_PAGE_SIZE);
+    updateDiscardSearchMeta(discardLastTotal);
+    syncDiscardBulkBar();
+    refreshDiscardBatches();
+}
+
 async function handleDiscardRestoreChange(event) {
     const select = event.target;
     const rawValue = select.value;
@@ -496,8 +518,7 @@ async function handleDiscardRestoreChange(event) {
 
         showToast(`已恢复到${getDiscardRestoreLabel(rawValue)}`);
         loadStats();
-        clampDiscardPageAfterRestore(1);
-        loadDiscardData();
+        removeRestoredDiscardRows([id]);
     } catch (e) {
         showToast(e.message || '恢复失败', 'error');
         select.value = '';
@@ -680,8 +701,8 @@ async function handleDiscardBulkTargetChange(event) {
         discardSelection.clear();
         showToast(`已恢复 ${ids.length} 条到${getDiscardRestoreLabel(rawValue)}`);
         loadStats();
-        clampDiscardPageAfterRestore(ids.length);
-        loadDiscardData();
+        setDiscardControlsDisabled(false);
+        removeRestoredDiscardRows(ids);
     } catch (e) {
         showToast(e.message || '批量恢复失败', 'error');
         discardSelection.clear();

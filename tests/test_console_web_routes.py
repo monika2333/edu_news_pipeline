@@ -1108,6 +1108,20 @@ def test_review_toolbar_search_can_shrink_without_overflowing() -> None:
     assert "max-width: none;" in review_css
 
 
+def test_duplicate_review_results_reserve_scrollbar_gutter() -> None:
+    # 查重弹窗摘要框按 scrollHeight 逐个撑高；结果区若不预留滚动条槽位，
+    # 滚动条会在第一个框量高之后才出现、把列挤窄，第一条摘要就少算一行被截断。
+    # jsdom 不做布局，只能锁住 CSS 规则本身。
+    review_css = (
+        Path(__file__).parents[1] / "src/console/web_static/css/modules/review.css"
+    ).read_text(encoding="utf-8")
+
+    block = re.search(r"\.duplicate-review-body\s*\{([^}]*)\}", review_css)
+    assert block, "review.css 缺少 .duplicate-review-body 规则"
+    assert "overflow-y: auto;" in block.group(1)
+    assert "scrollbar-gutter: stable;" in block.group(1)
+
+
 def test_duplicate_check_tracks_loading_state_by_review_column() -> None:
     scripts_dir = Path(__file__).parents[1] / "src/console/web_static/js/manual_filter"
     state_script = (scripts_dir / "review_duplicates_state.js").read_text(

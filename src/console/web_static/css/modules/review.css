@@ -537,6 +537,9 @@ body.duplicate-review-open .search-drawer-toggle {
 
 .duplicate-review-body {
     overflow-y: auto;
+    /* 始终预留滚动条槽位：摘要框按 scrollHeight 逐个撑高，第一个框量高时结果区还没溢出、
+       没有滚动条；后面的框撑高后滚动条出现、各列变窄，第一个框就少算一行被截断。 */
+    scrollbar-gutter: stable;
     padding-right: 4px;
 }
 

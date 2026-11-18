@@ -156,8 +156,8 @@ from src.adapters.http_toutiao import (
     resolve_article_id_from_feed,
 )
 from src.adapters.http_xinjinghao import (
-    AccountEntry as XinjinghaoEntry,
     article_to_detail_row as xinjinghao_article_to_detail_row,
+    entry_from_identifier as xinjinghao_entry_from_identifier,
     feed_item_to_row as xinjinghao_feed_item_to_row,
     list_items as xinjinghao_list_items,
     make_article_id as xinjinghao_make_article_id,
@@ -830,10 +830,10 @@ def _run_xinjinghao_flow(
         return _empty_stats()
 
     entries = [
-        XinjinghaoEntry(
-            xjh_id=account.normalized_identifier,
-            page_url=account.profile_url,
-            raw_source=account.original_input,
+        xinjinghao_entry_from_identifier(
+            account.normalized_identifier,
+            account.profile_url,
+            account.original_input,
         )
         for account in accounts
     ]

@@ -563,6 +563,18 @@ def test_xinjinghao_account_parse_normalizes_bare_id_and_url() -> None:
         assert parsed["original_input"] == raw
 
 
+def test_xinjinghao_account_parse_accepts_column_page_and_share_link() -> None:
+    for raw in (
+        "https://m.bjnews.com.cn/column/10200.html",
+        "https://api.bjnews.com.cn/api/v101/news/column_qrcode.php?column_id=10200",
+    ):
+        parsed = settings_service.parse_account("xinjinghao", raw)
+
+        assert parsed["normalized_identifier"] == "column:10200"
+        assert parsed["profile_url"] == "https://m.bjnews.com.cn/column/10200.html"
+        assert parsed["original_input"] == raw
+
+
 def test_xinjinghao_account_parse_rejects_article_and_foreign_urls() -> None:
     for raw in (
         "https://m.bjnews.com.cn/detail/1793885788019604.html",

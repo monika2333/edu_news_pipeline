@@ -4,6 +4,7 @@
 
 | 日期 | 功能 | 合入 | archive |
 |---|---|---|---|---|
+| 2026-11-18 | 新京号来源支持新京报栏目（用户要加 column 10200「北京知道」，原先控制台报「必须是 m.bjnews.com.cn 域名」）：`parse_account_input` 认 `/column/<id>.html` 与 `column_qrcode.php?column_id=` 分享链接，标识存 `column:<id>`；`list_items` 对栏目走 `news/column_news.php`（每页 20、无正文）并在列表阶段逐篇抓详情页 `.article-cen`，失败不返回以便下轮重试；栏目名取栏目页 h3/标题；**无数据库变更、无新环境变量、无前端改动**；号 296 行为不变；只读 live smoke 通过 | 见本次提交 | 站点事实记入 `pitfalls.md`，口径记入 `decisions.md` |
 | 2026-11-17 | 查重结果弹窗第一条摘要最后一行被截断：根因是结果区滚动条在第一个摘要框量高后才出现、把列挤窄；`.duplicate-review-body` 加 `scrollbar-gutter: stable`；纯 CSS；新增 CSS 规则断言（还原旧 CSS 实测失败）；浏览器夹具修前 30/141 个宽度截断、修后 0；全量 2022 passed | 见本次提交 | 踩坑记入 `pitfalls.md` 前端节 |
 | 2026-11-16 | 高级页「批量编辑」改为原地切换：点击后芯片框隐藏、textarea 占同一位置（不再在下方另展开），按钮变「逐条编辑」切回并保持高亮；提示文字移到两视图下方；纯前端；更新 jsdom 用例断言二选一与切回后芯片同步；全量 2021 passed | 见本次提交 | 拍板记入 `decisions.md` |
 | 2026-11-16 | 放弃页恢复后不再整页刷新：单条「恢复到」与勾选批量恢复成功后就地移除已恢复的行（`removeRestoredDiscardRows`），本地同步总数/分页/meta、后台刷新批次下拉；仅本页被恢复空时才重载；全部匹配模式与失败路径不变；纯前端；新增 4 条 jsdom 用例（管理员/值班双端，还原旧代码实测失败），全量 2021 passed | 见本次提交 | 约定记入 `src/console/AGENTS.md` 放弃页交互约定 |

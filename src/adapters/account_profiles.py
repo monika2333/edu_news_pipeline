@@ -176,6 +176,23 @@ def _resolve_xinjinghao(
     timeout: float,
 ) -> str:
     session = http_xinjinghao._session()
+    if normalized_identifier.startswith(http_xinjinghao.COLUMN_IDENTIFIER_PREFIX):
+        # 栏目没有号信息接口；栏目页是服务端渲染的，栏目名在头部 h3 与 <title>。
+        response = _request(
+            session,
+            profile_url,
+            headers={"Referer": profile_url},
+            timeout=timeout,
+            page_label="栏目页",
+        )
+        soup = BeautifulSoup(decode_response(response), "html.parser")
+        heading = soup.select_one(".head .name h3")
+        name = _name(heading.get_text(" ", strip=True)) if heading is not None else None
+        if name is None and soup.title is not None:
+            name = _name(soup.title.get_text(" ", strip=True))
+        if name is None:
+            raise AccountNameUnavailable("栏目页里没有找到栏目名")
+        return name
     # 号信息接口失败还要回退主页，两次请求共享同一个预算，避免把
     # 「纯 HTTP 来源 8 秒」的上限翻倍。
     budget = min(MAX_ACCOUNT_TIMEOUT_SECONDS, max(0.0, float(timeout)))

@@ -280,6 +280,34 @@ def test_xinjinghao_name_falls_back_to_hidden_name_field(
     assert name == "北京援藏"
 
 
+def test_xinjinghao_column_name_uses_column_page_heading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _Session(
+        _Response(
+            text=(
+                "<html><head><title>北京知道</title></head><body>"
+                '<div class="clearfix head"><div class="fl name">'
+                "<h3> 北京知道 </h3><p>已更新31篇</p></div></div>"
+                "</body></html>"
+            ),
+        )
+    )
+    monkeypatch.setattr(http_xinjinghao, "_session", lambda: session)
+
+    name = account_profiles.resolve_account_name(
+        "xinjinghao",
+        normalized_identifier="column:10200",
+        profile_url="https://m.bjnews.com.cn/column/10200.html",
+        timeout=8,
+    )
+
+    assert name == "北京知道"
+    assert [call["url"] for call in session.calls] == [
+        "https://m.bjnews.com.cn/column/10200.html"
+    ]
+
+
 def test_21jingji_name_uses_active_channel_nav(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

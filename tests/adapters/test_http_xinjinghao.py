@@ -407,3 +407,221 @@ def test_row_builders_ignore_item_section_and_use_xinjingbao() -> None:
     )
 
     assert feed_row["source"] == detail_row["source"] == "新京报"
+
+
+def _column_entry(column_id: str = "10200") -> http_xinjinghao.AccountEntry:
+    return http_xinjinghao.parse_account_input(
+        f"https://m.bjnews.com.cn/column/{column_id}.html"
+    )
+
+
+def _column_item(uuid: str, *, title: str = "北京知道稿件") -> dict[str, Any]:
+    # 栏目列表接口：row.content 与 share_url 都为空，只有 uuid。
+    return {
+        "type": "1",
+        "show_type": "2",
+        "uuid": uuid,
+        "row": {
+            "uuid": uuid,
+            "title": title,
+            "content": "",
+            "share_url": "",
+            "publish_timestamp": "1794989111",
+            "publish_time": "2026-11-18 16:05:11",
+        },
+    }
+
+
+_DETAIL_HTML = (
+    "<html><head><title>标题</title></head><body>"
+    '<div class="article"><div class="article-cen">'
+    "<p>北京教育正文第一段。</p><p>&nbsp;</p><p>正文第二段。</p>"
+    "<p>编辑：张三</p>"
+    "</div></div>"
+    '<div class="recommend"><p>推荐阅读不要</p></div>'
+    "</body></html>"
+)
+
+
+class HtmlResponse:
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.content = text.encode("utf-8")
+        self.encoding = "utf-8"
+        self.apparent_encoding = "utf-8"
+
+    def raise_for_status(self) -> None:
+        return None
+
+
+class ColumnSession:
+    def __init__(
+        self,
+        pages: dict[int, Any],
+        details: Optional[dict[str, Any]] = None,
+    ) -> None:
+        self.pages = pages
+        self.details = details or {}
+        self.calls: list[dict[str, Any]] = []
+
+    def get(self, url: str, **kwargs: Any) -> Any:
+        self.calls.append({"url": url, **kwargs})
+        if url == http_xinjinghao.COLUMN_LIST_API_URL:
+            value = self.pages.get(int(kwargs["params"]["page"]), _payload())
+            if isinstance(value, Exception):
+                raise value
+            return FakeResponse(value)
+        detail = self.details.get(url, _DETAIL_HTML)
+        if isinstance(detail, Exception):
+            raise detail
+        return HtmlResponse(detail)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "https://m.bjnews.com.cn/column/10200.html",
+        "https://m.bjnews.com.cn/column/10200.html?from=share",
+        "m.bjnews.com.cn/column/10200",
+        "https://api.bjnews.com.cn/api/v101/news/column_qrcode.php?column_id=10200",
+        "column:10200",
+    ],
+)
+def test_parse_account_input_accepts_column_forms(raw: str) -> None:
+    entry = http_xinjinghao.parse_account_input(raw)
+
+    assert entry.is_column
+    assert entry.column_id == "10200"
+    assert entry.xjh_id == ""
+    assert entry.normalized_identifier == "column:10200"
+    assert entry.page_url == "https://m.bjnews.com.cn/column/10200.html"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "https://api.bjnews.com.cn/api/v101/news/column_qrcode.php",
+        "https://api.bjnews.com.cn/api/v101/news/column_qrcode.php?column_id=abc",
+        "https://api.bjnews.com.cn/api/v101/news/column_news.php?column_id=10200",
+        "https://www.bjnews.com.cn/column/10200.html",
+        "column:abc",
+    ],
+)
+def test_parse_account_input_rejects_bad_column_forms(raw: str) -> None:
+    with pytest.raises(ValueError):
+        http_xinjinghao.parse_account_input(raw)
+
+
+def test_entry_from_identifier_round_trips_both_kinds() -> None:
+    column = http_xinjinghao.entry_from_identifier(
+        "column:10200", "https://m.bjnews.com.cn/column/10200.html"
+    )
+    account = http_xinjinghao.entry_from_identifier(
+        "296", "https://m.bjnews.com.cn/mp/296"
+    )
+
+    assert column.is_column and column.column_id == "10200"
+    assert column.normalized_identifier == "column:10200"
+    assert not account.is_column and account.xjh_id == "296"
+    assert account.normalized_identifier == "296"
+
+
+def test_column_list_items_uses_column_api_and_fills_body_from_detail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = ColumnSession({1: _payload(items=[_column_item("1794987365129345")])})
+    monkeypatch.setattr(http_xinjinghao, "_session", lambda: session)
+
+    items = http_xinjinghao.list_items([_column_entry()])
+
+    assert session.calls[0]["url"] == http_xinjinghao.COLUMN_LIST_API_URL
+    assert session.calls[0]["params"] == {"column_id": "10200", "page": 1}
+    assert session.calls[0]["headers"] == {
+        "Referer": "https://m.bjnews.com.cn/column/10200.html"
+    }
+    assert session.calls[1]["url"] == (
+        "https://m.bjnews.com.cn/detail/1794987365129345.html"
+    )
+    assert len(items) == 1
+    article_id = http_xinjinghao.make_article_id(items[0].url)
+    assert article_id == "xinjinghao:1794987365129345"
+    row = http_xinjinghao.article_to_detail_row(
+        items[0],
+        article_id,
+        detail_fetched_at=datetime(2026, 11, 18, 0, 0, tzinfo=timezone.utc),
+    )
+    assert row["source"] == "新京报"
+    assert "北京教育正文第一段" in row["content_markdown"]
+    assert "正文第二段" in row["content_markdown"]
+    assert "推荐阅读" not in row["content_markdown"]
+    assert "编辑" not in row["content_markdown"]
+
+
+def test_column_list_items_skips_existing_without_fetching_detail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = ColumnSession(
+        {1: _payload(items=[_column_item("old"), _column_item("new")])}
+    )
+    monkeypatch.setattr(http_xinjinghao, "_session", lambda: session)
+
+    items = http_xinjinghao.list_items(
+        [_column_entry()],
+        existing_ids={"xinjinghao:old"},
+    )
+
+    assert [http_xinjinghao.make_article_id(item.url) for item in items] == [
+        "xinjinghao:new"
+    ]
+    assert [call["url"] for call in session.calls] == [
+        http_xinjinghao.COLUMN_LIST_API_URL,
+        "https://m.bjnews.com.cn/detail/new.html",
+    ]
+
+
+def test_column_list_items_drops_items_whose_detail_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = ColumnSession(
+        {1: _payload(items=[_column_item("a"), _column_item("b"), _column_item("c")])},
+        details={
+            "https://m.bjnews.com.cn/detail/a.html": requests.Timeout("slow"),
+            "https://m.bjnews.com.cn/detail/b.html": "<html><body>无正文</body></html>",
+        },
+    )
+    monkeypatch.setattr(http_xinjinghao, "_session", lambda: session)
+
+    items = http_xinjinghao.list_items([_column_entry()])
+
+    assert [item.url for item in items] == ["https://m.bjnews.com.cn/detail/c.html"]
+
+
+def test_column_list_items_pages_by_twenty(monkeypatch: pytest.MonkeyPatch) -> None:
+    first_page = [_column_item(str(1000 + index)) for index in range(20)]
+    session = ColumnSession(
+        {1: _payload(items=first_page), 2: _payload(items=[_column_item("2000")])}
+    )
+    monkeypatch.setattr(http_xinjinghao, "_session", lambda: session)
+
+    items = http_xinjinghao.list_items([_column_entry()], pages=5)
+
+    assert len(items) == 21
+    list_pages = [
+        call["params"]["page"]
+        for call in session.calls
+        if call["url"] == http_xinjinghao.COLUMN_LIST_API_URL
+    ]
+    assert list_pages == [1, 2]
+
+
+def test_column_list_items_honors_limit_before_fetching_more_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_page = [_column_item(str(1000 + index)) for index in range(20)]
+    session = ColumnSession({1: _payload(items=first_page)})
+    monkeypatch.setattr(http_xinjinghao, "_session", lambda: session)
+
+    items = http_xinjinghao.list_items([_column_entry()], limit=2, pages=5)
+
+    assert len(items) == 2
+    assert len(session.calls) == 3

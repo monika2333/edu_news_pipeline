@@ -606,7 +606,7 @@ def _account_parser(source: str) -> Callable[[str], dict[str, str]]:
         def parse(raw: str) -> dict[str, str]:
             item = parse_xinjinghao_account(raw)
             return {
-                "normalized_identifier": item.xjh_id,
+                "normalized_identifier": item.normalized_identifier,
                 "profile_url": item.page_url,
             }
 

@@ -13,6 +13,7 @@ from src.adapters.db_postgres_manual_reviews._base import (
     _build_manual_review_filters,
     normalize_report_type_value,
     report_type_expr,
+    review_category_expressions,
 )
 from src.adapters.db_postgres_manual_reviews._versions import (
     update_manual_review_statuses_with_versions,
@@ -64,6 +65,7 @@ def search_manual_candidates(
         clauses.append(f"{CREATED_LOCAL_DATE_EXPRESSION} < %s")
         params.append(created_before)
     where_sql = " AND ".join(clauses)
+    beijing_expr, sentiment_expr = review_category_expressions("mr")
     count_query = f"""
         SELECT COUNT(*) AS total
         FROM manual_reviews mr
@@ -72,7 +74,11 @@ def search_manual_candidates(
     """
     query_sql = f"""
         SELECT
-            {MANUAL_REVIEW_SELECT_COLUMNS.format(type_expr=type_expr)}
+            {MANUAL_REVIEW_SELECT_COLUMNS.format(
+                type_expr=type_expr,
+                beijing_expr=beijing_expr,
+                sentiment_expr=sentiment_expr,
+            )}
         FROM manual_reviews mr
         JOIN news_summaries ns ON ns.article_id = mr.article_id
         {SCORE_FEEDBACK_JOIN}

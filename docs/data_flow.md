@@ -151,11 +151,13 @@ submitted_reports ──► submitted_report_items ──► 回链到 news_summ
 |---|---|---|
 | `summarize` | `summary_status` | `llm_summary`、`llm_keywords` |
 | `enrich-summary` | `status` | `sentiment_label`、`sentiment_confidence`、`llm_source` |
-| `geo-classify` | `external_importance_status`（见下方注意） | `is_beijing_related_llm`、`beijing_gate_raw` |
+| `geo-classify` | `external_importance_status`（见下方注意） | `is_beijing_related`、`is_beijing_related_llm`、`beijing_gate_raw` |
 | `external-filter` | `external_importance_status` | `external_importance_score`、`external_importance_raw` |
 | `submission-dedup` | 无独立状态字段 | `dedup_embedding`、`dedup_embedding_model`、`dedup_source_hash`、`dedup_embedded_at` |
 
 前四个生成/富化步骤各有独立的 `*_attempted_at` 和 `*_fail_count`，用于重试控制和失败隔离——**某一步失败不会阻塞其他生成/富化步骤**。`submission-dedup` 的四个字段是可重建缓存，不承担流水线重试状态。
+
+> **`news_summaries.is_beijing_related` / `sentiment_label` 从此只由流水线写入。** `geo-classify` 写 `is_beijing_related`、`enrich-summary` 写 `sentiment_label`；人工审阅页的换组不再改写这两个全局字段，只写工作区自己的分类覆盖值（见第三节）。库里已有的值可能混着 2026-11 之前人工换组的结果，**不做回填或还原**。人工工作区看到的「生效分类」= 本工作区覆盖值（若有）否则这两个全局值。
 
 `geo-classify`、`external-filter`、`summarize` 的 `*_fail_count` 只统计与该篇文章相关的失败。系统性 LLM 错误（不可重试的 4xx、额度/计费、请求发出前的配置类错误）与文章数据无关，**不写入这三个计数**，也不会触发达到上限后的状态变更（按北京放行 / 标 `external_filtered` / 标 `failed`）；文章保持原待处理状态，下一轮继续请求。`summarize` 的 `mark_attempt` 在提交请求前就把 `summary_fail_count` +1（同时用作认领），遇到系统性错误会退回这次预加（仅当行仍是 `summary_status = 'pending' AND status = 'pending'` 且计数 > 0），因此该字段最终仍反映真实的文章级失败次数。
 
@@ -300,6 +302,8 @@ T 非空时才调用「提示词优化」LLM 步骤。模型只返回 1–3 处 
 - 状态：`pending` / `selected` / `backup` / `discarded` / `exported`。`exported` 是历史状态：原由控制台「归档」写入（旧审计事件 `manual_review.archive`），该操作已于 2026-11 移除，此后不再有新写入；已有记录保留只读，状态值不改名、不迁移。这个名字是早期自动导出脚本的历史残留，与任何自动导出行为无关，不要按字面意思清理或改写它
 - `report_type` 只有 `zongbao` / `wanbao`，且**只在采纳时才有意义**——`pending` 状态下这个值不代表任何东西
 - `version` 用于乐观锁，防止同一管理员的并发请求覆盖自己的新决定
+- `category_override`：**本管理员工作区的分类覆盖值**，取值与前端分组键 `ReviewGroupKey` 同一套——`internal_positive` / `internal_negative` / `external_positive` / `external_negative`；`NULL` 表示跟随 `news_summaries` 的全局分类。审阅页把条目拖进另一个分组并保存时，和该条的全局分类比较：相同写 `NULL`（清空冗余覆盖、回到跟随全局），不同写分组键；**只写这一列，不再写 `news_summaries`**。覆盖值跟着工作区里的这条记录走：之后被放弃、恢复为待处理、再次采纳都保留（待处理条目在候选池与聚类视图里也按生效分类归组）
+- **生效分类** = 本工作区的覆盖值（若有）否则全局分类。审阅列表、候选池、分类筛选与计数、批量放弃/恢复、清理旧新闻、聚类视图都按生效分类计算；全库文章检索（`articles_service`）、归因分析（`db_postgres_article_attribution`）与 `manual_clusters` 缓存构建（`refresh-manual-clusters` / `fetch_manual_cluster_sources`）以及流水线各 worker 仍读全局分类，不受任何工作区覆盖影响
 - 人工摘要/来源（`summary` / `manual_llm_source`）只在用户实际编辑时写入：前端以「最近一次被服务端确认的值」为基准做改动判定，决定操作不再顺带把界面显示值整份写成人工值；历史数据中已有的此类副本不做清理
 - 汇总审阅的「一键清空」只把当前管理员自己的 `selected` / `backup` 行置为 `discarded`，清空排序值（`rank`），保留摘要、来源、笔记、评分和原报别。历史说明：库里 `decided_by = 'system:scheduled_clear'` 的行，以及审计 `after_data.trigger = 'scheduled'` 的 `manual_review.clear_buckets` 事件，来自 2026-11 已移除的每周自动清空命令（该命令曾清空所有管理员），属于只读历史；现行一键清空写入的 `trigger` 是 `manual`。
 - **按条件恢复**（`POST /api/manual_filter/bulk-restore`）：把当前管理员（`owner_user_id`）符合条件的 `status = 'discarded'` 行改回 `pending`。在一个事务里先 `SELECT ... FOR UPDATE` 锁定匹配行，再经 `update_manual_review_statuses_with_versions` 写入：`rank` 置空、`report_type` 走 `COALESCE`（与 `/decide` 恢复到待处理的写法一致，不真正清空该列）、`version + 1`、`decided_at` 写恢复发生时间。筛选子句与放弃列表接口共用同一构造（`_build_manual_review_filters`），保证列表、预览计数与实际恢复范围同口径；无任何条件时接口直接拒绝
@@ -311,6 +315,7 @@ T 非空时才调用「提示词优化」LLM 步骤。模型只返回 1–3 处 
 - **一个班次一篇文章一行**（`shift_id` + `article_id`）
 - 同一篇文章可以在多个班次里各有一行，互不冲突
 - 值班编辑只能读写**自己班次**的行
+- `category_override`：本班次工作区的分类覆盖值，含义、取值与写入/清空规则和 `manual_reviews.category_override` 相同——只写本班次这一列，不改 `news_summaries`。管理员查看某个班次的结果（值班结果列表、预览取数、定稿列表）时，看到的是**该班次**的生效分类，不是自己的覆盖值；聚类视图里，有覆盖值的待处理条目不参与共享缓存簇，按生效分类作为单条出现
 - `finalized_batch_id` / `finalized_rank` 表示已定稿，两者必须同时有值或同时为空（有 CHECK 约束保证）
 - 批量编辑采用部分更新：请求中未提交的摘要或人工来源字段保持原值；显式提交空字符串时仍按空字符串写入
 - 值班编辑按筛选条件批量放弃时，服务端直接用 `INSERT ... SELECT ... ON CONFLICT DO UPDATE` 写入本表；匹配条件复用管理员候选池的统一筛选器（细化筛选五参数经 `normalize_candidate_refine_filters` 归一化后逐层透传到 `bulk_discard_shift_candidates`），但额外受班次归属约束。预览计数与实际写入走同一段匹配 SQL，保证「全部放弃」确认框里的数字与实际放弃范围同口径。该路径不读取或写入 `manual_reviews`，不覆盖已有决定或已定稿条目，也不做逐行版本校验。
@@ -320,7 +325,7 @@ T 非空时才调用「提示词优化」LLM 步骤。模型只返回 1–3 处 
 
 ### 两者的关系
 
-值班编辑先做初筛，管理员通过"送入管理员工作区"把结果导入 `manual_reviews`（`import_shift_reviews_into_manual`）。**导入时会复制内容字段**（编辑过的摘要等），此后两张表各自独立演进。
+值班编辑先做初筛，管理员通过"送入管理员工作区"把结果导入 `manual_reviews`（`import_shift_reviews_into_manual`）。**导入时会复制内容字段**（编辑过的摘要等）与**班次的分类覆盖值**（`shift_reviews.category_override` → `manual_reviews.category_override`）：新导入、或冲突时选择「值班版本」的条目，按值班版本覆盖（值班没有覆盖则管理员这条也清空为 `NULL`）；冲突时选择「保留现有」的，管理员原有覆盖值不动。此后两张表各自独立演进。
 
 管理员查看值班结果时，默认的「未处理」范围会重新展示在自己全量新闻筛选中已被 `discarded` 的文章，给值班编辑的采纳或备选结论保留一次复核机会。此时全量页的放弃记录只作为当前管理员自己的后台历史存在：值班结果卡片按「未处理」呈现，管理员可以直接采纳、备选或放弃，不需要先撤回原决定，采纳或备选时也不触发版本选择。只有文章已在当前管理员工作区采纳、备选或归档，或者当前管理员已在值班结果页明确放弃时，才从其「未处理」中排除。管理员驳回记录存放在 `shift_review_admin_discards`，以 `owner_user_id + shift_review_id` 唯一；接口仍以 `admin_discarded_at`、`admin_discarded_by_user_id`、`admin_discarded_by_display_name` 返回当前查看者自己的记录。切换到「全部」仍可查看该栏目的完整值班结果，栏目数字必须与当前查看者的「未处理 / 全部」范围使用相同口径。
 
@@ -455,8 +460,8 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 
 | 表 | 职责 | 权威性 |
 |---|---|---|
-| `manual_reviews` | 管理员的采纳/放弃决定 | **权威，业务核心** |
-| `shift_reviews` | 值班编辑的班次内决定 | **权威，业务核心** |
+| `manual_reviews` | 管理员的采纳/放弃决定与本工作区分类覆盖 | **权威，业务核心** |
+| `shift_reviews` | 值班编辑的班次内决定与本班次分类覆盖 | **权威，业务核心** |
 | `shift_review_admin_discards` | 每位管理员对值班审阅记录的独立驳回决定 | **权威，业务核心** |
 | `shift_review_finalization_batches` | 班次定稿批次 | 权威 |
 | `duty_shifts` | 具体班次（谁、什么时间段） | 权威 |
@@ -499,6 +504,7 @@ ns.created_at >= s.starts_at AND ns.created_at < s.ends_at
 |---|---|---|
 | `news_summaries.created_at` 不可变 | 班次划分的唯一依据 | 新闻在班次间跳动，复核记录对不上 |
 | `manual_reviews(owner_user_id, article_id)` 唯一 | 每位管理员对每篇文章只有一份独立决定 | 同一工作区重复行或管理员之间互相覆盖 |
+| 分类覆盖值只落工作区表 | 换组是人的判断，按工作区隔离；全局分类只由流水线写 | 一个人换组改变所有人的候选池、筛选与聚类，管理员隔离失效 |
 | 入池为每位在职管理员各写一行 | 管理员候选池采用预写且彼此隔离 | 新闻缺失、重复或新决定被覆盖 |
 | 各来源 `article_id` 必须稳定 | 全链路的关联键 | 同一篇文章重复入库，去重失效 |
 | `detail_fetched_at` 与正文成对写入 | 详情补抓只挑「正文为空且 `detail_fetched_at` 为空」的行 | 不写标记：该行会被当成没抓过反复补抓；已抓过（含无文字的纯图片版）却没写标记，也会被反复重抓 |

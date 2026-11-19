@@ -680,13 +680,11 @@ def test_order_persists_review_groups_with_rank_updates(
     assert fake_adapter.ordered["category_updates"] == [
         {
             "article_id": "article-1",
-            "is_beijing_related": True,
-            "sentiment_label": "positive",
+            "category_override": "internal_positive",
         },
         {
             "article_id": "article-2",
-            "is_beijing_related": False,
-            "sentiment_label": "negative",
+            "category_override": "external_negative",
         },
     ]
     assert result["updated_categories"] == 2

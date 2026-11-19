@@ -236,10 +236,19 @@ CREATE TABLE public.manual_reviews (
     decided_by_user_id uuid,
     version integer DEFAULT 1 NOT NULL,
     owner_user_id uuid NOT NULL,
+    category_override text,
+    CONSTRAINT manual_reviews_category_override_check CHECK (((category_override IS NULL) OR (category_override = ANY (ARRAY['internal_positive'::text, 'internal_negative'::text, 'external_positive'::text, 'external_negative'::text])))),
     CONSTRAINT manual_reviews_report_type_check CHECK ((report_type = ANY (ARRAY['zongbao'::text, 'wanbao'::text]))),
     CONSTRAINT manual_reviews_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'selected'::text, 'backup'::text, 'discarded'::text, 'exported'::text]))),
     CONSTRAINT manual_reviews_version_check CHECK ((version > 0))
 );
+
+
+--
+-- Name: COLUMN manual_reviews.category_override; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.manual_reviews.category_override IS '本管理员工作区的分类覆盖值（internal/external × positive/negative 分组键）；NULL 表示跟随 news_summaries 的全局分类';
 
 
 --
@@ -645,6 +654,8 @@ CREATE TABLE public.shift_reviews (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     finalized_batch_id uuid,
     finalized_rank integer,
+    category_override text,
+    CONSTRAINT shift_reviews_category_override_check CHECK (((category_override IS NULL) OR (category_override = ANY (ARRAY['internal_positive'::text, 'internal_negative'::text, 'external_positive'::text, 'external_negative'::text])))),
     CONSTRAINT shift_reviews_decision_check CHECK ((decision = ANY (ARRAY['pending'::text, 'selected'::text, 'backup'::text, 'discarded'::text]))),
     CONSTRAINT shift_reviews_finalization_pair_check CHECK ((((finalized_batch_id IS NULL) AND (finalized_rank IS NULL)) OR ((finalized_batch_id IS NOT NULL) AND (finalized_rank IS NOT NULL)))),
     CONSTRAINT shift_reviews_finalized_rank_check CHECK (((finalized_rank IS NULL) OR (finalized_rank > 0))),
@@ -652,6 +663,13 @@ CREATE TABLE public.shift_reviews (
     CONSTRAINT shift_reviews_report_type_check CHECK (((report_type IS NULL) OR (report_type = ANY (ARRAY['zongbao'::text, 'wanbao'::text])))),
     CONSTRAINT shift_reviews_version_check CHECK ((version > 0))
 );
+
+
+--
+-- Name: COLUMN shift_reviews.category_override; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.shift_reviews.category_override IS '本班次工作区的分类覆盖值（internal/external × positive/negative 分组键）；NULL 表示跟随 news_summaries 的全局分类';
 
 
 --
@@ -1942,4 +1960,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261030120000'),
     ('20261106120000'),
     ('20261106150000'),
-    ('20261114120000');
+    ('20261114120000'),
+    ('20261119120000');

@@ -10,8 +10,12 @@ if TYPE_CHECKING:
 
 from src.adapters.db_postgres_manual_reviews import (
     CREATED_LOCAL_DATE_EXPRESSION,
+    REVIEW_CATEGORY_OVERRIDE_KEYS,
     SCORE_FEEDBACK_JOIN,
     SEARCH_TEXT_EXPRESSION,
+    category_override_value,
+    fetch_news_summary_categories,
+    review_category_expressions,
 )
 from src.adapters.sql_candidate_filters import (
     DISCARDED_BATCH_LIMIT,
@@ -39,7 +43,11 @@ _ADMIN_UNPROCESSED_SQL = """(
     )
 )"""
 
-SHIFT_REVIEW_SELECT = """
+_SHIFT_BEIJING_EXPRESSION, _SHIFT_SENTIMENT_EXPRESSION = (
+    review_category_expressions("sr")
+)
+
+SHIFT_REVIEW_SELECT = f"""
     ns.article_id,
     COALESCE(sr.decision, 'pending') AS decision,
     sr.report_type,
@@ -69,9 +77,9 @@ SHIFT_REVIEW_SELECT = """
     ns.source,
     ns.publish_time_iso,
     ns.publish_time,
-    ns.sentiment_label,
+    {_SHIFT_SENTIMENT_EXPRESSION} AS sentiment_label,
     ns.sentiment_confidence,
-    ns.is_beijing_related,
+    {_SHIFT_BEIJING_EXPRESSION} AS is_beijing_related,
     ns.external_importance_score,
     ns.external_importance_checked_at,
     ns.score_details,
@@ -257,10 +265,10 @@ def _shift_review_base_filter_clauses(
         clauses.append("COALESCE(sr.report_type, 'zongbao') = %s")
         params.append(report_type)
     if region in {"internal", "external"}:
-        clauses.append("ns.is_beijing_related = %s")
+        clauses.append(f"({_SHIFT_BEIJING_EXPRESSION}) = %s")
         params.append(region == "internal")
     if sentiment in {"positive", "negative"}:
-        clauses.append("ns.sentiment_label = %s")
+        clauses.append(f"({_SHIFT_SENTIMENT_EXPRESSION}) = %s")
         params.append(sentiment)
     # terms 已由 service 层切词去重；逐词一条 ILIKE（AND），按字面转义
     if terms:
@@ -497,10 +505,10 @@ def bulk_discard_shift_candidates(
     clauses = ["mr.status = %s", "ns.status = 'ready_for_export'"]
     filter_params: list[Any] = ["pending"]
     if region in {"internal", "external"}:
-        clauses.append("ns.is_beijing_related = %s")
+        clauses.append(f"({_SHIFT_BEIJING_EXPRESSION}) = %s")
         filter_params.append(region == "internal")
     if sentiment in {"positive", "negative"}:
-        clauses.append("ns.sentiment_label = %s")
+        clauses.append(f"({_SHIFT_SENTIMENT_EXPRESSION}) = %s")
         filter_params.append(sentiment)
     if terms:
         term_clauses, term_params = ilike_all_clauses(SEARCH_TEXT_EXPRESSION, terms)
@@ -791,13 +799,14 @@ def fetch_shift_clusters(
                 ns.article_id,
                 ns.external_importance_score,
                 sr.rank AS manual_rank,
+                sr.category_override,
                 ns.score,
                 ns.publish_time_iso,
                 CASE
-                    WHEN ns.is_beijing_related THEN 'internal'
+                    WHEN {_SHIFT_BEIJING_EXPRESSION} THEN 'internal'
                     ELSE 'external'
                 END || '_' || CASE
-                    WHEN lower(COALESCE(ns.sentiment_label, '')) = 'negative'
+                    WHEN lower(COALESCE({_SHIFT_SENTIMENT_EXPRESSION}, '')) = 'negative'
                         THEN 'negative'
                     ELSE 'positive'
                 END AS bucket_key
@@ -836,6 +845,7 @@ def fetch_shift_clusters(
             FROM cluster_items ci
             JOIN shift_pending pending
               ON pending.article_id = ci.article_id
+            WHERE pending.category_override IS NULL
         ),
         unclustered_items AS (
             SELECT
@@ -850,6 +860,7 @@ def fetch_shift_clusters(
             LEFT JOIN cluster_items ci
               ON ci.article_id = pending.article_id
             WHERE ci.article_id IS NULL
+               OR pending.category_override IS NOT NULL
         ),
         all_cluster_items AS (
             SELECT * FROM cluster_memberships
@@ -978,6 +989,7 @@ def fetch_shift_review(
             edited_summary,
             manual_llm_source,
             notes,
+            category_override,
             version,
             finalized_batch_id,
             finalized_rank,
@@ -1018,6 +1030,7 @@ def fetch_shift_reviews_for_update(
             edited_summary,
             manual_llm_source,
             notes,
+            category_override,
             version,
             finalized_batch_id,
             finalized_rank,
@@ -1489,18 +1502,71 @@ def update_shift_review_order(
     actor_user_id: str,
     selected_order: Sequence[str],
     backup_order: Sequence[str],
-) -> int:
+    category_updates: Optional[Mapping[str, str]] = None,
+) -> tuple[int, list[dict[str, Any]], list[dict[str, Any]]]:
+    """保存本班次排序，并在同一条 UPDATE 里写入分类覆盖值。
+
+    换组只写 ``shift_reviews.category_override``（NULL = 跟随全局），不再改
+    ``news_summaries``。与全局分类比较后相同则清空覆盖、不同则写分组键。
+    返回 ``(updated, before_rows, after_rows)``，供审计记录覆盖值的前后变化。
+    """
+    order_entries = [
+        (decision, article_id)
+        for decision, article_ids in (
+            ("selected", selected_order),
+            ("backup", backup_order),
+        )
+        for article_id in article_ids
+    ]
+    ordered_article_ids = [article_id for _, article_id in order_entries]
+    category_map: dict[str, str] = {}
+    for article_id, group_key in (category_updates or {}).items():
+        normalized_id = str(article_id or "").strip()
+        normalized_group = str(group_key or "").strip()
+        if not normalized_id:
+            raise ValueError("A review group update is missing its article id")
+        if normalized_id not in set(ordered_article_ids):
+            raise ValueError(
+                f"Grouped article is missing from review order: {normalized_id}"
+            )
+        if normalized_group not in REVIEW_CATEGORY_OVERRIDE_KEYS:
+            raise ValueError(f"Invalid review group: {normalized_group}")
+        category_map[normalized_id] = normalized_group
+    if not ordered_article_ids:
+        return 0, [], []
+    before = fetch_shift_reviews_for_update(
+        cur,
+        shift_id=shift_id,
+        article_ids=ordered_article_ids,
+    )
+    before_by_id = {str(row["article_id"]): row for row in before}
+    global_categories = fetch_news_summary_categories(cur, list(category_map))
     updated = 0
+    after: list[dict[str, Any]] = []
     for decision, article_ids in (
         ("selected", selected_order),
         ("backup", backup_order),
     ):
         for rank, article_id in enumerate(article_ids, start=1):
+            current = before_by_id.get(str(article_id))
+            if current is None:
+                raise ValueError(
+                    f"Review is missing from shift order: {article_id}"
+                )
+            override = current.get("category_override")
+            if str(article_id) in category_map:
+                global_category = global_categories.get(str(article_id)) or {}
+                override = category_override_value(
+                    category_map[str(article_id)],
+                    global_is_beijing=global_category.get("is_beijing_related"),
+                    global_sentiment=global_category.get("sentiment_label"),
+                )
             cur.execute(
                 """
                 UPDATE shift_reviews
                 SET decision = %s,
                     rank = %s,
+                    category_override = %s,
                     updated_by_user_id = %s,
                     decided_at = CASE
                         WHEN decision IS DISTINCT FROM %s THEN now()
@@ -1510,20 +1576,24 @@ def update_shift_review_order(
                 WHERE shift_id = %s
                   AND article_id = %s
                   AND finalized_batch_id IS NULL
+                RETURNING *
                 """,
                 (
                     decision,
                     rank,
+                    override,
                     actor_user_id,
                     decision,
                     shift_id,
                     article_id,
                 ),
             )
-            if cur.rowcount != 1:
+            row = cur.fetchone()
+            if cur.rowcount != 1 or not row:
                 raise ValueError(f"Review is missing from shift order: {article_id}")
             updated += 1
-    return updated
+            after.append(dict(row))
+    return updated, before, after
 
 
 def fetch_shift_stats(

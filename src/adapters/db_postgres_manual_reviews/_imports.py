@@ -70,6 +70,7 @@ def _fetch_shift_reviews_for_manual_import(
             sr.edited_summary,
             sr.manual_llm_source,
             sr.notes,
+            sr.category_override,
             ns.llm_summary,
             ns.score
         FROM shift_reviews sr
@@ -192,7 +193,8 @@ def import_shift_reviews_into_manual(
                     RETURNING
                         id, article_id, status, summary, rank, notes, score,
                         decided_by, decided_by_user_id, decided_at,
-                        manual_llm_source, report_type, version, created_at, updated_at
+                        manual_llm_source, report_type, category_override,
+                        version, created_at, updated_at
                     """,
                     (
                         _resolved_import_text(resolution, "summary", existing.get("summary")),
@@ -232,6 +234,7 @@ def import_shift_reviews_into_manual(
                     decided_at = now(),
                     manual_llm_source = %s,
                     report_type = %s,
+                    category_override = %s,
                     version = version + 1,
                     updated_at = now()
                 WHERE owner_user_id = %s
@@ -239,7 +242,8 @@ def import_shift_reviews_into_manual(
                 RETURNING
                     id, article_id, status, summary, rank, notes, score,
                     decided_by, decided_by_user_id, decided_at,
-                    manual_llm_source, report_type, version, created_at, updated_at
+                    manual_llm_source, report_type, category_override,
+                    version, created_at, updated_at
                 """,
                 (
                     target_status,
@@ -251,6 +255,7 @@ def import_shift_reviews_into_manual(
                     actor_user_id,
                     source,
                     normalized_report_type,
+                    row.get("category_override"),
                     actor_user_id,
                     article_id,
                 ),
@@ -271,9 +276,10 @@ def import_shift_reviews_into_manual(
                     decided_at,
                     manual_llm_source,
                     report_type,
+                    category_override,
                     version
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s, %s, 1)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s, %s, %s, 1)
                 ON CONFLICT (owner_user_id, article_id) DO NOTHING
                 RETURNING
                     id,
@@ -288,6 +294,7 @@ def import_shift_reviews_into_manual(
                     decided_at,
                     manual_llm_source,
                     report_type,
+                    category_override,
                     version,
                     created_at,
                     updated_at
@@ -304,6 +311,7 @@ def import_shift_reviews_into_manual(
                     actor_user_id,
                     source,
                     normalized_report_type,
+                    row.get("category_override"),
                 ),
             )
         imported.append(_return_manual_import_row(cur))

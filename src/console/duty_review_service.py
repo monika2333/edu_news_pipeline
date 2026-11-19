@@ -121,8 +121,7 @@ def _build_review_category_updates(
             updates.append(
                 {
                     "article_id": article_id,
-                    "is_beijing_related": region == "internal",
-                    "sentiment_label": sentiment,
+                    "category_override": group_key,
                 }
             )
     return updates

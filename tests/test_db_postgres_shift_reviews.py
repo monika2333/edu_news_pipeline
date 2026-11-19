@@ -157,8 +157,9 @@ def test_bulk_discard_reuses_manual_candidate_filters_for_preview() -> None:
     assert "manual_reviews" not in query
     assert "mr.status = %s" in query
     assert "ns.status = 'ready_for_export'" in query
-    assert "ns.is_beijing_related = %s" in query
-    assert "ns.sentiment_label = %s" in query
+    # 分类筛选走本班次的「生效分类」：有覆盖值看覆盖值，否则看全局分类
+    assert "CASE WHEN sr.category_override IS NULL THEN ns.is_beijing_related" in query
+    assert "CASE WHEN sr.category_override IS NULL THEN ns.sentiment_label" in query
     assert "ILIKE %s" in query
     assert "AT TIME ZONE 'Asia/Shanghai'" in query
     assert "ns.created_at" in query
@@ -311,8 +312,11 @@ def test_shift_candidate_search_uses_body_without_selecting_it() -> None:
     select_clause = list_query.split("FROM duty_shifts", maxsplit=1)[0]
     assert "coalesce(ns.content_markdown, '')" in list_query
     assert "ns.content_markdown" not in select_clause
-    assert "ns.is_beijing_related = %s" in list_query
-    assert "ns.sentiment_label = %s" in list_query
+    # 列表返回生效分类（同名别名），筛选也用同一对表达式
+    assert "AS is_beijing_related" in select_clause
+    assert "AS sentiment_label" in select_clause
+    assert "CASE WHEN sr.category_override IS NULL THEN ns.is_beijing_related" in list_query
+    assert "CASE WHEN sr.category_override IS NULL THEN ns.sentiment_label" in list_query
     assert "ILIKE %s" in list_query
     assert "AT TIME ZONE 'Asia/Shanghai'" in list_query
     assert cursor.params[-1][-6:-1] == (
@@ -771,8 +775,8 @@ def test_bulk_restore_dry_run_counts_without_write() -> None:
     assert "UPDATE shift_reviews" not in query
     assert "finalized_batch_id" not in query
     assert "COALESCE(sr.decision, 'pending') = %s" in query
-    assert "ns.is_beijing_related = %s" in query
-    assert "ns.sentiment_label = %s" in query
+    assert "CASE WHEN sr.category_override IS NULL THEN ns.is_beijing_related" in query
+    assert "CASE WHEN sr.category_override IS NULL THEN ns.sentiment_label" in query
     assert "ILIKE %s" in query
     assert "ns.external_importance_score >= %s" in query
     assert "ns.external_importance_score <= %s" in query
@@ -865,8 +869,8 @@ def test_bulk_restore_matches_list_where_construction() -> None:
         "s.cancelled_at IS NULL",
         "ns.status = 'ready_for_export'",
         "COALESCE(sr.decision, 'pending') = %s",
-        "ns.is_beijing_related = %s",
-        "ns.sentiment_label = %s",
+        "CASE WHEN sr.category_override IS NULL THEN ns.is_beijing_related",
+        "CASE WHEN sr.category_override IS NULL THEN ns.sentiment_label",
         "ILIKE %s",
         "EXTRACT(HOUR FROM ns.created_at AT TIME ZONE 'Asia/Shanghai') >= %s",
         "NOT EXISTS",

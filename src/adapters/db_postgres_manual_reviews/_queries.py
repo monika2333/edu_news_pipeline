@@ -10,6 +10,7 @@ from src.adapters.db_postgres_manual_reviews._base import (
     SCORE_FEEDBACK_JOIN,
     _build_manual_review_filters,
     report_type_expr,
+    review_category_expressions,
 )
 from src.adapters.sql_candidate_filters import (
     DISCARDED_BATCH_LIMIT,
@@ -173,6 +174,7 @@ def fetch_manual_reviews(
     where_sql = " AND ".join(clauses)
     order_by_sql = _manual_review_order_by(status=status, order_by_decided_at=order_by_decided_at)
     base_params = list(params)
+    beijing_expr, sentiment_expr = review_category_expressions("mr")
     count_query = f"""
         SELECT COUNT(*) AS total
         FROM manual_reviews mr
@@ -181,7 +183,11 @@ def fetch_manual_reviews(
     """
     query = f"""
         SELECT
-            {MANUAL_REVIEW_SELECT_COLUMNS.format(type_expr=type_expr)}
+            {MANUAL_REVIEW_SELECT_COLUMNS.format(
+                type_expr=type_expr,
+                beijing_expr=beijing_expr,
+                sentiment_expr=sentiment_expr,
+            )}
         FROM manual_reviews mr
         JOIN news_summaries ns ON ns.article_id = mr.article_id
         {SCORE_FEEDBACK_JOIN}

@@ -847,23 +847,29 @@ class PostgresAdapter:
         category_updates: Sequence[Mapping[str, Any]] = (),
         request_id: Optional[str] = None,
     ) -> int:
+        category_map = {
+            str(item["article_id"]): str(item.get("category_override") or "")
+            for item in category_updates
+            if item.get("article_id")
+        }
         with self.transaction() as cur:
-            updated = shift_reviews.update_shift_review_order(
+            updated, before, after = shift_reviews.update_shift_review_order(
                 cur,
                 shift_id=shift_id,
                 actor_user_id=actor_user_id,
                 selected_order=selected_order,
                 backup_order=backup_order,
+                category_updates=category_map,
             )
-            news_summaries.update_summary_categories(cur, category_updates)
             audit.insert_review_event(
                 cur,
                 actor_user_id=actor_user_id,
                 action="shift_review.reorder",
                 target_type="duty_shift",
                 target_id=shift_id,
-                before_data=None,
+                before_data={"items": before},
                 after_data={
+                    "items": after,
                     "selected_order": list(selected_order),
                     "backup_order": list(backup_order),
                     "category_updates": list(category_updates),
@@ -990,17 +996,16 @@ class PostgresAdapter:
         request_id: Optional[str] = None,
     ) -> Tuple[int, int]:
         with self.transaction() as cur:
-            before, after = manual_reviews.update_manual_review_order_as_user(
-                cur,
-                review_updates,
-                owner_user_id=actor_user_id,
-                actor_username=actor_username,
-                actor_user_id=actor_user_id,
-                report_type=report_type,
-            )
-            updated_categories = news_summaries.update_summary_categories(
-                cur,
-                category_updates,
+            before, after, updated_categories = (
+                manual_reviews.update_manual_review_order_as_user(
+                    cur,
+                    review_updates,
+                    owner_user_id=actor_user_id,
+                    actor_username=actor_username,
+                    actor_user_id=actor_user_id,
+                    report_type=report_type,
+                    category_updates=category_updates,
+                )
             )
             if after:
                 audit.insert_review_event(

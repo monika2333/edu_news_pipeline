@@ -1534,17 +1534,28 @@ def test_bulk_shift_review_update_rolls_back_after_late_failure() -> None:
     assert not any("INSERT INTO review_events" in query for query in cursor.queries)
 
 
-def test_shift_review_order_and_categories_share_one_transaction(
+def test_shift_review_order_writes_category_override_and_audits_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """换组只写本班次的覆盖值：排序写入带覆盖值，审计能看到前后变化。"""
     adapter = object.__new__(db_postgres_core.PostgresAdapter)
     cursor = object()
     events: list[str] = []
+    captured: dict[str, Any] = {}
+    before_row = {
+        "article_id": "article-1",
+        "category_override": None,
+        "decision": "selected",
+    }
+    after_row = {
+        "article_id": "article-1",
+        "category_override": "external_positive",
+        "decision": "selected",
+    }
     category_updates = [
         {
             "article_id": "article-1",
-            "is_beijing_related": True,
-            "sentiment_label": "positive",
+            "category_override": "external_positive",
         }
     ]
 
@@ -1554,21 +1565,22 @@ def test_shift_review_order_and_categories_share_one_transaction(
         yield cursor
         events.append("commit")
 
+    def fake_update_order(cur: object, **kwargs: Any) -> tuple[int, list, list]:
+        assert cur is cursor
+        captured.update(kwargs)
+        events.append("order")
+        return 1, [before_row], [after_row]
+
     adapter.transaction = fake_transaction
     monkeypatch.setattr(
         db_postgres_core.shift_reviews,
         "update_shift_review_order",
-        lambda cur, **kwargs: events.append("order") or 1,
-    )
-    monkeypatch.setattr(
-        db_postgres_core.news_summaries,
-        "update_summary_categories",
-        lambda cur, updates: events.append("categories") or len(updates),
+        fake_update_order,
     )
     monkeypatch.setattr(
         db_postgres_core.audit,
         "insert_review_event",
-        lambda cur, **kwargs: events.append(kwargs["action"]),
+        lambda cur, **kwargs: events.append(kwargs) or 1,
     )
 
     updated = adapter.update_shift_review_order(
@@ -1580,15 +1592,15 @@ def test_shift_review_order_and_categories_share_one_transaction(
     )
 
     assert updated == 1
-    assert events == [
-        "begin",
-        "order",
-        "categories",
-        "shift_review.reorder",
-        "commit",
-    ]
-
-
+    assert captured["category_updates"] == {"article-1": "external_positive"}
+    assert events[0] == "begin"
+    assert events[1] == "order"
+    audit_payload = events[2]
+    assert audit_payload["action"] == "shift_review.reorder"
+    assert audit_payload["before_data"]["items"] == [before_row]
+    assert audit_payload["after_data"]["items"] == [after_row]
+    assert audit_payload["after_data"]["category_updates"] == category_updates
+    assert events[-1] == "commit"
 
 
 def _connect_real_postgres() -> Any:

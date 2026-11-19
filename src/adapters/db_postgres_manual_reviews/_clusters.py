@@ -4,7 +4,10 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import psycopg
 
-from src.adapters.db_postgres_manual_reviews._base import DUTY_UNPROCESSED_SQL
+from src.adapters.db_postgres_manual_reviews._base import (
+    DUTY_UNPROCESSED_SQL,
+    review_category_expressions,
+)
 from src.adapters.sql_candidate_filters import candidate_extra_filter_clauses
 
 
@@ -64,6 +67,16 @@ def fetch_manual_clusters(
     extra_filter_sql = "".join(
         f" AND {clause}" for clause in extra_clauses
     )
+    beijing_expr, sentiment_expr = review_category_expressions("mr")
+    derived_bucket_expression = (
+        f"CASE WHEN {beijing_expr} THEN 'internal' ELSE 'external' END"
+        " || '_' || "
+        f"CASE WHEN lower(COALESCE({sentiment_expr}, '')) = 'negative' "
+        "THEN 'negative' ELSE 'positive' END"
+    )
+    # 聚类视图规则：工作区里有覆盖值的待处理条目不参与共享缓存里的簇
+    # （缓存按全局分类分桶，覆盖值只属于本工作区），按生效分类作为单条出现；
+    # 没有覆盖值的条目行为不变。
     query = f"""
         WITH cluster_base AS (
             SELECT cluster_id, bucket_key, item_ids
@@ -85,6 +98,7 @@ def fetch_manual_clusters(
                 mr.summary AS manual_summary,
                 mr.rank AS manual_rank,
                 mr.manual_llm_source,
+                mr.category_override,
                 ns.title,
                 ns.llm_summary,
                 ns.llm_source,
@@ -92,8 +106,8 @@ def fetch_manual_clusters(
                 ns.url,
                 ns.score,
                 ns.external_importance_score,
-                ns.sentiment_label,
-                ns.is_beijing_related,
+                {sentiment_expr} AS sentiment_label,
+                {beijing_expr} AS is_beijing_related,
                 ns.publish_time_iso,
                 ns.publish_time,
                 ns.created_at,
@@ -105,13 +119,7 @@ def fetch_manual_clusters(
                 sf.submitted_by_user_id AS score_feedback_submitted_by_user_id,
                 feedback_submitter.display_name AS score_feedback_submitted_by_display_name,
                 sf.updated_at AS score_feedback_updated_at,
-                CASE WHEN ns.is_beijing_related THEN 'internal' ELSE 'external' END
-                    || '_'
-                    || CASE
-                        WHEN lower(COALESCE(ns.sentiment_label, '')) = 'negative'
-                        THEN 'negative'
-                        ELSE 'positive'
-                    END AS derived_bucket_key
+                {derived_bucket_expression} AS derived_bucket_key
             FROM manual_reviews mr
             JOIN news_summaries ns ON ns.article_id = mr.article_id
             LEFT JOIN score_feedbacks sf
@@ -133,6 +141,7 @@ def fetch_manual_clusters(
                 p.*
             FROM visible_cluster_items ci
             JOIN pending p ON p.article_id = ci.article_id
+            WHERE p.category_override IS NULL
         ),
         singletons AS (
             SELECT
@@ -141,10 +150,13 @@ def fetch_manual_clusters(
                 p.*
             FROM pending p
             WHERE (%s::text IS NULL OR p.derived_bucket_key = %s)
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM all_cluster_items aci
-                  WHERE aci.article_id = p.article_id
+              AND (
+                  p.category_override IS NOT NULL
+                  OR NOT EXISTS (
+                      SELECT 1
+                      FROM all_cluster_items aci
+                      WHERE aci.article_id = p.article_id
+                  )
               )
         )
         SELECT

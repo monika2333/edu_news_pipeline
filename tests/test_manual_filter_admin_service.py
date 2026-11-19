@@ -292,13 +292,11 @@ def test_update_ranks_persists_cross_group_category_change(monkeypatch) -> None:
     assert adapter.order_update["category_updates"] == [
         {
             "article_id": "article-2",
-            "is_beijing_related": True,
-            "sentiment_label": "positive",
+            "category_override": "internal_positive",
         },
         {
             "article_id": "article-1",
-            "is_beijing_related": False,
-            "sentiment_label": "negative",
+            "category_override": "external_negative",
         },
     ]
     assert adapter.order_update["actor_username"] == "admin-a"

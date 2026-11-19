@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 import pytest
 
-from src.adapters import db_postgres_manual_reviews, db_postgres_news_summaries
+from src.adapters import db_postgres_manual_reviews
 
 
 class FakeCursor:
@@ -85,18 +85,6 @@ class FakeVersionedReviewCursor:
             "report_type": params[5] or current["report_type"],
             "version": current["version"] + 1,
         }
-
-
-class FakeUpdateCursor:
-    def __init__(self) -> None:
-        self.rowcount = 0
-        self.query: Optional[str] = None
-        self.payload: list[tuple[Any, ...]] = []
-
-    def executemany(self, query: str, payload: list[tuple[Any, ...]]) -> None:
-        self.query = query
-        self.payload = payload
-        self.rowcount = len(payload)
 
 
 class FakeEnqueueCursor:
@@ -619,31 +607,6 @@ def test_duty_import_can_replace_existing_version_after_explicit_choice() -> Non
     assert cur.params[-1][8] == "wanbao"
 
 
-def test_update_summary_categories_updates_canonical_group_fields() -> None:
-    cur = FakeUpdateCursor()
-
-    updated = db_postgres_news_summaries.update_summary_categories(
-        cur,
-        [
-            {
-                "article_id": "a1",
-                "is_beijing_related": True,
-                "sentiment_label": "positive",
-            },
-            {
-                "article_id": "a2",
-                "is_beijing_related": False,
-                "sentiment_label": "negative",
-            },
-        ],
-    )
-
-    assert updated == 2
-    assert cur.query is not None
-    assert "UPDATE news_summaries" in cur.query
-    assert cur.payload == [(True, "positive", "a1"), (False, "negative", "a2")]
-
-
 class _ScriptedVersionedCursor:
     """Cursor that answers the real version-check queries with scripted rows.
 
@@ -1005,8 +968,8 @@ def test_restore_filter_matches_discarded_list_where_construction() -> None:
     list_sql = list_cursor.queries[0]
     restore_sql = restore_cursor.queries[0]
     expected_clauses = [
-        "ns.is_beijing_related = %s",
-        "ns.sentiment_label = %s",
+        "CASE WHEN mr.category_override IS NULL THEN ns.is_beijing_related",
+        "CASE WHEN mr.category_override IS NULL THEN ns.sentiment_label",
         "ILIKE %s",
         "ILIKE %s",
         "ns.external_importance_score >= %s",

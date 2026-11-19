@@ -6,7 +6,10 @@ import psycopg
 
 from src.adapters.db_postgres_manual_reviews._base import (
     MANUAL_REVIEW_DECISION_LOCK_ID,
+    REVIEW_CATEGORY_OVERRIDE_KEYS,
     ManualReviewConflictError,
+    category_override_value,
+    fetch_news_summary_categories,
     manual_review_max_rank,
 )
 from src.domain.report_type import normalize_report_type as normalize_report_type_value
@@ -42,6 +45,7 @@ def fetch_manual_review_rows(
             decided_at,
             manual_llm_source,
             report_type,
+            category_override,
             version,
             created_at,
             updated_at
@@ -189,6 +193,7 @@ def update_manual_review_statuses_with_versions(
                 decided_at,
                 manual_llm_source,
                 report_type,
+                category_override,
                 version,
                 created_at,
                 updated_at
@@ -294,6 +299,7 @@ def update_manual_review_summaries_with_versions(
                 decided_at,
                 manual_llm_source,
                 report_type,
+                category_override,
                 version,
                 created_at,
                 updated_at
@@ -320,6 +326,33 @@ def update_manual_review_summaries_with_versions(
     return before, after
 
 
+def _normalize_category_updates(
+    category_updates: Sequence[Mapping[str, Any]],
+    *,
+    ordered_article_ids: Sequence[str],
+) -> dict[str, str]:
+    """校验并归一化「分组键覆盖」更新：article_id -> ReviewGroupKey。"""
+    ordered_ids = set(ordered_article_ids)
+    result: dict[str, str] = {}
+    for item in category_updates:
+        article_id = str(item.get("article_id") or "").strip()
+        group_key = str(item.get("category_override") or "").strip()
+        if not article_id:
+            raise ValueError("A review group update is missing its article id")
+        if article_id not in ordered_ids:
+            raise ValueError(
+                f"Grouped article is missing from review order: {article_id}"
+            )
+        if article_id in result:
+            raise ValueError(
+                f"Article appears in multiple review groups: {article_id}"
+            )
+        if group_key not in REVIEW_CATEGORY_OVERRIDE_KEYS:
+            raise ValueError(f"Invalid review group: {group_key}")
+        result[article_id] = group_key
+    return result
+
+
 def update_manual_review_order_as_user(
     cur: psycopg.Cursor,
     updates: Sequence[Mapping[str, Any]],
@@ -328,7 +361,15 @@ def update_manual_review_order_as_user(
     actor_username: str,
     actor_user_id: Optional[str],
     report_type: Optional[str] = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    category_updates: Sequence[Mapping[str, Any]] = (),
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    """保存审阅排序，并在同一条 UPDATE 里写入本工作区的分类覆盖值。
+
+    换组只写 ``manual_reviews.category_override``（NULL = 跟随全局），不再改
+    ``news_summaries``。与全局分类比较后相同则清空覆盖、不同则写分组键；
+    覆盖值与排序/状态写入落在同一条 SQL 里，update 之前/之后的行都带
+    ``category_override``，审计事件因此能看到覆盖值的前后变化。
+    """
     normalized_updates = [
         dict(item)
         for item in updates
@@ -337,9 +378,13 @@ def update_manual_review_order_as_user(
     ]
     article_ids = [str(item["article_id"]).strip() for item in normalized_updates]
     if not article_ids:
-        return [], []
+        return [], [], 0
     if len(article_ids) != len(set(article_ids)):
         raise ValueError("A manual review appears more than once in one order")
+    category_map = _normalize_category_updates(
+        category_updates,
+        ordered_article_ids=article_ids,
+    )
     before = fetch_manual_review_rows(
         cur,
         article_ids,
@@ -350,6 +395,8 @@ def update_manual_review_order_as_user(
         found = {str(row["article_id"]) for row in before}
         missing = sorted(set(article_ids) - found)
         raise ValueError(f"Manual reviews not found: {missing}")
+    before_by_id = {str(row["article_id"]): row for row in before}
+    global_categories = fetch_news_summary_categories(cur, list(category_map))
     default_report_type = normalize_report_type_value(report_type)
     after: list[dict[str, Any]] = []
     for item in normalized_updates:
@@ -358,6 +405,14 @@ def update_manual_review_order_as_user(
             normalize_report_type_value(item.get("report_type"))
             or default_report_type
         )
+        override = before_by_id[article_id].get("category_override")
+        if article_id in category_map:
+            global_category = global_categories.get(article_id) or {}
+            override = category_override_value(
+                category_map[article_id],
+                global_is_beijing=global_category.get("is_beijing_related"),
+                global_sentiment=global_category.get("sentiment_label"),
+            )
         cur.execute(
             """
             UPDATE manual_reviews
@@ -367,6 +422,7 @@ def update_manual_review_order_as_user(
                 decided_by_user_id = %s,
                 decided_at = COALESCE(decided_at, now()),
                 report_type = COALESCE(%s, report_type),
+                category_override = %s,
                 updated_at = now()
             WHERE owner_user_id = %s
               AND article_id = %s
@@ -383,6 +439,7 @@ def update_manual_review_order_as_user(
                 decided_at,
                 manual_llm_source,
                 report_type,
+                category_override,
                 version,
                 created_at,
                 updated_at
@@ -393,6 +450,7 @@ def update_manual_review_order_as_user(
                 actor_username,
                 actor_user_id,
                 target_report_type,
+                override,
                 owner_user_id,
                 article_id,
             ),
@@ -401,10 +459,11 @@ def update_manual_review_order_as_user(
         if not row:
             raise ValueError(f"Manual review not found: {article_id}")
         after.append(dict(row))
-    return before, after
+    return before, after, len(category_map)
 
 
 __all__ = [
+    "_normalize_category_updates",
     "_validate_expected_versions",
     "allocate_manual_review_decision_ranks",
     "fetch_manual_review_rows",

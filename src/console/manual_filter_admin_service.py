@@ -208,8 +208,7 @@ def update_ranks(
             category_updates.append(
                 {
                     "article_id": article_id,
-                    "is_beijing_related": region == "internal",
-                    "sentiment_label": sentiment,
+                    "category_override": group_key,
                 }
             )
     target_report_type = _normalize_report_type(report_type)

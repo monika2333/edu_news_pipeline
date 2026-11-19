@@ -12,6 +12,7 @@
 
 - **plpgsql 的 `RAISE EXCEPTION` 不带括号**：语法是 `RAISE EXCEPTION '格式串 %', 参数`；写成函数调用式 `RAISE EXCEPTION ('...', arg)` 直接 SyntaxError，报错指向括号处，与「DO 块里其他 IF/循环」无关（20261106150000 迁移实测）。jsonb 取值参与比较时两边都要 `->>`（`text = jsonb` 无操作符）。
 - **psycopg 3.2：`with conn:` 退出会关闭连接**（`Connection.__exit__` 里非 pool 连接直接 close），不再是旧「事务边界」语义。真实库测试若在 with conn 块外还要用连接（adapter 调用+断言），必须显式 seed + `conn.commit()`，不能包 with conn。
+- **`CREATE TEMP TABLE t (LIKE public.t INCLUDING DEFAULTS)` 不复制唯一约束/主键**：只复制列与默认值。测试里走 `INSERT ... ON CONFLICT (...) DO UPDATE` 的导入/upsert 路径时，临时表必须先 `CREATE UNIQUE INDEX ON t (...)`，否则报 `InvalidColumnReference: 没有匹配 ON CONFLICT 说明的唯一或排除约束`（2026-11-19 写值班导入行为测试时踩到）。
 - **app_settings（及任何可能被应用先行写入的表）种子迁移必须带 `ON CONFLICT ... DO NOTHING`**：设置页可以在任何迁移之前建行，长寿命库上裸 INSERT 必撞 pkey（20260923120000 实际炸过，3f1e4cd 修复了 llm_endpoints 与 review_sort_keywords 两条）。
 - 诊断 dbmate 失败以 `schema_migrations` 表为准——失败的迁移不留记录；用户终端粘贴的报错可能串行误导。
 - **`dbmate up` 回写的 `schema.sql` 只有「迁移版本行」该提交**：pg_dump 18 每次生成不同的 `\restrict`/`\unrestrict` 随机令牌，还会带出 public schema 注释块、以及把 `schema_migrations.version` 写成本机库现状的 `varchar`（无长度）。后两者与 `tests/test_migration_replay.py` 里硬编码 `varchar(128)` 的镜像 DDL 冲突，原样提交该用例立刻变红（实测）。现在由 `scripts/db/refresh-schema.ps1` 统一处理（规程见 [workflow.md](workflow.md)「刷新 schema.sql」），`tests/test_schema_normalizer.py` 把「提交的 `schema.sql` 必须已是规整形态」钉进了 CI。历史上这份文件的形态来回翻转多次（a3a63e4 等）就是每次有人手工清理这类噪音。

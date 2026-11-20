@@ -5,7 +5,7 @@
 // 覆盖的行为约定（改动这些行为时必须同步更新本文件）：
 // 1. 与筛选页同口径：命中加分词的浅红高亮（has-bonus）只用于京内
 //    （is_beijing_related 为 true）；京外与未归类命中也保持白底；
-// 2. meta 行「Bonus: 关键词」列表不受京内外限制，命中照常显示；
+// 2. meta 行「加分词: 关键词」列表不受京内外限制，命中照常显示；
 // 3. 审阅页与管理员汇总审阅共用 renderReviewCard，两端行为必须一致。
 'use strict';
 
@@ -79,14 +79,15 @@ function metaText(card) {
 }
 
 for (const mode of MODES) {
-    test(`${MODE_LABELS[mode]}审阅卡片：京内命中加分词标浅红，Bonus 关键词照常显示`, async () => {
+    test(`${MODE_LABELS[mode]}审阅卡片：京内命中加分词标浅红，加分词照常显示`, async () => {
         const page = await bootByMode[mode]([
             reviewItem('r1', { is_beijing_related: true, bonus_keywords: ['中考改革', '双减'] }),
         ]);
         try {
             const card = page.document.querySelector('#review-list .article-card');
             assert.ok(card.classList.contains('has-bonus'), '京内卡片命中加分词应有 has-bonus');
-            assert.equal(metaText(card).includes('中考改革'), true, 'Bonus 关键词列表不受京内外限制照常显示');
+            assert.equal(metaText(card).includes('中考改革'), true, '加分词列表不受京内外限制照常显示');
+            assert.equal(metaText(card).includes('加分词'), true, 'meta 行用「加分词」标签展示命中关键词');
             assert.deepEqual(unhandledRejections, []);
         } finally { page.close(); }
     });
@@ -98,7 +99,7 @@ for (const mode of MODES) {
         try {
             const card = page.document.querySelector('#review-list .article-card');
             assert.equal(card.classList.contains('has-bonus'), false, '京外卡片命中加分词也应保持白底');
-            assert.equal(metaText(card).includes('中考改革'), true, 'Bonus 关键词列表照常显示');
+            assert.equal(metaText(card).includes('中考改革'), true, '加分词列表照常显示');
             assert.deepEqual(unhandledRejections, []);
         } finally { page.close(); }
     });
@@ -121,6 +122,6 @@ test('审阅卡片：京内未命中加分词不标红', async () => {
     try {
         const card = page.document.querySelector('#review-list .article-card');
         assert.equal(card.classList.contains('has-bonus'), false, '京内但未命中加分词，不应标红');
-        assert.equal(metaText(card).includes('Bonus'), false, '无命中时不渲染 Bonus 行');
+        assert.equal(metaText(card).includes('加分词'), false, '无命中时不渲染加分词行');
     } finally { page.close(); }
 });

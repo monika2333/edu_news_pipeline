@@ -10,7 +10,7 @@
 // 4. 地域或情感未就绪时不猜词，留中性「-」占位，且不得出现「京内:」这类旧字段；
 // 5. 聚类内的成员卡片与单条卡片走同一渲染，标签口径一致；
 // 6. 命中加分词的浅红高亮（has-bonus）只用于京内桶（京内正面/京内负面），
-//    京外与未归类卡片命中也保持白底；meta 行的 Bonus 关键词列表不受桶限制照常显示。
+//    京外与未归类卡片命中也保持白底；meta 行的加分词列表不受桶限制照常显示。
 'use strict';
 
 const test = require('node:test');
@@ -125,7 +125,7 @@ test('聚类内成员卡片同样合并成一个分类标签', async () => {
 });
 
 for (const mode of MODES) {
-    test(`${MODE_LABELS[mode]}卡片：京内命中加分词标浅红，Bonus 关键词照常显示`, async () => {
+    test(`${MODE_LABELS[mode]}卡片：京内命中加分词标浅红，加分词照常显示`, async () => {
         const page = await bootPage(mode, {
             articleCount: 1,
             articleCategories: {
@@ -135,7 +135,8 @@ for (const mode of MODES) {
         try {
             const card = page.card('a00');
             assert.ok(card.classList.contains('has-bonus'), '京内卡片命中加分词应有 has-bonus');
-            assert.equal(metaText(card).includes('中考改革'), true, 'Bonus 关键词列表不受桶限制照常显示');
+            assert.equal(metaText(card).includes('中考改革'), true, '加分词列表不受桶限制照常显示');
+            assert.equal(metaText(card).includes('加分词'), true, 'meta 行用「加分词」标签展示命中关键词');
             assert.deepEqual(unhandledRejections, []);
         } finally {
             page.close();
@@ -152,7 +153,7 @@ for (const mode of MODES) {
         try {
             const card = page.card('a00');
             assert.equal(card.classList.contains('has-bonus'), false, '京外卡片命中加分词也应保持白底');
-            assert.equal(metaText(card).includes('中考改革'), true, 'Bonus 关键词列表照常显示');
+            assert.equal(metaText(card).includes('中考改革'), true, '加分词列表照常显示');
             assert.deepEqual(unhandledRejections, []);
         } finally {
             page.close();

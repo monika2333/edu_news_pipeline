@@ -171,7 +171,7 @@ function renderArticleCard(item, { showStatus = true, collapsed = false } = {}) 
                     <span class="badge search-category-badge ${category ? category.sentimentClass : 'neutral'}">${category ? category.label : '-'}</span>
                 </div>
     ${safe.bonus_keywords && safe.bonus_keywords.length ?
-            `<div class="meta-item">Bonus: ${safe.bonus_keywords.join(', ')}</div>` : ''
+            `<div class="meta-item">加分词: ${safe.bonus_keywords.join(', ')}</div>` : ''
         }
             </div>
 

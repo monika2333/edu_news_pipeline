@@ -288,7 +288,7 @@ function renderReviewCard(item) {
             <div class="meta-row">
                 <div class="meta-item meta-item-source" data-source-fill="${escapeReviewAttr(sourceText === '-' ? '' : sourceText)}" title="双击填入人工来源">来源: ${sourceText}</div>
                 ${renderScoreFeedbackControl(item)}
-                ${bonusText ? `<div class="meta-item">Bonus: ${bonusText}</div>` : ''}
+                ${bonusText ? `<div class="meta-item">加分词: ${bonusText}</div>` : ''}
             </div>
             <div class="review-summary-wrap">
                 <textarea class="summary-box" data-id="${item.article_id || ''}">${item.summary || ''}</textarea>

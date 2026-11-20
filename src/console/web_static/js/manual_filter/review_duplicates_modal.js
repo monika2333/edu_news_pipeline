@@ -66,7 +66,7 @@ function renderDuplicateReviewItem(item) {
                 <div class="meta-item meta-item-source" data-source-fill="${sourceFill}"
                     title="双击填入人工来源">来源：${source}</div>
                 <div class="meta-item">分数：${escapeDuplicateHtml(score)}</div>
-                ${bonusText ? `<div class="meta-item">Bonus：${escapeDuplicateHtml(bonusText)}</div>` : ''}
+                ${bonusText ? `<div class="meta-item">加分词：${escapeDuplicateHtml(bonusText)}</div>` : ''}
             </div>
             <div class="review-summary-wrap">
                 <textarea class="summary-box duplicate-review-summary-box"

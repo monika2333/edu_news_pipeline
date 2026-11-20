@@ -116,6 +116,10 @@ def test_parse_feedback_without_issue_number() -> None:
         ("（北京日报）", "北京日报", []),
         ("（小红书 http://a）", "小红书", ["http://a"]),
         ("（小红书 http://a、http://b）", "小红书", ["http://a", "http://b"]),
+        # 全角分号是链接之间的分隔符：不能留在 source 末尾（历史 bug：会变成
+        # source="小红书 ；"），也不能被 URL 字符集吞进链接。
+        ("（小红书 http://a ； http://b）", "小红书", ["http://a", "http://b"]),
+        ("（小红书 http://a；http://b）", "小红书", ["http://a", "http://b"]),
         (
             "（微博 https://weibo.com/x、哔哩哔哩 https://b23.tv/y）",
             "微博 哔哩哔哩",

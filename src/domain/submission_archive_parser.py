@@ -14,7 +14,12 @@ _NUMBER_ITEM_PATTERN = re.compile(
     r"^([一二三四五六七八九十百]+、)\s*(.+)$"
 )
 _SOURCE_GROUP_PATTERN = re.compile(r"（([^（）]*)）\s*$")
-_URL_PATTERN = re.compile(r"https?://[^\s、）]+")
+# 来源组里来源名与 URL 都按「、；;，,」与空白切分。全角分号/逗号必须排除出 URL
+# 字符集：否则「url1；url2」会被贪心匹配成一个坏 URL，而且去掉 URL 后残留的
+# 分隔符会被当成来源名拼进 source（历史表现：「（小红书 url1 ； url2）」存成
+# source="小红书 ；"、urls 正常但分隔符跑到来源名后面）。
+_SOURCE_SEPARATOR_PATTERN = re.compile(r"[、；;，,\s]+")
+_URL_PATTERN = re.compile(r"https?://[^\s、；，）]+")
 _LEADING_MARKER_PATTERN = re.compile(
     r"^\s*(?:[★■▲]|[一二三四五六七八九十百]+、)\s*"
 )
@@ -98,9 +103,11 @@ def _extract_source(body: str) -> tuple[str, Optional[str], list[str]]:
     group = match.group(1)
     urls = _URL_PATTERN.findall(group)
     remaining = _URL_PATTERN.sub(" ", group)
+    # 来源名与来源之间的分隔符（「微博、哔哩哔哩」）以及链接之间的分隔符被去掉
+    # URL 后残留的「；」都只是分隔符，不能拼进 source。
     source_parts = [
         part
-        for part in re.split(r"[、\s]+", remaining.strip())
+        for part in _SOURCE_SEPARATOR_PATTERN.split(remaining.strip())
         if part
     ]
     source = " ".join(source_parts) or None

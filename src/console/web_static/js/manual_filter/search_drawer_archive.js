@@ -102,21 +102,26 @@ function appendArchiveHighlight(container, text, terms) {
 // 一层，避免脏数据把 javascript: 之类的地址塞进 href。来源名沿用正文的关键词
 // 高亮；括号与链接文本不高亮——链接要能整段点击/复制，插 <mark> 只会把地址拆碎。
 const ARCHIVE_ITEM_URL_PATTERN = /^https?:\/\//i;
+// 存量数据兜底：旧解析器会把「链接之间的分隔符」留在 source 末尾（如
+// source="小红书 ；"），展示前剥掉；多个链接之间统一用「；」分隔。
+const ARCHIVE_SOURCE_TRAILING_SEPARATOR = /[\s、；;，,]+$/;
+const ARCHIVE_ITEM_URL_SEPARATOR = ' ； ';
 
 // 没有来源也没有合法链接时返回 null，调用方据此不渲染来源组。
 function buildArchiveSourceGroup(sourceText, urls, terms) {
     const values = (Array.isArray(urls) ? urls : [])
         .map(url => String(url || '').trim())
         .filter(url => ARCHIVE_ITEM_URL_PATTERN.test(url));
-    if (!sourceText && !values.length) return null;
+    const cleanSource = String(sourceText || '').replace(ARCHIVE_SOURCE_TRAILING_SEPARATOR, '');
+    if (!cleanSource && !values.length) return null;
     const groupEl = createEl('span', 'archive-item-source');
     groupEl.appendChild(document.createTextNode('（'));
-    if (sourceText) {
-        appendArchiveHighlight(groupEl, sourceText, terms);
+    if (cleanSource) {
+        appendArchiveHighlight(groupEl, cleanSource, terms);
         if (values.length) groupEl.appendChild(document.createTextNode(' '));
     }
     values.forEach((url, index) => {
-        if (index > 0) groupEl.appendChild(document.createTextNode(' '));
+        if (index > 0) groupEl.appendChild(document.createTextNode(ARCHIVE_ITEM_URL_SEPARATOR));
         groupEl.appendChild(createEl('a', 'archive-item-link', url, {
             href: url,
             target: '_blank',

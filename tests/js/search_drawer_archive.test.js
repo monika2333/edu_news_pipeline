@@ -12,7 +12,8 @@
 // 4. 词相互包含时（「课后」与「课后服务」）整段只包一个 <mark>，不嵌套、不重复；
 // 5. 条目文本里的 HTML 字符串按纯文本呈现，不产生元素；
 // 6. 条目 urls 拼进正文结尾的来源组「（来源 链接）」括号内（新标签页，只认
-//    HTTP(S)）；无 urls 时来源组保持「（来源）」，非 HTTP(S) 地址不渲染链接。
+//    HTTP(S)）；多个链接之间用「；」分隔；无 urls 时来源组保持「（来源）」，
+//    非 HTTP(S) 地址不渲染链接；存量 source 末尾遗留的分隔符展示前剥掉。
 'use strict';
 
 const test = require('node:test');
@@ -269,7 +270,7 @@ for (const mode of MODES) {
     });
 }
 
-test('条目带多个 urls：按原顺序空格分隔在同一个来源组内', async () => {
+test('条目带多个 urls：按原顺序用「；」分隔在同一个来源组内', async () => {
     const item = {
         id: 'a9',
         report_type: 'zongbao',
@@ -284,10 +285,38 @@ test('条目带多个 urls：按原顺序空格分隔在同一个来源组内', 
         const sourceEl = page.document.querySelector(
             '#archive-search-results .archive-item .archive-item-source'
         );
-        assert.equal(sourceEl.textContent, '（微博 https://weibo.com/a https://weibo.com/b）');
+        assert.equal(sourceEl.textContent, '（微博 https://weibo.com/a ； https://weibo.com/b）');
         assert.deepEqual(
             [...sourceEl.querySelectorAll('a')].map(link => link.getAttribute('href')),
             ['https://weibo.com/a', 'https://weibo.com/b']
+        );
+    });
+});
+
+// 存量数据回归：旧解析器把链接之间的分隔符留在 source 末尾（source="小红书 ；"），
+// 展示时必须把它从来源名后面剥掉，变成链接之间的「；」，而不是「小红书 ； a b」。
+test('存量 source 末尾带分隔符：剥掉后多个链接之间用「；」分隔', async () => {
+    const item = {
+        id: 'a12',
+        report_type: 'zongbao',
+        report_date: '2026-11-15',
+        title: '网民关注清华大学特等奖学金评选争议及评论被删',
+        body: '10月13日，小红书用户发帖关注清华特奖评比争议。',
+        source: '小红书 ；',
+        urls: ['https://xhslink.cn/o/1KOQmXlzt4z', 'https://xhslink.cn/o/vXeFzfhuiL'],
+    };
+    await withPage([archiveResponse([item], ['小红书'])], async (page) => {
+        await runArchiveSearch(page, '小红书');
+        const sourceEl = page.document.querySelector(
+            '#archive-search-results .archive-item .archive-item-source'
+        );
+        assert.equal(
+            sourceEl.textContent,
+            '（小红书 https://xhslink.cn/o/1KOQmXlzt4z ； https://xhslink.cn/o/vXeFzfhuiL）'
+        );
+        assert.ok(
+            !sourceEl.textContent.includes('小红书 ；'),
+            '来源名后面不得再出现分隔符'
         );
     });
 });

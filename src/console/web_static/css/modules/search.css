@@ -676,17 +676,9 @@
     color: var(--text-secondary);
 }
 
-/* 存档条目自己的原文/原帖地址（重点关注舆情类条目的 urls）：逐条一行，
+/* 存档正文结尾的来源组「（来源 原文链接）」：链接在括号内行内显示，
    长链接允许断行，避免撑宽检索抽屉。 */
-.archive-item-links {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin-top: 6px;
-    font-size: 0.78rem;
-}
-
-.archive-item-link {
+.archive-item-source .archive-item-link {
     color: var(--primary-color);
     word-break: break-all;
 }

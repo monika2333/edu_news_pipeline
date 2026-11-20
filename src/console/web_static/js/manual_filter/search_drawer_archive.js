@@ -95,29 +95,37 @@ function appendArchiveHighlight(container, text, terms) {
     container.appendChild(document.createTextNode(value.slice(index)));
 }
 
-// 存档条目的原文链接。重点关注舆情这类条目（小红书、微博等）在正文结尾只有
-// 来源名「（小红书）」，真正可回溯的原帖地址存在条目的 urls 字段里（检索接口
-// 已带回），这里逐条渲染为可点击外链，避免只能看到一个无法回溯的来源名。
+// 来源组「（来源 链接）」。重点关注舆情这类条目（小红书、微博等）的原帖地址存在
+// 条目的 urls 字段里（检索接口已带回），拼回正文结尾的来源组内，形如
+// 「（小红书 https://xhslink.cn/…）」——与报送原文的写法一致，不另起一行。
 // 只接受 HTTP(S)：报送文本解析与条目编辑接口两处都按这个口径校验过，这里再兜
-// 一层，避免脏数据把 javascript: 之类的地址塞进 href。链接文本不做关键词高亮
-// ——链接要能整段点击/复制，插 <mark> 只会把地址拆碎。
+// 一层，避免脏数据把 javascript: 之类的地址塞进 href。来源名沿用正文的关键词
+// 高亮；括号与链接文本不高亮——链接要能整段点击/复制，插 <mark> 只会把地址拆碎。
 const ARCHIVE_ITEM_URL_PATTERN = /^https?:\/\//i;
 
-function appendArchiveItemLinks(container, urls) {
+// 没有来源也没有合法链接时返回 null，调用方据此不渲染来源组。
+function buildArchiveSourceGroup(sourceText, urls, terms) {
     const values = (Array.isArray(urls) ? urls : [])
         .map(url => String(url || '').trim())
         .filter(url => ARCHIVE_ITEM_URL_PATTERN.test(url));
-    if (!values.length) return;
-    const linksEl = createEl('div', 'archive-item-links');
-    values.forEach(url => {
-        linksEl.appendChild(createEl('a', 'archive-item-link', url, {
+    if (!sourceText && !values.length) return null;
+    const groupEl = createEl('span', 'archive-item-source');
+    groupEl.appendChild(document.createTextNode('（'));
+    if (sourceText) {
+        appendArchiveHighlight(groupEl, sourceText, terms);
+        if (values.length) groupEl.appendChild(document.createTextNode(' '));
+    }
+    values.forEach((url, index) => {
+        if (index > 0) groupEl.appendChild(document.createTextNode(' '));
+        groupEl.appendChild(createEl('a', 'archive-item-link', url, {
             href: url,
             target: '_blank',
             rel: 'noopener noreferrer',
             title: '打开原文链接'
         }));
     });
-    container.appendChild(linksEl);
+    groupEl.appendChild(document.createTextNode('）'));
+    return groupEl;
 }
 
 async function performArchiveSearch() {
@@ -193,21 +201,17 @@ function renderArchiveResults(data) {
         itemEl.appendChild(head);
 
         // 存档正文是最终报送版，长度可控，直接显示全文，不做截断。
+        // 来源组「（来源 链接）」拼在正文结尾，与正文共用同一套关键词高亮；
+        // 即使正文为空，来源/链接也照常渲染——不能把条目自带的链接吞掉。
         const bodyText = String(item.body || '').trim();
-        if (bodyText) {
+        const sourceText = String(item.source || '').trim();
+        const sourceGroup = buildArchiveSourceGroup(sourceText, item.urls, terms);
+        if (bodyText || sourceGroup) {
             const bodyEl = createEl('div', 'archive-item-body');
-            appendArchiveHighlight(bodyEl, bodyText, terms);
-            // 来源拼在正文结尾，如「（北京日报）」；与标题、正文共用同一套关键词高亮。
-            const sourceText = String(item.source || '').trim();
-            if (sourceText) {
-                const sourceEl = createEl('span', 'archive-item-source');
-                appendArchiveHighlight(sourceEl, `（${sourceText}）`, terms);
-                bodyEl.appendChild(sourceEl);
-            }
+            if (bodyText) appendArchiveHighlight(bodyEl, bodyText, terms);
+            if (sourceGroup) bodyEl.appendChild(sourceGroup);
             itemEl.appendChild(bodyEl);
         }
-        // 来源名之外，把条目自己的原帖/原文地址也展示出来（与正文、来源分开一行）。
-        appendArchiveItemLinks(itemEl, item.urls);
         fragment.appendChild(itemEl);
     });
     results.appendChild(fragment);

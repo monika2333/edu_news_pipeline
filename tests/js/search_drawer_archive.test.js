@@ -11,8 +11,8 @@
 // 3. 大小写不敏感命中，<mark> 内保留原文写法；
 // 4. 词相互包含时（「课后」与「课后服务」）整段只包一个 <mark>，不嵌套、不重复；
 // 5. 条目文本里的 HTML 字符串按纯文本呈现，不产生元素；
-// 6. 条目 urls 在正文/来源之后渲染为可点击外链（新标签页，只认 HTTP(S)），
-//    无 urls 或地址非 HTTP(S) 时不渲染链接容器。
+// 6. 条目 urls 拼进正文结尾的来源组「（来源 链接）」括号内（新标签页，只认
+//    HTTP(S)）；无 urls 时来源组保持「（来源）」，非 HTTP(S) 地址不渲染链接。
 'use strict';
 
 const test = require('node:test');
@@ -228,9 +228,9 @@ test('响应缺 terms：只展示原文，不报错', async () => {
 });
 
 // 共享模块改动默认双跑两端：值班页（/duty，workspaceFetch 转译层）与管理员的
-// 检索抽屉必须渲染同样的链接。
+// 检索抽屉必须渲染同样的来源组。
 for (const mode of MODES) {
-    test(`${MODE_LABELS[mode]}页：条目带 urls 时在正文与来源之后渲染可点击外链`, async () => {
+    test(`${MODE_LABELS[mode]}页：条目 urls 拼进正文结尾来源组「（来源 链接）」的括号内`, async () => {
         const item = {
             id: 'a8',
             report_type: 'zongbao',
@@ -243,25 +243,33 @@ for (const mode of MODES) {
         await withPage([archiveResponse([item], ['小红书'])], async (page) => {
             await runArchiveSearch(page, '小红书');
             const itemEl = page.document.querySelector('#archive-search-results .archive-item');
-            const links = itemEl.querySelectorAll('.archive-item-links a');
-            assert.equal(links.length, 1);
-            const link = links[0];
+            const sourceEl = itemEl.querySelector('.archive-item-body .archive-item-source');
+            assert.ok(sourceEl, '来源组未渲染');
+            assert.equal(
+                sourceEl.textContent,
+                '（小红书 https://xhslink.cn/o/GGCwbSlHt9）',
+                '来源与链接应在同一对括号内'
+            );
+            const link = sourceEl.querySelector('a.archive-item-link');
+            assert.ok(link, '来源组内缺少链接');
             assert.equal(link.getAttribute('href'), 'https://xhslink.cn/o/GGCwbSlHt9');
             assert.equal(link.textContent, 'https://xhslink.cn/o/GGCwbSlHt9');
             assert.equal(link.target, '_blank');
             assert.equal(link.getAttribute('rel'), 'noopener noreferrer');
-            // 链接容器独立于正文块，正文/来源的高亮与拼字不受影响
-            assert.equal(itemEl.querySelector('.archive-item-body .archive-item-links'), null);
+            // 不再另起一行：整张卡片里没有独立的链接容器
+            assert.equal(itemEl.querySelector('.archive-item-links'), null);
             assert.ok(
-                itemEl.textContent.indexOf('（小红书）')
-                    < itemEl.textContent.indexOf('https://xhslink.cn/o/GGCwbSlHt9'),
-                '链接应渲染在正文与来源之后'
+                itemEl.textContent.endsWith('（小红书 https://xhslink.cn/o/GGCwbSlHt9）'),
+                '来源组应拼在正文结尾'
             );
+            // 来源名照旧参与关键词高亮，链接文本不进 <mark>
+            assert.deepEqual(markTexts(sourceEl), ['小红书']);
+            assert.equal(sourceEl.querySelectorAll('mark mark').length, 0);
         }, mode);
     });
 }
 
-test('条目带多个 urls：按原顺序逐条渲染链接', async () => {
+test('条目带多个 urls：按原顺序空格分隔在同一个来源组内', async () => {
     const item = {
         id: 'a9',
         report_type: 'zongbao',
@@ -273,17 +281,18 @@ test('条目带多个 urls：按原顺序逐条渲染链接', async () => {
     };
     await withPage([archiveResponse([item], ['微博'])], async (page) => {
         await runArchiveSearch(page, '微博');
-        const links = [
-            ...page.document.querySelectorAll('#archive-search-results .archive-item-links a')
-        ];
+        const sourceEl = page.document.querySelector(
+            '#archive-search-results .archive-item .archive-item-source'
+        );
+        assert.equal(sourceEl.textContent, '（微博 https://weibo.com/a https://weibo.com/b）');
         assert.deepEqual(
-            links.map(link => link.getAttribute('href')),
+            [...sourceEl.querySelectorAll('a')].map(link => link.getAttribute('href')),
             ['https://weibo.com/a', 'https://weibo.com/b']
         );
     });
 });
 
-test('无 urls 或地址非 HTTP(S)：不渲染链接容器', async () => {
+test('无 urls 或地址非 HTTP(S)：来源组保持「（来源）」且不渲染链接', async () => {
     const item = {
         id: 'a10',
         report_type: 'wanbao',
@@ -299,8 +308,9 @@ test('无 urls 或地址非 HTTP(S)：不渲染链接容器', async () => {
         const cards = page.document.querySelectorAll('#archive-search-results .archive-item');
         assert.equal(cards.length, 2);
         cards.forEach(card => {
-            assert.equal(card.querySelector('.archive-item-links'), null);
+            assert.equal(card.querySelector('.archive-item-source').textContent, '（北京日报）');
             assert.equal(card.querySelector('a'), null);
+            assert.equal(card.querySelector('.archive-item-links'), null);
         });
     });
 });

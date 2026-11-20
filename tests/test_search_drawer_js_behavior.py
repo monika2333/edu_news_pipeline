@@ -1,10 +1,12 @@
 """检索抽屉（报送存档检索）浏览器端行为测试（jsdom）的 pytest 入口。
 
 页面经真实路由渲染（模板改动会被一并覆盖），写入临时文件后交给
-tests/js/search_drawer_archive.test.js 运行。承载页选 /manual_filter：
-检索抽屉在该页无条件渲染，且与 manual_filter/content_drawer.js 同页加载——
-appendArchiveHighlight 与 content_drawer 的 appendHighlightedText 必须同名
-共存的约束恰好落在这一页上。存档检索后端由测试文件里的 fake 响应模拟。
+tests/js/search_drawer_archive.test.js 运行。承载页同时渲染 /manual_filter 与
+/duty：检索抽屉由共享的 `_search_drawer.html` + `manual_filter/search_drawer_archive.js`
+提供，共享界面改动默认双跑两端；/manual_filter 页还同时加载了
+manual_filter/content_drawer.js——appendArchiveHighlight 与 content_drawer 的
+appendHighlightedText 必须不同名共存的约束恰好落在这一页上。存档检索后端由
+测试文件里的 fake 响应模拟。
 
 本机未安装 Node 或未执行 ``npm ci --prefix tests/js`` 时跳过；CI 环境
 （``CI`` 变量存在）下改为失败。
@@ -28,17 +30,17 @@ JS_TEST_DIR = ROOT / "tests" / "js"
 STATIC_DIR = ROOT / "src" / "console" / "web_static"
 
 
-def _render_manual_filter_page() -> str:
+def _render_page(path: str, role: str) -> str:
     app = create_app()
     app.dependency_overrides[require_console_user] = lambda: ConsoleUser(
         method="test",
-        user_id="admin-id",
-        username="admin",
-        display_name="测试管理员",
-        role="admin",
+        user_id=f"{role}-id",
+        username=role,
+        display_name="测试用户",
+        role=role,
     )
-    response = TestClient(app).get("/manual_filter")
-    assert response.status_code == 200, f"/manual_filter 渲染失败：{response.status_code}"
+    response = TestClient(app).get(path)
+    assert response.status_code == 200, f"{path} 渲染失败：{response.status_code}"
     return response.text
 
 
@@ -57,13 +59,16 @@ def _node_or_skip() -> str:
 
 def test_search_drawer_archive_behaviour(tmp_path: Path) -> None:
     node = _node_or_skip()
-    manual_filter_html = tmp_path / "manual_filter.html"
-    manual_filter_html.write_text(_render_manual_filter_page(), encoding="utf-8")
+    duty_html = tmp_path / "duty.html"
+    admin_html = tmp_path / "admin.html"
+    duty_html.write_text(_render_page("/duty", "duty_editor"), encoding="utf-8")
+    admin_html.write_text(_render_page("/manual_filter", "admin"), encoding="utf-8")
 
     env = {
         **os.environ,
         "CONSOLE_STATIC_DIR": str(STATIC_DIR),
-        "FILTER_PAGE_ADMIN_HTML": str(manual_filter_html),
+        "FILTER_PAGE_DUTY_HTML": str(duty_html),
+        "FILTER_PAGE_ADMIN_HTML": str(admin_html),
     }
     result = subprocess.run(
         [

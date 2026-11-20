@@ -83,7 +83,7 @@
 - 设置页高级关键词芯片化后，`block.querySelector('input, textarea')` 会命中内联「添加关键词」input，而不是隐藏的批量 textarea；测试要显式用 `.settings-textarea`，否则改的是添加框、脏标记也不会动。
 - 值班汇总页是「渲染即过滤」：搜掉的条目不进 DOM，断言用渲染出的卡片集合而非 display；jsdom 夹具 `bootPage` **必须至少给一个 shiftRow**（ends_at 取边界时刻如 05:00+08:00 而非午夜，否则日期键滚到下一天 chooseInitialShift 选不中）。
 - 审阅页初始视图只渲染「综报×采纳」桶，fake `/review` 要按 decision+report_type 双过滤，卡片数按桶算。
-- 页面 `loadStats()` 常是 fire-and-forget：用例 close 前要 `waitFor(server.inflight === 0)`，否则 showToast 撞已销毁 document 变 unhandled rejection；夹具原地改数据的必须是工厂函数逐用例新建。
+- 页面 `loadStats()` 常是 fire-and-forget：用例 close 前要 `waitFor(server.inflight === 0)`，否则 showToast 撞已销毁 document 变 unhandled rejection；夹具原地改数据的必须是工厂函数逐用例新建。**值班页更隐蔽**（2026-11-20）：`bootPage('duty')` 的 inflight 归零检查与 DOMContentLoaded 链（班次加载 → 工作区重载 → `loadStats`）之间存在微任务间隙，boot 已返回但续发请求还没发出，用例跑完立刻 close 时回包落在已销毁文档上；收尾先等一拍（如 10ms）让续发请求入队，再 `waitFor(inflight === 0)` 才关窗口（报错堆栈是 `showToastAt` → `loadStats`，只在「结束后无未处理脚本错误」用例里暴露）。
 - `window.confirm` jsdom 未实现（返回 undefined），测试用桩替换并记录参数。
 - 跨页复用组件只能复刻样式、**类名不能共用**：`filter-refine-clear-link` 等类名会被 filter_refine.js 的委托劫持点击；禁用 `.filter-refine-row`/`data-refine-field` 命名同理。
 - 浮层分档现状：sticky 工具条最高 100（review-toolbar），账号菜单 150，modal/content_drawer 1000，检索抽屉 1050-1200，toast 2000。改层级先对照这张表。

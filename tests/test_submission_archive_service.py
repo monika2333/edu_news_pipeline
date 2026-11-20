@@ -848,7 +848,12 @@ class _SearchArchiveNamespace:
 
     def search_report_items(self, **kwargs: Any) -> list[dict[str, Any]]:
         self.kwargs = kwargs
-        return [{"id": "item-1", "title": "双减政策落地"}]
+        # urls 必须原样透传：检索抽屉把重点关注舆情等条目的原帖地址渲染成外链。
+        return [{
+            "id": "item-1",
+            "title": "双减政策落地",
+            "urls": ["https://xhslink.cn/o/test"],
+        }]
 
 
 class _SearchArchiveAdapter:
@@ -868,7 +873,11 @@ def test_search_archive_splits_terms_and_echoes_them(
     )
 
     assert adapter.submission_archive.kwargs["terms"] == ["双减", "课后"]
-    assert result["items"] == [{"id": "item-1", "title": "双减政策落地"}]
+    assert result["items"] == [{
+        "id": "item-1",
+        "title": "双减政策落地",
+        "urls": ["https://xhslink.cn/o/test"],
+    }]
     assert result["query"] == "双减　课后 双减"
     assert result["total"] == 1
     assert result["terms"] == ["双减", "课后"]

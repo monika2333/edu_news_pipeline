@@ -1,6 +1,7 @@
 // Manual Filter JS - Search Drawer · 报送存档命中（B 块）
 // 事件级检索：调用已有的 /api/submission-archive/search，只呈现候选条目，
 // 是否同一件事由使用者判断，这里不给「已报送」的硬结论。
+// 条目自带的原文/原帖地址（urls）单独渲染为外链，便于回溯小红书、微博等来源。
 // 由 _search_drawer.html 引入，运行期依赖 utils.js 与 search_drawer.js 的
 // searchDrawerFetch。
 
@@ -94,6 +95,31 @@ function appendArchiveHighlight(container, text, terms) {
     container.appendChild(document.createTextNode(value.slice(index)));
 }
 
+// 存档条目的原文链接。重点关注舆情这类条目（小红书、微博等）在正文结尾只有
+// 来源名「（小红书）」，真正可回溯的原帖地址存在条目的 urls 字段里（检索接口
+// 已带回），这里逐条渲染为可点击外链，避免只能看到一个无法回溯的来源名。
+// 只接受 HTTP(S)：报送文本解析与条目编辑接口两处都按这个口径校验过，这里再兜
+// 一层，避免脏数据把 javascript: 之类的地址塞进 href。链接文本不做关键词高亮
+// ——链接要能整段点击/复制，插 <mark> 只会把地址拆碎。
+const ARCHIVE_ITEM_URL_PATTERN = /^https?:\/\//i;
+
+function appendArchiveItemLinks(container, urls) {
+    const values = (Array.isArray(urls) ? urls : [])
+        .map(url => String(url || '').trim())
+        .filter(url => ARCHIVE_ITEM_URL_PATTERN.test(url));
+    if (!values.length) return;
+    const linksEl = createEl('div', 'archive-item-links');
+    values.forEach(url => {
+        linksEl.appendChild(createEl('a', 'archive-item-link', url, {
+            href: url,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            title: '打开原文链接'
+        }));
+    });
+    container.appendChild(linksEl);
+}
+
 async function performArchiveSearch() {
     const queryInput = document.getElementById('archive-search-q');
     const results = document.getElementById('archive-search-results');
@@ -180,6 +206,8 @@ function renderArchiveResults(data) {
             }
             itemEl.appendChild(bodyEl);
         }
+        // 来源名之外，把条目自己的原帖/原文地址也展示出来（与正文、来源分开一行）。
+        appendArchiveItemLinks(itemEl, item.urls);
         fragment.appendChild(itemEl);
     });
     results.appendChild(fragment);

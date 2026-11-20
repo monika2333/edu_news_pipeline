@@ -676,6 +676,21 @@
     color: var(--text-secondary);
 }
 
+/* 存档条目自己的原文/原帖地址（重点关注舆情类条目的 urls）：逐条一行，
+   长链接允许断行，避免撑宽检索抽屉。 */
+.archive-item-links {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 6px;
+    font-size: 0.78rem;
+}
+
+.archive-item-link {
+    color: var(--primary-color);
+    word-break: break-all;
+}
+
 /* 设置页「提示词试跑」的选择模式：只保留全库文章检索，
    浮动入口由页面按钮打开；不影响筛选页/值班页/存档页。 */
 body[data-search-drawer-mode="pick"] .search-drawer-toggle {

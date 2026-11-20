@@ -1701,20 +1701,21 @@ def _seed_archive_search_items(cur: psycopg.Cursor) -> None:
             title,
             body,
             source,
+            urls,
             norm_title,
             norm_title_hash,
             link_status
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, 'unmatched')
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'unmatched')
         """,
         [
-            (report_id, 0, "双减政策落地", "课后服务全面铺开", "北京日报", "双减政策落地", "h1"),
-            (report_id, 1, "校园活动合集", "义务教育阶段细则", "市教委", "校园活动合集", "h2"),
-            (report_id, 2, "abc", "普通正文", None, "abc", "h3"),
-            (report_id, 3, "a_c", "下划线标题", None, "a_c", "h4"),
-            (report_id, 4, "数字标题", "增长1000", None, "数字标题", "h5"),
-            (report_id, 5, "涨幅百分号", "利润100%", None, "涨幅百分号", "h6"),
-            (report_id, 6, "路径 a\\b 条目", "反斜杠正文", None, "路径 a\\b 条目", "h7"),
+            (report_id, 0, "双减政策落地", "课后服务全面铺开", "北京日报", ["https://xhslink.cn/o/test"], "双减政策落地", "h1"),
+            (report_id, 1, "校园活动合集", "义务教育阶段细则", "市教委", [], "校园活动合集", "h2"),
+            (report_id, 2, "abc", "普通正文", None, [], "abc", "h3"),
+            (report_id, 3, "a_c", "下划线标题", None, [], "a_c", "h4"),
+            (report_id, 4, "数字标题", "增长1000", None, [], "数字标题", "h5"),
+            (report_id, 5, "涨幅百分号", "利润100%", None, [], "涨幅百分号", "h6"),
+            (report_id, 6, "路径 a\\b 条目", "反斜杠正文", None, [], "路径 a\\b 条目", "h7"),
         ],
     )
 
@@ -1765,6 +1766,11 @@ def test_archive_search_matches_terms_across_fields_with_real_sql() -> None:
             assert [
                 row["title"] for row in _search_archive_items(cur, ["市教委"])
             ] == ["校园活动合集"]
+
+            # urls 必须随检索结果返回：检索抽屉把重点关注舆情等条目的原帖地址
+            # 渲染成可点击外链，SELECT 漏掉 urls 时页面就只剩来源名。
+            rows = _search_archive_items(cur, ["双减"])
+            assert rows[0]["urls"] == ["https://xhslink.cn/o/test"]
 
 
 def test_archive_search_matches_like_wildcards_literally_with_real_sql() -> None:

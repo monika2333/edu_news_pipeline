@@ -520,7 +520,7 @@ ITEM_CARD_CSS = "src/console/web_static/css/modules/submission_archive/item_card
 WIDGETS_CSS = "src/console/web_static/css/modules/submission_archive/widgets.css"
 
 
-def test_detail_stats_drops_linked_and_pending_filter_chips() -> None:
+def test_detail_stats_has_covered_and_uncovered_filter_chips() -> None:
     source = Path(BROWSER_JS).read_text(encoding="utf-8")
     stats_body = _strip_js_comments(
         source.split("function detailStats(items) {", maxsplit=1)[1].split(
@@ -528,20 +528,19 @@ def test_detail_stats_drops_linked_and_pending_filter_chips() -> None:
         )[0]
     )
 
-    # 「已匹配」「待确认」筛选 chip 均已删除：已匹配的筛选入口无实际用途、
-    # 覆盖率概览由左侧卡片进度条承担；待确认数量由标题栏批量按钮补上。
-    # 「未覆盖」是唯一保留的筛选 chip
-    assert "filterChip('linked'" not in stats_body
+    # 2026-11-24 用户要求加回「已覆盖」筛选 chip（取值 linked，与 linkStatusGroup 分组一致），
+    # 排在「未覆盖」之前；「待确认」chip 仍不提供（数量由标题栏批量按钮体现）
+    assert "${filterChip('linked', '已覆盖', covered)}" in stats_body
     assert "filterChip('pending'" not in stats_body
     assert "filterChip('uncovered', '未覆盖'" in stats_body
+    assert stats_body.index("filterChip('linked'") < stats_body.index("filterChip('uncovered'")
+    # 已覆盖计数只看 matched，不叠加 coverage_excluded（被剔除但已匹配仍算已覆盖）
+    assert "const covered = items.filter(item => item.link_status === 'matched').length;" in stats_body
     # 「共 N 条」「正在判断」与反馈报别的两个已报送 chip 保留
     assert "共 <strong>${items.length}</strong> 条" in stats_body
     assert "is-processing" in stats_body
     assert "priorChip('matched', '已报送'" in stats_body
     assert "priorChip('unmatched', '未报送'" in stats_body
-    # 已匹配 chip 的计数计算一并删除，不留算完却不用的残留
-    assert "const matched" not in stats_body
-    assert "matched: 0" not in stats_body
     assert "stats.unmatched + stats.rejected" not in stats_body
     # linkStatusGroup 的 linked/pending 分组保留：卡片仍要正确标注 data-link-group
     assert "if (status === 'matched') return 'linked';" in source

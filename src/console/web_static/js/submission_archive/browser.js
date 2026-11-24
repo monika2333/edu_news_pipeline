@@ -5,8 +5,8 @@ const listState = { offset: 0, total: 0, loading: false, type: '' };
 let activeReportId = initialReportId;
 let reportRefreshTimer = null;
 let activeReportStatusSignature = '';
-// 详情区按回链状态筛选：'' 表示不过滤；「未覆盖」（uncovered）是唯一保留的筛选 chip，
-// 已匹配/待确认的 chip 均已删除（待确认数量由标题栏批量按钮体现），取值机制与分组保留
+// 详情区按回链状态筛选：'' 表示不过滤；可筛选的 chip 是「已覆盖」（linked）与
+// 「未覆盖」（uncovered），待确认 chip 已删除（待确认数量由标题栏批量按钮体现），取值机制与分组保留
 let detailStatusFilter = '';
 // 详情区按已报送判定筛选（与回链状态筛选独立、可叠加）：'' / matched / unmatched
 let detailPriorFilter = '';
@@ -140,6 +140,9 @@ function detailStats(items) {
         item => (item.link_status === 'unmatched' || item.link_status === 'rejected')
             && !item.coverage_excluded
     ).length;
+    // 已覆盖 = 已绑定原文（matched），口径与 linkStatusGroup 的 linked 分组一致：
+    // 被剔除的舆情条目只要已匹配仍算已覆盖（不对称剔除），chip 计数与点击后的列表始终一致
+    const covered = items.filter(item => item.link_status === 'matched').length;
     // 已报送/未报送 chip：仅反馈报告且判定结束后渲染（进行中 prior_match 全为 null，
     // 计数没有含义），可点击筛选，与 link_status 筛选相互独立；
     // dismissed（人工判为未报送）计入未报送，与 detailPriorGroup 共用 isPriorSubmitted
@@ -150,10 +153,10 @@ function detailStats(items) {
         return `<button class="archive-stat-chip${extraClass}${active ? ' is-active' : ''}" type="button"`
             + ` data-prior-filter="${filter}" aria-pressed="${active}">${label} <strong>${count}</strong></button>`;
     };
-    // 「未覆盖」是统计区唯一可筛选口径：点击后仅展示未覆盖条目，再次点击取消筛选。
-    // 「已匹配」chip 已删除——覆盖率概览由左侧卡片进度条承担；剔除规则下
-    // 「共 N 条」不再等于各项之和（差值是系统本就不抓、无需覆盖的舆情条目），
-    // 统计区不对其余条目的归属做声称，也不再要求各项加起来等于总数。
+    // 「已覆盖」「未覆盖」是统计区的回链筛选口径：点击后仅展示对应条目，再次点击取消筛选，
+    // 两者互斥（同一个 detailStatusFilter）。剔除规则下「共 N 条」不再等于各项之和
+    // （差值是系统本就不抓、无需覆盖的舆情条目及正在判断/待确认条目），
+    // 统计区不要求各项加起来等于总数。
     // 待确认（pending）同样不提供 chip，其数量由标题栏的「待确认回链」批量按钮
     // （detailHeadActionsHtml）体现
     const filterChip = (filter, label, count, extraClass = '') => {
@@ -167,6 +170,7 @@ function detailStats(items) {
             ${processing ? `<span class="archive-stat-chip is-processing">正在判断 <strong>${processing}</strong></span>` : ''}
             ${showPriorChips ? priorChip('matched', '已报送', priorMatched, ' is-prior-matched')
                 + priorChip('unmatched', '未报送', items.length - priorMatched, ' is-prior-unmatched') : ''}
+            ${filterChip('linked', '已覆盖', covered)}
             ${filterChip('uncovered', '未覆盖', uncovered)}
         </div>
     `;
